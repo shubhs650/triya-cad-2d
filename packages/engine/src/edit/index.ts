@@ -39,3 +39,4 @@ export {
 export * from './dimension';
 export * from './named-view';
 export * from './underlay-layers';
+export * from './array';
