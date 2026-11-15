@@ -45,3 +45,5 @@ export {
   restyledDimensions,
 } from './modify/dimensions';
 export { FILE_COMMANDS } from './file';
+export { INQUIRY_COMMANDS, inquiryResults } from './inquiry/inquiry';
+export { measureObject, measurePolygon, type Measured } from './inquiry/measure';
