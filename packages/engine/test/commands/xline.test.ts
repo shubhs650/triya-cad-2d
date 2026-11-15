@@ -219,3 +219,66 @@ describe('RAY', () => {
     ]);
   });
 });
+
+describe('XLINE and RAY ended early', () => {
+  it('Enter (no answer) or Esc at any prompt draws nothing', async () => {
+    const { bus, added } = setup();
+    const scripts = [
+      ['XLINE'],
+      ['XLINE', '0,0'],
+      ['XLINE', 'H'],
+      ['XLINE', 'A'],
+      ['XLINE', 'A', 'R'],
+      ['XLINE', 'B'],
+      ['XLINE', 'B', '0,0'],
+      ['XLINE', 'B', '0,0', '1,0'],
+      ['XLINE', 'O'],
+      ['RAY'],
+      ['RAY', '0,0'],
+    ];
+    for (const script of scripts) {
+      await bus.script(script);
+      expect(bus.command).toBeDefined();
+      await bus.cancel();
+      expect(bus.command).toBeUndefined();
+      // Enter where a value is wanted ends the command too, as AutoCAD does.
+      await bus.script(script);
+      await bus.submit('');
+      if (bus.command) await bus.cancel();
+    }
+    expect(added()).toEqual([]);
+  });
+
+  it('Offset: refuses a zero distance, Enter takes the last, Esc at the side ends', async () => {
+    const { bus, lines } = setup();
+    await bus.script(['XLINE', 'O', '0']);
+    expect(bus.history.at(-1)).toBe('Value must be positive and nonzero.');
+    await bus.script(['3']);
+    await bus.pick({ x: 5, y: 0 });
+    await bus.cancel();
+    await bus.script(['XLINE', 'O', '']);
+    expect(bus.promptText).toBe('Select a line object:');
+    await bus.pick({ x: 5, y: 0 });
+    await bus.script(['1,1', '']);
+    expect(lines()).toEqual([['XLINE', 0, 3, 1, 0]]);
+    // Through brings the distance back to Through.
+    await bus.script(['XLINE', 'O', 'T', '']);
+    await bus.script(['XLINE', 'O']);
+    expect(bus.promptText).toBe('Specify offset distance or [Through] <Through>:');
+    await bus.cancel();
+  });
+
+  it('Ang Reference: Enter takes the line’s own angle; Ang takes a picked angle', async () => {
+    const { bus, lines } = setup();
+    await bus.script(['XLINE', 'A', 'R']);
+    await bus.pick({ x: 5, y: 0 });
+    await bus.script(['', '0,4', '']);
+    await bus.script(['XLINE', 'A']);
+    await bus.answer({ kind: 'angle', value: Math.PI / 2 });
+    await bus.script(['2,0', '']);
+    expect(lines()).toEqual([
+      ['XLINE', 0, 4, 1, 0],
+      ['XLINE', 2, 0, 0, 1],
+    ]);
+  });
+});

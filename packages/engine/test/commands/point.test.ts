@@ -119,3 +119,19 @@ describe('DONUT', () => {
     });
   });
 });
+
+describe('POINT and DONUT ended early', () => {
+  it('Enter (no answer) or Esc at any prompt draws nothing', async () => {
+    const { bus, added } = setup();
+    for (const script of [['POINT'], ['DONUT'], ['DONUT', '1'], ['DONUT', '1', '2']]) {
+      await bus.script(script);
+      await bus.cancel();
+      expect(bus.command).toBeUndefined();
+      // Enter where a value is wanted ends the command too, as AutoCAD does.
+      await bus.script(script);
+      await bus.submit('');
+      if (bus.command) await bus.cancel();
+    }
+    expect(added()).toEqual([]);
+  });
+});

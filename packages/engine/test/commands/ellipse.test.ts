@@ -184,3 +184,57 @@ describe('ELLIPSE', () => {
     expect(at(e, e.endParam)).toEqual({ x: 5, y: 2 });
   });
 });
+
+describe('ELLIPSE ended early', () => {
+  it('Enter or Esc at any prompt ends it, and Center refuses a zero axis', async () => {
+    const { bus, added } = setup();
+    const scripts = [
+      ['ELLIPSE'],
+      ['ELLIPSE', '0,0'],
+      ['ELLIPSE', '0,0', '4,0'],
+      ['ELLIPSE', '0,0', '4,0', 'R'],
+      ['ELLIPSE', 'C'],
+      ['ELLIPSE', 'C', '0,0'],
+      ['ELLIPSE', 'A'],
+      ['ELLIPSE', 'A', 'C', '0,0', '4,0'],
+      ['ELLIPSE', 'A', '0,0', '4,0', '1'],
+      ['ELLIPSE', 'A', '0,0', '4,0', '1', 'P', 'A', '0'],
+      ['ELLIPSE', 'A', '0,0', '4,0', '1', '0', 'P', 'A', 'I'],
+    ];
+    for (const script of scripts) {
+      await bus.script(script);
+      expect(bus.command).toBe('ELLIPSE');
+      await bus.cancel();
+      expect(bus.command).toBeUndefined();
+      // Enter where a value is wanted ends the command too, as AutoCAD does.
+      await bus.script(script);
+      await bus.submit('');
+      if (bus.command) await bus.cancel();
+    }
+    await bus.script(['ELLIPSE', 'C', '2,2', '2,2']);
+    expect(bus.history.at(-1)).toBe('*Invalid*');
+    expect(bus.promptText).toBe('Specify endpoint of axis:');
+    await bus.cancel();
+    // Only Enter at "Specify included angle for arc <180>" draws: it takes the 180.
+    expect(added().map((e) => e.type)).toEqual(['ELLIPSE']);
+  });
+
+  it('Arc: the parameter end and a picked start angle', async () => {
+    const { bus, added } = setup();
+    await bus.script(['ELLIPSE', 'A', '-4,0', '4,0', '2', 'P', '0', 'P', '90']);
+    expect(bus.command).toBeUndefined();
+    const e = added()[0]!.geom as Ellipse;
+    // Start parameter 0 at (−4, 0); end angle 90° from it, CCW: straight down, (0, −2).
+    expect(at(e, e.startParam)).toEqual({ x: -4, y: 0 });
+    expect(at(e, e.endParam)).toEqual({ x: 0, y: -2 });
+    // The end dragged by parameter and by included angle.
+    await bus.script(['ELLIPSE', 'A', '-4,0', '4,0', '2', 'P', '0']);
+    const byParameter = dragMotion(bus.prompt!.drag!, { x: 0, y: -9 })?.adding?.geom as Ellipse;
+    expect(at(byParameter, byParameter.endParam)).toEqual({ x: 0, y: -2 });
+    await bus.submit('I');
+    const included = dragMotion(bus.prompt!.drag!, { x: 9, y: 0 })?.adding?.geom as Ellipse;
+    // An included angle of 0 (the cursor along +X) closes the ellipse.
+    expect(included).toMatchObject({ startParam: 0, endParam: 2 * Math.PI });
+    await bus.cancel();
+  });
+});
