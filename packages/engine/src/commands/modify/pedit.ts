@@ -86,7 +86,7 @@ async function* yesNo(ctx: CommandContext, message: string): Sub<boolean | undef
   return a.keyword === 'Yes';
 }
 
-async function* precision(ctx: CommandContext, message: string): Sub<number | undefined> {
+export async function* precision(ctx: CommandContext, message: string): Sub<number | undefined> {
   for (;;) {
     const a = yield ctx.prompt.integer({ message, default: { kind: 'number', value: 10 } });
     if (a.kind !== 'number') return undefined;
@@ -280,7 +280,7 @@ async function* single(ctx: CommandContext, start: EntityId): Sub<void> {
 // ── Edit vertex ────────────────────────────────────────────────────────────────────────────
 
 /** The X PEDIT marks a vertex with, sized to the polyline. */
-function marker(vs: readonly Vec2[], at: Vec2): EntityGeometry[] {
+export function marker(vs: readonly Vec2[], at: Vec2): EntityGeometry[] {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
