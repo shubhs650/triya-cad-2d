@@ -12,6 +12,9 @@
 // `DRAWING_VARIABLES`): its file name and whether it has unsaved changes.
 import type { ViewReply } from '@triya/engine';
 import {
+  MAX_ADDITIONAL_ANGLES,
+  additionalAngles,
+  angleText,
   AUTOSNAP_KEPT,
   AUTOSNAP_OTRACK,
   AUTOSNAP_POLAR,
@@ -56,6 +59,7 @@ const VALUES: Readonly<
   PICKFIRST: { get: (s) => bit(s.pickfirst), set: (v) => ({ pickfirst: v === 1 }) },
   GRIPSIZE: { get: (s) => s.gripSize, set: (gripSize) => ({ gripSize }) },
   ROLLOVERTIPS: { get: (s) => bit(s.rolloverTips), set: (v) => ({ rolloverTips: v === 1 }) },
+  POLARMODE: { get: (s) => s.polarMode, set: (polarMode) => ({ polarMode }) },
   ARRAYASSOCIATIVITY: {
     get: (s) => bit(s.arrayAssociativity),
     set: (v) => ({ arrayAssociativity: v === 1 }),
@@ -73,13 +77,34 @@ function dynModeReply(dyn: DynMode, value: number | undefined): ViewReply {
   return { ok: true, value: dyn.get() ? 3 : -3 };
 }
 
+/**
+ * POLARADDANG (M3-06 part 1): the additional angles as text, refused unless it is a list of up to
+ * ten decimal angles separated by semicolons.
+ */
+function polarAddAngReply(drafting: Drafting, value: string | undefined): ViewReply {
+  if (value !== undefined) {
+    const angles = additionalAngles(value);
+    if (!angles) {
+      return {
+        ok: false,
+        message: `Requires up to ${MAX_ADDITIONAL_ANGLES} angles in degrees separated by semicolons.`,
+      };
+    }
+    drafting.configure({ polarAddAngles: angles.map(angleText).join(';') });
+  }
+  return { ok: true, value: drafting.get().polarAddAngles };
+}
+
 /** Reads, or sets and then reads, a variable the app keeps. */
 export function systemVariableReply(
   drafting: Drafting,
   name: string,
-  value?: number,
+  value?: number | string,
   dyn: DynMode = dynMode,
 ): ViewReply {
+  if (name === 'POLARADDANG')
+    return polarAddAngReply(drafting, value === undefined ? undefined : String(value));
+  if (typeof value === 'string') return { ok: false, message: `${name} takes a number.` };
   if (name === 'DYNMODE') return dynModeReply(dyn, value);
   const toggle = TOGGLES[name];
   if (toggle) {

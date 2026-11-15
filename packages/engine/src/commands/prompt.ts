@@ -429,7 +429,19 @@ export type DialogRequest =
       readonly selection: readonly QuickSelectType[];
       /** How the Value of a distance or angle is shown and typed. */
       readonly units: PropertyUnits;
+    }
+  | {
+      /**
+       * DSETTINGS' Drafting Settings (M3-06 part 1): the app's per-user drafting settings, which
+       * the dialog sets itself; `tab` the tab it opens on (OSNAP's Object Snap), none for the
+       * one shown last.
+       */
+      readonly type: 'dsettings';
+      readonly tab?: DraftingSettingsTab;
     };
+
+/** The Drafting Settings tabs Triya has (M3-06 part 1). */
+export type DraftingSettingsTab = 'polar' | 'osnap' | 'qp';
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
 export interface DialogPrompt extends PromptBase {
