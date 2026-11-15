@@ -4,8 +4,11 @@
 // Polar spacing and Snap type (Grid snap or PolarSnap) and the Polar Tracking tab's Polar Angle
 // measurement with part 3; Isometric snap is PRD non-goal 7 (DEC-060), so Grid snap has no
 // Rectangular/Isometric choice, and Grid style and Grid behavior are left out (Triya's grid is
-// lines, adaptive and past the limits). The Dynamic Input and Selection Cycling tabs come with
-// the rest of M3-06; 3D Object Snap is out of scope (PRD non-goal: no 3D).
+// lines, adaptive and past the limits). The Dynamic Input tab came with part 4, its Pointer Input
+// Settings on the tab itself rather than in a dialog of their own, and no Dimension Input
+// Settings or Drafting Tooltip Appearance (grip stretching shows no dimension input; the tooltip
+// follows the app's theme). The Selection Cycling tab comes with M3-04; 3D Object Snap is out of
+// scope (PRD non-goal: no 3D).
 // It opens on the tab shown last (OSNAP: Object Snap), edits a copy of the drafting aids and
 // sets them on OK; Cancel (or Esc) leaves them as they were. Options... is left out: Triya's
 // Settings panel is not a dialog to open over it.
@@ -76,6 +79,7 @@ export function DraftingSettingsDialog({ doc, request }: { doc: number; request:
         {tab === 'snap' && <SnapGridTab d={d} set={set} />}
         {tab === 'polar' && <PolarTab d={d} set={set} />}
         {tab === 'osnap' && <ObjectSnapTab d={d} set={set} />}
+        {tab === 'dyn' && <DynamicInputTab d={d} set={set} />}
         {tab === 'qp' && <QuickPropertiesTab d={d} set={set} />}
       </div>
       {problem && (
@@ -491,6 +495,62 @@ function ObjectSnapTab({ d, set }: TabProps) {
  * Quick Properties: whether it shows on selection (Ctrl+Shift+P) and for which objects, where
  * (by the cursor in a quadrant, some pixels away, or static), and whether it collapses.
  */
+/**
+ * Dynamic Input (AutoCAD 2024 Help, "Dynamic Input Tab (Drafting Settings Dialog Box)" and
+ * "Pointer Input Settings Dialog Box"): what the tooltip at the cursor shows while F12 has it on.
+ */
+function DynamicInputTab({ d, set }: TabProps) {
+  const id = useId();
+  const off = !d.dynPointer;
+  return (
+    <div className="dsettings-tab">
+      <Check checked={d.dynPointer} onChange={(dynPointer) => set({ dynPointer })}>
+        Enable Pointer Input
+      </Check>
+      <fieldset className="dsettings-sub" disabled={off}>
+        <legend>Pointer Input Settings: for second or next points, default to</legend>
+        <Radio
+          name={`${id}-format`}
+          checked={!d.dynCartesian}
+          onChange={() => set({ dynCartesian: false })}
+        >
+          Polar format
+        </Radio>
+        <Radio
+          name={`${id}-format`}
+          checked={d.dynCartesian}
+          onChange={() => set({ dynCartesian: true })}
+        >
+          Cartesian format
+        </Radio>
+        <Radio
+          name={`${id}-coords`}
+          checked={!d.dynAbsolute}
+          onChange={() => set({ dynAbsolute: false })}
+        >
+          Relative coordinates
+        </Radio>
+        <Radio
+          name={`${id}-coords`}
+          checked={d.dynAbsolute}
+          onChange={() => set({ dynAbsolute: true })}
+        >
+          Absolute coordinates
+        </Radio>
+      </fieldset>
+      <Check checked={d.dynDimension} onChange={(dynDimension) => set({ dynDimension })}>
+        Enable Dimension Input where possible
+      </Check>
+      <fieldset>
+        <legend>Dynamic Prompts</legend>
+        <Check checked={d.dynPrompt} onChange={(dynPrompt) => set({ dynPrompt })}>
+          Show command prompting and command input near the crosshairs
+        </Check>
+      </fieldset>
+    </div>
+  );
+}
+
 function QuickPropertiesTab({ d, set }: TabProps) {
   const id = useId();
   const cursor = d.qpLocation === 0;

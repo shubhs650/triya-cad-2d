@@ -134,19 +134,38 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'AUTOSNAPSIZE', undefined, dyn)).toEqual({ ok: true, value: 5 });
     systemVariableReply(d, 'AUTOSNAPSIZE', 12, dyn);
     expect(d.get().markerSize).toBe(12);
-    // DYNMODE: 3, pointer and dimensional input, while F12 has it on; −3 while off. Triya's
-    // tooltip is both at once, so 1 and 2 turn it on as 3 does, and 0 turns it off.
+    // DYNMODE: 3, pointer and dimensional input, while F12 has it on; −3 while off. Since M3-06
+    // part 4 its bits are the Dynamic Input tab's: 1 pointer input alone, 2 dimension input.
     expect(systemVariableReply(d, 'DYNMODE', undefined, dyn)).toEqual({ ok: true, value: 3 });
     expect(systemVariableReply(d, 'DYNMODE', -3, dyn)).toEqual({ ok: true, value: -3 });
     expect(dyn.get()).toBe(false);
-    expect(systemVariableReply(d, 'DYNMODE', 1, dyn)).toEqual({ ok: true, value: 3 });
+    expect(systemVariableReply(d, 'DYNMODE', 1, dyn)).toEqual({ ok: true, value: 1 });
     expect(dyn.get()).toBe(true);
-    expect(systemVariableReply(d, 'DYNMODE', 0, dyn)).toEqual({ ok: true, value: -3 });
+    expect(d.get().dynBits).toBe(1);
+    // 0 turns it all off, keeping the bits F12 turns back on; −2 off with dimension input only.
+    expect(systemVariableReply(d, 'DYNMODE', 0, dyn)).toEqual({ ok: true, value: -1 });
     expect(dyn.get()).toBe(false);
+    expect(systemVariableReply(d, 'DYNMODE', -2, dyn)).toEqual({ ok: true, value: -2 });
+    expect(d.get().dynBits).toBe(2);
+    dyn.toggle();
+    expect(systemVariableReply(d, 'DYNMODE', undefined, dyn)).toEqual({ ok: true, value: 2 });
     // PICKFIRST: AutoCAD's initial 1.
     expect(systemVariableReply(d, 'PICKFIRST', undefined, dyn)).toEqual({ ok: true, value: 1 });
     systemVariableReply(d, 'PICKFIRST', 0, dyn);
     expect(d.get().pickfirst).toBe(false);
+  });
+
+  it('keep DYNPROMPT, DYNPICOORDS and DYNPIFORMAT, the Dynamic Input tab (M3-06 part 4)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'DYNPROMPT')).toEqual({ ok: true, value: 1 });
+    expect(systemVariableReply(d, 'DYNPROMPT', 0)).toEqual({ ok: true, value: 0 });
+    expect(d.get().dynPrompt).toBe(false);
+    expect(systemVariableReply(d, 'DYNPICOORDS')).toEqual({ ok: true, value: 0 });
+    expect(systemVariableReply(d, 'DYNPICOORDS', 1)).toEqual({ ok: true, value: 1 });
+    expect(d.get().dynPiCoords).toBe(1);
+    expect(systemVariableReply(d, 'DYNPIFORMAT')).toEqual({ ok: true, value: 0 });
+    expect(systemVariableReply(d, 'DYNPIFORMAT', 1)).toEqual({ ok: true, value: 1 });
+    expect(d.get().dynPiFormat).toBe(1);
   });
 
   it('keep POLARMODE and POLARADDANG, the polar tracking settings (M3-06 part 1)', () => {

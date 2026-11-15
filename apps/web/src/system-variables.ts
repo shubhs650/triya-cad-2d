@@ -65,6 +65,9 @@ const VALUES: Readonly<
   // M3-06 part 3: PolarSnap's switch and distance (the engine has checked 0–1 and 0 or more).
   SNAPTYPE: { get: (s) => s.snapType, set: (v) => ({ snapType: v === 1 ? 1 : 0 }) },
   POLARDIST: { get: (s) => s.polarDist, set: (polarDist) => ({ polarDist }) },
+  DYNPROMPT: { get: (s) => bit(s.dynPrompt), set: (v) => ({ dynPrompt: v === 1 }) },
+  DYNPICOORDS: { get: (s) => s.dynPiCoords, set: (v) => ({ dynPiCoords: v === 1 ? 1 : 0 }) },
+  DYNPIFORMAT: { get: (s) => s.dynPiFormat, set: (v) => ({ dynPiFormat: v === 1 ? 1 : 0 }) },
   SELECTSIMILARMODE: {
     get: (s) => s.selectSimilarMode,
     set: (selectSimilarMode) => ({ selectSimilarMode }),
@@ -94,13 +97,18 @@ const VALUES: Readonly<
 
 /**
  * DYNMODE (AutoCAD 2024 Help): 1 pointer input, 2 dimensional input, 3 both, 0 neither, and a
- * negative value off (F12) keeping what turns back on. Triya's Dynamic Input tooltip is pointer
- * and dimensional input at once, so it reads 3 while on and −3 while off, and any positive value
- * turns it on (the common drafter's use: DYNMODE 0 or 1 in a script to turn it off or on).
+ * negative value off (F12) keeping what turns back on. The bits are the Dynamic Input tab's
+ * (M3-06 part 4, `DraftingState.dynBits`) and F12 turns them on and off (`DynMode`), so 0 turns
+ * Dynamic Input off keeping the bits it had, as AutoCAD's F12 brings them back.
  */
-function dynModeReply(dyn: DynMode, value: number | undefined): ViewReply {
-  if (value !== undefined) dyn.set(value > 0);
-  return { ok: true, value: dyn.get() ? 3 : -3 };
+function dynModeReply(drafting: Drafting, dyn: DynMode, value: number | undefined): ViewReply {
+  if (value !== undefined) {
+    if (value !== 0 && drafting.get().dynBits !== Math.abs(value))
+      drafting.configure({ dynBits: Math.abs(value) });
+    dyn.set(value > 0);
+  }
+  const bits = drafting.get().dynBits;
+  return { ok: true, value: dyn.get() || bits === 0 ? bits : -bits };
 }
 
 /**
@@ -144,7 +152,7 @@ export function systemVariableReply(
   if (name === 'POLARADDANG')
     return polarAddAngReply(drafting, value === undefined ? undefined : String(value));
   if (typeof value === 'string') return { ok: false, message: `${name} takes a number.` };
-  if (name === 'DYNMODE') return dynModeReply(dyn, value);
+  if (name === 'DYNMODE') return dynModeReply(drafting, dyn, value);
   if (name in MODIFY_OPTIONS || name in INITIAL_SESSION_OPTIONS) {
     return optionReply(drafting, name, value);
   }

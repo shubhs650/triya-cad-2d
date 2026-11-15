@@ -162,6 +162,12 @@ export interface PointPrompt extends PromptBase {
    */
   readonly pickbox?: boolean;
   /**
+   * The point goes horizontally or vertically from the rubber band's start, whatever ORTHO says
+   * (TK's next tracking point, M3-06 part 4): the front-end constrains the cursor so, and keeps
+   * an object snap's X or Y along that axis.
+   */
+  readonly ortho?: boolean;
+  /**
    * What a typed `@` counts from at this prompt instead of LASTPOINT: BREAK's "Specify second
    * break point", where `@` is the first break point however it was given (M3-02 part 4).
    */
@@ -564,7 +570,7 @@ export type GroupingAction =
   | { readonly op: 'reverse'; readonly group: string };
 
 /** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
-export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'qp';
+export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'dyn' | 'qp';
 
 /**
  * What the Snap and Grid tab sets in the `*Active` VPORT (M3-06 part 2): SNAPUNIT, GRIDUNIT (0
