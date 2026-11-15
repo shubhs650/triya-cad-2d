@@ -176,6 +176,7 @@ const ASKS: Readonly<Partial<Record<GripFunction, string>>> = {
   'Move with Dim Line': 'Specify point to place text',
   'Move Text Only': 'Specify point to place text',
   'Move with Leader': 'Specify point to place text',
+  'Lengthen Landing': 'Specify landing end point',
 };
 
 export type GripFunctionResult =

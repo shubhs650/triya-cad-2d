@@ -1962,7 +1962,9 @@ export class CanvasController {
       }
       if (this.#ctrl === e.ctrlKey) return;
       this.#ctrl = e.ctrlKey;
-      if (this.#prompt?.switchDirection && this.#pointer && this.#mode === 'none') this.#track();
+      // The dragged arc switches (M3-01 part 6), or the copy snaps to the offset (M3-05 part 6).
+      const redrag = this.#prompt?.switchDirection || this.#prompt?.offsetSnap;
+      if (redrag && this.#pointer && this.#mode === 'none') this.#track();
     };
     // A button pressed while Ctrl is down makes it no tap.
     window.addEventListener('pointerdown', () => (this.#ctrlTap = false), opts);

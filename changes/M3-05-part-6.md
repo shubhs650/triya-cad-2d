@@ -1,1 +1,1 @@
-- M3-05 part 6 (#TBD): grips on multileaders, multilines, tables, regions and non-associative hatch boundaries; Ctrl's offset and rotation snap for later grip copies.
+- M3-05 part 6 (#420): grips on multilines (vertices), multileaders (leader vertices, landing and content, Lengthen Landing), regions (one at their centre) and a non-associative hatch's boundary vertices; once a grip mode has placed a copy, Ctrl snaps the next ones to its offset or angle.
