@@ -1,9 +1,11 @@
 // DSETTINGS' Drafting Settings dialog (M3-06 part 1), with AutoCAD 2024's structure and labels
 // (AutoCAD Help, "Drafting Settings Dialog Box" and its "Polar Tracking Tab", "Object Snap Tab"
-// and "Quick Properties Tab" pages; UI_SPEC.md §7). The Snap and Grid tab came with part 2,
-// without Snap type (PolarSnap is a later part; Isometric snap is PRD non-goal 7, DEC-060), Grid
-// style and Grid behavior (Triya's grid is lines, adaptive and past the limits); the Dynamic Input and Selection
-// Cycling tabs come with the rest of M3-06; 3D Object Snap is out of scope (PRD non-goal: no 3D). Polar Angle measurement's Relative to last segment waits for them too.
+// and "Quick Properties Tab" pages; UI_SPEC.md §7). The Snap and Grid tab came with part 2, its
+// Polar spacing and Snap type (Grid snap or PolarSnap) and the Polar Tracking tab's Polar Angle
+// measurement with part 3; Isometric snap is PRD non-goal 7 (DEC-060), so Grid snap has no
+// Rectangular/Isometric choice, and Grid style and Grid behavior are left out (Triya's grid is
+// lines, adaptive and past the limits). The Dynamic Input and Selection Cycling tabs come with
+// the rest of M3-06; 3D Object Snap is out of scope (PRD non-goal: no 3D).
 // It opens on the tab shown last (OSNAP: Object Snap), edits a copy of the drafting aids and
 // sets them on OK; Cancel (or Esc) leaves them as they were. Options... is left out: Triya's
 // Settings panel is not a dialog to open over it.
@@ -171,12 +173,15 @@ function Spacing({
 }
 
 /**
- * Snap and Grid: SNAP (F9) and GRID (F7) on and off, and the drawing's snap and grid spacing
- * with Equal X and Y spacing and Major line every.
+ * Snap and Grid: SNAP (F9) and GRID (F7) on and off, the drawing's snap and grid spacing with
+ * Equal X and Y spacing and Major line every, Polar spacing and Snap type. As in AutoCAD,
+ * PolarSnap disables the snap spacing and Grid snap the polar distance.
  */
 function SnapGridTab({ d, set }: TabProps) {
+  const id = useId();
   const g = d.spacing;
   const none = g === undefined;
+  const polarSnap = d.snapType === 1;
   const setG = (next: SpacingDraft) => set({ spacing: next });
   const field = (f: 'snapX' | 'snapY' | 'gridX' | 'gridY') => (text: string) =>
     g && setG(typeSpacing(g, f, text));
@@ -191,22 +196,40 @@ function SnapGridTab({ d, set }: TabProps) {
           <Spacing
             label="Snap X spacing:"
             value={g?.snapX ?? ''}
-            disabled={none}
+            disabled={none || polarSnap}
             onChange={field('snapX')}
           />
           <Spacing
             label="Snap Y spacing:"
             value={g?.snapY ?? ''}
-            disabled={none}
+            disabled={none || polarSnap}
             onChange={field('snapY')}
           />
           <Check
             checked={g?.equal ?? false}
-            disabled={none}
+            disabled={none || polarSnap}
             onChange={(on) => g && setG(equalSpacing(g, on))}
           >
             Equal X and Y spacing
           </Check>
+        </fieldset>
+        <fieldset>
+          <legend>Polar spacing</legend>
+          <Spacing
+            label="Polar distance:"
+            value={d.polarDist}
+            disabled={!polarSnap}
+            onChange={(polarDist) => set({ polarDist })}
+          />
+        </fieldset>
+        <fieldset>
+          <legend>Snap type</legend>
+          <Radio name={`${id}-type`} checked={!polarSnap} onChange={() => set({ snapType: 0 })}>
+            Grid snap
+          </Radio>
+          <Radio name={`${id}-type`} checked={polarSnap} onChange={() => set({ snapType: 1 })}>
+            PolarSnap
+          </Radio>
         </fieldset>
       </div>
       <div>
@@ -392,6 +415,19 @@ function PolarTab({ d, set }: TabProps) {
           onChange={() => set({ trackPolar: true })}
         >
           Track using all polar angle settings
+        </Radio>
+      </fieldset>
+      <fieldset>
+        <legend>Polar Angle measurement</legend>
+        <Radio
+          name={`${id}-measure`}
+          checked={!d.relative}
+          onChange={() => set({ relative: false })}
+        >
+          Absolute
+        </Radio>
+        <Radio name={`${id}-measure`} checked={d.relative} onChange={() => set({ relative: true })}>
+          Relative to last segment
         </Radio>
       </fieldset>
     </div>

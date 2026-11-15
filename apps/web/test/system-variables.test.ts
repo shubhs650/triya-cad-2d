@@ -177,6 +177,17 @@ describe('system variables the app keeps', () => {
     });
   });
 
+  it('keep SNAPTYPE and POLARDIST, PolarSnap’s settings (M3-06 part 3)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'SNAPTYPE')).toEqual({ ok: true, value: 0 });
+    expect(systemVariableReply(d, 'POLARDIST')).toEqual({ ok: true, value: 0 });
+    expect(systemVariableReply(d, 'SNAPTYPE', 1)).toEqual({ ok: true, value: 1 });
+    expect(systemVariableReply(d, 'POLARDIST', 2.5)).toEqual({ ok: true, value: 2.5 });
+    expect(d.get()).toMatchObject({ snapType: 1, polarDist: 2.5 });
+    systemVariableReply(d, 'SNAPTYPE', 0);
+    expect(d.get().snapType).toBe(0);
+  });
+
   it('keep SELECTSIMILARMODE and SELECTIONCYCLING (M3-04 part 3)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'SELECTSIMILARMODE')).toEqual({ ok: true, value: 130 });

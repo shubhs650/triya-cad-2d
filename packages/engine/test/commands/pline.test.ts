@@ -317,6 +317,20 @@ describe('PLINE', () => {
     ]);
   });
 
+  it("gives the last segment's direction with the rubber band, for POLARMODE 1", async () => {
+    const { bus } = setup();
+    await bus.script(['PL', '0,0']);
+    expect(bus.prompt?.kind === 'point' && bus.prompt.rubberBand?.direction).toBeUndefined();
+    await bus.submit('0,10');
+    expect(bus.prompt).toMatchObject({ rubberBand: { direction: { x: 0, y: 1 } } });
+    // After an arc: the arc's direction at its end.
+    await bus.script(['A', '10,10', 'L']);
+    const d = bus.prompt?.kind === 'point' ? bus.prompt.rubberBand?.direction : undefined;
+    expect(d?.x).toBeCloseTo(0, 9);
+    expect(d?.y).toBeCloseTo(-1, 9);
+    await bus.cancel();
+  });
+
   it('drags the next segment with its widths, and the arc in arc mode', async () => {
     const { bus } = setup();
     await bus.script(['PL', '0,0', 'W', '1', '3']);

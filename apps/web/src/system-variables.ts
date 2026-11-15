@@ -62,6 +62,9 @@ const VALUES: Readonly<
   GRIPSIZE: { get: (s) => s.gripSize, set: (gripSize) => ({ gripSize }) },
   ROLLOVERTIPS: { get: (s) => bit(s.rolloverTips), set: (v) => ({ rolloverTips: v === 1 }) },
   POLARMODE: { get: (s) => s.polarMode, set: (polarMode) => ({ polarMode }) },
+  // M3-06 part 3: PolarSnap's switch and distance (the engine has checked 0–1 and 0 or more).
+  SNAPTYPE: { get: (s) => s.snapType, set: (v) => ({ snapType: v === 1 ? 1 : 0 }) },
+  POLARDIST: { get: (s) => s.polarDist, set: (polarDist) => ({ polarDist }) },
   SELECTSIMILARMODE: {
     get: (s) => s.selectSimilarMode,
     set: (selectSimilarMode) => ({ selectSimilarMode }),
