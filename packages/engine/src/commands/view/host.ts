@@ -6,7 +6,7 @@
 import type { Vec2 } from '../../geom/types';
 import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
-import type { HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
+import type { Color, HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 import type { ClipboardPicture } from '../../edit/picture';
 import type { UndoView } from '../undo';
@@ -122,6 +122,12 @@ export type ViewRequest =
    */
   | { readonly op: 'textOutlines'; readonly texts: readonly (TextGeometry | MTextGeometry)[] }
   /**
+   * The runs and strokes MTEXTs are laid out as in the fonts loaded now, each run with its own
+   * format (M3-12 part 7: EXPLODE turns an MTEXT into a TEXT per run), null for one no loaded
+   * font draws or that is drawn top to bottom.
+   */
+  | { readonly op: 'textPieces'; readonly texts: readonly MTextGeometry[] }
+  /**
    * The file commands (M2-13): QSAVE saves the drawing (in place when it can), SAVEAS and SAVE
    * save it under a name the drafter picks, CLOSE closes it (asking to save changes first). The
    * app holds the file, so the host does it; the reply's `file` is the name saved under.
@@ -225,6 +231,31 @@ export interface TextOutline {
   readonly width: number;
   readonly below: number;
 }
+
+/**
+ * A piece of an MTEXT as laid out (`textPieces`, M3-12 part 7), in drawing coordinates: a run
+ * of text in one format, from its baseline start along the MTEXT's direction, or a stroke (an
+ * underline, overline, strike-through, fraction bar or the background's frame). `font` is set
+ * where the run is not in its style's font, `color` where the text gives the run its own.
+ */
+export type TextPiece =
+  | {
+      readonly kind: 'text';
+      readonly value: string;
+      readonly position: Vec2;
+      readonly height: number;
+      readonly widthFactor: number;
+      /** Radians. */
+      readonly oblique: number;
+      readonly font?: {
+        readonly name: string;
+        readonly kind: 'shx' | 'ttf';
+        readonly bold: boolean;
+        readonly italic: boolean;
+      };
+      readonly color?: Color;
+    }
+  | { readonly kind: 'line'; readonly start: Vec2; readonly end: Vec2; readonly color?: Color };
 
 /** -PLOT's plot areas (AutoCAD's View is not offered: M6-04). */
 export type PlotScriptArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
@@ -371,6 +402,8 @@ export type ViewReply =
       readonly counts?: readonly (number | null)[];
       /** What `textOutlines` found, one per text (null: no loaded font draws it). */
       readonly outlines?: readonly (TextOutline | null)[];
+      /** What `textPieces` laid out, one per text (null: no loaded font draws it). */
+      readonly pieces?: readonly (readonly TextPiece[] | null)[];
       /** The pickbox's half size in world units, with `outlines`. */
       readonly pickbox?: number;
       /** The file a `file` request saved the drawing as. */

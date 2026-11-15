@@ -17,6 +17,7 @@ import type {
   QuickQuery,
   TextGeometry,
   TextOutline,
+  TextPiece,
   Vec2,
   UnderlaySnapPage,
 } from '@triya/engine';
@@ -122,6 +123,8 @@ export type HostMessage =
   | { readonly type: 'textBox'; readonly id: number; readonly text: MTextGeometry }
   /** The widths MTEXTs are laid out at (M2-10 part 3); the answer is a `widths`. */
   | { readonly type: 'textWidths'; readonly id: number; readonly texts: readonly MTextGeometry[] }
+  /** The TEXT runs and strokes MTEXTs explode into (M3-12 part 7); the answer is a `pieces`. */
+  | { readonly type: 'textPieces'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The dynamic column counts of MTEXTs (M2-26 part 2); the answer is a `counts`. */
   | { readonly type: 'columnCounts'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The drawing's dimensions against their stored blocks (M2-30 part 3); answered by `dimensionHealth`. */
@@ -175,6 +178,12 @@ export type WorkerMessage =
   | { readonly type: 'extents'; readonly id: number; readonly box: Box | null }
   /** The text widths asked for, null for a text no loaded font draws. */
   | { readonly type: 'widths'; readonly id: number; readonly widths: readonly (number | null)[] }
+  /** The pieces asked for, null for a text no loaded font draws. */
+  | {
+      readonly type: 'pieces';
+      readonly id: number;
+      readonly pieces: readonly (readonly TextPiece[] | null)[];
+    }
   /** The column counts asked for, null for a text no loaded font draws. */
   | { readonly type: 'counts'; readonly id: number; readonly counts: readonly (number | null)[] }
   | {

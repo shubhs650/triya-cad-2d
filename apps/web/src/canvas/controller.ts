@@ -69,6 +69,7 @@ import {
   type MTextGeometry,
   type TextGeometry,
   type TextOutline,
+  type TextPiece,
   type DeferredPick,
   type EnclosedSpace,
   type OsnapHit,
@@ -1346,6 +1347,11 @@ export class CanvasController {
   /** The widths MTEXTs are laid out at (M2-10 part 3: dimension regeneration). */
   textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
     return this.#host.textWidths(texts);
+  }
+
+  /** The TEXT runs and strokes MTEXTs explode into (M3-12 part 7: EXPLODE of MTEXT). */
+  textPieces(texts: readonly MTextGeometry[]): Promise<(readonly TextPiece[] | null)[]> {
+    return this.#host.textPieces(texts);
   }
 
   /** How many dynamic columns MTEXTs take (M2-26 part 2: a column grip recounts them). */

@@ -4,7 +4,8 @@
 // BREAK leaves it), lengthened by a tenth at its end (a spline by a straight piece tangent to
 // it, M3-12 part 2) or reversed. On a second copy every polyline, block reference, dimension,
 // leader, multileader, table, region and multiline (M3-12 part 3) is exploded (a block reference
-// scaled differently in X and Y too, M3-12 part 7) and then everything in model space is joined at once (splines and elliptical arcs
+// scaled differently in X and Y, and every MTEXT into TEXTs laid out in the bundled fonts, too,
+// M3-12 part 7) and then everything in model space is joined at once (splines and elliptical arcs
 // with what meets them into splines). Both save as AC1032 DXF
 // (DEC-047) and reopen with each object where the command put it; what an explode copied out of
 // a block (any kind) reopens under its handle.
@@ -39,10 +40,12 @@ import {
   type EntityGeometry,
 } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
+import { textPieces } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { saveAc1032Dxf } from '../dxf-audit/saves.ts';
+import { bundledFontBook } from '../render/bundled-fonts.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -117,6 +120,10 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
   const explodedKinds = new Map<string, number>();
   // M3-12 part 7: block references scaled differently in X and Y, now exploded too.
   let nonuniform = 0;
+  // M3-12 part 7: MTEXTs exploded into TEXTs, laid out in the bundled fonts.
+  let mtexts = 0;
+  let mtextRuns = 0;
+  const fonts = bundledFontBook();
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves its curves broken, lengthened, reversed, exploded and joined',
@@ -172,7 +179,14 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
             nonuniform++;
           }
         }
-        const r = explodeObjects(b2, m2, second.ids);
+        const pieces = textPieces({ fonts, style: (h) => m2.tables.textStyles.get(h) });
+        const r = explodeObjects(b2, m2, second.ids, {
+          textPieces: (g) => {
+            const p = pieces(g);
+            if (p && p.length > 0) mtexts++;
+            return p;
+          },
+        });
         m2.apply(b2.build());
         exploded += r.exploded;
         const space = m2.layouts.find((l) => l.name === 'Model')!.blockRecord;
@@ -196,14 +210,18 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
         }
         m2.apply(b3.build());
         joined += j.joined.length;
-        const pieces = r.made.filter((id) => {
+        const checked = r.made.filter((id) => {
           const e: Entity | undefined = m2.entity(id);
-          return e !== undefined && (e.geom.kind === 'LINE' || e.geom.kind === 'ARC');
+          return (
+            e !== undefined &&
+            (e.geom.kind === 'LINE' || e.geom.kind === 'ARC' || e.geom.kind === 'TEXT')
+          );
         });
-        const rest = r.made.filter((id) => !pieces.includes(id));
+        const rest = r.made.filter((id) => !checked.includes(id));
+        mtextRuns += checked.filter((id) => m2.entity(id)?.geom.kind === 'TEXT').length;
         if (kept.length + r.made.length > 0) {
           expect(
-            wrongAfterSave(bytes, m2, [...kept, ...pieces], rest).slice(0, 10),
+            wrongAfterSave(bytes, m2, [...kept, ...checked], rest).slice(0, 10),
             f.path,
           ).toEqual([]);
         }
@@ -280,5 +298,7 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
     expect(raysExtended).toBeGreaterThan(0);
     expect(new Set(explodedKinds.keys())).toEqual(EXPLODED_KINDS);
     expect(nonuniform).toBeGreaterThan(0);
+    expect(mtexts).toBeGreaterThan(10);
+    expect(mtextRuns).toBeGreaterThan(mtexts);
   });
 });

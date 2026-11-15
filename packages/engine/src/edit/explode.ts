@@ -42,6 +42,13 @@
 //   `ExplodeServices.hatchLines`); AutoCAD's help does not list hatches, and a solid or
 //   gradient fill, which has no lines to become, is left alone (the common drafter
 //   expectation: AutoCAD keeps a solid fill a hatch).
+// - An MTEXT (M3-12 part 7) becomes a TEXT for each run of one format on each of its lines
+//   ("Multiline Text: Explodes into text objects"), as the canvas lays it out in its fonts
+//   (`ExplodeServices.textPieces`), and lines for its underlines, overlines, strike-throughs,
+//   fraction bars and background frame; a run in another font than its style's takes a text
+//   style with that font, made (named for the font) when the drawing has none, as ezdxf's
+//   MTextExplode (MIT) does. Its background fill goes, as a TEXT has none. An MTEXT the canvas
+//   cannot lay out (its font not loaded, or drawn top to bottom) is not exploded.
 // - An associative array becomes copies of its source objects ("Array: Explodes an associative
 //   array into copies of the original objects"): the array's items are exploded with it.
 //
@@ -62,7 +69,16 @@ import { fitSpline } from '../geom/fit';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
-import type { Entity, EntityGeometry, HatchGeometry, RegionGeometry } from '../model/types';
+import type { TextPiece } from '../commands/view/host';
+import type { Handle } from '../model/handle';
+import type {
+  Entity,
+  EntityGeometry,
+  HatchGeometry,
+  MTextGeometry,
+  RegionGeometry,
+  TextStyleRecord,
+} from '../model/types';
 import { leaderParts } from '../annotation/leader';
 import { fileArc, mlineParts, mlineProblem, planarOf } from '../annotation/mline';
 import { multiLeaderParts, type AnnotationPart } from '../annotation/multileader';
@@ -103,8 +119,13 @@ export type HatchLinesOf = (
   g: HatchGeometry,
 ) => { readonly segments: readonly number[]; readonly dots: readonly number[] } | undefined;
 
+/** An MTEXT's runs and strokes as the canvas lays them out, or undefined when it cannot. */
+export type TextPiecesOf = (g: MTextGeometry) => readonly TextPiece[] | undefined;
+
 /** What EXPLODE reads from the packages above the engine. */
 export interface ExplodeServices {
+  /** An MTEXT's runs and strokes (`textPieces`); without it MTEXTs are not exploded. */
+  readonly textPieces?: TextPiecesOf | undefined;
   /** A pattern hatch's lines (`@triya/hatch`); without it hatches are not exploded. */
   readonly hatchLines?: HatchLinesOf | undefined;
   /** Measures a multileader's text, for its underline or overline (M1-111). */
@@ -124,6 +145,8 @@ export function explodeObjects(
   let lostWidth = false;
   // The `*D` blocks of dimensions copied out of blocks are named afresh across the whole edit.
   const names = new AnonymousNames(model);
+  // The text styles MTEXT runs in other fonts take, made once across the edit.
+  const styles = new FontStyles(b, model);
   /** `e` replaced by `parts`, each with `e`'s properties where it draws ByBlock. */
   const replace = (e: Entity, parts: readonly AnnotationPart[]) => {
     for (const p of parts) {
@@ -291,6 +314,19 @@ export function explodeObjects(
         replace(e, mlineParts(g, model, { fill: false }));
         continue;
       }
+      case 'MTEXT': {
+        const pieces = services.textPieces?.(g);
+        if (!pieces) {
+          count(refused, 'the MTEXT cannot be laid out (its font is not loaded)');
+          continue;
+        }
+        if (pieces.length === 0) {
+          count(refused, 'the MTEXT is empty');
+          continue;
+        }
+        replace(e, mtextParts(g, pieces, styles));
+        continue;
+      }
       case 'HATCH': {
         if (g.solid || g.gradient) {
           count(refused, 'a solid or gradient fill cannot be exploded');
@@ -362,6 +398,114 @@ function asExploded(p: AnnotationPart): AnnotationPart[] {
     return [{ ...p, geom: { ...g, knots: s.knots, controlPoints: s.controlPoints } }];
   }
   return [p];
+}
+
+/** An MTEXT's pieces as TEXTs and lines, in its plane. */
+function mtextParts(
+  g: MTextGeometry,
+  pieces: readonly TextPiece[],
+  styles: FontStyles,
+): AnnotationPart[] {
+  const planar = {
+    ...(g.elevation !== undefined && g.elevation !== 0 && { elevation: g.elevation }),
+  };
+  return pieces.map((p): AnnotationPart => {
+    const color = p.color ? { color: p.color } : {};
+    if (p.kind === 'line') {
+      return { geom: { kind: 'LINE', start: p.start, end: p.end, ...planar }, ...color };
+    }
+    return {
+      geom: {
+        kind: 'TEXT',
+        // "%%%" draws one percent sign, so a run's own "%%" is not read as a control code.
+        value: p.value.replace(/%%/g, '%%%%%%'),
+        style: p.font ? styles.styleFor(g.style, p.font) : g.style,
+        position: p.position,
+        height: p.height,
+        rotation: g.rotation,
+        widthFactor: p.widthFactor,
+        oblique: p.oblique,
+        halign: 0,
+        valign: 0,
+        backward: false,
+        upsideDown: !!g.upsideDown,
+        ...planar,
+      },
+      ...color,
+    };
+  });
+}
+
+/** A font as a run names it. */
+type RunFont = NonNullable<Extract<TextPiece, { kind: 'text' }>['font']>;
+
+/** `trueTypeFlags` bits: italic, bold. */
+const ITALIC = 1;
+const BOLD = 2;
+const fontKey = (name: string): string =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/\.(shx|ttf|ttc|otf)$/, '');
+
+/**
+ * The text styles exploded MTEXT runs in other fonts take: the drawing's first style with that
+ * font (and that bold and italic), else one made like the MTEXT's own style with that font,
+ * named for it ("Arial Bold"), once for the whole edit.
+ */
+class FontStyles {
+  readonly #b: ChangeSetBuilder;
+  readonly #model: DocumentModel;
+  readonly #made = new Map<string, Handle>();
+  readonly #names = new Set<string>();
+  constructor(b: ChangeSetBuilder, model: DocumentModel) {
+    this.#b = b;
+    this.#model = model;
+  }
+
+  styleFor(base: Handle, font: RunFont): Handle {
+    const key = `${fontKey(font.name)}|${font.bold}|${font.italic}`;
+    const known = this.#made.get(key);
+    if (known !== undefined) return known;
+    const flags = (font.bold ? BOLD : 0) | (font.italic ? ITALIC : 0);
+    // The drawing's styles; those made in this edit are in `#made` already.
+    const records = [...this.#model.tables.textStyles.values()];
+    const same = records.find(
+      (s) =>
+        fontKey(s.font) === fontKey(font.name) &&
+        (font.kind === 'shx' || (s.trueTypeFlags & (BOLD | ITALIC)) === flags) &&
+        ((s.flags ?? 0) & 1) === 0,
+    );
+    const handle = same?.handle ?? this.#add(base, font, flags, records);
+    this.#made.set(key, handle);
+    return handle;
+  }
+
+  #add(base: Handle, font: RunFont, flags: number, records: readonly TextStyleRecord[]): Handle {
+    const like = this.#b.tableRecord('textStyles', base);
+    const stem = font.name.trim().replace(/\.(shx|ttf|ttc|otf)$/i, '');
+    const wanted = `${stem}${font.bold ? ' Bold' : ''}${font.italic ? ' Italic' : ''}`.replace(
+      /[<>/\\":;?*|,=`]/g,
+      '_',
+    );
+    const taken = new Set([...records.map((s) => s.name.toLowerCase()), ...this.#names]);
+    let name = wanted;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${wanted} ${n}`;
+    this.#names.add(name.toLowerCase());
+    const ttf = font.kind === 'ttf';
+    return this.#b.addTableRecord('textStyles', {
+      name,
+      // A TrueType font is named by its file, the face's bold and italic in the style's flags.
+      font: /\.[a-z]+$/i.test(font.name) ? font.name : `${font.name}${ttf ? '.ttf' : '.shx'}`,
+      ...(!ttf && like?.bigFont !== undefined && { bigFont: like.bigFont }),
+      height: 0,
+      widthFactor: like?.widthFactor ?? 1,
+      obliqueAngle: like?.obliqueAngle ?? 0,
+      lastHeight: like?.lastHeight ?? 2.5,
+      generation: 0,
+      trueTypeFlags: ttf ? flags : 0,
+    }).handle;
+  }
 }
 
 /** A region's edges, loop by loop. */

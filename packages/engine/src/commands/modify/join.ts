@@ -12,13 +12,14 @@
 // `edit/break.ts`'s.
 import { eraseObjects, refusalMessages, reshapeObject } from '../../edit/edit';
 import { closeArc, closeEllipse, joinable, joinObjects, type Joined } from '../../edit/join';
-import { explodeObjects } from '../../edit/explode';
+import { explodeObjects, type TextPiecesOf } from '../../edit/explode';
 import { breakCurveOf, reverseGeometry } from '../../edit/break';
 import type { EntityId } from '../../model/entity-ids';
 import type { MTextGeometry } from '../../model/types';
 import { multiLeaderParts } from '../../annotation/multileader';
 import type { TextMeasure } from '../../annotation/tolerance';
 import type { CommandContext, CommandDef } from '../command';
+import type { TextPiece } from '../view/host';
 import { toleranceFor } from './offset';
 import { toleranceForSize } from '../../geom/tolerance';
 
@@ -134,9 +135,14 @@ export function explodeCommand(): CommandDef {
       const a = yield ctx.prompt.selection({ message: 'Select objects', editable: true });
       if (a.kind !== 'selection' || a.ids.length === 0) return;
       const measure = await multileaderWidths(ctx, a.ids);
+      const textPieces = await mtextPieces(ctx, a.ids);
       let report: ReturnType<typeof explodeObjects> | undefined;
       ctx.edit((b) => {
-        report = explodeObjects(b, ctx.model, a.ids, { hatchLines: ctx.hatchLines, measure });
+        report = explodeObjects(b, ctx.model, a.ids, {
+          hatchLines: ctx.hatchLines,
+          measure,
+          textPieces,
+        });
       });
       const r = report!;
       for (const line of refusalMessages(r.refused, 'exploded')) ctx.message(line);
@@ -173,6 +179,29 @@ async function multileaderWidths(
     widths.set(k, (reply.ok ? reply.widths?.[i] : undefined) ?? undefined),
   );
   return (t) => widths.get(JSON.stringify(t));
+}
+
+/**
+ * The MTEXTs among `ids` laid out on the canvas as the TEXT runs and strokes they explode into
+ * (`textPieces`, M3-12 part 7); one the canvas cannot lay out (no canvas, a font not loaded)
+ * is not exploded.
+ */
+async function mtextPieces(
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+): Promise<TextPiecesOf | undefined> {
+  const texts = new Map<string, MTextGeometry>();
+  for (const id of ids) {
+    const g = ctx.model.entity(id)?.geom;
+    if (g?.kind === 'MTEXT') texts.set(JSON.stringify(g), g);
+  }
+  if (texts.size === 0) return undefined;
+  const reply = await ctx.view.request({ op: 'textPieces', texts: [...texts.values()] });
+  const pieces = new Map<string, readonly TextPiece[] | undefined>();
+  [...texts.keys()].forEach((k, i) =>
+    pieces.set(k, (reply.ok ? reply.pieces?.[i] : undefined) ?? undefined),
+  );
+  return (t) => pieces.get(JSON.stringify(t));
 }
 
 // ── REVERSE ─────────────────────────────────────────────────────────────────────────────────

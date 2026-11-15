@@ -2830,4 +2830,23 @@ describe('acad-ts local patches', () => {
       0.5, 2, 0.25,
     ]);
   });
+  it('0183 DXF TEXT, ATTRIB and ATTDEF values decode their caret codes', () => {
+    // DXF reference, "Control Character Handling": ^@ to ^_ are the control characters 0 to 31
+    // and "^ " a caret. The writer escapes every caret and control character, but the reader
+    // took a TEXT's (and an attribute's) value 1 through the class map undecoded, so each save
+    // added a space after every caret ("a^b" came back "a^ b") and a control character came
+    // back as its caret code. MTEXT and TOLERANCE (0039) read theirs with `valueAsString`.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const text = new TextEntity();
+    text.value = 'a^b \u0001 ^';
+    doc.entities!.add(text);
+    const attdef = new AttributeDefinition();
+    attdef.tag = 'T';
+    attdef.prompt = 'P';
+    attdef.value = '^c';
+    doc.entities!.add(attdef);
+    const back = readCadDocument(writeDxf(doc, new DxfWriterConfiguration()));
+    expect((back.getCadObject(text.handle) as TextEntity).value).toBe('a^b \u0001 ^');
+    expect((back.getCadObject(attdef.handle) as AttributeDefinition).value).toBe('^c');
+  });
 });

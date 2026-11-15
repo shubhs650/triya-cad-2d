@@ -21,6 +21,7 @@ import type {
   QuickQuery,
   TextGeometry,
   TextOutline,
+  TextPiece,
   Vec2,
   UnderlaySnapPage,
 } from '@triya/engine';
@@ -337,6 +338,14 @@ export class RendererHost {
     if (this.#session) return Promise.resolve(this.#session.textWidths(texts));
     return this.#request((id) => ({ type: 'textWidths', id, texts })).then((m) =>
       m.type === 'widths' ? [...m.widths] : texts.map(() => null),
+    );
+  }
+
+  /** The TEXT runs and strokes MTEXTs explode into (M3-12 part 7); null for one not drawn. */
+  textPieces(texts: readonly MTextGeometry[]): Promise<(readonly TextPiece[] | null)[]> {
+    if (this.#session) return Promise.resolve(this.#session.textPieces(texts));
+    return this.#request((id) => ({ type: 'textPieces', id, texts })).then((m) =>
+      m.type === 'pieces' ? [...m.pieces] : texts.map(() => null),
     );
   }
 

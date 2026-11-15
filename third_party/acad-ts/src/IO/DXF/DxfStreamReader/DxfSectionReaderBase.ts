@@ -1018,6 +1018,11 @@ export abstract class DxfSectionReaderBase {
           (tmp.cadObject as MText).value += this._reader.valueAsString;
           return true;
         }
+        // The value decodes its caret codes as MTEXT's does: the writer escapes them (0183).
+        if ((this._reader.code as number) === 1 && tmp.cadObject instanceof TextEntity) {
+          (tmp.cadObject as TextEntity).value = this._reader.valueAsString;
+          return true;
+        }
         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(mapName)!);
       case 50:
         if (tmp.cadObject instanceof MText) {
