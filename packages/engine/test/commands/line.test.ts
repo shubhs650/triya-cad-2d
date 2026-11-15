@@ -84,6 +84,33 @@ describe('LINE', () => {
     expect(ends()).toEqual([[0, 0, 5, 5]]);
   });
 
+  it("gives the last segment's direction with the rubber band, for POLARMODE 1", async () => {
+    const { bus } = setup();
+    await bus.script(['LINE', '0,0']);
+    // No segment drawn yet: the polar angles stay absolute.
+    expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 0, y: 0 } } });
+    expect(bus.prompt?.kind === 'point' && bus.prompt.rubberBand?.direction).toBeUndefined();
+    await bus.submit('10,10');
+    const d = bus.prompt?.kind === 'point' ? bus.prompt.rubberBand?.direction : undefined;
+    expect(d?.x).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(d?.y).toBeCloseTo(Math.SQRT1_2, 12);
+    await bus.script(['20,10', 'U']);
+    expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 10, y: 10 } } });
+    expect(bus.prompt?.kind === 'point' && bus.prompt.rubberBand?.direction?.x).toBeCloseTo(
+      Math.SQRT1_2,
+      12,
+    );
+    await bus.script(['', 'LINE', '']);
+    // Enter continues from the last line's end, which is the last segment's too.
+    expect(bus.prompt).toMatchObject({
+      rubberBand: { from: { x: 10, y: 10 }, direction: { x: expect.any(Number) } },
+    });
+    await bus.cancel();
+    await bus.script(['LINE', '3,3']);
+    // A line started elsewhere has no last segment.
+    expect(bus.prompt?.kind === 'point' && bus.prompt.rubberBand?.direction).toBeUndefined();
+  });
+
   it('continues from the last line when Enter answers the first point', async () => {
     const { bus, ends } = setup();
     await bus.script(['LINE', '', '']);

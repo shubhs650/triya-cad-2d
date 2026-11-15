@@ -8,6 +8,7 @@ import {
   INITIAL_DRAFTING,
   additionalAngles,
   angleText,
+  polarSnapDistance,
   trackingSettings,
   type DraftingState,
 } from '../src/drafting';
@@ -92,6 +93,9 @@ describe('the Drafting Settings dialog', () => {
       additional: true,
       angles: [12.5, 80],
       trackPolar: true,
+      relative: false,
+      snapType: 0,
+      polarDist: '0',
       osnap: false,
       modes: 5,
       otrack: true,
@@ -134,6 +138,8 @@ describe('the Drafting Settings dialog', () => {
       polarAngle: 30,
       polarMode: 15,
       polarAddAngles: '12.5;80',
+      snapType: 0,
+      polarDist: 0,
       osmode: OSNAP.END | OSNAP.MID | OSNAP_OFF,
       otrack: false,
       qpmode: 2,
@@ -171,6 +177,52 @@ describe('the Drafting Settings dialog', () => {
     expect(addAngle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], '11')).toEqual({
       problem: 'Up to 10 additional angles.',
     });
+  });
+});
+
+describe('PolarSnap and relative polar angles (M3-06 part 3)', () => {
+  const rad = Math.PI / 180;
+
+  it('snap by POLARDIST, or the snap X spacing while it is 0, only with SNAP on and SNAPTYPE 1', () => {
+    expect(polarSnapDistance(state({ snap: true, snapType: 1, polarDist: 2.5 }), 10)).toBe(2.5);
+    expect(polarSnapDistance(state({ snap: true, snapType: 1 }), 10)).toBe(10);
+    expect(polarSnapDistance(state({ snap: false, snapType: 1, polarDist: 2.5 }), 10)).toBe(
+      undefined,
+    );
+    expect(polarSnapDistance(state({ snap: true, snapType: 0, polarDist: 2.5 }), 10)).toBe(
+      undefined,
+    );
+  });
+
+  it('count the polar angles from the last segment with POLARMODE 1 and a last segment', () => {
+    expect(trackingSettings(state({ polarMode: 1 }), { x: 0, y: 2 })).toEqual({
+      polar: { increment: 90 * rad, relative: 90 * rad },
+    });
+    // No last segment, a zero one, or bit 1 off: absolute.
+    expect(trackingSettings(state({ polarMode: 1 }))).toEqual({ polar: { increment: 90 * rad } });
+    expect(trackingSettings(state({ polarMode: 1 }), { x: 0, y: 0 })).toEqual({
+      polar: { increment: 90 * rad },
+    });
+    expect(trackingSettings(state(), { x: 0, y: 2 })).toEqual({ polar: { increment: 90 * rad } });
+  });
+
+  it('are the dialog’s Snap type, Polar distance and Polar Angle measurement', () => {
+    const s = state({ snapType: 1, polarDist: 2.5, polarMode: 1 });
+    const d = draftOf(s);
+    expect(d).toMatchObject({ snapType: 1, polarDist: '2.5', relative: true });
+    expect(draftPatch({ ...d, snapType: 0, polarDist: ' 4 ', relative: false }, s)).toMatchObject({
+      snapType: 0,
+      polarDist: 4,
+      polarMode: 0,
+    });
+    expect(draftPatch({ ...d, relative: true }, state({ polarMode: 8 }))).toMatchObject({
+      polarMode: 9,
+    });
+    expect(draftProblem({ ...d, polarDist: '-1' })).toBe(
+      'Polar distance must be a number, 0 or more.',
+    );
+    expect(draftProblem({ ...d, polarDist: 'far' })).toBeDefined();
+    expect(draftPatch({ ...d, polarDist: '' }, s)).toEqual({});
   });
 });
 

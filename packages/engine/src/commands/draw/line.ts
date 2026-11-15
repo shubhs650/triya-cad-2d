@@ -23,6 +23,8 @@ import { sketchTolerance } from './sketch';
 
 export const NO_LINE = 'Line does not exist.';
 
+const same = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;
+
 /** LINE's first point, and the point after a deferred one, take TAN and PER deferred. */
 const DEFERRED: DeferredModes = { modes: OSNAP.TAN | OSNAP.PER };
 
@@ -101,10 +103,12 @@ export function lineCommand(last: LastDrawn = lastDrawn()): CommandDef {
       }
       for (;;) {
         const from = points.at(-1)!;
+        // The last line or arc drawn, when this one goes on from its end (POLARMODE 1).
+        const segment = last.end && same(last.end.point, from) ? last.end : undefined;
         const a = yield ctx.prompt.point({
           message: 'Specify next point or',
           options: ids.length >= 2 ? ['Close', 'Undo'] : ['Undo'],
-          rubberBand: { from },
+          rubberBand: { from, ...(segment && { direction: segment.direction }) },
         });
         if (a.kind === 'keyword' && a.keyword === 'Undo') {
           const id = ids.pop();

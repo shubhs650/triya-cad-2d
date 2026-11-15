@@ -77,8 +77,7 @@ export interface DraftingState {
   /**
    * POLARMODE (M3-06 part 1): bits 1 polar angles relative to the last segment, 2 object snap
    * tracking along the polar angles, 4 the additional angles, 8 Shift to acquire tracking
-   * points. AutoCAD keeps it per user, initially 0. Bits 2 and 4 act; 1 and 8 are kept for
-   * the Drafting Settings parts to come (ROADMAP M3-06).
+   * points. AutoCAD keeps it per user, initially 0. Bits 1 and 8 act since part 3.
    */
   readonly polarMode: number;
   /**
@@ -86,6 +85,13 @@ export interface DraftingState {
    * 10, separated by semicolons; initially ""). Tracked while POLARMODE has bit 4.
    */
   readonly polarAddAngles: string;
+  /**
+   * SNAPTYPE (M3-06 part 3): SNAP snaps to the grid (0) or along tracking paths by the PolarSnap
+   * distance (1, PolarSnap). AutoCAD keeps it per user, initially 0.
+   */
+  readonly snapType: 0 | 1;
+  /** POLARDIST: PolarSnap's distance, 0 for the snap X spacing. Per user, initially 0. */
+  readonly polarDist: number;
   /**
    * SELECTSIMILARMODE (M3-04 part 3): the properties SELECTSIMILAR matches, AutoCAD's bits (1
    * Color, 2 Layer, 4 Linetype, 8 Linetype scale, 16 Lineweight, 32 Plot style, 64 Object
@@ -141,6 +147,13 @@ export const POLARMODE_RELATIVE = 1;
 export const POLARMODE_TRACK_POLAR = 2;
 /** POLARMODE 4: the additional angles (POLARADDANG) are tracked too. */
 export const POLARMODE_ADDITIONAL = 4;
+/**
+ * POLARMODE 8: points are acquired for object snap tracking only while Shift is held over them
+ * (Options > Drafting's "Shift to acquire"); otherwise a pause acquires them and Shift held
+ * keeps one from being acquired (AutoCAD 2024 Help, "About Tracking Points Automatically Using
+ * Object Snaps": "press Shift to temporarily avoid acquiring a point").
+ */
+export const POLARMODE_SHIFT_ACQUIRE = 8;
 
 /** POLARADDANG's limits (AutoCAD 2024 Help): up to 10 angles of up to 25 characters each. */
 export const MAX_ADDITIONAL_ANGLES = 10;
@@ -169,13 +182,21 @@ export function additionalAngles(text: string): number[] | undefined {
  * What the cursor tracks with (constrainCursor's `polar` and `trackPolar`): POLARANG's multiples
  * while POLAR is on, with POLARADDANG's angles while POLARMODE has bit 4, and object snap
  * tracking along all of them while it has bit 2 (AutoCAD 2024 Help, "Polar Tracking Tab
- * (Drafting Settings Dialog Box)": "Track Using All Polar Angle Settings").
+ * (Drafting Settings Dialog Box)": "Track Using All Polar Angle Settings"). With bit 1 and the
+ * direction of the last segment drawn (`last`, the prompt's), the angles count from it.
  */
-export function trackingSettings(s: DraftingState): {
-  polar?: { increment: number; additional?: number[] };
+export function trackingSettings(
+  s: DraftingState,
+  last?: { readonly x: number; readonly y: number },
+): {
+  polar?: { increment: number; additional?: number[]; relative?: number };
   trackPolar?: true;
 } {
   if (!s.polar) return {};
+  const relative =
+    (s.polarMode & POLARMODE_RELATIVE) !== 0 && last && (last.x !== 0 || last.y !== 0)
+      ? Math.atan2(last.y, last.x)
+      : undefined;
   const rad = Math.PI / 180;
   const extra =
     (s.polarMode & POLARMODE_ADDITIONAL) !== 0 ? (additionalAngles(s.polarAddAngles) ?? []) : [];
@@ -183,9 +204,20 @@ export function trackingSettings(s: DraftingState): {
     polar: {
       increment: s.polarAngle * rad,
       ...(extra.length > 0 && { additional: extra.map((a) => a * rad) }),
+      ...(relative !== undefined && { relative }),
     },
     ...((s.polarMode & POLARMODE_TRACK_POLAR) !== 0 && { trackPolar: true }),
   };
+}
+
+/**
+ * The PolarSnap distance while SNAP is on with PolarSnap (SNAPTYPE 1): POLARDIST, or the snap X
+ * spacing (`snapX`) while it is 0 (AutoCAD 2024 Help, "Snap and Grid Tab": "If this value is 0,
+ * the PolarSnap distance assumes the value for Snap X Spacing"); undefined for grid snap.
+ */
+export function polarSnapDistance(s: DraftingState, snapX: number): number | undefined {
+  if (!s.snap || s.snapType !== 1) return undefined;
+  return s.polarDist > 0 ? s.polarDist : snapX;
 }
 
 /** An angle as POLARADDANG lists it: decimal degrees, no trailing zeros. */
@@ -251,6 +283,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   arrayAssociativity: true,
   polarMode: 0,
   polarAddAngles: '',
+  snapType: 0,
+  polarDist: 0,
   selectSimilarMode: 130,
   selectionCycling: 0,
   pickStyle: 1,

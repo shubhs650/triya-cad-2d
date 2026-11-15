@@ -9,8 +9,9 @@
 // `2x` for twice the snap spacing and Snap for spacing 0 (the grid follows the snap spacing).
 // ON and OFF are the status bar's toggles (SNAPMODE, GRIDMODE: the app's, as SETVAR sets them);
 // the spacing and Major are the drawing's `*Active` VPORT's (`edit/snap-grid.ts`), one undo step.
-// Left out: SNAP's Style (isometric snap is PRD non-goal 7, DEC-026, DEC-060), Type and Legacy (PolarSnap
-// comes with a later M3-06 part); GRID's aDaptive, Limits and Follow (Triya's grid is always
+// SNAP's Type (M3-06 part 3): "Enter snap type [Polar/Grid] <Grid>:" sets SNAPTYPE, the app's
+// per-user setting (AutoCAD keeps it in the registry), and ends the command.
+// Left out: SNAP's Style (isometric snap is PRD non-goal 7, DEC-026, DEC-060) and Legacy; GRID's aDaptive, Limits and Follow (Triya's grid is always
 // adaptive and runs past the limits; no dynamic UCS). AutoCAD's command line refuses a spacing
 // of 0 or less with "Value must be positive and nonzero."
 import { GRID_MAJOR, currentVport, snapGridOf, snapGridPatch } from '../edit/snap-grid';
@@ -68,6 +69,25 @@ async function* aspect(
   return { x: values[0]!, y: values[1]! };
 }
 
+/** SNAP Type: PolarSnap (SNAPTYPE 1) or grid snap (0), the current one the default. */
+async function* snapType(ctx: CommandContext): AsyncGenerator<Prompt, void, PromptAnswer> {
+  const now = await ctx.view.request({ op: 'sysvar', name: 'SNAPTYPE' });
+  const current = now.ok && now.value === 1 ? 'Polar' : 'Grid';
+  const a = yield ctx.prompt.keyword({
+    message: 'Enter snap type',
+    options: ['Polar', 'Grid'],
+    default: { kind: 'keyword', keyword: current },
+  });
+  if (a.kind !== 'keyword') return;
+  const type = a.keyword;
+  const r = await ctx.view.request({
+    op: 'sysvar',
+    name: 'SNAPTYPE',
+    value: type === 'Polar' ? 1 : 0,
+  });
+  if (!r.ok) ctx.message(r.message);
+}
+
 const spacingNow = (ctx: CommandContext, key: 'snapSpacing' | 'gridSpacing'): Vec2 =>
   currentVport(ctx.model)?.[key] ?? { x: 10, y: 10 };
 
@@ -82,11 +102,12 @@ export function snapCommand(): CommandDef {
       for (;;) {
         const a = yield ctx.prompt.distance({
           message: 'Specify snap spacing or',
-          options: ['ON', 'OFF', 'Aspect'],
+          options: ['ON', 'OFF', 'Aspect', 'Type'],
           default: { kind: 'distance', value: now.x },
         });
         if (a.kind === 'keyword' && (a.keyword === 'ON' || a.keyword === 'OFF'))
           return await toggle(ctx, 'SNAPMODE', a.keyword === 'ON');
+        if (a.kind === 'keyword' && a.keyword === 'Type') return yield* snapType(ctx);
         if (a.kind === 'keyword') {
           const v = yield* aspect(
             ctx,
