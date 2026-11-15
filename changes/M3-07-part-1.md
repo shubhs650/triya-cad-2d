@@ -1,0 +1,1 @@
+- M3-07 part 1 (#369): the inquiry commands ID, DIST, AREA and MEASUREGEOM (Distance, Radius, Angle, ARea, Volume) with AutoCAD 2024's prompts, writing lengths, angles and areas in the drawing's units; AREA measures points or a circle, polyline, ellipse or spline, with Add and Subtract totals, and sets the session's AREA, PERIMETER and DISTANCE variables.

@@ -18,6 +18,8 @@ describe('palette search', () => {
       'AIMLEADEREDITREMOVE',
       // M3-01: ARC and CIRCLE.
       'ARC',
+      // M3-07: the inquiry commands.
+      'AREA',
       'ATTEDIT',
       'CIRCLE',
       'CLOSE',
@@ -33,6 +35,7 @@ describe('palette search', () => {
       'DIMDIAMETER',
       'DIMLINEAR',
       'DIMRADIUS',
+      'DIST',
       'DRAWINGRECOVERY',
       'DRAWORDER',
       'EATTEDIT',
@@ -40,7 +43,9 @@ describe('palette search', () => {
       'EXPORT',
       'EXPORTPDF',
       'HATCHTOBACK',
+      'ID',
       'LINE',
+      'MEASUREGEOM',
       'MIRROR',
       'MLEADER',
       'MLEADEREDIT',
