@@ -53,5 +53,8 @@ export {
   trimGeometry,
 } from './trim';
 export * from './corner';
+export * from './break';
+export * from './join';
+export * from './explode';
 export * from './underlay-layers';
 export * from './array';

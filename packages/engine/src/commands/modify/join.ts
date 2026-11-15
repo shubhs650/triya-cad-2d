@@ -1,0 +1,170 @@
+// JOIN, EXPLODE and REVERSE (M3-02 part 4), with AutoCAD 2024's prompts and messages (AutoCAD
+// Help, "JOIN (Command)", "EXPLODE (Command)", "REVERSE (Command)"):
+//
+//   Select source object or multiple objects to join at once:
+//   Select objects to join:
+//   3 objects converted to 1 polyline
+//
+// JOIN with one object chosen takes it as the source and asks for what to join to it (an arc or
+// elliptical arc source offers cLose, which makes its circle or ellipse); with several it joins
+// every group that can join. EXPLODE breaks what it is given into its parts; REVERSE runs lines,
+// polylines and splines the other way. The geometry is `edit/join.ts`, `edit/explode.ts` and
+// `edit/break.ts`'s.
+import { eraseObjects, refusalMessages, reshapeObject } from '../../edit/edit';
+import { closeArc, closeEllipse, joinable, joinObjects, type Joined } from '../../edit/join';
+import { explodeObjects } from '../../edit/explode';
+import { breakCurveOf, reverseGeometry } from '../../edit/break';
+import type { EntityId } from '../../model/entity-ids';
+import type { CommandContext, CommandDef } from '../command';
+import { toleranceFor } from './offset';
+import { toleranceForSize } from '../../geom/tolerance';
+
+// ── JOIN ────────────────────────────────────────────────────────────────────────────────────
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** What JOIN says it made. */
+function joinedMessage(j: Joined, kinds: readonly string[]): string {
+  const n = j.parts.length;
+  switch (j.made) {
+    case 'line':
+      return `${n} lines joined into 1 line`;
+    case 'arc':
+      return `${n} arcs joined into 1 arc`;
+    case 'circle':
+      return `${n} arcs joined into 1 circle`;
+    case 'ellipse':
+      return j.geom.kind === 'ELLIPSE' && j.geom.startParam === 0 && j.geom.endParam === 2 * Math.PI
+        ? `${n} elliptical arcs joined into 1 ellipse`
+        : `${n} elliptical arcs joined into 1 elliptical arc`;
+    case 'polyline':
+      // A polyline that took others in grew; anything else was converted.
+      return kinds[0] === 'LWPOLYLINE' || kinds[0] === 'POLYLINE'
+        ? `${plural(n - 1, 'segment')} added to polyline`
+        : `${n} objects converted to 1 polyline`;
+  }
+}
+
+export function joinCommand(): CommandDef {
+  return {
+    name: 'JOIN',
+    usesSelection: 'during',
+    async *run(ctx) {
+      const a = yield ctx.prompt.selection({
+        message: 'Select source object or multiple objects to join at once',
+        editable: true,
+      });
+      if (a.kind !== 'selection' || a.ids.length === 0) return;
+      if (a.ids.length > 1) {
+        join(ctx, a.ids, undefined);
+        return;
+      }
+      const source = a.ids[0]!;
+      const g = ctx.model.entity(source)?.geom;
+      const curved = g?.kind === 'ARC' || (g?.kind === 'ELLIPSE' && joinable(g));
+      const b = yield ctx.prompt.selection({
+        message: !curved
+          ? 'Select objects to join'
+          : g.kind === 'ARC'
+            ? 'Select arcs to join to source or'
+            : 'Select elliptical arcs to join to source or',
+        ...(curved && { options: ['cLose'] }),
+        editable: true,
+      });
+      if (b.kind === 'keyword' && curved) {
+        ctx.edit((e) =>
+          reshapeObject(e, ctx.model, source, [
+            g.kind === 'ARC' ? closeArc(g) : closeEllipse(g as never),
+          ]),
+        );
+        ctx.message(
+          g.kind === 'ARC'
+            ? 'Arc converted to a circle.'
+            : 'Elliptical arc converted to an ellipse.',
+        );
+        return;
+      }
+      const more = b.kind === 'selection' ? b.ids.filter((id) => id !== source) : [];
+      join(ctx, [source, ...more], source);
+    },
+  };
+}
+
+function join(ctx: CommandContext, ids: readonly EntityId[], source: EntityId | undefined): void {
+  const parts = ids.flatMap((id) => {
+    const e = ctx.model.entity(id);
+    return e ? [{ id, geom: e.geom }] : [];
+  });
+  const first = parts.map((p) => breakCurveOf(p.geom)).find((c) => c !== undefined);
+  const tol = first ? toleranceFor(ctx.model, first) : toleranceForSize(1);
+  const r = joinObjects(parts, source, tol);
+  const lines: string[] = [];
+  if (r.joined.length > 0) {
+    ctx.edit((b) => {
+      for (const j of r.joined) {
+        const kinds = j.parts.map((id) => ctx.model.entity(id)!.geom.kind);
+        lines.push(joinedMessage(j, kinds));
+        reshapeObject(b, ctx.model, j.keep, [j.geom]);
+        eraseObjects(
+          b,
+          ctx.model,
+          j.parts.filter((id) => id !== j.keep),
+        );
+      }
+    });
+  }
+  if (r.discarded > 0) {
+    lines.push(`${plural(r.discarded, 'object')} discarded from the operation`);
+  }
+  for (const line of lines) ctx.message(line);
+}
+
+// ── EXPLODE ─────────────────────────────────────────────────────────────────────────────────
+
+export function explodeCommand(): CommandDef {
+  return {
+    name: 'EXPLODE',
+    usesSelection: 'during',
+    async *run(ctx) {
+      const a = yield ctx.prompt.selection({ message: 'Select objects', editable: true });
+      if (a.kind !== 'selection' || a.ids.length === 0) return;
+      let report: ReturnType<typeof explodeObjects> | undefined;
+      ctx.edit((b) => {
+        report = explodeObjects(b, ctx.model, a.ids);
+      });
+      const r = report!;
+      for (const line of refusalMessages(r.refused, 'exploded')) ctx.message(line);
+      if (r.lostWidth) {
+        ctx.message('Exploding this polyline has lost width information.');
+        ctx.message('The UNDO command will restore it.');
+      }
+    },
+  };
+}
+
+// ── REVERSE ─────────────────────────────────────────────────────────────────────────────────
+
+export function reverseCommand(): CommandDef {
+  return {
+    name: 'REVERSE',
+    usesSelection: 'during',
+    async *run(ctx) {
+      const a = yield ctx.prompt.selection({
+        message: 'Select lines, polylines, splines, or helixes to reverse direction',
+        editable: true,
+      });
+      if (a.kind !== 'selection' || a.ids.length === 0) return;
+      let n = 0;
+      ctx.edit((b) => {
+        for (const id of a.ids) {
+          const e = b.entity(id);
+          const g = e && reverseGeometry(e.geom);
+          if (!g) continue;
+          b.updateEntity(id, { geom: g });
+          n++;
+        }
+      });
+      ctx.message(`${n} object(s) direction has been reversed.`);
+    },
+  };
+}
