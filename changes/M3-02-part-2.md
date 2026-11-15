@@ -1,0 +1,1 @@
+- M3-02 part 2 (#372): TRIM and EXTEND, in Quick and Standard modes, with picks, fences, crossing windows, Edge Extend, eRase, Undo and Shift to switch between them.
