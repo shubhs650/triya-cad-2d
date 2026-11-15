@@ -1,0 +1,1 @@
+- M3-06 part 3 (#400): PolarSnap (Snap type and Polar distance in Drafting Settings, SNAP Type, SNAPTYPE and POLARDIST), polar angles relative to the last segment (Polar Angle measurement, POLARMODE 1) for LINE and PLINE, and Shift to acquire (Settings > Drafting's Alignment point acquisition, POLARMODE 8); with automatic acquisition, Shift held keeps a point from being acquired.

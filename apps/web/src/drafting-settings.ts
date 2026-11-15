@@ -3,11 +3,14 @@
 // the drafting aids as the dialog opens and given back to them on OK. The dialog edits a copy,
 // so Cancel changes nothing, as AutoCAD's does. The Snap and Grid tab (part 2) shows SNAP and
 // GRID from the drafting aids and the spacing from the drawing's `*Active` VPORT, which OK
-// gives back to DSETTINGS to set (`snapGridOf`).
+// gives back to DSETTINGS to set (`snapGridOf`). Part 3 adds the Snap and Grid tab's Snap type
+// (Grid snap or PolarSnap, SNAPTYPE) and Polar spacing (POLARDIST), and the Polar Tracking tab's
+// Polar Angle measurement (Absolute or Relative to last segment, POLARMODE 1).
 import { OSNAP_OFF, type DraftingSettingsTab, type SnapGridSettings } from '@triya/engine';
 import {
   MAX_ADDITIONAL_ANGLES,
   POLARMODE_ADDITIONAL,
+  POLARMODE_RELATIVE,
   POLARMODE_TRACK_POLAR,
   QP_DISTANCES,
   QP_ROW_COUNTS,
@@ -42,6 +45,12 @@ export interface DraftingSettingsDraft {
   readonly angles: readonly number[];
   /** Track using all polar angle settings (POLARMODE 2), else track orthogonally only. */
   readonly trackPolar: boolean;
+  /** Polar Angle measurement: Relative to last segment (POLARMODE 1), else Absolute. */
+  readonly relative: boolean;
+  /** Snap type: Grid snap (SNAPTYPE 0) or PolarSnap (1). */
+  readonly snapType: 0 | 1;
+  /** Polar spacing's Polar distance (POLARDIST) as typed. */
+  readonly polarDist: string;
   /** Object Snap On (F3), and the modes checked (OSMODE without OSNAP_OFF). */
   readonly osnap: boolean;
   readonly modes: number;
@@ -92,6 +101,9 @@ export function draftOf(s: DraftingState, snapGrid?: SnapGridSettings): Drafting
     additional: (s.polarMode & POLARMODE_ADDITIONAL) !== 0,
     angles: additionalAngles(s.polarAddAngles) ?? [],
     trackPolar: (s.polarMode & POLARMODE_TRACK_POLAR) !== 0,
+    relative: (s.polarMode & POLARMODE_RELATIVE) !== 0,
+    snapType: s.snapType,
+    polarDist: String(s.polarDist),
     osnap: (s.osmode & OSNAP_OFF) === 0 && s.osmode !== 0,
     modes: s.osmode & ~OSNAP_OFF,
     otrack: s.otrack,
@@ -179,6 +191,8 @@ export function snapGridOf(d: DraftingSettingsDraft): SnapGridSettings | undefin
 export function draftProblem(d: DraftingSettingsDraft): string | undefined {
   const g = d.spacing && spacingSettings(d.spacing);
   if (typeof g === 'string') return g;
+  const dist = decimal(d.polarDist);
+  if (dist === undefined || dist < 0) return 'Polar distance must be a number, 0 or more.';
   if (whole(d.distance, QP_DISTANCES) === undefined)
     return `Distance in pixels must be a whole number from ${QP_DISTANCES.min} to ${QP_DISTANCES.max}.`;
   if (whole(d.rows, QP_ROW_COUNTS) === undefined)
@@ -207,7 +221,8 @@ export function addAngle(
 /** What OK sets: the drafting aids the dialog shows, `s` the state it opened over. */
 export function draftPatch(d: DraftingSettingsDraft, s: DraftingState): Partial<DraftingState> {
   if (draftProblem(d)) return {};
-  const keptBits = s.polarMode & ~(POLARMODE_ADDITIONAL | POLARMODE_TRACK_POLAR);
+  const keptBits =
+    s.polarMode & ~(POLARMODE_RELATIVE | POLARMODE_ADDITIONAL | POLARMODE_TRACK_POLAR);
   return {
     snap: d.snap,
     grid: d.grid,
@@ -216,8 +231,11 @@ export function draftPatch(d: DraftingSettingsDraft, s: DraftingState): Partial<
     polarMode:
       keptBits |
       (d.additional ? POLARMODE_ADDITIONAL : 0) |
-      (d.trackPolar ? POLARMODE_TRACK_POLAR : 0),
+      (d.trackPolar ? POLARMODE_TRACK_POLAR : 0) |
+      (d.relative ? POLARMODE_RELATIVE : 0),
     polarAddAngles: d.angles.map(angleText).join(';'),
+    snapType: d.snapType,
+    polarDist: decimal(d.polarDist)!,
     // Object Snap Off keeps the modes for F3 to turn back on, as AutoCAD's OSMODE 16384 bit does.
     osmode: d.osnap ? d.modes : d.modes | OSNAP_OFF,
     otrack: d.otrack,

@@ -66,7 +66,7 @@ function init(o?: Partial<VportRecord> | null): DocumentInit {
 /** A drawing, its bus, and the app's SNAPMODE and GRIDMODE as the view host keeps them. */
 function setup(o?: Partial<VportRecord> | null) {
   const model = DocumentModel.create(init(o));
-  const app: Record<string, number> = { SNAPMODE: 0, GRIDMODE: 0 };
+  const app: Record<string, number> = { SNAPMODE: 0, GRIDMODE: 0, SNAPTYPE: 0 };
   const view: ViewHost = {
     request: (r): Promise<ViewReply> => {
       if (r.op !== 'sysvar' || !(r.name in app))
@@ -164,7 +164,7 @@ describe('SNAP', () => {
   it('sets the snap spacing and turns SNAP on; ON and OFF turn it', async () => {
     const { bus, vp, app, log } = setup({ snapSpacing: { x: 2.5, y: 4 } });
     await bus.submit('SN');
-    expect(bus.promptText).toBe('Specify snap spacing or [ON/OFF/Aspect] <2.5000>:');
+    expect(bus.promptText).toBe('Specify snap spacing or [ON/OFF/Aspect/Type] <2.5000>:');
     await bus.submit('0.5');
     expect(vp().snapSpacing).toEqual({ x: 0.5, y: 0.5 });
     expect(app['SNAPMODE']).toBe(1);
@@ -180,6 +180,37 @@ describe('SNAP', () => {
     expect(vp().snapSpacing).toEqual({ x: 0.5, y: 0.5 });
     // One SNAP undo step for the spacing; the toggles are not steps.
     expect(bus.undo.state.undoable).toBe(1);
+  });
+
+  it('sets the snap type, PolarSnap or grid snap (SNAPTYPE), with the current one the default', async () => {
+    const { bus, app, vp } = setup();
+    await bus.script(['SNAP', 'T']);
+    expect(bus.promptText).toBe('Enter snap type [Polar/Grid] <Grid>:');
+    await bus.submit('P');
+    expect(app['SNAPTYPE']).toBe(1);
+    expect(bus.command).toBeUndefined();
+    await bus.script(['SNAP', 'T']);
+    expect(bus.promptText).toBe('Enter snap type [Polar/Grid] <Polar>:');
+    // Enter keeps it.
+    await bus.submit('');
+    expect(app['SNAPTYPE']).toBe(1);
+    await bus.script(['SNAP', 'T', 'G']);
+    expect(app['SNAPTYPE']).toBe(0);
+    // The spacing is not touched, and the type is no undo step.
+    expect(vp().snapSpacing).toEqual({ x: 10, y: 10 });
+    expect(bus.undo.state.undoable).toBe(0);
+  });
+
+  it('says why when the app keeps no snap type', async () => {
+    const { bus, app, log } = setup();
+    delete app['SNAPTYPE'];
+    await bus.script(['SNAP', 'T']);
+    expect(bus.promptText).toBe('Enter snap type [Polar/Grid] <Grid>:');
+    await bus.submit('P');
+    expect(log.at(-1)).toBe('Not here.');
+    await bus.script(['SNAP', 'T']);
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
   });
 
   it('takes different X and Y spacing after Aspect, without turning SNAP on', async () => {

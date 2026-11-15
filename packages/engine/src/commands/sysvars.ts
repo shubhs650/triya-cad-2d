@@ -152,6 +152,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // semicolons (initially ""), which the app reads and may refuse.
   { name: 'POLARMODE', store: 'app', kind: 'integer', min: 0, max: 15 },
   { name: 'POLARADDANG', store: 'app', kind: 'text' },
+  // M3-06 part 3 (AutoCAD 2024 Help, both "Saved in: Registry"): SNAPTYPE 0 grid snap, 1
+  // PolarSnap (initially 0); POLARDIST the PolarSnap increment (initially 0: the snap X spacing).
+  { name: 'SNAPTYPE', store: 'app', kind: 'integer', min: 0, max: 1 },
+  { name: 'POLARDIST', store: 'app', kind: 'real', nonNegative: true },
   // M3-04 part 3 (AutoCAD 2024 Help): SELECTSIMILARMODE's bits are the properties SELECTSIMILAR
   // matches (1 Color, 2 Layer, 4 Linetype, 8 Linetype scale, 16 Lineweight, 32 Plot style, 64
   // Object style, 128 Name; initially 130); SELECTIONCYCLING 0 off, 1 the overlap badge, 2 the

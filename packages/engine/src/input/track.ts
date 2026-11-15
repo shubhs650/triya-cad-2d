@@ -8,6 +8,9 @@
 // - PARallel: from the base point, both ways parallel to an acquired line.
 // - Polar tracking's paths from the base point take part too, so a path from an acquired point
 //   crosses a polar path ("Endpoint: < 90°, Polar: < 0°").
+// - Polar paths may count from the last segment drawn (POLARMODE 1, M3-06 part 3): they are then
+//   "Relative Polar" and their tooltip gives the angle from that segment; OTRACK's polar paths
+//   from acquired points stay absolute, as they are no continuation of that segment.
 // The cursor goes onto the path it is within `tolerance` of; where two paths that cross are
 // both that near, onto their crossing. What is acquired and when is the front-end's: AutoCAD
 // acquires a point the cursor pauses over and drops it when the cursor pauses over it again,
@@ -33,6 +36,10 @@ export interface TrackPath {
   readonly angle: number;
   /** What the tooltip calls it: "Polar", "Ortho", the acquired point's mode, "Extension"… */
   readonly label: string;
+  /** Polar tracking's path from the base point. */
+  readonly polar?: true;
+  /** POLARMODE 1: the last segment's angle, which the tooltip's angle counts from. */
+  readonly relative?: number;
 }
 
 export interface TrackLock {
@@ -59,13 +66,20 @@ const ORTHOGONAL = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
 
 const norm = (a: number): number => ((a % TAU) + TAU) % TAU;
 
-function polarAngles(s: PolarSettings): number[] {
+/**
+ * Polar tracking's angles: POLARANG's multiples and the additional angles, counted from the last
+ * segment (`relative`, POLARMODE 1) when `fromLast`. AutoCAD 2024 Help says Relative to Last
+ * Segment "bases polar tracking angles on the last segment drawn" without excepting the
+ * additional angles, so they turn with it too.
+ */
+export function polarAngles(s: PolarSettings, fromLast = true): number[] {
   const out: number[] = [];
+  const turn = fromLast ? (s.relative ?? 0) : 0;
   if (s.increment > 1e-9) {
     const n = Math.min(Math.round(TAU / s.increment), 3600);
-    for (let k = 0; k < n; k++) out.push(k * s.increment);
+    for (let k = 0; k < n; k++) out.push(norm(turn + k * s.increment));
   }
-  for (const a of s.additional ?? []) out.push(norm(a));
+  for (const a of s.additional ?? []) out.push(norm(turn + a));
   return out;
 }
 
@@ -74,9 +88,19 @@ export function trackPaths(o: Omit<TrackOptions, 'tolerance'>): TrackPath[] {
   const paths: TrackPath[] = [];
   const { base, polar } = o;
   if (base && polar) {
-    for (const a of polarAngles(polar)) paths.push({ from: base, angle: a, label: 'Polar' });
+    const relative = polar.relative;
+    const label = relative === undefined ? 'Polar' : 'Relative Polar';
+    for (const a of polarAngles(polar)) {
+      paths.push({
+        from: base,
+        angle: a,
+        label,
+        polar: true,
+        ...(relative !== undefined && { relative }),
+      });
+    }
   }
-  const otrack = o.trackPolar && polar ? polarAngles(polar) : ORTHOGONAL;
+  const otrack = o.trackPolar && polar ? polarAngles(polar, false) : ORTHOGONAL;
   for (const q of o.acquired ?? []) {
     if (q.kind === 'point') {
       const label = LABEL.get(q.mode) ?? q.mode;
@@ -176,6 +200,10 @@ export function orthoTrack(
   return undefined;
 }
 
+/** The angle a tooltip gives a path: from the last segment for a relative polar path. */
+export const shownAngle = (path: { angle: number; relative?: number }): number =>
+  path.relative === undefined ? path.angle : norm(path.angle - path.relative);
+
 const degrees = (a: number): string => {
   const d = (a * 180) / Math.PI;
   return Math.abs(d - Math.round(d)) < 1e-6 ? String(Math.round(d) % 360) : d.toFixed(2);
@@ -189,7 +217,7 @@ export function trackLabel(lock: TrackLock, precision = 4): string {
   if (lock.paths.length === 1) {
     const path = lock.paths[0]!;
     const d = Math.hypot(lock.point.x - path.from.x, lock.point.y - path.from.y);
-    return `${path.label}: ${d.toFixed(precision)} < ${degrees(path.angle)}°`;
+    return `${path.label}: ${d.toFixed(precision)} < ${degrees(shownAngle(path))}°`;
   }
-  return lock.paths.map((path) => `${path.label}: < ${degrees(path.angle)}°`).join(', ');
+  return lock.paths.map((path) => `${path.label}: < ${degrees(shownAngle(path))}°`).join(', ');
 }
