@@ -1193,7 +1193,7 @@ export class PromptBus {
   async #typed(prompt: Prompt, text: string): Promise<void> {
     const t = text.trim();
     if (t === '') return this.#deliver(prompt.default ?? { kind: 'enter' }, '');
-    const keyword = matchKeyword(t, prompt.options ?? []);
+    const keyword = matchKeyword(t, [...(prompt.options ?? []), ...(prompt.hiddenOptions ?? [])]);
     if (keyword) return this.#deliver({ kind: 'keyword', keyword }, t);
     const angles = this.#angles();
     switch (prompt.kind) {

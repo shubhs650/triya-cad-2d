@@ -49,6 +49,18 @@ interface PromptBase {
    * ("Undo", "Close", "eXit", "LAst"). Shown as `[Undo/Close]`.
    */
   readonly options?: readonly string[];
+  /**
+   * Keywords taken as `options` are but not shown (AutoCAD's keywords a prompt accepts without
+   * listing them): the grip mode names MO, RO, SC, MI and ST typed at a grip prompt, and a
+   * multi-functional grip's functions (M3-05).
+   */
+  readonly hiddenOptions?: readonly string[];
+  /**
+   * A tap of Ctrl (pressed and let go with no other key or button) answers the keyword
+   * `GRIP_CYCLE`: a hot multi-functional grip's next function, as AutoCAD's Ctrl cycles them
+   * (M3-05).
+   */
+  readonly ctrlCycles?: true;
   /** What Enter gives, shown as `<…>`; without one Enter answers `{ kind: 'enter' }`. */
   readonly default?: PromptAnswer;
   /**
@@ -72,6 +84,9 @@ interface PromptBase {
    */
   readonly switchDirection?: true;
 }
+
+/** The keyword a Ctrl tap answers at a prompt that `ctrlCycles`. */
+export const GRIP_CYCLE = 'Ctrl';
 
 /** What a prompt that takes Ctrl (`switchDirection`) puts after its message's first words. */
 export const CTRL_SWITCH = ' (hold Ctrl to switch direction)';
@@ -574,7 +589,10 @@ export function answerFits(prompt: Prompt, answer: PromptAnswer): boolean {
   if (answer.kind === 'enter') return true;
   if (answer.kind === 'escape') return prompt.escape === true;
   if (answer.kind === 'keyword') {
-    return (prompt.options ?? []).some((o) => o.toUpperCase() === answer.keyword.toUpperCase());
+    if (prompt.ctrlCycles && answer.keyword === GRIP_CYCLE) return true;
+    return [...(prompt.options ?? []), ...(prompt.hiddenOptions ?? [])].some(
+      (o) => o.toUpperCase() === answer.keyword.toUpperCase(),
+    );
   }
   if (answer.kind === 'string' && 'arbitrary' in prompt && prompt.arbitrary) return true;
   if (answer.kind === 'point' && prompt.kind === 'string' && prompt.pick) return true;

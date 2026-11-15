@@ -1,0 +1,304 @@
+// Multi-functional grips (M3-05 part 1; FR-D4): the functions AutoCAD 2024 offers at a grip, in
+// the menu shown as the cursor rests on it and in the order Ctrl cycles through once it is hot.
+//
+// - a line's or arc's end: Stretch, Lengthen ("The Stretch and Lengthen Commands": the grip's
+//   Lengthen behaves as LENGTHEN's Dynamic method, the end carried along the line or round the
+//   circle to the cursor);
+// - an arc's midpoint: Stretch, Radius (the radius changes about the centre, the angles kept);
+// - a 2D polyline's vertex: Stretch Vertex, Add Vertex, Remove Vertex, and at an open polyline's
+//   ends Extend Vertex; a straight segment's midpoint: Stretch, Add Vertex, Convert to Arc; an
+//   arc segment's: Stretch, Add Vertex, Convert to Line ("To Modify Polylines With Grips").
+//
+// AutoCAD's help leaves some of what these do unsaid; the choices made here are the ones a
+// drafter would expect:
+// - Add Vertex at a vertex puts the new vertex after it (between it and the next), at an open
+//   polyline's last vertex before it, as nothing follows;
+// - Add Vertex on an arc segment keeps both halves round, on the circle through the segment's
+//   ends and the new vertex (a vertex added on the arc leaves its shape as it was);
+// - Remove Vertex joins its neighbours with a straight segment, one arc when both segments were
+//   arcs of one circle turning the same way; the joined segment starts as the one before did and
+//   ends as the one after did;
+// - Convert to Arc makes the arc through the segment's ends and the point given.
+import { ccwSweep, TAU } from '../geom/angle';
+import { toleranceForSize, type Tolerance } from '../geom/tolerance';
+import type { Vec2 } from '../geom/types';
+import { add, angleOf, distance, sub } from '../geom/vec';
+import type {
+  ArcGeometry,
+  EntityGeometry,
+  LwPolylineGeometry,
+  PolylineGeometry,
+  PolylineVertex,
+} from '../model/types';
+import type { GripInfo } from './array-grips';
+import { breakCurveOf, lengthenGeometry, lengthTo } from './break';
+import { arcThrough, bulgeMidpoint, bulgeThrough, gripsOf, moveGrip, sameGrip } from './grips';
+import type { StretchResult } from './stretch';
+
+export type GripFunction =
+  | 'Stretch'
+  | 'Stretch Vertex'
+  | 'Lengthen'
+  | 'Radius'
+  | 'Add Vertex'
+  | 'Remove Vertex'
+  | 'Extend Vertex'
+  | 'Convert to Arc'
+  | 'Convert to Line';
+
+/** The functions that are the STRETCH grip mode itself. */
+export const isStretchFunction = (fn: GripFunction | undefined): boolean =>
+  fn === undefined || fn === 'Stretch' || fn === 'Stretch Vertex';
+
+type Poly = LwPolylineGeometry | PolylineGeometry;
+
+/** A polyline whose grips have functions: lightweight, or heavy 2D and not fitted. */
+const functional = (g: EntityGeometry): g is Poly =>
+  g.kind === 'LWPOLYLINE' || (g.kind === 'POLYLINE' && !g.is3d && !g.fit);
+
+const segmentCount = (g: Poly) => (g.closed ? g.vertices.length : g.vertices.length - 1);
+
+/** The polyline grip at `grip`: a vertex's index, or a segment's (from its first vertex). */
+function polylineGrip(
+  g: Poly,
+  grip: Vec2,
+): { vertex: number } | { segment: number; arc: boolean } | undefined {
+  const v = g.vertices;
+  const vertex = v.findIndex((p) => sameGrip(p, grip));
+  if (vertex >= 0) return { vertex };
+  for (let i = 0; i < segmentCount(g) && v.length > 1; i++) {
+    const a = v[i]!;
+    const b = v[(i + 1) % v.length]!;
+    const mid =
+      a.bulge === 0 ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : bulgeMidpoint(a, b, a.bulge);
+    if (sameGrip(mid, grip)) return { segment: i, arc: a.bulge !== 0 };
+  }
+  return undefined;
+}
+
+/**
+ * The functions of the grip at `grip`, the first the STRETCH grip mode; none where the grip has
+ * only that one (or there is no grip there).
+ */
+export function gripFunctionsOf(
+  geom: EntityGeometry,
+  grip: Vec2,
+  info?: GripInfo,
+): readonly GripFunction[] {
+  const found = gripsOf(geom, info).find((x) => sameGrip(x.point, grip));
+  if (!found) return [];
+  switch (geom.kind) {
+    case 'LINE':
+      return found.kind === 'stretch' ? ['Stretch', 'Lengthen'] : [];
+    case 'ARC':
+      if (found.kind === 'stretch') return ['Stretch', 'Lengthen'];
+      return found.kind === 'arc' ? ['Stretch', 'Radius'] : [];
+    case 'LWPOLYLINE':
+    case 'POLYLINE': {
+      if (!functional(geom) || found.kind === 'cloud') return [];
+      const at = polylineGrip(geom, grip);
+      if (!at) return [];
+      if ('segment' in at) {
+        return ['Stretch', 'Add Vertex', at.arc ? 'Convert to Line' : 'Convert to Arc'];
+      }
+      const end = !geom.closed && (at.vertex === 0 || at.vertex === geom.vertices.length - 1);
+      return [
+        'Stretch Vertex',
+        'Add Vertex',
+        'Remove Vertex',
+        ...(end ? (['Extend Vertex'] as const) : []),
+      ];
+    }
+    default:
+      return [];
+  }
+}
+
+export type GripFunctionProblem =
+  /** The point gives no shape (behind a line's fixed end, in line with a segment, …). */
+  | 'invalid'
+  /** A polyline keeps at least two vertices. */
+  | 'too few'
+  /** An arc would go all the way round. */
+  | 'too long';
+
+/** A vertex with the widths given, none where both are absent. */
+function widths(v: PolylineVertex, sw: number | undefined, ew: number | undefined): PolylineVertex {
+  const { startWidth: _s, endWidth: _e, ...rest } = v;
+  return {
+    ...rest,
+    ...(sw !== undefined && { startWidth: sw }),
+    ...(ew !== undefined && { endWidth: ew }),
+  };
+}
+
+/** The segment from vertex `i` split at `p`: two straight halves, or two arcs of one circle. */
+function splitSegment(vs: readonly PolylineVertex[], i: number, p: Vec2): PolylineVertex[] {
+  const a = vs[i]!;
+  const b = vs[(i + 1) % vs.length]!;
+  let first = 0;
+  let second = 0;
+  const arc = a.bulge !== 0 ? arcThrough(a, p, b) : undefined;
+  if (arc && !sameGrip(p, a) && !sameGrip(p, b)) {
+    // The arc a → p → b, split at p: each half turns the same way.
+    const whole = 4 * Math.atan(bulgeThrough(a, p, b));
+    const sa = angleOf(sub(a, arc.center));
+    const sp = angleOf(sub(p, arc.center));
+    const half = whole > 0 ? ccwSweep(sa, sp) : -ccwSweep(sp, sa);
+    first = Math.tan(half / 4);
+    second = Math.tan((whole - half) / 4);
+  }
+  const sw = a.startWidth;
+  const ew = a.endWidth;
+  const mid = sw === undefined && ew === undefined ? undefined : ((sw ?? 0) + (ew ?? 0)) / 2;
+  return [
+    ...vs.slice(0, i),
+    widths({ ...a, bulge: first }, sw, mid),
+    widths({ x: p.x, y: p.y, bulge: second }, mid, mid === undefined ? undefined : ew),
+    ...vs.slice(i + 1),
+  ];
+}
+
+/** Two arc segments' bulges as one, when both are arcs of one circle turning the same way. */
+function joinedBulge(
+  a: PolylineVertex,
+  b: PolylineVertex,
+  c: PolylineVertex,
+  tol: Tolerance,
+): number {
+  if (a.bulge === 0 || b.bulge === 0 || Math.sign(a.bulge) !== Math.sign(b.bulge)) return 0;
+  const sweep = 4 * Math.atan(a.bulge) + 4 * Math.atan(b.bulge);
+  if (Math.abs(sweep) >= TAU - tol.angular) return 0;
+  const bulge = Math.tan(sweep / 4);
+  // One circle: the joined arc passes through the removed vertex.
+  const m = bulgeThrough(a, b, c);
+  return Math.abs(m - bulge) <= 1e-9 * Math.max(1, Math.abs(bulge)) ? bulge : 0;
+}
+
+function removeVertex(g: Poly, i: number, tol: Tolerance): PolylineVertex[] | GripFunctionProblem {
+  const vs = g.vertices;
+  const n = vs.length;
+  if (n <= 2) return 'too few';
+  const before = g.closed ? (i - 1 + n) % n : i - 1;
+  if (before < 0 || (!g.closed && i === n - 1)) {
+    // An open polyline's end: the next (or previous) vertex is the end now.
+    return vs.filter((_, k) => k !== i);
+  }
+  const p = vs[before]!;
+  const after = vs[(i + 1) % n]!;
+  const joined = widths(
+    { ...p, bulge: joinedBulge(p, vs[i]!, after, tol) },
+    p.startWidth,
+    vs[i]!.endWidth,
+  );
+  return vs.map((v, k) => (k === before ? joined : v)).filter((_, k) => k !== i);
+}
+
+const withVertices = (g: Poly, vertices: readonly PolylineVertex[]): Poly => ({ ...g, vertices });
+
+/**
+ * What the function `fn` of the grip at `grip` does with the point `to` (Convert to Line takes
+ * none): the object's new shape, or why there is none. Stretch is `moveGrip`'s.
+ */
+export function gripFunctionEdit(
+  geom: EntityGeometry,
+  grip: Vec2,
+  fn: GripFunction,
+  to: Vec2,
+  tol: Tolerance,
+  info?: GripInfo,
+): EntityGeometry | GripFunctionProblem {
+  if (!gripFunctionsOf(geom, grip, info).includes(fn)) return 'invalid';
+  switch (fn) {
+    case 'Lengthen': {
+      const c = breakCurveOf(geom);
+      if (!c || (c.kind !== 'LINE' && c.kind !== 'ARC')) return 'invalid';
+      const end = c.kind === 'LINE' ? c.end : add(c.center, polar(c.endAngle, c.radius));
+      const atEnd = sameGrip(end, grip);
+      const length = lengthTo(c, atEnd, to, tol);
+      if (length === undefined) return 'invalid';
+      const r = lengthenGeometry(geom, c, atEnd, length, tol);
+      if (r === 'too long') return 'too long';
+      return typeof r === 'string' ? 'invalid' : r;
+    }
+    case 'Radius': {
+      const a = geom as ArcGeometry;
+      const radius = distance(a.center, to);
+      return radius > tol.linear ? { ...a, radius } : 'invalid';
+    }
+    default:
+      break;
+  }
+  const g = geom as Poly;
+  const at = polylineGrip(g, grip)!;
+  const vs = g.vertices;
+  switch (fn) {
+    case 'Add Vertex': {
+      const n = vs.length;
+      const i = 'segment' in at ? at.segment : !g.closed && at.vertex === n - 1 ? n - 2 : at.vertex;
+      return withVertices(g, splitSegment(vs, i, to));
+    }
+    case 'Remove Vertex': {
+      const r = removeVertex(g, (at as { vertex: number }).vertex, tol);
+      return typeof r === 'string' ? r : withVertices(g, r);
+    }
+    case 'Extend Vertex': {
+      const i = (at as { vertex: number }).vertex;
+      const end = vs[i]!;
+      if (i === 0) {
+        const added = widths({ x: to.x, y: to.y, bulge: 0 }, end.startWidth, end.startWidth);
+        return withVertices(g, [added, ...vs]);
+      }
+      const added = widths({ x: to.x, y: to.y, bulge: 0 }, end.startWidth, end.endWidth);
+      return withVertices(g, [...vs.slice(0, i), { ...end, bulge: 0 }, added]);
+    }
+    case 'Convert to Arc': {
+      const i = (at as { segment: number }).segment;
+      const bulge = bulgeThrough(vs[i]!, to, vs[(i + 1) % vs.length]!);
+      if (bulge === 0) return 'invalid';
+      return withVertices(
+        g,
+        vs.map((v, k) => (k === i ? { ...v, bulge } : v)),
+      );
+    }
+    case 'Convert to Line': {
+      const i = (at as { segment: number }).segment;
+      return withVertices(
+        g,
+        vs.map((v, k) => (k === i ? { ...v, bulge: 0 } : v)),
+      );
+    }
+    default:
+      return 'invalid';
+  }
+}
+
+const polar = (theta: number, r: number): Vec2 => ({
+  x: r * Math.cos(theta),
+  y: r * Math.sin(theta),
+});
+
+/** A tolerance from the object's own size, for a drag preview drawn without the drawing's. */
+function ownTolerance(geom: EntityGeometry, grip: Vec2): Tolerance {
+  const pts = gripsOf(geom).map((x) => x.point);
+  let m = Math.max(Math.abs(grip.x), Math.abs(grip.y));
+  for (const p of pts) m = Math.max(m, Math.abs(p.x), Math.abs(p.y));
+  return toleranceForSize(m);
+}
+
+/**
+ * What dragging the grip at `grip` to `to` does with the function `fn` (the STRETCH grip mode
+ * when it is a Stretch or not given): the drag preview's and the grip command's.
+ */
+export function moveGripBy(
+  geom: EntityGeometry,
+  grip: Vec2,
+  to: Vec2,
+  info: GripInfo | undefined,
+  fn: GripFunction | undefined,
+  tol: Tolerance = ownTolerance(geom, grip),
+): StretchResult {
+  if (isStretchFunction(fn)) return moveGrip(geom, grip, to, info);
+  const r = gripFunctionEdit(geom, grip, fn!, to, tol, info);
+  return typeof r === 'string' ? { kind: 'none' } : { kind: 'shape', geom: r };
+}
