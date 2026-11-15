@@ -240,6 +240,25 @@ describe('multi-functional grips', () => {
     expect(s.verts()).toHaveLength(3);
   });
 
+  it('another function typed at a function’s prompt goes there', async () => {
+    const s = setup();
+    await s.hot(10, 0);
+    await s.ctrl();
+    await s.bus.submit('REM');
+    expect(s.verts()).toEqual([
+      [0, 0, 0],
+      [10, 10, 0],
+    ]);
+    // A Lengthen point behind the fixed end asks again.
+    await s.hot(30, 0);
+    await s.bus.submit('LE');
+    await s.bus.submit('10,0');
+    expect(s.log).toContain('The point gives no shape.');
+    expect(s.bus.promptText).toBe('Specify new end point or [eXit]:');
+    await s.ctrl();
+    expect(s.bus.promptText).toBe('Specify stretch point or [Base point/Copy/Undo/eXit]:');
+  });
+
   it('Esc at a function ends grip editing with nothing changed', async () => {
     const s = setup();
     await s.hot(10, 0);
