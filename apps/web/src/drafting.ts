@@ -8,6 +8,7 @@
 // was drawn; LWT shows each drawing's own LWDISPLAY until the drafter turns it, and is then the
 // same for every drawing. Nothing is written back to the file. The snap and grid spacing are
 // each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas.
+import { GRIP_COLORS_DEFAULT, type GripColors } from '@triya/render';
 import {
   GRID_DISPLAY,
   OSMODE_DEFAULT,
@@ -71,6 +72,11 @@ export interface DraftingState {
    * AutoCAD keeps it per user; the canvas draws grips at it and picks them within it.
    */
   readonly gripSize: number;
+  /**
+   * GRIPCOLOR, GRIPHOVER, GRIPHOT and GRIPCONTOUR (M3-05 part 5): the grips' colours, ACIs 1 to
+   * 255, initially 150, 11, 12 and 251. AutoCAD keeps them per user; Settings' Grip Colors.
+   */
+  readonly gripColors: GripColors;
   /**
    * ROLLOVERTIPS (M2-35 part 21): the object under a resting cursor shows a tooltip with its
    * properties. AutoCAD keeps it per user, initially on.
@@ -410,6 +416,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   autosnap: AUTOSNAP_KEPT,
   pickfirst: true,
   gripSize: 5,
+  gripColors: GRIP_COLORS_DEFAULT,
   rolloverTips: true,
   arrayAssociativity: true,
   polarMode: 0,

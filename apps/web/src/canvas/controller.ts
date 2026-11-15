@@ -244,6 +244,11 @@ export interface CanvasHooks {
   readonly onCtrlCycle?: () => void;
   /** Shift+right-click at a point prompt (M2-04 part 2): the object snap menu, at client px. */
   readonly onSnapMenu?: (at: { readonly x: number; readonly y: number }) => void;
+  /**
+   * A right-click (no Shift) on the canvas (M3-05 part 5): the prompt's shortcut menu, at client
+   * px, if it has one (the grip modes'); true when shown, so the browser's menu is not.
+   */
+  readonly onShortcutMenu?: (at: { readonly x: number; readonly y: number }) => boolean;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
   /**
@@ -953,6 +958,7 @@ export class CanvasController {
       before.lwt !== state.lwt ||
       before.tpy !== state.tpy ||
       before.gripSize !== state.gripSize ||
+      before.gripColors !== state.gripColors ||
       before.gridStyle !== state.gridStyle
     ) {
       this.#host.setStyle(this.#style());
@@ -1525,6 +1531,7 @@ export class CanvasController {
       selection: c.selection,
       ...(!d.tpy && { showTransparency: false }),
       gripSize: d.gripSize,
+      gripColors: d.gripColors,
       ...(d.grid && { grid: { ...this.#grid(), ...(c.grid && { color: c.grid }) } }),
     };
     const background = this.#layout ? c.paper : c.model;
@@ -2195,11 +2202,18 @@ export class CanvasController {
       },
       opts,
     );
-    // Shift+right-click: AutoCAD's object snap menu, at a point prompt (M2-04 part 2).
+    // Shift+right-click: AutoCAD's object snap menu, at a point prompt (M2-04 part 2); a plain
+    // right-click the prompt's shortcut menu, where it has one (M3-05 part 5).
     c.addEventListener(
       'contextmenu',
       (e) => {
-        if (!e.shiftKey || !this.#precise() || this.#mode !== 'none') return;
+        if (this.#mode !== 'none') return;
+        if (!e.shiftKey) {
+          // The prompt's own menu (M3-05 part 5: the grip modes' right-click menu).
+          if (this.#hooks.onShortcutMenu?.({ x: e.clientX, y: e.clientY })) e.preventDefault();
+          return;
+        }
+        if (!this.#precise()) return;
         e.preventDefault();
         this.#hooks.onSnapMenu?.({ x: e.clientX, y: e.clientY });
       },

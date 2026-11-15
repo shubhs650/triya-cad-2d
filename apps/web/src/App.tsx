@@ -89,8 +89,10 @@ import { drafting, type DraftingState } from './drafting';
 import { selectionFilters } from './selection-filters';
 import { drawingVariableReply, systemVariableReply } from './system-variables';
 import { snapMenu } from './snap-menu';
+import { shortcutMenu } from './shortcut-menu';
 import { AppClipboard, browserClipboardEnv, clipboardPicture } from './system-clipboard';
 import { SnapMenu } from './SnapMenu';
+import { ShortcutMenu } from './ShortcutMenu';
 import { DraftingToggles } from './DraftingToggles';
 import {
   DocumentStore,
@@ -1859,6 +1861,7 @@ export function App() {
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
+      <ShortcutMenu />
       <GripMenu />
       <CommandLine
         doc={active?.id}
@@ -2160,6 +2163,13 @@ function ViewportCanvas({
           view,
         }),
       onSnapMenu: (at) => snapMenu.open(id, at),
+      // A plain right-click (M3-05 part 5): the prompt's shortcut menu, the grip modes' options.
+      onShortcutMenu: (at) => {
+        const items = commandLines.get(id).prompt?.shortcutMenu;
+        if (!items?.length) return false;
+        shortcutMenu.open(id, at, items);
+        return true;
+      },
       // SELECTIONPREVIEW's bit 1 (M3-04 part 5) previews at `Command:` only.
       atCommand: () => atCommand(id),
       // Rollover tooltips (M2-35 part 21): the object under a resting cursor at `Command:`.
