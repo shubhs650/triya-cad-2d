@@ -25,6 +25,7 @@ Written by the fidelity reporter after a golden-image run (M1-106, TESTING.md §
 | LEADER | 20 | 20 | 0 | 0 |
 | LINE | 2244 | 114 | 0 | 0 |
 | LWPOLYLINE | 942 | 106 | 0 | 0 |
+| MLINE | 60 | 20 | 0 | 0 |
 | MTEXT | 471 | 51 | 0 | 0 |
 | MULTILEADER | 312 | 23 | 0 | 0 |
 | POINT | 499 | 84 | 0 | 0 |
