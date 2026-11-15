@@ -16,6 +16,12 @@
 // and a paste reads it (M2-32 part 5): another Triya window's objects come as a Clipboard, and
 // another app's text as `text`, which PASTECLIP pastes as multiline text, and another app's
 // picture as `picture`, which PASTECLIP pastes as a raster image (M2-54, edit/picture.ts).
+//
+// Objects from another drawing are scaled by the ratio of the two drawings' INSUNITS (M2-32).
+// Where one of the two is unitless, AutoCAD scales nothing; Triya asks first what units the
+// unitless drawing is in (PRD FR-F9: "insert scales by unit ratio with prompt when unitless";
+// M3-09), Enter keeping AutoCAD's way (Unitless, nothing scaled). The answer is for that paste
+// only: the drawing's INSUNITS is not changed (UNITS sets it).
 import type { Box } from '../../geom/bounds';
 import type { Vec2 } from '../../geom/types';
 import {
@@ -35,6 +41,7 @@ import { hasPixels, pastePicture, pictureFrame, type ClipboardPicture } from '..
 import { currentTextStyle, textSize } from '../draw/text';
 import type { CommandContext, CommandDef } from '../command';
 import { currentProps } from '../../properties/current';
+import { insUnitsOf } from '../../model/units';
 import type { Prompt, PromptAnswer } from '../prompt';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -217,9 +224,60 @@ function previewOf(clip: Clipboard, k: number): EntityGeometry[] {
   return out;
 }
 
+/**
+ * The units a unitless drawing may be named in, with their INSUNITS codes (the keywords' capitals
+ * are what may be typed: MEters' ME beside Millimeters' M).
+ */
+export const UNITLESS_OPTIONS: readonly (readonly [string, number])[] = [
+  ['Unitless', 0],
+  ['Inches', 1],
+  ['Feet', 2],
+  ['Yards', 10],
+  ['Millimeters', 4],
+  ['Centimeters', 5],
+  ['MEters', 6],
+  ['Kilometers', 7],
+];
+
+/** What a paste of `clip` scales by: the Clipboard with its units, and the drawing's. */
+interface PasteUnits {
+  readonly clip: Clipboard;
+  /** The drawing's units named for this paste; absent: its INSUNITS. */
+  readonly units?: number;
+}
+
+/**
+ * The units of a paste from another drawing where exactly one of the two drawings is unitless,
+ * asked of the drafter (M3-09); undefined on Esc.
+ */
+async function* pasteUnits(
+  ctx: CommandContext,
+  clip: Clipboard,
+  sameDrawing: boolean,
+): Sub<PasteUnits | undefined> {
+  const from = clip.insUnits ?? 0;
+  const to = insUnitsOf(ctx.model);
+  if (sameDrawing || (from === 0) === (to === 0)) return { clip };
+  const a = yield ctx.prompt.keyword({
+    message:
+      from === 0
+        ? 'The objects come from a unitless drawing. Specify their units'
+        : 'This drawing is unitless. Specify its units for the paste',
+    options: UNITLESS_OPTIONS.map(([name]) => name),
+    default: { kind: 'keyword', keyword: 'Unitless' },
+  });
+  if (a.kind !== 'keyword') return undefined;
+  const code = UNITLESS_OPTIONS.find(([name]) => name === a.keyword)![1];
+  return from === 0 ? { clip: { ...clip, insUnits: code } } : { clip, units: code };
+}
+
 /** "Specify insertion point:" with the Clipboard's objects at the cursor. */
-async function* insertionPoint(ctx: CommandContext, clip: Clipboard): Sub<Vec2 | undefined> {
-  ctx.preview(previewOf(clip, pasteScale(ctx.model, clip)));
+async function* insertionPoint(
+  ctx: CommandContext,
+  clip: Clipboard,
+  units?: number,
+): Sub<Vec2 | undefined> {
+  ctx.preview(previewOf(clip, pasteScale(ctx.model, clip, units)));
   const a = yield ctx.prompt.point({
     message: 'Specify insertion point',
     drag: { kind: 'preview', from: clip.base },
@@ -284,9 +342,11 @@ export function pasteClipCommand(): CommandDef {
         yield* pasteImage(ctx, found.picture);
         return;
       }
-      const at = yield* insertionPoint(ctx, found.clipboard);
+      const paste = yield* pasteUnits(ctx, found.clipboard, found.sameDrawing);
+      if (!paste) return;
+      const at = yield* insertionPoint(ctx, paste.clip, paste.units);
       if (!at) return;
-      ctx.edit((b) => pasteObjects(b, ctx.model, found.clipboard, ctx.space, at));
+      ctx.edit((b) => pasteObjects(b, ctx.model, paste.clip, ctx.space, at, paste.units));
     },
   };
 }
@@ -298,10 +358,12 @@ export function pasteBlockCommand(): CommandDef {
     async *run(ctx) {
       const found = await fromClipboard(ctx);
       if (!found) return;
-      const at = yield* insertionPoint(ctx, found.clipboard);
+      const paste = yield* pasteUnits(ctx, found.clipboard, found.sameDrawing);
+      if (!paste) return;
+      const at = yield* insertionPoint(ctx, paste.clip, paste.units);
       if (!at) return;
       const props = currentProps(ctx.model);
-      ctx.edit((b) => pasteAsBlock(b, ctx.model, found.clipboard, ctx.space, props, at));
+      ctx.edit((b) => pasteAsBlock(b, ctx.model, paste.clip, ctx.space, props, at, paste.units));
     },
   };
 }
@@ -310,7 +372,6 @@ export function pasteOrigCommand(): CommandDef {
   return {
     name: 'PASTEORIG',
     usesSelection: 'none',
-    // eslint-disable-next-line require-yield -- it asks nothing
     async *run(ctx) {
       const found = await fromClipboard(ctx);
       if (!found) return;
@@ -318,8 +379,10 @@ export function pasteOrigCommand(): CommandDef {
         ctx.message('PASTEORIG pastes objects copied from another drawing only.');
         return;
       }
-      const { clipboard } = found;
-      ctx.edit((b) => pasteObjects(b, ctx.model, clipboard, ctx.space, clipboard.base));
+      const paste = yield* pasteUnits(ctx, found.clipboard, false);
+      if (!paste) return;
+      const { clip, units } = paste;
+      ctx.edit((b) => pasteObjects(b, ctx.model, clip, ctx.space, clip.base, units));
     },
   };
 }

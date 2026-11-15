@@ -14,6 +14,7 @@ import type { FilterItem, FilterNameKey } from '../selection/filter';
 import type { PropertyUnits } from '../properties/sheet';
 import type { MatchSettings } from '../properties/match';
 import type { DragPreview } from './drag';
+import type { UnitsSettings } from './drawing-units';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -186,6 +187,11 @@ export interface AnglePrompt extends PromptBase {
    * Picked points still answer their world angle.
    */
   readonly zero?: number;
+  /**
+   * A typed angle counts counter-clockwise whatever ANGDIR says: UNITS sets the direction of
+   * angle 0 before (or apart from) whether angles run clockwise (M3-09).
+   */
+  readonly counterClockwise?: true;
 }
 
 /** One of the options only. */
@@ -482,6 +488,15 @@ export type DialogRequest =
       readonly name?: string;
       readonly names: Readonly<Record<FilterNameKey, readonly string[]>>;
       readonly types: readonly { readonly type: EntityType; readonly label: string }[];
+    }
+  | {
+      /**
+       * UNITS' Drawing Units (M3-09), opened on `settings`; `direction`: on its Direction
+       * Control, after Pick an angle.
+       */
+      readonly type: 'units';
+      readonly settings: UnitsSettings;
+      readonly direction?: true;
     };
 
 /** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
@@ -601,6 +616,10 @@ export type PromptAnswer =
       readonly qselect?: QuickSelectCriteria;
       /** Select Similar Settings' checkboxes as OK closed it, SELECTSIMILARMODE's bits. */
       readonly selectSimilar?: number;
+      /**
+       * Drawing Units' settings as OK (or Direction Control's Pick an angle, `select`) closed it.
+       */
+      readonly units?: UnitsSettings;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

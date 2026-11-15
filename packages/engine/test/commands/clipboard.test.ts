@@ -162,6 +162,87 @@ describe('PASTECLIP between drawings of other units (M2-32)', () => {
   });
 });
 
+// M3-09: where one of the two drawings is unitless, the paste asks what units it is in (PRD
+// FR-F9), Enter keeping AutoCAD's way of scaling nothing.
+describe('a paste between a unitless drawing and one with units (M3-09)', () => {
+  const unitless = (): DocumentInit => {
+    const init = sampleInit();
+    return { ...init, meta: { ...init.meta, insUnits: 0 } };
+  };
+
+  it('asks the units of the objects copied from a unitless drawing', async () => {
+    const a = app();
+    const one = a.drawing(1, unitless(), BOX);
+    const two = a.drawing(2); // millimetres
+    await one.bus.script(['COPYCLIP', 'ALL', '']);
+    await two.bus.script(['PASTECLIP']);
+    expect(two.bus.promptText).toBe(
+      'The objects come from a unitless drawing. Specify their units ' +
+        '[Unitless/Inches/Feet/Yards/Millimeters/Centimeters/MEters/Kilometers] <Unitless>:',
+    );
+    await two.bus.script(['I']);
+    // The dragged line is already 10 inches long in millimetres.
+    const [line] = two.previews.at(-1)! as unknown as {
+      start: { x: number };
+      end: { x: number };
+    }[];
+    expect(r6(line!.end.x - line!.start.x)).toBe(254);
+    await two.bus.script(['0,0']);
+    expect(ends(two.added()[0]!)).toEqual([0, 0, 254, 0]);
+    // The drawing pasted into keeps its own units.
+    expect(two.model.header.get('$INSUNITS')).toBeUndefined();
+  });
+
+  it('asks the units of a unitless drawing pasted into; Enter scales nothing', async () => {
+    const a = app();
+    const one = a.drawing(1, sampleInit(), BOX); // millimetres
+    const two = a.drawing(2, unitless());
+    await one.bus.script(['COPYCLIP', 'ALL', '']);
+    await two.bus.script(['PASTECLIP']);
+    expect(two.bus.promptText).toMatch(
+      /^This drawing is unitless\. Specify its units for the paste \[/,
+    );
+    await two.bus.script(['ME', '0,0']);
+    expect(ends(two.added()[0]!)).toEqual([0, 0, 0.01, 0]);
+    await two.bus.script(['PASTECLIP', '', '0,0']);
+    expect(ends(two.added().at(-3)!)).toEqual([0, 0, 10, 0]);
+  });
+
+  it('asks nothing between two unitless drawings or within one drawing', async () => {
+    const a = app();
+    const one = a.drawing(1, unitless(), BOX);
+    const two = a.drawing(2, unitless());
+    await one.bus.script(['COPYCLIP', 'ALL', '']);
+    await two.bus.script(['PASTECLIP']);
+    expect(two.bus.promptText).toBe('Specify insertion point:');
+    await two.bus.cancel();
+    await one.bus.script(['PASTECLIP']);
+    expect(one.bus.promptText).toBe('Specify insertion point:');
+    await one.bus.cancel();
+  });
+
+  it('scales PASTEBLOCK and PASTEORIG by the units named, and ends on Esc', async () => {
+    const a = app();
+    const one = a.drawing(1, unitless(), BOX);
+    const two = a.drawing(2);
+    await one.bus.script(['COPYCLIP', 'ALL', '']);
+    await two.bus.script(['PASTEBLOCK', 'Centimeters', '5,5']);
+    const [ref] = two.added().filter((e) => e.owner === MODEL_SPACE);
+    expect(ref!.geom).toMatchObject({ kind: 'INSERT', scale: { x: 10, y: 10, z: 10 } });
+    const block = two.model.tables.blockRecords.get(
+      (ref!.geom as { block: string }).block as never,
+    ) as { units?: number } | undefined;
+    expect(block?.units).toBe(5);
+    const before = two.added().length;
+    await two.bus.script(['PASTEORIG']);
+    await two.bus.cancel();
+    expect(two.added()).toHaveLength(before);
+    await two.bus.script(['PASTEORIG', 'F']);
+    const pasted = two.added().slice(before);
+    expect(ends(pasted[0]!)).toEqual([0, 0, 3048, 0]);
+  });
+});
+
 describe('CUTCLIP', () => {
   it('puts the objects on the Clipboard and removes them, as one undo step', async () => {
     const a = app();
