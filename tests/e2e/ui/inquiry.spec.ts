@@ -127,14 +127,14 @@ test('MEASUREGEOM Quick, the Arc option and LIST', async ({ page }) => {
   await answer(
     page,
     'A',
-    'Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo]:',
+    'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo]:',
   );
   await canvas.hover({ position: { x: centre.x + 60 * scale, y: centre.y - 10 * scale } });
   await shot('1-area-arc-dragged.png');
   await answer(
     page,
     '1100,1060',
-    'Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo/Total] <Total>:',
+    'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo/Total] <Total>:',
   );
   await answer(page, 'L', 'Specify next point or [Arc/Length/Undo/Total] <Total>:');
   await answer(page, '1000,1060', 'Specify next point or [Arc/Length/Undo/Total] <Total>:');

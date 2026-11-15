@@ -303,4 +303,13 @@ describe('ELLIPSE with PELLIPSE 1', () => {
     await bus.script(['PELLIPSE', '0', 'EL', '0,0', '4,0', '1']);
     expect(added().at(-1)!.type).toBe('ELLIPSE');
   });
+
+  it('reads a PELLIPSE kept as a flag, as a drawing read from a file may keep it', async () => {
+    const init = sampleInit();
+    (init.header as Map<string, HeaderValue>).set('$PELLIPSE', true);
+    const model = DocumentModel.create(init);
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    await bus.script(['EL', '0,0', '4,0', '1']);
+    expect([...model.entities()].at(-1)!.type).toBe('LWPOLYLINE');
+  });
 });

@@ -39,7 +39,9 @@ export function ellipseCommand(): CommandDef {
   return {
     name: 'ELLIPSE',
     async *run(ctx) {
-      const polyline = ctx.model.header.get('$PELLIPSE') === 1;
+      // The drawing may keep PELLIPSE as a number or, read from a file, a flag.
+      const pellipse = ctx.model.header.get('$PELLIPSE');
+      const polyline = pellipse === 1 || pellipse === true;
       const e = yield* ellipsePrompts(ctx, polyline);
       if (!e) return;
       const props = currentProps(ctx.model);
