@@ -6,6 +6,7 @@
 // a click elsewhere closes it.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { engines } from './engine/registry';
+import { keymap, keymapVersion } from './shortcuts';
 import { undoButtons, undoList, undoListPick, undoStates } from './undo';
 
 type Kind = 'undo' | 'redo';
@@ -13,7 +14,11 @@ type Kind = 'undo' | 'redo';
 export function UndoButtons({ doc }: { readonly doc: number | undefined }) {
   useSyncExternalStore(undoStates.subscribe, undoStates.version);
   const state = undoStates.get(doc);
-  const { undo, redo } = undoButtons(state);
+  useSyncExternalStore(keymapVersion.subscribe, keymapVersion.get);
+  const { undo, redo } = undoButtons(state, {
+    undo: keymap().keysOf('command:U')[0],
+    redo: keymap().keysOf('command:REDO')[0],
+  });
   const [open, setOpen] = useState<Kind | undefined>();
   const run = (name: string) => {
     if (doc !== undefined) engines.command(doc, { kind: 'invoke', name });

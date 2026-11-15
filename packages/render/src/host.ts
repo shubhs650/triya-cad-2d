@@ -37,6 +37,7 @@ import type {
   RenderStyle,
   ScreenRect,
   SelectQuery,
+  SelectionPreview,
   UnderlayRaster,
   UnderlayRequest,
   ViewTransform,
@@ -307,6 +308,12 @@ export class RendererHost {
   setGripHover(at: Vec2 | undefined, within: number): void {
     if (this.#session) this.#session.renderer.setGripHover(at, within);
     else this.#post({ type: 'grip-hover', at: at ?? null, within });
+  }
+
+  /** Where the pickbox is for the selection preview (M3-04 part 5); undefined, none. */
+  setSelectionPreview(preview: SelectionPreview | undefined): void {
+    if (this.#session) this.#session.renderer.setSelectionPreview(preview);
+    else this.#post({ type: 'selection-preview', preview: preview ?? null });
   }
 
   /** The extents of some entities (ZOOM Object, M2-03); undefined when none is known. */

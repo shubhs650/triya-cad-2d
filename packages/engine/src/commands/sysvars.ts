@@ -177,6 +177,12 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'PICKBOX', store: 'app', kind: 'integer', min: 0, max: 50 },
   { name: 'PICKADD', store: 'app', kind: 'integer', min: 0, max: 3 },
   { name: 'PICKAUTO', store: 'app', kind: 'integer', min: 0, max: 7 },
+  // M3-04 part 5 (AutoCAD 2024 Help, both "Saved in: Registry", initially 3): SELECTIONPREVIEW's
+  // bits 1 the preview at `Command:`, 2 at a command's object selection; PREVIEWFILTER's bits
+  // leave out objects on locked layers (1), in xrefs (2), tables (4), MTEXT (8), hatches (16) and
+  // objects in groups (32).
+  { name: 'SELECTIONPREVIEW', store: 'app', kind: 'integer', min: 0, max: 3 },
+  { name: 'PREVIEWFILTER', store: 'app', kind: 'integer', min: 0, max: 63 },
   // M3-12 (AutoCAD 2024 Help): the modify commands' options. OFFSETDIST the offset distance, a
   // negative value Through (initially −1), and CHAMMODE CHAMFER's method, 0 two distances or 1
   // a length and an angle (initially 0), are AutoCAD's unsaved variables: the app keeps them

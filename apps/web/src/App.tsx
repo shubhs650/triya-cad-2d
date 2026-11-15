@@ -161,7 +161,9 @@ import { PdfPages, fileKey } from './underlay/pages';
 import { openPdf } from './underlay/pdfjs';
 import { PlotPreview } from './PlotPreview';
 import { AliasEditor } from './AliasEditor';
+import { KeyboardShortcuts } from './KeyboardShortcuts';
 import { aliasesOf, applyAliasFile } from './user-aliases';
+import { applyKeyOverrides, onShortcuts } from './shortcuts';
 import {
   lastPlotSettings,
   plotRequest,
@@ -395,8 +397,10 @@ preferences.subscribe(() => {
   applyTheme(p.theme);
   selectionFilters.bind(p.filters, (filters) => preferences.update({ filters }));
   if (applyAliasFile(p.aliasFile)) for (const d of store.getSnapshot().docs) tellAliases(d.id);
+  applyKeyOverrides(p.keys);
 });
 applyAliasFile(preferences.get().aliasFile);
+applyKeyOverrides(preferences.get().keys);
 
 /** The user alias file's aliases (M3-10), which a drawing's command line runs over the defaults. */
 function tellAliases(doc: number): void {
@@ -1379,7 +1383,11 @@ export function App() {
   const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
   const [settings, setSettings] = useState(false);
   const [aliasEditor, setAliasEditor] = useState(false);
-  const aliasFile = useSyncExternalStore(preferences.subscribe, preferences.get).aliasFile;
+  const [shortcutEditor, setShortcutEditor] = useState(false);
+  const { aliasFile, keys: keyOverrides } = useSyncExternalStore(
+    preferences.subscribe,
+    preferences.get,
+  );
   // One palette docks at a time until the palette stack (M7-03); PROPERTIES opens one too.
   const palette = useSyncExternalStore(dockedPalette.subscribe, dockedPalette.get);
   const quickOn = useSyncExternalStore(drafting.subscribe, () => drafting.isOn('qp'));
@@ -1419,40 +1427,35 @@ export function App() {
     });
   }, []);
 
+  // The title bar's shortcut keys (M3-10 part 2, keymap.ts): Ctrl+O, Ctrl+S QSAVE and
+  // Ctrl+Shift+S SAVEAS (M2-13), Ctrl+1 the Properties palette (M2-21), whatever has the focus.
+  useEffect(
+    () =>
+      onShortcuts({
+        'file:open': () => {
+          pick();
+          return true;
+        },
+        'file:save': () => {
+          const { active } = store.getSnapshot();
+          if (active !== undefined) void saveDoc(active, 'qsave');
+          return true;
+        },
+        'file:saveas': () => {
+          const { active } = store.getSnapshot();
+          if (active !== undefined) void saveDoc(active, 'saveas');
+          return true;
+        },
+        properties: () => {
+          if (store.getSnapshot().active !== undefined) dockedPalette.toggle('properties');
+          return true;
+        },
+      }),
+    [pick],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        pick();
-      }
-      // Ctrl+S QSAVE, Ctrl+Shift+S SAVEAS (M2-13), whatever has the focus.
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        const { active } = store.getSnapshot();
-        if (active !== undefined) void saveDoc(active, e.shiftKey ? 'saveas' : 'qsave');
-      }
-      // Ctrl+P runs PLOT (M2-17), as in AutoCAD: the command owns the dialog (its Window<).
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        const { active } = store.getSnapshot();
-        if (active !== undefined) engines.command(active, { kind: 'invoke', name: 'PLOT' });
-      }
-      // Ctrl+Shift+P turns Quick Properties on or off (QPMODE, M2-35 part 16), as in AutoCAD.
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.shiftKey && e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        drafting.toggle('qp');
-      }
-      // Ctrl+W turns selection cycling on or off (SELECTIONCYCLING, M3-04 part 3), as in
-      // AutoCAD. A browser tab keeps Ctrl+W for itself; the installed app's window passes it on.
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'w') {
-        e.preventDefault();
-        drafting.toggle('sc');
-      }
-      // Ctrl+1 opens or closes the Properties palette (PROPERTIES, M2-21), as in AutoCAD.
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === '1') {
-        e.preventDefault();
-        if (store.getSnapshot().active !== undefined) dockedPalette.toggle('properties');
-      }
       // Esc ends real-time PAN and cancels ZOOM Window, as in AutoCAD.
       if (e.key === 'Escape') {
         const { docs, active } = store.getSnapshot();
@@ -1462,7 +1465,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pick]);
+  }, []);
 
   useEffect(() => {
     // A page going away writes the snapshots still waiting for their 5 s (M2-14).
@@ -1608,7 +1611,18 @@ export function App() {
         onAddFonts={addFonts}
         onAddFiles={addSupportFiles}
         onEditAliases={() => setAliasEditor(true)}
+        onEditShortcuts={() => setShortcutEditor(true)}
       />
+      {shortcutEditor && (
+        <KeyboardShortcuts
+          overrides={keyOverrides}
+          onOk={(keys) => {
+            preferences.update({ keys });
+            setShortcutEditor(false);
+          }}
+          onCancel={() => setShortcutEditor(false)}
+        />
+      )}
       {aliasEditor && (
         <AliasEditor
           file={aliasFile}
@@ -1850,6 +1864,7 @@ export function App() {
         cursor={() => lastCursor}
         onSettings={() => setSettings(true)}
         onEditAliases={() => setAliasEditor(true)}
+        onEditShortcuts={() => setShortcutEditor(true)}
         recent={recentFiles}
         onOpenRecent={(key) => void openRecent(key)}
       />
@@ -2139,6 +2154,8 @@ function ViewportCanvas({
           view,
         }),
       onSnapMenu: (at) => snapMenu.open(id, at),
+      // SELECTIONPREVIEW's bit 1 (M3-04 part 5) previews at `Command:` only.
+      atCommand: () => atCommand(id),
       // Rollover tooltips (M2-35 part 21): the object under a resting cursor at `Command:`.
       onRest: (at) => {
         void hoverRollover(rollovers, id, at, {

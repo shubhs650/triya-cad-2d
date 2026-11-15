@@ -18,6 +18,7 @@ import {
   type QpQuadrant,
 } from './drafting';
 import type { DynMode } from './dynamic-input';
+import { normalizeKeyOverrides, type KeyOverrides } from './keymap';
 import { closeOnDelete } from './local-data';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
 import { ALIAS_FILE_MAX } from './user-aliases';
@@ -83,6 +84,8 @@ export type DraftingPreferences = Pick<
   | 'pickbox'
   | 'pickadd'
   | 'pickauto'
+  | 'selectionPreview'
+  | 'previewFilter'
   | 'qpQuadrant'
   | 'qpDistance'
   | 'qpCollapse'
@@ -101,6 +104,8 @@ export interface Preferences {
   readonly filters: NamedFilters;
   /** The user alias file (M3-10, user-aliases.ts), acad.pgp syntax; '' for none. */
   readonly aliasFile: string;
+  /** The user's shortcut keys over AutoCAD's defaults (M3-10 part 2, keymap.ts). */
+  readonly keys: KeyOverrides;
 }
 
 /** POLARANG's choices in AutoCAD's Drafting Settings, degrees. */
@@ -154,6 +159,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     pickbox: 3,
     pickadd: 2,
     pickauto: 5,
+    selectionPreview: 3,
+    previewFilter: 3,
     qpQuadrant: 'top-right',
     qpDistance: 50,
     qpCollapse: true,
@@ -162,6 +169,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   filters: {},
   aliasFile: '',
+  keys: {},
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -226,6 +234,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       typeof raw['aliasFile'] === 'string' && raw['aliasFile'].length <= ALIAS_FILE_MAX
         ? raw['aliasFile']
         : d.aliasFile,
+    keys: normalizeKeyOverrides(raw['keys']),
     drafting: {
       // OSMODE's 14 mode bits and OSNAP_OFF.
       osmode:
@@ -272,6 +281,12 @@ export function normalizePreferences(raw: unknown): Preferences {
       pickbox: within(k['pickbox'], { min: 0, max: 50 }, d.drafting.pickbox),
       pickadd: within(k['pickadd'], { min: 0, max: 3 }, d.drafting.pickadd),
       pickauto: within(k['pickauto'], { min: 0, max: 7 }, d.drafting.pickauto),
+      selectionPreview: within(
+        k['selectionPreview'],
+        { min: 0, max: 3 },
+        d.drafting.selectionPreview,
+      ),
+      previewFilter: within(k['previewFilter'], { min: 0, max: 63 }, d.drafting.previewFilter),
       polarAddAngles:
         typeof polarAddAngles === 'string' && additionalAngles(polarAddAngles)
           ? polarAddAngles
@@ -373,6 +388,8 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     pickbox: s.pickbox,
     pickadd: s.pickadd,
     pickauto: s.pickauto,
+    selectionPreview: s.selectionPreview,
+    previewFilter: s.previewFilter,
     qpQuadrant: s.qpQuadrant,
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,

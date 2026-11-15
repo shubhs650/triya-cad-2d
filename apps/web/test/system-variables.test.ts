@@ -229,6 +229,15 @@ describe('system variables the app keeps', () => {
     expect(d.get()).toMatchObject({ pickbox: 8, pickadd: 0, pickauto: 1 });
   });
 
+  it('keep SELECTIONPREVIEW and PREVIEWFILTER (M3-04 part 5)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'SELECTIONPREVIEW')).toEqual({ ok: true, value: 3 });
+    expect(systemVariableReply(d, 'PREVIEWFILTER')).toEqual({ ok: true, value: 3 });
+    systemVariableReply(d, 'SELECTIONPREVIEW', 2);
+    systemVariableReply(d, 'PREVIEWFILTER', 16);
+    expect(d.get()).toMatchObject({ selectionPreview: 2, previewFilter: 16 });
+  });
+
   it('are answered by the view host, refused where the app keeps none', () => {
     const d = new Drafting();
     const ctx = { target: undefined, all: () => [], views: () => [] };

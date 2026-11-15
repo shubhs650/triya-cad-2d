@@ -82,6 +82,8 @@ describe('preferences', () => {
       pickbox: 3,
       pickadd: 2,
       pickauto: 5,
+      selectionPreview: 3,
+      previewFilter: 3,
       qpQuadrant: 'top-right',
       qpDistance: 50,
       qpCollapse: true,
@@ -101,6 +103,18 @@ describe('preferences', () => {
     expect(DEFAULT_PREFERENCES.filters).toEqual({});
     // No user alias file (M3-10).
     expect(DEFAULT_PREFERENCES.aliasFile).toBe('');
+    // AutoCAD's default shortcut keys (M3-10 part 2).
+    expect(DEFAULT_PREFERENCES.keys).toEqual({});
+  });
+
+  it('keep the user shortcut keys they can use (M3-10 part 2)', () => {
+    expect(
+      normalizePreferences({ keys: { 'command:LINE': ['ctrl+alt+l'], 'drafting:osnap': [] } }).keys,
+    ).toEqual({ 'command:LINE': ['Ctrl+Alt+L'], 'drafting:osnap': [] });
+    expect(normalizePreferences({ keys: { 'command:LINE': ['L'] } }).keys).toEqual({
+      'command:LINE': [],
+    });
+    expect(normalizePreferences({ keys: 'F1' }).keys).toEqual({});
   });
 
   it('keep the user alias file, unless it is not text or too long (M3-10)', () => {
@@ -122,6 +136,8 @@ describe('preferences', () => {
         pickbox: 10,
         pickadd: 0,
         pickauto: 7,
+        selectionPreview: 1,
+        previewFilter: 40,
         qpQuadrant: 'bottom-left',
         qpDistance: 120,
         qpCollapse: false,
@@ -135,6 +151,8 @@ describe('preferences', () => {
       pickbox: 10,
       pickadd: 0,
       pickauto: 7,
+      selectionPreview: 1,
+      previewFilter: 40,
       polarMode: 6,
       polarAddAngles: '12.5;80',
       snapType: 1,
@@ -156,6 +174,8 @@ describe('preferences', () => {
         pickbox: 51,
         pickadd: 4,
         pickauto: -1,
+        selectionPreview: 4,
+        previewFilter: 64,
         qpQuadrant: 'middle',
         qpDistance: 'far',
         qpCollapse: 'yes',
@@ -169,6 +189,8 @@ describe('preferences', () => {
       pickbox: 3,
       pickadd: 2,
       pickauto: 5,
+      selectionPreview: 3,
+      previewFilter: 3,
       polarMode: 0,
       polarAddAngles: '',
       snapType: 0,

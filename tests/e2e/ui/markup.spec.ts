@@ -252,6 +252,9 @@ test('REVCLOUD corner grips and Modify', async ({ page }) => {
   // Selected, the cloud shows its four corners, and no grip where two arcs meet along a side;
   // the upper right corner dragged out.
   await click(100, 80);
+  // Off the cloud, so the selection preview (M3-04 part 5) does not light it up as well.
+  const away = at(140, 95);
+  await page.mouse.move(away.x, away.y);
   await expect.poll(() => blue(page, at(20, 20))).toBeGreaterThan(20);
   expect(await blue(page, at(60, 20))).toBe(0);
   await shot('1-corner-grips.png');

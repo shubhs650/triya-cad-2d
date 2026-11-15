@@ -125,6 +125,14 @@ export interface DraftingState {
   readonly pickadd: number;
   readonly pickauto: number;
   /**
+   * M3-04 part 5 (AutoCAD 2024 Help), kept per user and initially 3: SELECTIONPREVIEW's bits 1
+   * the hover highlight at `Command:`, 2 at a command's object selection; PREVIEWFILTER's bits
+   * leave out of it objects on locked layers (1), in xrefs (2), tables (4), multiline text (8),
+   * hatches (16) and objects in groups (32).
+   */
+  readonly selectionPreview: number;
+  readonly previewFilter: number;
+  /**
    * The Drafting Settings dialog's Quick Properties tab (AutoCAD 2024 Help, "Quick Properties
    * Tab (Drafting Settings Dialog Box)"), kept per user: by the cursor, the quadrant and the
    * distance in pixels it goes at; whether it collapses, and to how many rows.
@@ -292,30 +300,23 @@ export type DraftingToggle =
   | 'groups'
   | 'groupBox';
 
-/** The function keys AutoCAD gives the toggles. */
-export const DRAFTING_KEYS: Readonly<Record<string, DraftingToggle>> = {
-  F3: 'osnap',
-  F7: 'grid',
-  F8: 'ortho',
-  F9: 'snap',
-  F10: 'polar',
-  F11: 'otrack',
-};
-
-/** The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). */
+/**
+ * The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). Their keys (F3, F7–F11,
+ * Ctrl+Shift+P, Ctrl+W, Ctrl+Shift+A, AutoCAD's) are the keyboard map's (keymap.ts, M3-10 part 2).
+ */
 export const DRAFTING_ITEMS = [
-  { id: 'drafting:osnap', label: 'Object Snap on/off', keys: 'F3' },
-  { id: 'drafting:grid', label: 'Grid Display on/off', keys: 'F7' },
-  { id: 'drafting:ortho', label: 'Ortho Mode on/off', keys: 'F8' },
-  { id: 'drafting:snap', label: 'Snap Mode on/off', keys: 'F9' },
-  { id: 'drafting:polar', label: 'Polar Tracking on/off', keys: 'F10' },
-  { id: 'drafting:otrack', label: 'Object Snap Tracking on/off', keys: 'F11' },
-  { id: 'drafting:lwt', label: 'Show/Hide Lineweight', keys: '' },
-  { id: 'drafting:tpy', label: 'Show/Hide Transparency', keys: '' },
-  { id: 'drafting:qp', label: 'Quick Properties on/off', keys: 'Ctrl+Shift+P' },
-  { id: 'drafting:sc', label: 'Selection Cycling on/off', keys: 'Ctrl+W' },
-  { id: 'drafting:groups', label: 'Group Selection on/off', keys: 'Ctrl+Shift+A' },
-  { id: 'drafting:groupBox', label: 'Group Bounding Box on/off', keys: '' },
+  { id: 'drafting:osnap', label: 'Object Snap on/off' },
+  { id: 'drafting:grid', label: 'Grid Display on/off' },
+  { id: 'drafting:ortho', label: 'Ortho Mode on/off' },
+  { id: 'drafting:snap', label: 'Snap Mode on/off' },
+  { id: 'drafting:polar', label: 'Polar Tracking on/off' },
+  { id: 'drafting:otrack', label: 'Object Snap Tracking on/off' },
+  { id: 'drafting:lwt', label: 'Show/Hide Lineweight' },
+  { id: 'drafting:tpy', label: 'Show/Hide Transparency' },
+  { id: 'drafting:qp', label: 'Quick Properties on/off' },
+  { id: 'drafting:sc', label: 'Selection Cycling on/off' },
+  { id: 'drafting:groups', label: 'Group Selection on/off' },
+  { id: 'drafting:groupBox', label: 'Group Bounding Box on/off' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -350,6 +351,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   pickbox: 3,
   pickadd: 2,
   pickauto: 5,
+  selectionPreview: 3,
+  previewFilter: 3,
   qpQuadrant: 'top-right',
   qpDistance: 50,
   qpCollapse: true,

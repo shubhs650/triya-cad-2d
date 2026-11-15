@@ -4,45 +4,35 @@
 // Their drop-down lists (M2-36) undo or redo several steps with one pick.
 import type { UndoAction, UndoState } from '@triya/engine';
 
-interface KeyPress {
-  readonly key: string;
-  readonly ctrlKey: boolean;
-  readonly metaKey: boolean;
-  readonly shiftKey: boolean;
-  readonly altKey: boolean;
-}
-
-/**
- * The undo command a key press runs: Ctrl+Z U and Ctrl+Y REDO, as AutoCAD binds them (Cmd for
- * Ctrl on a Mac, where Cmd+Shift+Z is redo too, as in AutoCAD for Mac), or undefined.
- */
-export function undoKeyCommand(e: KeyPress): string | undefined {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey) return undefined;
-  const key = e.key.toLowerCase();
-  if (key === 'z') return e.shiftKey ? (e.metaKey ? 'REDO' : undefined) : 'U';
-  if (key === 'y' && !e.shiftKey) return 'REDO';
-  return undefined;
-}
-
 export interface UndoButton {
   readonly enabled: boolean;
   readonly title: string;
 }
 
-/** The Undo and Redo buttons for a drawing's undo state (undefined: no drawing). */
-export function undoButtons(s: UndoState | undefined): {
+/**
+ * The Undo and Redo buttons for a drawing's undo state (undefined: no drawing), titled with the
+ * keys U and REDO have (the keyboard map's first, M3-10 part 2; none leaves the brackets out).
+ */
+export function undoButtons(
+  s: UndoState | undefined,
+  keys: { readonly undo?: string | undefined; readonly redo?: string | undefined } = {
+    undo: 'Ctrl+Z',
+    redo: 'Ctrl+Y',
+  },
+): {
   readonly undo: UndoButton;
   readonly redo: UndoButton;
 } {
+  const k = (key: string | undefined) => (key ? ` (${key})` : '');
   const undo: UndoButton =
     s?.control === 'none'
       ? { enabled: false, title: 'Undo is turned off' }
       : s && s.undoable > 0
-        ? { enabled: true, title: `Undo ${s.nextUndo ? `${s.nextUndo} ` : ''}(Ctrl+Z)` }
+        ? { enabled: true, title: `Undo${s.nextUndo ? ` ${s.nextUndo}` : ''}${k(keys.undo)}` }
         : { enabled: false, title: 'Nothing to undo' };
   const redo: UndoButton =
     s && s.redoable > 0
-      ? { enabled: true, title: `Redo ${s.nextRedo ? `${s.nextRedo} ` : ''}(Ctrl+Y)` }
+      ? { enabled: true, title: `Redo${s.nextRedo ? ` ${s.nextRedo}` : ''}${k(keys.redo)}` }
       : { enabled: false, title: 'Nothing to redo' };
   return { undo, redo };
 }
