@@ -336,6 +336,8 @@ const PRINTABLE_DASH = [6, 4];
 /** GRID's lines: the foreground's share of their colour, minor and major (M2-04 part 2). */
 const GRID_MINOR_MIX = 0.12;
 const GRID_MAJOR_MIX = 0.24;
+/** A dotted grid's dots, stronger than the minor lines as a dot covers so little. */
+const GRID_DOT_MIX = 0.6;
 /** The selection highlight (M2-03): colour, glow width and alpha, and dash, in CSS pixels. */
 const SELECTION_COLOR = '#4da3ff';
 const SELECTION_GLOW_PX = 5;
@@ -1761,21 +1763,37 @@ export class Canvas2DRenderer implements Renderer {
     const lines = gridLines(spec, view.box, this.#view.scale);
     if (!lines) return;
     const { m, ox, oy } = view;
-    const w = this.#width * this.#dpr;
-    const h = this.#height * this.#dpr;
     const { background, foreground } = this.#style;
     const toward = spec.color ?? foreground;
+    const dx = (x: number) => m.a * (x - ox) + m.e;
+    const dy = (y: number) => m.d * (y - oy) + m.f;
+    if (spec.dots) {
+      // GRIDSTYLE (M3-06 part 6): a dot of a device pixel or two where the lines cross.
+      const size = Math.max(1, Math.round(this.#dpr));
+      ctx.beginPath();
+      for (const x of lines.xs) {
+        const px = Math.round(dx(x));
+        for (const y of lines.ys) ctx.rect(px, Math.round(dy(y)), size, size);
+      }
+      ctx.fillStyle = mixColors(background, toward, spec.color ? 1 : GRID_DOT_MIX);
+      ctx.fill();
+      return;
+    }
+    // Lines across the view, or between the limits (GRIDDISPLAY without bit 1).
+    const e = lines.extent;
+    const [left, right] = e ? [dx(e.minX), dx(e.maxX)] : [0, this.#width * this.#dpr];
+    const [top, bottom] = e ? [dy(e.maxY), dy(e.minY)] : [0, this.#height * this.#dpr];
     const stroke = (xs: readonly number[], ys: readonly number[], mix: number) => {
       ctx.beginPath();
       for (const x of xs) {
-        const d = Math.round(m.a * (x - ox) + m.e) + 0.5;
-        ctx.moveTo(d, 0);
-        ctx.lineTo(d, h);
+        const d = Math.round(dx(x)) + 0.5;
+        ctx.moveTo(d, top);
+        ctx.lineTo(d, bottom);
       }
       for (const y of ys) {
-        const d = Math.round(m.d * (y - oy) + m.f) + 0.5;
-        ctx.moveTo(0, d);
-        ctx.lineTo(w, d);
+        const d = Math.round(dy(y)) + 0.5;
+        ctx.moveTo(left, d);
+        ctx.lineTo(right, d);
       }
       ctx.strokeStyle = mixColors(background, toward, mix);
       ctx.lineWidth = this.#dpr;
