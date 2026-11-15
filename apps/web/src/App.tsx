@@ -17,7 +17,7 @@ import type {
   ViewReply,
   ViewState,
 } from '@triya/engine';
-import { PICKFIRST, REVCLOUDGRIPS } from '@triya/engine';
+import { PICKFIRST, REVCLOUDGRIPS, lassoPrompt } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
@@ -2021,6 +2021,7 @@ function ViewportCanvas({
           ...(r?.deferred && { deferred: r.deferred }),
           ...(o.grip !== undefined && { grip: o.grip }),
           ...(o.ctrl && { ctrl: true }),
+          ...(o.lasso && { lasso: o.lasso }),
         });
         engines.command(
           id,
@@ -2028,6 +2029,7 @@ function ViewportCanvas({
         );
       },
       onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
+      onLasso: (kind) => commandLines.lasso(id, kind && lassoPrompt(kind)),
       // A view changed is an undo step of the drawing's (M2-47 part 4); U finds this canvas
       // again by the name given here (`viewContext`'s `viewport`).
       onViewStep: (label, view) =>

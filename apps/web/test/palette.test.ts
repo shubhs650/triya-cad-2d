@@ -105,6 +105,7 @@ describe('palette search', () => {
       'PROPERTIESCLOSE',
       'PUBLISH',
       'QSAVE',
+      'QSELECT',
       'QUICKPROPERTIES',
       'RAY',
       'RECTANG',
