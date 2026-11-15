@@ -75,6 +75,13 @@ interface PromptBase {
    */
   readonly ctrlCopies?: true;
   /**
+   * Offset or rotation snap (M3-05 part 6; AutoCAD 2024 Help, "To Make Multiple Copies with
+   * Grips"): once a grip mode has placed a copy, a point or angle picked with Ctrl held snaps to
+   * whole multiples of that copy's offset or angle (`offsetSnapPoint`). The command snaps the
+   * answer; the front-end drags the cursor snapped while Ctrl is held.
+   */
+  readonly offsetSnap?: OffsetSnap;
+  /**
    * The menu a right-click on the canvas shows while this prompt waits (M3-05 part 5: the grip
    * modes' menu, AutoCAD 2024 Help, "To Use Grips to Stretch, Move, Rotate, Scale or Mirror
    * Objects": "right-click to display a shortcut menu of grip options"). Each item answers as
@@ -108,6 +115,42 @@ interface PromptBase {
    * else a Ctrl pick is a plain one. The message says so itself (`CTRL_SWITCH`).
    */
   readonly switchDirection?: true;
+}
+
+/** A grip mode's offset snap: copies `step` apart from `from`, or `step` radians about `base`. */
+export type OffsetSnap =
+  | { readonly kind: 'offset'; readonly from: Vec2; readonly step: Vec2 }
+  | { readonly kind: 'rotation'; readonly base: Vec2; readonly step: number };
+
+/**
+ * The point `p` snapped by `snap`: to the nearest whole multiple of the step from its start
+ * along the step's line (or round the base, at the same distance from it), never the start
+ * itself, where the original is.
+ */
+export function offsetSnapPoint(snap: OffsetSnap, p: Vec2): Vec2 {
+  const nearest = (x: number) => {
+    const k = Math.round(x);
+    return k !== 0 ? k : x < 0 ? -1 : 1;
+  };
+  if (snap.kind === 'offset') {
+    const { from, step } = snap;
+    const l2 = step.x * step.x + step.y * step.y;
+    if (!(l2 > 0)) return p;
+    const k = nearest(((p.x - from.x) * step.x + (p.y - from.y) * step.y) / l2);
+    return { x: from.x + k * step.x, y: from.y + k * step.y };
+  }
+  const { base, step } = snap;
+  if (!(Math.abs(step) > 0)) return p;
+  const r = Math.hypot(p.x - base.x, p.y - base.y);
+  const a = nearest(Math.atan2(p.y - base.y, p.x - base.x) / step) * step;
+  return { x: base.x + r * Math.cos(a), y: base.y + r * Math.sin(a) };
+}
+
+/** The angle `a` (radians) snapped to the nearest whole multiple of `step`, never 0. */
+export function rotationSnapAngle(step: number, a: number): number {
+  if (!(Math.abs(step) > 0)) return a;
+  const k = Math.round(a / step);
+  return (k !== 0 ? k : a < 0 ? -1 : 1) * step;
 }
 
 /** The keyword a Ctrl tap answers at a prompt that `ctrlCycles`. */

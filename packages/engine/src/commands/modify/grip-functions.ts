@@ -53,6 +53,7 @@ const KEYWORD_OF: Readonly<Record<GripFunction, string>> = {
   'Above Dim Line': 'ABove dim line',
   'Center Vertically': 'CEnter vertically',
   'Reset Text Position': 'REset text position',
+  'Lengthen Landing': 'LAnding',
 };
 
 /** Each function keyword's function; STretch is either Stretch, as the grip has it. */
@@ -175,6 +176,7 @@ const ASKS: Readonly<Partial<Record<GripFunction, string>>> = {
   'Move with Dim Line': 'Specify point to place text',
   'Move Text Only': 'Specify point to place text',
   'Move with Leader': 'Specify point to place text',
+  'Lengthen Landing': 'Specify landing end point',
 };
 
 export type GripFunctionResult =

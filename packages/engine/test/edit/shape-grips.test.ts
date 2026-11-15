@@ -172,10 +172,13 @@ describe('ellipse grips', () => {
 
 describe('hatch grips', () => {
   it('one control grip at the centre of its extents, which moves it', () => {
-    expect(pts(hatch())).toEqual([[5, 3, 'move']]);
+    // An associative hatch follows its boundary objects: the control grip alone (M3-05 part 6
+    // gives a non-associative one its boundary's grips too: object-grips.test.ts).
+    expect(pts(hatch({ associative: true }))).toEqual([[5, 3, 'move']]);
     expect(moveGrip(hatch(), { x: 5, y: 3 }, { x: 9, y: 9 }).kind).toBe('move');
     // Edges count too; a hatch without a boundary has no grip.
     const edged = hatch({
+      associative: true,
       loops: [
         {
           flags: 1,

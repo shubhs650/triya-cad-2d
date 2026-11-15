@@ -48,6 +48,7 @@ import {
   constrainCursor,
   dragMotion,
   layoutSheet,
+  offsetSnapPoint,
   polarLabel,
   trackLabel,
   toWorld,
@@ -1857,8 +1858,11 @@ export class CanvasController {
    * The command's rubber band from its base point to the cursor (a rectangle for a window's
    * corners), or none, over the command's preview.
    */
-  #rubberBand(cursor: Point | undefined): void {
+  #rubberBand(at: Point | undefined): void {
     const p = this.#prompt;
+    // Ctrl held at a grip mode that has placed a copy: the cursor snaps to that copy's offset or
+    // angle (M3-05 part 6), as the click will.
+    const cursor = at && this.#ctrl && p?.offsetSnap ? offsetSnapPoint(p.offsetSnap, at) : at;
     // A command preview at a point prompt follows the point the drafting aids make (M3-12 part
     // 6); one by the object under the pickbox follows the pointer instead.
     if (!this.#asked?.commandPreview?.hover) this.#commandPreview(cursor);
@@ -2073,7 +2077,9 @@ export class CanvasController {
       }
       if (this.#ctrl === e.ctrlKey) return;
       this.#ctrl = e.ctrlKey;
-      if (this.#prompt?.switchDirection && this.#pointer && this.#mode === 'none') this.#track();
+      // The dragged arc switches (M3-01 part 6), or the copy snaps to the offset (M3-05 part 6).
+      const redrag = this.#prompt?.switchDirection || this.#prompt?.offsetSnap;
+      if (redrag && this.#pointer && this.#mode === 'none') this.#track();
     };
     // A button pressed while Ctrl is down makes it no tap.
     window.addEventListener('pointerdown', () => (this.#ctrlTap = false), opts);
