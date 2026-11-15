@@ -7,11 +7,15 @@ import {
   keymap,
   keymapVersion,
   onShortcuts,
+  overrideKey,
+  releaseShortcut,
   runShortcut,
 } from '../src/shortcuts';
+import { heldOverrides } from '../src/temp-overrides';
 
-const key = (k: string, o: { ctrl?: boolean; shift?: boolean } = {}) => ({
+const key = (k: string, o: { ctrl?: boolean; shift?: boolean; code?: string } = {}) => ({
   key: k,
+  ...(o.code !== undefined && { code: o.code }),
   ctrlKey: o.ctrl === true,
   metaKey: false,
   shiftKey: o.shift === true,
@@ -21,6 +25,7 @@ const key = (k: string, o: { ctrl?: boolean; shift?: boolean } = {}) => ({
 
 afterEach(() => {
   applyKeyOverrides({});
+  heldOverrides.clear();
 });
 
 describe('runShortcut', () => {
@@ -77,6 +82,56 @@ describe('runShortcut', () => {
     expect(runShortcut(key('F2'))).toBe(true);
     offB();
     expect(runShortcut(key('F2'))).toBe(false);
+  });
+});
+
+// M3-06 part 5: the temporary override keys are held: the override lasts until the key is let
+// go, and only while their owner takes them (a prompt for a point, nothing typed).
+describe('held override keys', () => {
+  it('holds an override while its key is down, Shift alone staying the browser\u2019s', () => {
+    let takes = true;
+    const asked: string[] = [];
+    const off = onShortcuts({ 'override:': (id) => (asked.push(id), takes) });
+    // Shift alone: ORTHO's override, held but not taken from the browser (Shift+click).
+    expect(runShortcut(key('Shift', { shift: true, code: 'ShiftLeft' }))).toBe(false);
+    expect(heldOverrides.active()).toEqual(['ortho']);
+    // Shift+E: Endpoint, and Shift alone stands aside while it is held.
+    expect(runShortcut(key('E', { shift: true, code: 'KeyE' }))).toBe(true);
+    expect(heldOverrides.active()).toEqual(['END']);
+    // A key repeat changes nothing.
+    expect(runShortcut(key('E', { shift: true, code: 'KeyE' }))).toBe(true);
+    releaseShortcut(key('E', { shift: true, code: 'KeyE' }));
+    expect(heldOverrides.active()).toEqual(['ortho']);
+    expect(runShortcut(key('>', { shift: true, code: 'Period' }))).toBe(true);
+    expect(heldOverrides.active()).toEqual(['polar']);
+    // Shift let go lets every override go.
+    releaseShortcut(key('Shift', { code: 'ShiftLeft' }));
+    expect(heldOverrides.active()).toEqual([]);
+    expect(asked).toEqual(['override:ortho', 'override:END', 'override:END', 'override:polar']);
+    // Declined (no point asked for, or text typed): the key types.
+    takes = false;
+    expect(runShortcut(key('E', { shift: true, code: 'KeyE' }))).toBe(false);
+    expect(heldOverrides.active()).toEqual([]);
+    off();
+    takes = true;
+    expect(runShortcut(key('E', { shift: true, code: 'KeyE' }))).toBe(false);
+  });
+
+  it('tells Dynamic Input which keys are override keys', () => {
+    expect(overrideKey(key('M', { shift: true, code: 'KeyM' }))).toBe(true);
+    expect(overrideKey(key('m', { code: 'KeyM' }))).toBe(false);
+    expect(overrideKey(key('Shift', { shift: true, code: 'ShiftLeft' }))).toBe(false);
+    expect(overrideKey(key('F3'))).toBe(false);
+  });
+
+  it("follows the user's override keys", () => {
+    const off = onShortcuts({ 'override:': () => true });
+    applyKeyOverrides({ 'override:ortho': ['Shift+O'] });
+    expect(runShortcut(key('Shift', { shift: true, code: 'ShiftLeft' }))).toBe(false);
+    expect(heldOverrides.active()).toEqual([]);
+    expect(runShortcut(key('O', { shift: true, code: 'KeyO' }))).toBe(true);
+    expect(heldOverrides.active()).toEqual(['ortho']);
+    off();
   });
 });
 
