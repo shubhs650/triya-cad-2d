@@ -561,6 +561,45 @@ describe('PromptBus', () => {
     expect(bus.history).toContain('<Offset>: @5,0');
   });
 
+  it('collects TK tracking points, each orthogonal to the last, until Enter (M3-06 part 4)', async () => {
+    const { bus, lines } = setup();
+    const before = lines().length;
+    // Enter before the first tracking point is no point.
+    await bus.script(['LINE', 'TK', '']);
+    expect(bus.history.at(-1)).toBe('Invalid point.');
+    expect(bus.promptText).toBe('First tracking point:');
+    expect(bus.prompt).toMatchObject({ kind: 'point' });
+    expect(bus.prompt).not.toHaveProperty('ortho');
+    await bus.submit('0,10');
+    expect(bus.promptText).toBe('Next point (Press ENTER to end tracking):');
+    expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 0, y: 10 } }, ortho: true });
+    // A picked point (a snap off the axis) keeps the coordinate it is further along: vertical here.
+    await bus.answer({ kind: 'point', point: { x: -3, y: 4 } });
+    expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 0, y: 4 } } });
+    // `@` counts from the last tracking point; a number goes that far towards the cursor.
+    await bus.submit('@5,1');
+    bus.pointer({ x: 5.5, y: -20 });
+    await bus.submit('3');
+    expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 5, y: 1 } } });
+    await bus.answer({ kind: 'enter' });
+    expect(bus.lastPoint).toEqual({ x: 5, y: 1 });
+    expect(bus.promptText).toMatch(/^Specify next point/);
+    // TK inside FROM: its base point is tracked, Enter hands it on to the offset.
+    await bus.script(['FROM', 'TK', '0,0', '7,1', '', '@0,2', '']);
+    const ends = lines()
+      .slice(before)
+      .map((l) => [l.start, l.end]);
+    expect(ends).toEqual([
+      [
+        { x: 5, y: 1 },
+        { x: 7, y: 2 },
+      ],
+    ]);
+    expect(bus.history).toContain('First tracking point: 0,10');
+    expect(bus.history).toContain('Next point (Press ENTER to end tracking): @5,1');
+    expect(bus.history).toContain('Next point (Press ENTER to end tracking):');
+  });
+
   it('refuses a bad point inside a modifier and keeps it through a transparent command', async () => {
     const { bus } = setup();
     await bus.script(['LINE', 'FROM', 'abc']);

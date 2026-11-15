@@ -99,6 +99,11 @@ describe('the Drafting Settings dialog', () => {
       osnap: false,
       modes: 5,
       otrack: true,
+      dynPointer: true,
+      dynDimension: true,
+      dynPrompt: true,
+      dynAbsolute: false,
+      dynCartesian: false,
       qp: false,
       qpMode: 2,
       qpLocation: 0,
@@ -142,6 +147,10 @@ describe('the Drafting Settings dialog', () => {
       polarDist: 0,
       osmode: OSNAP.END | OSNAP.MID | OSNAP_OFF,
       otrack: false,
+      dynBits: 3,
+      dynPrompt: true,
+      dynPiCoords: 0,
+      dynPiFormat: 0,
       qpmode: 2,
       qpLocation: 1,
       qpQuadrant: 'bottom-left',
@@ -234,6 +243,7 @@ describe('the Snap and Grid tab', () => {
       'Snap and Grid',
       'Polar Tracking',
       'Object Snap',
+      'Dynamic Input',
       'Quick Properties',
     ]);
     const d = draftOf(state({ snap: true, grid: true }), drawing);
@@ -300,5 +310,33 @@ describe('the Object Snap tab’s markers', () => {
     expect(markerSvgPath('END', 5)).toBe('M-5 5L5 5L5 -5L-5 -5Z');
     expect(markerSvgPath('CEN', 5)).toBe('M5 0M5 0A5 5 0 1 0 -5 0A5 5 0 1 0 5 0');
     for (const { mode } of OSNAP_MODES) expect(markerSvgPath(mode, 5)).toMatch(/^M/);
+  });
+});
+
+describe('the Dynamic Input tab (M3-06 part 4)', () => {
+  it('comes before Quick Properties, as AutoCAD’s does', () => {
+    const tabs = DRAFTING_SETTINGS_TABS.map((t) => t.label);
+    expect(tabs.indexOf('Dynamic Input')).toBe(tabs.indexOf('Quick Properties') - 1);
+  });
+
+  it('shows DYNMODE’s bits, DYNPROMPT, DYNPICOORDS and DYNPIFORMAT, and OK sets them', () => {
+    const d = draftOf(state());
+    expect(d).toMatchObject({
+      dynPointer: true,
+      dynDimension: true,
+      dynPrompt: true,
+      dynAbsolute: false,
+      dynCartesian: false,
+    });
+    const set = draftPatch(
+      { ...d, dynPointer: false, dynPrompt: false, dynAbsolute: true, dynCartesian: true },
+      state(),
+    );
+    expect(set).toMatchObject({ dynBits: 2, dynPrompt: false, dynPiCoords: 1, dynPiFormat: 1 });
+    expect(draftOf(state({ dynBits: 1, dynPiFormat: 1 }))).toMatchObject({
+      dynPointer: true,
+      dynDimension: false,
+      dynCartesian: true,
+    });
   });
 });

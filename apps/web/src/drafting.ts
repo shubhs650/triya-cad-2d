@@ -93,6 +93,17 @@ export interface DraftingState {
   /** POLARDIST: PolarSnap's distance, 0 for the snap X spacing. Per user, initially 0. */
   readonly polarDist: number;
   /**
+   * The Drafting Settings dialog's Dynamic Input tab (M3-06 part 4), kept per user as AutoCAD
+   * keeps them: DYNMODE's bits (1 pointer input, 2 dimension input; initially 3), which F12
+   * turns on and off as a whole (`DynMode`); DYNPROMPT, the prompt at the cursor (initially on);
+   * DYNPICOORDS, pointer input's next points relative (0, initially) or absolute (1); and
+   * DYNPIFORMAT, their format polar (0, initially) or Cartesian (1).
+   */
+  readonly dynBits: number;
+  readonly dynPrompt: boolean;
+  readonly dynPiCoords: 0 | 1;
+  readonly dynPiFormat: 0 | 1;
+  /**
    * SELECTSIMILARMODE (M3-04 part 3): the properties SELECTSIMILAR matches, AutoCAD's bits (1
    * Color, 2 Layer, 4 Linetype, 8 Linetype scale, 16 Lineweight, 32 Plot style, 64 Object
    * style, 128 Name). AutoCAD keeps it per user, initially 130.
@@ -326,6 +337,10 @@ export const INITIAL_DRAFTING: DraftingState = {
   polarAddAngles: '',
   snapType: 0,
   polarDist: 0,
+  dynBits: 3,
+  dynPrompt: true,
+  dynPiCoords: 0,
+  dynPiFormat: 0,
   selectSimilarMode: 130,
   selectionCycling: 0,
   pickStyle: 1,

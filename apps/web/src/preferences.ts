@@ -77,6 +77,10 @@ export type DraftingPreferences = Pick<
   | 'polarAddAngles'
   | 'snapType'
   | 'polarDist'
+  | 'dynBits'
+  | 'dynPrompt'
+  | 'dynPiCoords'
+  | 'dynPiFormat'
   | 'selectSimilarMode'
   | 'selectionCycling'
   | 'pickStyle'
@@ -151,6 +155,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
     polarAddAngles: '',
     snapType: 0,
     polarDist: 0,
+    dynBits: 3,
+    dynPrompt: true,
+    dynPiCoords: 0,
+    dynPiFormat: 0,
     selectSimilarMode: 130,
     selectionCycling: 0,
     pickStyle: 1,
@@ -289,6 +297,10 @@ export function normalizePreferences(raw: unknown): Preferences {
         typeof k['polarDist'] === 'number' && Number.isFinite(k['polarDist']) && k['polarDist'] >= 0
           ? k['polarDist']
           : d.drafting.polarDist,
+      dynBits: within(k['dynBits'], { min: 0, max: 3 }, d.drafting.dynBits),
+      dynPrompt: bool(k['dynPrompt'], d.drafting.dynPrompt),
+      dynPiCoords: within(k['dynPiCoords'], { min: 0, max: 1 }, d.drafting.dynPiCoords) as 0 | 1,
+      dynPiFormat: within(k['dynPiFormat'], { min: 0, max: 1 }, d.drafting.dynPiFormat) as 0 | 1,
       qpQuadrant: QP_QUADRANTS.some((q) => q.value === qpQuadrant)
         ? (qpQuadrant as QpQuadrant)
         : d.drafting.qpQuadrant,
@@ -374,6 +386,10 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     polarAddAngles: s.polarAddAngles,
     snapType: s.snapType,
     polarDist: s.polarDist,
+    dynBits: s.dynBits,
+    dynPrompt: s.dynPrompt,
+    dynPiCoords: s.dynPiCoords,
+    dynPiFormat: s.dynPiFormat,
     selectSimilarMode: s.selectSimilarMode,
     selectionCycling: s.selectionCycling,
     pickStyle: s.pickStyle,

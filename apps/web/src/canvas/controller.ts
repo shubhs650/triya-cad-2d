@@ -2068,7 +2068,8 @@ export class CanvasController {
           ...(vport?.snapBase && { snapBase: vport.snapBase }),
         }),
       ...(polarSnap !== undefined && { polarSnap }),
-      ortho: d.ortho,
+      // TK's next tracking point goes orthogonally whatever ORTHO says (M3-06 part 4).
+      ortho: d.ortho || (p?.kind === 'point' && p.ortho === true),
       ...trackingSettings(d, last),
       tolerance: TRACK_PX * this.#px(),
       ...(this.#acquired.length > 0 && { acquired: this.#acquired }),
@@ -2206,10 +2207,26 @@ export class CanvasController {
   async #pointAt(world: Vec2): Promise<PickedPoint> {
     const hits = (await this.#snapAt(world)).filter((h) => !h.track);
     const hit = hits[this.#cycle < hits.length ? this.#cycle : 0];
-    if (hit) return { point: hit.point, ...(hit.deferred && { deferred: hit.deferred }) };
+    if (hit) {
+      const point = this.#along(world, hit.point);
+      return { point, ...(hit.deferred && { deferred: hit.deferred }) };
+    }
     const p = this.#prompt;
     const missed = p?.kind === 'point' && p.osnap !== undefined && p.osnap !== 0;
     return { point: this.#constrain(world).point, ...(missed && { missed: true }) };
+  }
+
+  /**
+   * A snap at a prompt whose point goes orthogonally (TK's next tracking point, M3-06 part 4):
+   * the snap's X or Y along the axis the cursor goes from the base, as AutoCAD's tracking takes
+   * it; elsewhere the snap itself.
+   */
+  #along(world: Vec2, snap: Vec2): Vec2 {
+    const p = this.#prompt;
+    const base = this.#base();
+    if (p?.kind !== 'point' || !p.ortho || !base) return snap;
+    const c = this.#constrain(world).point;
+    return c.y === base.y && c.x !== base.x ? { x: snap.x, y: base.y } : { x: base.x, y: snap.y };
   }
 
   /**
@@ -2257,7 +2274,7 @@ export class CanvasController {
     const trackTip = (bits & AUTOSNAP_TRACK_TIP) !== 0;
     if (hit) {
       // Without the magnet the rubber band stays at the cursor; a click still takes the snap.
-      if (bits & AUTOSNAP_MAGNET) point = hit.point;
+      if (bits & AUTOSNAP_MAGNET) point = this.#along(world, hit.point);
       this.#overlay = [
         ...acquired,
         ...(bits & AUTOSNAP_MARKER
