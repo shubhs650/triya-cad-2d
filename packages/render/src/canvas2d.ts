@@ -43,6 +43,8 @@ import {
   moveGripBy,
   sameGrip,
   translation,
+  unionBox,
+  type GroupGrip,
   paperUnitsPerMm,
   previewObjects,
   viewportFrame,
@@ -606,8 +608,17 @@ export class Canvas2DRenderer implements Renderer {
         readonly gripMove: Matrix2D;
       }
     | undefined;
-  /** The objects grips show on, and the hot grip (M2-06 part 2). */
-  #grips: { readonly ids: readonly EntityId[]; readonly hot: Vec2 | undefined } | undefined;
+  /**
+   * The objects grips show on, and the hot grip (M2-06 part 2); the groups shown by one grip
+   * each (GROUPDISPLAYMODE, M3-13).
+   */
+  #grips:
+    | {
+        readonly ids: readonly EntityId[];
+        readonly hot: Vec2 | undefined;
+        readonly groups: readonly GroupGrip[];
+      }
+    | undefined;
   /** The cursor, and how near a grip counts as under it (M3-05 part 2), for GRIPHOVER. */
   #gripHover: { readonly at: Vec2; readonly within: number } | undefined;
   /** The objects the selection preview highlights (M3-04 part 5). */
@@ -826,10 +837,31 @@ export class Canvas2DRenderer implements Renderer {
    * Grips are drawn at the style's GRIPSIZE in GRIPCOLOR (ACI 150) and GRIPHOT (ACI 12), over
    * everything, AutoCAD's defaults.
    */
-  setGrips(ids: readonly EntityId[], hot?: Vec2): void {
-    if (ids.length === 0 && !this.#grips) return;
-    this.#grips = ids.length > 0 ? { ids, hot } : undefined;
+  setGrips(ids: readonly EntityId[], hot?: Vec2, groups: readonly GroupGrip[] = []): void {
+    const shown = ids.length > 0 || groups.length > 0;
+    if (!shown && !this.#grips) return;
+    this.#grips = shown ? { ids, hot, groups } : undefined;
     this.#transientDirty = true;
+  }
+
+  /**
+   * A selected group's one grip (GROUPDISPLAYMODE, M3-13): the centre of its objects' extents as
+   * the spatial index bounds them, the point the engine asks the canvas for (`bounds`), and that
+   * box. None for objects without extents.
+   */
+  #groupGrips(): { readonly center: Vec2; readonly box: Box | undefined }[] {
+    const out: { center: Vec2; box: Box | undefined }[] = [];
+    for (const g of this.#grips?.groups ?? []) {
+      let box: Box | undefined;
+      for (const id of g.ids) {
+        const b = this.#index.bounds(id);
+        if (b?.kind === 'box') box = box ? unionBox(box, b.box) : b.box;
+      }
+      if (!box) continue;
+      const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+      out.push({ center, box: g.box ? box : undefined });
+    }
+    return out;
   }
 
   /**
@@ -1404,16 +1436,60 @@ export class Canvas2DRenderer implements Renderer {
     ctx.globalAlpha = 1;
     const seen = new Set<string>();
     const hover = this.#hoveredGrip();
+    const device = (p: Vec2) => ({
+      x: Math.round(m.a * (p.x - ox) + m.c * (p.y - oy) + m.e),
+      y: Math.round(m.b * (p.x - ox) + m.d * (p.y - oy) + m.f),
+    });
+    const square = (x: number, y: number, fill: string) => {
+      // A dark edge keeps the grip visible on any background.
+      ctx.fillStyle = GRIP_EDGE;
+      ctx.fillRect(x - half - 1, y - half - 1, 2 * half + 2, 2 * half + 2);
+      ctx.fillStyle = fill;
+      ctx.fillRect(x - half, y - half, 2 * half, 2 * half);
+    };
+    const fillOf = (p: Vec2) =>
+      grips.hot !== undefined && sameGrip(p, grips.hot)
+        ? GRIP_HOT
+        : hover && sameGrip(p, hover)
+          ? GRIP_HOVER
+          : GRIP_COLOR;
+    // A selected group (M3-13): its bounding box at GROUPDISPLAYMODE 2, a device pixel wide in
+    // the grip colour, then its one grip at the centre.
+    const groups = this.#groupGrips();
+    for (const { box } of groups) {
+      if (!box) continue;
+      const corners = [
+        device({ x: box.minX, y: box.minY }),
+        device({ x: box.maxX, y: box.minY }),
+        device({ x: box.maxX, y: box.maxY }),
+        device({ x: box.minX, y: box.maxY }),
+      ];
+      const width = Math.max(1, Math.round(this.#dpr));
+      // An odd width sits on pixel centres, so the line is crisp, not two half-tone pixels.
+      const o = width % 2 === 1 ? 0.5 : 0;
+      ctx.strokeStyle = GRIP_COLOR;
+      ctx.lineWidth = width;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(corners[0]!.x + o, corners[0]!.y + o);
+      for (const c of corners.slice(1)) ctx.lineTo(c.x + o, c.y + o);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    for (const { center } of groups) {
+      const { x, y } = device(center);
+      if (seen.has(`${x},${y}`)) continue;
+      seen.add(`${x},${y}`);
+      square(x, y, fillOf(center));
+    }
     for (const id of grips.ids) {
       const e = this.#model.entity(id);
       if (!e) continue;
       for (const g of gripsOf(e.geom, gripInfoOf(this.#model, e))) {
-        const x = Math.round(m.a * (g.point.x - ox) + m.c * (g.point.y - oy) + m.e);
-        const y = Math.round(m.b * (g.point.x - ox) + m.d * (g.point.y - oy) + m.f);
+        const { x, y } = device(g.point);
         if (seen.has(`${x},${y}`)) continue;
         seen.add(`${x},${y}`);
-        const hot = grips.hot !== undefined && sameGrip(g.point, grips.hot);
-        const fill = hot ? GRIP_HOT : hover && sameGrip(g.point, hover) ? GRIP_HOVER : GRIP_COLOR;
+        const fill = fillOf(g.point);
         if (g.towards) {
           // An arrow grip (M2-26 part 2: an MTEXT's column width and height), pointing the way
           // it sizes, as AutoCAD draws them.
@@ -1423,11 +1499,7 @@ export class Canvas2DRenderer implements Renderer {
           arrowGrip(ctx, x, y, dx / len, dy / len, half, fill);
           continue;
         }
-        // A dark edge keeps the grip visible on any background.
-        ctx.fillStyle = GRIP_EDGE;
-        ctx.fillRect(x - half - 1, y - half - 1, 2 * half + 2, 2 * half + 2);
-        ctx.fillStyle = fill;
-        ctx.fillRect(x - half, y - half, 2 * half, 2 * half);
+        square(x, y, fill);
       }
     }
   }
@@ -1438,6 +1510,13 @@ export class Canvas2DRenderer implements Renderer {
     if (!h || !this.#grips) return undefined;
     let best: Vec2 | undefined;
     let bestD = h.within;
+    for (const { center } of this.#groupGrips()) {
+      const d = Math.hypot(center.x - h.at.x, center.y - h.at.y);
+      if (d <= bestD) {
+        best = center;
+        bestD = d;
+      }
+    }
     for (const id of this.#grips.ids) {
       const e = this.#model.entity(id);
       if (!e) continue;

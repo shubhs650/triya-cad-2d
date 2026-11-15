@@ -13,7 +13,8 @@
 //   association, a leader's annotation, a viewport's clip, a group's member list.
 // - A copy is a new object: its own handle (and its ATTRIBs'), no reactors or extension
 //   dictionary, so no associativity or group membership, except that hatches copied with their
-//   whole boundary stay associative with the copies. Copies of annotative objects are not
+//   whole boundary stay associative with the copies, and a copy of a whole group, left in its
+//   space, is a new unnamed group of the copies (M3-13). Copies of annotative objects are not
 //   annotative (a new annotative object is DEC-013's, not saved yet).
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
@@ -34,6 +35,7 @@ import type {
   Xdata,
 } from '../model/types';
 import { copyAssocArrays } from './assoc-array';
+import { copyGroups } from './groups';
 import { isAssocArray } from '../model/types';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry, type StretchOptions } from './stretch';
@@ -569,6 +571,8 @@ export function copyObjects(
   }
   // A copy of an associative array is an array of its own (M3-11).
   copyAssocArrays(b, model, copies, names);
+  // A copy of a whole group, left in its space, is a group of its own (M3-13).
+  if (into === undefined) copyGroups(b, model, copies);
   const made = [...copies.values()];
   return {
     ids: made.map((e) => e.id),

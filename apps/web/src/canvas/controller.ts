@@ -54,6 +54,7 @@ import {
   type Box,
   type ChangeSet,
   type EntityId,
+  type GroupGrip,
   type Handle,
   type HeaderValue,
   type Layout,
@@ -952,9 +953,9 @@ export class CanvasController {
   }
 
   /** The objects to show grips on, and the hot grip (M2-06 part 2). */
-  setGrips(ids: readonly EntityId[], hot?: Vec2): void {
-    this.#host.setGrips(ids, hot);
-    this.#gripsHoverable = ids.length > 0 && !hot;
+  setGrips(ids: readonly EntityId[], hot?: Vec2, groups: readonly GroupGrip[] = []): void {
+    this.#host.setGrips(ids, hot, groups);
+    this.#gripsHoverable = (ids.length > 0 || groups.length > 0) && !hot;
     if (!this.#gripsHoverable) this.#hoverGrip(undefined);
     this.#requestFrame();
   }

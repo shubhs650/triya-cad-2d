@@ -7,7 +7,7 @@ import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
 import { PICKFIRST } from '../commands/sysvars';
-import { PICKADD, PICKAUTO } from '../selection/loop';
+import { GROUPDISPLAYMODE, PICKADD, PICKAUTO, PICKSTYLE } from '../selection/loop';
 import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
@@ -103,10 +103,13 @@ export type SessionVariableEdit =
       readonly name: typeof REVCLOUDGRIPS | typeof PICKFIRST;
       readonly value: 0 | 1;
     }
-  /** PICKADD (0 to 3) and PICKAUTO (0 to 7), which its "Select objects" follows (M3-04 part 4). */
+  /**
+   * PICKADD (0 to 3) and PICKAUTO (0 to 7), which its "Select objects" follows (M3-04 part 4);
+   * PICKSTYLE (0 to 3) and GROUPDISPLAYMODE (0 to 2), which its grips on groups follow (M3-13).
+   */
   | {
       readonly kind: 'sysvar';
-      readonly name: typeof PICKADD | typeof PICKAUTO;
+      readonly name: typeof PICKADD | typeof PICKAUTO | typeof PICKSTYLE | typeof GROUPDISPLAYMODE;
       readonly value: number;
     };
 
@@ -552,12 +555,14 @@ export class EngineSession {
   }
 
   #sessionVariable(e: SessionVariableEdit): EditResult {
-    if (e.name === PICKADD || e.name === PICKAUTO) {
-      const max = e.name === PICKADD ? 3 : 7;
+    const most = { [PICKADD]: 3, [PICKAUTO]: 7, [PICKSTYLE]: 3, [GROUPDISPLAYMODE]: 2 } as const;
+    if (e.name in most) {
+      const name = e.name as keyof typeof most;
+      const max = most[name];
       if (!Number.isInteger(e.value) || e.value < 0 || e.value > max) {
         return { ok: false, message: `Cannot set ${e.name} to ${e.value}.` };
       }
-      this.#bus.setPickVariable(e.name, e.value);
+      this.#bus.setPickVariable(name, e.value);
       return { ok: true, change: {} };
     }
     const known = e.name === REVCLOUDGRIPS || e.name === PICKFIRST;
