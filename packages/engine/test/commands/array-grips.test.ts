@@ -12,9 +12,12 @@ import {
   PromptBus,
   applyPoint,
   arrayGripEdit,
+  arrayGripPreview,
   assocArrayOf,
   builtinCommands,
   compose,
+  dragMotion,
+  GRIP_CYCLE,
   gripInfoOf,
   gripsOf,
   insertMatrix,
@@ -505,5 +508,94 @@ describe('array grip helpers', () => {
       'An array is being edited: save or discard its changes with ARRAYCLOSE first.',
     );
     expect(s.bus.command).toBeUndefined();
+  });
+});
+
+// M3-05 part 7: AutoCAD redraws the array as a triangle grip is dragged. The prompt says what
+// is dragged (`drag` kind `array`), `dragMotion` passes the cursor on, and `arrayGripPreview`
+// gives each item of the array the click would make: its block and where it goes.
+describe('the array redrawn as its grip is dragged', () => {
+  /** Where each preview item puts its block's objects' first points, sorted. */
+  function previewed(
+    s: ReturnType<typeof setup>,
+    role: Parameters<typeof arrayGripPreview>[3],
+    fn: string,
+    to: { x: number; y: number },
+  ): number[][] | undefined {
+    const items = arrayGripPreview(s.model, s.array(), s.record(), role, fn, to);
+    if (!items) return undefined;
+    const out: number[][] = [];
+    for (const { block, m } of items) {
+      for (const id of s.model.blockEntities(block)) {
+        const g = s.model.entity(id)!.geom;
+        if (g.kind !== 'CIRCLE' && g.kind !== 'LINE') continue;
+        const p = applyPoint(m, g.kind === 'CIRCLE' ? g.center : g.start);
+        out.push([r4(p.x), r4(p.y)]);
+      }
+    }
+    return out.sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
+  }
+
+  it('a count grip drags the array its click would make', async () => {
+    const s = await rectangular();
+    await s.hot({ x: 9, y: 0 });
+    const drag = s.bus.prompt!.drag!;
+    expect(drag).toEqual({
+      kind: 'array',
+      id: s.array().id,
+      role: 'columnCount',
+      fn: 'Column count',
+    });
+    expect(dragMotion(drag, { x: 15.4, y: 2 })).toEqual({
+      ids: [],
+      m: IDENTITY,
+      array: { id: s.array().id, role: 'columnCount', fn: 'Column count', to: { x: 15.4, y: 2 } },
+    });
+    expect(previewed(s, 'columnCount', 'Column count', { x: 15.4, y: 2 })).toEqual(
+      grid([0, 3, 6, 9, 12, 15], [0, 3, 6]),
+    );
+    // What the click makes is what was drawn.
+    await s.bus.submit('15.4,2');
+    expect(s.drawn()).toEqual(grid([0, 3, 6, 9, 12, 15], [0, 3, 6]));
+  });
+
+  it('follows the function Ctrl or an option goes on to', async () => {
+    const s = await rectangular();
+    await s.hot({ x: 9, y: 0 });
+    await s.bus.answer({ kind: 'keyword', keyword: GRIP_CYCLE });
+    expect(s.bus.prompt!.drag).toMatchObject({ kind: 'array', fn: 'Total spacing' });
+    // Four columns spread over 12.
+    expect(previewed(s, 'columnCount', 'Total spacing', { x: 12, y: 0 })).toEqual(
+      grid([0, 4, 8, 12], [0, 3, 6]),
+    );
+  });
+
+  it('a polar array: the item angle, and the radius stretched with its objects shifted', async () => {
+    const s = await polar();
+    expect(previewed(s, 'itemAngle', 'Item angle', { x: 1, y: 1 })).toHaveLength(4);
+    // The base grip at (2.5, 0) dragged to (5, 0): the sticks 2.5 further out.
+    const out = previewed(s, 'radius', 'Stretch radius', { x: 5, y: 0 })!;
+    expect(out).toEqual([
+      [-4.5, 0],
+      [0, -4.5],
+      [0, 4.5],
+      [4.5, 0],
+    ]);
+  });
+
+  it('a path array along its path', async () => {
+    const s = await path();
+    const out = previewed(s, 'lastItem', 'Count', { x: 9.2, y: 10 })!;
+    expect(out).toEqual([
+      [0, 10],
+      [3, 10],
+      [6, 10],
+      [9, 10],
+    ]);
+  });
+
+  it('draws nothing where the point makes no array', async () => {
+    const s = await rectangular();
+    expect(previewed(s, 'columnSpacing', 'Column spacing', { x: 0, y: 0 })).toBeUndefined();
   });
 });

@@ -112,6 +112,8 @@ export async function* editArrayByGrip(
       options,
       rubberBand: { from: hot },
       arbitrary: true,
+      // The array drawn remade as the cursor drags the grip (M3-05 part 7).
+      drag: { kind: 'array', id, role, fn },
       ...(functions.length > 1 && { ctrlCycles: true as const }),
     });
     if (a.kind === 'keyword') {

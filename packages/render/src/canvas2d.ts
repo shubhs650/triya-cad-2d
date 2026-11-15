@@ -32,6 +32,8 @@
 
 import {
   applyPoint,
+  arrayGripPreview,
+  assocArrayOf,
   stretchInside,
   invert,
   layoutSheet,
@@ -618,8 +620,12 @@ export class Canvas2DRenderer implements Renderer {
         /** Objects a grip moves whole, by `gripMove`. */
         readonly gripMoved: readonly CacheEntry[];
         readonly gripMove: Matrix2D;
+        /** An array's items remade by its grip (M3-05 part 7): a block's entry through `m`. */
+        readonly items: readonly { readonly entry: CacheEntry; readonly m: Matrix2D }[];
       }
     | undefined;
+  /** The array preview's blocks tessellated once per drag: an INSERT of each at its base. */
+  #itemBlocks = new Map<string, CacheEntry | undefined>();
   /**
    * The objects grips show on, and the hot grip (M2-06 part 2); the groups shown by one grip
    * each (GROUPDISPLAYMODE, M3-13).
@@ -775,6 +781,7 @@ export class Canvas2DRenderer implements Renderer {
 
   setDrag(motion: DragMotion | undefined): void {
     if (!motion) {
+      this.#itemBlocks.clear();
       if (!this.#drag) return;
       this.#drag = undefined;
       this.#transientDirty = true;
@@ -840,8 +847,42 @@ export class Canvas2DRenderer implements Renderer {
       if (entry) stretched.push(entry);
     }
     const gripMove = g ? translation(g.to.x - g.from.x, g.to.y - g.from.y) : motion.m;
-    this.#drag = { moved, m: motion.m, stretched, gripMoved, gripMove };
+    const items = motion.array ? this.#arrayItems(motion.array) : [];
+    this.#drag = { moved, m: motion.m, stretched, gripMoved, gripMove, items };
     this.#transientDirty = true;
+  }
+
+  /**
+   * The array a grip drag would make (M3-05 part 7): each item's block, tessellated once per
+   * drag as an INSERT of it at its base point carrying the array's properties (its items' are
+   * ByBlock), drawn through the item's transform.
+   */
+  #arrayItems(a: NonNullable<DragMotion['array']>): { entry: CacheEntry; m: Matrix2D }[] {
+    const insert = this.#model.entity(a.id);
+    const record = insert && assocArrayOf(this.#model.objects.values(), insert);
+    if (!insert || !record || insert.geom.kind !== 'INSERT') return [];
+    const shown = arrayGripPreview(this.#model, insert, record, a.role, a.fn, a.to) ?? [];
+    const out: { entry: CacheEntry; m: Matrix2D }[] = [];
+    for (const { block, m } of shown) {
+      const key = `${a.id}:${block}`;
+      if (!this.#itemBlocks.has(key)) {
+        const base = this.#model.blocks.get(block)?.basePoint ?? { x: 0, y: 0 };
+        const geom = {
+          ...insert.geom,
+          block,
+          position: base,
+          scale: { x: 1, y: 1, z: 1 },
+          rotation: 0,
+          attributes: [],
+        };
+        delete (geom as { array?: unknown }).array;
+        const entry = this.#entryOf({ ...insert, geom }, a.id, this.#model, this.#blockSource);
+        this.#itemBlocks.set(key, entry);
+      }
+      const entry = this.#itemBlocks.get(key);
+      if (entry) out.push({ entry, m });
+    }
+    return out;
   }
 
   /**
@@ -1063,6 +1104,9 @@ export class Canvas2DRenderer implements Renderer {
         this.#drawPrimitives(t.ctx, drag.stretched, false, view);
         if (drag.gripMoved.length > 0) {
           this.#drawPrimitives(t.ctx, drag.gripMoved, false, this.#dragFrame(view, drag.gripMove));
+        }
+        for (const { entry, m } of drag.items) {
+          this.#drawPrimitives(t.ctx, [entry], false, this.#dragFrame(view, m));
         }
       }
       this.#drawPrimitives(

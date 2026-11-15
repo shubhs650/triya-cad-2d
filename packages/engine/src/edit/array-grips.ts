@@ -16,11 +16,19 @@
 // the first and offers the others as options. Everything is computed in the array block's
 // coordinates (a path array's along its path in the drawing), so a turned or scaled array's
 // grips size it along its own axes.
-import { applyPoint, applyVector, invert, type Matrix2D } from '../geom/transform';
+import {
+  applyPoint,
+  applyVector,
+  compose,
+  invert,
+  translation,
+  type Matrix2D,
+} from '../geom/transform';
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, dot, normalize, perp, scale, sub } from '../geom/vec';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
+import type { Handle } from '../model/handle';
 import type { Entity, AssocArray, AssocArrayParams, InsertGeometry } from '../model/types';
 import {
   arrayPath,
@@ -33,7 +41,15 @@ import {
   polarAngleBetween,
   type ArrayPath,
 } from './array';
-import { assocArrayOf, insertMatrix, remakeAssocArray } from './assoc-array';
+import {
+  assocArrayOf,
+  assocItems,
+  insertMatrix,
+  itemBlock,
+  itemKey,
+  itemMatrix,
+  remakeAssocArray,
+} from './assoc-array';
 import { transformObjects } from './edit';
 import type { Grip } from './grips';
 import { revcloudOf, type CloudInfo } from './revcloud';
@@ -472,4 +488,42 @@ export function applyArrayGripEdit(
       transformObjects(b, model, b.blockEntities(block), moveBy(edit.shift));
   }
   return remakeAssocArray(b, model, insert, record, edit.params);
+}
+
+/** The most items the drag preview draws: a bigger array is drawn when the click makes it. */
+export const ARRAY_PREVIEW_LIMIT = 10000;
+
+/** One item of the array a grip's drag would make: the block it shows and where it goes. */
+export interface ArrayPreviewItem {
+  readonly block: Handle;
+  /** From the block's own coordinates (its base point's) to the drawing's. */
+  readonly m: Matrix2D;
+}
+
+/**
+ * The array the function `fn` of the grip `role` would make with the cursor at `point`, as it
+ * is drawn (M3-05 part 7: AutoCAD redraws the array as a triangle is dragged): each item's
+ * block and transform, the item blocks' objects shifted as a polar Stretch radius shifts them.
+ * Undefined where the point makes no array, or one of more than ARRAY_PREVIEW_LIMIT items.
+ */
+export function arrayGripPreview(
+  model: DocumentModel,
+  insert: Entity,
+  record: AssocArray,
+  role: ArrayGripRole,
+  fn: string,
+  point: Vec2,
+): ArrayPreviewItem[] | undefined {
+  const edit = arrayGripEdit(model, insert, record, role, fn, { point });
+  if (typeof edit === 'string') return undefined;
+  const items = assocItems(model, insert, edit.params);
+  if (typeof items === 'string' || items.length > ARRAY_PREVIEW_LIMIT) return undefined;
+  const shift = edit.shift ? translation(edit.shift.x, edit.shift.y) : undefined;
+  return items.map((t, k) => {
+    const block = itemBlock(record, itemKey(edit.params, k));
+    const base = model.blocks.get(block)?.basePoint ?? { x: 0, y: 0 };
+    // The item INSERT's own transform (from its block's base point), then the array's.
+    const m = compose(translation(-base.x, -base.y), itemMatrix(model, insert, t));
+    return { block, m: shift ? compose(shift, m) : m };
+  });
 }
