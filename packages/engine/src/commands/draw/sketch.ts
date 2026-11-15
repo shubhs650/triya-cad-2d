@@ -1,6 +1,6 @@
-// What CIRCLE and ARC (M3-01) drag while they wait for their last value: the circle or arc the
-// cursor would give, drawn as the command will draw it (AutoCAD drags it, DRAGMODE Auto); PLINE,
-// RECTANG and POLYGON (part 3) drag the segment, rectangle or polygon the same way. The
+// What CIRCLE, ARC and LINE (M3-01) drag while they wait for their last value: the circle or arc
+// the cursor would give, drawn as the command will draw it (AutoCAD drags it, DRAGMODE Auto);
+// PLINE, RECTANG and POLYGON (part 3) drag the segment, rectangle or polygon the same way. The
 // prompt carries the construction and what is fixed so far (`Sketch`); the front-end calls
 // `sketchGeometry` with the cursor, which reads the cursor as the prompt reads a pick (a point,
 // its distance from the prompt's base, or its angle from it), so the preview is the answer.
@@ -14,10 +14,16 @@ import {
   arcStartEndCenter,
   arcStartEndRadius,
   arcThrough3,
-  circleThrough3,
   dxfArc,
 } from '../../geom/construct';
 import type { BulgeVertex, Circle } from '../../geom/curves';
+import {
+  circleThroughItems,
+  itemPoint,
+  lineBetween,
+  type DeferredItem,
+  type DeferredPick,
+} from '../../geom/deferred';
 import type { BulgeArc } from '../../geom/eval';
 import {
   bulgeOf,
@@ -37,8 +43,10 @@ export type Sketch =
   | { readonly shape: 'circle'; readonly center: Vec2; readonly diameter?: boolean }
   /** CIRCLE 2P: the cursor is the diameter's other end. */
   | { readonly shape: 'circle2p'; readonly a: Vec2 }
-  /** CIRCLE 3P: the cursor is the third point. */
-  | { readonly shape: 'circle3p'; readonly a: Vec2; readonly b: Vec2 }
+  /** CIRCLE 3P: the cursor is the third point; the first two may be deferred tangents. */
+  | { readonly shape: 'circle3p'; readonly a: DeferredItem; readonly b: DeferredItem }
+  /** LINE from a deferred tangent or perpendicular (M3-01 part 2): the cursor is the end. */
+  | { readonly shape: 'line'; readonly from: DeferredPick }
   /** ARC 3P: the cursor is the end. */
   | { readonly shape: 'arc3p'; readonly a: Vec2; readonly b: Vec2 }
   /** ARC from a start and centre: the cursor gives the end, the included angle or the chord. */
@@ -126,7 +134,14 @@ export function sketchGeometry(s: Sketch, cursor: Vec2): EntityGeometry | undefi
     case 'circle2p':
       return circleOf(midpoint(s.a, cursor), distance(s.a, cursor) / 2);
     case 'circle3p':
-      return circleThrough3(s.a, s.b, cursor, sketchTolerance(s.a, s.b, cursor));
+      return circleThroughItems(
+        [s.a, s.b, cursor],
+        sketchTolerance(itemPoint(s.a), itemPoint(s.b), cursor),
+      );
+    case 'line': {
+      const l = lineBetween(s.from, cursor, sketchTolerance(s.from.pick, cursor));
+      return l && { kind: 'LINE', start: l.start, end: l.end };
+    }
     case 'pline':
       return plineSegment(s, cursor);
     case 'rectangle':

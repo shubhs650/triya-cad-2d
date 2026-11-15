@@ -9,9 +9,15 @@
 // AutoCAD draws the one whose tangent points are closest to the points picked; when none
 // exists it says "Circle does not exist." and ends.
 //
-// Tan, Tan, Tan (the ribbon's 3P with deferred tangent snaps) needs a deferred TANgent object
-// snap, which the snaps do not have yet; it is a later part of M3-01.
-import { circleTanTanRadius, circleThrough3, type TangentTarget } from '../../geom/construct';
+// 3P's points take deferred TANgent snaps (M3-01 part 2): a point snapped TAN to a line,
+// circle or arc holds that object, and the circle drawn touches it, as AutoCAD's 3P does with
+// the Tangent snap. Three of them are the ribbon's Tan, Tan, Tan (`_circle _3p _tan _tan _tan`,
+// typed here as CIRCLE ↵ 3P ↵ TAN ↵ pick, three times, until the ribbon exists, M7-01); the
+// circle whose touching points are nearest the picks is drawn, or "Circle does not exist.".
+import { circleTanTanRadius, type TangentTarget } from '../../geom/construct';
+import { circleThroughItems, isDeferred, itemPoint, type DeferredItem } from '../../geom/deferred';
+import type { DeferredModes } from '../../input/osnap';
+import { OSNAP } from '../../input/osnap';
 import type { Circle } from '../../geom/curves';
 import { closestPoint } from '../../geom/closest';
 import { polylineSegment } from '../../geom/eval';
@@ -88,26 +94,38 @@ async function* byRadius(ctx: CommandContext, center: Vec2, last: number): Sub<C
   }
 }
 
+/** 3P's points take a deferred TANgent to a line, circle or arc. */
+const TANGENTS: DeferredModes = { modes: OSNAP.TAN, straight: true };
+
+/** A 3P answer as the construction takes it: the point, or the deferred tangent. */
+const item = (a: PromptAnswer & { kind: 'point' }): DeferredItem => a.deferred ?? a.point;
+
 async function* threePoints(ctx: CommandContext): Sub<Circle | undefined> {
-  const a = yield ctx.prompt.point({ message: 'Specify first point on circle' });
+  const a = yield ctx.prompt.point({
+    message: 'Specify first point on circle',
+    deferred: TANGENTS,
+  });
   if (a.kind !== 'point') return undefined;
+  const first = item(a);
   const b = yield ctx.prompt.point({
     message: 'Specify second point on circle',
-    rubberBand: { from: a.point },
+    deferred: TANGENTS,
+    // A tangent is not a point to stretch a rubber band from.
+    ...(!isDeferred(first) && { rubberBand: { from: first } }),
   });
   if (b.kind !== 'point') return undefined;
+  const second = item(b);
   for (;;) {
     const c = yield withSketch(
       ctx,
-      { shape: 'circle3p', a: a.point, b: b.point },
-      ctx.prompt.point({ message: 'Specify third point on circle' }),
+      { shape: 'circle3p', a: first, b: second },
+      ctx.prompt.point({ message: 'Specify third point on circle', deferred: TANGENTS }),
     );
     if (c.kind !== 'point') return undefined;
-    const circle = circleThrough3(
-      a.point,
-      b.point,
-      c.point,
-      sketchTolerance(a.point, b.point, c.point),
+    const third = item(c);
+    const circle = circleThroughItems(
+      [first, second, third],
+      sketchTolerance(itemPoint(first), itemPoint(second), itemPoint(third)),
     );
     if (circle) return circle;
     ctx.message(NO_CIRCLE);

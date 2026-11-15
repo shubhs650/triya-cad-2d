@@ -337,7 +337,7 @@ describe('modes', () => {
       x: 0,
       y: -10,
     });
-    // No last point, no perpendicular (deferred perpendicular is not in this version).
+    // No last point, no perpendicular (unless the prompt defers it, below).
     expect(snap([e(LINE)], at(52, 1), OSNAP.PER)).toEqual([]);
   });
 
@@ -371,6 +371,98 @@ describe('modes', () => {
       y: 0,
     });
     expect(snap([a, b], at(11.5, 0.5), OSNAP.INT, { aperture: 3 })).toEqual([]);
+  });
+});
+
+describe('deferred TAN and PER (M3-01 part 2)', () => {
+  const circle = circleGeom(0, 0, 10);
+
+  it('offers a Deferred Tangent on a circle or arc where the prompt solves it later', () => {
+    const deferred = { modes: OSNAP.TAN | OSNAP.PER };
+    const hits = snap([e(circle)], at(9, 5), OSNAP.TAN, { deferred });
+    expect(hits).toHaveLength(1);
+    const [hit] = hits;
+    // At the point picked on the circle, holding the circle to be solved against.
+    expect(hit!.mode).toBe('TAN');
+    expect(hit!.point.x).toBeCloseTo(8.741573, 6);
+    expect(hit!.point.y).toBeCloseTo(4.856429, 6);
+    expect(hit!.deferred).toEqual({
+      mode: 'TAN',
+      target: { kind: 'circle', center: { x: 0, y: 0 }, radius: 10 },
+      pick: hit!.point,
+    });
+    const arc = e({ kind: 'ARC', center: at(0, 0), radius: 10, startAngle: 0, endAngle: Math.PI });
+    expect(snap([arc], at(0, 11), OSNAP.TAN, { deferred })[0]!.deferred!.target).toEqual({
+      kind: 'circle',
+      center: { x: 0, y: 0 },
+      radius: 10,
+    });
+  });
+
+  it('defers instead of snapping from the last point, and only the modes asked for', () => {
+    const from = at(0, -20);
+    const [hit] = snap([e(circle)], at(9, -5), OSNAP.TAN, { from, deferred: { modes: OSNAP.TAN } });
+    expect(hit!.deferred?.mode).toBe('TAN');
+    // PER is not deferred here, so it is still drawn from the last point.
+    const per = snap([e(LINE)], at(52, 1), OSNAP.PER, {
+      from: at(30, 20),
+      deferred: { modes: OSNAP.TAN },
+    });
+    expect(per).toEqual([{ mode: 'PER', point: { x: 30, y: 0 }, id: expect.anything() }]);
+    // A mode that is not on offers nothing deferred.
+    expect(snap([e(circle)], at(9, -5), OSNAP.END, { deferred: { modes: OSNAP.TAN } })).toEqual([]);
+  });
+
+  it('defers TAN on a line only for a circle drawn tangent to it; PER on lines and circles', () => {
+    const line = e(LINE);
+    expect(snap([line], at(30, 1), OSNAP.TAN, { deferred: { modes: OSNAP.TAN } })).toEqual([]);
+    const [tan] = snap([line], at(30, 1), OSNAP.TAN, {
+      deferred: { modes: OSNAP.TAN, straight: true },
+    });
+    expect(tan!.deferred).toEqual({
+      mode: 'TAN',
+      target: { kind: 'line', point: { x: 0, y: 0 }, direction: { x: 100, y: 0 } },
+      pick: { x: 30, y: 0 },
+    });
+    const [per] = snap([line], at(30, 1), OSNAP.PER, { deferred: { modes: OSNAP.PER } });
+    expect(per).toMatchObject({ mode: 'PER', point: { x: 30, y: 0 }, deferred: { mode: 'PER' } });
+    expect(
+      snap([e(circle)], at(0, 11), OSNAP.PER, { deferred: { modes: OSNAP.PER } })[0]!.deferred!
+        .target.kind,
+    ).toBe('circle');
+    const xline = e({ kind: 'XLINE', base: at(0, 50), direction: at(1, 0) });
+    expect(
+      snap([xline], at(5, 51), OSNAP.PER, { deferred: { modes: OSNAP.PER } })[0]!.deferred!.target,
+    ).toEqual({ kind: 'line', point: { x: 0, y: 50 }, direction: { x: 1, y: 0 } });
+    // Nothing deferred on other objects (an ellipse) or a line of no length.
+    const ellipse = e({
+      kind: 'ELLIPSE',
+      center: at(0, 0),
+      majorAxis: at(10, 0),
+      ratio: 0.5,
+      startParam: 0,
+      endParam: 2 * Math.PI,
+    });
+    expect(snap([ellipse], at(10, 1), OSNAP.TAN, { deferred: { modes: OSNAP.TAN } })).toEqual([]);
+    expect(
+      snap([e(lineGeom(5, 5, 5, 5))], at(5, 5), OSNAP.PER, { deferred: { modes: OSNAP.PER } }),
+    ).toEqual([]);
+  });
+
+  it('ranks a Deferred Tangent with NEA: after points inside the aperture, before NEA', () => {
+    const arc = e({ kind: 'ARC', center: at(0, 0), radius: 10, startAngle: 0, endAngle: Math.PI });
+    const modes = OSNAP.END | OSNAP.TAN | OSNAP.NEA;
+    const deferred = { modes: OSNAP.TAN };
+    expect(snap([arc], at(9.8, 1), modes, { deferred }).map((h) => h.mode)).toEqual([
+      'END',
+      'TAN',
+      'NEA',
+    ]);
+    expect(snap([arc], at(0, 11), modes, { deferred }).map((h) => h.mode)).toEqual([
+      'TAN',
+      'NEA',
+      'END',
+    ]);
   });
 });
 

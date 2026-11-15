@@ -20,7 +20,12 @@ import type {
 import { PICKFIRST, REVCLOUDGRIPS } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
+import {
+  CanvasController,
+  type CanvasHooks,
+  type CanvasMode,
+  type PickedPoint,
+} from './canvas/controller';
 import { pictureOf, pngOf, type PictureSize } from './canvas/picture';
 import {
   allControllers,
@@ -2007,17 +2012,18 @@ function ViewportCanvas({
       },
       onError: (e) => store.failed(name, openError(name, e)),
       onPick: (point, o) => {
-        const pick = (p: Vec2, missed = false): CommandInput => ({
+        const pick = (p: Vec2, r?: Omit<PickedPoint, 'point'>): CommandInput => ({
           kind: 'pick',
           point: p,
           ...(o.shift && { shift: true }),
           ...(o.release && { release: true }),
-          ...(missed && { missed: true }),
+          ...(r?.missed && { missed: true }),
+          ...(r?.deferred && { deferred: r.deferred }),
           ...(o.grip !== undefined && { grip: o.grip }),
         });
         engines.command(
           id,
-          point instanceof Promise ? point.then((r) => pick(r.point, r.missed)) : pick(point),
+          point instanceof Promise ? point.then((r) => pick(r.point, r)) : pick(point),
         );
       },
       onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),

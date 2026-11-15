@@ -5,7 +5,7 @@ export * from './parse';
 export * from './prompt';
 export * from './units';
 export * from './builtin';
-export { currentLayer, lineCommand } from './draw/line';
+export { currentLayer, lineCommand, NO_LINE } from './draw/line';
 export { arcCommand } from './draw/arc';
 export { circleCommand, tangentTarget } from './draw/circle';
 export { lastDrawn, type DrawnEnd, type LastDrawn } from './draw/last-drawn';

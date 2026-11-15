@@ -13,8 +13,13 @@
 // - INTersection and APParent intersection count only points inside the aperture. APP in plan
 //   view is the extended intersection: lines extended to infinite lines, arcs to their
 //   circles, elliptical arcs to their ellipses.
-// - PERpendicular and TANgent need the last point (`from`); AutoCAD's deferred perpendicular
-//   and tangent (no last point yet) are not in this version.
+// - PERpendicular and TANgent are drawn from the last point (`from`). Where the prompt solves
+//   them later (`deferred`: LINE's first point, CIRCLE 3P's points; M3-01 part 2) they are
+//   AutoCAD's Deferred Tangent and Deferred Perpendicular instead: the object under the cursor
+//   and where on it, offered at that point. Like NEArest they are always under the cursor, so
+//   they rank with it, after points inside the aperture (an arc's END still wins at its end).
+//   TAN is deferred on circles and arcs, and on lines where a circle is being drawn tangent to
+//   them (`straight`); PER on lines, circles and arcs.
 // - EXTension and PARallel follow lines acquired by hovering, as object snap tracking does
 //   (OTRACK, `track.ts`): here they offer what may be acquired, a line's nearer end with the
 //   direction out of it (EXT) and the line under the cursor with its direction once there is a
@@ -36,6 +41,8 @@
 // the objects under the aperture, not the drawing (PRD §12 T3: < 50 ms at 100k entities).
 import { angleWithin, TAU } from '../geom/angle';
 import { closestPoint } from '../geom/closest';
+import type { TangentTarget } from '../geom/construct';
+import type { DeferredPick } from '../geom/deferred';
 import type { Arc, Circle, Curve, Ellipse, Line, Polyline, Spline } from '../geom/curves';
 import { arcSweep, domain, ellipseSweep, explodePolyline, pointAt } from '../geom/eval';
 import { flatten } from '../geom/flatten';
@@ -146,6 +153,17 @@ export interface OsnapQuery {
   readonly from?: Vec2;
   /** PDFOSNAP: PDF underlays' geometry is snapped to unless this is false (M2-22). */
   readonly underlays?: boolean;
+  /** The TAN and PER the prompt solves later: offered deferred, not from `from` (M3-01). */
+  readonly deferred?: DeferredModes;
+}
+
+/**
+ * Which object snaps a point prompt takes deferred (M3-01 part 2): `modes` holds TAN, PER or
+ * both; `straight` lets TAN be deferred on lines too (a circle drawn tangent to a line).
+ */
+export interface DeferredModes {
+  readonly modes: number;
+  readonly straight?: boolean;
 }
 
 export interface OsnapHit {
@@ -160,6 +178,8 @@ export interface OsnapHit {
   readonly direction?: Vec2;
   /** Not a point to snap to, but something to acquire for tracking (EXT, PAR). */
   readonly track?: true;
+  /** A deferred TAN or PER (M3-01 part 2): the object and the pick, which the command solves. */
+  readonly deferred?: DeferredPick;
 }
 
 /** Block nesting followed, and MINSERT cells taken per reference, before giving up. */
@@ -246,6 +266,12 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
     const addPart = part.inside ? addTo(part) : add;
     curvePoints(part, q, src.tol, addPart, on);
     addPart('NEA', nearest, part.id);
+    if (q.deferred) {
+      for (const d of deferredPicks(part.curve, nearest, q.deferred, on)) {
+        if (within(part, nearest))
+          out.push({ mode: d.mode, point: nearest, id: part.id, deferred: d });
+      }
+    }
     const c = part.curve;
     if (on('EXT') && part.ends && c.kind === 'LINE') {
       const atEnd = distance(c.end, q.point) < distance(c.start, q.point);
@@ -326,7 +352,8 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
 }
 
 function rank(hits: OsnapHit[], q: OsnapQuery, tol: Tolerance): OsnapHit[] {
-  const tier = (h: OsnapHit, d: number) => (h.mode === 'NEA' ? 1 : d <= q.aperture ? 0 : 2);
+  const tier = (h: OsnapHit, d: number) =>
+    h.mode === 'NEA' || h.deferred ? 1 : d <= q.aperture ? 0 : 2;
   const scored = hits.map((h) => {
     const d = distance(h.point, q.point);
     return { h, d, tier: tier(h, d) };
@@ -401,12 +428,43 @@ function curvePoints(
     }
   }
   const from = q.from;
-  if (from && on('PER')) {
+  const deferred = q.deferred?.modes ?? 0;
+  if (from && on('PER') && !(deferred & OSNAP.PER)) {
     for (const p of perpendicularFeet(c, from, tol)) add('PER', p, id);
   }
-  if (from && on('TAN') && c.kind !== 'LINE' && c.kind !== 'XLINE' && c.kind !== 'RAY') {
+  if (
+    from &&
+    on('TAN') &&
+    !(deferred & OSNAP.TAN) &&
+    c.kind !== 'LINE' &&
+    c.kind !== 'XLINE' &&
+    c.kind !== 'RAY'
+  ) {
     for (const t of tangentPointsFrom(c, from, tol)) add('TAN', t.point, id);
   }
+}
+
+/** The deferred TAN and PER a curve offers at `pick`, as the line or circle it is solved on. */
+function deferredPicks(
+  c: Simple,
+  pick: Vec2,
+  d: DeferredModes,
+  on: (m: OsnapMode) => boolean,
+): DeferredPick[] {
+  let target: TangentTarget | undefined;
+  if (c.kind === 'CIRCLE' || c.kind === 'ARC')
+    target = { kind: 'circle', center: c.center, radius: c.radius };
+  else if (c.kind === 'LINE') {
+    if (c.end.x !== c.start.x || c.end.y !== c.start.y)
+      target = { kind: 'line', point: c.start, direction: sub(c.end, c.start) };
+  } else if (c.kind === 'XLINE' || c.kind === 'RAY')
+    target = { kind: 'line', point: c.base, direction: c.direction };
+  if (!target) return [];
+  const out: DeferredPick[] = [];
+  if (on('TAN') && d.modes & OSNAP.TAN && (target.kind === 'circle' || d.straight))
+    out.push({ mode: 'TAN', target, pick });
+  if (on('PER') && d.modes & OSNAP.PER) out.push({ mode: 'PER', target, pick });
+  return out;
 }
 
 /** Feet of the perpendiculars from `p`: on a line's extension too, on an arc within its sweep. */

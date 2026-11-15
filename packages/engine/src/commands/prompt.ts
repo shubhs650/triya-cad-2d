@@ -1,7 +1,9 @@
 // Prompts and answers of the command engine (M2-01, ARCHITECTURE.md §5.1). A command yields a
 // `Prompt` and receives a `PromptAnswer`; the command line, Dynamic Input, the Ctrl+K palette and
 // tests are front-ends that turn typed text or picks into answers on the `PromptBus`.
+import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
+import type { DeferredModes } from '../input/osnap';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Color, LinetypeRef, Lineweight } from '../model/types';
@@ -90,6 +92,14 @@ export interface PointPrompt extends PromptBase {
    * with `missed`).
    */
   readonly osnap?: number;
+  /**
+   * The TAN and PER object snaps this point takes deferred (M3-01 part 2: LINE's first point,
+   * CIRCLE 3P's points): the front-end offers AutoCAD's Deferred Tangent and Deferred
+   * Perpendicular on the object under the cursor, and the answer carries it (`deferred`) for
+   * the command to solve once its other points are known. Elsewhere TAN and PER are drawn
+   * from the last point, as they always are.
+   */
+  readonly deferred?: DeferredModes;
   /**
    * Freehand (REVCLOUD Freehand, M2-08): the front-end answers with the cursor's point, without
    * a click, each time the cursor has moved `spacing` world units from `from`, as AutoCAD draws
@@ -382,6 +392,11 @@ export type PromptAnswer =
       readonly point: Vec2;
       /** A click made with Shift held (TRIM's shift-select to extend, M3-02 part 2). */
       readonly shift?: true;
+      /**
+       * A deferred TAN or PER pick (M3-01 part 2), only at a prompt that takes it (`deferred`):
+       * `point` is where the object was picked, which the command solves from.
+       */
+      readonly deferred?: DeferredPick;
     }
   | {
       readonly kind: 'distance';
