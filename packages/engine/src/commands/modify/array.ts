@@ -734,7 +734,10 @@ async function* along(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
         path: picked.handle,
         method: s.method,
         base: s.base,
-        tangent: s.tangent ?? pathFrame(path, 0).direction,
+        // + 0: a direction of -0 is saved as 0.
+        tangent: (({ x, y }) => ({ x: x + 0, y: y + 0 }))(
+          s.tangent ?? pathFrame(path, 0).direction,
+        ),
         spacing: s.spacing,
         items: s.items,
         rows: s.rows,

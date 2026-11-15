@@ -21,6 +21,7 @@ export { CELL_STYLE_MAP, cellStyleMapOf, mappedCellStyleMap } from './map/styles
 export { aciOfTrueColor } from './map/common';
 export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/entities';
 export { mapSortEnts } from './map/sortents';
+export { mapTriyaArrays, TRIYA_ARRAY } from './map/triya-array';
 export { mapLayouts, mapPageSetups } from './map/layouts';
 export { mapImageObjects, type ImageObject } from './map/images';
 export {
