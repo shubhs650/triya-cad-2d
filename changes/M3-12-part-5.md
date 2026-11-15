@@ -1,0 +1,1 @@
+- M3-12 part 5 (#419): FILLET rounds ellipses, elliptical arcs, splines and polyline arc segments, and FILLET and CHAMFER close an open polyline picked at its first and last segments.

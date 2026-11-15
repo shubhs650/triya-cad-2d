@@ -215,18 +215,10 @@ describe('FILLET', () => {
   });
 
   it('changes the radius at the second prompt, and refuses what it cannot fillet', async () => {
-    const { bus, log, arcs } = setup([
-      {
-        kind: 'ELLIPSE',
-        center: { x: 70, y: 0 },
-        majorAxis: { x: 3, y: 0 },
-        ratio: 0.5,
-        startParam: 0,
-        endParam: 2 * Math.PI,
-      },
-    ]);
+    // A circle of no size: nothing to be tangent to.
+    const { bus, log, arcs } = setup([{ kind: 'CIRCLE', center: { x: 70, y: 0 }, radius: 0 }]);
     await bus.script(['FILLET']);
-    await bus.pick({ x: 73, y: 0 });
+    await bus.pick({ x: 70, y: 0 });
     expect(log).toContain('Cannot fillet that object.');
     expect(bus.promptText).toBe(FILLET_FIRST);
     await bus.pick({ x: 6, y: 0 });
@@ -240,6 +232,88 @@ describe('FILLET', () => {
     await bus.pick({ x: 6, y: 0 });
     await bus.pick({ x: 7, y: 0 });
     expect(log).toContain('Cannot fillet an object to itself.');
+  });
+
+  it('fillets a line to an elliptical arc and a spline, trimming them (M3-12)', async () => {
+    const { bus, byHandle, arcs } = setup([
+      // 40: the upper half of an ellipse round (100,0), semi-axes 10 and 5.
+      {
+        kind: 'ELLIPSE',
+        center: { x: 100, y: 0 },
+        majorAxis: { x: 10, y: 0 },
+        ratio: 0.5,
+        startParam: 0,
+        endParam: Math.PI,
+      },
+      // 41: the line x = 108 across its right end.
+      lineGeom(108, -5, 108, 10),
+      // 42: a cubic spline from (100,20) to (120,20) over a hump; 43: the line y = 24 above it.
+      {
+        kind: 'SPLINE',
+        degree: 3,
+        knots: [0, 0, 0, 0, 1, 1, 1, 1],
+        controlPoints: [
+          { x: 100, y: 20 },
+          { x: 105, y: 26 },
+          { x: 115, y: 26 },
+          { x: 120, y: 20 },
+        ],
+        closed: false,
+        periodic: false,
+      } as EntityGeometry,
+      lineGeom(95, 24, 103, 24),
+    ]);
+    await bus.script(['FILLET', 'R', '1']);
+    await bus.pick({ x: 94, y: 4 });
+    await bus.pick({ x: 108, y: 8 });
+    expect(bus.command).toBeUndefined();
+    expect(arcs()).toHaveLength(1);
+    const e = byHandle('40')!.geom as { startParam: number; endParam: number };
+    expect(e.endParam).toBe(Math.PI);
+    expect(e.startParam).toBeGreaterThan(0);
+    expect(byHandle('41')!.geom).toMatchObject({ end: { x: 108, y: 10 } });
+    await bus.script(['FILLET']);
+    await bus.pick({ x: 102.5, y: 22.3 });
+    await bus.pick({ x: 96, y: 24 });
+    expect(arcs()).toHaveLength(2);
+    const sp = byHandle('42')!.geom as unknown as { kind: string; controlPoints: { x: number }[] };
+    expect(sp.kind).toBe('SPLINE');
+    // Cut at the tangent point: its start (100,20) stays, its end is before the hump's top.
+    expect(sp.controlPoints[0]).toEqual({ x: 100, y: 20 });
+    expect(sp.controlPoints.at(-1)!.x).toBeLessThan(110);
+    expect(byHandle('43')!.geom).toMatchObject({ start: { x: 95, y: 24 } });
+  });
+
+  it('closes an open polyline filleted at its first and last segments (M3-12)', async () => {
+    const { bus, byHandle, arcs } = setup([
+      {
+        kind: 'LWPOLYLINE',
+        closed: false,
+        vertices: [
+          { x: 60, y: 20, bulge: 0 },
+          { x: 70, y: 20, bulge: 0 },
+          { x: 70, y: 30, bulge: 0 },
+          { x: 60, y: 30, bulge: 0 },
+          { x: 60, y: 22, bulge: 0 },
+        ],
+      },
+    ]);
+    await bus.script(['FILLET', 'R', '1']);
+    await bus.pick({ x: 65, y: 20 });
+    await bus.pick({ x: 60, y: 26 });
+    expect(arcs()).toHaveLength(0);
+    const g = byHandle('40')!.geom as unknown as {
+      closed: boolean;
+      vertices: { x: number; y: number }[];
+    };
+    expect(g.closed).toBe(true);
+    expect(g.vertices.map((v) => [r6(v.x), r6(v.y)])).toEqual([
+      [61, 20],
+      [70, 20],
+      [70, 30],
+      [60, 30],
+      [60, 21],
+    ]);
   });
 
   it('fillets a line to a circle, leaving the circle whole', async () => {
@@ -385,6 +459,49 @@ describe('CHAMFER', () => {
     await bus.submit('');
     await bus.script(['CHAMFER']);
     expect(log.at(-1)).toBe('(TRIM mode) Current chamfer Dist1 = 0.0000, Dist2 = 0.0000');
+  });
+
+  it('refuses ellipses and splines, and closes an open polyline at its end segments (M3-12)', async () => {
+    const { bus, log, byHandle } = setup([
+      {
+        kind: 'LWPOLYLINE',
+        closed: false,
+        vertices: [
+          { x: 60, y: 20, bulge: 0 },
+          { x: 70, y: 20, bulge: 0 },
+          { x: 70, y: 30, bulge: 0 },
+          { x: 60, y: 30, bulge: 0 },
+          { x: 60, y: 22, bulge: 0 },
+        ],
+      },
+      {
+        kind: 'ELLIPSE',
+        center: { x: 100, y: 0 },
+        majorAxis: { x: 10, y: 0 },
+        ratio: 0.5,
+        startParam: 0,
+        endParam: 2 * Math.PI,
+      },
+    ]);
+    await bus.script(['CHAMFER', 'D', '1', '2']);
+    // CHAMFER takes lines, polylines, rays and xlines only (AutoCAD 2024 Help, CHAMFER).
+    await bus.pick({ x: 110, y: 0 });
+    expect(log).toContain('Cannot chamfer that object.');
+    await bus.pick({ x: 65, y: 20 });
+    await bus.pick({ x: 60, y: 26 });
+    const g = byHandle('40')!.geom as unknown as {
+      closed: boolean;
+      vertices: { x: number; y: number }[];
+    };
+    expect(g.closed).toBe(true);
+    // 1 along the first segment picked, 2 along the second, the chamfer the closing segment.
+    expect(g.vertices.map((v) => [r6(v.x), r6(v.y)])).toEqual([
+      [61, 20],
+      [70, 20],
+      [70, 30],
+      [60, 30],
+      [60, 22],
+    ]);
   });
 
   it('refuses arcs and parallel lines, and chamfers a polyline with Polyline', async () => {
