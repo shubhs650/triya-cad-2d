@@ -11,6 +11,7 @@ import { distance, sub } from '../geom/vec';
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import { dynamicBlockOf } from '../model/dynamic-block';
+import { dynamicProperties } from './dynamic';
 import type { EntityId } from '../model/entity-ids';
 import type {
   Color,
@@ -986,6 +987,7 @@ function typeSections(
         }),
         row(es, { key: 'rotation', label: 'Rotation', kind: 'angle', get: (e) => g(e).rotation }),
       ]);
+      add('Custom', customRows(model, es));
       if (es.length === 1) {
         // One reference: its attributes by tag, as AutoCAD's Attributes section lists them.
         // A multiline attribute is edited in the Enhanced Attribute Editor (EATTEDIT).
@@ -1427,6 +1429,28 @@ function multiLeaderBlockRows(model: DocumentModel, es: readonly Entity[]): Prop
       get: (e) => BLOCK_CONNECTIONS[blockConnectionOf(model, g(e)) === 1 ? 1 : 0].value,
     }),
   ];
+}
+
+/**
+ * A dynamic block reference's Custom section (M2-35 part 29, `dynamic.ts`): its parameters'
+ * values, read-only, as Triya does not evaluate dynamic blocks (PRD non-goal 2). References to
+ * more than one dynamic block (or a static one) share no parameters, and show none.
+ */
+function customRows(model: DocumentModel, es: readonly Entity[]): PropertyRow[] {
+  const definitions = new Set(
+    es.map((e) => dynamicBlockOf(model.blocks, geomOf<'INSERT'>(e).block)?.handle),
+  );
+  if (definitions.size !== 1 || definitions.has(undefined)) return [];
+  const each = new Map(es.map((e) => [e, dynamicProperties(model, e)]));
+  return each.get(es[0]!)!.map((p) =>
+    row(es, {
+      key: p.key,
+      label: p.label,
+      kind: p.kind,
+      readOnly: true,
+      get: (e) => each.get(e)!.find((q) => q.key === p.key)?.value ?? '',
+    }),
+  );
 }
 
 /** A multileader's Misc rows (M2-35 parts 25 and 28, `multileader-misc.ts`, `multileader-style.ts`). */

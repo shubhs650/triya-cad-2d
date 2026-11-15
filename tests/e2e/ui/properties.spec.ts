@@ -2,7 +2,7 @@
 // is picked; Ctrl+1 shows its properties; its colour is chosen and its end typed, each an edit
 // the drawing's engine makes (and so a change set); Ctrl+A shows every object, General only,
 // with *VARIES*, and the object list narrows it; PROPERTIESCLOSE closes the palette. A drawing
-// with dynamic block references shows the FR-B3 badge. The sheet and the edits are unit-tested
+// with dynamic block references shows the FR-B3 badge and their Custom properties. The sheet and the edits are unit-tested
 // in packages/engine/test/properties; this checks the app carries them end to end.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, InsertGeometry, MultiLeaderGeometry } from '@triya/engine';
@@ -251,6 +251,13 @@ test('shows the dynamic block badge on dynamic block references', async ({ page 
   if (types.length > 1) await objects.selectOption({ label: block });
   await expect(palette.getByRole('note')).toContainText('Dynamic — edit in AutoCAD');
   await expect(palette.getByLabel('Name', { exact: true })).not.toHaveText(/^\*U/);
+  // M2-35 part 29: the dynamic block's parameters, read-only in a Custom section after Misc.
+  // The four references show four visibility states, so the value varies.
+  const sections = await palette.locator('details > summary').allTextContents();
+  expect(sections.indexOf('Custom')).toBe(sections.indexOf('Misc') + 1);
+  const custom = palette.getByRole('table', { name: 'Custom' });
+  await expect(custom.getByRole('rowheader')).toHaveText(['Test visibility']);
+  await expect(custom.getByLabel('Test visibility')).toHaveText('*VARIES*');
 });
 
 // M2-35 part 2: a text's Justify and a block reference's Scale X are a choice and a typed value in
