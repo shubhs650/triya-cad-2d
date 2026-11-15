@@ -77,6 +77,11 @@ export interface CommandContext {
    */
   select(ids: readonly EntityId[]): void;
   /**
+   * Makes `ids` the Previous selection set, as a "Select objects" ending on them would: DIVIDE's
+   * and MEASURE's marks (M3-01 part 5; AutoCAD: "use Previous to select them").
+   */
+  setPrevious(ids: readonly EntityId[]): void;
+  /**
    * Builds a change set, applies it to the drawing at once (so later prompts, osnaps and the
    * screen see it) and adds it to this command's undo record, which closes when the command
    * ends, cancelled or not: Esc after three LINE segments keeps them, as in AutoCAD.

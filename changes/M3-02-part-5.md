@@ -1,0 +1,1 @@
+- M3-02 part 5 (#381): PEDIT (Close/Open, Join, Width, Edit vertex, Fit, Spline, Decurve, Ltype gen, Reverse, Undo, Multiple), CHPROP and CHANGE, and MATCHPROP with its Property Settings dialog.

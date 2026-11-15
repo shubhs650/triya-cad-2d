@@ -14,7 +14,7 @@ import {
   xlineThrough,
   type EllipseAxes,
   type StraightLine,
-} from '../../geom/shapes';
+} from '../../geom/ellipse-xline';
 import { toleranceForSize, type Tolerance } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
 import { angleOf, distance, sub } from '../../geom/vec';

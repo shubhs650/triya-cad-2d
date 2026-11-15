@@ -10,6 +10,11 @@ import { donutCommand, pointCommand } from './draw/point';
 import { rayCommand, xlineCommand } from './draw/xline';
 import { lastDrawn } from './draw/last-drawn';
 import { lineCommand } from './draw/line';
+import { plineCommand } from './draw/pline';
+import { polygonCommand } from './draw/polygon';
+import { rectangCommand } from './draw/rectang';
+import { splineCommand } from './draw/spline';
+import { divideCommand, measureCommand } from './draw/divide';
 import { MLEADER_COMMANDS } from './draw/mleader';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
@@ -18,6 +23,12 @@ import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
 import { chamferCommand, cornerSettings, filletCommand } from './modify/fillet';
 import { offsetCommand } from './modify/offset';
+import { alignCommand } from './modify/align';
+import { breakAtPointCommand, breakCommand, lengthenCommand } from './modify/break';
+import { explodeCommand, joinCommand, reverseCommand } from './modify/join';
+import { peditCommand } from './modify/pedit';
+import { changeCommand, chpropCommand } from './modify/chprop';
+import { matchpropCommand } from './modify/matchprop';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
@@ -43,6 +54,12 @@ export function builtinCommands(): CommandRegistry {
     lineCommand(last),
     arcCommand(last),
     circleCommand(),
+    plineCommand(last),
+    rectangCommand(),
+    polygonCommand(),
+    splineCommand(),
+    divideCommand(),
+    measureCommand(),
     ellipseCommand(),
     xlineCommand(),
     rayCommand(),
@@ -64,6 +81,17 @@ export function builtinCommands(): CommandRegistry {
     extendCommand(trim),
     filletCommand(corner),
     chamferCommand(corner),
+    breakCommand(),
+    breakAtPointCommand(),
+    joinCommand(),
+    explodeCommand(),
+    lengthenCommand(),
+    reverseCommand(),
+    alignCommand(),
+    peditCommand(),
+    chpropCommand(),
+    changeCommand(),
+    matchpropCommand(),
     revcloudCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),

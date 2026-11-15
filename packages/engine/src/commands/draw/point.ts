@@ -10,7 +10,7 @@
 // `pointFigure`). A donut is a closed LWPOLYLINE of two half-circle arcs with a constant width
 // (`geom/shapes.ts` `donutOf`); its diameters are remembered for the next DONUT, as AutoCAD's
 // DONUTID and DONUTOD (initially 0.5 and 1), which it does not save.
-import { donutOf } from '../../geom/shapes';
+import { donutOf } from '../../geom/ellipse-xline';
 import type { CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { currentProps } from '../../properties/current';

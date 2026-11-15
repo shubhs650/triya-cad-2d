@@ -157,7 +157,11 @@ describe('type-ahead (M2-47 part 3)', () => {
 describe('completions', () => {
   const registry = builtinCommands();
   it('offers the command an alias names, then names that begin with the text', () => {
-    expect(completions(registry, 'l')).toEqual([{ name: 'LINE', alias: 'L' }]);
+    // LENGTHEN (M3-02 part 4) begins with L too.
+    expect(completions(registry, 'l')).toEqual([
+      { name: 'LINE', alias: 'L' },
+      { name: 'LENGTHEN' },
+    ]);
     expect(completions(registry, 'LI')).toEqual([{ name: 'LINE' }]);
     expect(completions(registry, "'li")).toEqual([{ name: 'LINE' }]);
   });
@@ -166,12 +170,18 @@ describe('completions', () => {
     expect(completions(registry, '0,0')).toEqual([]);
     expect(completions(registry, '')).toEqual([]);
     expect(completions(registry, 'ZZZ')).toEqual([]);
-    // An acad.pgp alias of a command not built yet (REC, RECTANG's) completes nothing; C,
-    // CIRCLE's since M3-01, completes CIRCLE first, then CHAMFER, CLOSE, COPY and the Clipboard commands.
-    expect(completions(registry, 'REC')).toEqual([]);
+    // An acad.pgp alias of a command not built yet (BO, BOUNDARY's) completes nothing; SPL,
+    // SPLINE's since M3-01 part 5, completes SPLINE; REC,
+    // RECTANG's since M3-01 part 3, completes RECTANG; C, CIRCLE's since M3-01, completes CIRCLE
+    // first, then CHAMFER, CHANGE, CHPROP, CLOSE, COPY and the Clipboard commands.
+    expect(completions(registry, 'BO')).toEqual([]);
+    expect(completions(registry, 'SPL')).toEqual([{ name: 'SPLINE', alias: 'SPL' }]);
+    expect(completions(registry, 'REC')[0]).toEqual({ name: 'RECTANG', alias: 'REC' });
     expect(completions(registry, 'C')).toEqual([
       { name: 'CIRCLE', alias: 'C' },
       { name: 'CHAMFER' },
+      { name: 'CHANGE' },
+      { name: 'CHPROP' },
       { name: 'CLOSE' },
       { name: 'CLOSEALL' },
       { name: 'COPY' },
@@ -211,6 +221,8 @@ describe('completions of system variables', () => {
     expect(c.slice(0, first).map((s) => s.name)).toEqual([
       'CIRCLE',
       'CHAMFER',
+      'CHANGE',
+      'CHPROP',
       'CLOSE',
       'CLOSEALL',
       'COPY',

@@ -16,6 +16,8 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       'AIMLEADEREDITADD',
       'AIMLEADEREDITREMOVE',
+      // M3-02 part 4: BREAK, BREAKATPOINT, JOIN, EXPLODE, LENGTHEN, REVERSE and ALIGN.
+      'ALIGN',
       // M3-01: ARC and CIRCLE.
       'ARC',
       // M3-07: the inquiry commands.
@@ -26,8 +28,13 @@ describe('palette search', () => {
       'ARRAYPOLAR',
       'ARRAYRECT',
       'ATTEDIT',
+      'BREAK',
+      'BREAKATPOINT',
       // M3-02 part 3: CHAMFER and FILLET.
       'CHAMFER',
+      // M3-02 part 5: CHANGE and CHPROP.
+      'CHANGE',
+      'CHPROP',
       'CIRCLE',
       'CLOSE',
       'CLOSEALL',
@@ -43,6 +50,8 @@ describe('palette search', () => {
       'DIMLINEAR',
       'DIMRADIUS',
       'DIST',
+      // M3-01 part 5: DIVIDE, MEASURE and SPLINE.
+      'DIVIDE',
       // M3-01 part 4: DONUT, ELLIPSE, POINT, RAY and XLINE.
       'DONUT',
       'DRAWINGRECOVERY',
@@ -50,13 +59,19 @@ describe('palette search', () => {
       'EATTEDIT',
       'ELLIPSE',
       'ERASE',
+      'EXPLODE',
       'EXPORT',
       'EXPORTPDF',
       'EXTEND',
       'FILLET',
       'HATCHTOBACK',
       'ID',
+      'JOIN',
+      'LENGTHEN',
       'LINE',
+      // M3-02 part 5: MATCHPROP.
+      'MATCHPROP',
+      'MEASURE',
       'MEASUREGEOM',
       'MIRROR',
       'MLEADER',
@@ -70,8 +85,13 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      // M3-02 part 5: PEDIT.
+      'PEDIT',
+      // M3-01 part 3: PLINE, POLYGON and RECTANG.
+      'PLINE',
       'PLOT',
       'POINT',
+      'POLYGON',
       'PREVIEW',
       'PRINT',
       'PROPERTIES',
@@ -80,16 +100,19 @@ describe('palette search', () => {
       'QSAVE',
       'QUICKPROPERTIES',
       'RAY',
+      'RECTANG',
       'REDO',
       'REGEN',
       'REGENALL',
       'REVCLOUD',
+      'REVERSE',
       'ROTATE',
       'SAVE',
       'SAVEAS',
       'SCALE',
       'SELECT',
       'SETVAR',
+      'SPLINE',
       'STRETCH',
       'TEXT',
       'TEXTEDIT',

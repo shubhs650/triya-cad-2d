@@ -1,0 +1,1 @@
+- M3-02 part 4 (#377): BREAK and BREAKATPOINT, LENGTHEN (DElta, Percent, Total, DYnamic, Undo), REVERSE, JOIN (a source or several at once, into lines, arcs, circles, elliptical arcs and polylines), EXPLODE (polylines, block references, dimensions) and ALIGN (one, two or three pairs of points, with scale).

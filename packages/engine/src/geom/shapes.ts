@@ -1,143 +1,131 @@
-// Constructions for ELLIPSE, XLINE, RAY and DONUT (M3-01 part 4), as AutoCAD 2024's commands make
-// them (AutoCAD 2024 Help, "ELLIPSE (Command)", "XLINE (Command)", "DONUT (Command)").
-//
-// An ellipse is drawn from its first axis (a half-axis vector from the centre, whichever of the
-// two it turns out to be) and the other half-axis length. Its DXF form needs the major axis and
-// a ratio ≤ 1, so when the second axis is the longer one the major axis turns a quarter and the
-// DXF parameters shift by −π/2. Elliptical arcs are asked in the first axis's frame: an angle
-// counts counter-clockwise from the first axis endpoint (ELLIPSE help: "The angle of the first
-// axis determines the angle of the elliptical arc"), and a parameter u is that of
-// p(u) = c + a·cos u + b·sin u with a the first half-axis and b the second, CCW from it.
-import { normalizeAngle, TAU } from './angle';
-import type { Ellipse, Xline } from './curves';
+// The closed shapes RECTANG and POLYGON draw (M3-01), as the vertices of the LWPOLYLINE each
+// makes (AutoCAD 2024 Help, "RECTANG (Command)", "POLYGON (Command)"), and the bulge of a drawn
+// arc for PLINE's arc segments.
 import type { BulgeVertex } from './curves';
+import type { BulgeArc } from './eval';
 import type { Tolerance } from './tolerance';
 import type { Vec2 } from './types';
-import { add, angleOf, cross, length, normalize, perp, scale, sub } from './vec';
+import { add, angleOf, distance, fromAngle, midpoint, normalize, perp, scale, sub } from './vec';
 
-/** An ellipse being drawn: its centre, first half-axis vector and the other half-axis length. */
-export interface EllipseAxes {
-  readonly center: Vec2;
-  /** From the centre to the first axis endpoint given. */
-  readonly axis: Vec2;
-  /** Half the other axis, which runs CCW a quarter turn from `axis`. */
-  readonly other: number;
-}
+/** A polyline vertex's bulge for an arc drawn from it (`sweep` signed, |sweep| < 2π). */
+export const bulgeOf = (a: BulgeArc): number => Math.tan(a.sweep / 4);
 
-/**
- * The DXF ELLIPSE of `e`, whole or from first-axis parameter `u0` to `u1` (CCW); undefined when
- * an axis is degenerate.
- */
-export function ellipseOf(e: EllipseAxes, tol: Tolerance, u0 = 0, u1 = TAU): Ellipse | undefined {
-  const a = length(e.axis);
-  const b = Math.abs(e.other);
-  if (!(a > tol.linear) || !(b > tol.linear)) return undefined;
-  const sweep = u1 - u0;
-  const whole =
-    sweep >= TAU - tol.angular || Math.abs(normalizeAngle(u1) - normalizeAngle(u0)) <= tol.angular;
-  const shift = b > a ? -Math.PI / 2 : 0;
-  const majorAxis = b > a ? scale(normalize(perp(e.axis)), b) : e.axis;
-  const ratio = b > a ? a / b : b / a;
-  if (whole)
-    return { kind: 'ELLIPSE', center: e.center, majorAxis, ratio, startParam: 0, endParam: TAU };
-  // DXF parameters in [0, 2π); the curve runs CCW from start to end, wrapping past 2π.
-  const startParam = normalizeAngle(u0 + shift);
-  const endParam = normalizeAngle(u1 + shift);
-  return { kind: 'ELLIPSE', center: e.center, majorAxis, ratio, startParam, endParam };
-}
+/** How RECTANG cuts its corners: rounded (Fillet) or bevelled (Chamfer). */
+export type RectangleCorners =
+  | { readonly kind: 'fillet'; readonly radius: number }
+  | { readonly kind: 'chamfer'; readonly first: number; readonly second: number };
 
 /**
- * The first-axis parameter of the point at `angle` from the first axis (ELLIPSE Arc's Angle
- * mode): where the ray from the centre at that angle meets the ellipse.
+ * A rectangle from `first`, `length` along the direction at `rotation` (radians) and `width`
+ * square to it, both signed: the corners in RECTANG's order, first corner, along the length,
+ * the other corner, back along the width. With `corners`, each corner is filleted or chamfered;
+ * a chamfer takes its first distance on the side arriving at the corner and its second on the
+ * side leaving it (AutoCAD's help does not say which side gets which: this is CHAMFER's order,
+ * first line then second, going round). Corners that do not fit (a side shorter than the two
+ * cuts on it) are left square, as AutoCAD draws a rectangle too small for its fillets.
  */
-export function parameterAtAngle(e: EllipseAxes, angle: number): number {
-  const a = length(e.axis);
-  const b = Math.abs(e.other);
-  return normalizeAngle(Math.atan2(Math.sin(angle) / b, Math.cos(angle) / a));
-}
-
-/** The world angle a typed arc angle counts from: the first axis's direction. */
-export const firstAxisAngle = (e: EllipseAxes): number => angleOf(e.axis);
-
-/** The angle from the first axis of `p` seen from the centre, in [0, 2π). */
-export function angleFromAxis(e: EllipseAxes, p: Vec2): number {
-  return normalizeAngle(angleOf(sub(p, e.center)) - angleOf(e.axis));
-}
-
-/**
- * ELLIPSE Rotation: the other half-axis of a circle on the first axis turned `rotation` about it
- * (cos of the rotation, either way); undefined past 89.4°, which AutoCAD refuses.
- */
-export function otherFromRotation(axis: Vec2, rotation: number): number | undefined {
-  const k = Math.abs(Math.cos(rotation));
-  return k < Math.cos((89.4 * Math.PI) / 180) - 1e-12 ? undefined : length(axis) * k;
-}
-
-/** An XLINE through `base` along `direction` (normalised), or undefined for a zero direction. */
-export function xlineThrough(base: Vec2, direction: Vec2, tol: Tolerance): Xline | undefined {
-  if (!(length(direction) > tol.linear)) return undefined;
-  return { kind: 'XLINE', base, direction: normalize(direction) };
-}
-
-/**
- * XLINE Bisect: the line through `vertex` halving the angle from `start` to `end` (the one
- * AutoCAD draws: between the two rays from the vertex); undefined when a point is the vertex.
- */
-export function bisector(vertex: Vec2, start: Vec2, end: Vec2, tol: Tolerance): Xline | undefined {
-  const u = sub(start, vertex);
-  const v = sub(end, vertex);
-  if (!(length(u) > tol.linear) || !(length(v) > tol.linear)) return undefined;
-  const s = add(normalize(u), normalize(v));
-  // Rays pointing opposite ways: the bisector is square to them.
-  const d = length(s) > 1e-9 ? s : perp(normalize(u));
-  return { kind: 'XLINE', base: vertex, direction: normalize(d) };
-}
-
-/** A straight line an XLINE can be drawn from: a point on it and its direction. */
-export interface StraightLine {
-  readonly point: Vec2;
-  readonly direction: Vec2;
-}
-
-/**
- * XLINE Offset: the xline parallel to `line` at `distance` on the side of `side`, or through
- * `side` when no distance is given (Through); undefined when `side` is on the line.
- */
-export function offsetXline(
-  line: StraightLine,
-  side: Vec2,
-  distance: number | undefined,
+export function rectangleVertices(
+  first: Vec2,
+  length: number,
+  width: number,
+  rotation: number,
+  corners: RectangleCorners | undefined,
   tol: Tolerance,
-): Xline | undefined {
-  const d = normalize(line.direction);
-  const off = cross(d, sub(side, line.point));
-  if (distance === undefined) {
-    return { kind: 'XLINE', base: side, direction: d };
+): BulgeVertex[] {
+  const u = fromAngle(rotation);
+  const v = perp(u);
+  const c = [
+    first,
+    add(first, scale(u, length)),
+    add(add(first, scale(u, length)), scale(v, width)),
+    add(first, scale(v, width)),
+  ];
+  const plain = c.map((p) => ({ x: p.x, y: p.y, bulge: 0 }));
+  const cut = cornerCuts(corners);
+  if (!cut) return plain;
+  const [into, out] = cut;
+  const sides = [Math.abs(length), Math.abs(width)];
+  if (sides.some((s) => into + out > s + tol.linear)) return plain;
+  // Each corner turns the same way: left (counter-clockwise) when length and width share a sign.
+  const turn = Math.sign(length * width);
+  const bulge = corners?.kind === 'fillet' ? turn * Math.tan(Math.PI / 8) : 0;
+  const out4: BulgeVertex[] = [];
+  for (let i = 0; i < 4; i++) {
+    const p = c[i]!;
+    const dirIn = normalize(sub(p, c[(i + 3) % 4]!));
+    const dirOut = normalize(sub(c[(i + 1) % 4]!, p));
+    const a = sub(p, scale(dirIn, into));
+    const b = add(p, scale(dirOut, out));
+    out4.push({ x: a.x, y: a.y, bulge }, { x: b.x, y: b.y, bulge: 0 });
   }
-  if (Math.abs(off) <= tol.linear) return undefined;
-  const n = scale(perp(d), Math.sign(off) * distance);
-  // The base stays across from the line's own point, as an offset of it.
-  return { kind: 'XLINE', base: add(line.point, n), direction: d };
+  // A side the cuts use up whole leaves two coincident vertices: drop the straight one.
+  return out4.filter((p, i) => {
+    const next = out4[(i + 1) % out4.length]!;
+    return p.bulge !== 0 || distance(p, next) > tol.linear;
+  });
+}
+
+/** How far each corner's cut runs back along the side arriving and on along the side leaving. */
+function cornerCuts(corners: RectangleCorners | undefined): [number, number] | undefined {
+  if (!corners) return undefined;
+  const cut: [number, number] =
+    corners.kind === 'fillet' ? [corners.radius, corners.radius] : [corners.first, corners.second];
+  return cut[0] > 0 || cut[1] > 0 ? cut : undefined;
 }
 
 /**
- * DONUT: a closed two-arc polyline round `center` whose width covers `inside` to `outside`
- * diameter, as AutoCAD draws one (a zero inside diameter fills the circle). The vertices run
- * left then right of the centre with bulge 1 (half circles).
+ * The area the corners take from a rectangle (RECTANG Area counts it, AutoCAD 2024 Help: "If
+ * the Chamfer or Fillet option is active, the area includes the effect of the chamfers or
+ * fillets on the corners"): four quarter-circle remainders or four triangles.
  */
-export function donutOf(
+export function cornersArea(corners: RectangleCorners | undefined): number {
+  if (!corners) return 0;
+  if (corners.kind === 'fillet') return (4 - Math.PI) * corners.radius ** 2;
+  return 2 * corners.first * corners.second;
+}
+
+/** A regular polygon's vertices, counter-clockwise, the first `radius` from `center` at `start`. */
+export function polygonVertices(
   center: Vec2,
-  inside: number,
-  outside: number,
-): { vertices: BulgeVertex[]; width: number } {
-  const lo = Math.min(inside, outside);
-  const hi = Math.max(inside, outside);
-  const r = (lo + hi) / 4;
-  return {
-    vertices: [
-      { x: center.x - r, y: center.y, bulge: 1 },
-      { x: center.x + r, y: center.y, bulge: 1 },
-    ],
-    width: (hi - lo) / 2,
-  };
+  radius: number,
+  sides: number,
+  start: number,
+): BulgeVertex[] {
+  const out: BulgeVertex[] = [];
+  for (let i = 0; i < sides; i++) {
+    const p = add(center, fromAngle(start + (2 * Math.PI * i) / sides, radius));
+    out.push({ x: p.x, y: p.y, bulge: 0 });
+  }
+  return out;
+}
+
+/**
+ * POLYGON about a centre: the vertices for a circle of `radius` through `toward`'s direction,
+ * inscribed (`toward`'s direction is a vertex's) or circumscribed (an edge's midpoint's). With no
+ * `toward` (the radius typed) the bottom edge is horizontal (AutoCAD 2024 Help: "Specifying the
+ * radius with a value draws the bottom edge of the polygon at the current snap rotation angle";
+ * SNAPANG arrives with M3-06, so 0).
+ */
+export function polygonAbout(
+  center: Vec2,
+  radius: number,
+  sides: number,
+  inscribed: boolean,
+  toward?: Vec2,
+): BulgeVertex[] {
+  const half = Math.PI / sides;
+  const r = inscribed ? radius : radius / Math.cos(half);
+  const start = toward
+    ? angleOf(sub(toward, center)) - (inscribed ? 0 : half)
+    : -Math.PI / 2 - half;
+  return polygonVertices(center, r, sides, start);
+}
+
+/** POLYGON Edge: the polygon on the left of the edge from `a` to `b`, counter-clockwise from `a`. */
+export function polygonOnEdge(a: Vec2, b: Vec2, sides: number): BulgeVertex[] {
+  const half = Math.PI / sides;
+  const side = distance(a, b);
+  const toCenter = side / (2 * Math.tan(half));
+  const center = add(midpoint(a, b), scale(perp(normalize(sub(b, a))), toCenter));
+  return polygonVertices(center, side / (2 * Math.sin(half)), sides, angleOf(sub(a, center)));
 }

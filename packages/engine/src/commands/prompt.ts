@@ -8,6 +8,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Color, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
+import type { MatchSettings } from '../properties/match';
 import type { DragPreview } from './drag';
 import {
   DECIMAL_UNITS,
@@ -73,6 +74,11 @@ export interface PointPrompt extends PromptBase {
   readonly rubberBand?: {
     readonly from: Vec2;
     readonly box?: boolean;
+    /**
+     * False: nothing is drawn for it, the drag draws the shape (RECTANG's rounded or turned
+     * rectangle, M3-01 part 3); the cursor is still measured from `from`.
+     */
+    readonly drawn?: false;
     readonly selection?: 'auto' | 'window' | 'crossing';
   };
   /**
@@ -107,6 +113,11 @@ export interface PointPrompt extends PromptBase {
    * (the answer's `shift`).
    */
   readonly pickbox?: boolean;
+  /**
+   * What a typed `@` counts from at this prompt instead of LASTPOINT: BREAK's "Specify second
+   * break point", where `@` is the first break point however it was given (M3-02 part 4).
+   */
+  readonly lastPoint?: Vec2;
 }
 
 /** A distance: a number, or two points (one when `base` is given). */
@@ -361,6 +372,13 @@ export type DialogRequest =
       /** The default value; a multiline ATTDEF's MTEXT contents. */
       readonly value: string;
       readonly multiline: boolean;
+    }
+  | {
+      /** MATCHPROP's Property Settings (M3-02 part 5): which properties it copies. */
+      readonly type: 'matchprop';
+      readonly settings: MatchSettings;
+      /** Plot Style is offered: the drawing uses named plot styles. */
+      readonly plotStyles: boolean;
     };
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
@@ -399,7 +417,15 @@ export type PromptAnswer =
        */
       readonly deferred?: DeferredPick;
     }
-  | { readonly kind: 'distance'; readonly value: number }
+  | {
+      readonly kind: 'distance';
+      readonly value: number;
+      /**
+       * The second point when the distance was given by points (POLYGON, M3-01 part 3: a radius
+       * picked turns the polygon, a typed one does not).
+       */
+      readonly to?: Vec2;
+    }
   | { readonly kind: 'angle'; readonly value: number }
   | { readonly kind: 'keyword'; readonly keyword: string }
   | {
@@ -438,6 +464,8 @@ export type PromptAnswer =
       readonly attributes?: readonly AttributePatch[];
       /** Edit Attribute Definition's fields. */
       readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
+      /** Property Settings' checkboxes as OK closed it. */
+      readonly matchprop?: MatchSettings;
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }

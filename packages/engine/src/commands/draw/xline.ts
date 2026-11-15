@@ -16,7 +16,7 @@
 // remembered for the next XLINE Offset (AutoCAD keeps it in OFFSETDIST, shared with OFFSET;
 // Triya's OFFSET keeps its own distance, so XLINE keeps its own too).
 import type { Xline } from '../../geom/curves';
-import { bisector, offsetXline, xlineThrough, type StraightLine } from '../../geom/shapes';
+import { bisector, offsetXline, xlineThrough, type StraightLine } from '../../geom/ellipse-xline';
 import type { Vec2 } from '../../geom/types';
 import { angleOf, fromAngle, sub } from '../../geom/vec';
 import type { CommandContext, CommandDef } from '../command';

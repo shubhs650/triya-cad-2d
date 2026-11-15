@@ -14,7 +14,12 @@
 // does not word its refusals; "*Invalid*" is what its command line gives for them (as ARC).
 import { normalizeAngle, TAU } from '../../geom/angle';
 import type { Ellipse } from '../../geom/curves';
-import { ellipseOf, firstAxisAngle, otherFromRotation, type EllipseAxes } from '../../geom/shapes';
+import {
+  ellipseOf,
+  firstAxisAngle,
+  otherFromRotation,
+  type EllipseAxes,
+} from '../../geom/ellipse-xline';
 import type { Vec2 } from '../../geom/types';
 import { midpoint, sub } from '../../geom/vec';
 import type { CommandContext, CommandDef } from '../command';
