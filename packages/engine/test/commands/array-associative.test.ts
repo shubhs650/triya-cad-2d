@@ -120,7 +120,26 @@ function setup(associativity = 1) {
     walk(model.blockEntities(MODEL_SPACE), IDENTITY);
     return out.sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
   };
-  return { model, bus, log, pick, live, arrays, record, rings, value: () => value };
+  /** Every line drawn inside a block reference, as sorted [x1, y1, x2, y2]. */
+  const sticks = (): number[][] => {
+    const out: number[][] = [];
+    const walk = (ids: readonly EntityId[], m: Matrix2D, inside: boolean) => {
+      for (const id of ids) {
+        const g = model.entity(id)!.geom;
+        if (g.kind === 'LINE' && inside) {
+          const a = applyPoint(m, g.start);
+          const b = applyPoint(m, g.end);
+          out.push([r4(a.x), r4(a.y), r4(b.x), r4(b.y)]);
+        } else if (g.kind === 'INSERT') {
+          const base = model.blocks.get(g.block)!.basePoint;
+          walk(model.blockEntities(g.block), compose(insertMatrix(g, base), m), true);
+        }
+      }
+    };
+    walk(model.blockEntities(MODEL_SPACE), IDENTITY, false);
+    return out.sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
+  };
+  return { model, bus, log, pick, live, arrays, record, rings, sticks, value: () => value };
 }
 
 const grid = (xs: number[], ys: number[]) =>
@@ -285,7 +304,9 @@ describe('ARRAYEDIT', () => {
     const array = await made(s);
     s.pick(array.handle);
     await s.bus.script(['ARRAYEDIT', '0,0']);
-    expect(s.bus.promptText).toBe('Enter an option [Rows/Columns/eXit] <eXit>:');
+    expect(s.bus.promptText).toBe(
+      'Enter an option [Source/REPlace/Base point/Rows/Columns/RESet/eXit] <eXit>:',
+    );
     await s.bus.script(['C', '2', '5', 'R', '2', 'T', '2']);
     expect(s.record().params).toEqual({
       kind: 'rectangular',
@@ -327,7 +348,7 @@ describe('ARRAYEDIT', () => {
     s.pick(s.arrays()[0]!.handle);
     await s.bus.script(['ARRAYEDIT', '0,0']);
     expect(s.bus.promptText).toBe(
-      'Enter an option [Base point/Items/Angle between/Fill angle/Rows/ROTate items/eXit] <eXit>:',
+      'Enter an option [Source/REPlace/Base point/Items/Angle between/Fill angle/Rows/ROTate items/RESet/eXit] <eXit>:',
     );
     await s.bus.script(['I', '3', 'F', '180', 'A', '45', 'R', '2', '1', 'ROT', 'N']);
     const p = s.record().params;
@@ -347,7 +368,7 @@ describe('ARRAYEDIT', () => {
     s.pick(s.arrays()[0]!.handle);
     await s.bus.script(['ARRAYEDIT', '0,0']);
     expect(s.bus.promptText).toBe(
-      'Enter an option [Method/Base point/Items/Rows/Align items/eXit] <eXit>:',
+      'Enter an option [Source/REPlace/Method/Base point/Items/Rows/Align items/RESet/eXit] <eXit>:',
     );
     await s.bus.script(['M', 'D', 'I', '2', 'R', '2', '1', 'A', 'N']);
     expect(s.record().params).toMatchObject({
@@ -410,5 +431,288 @@ describe('ARRAYEDIT', () => {
     expect(t.arrays()).toEqual([]);
     expect(t.log).toContain('1 object was not arrayed: a region cannot be copied.');
     expect(t.model.entityByHandle('35')).toBeDefined();
+  });
+});
+
+describe('ARRAYEDIT Base point, REPlace and RESet (part 2)', () => {
+  async function made(s: ReturnType<typeof setup>) {
+    await start(s, 'ARRAYRECT');
+    await s.bus.script(['']);
+    const array = s.arrays()[0]!;
+    s.pick(array.handle);
+    await s.bus.script(['ARRAYEDIT', '0,0']);
+    return array;
+  }
+
+  it('moves a rectangular array’s base point, leaving its items where they are', async () => {
+    const s = setup();
+    const array = await made(s);
+    expect(s.bus.promptText).toBe(
+      'Enter an option [Source/REPlace/Base point/Rows/Columns/RESet/eXit] <eXit>:',
+    );
+    await s.bus.script(['B']);
+    expect(s.bus.promptText).toBe('Specify base point <current>:');
+    await s.bus.script(['1,2']);
+    expect(s.arrays()[0]!.geom).toMatchObject({ position: { x: 1, y: 2 } });
+    expect(s.rings()).toEqual(grid([0, 3, 6, 9], [0, 3, 6]));
+    const source = s.model.blockEntities(s.record().source).map((id) => s.model.entity(id)!);
+    expect(source[0]!.geom).toMatchObject({ center: { x: -1, y: -2 } });
+    // Enter keeps it where it is.
+    await s.bus.script(['B', '']);
+    expect(s.arrays()[0]!.geom).toMatchObject({ position: { x: 1, y: 2 } });
+    // Later edits keep the base point: rows grow from the same items.
+    await s.bus.script(['R', '2', '']);
+    expect(s.rings()).toEqual(grid([0, 3, 6, 9], [0, 3]));
+    expect(s.arrays()[0]!.handle).toBe(array.handle);
+  });
+
+  it('replaces picked items with other objects, which stay in the drawing, and RESet takes them back', async () => {
+    const s = setup();
+    await made(s);
+    s.pick('33');
+    await s.bus.script(['REP', '0,0', '']);
+    expect(s.bus.promptText).toBe('Select base point of replacement objects <centroid>:');
+    // The stick's start lands on each item's base point (the circle's centre).
+    await s.bus.script(['2,0']);
+    expect(s.bus.promptText).toBe('Select an item in array to replace or [Source objects]:');
+    await s.bus.script(['3.5,0.5', '6,3']);
+    expect(s.model.entityByHandle('33')).toBeDefined();
+    const r = s.record();
+    expect(r.replaced).toHaveLength(2);
+    expect(r.replaced![0]).toMatchObject({ item: 1, row: 0 });
+    expect(r.replaced![1]).toMatchObject({ item: 2, row: 1, block: r.replaced![0]!.block });
+    expect(s.model.blocks.get(r.replaced![0]!.block)!.name).toMatch(/^\*U\d+$/);
+    expect(s.sticks()).toEqual([
+      [3, 0, 4, 0],
+      [6, 3, 7, 3],
+    ]);
+    expect(s.rings()).toHaveLength(10);
+    // A point off the array finds nothing; Enter ends the picking.
+    await s.bus.script(['50,50']);
+    expect(s.log.at(-1)).toBe('No item of the array is there.');
+    await s.bus.script(['']);
+    expect(s.bus.promptText).toMatch(/^Enter an option/);
+
+    await s.bus.script(['RES']);
+    expect(s.record()).not.toHaveProperty('replaced');
+    expect(s.sticks()).toEqual([]);
+    expect(s.rings()).toHaveLength(12);
+  });
+
+  it('replaces the source objects for every item not replaced already', async () => {
+    const s = setup();
+    await made(s);
+    const before = s.record().source;
+    s.pick('33');
+    await s.bus.script(['REP', '0,0', '', '2,0', '0,3', '']);
+    s.pick('33');
+    await s.bus.script(['REP', '0,0', '', '', 'S']);
+    expect(s.bus.promptText).toMatch(/^Enter an option/);
+    const r = s.record();
+    expect(r.source).not.toBe(before);
+    // Both replacements show the stick, the second about its centre (2.5, 0).
+    expect(s.sticks()).toHaveLength(12);
+    expect(s.sticks()).toContainEqual([0, 3, 1, 3]);
+    expect(s.sticks()).toContainEqual([-0.5, 0, 0.5, 0]);
+    expect(s.rings()).toEqual([]);
+    // RESet leaves the new source objects: only the item overrides go.
+    await s.bus.script(['RES']);
+    expect(s.sticks()).toContainEqual([-0.5, 3, 0.5, 3]);
+  });
+
+  it('will not replace items with the array itself, and copies an array with its replacements', async () => {
+    const s = setup();
+    const array = await made(s);
+    s.pick(array.handle);
+    await s.bus.script(['REP', '0,0', '']);
+    expect(s.log.at(-1)).toBe('An array cannot replace its own items.');
+    s.pick('33');
+    await s.bus.script(['REP', '0,0', '', '2,0', '0,0', '', '']);
+    s.pick(array.handle);
+    await s.bus.script(['COPY', '0,0', '', '0,0', '100,0', '']);
+    const [a, b] = s.arrays();
+    const ra = s.record(a);
+    const rb = s.record(b);
+    expect(rb.replaced).toEqual([{ item: 0, row: 0, block: expect.any(String) }]);
+    expect(rb.replaced![0]!.block).not.toBe(ra.replaced![0]!.block);
+    expect(s.sticks()).toEqual([
+      [0, 0, 1, 0],
+      [100, 0, 101, 0],
+    ]);
+  });
+});
+
+describe('ARRAYEDIT Source and ARRAYCLOSE (part 2)', () => {
+  async function opened(s: ReturnType<typeof setup>) {
+    await start(s, 'ARRAYRECT');
+    await s.bus.script(['COU', '2', '1', '']);
+    s.pick(s.arrays()[0]!.handle);
+    await s.bus.script(['ARRAYEDIT', '0,0', 'S']);
+    expect(s.bus.promptText).toBe('Select item in array:');
+    await s.bus.script(['3.2,0']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.log.at(-1)).toBe('Edit the item, then save or discard the changes with ARRAYCLOSE.');
+  }
+  /** The unit circles standing in model space: the item's objects being edited. */
+  const editing = (s: ReturnType<typeof setup>) =>
+    s.live().filter((e) => e.geom.kind === 'CIRCLE' && e.geom.radius === 1);
+
+  it('opens the item’s objects in its place, and every item follows their edits', async () => {
+    const s = setup();
+    await opened(s);
+    const [copy] = editing(s);
+    expect(copy!.geom).toMatchObject({ center: { x: 3, y: 0 } });
+    // The item itself is left out while it is edited.
+    expect(s.rings()).toEqual([
+      [0, 0],
+      [3, 0],
+    ]);
+    s.pick(copy!.handle);
+    await s.bus.script(['MOVE', '0,0', '', '0,0', '0,1']);
+    expect(s.rings()).toEqual([
+      [0, 1],
+      [3, 1],
+    ]);
+    // Drawn objects join the source too.
+    await s.bus.script(['LINE', '3,0', '4,0', '']);
+    expect(s.sticks()).toEqual([[0, 0, 1, 0]]);
+    await s.bus.script(['ARRAYEDIT']);
+    expect(s.log.at(-1)).toBe(
+      'An array is being edited: save or discard its changes with ARRAYCLOSE first.',
+    );
+    await s.bus.script(['ARRAYCLOSE']);
+    expect(s.bus.promptText).toBe('Save changes to array [Yes/No] <Yes>:');
+    await s.bus.script(['']);
+    expect(editing(s)).toEqual([]);
+    expect(s.rings()).toEqual([
+      [0, 1],
+      [3, 1],
+    ]);
+    expect(s.sticks()).toEqual([
+      [0, 0, 1, 0],
+      [3, 0, 4, 0],
+    ]);
+    expect(s.live().some((e) => e.geom.kind === 'LINE' && r4(e.geom.start.x) === 3)).toBe(false);
+    await s.bus.script(['ARRAYCLOSE']);
+    expect(s.log.at(-1)).toBe('No array is being edited.');
+  });
+
+  it('puts the objects back as they were on No', async () => {
+    const s = setup();
+    await opened(s);
+    const before = s.model.blockEntities(s.record().source).map((id) => s.model.entity(id)!.handle);
+    s.pick(editing(s)[0]!.handle);
+    await s.bus.script(['MOVE', '0,0', '', '0,0', '0,1']);
+    await s.bus.script(['ARRAYCLOSE', 'N']);
+    expect(editing(s)).toEqual([]);
+    expect(s.rings()).toEqual([
+      [0, 0],
+      [3, 0],
+    ]);
+    expect(
+      s.model.blockEntities(s.record().source).map((id) => s.model.entity(id)!.handle),
+    ).toEqual(before);
+  });
+
+  it('discards when every object was erased, and forgets an array that is gone', async () => {
+    const s = setup();
+    await opened(s);
+    s.pick(editing(s)[0]!.handle);
+    await s.bus.script(['ERASE', '0,0', '']);
+    // Erasing them all leaves the block as it was.
+    expect(s.rings()).toEqual([[0, 0]]);
+    await s.bus.script(['ARRAYCLOSE', 'Y']);
+    expect(s.log).toContain("The item's objects are all erased: the changes are discarded.");
+    expect(s.rings()).toEqual([
+      [0, 0],
+      [3, 0],
+    ]);
+
+    const t = setup();
+    await opened(t);
+    t.pick(t.arrays()[0]!.handle);
+    await t.bus.script(['ERASE', '0,0', '']);
+    await t.bus.script(['ARRAYCLOSE']);
+    expect(t.log.at(-1)).toBe('No array is being edited.');
+  });
+
+  it('closes on an undone opening, putting the item back', async () => {
+    const s = setup();
+    await opened(s);
+    await s.bus.script(['U']);
+    expect(editing(s)).toEqual([]);
+    expect(s.rings()).toHaveLength(2);
+    await s.bus.script(['ARRAYCLOSE', 'N']);
+    expect(s.rings()).toEqual([
+      [0, 0],
+      [3, 0],
+    ]);
+    // Esc at the question leaves the edit open.
+    const t = setup();
+    await opened(t);
+    await t.bus.script(['ARRAYCLOSE']);
+    await t.bus.cancel();
+    expect(editing(t)).toHaveLength(1);
+    await t.bus.script(['ARRAYCLOSE', 'N']);
+    expect(editing(t)).toEqual([]);
+  });
+
+  it('picks again where no item is, and refuses an item scaled out of shape', async () => {
+    const s = setup();
+    await start(s, 'ARRAYRECT');
+    await s.bus.script(['']);
+    const array = s.arrays()[0]!;
+    s.pick(array.handle);
+    await s.bus.script(['ARRAYEDIT', '0,0', 'S', '50,50']);
+    expect(s.log.at(-1)).toBe('No item of the array is there.');
+    await s.bus.script(['']);
+    expect(s.bus.promptText).toMatch(/^Enter an option/);
+    await s.bus.script(['']);
+    const b = new ChangeSetBuilder(s.model);
+    b.updateEntity(array.id, { geom: { ...array.geom, scale: { x: 2, y: 1, z: 1 } } as never });
+    s.model.apply(b.build());
+    s.pick(array.handle);
+    await s.bus.script(['ARRAYEDIT', '0,0', 'S', '0,0']);
+    expect(s.log.at(-1)).toBe('The item cannot be edited: it is not scaled uniformly.');
+  });
+});
+
+describe('path arrays follow their path (part 2)', () => {
+  it('remakes the items along a path that moved or changed shape', async () => {
+    const s = setup();
+    s.pick('30');
+    await s.bus.script(['ARRAYPATH', '0,0', '']);
+    s.pick('31');
+    await s.bus.script(['1,10', 'B', '0,0', 'M', 'D', 'I', '3', '']);
+    s.pick('31');
+    await s.bus.script(['MOVE', '0,0', '', '0,0', '0,5']);
+    expect(s.rings()).toEqual([
+      [0, 15],
+      [10, 15],
+      [20, 15],
+    ]);
+    // Undo takes the items back with the path.
+    await s.bus.script(['U']);
+    expect(s.rings()).toEqual([
+      [0, 10],
+      [10, 10],
+      [20, 10],
+    ]);
+    // Moved with the path, the array stays on it.
+    s.pick('31', s.arrays()[0]!.handle);
+    await s.bus.script(['MOVE', '0,0', '', '0,0', '5,0']);
+    expect(s.rings()).toEqual([
+      [5, 10],
+      [15, 10],
+      [25, 10],
+    ]);
+    // A path that changes length spreads the items along it.
+    s.pick('31');
+    await s.bus.script(['SCALE', '0,0', '', '5,10', '2']);
+    expect(s.rings()).toEqual([
+      [5, 10],
+      [25, 10],
+      [45, 10],
+    ]);
   });
 });

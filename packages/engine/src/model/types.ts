@@ -1840,6 +1840,25 @@ export interface AssocArray extends NonGraphicalObject {
   /** DXF 340: the source block's BLOCK_RECORD. */
   readonly source: Handle;
   readonly params: AssocArrayParams;
+  /**
+   * Items ARRAYEDIT's REPlace put other objects in (M3-11 part 2): each an INSERT of its own
+   * anonymous block instead of the source block. RESet takes them all back to the source.
+   */
+  readonly replaced?: readonly ReplacedItem[];
+}
+
+/**
+ * Which item of an array: `item` along a row (a rectangular array's column, a polar or path
+ * array's item) and `row` (a polar array's ring), both from 0. Items are made row by row.
+ */
+export interface ArrayItemKey {
+  readonly item: number;
+  readonly row: number;
+}
+
+/** An item REPlace gave other objects: DXF 92 item, 93 row, 341 the block's BLOCK_RECORD. */
+export interface ReplacedItem extends ArrayItemKey {
+  readonly block: Handle;
 }
 
 export type AssocArrayParams =
