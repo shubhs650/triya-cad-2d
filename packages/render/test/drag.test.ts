@@ -288,12 +288,12 @@ describe('Canvas2DRenderer grips', () => {
       [0, -250],
     ]);
     // The box round the group's extents, drawn before the grips.
+    // A device pixel wide, on pixel centres.
     expect(devicePoints(transient().calls)).toEqual([
-      [0, 50],
-      [100, 50],
-      [100, 50],
-      [0, 50],
-      [0, 50],
+      [0.5, 50.5],
+      [100.5, 50.5],
+      [100.5, 50.5],
+      [0.5, 50.5],
     ]);
     // No box at GROUPDISPLAYMODE 1; the centre grip takes the hover and hot colours.
     r.setGrips([], undefined, [{ ids: [id('20')] }]);

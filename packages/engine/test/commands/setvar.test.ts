@@ -934,6 +934,22 @@ describe('PICKADD and PICKAUTO', () => {
       ok: false,
     });
   });
+
+  it('PICKSTYLE and GROUPDISPLAYMODE are session settings of its grips on groups (M3-13)', () => {
+    const session = new EngineSession(sampleInit());
+    expect(session.edit({ kind: 'sysvar', name: 'PICKSTYLE', value: 3 })).toEqual({
+      ok: true,
+      change: {},
+    });
+    expect(session.edit({ kind: 'sysvar', name: 'GROUPDISPLAYMODE', value: 0 })).toEqual({
+      ok: true,
+      change: {},
+    });
+    expect(session.edit({ kind: 'sysvar', name: 'GROUPDISPLAYMODE', value: 3 })).toEqual({
+      ok: false,
+      message: 'Cannot set GROUPDISPLAYMODE to 3.',
+    });
+  });
 });
 
 describe('REVCLOUDGRIPS', () => {

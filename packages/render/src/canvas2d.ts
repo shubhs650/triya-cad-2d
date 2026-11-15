@@ -1437,13 +1437,16 @@ export class Canvas2DRenderer implements Renderer {
         device({ x: box.maxX, y: box.maxY }),
         device({ x: box.minX, y: box.maxY }),
       ];
+      const width = Math.max(1, Math.round(this.#dpr));
+      // An odd width sits on pixel centres, so the line is crisp, not two half-tone pixels.
+      const o = width % 2 === 1 ? 0.5 : 0;
       ctx.strokeStyle = GRIP_COLOR;
-      ctx.lineWidth = Math.max(1, Math.round(this.#dpr));
+      ctx.lineWidth = width;
       ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(corners[0]!.x, corners[0]!.y);
-      for (const c of corners.slice(1)) ctx.lineTo(c.x, c.y);
-      ctx.lineTo(corners[0]!.x, corners[0]!.y);
+      ctx.moveTo(corners[0]!.x + o, corners[0]!.y + o);
+      for (const c of corners.slice(1)) ctx.lineTo(c.x + o, c.y + o);
+      ctx.closePath();
       ctx.stroke();
     }
     for (const { center } of groups) {
