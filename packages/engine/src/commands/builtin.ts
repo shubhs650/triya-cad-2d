@@ -39,6 +39,7 @@ import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
 import { qselectCommand } from './qselect';
+import { filterCommand } from './filter';
 import { selectSimilarCommand } from './select-similar';
 import { setvarCommand } from './setvar';
 import { PALETTE_COMMANDS } from './palettes';
@@ -82,6 +83,7 @@ export function builtinCommands(): CommandRegistry {
     viewCommand(),
     selectCommand(),
     qselectCommand(),
+    filterCommand(),
     selectSimilarCommand(),
     setvarCommand(),
     ...EDIT_COMMANDS.map((make) => make()),

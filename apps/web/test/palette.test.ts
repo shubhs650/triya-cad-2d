@@ -70,6 +70,7 @@ describe('palette search', () => {
       'EXPORTPDF',
       'EXTEND',
       'FILLET',
+      'FILTER',
       // M3-06 part 2: GRID and SNAP.
       'GRID',
       'HATCHTOBACK',

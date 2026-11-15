@@ -77,6 +77,12 @@ export interface CommandContext {
    */
   select(ids: readonly EntityId[]): void;
   /**
+   * Adds `ids` to the selection the command this one runs inside is building, as one step of
+   * its "Select objects" ('FILTER, M3-04 part 4). False when it builds none (not transparent, or
+   * the command it runs in is at another prompt).
+   */
+  addSelected(ids: readonly EntityId[]): boolean;
+  /**
    * Makes `ids` the Previous selection set, as a "Select objects" ending on them would: DIVIDE's
    * and MEASURE's marks (M3-01 part 5; AutoCAD: "use Previous to select them").
    */

@@ -71,11 +71,17 @@ describe('preferences', () => {
       // SELECTSIMILARMODE 130 (Layer and Name) and SELECTIONCYCLING 0 (off), AutoCAD's.
       selectSimilarMode: 130,
       selectionCycling: 0,
+      // PICKBOX 3, PICKADD 2 and PICKAUTO 5, AutoCAD's initial values (M3-04 part 4).
+      pickbox: 3,
+      pickadd: 2,
+      pickauto: 5,
       qpQuadrant: 'top-right',
       qpDistance: 50,
       qpCollapse: true,
       qpRows: 3,
     });
+    // No named filters (FILTER, M3-04 part 4).
+    expect(DEFAULT_PREFERENCES.filters).toEqual({});
   });
 
   it('keep the Drafting Settings dialog\u2019s values when valid (M3-06 part 1)', () => {
@@ -85,6 +91,9 @@ describe('preferences', () => {
         polarAddAngles: '12.5;80',
         selectSimilarMode: 7,
         selectionCycling: -2,
+        pickbox: 10,
+        pickadd: 0,
+        pickauto: 7,
         qpQuadrant: 'bottom-left',
         qpDistance: 120,
         qpCollapse: false,
@@ -94,6 +103,9 @@ describe('preferences', () => {
     expect(kept).toMatchObject({
       selectSimilarMode: 7,
       selectionCycling: -2,
+      pickbox: 10,
+      pickadd: 0,
+      pickauto: 7,
       polarMode: 6,
       polarAddAngles: '12.5;80',
       qpQuadrant: 'bottom-left',
@@ -107,6 +119,9 @@ describe('preferences', () => {
         polarAddAngles: 'north',
         selectSimilarMode: 256,
         selectionCycling: 3,
+        pickbox: 51,
+        pickadd: 4,
+        pickauto: -1,
         qpQuadrant: 'middle',
         qpDistance: 'far',
         qpCollapse: 'yes',
@@ -116,6 +131,9 @@ describe('preferences', () => {
     expect(bad).toMatchObject({
       selectSimilarMode: 130,
       selectionCycling: 0,
+      pickbox: 3,
+      pickadd: 2,
+      pickauto: 5,
       polarMode: 0,
       polarAddAngles: '',
       qpQuadrant: 'top-right',
