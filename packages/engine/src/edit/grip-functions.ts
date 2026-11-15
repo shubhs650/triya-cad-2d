@@ -26,12 +26,24 @@
 // grip's direction to it and the scale its distance from the grip, as a typed number is the
 // angle or scale itself; the lines are laid out again about the origin, as the Properties
 // palette's Angle and Scale rows do (a user-defined hatch's Scale is its spacing).
+//
+// A linear or aligned dimension (M3-05 part 4; "About Modifying Dimension Geometry", "About
+// Modifying Dimension Text"): its dimension line grips offer Stretch, Continue Dimension,
+// Baseline Dimension and Flip Arrow, its text grip Stretch, Move with Dim Line, Move Text Only,
+// Move with Leader, Above Dim Line, Center Vertically and Reset Text Position. AutoCAD keeps
+// the text choices as the dimension's own DIMVAR overrides (DIMTMOVE 0, 2 and 1; DIMTAD 1, and
+// DIMTAD 0 with DIMTVP 0: `dimensionGripOverrides`). Its help does not say where Above Dim Line
+// and Center Vertically leave text the drafter moved; here the text goes home, where the style
+// places it, as Reset Text Position does. Move with Dim Line moves the dimension line across by
+// as much as the text moves across it. Continue and Baseline Dimension run DIMCONTINUE and
+// DIMBASELINE from the extension line at the grip's end (the grip command does that).
 import { ccwSweep, normalizeAngle, TAU } from '../geom/angle';
 import { toleranceForSize, type Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
-import { add, angleOf, distance, sub } from '../geom/vec';
+import { add, angleOf, distance, dot, scale, sub } from '../geom/vec';
 import type {
   ArcGeometry,
+  DimensionGeometry,
   EntityGeometry,
   HatchGeometry,
   LwPolylineGeometry,
@@ -40,6 +52,7 @@ import type {
 } from '../model/types';
 import type { GripInfo } from './array-grips';
 import { breakCurveOf, lengthenGeometry, lengthTo } from './break';
+import { dimensionDirection, dimensionLineEnds } from './dimension';
 import { relaidLines } from './hatch-lines';
 import { arcThrough, bulgeMidpoint, bulgeThrough, gripsOf, moveGrip, sameGrip } from './grips';
 import type { StretchResult } from './stretch';
@@ -56,7 +69,87 @@ export type GripFunction =
   | 'Convert to Line'
   | 'Origin Point'
   | 'Hatch Angle'
-  | 'Hatch Scale';
+  | 'Hatch Scale'
+  | 'Continue Dimension'
+  | 'Baseline Dimension'
+  | 'Flip Arrow'
+  | 'Move with Dim Line'
+  | 'Move Text Only'
+  | 'Move with Leader'
+  | 'Above Dim Line'
+  | 'Center Vertically'
+  | 'Reset Text Position';
+
+/** The functions that take no point: they act at once, and Ctrl passes them by. */
+export const IMMEDIATE_FUNCTIONS: ReadonlySet<GripFunction> = new Set<GripFunction>([
+  'Remove Vertex',
+  'Convert to Line',
+  'Flip Arrow',
+  'Above Dim Line',
+  'Center Vertically',
+  'Reset Text Position',
+]);
+
+/** The functions that start another command (DIMCONTINUE, DIMBASELINE): Ctrl passes them by. */
+export const COMMAND_FUNCTIONS: ReadonlySet<GripFunction> = new Set<GripFunction>([
+  'Continue Dimension',
+  'Baseline Dimension',
+]);
+
+/** A linear or aligned dimension's dimension line grip's functions (M3-05 part 4). */
+const DIMENSION_LINE_FUNCTIONS: readonly GripFunction[] = [
+  'Stretch',
+  'Continue Dimension',
+  'Baseline Dimension',
+  'Flip Arrow',
+];
+
+/** Its text grip's. */
+const DIMENSION_TEXT_FUNCTIONS: readonly GripFunction[] = [
+  'Stretch',
+  'Move with Dim Line',
+  'Move Text Only',
+  'Move with Leader',
+  'Above Dim Line',
+  'Center Vertically',
+  'Reset Text Position',
+];
+
+/** The DIMVAR overrides a dimension's text function sets on the dimension. */
+export function dimensionGripOverrides(fn: GripFunction): readonly [string, number][] {
+  switch (fn) {
+    case 'Move with Dim Line':
+      return [['DIMTMOVE', 0]];
+    case 'Move with Leader':
+      return [['DIMTMOVE', 1]];
+    case 'Move Text Only':
+      return [['DIMTMOVE', 2]];
+    case 'Above Dim Line':
+      return [['DIMTAD', 1]];
+    case 'Center Vertically':
+      return [
+        ['DIMTAD', 0],
+        ['DIMTVP', 0],
+      ];
+    default:
+      return [];
+  }
+}
+
+type LinearDimension = Extract<DimensionGeometry, { dimType: 'linear' | 'aligned' }>;
+
+const isLinearDimension = (g: EntityGeometry): g is LinearDimension =>
+  g.kind === 'DIMENSION' && (g.dimType === 'linear' || g.dimType === 'aligned');
+
+/**
+ * The end of a linear or aligned dimension the grip at `grip` is on: 0 the first extension
+ * line's, 1 the second's (its dimension line ends), undefined for another grip.
+ */
+export function dimensionLineEnd(g: LinearDimension, grip: Vec2): 0 | 1 | undefined {
+  const [a, b] = dimensionLineEnds(g);
+  if (sameGrip(a, grip)) return 0;
+  return sameGrip(b, grip) ? 1 : undefined;
+}
 
 /** The hatch grip's functions after Stretch (M3-05 part 3). */
 const HATCH_FUNCTIONS: readonly GripFunction[] = [
@@ -134,6 +227,16 @@ export function gripFunctionsOf(
     }
     case 'HATCH':
       return patterned(geom) ? HATCH_FUNCTIONS : [];
+    case 'DIMENSION':
+      if (!isLinearDimension(geom)) return [];
+      if (found.kind === 'dimline') return DIMENSION_LINE_FUNCTIONS;
+      // The text's grip (one on a definition point is that point's).
+      return found.kind === 'stretch' &&
+        sameGrip(geom.textPosition, grip) &&
+        !sameGrip(geom.first, grip) &&
+        !sameGrip(geom.second, grip)
+        ? DIMENSION_TEXT_FUNCTIONS
+        : [];
     default:
       return [];
   }
@@ -253,6 +356,36 @@ export function gripFunctionEdit(
       return gripFunctionValue(geom, fn, angleOf(sub(to, grip)), tol);
     case 'Hatch Scale':
       return gripFunctionValue(geom, fn, distance(grip, to), tol);
+    case 'Flip Arrow': {
+      const d = geom as LinearDimension;
+      const end = dimensionLineEnd(d, grip)!;
+      const flipArrows: [boolean, boolean] = [...(d.flipArrows ?? [false, false])];
+      flipArrows[end] = !flipArrows[end];
+      return { ...d, flipArrows };
+    }
+    case 'Move Text Only':
+    case 'Move with Leader':
+      return { ...(geom as LinearDimension), textPosition: to, textUserPositioned: true };
+    case 'Move with Dim Line': {
+      // The dimension line moves across by as much as the text does.
+      const d = geom as LinearDimension;
+      const u = dimensionDirection(d);
+      const moved = sub(to, d.textPosition);
+      const across = sub(moved, scale(u, dot(moved, u)));
+      return {
+        ...d,
+        definitionPoint: add(d.definitionPoint, across),
+        textPosition: to,
+        textUserPositioned: true,
+      };
+    }
+    case 'Above Dim Line':
+    case 'Center Vertically':
+    case 'Reset Text Position':
+      return { ...(geom as LinearDimension), textUserPositioned: false };
+    case 'Continue Dimension':
+    case 'Baseline Dimension':
+      return 'invalid';
     case 'Origin Point': {
       const h = geom as HatchGeometry;
       const d = sub(to, h.patternLines[0]!.base);

@@ -21,6 +21,8 @@
 // - Text moved out without a leader (DIMTMOVE 0) takes the dimension line with it: the line
 //   goes on from the nearer extension line to the text.
 // - Dimension lines stay out of the text's box widened by DIMGAP.
+// - A flipped arrowhead (DXF 74/75, AutoCAD's Flip Arrow grip function) points the other way
+//   from where the fit put it, with a DIMASZ tail behind it when it is then outside.
 // - DIMJUST 3 and 4 put the text over the first or second extension line: turned along it
 //   (upright), its middle DIMGAP and half its width beyond the dimension line, beside the line
 //   by DIMTAD as text beside a dimension line is; the extension line stays out of its box. The
@@ -268,14 +270,18 @@ export function linearParts(
   const showArrows = arrowsInside || !s.soxd;
   const tip1 = atTip(s.blk1, s, model);
   const tip2 = atTip(s.blk2, s, model);
-  const dir1 = arrowsInside ? along : { x: -along.x, y: -along.y };
-  const base1 = add(s1, dir1, s.asz);
-  const base2 = add(s2, dir1, -s.asz);
+  // A flipped arrow (DXF 74/75, AutoCAD's Flip Arrow grip function) points the other way:
+  // inside where the fit put arrows outside, outside where it put them inside.
+  const [flip1, flip2] = g.flipArrows ?? [false, false];
+  const in1 = arrowsInside !== flip1;
+  const in2 = arrowsInside !== flip2;
+  const base1 = add(s1, along, in1 ? s.asz : -s.asz);
+  const base2 = add(s2, along, in2 ? -s.asz : s.asz);
   let lineStart = s1;
   let lineEnd = s2;
   if (arrowsInside) {
-    if (showArrows && !tip1 && s.asz > 0) lineStart = base1;
-    if (showArrows && !tip2 && s.asz > 0) lineEnd = base2;
+    if (showArrows && in1 && !tip1 && s.asz > 0) lineStart = base1;
+    if (showArrows && in2 && !tip2 && s.asz > 0) lineEnd = base2;
     if (tip1) lineStart = add(lineStart, along, -s.dle);
     if (tip2) lineEnd = add(lineEnd, along, s.dle);
   }
@@ -291,10 +297,10 @@ export function linearParts(
     else if (s.sd2) lines.push([lineStart, split]);
     else lines.push([lineStart, lineEnd]);
   }
-  if (!arrowsInside && showArrows) {
+  if (showArrows) {
     // Tails beyond outside arrows' backs.
-    if (!tip1 && !s.sd1) lines.push([base1, add(base1, dir1, s.asz)]);
-    if (!tip2 && !s.sd2) lines.push([base2, add(base2, dir1, -s.asz)]);
+    if (!in1 && !tip1 && !s.sd1) lines.push([base1, add(base1, along, -s.asz)]);
+    if (!in2 && !tip2 && !s.sd2) lines.push([base2, add(base2, along, s.asz)]);
   }
   if (text && !placement.textInside && s.tmove === 0) {
     // The dimension line follows outside text, under it (or to its box when centred).
