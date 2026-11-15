@@ -292,6 +292,13 @@ describe('system variables the app keeps', () => {
     expect(d.get()).toMatchObject({ selectionPreviewLimit: 0 });
   });
 
+  it('keep COMMANDPREVIEW, initially 1 (M3-12 part 6)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'COMMANDPREVIEW')).toEqual({ ok: true, value: 1 });
+    systemVariableReply(d, 'COMMANDPREVIEW', 0);
+    expect(d.get()).toMatchObject({ commandPreview: 0 });
+  });
+
   it('are answered by the view host, refused where the app keeps none', () => {
     const d = new Drafting();
     const ctx = { target: undefined, all: () => [], views: () => [] };

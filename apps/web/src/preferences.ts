@@ -101,6 +101,7 @@ export type DraftingPreferences = Pick<
   | 'selectionPreview'
   | 'previewFilter'
   | 'selectionPreviewLimit'
+  | 'commandPreview'
   | 'qpQuadrant'
   | 'qpDistance'
   | 'qpCollapse'
@@ -193,6 +194,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     selectionPreview: 3,
     previewFilter: 3,
     selectionPreviewLimit: 20000,
+    commandPreview: 1,
     qpQuadrant: 'top-right',
     qpDistance: 50,
     qpCollapse: true,
@@ -343,6 +345,7 @@ export function normalizePreferences(raw: unknown): Preferences {
         { min: 0, max: 32767 },
         d.drafting.selectionPreviewLimit,
       ),
+      commandPreview: within(k['commandPreview'], { min: 0, max: 1 }, d.drafting.commandPreview),
       polarAddAngles:
         typeof polarAddAngles === 'string' && additionalAngles(polarAddAngles)
           ? polarAddAngles
@@ -476,6 +479,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     selectionPreview: s.selectionPreview,
     previewFilter: s.previewFilter,
     selectionPreviewLimit: s.selectionPreviewLimit,
+    commandPreview: s.commandPreview,
     qpQuadrant: s.qpQuadrant,
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,

@@ -682,6 +682,16 @@ function DraftingSettings() {
             {label}
           </label>
         ))}
+        <label className="setting-check">
+          <input
+            type="checkbox"
+            checked={d.commandPreview === 1}
+            onChange={(e) =>
+              drafting.configure({ commandPreview: e.currentTarget.checked ? 1 : 0 })
+            }
+          />
+          Command preview (COMMANDPREVIEW)
+        </label>
       </fieldset>
       <label className="setting-check">
         <input

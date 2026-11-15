@@ -311,6 +311,9 @@ engines.onCommand((doc, o) => {
   if (o.type === 'properties') propertySheets.set(doc, o.sheet);
   // A rollover tooltip's answer shows; a command starting takes it away (M2-35 part 21).
   if (o.type === 'rollover') rollovers.answer(doc, o.id, o.sheet);
+  if (o.type === 'command-preview') {
+    for (const c of controllersOf(doc)) c.commandPreviewed(o.seq, o.preview);
+  }
   if (o.type === 'start') rollovers.clear(doc);
   // A grip's hover menu (M3-05 part 2): shown from the engine's answer, gone as a command
   // starts or the grips change.
@@ -2136,6 +2139,7 @@ function ViewportCanvas({
           ...(o.ctrl && { ctrl: true }),
           ...(o.lasso && { lasso: o.lasso }),
           ...(o.dragged && { dragged: true }),
+          ...(o.freehand && { freehand: o.freehand }),
         });
         engines.command(
           id,
@@ -2143,6 +2147,15 @@ function ViewportCanvas({
         );
       },
       onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
+      // COMMANDPREVIEW (M3-12 part 6): the engine works out what a pick here would do.
+      onCommandPreview: (q) =>
+        engines.command(id, {
+          kind: 'command-preview',
+          seq: q.seq,
+          cursor: q.cursor,
+          hits: q.hits,
+          ...(q.shift && { shift: true }),
+        }),
       // Ctrl tapped at a hot multi-functional grip (M3-05): its next function. Every canvas of
       // the drawing hears the key; the current one answers.
       onCtrlCycle: () => {

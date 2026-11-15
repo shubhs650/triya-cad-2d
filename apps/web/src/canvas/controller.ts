@@ -43,6 +43,7 @@
 import type { DrawingDimensionHealth } from '@triya/dims';
 import RenderWorker from '@triya/render/worker?worker';
 import {
+  IDENTITY,
   MAX_ACQUIRED,
   constrainCursor,
   dragMotion,
@@ -78,6 +79,7 @@ import {
   type UndoView,
   type Vec2,
   type VportRecord,
+  type CommandPreview,
 } from '@triya/engine';
 import {
   PATH_L,
@@ -178,6 +180,8 @@ const WINDOW_COLOR = '#4da3ff';
 const CROSSING_COLOR = '#5fd35f';
 const SELECTION_FILL_OPACITY = 0.18;
 const DASH_PX = 6;
+/** Command preview requests (M3-12 part 6), numbered across every canvas of every drawing. */
+let previewSeq = 0;
 /**
  * A click this near a grip (CSS pixels) is on it: the grip's half size at GRIPSIZE and a pixel
  * (M2-06; M2-59 part 3 sizes it).
@@ -227,8 +231,24 @@ export interface CanvasHooks {
        * picked an object at `Command:` starts a window there instead.
        */
       readonly dragged?: boolean;
+      /**
+       * With `release`: the path a press was dragged along from the rubber band's start, at a
+       * prompt that takes a freehand path (TRIM's freehand fence, M3-12 part 6).
+       */
+      readonly freehand?: readonly Vec2[];
     },
   ) => void;
+  /**
+   * COMMANDPREVIEW (M3-12 part 6): asks the command engine what a pick (point) at `cursor`
+   * would do, with the objects under the pickbox (`hits`) where the prompt previews by them;
+   * the answer comes back to `commandPreviewed` with `seq`.
+   */
+  readonly onCommandPreview?: (q: {
+    readonly seq: number;
+    readonly cursor: Vec2;
+    readonly hits: readonly EntityId[];
+    readonly shift: boolean;
+  }) => void;
   /**
    * A lasso is dragged (M3-04 part 2): its kind, for the command line to say, as AutoCAD's
    * does; undefined when it ends.
@@ -421,6 +441,13 @@ export class CanvasController {
   #asked: Prompt | undefined;
   /** The renderer was last told a pickbox for the selection preview (M3-04 part 5). */
   #previewing = false;
+  /**
+   * COMMANDPREVIEW (M3-12 part 6): the request the engine is answering (one at a time, the
+   * latest cursor asked next), the cursor still to ask about, and whether a preview is drawn.
+   */
+  #previewAsked: { readonly seq: number; readonly prompt: Prompt } | undefined;
+  #previewWanted: { readonly cursor: Point; readonly hover: boolean } | undefined;
+  #previewShown = false;
   /** A selection window or lasso being dragged previews what it takes (M3-04 part 6). */
   #areaPreviewing = false;
   /**
@@ -777,6 +804,12 @@ export class CanvasController {
         prompt.kind === 'angle');
     this.#prompt = picking ? prompt : undefined;
     this.#asked = prompt;
+    // The preview drawn was the last prompt's; this one's is asked for where the cursor rests.
+    this.#showCommandPreview(undefined);
+    if (prompt?.commandPreview?.hover) {
+      const p = this.#pointer;
+      this.#commandPreview(p && !this.#press ? this.#world(p) : undefined);
+    }
     // The window that previewed is gone or another; the next cursor move previews it afresh.
     if (this.#areaPreviewing) {
       this.#areaPreviewing = false;
@@ -1086,9 +1119,13 @@ export class CanvasController {
       this.#overlapStep = undefined;
     const cycle = this.#overlapStep?.step;
     this.#overlapBadge(selecting && d.selectionCycling > 0 ? screen : undefined);
+    // A command preview of the object under the pickbox (M3-12 part 6) shows what the pick does
+    // in place of the selection preview's highlight, which would hide the faded part.
+    const commandPreviews = this.#asked?.commandPreview?.hover === true && d.commandPreview === 1;
     const on =
       selecting &&
-      (cycle !== undefined || previewsSelection(d.selectionPreview, this.#asked, atCommand));
+      (cycle !== undefined ||
+        (!commandPreviews && previewsSelection(d.selectionPreview, this.#asked, atCommand)));
     if (!on && !this.#previewing) return;
     this.#previewing = !!on;
     this.#host.setSelectionPreview(
@@ -1102,6 +1139,70 @@ export class CanvasController {
           }
         : undefined,
     );
+    this.#requestFrame();
+  }
+
+  /**
+   * COMMANDPREVIEW (M3-12 part 6; AutoCAD 2024 Help, COMMANDPREVIEW): at a prompt with a
+   * command preview, what a pick (point) at `cursor` would do, asked of the command engine and
+   * drawn when it answers: the objects it changes faded, their new shapes over them. Undefined,
+   * or COMMANDPREVIEW 0, takes the preview away.
+   */
+  #commandPreview(cursor: Point | undefined): void {
+    const src = this.#asked?.commandPreview;
+    const on =
+      src && cursor && this.#mode === 'none' && this.#drafting.commandPreview === 1 && !this.#press;
+    if (!on) {
+      this.#previewWanted = undefined;
+      // An answer still to come is for a cursor gone: it is not drawn.
+      this.#previewAsked = this.#previewAsked && { ...this.#previewAsked, prompt: NO_PROMPT };
+      this.#showCommandPreview(undefined);
+      return;
+    }
+    this.#previewWanted = { cursor, hover: src.hover === true };
+    this.#askPreview();
+  }
+
+  /** Asks for the cursor wanted, unless an answer is awaited (the latest is asked next). */
+  #askPreview(): void {
+    const want = this.#previewWanted;
+    const prompt = this.#asked;
+    const ask = this.#hooks.onCommandPreview;
+    if (!want || !prompt || !ask || this.#previewAsked) return;
+    this.#previewWanted = undefined;
+    const seq = ++previewSeq;
+    this.#previewAsked = { seq, prompt };
+    const send = (hits: readonly EntityId[]) => {
+      if (this.#previewAsked?.seq !== seq) return;
+      ask({ seq, cursor: want.cursor, hits, shift: this.#shift });
+    };
+    const screen = this.#pointer;
+    if (!want.hover) send([]);
+    else if (!screen) this.commandPreviewed(seq, undefined);
+    else {
+      // What a pick there would find: the objects under the pickbox, as a click asks.
+      void this.#host
+        .hitTest({ x: screen.offsetX, y: screen.offsetY }, this.#drafting.pickbox)
+        .then(send, () => this.commandPreviewed(seq, undefined));
+    }
+  }
+
+  /**
+   * The command engine's answer to the preview request `seq` (M3-12 part 6): drawn while the
+   * prompt it was asked at still waits; another canvas's answer is passed over.
+   */
+  commandPreviewed(seq: number, preview: CommandPreview | undefined): void {
+    const asked = this.#previewAsked;
+    if (asked?.seq !== seq) return;
+    this.#previewAsked = undefined;
+    if (asked.prompt === this.#asked) this.#showCommandPreview(preview);
+    this.#askPreview();
+  }
+
+  #showCommandPreview(preview: CommandPreview | undefined): void {
+    if (!preview && !this.#previewShown) return;
+    this.#previewShown = preview !== undefined;
+    this.#host.setDrag(preview && { ids: [], m: IDENTITY, preview });
     this.#requestFrame();
   }
 
@@ -1796,6 +1897,9 @@ export class CanvasController {
     // Ctrl held at a grip mode that has placed a copy: the cursor snaps to that copy's offset or
     // angle (M3-05 part 6), as the click will.
     const cursor = at && this.#ctrl && p?.offsetSnap ? offsetSnapPoint(p.offsetSnap, at) : at;
+    // A command preview at a point prompt follows the point the drafting aids make (M3-12 part
+    // 6); one by the object under the pickbox follows the pointer instead.
+    if (!this.#asked?.commandPreview?.hover) this.#commandPreview(cursor);
     // The objects the prompt drags follow the cursor as the drafting aids place it (M2-06).
     const ctrl = this.#ctrl && p?.switchDirection === true;
     const motion =
@@ -1820,6 +1924,17 @@ export class CanvasController {
             }),
           )
       : this.#preview;
+    // TRIM's freehand fence being dragged (M3-12 part 6): drawn as a fence is.
+    const free = this.#freehand();
+    if (free && cursor && this.#mode === 'none') {
+      this.#host.setTransient([
+        ...preview,
+        ...this.#selectionPath([...free, cursor], true, false),
+        ...this.#vertexMarker(),
+      ]);
+      this.#requestFrame();
+      return;
+    }
     const from = p?.kind === 'point' ? p.rubberBand?.from : p && 'base' in p ? p.base : undefined;
     const box = p?.kind === 'point' && p.rubberBand?.box;
     const selection = p?.kind === 'point' ? p.rubberBand?.selection : undefined;
@@ -2140,6 +2255,8 @@ export class CanvasController {
         const resting = e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none';
         this.#hoverGrip(resting ? world : undefined);
         this.#hoverPreview(resting ? { x: e.offsetX, y: e.offsetY } : undefined);
+        // A preview by the object under the pickbox follows the cursor itself (M3-12 part 6).
+        if (this.#asked?.commandPreview?.hover) this.#commandPreview(resting ? world : undefined);
         if (press?.pointer === e.pointerId) {
           if (Math.hypot(e.offsetX - press.x, e.offsetY - press.y) > CLICK_PX && !press.dragged) {
             press.dragged = true;
@@ -2197,6 +2314,7 @@ export class CanvasController {
       const press = this.#press;
       if (press?.pointer === e.pointerId) {
         const lasso = this.#lasso();
+        const free = this.#freehand();
         this.#press = undefined;
         if (press.shown) this.#hooks.onLasso?.(undefined);
         if (press.dragged && world && e.type === 'pointerup') {
@@ -2204,6 +2322,7 @@ export class CanvasController {
             shift: e.shiftKey,
             release: true,
             ...(lasso && { lasso: { kind: lasso.kind, points: [...lasso.points, world] } }),
+            ...(free && { freehand: [...free, world] }),
           });
         }
       }
@@ -2216,6 +2335,7 @@ export class CanvasController {
         this.#rest.cancel();
         this.#hoverGrip(undefined);
         this.#hoverPreview(undefined);
+        this.#commandPreview(undefined);
         this.#pointer = undefined;
         this.#hit = undefined;
         this.#hits = [];
@@ -2294,6 +2414,21 @@ export class CanvasController {
       this.#hooks.onLasso?.(press.lasso);
     }
     return { kind: press.lasso, points: press.path };
+  }
+
+  /**
+   * The freehand path being dragged (M3-12 part 6): a press that started the rubber band of a
+   * prompt that takes one (TRIM's Quick mode fence) and has been dragged; its points so far.
+   */
+  #freehand(): readonly Point[] | undefined {
+    const press = this.#press;
+    const p = this.#prompt;
+    if (!press?.dragged || p?.kind !== 'point' || !p.rubberBand?.freehand) return undefined;
+    const start = press.path[0]!;
+    const from = p.rubberBand.from;
+    // The press that began this fence, not one after a click gave its first point.
+    if (Math.hypot(start.x - from.x, start.y - from.y) > this.#px()) return undefined;
+    return press.path;
   }
 
   /**
@@ -2639,6 +2774,9 @@ export class CanvasController {
     this.canvas.setPointerCapture(e.pointerId);
   }
 }
+
+/** A prompt no answer is drawn at: a command preview's answer for a cursor gone. */
+const NO_PROMPT: Prompt = { kind: 'keyword', message: '' } as Prompt;
 
 const sameAt = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;
 

@@ -86,6 +86,7 @@ import type { HatchLinesOf } from '../edit/explode';
 import { distance } from '../geom/vec';
 import { wholeGroups } from '../edit/groups';
 import type { DragPreview } from './drag';
+import type { CommandPreview, PreviewQuery } from './command-preview';
 import { UndoStack, type UndoAction, type UndoState } from './undo';
 import type { PropertyEdit } from '../properties/edit';
 import { filtered } from '../properties/sheet';
@@ -566,6 +567,8 @@ export class PromptBus {
       readonly ctrl?: boolean;
       readonly gripFunction?: string;
       readonly dragged?: boolean;
+      /** With `release`: the path a press was dragged along (M3-12 part 6, `freehand`). */
+      readonly freehand?: readonly Vec2[];
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
@@ -612,7 +615,12 @@ export class PromptBus {
         return this.#step(frame, await frame.select.point(point, o));
       }
       if (frame) {
-        if (o.release) return undefined;
+        if (o.release) {
+          // TRIM's freehand fence (M3-12 part 6): the path, at a prompt that takes one.
+          const p = this.prompt;
+          if (!o.freehand || p?.kind !== 'point' || !p.rubberBand?.freehand) return undefined;
+          return this.#direct({ kind: 'point', point, freehand: o.freehand });
+        }
         return this.#direct({
           kind: 'point',
           point,
@@ -624,6 +632,22 @@ export class PromptBus {
       if (!this.#pickfirstOn) return;
       this.#step(undefined, await this.#idle.point(point, o));
     });
+  }
+
+  /**
+   * COMMANDPREVIEW (M3-12 part 6, `command-preview.ts`): what a pick (point) at `q` would do at
+   * the prompt the command waits at, when it shows a preview. It edits nothing and does not
+   * wait behind input still being worked on: a prompt gone meanwhile gives none.
+   */
+  async commandPreview(q: PreviewQuery): Promise<CommandPreview | undefined> {
+    const at = this.prompt?.commandPreview?.at;
+    if (!at) return undefined;
+    try {
+      return await at(q);
+    } catch {
+      // A preview is never worth an error: the pick itself says what is wrong.
+      return undefined;
+    }
   }
 
   /**
