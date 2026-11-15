@@ -1,0 +1,1 @@
+- M3-01 part 6 (#385): ARC's and PLINE's arcs (and DIST's and AREA's Arc) draw the other way round when picked with Ctrl held, dragged so while Ctrl is pressed, as AutoCAD 2024's "(hold Ctrl to switch direction)"; ELLIPSE draws a closed polyline of arcs when PELLIPSE is 1; DDPTYPE opens the Point Style dialog to choose PDMODE and PDSIZE. M3-01 is complete.

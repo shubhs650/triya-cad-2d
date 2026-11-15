@@ -10,9 +10,9 @@
 //   Specify center point of arc or [Angle/Direction/Radius]:   after a start and end: SEC
 //   Specify tangent direction for the start point of arc:      SED
 //   Specify radius of arc:                                     SER
-// AutoCAD 2024 adds "(hold Ctrl to switch direction)" to the last prompts; Triya's front-ends
-// have no such modifier yet, so the prompts leave it out (a negative angle, chord or radius
-// still draws the other way, as typed values do in AutoCAD).
+// AutoCAD 2024 adds "(hold Ctrl to switch direction)" to the last prompts but 3P's (M3-01 part
+// 6): a pick with Ctrl held draws the arc the other way round (`switchArc`), and the dragged arc
+// follows Ctrl. A typed negative angle, chord or radius still draws the other way.
 //
 // Each construction is in `geom/construct.ts`; while the last value is asked, the arc it would
 // give is dragged with the cursor (`sketch.ts`). An impossible answer (three collinear points, a
@@ -22,10 +22,10 @@ import type { BulgeArc } from '../../geom/eval';
 import type { Vec2 } from '../../geom/types';
 import { fromAngle } from '../../geom/vec';
 import type { CommandContext, CommandDef } from '../command';
-import type { Prompt, PromptAnswer } from '../prompt';
+import { CTRL_SWITCH, type Prompt, type PromptAnswer } from '../prompt';
 import { currentProps } from '../../properties/current';
 import { lastDrawn, type LastDrawn } from './last-drawn';
-import { sketchTolerance, type ArcSketch } from './sketch';
+import { sketchTolerance, switchArc, type ArcSketch } from './sketch';
 import {
   arcEnd,
   arcStartCenterAngle,
@@ -84,7 +84,11 @@ async function* arcPrompts(ctx: CommandContext, last: LastDrawn): Sub<BulgeArc |
     return yield* final(
       ctx,
       { shape: 'arcTangent', start, direction },
-      ctx.prompt.point({ message: 'Specify end point of arc', rubberBand: { from: start } }),
+      ctx.prompt.point({
+        message: `Specify end point of arc${CTRL_SWITCH}`,
+        rubberBand: { from: start },
+        switchDirection: true,
+      }),
       (e) =>
         e.kind === 'point'
           ? arcStartDirectionEnd(start, direction, e.point, sketchTolerance(start, e.point))
@@ -146,17 +150,17 @@ async function* afterStartCenter(
       ctx,
       sketch('end'),
       ctx.prompt.point({
-        message: 'Specify end point of arc or',
+        message: `Specify end point of arc${CTRL_SWITCH} or`,
         options: ['Angle', 'chord Length'],
         rubberBand: { from: center },
+        switchDirection: true,
       }),
     );
     if (a.kind === 'point') {
-      const arc = arcStartCenterEnd(
-        start,
-        center,
-        a.point,
-        sketchTolerance(start, center, a.point),
+      const arc = switched(
+        sketch('end'),
+        a,
+        arcStartCenterEnd(start, center, a.point, sketchTolerance(start, center, a.point)),
       );
       if (arc) return arc;
       ctx.message(INVALID_ARC);
@@ -167,14 +171,22 @@ async function* afterStartCenter(
       return yield* final(
         ctx,
         sketch('angle'),
-        ctx.prompt.angle({ message: 'Specify included angle', base: center }),
+        ctx.prompt.angle({
+          message: `Specify included angle${CTRL_SWITCH}`,
+          base: center,
+          switchDirection: true,
+        }),
         (v) => (v.kind === 'angle' ? arcStartCenterAngle(start, center, v.value, tol) : undefined),
       );
     }
     return yield* final(
       ctx,
       sketch('chord'),
-      ctx.prompt.distance({ message: 'Specify length of chord', base: start }),
+      ctx.prompt.distance({
+        message: `Specify length of chord${CTRL_SWITCH}`,
+        base: start,
+        switchDirection: true,
+      }),
       (v) => (v.kind === 'distance' ? arcStartCenterChord(start, center, v.value, tol) : undefined),
     );
   }
@@ -198,13 +210,18 @@ async function* afterStartEnd(
       ctx,
       sketch('center'),
       ctx.prompt.point({
-        message: 'Specify center point of arc or',
+        message: `Specify center point of arc${CTRL_SWITCH} or`,
         options: ['Angle', 'Direction', 'Radius'],
         rubberBand: { from: end },
+        switchDirection: true,
       }),
     );
     if (a.kind === 'point') {
-      const arc = arcStartEndCenter(start, end, a.point, sketchTolerance(start, end, a.point));
+      const arc = switched(
+        sketch('center'),
+        a,
+        arcStartEndCenter(start, end, a.point, sketchTolerance(start, end, a.point)),
+      );
       if (arc) return arc;
       ctx.message(INVALID_ARC);
       continue;
@@ -215,7 +232,11 @@ async function* afterStartEnd(
         return yield* final(
           ctx,
           sketch('angle'),
-          ctx.prompt.angle({ message: 'Specify included angle', base: start }),
+          ctx.prompt.angle({
+            message: `Specify included angle${CTRL_SWITCH}`,
+            base: start,
+            switchDirection: true,
+          }),
           (v) => (v.kind === 'angle' ? arcStartEndAngle(start, end, v.value, tol) : undefined),
         );
       case 'Direction':
@@ -223,8 +244,9 @@ async function* afterStartEnd(
           ctx,
           sketch('direction'),
           ctx.prompt.angle({
-            message: 'Specify tangent direction for the start point of arc',
+            message: `Specify tangent direction for the start point of arc${CTRL_SWITCH}`,
             base: start,
+            switchDirection: true,
           }),
           (v) =>
             v.kind === 'angle'
@@ -235,7 +257,11 @@ async function* afterStartEnd(
         return yield* final(
           ctx,
           sketch('radius'),
-          ctx.prompt.distance({ message: 'Specify radius of arc', base: end }),
+          ctx.prompt.distance({
+            message: `Specify radius of arc${CTRL_SWITCH}`,
+            base: end,
+            switchDirection: true,
+          }),
           (v) => (v.kind === 'distance' ? arcStartEndRadius(start, end, v.value, tol) : undefined),
         );
     }
@@ -255,7 +281,7 @@ async function* final(
   for (;;) {
     const a = yield withSketch(ctx, sketch, prompt);
     if (a.kind === 'enter' || a.kind === 'keyword') return undefined;
-    const arc = make(a);
+    const arc = switched(sketch, a, make(a));
     if (arc) return arc;
     ctx.message(INVALID_ARC);
   }
@@ -263,4 +289,13 @@ async function* final(
 
 function withSketch(ctx: CommandContext, sketch: ArcSketch, prompt: Prompt): Prompt {
   return { ...prompt, drag: { kind: 'sketch', sketch, layer: currentProps(ctx.model).layer } };
+}
+
+/** The arc an answer made, the other way round when it was picked with Ctrl held. */
+export function switched(
+  sketch: ArcSketch,
+  a: PromptAnswer,
+  arc: BulgeArc | undefined,
+): BulgeArc | undefined {
+  return arc && 'ctrl' in a && a.ctrl ? switchArc(sketch, arc) : arc;
 }

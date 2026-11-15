@@ -135,3 +135,60 @@ describe('POINT and DONUT ended early', () => {
     expect(added()).toEqual([]);
   });
 });
+
+// M3-01 part 6: DDPTYPE, the Point Style dialog (AutoCAD 2024 Help, "Point Style Dialog Box"):
+// it opens on PDMODE and PDSIZE and OK sets both, in one undo step.
+describe('DDPTYPE', () => {
+  it('opens the Point Style dialog on PDMODE and PDSIZE; OK sets them, undone as one', async () => {
+    const { bus, model } = setup([
+      ['$PDMODE', 0],
+      ['$PDSIZE', 0],
+    ]);
+    await bus.submit('DDPTYPE');
+    expect(bus.prompt).toMatchObject({
+      kind: 'dialog',
+      message: 'Point Style',
+      dialog: { type: 'pointstyle', mode: 0, size: 0 },
+    });
+    await bus.answer({ kind: 'dialog', action: 'ok', pointStyle: { mode: 35, size: -7.5 } });
+    expect(bus.command).toBeUndefined();
+    expect(model.header.get('$PDMODE')).toBe(35);
+    expect(model.header.get('$PDSIZE')).toBe(-7.5);
+    await bus.submit('U');
+    expect(model.header.get('$PDMODE')).toBe(0);
+    expect(model.header.get('$PDSIZE')).toBe(0);
+  });
+
+  it('changes nothing on Cancel, on OK unchanged, or on a style AutoCAD has not', async () => {
+    const { bus, model } = setup([
+      ['$PDMODE', 3],
+      ['$PDSIZE', 2],
+    ]);
+    const version = model.version;
+    await bus.submit('DDPTYPE');
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+    await bus.submit('DDPTYPE');
+    await bus.answer({ kind: 'dialog', action: 'ok', pointStyle: { mode: 3, size: 2 } });
+    await bus.submit('DDPTYPE');
+    await bus.answer({ kind: 'dialog', action: 'ok', pointStyle: { mode: 5, size: 2 } });
+    await bus.submit('DDPTYPE');
+    await bus.answer({ kind: 'dialog', action: 'ok', pointStyle: { mode: 3, size: Infinity } });
+    await bus.submit('DDPTYPE');
+    await bus.answer({ kind: 'dialog', action: 'ok' });
+    expect(model.header.get('$PDMODE')).toBe(3);
+    expect(model.header.get('$PDSIZE')).toBe(2);
+    expect(model.version).toBe(version);
+    // Only what changed is set.
+    await bus.submit('DDPTYPE');
+    await bus.answer({ kind: 'dialog', action: 'ok', pointStyle: { mode: 98, size: 2 } });
+    expect(model.header.get('$PDMODE')).toBe(98);
+  });
+
+  it("opens on AutoCAD's initial values where the drawing has neither variable", async () => {
+    const { bus } = setup();
+    await bus.submit('DDPTYPE');
+    expect(bus.prompt).toMatchObject({ dialog: { type: 'pointstyle', mode: 0, size: 0 } });
+    await bus.cancel();
+  });
+});

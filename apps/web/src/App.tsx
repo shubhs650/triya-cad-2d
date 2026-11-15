@@ -2020,6 +2020,7 @@ function ViewportCanvas({
           ...(r?.missed && { missed: true }),
           ...(r?.deferred && { deferred: r.deferred }),
           ...(o.grip !== undefined && { grip: o.grip }),
+          ...(o.ctrl && { ctrl: true }),
         });
         engines.command(
           id,

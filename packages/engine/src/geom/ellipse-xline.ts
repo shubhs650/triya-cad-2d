@@ -9,7 +9,9 @@
 // axis determines the angle of the elliptical arc"), and a parameter u is that of
 // p(u) = c + a·cos u + b·sin u with a the first half-axis and b the second, CCW from it.
 import { normalizeAngle, TAU } from './angle';
+import { arcThrough3 } from './construct';
 import type { Ellipse, Xline } from './curves';
+import { pointAt } from './eval';
 import type { BulgeVertex } from './curves';
 import type { Tolerance } from './tolerance';
 import type { Vec2 } from './types';
@@ -140,4 +142,28 @@ export function donutOf(
     ],
     width: (hi - lo) / 2,
   };
+}
+
+/** How many arcs a polyline ellipse is made of (PELLIPSE 1): four to each quadrant. */
+export const POLYLINE_ELLIPSE_ARCS = 16;
+
+/**
+ * A whole ellipse as the closed polyline of arcs PELLIPSE 1 draws (M3-01 part 6; AutoCAD 2024
+ * Help, "PELLIPSE (System Variable)": "Creates a polyline representation of an ellipse"). The
+ * help says no more: the vertices are at equal steps of the DXF parameter from the major axis
+ * end, sixteen of them, and each arc passes through the ellipse at its middle parameter too,
+ * which keeps it within 0.08% of the major radius at a ratio of a half, 0.35% at any ratio. Undefined when the
+ * ellipse is too flat to make arcs of.
+ */
+export function ellipsePolyline(e: Ellipse, tol: Tolerance): BulgeVertex[] | undefined {
+  const n = POLYLINE_ELLIPSE_ARCS;
+  const vertices: BulgeVertex[] = [];
+  for (let i = 0; i < n; i++) {
+    const t0 = (TAU * i) / n;
+    const p = pointAt(e, t0);
+    const arc = arcThrough3(p, pointAt(e, t0 + Math.PI / n), pointAt(e, t0 + TAU / n), tol);
+    if (!arc) return undefined;
+    vertices.push({ x: p.x, y: p.y, bulge: Math.tan(arc.sweep / 4) });
+  }
+  return vertices;
 }

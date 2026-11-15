@@ -68,15 +68,17 @@ describe('ARC', () => {
   it('SCE, SCA and SCL', async () => {
     const { bus, shapes } = setup();
     await bus.script(['ARC', '10,0', 'C', '0,0']);
-    expect(bus.promptText).toBe('Specify end point of arc or [Angle/chord Length]:');
+    expect(bus.promptText).toBe(
+      'Specify end point of arc (hold Ctrl to switch direction) or [Angle/chord Length]:',
+    );
     expect(dragged(bus.prompt, 0, 5)).toMatchObject({ kind: 'ARC', startAngle: 0 });
     await bus.submit('0,5');
     await bus.script(['ARC', '10,0', 'C', '0,0', 'A']);
-    expect(bus.promptText).toBe('Specify included angle:');
+    expect(bus.promptText).toBe('Specify included angle (hold Ctrl to switch direction):');
     expect(dragged(bus.prompt, 0, 5)).toMatchObject({ kind: 'ARC' });
     await bus.submit('-90');
     await bus.script(['ARC', '10,0', 'C', '0,0', 'L']);
-    expect(bus.promptText).toBe('Specify length of chord:');
+    expect(bus.promptText).toBe('Specify length of chord (hold Ctrl to switch direction):');
     expect(dragged(bus.prompt, 0, 10)).toMatchObject({ kind: 'ARC' });
     await bus.submit('-20');
     expect(shapes()).toEqual([
@@ -94,7 +96,7 @@ describe('ARC', () => {
     expect(bus.history.at(-1)).toBe('*Invalid*');
     await bus.script(['L', '25']);
     expect(bus.history.at(-1)).toBe('*Invalid*');
-    expect(bus.promptText).toBe('Specify length of chord:');
+    expect(bus.promptText).toBe('Specify length of chord (hold Ctrl to switch direction):');
     await bus.submit('');
     expect(bus.command).toBeUndefined();
     await bus.script(['ARC', '10,0', 'C', '0,0', 'A', '0']);
@@ -120,19 +122,23 @@ describe('ARC', () => {
   it('SEC, SEA, SED and SER', async () => {
     const { bus, shapes } = setup();
     await bus.script(['ARC', '10,0', 'E', '0,10']);
-    expect(bus.promptText).toBe('Specify center point of arc or [Angle/Direction/Radius]:');
+    expect(bus.promptText).toBe(
+      'Specify center point of arc (hold Ctrl to switch direction) or [Angle/Direction/Radius]:',
+    );
     expect(dragged(bus.prompt, 0, 0)).toMatchObject({ kind: 'ARC', radius: 10 });
     await bus.submit('0,0');
     await bus.script(['ARC', '10,0', 'E', '0,10', 'A']);
-    expect(bus.promptText).toBe('Specify included angle:');
+    expect(bus.promptText).toBe('Specify included angle (hold Ctrl to switch direction):');
     expect(dragged(bus.prompt, 10, 10)).toMatchObject({ kind: 'ARC' });
     await bus.submit('-90');
     await bus.script(['ARC', '10,0', 'E', '0,10', 'D']);
-    expect(bus.promptText).toBe('Specify tangent direction for the start point of arc:');
+    expect(bus.promptText).toBe(
+      'Specify tangent direction for the start point of arc (hold Ctrl to switch direction):',
+    );
     expect(dragged(bus.prompt, 10, 5)).toMatchObject({ kind: 'ARC', radius: 10 });
     await bus.submit('90');
     await bus.script(['ARC', '10,0', 'E', '0,10', 'R']);
-    expect(bus.promptText).toBe('Specify radius of arc:');
+    expect(bus.promptText).toBe('Specify radius of arc (hold Ctrl to switch direction):');
     const g = dragged(bus.prompt, 0, 20);
     expect(g?.kind === 'ARC' && r6(g.radius)).toBe(10);
     await bus.submit('-10');
@@ -163,7 +169,7 @@ describe('ARC', () => {
     // A quarter circle counter-clockwise from (10, 0) to (0, 10), heading −X at its end.
     await bus.script(['ARC', '10,0', 'C', '0,0', '0,10']);
     await bus.script(['ARC', '']);
-    expect(bus.promptText).toBe('Specify end point of arc:');
+    expect(bus.promptText).toBe('Specify end point of arc (hold Ctrl to switch direction):');
     expect(dragged(bus.prompt, -10, 0)).toMatchObject({ kind: 'ARC' });
     await bus.submit('-10,0');
     // A line from (0, 0) to (0, 5) heads +Y: the arc to (-5, 10) turns left about (-5, 5).

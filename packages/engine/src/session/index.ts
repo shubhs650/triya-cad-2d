@@ -151,6 +151,8 @@ export type CommandInput =
       readonly grip?: number;
       /** The Deferred Tangent or Perpendicular the point was snapped with (M3-01 part 2). */
       readonly deferred?: DeferredPick;
+      /** Ctrl was held: an arc's direction switched (M3-01 part 6). */
+      readonly ctrl?: boolean;
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
@@ -363,6 +365,7 @@ export class EngineSession {
           ...(input.missed && { missed: true }),
           ...(input.grip !== undefined && { grip: input.grip }),
           ...(input.deferred && { deferred: input.deferred }),
+          ...(input.ctrl && { ctrl: true }),
         });
       case 'select-all':
         return this.#bus.selectAll();

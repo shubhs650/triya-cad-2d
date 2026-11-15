@@ -445,7 +445,8 @@ export class PromptBus {
    * A click on the canvas (M2-03). At "Select objects" or at `Command:` it picks, or starts or
    * ends a selection window, removing with `shift`; at a prompt for a point it is the point.
    * `release` ends a dragged window and does nothing when no window is open. `missed` says the
-   * prompt's object snap override found nothing at the point, which refuses it (M2-04).
+   * prompt's object snap override found nothing at the point, which refuses it (M2-04). `ctrl`:
+   * Ctrl was held, which a prompt that switches an arc's direction takes (M3-01 part 6).
    */
   pick(
     point: Vec2,
@@ -455,6 +456,7 @@ export class PromptBus {
       readonly grip?: number;
       readonly missed?: boolean;
       readonly deferred?: DeferredPick;
+      readonly ctrl?: boolean;
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
@@ -483,6 +485,7 @@ export class PromptBus {
           point,
           ...(o.shift && { shift: true as const }),
           ...(o.deferred && { deferred: o.deferred }),
+          ...(o.ctrl && { ctrl: true as const }),
         });
       }
       if (!this.#pickfirstOn) return;
@@ -795,7 +798,7 @@ export class PromptBus {
       return this.#feedPoint(answer.point, answer.deferred);
     }
     if (answer.kind === 'point' && frame.prompt!.kind !== 'point' && takesPoints(frame.prompt!)) {
-      return this.#pointFor(answer.point, echo);
+      return this.#pointFor(answer.point, echo, true, undefined, answer.ctrl);
     }
     return this.#deliver(answer, echo);
   }
@@ -1336,7 +1339,13 @@ export class PromptBus {
   }
 
   /** A point given at the command's prompt: the point itself, or a distance or angle from it. */
-  async #pointFor(p: Vec2, echo: string, log = true, deferred?: DeferredPick): Promise<void> {
+  async #pointFor(
+    p: Vec2,
+    echo: string,
+    log = true,
+    deferred?: DeferredPick,
+    ctrl?: true,
+  ): Promise<void> {
     const frame = this.#stack.at(-1)!;
     // A point made with FROM or a filter at "Select objects" picks there.
     if (frame.select) return this.#step(frame, await frame.select.point(p));
@@ -1349,11 +1358,16 @@ export class PromptBus {
     }
     if (log) this.#log(`${this.promptText} ${echo}`.trimEnd());
     this.#lastPoint = p;
-    const measure = (a: Vec2, b: Vec2): PromptAnswer =>
+    const measure = (a: Vec2, b: Vec2, c?: true): PromptAnswer =>
       prompt.kind === 'distance'
-        ? { kind: 'distance', value: Math.hypot(b.x - a.x, b.y - a.y), to: b }
-        : { kind: 'angle', value: Math.atan2(b.y - a.y, b.x - a.x) };
-    if (prompt.base) return this.#deliver(measure(prompt.base, p), '', false);
+        ? {
+            kind: 'distance',
+            value: Math.hypot(b.x - a.x, b.y - a.y),
+            to: b,
+            ...(c && { ctrl: c }),
+          }
+        : { kind: 'angle', value: Math.atan2(b.y - a.y, b.x - a.x), ...(c && { ctrl: c }) };
+    if (prompt.base) return this.#deliver(measure(prompt.base, p, ctrl), '', false);
     this.#collectors.push({
       text: 'Specify second point:',
       accept: (q) => ({ answer: measure(p, q) }),
@@ -1369,6 +1383,11 @@ export class PromptBus {
     // A deferred snap reaches only a prompt that solves it; anywhere else it is its point.
     if (given.kind === 'point' && given.deferred && !takesDeferred(prompt, given.deferred)) {
       const { deferred: _, ...plain } = given;
+      given = plain;
+    }
+    // Ctrl reaches only a prompt that switches an arc's direction with it (M3-01 part 6).
+    if ('ctrl' in given && given.ctrl && !prompt.switchDirection) {
+      const { ctrl: _, ...plain } = given;
       given = plain;
     }
     if (!answerFits(prompt, given)) {
