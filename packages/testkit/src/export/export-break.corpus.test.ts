@@ -1,9 +1,10 @@
 // BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN (M3-02 part 4) on every readable public corpus
 // file. On one copy of the drawing every line, arc, circle, ellipse, ray, xline, polyline and
 // spline a drafter can select in model space is, in turn, broken (its middle third erased, as
-// BREAK leaves it), lengthened by a tenth at its end (shortened by a tenth when it cannot grow:
-// a spline) or reversed. On a second copy every polyline, block reference and dimension is
-// exploded and then everything in model space is joined at once. Both save as AC1032 DXF
+// BREAK leaves it), lengthened by a tenth at its end (a spline by a straight piece tangent to
+// it, M3-12 part 2) or reversed. On a second copy every polyline, block reference and dimension
+// is exploded and then everything in model space is joined at once (splines and elliptical arcs
+// with what meets them into splines). Both save as AC1032 DXF
 // (DEC-047) and reopen with each object where the command put it; what an explode copied out of
 // a block (any kind) reopens under its handle.
 import { readFileSync } from 'node:fs';
@@ -17,16 +18,24 @@ import {
   domain,
   eraseObjects,
   explodeObjects,
+  extendGeometry,
   isClosedCurve,
   joinObjects,
   lengthenGeometry,
   reshapeObject,
+  pointAt,
   reverseGeometry,
   toleranceForSize,
   toleranceFromExtents,
   type Entity,
   type EntityId,
   type Vec2,
+  add,
+  normalize,
+  scale,
+  sub,
+  type Curve,
+  type EntityGeometry,
 } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
@@ -99,6 +108,9 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
   let reshaped = 0;
   let exploded = 0;
   let joined = 0;
+  let splinesGrown = 0;
+  let splinesJoined = 0;
+  let raysExtended = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves its curves broken, lengthened, reversed, exploded and joined',
@@ -127,8 +139,7 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
           } else if (i % 3 === 1) {
             if (c.kind === 'RAY' || c.kind === 'XLINE' || isClosedCurve(c, tol)) return;
             const l = curveLength(c);
-            const grown = lengthenGeometry(e.geom, c, true, l * 1.1, tol);
-            const r = grown === 'spline' ? lengthenGeometry(e.geom, c, true, l * 0.9, tol) : grown;
+            const r = lengthenGeometry(e.geom, c, true, l * 1.1, tol);
             if (typeof r !== 'string') made.push(...reshapeObject(b, model, id, [r]));
           } else {
             const r = reverseGeometry(e.geom);
@@ -171,6 +182,7 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
         }
         m2.apply(b3.build());
         joined += j.joined.length;
+        splinesJoined += j.joined.filter((one) => one.made === 'spline').length;
         const pieces = r.made.filter((id) => {
           const e: Entity | undefined = m2.entity(id);
           return e !== undefined && (e.geom.kind === 'LINE' || e.geom.kind === 'ARC');
@@ -187,10 +199,71 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
     PER_FILE_BUDGET_MS,
   );
 
+  it.each(readable.map((f) => [f.path, f] as const))(
+    '%s saves its splines lengthened and joined and its rays extended',
+    (_path, f) => {
+      const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
+      withPinnedClock(() => {
+        const third = open(bytes);
+        if (!third) return;
+        const { model, ids, tol } = third;
+        const b = new ChangeSetBuilder(model);
+        const made: EntityId[] = [];
+        for (const id of ids) {
+          const e = model.entity(id)!;
+          const c = breakCurveOf(e.geom);
+          if (c?.kind === 'RAY') {
+            // EXTEND back to a line across it behind its base.
+            const u = normalize(c.direction);
+            const behind = sub(c.base, scale(u, 10));
+            const across = { x: -u.y, y: u.x };
+            const edge: Curve = {
+              kind: 'LINE',
+              start: sub(behind, across),
+              end: add(behind, across),
+            };
+            const r = extendGeometry(e.geom, c, [edge], 0, tol);
+            if (r) made.push(...reshapeObject(b, model, id, [r]));
+            raysExtended++;
+            continue;
+          }
+          if (c?.kind !== 'SPLINE' || isClosedCurve(c, tol)) continue;
+          // LENGTHEN by a tenth at the end, then JOIN a line meeting the start.
+          const grown = lengthenGeometry(e.geom, c, true, curveLength(c) * 1.1, tol);
+          if (typeof grown === 'string') continue;
+          const from = pointAt(c, domain(c).start);
+          const lead: EntityGeometry = {
+            kind: 'LINE',
+            start: sub(from, { x: curveLength(c) / 10, y: 0 }),
+            end: from,
+          };
+          const j = joinObjects(
+            [
+              { id, geom: grown },
+              { id: -1 as unknown as EntityId, geom: lead },
+            ],
+            id,
+            tol,
+          );
+          splinesGrown++;
+          if (j.joined[0]?.made === 'spline') splinesJoined++;
+          made.push(...reshapeObject(b, model, id, [j.joined[0]?.geom ?? grown]));
+        }
+        if (made.length === 0) return;
+        model.apply(b.build());
+        expect(wrongAfterSave(bytes, model, made, []).slice(0, 10), f.path).toEqual([]);
+      });
+    },
+    PER_FILE_BUDGET_MS,
+  );
+
   it('changed objects', () => {
     // Most corpus files hold lines, arcs, circles, polylines and blocks; the counts guard the sweep.
     expect(reshaped).toBeGreaterThan(1000);
     expect(exploded).toBeGreaterThan(100);
     expect(joined).toBeGreaterThan(50);
+    expect(splinesGrown).toBeGreaterThan(0);
+    expect(splinesJoined).toBe(splinesGrown);
+    expect(raysExtended).toBeGreaterThan(0);
   });
 });

@@ -7,10 +7,11 @@
 //   ellipse, a closed polyline or a closed spline it runs the object's own way round, leaving an
 //   open one. Two equal points split an open object in two (BREAKATPOINT); a closed object
 //   cannot be broken at a single point.
-// - LENGTHEN changes the length of lines, arcs, open polylines and elliptical arcs, and
-//   shortens open splines, at the end nearer the pick; the other end stays. A lengthened
-//   polyline's end segment goes on, straight or round its arc; a shortened one loses what lies
-//   past the new length. Closed objects are not lengthened.
+// - LENGTHEN changes the length of lines, arcs, open polylines, elliptical arcs and open
+//   splines at the end nearer the pick; the other end stays. A lengthened polyline's end segment
+//   goes on, straight or round its arc, a spline by a straight piece tangent to its end (as
+//   EXTEND adds, M3-12 part 2); a shortened one loses what lies past the new length. Closed
+//   objects are not lengthened.
 // - REVERSE runs lines, polylines (2D and 3D) and splines the other way: the same shape, its
 //   vertices (control points, fit points) in the opposite order, each segment keeping its bulge
 //   (negated) and widths (swapped).
@@ -42,7 +43,16 @@ import type {
   SplineGeometry,
 } from '../model/types';
 import { cleanPolyline } from './offset';
-import { isClosedCurve, subGeometry, subSpline, trimCurveOf, withVertices } from './trim';
+import {
+  extendSpline,
+  isClosedCurve,
+  openSpline,
+  splineEnd,
+  subGeometry,
+  subSpline,
+  trimCurveOf,
+  withVertices,
+} from './trim';
 
 // ── BREAK ──────────────────────────────────────────────────────────────────────────────────
 
@@ -89,7 +99,7 @@ export function breakGeometry(
 // ── LENGTHEN ───────────────────────────────────────────────────────────────────────────────
 
 /** Why LENGTHEN could not change an object. */
-export type LengthenProblem = 'closed' | 'invalid' | 'too long' | 'spline' | 'not an arc';
+export type LengthenProblem = 'closed' | 'invalid' | 'too long' | 'not an arc';
 
 /** What LENGTHEN reports of an object: its length, and an arc's included angle. */
 export function measureLength(c: Curve): { length: number; angle?: number } | undefined {
@@ -136,8 +146,7 @@ function lengthUpTo(c: BoundedCurve, t: number): number {
 /**
  * `g` (whose curve is `c`) changed to `newLength`, the end (`atEnd`) or start moving and the
  * other staying: shortened by cutting off, lengthened by carrying the end on. A problem when it
- * cannot be: a closed object, a length not above the tolerance, an arc that would close, a
- * spline that would have to grow.
+ * cannot be: a closed object, a length not above the tolerance, an arc that would close.
  */
 export function lengthenGeometry(
   g: EntityGeometry,
@@ -181,7 +190,10 @@ export function lengthenGeometry(
     case 'LWPOLYLINE':
       return lengthenPolyline(g as LwPolylineGeometry | PolylineGeometry, c, atEnd, more, tol);
     case 'SPLINE':
-      return 'spline';
+      return openSpline(
+        g as SplineGeometry,
+        extendSpline(subSpline(c, d.start, d.end)!, atEnd, more),
+      );
     default:
       return 'invalid';
   }
@@ -304,6 +316,10 @@ export function lengthTo(c: Curve, atEnd: boolean, p: Vec2, tol: Tolerance): num
       return positive(rest + along);
     }
     case 'SPLINE': {
+      // Past the moving end, along the straight piece LENGTHEN would add there.
+      const end = splineEnd(c, atEnd);
+      const past = dot(sub(p, end.point), end.direction);
+      if (past > tol.linear) return curveLength(c) + past;
       const t = closestPoint(c, p, tol).t;
       const to = lengthUpTo(c, t);
       return positive(atEnd ? to : curveLength(c) - to);
