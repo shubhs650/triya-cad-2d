@@ -1,0 +1,1 @@
+- M3-02 part 1 (#370): OFFSET, with a distance or Through, Erase, Layer, Multiple and Undo; an inward polyline offset has the loops it crosses back into cut out, and ellipses and splines offset as SPLINEs.

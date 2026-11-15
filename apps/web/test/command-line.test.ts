@@ -166,10 +166,11 @@ describe('completions', () => {
     expect(completions(registry, '0,0')).toEqual([]);
     expect(completions(registry, '')).toEqual([]);
     expect(completions(registry, 'ZZZ')).toEqual([]);
-    // An acad.pgp alias of a command not built yet (C, CIRCLE's, now completes CLOSE, COPY and
-    // the Clipboard commands).
+    // An acad.pgp alias of a command not built yet (REC, RECTANG's) completes nothing; C,
+    // CIRCLE's since M3-01, completes CIRCLE first, then CLOSE, COPY and the Clipboard commands.
     expect(completions(registry, 'REC')).toEqual([]);
     expect(completions(registry, 'C')).toEqual([
+      { name: 'CIRCLE', alias: 'C' },
       { name: 'CLOSE' },
       { name: 'CLOSEALL' },
       { name: 'COPY' },
@@ -207,6 +208,7 @@ describe('completions of system variables', () => {
     const c = completions(registry, 'C', variables);
     const first = c.findIndex((s) => s.variable);
     expect(c.slice(0, first).map((s) => s.name)).toEqual([
+      'CIRCLE',
       'CLOSE',
       'CLOSEALL',
       'COPY',

@@ -16,6 +16,8 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       'AIMLEADEREDITADD',
       'AIMLEADEREDITREMOVE',
+      // M3-01: ARC and CIRCLE.
+      'ARC',
       // M3-07: the inquiry commands.
       'AREA',
       // M3-03: the arrays.
@@ -24,6 +26,7 @@ describe('palette search', () => {
       'ARRAYPOLAR',
       'ARRAYRECT',
       'ATTEDIT',
+      'CIRCLE',
       'CLOSE',
       'CLOSEALL',
       'COPY',
@@ -54,6 +57,7 @@ describe('palette search', () => {
       'MOVE',
       'MREDO',
       'MTEXT',
+      'OFFSET',
       'OOPS',
       'PAN',
       'PASTEBLOCK',

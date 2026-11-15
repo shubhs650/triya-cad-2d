@@ -10,10 +10,10 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Options / notes | Status |
 |---|---|---|---|---|
-| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | ~ (#222: Undo, Close, ↵ from the last line; #226: running osnaps incl. PER and TAN from the last point; arcs M3-01) |
+| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | x (#222: Undo, Close, ↵ from the last line; #226: running osnaps incl. PER and TAN from the last point; #368: ↵ after an arc continues tangent to it, asking the length) |
 | PLINE | PL | 1 | Arc (Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width), Halfwidth, Length, Undo, Width, Close | |
-| CIRCLE | C | 1 | 3P, 2P, TTR, TTT, Diameter | |
-| ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | |
+| CIRCLE | C | 1 | 3P, 2P, TTR, TTT, Diameter | ~ (#368: Center with Radius or Diameter, the last radius as the default (CIRCLERAD, session only), 3P, 2P, Ttr nearest the picks on lines, rays, xlines, circles, arcs and polyline segments, dragged while the last value is asked; TTT waits for the deferred TANgent snap, M3-01 part 2) |
+| ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | x (#368: 3P, SCE, SCA, SCL, SEC, SEA, SED, SER, CSE, CSA, CSL and ↵ tangent from the last line or arc, dragged while the last value is asked; negative angles, chords and radii draw the other way; AutoCAD's Ctrl direction switch is not offered) |
 | RECTANG | REC | 1 | Chamfer, Elevation(ignored), Fillet, Thickness(ignored), Width, Area, Dimensions, Rotation | |
 | POLYGON | POL | 2 | Edge, Inscribed/Circumscribed | |
 | ELLIPSE | EL | 2 | Arc, Center, Rotation | |
@@ -45,7 +45,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | ~ (#227, #229: Copy, Reference with Points, dragged with the cursor; a table's cell text heights do not rescale yet; scaled dimensions are regenerated, #239) |
 | STRETCH | S | 1 | crossing/polygon; dims/defpoints follow | ~ (#229: the last crossing window (CPolygon with M3-04), Displacement, dragged with the cursor; hatches, multilines, multileaders, regions and viewports move only when wholly inside; dimensions stretch their definition points inside and are regenerated, #239) |
 | MIRROR | MI | 1 | MIRRTEXT | x (#227, #229: MIRRTEXT and MIRRHATCH, Erase source; MTEXT always stays readable; dragged with the cursor) |
-| OFFSET | O | 2 | Through, Erase, Layer, Multiple, Undo; gap types | |
+| OFFSET | O | 2 | Through, Erase, Layer, Multiple, Undo; gap types | ~ (#370, M3-02 part 1: a distance or Through, Erase, Layer Current/Source, Multiple and Undo, the distance and options remembered for the drawing's next OFFSET; lines, arcs, circles, rays and xlines as themselves, LWPOLYLINEs and 2D POLYLINEs as polylines of their kind with OFFSETGAPTYPE 0's extended corners and their widths, the loops an inward offset crosses back into cut out (one polyline or several), ellipses and splines as SPLINEs within 1e-6 of their size; the source's properties and xdata. Not yet: OFFSETGAPTYPE 1 and 2, OFFSETDIST/OFFSETERASE/OFFSETGAPTYPE in SETVAR, the offset previewed at the cursor) |
 | TRIM | TR | 2 | Fence, Crossing, Project(2D), Edge, eRase, Undo; Shift→Extend; ↵↵ all | |
 | EXTEND | EX | 2 | same as TRIM; Shift→Trim | |
 | FILLET | F | 2 | Undo, Polyline, Radius, Trim, Multiple; Shift for R=0 | |
