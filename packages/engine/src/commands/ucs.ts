@@ -11,6 +11,7 @@
 //                      Enter name to save current UCS or [?]:
 //                      Enter UCS name(s) to delete <none>:
 //                      Enter UCS name(s) to list <*>:
+//            Apply     Pick viewport to apply current UCS or [All] <current>:   (a layout only)
 //   UCSICON  Enter an option [ON/OFF/Noorigin/ORigin] <ON>:
 // Triya draws in plan (PRD: 2D), so AutoCAD's Face, X, Y and ZAxis options, which tilt the XY
 // plane, are left out, and a point on the XY plane that would turn the Z axis down is refused.
@@ -19,6 +20,12 @@
 // it per viewport; each change is one undo step. Named UCSs are the UCS table's records.
 // Previous goes back through the last ten UCSs of the space this session (AutoCAD: "up to 10").
 // UCSICON's ON and ORigin are the `*Active` VPORT's DXF 74 bits 1 and 2 (UCSICON's value).
+// Apply (M3-15; AutoCAD: "Applies the current UCS setting to a specified viewport or all
+// viewports") keeps a UCS in a layout's floating viewports (DXF 110/111/112) and turns their UCSVP
+// on (DXF 71), so each shows it from then on (`viewportUcs`). AutoCAD sets a viewport's UCS from
+// model space inside it; Triya cannot make a viewport current yet (MSPACE, M6-02), so Apply is
+// offered in a layout, where it applies model space's current UCS, the one a viewport with UCSVP 0
+// shows. Its <current> is paper space's own viewport, which keeps no model space UCS: Enter ends.
 import { currentVport } from '../edit/snap-grid';
 import { offsetCurveOf } from '../edit/offset';
 import { hatchBoundary } from '../edit/trim-edges';
@@ -39,7 +46,9 @@ import {
   type PlanUcs,
 } from '../input/ucs';
 import type { ChangeSetBuilder } from '../model/builder';
-import type { EntityGeometry, UcsRecord } from '../model/types';
+import type { EntityGeometry, UcsRecord, ViewportGeometry } from '../model/types';
+import type { EntityId } from '../model/entity-ids';
+import { viewportFrame } from '../layout/viewport';
 import { modelSpaceOf } from './bus';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
@@ -366,6 +375,51 @@ async function* fromOrigin(ctx: CommandContext, origin: Vec2): Sub<PlanUcs | und
   }
 }
 
+/** The layout's floating viewports (not paper space's own, id 1), topmost last. */
+function floatingViewports(ctx: CommandContext): { id: EntityId; geom: ViewportGeometry }[] {
+  if (!ctx.model.hasBlock(ctx.space)) return [];
+  const out: { id: EntityId; geom: ViewportGeometry }[] = [];
+  for (const id of ctx.model.blockEntities(ctx.space)) {
+    const g = ctx.model.entity(id)?.geom;
+    if (g?.kind === 'VIEWPORT' && g.id !== 1) out.push({ id, geom: g });
+  }
+  return out;
+}
+
+/**
+ * Apply: model space's current UCS kept in the viewport picked, or every floating viewport of the
+ * layout (All), with UCSVP on; one undo step.
+ */
+async function* applyUcs(ctx: CommandContext): Sub<void> {
+  const viewports = floatingViewports(ctx);
+  let chosen: { id: EntityId; geom: ViewportGeometry }[] | undefined;
+  while (!chosen) {
+    const a = yield ctx.prompt.point({
+      message: 'Pick viewport to apply current UCS or',
+      options: ['All'],
+      defaultLabel: 'current',
+    });
+    if (a.kind === 'keyword') chosen = viewports;
+    else if (a.kind !== 'point') return;
+    else {
+      const p = a.point;
+      const hit = viewports.findLast(({ geom }) => {
+        const f = viewportFrame(geom);
+        return p.x >= f.minX && p.x <= f.maxX && p.y >= f.minY && p.y <= f.maxY;
+      });
+      if (hit) chosen = [hit];
+      else ctx.message('No viewport found at that point.');
+    }
+  }
+  const a = ucsAxes(ucsOf(ctx.model.header, false));
+  ctx.edit((b) => {
+    for (const { id, geom } of chosen) {
+      const ucs = { ...a, elevation: geom.ucs?.elevation ?? 0, orthographic: 0 };
+      b.updateEntity(id, { geom: { ...geom, ucsPerViewport: true, ucs } });
+    }
+  });
+}
+
 export function ucsCommand(): CommandDef {
   const history = new Map<boolean, Remembered[]>();
   const stack = (ctx: CommandContext): Remembered[] => {
@@ -391,7 +445,15 @@ export function ucsCommand(): CommandDef {
       };
       const a = yield ctx.prompt.point({
         message: 'Specify origin of UCS or',
-        options: ['NAmed', 'OBject', 'Previous', 'View', 'World', 'Z'],
+        options: [
+          'NAmed',
+          'OBject',
+          'Previous',
+          'View',
+          'World',
+          'Z',
+          ...(inPaper(ctx) ? ['Apply'] : []),
+        ],
         default: { kind: 'keyword', keyword: 'World' },
       });
       if (a.kind === 'point') return change(yield* fromOrigin(ctx, a.point));
@@ -428,6 +490,8 @@ export function ucsCommand(): CommandDef {
         }
         case 'NAmed':
           return yield* named(ctx, (r) => remember(ctx, r));
+        case 'Apply':
+          return yield* applyUcs(ctx);
       }
     },
   };

@@ -5,7 +5,7 @@
 // origin and the angle of its X axis in the world XY plane, its Z axis the world's. A UCS whose XY
 // plane is not the world's (a 3D UCS a file brings, whose Z axis is not world +Z) cannot be drawn
 // in plan: input then reads as in the WCS, and the file keeps the UCS as it was.
-import type { HeaderValue } from '../model/types';
+import type { HeaderValue, ViewportGeometry } from '../model/types';
 import type { Vec2, Vec3 } from '../geom/types';
 
 export interface PlanUcs {
@@ -64,6 +64,19 @@ export function ucsOf(header: ReadonlyMap<string, unknown>, paper = false): Plan
   const yAxis = get(names.yAxis);
   if (!origin || !xAxis || !yAxis) return WORLD_UCS;
   return planUcs(origin, xAxis, yAxis) ?? WORLD_UCS;
+}
+
+/**
+ * The UCS a layout viewport shows (M3-15; AutoCAD 2024 Help, "UCSVP"): its own, kept in it
+ * (DXF 110/111/112), while its UCSVP is 1 (DXF 71), else model space's current UCS `current`,
+ * which a viewport with UCSVP 0 follows. Its own reads as the WCS when it is not in plan. What the
+ * viewport's UCS icon shows, and what typed input will read in it once a viewport can be made
+ * current (MSPACE, M6-02).
+ */
+export function viewportUcs(vp: ViewportGeometry, current: PlanUcs): PlanUcs {
+  if (!vp.ucsPerViewport) return current;
+  const u = vp.ucs;
+  return (u && planUcs(u.origin, u.xAxis, u.yAxis)) ?? WORLD_UCS;
 }
 
 export const isWorld = (u: PlanUcs): boolean =>
