@@ -70,6 +70,7 @@ describe('palette search', () => {
       'EXPORTPDF',
       'EXTEND',
       'FILLET',
+      'FILTER',
       'HATCHTOBACK',
       'ID',
       'JOIN',

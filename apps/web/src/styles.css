@@ -3290,3 +3290,44 @@ button {
   color: #fff;
   outline: none;
 }
+
+/* FILTER's Object Selection Filters (M3-04 part 4): the list on top, Select Filter and Named
+   Filters side by side below it (stacked when narrow). */
+.filter-list {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+}
+
+.filter-panes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.filter-panes fieldset {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 6px;
+  align-content: start;
+  border: 1px solid var(--chrome-border);
+}
+
+.filter-xyz {
+  display: grid;
+  grid-template-columns: 2ch 6ch minmax(8ch, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-buttons,
+.filter-save {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-save input {
+  flex: 1;
+  min-width: 8ch;
+}

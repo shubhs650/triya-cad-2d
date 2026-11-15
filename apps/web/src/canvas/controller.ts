@@ -154,8 +154,8 @@ const DOUBLE_CLICK_PX = 4;
 const WHEEL_GESTURE_MS = 400;
 /** A press that moves less than this is a click, not a drag. */
 const CLICK_PX = 4;
-/** PICKBOX (M2-03): the pickbox's half size in CSS pixels, AutoCAD's default 3. */
-const PICKBOX = 3;
+/** PICKAUTO 4 (M3-04 part 4): a drag that starts on nothing draws a lasso, not a rectangle. */
+const PICKAUTO_LASSO = 4;
 /** A selection window's colours, its fill's opacity and a crossing edge's dash (M2-03). */
 const WINDOW_COLOR = '#4da3ff';
 const CROSSING_COLOR = '#5fd35f';
@@ -962,7 +962,8 @@ export class CanvasController {
     const v = this.#view;
     if (!v) return Promise.resolve([]);
     const screen = worldToScreen(v, this.#size.width, this.#size.height, point);
-    return this.#host.hitTest(screen, PICKBOX);
+    // PICKBOX (M3-04 part 4): the pickbox's half size in CSS pixels, AutoCAD's initial 3.
+    return this.#host.hitTest(screen, this.#drafting.pickbox);
   }
 
   /** Where a world point is shown, in window pixels (M3-04 part 3: the Selection list). */
@@ -1036,7 +1037,7 @@ export class CanvasController {
 
   /** The pickbox's half size in world units (M2-27). */
   get pickbox(): number {
-    return PICKBOX * this.#px();
+    return this.#drafting.pickbox * this.#px();
   }
 
   /**
@@ -1793,7 +1794,9 @@ export class CanvasController {
         if (press?.pointer === e.pointerId) {
           if (Math.hypot(e.offsetX - press.x, e.offsetY - press.y) > CLICK_PX && !press.dragged) {
             press.dragged = true;
-            press.lasso = e.offsetX < press.x ? 'crossing' : 'window';
+            // Without PICKAUTO's bit 4 the drag makes the rectangular window it began.
+            if (this.#drafting.pickauto & PICKAUTO_LASSO)
+              press.lasso = e.offsetX < press.x ? 'crossing' : 'window';
           }
           // A point every few pixels is path enough, and keeps a long lasso's test quick.
           const last = press.path.at(-1);
