@@ -3005,3 +3005,36 @@ button {
   align-items: center;
   gap: 4px;
 }
+
+/* OVERKILL's Delete Duplicate Objects (M3-02 part 6): settings above, options below. */
+.overkill-dialog fieldset {
+  margin: 0 0 8px;
+  border: 1px solid var(--chrome-border);
+}
+
+.overkill-ignore {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+
+.overkill-tolerance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.overkill-tolerance input {
+  width: 12ch;
+}
+
+.overkill-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.overkill-sub {
+  padding-left: 20px;
+}

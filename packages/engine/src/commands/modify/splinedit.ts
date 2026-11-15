@@ -66,13 +66,13 @@ class Session {
     public id: EntityId,
   ) {}
 
-  get geom(): SplineGeometry | undefined {
-    const g = this.ctx.model.entity(this.id)?.geom;
-    return g?.kind === 'SPLINE' ? g : undefined;
+  /** The spline: it stays one until convert to Polyline, which ends the command. */
+  get geom(): SplineGeometry {
+    return this.ctx.model.entity(this.id)!.geom as SplineGeometry;
   }
 
   get tol(): Tolerance {
-    const c = this.geom && splineCurve(this.geom);
+    const c = splineCurve(this.geom);
     return c ? toleranceFor(this.ctx.model, c) : toleranceForSize(1);
   }
 
@@ -90,7 +90,6 @@ class Session {
 
   fit(f: (now: FitEdit, g: SplineGeometry) => FitEdit | undefined): boolean {
     const g = this.geom;
-    if (!g) return false;
     const next = f(fitEditOf(g, this.tol), g);
     return next !== undefined && this.change(withFitData(g, next));
   }
@@ -133,7 +132,6 @@ async function* main(s: Session): Sub<void> {
   const { ctx } = s;
   for (;;) {
     const g = s.geom;
-    if (!g) return;
     const options = [
       g.closed ? 'Open' : 'Close',
       'Join',
@@ -181,8 +179,7 @@ async function* main(s: Session): Sub<void> {
         break;
       case 'convert to Polyline': {
         const p = yield* precision(ctx, 'Specify a precision');
-        if (p === undefined) return;
-        s.change(polylineFrom(g, p));
+        s.change(polylineFrom(g, p!));
         return;
       }
       case 'Reverse':
@@ -203,8 +200,7 @@ async function* main(s: Session): Sub<void> {
 }
 
 /** Marks point `i` of `pts` with an X. */
-const mark = (s: Session, pts: readonly Vec2[], i: number) =>
-  s.ctx.preview(pts[i] ? marker(pts, pts[i]) : []);
+const mark = (s: Session, pts: readonly Vec2[], i: number) => s.ctx.preview(marker(pts, pts[i]!));
 
 /** A point picked at an "<exit>" prompt: the point, or undefined for Enter (exit). */
 async function* pointOrExit(s: Session, message: string): Sub<Vec2 | undefined> {
@@ -223,7 +219,6 @@ async function* fitData(s: Session): Sub<void> {
   for (;;) {
     ctx.preview([]);
     const g = s.geom;
-    if (!g || !hasFitData(g)) return;
     const a = yield ctx.prompt.keyword({
       message: 'Enter a fit data option',
       options: [
@@ -292,14 +287,14 @@ async function* fitData(s: Session): Sub<void> {
 /** Fit data Add: new fit points after (or, at an open spline's start, before) one picked. */
 async function* fitAdd(s: Session): Sub<void> {
   for (;;) {
-    const pts = s.geom?.fitPoints ?? [];
+    const pts = s.geom.fitPoints!;
     const p = yield* pointOrExit(s, 'Specify existing fit point');
     if (!p) return;
     let k = nearestIndex(pts, p);
     let before = false;
     for (;;) {
-      const g = s.geom!;
-      const now = g.fitPoints ?? [];
+      const g = s.geom;
+      const now = g.fitPoints!;
       mark(s, now, k);
       const first = !g.closed && k === 0;
       const a = yield {
@@ -329,8 +324,8 @@ async function* fitAdd(s: Session): Sub<void> {
 
 async function* fitDelete(s: Session): Sub<void> {
   for (;;) {
-    const g = s.geom!;
-    const pts = g.fitPoints ?? [];
+    const g = s.geom;
+    const pts = g.fitPoints!;
     const p = yield* pointOrExit(s, 'Specify existing fit point');
     if (!p) return;
     const least = g.closed ? 3 : 2;
@@ -351,11 +346,10 @@ async function* fitKink(s: Session): Sub<void> {
   for (;;) {
     const p = yield* pointOrExit(s, 'Specify new point on spline');
     if (!p) return;
-    const g = s.geom!;
+    const g = s.geom;
     const tol = s.tol;
-    const q = pointOnSpline(g, p, tol);
-    if (!q) continue;
-    const pts = g.fitPoints ?? [];
+    const q = pointOnSpline(g, p, tol)!;
+    const pts = g.fitPoints!;
     const same = pts.findIndex((f) => distance(f, q) <= tol.linear);
     const at = same >= 0 ? same : fitInsertIndex(g, q, tol);
     s.fit((f) =>
@@ -372,8 +366,8 @@ async function* fitKink(s: Session): Sub<void> {
 
 /** Fit data Tangents: a point gives the direction from the end; System default takes it off. */
 async function* tangents(s: Session): Sub<void> {
-  const g = s.geom!;
-  const pts = g.fitPoints ?? [];
+  const g = s.geom;
+  const pts = g.fitPoints!;
   const ask = async function* (message: string, from: Vec2): Sub<Vec2 | undefined | null> {
     const a = yield s.ctx.prompt.point({
       message,
@@ -418,7 +412,7 @@ async function* editVertex(s: Session): Sub<void> {
         for (;;) {
           const p = yield* pointOrExit(s, 'Specify a point on the spline');
           if (!p) break;
-          if (!s.change(addControlVertex(s.geom!, p, s.tol))) {
+          if (!s.change(addControlVertex(s.geom, p, s.tol))) {
             ctx.message('A control vertex cannot be added there.');
           }
         }
@@ -427,7 +421,7 @@ async function* editVertex(s: Session): Sub<void> {
         for (;;) {
           const p = yield* pointOrExit(s, 'Specify control point');
           if (!p) break;
-          const g = s.geom!;
+          const g = s.geom;
           const k = nearestIndex(controlPositions(g), p);
           if (!s.change(deleteControlVertex(g, k))) {
             ctx.message(`The spline needs more control points than its order (${g.degree + 1}).`);
@@ -435,7 +429,7 @@ async function* editVertex(s: Session): Sub<void> {
         }
         break;
       case 'Elevate order': {
-        const g = s.geom!;
+        const g = s.geom;
         const order = g.degree + 1;
         for (;;) {
           const o = yield ctx.prompt.integer({
@@ -467,10 +461,10 @@ async function* editVertex(s: Session): Sub<void> {
  */
 async function* walk(s: Session, what: 'fit' | 'move' | 'weight'): Sub<void> {
   const { ctx } = s;
-  const points = () => (what === 'fit' ? (s.geom!.fitPoints ?? []) : controlPositions(s.geom!));
+  const points = () => (what === 'fit' ? s.geom.fitPoints! : controlPositions(s.geom));
   let i = 0;
   for (;;) {
-    const g = s.geom!;
+    const g = s.geom;
     const pts = points();
     i = Math.min(i, pts.length - 1);
     mark(s, pts, i);

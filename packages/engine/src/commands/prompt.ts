@@ -8,6 +8,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Color, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
+import type { OverkillSettings } from '../edit/overkill';
 import type { MatchSettings } from '../properties/match';
 import type { DragPreview } from './drag';
 import {
@@ -373,6 +374,11 @@ export type DialogRequest =
       readonly settings: MatchSettings;
       /** Plot Style is offered: the drawing uses named plot styles. */
       readonly plotStyles: boolean;
+    }
+  | {
+      /** OVERKILL's Delete Duplicate Objects (M3-02 part 6): its settings as it opens. */
+      readonly type: 'overkill';
+      readonly settings: OverkillSettings;
     };
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
@@ -460,6 +466,8 @@ export type PromptAnswer =
       readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
       /** Property Settings' checkboxes as OK closed it. */
       readonly matchprop?: MatchSettings;
+      /** Delete Duplicate Objects' settings as OK closed it. */
+      readonly overkill?: OverkillSettings;
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }

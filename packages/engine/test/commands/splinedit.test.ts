@@ -245,6 +245,31 @@ describe('SPLINEDIT', () => {
     expect(bus.command).toBeUndefined();
   });
 
+  it('closes a fit-only spline by its fit points and keeps a closed one to three', async () => {
+    const bare: SplineGeometry = { ...fit(), controlPoints: [], knots: [] };
+    const { bus, byHandle, log } = setup([bare]);
+    const spline = () => byHandle('40')!.geom as SplineGeometry;
+    await bus.script(['SPE', '']);
+    expect(bus.command).toBeUndefined();
+    await bus.script(['SPE']);
+    await bus.pick(P(0, 10));
+    await bus.script(['C']);
+    expect(spline()).toMatchObject({ closed: true, periodic: false });
+    expect(spline().controlPoints.length).toBeGreaterThan(0);
+    await bus.script(['F', 'D', '30,20', '20,10']);
+    expect(log).toContain('A closed spline needs at least 3 fit points.');
+    // A tangent picked on the point itself has no direction: the tangent stays as it was.
+    await bus.script(['', 'T', '0,10']);
+    expect(spline().startTangent).toBeUndefined();
+    expect(bus.promptText).toMatch(/^Enter a fit data option/);
+    await bus.script(['']);
+    expect(bus.promptText).toMatch(/^Enter an option/);
+    await bus.script(['E', '']);
+    expect(bus.promptText).toMatch(/^Enter an option/);
+    await bus.script(['']);
+    expect(bus.command).toBeUndefined();
+  });
+
   it('turns a spline-fit polyline into a spline and refuses other objects', async () => {
     const frame = S.map((p) => ({ x: p.x, y: p.y, bulge: 0 }));
     const poly: PolylineGeometry = {

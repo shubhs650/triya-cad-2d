@@ -60,3 +60,4 @@ export * from './underlay-layers';
 export * from './array';
 export * from './pedit';
 export * from './splinedit';
+export * from './overkill';
