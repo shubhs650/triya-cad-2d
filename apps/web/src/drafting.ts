@@ -8,6 +8,7 @@
 // was drawn; LWT shows each drawing's own LWDISPLAY until the drafter turns it, and is then the
 // same for every drawing. Nothing is written back to the file. The snap and grid spacing are
 // each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas.
+import { GRIP_COLORS_DEFAULT, type GripColors } from '@triya/render';
 import { DEFAULT_TOOLTIP, type TooltipAppearance } from './tooltip-appearance';
 import {
   GRID_DISPLAY,
@@ -72,6 +73,11 @@ export interface DraftingState {
    * AutoCAD keeps it per user; the canvas draws grips at it and picks them within it.
    */
   readonly gripSize: number;
+  /**
+   * GRIPCOLOR, GRIPHOVER, GRIPHOT and GRIPCONTOUR (M3-05 part 5): the grips' colours, ACIs 1 to
+   * 255, initially 150, 11, 12 and 251. AutoCAD keeps them per user; Settings' Grip Colors.
+   */
+  readonly gripColors: GripColors;
   /**
    * ROLLOVERTIPS (M2-35 part 21): the object under a resting cursor shows a tooltip with its
    * properties. AutoCAD keeps it per user, initially on.
@@ -189,6 +195,16 @@ export interface DraftingState {
   readonly qpDistance: number;
   readonly qpCollapse: boolean;
   readonly qpRows: number;
+  /**
+   * The Drafting Settings dialog's Selection Cycling tab (M3-04 part 7; AutoCAD 2024 Help,
+   * "Selection Cycling Tab (Drafting Settings Dialog Box)"), kept per user: where the Selection
+   * list opens, by the cursor (0: its Quadrant, Distance in pixels away) or Static (1: where it
+   * was dragged), and whether it shows its title bar.
+   */
+  readonly scLocation: 0 | 1;
+  readonly scQuadrant: QpQuadrant;
+  readonly scDistance: number;
+  readonly scTitleBar: boolean;
   /**
    * The modify commands' options AutoCAD keeps per user (M3-12, `MODIFY_OPTIONS`): OFFSETERASE,
    * OFFSETGAPTYPE, TRIMEXTENDMODE, EDGEMODE, PROJMODE, TRIMMODE and PEDITACCEPT, by name.
@@ -413,6 +429,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   autosnap: AUTOSNAP_KEPT,
   pickfirst: true,
   gripSize: 5,
+  gripColors: GRIP_COLORS_DEFAULT,
   rolloverTips: true,
   arrayAssociativity: true,
   polarMode: 0,
@@ -444,6 +461,12 @@ export const INITIAL_DRAFTING: DraftingState = {
   qpDistance: 50,
   qpCollapse: true,
   qpRows: 3,
+  // Help states no initial place for the Selection list: Triya takes top right, 25 pixels,
+  // nearer than Quick Properties' 50 as the list is small and read at once.
+  scLocation: 0,
+  scQuadrant: 'top-right',
+  scDistance: 25,
+  scTitleBar: true,
   modifyOptions: INITIAL_MODIFY_OPTIONS,
   sessionOptions: INITIAL_SESSION_OPTIONS,
 };

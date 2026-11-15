@@ -55,6 +55,8 @@ import {
 } from './canvas/view-host';
 import { selectionList } from './selection-list';
 import { SelectionList } from './SelectionList';
+import { CyclingBadge } from './CyclingBadge';
+import { cyclingBadge } from './cycling-badge';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
@@ -87,8 +89,10 @@ import { drafting, type DraftingState } from './drafting';
 import { selectionFilters } from './selection-filters';
 import { drawingVariableReply, systemVariableReply } from './system-variables';
 import { snapMenu } from './snap-menu';
+import { shortcutMenu } from './shortcut-menu';
 import { AppClipboard, browserClipboardEnv, clipboardPicture } from './system-clipboard';
 import { SnapMenu } from './SnapMenu';
+import { ShortcutMenu } from './ShortcutMenu';
 import { DraftingToggles } from './DraftingToggles';
 import {
   DocumentStore,
@@ -1735,6 +1739,7 @@ export function App() {
               }}
             />
           )}
+          {active && <CyclingBadge doc={active.id} />}
           <PlotPreview active={state.active} />
           {state.docs.length === 0 && (
             <div className="start" data-testid="start">
@@ -1856,6 +1861,7 @@ export function App() {
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
+      <ShortcutMenu />
       <GripMenu />
       <CommandLine
         doc={active?.id}
@@ -2145,6 +2151,8 @@ function ViewportCanvas({
         }
       },
       onLasso: (kind) => commandLines.lasso(id, kind && lassoPrompt(kind)),
+      // Selection cycling's badge by the cursor over overlapping objects (M3-04 part 7).
+      onOverlap: (at) => cyclingBadge.set(id, at),
       // A view changed is an undo step of the drawing's (M2-47 part 4); U finds this canvas
       // again by the name given here (`viewContext`'s `viewport`).
       onViewStep: (label, view) =>
@@ -2155,6 +2163,13 @@ function ViewportCanvas({
           view,
         }),
       onSnapMenu: (at) => snapMenu.open(id, at),
+      // A plain right-click (M3-05 part 5): the prompt's shortcut menu, the grip modes' options.
+      onShortcutMenu: (at) => {
+        const items = commandLines.get(id).prompt?.shortcutMenu;
+        if (!items?.length) return false;
+        shortcutMenu.open(id, at, items);
+        return true;
+      },
       // SELECTIONPREVIEW's bit 1 (M3-04 part 5) previews at `Command:` only.
       atCommand: () => atCommand(id),
       // Rollover tooltips (M2-35 part 21): the object under a resting cursor at `Command:`.

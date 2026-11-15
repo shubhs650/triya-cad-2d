@@ -23,7 +23,7 @@ import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
 import type { ArcGeometry, DimensionGeometry, Entity, EntityGeometry } from '../../model/types';
 import type { CommandContext } from '../command';
-import { GRIP_CYCLE, type Prompt, type PromptAnswer } from '../prompt';
+import { GRIP_CYCLE, type Prompt, type PromptAnswer, type ShortcutMenuItem } from '../prompt';
 import { toleranceFor } from './offset';
 import { arrayGripAt } from './array-grips';
 
@@ -61,6 +61,50 @@ export const FUNCTION_KEYWORDS: ReadonlyMap<string, GripFunction> = new Map(
     .filter(([f]) => f !== 'Stretch Vertex')
     .map(([f, k]) => [k, f]),
 );
+
+/**
+ * Properties on the grip menu (M3-05 part 5), typed PR at any grip prompt: grip editing ends and
+ * the Properties palette opens on the objects, which stay selected.
+ */
+export const PROPERTIES_KEYWORD = 'PRoperties';
+
+/**
+ * The grip modes' right-click menu (M3-05 part 5; AutoCAD 2024 Help, "To Use Grips to Stretch,
+ * Move, Rotate, Scale or Mirror Objects", and its grip shortcut menu): Enter, the modes in the
+ * menu's order (Move, Mirror, Rotate, Scale, Stretch), Base Point, Copy, Reference, Undo,
+ * Properties and Exit. A multi-functional grip's functions follow Enter, by the names its hover
+ * menu shows (Help shows them in the hover menu only; listing them here too keeps the
+ * right-click a way to every function, the common expectation). `accepts`: the keywords the
+ * prompt takes; the others are greyed (Reference outside ROTATE and SCALE).
+ */
+export function gripShortcutMenu(
+  accepts: readonly string[],
+  functions: readonly GripFunction[] = [],
+): ShortcutMenuItem[] {
+  const item = (label: string, keyword?: string, separatorBefore?: boolean): ShortcutMenuItem => ({
+    label,
+    ...(keyword !== undefined && { keyword }),
+    ...(keyword !== undefined && !accepts.includes(keyword) && { disabled: true as const }),
+    ...(separatorBefore && { separatorBefore: true as const }),
+  });
+  // A plain Stretch first function is the Stretch mode, listed with the modes.
+  const own = functions.filter((f) => f !== 'Stretch');
+  return [
+    item('Enter'),
+    ...own.map((f, i) => item(f, KEYWORD_OF[f], i === 0)),
+    item('Move', 'MOve', true),
+    item('Mirror', 'MIrror'),
+    item('Rotate', 'ROtate'),
+    item('Scale', 'SCale'),
+    item('Stretch', 'STretch'),
+    item('Base Point', 'Base point', true),
+    item('Copy', 'Copy'),
+    item('Reference', 'Reference'),
+    item('Undo', 'Undo'),
+    item('Properties', PROPERTIES_KEYWORD, true),
+    item('Exit', 'eXit', true),
+  ];
+}
 
 export interface GripFunctions {
   /** The object the functions edit: the first selected one with the hot grip that has them. */
@@ -149,7 +193,8 @@ export type GripFunctionResult =
 
 /**
  * The function `fn` of the grip at `hot` on `id`: its prompt until it is done, or left for
- * another mode or function. `hidden`: the keywords typed at it (modes and the grip's functions).
+ * another mode or function. `hidden`: the keywords typed at it (modes and the grip's functions);
+ * `menu`: its right-click menu (M3-05 part 5).
  */
 export async function* runGripFunction(
   ctx: CommandContext,
@@ -157,6 +202,7 @@ export async function* runGripFunction(
   hot: Vec2,
   fn: GripFunction,
   hidden: readonly string[],
+  menu?: readonly ShortcutMenuItem[],
 ): AsyncGenerator<Prompt, GripFunctionResult, PromptAnswer> {
   const immediate = IMMEDIATE_FUNCTIONS.has(fn);
   for (;;) {
@@ -180,6 +226,7 @@ export async function* runGripFunction(
         options: ['eXit'],
         hiddenOptions: hidden,
         ctrlCycles: true as const,
+        ...(menu && { shortcutMenu: menu }),
         drag: { kind: 'grip' as const, ids: [id], grip: hot, from: hot, fn },
       };
       const a =

@@ -36,6 +36,7 @@ export const DRAFTING_SETTINGS_TABS: readonly { tab: DraftingSettingsTab; label:
   { tab: 'osnap', label: 'Object Snap' },
   { tab: 'dyn', label: 'Dynamic Input' },
   { tab: 'qp', label: 'Quick Properties' },
+  { tab: 'sc', label: 'Selection Cycling' },
 ];
 
 export interface DraftingSettingsDraft {
@@ -97,6 +98,15 @@ export interface DraftingSettingsDraft {
   readonly distance: string;
   readonly collapse: boolean;
   readonly rows: string;
+  /** Allow selection cycling (SELECTIONCYCLING above 0) and Display selection cycling list box (2). */
+  readonly sc: boolean;
+  readonly scList: boolean;
+  /** The list's Display location: Cursor dependent (0), its Quadrant and Distance in pixels as typed, or Static (1). */
+  readonly scLocation: 0 | 1;
+  readonly scQuadrant: QpQuadrant;
+  readonly scDistance: string;
+  /** Show title bar. */
+  readonly scTitleBar: boolean;
 }
 
 export interface SpacingDraft {
@@ -176,7 +186,24 @@ export function draftOf(s: DraftingState, snapGrid?: SnapGridSettings): Drafting
     distance: String(s.qpDistance),
     collapse: s.qpCollapse,
     rows: String(s.qpRows),
+    sc: s.selectionCycling > 0,
+    // 0 (off with no mode kept) allows the list, as Ctrl+W turns on 2.
+    scList: Math.abs(s.selectionCycling) !== 1,
+    scLocation: s.scLocation,
+    scQuadrant: s.scQuadrant,
+    scDistance: String(s.scDistance),
+    scTitleBar: s.scTitleBar,
   };
+}
+
+/**
+ * SELECTIONCYCLING as the Selection Cycling tab leaves it: off keeps the mode negative for Ctrl+W
+ * to turn back on, and 0 (off with no mode kept) stays 0 while the list box stays checked.
+ */
+function cyclingOf(d: DraftingSettingsDraft, was: number): number {
+  const mode = d.scList ? 2 : 1;
+  if (d.sc) return mode;
+  return was === 0 && mode === 2 ? 0 : -mode;
 }
 
 /** A whole number typed in `range`, else undefined. */
@@ -259,6 +286,8 @@ export function draftProblem(d: DraftingSettingsDraft): string | undefined {
     return `Distance in pixels must be a whole number from ${QP_DISTANCES.min} to ${QP_DISTANCES.max}.`;
   if (whole(d.rows, QP_ROW_COUNTS) === undefined)
     return `Minimum number of rows must be a whole number from ${QP_ROW_COUNTS.min} to ${QP_ROW_COUNTS.max}.`;
+  if (whole(d.scDistance, QP_DISTANCES) === undefined)
+    return `Distance in pixels must be a whole number from ${QP_DISTANCES.min} to ${QP_DISTANCES.max}.`;
   return undefined;
 }
 
@@ -317,5 +346,10 @@ export function draftPatch(d: DraftingSettingsDraft, s: DraftingState): Partial<
     qpDistance: whole(d.distance, QP_DISTANCES)!,
     qpCollapse: d.collapse,
     qpRows: whole(d.rows, QP_ROW_COUNTS)!,
+    selectionCycling: cyclingOf(d, s.selectionCycling),
+    scLocation: d.scLocation,
+    scQuadrant: d.scQuadrant,
+    scDistance: whole(d.scDistance, QP_DISTANCES)!,
+    scTitleBar: d.scTitleBar,
   };
 }

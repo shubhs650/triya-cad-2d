@@ -3315,6 +3315,22 @@ button {
   border-bottom: 1px solid var(--tip-border);
 }
 
+/* Selection cycling's badge (M3-04 part 7): two overlapping squares by the cursor. */
+.cycling-badge {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  fill: var(--tip-bg, #ffffff);
+  stroke: var(--accent, #0f6cbd);
+  stroke-width: 1.5;
+}
+
+/* Static (M3-04 part 7): the title bar drags the list. */
+.selection-list-title.movable {
+  cursor: move;
+  user-select: none;
+}
+
 .selection-list ul {
   margin: 0;
   padding: 2px 0;
@@ -3591,4 +3607,35 @@ button {
 
 .units-other input {
   width: 9em;
+}
+
+/* M3-05 part 5: the Grip Colors dialog, a list per grip colour with its swatch. */
+.grip-colors-rows {
+  display: grid;
+  gap: 8px;
+  min-width: 280px;
+}
+
+.grip-colors-rows .cad-dialog-field > label {
+  min-width: 140px;
+}
+
+.grip-colors-choice {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.grip-colors-swatch {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--chrome-border);
+}
+
+/* M3-05 part 5: a greyed item of the grip right-click menu. */
+.snap-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

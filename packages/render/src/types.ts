@@ -55,7 +55,33 @@ export interface RenderStyle {
    * sets it; plots and previews never draw it.
    */
   readonly viewportUcsIcons?: boolean;
+  /**
+   * GRIPCOLOR, GRIPHOVER, GRIPHOT and GRIPCONTOUR (M3-05 part 5), ACIs; absent are AutoCAD's
+   * initial colours (`GRIP_COLORS_DEFAULT`).
+   */
+  readonly gripColors?: GripColors;
 }
+
+/**
+ * The grips' colours as ACIs 1 to 255 (AutoCAD 2024 Help, each variable "Saved in: Registry";
+ * the Options dialog's Selection tab, "Grip Colors Dialog Box"): unselected grips (GRIPCOLOR),
+ * the grip the cursor pauses on (GRIPHOVER), the hot grip (GRIPHOT) and every grip's contour
+ * (GRIPCONTOUR).
+ */
+export interface GripColors {
+  readonly unselected: number;
+  readonly hover: number;
+  readonly selected: number;
+  readonly contour: number;
+}
+
+/** The grip colours' initial values (AutoCAD 2024 Help): ACI 150, 11, 12 and 251. */
+export const GRIP_COLORS_DEFAULT: GripColors = {
+  unselected: 150,
+  hover: 11,
+  selected: 12,
+  contour: 251,
+};
 
 /** GRIPSIZE's initial value (AutoCAD 2024 Help). */
 export const GRIPSIZE_DEFAULT = 5;
@@ -431,6 +457,12 @@ export interface SelectionPreview {
    * discontinued"); undefined, no limit.
    */
   readonly limit?: number;
+  /**
+   * Shift+Space pressed this many times over overlapping objects (M3-04 part 7): the object
+   * under the pickbox that many steps on from the nearest (round again after the farthest) is
+   * the one previewed, whatever PREVIEWFILTER says; undefined, the nearest, filtered.
+   */
+  readonly cycle?: number;
   /** The pickbox's half size in CSS pixels (PICKBOX). */
   readonly aperture: number;
   /** PREVIEWFILTER's bits. */

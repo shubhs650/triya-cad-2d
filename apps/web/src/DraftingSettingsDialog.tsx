@@ -8,9 +8,8 @@
 // `*Active` VPORT) came with part 6. The Dynamic Input tab came with part 4, its Pointer Input
 // Settings on the tab itself rather than in a dialog of their own; part 8 added Pointer Input's
 // Visibility and the Dimension Input Settings there too, Show additional tips, and the Drafting
-// Tooltip Appearance dialog (`TooltipAppearanceDialog`). The Selection Cycling tab comes with
-// M3-04; 3D Object Snap is out of
-// scope (PRD non-goal: no 3D).
+// Tooltip Appearance dialog (`TooltipAppearanceDialog`). The Selection Cycling tab came with
+// M3-04 part 7; 3D Object Snap is out of scope (PRD non-goal: no 3D).
 // It opens on the tab shown last (OSNAP: Object Snap), edits a copy of the drafting aids and
 // sets them on OK; Cancel (or Esc) leaves them as they were. Options... is left out: Triya's
 // Settings panel is not a dialog to open over it.
@@ -99,6 +98,7 @@ export function DraftingSettingsDialog({ doc, request }: { doc: number; request:
         {tab === 'osnap' && <ObjectSnapTab d={d} set={set} />}
         {tab === 'dyn' && <DynamicInputTab d={d} set={set} />}
         {tab === 'qp' && <QuickPropertiesTab d={d} set={set} />}
+        {tab === 'sc' && <SelectionCyclingTab d={d} set={set} />}
       </div>
       {problem && (
         <p role="alert" className="dsettings-error">
@@ -867,6 +867,73 @@ function QuickPropertiesTab({ d, set }: TabProps) {
             onChange={(e) => set({ rows: e.currentTarget.value })}
           />
         </label>
+      </fieldset>
+    </div>
+  );
+}
+
+/**
+ * Selection Cycling (AutoCAD 2024 Help, "Selection Cycling Tab (Drafting Settings Dialog Box)"):
+ * Allow selection cycling (SELECTIONCYCLING, Ctrl+W), Display selection cycling list box, and
+ * where the list shows: Cursor dependent, in a Quadrant of the pick and Distance in pixels away,
+ * or Static, where it was dragged; Show title bar.
+ */
+function SelectionCyclingTab({ d, set }: TabProps) {
+  const id = useId();
+  const list = d.sc && d.scList;
+  const cursor = d.scLocation === 0;
+  return (
+    <div className="dsettings-tab">
+      <Check checked={d.sc} onChange={(sc) => set({ sc })}>
+        Allow selection cycling (Ctrl+W)
+      </Check>
+      <fieldset disabled={!d.sc}>
+        <legend>Selection cycling list box</legend>
+        <Check checked={d.scList} onChange={(scList) => set({ scList })}>
+          Display selection cycling list box
+        </Check>
+        <fieldset disabled={!list}>
+          <legend>Display location</legend>
+          <Radio name={`${id}-location`} checked={cursor} onChange={() => set({ scLocation: 0 })}>
+            Cursor dependent
+          </Radio>
+          <div className="dsettings-sub">
+            <label className="cad-dialog-field">
+              <span>Quadrant</span>
+              <select
+                value={d.scQuadrant}
+                disabled={!cursor}
+                onChange={(e) => set({ scQuadrant: e.currentTarget.value as QpQuadrant })}
+              >
+                {QP_QUADRANTS.map((q) => (
+                  <option key={q.value} value={q.value}>
+                    {q.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="cad-dialog-field">
+              <span>Distance in pixels</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={d.scDistance}
+                disabled={!cursor}
+                onChange={(e) => set({ scDistance: e.currentTarget.value })}
+              />
+            </label>
+          </div>
+          <Radio name={`${id}-location`} checked={!cursor} onChange={() => set({ scLocation: 1 })}>
+            Static
+          </Radio>
+        </fieldset>
+        <Check
+          checked={d.scTitleBar}
+          disabled={!list}
+          onChange={(scTitleBar) => set({ scTitleBar })}
+        >
+          Show title bar
+        </Check>
       </fieldset>
     </div>
   );

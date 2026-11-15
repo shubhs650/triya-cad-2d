@@ -126,11 +126,13 @@ import {
   PATH_M,
   PATH_Q,
   PATH_Z,
+  GRIP_COLORS_DEFAULT,
   gripHalfSize,
   screenToWorld,
   visibleBox,
   type DrawnEntity,
   type FillGradient,
+  type GripColors,
   type ImageFill,
   type PrimitiveClip,
   type PrimitiveColor,
@@ -443,14 +445,21 @@ function touchesSortEnts(c: KeyedChanges<NonGraphicalObject> | undefined): boole
 }
 
 /**
- * Grips (M2-06 part 2): GRIPCOLOR (ACI 150), GRIPHOT (ACI 12) and a dark edge; their size is the
- * style's GRIPSIZE (`gripHalfSize`, M2-59 part 3).
+ * Grips (M2-06 part 2): their size is the style's GRIPSIZE (`gripHalfSize`, M2-59 part 3), their
+ * colours its GRIPCOLOR, GRIPHOVER (M3-05 part 2: the grip under the cursor), GRIPHOT and
+ * GRIPCONTOUR (the edge that keeps a grip visible on any background), AutoCAD's initial ACI 150,
+ * 11, 12 and 251 unless set (M3-05 part 5).
  */
-const GRIP_COLOR = rgbHex(aciRgb(150));
-const GRIP_HOT = rgbHex(aciRgb(12));
-/** GRIPHOVER (M3-05 part 2): the grip under the cursor, AutoCAD's initial ACI 11. */
-const GRIP_HOVER = rgbHex(aciRgb(11));
-const GRIP_EDGE = '#1a1a1a';
+function gripPalette(c: GripColors | undefined) {
+  const hex = (aci: number) => rgbHex(aciRgb(aci));
+  const g = c ?? GRIP_COLORS_DEFAULT;
+  return {
+    unselected: hex(g.unselected),
+    hover: hex(g.hover),
+    selected: hex(g.selected),
+    contour: hex(g.contour),
+  };
+}
 
 /** DXF 90 bits 32 and 64 of a VIEWPORT: UCSICON on, and at the UCS origin (M3-06 part 8). */
 const VIEWPORT_UCS_ICON = 32;
@@ -471,6 +480,7 @@ function arrowGrip(
   uy: number,
   half: number,
   fill: string,
+  contour: string,
 ): void {
   const corners = (r: number): [[number, number], [number, number], [number, number]] => [
     [x + ux * 1.4 * r, y + uy * 1.4 * r],
@@ -478,7 +488,7 @@ function arrowGrip(
     [x - ux * r + uy * 1.2 * r, y - uy * r - ux * 1.2 * r],
   ];
   for (const [style, r] of [
-    [GRIP_EDGE, half + 1],
+    [contour, half + 1],
     [fill, half],
   ] as const) {
     const [a, b, c] = corners(r);
@@ -903,7 +913,14 @@ export class Canvas2DRenderer implements Renderer {
       for (const id of taken) for (const p of previewObjects(this.#model, id, o)) out.add(p);
       return [...out].sort((a, b) => a - b);
     }
-    const hit = preview.screen && this.hitTest(preview.screen, preview.aperture)[0];
+    const hits = preview.screen ? this.hitTest(preview.screen, preview.aperture) : [];
+    // Shift+Space (M3-04 part 7) steps through the overlapping objects; the one stepped to
+    // shows whatever PREVIEWFILTER says, as the drafter asked for it.
+    if (preview.cycle !== undefined && hits.length > 0) {
+      const hit = hits[preview.cycle % hits.length]!;
+      return previewObjects(this.#model, hit, { ...o, filter: 0 });
+    }
+    const hit = hits[0];
     return hit !== undefined ? previewObjects(this.#model, hit, o) : [];
   }
 
@@ -1453,23 +1470,24 @@ export class Canvas2DRenderer implements Renderer {
     ctx.globalAlpha = 1;
     const seen = new Set<string>();
     const hover = this.#hoveredGrip();
+    const colors = gripPalette(this.#style.gripColors);
     const device = (p: Vec2) => ({
       x: Math.round(m.a * (p.x - ox) + m.c * (p.y - oy) + m.e),
       y: Math.round(m.b * (p.x - ox) + m.d * (p.y - oy) + m.f),
     });
     const square = (x: number, y: number, fill: string) => {
-      // A dark edge keeps the grip visible on any background.
-      ctx.fillStyle = GRIP_EDGE;
+      // The contour keeps the grip visible on any background.
+      ctx.fillStyle = colors.contour;
       ctx.fillRect(x - half - 1, y - half - 1, 2 * half + 2, 2 * half + 2);
       ctx.fillStyle = fill;
       ctx.fillRect(x - half, y - half, 2 * half, 2 * half);
     };
     const fillOf = (p: Vec2) =>
       grips.hot !== undefined && sameGrip(p, grips.hot)
-        ? GRIP_HOT
+        ? colors.selected
         : hover && sameGrip(p, hover)
-          ? GRIP_HOVER
-          : GRIP_COLOR;
+          ? colors.hover
+          : colors.unselected;
     // A selected group (M3-13): its bounding box at GROUPDISPLAYMODE 2, a device pixel wide in
     // the grip colour, then its one grip at the centre.
     const groups = this.#groupGrips();
@@ -1484,7 +1502,7 @@ export class Canvas2DRenderer implements Renderer {
       const width = Math.max(1, Math.round(this.#dpr));
       // An odd width sits on pixel centres, so the line is crisp, not two half-tone pixels.
       const o = width % 2 === 1 ? 0.5 : 0;
-      ctx.strokeStyle = GRIP_COLOR;
+      ctx.strokeStyle = colors.unselected;
       ctx.lineWidth = width;
       ctx.setLineDash([]);
       ctx.beginPath();
@@ -1513,7 +1531,7 @@ export class Canvas2DRenderer implements Renderer {
           const dx = m.a * g.towards.x + m.c * g.towards.y;
           const dy = m.b * g.towards.x + m.d * g.towards.y;
           const len = Math.hypot(dx, dy) || 1;
-          arrowGrip(ctx, x, y, dx / len, dy / len, half, fill);
+          arrowGrip(ctx, x, y, dx / len, dy / len, half, fill, colors.contour);
           continue;
         }
         square(x, y, fill);

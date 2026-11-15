@@ -11,7 +11,7 @@
 // Drafting Tooltip Appearance's colour, size and transparency.
 import { keywordShortcut, type Prompt, type Vec2 } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { cycleLasso, cycleSnap } from './canvas/registry';
+import { cycleLasso, cycleOverlap, cycleSnap } from './canvas/registry';
 import { drafting } from './drafting';
 import { overrideKey } from './shortcuts';
 import {
@@ -189,6 +189,12 @@ export function DynamicInput({
     const onKey = (e: KeyboardEvent) => {
       // Spacebar while a lasso is dragged cycles its kind (M3-04 part 2), whatever has focus.
       if (e.key === ' ' && cycleLasso()) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      // Shift+Space over overlapping objects steps through them (M3-04 part 7), not Enter.
+      if (e.key === ' ' && e.shiftKey && !takesText(e.target) && cycleOverlap()) {
         e.preventDefault();
         e.stopImmediatePropagation();
         return;

@@ -4,6 +4,7 @@
 // device, in IndexedDB (`triya-settings`, ARCHITECTURE.md §13), until "Clear all local data".
 // ORTHO, SNAP, GRID, LWT and TPY are each drawing's own in AutoCAD (ORTHOMODE, SNAPMODE,
 // GRIDMODE, LWDISPLAY, TRANSPARENCYDISPLAY) and stay per session, as M2-04 built them.
+import { GRIP_COLORS_DEFAULT, type GripColors } from '@triya/render';
 import { OSMODE_DEFAULT, OSNAP_OFF } from '@triya/engine';
 import {
   AUTOSNAP_KEPT,
@@ -72,6 +73,7 @@ export type DraftingPreferences = Pick<
   | 'autosnap'
   | 'pickfirst'
   | 'gripSize'
+  | 'gripColors'
   | 'rolloverTips'
   | 'arrayAssociativity'
   | 'polarMode'
@@ -103,6 +105,10 @@ export type DraftingPreferences = Pick<
   | 'qpDistance'
   | 'qpCollapse'
   | 'qpRows'
+  | 'scLocation'
+  | 'scQuadrant'
+  | 'scDistance'
+  | 'scTitleBar'
   | 'modifyOptions'
 >;
 
@@ -159,6 +165,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     autosnap: AUTOSNAP_KEPT,
     pickfirst: true,
     gripSize: 5,
+    gripColors: GRIP_COLORS_DEFAULT,
     rolloverTips: true,
     arrayAssociativity: true,
     polarMode: 0,
@@ -190,6 +197,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
     qpDistance: 50,
     qpCollapse: true,
     qpRows: 3,
+    scLocation: 0,
+    scQuadrant: 'top-right',
+    scDistance: 25,
+    scTitleBar: true,
     modifyOptions: INITIAL_MODIFY_OPTIONS,
   },
   filters: {},
@@ -228,6 +239,19 @@ function int(v: unknown, range: { min: number; max: number }, fallback: number):
   return Math.min(range.max, Math.max(range.min, Math.round(v)));
 }
 
+/** The grip colours stored (M3-05 part 5): each an ACI 1 to 255, else its initial value. */
+function gripColors(v: unknown): GripColors {
+  const stored = isRecord(v) ? v : {};
+  const d = GRIP_COLORS_DEFAULT;
+  const aci = { min: 1, max: 255 };
+  return {
+    unselected: within(stored['unselected'], aci, d.unselected),
+    hover: within(stored['hover'], aci, d.hover),
+    selected: within(stored['selected'], aci, d.selected),
+    contour: within(stored['contour'], aci, d.contour),
+  };
+}
+
 /** A stored record as preferences: whatever is missing or not valid takes its default. */
 export function normalizePreferences(raw: unknown): Preferences {
   const d = DEFAULT_PREFERENCES;
@@ -240,6 +264,7 @@ export function normalizePreferences(raw: unknown): Preferences {
   const polarAngle = k['polarAngle'];
   const polarAddAngles = k['polarAddAngles'];
   const qpQuadrant = k['qpQuadrant'];
+  const scQuadrant = k['scQuadrant'];
   return {
     theme: theme === 'light' || theme === 'dark' || theme === 'system' ? theme : d.theme,
     canvas: {
@@ -274,6 +299,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       markerSize: int(k['markerSize'], MARKER_SIZES, d.drafting.markerSize),
       aperture: int(k['aperture'], APERTURES, d.drafting.aperture),
       gripSize: int(k['gripSize'], GRIP_SIZES, d.drafting.gripSize),
+      gripColors: gripColors(k['gripColors']),
       pdfOsnap: bool(k['pdfOsnap'], d.drafting.pdfOsnap),
       revcloudGrips: bool(k['revcloudGrips'], d.drafting.revcloudGrips),
       qpmode: within(k['qpmode'], { min: -2, max: 2 }, d.drafting.qpmode),
@@ -343,6 +369,12 @@ export function normalizePreferences(raw: unknown): Preferences {
       qpDistance: int(k['qpDistance'], QP_DISTANCES, d.drafting.qpDistance),
       qpCollapse: bool(k['qpCollapse'], d.drafting.qpCollapse),
       qpRows: int(k['qpRows'], QP_ROW_COUNTS, d.drafting.qpRows),
+      scLocation: within(k['scLocation'], { min: 0, max: 1 }, d.drafting.scLocation) as 0 | 1,
+      scQuadrant: QP_QUADRANTS.some((q) => q.value === scQuadrant)
+        ? (scQuadrant as QpQuadrant)
+        : d.drafting.scQuadrant,
+      scDistance: int(k['scDistance'], QP_DISTANCES, d.drafting.scDistance),
+      scTitleBar: bool(k['scTitleBar'], d.drafting.scTitleBar),
       modifyOptions: modifyOptions(k['modifyOptions']),
     },
   };
@@ -416,6 +448,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     autosnap: s.autosnap,
     pickfirst: s.pickfirst,
     gripSize: s.gripSize,
+    gripColors: s.gripColors,
     rolloverTips: s.rolloverTips,
     arrayAssociativity: s.arrayAssociativity,
     polarMode: s.polarMode,
@@ -447,6 +480,10 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,
     qpRows: s.qpRows,
+    scLocation: s.scLocation,
+    scQuadrant: s.scQuadrant,
+    scDistance: s.scDistance,
+    scTitleBar: s.scTitleBar,
     modifyOptions: s.modifyOptions,
   };
 }

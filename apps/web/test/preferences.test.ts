@@ -62,6 +62,8 @@ describe('preferences', () => {
       pickfirst: true,
       // GRIPSIZE 5 (M2-59 part 3).
       gripSize: 5,
+      // GRIPCOLOR 150, GRIPHOVER 11, GRIPHOT 12 and GRIPCONTOUR 251, AutoCAD's (M3-05 part 5).
+      gripColors: { unselected: 150, hover: 11, selected: 12, contour: 251 },
       // ROLLOVERTIPS 1 (M2-35 part 21).
       rolloverTips: true,
       // ARRAYASSOCIATIVITY 1 (M3-11).
@@ -105,6 +107,11 @@ describe('preferences', () => {
       qpDistance: 50,
       qpCollapse: true,
       qpRows: 3,
+      // The Selection Cycling tab's list place (M3-04 part 7).
+      scLocation: 0,
+      scQuadrant: 'top-right',
+      scDistance: 25,
+      scTitleBar: true,
       // M3-12: the modify commands' options AutoCAD keeps per user, at its initial values.
       modifyOptions: {
         OFFSETERASE: 0,
@@ -192,9 +199,17 @@ describe('preferences', () => {
         qpDistance: 120,
         qpCollapse: false,
         qpRows: 5,
+        scLocation: 1,
+        scQuadrant: 'bottom-right',
+        scDistance: 0,
+        scTitleBar: false,
       },
     }).drafting;
     expect(kept).toMatchObject({
+      scLocation: 1,
+      scQuadrant: 'bottom-right',
+      scDistance: 0,
+      scTitleBar: false,
       selectSimilarMode: 7,
       selectionCycling: -2,
       pickStyle: 3,
@@ -244,9 +259,17 @@ describe('preferences', () => {
         qpDistance: 'far',
         qpCollapse: 'yes',
         qpRows: 99,
+        scLocation: 2,
+        scQuadrant: 'left',
+        scDistance: 500,
+        scTitleBar: 'no',
       },
     }).drafting;
     expect(bad).toMatchObject({
+      scLocation: 0,
+      scQuadrant: 'top-right',
+      scDistance: 400,
+      scTitleBar: true,
       selectSimilarMode: 130,
       selectionCycling: 0,
       pickStyle: 1,
@@ -360,6 +383,22 @@ describe('preferences', () => {
     expect(normalizePreferences({ drafting: { qpmode: 2 } }).drafting.qpmode).toBe(2);
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
     expect(normalizePreferences('junk')).toEqual(DEFAULT_PREFERENCES);
+  });
+
+  it('keep the grip colours as ACI 1 to 255, each on its own (M3-05 part 5)', () => {
+    const colors = (gripColors: unknown) =>
+      normalizePreferences({ drafting: { gripColors } }).drafting.gripColors;
+    expect(colors({ unselected: 3, hover: 4, selected: 5, contour: 6 })).toEqual({
+      unselected: 3,
+      hover: 4,
+      selected: 5,
+      contour: 6,
+    });
+    // Out of range, not a whole number or missing: that colour's default.
+    expect(colors({ unselected: 0, hover: 256, selected: 2.5 })).toEqual(
+      DEFAULT_PREFERENCES.drafting.gripColors,
+    );
+    expect(colors('red')).toEqual(DEFAULT_PREFERENCES.drafting.gripColors);
   });
 
   it('load the stored record, save each change, and skip a change that changes nothing', async () => {
