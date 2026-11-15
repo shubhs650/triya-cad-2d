@@ -1,1 +1,1 @@
-- M3-04 part 5 (#PRNUM): selection preview: the object under the pickbox lights up at `Command:` and at "Select objects" (SELECTIONPREVIEW), with PREVIEWFILTER leaving out locked layers, xrefs, tables, MTEXT, hatches or grouped objects, both in Settings and typed.
+- M3-04 part 5 (#403): selection preview: the object under the pickbox lights up at `Command:` and at "Select objects" (SELECTIONPREVIEW), with PREVIEWFILTER leaving out locked layers, xrefs, tables, MTEXT, hatches or grouped objects, both in Settings and typed.
