@@ -124,7 +124,7 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         r.setDrag(m.motion ?? undefined);
         break;
       case 'grips':
-        r.setGrips(m.ids, m.hot ?? undefined);
+        r.setGrips(m.ids, m.hot ?? undefined, m.groups);
         break;
       case 'grip-hover':
         r.setGripHover(m.at ?? undefined, m.within);

@@ -1305,3 +1305,69 @@ describe('colour-book colours pasted (M2-48)', () => {
     expect(clip.clipboard.entities[0]!.color).toEqual(RAL_3020);
   });
 });
+
+// M3-13: a group copied whole comes back from a paste as a new unnamed group, as COPY makes one.
+describe('groups on the Clipboard', () => {
+  const group = (handle: string, name: string, entities: string[]) => ({
+    handle,
+    type: 'GROUP' as const,
+    owner: '91',
+    reactors: ['91'],
+    name,
+    description: '',
+    selectable: true,
+    entities,
+  });
+  /** PAIR (92) holds 61 and 60, in that order; *A1 (93) holds 60 and 68. */
+  function groupedSource(): DocumentInit {
+    const init = sourceInit();
+    return {
+      ...init,
+      meta: { ...init.meta, groupDictionary: '91' },
+      objects: [
+        ...init.objects!,
+        { handle: '91', type: 'DICTIONARY', owner: 'C' },
+        group('92', 'PAIR', ['61', '60']),
+        group('93', '*A1', ['60', '68']),
+      ],
+      entities: init.entities!.map((e) =>
+        e.handle === '60'
+          ? { ...e, reactors: ['92', '93'] }
+          : e.handle === '61'
+            ? { ...e, reactors: ['92'] }
+            : e.handle === '68'
+              ? { ...e, reactors: ['93'] }
+              : e,
+      ),
+    };
+  }
+  const groupsIn = (m: DocumentModel) =>
+    [...m.objects.values()].filter((o) => o.type === 'GROUP') as unknown as {
+      name: string;
+      entities: string[];
+    }[];
+
+  it('a group copied whole is pasted as a new unnamed group; one copied in part is not', () => {
+    const source = DocumentModel.create(groupedSource());
+    const ids = COPIED.map((h) => source.entityByHandle(h)!.id);
+    const clip = structuredClone(copyToClipboard(source, ids, { x: 0, y: 0 }).clipboard);
+    expect(clip.groups).toEqual([['61', '60']]);
+    const init = targetInit();
+    const target = DocumentModel.create({
+      ...init,
+      meta: { ...init.meta, groupDictionary: '91' },
+      objects: [...init.objects!, { handle: '91', type: 'DICTIONARY', owner: 'C' }],
+    });
+    const { pasted } = paste(target, clip);
+    const [line] = of(pasted, 'LINE');
+    const [text] = of(pasted, 'TEXT');
+    expect(groupsIn(target)).toMatchObject([
+      { name: '*A1', entities: [text!.handle, line!.handle] },
+    ]);
+    expect(line!.reactors).toHaveLength(1);
+    // A drawing without ACAD_GROUP takes the objects alone.
+    const bare = DocumentModel.create(targetInit());
+    paste(bare, clip);
+    expect(groupsIn(bare)).toEqual([]);
+  });
+});

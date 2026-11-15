@@ -13,15 +13,18 @@ import type {
   FileAction,
   Layout,
   PdfDefinition,
+  GroupGrip,
   Vec2,
   ViewReply,
   ViewState,
 } from '@triya/engine';
 import {
   GRIP_CYCLE,
+  GROUPDISPLAYMODE,
   PICKADD,
   PICKAUTO,
   PICKFIRST,
+  PICKSTYLE,
   REVCLOUDGRIPS,
   lassoPrompt,
 } from '@triya/engine';
@@ -317,7 +320,7 @@ engines.onCommand((doc, o) => {
   }
   if (o.type === 'grips') {
     grips.set(doc, o);
-    for (const c of controllersOf(doc)) c.setGrips(o.ids, o.hot);
+    for (const c of controllersOf(doc)) c.setGrips(o.ids, o.hot, o.groups);
   }
   if (o.type === 'view') {
     void Promise.resolve(answerView(o.request, viewContext(doc))).then(
@@ -338,7 +341,8 @@ drafting.subscribe(() => {
 });
 
 /**
- * REVCLOUDGRIPS (M2-42), PICKFIRST (M2-59), PICKADD and PICKAUTO (M3-04 part 4), per-user
+ * REVCLOUDGRIPS (M2-42), PICKFIRST (M2-59), PICKADD and PICKAUTO (M3-04 part 4), PICKSTYLE and
+ * GROUPDISPLAYMODE (M3-13: the grips a selected group shows), per-user
  * settings each drawing's engine follows (its grips, its command line's selection): each is told
  * them when the drawing opens and whenever SETVAR or the stored settings change them.
  */
@@ -347,14 +351,19 @@ const sessionVariablesOf = (s: DraftingState) => ({
   pickfirst: s.pickfirst,
   pickadd: s.pickadd,
   pickauto: s.pickauto,
+  pickStyle: s.pickStyle,
+  groupDisplayMode: s.groupDisplayMode,
 });
 let sessionVariables = sessionVariablesOf(drafting.get());
 function tellSessionVariables(doc: number): void {
-  const { revcloudGrips, pickfirst, pickadd, pickauto } = sessionVariables;
+  const { revcloudGrips, pickfirst, pickadd, pickauto, pickStyle, groupDisplayMode } =
+    sessionVariables;
   void engines.edit(doc, { kind: 'sysvar', name: REVCLOUDGRIPS, value: revcloudGrips ? 1 : 0 });
   void engines.edit(doc, { kind: 'sysvar', name: PICKFIRST, value: pickfirst ? 1 : 0 });
   void engines.edit(doc, { kind: 'sysvar', name: PICKADD, value: pickadd });
   void engines.edit(doc, { kind: 'sysvar', name: PICKAUTO, value: pickauto });
+  void engines.edit(doc, { kind: 'sysvar', name: PICKSTYLE, value: pickStyle });
+  void engines.edit(doc, { kind: 'sysvar', name: GROUPDISPLAYMODE, value: groupDisplayMode });
 }
 drafting.subscribe(() => {
   const next = sessionVariablesOf(drafting.get());
@@ -419,7 +428,14 @@ async function clearAllLocalData(): Promise<ClearReport> {
 /** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
 const selections = new Map<number, readonly EntityId[]>();
 /** Each drawing's grips as its engine last showed them (M2-06), for canvases made later. */
-const grips = new Map<number, { readonly ids: readonly EntityId[]; readonly hot?: Vec2 }>();
+const grips = new Map<
+  number,
+  {
+    readonly ids: readonly EntityId[];
+    readonly hot?: Vec2;
+    readonly groups?: readonly GroupGrip[];
+  }
+>();
 
 /** The view commands' link to a drawing's canvas: the current viewport of the space shown. */
 /** A canvas's name in the drawing's view undo steps (M2-47 part 4): its space and tile. */
@@ -2174,7 +2190,7 @@ function ViewportCanvas({
     const selected = selections.get(id);
     if (selected?.length) c.setHighlight(selected);
     const shown = grips.get(id);
-    if (shown?.ids.length) c.setGrips(shown.ids, shown.hot);
+    if (shown?.ids.length || shown?.groups?.length) c.setGrips(shown.ids, shown.hot, shown.groups);
     showCurrent(id, block, visibleRef.current);
     return () => {
       unregister();

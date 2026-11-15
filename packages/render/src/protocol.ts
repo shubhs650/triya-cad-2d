@@ -8,6 +8,7 @@ import type {
   ChangeSet,
   DragMotion,
   EntityId,
+  GroupGrip,
   MTextGeometry,
   EnclosedSpace,
   OsnapHit,
@@ -104,7 +105,13 @@ export type HostMessage =
   /** The objects a command drags with the cursor (M2-06 part 2); null ends the drag. */
   | { readonly type: 'drag'; readonly motion: DragMotion | null }
   /** The objects to show grips on and the hot grip (M2-06 part 2). */
-  | { readonly type: 'grips'; readonly ids: readonly EntityId[]; readonly hot: Vec2 | null }
+  | {
+      readonly type: 'grips';
+      readonly ids: readonly EntityId[];
+      readonly hot: Vec2 | null;
+      /** The groups shown by one grip (GROUPDISPLAYMODE, M3-13). */
+      readonly groups?: readonly GroupGrip[];
+    }
   /** The cursor for the grip hover colour (M3-05 part 2); null, none. */
   | { readonly type: 'grip-hover'; readonly at: Vec2 | null; readonly within: number }
   /** Where the pickbox is for the selection preview (M3-04 part 5); null, none. */

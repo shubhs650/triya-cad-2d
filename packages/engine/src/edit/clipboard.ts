@@ -17,7 +17,8 @@
 //
 // A pasted object is a copy (edit.ts): no reactors, extension dictionary or annotation scales, so
 // no associativity or group membership, except that a hatch pasted with its whole boundary stays
-// associative with the boundary's copies. Materials and plot style names are kept by name only
+// associative with the boundary's copies, and a group copied whole is pasted as a new unnamed
+// group of the pasted objects (M3-13), as COPY makes one. Materials and plot style names are kept by name only
 // in Triya (types.ts `TableRecords`), so a pasted object keeps one only where the target has it.
 //
 // An image or PDF underlay brings its definition, the IMAGEDEF or PDFDEFINITION naming its file
@@ -51,6 +52,7 @@ import type { GeneralProps } from '../properties/sheet';
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { sub } from '../geom/vec';
+import { createGroup, groupsOf } from './groups';
 import { bookColors, heldBookColor } from '../model/book-colors';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
@@ -110,6 +112,11 @@ export interface Clipboard {
    * dictionaries (`extDict`) of the block records and references that carry one.
    */
   readonly coded?: readonly CodedObject[];
+  /**
+   * The groups copied whole (M3-13), each its members' handles in `entities`, in the group's
+   * order: a paste makes each a new unnamed group of the pasted objects, as a copy does.
+   */
+  readonly groups?: readonly (readonly Handle[])[];
 }
 
 export interface ClipboardCopy {
@@ -486,6 +493,10 @@ export function copyToClipboard(
     references(c, pending, layers);
   };
   for (const e of sorted) take(e, entities);
+  const carried = new Set(entities.map((e) => e.handle));
+  const groups = groupsOf(model)
+    .filter((g) => g.entities.length > 0 && g.entities.every((h) => carried.has(h)))
+    .map((g) => [...g.entities]);
   while (pending.length > 0) {
     const h = pending.pop()!;
     const o = model.objects.get(h);
@@ -525,6 +536,7 @@ export function copyToClipboard(
       insUnits: insUnitsOf(model),
       ...(objects.size > 0 ? { objects: [...objects.values()] } : {}),
       ...(coded.length > 0 ? { coded: coded.map((o) => common(model, o)) } : {}),
+      ...(groups.length > 0 ? { groups } : {}),
     },
     refused,
     unannotated,
@@ -585,7 +597,15 @@ export function pasteObjects(
   at: Vec2,
   units?: number,
 ): EditReport {
-  return pasteInto(b, model, clip, owner, pastePlacement(model, clip, at, units));
+  const report = pasteInto(b, model, clip, owner, pastePlacement(model, clip, at, units));
+  // A group copied whole is pasted as a new unnamed group (M3-13); the pasted objects are in
+  // the Clipboard's order.
+  const index = new Map(clip.entities.map((e, i) => [e.handle, i]));
+  for (const g of clip.groups ?? []) {
+    const ids = g.map((h) => report.ids[index.get(h) ?? -1]);
+    if (ids.every((id) => id !== undefined)) createGroup(b, model, { ids: ids as EntityId[] });
+  }
+  return report;
 }
 
 /** The Clipboard's objects pasted into `owner`, carried by `t` (left where they are without). */

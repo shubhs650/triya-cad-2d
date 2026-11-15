@@ -97,6 +97,8 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     group: 'Drafting',
     keys: ['Ctrl+Shift+A', 'Ctrl+H'],
   },
+  // AutoCAD's Group Bounding Box button (Home > Groups) has no default key (M3-13).
+  { id: 'drafting:groupBox', label: 'Group Bounding Box on/off', group: 'Drafting', keys: [] },
 ];
 
 const ACTIONS = new Map(KEY_ACTIONS.map((a) => [a.id, a]));

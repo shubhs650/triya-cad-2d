@@ -12,6 +12,7 @@ import type {
   ChangeSet,
   DragMotion,
   EntityId,
+  GroupGrip,
   MTextGeometry,
   EnclosedSpace,
   OsnapHit,
@@ -298,9 +299,9 @@ export class RendererHost {
   }
 
   /** The objects to show grips on and the hot grip (M2-06 part 2). */
-  setGrips(ids: readonly EntityId[], hot?: Vec2): void {
-    if (this.#session) this.#session.renderer.setGrips(ids, hot);
-    else this.#post({ type: 'grips', ids, hot: hot ?? null });
+  setGrips(ids: readonly EntityId[], hot?: Vec2, groups: readonly GroupGrip[] = []): void {
+    if (this.#session) this.#session.renderer.setGrips(ids, hot, groups);
+    else this.#post({ type: 'grips', ids, hot: hot ?? null, groups });
   }
 
   /** The cursor for the grip hover colour (M3-05 part 2); undefined, none. */

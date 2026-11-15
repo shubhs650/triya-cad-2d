@@ -2,7 +2,7 @@
 // `Renderer`; only this package knows it is Canvas 2D underneath, so a WebGL renderer can
 // replace it behind the same interface (DEC-006).
 
-import type { Box, ChangeSet, DragMotion, EntityId, Handle, Vec2 } from '@triya/engine';
+import type { Box, ChangeSet, DragMotion, EntityId, GroupGrip, Handle, Vec2 } from '@triya/engine';
 import type { GridSpec } from './grid';
 import type { TtfFont } from '@triya/text';
 import type { Affine } from './affine';
@@ -390,8 +390,11 @@ export interface Renderer {
    * layer over their originals; undefined ends the drag.
    */
   setDrag(motion: DragMotion | undefined): void;
-  /** The objects to show grips on, `hot` the hot grip (M2-06 part 2); none hides them. */
-  setGrips(ids: readonly EntityId[], hot?: Vec2): void;
+  /**
+   * The objects to show grips on, `hot` the hot grip (M2-06 part 2), and the groups shown by
+   * one grip at their centre (GROUPDISPLAYMODE, M3-13); none hides them.
+   */
+  setGrips(ids: readonly EntityId[], hot?: Vec2, groups?: readonly GroupGrip[]): void;
   /**
    * The cursor (M3-05 part 2): the grip nearest it within `within` drawing units draws in the
    * hover colour; undefined, none does.

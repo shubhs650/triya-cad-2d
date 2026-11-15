@@ -121,6 +121,12 @@ export interface DraftingState {
    */
   readonly pickStyle: number;
   /**
+   * GROUPDISPLAYMODE (M3-13): a group selected whole shows 0 its objects' grips, 1 one grip at
+   * its centre, 2 that grip and its bounding box. AutoCAD keeps it per user, initially 2; the
+   * Group Bounding Box toggle switches 2 and 1.
+   */
+  readonly groupDisplayMode: number;
+  /**
    * M3-04 part 4 (AutoCAD 2024 Help), kept per user: PICKBOX the pickbox's half size in pixels
    * (0 to 50, initially 3); PICKADD whether a selection step adds to the set (1, 2) or replaces
    * it (0, 3; initially 2); PICKAUTO's bits 1 implied windowing at "Select objects", 2 a window
@@ -292,7 +298,18 @@ export const AUTOSNAP_TRACK_TIP = 32;
 export const AUTOSNAP_KEPT = AUTOSNAP_MARKER | AUTOSNAP_TIP | AUTOSNAP_MAGNET | AUTOSNAP_TRACK_TIP;
 
 export type DraftingToggle =
-  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp' | 'sc' | 'groups';
+  | 'osnap'
+  | 'ortho'
+  | 'polar'
+  | 'snap'
+  | 'otrack'
+  | 'grid'
+  | 'lwt'
+  | 'tpy'
+  | 'qp'
+  | 'sc'
+  | 'groups'
+  | 'groupBox';
 
 /**
  * The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). Their keys (F3, F7–F11,
@@ -310,6 +327,7 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:qp', label: 'Quick Properties on/off' },
   { id: 'drafting:sc', label: 'Selection Cycling on/off' },
   { id: 'drafting:groups', label: 'Group Selection on/off' },
+  { id: 'drafting:groupBox', label: 'Group Bounding Box on/off' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -344,6 +362,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   selectSimilarMode: 130,
   selectionCycling: 0,
   pickStyle: 1,
+  groupDisplayMode: 2,
   pickbox: 3,
   pickadd: 2,
   pickauto: 5,
@@ -367,6 +386,7 @@ export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): bo
   if (t === 'qp') return s.qpmode > 0;
   if (t === 'sc') return s.selectionCycling > 0;
   if (t === 'groups') return (s.pickStyle & 1) !== 0;
+  if (t === 'groupBox') return s.groupDisplayMode === 2;
   return s[t];
 }
 
@@ -432,6 +452,10 @@ export class Drafting {
       // Group selection is PICKSTYLE's bit 1 (M3-08); associative hatch selection keeps its bit.
       case 'groups':
         return this.#set({ ...s, pickStyle: s.pickStyle ^ 1 });
+      // The Group Bounding Box toggle (M3-13; the Home tab's Groups panel in AutoCAD): the box
+      // with the group's one grip (GROUPDISPLAYMODE 2), or the grip alone (1).
+      case 'groupBox':
+        return this.#set({ ...s, groupDisplayMode: s.groupDisplayMode === 2 ? 1 : 2 });
       case 'snap':
       case 'otrack':
       case 'grid':
