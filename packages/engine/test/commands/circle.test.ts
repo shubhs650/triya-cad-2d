@@ -173,6 +173,8 @@ describe('CIRCLE', () => {
       kind: 'CIRCLE',
     });
     await bus.submit('tan');
+    // Still dragged while the override asks "to".
+    expect(bus.prompt).toMatchObject({ message: 'to', drag: { kind: 'sketch' } });
     await bus.pick({ x: 2, y: 1.5 }, tan(line(4, 0, -4, 3), 2, 1.5));
     expect(circles()).toEqual([[1, 1, 1]]);
     expect(bus.history).toContain('Specify first point on circle: tan');

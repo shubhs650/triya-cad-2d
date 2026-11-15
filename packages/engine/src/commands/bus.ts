@@ -64,6 +64,7 @@ import { systemVariable } from './sysvars';
 import { revcloudOf } from '../edit/revcloud';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
+import type { DragPreview } from './drag';
 import { UndoStack, type UndoAction, type UndoState } from './undo';
 import {
   applyCurrentEdit,
@@ -216,6 +217,8 @@ interface Collector {
   readonly band?: Vec2;
   /** The deferred snaps the prompt it was typed at takes, kept for the override (M3-01). */
   readonly deferred?: DeferredModes;
+  /** What the prompt it was typed at dragged, still dragged while the override asks (M3-01). */
+  readonly drag?: DragPreview;
   accept(p: Vec2): Vec2 | Collector | { readonly answer: PromptAnswer };
 }
 
@@ -342,6 +345,7 @@ export class PromptBus {
         ...(c.band && { rubberBand: { from: c.band } }),
         ...(c.osnap !== undefined && { osnap: c.osnap }),
         ...(c.deferred && { deferred: c.deferred }),
+        ...(c.drag && { drag: c.drag }),
       });
     }
     const frame = this.#stack.at(-1);
@@ -1345,12 +1349,14 @@ export class PromptBus {
           ? shown.base
           : undefined;
     const deferred = shown?.kind === 'point' ? shown.deferred : undefined;
+    const drag = shown?.drag;
     this.#log(`${this.promptText} ${echo}`);
     this.#collectors.push({
       text: overrideAsks(modes),
       osnap: modes,
       ...(band && { band }),
       ...(deferred && { deferred }),
+      ...(drag && { drag }),
       accept: (p) => p,
     });
     this.#showPrompt();

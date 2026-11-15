@@ -61,6 +61,7 @@ import {
   type MTextGeometry,
   type TextGeometry,
   type TextOutline,
+  type DeferredPick,
   type OsnapHit,
   type Prompt,
   type UnderlaySnapPage,
@@ -255,10 +256,14 @@ export interface CanvasHooks {
 
 type Point = { readonly x: number; readonly y: number };
 
-/** A click's point at a point prompt; `missed` when its object snap override found nothing. */
+/**
+ * A click's point at a point prompt; `missed` when its object snap override found nothing;
+ * `deferred` when it was snapped to a Deferred Tangent or Perpendicular (M3-01 part 2).
+ */
 export interface PickedPoint {
   readonly point: Vec2;
   readonly missed?: boolean;
+  readonly deferred?: DeferredPick;
 }
 
 const sameHit = (a: OsnapHit | undefined, b: OsnapHit | undefined): boolean =>
@@ -1561,6 +1566,8 @@ export class CanvasController {
   #snapAt(world: Vec2): Promise<OsnapHit[]> {
     const base = this.#base();
     const modes = this.#modes();
+    const p = this.#prompt;
+    const deferred = p?.kind === 'point' ? p.deferred : undefined;
     if (modes === 0 || !this.#view) return Promise.resolve([]);
     return this.#host
       .snap({
@@ -1569,6 +1576,7 @@ export class CanvasController {
         modes,
         underlays: this.#drafting.pdfOsnap,
         ...(base && { from: base }),
+        ...(deferred && { deferred }),
       })
       .catch(() => []);
   }
@@ -1657,7 +1665,7 @@ export class CanvasController {
   async #pointAt(world: Vec2): Promise<PickedPoint> {
     const hits = (await this.#snapAt(world)).filter((h) => !h.track);
     const hit = hits[this.#cycle < hits.length ? this.#cycle : 0];
-    if (hit) return { point: hit.point };
+    if (hit) return { point: hit.point, ...(hit.deferred && { deferred: hit.deferred }) };
     const p = this.#prompt;
     const missed = p?.kind === 'point' && p.osnap !== undefined && p.osnap !== 0;
     return { point: this.#constrain(world).point, ...(missed && { missed: true }) };
@@ -1712,10 +1720,10 @@ export class CanvasController {
       this.#overlay = [
         ...acquired,
         ...(bits & AUTOSNAP_MARKER
-          ? markerPrimitives(hit.mode, hit.point, marker, ui.autosnap)
+          ? markerPrimitives(hit.mode, hit.point, marker, ui.autosnap, !!hit.deferred)
           : []),
       ];
-      if (bits & AUTOSNAP_TIP) tip = snapLabel(hit.mode);
+      if (bits & AUTOSNAP_TIP) tip = snapLabel(hit.mode, !!hit.deferred);
     } else if (c.polar) {
       const base = this.#base()!;
       this.#overlay = [
@@ -1740,6 +1748,7 @@ export class CanvasController {
     if (tip) {
       this.#tip.textContent = tip;
       this.#tip.dataset['mode'] = hit?.mode ?? (c.polar ? 'polar' : 'track');
+      this.#tip.dataset['deferred'] = String(!!hit?.deferred);
       // How many snap points Tab steps through here (tests wait on it).
       this.#tip.dataset['candidates'] = String(hit ? this.#hits.length : 0);
       this.#tip.style.left = `${this.#pointer!.offsetX + 16}px`;
