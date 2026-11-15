@@ -47,6 +47,7 @@ import {
   constrainCursor,
   dragMotion,
   layoutSheet,
+  offsetSnapPoint,
   polarLabel,
   trackLabel,
   toWorld,
@@ -1756,8 +1757,11 @@ export class CanvasController {
    * The command's rubber band from its base point to the cursor (a rectangle for a window's
    * corners), or none, over the command's preview.
    */
-  #rubberBand(cursor: Point | undefined): void {
+  #rubberBand(at: Point | undefined): void {
     const p = this.#prompt;
+    // Ctrl held at a grip mode that has placed a copy: the cursor snaps to that copy's offset or
+    // angle (M3-05 part 6), as the click will.
+    const cursor = at && this.#ctrl && p?.offsetSnap ? offsetSnapPoint(p.offsetSnap, at) : at;
     // The objects the prompt drags follow the cursor as the drafting aids place it (M2-06).
     const ctrl = this.#ctrl && p?.switchDirection === true;
     const motion =

@@ -15,6 +15,12 @@
 // with Ctrl held at a grip mode's prompt as Copy turned on, that click placing the first copy. A function edits only the first selected object
 // with that grip, in one undo step; Enter goes on to MOVE, as from STRETCH.
 //
+// Offset and rotation snap (M3-05 part 6; "To Make Multiple Copies with Grips"): once STRETCH,
+// MOVE or ROTATE has placed a copy, a point picked with Ctrl held places the next one at a whole
+// multiple of that first copy's offset from the base point (along its line: Help does not say
+// whether it snaps as a grid, and evenly spaced copies in a row are what a drafter expects), or
+// of its angle. A typed point is taken as typed.
+//
 // A dimension's grips (M3-05 part 4): Flip Arrow and the text placements that take no point act at
 // once; Continue and Baseline Dimension end grip editing in DIMCONTINUE's or DIMBASELINE's
 // prompts, going on from the extension line at the grip's end.
@@ -41,7 +47,7 @@ import {
   PROPERTIES_KEYWORD,
 } from './grip-functions';
 import { viewRequest } from '../view/zoom';
-import { GRIP_CYCLE } from '../prompt';
+import { GRIP_CYCLE, offsetSnapPoint, rotationSnapAngle, type OffsetSnap } from '../prompt';
 import {
   COMMAND_FUNCTIONS,
   IMMEDIATE_FUNCTIONS,
@@ -125,6 +131,8 @@ export function gripCommand(
       let base = hot;
       let copying = false;
       const made: EntityId[][] = [];
+      /** The first copy's offset or angle in the mode it was placed in (M3-05 part 6). */
+      let snap: { mode: number; snap: OffsetSnap } | undefined;
       const say = (lines: string[]) => lines.forEach((l) => ctx.message(l));
       /** One edit: kept as a copy (the mode goes on) or made (grip editing ends). */
       const apply = (t: Similarity, verb: string): boolean => {
@@ -197,8 +205,10 @@ export function gripCommand(
         const options = ['Base point', 'Copy', 'Undo', 'eXit'];
         const withReference = ['Base point', 'Copy', 'Undo', 'Reference', 'eXit'];
         const referenced = name === 'ROTATE' || name === 'SCALE';
+        const offsetSnap = copying && snap?.mode === mode ? snap.snap : undefined;
         const extra = {
           hiddenOptions,
+          ...(offsetSnap && { offsetSnap }),
           ...(stretching && takes.length > 1 && { ctrlCycles: true as const }),
           ctrlCopies: true as const,
           // The right-click menu (M3-05 part 5): what this prompt takes, the rest greyed.
@@ -283,11 +293,15 @@ export function gripCommand(
             case 'Undo': {
               const last = made.pop();
               if (last) ctx.edit((b) => removeCopies(b, last));
+              if (made.length === 0) snap = undefined;
               continue;
             }
             case 'Base point': {
               const p = yield ctx.prompt.point({ message: 'Specify base point' });
-              if (p.kind === 'point') base = p.point;
+              if (p.kind === 'point') {
+                base = p.point;
+                snap = undefined;
+              }
               continue;
             }
             case 'Reference': {
@@ -301,8 +315,17 @@ export function gripCommand(
           }
           continue;
         }
-        // A point clicked with Ctrl held turns Copy on, this one placing the first copy.
-        if ('ctrl' in a && a.ctrl) copying = true;
+        // A point clicked with Ctrl held turns Copy on, this one placing the first copy; once a
+        // copy is placed, it snaps to that copy's offset or angle.
+        if ('ctrl' in a && a.ctrl) {
+          if (offsetSnap?.kind === 'offset' && a.kind === 'point') {
+            a = { ...a, point: offsetSnapPoint(offsetSnap, a.point) };
+          } else if (offsetSnap?.kind === 'rotation' && a.kind === 'angle') {
+            a = { ...a, value: rotationSnapAngle(offsetSnap.step, a.value) };
+          }
+          copying = true;
+        }
+        const placed = made.length;
         let ended = false;
         if (name === 'STRETCH' && a.kind === 'point' && group) {
           ended = apply(moveBy(sub(a.point, base)), 'moved');
@@ -346,6 +369,16 @@ export function gripCommand(
           ended = apply(mirrorIn(base, a.point), 'mirrored');
         }
         if (ended) return;
+        // The first copy in this mode sets the snap for the later ones.
+        if (made.length > placed && snap?.mode !== mode) {
+          if ((name === 'STRETCH' || name === 'MOVE') && a.kind === 'point') {
+            const step = sub(a.point, base);
+            if (step.x !== 0 || step.y !== 0)
+              snap = { mode, snap: { kind: 'offset', from: base, step } };
+          } else if (name === 'ROTATE' && a.kind === 'angle' && a.value !== 0) {
+            snap = { mode, snap: { kind: 'rotation', base, step: a.value } };
+          }
+        }
       }
     },
   };

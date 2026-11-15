@@ -53,6 +53,7 @@ const KEYWORD_OF: Readonly<Record<GripFunction, string>> = {
   'Above Dim Line': 'ABove dim line',
   'Center Vertically': 'CEnter vertically',
   'Reset Text Position': 'REset text position',
+  'Lengthen Landing': 'LAnding',
 };
 
 /** Each function keyword's function; STretch is either Stretch, as the grip has it. */
