@@ -30,6 +30,9 @@ import { closed, sketchTolerance, type Sketch } from './sketch';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
+/** A distance prompt's value: each of RECTANG's has a default, so Enter answers it too. */
+const valueOf = (a: PromptAnswer): number => (a as { value: number }).value;
+
 const INVALID = '*Invalid*';
 const NOT_NEGATIVE = 'Value must be positive or zero.';
 const POSITIVE = 'Value must be positive and nonzero.';
@@ -77,11 +80,10 @@ export function rectangCommand(): CommandDef {
     async *run(ctx) {
       const units = drawingUnits(ctx.model.header);
       const d = (v: number) => formatDistance(v, units);
-      const distance = async function* (message: string, value: number): Sub<number | undefined> {
+      const distance = async function* (message: string, value: number): Sub<number> {
         for (;;) {
           const a = yield ctx.prompt.distance({ message, default: { kind: 'distance', value } });
-          if (a.kind !== 'distance') return undefined;
-          if (a.value >= 0) return a.value;
+          if (valueOf(a) >= 0) return valueOf(a);
           ctx.message(NOT_NEGATIVE);
         }
       };
@@ -115,23 +117,19 @@ export function rectangCommand(): CommandDef {
               'Specify first chamfer distance for rectangles',
               state.chamfer[0],
             );
-            if (c1 === undefined) return;
             const c2 = yield* distance('Specify second chamfer distance for rectangles', c1);
-            if (c2 === undefined) return;
             state.chamfer = [c1, c2];
             state.corners = 'chamfer';
             break;
           }
           case 'Fillet': {
             const r = yield* distance('Specify fillet radius for rectangles', state.fillet);
-            if (r === undefined) return;
             state.fillet = r;
             state.corners = 'fillet';
             break;
           }
           case 'Width': {
             const w = yield* distance('Specify line width for rectangles', state.width);
-            if (w === undefined) return;
             state.width = w;
             break;
           }
@@ -147,9 +145,8 @@ export function rectangCommand(): CommandDef {
                 value: elevation ? state.elevation : state.thickness,
               },
             });
-            if (v.kind !== 'distance') return;
-            if (elevation) state.elevation = v.value;
-            else state.thickness = v.value;
+            if (elevation) state.elevation = valueOf(v);
+            else state.thickness = valueOf(v);
           }
         }
       }
@@ -200,16 +197,13 @@ export function rectangCommand(): CommandDef {
         }
         if (a.keyword === 'Dimensions') {
           const l = yield* positive(ctx, 'Specify length for rectangles', state.length);
-          if (l === undefined) return;
           const w = yield* positive(ctx, 'Specify width for rectangles', state.breadth);
-          if (w === undefined) return;
           state.length = l;
           state.breadth = w;
           size = { length: l, width: w };
           continue;
         }
         const area = yield* byArea(ctx, state);
-        if (!area) return;
         return draw(ctx, state, corner, area[0], area[1]);
       }
     },
@@ -217,22 +211,20 @@ export function rectangCommand(): CommandDef {
 }
 
 /** Area: the area, then a length or a width; the other side counting the corners' area. */
-async function* byArea(ctx: CommandContext, s: RectangState): Sub<[number, number] | undefined> {
+async function* byArea(ctx: CommandContext, s: RectangState): Sub<[number, number]> {
   const area = yield* positive(ctx, 'Enter area of rectangle in current units', s.area);
-  if (area === undefined) return undefined;
   const by = yield ctx.prompt.keyword({
     message: 'Calculate rectangle dimensions based on',
     options: ['Length', 'Width'],
     default: { kind: 'keyword', keyword: 'Length' },
   });
-  if (by.kind !== 'keyword') return undefined;
-  const length = by.keyword === 'Length';
+  // The default makes Enter Length too.
+  const length = (by as { keyword: string }).keyword === 'Length';
   const side = yield* positive(
     ctx,
     length ? 'Enter rectangle length' : 'Enter rectangle width',
     length ? s.length : s.breadth,
   );
-  if (side === undefined) return undefined;
   const other = (area + cornersArea(cornersOf(s))) / side;
   s.area = area;
   s.length = length ? side : other;
@@ -241,15 +233,10 @@ async function* byArea(ctx: CommandContext, s: RectangState): Sub<[number, numbe
 }
 
 /** A distance above zero, `value` the default. */
-async function* positive(
-  ctx: CommandContext,
-  message: string,
-  value: number,
-): Sub<number | undefined> {
+async function* positive(ctx: CommandContext, message: string, value: number): Sub<number> {
   for (;;) {
     const a = yield ctx.prompt.distance({ message, default: { kind: 'distance', value } });
-    if (a.kind !== 'distance') return undefined;
-    if (a.value > 0) return a.value;
+    if (valueOf(a) > 0) return valueOf(a);
     ctx.message(POSITIVE);
   }
 }
@@ -261,8 +248,8 @@ async function* rotation(ctx: CommandContext, value: number): Sub<number | undef
     options: ['Pick points'],
     default: { kind: 'angle', value },
   });
+  // An angle (Enter gives the default), else Pick points.
   if (a.kind === 'angle') return a.value;
-  if (a.kind !== 'keyword') return undefined;
   const p = yield ctx.prompt.point({ message: 'Specify first point' });
   if (p.kind !== 'point') return undefined;
   const q = yield ctx.prompt.point({

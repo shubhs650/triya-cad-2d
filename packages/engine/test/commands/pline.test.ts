@@ -4,10 +4,13 @@
 // and Close, the segment dragged while its point is asked, and Esc keeping what is drawn.
 import { describe, expect, it } from 'vitest';
 import {
+  CommandRegistry,
   DocumentModel,
   PromptBus,
+  arcSegment,
   builtinCommands,
   dragMotion,
+  type ArcStep,
   type BusEvent,
   type Entity,
   type HeaderValue,
@@ -346,5 +349,92 @@ describe('PLINE', () => {
     const { bus, pline } = setup([['$PLINEGEN', 1]]);
     await bus.script(['PL', '0,0', '10,0', '']);
     expect(pline().plinegen).toBe(true);
+  });
+
+  it('ends at Enter wherever a value is asked, and refuses what makes no arc', async () => {
+    const { bus, added, vertices } = setup();
+    await bus.script(['PL', '']);
+    expect(bus.promptText).toBe('Command:');
+    const ends = [
+      ['D', ''],
+      ['S', ''],
+      ['S', '5,5', ''],
+      ['A', ''],
+      ['A', '90', ''],
+      ['A', '90', 'R', ''],
+      ['A', '90', 'R', '5', 'A'],
+      ['A', '90', 'CE', ''],
+      ['CE', ''],
+      ['CE', '5,0', ''],
+      ['CE', '5,0', 'A', ''],
+      ['CE', '5,0', 'L', ''],
+      ['R', ''],
+      ['R', '5', ''],
+      ['R', '5', 'A', ''],
+    ];
+    for (const keys of ends) {
+      await bus.script(['PL', '0,0', 'A', ...keys]);
+      expect(bus.promptText, keys.join(' ')).toMatch(/^Command:$|^Specify direction of chord/);
+      await bus.cancel();
+    }
+    expect(added()).toHaveLength(0);
+    const refused = [
+      ['A', '90', '0,0'],
+      ['CE', '5,0', '5,0'],
+      ['R', '1', '10,0'],
+      ['S', '5,5', '5,5'],
+    ];
+    for (const keys of refused) {
+      await bus.script(['PL', '0,0', 'A', ...keys]);
+      expect(bus.history.at(-1), keys.join(' ')).toBe('*Invalid*');
+      await bus.cancel();
+    }
+    await bus.script(['PL', '0,0', 'A', 'R', '0']);
+    expect(bus.history.at(-1)).toBe('Value must be positive and nonzero.');
+    await bus.cancel();
+    // Arc CLose straight back along the tangent makes no arc; Length's Enter asks again; a
+    // negative length goes back.
+    await bus.script(['PL', '0,0', '10,0', 'A', 'CL']);
+    expect(bus.history.at(-1)).toBe('*Invalid*');
+    await bus.script(['L', 'L', '']);
+    expect(bus.promptText).toBe('Specify next point or [Arc/Close/Halfwidth/Length/Undo/Width]:');
+    await bus.script(['L', '-4', '']);
+    expect(vertices()).toEqual([
+      [0, 0, 0],
+      [10, 0, 0],
+      [6, 0, 0],
+    ]);
+  });
+
+  it("offers its arc segments to other commands' next-point prompts (arcSegment)", async () => {
+    const model = DocumentModel.create(sampleInit());
+    const steps: (ArcStep | undefined)[] = [];
+    const registry = new CommandRegistry([
+      {
+        name: 'MEASURE',
+        async *run(ctx) {
+          for (;;) {
+            const step = yield* arcSegment(ctx, {
+              start: { x: 0, y: 0 },
+              direction: { x: 1, y: 0 },
+              options: ['Line', 'Undo'],
+              layer: LAYER_WALLS,
+              prefix: '<Add mode> ',
+            });
+            steps.push(step);
+            if (!step || step.kind === 'enter') return;
+          }
+        },
+      },
+    ]);
+    const bus = new PromptBus({ model, registry });
+    await bus.submit('MEASURE');
+    expect(bus.promptText).toBe(
+      '<Add mode> Specify endpoint of arc or [Angle/CEnter/Direction/Line/Radius/Second pt/Undo]:',
+    );
+    expect(r6((dragged(bus.prompt, 0, 10) as LwPolylineGeometry).vertices[0]!.bulge)).toBe(1);
+    await bus.script(['0,10', 'U', '']);
+    expect(steps.map((s) => s?.kind)).toEqual(['arc', 'keyword', 'enter']);
+    expect(steps[1]).toEqual({ kind: 'keyword', keyword: 'Undo' });
   });
 });

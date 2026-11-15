@@ -31,8 +31,9 @@ export function polygonCommand(): CommandDef {
           message: 'Enter number of sides',
           default: { kind: 'number', value: state.sides },
         });
-        if (a.kind !== 'number') return;
-        if (a.value >= 3 && a.value <= 1024) sides = a.value;
+        // The prompt has a default, so it is always answered with a number.
+        const n = (a as { value: number }).value;
+        if (n >= 3 && n <= 1024) sides = n;
         else ctx.message(SIDES);
       }
       state.sides = sides;
@@ -76,8 +77,8 @@ export function polygonCommand(): CommandDef {
         options: [INSCRIBED, CIRCUMSCRIBED],
         defaultLabel: state.inscribed ? 'I' : 'C',
       });
+      // Enter keeps the last choice.
       if (o.kind === 'keyword') state.inscribed = o.keyword === INSCRIBED;
-      else if (o.kind !== 'enter') return;
       const inscribed = state.inscribed;
       for (;;) {
         const r = yield {

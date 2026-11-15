@@ -81,7 +81,8 @@ export function plineCommand(last: LastDrawn = lastDrawn()): CommandDef {
         const geom = vertices.length >= 2 ? geometry(vertices, closed, plinegen) : undefined;
         ctx.edit((b) => {
           if (!geom) {
-            if (id !== undefined) b.removeEntity(id);
+            // Undo back to the start point: there is a polyline, as there was a segment.
+            b.removeEntity(id!);
             id = undefined;
           } else if (id === undefined) {
             id = b.addEntity({ owner: ctx.space, ...props, geom }).id;
@@ -185,8 +186,7 @@ export function plineCommand(last: LastDrawn = lastDrawn()): CommandDef {
               message: 'Specify length of line',
               base: point(),
             });
-            if (l.kind === 'enter') break;
-            if (l.kind !== 'distance') return;
+            if (l.kind !== 'distance') break;
             const d = direction();
             segment(add(point(), scale(d, l.value)), 0, l.value < 0 ? scale(d, -1) : d);
             break;
@@ -204,7 +204,6 @@ export function plineCommand(last: LastDrawn = lastDrawn()): CommandDef {
           case 'Width':
           case 'Halfwidth': {
             const w = yield* widths(ctx, current(), answer.keyword === 'Halfwidth');
-            if (!w) return;
             current().startWidth = w[0];
             current().endWidth = w[1];
             ctx.edit((b) => b.setHeader('$PLINEWID', w[1]));
@@ -217,31 +216,26 @@ export function plineCommand(last: LastDrawn = lastDrawn()): CommandDef {
   };
 }
 
-/** Width or Halfwidth: the next segment's starting and ending widths; undefined at Esc. */
-async function* widths(
-  ctx: CommandContext,
-  at: Vertex,
-  half: boolean,
-): Sub<[number, number] | undefined> {
+/** Width or Halfwidth: the next segment's starting and ending widths (each has a default). */
+async function* widths(ctx: CommandContext, at: Vertex, half: boolean): Sub<[number, number]> {
   const k = half ? 2 : 1;
   const word = half ? 'half-width' : 'width';
   const base = { x: at.x, y: at.y };
-  const ask = async function* (which: string, value: number): Sub<number | undefined> {
+  const ask = async function* (which: string, value: number): Sub<number> {
     for (;;) {
       const a = yield ctx.prompt.distance({
         message: `Specify ${which} ${word}`,
         base,
         default: { kind: 'distance', value },
       });
-      if (a.kind !== 'distance') return undefined;
-      if (a.value >= 0) return a.value * k;
+      const v = (a as { value: number }).value;
+      if (v >= 0) return v * k;
       ctx.message(NOT_NEGATIVE);
     }
   };
   const start = yield* ask('starting', at.startWidth / k);
-  if (start === undefined) return undefined;
   const end = yield* ask('ending', start / k);
-  return end === undefined ? undefined : [start, end];
+  return [start, end];
 }
 
 /** The LWPOLYLINE `vertices` make: one constant width when they all share it. */

@@ -9,6 +9,7 @@ import {
   builtinCommands,
   dragMotion,
   type Entity,
+  type HeaderValue,
   type LwPolylineGeometry,
   type Prompt,
 } from '../../src/index';
@@ -18,8 +19,10 @@ const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
 const T8 = r6(Math.tan(Math.PI / 8));
 const S3 = r6(5 * Math.sqrt(3));
 
-function setup() {
-  const model = DocumentModel.create(sampleInit());
+function setup(header: [string, HeaderValue][] = []) {
+  const init = sampleInit();
+  for (const [k, v] of header) (init.header as Map<string, HeaderValue>).set(k, v);
+  const model = DocumentModel.create(init);
   const before = new Set([...model.entities()].map((e) => e.id));
   const bus = new PromptBus({ model, registry: builtinCommands() });
   const added = (): Entity[] => [...model.entities()].filter((e) => !before.has(e.id));
@@ -320,5 +323,45 @@ describe('POLYGON', () => {
     expect(bus.history.at(-1)).toBe('*Invalid*');
     await bus.cancel();
     expect(added()).toHaveLength(0);
+  });
+
+  it('ends at Enter at its points, and draws with PLINEGEN', async () => {
+    const { bus, added, pline } = setup([['$PLINEGEN', 1]]);
+    for (const keys of [
+      ['', ''],
+      ['', 'E', ''],
+      ['', 'E', '0,0', ''],
+      ['', '0,0', '', ''],
+    ]) {
+      await bus.script(['POL', ...keys]);
+      expect(bus.promptText, keys.join(' ')).toBe('Command:');
+    }
+    expect(added()).toHaveLength(0);
+    await bus.script(['POL', '', '0,0', '', '5']);
+    expect(pline()).toMatchObject({ closed: true, plinegen: true });
+  });
+});
+
+describe('RECTANG at Enter, zero and negative values', () => {
+  it('ends at Enter at its points and refuses what it cannot draw', async () => {
+    const { bus, added, corners, pline } = setup([['$PLINEGEN', 1]]);
+    for (const keys of [[''], ['0,0', ''], ['0,0', 'R', 'P', ''], ['0,0', 'R', 'P', '0,0', '']]) {
+      await bus.script(['REC', ...keys]);
+      expect(bus.promptText, keys.join(' ')).toBe('Command:');
+    }
+    expect(added()).toHaveLength(0);
+    await bus.script(['REC', 'F', '-1']);
+    expect(bus.history.at(-1)).toBe('Value must be positive or zero.');
+    await bus.script(['0', 'C', '0', '0', '0,0', 'D', '0']);
+    expect(bus.history.at(-1)).toBe('Value must be positive and nonzero.');
+    // Chamfers of 0 leave the corners square; Dimensions towards +X and +Y.
+    await bus.script(['8', '3', '1,1']);
+    expect(corners()).toEqual([
+      [0, 0, 0],
+      [8, 0, 0],
+      [8, 3, 0],
+      [0, 3, 0],
+    ]);
+    expect(pline().plinegen).toBe(true);
   });
 });

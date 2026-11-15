@@ -44,6 +44,11 @@ import { chordEnd, sketchTolerance, type ArcSketch } from './sketch';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
+// What a prompt was answered with, read without checking its kind: `last` hands its `make` only
+// the kind its prompt asks for (the bus refuses any other).
+const pointOf = (a: PromptAnswer): Vec2 => (a as { point: Vec2 }).point;
+const valueOf = (a: PromptAnswer): number => (a as { value: number }).value;
+
 /** The arc's own options, which `arcSegment` answers itself. */
 const ARC_OPTIONS = ['Angle', 'CEnter', 'Direction', 'Radius', 'Second pt'];
 
@@ -99,7 +104,7 @@ export async function* arcSegment(
   ): Sub<BulgeArc | undefined> {
     for (;;) {
       const a = yield ask(sketch, prompt);
-      if (a.kind !== 'point' && a.kind !== 'distance' && a.kind !== 'angle') return undefined;
+      if (a.kind === 'enter') return undefined;
       const arc = make(a);
       if (arc) return arc;
       ctx.message(INVALID_ARC);
@@ -127,8 +132,7 @@ export async function* arcSegment(
       }
       return { kind: 'arc', arc };
     }
-    if (a.kind === 'enter') return { kind: 'enter' };
-    if (a.kind !== 'keyword') return undefined;
+    if (a.kind !== 'keyword') return { kind: 'enter' };
     switch (a.keyword) {
       case 'Angle':
         arc = yield* byAngle(ctx, start, o.direction, ask, last);
@@ -149,10 +153,7 @@ export async function* arcSegment(
         arc = yield* last(
           { shape: 'arcTangent', start, direction: dir },
           ctx.prompt.point({ message: 'Specify endpoint of the arc', rubberBand: { from: start } }),
-          (e) =>
-            e.kind === 'point'
-              ? arcStartDirectionEnd(start, dir, e.point, tol(e.point))
-              : undefined,
+          (e) => arcStartDirectionEnd(start, dir, pointOf(e), tol(pointOf(e))),
         );
         break;
       }
@@ -169,10 +170,7 @@ export async function* arcSegment(
         arc = yield* last(
           { shape: 'arc3p', a: start, b: second },
           ctx.prompt.point({ message: 'Specify end point of arc' }),
-          (e) =>
-            e.kind === 'point'
-              ? arcThrough3(start, second, e.point, tol(second, e.point))
-              : undefined,
+          (e) => arcThrough3(start, second, pointOf(e), tol(second, pointOf(e))),
         );
         break;
       }
@@ -224,10 +222,7 @@ async function* byAngle(
       return yield* last(
         { shape: 'arcSA', by: 'center', start, angle },
         ctx.prompt.point({ message: 'Specify center point of arc', rubberBand: { from: start } }),
-        (c) =>
-          c.kind === 'point'
-            ? arcStartCenterAngle(start, c.point, angle, sketchTolerance(start, c.point))
-            : undefined,
+        (c) => arcStartCenterAngle(start, pointOf(c), angle, sketchTolerance(start, pointOf(c))),
       );
     }
     const r = yield* radius(ctx, start, ask);
@@ -275,13 +270,13 @@ async function* byCenter(
       return yield* last(
         { shape: 'arcSC', by: 'angle', start, center },
         ctx.prompt.angle({ message: 'Specify included angle', base: center }),
-        (v) => (v.kind === 'angle' ? arcStartCenterAngle(start, center, v.value, tol) : undefined),
+        (v) => arcStartCenterAngle(start, center, valueOf(v), tol),
       );
     }
     return yield* last(
       { shape: 'arcSC', by: 'chord', start, center },
       ctx.prompt.distance({ message: 'Specify length of chord', base: start }),
-      (v) => (v.kind === 'distance' ? arcStartCenterChord(start, center, v.value, tol) : undefined),
+      (v) => arcStartCenterChord(start, center, valueOf(v), tol),
     );
   }
 }
@@ -355,8 +350,7 @@ async function* chordDirection(
       default: { kind: 'angle', value: tangent },
     }),
     (v) => {
-      if (v.kind !== 'angle') return undefined;
-      const end = chordEnd(start, angle, r, v.value);
+      const end = chordEnd(start, angle, r, valueOf(v));
       return arcStartEndAngle(start, end, angle, sketchTolerance(start, end));
     },
   );
