@@ -325,8 +325,11 @@ describe('DIVIDE', () => {
     ]);
     expect(added()[0]).toMatchObject({ type: 'POINT', layer: LAYER_WALLS, owner: MODEL_SPACE });
     // The circle at (5,5) radius 2, from angle 0 counter-clockwise.
+    // The marks are the Previous selection set.
+    await bus.script(['ERASE', 'P', '']);
+    expect(added()).toHaveLength(0);
     await bus.script(['DIVIDE', '7,5', '4']);
-    expect(marks(added).slice(3)).toEqual([
+    expect(marks(added)).toEqual([
       [7, 5],
       [5, 7],
       [3, 5],

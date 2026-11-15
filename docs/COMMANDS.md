@@ -28,7 +28,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | REGION | REG | 3 | 2D only | |
 | WIPEOUT | — | 1 | Frames, Polyline | x (#231; Frames ON/OFF and "Display but not plot", shown on screen and left off plots, #260) |
 | REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | x (#231; Modify and corner grips #258; REVCLOUDGRIPS 0, a grip at every arc's end, #302) |
-| DIVIDE | DIV | 2 | Block | x (#378, M3-01 part 5: 2 to 32767 equal segments of a line, arc, circle, ellipse, polyline or spline, by length along it, n − 1 POINTs on an open object and n on a closed one (a circle from angle 0); Block by name, aligned with the object or not, without attributes; on the current layer. Not yet: the marks as the Previous selection set) |
+| DIVIDE | DIV | 2 | Block | x (#378, M3-01 part 5: 2 to 32767 equal segments of a line, arc, circle, ellipse, polyline or spline, by length along it, n − 1 POINTs on an open object and n on a closed one (a circle from angle 0); Block by name, aligned with the object or not, without attributes; on the current layer, the marks left as the Previous selection set) |
 | MEASURE | ME | 2 | Block | x (#378, M3-01 part 5: a POINT or block every segment length (typed or two points) from the end nearer the pick, a closed object from its start; no mark on the far end even when the length divides it exactly (AutoCAD's documentation is silent; DIVIDE never marks an end); Block as DIVIDE's) |
 | MLINE | ML | 3 | read/render required; creation Should | |
 | SKETCH | — | 3 | | |

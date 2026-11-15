@@ -17,11 +17,13 @@
 // at (a closed object from its start). AutoCAD's documentation does not say whether a mark
 // falls on the far end when the length divides the object exactly; as DIVIDE never marks an
 // end, MEASURE does not either (marks stop short of the end by more than the tolerance).
-// Attributes are not added to the blocks, as AutoCAD's DIVIDE and MEASURE leave them out.
+// Attributes are not added to the blocks, as AutoCAD's DIVIDE and MEASURE leave them out. The
+// marks become the Previous selection set (AutoCAD: select them with Previous).
 import { arrayPath, pathCurveOf, pathFrame, pathLength, type ArrayPath } from '../../edit/array';
 import { endPoint, startPoint } from '../../geom/eval';
 import type { Vec2 } from '../../geom/types';
 import { angleOf, distance } from '../../geom/vec';
+import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
 import { currentProps } from '../../properties/current';
 import type { CommandContext, CommandDef } from '../command';
@@ -177,11 +179,12 @@ function place(
 ): void {
   if (stations.length === 0) return;
   const props = currentProps(ctx.model);
+  const ids: EntityId[] = [];
   ctx.edit((b) => {
     for (const s of stations) {
       const f = pathFrame(path, s);
       const position: Vec2 = f.point;
-      b.addEntity({
+      const e = b.addEntity({
         owner: ctx.space,
         ...props,
         geom: marker
@@ -195,6 +198,9 @@ function place(
             }
           : { kind: 'POINT', position },
       });
+      ids.push(e.id);
     }
   });
+  // The marks are the Previous selection set, to be picked again together.
+  ctx.setPrevious(ids);
 }
