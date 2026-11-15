@@ -109,7 +109,7 @@ export function offsetGeometry(g: EntityGeometry, d: number, tol: Tolerance): En
 // ── Polylines ──────────────────────────────────────────────────────────────────────────────
 
 /** A polyline without repeated vertices, and the source vertex each of its vertices is. */
-function cleanPolyline(g: LwPolylineGeometry | PolylineGeometry): {
+export function cleanPolyline(g: LwPolylineGeometry | PolylineGeometry): {
   curve: Polyline;
   index: number[];
 } {
@@ -170,7 +170,7 @@ function offsetPolylineGeometry(
 }
 
 /** Each source segment's start and end widths, or undefined when the polyline has none. */
-function segmentWidths(
+export function segmentWidths(
   g: LwPolylineGeometry | PolylineGeometry,
   index: readonly number[],
   n: number,

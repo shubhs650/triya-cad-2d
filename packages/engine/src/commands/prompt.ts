@@ -91,6 +91,12 @@ export interface PointPrompt extends PromptBase {
    * a freehand cloud while the crosshairs are guided along its path. A click answers too.
    */
   readonly trace?: { readonly from: Vec2; readonly spacing: number };
+  /**
+   * An object pick (TRIM's and EXTEND's "Select object to trim", M3-02 part 2): the click's own
+   * point, with the pickbox rather than the crosshairs and no drafting aids, Shift held or not
+   * (the answer's `shift`).
+   */
+  readonly pickbox?: boolean;
 }
 
 /** A distance: a number, or two points (one when `base` is given). */
@@ -366,7 +372,12 @@ export type PromptKind = Prompt['kind'];
  * clockwise from world +X, whatever ANGBASE and ANGDIR say about how they were typed.
  */
 export type PromptAnswer =
-  | { readonly kind: 'point'; readonly point: Vec2 }
+  | {
+      readonly kind: 'point';
+      readonly point: Vec2;
+      /** A click made with Shift held (TRIM's shift-select to extend, M3-02 part 2). */
+      readonly shift?: true;
+    }
   | { readonly kind: 'distance'; readonly value: number }
   | { readonly kind: 'angle'; readonly value: number }
   | { readonly kind: 'keyword'; readonly keyword: string }

@@ -477,7 +477,10 @@ export class PromptBus {
       if (frame?.select && this.#collectors.length === 0) {
         return this.#step(frame, await frame.select.point(point, o));
       }
-      if (frame) return o.release ? undefined : this.#direct({ kind: 'point', point });
+      if (frame) {
+        if (o.release) return undefined;
+        return this.#direct({ kind: 'point', point, ...(o.shift && { shift: true as const }) });
+      }
       if (!this.#pickfirstOn) return;
       this.#step(undefined, await this.#idle.point(point, o));
     });
