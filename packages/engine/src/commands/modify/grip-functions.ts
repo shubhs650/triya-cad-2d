@@ -5,17 +5,23 @@ import type { Vec2 } from '../../geom/types';
 import { reshapeObject } from '../../edit/edit';
 import { ARRAY_GRIP_FUNCTIONS, gripInfoOf } from '../../edit/array-grips';
 import {
+  COMMAND_FUNCTIONS,
+  IMMEDIATE_FUNCTIONS,
+  dimensionGripOverrides,
+  dimensionLineEnd,
   gripFunctionEdit,
   gripFunctionValue,
   gripFunctionsOf,
   type GripFunction,
   type GripFunctionProblem,
 } from '../../edit/grip-functions';
+import { withDimvarOverride } from '../../annotation/dstyle';
+import { regenerateDimensions } from './dimensions';
 import { breakCurveOf } from '../../edit/break';
 import { toleranceForSize, type Tolerance } from '../../geom/tolerance';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
-import type { ArcGeometry, EntityGeometry } from '../../model/types';
+import type { ArcGeometry, DimensionGeometry, Entity, EntityGeometry } from '../../model/types';
 import type { CommandContext } from '../command';
 import { GRIP_CYCLE, type Prompt, type PromptAnswer } from '../prompt';
 import { toleranceFor } from './offset';
@@ -38,6 +44,15 @@ const KEYWORD_OF: Readonly<Record<GripFunction, string>> = {
   'Origin Point': 'ORigin point',
   'Hatch Angle': 'ANgle',
   'Hatch Scale': 'HAtch scale',
+  'Continue Dimension': 'COntinue dimension',
+  'Baseline Dimension': 'BAseline dimension',
+  'Flip Arrow': 'FLip arrow',
+  'Move with Dim Line': 'DIm line',
+  'Move Text Only': 'TExt only',
+  'Move with Leader': 'LEader',
+  'Above Dim Line': 'ABove dim line',
+  'Center Vertically': 'CEnter vertically',
+  'Reset Text Position': 'REset text position',
 };
 
 /** Each function keyword's function; STretch is either Stretch, as the grip has it. */
@@ -113,6 +128,9 @@ const ASKS: Readonly<Partial<Record<GripFunction, string>>> = {
   'Origin Point': 'Specify origin point',
   'Hatch Angle': 'Specify hatch angle',
   'Hatch Scale': 'Specify hatch scale',
+  'Move with Dim Line': 'Specify point to place text',
+  'Move Text Only': 'Specify point to place text',
+  'Move with Leader': 'Specify point to place text',
 };
 
 export type GripFunctionResult =
@@ -125,7 +143,9 @@ export type GripFunctionResult =
   /** A mode or function typed: the grip command goes there. */
   | { readonly kind: 'keyword'; readonly keyword: string }
   /** An immediate function that could not be done: back to STRETCH. */
-  | { readonly kind: 'refused' };
+  | { readonly kind: 'refused' }
+  /** Continue or Baseline Dimension: DIMCONTINUE or DIMBASELINE from the origin `from`. */
+  | { readonly kind: 'chain'; readonly baseline: boolean; readonly from: Vec2 };
 
 /**
  * The function `fn` of the grip at `hot` on `id`: its prompt until it is done, or left for
@@ -138,10 +158,19 @@ export async function* runGripFunction(
   fn: GripFunction,
   hidden: readonly string[],
 ): AsyncGenerator<Prompt, GripFunctionResult, PromptAnswer> {
-  const immediate = fn === 'Remove Vertex' || fn === 'Convert to Line';
+  const immediate = IMMEDIATE_FUNCTIONS.has(fn);
   for (;;) {
     const e = ctx.model.entity(id);
     if (!e) return { kind: 'done' };
+    if (COMMAND_FUNCTIONS.has(fn)) {
+      const d = e.geom as Extract<DimensionGeometry, { dimType: 'linear' | 'aligned' }>;
+      const end = dimensionLineEnd(d, hot);
+      return {
+        kind: 'chain',
+        baseline: fn === 'Baseline Dimension',
+        from: end === 1 ? d.second : d.first,
+      };
+    }
     let to: Vec2 = hot;
     let value: number | undefined;
     if (!immediate) {
@@ -182,9 +211,35 @@ export async function* runGripFunction(
       if (immediate) return { kind: 'refused' };
       continue;
     }
+    if ('dimType' in r) {
+      await editDimension(ctx, e, r, fn);
+      return { kind: 'done' };
+    }
     ctx.edit((b) => reshapeObject(b, ctx.model, id, [r]));
     return { kind: 'done' };
   }
+}
+
+/**
+ * A dimension's grip function done: its new geometry, with the DIMVAR overrides the function
+ * sets on it (M3-05 part 4), and the dimension drawn afresh, in one undo step.
+ */
+async function editDimension(
+  ctx: CommandContext,
+  e: Entity,
+  geom: DimensionGeometry,
+  fn: GripFunction,
+): Promise<void> {
+  let xdata = e.xdata;
+  for (const [name, value] of dimensionGripOverrides(fn)) {
+    const x = withDimvarOverride(xdata ? { xdata } : {}, geom.style, ctx.model, name, value);
+    // A drawing without the ACAD application keeps no overrides: the geometry still changes.
+    if (x !== 'no-acad') xdata = x;
+  }
+  ctx.edit((b) => {
+    b.updateEntity(e.id, { geom, ...(xdata !== e.xdata && { xdata }) });
+  });
+  await regenerateDimensions(ctx, [e.id]);
 }
 
 /**
