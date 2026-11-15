@@ -21,6 +21,7 @@
 // UCSICON's ON and ORigin are the `*Active` VPORT's DXF 74 bits 1 and 2 (UCSICON's value).
 import { currentVport } from '../edit/snap-grid';
 import { offsetCurveOf } from '../edit/offset';
+import { hatchBoundary } from '../edit/trim-edges';
 import { validViewName } from '../edit/named-view';
 import { endPoint, startPoint } from '../geom/eval';
 import type { Vec2 } from '../geom/types';
@@ -114,9 +115,12 @@ function exactAngle(a: number): number {
  * nearer the pick; a circle from its centre towards the pick; a polyline from its first vertex
  * towards the second; a point at it; a solid or trace from its first corner towards the second;
  * text, an attribute definition or a block reference at its insertion point, turned by its
- * rotation. Undefined for the others (AutoCAD cannot align to an ellipse, spline, ray, xline,
- * multiline, region, leader, viewport or mtext either; dimensions and the rest Triya leaves
- * out).
+ * rotation; a dimension at the middle of its text, X as the UCS's when it was drawn (DXF 51 is
+ * minus that axis's angle). AutoCAD 2024 aligns to any object but xlines and 3D polylines, "in
+ * most cases" at the end nearest the pick with X along an edge, without saying more (M3-06 part
+ * 8, the common drafter expectation): an ellipse at its centre along its major axis, as an arc
+ * aligns at its centre; a hatch at its boundary's corner nearest the pick, X along the boundary
+ * on from it. Undefined for the others (rays, xlines, splines, mtext, leaders and the rest).
  */
 export function objectUcs(g: EntityGeometry, pick: Vec2): PlanUcs | undefined {
   const nearer = (a: Vec2, b: Vec2): [Vec2, Vec2] =>
@@ -156,6 +160,29 @@ export function objectUcs(g: EntityGeometry, pick: Vec2): PlanUcs | undefined {
     case 'ATTDEF':
     case 'INSERT':
       return { origin: { x: g.position.x, y: g.position.y }, angle: exactAngle(g.rotation) };
+    case 'DIMENSION':
+    case 'LARGE_RADIAL_DIMENSION':
+    case 'ARC_DIMENSION':
+      return {
+        origin: { x: g.textPosition.x, y: g.textPosition.y },
+        angle: exactAngle(-g.horizontalDirection),
+      };
+    case 'ELLIPSE':
+      return along(g.center, { x: g.center.x + g.majorAxis.x, y: g.center.y + g.majorAxis.y });
+    case 'HATCH': {
+      // Each boundary curve's start and where it goes on to: a polyline's vertices one by one.
+      let best: [Vec2, Vec2] | undefined;
+      const consider = (a: Vec2, b: Vec2) => {
+        const d = Math.hypot(a.x - pick.x, a.y - pick.y);
+        if (!best || d < Math.hypot(best[0].x - pick.x, best[0].y - pick.y)) best = [a, b];
+      };
+      for (const c of hatchBoundary(g)) {
+        if (c.kind === 'LWPOLYLINE') {
+          c.vertices.forEach((v, i) => consider(v, c.vertices[(i + 1) % c.vertices.length]!));
+        } else consider(startPoint(c), endPoint(c));
+      }
+      return best && along(best[0], best[1]);
+    }
     default:
       return undefined;
   }

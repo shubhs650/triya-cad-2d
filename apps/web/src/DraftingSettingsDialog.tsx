@@ -6,10 +6,10 @@
 // Rectangular/Isometric choice. Grid style (GRIDSTYLE, per user; Block editor is kept but
 // disabled, as Triya has no block editor) and Grid behavior (GRIDDISPLAY, in the drawing's
 // `*Active` VPORT) came with part 6. The Dynamic Input tab came with part 4, its Pointer Input
-// Settings on the tab itself rather than in a dialog of their own, and no Dimension Input
-// Settings or Drafting Tooltip Appearance (grip stretching shows no dimension input; the tooltip
-// follows the app's theme). The Selection Cycling tab came with M3-04 part 7; 3D Object Snap is
-// out of scope (PRD non-goal: no 3D).
+// Settings on the tab itself rather than in a dialog of their own; part 8 added Pointer Input's
+// Visibility and the Dimension Input Settings there too, Show additional tips, and the Drafting
+// Tooltip Appearance dialog (`TooltipAppearanceDialog`). The Selection Cycling tab came with
+// M3-04 part 7; 3D Object Snap is out of scope (PRD non-goal: no 3D).
 // It opens on the tab shown last (OSNAP: Object Snap), edits a copy of the drafting aids and
 // sets them on OK; Cancel (or Esc) leaves them as they were. Options... is left out: Triya's
 // Settings panel is not a dialog to open over it.
@@ -46,6 +46,8 @@ import {
 } from './drafting-settings';
 import { engines } from './engine/registry';
 import { POLAR_ANGLES } from './preferences';
+import { GRIP_MEASURES } from './dynamic-input';
+import { TOOLTIP_SIZES, TOOLTIP_TRANSPARENCY, type TooltipAppearance } from './tooltip-appearance';
 
 type Request = Extract<DialogRequest, { type: 'dsettings' }>;
 type Tab = (typeof DRAFTING_SETTINGS_TABS)[number]['tab'];
@@ -579,6 +581,8 @@ function ObjectSnapTab({ d, set }: TabProps) {
 function DynamicInputTab({ d, set }: TabProps) {
   const id = useId();
   const off = !d.dynPointer;
+  const [appearance, setAppearance] = useState(false);
+  const fieldsTogether = d.dynDiVis === 2;
   return (
     <div className="dsettings-tab">
       <Check checked={d.dynPointer} onChange={(dynPointer) => set({ dynPointer })}>
@@ -615,16 +619,184 @@ function DynamicInputTab({ d, set }: TabProps) {
           Absolute coordinates
         </Radio>
       </fieldset>
+      <fieldset className="dsettings-sub" disabled={off}>
+        <legend>Visibility: show coordinate tooltips</legend>
+        <Radio
+          name={`${id}-pivis`}
+          checked={d.dynPiVis === 0}
+          onChange={() => set({ dynPiVis: 0 })}
+        >
+          As soon as I type coordinate data
+        </Radio>
+        <Radio
+          name={`${id}-pivis`}
+          checked={d.dynPiVis === 1}
+          onChange={() => set({ dynPiVis: 1 })}
+        >
+          When a command asks for a point
+        </Radio>
+        <Radio
+          name={`${id}-pivis`}
+          checked={d.dynPiVis === 2}
+          onChange={() => set({ dynPiVis: 2 })}
+        >
+          Always - even when not in a command
+        </Radio>
+      </fieldset>
       <Check checked={d.dynDimension} onChange={(dynDimension) => set({ dynDimension })}>
         Enable Dimension Input where possible
       </Check>
+      <fieldset className="dsettings-sub" disabled={!d.dynDimension}>
+        <legend>Dimension Input Settings: visibility when grip stretching</legend>
+        <Radio
+          name={`${id}-divis`}
+          checked={d.dynDiVis === 0}
+          onChange={() => set({ dynDiVis: 0 })}
+        >
+          Show only 1 dimension input field at a time
+        </Radio>
+        <Radio
+          name={`${id}-divis`}
+          checked={d.dynDiVis === 1}
+          onChange={() => set({ dynDiVis: 1 })}
+        >
+          Show 2 dimension input fields at a time
+        </Radio>
+        <Radio
+          name={`${id}-divis`}
+          checked={d.dynDiVis === 2}
+          onChange={() => set({ dynDiVis: 2 })}
+        >
+          Show the following dimension input fields simultaneously:
+        </Radio>
+        <div className="dsettings-sub">
+          {GRIP_MEASURES.map((m) => (
+            <Check
+              key={m.measure}
+              checked={(d.dynDiGrip & m.bit) !== 0}
+              disabled={!fieldsTogether}
+              onChange={(on) => set({ dynDiGrip: on ? d.dynDiGrip | m.bit : d.dynDiGrip & ~m.bit })}
+            >
+              {m.label}
+            </Check>
+          ))}
+        </div>
+      </fieldset>
       <fieldset>
         <legend>Dynamic Prompts</legend>
         <Check checked={d.dynPrompt} onChange={(dynPrompt) => set({ dynPrompt })}>
           Show command prompting and command input near the crosshairs
         </Check>
+        <Check checked={d.dynInfoTips} onChange={(dynInfoTips) => set({ dynInfoTips })}>
+          Show additional tips with command prompting
+        </Check>
       </fieldset>
+      <button type="button" onClick={() => setAppearance(true)}>
+        Drafting Tooltip Appearance...
+      </button>
+      {appearance && (
+        <TooltipAppearanceDialog
+          value={d.tooltip}
+          onOk={(tooltip) => {
+            set({ tooltip });
+            setAppearance(false);
+          }}
+          onCancel={() => setAppearance(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Tooltip Appearance (AutoCAD 2024 Help, "Tooltip Appearance Dialog Box"): the drafting
+ * tooltips' colour in model space and on layouts (AutoCAD's Colors... opens Drawing Window
+ * Colors for it; here the two colours sit in the dialog, empty following the theme), their size
+ * and transparency, and whether they apply to every drafting tooltip or Dynamic Input's only.
+ */
+export function TooltipAppearanceDialog({
+  value,
+  onOk,
+  onCancel,
+}: {
+  value: TooltipAppearance;
+  onOk: (t: TooltipAppearance) => void;
+  onCancel: () => void;
+}) {
+  const id = useId();
+  const [t, setT] = useState(value);
+  const set = (patch: Partial<TooltipAppearance>) => setT((was) => ({ ...was, ...patch }));
+  const colour = (key: 'modelColor' | 'layoutColor', label: string) => (
+    <div className="cad-dialog-field">
+      <label className="cad-dialog-check">
+        <input
+          type="checkbox"
+          checked={t[key] !== undefined}
+          onChange={(e) => set({ [key]: e.currentTarget.checked ? '#fffbe0' : undefined })}
+        />
+        {label}
+      </label>
+      <input
+        type="color"
+        aria-label={`${label} colour`}
+        value={t[key] ?? '#fffbe0'}
+        disabled={t[key] === undefined}
+        onChange={(e) => set({ [key]: e.currentTarget.value })}
+      />
+    </div>
+  );
+  return (
+    <Modal
+      label="Tooltip Appearance"
+      className="tooltip-appearance"
+      onOk={() => onOk(t)}
+      onCancel={onCancel}
+    >
+      <fieldset>
+        <legend>Colors</legend>
+        {colour('modelColor', 'Model space')}
+        {colour('layoutColor', 'Layout')}
+      </fieldset>
+      <label className="cad-dialog-field">
+        <span>Size</span>
+        <input
+          type="range"
+          min={TOOLTIP_SIZES.min}
+          max={TOOLTIP_SIZES.max}
+          value={t.size}
+          onChange={(e) => set({ size: Number(e.currentTarget.value) })}
+        />
+        <output>{t.size}</output>
+      </label>
+      <label className="cad-dialog-field">
+        <span>Transparency</span>
+        <input
+          type="range"
+          min={TOOLTIP_TRANSPARENCY.min}
+          max={TOOLTIP_TRANSPARENCY.max}
+          value={t.transparency}
+          onChange={(e) => set({ transparency: Number(e.currentTarget.value) })}
+        />
+        <output>{t.transparency}%</output>
+      </label>
+      <fieldset>
+        <legend>Apply to</legend>
+        <Radio name={`${id}-apply`} checked={t.all} onChange={() => set({ all: true })}>
+          Override OS settings for all drafting tooltips
+        </Radio>
+        <Radio name={`${id}-apply`} checked={!t.all} onChange={() => set({ all: false })}>
+          Use settings only for Dynamic Input tooltips
+        </Radio>
+      </fieldset>
+      <div className="cad-dialog-buttons">
+        <button type="button" onClick={() => onOk(t)}>
+          OK
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
   );
 }
 

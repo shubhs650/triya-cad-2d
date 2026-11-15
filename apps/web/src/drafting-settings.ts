@@ -16,6 +16,7 @@ import {
   type SnapGridSettings,
 } from '@triya/engine';
 import { DYN_DIMENSION, DYN_POINTER } from './dynamic-input';
+import type { TooltipAppearance } from './tooltip-appearance';
 import {
   MAX_ADDITIONAL_ANGLES,
   POLARMODE_ADDITIONAL,
@@ -77,6 +78,16 @@ export interface DraftingSettingsDraft {
   /** Pointer input's next points: Absolute coordinates (DYNPICOORDS 1), Cartesian (DYNPIFORMAT 1). */
   readonly dynAbsolute: boolean;
   readonly dynCartesian: boolean;
+  /**
+   * Part 8: Pointer Input's Visibility (DYNPIVIS), Dimension Input's Visibility (DYNDIVIS) and
+   * the fields shown together (DYNDIGRIP), Show additional tips (DYNINFOTIPS), and the Drafting
+   * Tooltip Appearance.
+   */
+  readonly dynPiVis: 0 | 1 | 2;
+  readonly dynDiVis: 0 | 1 | 2;
+  readonly dynDiGrip: number;
+  readonly dynInfoTips: boolean;
+  readonly tooltip: TooltipAppearance;
   /** Display the Quick Properties palette on selection (QPMODE above 0), and for which. */
   readonly qp: boolean;
   readonly qpMode: 1 | 2;
@@ -162,6 +173,11 @@ export function draftOf(s: DraftingState, snapGrid?: SnapGridSettings): Drafting
     dynPrompt: s.dynPrompt,
     dynAbsolute: s.dynPiCoords === 1,
     dynCartesian: s.dynPiFormat === 1,
+    dynPiVis: s.dynPiVis,
+    dynDiVis: s.dynDiVis,
+    dynDiGrip: s.dynDiGrip,
+    dynInfoTips: s.dynInfoTips,
+    tooltip: s.tooltip,
     qp: s.qpmode > 0,
     // QPMODE 0 (off, with no mode kept) turns on for all objects, as Ctrl+Shift+P does.
     qpMode: Math.abs(s.qpmode) === 2 ? 2 : 1,
@@ -319,6 +335,11 @@ export function draftPatch(d: DraftingSettingsDraft, s: DraftingState): Partial<
     dynPrompt: d.dynPrompt,
     dynPiCoords: d.dynAbsolute ? 1 : 0,
     dynPiFormat: d.dynCartesian ? 1 : 0,
+    dynPiVis: d.dynPiVis,
+    dynDiVis: d.dynDiVis,
+    dynDiGrip: d.dynDiGrip,
+    dynInfoTips: d.dynInfoTips,
+    tooltip: d.tooltip,
     qpmode: d.qp ? d.qpMode : -d.qpMode,
     qpLocation: d.qpLocation,
     qpQuadrant: d.quadrant,

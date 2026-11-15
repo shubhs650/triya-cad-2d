@@ -25,7 +25,15 @@ export {
   type EditReport,
 } from './edit';
 export { stretchGeometry, type StretchOptions, type StretchResult } from './stretch';
-export { gripsOf, moveGrip, sameGrip, type Grip, type GripKind } from './grips';
+export {
+  gripDimensionsOf,
+  gripsOf,
+  moveGrip,
+  sameGrip,
+  type Grip,
+  type GripDimensions,
+  type GripKind,
+} from './grips';
 export * from './array-grips';
 export * from './grip-functions';
 export { hasDynamicColumns, withColumnCount } from './mtext-grips';

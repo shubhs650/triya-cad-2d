@@ -259,6 +259,43 @@ export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
   }
 }
 
+/**
+ * What Dynamic Input's dimension fields measure while a grip is stretched (M3-06 part 8; AutoCAD
+ * 2024 Help, "DYNDIGRIP"): `grip` where the grip was; `anchor` the point a resulting length and
+ * angle count from (a line's other end, a polyline's vertex before the grip, else after it);
+ * `center` the centre an arc radius counts from (a circle's quadrant grips).
+ */
+export interface GripDimensions {
+  readonly grip: Vec2;
+  readonly anchor?: Vec2;
+  readonly center?: Vec2;
+}
+
+/** What stretching the grip at `grip` of `geom` measures; undefined where nothing is (a move grip). */
+export function gripDimensionsOf(geom: EntityGeometry, grip: Vec2): GripDimensions | undefined {
+  const at = { x: grip.x, y: grip.y };
+  switch (geom.kind) {
+    case 'LINE':
+      if (sameGrip(geom.start, grip)) return { grip: at, anchor: geom.end };
+      if (sameGrip(geom.end, grip)) return { grip: at, anchor: geom.start };
+      return undefined;
+    case 'LWPOLYLINE':
+    case 'POLYLINE': {
+      if (geom.kind === 'POLYLINE' && geom.fit) return undefined;
+      const v = geom.vertices;
+      const i = v.findIndex((p) => sameGrip(p, grip));
+      if (i < 0 || v.length < 2) return undefined;
+      const before = i > 0 ? v[i - 1] : geom.closed ? v.at(-1) : undefined;
+      const anchor = before ?? v[i + 1]!;
+      return { grip: at, anchor: { x: anchor.x, y: anchor.y } };
+    }
+    case 'CIRCLE':
+      return sameGrip(geom.center, grip) ? undefined : { grip: at, center: geom.center };
+    default:
+      return undefined;
+  }
+}
+
 /** The midpoint of the arc segment from `a` to `b` with `bulge`. */
 export function bulgeMidpoint(a: Vec2, b: Vec2, bulge: number): Vec2 {
   // The sagitta, bulge × half the chord, off the chord's midpoint to its right for a positive

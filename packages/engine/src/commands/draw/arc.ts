@@ -38,6 +38,7 @@ import {
   arcThrough3,
   dxfArc,
 } from '../../geom/construct';
+import { currentUcs } from '../ucs';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -143,6 +144,7 @@ async function* afterStartCenter(
     by,
     start,
     center,
+    ...turnOf(ctx),
   });
   const tol = sketchTolerance(start, center);
   for (;;) {
@@ -204,6 +206,7 @@ async function* afterStartEnd(
     by,
     start,
     end,
+    ...turnOf(ctx),
   });
   const tol = sketchTolerance(start, end);
   for (;;) {
@@ -300,4 +303,10 @@ export function switched(
   arc: BulgeArc | undefined,
 ): BulgeArc | undefined {
   return arc && 'ctrl' in a && a.ctrl ? switchArc(sketch, arc) : arc;
+}
+
+/** The UCS's X axis, when turned, which an included angle picked counts from (M3-06 part 8). */
+export function turnOf(ctx: CommandContext): { readonly turn?: number } {
+  const turn = currentUcs(ctx).angle;
+  return turn === 0 ? {} : { turn };
 }
