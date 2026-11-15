@@ -1262,7 +1262,10 @@ export class PromptBus {
         const override = parseOsnapOverride(t);
         if (override !== undefined) return this.#override(override, t);
         const lunits = this.#lunits();
-        const p = parseCoordinate(t, { lastPoint: this.#relativeBase(), angles, lunits });
+        // A prompt may say what `@` counts from (BREAK's second point: the first, M3-02 part 4).
+        const from = this.#relativeTo ?? (prompt.kind === 'point' ? prompt.lastPoint : undefined);
+        const lastPoint = from ?? this.#relativeBase();
+        const p = parseCoordinate(t, { lastPoint, angles, lunits });
         if (p !== undefined && p !== 'invalid') return this.#pointFor(p, t);
         const arbitrary = prompt.kind !== 'angle' && prompt.arbitrary;
         if (arbitrary && (prompt.kind === 'point' || parseDistance(t, lunits) === undefined)) {

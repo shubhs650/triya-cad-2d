@@ -107,6 +107,11 @@ export interface PointPrompt extends PromptBase {
    * (the answer's `shift`).
    */
   readonly pickbox?: boolean;
+  /**
+   * What a typed `@` counts from at this prompt instead of LASTPOINT: BREAK's "Specify second
+   * break point", where `@` is the first break point however it was given (M3-02 part 4).
+   */
+  readonly lastPoint?: Vec2;
 }
 
 /** A distance: a number, or two points (one when `base` is given). */

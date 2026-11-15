@@ -15,6 +15,9 @@ import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
 import { chamferCommand, cornerSettings, filletCommand } from './modify/fillet';
 import { offsetCommand } from './modify/offset';
+import { alignCommand } from './modify/align';
+import { breakAtPointCommand, breakCommand, lengthenCommand } from './modify/break';
+import { explodeCommand, joinCommand, reverseCommand } from './modify/join';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
@@ -56,6 +59,13 @@ export function builtinCommands(): CommandRegistry {
     extendCommand(trim),
     filletCommand(corner),
     chamferCommand(corner),
+    breakCommand(),
+    breakAtPointCommand(),
+    joinCommand(),
+    explodeCommand(),
+    lengthenCommand(),
+    reverseCommand(),
+    alignCommand(),
     revcloudCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),

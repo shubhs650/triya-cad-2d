@@ -510,6 +510,8 @@ export function copyObjects(
   ids: readonly EntityId[],
   t: Similarity,
   o: TransformOptions = {},
+  /** Where the copies go: each object's own space unless given (EXPLODE copies a block's out). */
+  into?: Handle,
 ): EditReport {
   const refused = new Map<string, number>();
   const copies = new Map<Handle, Entity>();
@@ -524,7 +526,7 @@ export function copyObjects(
       continue;
     }
     if (e.annotative) unannotated++;
-    const copy = copyEntity(b, e, e.owner, t, o, names);
+    const copy = copyEntity(b, e, into ?? e.owner, t, o, names);
     const radial = carriedRadialArc(
       { geom: e.geom, ...(copy.xdata && { xdata: copy.xdata }) },
       t,
