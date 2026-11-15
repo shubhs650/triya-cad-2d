@@ -73,6 +73,7 @@ import {
   type StyleSource,
 } from '../style/resolve';
 import { tessellate, type Paint, type TessellateContext } from '../tessellate';
+import { figureSize, pointFigurePath, pointHasDot, pointStyle } from '../point-style';
 import {
   PATH_A,
   PATH_C,
@@ -187,6 +188,12 @@ export interface PlotSource {
   /** "Plot paperspace last" (a layout only); off when absent. */
   readonly paperspaceLast?: boolean;
   /**
+   * The height, in the plotted space's units, of the view the plot is made from: what a
+   * relative PDSIZE is a share of (M3-01 part 4). Without it such points plot as dots. A
+   * viewport's model points take the viewport's own view height.
+   */
+  readonly viewHeight?: number;
+  /**
    * The space's objects to plot, by handle (the picture of the objects COPYCLIP puts on the
    * system clipboard, M2-32 part 5); every object when absent.
    */
@@ -264,7 +271,11 @@ class Plotter {
     this.#lwDefault = src.lwDefault ?? 25;
     // The screen's context, with the frames a plot draws: WIPEOUTFRAME 2 shows them on screen
     // and leaves them off the plot (AutoCAD 2024 Help, "WIPEOUTFRAME (System Variable)").
-    this.#tessellate = { ...src.tessellate, frames: imageFrames(model, 'plot') };
+    this.#tessellate = {
+      ...src.tessellate,
+      frames: imageFrames(model, 'plot'),
+      points: pointStyle(model),
+    };
     this.#base = createPaint({ lwDefault: this.#lwDefault });
   }
 
@@ -322,6 +333,8 @@ class Plotter {
       readonly m?: Affine;
       readonly clip?: readonly (readonly number[])[];
       readonly frozen?: ReadonlySet<Handle>;
+      /** What a relative PDSIZE is a share of: the height of the view plotted, its units. */
+      readonly viewHeight?: number;
     } = {},
   ): void {
     const ltMul = o.linetypeScale ?? 1;
@@ -378,18 +391,23 @@ class Plotter {
         shown = resolveColor(owner.entity, src, owner.context);
         layer = effectiveLayer(owner.entity, src, owner.context)?.name;
       }
-      const prim = o.m ? transformPrimitive(raw, o.m) : raw;
-      let clip = o.clip;
-      if (prim.clip) {
-        let joined = clips.get(prim.clip);
-        if (!joined) clips.set(prim.clip, (joined = [...(o.clip ?? []), ...prim.clip]));
-        clip = joined;
+      const viewHeight = o.viewHeight ?? this.#src.viewHeight;
+      for (const figured of raw.kind === 'point' && raw.figure
+        ? figureParts(raw, viewHeight)
+        : [raw]) {
+        const prim = o.m ? transformPrimitive(figured, o.m) : figured;
+        let clip = o.clip;
+        if (prim.clip) {
+          let joined = clips.get(prim.clip);
+          if (!joined) clips.set(prim.clip, (joined = [...(o.clip ?? []), ...prim.clip]));
+          clip = joined;
+        }
+        const part = this.part(prim, object!, props!, shown);
+        if (!part) continue;
+        const tagged = layer === undefined ? part : { ...part, layer };
+        const linked = link ? { ...tagged, link } : tagged;
+        out.push(clip ? { ...linked, clip } : linked);
       }
-      const part = this.part(prim, object!, props!, shown);
-      if (!part) continue;
-      const tagged = layer === undefined ? part : { ...part, layer };
-      const linked = link ? { ...tagged, link } : tagged;
-      out.push(clip ? { ...linked, clip } : linked);
     }
   }
 
@@ -637,6 +655,35 @@ function sweepOf(a0: number, a1: number, ccw: boolean): number {
 }
 
 /** The block record of model space. */
+/**
+ * A POINT with a PDMODE figure as plotted (M3-01 part 4): the figure's lines, sized by the view
+ * plotted, and the dot when the mode has one. A relative size with no view to size it by plots
+ * the dot alone.
+ */
+function figureParts(
+  p: Extract<RenderPrimitive, { kind: 'point' }>,
+  viewHeight: number | undefined,
+): RenderPrimitive[] {
+  const { figure, ...dot } = p;
+  if (!figure) return [p];
+  if (figure.size <= 0 && !(viewHeight !== undefined && viewHeight > 0)) return [dot];
+  const size = figureSize(figure.size, viewHeight ?? 0);
+  const path = pointFigurePath(p.x, p.y, figure.mode, size, figure.angle);
+  const out: RenderPrimitive[] = [];
+  if (path.length > 0) {
+    out.push({
+      kind: 'stroke',
+      path,
+      color: p.color,
+      ...(p.layers && { layers: p.layers }),
+      ...(p.clip && { clip: p.clip }),
+      ...(p.opacity !== undefined && { opacity: p.opacity }),
+    });
+  }
+  if (pointHasDot(figure.mode)) out.push(dot);
+  return out;
+}
+
 function modelSpace(model: DocumentModel): Handle | undefined {
   for (const r of model.tables.blockRecords.values())
     if (r.name.toLowerCase() === '*model_space') return r.handle;
@@ -681,6 +728,7 @@ export function plotParts(model: DocumentModel, block: Handle, src: PlotSource):
       plotter.entityParts(e, seen, views, {
         // PSLTSCALE 1: dashes in a viewport are as long as in paper space.
         linetypeScale: psltscale && vs > 0 ? 1 / vs : 1,
+        viewHeight: g.viewHeight,
         m,
         clip,
         ...(frozen ? { frozen } : {}),

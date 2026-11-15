@@ -98,6 +98,13 @@ import { annotationLinetypeScale, patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
 import { primCrosses, primInside } from './select';
 import { patternLibrary, tessellate, type TessellateContext } from './tessellate';
+import {
+  figureSize,
+  pointFigurePath,
+  pointHasDot,
+  pointStyle,
+  type PointStyle,
+} from './point-style';
 import { columnCounter, type TextContext } from './text';
 import type { PatternLibrary } from '@triya/hatch';
 import type { TextFonts } from '@triya/text';
@@ -281,6 +288,12 @@ interface DrawFrame {
   readonly linetypeScale?: number;
 }
 
+/** A POINT shown as its PDMODE figure, which the view sizes (M3-01 part 4). */
+function hasFigure(entry: CacheEntry): boolean {
+  const p = entry.prims[0];
+  return p?.kind === 'point' && p.figure !== undefined;
+}
+
 /** A viewport to draw: its geometry, model → paper map, and whether it is drawn. */
 interface ViewportEntry {
   readonly handle: Handle;
@@ -346,7 +359,14 @@ const GREEK_ALPHA = 0.35;
 const LAYLOCKFADE_DEFAULT = 50;
 const LAYLOCKFADE_MAX = 90;
 /** Header variables that change how every entity is painted. */
-const PAINT_HEADER = new Set(['$LTSCALE', '$FILLMODE', '$ATTMODE', '$XCLIPFRAME']);
+const PAINT_HEADER = new Set([
+  '$LTSCALE',
+  '$FILLMODE',
+  '$ATTMODE',
+  '$XCLIPFRAME',
+  '$PDMODE',
+  '$PDSIZE',
+]);
 
 const isSortEnts = (o: NonGraphicalObject): o is SortEntsTable => o.type === 'SORTENTSTABLE';
 
@@ -481,6 +501,7 @@ export class Canvas2DRenderer implements Renderer {
     patterns?: PatternLibrary;
     fill?: boolean;
     attributeMode?: number | undefined;
+    points?: PointStyle;
   } = {};
   readonly #createLayer: () => Surface;
   readonly #images: ((definition: Handle) => RasterPixels | undefined) | undefined;
@@ -626,6 +647,7 @@ export class Canvas2DRenderer implements Renderer {
     }
     this.#tessellate.fill = fillMode(this.#model);
     this.#tessellate.attributeMode = attributeMode(this.#model);
+    this.#tessellate.points = pointStyle(this.#model);
     this.#imageQuality = imageQuality(this.#model);
     if (o.patterns?.length) this.#tessellate.patterns = patternLibrary(o.patterns);
     this.#blockSource = {
@@ -807,6 +829,14 @@ export class Canvas2DRenderer implements Renderer {
    * What entities are tessellated with now (fonts, image frames, patterns, FILLMODE, ATTMODE):
    * the plot job (M2-17) tessellates with the same, so a plot shows what the screen does.
    */
+  /**
+   * The height of the view on show in drawing units (the space shown's): what a plot made now
+   * sizes relative PDSIZE points by, as the screen does (M3-01 part 4).
+   */
+  get viewHeight(): number {
+    return this.#height / this.#view.scale;
+  }
+
   get tessellateContext(): TessellateContext {
     return this.#tessellate;
   }
@@ -870,6 +900,7 @@ export class Canvas2DRenderer implements Renderer {
     }
     this.#tessellate.fill = fillMode(this.#model);
     this.#tessellate.attributeMode = attributeMode(this.#model);
+    this.#tessellate.points = pointStyle(this.#model);
     if (cs.tables?.layers) this.#locked = undefined;
     // An XCLIP turned on or off, reshaped, added or removed, or XCLIPFRAME changed (M1-103):
     // the references drawing it may sit anywhere, nested in any block, so the block is redrawn.
@@ -1769,8 +1800,9 @@ export class Canvas2DRenderer implements Renderer {
       if (frozen && entry.layer !== undefined && frozen.has(entry.layer)) continue;
       const entryAlpha =
         fade && entry.layer !== undefined && fade.locked.has(entry.layer) ? fade.alpha : 1;
-      // LOD: an entity under a pixel is a dot, or nothing in a reduced frame.
-      if (entry.size * scale < 1) {
+      // LOD: an entity under a pixel is a dot, or nothing in a reduced frame. A POINT with a
+      // PDMODE figure is sized by the view, not by the entity (M3-01 part 4).
+      if (entry.size * scale < 1 && !hasFigure(entry)) {
         if (reduced) continue;
         const first = entry.prims[0];
         if (!first) continue;
@@ -1803,6 +1835,24 @@ export class Canvas2DRenderer implements Renderer {
         const color = this.#color(prim.color);
         if (prim.kind === 'point') {
           flush();
+          const f = prim.figure;
+          if (f) {
+            // The PDMODE figure (M3-01 part 4), sized by the view now: a relative PDSIZE is a
+            // share of the height on show (the canvas, or the viewport drawn).
+            const size = figureSize(f.size, box.maxY - box.minY);
+            const path = pointFigurePath(prim.x, prim.y, f.mode, size, f.angle);
+            if (path.length > 0) {
+              world();
+              ctx.beginPath();
+              buildPath(ctx, path, ox, oy);
+              device();
+              setAlpha(a);
+              ctx.strokeStyle = color;
+              ctx.lineWidth = this.#lineWidth(undefined);
+              ctx.stroke();
+            }
+            if (!pointHasDot(f.mode)) continue;
+          }
           device();
           setAlpha(a);
           ctx.fillStyle = color;
