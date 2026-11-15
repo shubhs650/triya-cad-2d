@@ -97,6 +97,24 @@ class Target implements ViewTarget {
     this.calls.push(`bounds ${ids.join(',')}`),
     Promise.resolve(this.objectsKnown ? { minX: 1, minY: 2, maxX: 3, maxY: 4 } : undefined)
   );
+  enclosed = (p: { x: number; y: number }) => (
+    this.calls.push(`enclosed ${p.x},${p.y}`),
+    Promise.resolve(
+      p.x > 0
+        ? {
+            area: 4,
+            perimeter: 8,
+            loops: [
+              [
+                { x: 0, y: 0 },
+                { x: 2, y: 0 },
+                { x: 2, y: 2 },
+              ],
+            ],
+          }
+        : undefined,
+    )
+  );
 }
 
 /** The view requests answer at once; only selection's wait for the renderer. */
@@ -238,6 +256,28 @@ describe('answerView', () => {
       message: 'The objects have no extents.',
     });
     expect(t.calls).toEqual(['bounds 3,4', 'bounds 3']);
+  });
+
+  it('finds the space a MEASUREGEOM Quick click is in with the renderer (M3-07)', async () => {
+    const t = new Target();
+    const { ctx } = context(t);
+    expect(await answerView({ op: 'enclosed', point: { x: 1, y: 1 } }, ctx)).toEqual({
+      ok: true,
+      enclosed: {
+        area: 4,
+        perimeter: 8,
+        loops: [
+          [
+            { x: 0, y: 0 },
+            { x: 2, y: 0 },
+            { x: 2, y: 2 },
+          ],
+        ],
+      },
+    });
+    // Outside every space: no space, still an answer.
+    expect(await answerView({ op: 'enclosed', point: { x: -1, y: 1 } }, ctx)).toEqual({ ok: true });
+    expect(t.calls).toEqual(['enclosed 1,1', 'enclosed -1,1']);
   });
 
   it('answers selection from the renderer (M2-03): picks, windows and ZOOM Object', async () => {

@@ -6,6 +6,7 @@
 // Selection asks it too (M2-03): what a pick or a window takes, and ZOOM Object's extents, which
 // the renderer answers, so those replies come later.
 import type {
+  EnclosedSpace,
   Box,
   Clipboard,
   EntityId,
@@ -70,6 +71,8 @@ export interface ViewTarget {
   readonly pickbox: number;
   /** The objects' extents as drawn (M2-14 part 2: COPYCLIP's base point), or undefined. */
   boundsOf(ids: readonly EntityId[]): Promise<Box | undefined>;
+  /** The space enclosed around a point by the objects shown (M3-07, MEASUREGEOM Quick). */
+  enclosed(point: Vec2): Promise<EnclosedSpace | undefined>;
 }
 
 /** A named view of the space shown; `view` is undefined when a 2D canvas cannot show it. */
@@ -301,6 +304,8 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       return t
         .textOutlines(r.texts)
         .then((outlines) => ({ ok: true, outlines, pickbox: t.pickbox }));
+    case 'enclosed':
+      return t.enclosed(r.point).then((enclosed) => ({ ok: true, ...(enclosed && { enclosed }) }));
     case 'bounds':
       return t
         .boundsOf(r.ids)

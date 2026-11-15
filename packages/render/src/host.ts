@@ -13,8 +13,11 @@ import type {
   DragMotion,
   EntityId,
   MTextGeometry,
+  EnclosedSpace,
   OsnapHit,
   OsnapQuery,
+  QuickMeasure,
+  QuickQuery,
   TextGeometry,
   TextOutline,
   Vec2,
@@ -363,6 +366,22 @@ export class RendererHost {
     if (this.#session) return Promise.resolve(this.#session.snap(query));
     return this.#request((id) => ({ type: 'snap', id, query })).then((m) =>
       m.type === 'snap' ? [...m.hits] : [],
+    );
+  }
+
+  /** What MEASUREGEOM's Quick mode shows with the cursor at `query.point` (M3-07). */
+  quickMeasure(query: QuickQuery): Promise<QuickMeasure> {
+    if (this.#session) return Promise.resolve(this.#session.quickMeasure(query));
+    return this.#request((id) => ({ type: 'quick', id, query })).then((m) =>
+      m.type === 'quick' ? m.measure : { spans: [], angles: [] },
+    );
+  }
+
+  /** The space enclosed around `point` by the objects shown in `view` (M3-07), if any. */
+  enclosedSpace(point: Vec2, view: Box): Promise<EnclosedSpace | undefined> {
+    if (this.#session) return Promise.resolve(this.#session.enclosedSpace(point, view));
+    return this.#request((id) => ({ type: 'enclosed', id, point, view })).then((m) =>
+      m.type === 'enclosed' ? (m.space ?? undefined) : undefined,
     );
   }
 
