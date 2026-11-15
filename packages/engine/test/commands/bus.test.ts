@@ -585,6 +585,13 @@ describe('PromptBus', () => {
     expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 0, y: 4 } } });
     // `@` counts from the last tracking point; a number goes that far towards the cursor.
     await bus.submit('@5,1');
+    // A distance needs a cursor away from the last tracking point to go towards.
+    bus.pointer(undefined);
+    await bus.submit('3');
+    expect(bus.history.at(-1)).toBe('Invalid point.');
+    bus.pointer({ x: 5, y: 4 });
+    await bus.submit('3');
+    expect(bus.history.at(-1)).toBe('Invalid point.');
     bus.pointer({ x: 5.5, y: -20 });
     await bus.submit('3');
     expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 5, y: 1 } } });
