@@ -5,8 +5,10 @@
 // GRID from the drafting aids and the spacing from the drawing's `*Active` VPORT, which OK
 // gives back to DSETTINGS to set (`snapGridOf`). Part 3 adds the Snap and Grid tab's Snap type
 // (Grid snap or PolarSnap, SNAPTYPE) and Polar spacing (POLARDIST), and the Polar Tracking tab's
-// Polar Angle measurement (Absolute or Relative to last segment, POLARMODE 1).
+// Polar Angle measurement (Absolute or Relative to last segment, POLARMODE 1). Part 4 adds the
+// Dynamic Input tab (DYNMODE's bits, DYNPROMPT, DYNPICOORDS, DYNPIFORMAT; dynamic-input.ts).
 import { OSNAP_OFF, type DraftingSettingsTab, type SnapGridSettings } from '@triya/engine';
+import { DYN_DIMENSION, DYN_POINTER } from './dynamic-input';
 import {
   MAX_ADDITIONAL_ANGLES,
   POLARMODE_ADDITIONAL,
@@ -24,6 +26,7 @@ export const DRAFTING_SETTINGS_TABS: readonly { tab: DraftingSettingsTab; label:
   { tab: 'snap', label: 'Snap and Grid' },
   { tab: 'polar', label: 'Polar Tracking' },
   { tab: 'osnap', label: 'Object Snap' },
+  { tab: 'dyn', label: 'Dynamic Input' },
   { tab: 'qp', label: 'Quick Properties' },
 ];
 
@@ -56,6 +59,14 @@ export interface DraftingSettingsDraft {
   readonly modes: number;
   /** Object Snap Tracking On (F11). */
   readonly otrack: boolean;
+  /** Enable Pointer Input and Enable Dimension Input where possible (DYNMODE's bits). */
+  readonly dynPointer: boolean;
+  readonly dynDimension: boolean;
+  /** Show command prompting and command input near the crosshairs (DYNPROMPT). */
+  readonly dynPrompt: boolean;
+  /** Pointer input's next points: Absolute coordinates (DYNPICOORDS 1), Cartesian (DYNPIFORMAT 1). */
+  readonly dynAbsolute: boolean;
+  readonly dynCartesian: boolean;
   /** Display the Quick Properties palette on selection (QPMODE above 0), and for which. */
   readonly qp: boolean;
   readonly qpMode: 1 | 2;
@@ -107,6 +118,11 @@ export function draftOf(s: DraftingState, snapGrid?: SnapGridSettings): Drafting
     osnap: (s.osmode & OSNAP_OFF) === 0 && s.osmode !== 0,
     modes: s.osmode & ~OSNAP_OFF,
     otrack: s.otrack,
+    dynPointer: (s.dynBits & DYN_POINTER) !== 0,
+    dynDimension: (s.dynBits & DYN_DIMENSION) !== 0,
+    dynPrompt: s.dynPrompt,
+    dynAbsolute: s.dynPiCoords === 1,
+    dynCartesian: s.dynPiFormat === 1,
     qp: s.qpmode > 0,
     // QPMODE 0 (off, with no mode kept) turns on for all objects, as Ctrl+Shift+P does.
     qpMode: Math.abs(s.qpmode) === 2 ? 2 : 1,
@@ -239,6 +255,10 @@ export function draftPatch(d: DraftingSettingsDraft, s: DraftingState): Partial<
     // Object Snap Off keeps the modes for F3 to turn back on, as AutoCAD's OSMODE 16384 bit does.
     osmode: d.osnap ? d.modes : d.modes | OSNAP_OFF,
     otrack: d.otrack,
+    dynBits: (d.dynPointer ? DYN_POINTER : 0) | (d.dynDimension ? DYN_DIMENSION : 0),
+    dynPrompt: d.dynPrompt,
+    dynPiCoords: d.dynAbsolute ? 1 : 0,
+    dynPiFormat: d.dynCartesian ? 1 : 0,
     qpmode: d.qp ? d.qpMode : -d.qpMode,
     qpLocation: d.qpLocation,
     qpQuadrant: d.quadrant,

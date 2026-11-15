@@ -3,10 +3,13 @@
 // typed outside a text field come here rather than to the command line then; Enter sends the
 // fields as the command line's text. The tooltip follows the cursor by its style alone, and the
 // fields show the cursor's values by their text alone, so moving the cursor renders nothing in
-// React (.claude/rules/ui.md).
+// React (.claude/rules/ui.md). The Drafting Settings dialog's Dynamic Input tab (M3-06 part 4)
+// says which fields show and whether the prompt does (`DynSettings`); with neither, the tooltip
+// stays hidden and keys go to the command line.
 import { keywordShortcut, type Prompt, type Vec2 } from '@triya/engine';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { cycleLasso, cycleSnap } from './canvas/registry';
+import { drafting } from './drafting';
 import {
   dynAhead,
   dynBackspace,
@@ -17,6 +20,8 @@ import {
   dynMode,
   dynRelativeTo,
   dynReplay,
+  dynSettings,
+  dynShows,
   dynTab,
   dynText,
   dynType,
@@ -73,6 +78,13 @@ export function DynamicInput({
   ahead?: { current: ((keys: readonly string[]) => readonly string[] | undefined) | undefined };
 }) {
   const on = useSyncExternalStore(dynMode.subscribe, dynMode.get);
+  const aids = useSyncExternalStore(drafting.subscribe, drafting.get);
+  const { dynBits, dynPrompt, dynPiCoords, dynPiFormat } = aids;
+  // Rebuilt only when the tab's settings change, which starts the fields afresh.
+  const o = useMemo(
+    () => dynSettings({ dynBits, dynPrompt, dynPiCoords, dynPiFormat }),
+    [dynBits, dynPrompt, dynPiCoords, dynPiFormat],
+  );
   const [over, setOver] = useState(false);
   /**
    * Whether the cursor is over a drawing now. The keys read this rather than `over`: a key typed
@@ -88,7 +100,7 @@ export function DynamicInput({
    */
   const latest = useRef<{ prompt: Prompt | undefined; state: DynState | undefined }>({
     prompt,
-    state: prompt && dynFor(prompt),
+    state: prompt && dynFor(prompt, o),
   });
   const [state, setState] = useState<DynState | undefined>(latest.current.state);
   const put = (p: Prompt | undefined, next: DynState | undefined) => {
@@ -98,15 +110,15 @@ export function DynamicInput({
   const box = useRef<HTMLDivElement>(null);
   const live = useRef<(HTMLSpanElement | null)[]>([]);
   const at = useRef({ x: 0, y: 0 });
-  const shown = on && over && prompt !== undefined && state !== undefined;
+  const shown = on && over && prompt !== undefined && state !== undefined && dynShows(state, o);
 
   /** Keys typed since the last Enter: replayed on a prompt that arrives after them. */
   const typed = useRef<string[]>([]);
   // A new prompt starts with empty fields, or with what was typed ahead of it.
-  useEffect(() => put(prompt, prompt && dynReplay(prompt, typed.current)), [prompt]);
+  useEffect(() => put(prompt, prompt && dynReplay(prompt, typed.current, o)), [prompt, o]);
 
-  const props = useRef({ prompt, units, state, shown, cursor, onSubmit, onKeyword, hold });
-  props.current = { prompt, units, state, shown, cursor, onSubmit, onKeyword, hold };
+  const props = useRef({ prompt, units, state, shown, cursor, onSubmit, onKeyword, hold, o });
+  props.current = { prompt, units, state, shown, cursor, onSubmit, onKeyword, hold, o };
 
   const place = () => {
     const el = box.current;
@@ -143,9 +155,9 @@ export function DynamicInput({
         e.stopImmediatePropagation();
         return;
       }
-      const { prompt: p, shown: visible } = props.current;
+      const { prompt: p, shown: visible, o: settings } = props.current;
       // Fields set for an earlier prompt are this prompt's as soon as it has arrived.
-      const s = dynCurrent(latest.current, p, typed.current);
+      const s = dynCurrent(latest.current, p, typed.current, settings);
       if (!visible || !overNow.current || !p || !s || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (props.current.hold(e.key)) {
@@ -164,17 +176,17 @@ export function DynamicInput({
       if (e.key === 'Escape') {
         // The command line's listener cancels the command.
         typed.current = [];
-        put(p, dynFor(p));
+        put(p, dynFor(p, settings));
         return;
       }
       if (dynEnds(s, p, e.key)) {
         const options = p.options ?? [];
         if (s.menu !== undefined && options[s.menu]) {
-          take(dynFor(p));
+          take(dynFor(p, settings));
           props.current.onKeyword(options[s.menu]!);
           return;
         }
-        take(dynFor(p));
+        take(dynFor(p, settings));
         const text = dynText(s, p, props.current.cursor(), props.current.units);
         props.current.onSubmit(text, dynRelativeTo(text, p));
         return;
@@ -186,8 +198,8 @@ export function DynamicInput({
         return;
       }
       if (e.key === 'Tab') return take(dynTab(s), 'Tab');
-      if (e.key === 'Backspace') return take(dynBackspace(s, p), 'Backspace');
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && p.options?.length) {
+      if (e.key === 'Backspace') return take(dynBackspace(s, p, settings), 'Backspace');
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && p.options?.length && settings.prompt) {
         const n = p.options.length;
         const step = e.key === 'ArrowDown' ? 1 : -1;
         return take(
@@ -209,16 +221,17 @@ export function DynamicInput({
   useEffect(() => {
     if (!ahead) return;
     ahead.current = (keys) => {
-      const { prompt: p } = props.current;
-      const s = dynCurrent(latest.current, p, typed.current);
+      const { prompt: p, o: settings } = props.current;
+      const s = dynCurrent(latest.current, p, typed.current, settings);
       if (!dynMode.get() || !overNow.current || !p || !s || takesText(document.activeElement)) {
         return undefined;
       }
-      const r = dynAhead(s, p, keys);
+      if (!dynShows(s, settings)) return undefined;
+      const r = dynAhead(s, p, keys, settings);
       // An Esc empties the fields, as typed (the command line cancels).
       if (!r.ends && r.rest[0] === 'Escape') {
         typed.current = [];
-        put(p, dynFor(p));
+        put(p, dynFor(p, settings));
         return r.rest;
       }
       if (!r.ends) {
@@ -227,7 +240,7 @@ export function DynamicInput({
         return r.rest;
       }
       typed.current = [];
-      put(p, dynFor(p));
+      put(p, dynFor(p, settings));
       const { cursor: at, units: u } = props.current;
       const text = dynText(r.state, p, at(), u);
       props.current.onSubmit(text, dynRelativeTo(text, p));
@@ -242,15 +255,17 @@ export function DynamicInput({
   const options = prompt.options ?? [];
   return (
     <div className="dyn-input" ref={box} role="status" aria-label="Dynamic Input" data-testid="dyn">
-      <div className="dyn-prompt">
-        {message}
-        {options.length > 0 && (
-          <span className="dyn-more" aria-hidden="true">
-            {' '}
-            ↓
-          </span>
-        )}
-      </div>
+      {o.prompt && (
+        <div className="dyn-prompt">
+          {message}
+          {options.length > 0 && (
+            <span className="dyn-more" aria-hidden="true">
+              {' '}
+              ↓
+            </span>
+          )}
+        </div>
+      )}
       <div className="dyn-fields">
         {state.fields.map((f, i) => (
           <span
@@ -276,20 +291,20 @@ export function DynamicInput({
       </div>
       {state.menu !== undefined && (
         <ul className="dyn-menu" role="listbox" aria-label="Options">
-          {options.map((o, i) => (
+          {options.map((option, i) => (
             <li
-              key={o}
+              key={option}
               role="option"
               aria-selected={i === state.menu}
               onPointerDown={(e) => {
                 e.preventDefault();
                 typed.current = [];
-                put(prompt, dynFor(prompt));
-                onKeyword(o);
+                put(prompt, dynFor(prompt, o));
+                onKeyword(option);
               }}
             >
-              {o}
-              <span className="alias"> ({keywordShortcut(o)})</span>
+              {option}
+              <span className="alias"> ({keywordShortcut(option)})</span>
             </li>
           ))}
         </ul>

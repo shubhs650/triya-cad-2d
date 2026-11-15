@@ -15,8 +15,13 @@ import {
   dynText,
   dynType,
   dynTyped,
+  dynSettings,
+  dynShows,
+  DYN_SETTINGS,
+  type DynSettings,
   type DynState,
 } from '../src/dynamic-input';
+import { INITIAL_DRAFTING } from '../src/drafting';
 
 const first = prompts.point({ message: 'Specify first point' });
 const next = prompts.point({
@@ -306,5 +311,83 @@ describe('a key typed as a new prompt arrives (M2-34)', () => {
       dynText(dynCurrent({ prompt: base, state: dynFor(base) }, angle, ['4', '5'])!, angle, cursor),
     ).toBe('45');
     expect(dynCurrent({ prompt: base, state: dynFor(base) }, undefined, [])).toBeUndefined();
+  });
+});
+
+describe('the Dynamic Input tab (M3-06 part 4)', () => {
+  const radius = prompts.distance({ message: 'Specify radius', base: { x: 10, y: 10 } });
+  const options = prompts.keyword({ message: 'Enter an option', options: ['A'] });
+  const labels = (p: Prompt, o: DynSettings) => dynFor(p, o).fields.map((f) => f.label);
+  const typed = (p: Prompt, keys: string, o: DynSettings) => {
+    let s = dynFor(p, o);
+    for (const k of keys) s = k === '\b' ? dynBackspace(s, p, o) : dynType(s, k);
+    return dynText(s, p, cursor);
+  };
+
+  it('reads DYNMODE, DYNPROMPT, DYNPICOORDS and DYNPIFORMAT from the drafting aids', () => {
+    expect(dynSettings(INITIAL_DRAFTING)).toEqual(DYN_SETTINGS);
+    expect(DYN_SETTINGS).toEqual({
+      pointer: true,
+      dimension: true,
+      prompt: true,
+      absolute: false,
+      cartesian: false,
+    });
+    expect(
+      dynSettings({
+        ...INITIAL_DRAFTING,
+        dynBits: 1,
+        dynPrompt: false,
+        dynPiCoords: 1,
+        dynPiFormat: 1,
+      }),
+    ).toEqual({ pointer: true, dimension: false, prompt: false, absolute: true, cartesian: true });
+  });
+
+  it('Enable Dimension Input off: next points take pointer input, polar or Cartesian', () => {
+    const polar = { ...DYN_SETTINGS, dimension: false };
+    expect(labels(next, polar)).toEqual(['Distance', 'Angle']);
+    expect(typed(next, '5<30', polar)).toBe('@5<30');
+    const cartesian = { ...polar, cartesian: true };
+    expect(labels(next, cartesian)).toEqual(['X', 'Y']);
+    expect(typed(next, '5,2', cartesian)).toBe('@5,2');
+    // Distance and angle prompts are dimension input: without it, only what is typed.
+    expect(labels(radius, polar)).toEqual(['']);
+    expect(labels(radius, DYN_SETTINGS)).toEqual(['Distance']);
+  });
+
+  it('Absolute coordinates (DYNPICOORDS 1): next points are absolute unless typed with @', () => {
+    const absolute = { ...DYN_SETTINGS, absolute: true, cartesian: true, dimension: false };
+    expect(typed(next, '5,2', absolute)).toBe('5,2');
+    expect(typed(next, '@5,2', absolute)).toBe('@5,2');
+    expect(dynLive(dynFor(next, absolute), next, cursor)).toEqual(['13.0000', '14.0000']);
+    // Dimension input's comma switches to pointer input as DYNPICOORDS says.
+    expect(typed(next, '5,2', { ...DYN_SETTINGS, absolute: true })).toBe('5,2');
+    expect(typed(next, '5,2', DYN_SETTINGS)).toBe('@5,2');
+  });
+
+  it('Enable Pointer Input off: points take what is typed, sent as typed', () => {
+    const none = { ...DYN_SETTINGS, pointer: false };
+    expect(labels(first, none)).toEqual(['']);
+    expect(typed(first, '5,2', none)).toBe('5,2');
+    expect(labels(next, none)).toEqual(['Distance', 'Angle']);
+    const neither = { ...none, dimension: false };
+    expect(labels(next, neither)).toEqual(['']);
+    // Backspace that empties typed text starts the fields afresh, with the same settings.
+    expect(typed(first, '5\b', neither)).toBe('');
+  });
+
+  it('shows the tooltip for its fields, or for the prompt while DYNPROMPT is 1', () => {
+    const quiet = { ...DYN_SETTINGS, prompt: false };
+    expect(dynShows(dynFor(first, quiet), quiet)).toBe(true);
+    expect(dynShows(dynFor(options, quiet), quiet)).toBe(false);
+    expect(dynShows(dynFor(options, DYN_SETTINGS), DYN_SETTINGS)).toBe(true);
+    const off = { ...quiet, pointer: false, dimension: false };
+    expect(dynShows(dynFor(first, off), off)).toBe(false);
+    expect(dynShows(dynFor(radius, off), off)).toBe(false);
+    // Held keys replay with the settings too.
+    expect(dynReplay(next, ['5', ','], off).fields.map((f) => f.label)).toEqual(['']);
+    expect(dynAhead(dynFor(first, off), first, ['5', 'Enter'], off).ends).toBe(true);
+    expect(dynCurrent({ prompt: first, state: undefined }, next, [], off)?.kind).toBe('single');
   });
 });
