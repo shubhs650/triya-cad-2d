@@ -98,12 +98,12 @@ describe('PLINE', () => {
     const { bus, vertices } = setup();
     await bus.script(['PL', '0,0', '10,0', 'A']);
     expect(bus.promptText).toBe(
-      'Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width]:',
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width]:',
     );
     // Tangent to +X at 10,0 to 10,10: a half circle counter-clockwise (bulge 1).
     await bus.submit('10,10');
     expect(bus.promptText).toBe(
-      'Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width]:',
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width]:',
     );
     // The next arc goes on tangent: heading -X at 10,10, to 0,10 is straight on: no arc.
     await bus.submit('0,10');
@@ -121,7 +121,7 @@ describe('PLINE', () => {
     const { bus, vertices } = setup();
     await bus.script(['PL', '0,0', 'A']);
     expect(bus.promptText).toBe(
-      'Specify endpoint of arc or [Angle/CEnter/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width]:',
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width]:',
     );
     await bus.script(['0,10', '']);
     expect(vertices()).toEqual([
@@ -134,21 +134,27 @@ describe('PLINE', () => {
     const { bus, vertices } = setup();
     // Angle then the end: 90° counter-clockwise from 0,0 to 10,0.
     await bus.script(['PL', '0,0', 'A', 'A', '90']);
-    expect(bus.promptText).toBe('Specify endpoint of arc or [CEnter/Radius]:');
+    expect(bus.promptText).toBe(
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [CEnter/Radius]:',
+    );
     await bus.submit('10,0');
     // CEnter then the end: about 15,0 from 10,0 to 20,0, counter-clockwise (half a turn).
     await bus.script(['CE', '15,0']);
-    expect(bus.promptText).toBe('Specify endpoint of arc or [Angle/Length]:');
+    expect(bus.promptText).toBe(
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/Length]:',
+    );
     await bus.submit('20,0');
     // Direction then the end: leaving 20,0 north, to 30,0 (clockwise half a turn).
     await bus.submit('D');
     expect(bus.promptText).toBe('Specify the tangent direction for the start point of arc:');
     await bus.submit('90');
-    expect(bus.promptText).toBe('Specify endpoint of the arc:');
+    expect(bus.promptText).toBe('Specify endpoint of the arc (hold Ctrl to switch direction):');
     await bus.submit('30,0');
     // Radius then the end: radius 5 from 30,0 to 40,0 (the minor arc, counter-clockwise).
     await bus.script(['R', '5']);
-    expect(bus.promptText).toBe('Specify endpoint of arc or [Angle]:');
+    expect(bus.promptText).toBe(
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle]:',
+    );
     await bus.submit('40,0');
     // Second pt: through 45,5 to 50,0 (clockwise).
     await bus.submit('S');
@@ -170,11 +176,11 @@ describe('PLINE', () => {
     const { bus, vertices } = setup();
     // CEnter 5,0 and 90°: from 0,0 a quarter turn counter-clockwise ends at 5,-5.
     await bus.script(['PL', '0,0', 'A', 'CE', '5,0', 'A']);
-    expect(bus.promptText).toBe('Specify included angle:');
+    expect(bus.promptText).toBe('Specify included angle (hold Ctrl to switch direction):');
     await bus.submit('90');
     // CEnter 10,-5 with a chord of 5·√2: a quarter turn to 10,-10.
     await bus.script(['CE', '10,-5', 'L']);
-    expect(bus.promptText).toBe('Specify length of chord:');
+    expect(bus.promptText).toBe('Specify length of chord (hold Ctrl to switch direction):');
     await bus.submit(String(5 * Math.SQRT2));
     // Angle 180 about the centre 15,-10: to 20,-10.
     await bus.script(['A', '180', 'CE', '15,-10']);
@@ -182,7 +188,9 @@ describe('PLINE', () => {
     await bus.script(['A', '90', 'R']);
     expect(bus.promptText).toBe('Specify radius of arc:');
     await bus.submit('5');
-    expect(bus.promptText).toBe('Specify direction of chord for arc <135>:');
+    expect(bus.promptText).toBe(
+      'Specify direction of chord for arc (hold Ctrl to switch direction) <135>:',
+    );
     await bus.script(['', '']);
     expect(vertices()).toEqual([
       [0, 0, T8],
@@ -198,7 +206,9 @@ describe('PLINE', () => {
     await bus.script(['PL', '0,0', 'A', 'R', '5', 'A']);
     expect(bus.promptText).toBe('Specify included angle:');
     await bus.submit('90');
-    expect(bus.promptText).toBe('Specify direction of chord for arc <45>:');
+    expect(bus.promptText).toBe(
+      'Specify direction of chord for arc (hold Ctrl to switch direction) <45>:',
+    );
     await bus.script(['0', '']);
     expect(vertices()).toEqual([
       [0, 0, T8],
@@ -263,7 +273,9 @@ describe('PLINE', () => {
   it('sets widths in arc mode too, and stays in arc mode', async () => {
     const { bus, widths } = setup([['$PLINEWID', 1]]);
     await bus.script(['PL', '0,0', 'A', 'W', '', '3']);
-    expect(bus.promptText).toMatch(/^Specify endpoint of arc or \[/);
+    expect(bus.promptText).toMatch(
+      /^Specify endpoint of arc \(hold Ctrl to switch direction\) or \[/,
+    );
     await bus.script(['0,10', '']);
     expect(widths()).toEqual([
       [1, 3],
@@ -290,7 +302,9 @@ describe('PLINE', () => {
     const { bus, added, vertices } = setup();
     await bus.script(['PL', '0,0', '10,0', 'A', '10,10', 'U']);
     // Undo keeps arc mode, from 10,0 again.
-    expect(bus.promptText).toMatch(/^Specify endpoint of arc or \[Angle\/CEnter\/CLose/);
+    expect(bus.promptText).toMatch(
+      /^Specify endpoint of arc \(hold Ctrl to switch direction\) or \[Angle\/CEnter\/CLose/,
+    );
     await bus.script(['L', 'U']);
     expect(added()).toHaveLength(0);
     expect(bus.promptText).toBe('Specify next point or [Arc/Halfwidth/Length/Undo/Width]:');
@@ -430,7 +444,7 @@ describe('PLINE', () => {
     const bus = new PromptBus({ model, registry });
     await bus.submit('MEASURE');
     expect(bus.promptText).toBe(
-      '<Add mode> Specify endpoint of arc or [Angle/CEnter/Direction/Line/Radius/Second pt/Undo]:',
+      '<Add mode> Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/Direction/Line/Radius/Second pt/Undo]:',
     );
     expect(r6((dragged(bus.prompt, 0, 10) as LwPolylineGeometry).vertices[0]!.bulge)).toBe(1);
     await bus.script(['0,10', 'U', '']);

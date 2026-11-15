@@ -61,7 +61,17 @@ interface PromptBase {
    * meanwhile still cancels it.
    */
   readonly escape?: boolean;
+  /**
+   * AutoCAD 2024's "(hold Ctrl to switch direction)" (M3-01 part 6: ARC's and PLINE's last arc
+   * values): a point, distance or angle picked with Ctrl held answers with `ctrl`, which draws
+   * the arc the other way round, and the front-end drags it so while Ctrl is held. Anywhere
+   * else a Ctrl pick is a plain one. The message says so itself (`CTRL_SWITCH`).
+   */
+  readonly switchDirection?: true;
 }
+
+/** What a prompt that takes Ctrl (`switchDirection`) puts after its message's first words. */
+export const CTRL_SWITCH = ' (hold Ctrl to switch direction)';
 
 /** A point; with `rubberBand` the front-end draws a line from it and a number is a direct distance. */
 export interface PointPrompt extends PromptBase {
@@ -386,6 +396,12 @@ export type DialogRequest =
       readonly settings: MatchSettings;
       /** Plot Style is offered: the drawing uses named plot styles. */
       readonly plotStyles: boolean;
+    }
+  | {
+      /** DDPTYPE's Point Style (M3-01 part 6), opened on PDMODE and PDSIZE. */
+      readonly type: 'pointstyle';
+      readonly mode: number;
+      readonly size: number;
     };
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
@@ -418,6 +434,8 @@ export type PromptAnswer =
       readonly point: Vec2;
       /** A click made with Shift held (TRIM's shift-select to extend, M3-02 part 2). */
       readonly shift?: true;
+      /** Picked with Ctrl held, at a prompt that takes it (`switchDirection`, M3-01 part 6). */
+      readonly ctrl?: true;
       /**
        * A deferred TAN or PER pick (M3-01 part 2), only at a prompt that takes it (`deferred`):
        * `point` is where the object was picked, which the command solves from.
@@ -432,8 +450,15 @@ export type PromptAnswer =
        * picked turns the polygon, a typed one does not).
        */
       readonly to?: Vec2;
+      /** Picked with Ctrl held, at a prompt that takes it (`switchDirection`). */
+      readonly ctrl?: true;
     }
-  | { readonly kind: 'angle'; readonly value: number }
+  | {
+      readonly kind: 'angle';
+      readonly value: number;
+      /** Picked with Ctrl held, at a prompt that takes it (`switchDirection`). */
+      readonly ctrl?: true;
+    }
   | { readonly kind: 'keyword'; readonly keyword: string }
   | {
       readonly kind: 'string';
@@ -473,6 +498,8 @@ export type PromptAnswer =
       readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
       /** Property Settings' checkboxes as OK closed it. */
       readonly matchprop?: MatchSettings;
+      /** Point Style's PDMODE and PDSIZE as OK closed it (negative: relative to the screen). */
+      readonly pointStyle?: { readonly mode: number; readonly size: number };
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }

@@ -3026,3 +3026,58 @@ button {
   align-items: center;
   gap: 4px;
 }
+
+/* DDPTYPE's Point Style (M3-01 part 6): the twenty styles in four rows of five. */
+.point-style-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 40px);
+  gap: 4px;
+  margin: 0 0 12px;
+}
+
+.point-style-tile {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--chrome-border);
+  cursor: pointer;
+}
+
+.point-style-tile:has(input:checked) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.point-style-tile:has(input:focus-visible) {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.point-style-tile input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.point-style-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.point-style-size input {
+  width: 8em;
+}
+
+.point-style-error {
+  margin: 4px 0 0;
+  color: var(--danger-text);
+}
+
+.point-style-relative {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  border: 0;
+  padding: 0;
+}

@@ -32,6 +32,7 @@ import {
   rectangleVertices,
   type RectangleCorners,
 } from '../../geom/shapes';
+import { TAU } from '../../geom/angle';
 import { toleranceForSize, type Tolerance } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
 import { angleOf, distance, dot, fromAngle, midpoint, perp, sub } from '../../geom/vec';
@@ -131,7 +132,7 @@ export function sketchTolerance(...points: readonly Vec2[]): Tolerance {
  * The circle or arc a sketch makes with the cursor at `cursor`; undefined where none is (the
  * cursor on the start, three collinear points).
  */
-export function sketchGeometry(s: Sketch, cursor: Vec2): EntityGeometry | undefined {
+export function sketchGeometry(s: Sketch, cursor: Vec2, ctrl = false): EntityGeometry | undefined {
   if (isShapeSketch(s)) return shapeSketchGeometry(s, cursor);
   if (s.shape === 'spline') return splineSketch(s, cursor);
   switch (s.shape) {
@@ -151,7 +152,7 @@ export function sketchGeometry(s: Sketch, cursor: Vec2): EntityGeometry | undefi
       return l && { kind: 'LINE', start: l.start, end: l.end };
     }
     case 'pline':
-      return plineSegment(s, cursor);
+      return plineSegment(s, cursor, ctrl);
     case 'rectangle':
       return rectangleSketch(s, cursor);
     case 'polygon': {
@@ -163,14 +164,62 @@ export function sketchGeometry(s: Sketch, cursor: Vec2): EntityGeometry | undefi
       if (distance(s.a, cursor) <= sketchTolerance(s.a, cursor).linear) return undefined;
       return closed(polygonOnEdge(s.a, cursor, s.sides));
     default: {
-      const arc = sketchArc(s, cursor);
+      const arc = sketchArc(s, cursor, ctrl);
       return arc && dxfArc(arc);
     }
   }
 }
 
-/** The arc an arc sketch makes with the cursor at `cursor`. */
-export function sketchArc(s: ArcSketch, cursor: Vec2): BulgeArc | undefined {
+/**
+ * The arc an arc sketch makes with the cursor at `cursor`; with `ctrl` (Ctrl held at a prompt
+ * that switches, M3-01 part 6) the other way round (`switchArc`).
+ */
+export function sketchArc(s: ArcSketch, cursor: Vec2, ctrl = false): BulgeArc | undefined {
+  const arc = cursorArc(s, cursor);
+  return ctrl && arc ? switchArc(s, arc) : arc;
+}
+
+/**
+ * An arc drawn the other way round, as Ctrl held draws it (M3-01 part 6; AutoCAD 2024 Help, "ARC
+ * (Command)": "Hold down the Ctrl key as you drag to draw in a clockwise direction"). What the
+ * construction fixes stays: where the start and centre are fixed and a value is given (an
+ * included angle, a chord), the same value clockwise; where the start and end are fixed with an
+ * angle or radius, the same angle or radius on the chord's other side; where points fix the
+ * circle (an end on the ray from the centre, the centre, a start tangent), the rest of that
+ * circle, which leaves the start backwards. Three points fix the arc: it does not switch.
+ * AutoCAD's help says no more than "clockwise"; this is the arc its drag shows for each method.
+ */
+export function switchArc(s: ArcSketch, arc: BulgeArc): BulgeArc | undefined {
+  const by = 'by' in s ? s.by : undefined;
+  switch (s.shape) {
+    case 'arc3p':
+      return arc;
+    case 'arcSC':
+      return by === 'end' ? otherWayRound(arc) : { ...arc, sweep: -arc.sweep };
+    case 'arcSA':
+      return by === 'center' ? { ...arc, sweep: -arc.sweep } : acrossChord(arc);
+    case 'arcSR':
+      return acrossChord(arc);
+    case 'arcSE':
+      return by === 'angle' || by === 'radius' ? acrossChord(arc) : otherWayRound(arc);
+    case 'arcTangent':
+      return otherWayRound(arc);
+  }
+}
+
+/** The rest of the arc's circle, from the same start to the same end. */
+function otherWayRound(arc: BulgeArc): BulgeArc {
+  return { ...arc, sweep: arc.sweep > 0 ? arc.sweep - TAU : arc.sweep + TAU };
+}
+
+/** The same arc mirrored in its chord: the same ends and turn, the other way. */
+function acrossChord(arc: BulgeArc): BulgeArc | undefined {
+  const start = arcEnd({ ...arc, sweep: 0 }).point;
+  const end = arcEnd(arc).point;
+  return arcStartEndAngle(start, end, -arc.sweep, sketchTolerance(start, end));
+}
+
+function cursorArc(s: ArcSketch, cursor: Vec2): BulgeArc | undefined {
   switch (s.shape) {
     case 'arcSA': {
       const tol = sketchTolerance(s.start, cursor);
@@ -224,11 +273,11 @@ export function chordEnd(start: Vec2, angle: number, radius: number, direction: 
 }
 
 /** PLINE's segment to the cursor as a two-vertex polyline, as it will be drawn. */
-function plineSegment(s: Extract<Sketch, { shape: 'pline' }>, cursor: Vec2) {
+function plineSegment(s: Extract<Sketch, { shape: 'pline' }>, cursor: Vec2, ctrl: boolean) {
   let bulge = 0;
   let end = cursor;
   if (s.arc) {
-    const arc = sketchArc(s.arc, cursor);
+    const arc = sketchArc(s.arc, cursor, ctrl);
     if (!arc) return undefined;
     bulge = bulgeOf(arc);
     end = arcEnd(arc).point;

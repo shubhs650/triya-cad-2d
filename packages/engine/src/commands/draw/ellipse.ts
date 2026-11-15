@@ -9,18 +9,21 @@
 //        Included angle: Specify included angle for arc <180>:
 // The first axis may be the major or the minor one (`geom/shapes.ts`). Arc angles count CCW
 // from the first axis endpoint, typed ones too (`AnglePrompt.zero`). Isocircle is offered only
-// with isometric snap, which Triya does not have yet; PELLIPSE 1 (polyline ellipses) is not
-// honoured: ELLIPSE always makes an ELLIPSE (PELLIPSE's initial value is 0). AutoCAD's help
+// with isometric snap, which Triya does not have yet (M3-06). With PELLIPSE 1 (part 6) ELLIPSE
+// makes a closed polyline of arcs instead (`ellipsePolyline`) and leaves Arc out of its first
+// prompt, as AutoCAD's does: a polyline ellipse cannot be an elliptical arc. AutoCAD's help
 // does not word its refusals; "*Invalid*" is what its command line gives for them (as ARC).
 import { normalizeAngle, TAU } from '../../geom/angle';
 import type { Ellipse } from '../../geom/curves';
 import {
   ellipseOf,
+  ellipsePolyline,
   firstAxisAngle,
   otherFromRotation,
   type EllipseAxes,
 } from '../../geom/ellipse-xline';
 import type { Vec2 } from '../../geom/types';
+import type { EntityGeometry } from '../../model/types';
 import { midpoint, sub } from '../../geom/vec';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
@@ -36,18 +39,21 @@ export function ellipseCommand(): CommandDef {
   return {
     name: 'ELLIPSE',
     async *run(ctx) {
-      const e = yield* ellipsePrompts(ctx);
+      const polyline = ctx.model.header.get('$PELLIPSE') === 1;
+      const e = yield* ellipsePrompts(ctx, polyline);
       if (!e) return;
       const props = currentProps(ctx.model);
-      ctx.edit((b) => b.addEntity({ owner: ctx.space, ...props, geom: e }));
+      const vertices = polyline ? ellipsePolyline(e, tolOfEllipse(e)) : undefined;
+      const geom: EntityGeometry = vertices ? { kind: 'LWPOLYLINE', vertices, closed: true } : e;
+      ctx.edit((b) => b.addEntity({ owner: ctx.space, ...props, geom }));
     },
   };
 }
 
-async function* ellipsePrompts(ctx: CommandContext): Sub<Ellipse | undefined> {
+async function* ellipsePrompts(ctx: CommandContext, polyline: boolean): Sub<Ellipse | undefined> {
   const a = yield ctx.prompt.point({
     message: 'Specify axis endpoint of ellipse or',
-    options: ['Arc', 'Center'],
+    options: polyline ? ['Center'] : ['Arc', 'Center'],
   });
   if (a.kind === 'keyword' && a.keyword === 'Arc') {
     const axes = yield* arcAxes(ctx);
@@ -216,6 +222,9 @@ function angleOfParameter(axes: EllipseAxes, u: number): number {
   const a = Math.hypot(axes.axis.x, axes.axis.y);
   return normalizeAngle(Math.atan2(Math.abs(axes.other) * Math.sin(u), a * Math.cos(u)));
 }
+
+const tolOfEllipse = (e: Ellipse) =>
+  sketchTolerance(e.center, { x: e.center.x + e.majorAxis.x, y: e.center.y + e.majorAxis.y });
 
 const tolOf = (e: EllipseAxes) =>
   sketchTolerance(

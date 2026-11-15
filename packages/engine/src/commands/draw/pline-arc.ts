@@ -16,8 +16,8 @@
 //   Second pt:  Specify second point on arc:
 //               Specify end point of arc:
 // An endpoint alone draws the arc tangent to the path so far. AutoCAD 2024 adds "(hold Ctrl to
-// switch direction)" after "endpoint of arc"; Triya's front-ends have no such modifier yet (as
-// ARC, `arc.ts`), so the prompts leave it out. An answer that makes no arc (an end straight on
+// switch direction)" to the prompts that finish an arc but Second pt's (M3-01 part 6): a pick
+// with Ctrl held draws it the other way round, as ARC's (`switchArc`). An answer that makes no arc (an end straight on
 // along the tangent, a chord longer than the diameter) is refused with "*Invalid*" and asked
 // again.
 //
@@ -38,8 +38,8 @@ import type { Vec2 } from '../../geom/types';
 import { angleOf, fromAngle } from '../../geom/vec';
 import type { Handle } from '../../model/handle';
 import type { CommandContext } from '../command';
-import type { Prompt, PromptAnswer } from '../prompt';
-import { INVALID_ARC } from './arc';
+import { CTRL_SWITCH, type Prompt, type PromptAnswer } from '../prompt';
+import { INVALID_ARC, switched } from './arc';
 import { chordEnd, sketchTolerance, type ArcSketch } from './sketch';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -112,7 +112,7 @@ export async function* arcSegment(
     for (;;) {
       const a = yield ask(sketch, prompt);
       if (a.kind === 'enter') return undefined;
-      const arc = make(a);
+      const arc = sketch ? switched(sketch, a, make(a)) : make(a);
       if (arc) return arc;
       ctx.message(INVALID_ARC);
     }
@@ -128,9 +128,10 @@ export async function* arcSegment(
     const a = yield ask(
       { shape: 'arcTangent', start, direction: o.direction },
       ctx.prompt.point({
-        message: 'Specify endpoint of arc or',
+        message: `Specify endpoint of arc${CTRL_SWITCH} or`,
         options,
         rubberBand: { from: start },
+        switchDirection: true,
         ...(o.default !== undefined && {
           default: { kind: 'keyword' as const, keyword: o.default },
         }),
@@ -138,7 +139,11 @@ export async function* arcSegment(
     );
     let arc: BulgeArc | undefined;
     if (a.kind === 'point') {
-      arc = arcStartDirectionEnd(start, o.direction, a.point, tol(a.point));
+      arc = switched(
+        { shape: 'arcTangent', start, direction: o.direction },
+        a,
+        arcStartDirectionEnd(start, o.direction, a.point, tol(a.point)),
+      );
       if (!arc) {
         ctx.message(INVALID_ARC);
         continue;
@@ -165,7 +170,11 @@ export async function* arcSegment(
         const dir = fromAngle(d.value);
         arc = yield* last(
           { shape: 'arcTangent', start, direction: dir },
-          ctx.prompt.point({ message: 'Specify endpoint of the arc', rubberBand: { from: start } }),
+          ctx.prompt.point({
+            message: `Specify endpoint of the arc${CTRL_SWITCH}`,
+            rubberBand: { from: start },
+            switchDirection: true,
+          }),
           (e) => arcStartDirectionEnd(start, dir, pointOf(e), tol(pointOf(e))),
         );
         break;
@@ -219,13 +228,18 @@ async function* byAngle(
     const a = yield ask(
       { shape: 'arcSA', by: 'end', start, angle },
       ctx.prompt.point({
-        message: 'Specify endpoint of arc or',
+        message: `Specify endpoint of arc${CTRL_SWITCH} or`,
         options: ['CEnter', 'Radius'],
         rubberBand: { from: start },
+        switchDirection: true,
       }),
     );
     if (a.kind === 'point') {
-      const arc = arcStartEndAngle(start, a.point, angle, sketchTolerance(start, a.point));
+      const arc = switched(
+        { shape: 'arcSA', by: 'end', start, angle },
+        a,
+        arcStartEndAngle(start, a.point, angle, sketchTolerance(start, a.point)),
+      );
       if (arc) return arc;
       ctx.message(INVALID_ARC);
       continue;
@@ -234,7 +248,11 @@ async function* byAngle(
     if (a.keyword === 'CEnter') {
       return yield* last(
         { shape: 'arcSA', by: 'center', start, angle },
-        ctx.prompt.point({ message: 'Specify center point of arc', rubberBand: { from: start } }),
+        ctx.prompt.point({
+          message: `Specify center point of arc${CTRL_SWITCH}`,
+          rubberBand: { from: start },
+          switchDirection: true,
+        }),
         (c) => arcStartCenterAngle(start, pointOf(c), angle, sketchTolerance(start, pointOf(c))),
       );
     }
@@ -262,17 +280,17 @@ async function* byCenter(
     const a = yield ask(
       { shape: 'arcSC', by: 'end', start, center },
       ctx.prompt.point({
-        message: 'Specify endpoint of arc or',
+        message: `Specify endpoint of arc${CTRL_SWITCH} or`,
         options: ['Angle', 'Length'],
         rubberBand: { from: center },
+        switchDirection: true,
       }),
     );
     if (a.kind === 'point') {
-      const arc = arcStartCenterEnd(
-        start,
-        center,
-        a.point,
-        sketchTolerance(start, center, a.point),
+      const arc = switched(
+        { shape: 'arcSC', by: 'end', start, center },
+        a,
+        arcStartCenterEnd(start, center, a.point, sketchTolerance(start, center, a.point)),
       );
       if (arc) return arc;
       ctx.message(INVALID_ARC);
@@ -282,13 +300,21 @@ async function* byCenter(
     if (a.keyword === 'Angle') {
       return yield* last(
         { shape: 'arcSC', by: 'angle', start, center },
-        ctx.prompt.angle({ message: 'Specify included angle', base: center }),
+        ctx.prompt.angle({
+          message: `Specify included angle${CTRL_SWITCH}`,
+          base: center,
+          switchDirection: true,
+        }),
         (v) => arcStartCenterAngle(start, center, valueOf(v), tol),
       );
     }
     return yield* last(
       { shape: 'arcSC', by: 'chord', start, center },
-      ctx.prompt.distance({ message: 'Specify length of chord', base: start }),
+      ctx.prompt.distance({
+        message: `Specify length of chord${CTRL_SWITCH}`,
+        base: start,
+        switchDirection: true,
+      }),
       (v) => arcStartCenterChord(start, center, valueOf(v), tol),
     );
   }
@@ -308,13 +334,18 @@ async function* byRadius(
     const a = yield ask(
       { shape: 'arcSR', start, radius: r },
       ctx.prompt.point({
-        message: 'Specify endpoint of arc or',
+        message: `Specify endpoint of arc${CTRL_SWITCH} or`,
         options: ['Angle'],
         rubberBand: { from: start },
+        switchDirection: true,
       }),
     );
     if (a.kind === 'point') {
-      const arc = arcStartEndRadius(start, a.point, r, sketchTolerance(start, a.point));
+      const arc = switched(
+        { shape: 'arcSR', start, radius: r },
+        a,
+        arcStartEndRadius(start, a.point, r, sketchTolerance(start, a.point)),
+      );
       if (arc) return arc;
       ctx.message(INVALID_ARC);
       continue;
@@ -358,8 +389,9 @@ async function* chordDirection(
   return yield* last(
     { shape: 'arcSA', by: 'chord', start, angle, radius: r },
     ctx.prompt.angle({
-      message: 'Specify direction of chord for arc',
+      message: `Specify direction of chord for arc${CTRL_SWITCH}`,
       base: start,
+      switchDirection: true,
       default: { kind: 'angle', value: tangent },
     }),
     (v) => {
