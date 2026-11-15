@@ -1,9 +1,11 @@
 // Annotations drawn as parts (M1-52): which kinds, and a part as an entity of its own.
 // LEADER needs only the drawing's tables; TOLERANCE measures its text, and MULTILEADER does to
-// underline or overline it (M1-111).
+// underline or overline it (M1-111). An MLINE draws as parts too (M3-14): its elements, caps,
+// joints and fill.
 
 import type { Entity, EntityGeometry } from '../model/types';
 import { leaderParts } from './leader';
+import { mlineParts } from './mline';
 import { multiLeaderParts, type AnnotationPart, type AnnotationTables } from './multileader';
 import { toleranceParts, type TextMeasure } from './tolerance';
 
@@ -20,6 +22,7 @@ export function annotationParts(
   if (g.kind === 'MULTILEADER') return multiLeaderParts(g, model, measure);
   if (g.kind === 'LEADER') return leaderParts(g, xdata, model);
   if (g.kind === 'TOLERANCE') return measure && toleranceParts(g, xdata, model, measure);
+  if (g.kind === 'MLINE') return mlineParts(g, model, { fill: true });
   return undefined;
 }
 

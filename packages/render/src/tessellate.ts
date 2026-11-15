@@ -10,8 +10,8 @@
 // Text and shapes inside complex linetypes draw in their gaps through the text engine and SHX
 // shapes (M1-45, `linetypeEmbedPrimitives`) when fonts are passed.
 //
-// INSERT, DIMENSION, ACAD_TABLE and MULTILEADER yield nothing here: the renderer draws them
-// from their blocks or parts (`expandInsert`, M1-14, M1-15, M1-17 and M1-52). Kinds drawn by later tasks yield nothing
+// INSERT, DIMENSION, ACAD_TABLE, MULTILEADER and MLINE yield nothing here: the renderer draws them
+// from their blocks or parts (`expandInsert`, M1-14, M1-15, M1-17, M1-52 and M3-14). Kinds drawn by later tasks yield nothing
 // either, each noted where it falls through:
 // attributes (M1-14) and the MTEXT background mask (M1-41 part 2). IMAGE
 // and WIPEOUT come from `imagePrimitives` (M1-19), PDFUNDERLAY from `underlayPrimitives` (M1-20). TEXT and MTEXT draw their glyphs (`textPrimitives`, M1-41)

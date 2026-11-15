@@ -7,6 +7,7 @@ import {
   toleranceForSize,
   type ChangeSet,
   type DimStyleRecord,
+  type MLineStyleRecord,
   type DocumentInit,
   type EntityGeometry,
   type EntityInit,
@@ -96,6 +97,8 @@ export interface DrawingExtra {
   readonly textStyles?: readonly TextStyleRecord[];
   /** M1-52: dimension styles (LEADER). */
   readonly dimStyles?: readonly DimStyleRecord[];
+  /** M3-14: multiline styles. */
+  readonly mlineStyles?: readonly MLineStyleRecord[];
   /** M1-18: Layout1's page setup and layout flags (1 = PSLTSCALE). */
   readonly layoutPlot?: LayoutPlot;
   readonly layoutFlags?: number;
@@ -136,6 +139,7 @@ export function drawingInit(entities: EntityInit[], extra: DrawingExtra = {}): D
       ],
       ...(extra.textStyles ? { textStyles: [...extra.textStyles] } : {}),
       ...(extra.dimStyles ? { dimStyles: [...extra.dimStyles] } : {}),
+      ...(extra.mlineStyles ? { mlineStyles: [...extra.mlineStyles] } : {}),
       blockRecords: [
         { handle: MODEL, name: '*Model_Space', units: 0, explodable: true, scalable: true },
         { handle: PAPER, name: '*Paper_Space', units: 0, explodable: true, scalable: true },

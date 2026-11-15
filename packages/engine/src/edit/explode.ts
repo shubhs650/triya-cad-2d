@@ -40,20 +40,13 @@
 import { compose, rotation, scaling, translation } from '../geom/transform';
 import { explodePolyline } from '../geom/eval';
 import { fitSpline } from '../geom/fit';
-import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
-import type {
-  Entity,
-  EntityGeometry,
-  HatchGeometry,
-  MLineGeometry,
-  PlanarProps,
-  RegionGeometry,
-} from '../model/types';
+import type { Entity, EntityGeometry, HatchGeometry, RegionGeometry } from '../model/types';
 import { leaderParts } from '../annotation/leader';
-import { linetypeRef, multiLeaderParts, type AnnotationPart } from '../annotation/multileader';
+import { fileArc, mlineParts, mlineProblem, planarOf } from '../annotation/mline';
+import { multiLeaderParts, type AnnotationPart } from '../annotation/multileader';
 import type { TextMeasure } from '../annotation/tolerance';
 import { tableAxes } from '../spatial/entity-bounds';
 import { assocArrayOf } from './assoc-array';
@@ -259,12 +252,13 @@ export function explodeObjects(
         continue;
       }
       case 'MLINE': {
-        const parts = mlinePieces(g, model);
-        if (typeof parts === 'string') {
-          count(refused, parts);
+        // What the canvas draws (M3-14) less the fill, which AutoCAD's EXPLODE drops.
+        const problem = mlineProblem(g, model);
+        if (problem !== undefined) {
+          count(refused, problem);
           continue;
         }
-        replace(e, parts);
+        replace(e, mlineParts(g, model, { fill: false }));
         continue;
       }
       case 'HATCH': {
@@ -340,20 +334,6 @@ function asExploded(p: AnnotationPart): AnnotationPart[] {
   return [p];
 }
 
-/** The plane an exploded object's pieces keep. */
-function planarOf(g: PlanarProps): PlanarProps {
-  return {
-    ...(g.elevation !== undefined && g.elevation !== 0 && { elevation: g.elevation }),
-    ...(g.normal !== undefined && { normal: g.normal }),
-  };
-}
-
-/** Arc angles in [0, 2π), as the file has them. */
-const fileArc = <T extends EntityGeometry>(g: T): T =>
-  g.kind === 'ARC'
-    ? { ...g, startAngle: normalizeAngle(g.startAngle), endAngle: normalizeAngle(g.endAngle) }
-    : g;
-
 /** A region's edges, loop by loop. */
 function regionPieces(g: RegionGeometry): AnnotationPart[] {
   const planar = planarOf(g);
@@ -384,101 +364,6 @@ function hatchPieces(
   }
   return out;
 }
-
-// MLINESTYLE DXF 70 bits (AutoCAD DXF reference, MLINESTYLE).
-const MLS_MITER = 2;
-const MLS_START_SQUARE = 16;
-const MLS_START_INNER = 32;
-const MLS_START_ROUND = 64;
-const MLS_END_SQUARE = 256;
-const MLS_END_INNER = 512;
-const MLS_END_ROUND = 1024;
-
-/**
- * A multiline's lines and arcs (ezdxf's `render/mline.py`, MIT, reads the stored geometry the
- * same way): each element's point at a vertex lies along the vertex's miter at the element's
- * first parameter (scale and justification are already in it), and each element runs from
- * vertex to vertex in its colour and linetype. Square caps and displayed joints are lines from
- * the outermost elements to the middle between them; round caps join the outermost elements
- * with a half circle and inner arcs the next ones in, two quarter circles when the two
- * elements' colours differ.
- */
-function mlinePieces(g: MLineGeometry, model: DocumentModel): AnnotationPart[] | string {
-  const style = g.style === undefined ? undefined : model.tables.mlineStyles.get(g.style);
-  if (!style || style.elements.length === 0) return 'the multiline has no style';
-  const n = style.elements.length;
-  if (g.vertices.length < 2) return 'the multiline has fewer than two vertices';
-  if (g.vertices.some((v) => v.elements.length !== n)) {
-    return 'the multiline does not match its style';
-  }
-  const planar = planarOf(g);
-  const props = (k: number): Omit<AnnotationPart, 'geom'> => {
-    const el = style.elements[k]!;
-    const linetype = linetypeRef(model, el.linetype);
-    return { color: el.color, ...(linetype !== undefined && { linetype }) };
-  };
-  const at = (v: MLineGeometry['vertices'][number], k: number): Vec2 => {
-    const t = v.elements[k]!.parameters[0] ?? 0;
-    return { x: v.position.x + v.miter.x * t, y: v.position.y + v.miter.y * t };
-  };
-  const miters = g.vertices.map((v) => style.elements.map((_, k) => at(v, k)));
-  const closed = (g.flags & 2) !== 0;
-  if (closed) miters.push(miters[0]!);
-  // Elements from the lowest offset (bottom) to the highest (top).
-  const order = style.elements
-    .map((_, k) => k)
-    .sort((i, j) => style.elements[i]!.offset - style.elements[j]!.offset);
-  const bottom = order[0]!;
-  const top = order[n - 1]!;
-  const line = (a: Vec2, c: Vec2, k: number): AnnotationPart[] =>
-    a.x === c.x && a.y === c.y
-      ? []
-      : [{ ...props(k), geom: { kind: 'LINE', start: a, end: c, ...planar } }];
-  const joint = (m: readonly Vec2[]): AnnotationPart[] => {
-    const mid = { x: (m[top]!.x + m[bottom]!.x) / 2, y: (m[top]!.y + m[bottom]!.y) / 2 };
-    return [...line(m[top]!, mid, top), ...line(m[bottom]!, mid, bottom)];
-  };
-  const caps = (m: readonly Vec2[], from: number, to: number): AnnotationPart[] => {
-    const a = m[from]!;
-    const c = m[to]!;
-    const center = { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 };
-    const radius = Math.hypot(c.x - a.x, c.y - a.y) / 2;
-    if (!(radius > 0)) return [];
-    const angle = Math.atan2(a.y - center.y, a.x - center.x);
-    const arc = (a0: number, a1: number, k: number): AnnotationPart => ({
-      ...props(k),
-      geom: fileArc({ kind: 'ARC', center, radius, startAngle: a0, endAngle: a1, ...planar }),
-    });
-    const same = sameColor(style.elements[from]!.color, style.elements[to]!.color);
-    return same
-      ? [arc(angle, angle + Math.PI, from)]
-      : [arc(angle, angle + Math.PI / 2, from), arc(angle + Math.PI / 2, angle + Math.PI, to)];
-  };
-  const out: AnnotationPart[] = [];
-  const flags = style.styleFlags;
-  const first = miters[0]!;
-  const last = miters[miters.length - 1]!;
-  if (!closed) {
-    if (flags & MLS_START_SQUARE) out.push(...joint(first));
-    if (flags & MLS_START_ROUND) out.push(...caps(first, top, bottom));
-    if (flags & MLS_START_INNER && n > 3) out.push(...caps(first, order[n - 2]!, order[1]!));
-  }
-  for (let i = 1; i < miters.length; i++) {
-    for (let k = 0; k < n; k++) out.push(...line(miters[i - 1]![k]!, miters[i]![k]!, k));
-  }
-  if (flags & MLS_MITER) {
-    for (let i = closed ? 0 : 1; i < miters.length - 1; i++) out.push(...joint(miters[i]!));
-  }
-  if (!closed) {
-    if (flags & MLS_END_SQUARE) out.push(...joint(last));
-    if (flags & MLS_END_ROUND) out.push(...caps(last, bottom, top));
-    if (flags & MLS_END_INNER && n > 3) out.push(...caps(last, order[1]!, order[n - 2]!));
-  }
-  return out;
-}
-
-const sameColor = (a: Entity['color'], c: Entity['color']): boolean =>
-  JSON.stringify(a) === JSON.stringify(c);
 
 const article = (kind: string): string => (/^[AEIOU]/.test(kind) ? `an ${kind}` : `a ${kind}`);
 
