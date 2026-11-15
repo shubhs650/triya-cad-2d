@@ -125,6 +125,9 @@ test('variables typed at Command:, SETVAR, and REVCLOUDGRIPS 0', async ({ page }
   // REVCLOUDGRIPS 1 (AutoCAD's initial value): the corners only.
   const pick = at(100, 80);
   await page.mouse.click(pick.x, pick.y);
+  // Off the cloud, so the selection preview (M3-04 part 5) does not light it up as well.
+  const away = at(140, 95);
+  await page.mouse.move(away.x, away.y);
   await expect.poll(() => blue(page, at(20, 20))).toBeGreaterThan(20);
   expect(await blue(page, at(60, 20))).toBe(0);
   await shot('1-revcloudgrips-1.png');
@@ -322,6 +325,8 @@ test('AUTOSNAP, DYNMODE, PICKFIRST and SCREENSIZE', async ({ page }) => {
   await type(page, '0', 'Command:');
   await page.mouse.click(view.box.x + onLine.x, view.box.y + onLine.y);
   const lineEnd = { x: view.box.x + view.at(O, O).x, y: view.box.y + view.at(O, O).y };
+  // Off the line, so the selection preview (M3-04 part 5) does not light it up instead.
+  await page.mouse.move(view.box.x + onLine.x, view.box.y + onLine.y - 40);
   await page.waitForTimeout(300);
   expect(await blue(page, lineEnd)).toBe(0);
   await type(page, 'PICKFIRST', 'Enter new value for PICKFIRST <0>:');
