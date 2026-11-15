@@ -17,7 +17,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | RECTANG | REC | 1 | Chamfer, Elevation, Fillet, Thickness, Width, Area, Dimensions, Rotation | x (#375: a closed LWPOLYLINE dragged to its other corner; Chamfer (first distance on the side arriving at each corner), Fillet, Width, Elevation and Thickness (written to the polyline, not shown in 2D) kept for the drawing's next rectangles and listed as "Current rectangle modes"; corners too big for the rectangle are left square; Area with a length or width (the corners' area counted), Dimensions with the cursor choosing the side, Rotation typed or by Pick points, kept) |
 | POLYGON | POL | 2 | Edge, Inscribed/Circumscribed | x (#375: 3 to 1024 sides (the last kept, POLYSIDES), Inscribed or Circumscribed (the last kept); a picked radius turns the polygon to the cursor, a typed one levels the bottom edge (SNAPANG waits for M3-06); Edge counter-clockwise from its first endpoint; dragged) |
 | ELLIPSE | EL | 2 | Arc, Center, Rotation | |
-| SPLINE | SPL | 2 | Method (Fit/CV), Knots, Degree, Object, Close, Tolerance | |
+| SPLINE | SPL | 2 | Method (Fit/CV), Knots, Degree, Object, Close, Tolerance | x (#378, M3-01 part 5: Fit through the points picked, a cubic with Chord, Square root or Uniform knots, start and end Tangency, toLerance (saved as DXF 44; the curve still passes through the fit points, AutoCAD's approximation being undocumented), Undo, Close (periodic) and Enter; CV by control vertices of degree 1 to 10 (uniform knots, clamped; Close periodic), the degree lowered while fewer vertices carry it; dragged as it grows; the method, knots and degree kept for the drawing's next spline (SPLMETHOD, SPLKNOTS, SPLDEGREE, session only); Object turns quadratic and cubic spline-fit polylines into splines on their frames, erasing them (DELOBJ's default). Esc draws nothing) |
 | XLINE | XL | 2 | Hor, Ver, Ang, Bisect, Offset | |
 | RAY | — | 2 | | |
 | POINT | PO | 2 | PDMODE, PDSIZE, Multiple | |
@@ -28,8 +28,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | REGION | REG | 3 | 2D only | |
 | WIPEOUT | — | 1 | Frames, Polyline | x (#231; Frames ON/OFF and "Display but not plot", shown on screen and left off plots, #260) |
 | REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | x (#231; Modify and corner grips #258; REVCLOUDGRIPS 0, a grip at every arc's end, #302) |
-| DIVIDE | DIV | 2 | Block | |
-| MEASURE | ME | 2 | Block | |
+| DIVIDE | DIV | 2 | Block | x (#378, M3-01 part 5: 2 to 32767 equal segments of a line, arc, circle, ellipse, polyline or spline, by length along it, n − 1 POINTs on an open object and n on a closed one (a circle from angle 0); Block by name, aligned with the object or not, without attributes; on the current layer, the marks left as the Previous selection set) |
+| MEASURE | ME | 2 | Block | x (#378, M3-01 part 5: a POINT or block every segment length (typed or two points) from the end nearer the pick, a closed object from its start; no mark on the far end even when the length divides it exactly (AutoCAD's documentation is silent; DIVIDE never marks an end); Block as DIVIDE's) |
 | MLINE | ML | 3 | read/render required; creation Should | |
 | SKETCH | — | 3 | | |
 

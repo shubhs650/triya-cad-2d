@@ -5,6 +5,7 @@ export * from './arclength';
 export * from './bounds';
 export * from './closest';
 export * from './construct';
+export * from './control-spline';
 export * from './curves';
 export * from './eval';
 export * from './fit';

@@ -973,6 +973,9 @@ export class PromptBus {
         this.#idle.set(ids);
         this.#showSelection();
       },
+      setPrevious: (ids) => {
+        if (ids.length > 0) this.#previous = [...ids];
+      },
       edit: (build) => {
         const b = new ChangeSetBuilder(this.#model);
         build(b);

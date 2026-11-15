@@ -166,10 +166,12 @@ describe('completions', () => {
     expect(completions(registry, '0,0')).toEqual([]);
     expect(completions(registry, '')).toEqual([]);
     expect(completions(registry, 'ZZZ')).toEqual([]);
-    // An acad.pgp alias of a command not built yet (SPL, SPLINE's) completes nothing; REC,
+    // An acad.pgp alias of a command not built yet (BO, BOUNDARY's) completes nothing; SPL,
+    // SPLINE's since M3-01 part 5, completes SPLINE; REC,
     // RECTANG's since M3-01 part 3, completes RECTANG; C, CIRCLE's since M3-01, completes CIRCLE
     // first, then CHAMFER, CLOSE, COPY and the Clipboard commands.
-    expect(completions(registry, 'SPL')).toEqual([]);
+    expect(completions(registry, 'BO')).toEqual([]);
+    expect(completions(registry, 'SPL')).toEqual([{ name: 'SPLINE', alias: 'SPL' }]);
     expect(completions(registry, 'REC')[0]).toEqual({ name: 'RECTANG', alias: 'REC' });
     expect(completions(registry, 'C')).toEqual([
       { name: 'CIRCLE', alias: 'C' },

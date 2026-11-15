@@ -904,6 +904,7 @@ const splineWriter: Writer<SplineGeometry> = {
           ? KnotParametrization.Custom
           : KnotParametrization.Chord;
     }
+    if (d('fitTolerance')) s.fitTolerance = g.fitTolerance ?? 1e-10;
     if (d('closed')) s.isClosed = g.closed;
     if (d('periodic')) s.isPeriodic = g.periodic;
     if (d('normal') && (before || g.normal)) s.normal = xyz(g.normal);

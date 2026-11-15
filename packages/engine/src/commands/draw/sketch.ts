@@ -36,6 +36,7 @@ import { toleranceForSize, type Tolerance } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
 import { angleOf, distance, dot, fromAngle, midpoint, perp, sub } from '../../geom/vec';
 import type { EntityGeometry, LwPolylineGeometry, PolylineVertex } from '../../model/types';
+import { splineSketch, type SplineSketch } from './spline-shape';
 
 /** A circle or arc being drawn, what the cursor gives it named by the construction. */
 export type Sketch =
@@ -109,7 +110,9 @@ export type Sketch =
       readonly inscribed: boolean;
     }
   /** POLYGON Edge: the cursor is the edge's second endpoint. */
-  | { readonly shape: 'polygonEdge'; readonly a: Vec2; readonly sides: number };
+  | { readonly shape: 'polygonEdge'; readonly a: Vec2; readonly sides: number }
+  /** SPLINE (part 5): the cursor is the next fit point or vertex, or an end's tangent. */
+  | SplineSketch;
 
 /** The sketches that make an arc (their shapes start `arc`). */
 export type ArcSketch = Extract<Sketch, { shape: `arc${string}` }>;
@@ -126,6 +129,7 @@ export function sketchTolerance(...points: readonly Vec2[]): Tolerance {
  * cursor on the start, three collinear points).
  */
 export function sketchGeometry(s: Sketch, cursor: Vec2): EntityGeometry | undefined {
+  if (s.shape === 'spline') return splineSketch(s, cursor);
   switch (s.shape) {
     case 'circle': {
       const d = distance(s.center, cursor);
