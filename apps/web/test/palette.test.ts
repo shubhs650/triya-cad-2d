@@ -122,6 +122,7 @@ describe('palette search', () => {
       'SAVEAS',
       'SCALE',
       'SELECT',
+      'SELECTSIMILAR',
       'SETVAR',
       'SPLINE',
       'SPLINEDIT',

@@ -17,6 +17,9 @@
 //   - a press that finds nothing and is dragged draws a lasso (M3-04 part 2, "To Select
 //     Objects": "click, drag, and release"): released, it takes what a window, crossing or fence
 //     of its path takes, as the canvas chose by the drag's direction and Spacebar.
+//   - a pick over overlapping objects with selection cycling on (SELECTIONCYCLING 2) shows the
+//     Selection list of them and takes the one chosen (M3-04 part 3, "To Select Overlapping or
+//     Close Objects"); with it off the nearest is taken.
 // The same loop, without a prompt of its own, is the pre-selection made at `Command:` (PICKFIRST).
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
@@ -30,7 +33,15 @@ import {
   type SelectionWindow,
 } from '../commands/prompt';
 import type { ViewReply, ViewRequest } from '../commands/view/host';
+import { typeLabel } from '../properties/sheet';
 import { inSpace, onLockedLayers, selectAll, selectLast } from './rules';
+
+/**
+ * SELECTIONCYCLING (AutoCAD 2024 Help): 0 off, 1 a badge where objects overlap, 2 the badge and
+ * the Selection list when one of them is picked; negative, off keeping what Ctrl+W turns back on.
+ */
+export const SELECTIONCYCLING = 'SELECTIONCYCLING';
+const CYCLING_LIST = 2;
 
 /** The modes typed at "Select objects", in AutoCAD's display form. */
 export const SELECTION_MODES = [
@@ -287,14 +298,35 @@ export class SelectionLoop {
     }
     const remove = this.#remove || !!o.shift;
     const r = await this.#host.request({ op: 'pick', point: p });
-    const hit = r.ok ? (r.ids ?? []).find((id) => this.#host.model.entity(id)) : undefined;
-    if (hit === undefined) {
+    const hits = r.ok ? (r.ids ?? []).filter((id) => this.#host.model.entity(id)) : [];
+    if (hits.length === 0) {
       if (!r.ok) this.#say(r.message);
       this.#corner = { from: p, kind: 'auto', remove };
       return 'more';
     }
+    const hit = hits.length > 1 ? await this.#cycle(p, hits) : hits[0];
+    // The Selection list dismissed: nothing taken, and no window either.
+    if (hit === undefined) return 'more';
     if (!remove) this.#pick = p;
     return this.#apply([hit], remove, this.#label(), { pick: p });
+  }
+
+  /**
+   * Overlapping objects under a pick (M3-04 part 3): with SELECTIONCYCLING 2 the drafter chooses
+   * one from the Selection list; otherwise, as with cycling off, the nearest is taken.
+   */
+  async #cycle(p: Vec2, hits: readonly EntityId[]): Promise<EntityId | undefined> {
+    const mode = await this.#host.request({ op: 'sysvar', name: SELECTIONCYCLING });
+    if (!(mode.ok && mode.value === CYCLING_LIST)) return hits[0];
+    const model = this.#host.model;
+    const r = await this.#host.request({
+      op: 'cycle',
+      point: p,
+      candidates: hits.map((id) => ({ id, label: typeLabel(model.entity(id)!.type) })),
+    });
+    // A canvas that cannot show the list takes the nearest, as cycling off would.
+    if (!r.ok) return hits[0];
+    return (r.ids ?? []).find((id) => hits.includes(id));
   }
 
   /** A mode typed at the prompt; undefined when the text names none. */

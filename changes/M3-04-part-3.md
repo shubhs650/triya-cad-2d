@@ -1,0 +1,1 @@
+- M3-04 part 3 (#394): SELECTSIMILAR with its Select Similar Settings dialog (SELECTSIMILARMODE), and selection cycling (SELECTIONCYCLING, the SC button and Ctrl+W) with the Selection list for picks over overlapping objects.

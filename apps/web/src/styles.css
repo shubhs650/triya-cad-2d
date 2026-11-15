@@ -3242,3 +3242,47 @@ button {
 .overkill-sub {
   padding-left: 20px;
 }
+
+/* Selection cycling's Selection list (M3-04 part 3): beside the pick, a title and one row per
+   overlapping object, each a button. */
+.selection-list {
+  position: fixed;
+  z-index: 31;
+  min-width: 140px;
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  border: 1px solid var(--tip-border);
+  border-radius: 2px;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 25%);
+  font-size: 12px;
+}
+
+.selection-list-title {
+  padding: 3px 8px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--tip-border);
+}
+
+.selection-list ul {
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.selection-list button {
+  display: block;
+  width: 100%;
+  padding: 3px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.selection-list button:hover,
+.selection-list button:focus-visible {
+  background: var(--accent, #0078d4);
+  color: #fff;
+  outline: none;
+}
