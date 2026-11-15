@@ -4,7 +4,8 @@
 // the lines to it; a Shift+click with FILLET then makes a sharp corner of a third pair.
 // The prompts and geometry are unit-tested in packages/engine/test (commands/fillet.test.ts,
 // edit/corner.test.ts); this checks that the app's canvas, bus and engine worker carry them:
-// clicks with the pickbox (no snaps) and Shift with the second.
+// clicks with the pickbox (no snaps) and Shift with the second. M3-12 part 5 adds an ellipse, a
+// spline and a polyline arc segment filleted to lines.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
@@ -147,4 +148,92 @@ test('FILLET and CHAMFER with clicks, and Shift for a sharp corner', async ({ pa
   await expect.poll(async () => (await drawn(page)).arcs).toHaveLength(1);
   await page.mouse.move(400, 300);
   await page.screenshot({ path: test.info().outputPath('2-after.png') });
+});
+
+// M3-12 part 5: FILLET rounds an ellipse, a spline and a polyline's arc segment to lines.
+test('FILLET with an ellipse, a spline and a polyline arc segment', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  const kinds = () =>
+    page.evaluate(() => {
+      const now = new Map<string, { type: string }>();
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const a of cs.entities?.added ?? []) now.set(a.entity.handle, a.entity);
+        for (const r of cs.entities?.removed ?? []) now.delete(r.entity.handle);
+      }
+      return [...now.values()].map((e) => e.type).sort();
+    });
+  const line = async (a: string, b: string) => {
+    await type(page, 'L', 'Specify first point:');
+    await type(page, a, 'Specify next point or [Undo]:');
+    await type(page, b, 'Specify next point or [Undo]:');
+    await type(page, '', 'Command:');
+  };
+  // An ellipse round (40,50), semi-axes 20 and 10, and the line y = 65 above it.
+  await type(page, 'EL', /^Specify axis endpoint of ellipse/);
+  await type(page, 'C', /^Specify center of ellipse/);
+  await type(page, '1000040,1000050', /^Specify endpoint of axis/);
+  await type(page, '1000060,1000050', /^Specify distance to other axis/);
+  await type(page, '10', 'Command:');
+  await line('1000010,1000065', '1000070,1000065');
+  // A spline through (90,20), (100,35), (115,30), (130,45), and the line x = 100 across it.
+  await type(page, 'SPL', /^Specify first point/);
+  await type(page, '1000090,1000020', /^Enter next point/);
+  await type(page, '1000100,1000035', /^Enter next point/);
+  await type(page, '1000115,1000030', /^Enter next point/);
+  await type(page, '1000130,1000045', /^Enter next point/);
+  await type(page, '', 'Command:');
+  await line('1000100,1000060', '1000100,1000005');
+  // A polyline down (135,90)-(135,75), then a half circle to (150,75); the line x = 148 across it.
+  await type(page, 'PL', /^Specify start point/);
+  await type(page, '1000135,1000090', /^Specify next point/);
+  await type(page, '1000135,1000075', /^Specify next point/);
+  await type(page, 'A', /^Specify endpoint of arc/);
+  await type(page, '1000150,1000075', /^Specify endpoint of arc/);
+  await type(page, '', 'Command:');
+  await line('1000148,1000060', '1000148,1000090');
+  await expect.poll(kinds).toEqual(['ELLIPSE', 'LINE', 'LINE', 'LINE', 'LWPOLYLINE', 'SPLINE']);
+  await expectDrawn(page, { timeout: 15_000 });
+  await page.mouse.move(400, 300);
+  await page.screenshot({ path: test.info().outputPath('3-curves-before.png') });
+
+  const view = await viewOf(page);
+  const click = async (x: number, y: number) => {
+    const p = view.at(1000000 + x, 1000000 + y);
+    await page.mouse.click(view.box.x + p.x, view.box.y + p.y);
+  };
+  await type(page, 'F', FILLET_FIRST);
+  await type(page, 'R', /^Specify fillet radius/);
+  await type(page, '3', FILLET_FIRST);
+  await type(page, 'M', FILLET_FIRST);
+  // The ellipse (at (52,58) on it) to the line: an arc, the ellipse left whole.
+  await click(52, 58);
+  await expect(prompt(page)).toHaveText(FILLET_SECOND);
+  await click(60, 65);
+  await expect(prompt(page)).toHaveText(FILLET_FIRST);
+  await expect.poll(async () => (await kinds()).filter((k) => k === 'ARC')).toHaveLength(1);
+  // The spline (at its fit point (115,30)) to the line x = 100 above it.
+  await click(115, 30);
+  await expect(prompt(page)).toHaveText(FILLET_SECOND);
+  await click(100, 55);
+  await expect(prompt(page)).toHaveText(FILLET_FIRST);
+  await expect.poll(async () => (await kinds()).filter((k) => k === 'ARC')).toHaveLength(2);
+  // The half circle (at −110° on it) to the line inside it: joined into the polyline.
+  const turn = (-110 * Math.PI) / 180;
+  await click(142.5 + 7.5 * Math.cos(turn), 75 + 7.5 * Math.sin(turn));
+  await expect(prompt(page)).toHaveText(FILLET_SECOND);
+  await click(148, 80);
+  await expect(prompt(page)).toHaveText(FILLET_FIRST);
+  await type(page, '', 'Command:');
+  await expect
+    .poll(kinds)
+    .toEqual(['ARC', 'ARC', 'ELLIPSE', 'LINE', 'LINE', 'LWPOLYLINE', 'SPLINE']);
+  await page.mouse.move(400, 300);
+  await page.screenshot({ path: test.info().outputPath('4-curves-after.png') });
 });

@@ -3,7 +3,9 @@
 // and every 2D polyline has its corners filleted with the Polyline option, as the commands
 // make them (`filletCorner`/`chamferCorner` + `cornerEdit`, `polylineCorners`) and put them in
 // the drawing (`reshapeObject`, a new arc or line on the objects' layer). The drawing saves as
-// AC1032 DXF (DEC-047) and reopens with each object where FILLET or CHAMFER left it.
+// AC1032 DXF (DEC-047) and reopens with each object where FILLET or CHAMFER left it. M3-12 part 5
+// adds every ellipse, elliptical arc and open spline filleted to a line drawn across it, and
+// every open polyline of four or more segments closed by filleting its first and last segments.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -11,8 +13,14 @@ import {
   DocumentModel,
   chamferCorner,
   cornerEdit,
+  curveBounds,
+  derivativeAt,
+  domain,
   filletCorner,
   legOf,
+  offsetCurveOf,
+  pointAt,
+  samePolylineCorner,
   polylineCorners,
   reshapeObject,
   toleranceForSize,
@@ -61,6 +69,8 @@ const len = (a: Vec2, b: Vec2) => Math.hypot(b.x - a.x, b.y - a.y);
 describe('FILLET and CHAMFER on the public corpus', () => {
   let corners = 0;
   let polylines = 0;
+  let curves = 0;
+  let closed = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves its corners filleted and chamfered',
@@ -137,10 +147,62 @@ describe('FILLET and CHAMFER on the public corpus', () => {
             if (vs[i]!.bulge === 0 && d > tol.linear * 1e6) shortest = Math.min(shortest, d);
           }
           if (!Number.isFinite(shortest)) continue;
+          // An open one of four or more segments is closed by its first and last (M3-12 part 5).
+          const segments = vs.length - 1;
+          if (!e.geom.closed && segments >= 4) {
+            const ends = (i: number) => lerp(vs[i]!, vs[i + 1]!, 0.5);
+            const a = legOf(e.geom, ends(segments - 1), tol);
+            const c = legOf(e.geom, ends(0), tol);
+            const k = a && c && filletCorner(a, c, shortest / 10, tol);
+            const g = a && c && k && typeof k !== 'string' && samePolylineCorner(a, c, k, tol);
+            if (g && typeof g !== 'string') {
+              made.push(...reshapeObject(b, model, e.id, [g]));
+              closed++;
+              continue;
+            }
+          }
           const r = polylineCorners(e.geom, { fillet: shortest / 10 }, tol);
           if (!r || r.done === 0) continue;
           made.push(...reshapeObject(b, model, e.id, [r.geom]));
           polylines++;
+        }
+        // Every ellipse and open spline (M3-12 part 5): a line drawn square across it half way,
+        // filleted to it at a radius a fiftieth of its size.
+        for (const e of usable) {
+          if (touched.has(e.id)) continue;
+          if (e.geom.kind !== 'ELLIPSE' && e.geom.kind !== 'SPLINE') continue;
+          const c = offsetCurveOf(e.geom);
+          if (!c) continue;
+          const box = curveBounds(c, tol);
+          const r = Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 50;
+          if (!(r > tol.linear * 1e6)) continue;
+          const d = domain(c);
+          const mid = (d.start + d.end) / 2;
+          const p = pointAt(c, mid);
+          const der = derivativeAt(c, mid);
+          const speed = Math.hypot(der.x, der.y);
+          if (speed === 0) continue;
+          const t = { x: der.x / speed, y: der.y / speed };
+          const n = { x: -t.y, y: t.x };
+          const across = {
+            kind: 'LINE' as const,
+            start: { x: p.x - n.x * 10 * r, y: p.y - n.y * 10 * r },
+            end: { x: p.x + n.x * 10 * r, y: p.y + n.y * 10 * r },
+          };
+          const a = legOf(e.geom, { x: p.x + t.x * 5 * r, y: p.y + t.y * 5 * r }, tol);
+          const l = legOf(across, { x: p.x + n.x * 5 * r, y: p.y + n.y * 5 * r }, tol);
+          if (!a || !l) continue;
+          const k = filletCorner(a, l, r, tol);
+          if (typeof k === 'string') continue;
+          const edit = cornerEdit(a, l, k, true, tol);
+          if (typeof edit === 'string') continue;
+          touched.add(e.id);
+          if (edit.first) made.push(...reshapeObject(b, model, e.id, [edit.first]));
+          const line = edit.second === undefined ? across : edit.second;
+          if (line) made.push(b.addEntity({ owner: space, layer: e.layer, geom: line }).id);
+          if (edit.added)
+            made.push(b.addEntity({ owner: space, layer: e.layer, geom: edit.added }).id);
+          curves++;
         }
         if (made.length === 0) return;
         model.apply(b.build());
@@ -165,5 +227,7 @@ describe('FILLET and CHAMFER on the public corpus', () => {
     // The corpus has many line corners and polylines; the counts guard the sweep.
     expect(corners).toBeGreaterThan(100);
     expect(polylines).toBeGreaterThan(50);
+    expect(curves).toBeGreaterThan(50);
+    expect(closed).toBeGreaterThan(40);
   });
 });
