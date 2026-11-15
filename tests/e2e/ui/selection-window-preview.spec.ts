@@ -134,6 +134,8 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
 
   // A crossing window (right to left) lights up both lines it crosses.
   await click(0.9, 0.2);
+  // The band follows the cursor once the canvas has the corner prompt.
+  await expect(prompt(page)).toHaveText('Specify opposite corner:');
   await move(0.5, 0.8);
   await expect.poll(() => lit(page, onA)).toBeGreaterThan(10);
   await expect.poll(() => lit(page, onB)).toBeGreaterThan(10);
@@ -144,6 +146,8 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
   await type(page, 'SELECTIONPREVIEWLIMIT', 'Enter new value for SELECTIONPREVIEWLIMIT <20000>:');
   await type(page, '1', 'Command:');
   await click(0.9, 0.2);
+  // The band follows the cursor once the canvas has the corner prompt.
+  await expect(prompt(page)).toHaveText('Specify opposite corner:');
   await move(0.5, 0.8);
   await page.waitForTimeout(300);
   expect(await lit(page, onA)).toBe(0);
