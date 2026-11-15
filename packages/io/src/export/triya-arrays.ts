@@ -6,9 +6,10 @@
 // the record's groups; an erased array takes its dictionary, and so its record, with it.
 //
 // Refused, before anything changes: a record whose INSERT is not an entity of the drawing or does
-// not name its dictionary, a record that moves to another INSERT, dictionary or source block, a
-// new record on an INSERT the drawing already has (Triya makes arrays only as new INSERTs), a
-// handle in use, and a version before R2000 (the save writes AC1032, DEC-047).
+// not name its dictionary, a record that moves to another INSERT or dictionary, one naming a
+// block that is gone, a new record on an INSERT the drawing already has (Triya makes arrays only
+// as new INSERTs), a handle in use, and a version before R2000 (the save writes AC1032, DEC-047).
+// The source block may change (REPlace's Source objects, M3-11 part 2).
 import {
   ACadVersion,
   CadDictionary,
@@ -80,9 +81,14 @@ export function planTriyaArrays(
       out.push(`INSERT ${a.insert}'s extension dictionary is not ${a.owner}`);
     }
     if (!model.blocks.has(a.source)) out.push(`source block ${a.source} is not in the drawing`);
+    for (const r of a.replaced ?? []) {
+      if (!model.blocks.has(r.block))
+        out.push(`replacement block ${r.block} is not in the drawing`);
+    }
     if (old) out.push(`${ACadVersion[version!]} is older than R2000`);
     if (b) {
-      for (const k of ['owner', 'insert', 'source'] as const) {
+      // The source block may change (ARRAYEDIT REPlace's Source objects, M3-11 part 2).
+      for (const k of ['owner', 'insert'] as const) {
         if (b[k] !== a[k]) out.push(`its ${k} changes`);
       }
       const acad = resolve(r, a.handle, XRecord);
@@ -140,6 +146,11 @@ function fill(x: XRecord, a: AssocArray): void {
       x.createEntry(290, p.align);
       x.createEntry(291, p.reversed);
       break;
+  }
+  for (const r of a.replaced ?? []) {
+    x.createEntry(92, r.item);
+    x.createEntry(93, r.row);
+    x.createEntry(341, handle(r.block));
   }
 }
 

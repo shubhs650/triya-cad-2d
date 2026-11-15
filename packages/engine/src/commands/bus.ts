@@ -33,6 +33,7 @@ import {
   type ResolvedCommand,
 } from './command';
 import { blocklessDimensionBlocks, regenerateRestyled } from './modify/dimensions';
+import { followAssociations } from './modify/array';
 import { applyProperty } from './modify/property-edit';
 import {
   DEFAULT_ANGLES,
@@ -612,7 +613,10 @@ export class PromptBus {
       await this.#applyProperty(ctx, ids, edit, filter);
       // Restyled dimensions are redrawn now: a command cancelled later redraws nothing.
       const made = this.#changes.slice(from);
-      if (made.length > 0) await regenerateRestyled(ctx, made);
+      if (made.length > 0) {
+        followAssociations(ctx, made);
+        await regenerateRestyled(ctx, made);
+      }
     } catch (err) {
       this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -946,6 +950,9 @@ export class PromptBus {
       // part 2): a transparent command's edits wait for the command it ran inside.
       if (!frame.transparent && this.#changes.length > 0) {
         try {
+          // An array's item being edited and path arrays follow what the command changed
+          // (M3-11 part 2), before the dimensions it restyled are redrawn.
+          followAssociations(frame.ctx, [...this.#changes]);
           await regenerateRestyled(frame.ctx, this.#changes);
         } catch (err) {
           this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
