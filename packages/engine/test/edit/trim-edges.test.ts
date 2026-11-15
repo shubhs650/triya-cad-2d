@@ -136,6 +136,47 @@ describe('objectEdgeCurves', () => {
     ]);
   });
 
+  it('cuts with the segments of a polyline with arcs in a nonuniformly scaled reference', () => {
+    const { model, byHandle } = setup([
+      insert({ position: { x: 0, y: 0 }, rotation: 0, scale: { x: 2, y: 1, z: 1 } }),
+      [
+        {
+          kind: 'LWPOLYLINE',
+          closed: false,
+          vertices: [
+            { x: 5, y: 0, bulge: 0 },
+            { x: 6, y: 0, bulge: 1 },
+            { x: 6, y: 2, bulge: 0 },
+          ],
+        } as never,
+        { owner: '50' },
+      ],
+    ]);
+    // The half circle of the polyline (radius 1) is drawn as half an ellipse with semi-axes 2 and 1.
+    expect(edgesOf(model, byHandle('40')!).slice(2)).toEqual([
+      ['LINE', 10, 0, 12, 0],
+      ['ELLIPSE', 12, 1, 2, 0, 0.5],
+    ]);
+  });
+
+  it('gives up inside a block that holds references to itself', () => {
+    const { model, byHandle } = setup([
+      insert({ position: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: 1, z: 1 } }),
+      [
+        insert({
+          position: { x: 0, y: 0 },
+          rotation: 0,
+          scale: { x: 1, y: 1, z: 1 },
+          array: { columns: 32, rows: 32, columnSpacing: 1, rowSpacing: 1 },
+        }),
+        { owner: '50' },
+      ],
+    ]);
+    const n = edgesOf(model, byHandle('40')!).length;
+    expect(n).toBeGreaterThan(2);
+    expect(n).toBeLessThanOrEqual(2 * 50_000);
+  });
+
   it('cuts with text by its drawn box, and with nothing when the canvas did not measure it', () => {
     const { model, byHandle } = setup([text('ABC', 1, 2)]);
     expect(edgesOf(model, byHandle('40')!)).toEqual([

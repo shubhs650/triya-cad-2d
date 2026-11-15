@@ -52,6 +52,11 @@ export type EdgeText = TextGeometry | MTextGeometry;
 /** Block nesting followed, and MINSERT cells taken per reference (as OSNAP's). */
 const MAX_DEPTH = 8;
 const MAX_CELLS = 1024;
+/**
+ * Objects visited inside one object's blocks before giving up: a block holding MINSERTs of
+ * itself would otherwise multiply cells level by level.
+ */
+const MAX_VISITS = 50_000;
 
 /** DXF 70 bits of an attribute: 1 invisible, 2 constant. */
 const INVISIBLE = 1;
@@ -163,12 +168,14 @@ function walk(
   visit: (v: Visit) => void,
   own = true,
   xdata?: Entity['xdata'],
+  budget = { left: MAX_VISITS },
 ): void {
   const curve = (c: Curve) => visit({ curve: c, m });
   const block = (handle: string | undefined, inner: Matrix2D, ownParts: boolean) => {
     if (handle === undefined || depth + 1 > MAX_DEPTH || !model.hasBlock(handle)) return;
     const at = m === IDENTITY ? inner : inner === IDENTITY ? m : compose(inner, m);
     for (const id of model.blockEntities(handle)) {
+      if (--budget.left < 0) return;
       const e = model.entity(id);
       if (!e || !e.visible) continue;
       const l = model.tables.layers.get(e.layer);
@@ -179,7 +186,7 @@ function walk(
           visit({ text: attributeText(e.geom), key: e.geom, m: at });
         continue;
       }
-      walk(model, e.geom, at, depth + 1, o, visit, ownParts, e.xdata);
+      walk(model, e.geom, at, depth + 1, o, visit, ownParts, e.xdata, budget);
     }
   };
   switch (g.kind) {
@@ -260,7 +267,7 @@ function walk(
   /** An annotation's part: its curve as drawn, never carried on. */
   function part(p: EntityGeometry): void {
     if (p.kind === 'INSERT') {
-      walk(model, p, m, depth, o, visit, false);
+      walk(model, p, m, depth, o, visit, false, undefined, budget);
       return;
     }
     for (const c of edgeCurvesOf(p, false)) curve(c);
