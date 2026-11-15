@@ -1161,3 +1161,53 @@ describe('the text view direction, DIMTXTDIRECTION (M2-35 part 26)', () => {
     close(text(ps).rotation, Math.PI);
   });
 });
+
+describe('flipped arrowheads, DXF 74 and 75 (M3-05 part 4)', () => {
+  // AutoCAD's Flip Arrow grip function turns one arrowhead round on its extension line: it
+  // points the other way, its back beyond the extension line, with a DIMASZ tail behind it as an
+  // arrow moved outside has; the dimension line inside then runs to that extension line.
+  const solids = (ps: DimPart[]) => of(ps, 'SOLID') as Extract<EntityGeometry, { kind: 'SOLID' }>[];
+  const lines = (ps: DimPart[]) => of(ps, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[];
+
+  it('turns the first arrow outward with a tail, the line running to its tip', () => {
+    const ps = parts(linear({ flipArrows: [true, false] }));
+    const [a, b] = solids(ps);
+    // The first arrow's back is outside, at x = -2.5; the second is as before.
+    close(a!.corners[0].x, -2.5);
+    expect(a!.corners[2]).toEqual({ x: 0, y: 20 });
+    close(b!.corners[0].x, 97.5);
+    expect(lines(ps).slice(2)).toEqual([
+      { kind: 'LINE', start: { x: 0, y: 20 }, end: { x: 97.5, y: 20 } },
+      { kind: 'LINE', start: { x: -2.5, y: 20 }, end: { x: -5, y: 20 } },
+    ]);
+  });
+
+  it('turns the second arrow, and both', () => {
+    const second = parts(linear({ flipArrows: [false, true] }));
+    close(solids(second)[1]!.corners[0].x, 102.5);
+    expect(lines(second).slice(2)).toEqual([
+      { kind: 'LINE', start: { x: 2.5, y: 20 }, end: { x: 100, y: 20 } },
+      { kind: 'LINE', start: { x: 102.5, y: 20 }, end: { x: 105, y: 20 } },
+    ]);
+    const both = parts(linear({ flipArrows: [true, true] }));
+    expect(lines(both).slice(2)).toEqual([
+      { kind: 'LINE', start: { x: 0, y: 20 }, end: { x: 100, y: 20 } },
+      { kind: 'LINE', start: { x: -2.5, y: 20 }, end: { x: -5, y: 20 } },
+      { kind: 'LINE', start: { x: 102.5, y: 20 }, end: { x: 105, y: 20 } },
+    ]);
+  });
+
+  it('turns an arrow drawn outside back in, with no tail', () => {
+    const geom = linear({
+      second: { x: 5, y: 0 },
+      definitionPoint: { x: 5, y: 10 },
+      textPosition: { x: 2.5, y: 10 },
+      flipArrows: [true, false],
+    });
+    const ps = parts(geom, model({ ...ISO, DIMTAD: 0, DIMTOFL: false }));
+    close(solids(ps)[0]!.corners[0].x, 2.5);
+    expect(lines(ps).slice(2)).toEqual([
+      { kind: 'LINE', start: { x: 7.5, y: 10 }, end: { x: 10, y: 10 } },
+    ]);
+  });
+});
