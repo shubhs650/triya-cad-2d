@@ -262,7 +262,9 @@ describe('GRID', () => {
   it('sets the grid spacing and turns GRID on; ON and OFF turn it', async () => {
     const { bus, vp, app } = setup({ gridSpacing: { x: 0, y: 0 } });
     await bus.submit('GRID');
-    expect(bus.promptText).toBe('Specify grid spacing(X) or [ON/OFF/Snap/Major/Aspect] <0.0000>:');
+    expect(bus.promptText).toBe(
+      'Specify grid spacing(X) or [ON/OFF/Snap/Major/aDaptive/Limits/Follow/Aspect] <0.0000>:',
+    );
     await bus.submit('20');
     expect(vp().gridSpacing).toEqual({ x: 20, y: 20 });
     expect(app['GRIDMODE']).toBe(1);
@@ -327,6 +329,143 @@ describe('GRID', () => {
     expect(none.app['GRIDMODE']).toBe(1);
     await none.bus.submit('GRID');
     await none.bus.cancel();
+    expect(none.bus.command).toBeUndefined();
+  });
+});
+
+// M3-06 part 6: Grid behavior (AutoCAD 2024 Help, "GRIDDISPLAY": 1 display beyond the limits, 2
+// adaptive, 4 subdivide below the grid spacing, 8 follow the dynamic UCS), kept in the `*Active`
+// VPORT (DXF 60) as AutoCAD keeps it in the current viewport, and GRID's aDaptive, Limits and
+// Follow ("GRID (Command)").
+describe('GRID behaviour (GRIDDISPLAY)', () => {
+  it('aDaptive turns adaptive display on with or without subdivision, or off', async () => {
+    const { bus, vp } = setup({ gridFlags: 1 });
+    await bus.script(['GRID', 'D']);
+    expect(bus.promptText).toBe('Turn adaptive behavior on [Yes/No] <No>:');
+    await bus.submit('Y');
+    expect(bus.promptText).toBe('Allow subdivision below grid spacing [Yes/No] <No>:');
+    await bus.submit('Y');
+    expect(vp().gridFlags).toBe(1 | 2 | 4);
+    expect(bus.command).toBeUndefined();
+    await bus.script(['GRID', 'D']);
+    expect(bus.promptText).toBe('Turn adaptive behavior on [Yes/No] <Yes>:');
+    await bus.submit('');
+    expect(bus.promptText).toBe('Allow subdivision below grid spacing [Yes/No] <Yes>:');
+    await bus.submit('N');
+    expect(vp().gridFlags).toBe(1 | 2);
+    // No asks nothing more and keeps subdivision as it was, for when adaptive is on again.
+    await bus.script(['GRID', 'D', 'N']);
+    expect(bus.command).toBeUndefined();
+    expect(vp().gridFlags).toBe(1);
+    // Each change is one GRID undo step.
+    expect(bus.undo.state.undoable).toBe(3);
+    await bus.submit('U');
+    expect(vp().gridFlags).toBe(1 | 2);
+  });
+
+  it('Limits and Follow set the grid beyond the limits and following the dynamic UCS', async () => {
+    const { bus, vp } = setup({ gridFlags: 3 });
+    await bus.script(['GRID', 'L']);
+    expect(bus.promptText).toBe('Display grid beyond Limits [Yes/No] <Yes>:');
+    await bus.submit('N');
+    expect(vp().gridFlags).toBe(2);
+    await bus.script(['GRID', 'L', 'Y']);
+    expect(vp().gridFlags).toBe(3);
+    await bus.script(['GRID', 'F']);
+    expect(bus.promptText).toBe('Follow Dynamic UCS [Yes/No] <No>:');
+    await bus.submit('Y');
+    expect(vp().gridFlags).toBe(11);
+    // A or AS is still Aspect, D the adaptive option.
+    await bus.script(['GRID', 'A']);
+    expect(bus.promptText).toBe('Specify the horizontal spacing(X) <10.0000>:');
+    await bus.cancel();
+    await bus.script(['GRID', 'L']);
+    await bus.cancel();
+    expect(vp().gridFlags).toBe(11);
+  });
+
+  it('says why without an *Active VPORT', async () => {
+    const none = setup(null);
+    await none.bus.script(['GRID', 'L']);
+    expect(none.log.at(-1)).toBe('The drawing has no current viewport to keep the spacing in.');
+    expect(none.bus.command).toBeUndefined();
+  });
+
+  it('the Snap and Grid tab opens with GRIDDISPLAY and OK sets it with the spacing', async () => {
+    const { bus, vp } = setup({ gridFlags: 3 });
+    await bus.submit('DSETTINGS');
+    expect(bus.prompt).toMatchObject({ dialog: { snapGrid: { gridDisplay: 3 } } });
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      snapGrid: { ...SETTINGS, gridDisplay: 6 },
+    });
+    expect(vp()).toMatchObject({ gridFlags: 6, gridMajor: 4 });
+    expect(bus.undo.state.undoable).toBe(1);
+    // Bits AutoCAD does not define are refused.
+    for (const gridDisplay of [16, -1, 1.5]) {
+      await bus.submit('DSETTINGS');
+      await bus.answer({ kind: 'dialog', action: 'ok', snapGrid: { ...SETTINGS, gridDisplay } });
+    }
+    expect(vp().gridFlags).toBe(6);
+    expect(bus.undo.state.undoable).toBe(1);
+  });
+});
+
+// M3-06 part 6: SETVAR's SNAPUNIT, GRIDUNIT, GRIDMAJOR, GRIDDISPLAY and SNAPBASE are the
+// `*Active` VPORT's, as the Snap and Grid tab's are (AutoCAD 2024 Help, each variable: "Saved in:
+// Drawing", the current viewport's).
+describe('SETVAR of the viewport’s snap and grid', () => {
+  it('reads and sets SNAPUNIT, GRIDUNIT and SNAPBASE as points', async () => {
+    const { bus, vp, log } = setup({ snapSpacing: { x: 2, y: 3 } });
+    await bus.script(['SETVAR', 'SNAPUNIT']);
+    expect(bus.promptText).toBe('Enter new value for SNAPUNIT <2.0000,3.0000>:');
+    await bus.submit('0.5,0.25');
+    expect(vp().snapSpacing).toEqual({ x: 0.5, y: 0.25 });
+    await bus.script(['GRIDUNIT', '0,0']);
+    expect(vp().gridSpacing).toEqual({ x: 0, y: 0 });
+    await bus.script(['SNAPBASE', '1,2']);
+    expect(vp().snapBase).toEqual({ x: 1, y: 2 });
+    expect(bus.undo.state.undoable).toBe(3);
+    // A snap spacing of 0 or a negative grid spacing is refused, the viewport unchanged.
+    await bus.script(['SNAPUNIT', '0,1']);
+    expect(log.at(-1)).toBe('Snap spacing must be more than 0.');
+    await bus.script(['GRIDUNIT', '-1,1']);
+    expect(log.at(-1)).toBe('Grid spacing must be 0 or more.');
+    expect(vp().snapSpacing).toEqual({ x: 0.5, y: 0.25 });
+    expect(bus.undo.state.undoable).toBe(3);
+  });
+
+  it('sets GRIDMAJOR 1 to 100 and GRIDDISPLAY 0 to 15', async () => {
+    const { bus, vp, log } = setup({ gridFlags: 3 });
+    await bus.script(['GRIDMAJOR']);
+    expect(bus.promptText).toBe('Enter new value for GRIDMAJOR <5>:');
+    await bus.submit('10');
+    expect(vp().gridMajor).toBe(10);
+    await bus.script(['GRIDMAJOR', '101']);
+    expect(log.at(-1)).toBe('Value must be between 1 and 100.');
+    await bus.cancel();
+    await bus.script(['GRIDDISPLAY']);
+    expect(bus.promptText).toBe('Enter new value for GRIDDISPLAY <3>:');
+    await bus.submit('6');
+    expect(vp().gridFlags).toBe(6);
+    await bus.script(['GRIDDISPLAY', '16']);
+    expect(log.at(-1)).toBe('Value must be between 0 and 15.');
+    await bus.cancel();
+    expect(vp()).toMatchObject({ gridMajor: 10, gridFlags: 6 });
+    // The same value again is no change and no undo step.
+    await bus.script(['GRIDMAJOR', '10']);
+    expect(bus.undo.state.undoable).toBe(2);
+  });
+
+  it('lists them with SETVAR ?, and says why without an *Active VPORT', async () => {
+    const { bus, log } = setup({ gridMajor: 4 });
+    await bus.script(['SETVAR', '?', 'GRID*']);
+    expect(log).toContain('GRIDMAJOR         4');
+    expect(log).toContain('GRIDUNIT          10.0000,10.0000');
+    const none = setup(null);
+    await none.bus.script(['SNAPUNIT']);
+    expect(none.log.at(-1)).toBe('The drawing has no current viewport to keep SNAPUNIT in.');
     expect(none.bus.command).toBeUndefined();
   });
 });

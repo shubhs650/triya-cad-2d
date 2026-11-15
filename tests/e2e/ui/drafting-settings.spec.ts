@@ -9,6 +9,8 @@
 // apps/web/test/drafting-settings.test.ts. Part 3: PolarSnap, polar angles relative to the last
 // segment and Settings' Shift to acquire. Part 4: TK's tracking points and the Dynamic Input tab.
 // Part 5: the temporary override keys (Shift for ORTHO, Shift+M Midpoint; TEMPOVERRIDES).
+// Part 6: Grid style (GRIDSTYLE) and Grid behavior (GRIDDISPLAY), GRID's Limits, and SETVAR of
+// the viewport's GRIDDISPLAY.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
@@ -297,7 +299,11 @@ test('sets the snap and grid spacing, from the Snap and Grid tab and from SNAP a
   // SNAP and GRID at the command line: a spacing, and 2x the snap spacing for the grid.
   await type(page, 'SN', 'Specify snap spacing or [ON/OFF/Aspect/Type] <2.5000>:');
   await type(page, '4', 'Command:');
-  await type(page, 'GRID', 'Specify grid spacing(X) or [ON/OFF/Snap/Major/Aspect] <0.0000>:');
+  await type(
+    page,
+    'GRID',
+    'Specify grid spacing(X) or [ON/OFF/Snap/Major/aDaptive/Limits/Follow/Aspect] <0.0000>:',
+  );
   await type(page, '2x', 'Command:');
   await idAt(X0 + 9.1, Y0 - 2.1);
   await expect(history(page)).toContainText('X = 1000008.0000     Y = 999996.0000');
@@ -320,6 +326,77 @@ test('sets the snap and grid spacing, from the Snap and Grid tab and from SNAP a
   await expect(field('Snap X spacing:')).toHaveValue('2.5');
   await expect(field('Grid X spacing:')).toHaveValue('0');
   await page.keyboard.press('Escape');
+});
+
+// M3-06 part 6: a dotted grid within the limits, from the Snap and Grid tab's Grid style and
+// Grid behavior, then from SETVAR and GRID.
+test('draws a dotted grid within the limits (Grid style, Grid behavior)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0 - 10},${Y0 - 30}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 70},${Y0 + 30}`, 'Command:');
+  // Limits round part of the view.
+  await type(page, 'LIMMIN', /^Enter new value for LIMMIN/);
+  await type(page, `${X0},${Y0 - 15}`, 'Command:');
+  await type(page, 'LIMMAX', /^Enter new value for LIMMAX/);
+  await type(page, `${X0 + 45},${Y0 + 15}`, 'Command:');
+  await type(page, 'GRID', /^Specify grid spacing/);
+  await type(page, 'ON', 'Command:');
+  await canvas.hover();
+  await shot(page, '10-grid-lines-beyond-limits');
+
+  // The tab shows GRIDSTYLE (lines everywhere at first) and the drawing's GRIDDISPLAY, 3.
+  await type(page, 'DS', 'Drafting Settings:');
+  const d = dialog(page);
+  await d.getByRole('tab', { name: 'Snap and Grid' }).click();
+  const check = (name: string) => d.getByRole('checkbox', { name, exact: true });
+  await expect(check('2D model space')).not.toBeChecked();
+  await expect(check('Block editor')).toBeDisabled();
+  await expect(check('Sheet/layout')).not.toBeChecked();
+  await expect(check('Adaptive grid')).toBeChecked();
+  await expect(check('Allow subdivision below grid spacing')).not.toBeChecked();
+  await expect(check('Display grid beyond Limits')).toBeChecked();
+  await expect(check('Follow Dynamic UCS')).not.toBeChecked();
+  // Subdivision needs Adaptive grid.
+  await check('Adaptive grid').uncheck();
+  await expect(check('Allow subdivision below grid spacing')).toBeDisabled();
+  await check('Adaptive grid').check();
+  await check('Allow subdivision below grid spacing').check();
+  await check('Display grid beyond Limits').uncheck();
+  await check('2D model space').check();
+  await shot(page, '11-grid-style-and-behavior');
+  await d.getByRole('button', { name: 'OK' }).click();
+  await expect(d).toBeHidden();
+  await canvas.hover();
+  await shot(page, '12-dotted-grid-within-limits');
+
+  // SETVAR reads them: GRIDDISPLAY from the drawing's viewport, GRIDSTYLE from the app.
+  await type(page, 'GRIDDISPLAY', 'Enter new value for GRIDDISPLAY <6>:');
+  await type(page, '2', 'Command:');
+  await type(page, 'GRIDSTYLE', 'Enter new value for GRIDSTYLE <1>:');
+  await type(page, '5', 'Command:');
+  // GRID Limits: beyond the limits again.
+  await type(page, 'GRID', /^Specify grid spacing/);
+  await type(page, 'L', 'Display grid beyond Limits [Yes/No] <No>:');
+  await type(page, 'Y', 'Command:');
+  await type(page, 'DS', 'Drafting Settings:');
+  await expect(check('Allow subdivision below grid spacing')).not.toBeChecked();
+  await expect(check('Display grid beyond Limits')).toBeChecked();
+  await expect(check('2D model space')).toBeChecked();
+  await expect(check('Sheet/layout')).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(d).toBeHidden();
+  // U takes back GRID's change, then SETVAR's, then the dialog's.
+  await canvas.hover();
+  await type(page, 'U', 'Command:');
+  await type(page, 'GRIDDISPLAY', 'Enter new value for GRIDDISPLAY <2>:');
+  await page.keyboard.press('Escape');
+  await canvas.hover();
+  await shot(page, '13-dotted-grid-everywhere');
 });
 
 /** The LINE entities the drawing's commands added, as [x1, y1, x2, y2] to 4 places. */

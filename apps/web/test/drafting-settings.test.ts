@@ -8,6 +8,7 @@ import {
   INITIAL_DRAFTING,
   additionalAngles,
   angleText,
+  gridDisplayOf,
   polarSnapDistance,
   trackingSettings,
   type DraftingState,
@@ -19,6 +20,7 @@ import {
   draftPatch,
   draftProblem,
   equalSpacing,
+  gridBehavior,
   snapGridOf,
   spacingOf,
   spacingSettings,
@@ -95,6 +97,7 @@ describe('the Drafting Settings dialog', () => {
       trackPolar: true,
       relative: false,
       snapType: 0,
+      gridStyle: 0,
       polarDist: '0',
       osnap: false,
       modes: 5,
@@ -144,6 +147,7 @@ describe('the Drafting Settings dialog', () => {
       polarMode: 15,
       polarAddAngles: '12.5;80',
       snapType: 0,
+      gridStyle: 0,
       polarDist: 0,
       osmode: OSNAP.END | OSNAP.MID | OSNAP_OFF,
       otrack: false,
@@ -338,5 +342,81 @@ describe('the Dynamic Input tab (M3-06 part 4)', () => {
       dynDimension: false,
       dynCartesian: true,
     });
+  });
+});
+
+// M3-06 part 6: the Snap and Grid tab's Grid style (GRIDSTYLE, per user) and Grid behavior
+// (GRIDDISPLAY, the drawing's `*Active` VPORT), AutoCAD 2024 Help, "Snap and Grid Tab (Drafting
+// Settings Dialog Box)".
+describe('Grid style and Grid behavior (M3-06 part 6)', () => {
+  const drawing = {
+    snapSpacing: { x: 1, y: 1 },
+    gridSpacing: { x: 10, y: 10 },
+    gridMajor: 5,
+    gridDisplay: 3,
+  };
+
+  it('show GRIDDISPLAY’s bits and GRIDSTYLE, and OK sets both', () => {
+    const d = draftOf(state({ gridStyle: 4 }), drawing);
+    expect(d.gridStyle).toBe(4);
+    expect(gridBehavior(d.spacing!)).toEqual({
+      adaptive: true,
+      subdivide: false,
+      beyondLimits: true,
+      follow: false,
+    });
+    const g = { ...d.spacing!, gridDisplay: 2 | 4 | 8 };
+    expect(gridBehavior(g)).toEqual({
+      adaptive: true,
+      subdivide: true,
+      beyondLimits: false,
+      follow: true,
+    });
+    const ok = { ...d, gridStyle: 1, spacing: g };
+    expect(snapGridOf(ok)).toMatchObject({ gridDisplay: 14 });
+    expect(draftPatch(ok, state())).toMatchObject({ gridStyle: 1 });
+    // A drawing without the bits (an older answer) sets none.
+    const { gridDisplay: _, ...older } = drawing;
+    expect(snapGridOf(draftOf(state(), older))).not.toHaveProperty('gridDisplay');
+  });
+});
+
+describe('the grid the canvas draws (M3-06 part 6)', () => {
+  const limits = { minX: 0, minY: 0, maxX: 420, maxY: 297 };
+
+  it('follows GRIDDISPLAY in model space, adaptive and beyond the limits without a viewport', () => {
+    expect(gridDisplayOf({ flags: 3, limits, layout: false, gridStyle: 0 })).toEqual({
+      adaptive: true,
+      subdivide: false,
+      dots: false,
+    });
+    expect(gridDisplayOf({ flags: 4, limits, layout: false, gridStyle: 0 })).toEqual({
+      adaptive: false,
+      subdivide: false,
+      limits,
+      dots: false,
+    });
+    expect(gridDisplayOf({ flags: 6, limits: undefined, layout: false, gridStyle: 0 })).toEqual({
+      adaptive: true,
+      subdivide: true,
+      dots: false,
+    });
+    expect(gridDisplayOf({ flags: undefined, limits, layout: true, gridStyle: 0 })).toEqual({
+      adaptive: true,
+      subdivide: false,
+      dots: false,
+    });
+  });
+
+  it('is dotted by GRIDSTYLE: bit 1 in model space, bit 4 on a layout', () => {
+    const dots = (gridStyle: number, layout: boolean) =>
+      gridDisplayOf({ flags: 3, limits, layout, gridStyle }).dots;
+    expect([dots(1, false), dots(1, true), dots(4, false), dots(4, true)]).toEqual([
+      true,
+      false,
+      false,
+      true,
+    ]);
+    expect(dots(2, false)).toBe(false);
   });
 });

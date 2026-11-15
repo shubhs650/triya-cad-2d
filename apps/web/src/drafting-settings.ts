@@ -7,7 +7,14 @@
 // (Grid snap or PolarSnap, SNAPTYPE) and Polar spacing (POLARDIST), and the Polar Tracking tab's
 // Polar Angle measurement (Absolute or Relative to last segment, POLARMODE 1). Part 4 adds the
 // Dynamic Input tab (DYNMODE's bits, DYNPROMPT, DYNPICOORDS, DYNPIFORMAT; dynamic-input.ts).
-import { OSNAP_OFF, type DraftingSettingsTab, type SnapGridSettings } from '@triya/engine';
+// Part 6 adds the Snap and Grid tab's Grid style (GRIDSTYLE, per user) and Grid behavior
+// (GRIDDISPLAY, kept with the spacing in the drawing's `*Active` VPORT).
+import {
+  GRID_DISPLAY,
+  OSNAP_OFF,
+  type DraftingSettingsTab,
+  type SnapGridSettings,
+} from '@triya/engine';
 import { DYN_DIMENSION, DYN_POINTER } from './dynamic-input';
 import {
   MAX_ADDITIONAL_ANGLES,
@@ -52,6 +59,8 @@ export interface DraftingSettingsDraft {
   readonly relative: boolean;
   /** Snap type: Grid snap (SNAPTYPE 0) or PolarSnap (1). */
   readonly snapType: 0 | 1;
+  /** Grid style: Display dotted grid in 2D model space, Block editor, Sheet/layout (GRIDSTYLE). */
+  readonly gridStyle: number;
   /** Polar spacing's Polar distance (POLARDIST) as typed. */
   readonly polarDist: string;
   /** Object Snap On (F3), and the modes checked (OSMODE without OSNAP_OFF). */
@@ -87,6 +96,24 @@ export interface SpacingDraft {
   /** Equal X and Y spacing: typing either X or Y sets both, for snap and for grid. */
   readonly equal: boolean;
   readonly major: string;
+  /** Grid behavior: GRIDDISPLAY's bits (`gridBehavior`); absent when the drawing gave none. */
+  readonly gridDisplay?: number;
+}
+
+/** Grid behavior's check boxes as GRIDDISPLAY's bits hold them. */
+export function gridBehavior(g: SpacingDraft): {
+  adaptive: boolean;
+  subdivide: boolean;
+  beyondLimits: boolean;
+  follow: boolean;
+} {
+  const has = (bit: number) => ((g.gridDisplay ?? 0) & bit) !== 0;
+  return {
+    adaptive: has(GRID_DISPLAY.adaptive),
+    subdivide: has(GRID_DISPLAY.subdivide),
+    beyondLimits: has(GRID_DISPLAY.beyondLimits),
+    follow: has(GRID_DISPLAY.follow),
+  };
 }
 
 /** The Snap and Grid tab's fields for the drawing's settings. */
@@ -98,6 +125,7 @@ export function spacingOf(g: SnapGridSettings): SpacingDraft {
     gridY: String(g.gridSpacing.y),
     equal: g.snapSpacing.x === g.snapSpacing.y && g.gridSpacing.x === g.gridSpacing.y,
     major: String(g.gridMajor),
+    ...(g.gridDisplay !== undefined && { gridDisplay: g.gridDisplay }),
   };
 }
 
@@ -114,6 +142,7 @@ export function draftOf(s: DraftingState, snapGrid?: SnapGridSettings): Drafting
     trackPolar: (s.polarMode & POLARMODE_TRACK_POLAR) !== 0,
     relative: (s.polarMode & POLARMODE_RELATIVE) !== 0,
     snapType: s.snapType,
+    gridStyle: s.gridStyle,
     polarDist: String(s.polarDist),
     osnap: (s.osmode & OSNAP_OFF) === 0 && s.osmode !== 0,
     modes: s.osmode & ~OSNAP_OFF,
@@ -174,6 +203,7 @@ export function spacingSettings(g: SpacingDraft): SnapGridSettings | string {
     snapSpacing: { x: snapX, y: snapY },
     gridSpacing: { x: gridX, y: gridY },
     gridMajor: major,
+    ...(g.gridDisplay !== undefined && { gridDisplay: g.gridDisplay }),
   };
 }
 
@@ -251,6 +281,7 @@ export function draftPatch(d: DraftingSettingsDraft, s: DraftingState): Partial<
       (d.relative ? POLARMODE_RELATIVE : 0),
     polarAddAngles: d.angles.map(angleText).join(';'),
     snapType: d.snapType,
+    gridStyle: d.gridStyle,
     polarDist: decimal(d.polarDist)!,
     // Object Snap Off keeps the modes for F3 to turn back on, as AutoCAD's OSMODE 16384 bit does.
     osmode: d.osnap ? d.modes : d.modes | OSNAP_OFF,

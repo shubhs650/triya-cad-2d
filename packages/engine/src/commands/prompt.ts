@@ -588,12 +588,14 @@ export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'dyn' | 'qp';
 
 /**
  * What the Snap and Grid tab sets in the `*Active` VPORT (M3-06 part 2): SNAPUNIT, GRIDUNIT (0
- * follows the snap spacing) and GRIDMAJOR.
+ * follows the snap spacing) and GRIDMAJOR, and its Grid behavior (part 6), GRIDDISPLAY's bits.
  */
 export interface SnapGridSettings {
   readonly snapSpacing: Vec2;
   readonly gridSpacing: Vec2;
   readonly gridMajor: number;
+  /** GRIDDISPLAY (`edit/snap-grid.ts` GRID_DISPLAY bits); absent keeps the viewport's. */
+  readonly gridDisplay?: number;
 }
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */

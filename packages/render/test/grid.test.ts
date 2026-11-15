@@ -43,6 +43,50 @@ describe('gridLines', () => {
   });
 });
 
+// M3-06 part 6: Grid behavior and Grid style (AutoCAD 2024 Help, "GRIDDISPLAY", "GRIDSTYLE",
+// "Snap and Grid Tab (Drafting Settings Dialog Box)").
+describe('gridLines behaviour', () => {
+  it('without adaptive display shows no grid too dense to see, rather than coarsening', () => {
+    expect(gridLines({ spacing: { x: 10, y: 10 }, major: 5, adaptive: false }, box, 0.5)).toBe(
+      undefined,
+    );
+    const g = gridLines({ spacing: { x: 10, y: 10 }, major: 5, adaptive: false }, box, 1)!;
+    expect(g.xs).toHaveLength(11);
+  });
+
+  it('subdivides below the grid spacing by GRIDMAJOR when zoomed in far enough', () => {
+    const spec = { spacing: { x: 10, y: 10 }, major: 5, subdivide: true };
+    // 10 units at 1 px is 10 px: a fifth of that (2 px) would be too dense.
+    expect(gridLines(spec, box, 1)!.xs).toHaveLength(11);
+    // At 10 px a unit, lines every 2 units are 20 px apart; the old lines stay major.
+    const g = gridLines(spec, { minX: 0, minY: 0, maxX: 10, maxY: 4 }, 10)!;
+    expect(g.xs).toEqual([0, 2, 4, 6, 8, 10]);
+    expect(g.majorXs).toEqual([0, 10]);
+    expect(g.ys).toEqual([0, 2, 4]);
+    // Not adaptive: no subdivision.
+    const plain = gridLines(
+      { ...spec, adaptive: false },
+      { minX: 0, minY: 0, maxX: 10, maxY: 4 },
+      10,
+    )!;
+    expect(plain.xs).toEqual([0, 10]);
+  });
+
+  it('keeps the grid within the limits unless it runs beyond them', () => {
+    const limits = { minX: 15, minY: 5, maxX: 62, maxY: 30 };
+    const g = gridLines({ spacing: { x: 10, y: 10 }, major: 5, limits }, box, 1)!;
+    expect(g.xs).toEqual([20, 30, 40, 50, 60]);
+    expect(g.ys).toEqual([10, 20, 30]);
+    expect(g.majorXs).toEqual([50]);
+    expect(g.extent).toEqual(limits);
+    // Limits wholly off the view: nothing to draw.
+    const away = { minX: 500, minY: 500, maxX: 600, maxY: 600 };
+    expect(gridLines({ spacing: { x: 10, y: 10 }, major: 5, limits: away }, box, 1)).toBe(
+      undefined,
+    );
+  });
+});
+
 describe('Canvas2DRenderer grid', () => {
   it('draws the grid on the scene only while RenderStyle.grid is set', () => {
     const d = drawing([entity('100', line(0, 0, 10, 0))]);
@@ -80,5 +124,48 @@ describe('Canvas2DRenderer grid', () => {
     r.frame();
     const colours = layers[0]!.ctx.calls.filter((c) => c[0] === 'strokeStyle').map((c) => c[1]);
     expect(colours.slice(0, 2)).toEqual([mixColors(style.background, '#00ff00', 0.5), '#00ff00']);
+  });
+
+  it('draws a dotted grid (GRIDSTYLE) as a dot where the lines cross, and lines only within the limits', () => {
+    const d = drawing([]);
+    const layers: ReturnType<typeof surface>[] = [];
+    const style = { background: '#000000', foreground: '#ffffff', showLineweights: false };
+    const r = new Canvas2DRenderer({
+      model: d.model,
+      index: d.index,
+      block: MODEL,
+      surface: surface('visible'),
+      createLayer: () => {
+        const s = surface(layers.length === 0 ? 'scene' : 'transient');
+        layers.push(s);
+        return s;
+      },
+      style,
+      requestIdle: () => {},
+    });
+    r.resize(200, 100, 1);
+    r.setView({ center: { x: 0, y: 0 }, scale: 2 });
+    const calls = () => {
+      layers[0]!.ctx.clear();
+      r.frame();
+      return layers[0]!.ctx.calls;
+    };
+    // The view is 100 × 50 units about the origin: 11 × 5 crossings 10 apart.
+    const spacing = { x: 10, y: 10 };
+    r.setStyle({ ...style, grid: { spacing, major: 5, dots: true } });
+    const dotted = calls();
+    expect(dotted.filter((c) => c[0] === 'rect').length).toBe(11 * 5);
+    expect(dotted.filter((c) => c[0] === 'moveTo').length).toBe(0);
+    // Lines within limits from (0,0) to (20,20): three each way, as long as the limits.
+    r.setStyle({
+      ...style,
+      grid: { spacing, major: 5, limits: { minX: 0, minY: 0, maxX: 20, maxY: 20 } },
+    });
+    const limited = calls().filter((c) => c[0] === 'lineTo');
+    expect(limited.length).toBe(6);
+    // Device pixels: the view's centre (0,0) is at (100,50), 2 px a unit, Y up; each line
+    // runs from the limits' top or left edge to the other.
+    expect(limited).toContainEqual(['lineTo', 100.5, 50]);
+    expect(limited).toContainEqual(['lineTo', 140, 50.5]);
   });
 });

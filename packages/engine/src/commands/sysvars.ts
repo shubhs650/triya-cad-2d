@@ -76,7 +76,7 @@ export type NameTable =
 export interface SystemVariable {
   /** AutoCAD's name, upper case, without the header's `$`. */
   readonly name: string;
-  readonly store: 'header' | 'wipeout' | 'app' | 'computed';
+  readonly store: 'header' | 'wipeout' | 'app' | 'computed' | 'vport';
   /** The header entry (`$LTSCALE`, `CETRANSPARENCY`) of a header variable. */
   readonly key?: string;
   readonly kind: VariableKind;
@@ -156,6 +156,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // PolarSnap (initially 0); POLARDIST the PolarSnap increment (initially 0: the snap X spacing).
   { name: 'SNAPTYPE', store: 'app', kind: 'integer', min: 0, max: 1 },
   { name: 'POLARDIST', store: 'app', kind: 'real', nonNegative: true },
+  // M3-06 part 6 (AutoCAD 2024 Help, "GRIDSTYLE"): a dotted grid in 2D model space (1), the block
+  // editor (2) and on layouts (4); initially 0, lines. DXF has no place for it: per user.
+  { name: 'GRIDSTYLE', store: 'app', kind: 'integer', min: 0, max: 7 },
   // M3-06 part 5 (AutoCAD 2024 Help, "Saved in: Registry"): TEMPOVERRIDES 1 the temporary override
   // keys act (initially), 0 not.
   { name: 'TEMPOVERRIDES', store: 'app', kind: 'switch' },
@@ -248,6 +251,21 @@ export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
   { name: 'TILEMODE', store: 'computed', kind: 'switch' },
   { name: 'VIEWCTR', store: 'computed', kind: 'point', readOnly: true },
   { name: 'VIEWSIZE', store: 'computed', kind: 'distance', readOnly: true },
+];
+
+/**
+ * The variables kept in the current viewport, the model-space `*Active` VPORT (M3-06 part 6;
+ * AutoCAD 2024 Help, each variable: saved in the drawing, the current viewport's): the snap
+ * spacing (positive), the grid spacing (0 follows the snap spacing), GRIDMAJOR, GRIDDISPLAY's bits
+ * and the snap base. They come before the header's copies, which only pre-2000 files carry and
+ * which AutoCAD itself no longer reads; those stay as read.
+ */
+export const VPORT_VARIABLES: readonly SystemVariable[] = [
+  { name: 'GRIDDISPLAY', store: 'vport', kind: 'integer', min: 0, max: 15 },
+  { name: 'GRIDMAJOR', store: 'vport', kind: 'integer', min: 1, max: 100 },
+  { name: 'GRIDUNIT', store: 'vport', kind: 'point' },
+  { name: 'SNAPBASE', store: 'vport', kind: 'point' },
+  { name: 'SNAPUNIT', store: 'vport', kind: 'point' },
 ];
 
 /**
@@ -544,6 +562,8 @@ export function systemVariable(model: VariableSource, name: string): SystemVaria
   const app = APP_VARIABLES.find((v) => v.name === n);
   if (app) return app;
   if (n === WIPEOUTFRAME.name) return WIPEOUTFRAME;
+  const vport = VPORT_VARIABLES.find((v) => v.name === n);
+  if (vport) return vport;
   const known = COMPUTED_VARIABLES.find((v) => v.name === n);
   if (known) return known;
   const drawing = DRAWING_VARIABLES.find((v) => v.name === n);
@@ -560,7 +580,12 @@ export function systemVariables(model: VariableSource): SystemVariable[] {
     if (v) out.set(v.name, v);
   }
   out.set(WIPEOUTFRAME.name, WIPEOUTFRAME);
-  for (const v of [...APP_VARIABLES, ...COMPUTED_VARIABLES, ...DRAWING_VARIABLES]) {
+  for (const v of [
+    ...APP_VARIABLES,
+    ...VPORT_VARIABLES,
+    ...COMPUTED_VARIABLES,
+    ...DRAWING_VARIABLES,
+  ]) {
     out.set(v.name, v);
   }
   return [...out.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));

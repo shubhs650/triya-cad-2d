@@ -11,10 +11,21 @@
 // the spacing and Major are the drawing's `*Active` VPORT's (`edit/snap-grid.ts`), one undo step.
 // SNAP's Type (M3-06 part 3): "Enter snap type [Polar/Grid] <Grid>:" sets SNAPTYPE, the app's
 // per-user setting (AutoCAD keeps it in the registry), and ends the command.
-// Left out: SNAP's Style (isometric snap is PRD non-goal 7, DEC-026, DEC-060) and Legacy; GRID's aDaptive, Limits and Follow (Triya's grid is always
-// adaptive and runs past the limits; no dynamic UCS). AutoCAD's command line refuses a spacing
-// of 0 or less with "Value must be positive and nonzero."
-import { GRID_MAJOR, currentVport, snapGridOf, snapGridPatch } from '../edit/snap-grid';
+// GRID's aDaptive, Limits and Follow (M3-06 part 6) set the viewport's GRIDDISPLAY bits:
+//   aDaptive  Turn adaptive behavior on [Yes/No] <Yes>:
+//             Allow subdivision below grid spacing [Yes/No] <Yes>:   (asked only after Yes)
+//   Limits    Display grid beyond Limits [Yes/No] <Yes>:
+//   Follow    Follow Dynamic UCS [Yes/No] <No>:   (kept for the file; Triya has no dynamic UCS)
+// Left out: SNAP's Style (isometric snap is PRD non-goal 7, DEC-026, DEC-060) and Legacy.
+// AutoCAD's command line refuses a spacing of 0 or less with "Value must be positive and
+// nonzero."
+import {
+  GRID_DISPLAY,
+  GRID_MAJOR,
+  currentVport,
+  snapGridOf,
+  snapGridPatch,
+} from '../edit/snap-grid';
 import type { Vec2 } from '../geom/types';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer, SnapGridSettings } from './prompt';
@@ -88,6 +99,59 @@ async function* snapType(ctx: CommandContext): AsyncGenerator<Prompt, void, Prom
   if (!r.ok) ctx.message(r.message);
 }
 
+/** "message [Yes/No] <current>:", true for Yes; undefined when cancelled. */
+async function* yesNo(
+  ctx: CommandContext,
+  message: string,
+  now: boolean,
+): AsyncGenerator<Prompt, boolean | undefined, PromptAnswer> {
+  const a = yield ctx.prompt.keyword({
+    message,
+    options: ['Yes', 'No'],
+    default: { kind: 'keyword', keyword: now ? 'Yes' : 'No' },
+  });
+  return a.kind === 'keyword' ? a.keyword === 'Yes' : undefined;
+}
+
+/**
+ * GRID's aDaptive, Limits and Follow: the GRIDDISPLAY bits asked about, set in the `*Active`
+ * VPORT in one undo step. Without one, says why before asking anything.
+ */
+async function* gridBehavior(
+  ctx: CommandContext,
+  option: 'aDaptive' | 'Limits' | 'Follow',
+): AsyncGenerator<Prompt, void, PromptAnswer> {
+  const v = currentVport(ctx.model);
+  if (!v) {
+    ctx.message(NO_VPORT);
+    return;
+  }
+  let flags = v.gridFlags;
+  const has = (bit: number) => (flags & bit) !== 0;
+  const turn = (bit: number, on: boolean) => (flags = on ? flags | bit : flags & ~bit);
+  if (option === 'aDaptive') {
+    const on = yield* yesNo(ctx, 'Turn adaptive behavior on', has(GRID_DISPLAY.adaptive));
+    if (on === undefined) return;
+    turn(GRID_DISPLAY.adaptive, on);
+    if (on) {
+      const sub = yield* yesNo(
+        ctx,
+        'Allow subdivision below grid spacing',
+        has(GRID_DISPLAY.subdivide),
+      );
+      if (sub === undefined) return;
+      turn(GRID_DISPLAY.subdivide, sub);
+    }
+  } else {
+    const bit = option === 'Limits' ? GRID_DISPLAY.beyondLimits : GRID_DISPLAY.follow;
+    const message = option === 'Limits' ? 'Display grid beyond Limits' : 'Follow Dynamic UCS';
+    const on = yield* yesNo(ctx, message, has(bit));
+    if (on === undefined) return;
+    turn(bit, on);
+  }
+  setSettings(ctx, () => ({ gridDisplay: flags }));
+}
+
 const spacingNow = (ctx: CommandContext, key: 'snapSpacing' | 'gridSpacing'): Vec2 =>
   currentVport(ctx.model)?.[key] ?? { x: 10, y: 10 };
 
@@ -143,7 +207,7 @@ export function gridCommand(): CommandDef {
       for (;;) {
         const a = yield ctx.prompt.distance({
           message: 'Specify grid spacing(X) or',
-          options: ['ON', 'OFF', 'Snap', 'Major', 'Aspect'],
+          options: ['ON', 'OFF', 'Snap', 'Major', 'aDaptive', 'Limits', 'Follow', 'Aspect'],
           default: { kind: 'distance', value: now.x },
           arbitrary: true,
         });
@@ -167,6 +231,11 @@ export function gridCommand(): CommandDef {
           setSettings(ctx, () => ({ gridMajor: m.value }));
           return;
         }
+        if (
+          a.kind === 'keyword' &&
+          (a.keyword === 'aDaptive' || a.keyword === 'Limits' || a.keyword === 'Follow')
+        )
+          return yield* gridBehavior(ctx, a.keyword);
         if (a.kind === 'keyword') {
           const v = yield* aspect(
             ctx,

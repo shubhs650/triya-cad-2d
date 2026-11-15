@@ -8,7 +8,14 @@
 // was drawn; LWT shows each drawing's own LWDISPLAY until the drafter turns it, and is then the
 // same for every drawing. Nothing is written back to the file. The snap and grid spacing are
 // each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas.
-import { OSMODE_DEFAULT, OSNAP, OSNAP_OFF, type OsnapMode } from '@triya/engine';
+import {
+  GRID_DISPLAY,
+  OSMODE_DEFAULT,
+  OSNAP,
+  OSNAP_OFF,
+  type Box,
+  type OsnapMode,
+} from '@triya/engine';
 
 export interface DraftingState {
   /** OSMODE: the running object snap modes, with OSNAP_OFF set while F3 has them off. */
@@ -92,6 +99,12 @@ export interface DraftingState {
   readonly snapType: 0 | 1;
   /** POLARDIST: PolarSnap's distance, 0 for the snap X spacing. Per user, initially 0. */
   readonly polarDist: number;
+  /**
+   * GRIDSTYLE (M3-06 part 6): the grid is dotted in 2D model space (1), the block editor (2,
+   * kept: Triya has none) and on layouts (4), else lines. Initially 0. DXF has no place for it,
+   * so Triya keeps it per user.
+   */
+  readonly gridStyle: number;
   /**
    * TEMPOVERRIDES (M3-06 part 5): the temporary override keys (Shift for ORTHO, Shift+E for
    * Endpoint…, `temp-overrides.ts`) act. AutoCAD keeps it per user, initially on.
@@ -289,6 +302,33 @@ export function polarSnapDistance(s: DraftingState, snapX: number): number | und
   return s.polarDist > 0 ? s.polarDist : snapX;
 }
 
+/** GRIDSTYLE 1: the grid is dotted in 2D model space. */
+export const GRIDSTYLE_MODEL = 1;
+/** GRIDSTYLE 4: the grid is dotted on layouts (AutoCAD's "Sheet/layout"). */
+export const GRIDSTYLE_LAYOUT = 4;
+
+/**
+ * How the canvas draws the grid (M3-06 part 6): adaptive, subdivided and within the limits by
+ * the viewport's GRIDDISPLAY (`flags`; a layout or a drawing without one is adaptive and runs
+ * beyond the limits, as before), dotted by GRIDSTYLE for the space shown.
+ */
+export function gridDisplayOf(o: {
+  flags: number | undefined;
+  limits: Box | undefined;
+  layout: boolean;
+  gridStyle: number;
+}): { adaptive: boolean; subdivide: boolean; limits?: Box; dots: boolean } {
+  const flags = o.flags ?? GRID_DISPLAY.adaptive | GRID_DISPLAY.beyondLimits;
+  const adaptive = (flags & GRID_DISPLAY.adaptive) !== 0;
+  const within = (flags & GRID_DISPLAY.beyondLimits) === 0 ? o.limits : undefined;
+  return {
+    adaptive,
+    subdivide: adaptive && (flags & GRID_DISPLAY.subdivide) !== 0,
+    ...(within && { limits: within }),
+    dots: (o.gridStyle & (o.layout ? GRIDSTYLE_LAYOUT : GRIDSTYLE_MODEL)) !== 0,
+  };
+}
+
 /** An angle as POLARADDANG lists it: decimal degrees, no trailing zeros. */
 export function angleText(deg: number): string {
   return String(+deg.toFixed(6));
@@ -366,6 +406,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   polarAddAngles: '',
   snapType: 0,
   polarDist: 0,
+  gridStyle: 0,
   tempOverrides: true,
   dynBits: 3,
   dynPrompt: true,

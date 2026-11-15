@@ -207,6 +207,13 @@ describe('system variables the app keeps', () => {
     expect(d.get().snapType).toBe(0);
   });
 
+  it('keeps GRIDSTYLE, the dotted grid’s bits, lines everywhere at first (M3-06 part 6)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'GRIDSTYLE')).toEqual({ ok: true, value: 0 });
+    expect(systemVariableReply(d, 'GRIDSTYLE', 5)).toEqual({ ok: true, value: 5 });
+    expect(d.get().gridStyle).toBe(5);
+  });
+
   it('keeps TEMPOVERRIDES, the temporary override keys on (M3-06 part 5)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'TEMPOVERRIDES')).toEqual({ ok: true, value: 1 });

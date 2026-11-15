@@ -87,6 +87,7 @@ import {
   type ChangeLink,
   type DrawnEntity,
   type FontSources,
+  type GridSpec,
   type PlotPart,
   type PlotRequest,
   type RasterPixels,
@@ -113,6 +114,7 @@ import {
   AUTOSNAP_TRACK_TIP,
   INITIAL_DRAFTING,
   POLARMODE_SHIFT_ACQUIRE,
+  gridDisplayOf,
   polarSnapDistance,
   trackingSettings,
   type DraftingState,
@@ -921,7 +923,8 @@ export class CanvasController {
       before.grid !== state.grid ||
       before.lwt !== state.lwt ||
       before.tpy !== state.tpy ||
-      before.gripSize !== state.gripSize
+      before.gripSize !== state.gripSize ||
+      before.gridStyle !== state.gridStyle
     ) {
       this.#host.setStyle(this.#style());
       this.#requestFrame();
@@ -1218,9 +1221,11 @@ export class CanvasController {
       this.#layout = after;
       this.#canvas.setAttribute('aria-label', `Layout ${after.name}`);
     }
-    this.#followHeader(change);
-    // The snap and grid spacing, or the snap type, changed: the grid shows them.
-    if (this.#followVports(change)) this.#host.setStyle(this.#style());
+    // The snap and grid spacing or behaviour, or the limits a grid may stay within (M3-06
+    // part 6), changed: the grid shows them.
+    const limits = this.#followHeader(change);
+    if (this.#followVports(change) || (limits && this.#drafting.grid))
+      this.#host.setStyle(this.#style());
     // Drawn now rather than on the next animation frame, so `flush` resolves once the change
     // is on screen (the palette measures toggle → canvas, M1-23). The view is sent only when it
     // is not the one the renderer has: setting a view redraws the whole scene, and a render
@@ -1300,11 +1305,15 @@ export class CanvasController {
     return (v?.added?.length ?? 0) + (v?.updated?.length ?? 0) > 0;
   }
 
-  #followHeader(change: ChangeSet): void {
+  /** Keeps the header as `change` leaves it; true when model space's limits changed. */
+  #followHeader(change: ChangeSet): boolean {
+    let limits = false;
     for (const h of change.header ?? []) {
       if (h.after === undefined) this.#header.delete(h.name);
       else this.#header.set(h.name, h.after);
+      if (h.name === '$LIMMIN' || h.name === '$LIMMAX') limits = true;
     }
+    return limits;
   }
 
   /**
@@ -1425,17 +1434,27 @@ export class CanvasController {
     };
   }
 
-  /** GRIDUNIT and GRIDMAJOR of the viewport shown (10 × 10 and 5 when it has none). */
-  #grid(): { spacing: Vec2; base?: Vec2; major: number } {
+  /**
+   * GRIDUNIT and GRIDMAJOR of the viewport shown (10 × 10 and 5 when it has none), drawn as its
+   * GRIDDISPLAY and GRIDSTYLE say (M3-06 part 6).
+   */
+  #grid(): GridSpec {
     const vport = this.#vport();
     const g = vport?.gridSpacing;
     const s = this.#snapSpacing();
     // A GRIDUNIT of 0 follows the snap spacing, as AutoCAD's does.
     const spacing = g && g.x > 0 && g.y > 0 ? g : s;
+    const display = gridDisplayOf({
+      flags: vport?.gridFlags,
+      limits: this.#layout ? undefined : this.#limits(),
+      layout: this.#layout !== undefined,
+      gridStyle: this.#drafting.gridStyle,
+    });
     return {
       spacing,
       ...(vport?.snapBase && { base: vport.snapBase }),
       major: vport?.gridMajor && vport.gridMajor > 0 ? vport.gridMajor : 5,
+      ...display,
     };
   }
 
