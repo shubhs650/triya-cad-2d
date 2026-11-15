@@ -72,6 +72,9 @@ describe('palette search', () => {
       'EXPORTPDF',
       'EXTEND',
       'FILLET',
+      'FILTER',
+      // M3-06 part 2: GRID and SNAP.
+      'GRID',
       'GROUP',
       'GROUPEDIT',
       'HATCHTOBACK',
@@ -128,6 +131,7 @@ describe('palette search', () => {
       'SELECT',
       'SELECTSIMILAR',
       'SETVAR',
+      'SNAP',
       'SPLINE',
       'SPLINEDIT',
       'STRETCH',

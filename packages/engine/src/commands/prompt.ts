@@ -6,10 +6,11 @@ import type { Vec2 } from '../geom/types';
 import type { DeferredModes } from '../input/osnap';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { Color, LinetypeRef, Lineweight } from '../model/types';
+import type { Color, EntityType, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
 import type { OverkillSettings } from '../edit/overkill';
 import type { QuickSelectCriteria, QuickSelectType } from '../selection/qselect';
+import type { FilterItem, FilterNameKey } from '../selection/filter';
 import type { PropertyUnits } from '../properties/sheet';
 import type { MatchSettings } from '../properties/match';
 import type { DragPreview } from './drag';
@@ -464,11 +465,28 @@ export type DialogRequest =
        */
       readonly type: 'dsettings';
       readonly tab?: DraftingSettingsTab;
+      /**
+       * The Snap and Grid tab's spacing (M3-06 part 2): the drawing's, from its
+       * `*Active` VPORT; none when it has no such viewport.
+       */
+      readonly snapGrid?: SnapGridSettings;
     }
   | {
       /** SELECTSIMILAR's Select Similar Settings (M3-04 part 3), opened on SELECTSIMILARMODE. */
       readonly type: 'selectsimilar';
       readonly mode: number;
+    }
+  | {
+      /**
+       * FILTER's Object Selection Filters (M3-04 part 4). `list` and `name`: the filter it closed
+       * with when Add Selected Object reopens it (absent: the app's current filter). `names`
+       * offers each name property's values in the drawing, `types` the object types.
+       */
+      readonly type: 'filter';
+      readonly list?: readonly FilterItem[];
+      readonly name?: string;
+      readonly names: Readonly<Record<FilterNameKey, readonly string[]>>;
+      readonly types: readonly { readonly type: EntityType; readonly label: string }[];
     }
   | ObjectGroupingRequest;
 
@@ -524,8 +542,18 @@ export type GroupingAction =
     }
   | { readonly op: 'reverse'; readonly group: string };
 
-/** The Drafting Settings tabs Triya has (M3-06 part 1). */
-export type DraftingSettingsTab = 'polar' | 'osnap' | 'qp';
+/** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
+export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'qp';
+
+/**
+ * What the Snap and Grid tab sets in the `*Active` VPORT (M3-06 part 2): SNAPUNIT, GRIDUNIT (0
+ * follows the snap spacing) and GRIDMAJOR.
+ */
+export interface SnapGridSettings {
+  readonly snapSpacing: Vec2;
+  readonly gridSpacing: Vec2;
+  readonly gridMajor: number;
+}
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
 export interface DialogPrompt extends PromptBase {
@@ -625,6 +653,8 @@ export type PromptAnswer =
       readonly pointStyle?: { readonly mode: number; readonly size: number };
       /** Delete Duplicate Objects' settings as OK closed it. */
       readonly overkill?: OverkillSettings;
+      /** Drafting Settings' Snap and Grid tab as OK closed it (M3-06 part 2). */
+      readonly snapGrid?: SnapGridSettings;
       /** Quick Select's criteria as OK (or Select objects) closed it. */
       readonly qselect?: QuickSelectCriteria;
       /** Select Similar Settings' checkboxes as OK closed it, SELECTSIMILARMODE's bits. */
@@ -632,6 +662,8 @@ export type PromptAnswer =
       /** An Object Grouping button (CLASSICGROUP, M3-08), with Include Unnamed as it was. */
       readonly grouping?: GroupingAction;
       readonly includeUnnamed?: boolean;
+      /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
+      readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }

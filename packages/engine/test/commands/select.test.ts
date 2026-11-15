@@ -78,6 +78,8 @@ function setup(o: { pickfirst?: boolean } = {}) {
   const id = (h: string) => model.ids.idOf(h)!;
   const handles = (ids: readonly EntityId[]) => ids.map((i) => model.ids.handleOf(i));
   const answer = (r: ViewRequest): ViewReply => {
+    // PICKADD 1 (M3-04 part 4): SELECT leaves nothing selected; 2 keeps it (filter.test.ts).
+    if (r.op === 'sysvar' && r.name === 'PICKADD') return { ok: true, value: 1 };
     asked.push(r);
     const near = (b: Box, p: { x: number; y: number }) =>
       p.x >= b.minX - 0.5 && p.x <= b.maxX + 0.5 && p.y >= b.minY - 0.5 && p.y <= b.maxY + 0.5;
@@ -486,7 +488,13 @@ describe('noun-verb pre-selection (PICKFIRST)', () => {
       model: s.model,
       registry,
       view: {
-        request: (r) => Promise.resolve({ ok: true, ids: r.op === 'pick' ? [s.id('20')] : [] }),
+        // PICKADD 1: SELECT leaves nothing selected (M3-04 part 4).
+        request: (r) =>
+          Promise.resolve(
+            r.op === 'sysvar'
+              ? { ok: true, value: 1 }
+              : { ok: true, ids: r.op === 'pick' ? [s.id('20')] : [] },
+          ),
       },
     });
     let shown: readonly EntityId[] = [];

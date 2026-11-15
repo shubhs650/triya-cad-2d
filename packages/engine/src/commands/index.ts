@@ -26,12 +26,14 @@ export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale }
 export { viewCommand, viewNameMatches } from './view/named-view';
 export { selectCommand } from './select';
 export { selectSimilarCommand } from './select-similar';
+export { filterCommand } from './filter';
 export { setvarCommand, variableCommand, UNKNOWN_VARIABLE } from './setvar';
 export * from './sysvars';
 export * from '../selection/loop';
 export * from '../selection/rules';
 export * from '../selection/qselect';
 export * from '../selection/similar';
+export * from '../selection/filter';
 export * from './undo';
 export * from './undo-commands';
 export * from './modify/edit';

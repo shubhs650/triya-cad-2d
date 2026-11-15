@@ -104,6 +104,15 @@ export interface DraftingState {
    */
   readonly pickStyle: number;
   /**
+   * M3-04 part 4 (AutoCAD 2024 Help), kept per user: PICKBOX the pickbox's half size in pixels
+   * (0 to 50, initially 3); PICKADD whether a selection step adds to the set (1, 2) or replaces
+   * it (0, 3; initially 2); PICKAUTO's bits 1 implied windowing at "Select objects", 2 a window
+   * dragged from an object at `Command:` (not yet acted on), 4 a lasso (initially 5).
+   */
+  readonly pickbox: number;
+  readonly pickadd: number;
+  readonly pickauto: number;
+  /**
    * The Drafting Settings dialog's Quick Properties tab (AutoCAD 2024 Help, "Quick Properties
    * Tab (Drafting Settings Dialog Box)"), kept per user: by the cursor, the quadrant and the
    * distance in pixels it goes at; whether it collapses, and to how many rows.
@@ -252,6 +261,9 @@ export const INITIAL_DRAFTING: DraftingState = {
   selectSimilarMode: 130,
   selectionCycling: 0,
   pickStyle: 1,
+  pickbox: 3,
+  pickadd: 2,
+  pickauto: 5,
   qpQuadrant: 'top-right',
   qpDistance: 50,
   qpCollapse: true,

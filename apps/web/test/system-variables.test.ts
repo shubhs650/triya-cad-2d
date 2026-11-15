@@ -177,6 +177,17 @@ describe('system variables the app keeps', () => {
     expect(d.isOn('groups')).toBe(false);
   });
 
+  it('keep PICKBOX, PICKADD and PICKAUTO (M3-04 part 4)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'PICKBOX')).toEqual({ ok: true, value: 3 });
+    expect(systemVariableReply(d, 'PICKADD')).toEqual({ ok: true, value: 2 });
+    expect(systemVariableReply(d, 'PICKAUTO')).toEqual({ ok: true, value: 5 });
+    systemVariableReply(d, 'PICKBOX', 8);
+    systemVariableReply(d, 'PICKADD', 0);
+    systemVariableReply(d, 'PICKAUTO', 1);
+    expect(d.get()).toMatchObject({ pickbox: 8, pickadd: 0, pickauto: 1 });
+  });
+
   it('are answered by the view host, refused where the app keeps none', () => {
     const d = new Drafting();
     const ctx = { target: undefined, all: () => [], views: () => [] };

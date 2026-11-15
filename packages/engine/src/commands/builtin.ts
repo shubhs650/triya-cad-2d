@@ -30,6 +30,7 @@ import { peditCommand } from './modify/pedit';
 import { splineditCommand } from './modify/splinedit';
 import { overkillCommand } from './modify/overkill';
 import { DRAFTING_SETTINGS_COMMANDS } from './drafting-settings';
+import { SNAP_GRID_COMMANDS } from './snap-grid';
 import { changeCommand, chpropCommand } from './modify/chprop';
 import { matchpropCommand } from './modify/matchprop';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
@@ -39,6 +40,7 @@ import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
 import { qselectCommand } from './qselect';
 import { GROUP_COMMANDS } from './modify/group';
+import { filterCommand } from './filter';
 import { selectSimilarCommand } from './select-similar';
 import { setvarCommand } from './setvar';
 import { PALETTE_COMMANDS } from './palettes';
@@ -82,6 +84,7 @@ export function builtinCommands(): CommandRegistry {
     viewCommand(),
     selectCommand(),
     qselectCommand(),
+    filterCommand(),
     selectSimilarCommand(),
     setvarCommand(),
     ...EDIT_COMMANDS.map((make) => make()),
@@ -113,6 +116,7 @@ export function builtinCommands(): CommandRegistry {
     ...CLIPBOARD_COMMANDS.map((make) => make()),
     ...PALETTE_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
+    ...SNAP_GRID_COMMANDS.map((make) => make()),
     underlayLayersCommand(),
     ...INQUIRY_COMMANDS.map((make) => make()),
     ...ARRAY_COMMANDS.map((make) => make()),

@@ -26,6 +26,10 @@
 //     well, but not those on frozen or locked layers; "Selecting an object that belongs to
 //     multiple groups selects all groups to which that object belongs".
 // The same loop, without a prompt of its own, is the pre-selection made at `Command:` (PICKFIRST).
+// M3-04 part 4 (AutoCAD 2024 Help, "PICKADD", "PICKAUTO"): with PICKADD 0 or 3 each step's
+// objects replace the set and Shift toggles them in or out (a Shift step finding nothing clears
+// the set at 0, keeps it at 3); 1 and 2 add, Shift removing. Without PICKAUTO's bit 1 a pick that
+// finds nothing at "Select objects" starts no window (at `Command:` one always starts).
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
@@ -56,6 +60,17 @@ const CYCLING_LIST = 2;
 export const PICKSTYLE = 'PICKSTYLE';
 export const DEFAULT_PICKSTYLE = 1;
 const GROUP_SELECTION = 1;
+
+/** PICKADD's and PICKAUTO's names, and AutoCAD's initial values (2 and 5). */
+export const PICKADD = 'PICKADD';
+export const PICKAUTO = 'PICKAUTO';
+export const DEFAULT_PICKADD = 2;
+export const DEFAULT_PICKAUTO = 5;
+/** PICKAUTO 1: a pick that finds nothing at "Select objects" starts a window. */
+const PICKAUTO_WINDOW = 1;
+
+/** What a step does to the set: adds, removes, replaces it, or toggles (Shift at PICKADD 0). */
+type SetOp = 'add' | 'remove' | 'replace' | 'toggle';
 
 /** The modes typed at "Select objects", in AutoCAD's display form. */
 export const SELECTION_MODES = [
@@ -91,6 +106,9 @@ export interface SelectionLoopHost {
   log(line: string): void;
   /** The Previous selection set. */
   previous(): readonly EntityId[];
+  /** PICKADD and PICKAUTO as the app last set them (AutoCAD's 2 and 5 when not given). */
+  pickadd?(): number;
+  pickauto?(): number;
 }
 
 export interface SelectionLoopOptions {
@@ -141,7 +159,7 @@ interface Corner {
   readonly from: Vec2;
   /** `auto` takes its kind from the direction (implied windowing and BOX). */
   readonly kind: 'auto' | 'window' | 'crossing';
-  readonly remove: boolean;
+  readonly op: SetOp;
 }
 
 export class SelectionLoop {
@@ -161,7 +179,7 @@ export class SelectionLoop {
   #takes: SelectionTake[] = [];
   readonly #undoTakes: SelectionTake[][] = [];
   /** Fence, WPolygon or CPolygon typed: its points so far. */
-  #path: { kind: SelectionPath['kind']; points: Vec2[]; remove: boolean } | undefined;
+  #path: { kind: SelectionPath['kind']; points: Vec2[]; op: SetOp } | undefined;
   /** Group typed: its name is asked for. */
   #group = false;
   /** Multiple typed: the picks made so far, taken at Enter. */
@@ -276,7 +294,7 @@ export class SelectionLoop {
     o: { readonly shift?: boolean; readonly release?: boolean; readonly lasso?: Lasso } = {},
   ): Promise<StepResult> {
     if (this.#first) {
-      this.#corner = { from: p, kind: this.#first, remove: this.#remove };
+      this.#corner = { from: p, kind: this.#first, op: this.#op(false) };
       this.#first = undefined;
       return 'more';
     }
@@ -290,15 +308,15 @@ export class SelectionLoop {
         kind: lasso.kind,
         points: lasso.points,
       });
-      return await this.#take(r, c.remove, `${lassoPrompt(lasso.kind)}:`, {});
+      return await this.#take(r, c.op, `${lassoPrompt(lasso.kind)}:`, {});
     }
     if (c) {
       this.#corner = undefined;
       const crossing = c.kind === 'auto' ? p.x < c.from.x : c.kind === 'crossing';
       const r = await this.#host.request({ op: 'select', a: c.from, b: p, crossing });
       const window = { a: c.from, b: p };
-      if (!c.remove && r.ok) this.#window = window;
-      return await this.#take(r, c.remove, 'Specify opposite corner:', { window, crossing });
+      if (c.op !== 'remove' && r.ok) this.#window = window;
+      return await this.#take(r, c.op, 'Specify opposite corner:', { window, crossing });
     }
     if (o.release) return 'more';
     const path = this.#path;
@@ -315,20 +333,40 @@ export class SelectionLoop {
       this.#multiple.push(p);
       return 'more';
     }
-    const remove = this.#remove || !!o.shift;
+    const op = this.#op(!!o.shift);
     const r = await this.#host.request({ op: 'pick', point: p });
     const hits = r.ok ? (r.ids ?? []).filter((id) => this.#host.model.entity(id)) : [];
     if (hits.length === 0) {
       if (!r.ok) this.#say(r.message);
-      this.#corner = { from: p, kind: 'auto', remove };
+      const auto = this.#host.pickauto?.() ?? DEFAULT_PICKAUTO;
+      if (this.#o.atCommand || (auto & PICKAUTO_WINDOW) !== 0) {
+        this.#corner = { from: p, kind: 'auto', op };
+      }
       return 'more';
     }
     const hit = hits.length > 1 ? await this.#cycle(p, hits) : hits[0];
     // The Selection list dismissed: nothing taken, and no window either.
     if (hit === undefined) return 'more';
-    if (!remove) this.#pick = p;
+    if (op !== 'remove') this.#pick = p;
     const { ids, groups } = await this.#grouped([hit]);
-    return this.#apply(ids, remove, this.#label(), { pick: p }, groups);
+    return this.#apply(ids, op, this.#label(), { pick: p }, groups);
+  }
+
+  /** What a step does: Remove mode removes; PICKADD says whether it adds or replaces. */
+  #op(shift: boolean): SetOp {
+    if (this.#remove) return 'remove';
+    const pickadd = this.#host.pickadd?.() ?? DEFAULT_PICKADD;
+    const adds = pickadd === 1 || pickadd === 2;
+    if (adds) return shift ? 'remove' : 'add';
+    return shift ? 'toggle' : 'replace';
+  }
+
+  /**
+   * Objects added from outside the loop: what 'FILTER found at this prompt (M3-04 part 4), as
+   * one step of it.
+   */
+  add(ids: readonly EntityId[]): void {
+    this.#apply(ids, this.#op(false), this.#label());
   }
 
   /**
@@ -377,7 +415,7 @@ export class SelectionLoop {
         this.#path = {
           kind: mode === 'Fence' ? 'fence' : mode === 'WPolygon' ? 'window' : 'crossing',
           points: [],
-          remove: this.#remove,
+          op: this.#op(false),
         };
         this.#say(label);
         return 'more';
@@ -390,14 +428,14 @@ export class SelectionLoop {
         this.#say(label);
         return 'more';
       case 'ALL':
-        return this.#apply(selectAll(model, space), this.#remove, label);
+        return this.#apply(selectAll(model, space), this.#op(false), label);
       case 'Last': {
         const last = selectLast(model, space);
         const { ids, groups } = await this.#grouped(last === undefined ? [] : [last]);
-        return this.#apply(ids, this.#remove, label, {}, groups);
+        return this.#apply(ids, this.#op(false), label, {}, groups);
       }
       case 'Previous':
-        return this.#apply(inSpace(model, space, this.#host.previous()), this.#remove, label);
+        return this.#apply(inSpace(model, space, this.#host.previous()), this.#op(false), label);
       case 'Add':
       case 'Remove':
         this.#remove = mode === 'Remove';
@@ -468,7 +506,7 @@ export class SelectionLoop {
       const e = model.entityByHandle(h);
       return e && e.owner === space ? [e.id] : [];
     });
-    return this.#apply(ids, this.#remove, label);
+    return this.#apply(ids, this.#op(false), label);
   }
 
   async #endPath(): Promise<StepResult> {
@@ -481,7 +519,7 @@ export class SelectionLoop {
       kind: path.kind,
       points: path.points,
     });
-    return await this.#take(r, path.remove, label, {});
+    return await this.#take(r, path.op, label, {});
   }
 
   /** Multiple's picks: each takes the nearest object under it that no other pick took. */
@@ -498,7 +536,7 @@ export class SelectionLoop {
       if (hit !== undefined) found.push(hit);
     }
     const { ids, groups } = await this.#grouped(found);
-    return this.#apply(ids, this.#remove, this.#label(), {}, groups);
+    return this.#apply(ids, this.#op(false), this.#label(), {}, groups);
   }
 
   /** Text that is no point and no mode: AutoCAD's refusal and its list of modes. */
@@ -519,7 +557,7 @@ export class SelectionLoop {
 
   async #take(
     r: ViewReply,
-    remove: boolean,
+    op: SetOp,
     label: string,
     how: Omit<SelectionTake, 'ids'>,
   ): Promise<StepResult> {
@@ -530,7 +568,7 @@ export class SelectionLoop {
     const { ids, groups } = await this.#grouped(
       (r.ids ?? []).filter((id) => this.#host.model.entity(id)),
     );
-    return this.#apply(ids, remove, label, how, groups);
+    return this.#apply(ids, op, label, how, groups);
   }
 
   /**
@@ -564,10 +602,10 @@ export class SelectionLoop {
     return { ids, groups: hit.length };
   }
 
-  /** Adds or removes `found`, saying what happened as AutoCAD does. */
+  /** Adds, removes, replaces or toggles `found`, saying what happened as AutoCAD does. */
   #apply(
     found: readonly EntityId[],
-    remove: boolean,
+    op: SetOp,
     label: string,
     how: Omit<SelectionTake, 'ids'> = {},
     groups = 0,
@@ -582,7 +620,25 @@ export class SelectionLoop {
     let line: string;
     // "3 found, 1 group": AutoCAD names the groups a step took after the objects it found.
     const took = `${unique.length} found${groups > 0 ? `, ${groups} group${groups === 1 ? '' : 's'}` : ''}`;
-    if (remove) {
+    if (op === 'replace') {
+      this.#ids = taken;
+      this.#takes = taken.length > 0 ? [{ ids: taken, ...how }] : [];
+      line = took;
+    } else if (op === 'toggle') {
+      const out = new Set(taken.filter((id) => had.has(id)));
+      const added = taken.filter((id) => !had.has(id));
+      // A Shift step that finds nothing: PICKADD 0 empties the set, 3 keeps it.
+      const pickadd = this.#host.pickadd?.() ?? DEFAULT_PICKADD;
+      const kept = unique.length === 0 && pickadd === 0 ? [] : before.filter((id) => !out.has(id));
+      this.#ids = [...kept, ...added];
+      const keep = new Set(kept);
+      this.#takes = without(this.#takes, new Set(before.filter((id) => !keep.has(id))));
+      if (added.length > 0) this.#takes = [...this.#takes, { ids: added, ...how }];
+      line =
+        added.length === 0 && out.size > 0
+          ? `${out.size} removed, ${this.#ids.length} total`
+          : `${took}, ${this.#ids.length} total`;
+    } else if (op === 'remove') {
       const out = new Set(taken.filter((id) => had.has(id)));
       this.#ids = before.filter((id) => !out.has(id));
       this.#takes = without(this.#takes, out);
@@ -601,7 +657,7 @@ export class SelectionLoop {
     if (locked.size > 0) {
       this.#say(`${locked.size} ${locked.size === 1 ? 'was' : 'were'} on a locked layer.`);
     }
-    return this.#single && !remove && taken.length > 0 ? 'done' : 'more';
+    return this.#single && op !== 'remove' && taken.length > 0 ? 'done' : 'more';
   }
 }
 

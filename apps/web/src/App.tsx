@@ -17,7 +17,14 @@ import type {
   ViewReply,
   ViewState,
 } from '@triya/engine';
-import { GRIP_CYCLE, PICKFIRST, REVCLOUDGRIPS, lassoPrompt } from '@triya/engine';
+import {
+  GRIP_CYCLE,
+  PICKADD,
+  PICKAUTO,
+  PICKFIRST,
+  REVCLOUDGRIPS,
+  lassoPrompt,
+} from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
@@ -73,7 +80,8 @@ import { exportFile } from './export-file';
 import { commandLines, variableNames } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
-import { drafting } from './drafting';
+import { drafting, type DraftingState } from './drafting';
+import { selectionFilters } from './selection-filters';
 import { drawingVariableReply, systemVariableReply } from './system-variables';
 import { snapMenu } from './snap-menu';
 import { AppClipboard, browserClipboardEnv, clipboardPicture } from './system-clipboard';
@@ -326,24 +334,28 @@ drafting.subscribe(() => {
 });
 
 /**
- * REVCLOUDGRIPS (M2-42) and PICKFIRST (M2-59), per-user settings each drawing's engine follows
- * (its grips, its command line's noun-verb selection): each is told them when the drawing opens
- * and whenever SETVAR or the stored settings change them.
+ * REVCLOUDGRIPS (M2-42), PICKFIRST (M2-59), PICKADD and PICKAUTO (M3-04 part 4), per-user
+ * settings each drawing's engine follows (its grips, its command line's selection): each is told
+ * them when the drawing opens and whenever SETVAR or the stored settings change them.
  */
-let sessionVariables = {
-  revcloudGrips: drafting.get().revcloudGrips,
-  pickfirst: drafting.get().pickfirst,
-};
+const sessionVariablesOf = (s: DraftingState) => ({
+  revcloudGrips: s.revcloudGrips,
+  pickfirst: s.pickfirst,
+  pickadd: s.pickadd,
+  pickauto: s.pickauto,
+});
+let sessionVariables = sessionVariablesOf(drafting.get());
 function tellSessionVariables(doc: number): void {
-  const { revcloudGrips, pickfirst } = sessionVariables;
+  const { revcloudGrips, pickfirst, pickadd, pickauto } = sessionVariables;
   void engines.edit(doc, { kind: 'sysvar', name: REVCLOUDGRIPS, value: revcloudGrips ? 1 : 0 });
   void engines.edit(doc, { kind: 'sysvar', name: PICKFIRST, value: pickfirst ? 1 : 0 });
+  void engines.edit(doc, { kind: 'sysvar', name: PICKADD, value: pickadd });
+  void engines.edit(doc, { kind: 'sysvar', name: PICKAUTO, value: pickauto });
 }
 drafting.subscribe(() => {
-  const { revcloudGrips, pickfirst } = drafting.get();
-  if (revcloudGrips === sessionVariables.revcloudGrips && pickfirst === sessionVariables.pickfirst)
-    return;
-  sessionVariables = { revcloudGrips, pickfirst };
+  const next = sessionVariablesOf(drafting.get());
+  if (JSON.stringify(next) === JSON.stringify(sessionVariables)) return;
+  sessionVariables = next;
   for (const d of store.getSnapshot().docs) tellSessionVariables(d.id);
 });
 
@@ -370,7 +382,9 @@ preferences.subscribe(() => {
     for (const c of allControllers()) c.setColours(canvasColours);
   }
   applyTheme(p.theme);
+  selectionFilters.bind(p.filters, (filters) => preferences.update({ filters }));
 });
+selectionFilters.bind(preferences.get().filters, (filters) => preferences.update({ filters }));
 void preferences.load();
 
 /** Set while "Clear all local data" reloads the page, so leaving it asks nothing. */

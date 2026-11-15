@@ -7,6 +7,7 @@ import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
 import { PICKFIRST } from '../commands/sysvars';
+import { PICKADD, PICKAUTO } from '../selection/loop';
 import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
@@ -96,11 +97,18 @@ export type ViewTableEdit =
  * sets them on every drawing it opens and whenever SETVAR changes them. Not undoable edits, and
  * never saved: AutoCAD keeps them in the registry, not in the drawing.
  */
-export interface SessionVariableEdit {
-  readonly kind: 'sysvar';
-  readonly name: typeof REVCLOUDGRIPS | typeof PICKFIRST;
-  readonly value: 0 | 1;
-}
+export type SessionVariableEdit =
+  | {
+      readonly kind: 'sysvar';
+      readonly name: typeof REVCLOUDGRIPS | typeof PICKFIRST;
+      readonly value: 0 | 1;
+    }
+  /** PICKADD (0 to 3) and PICKAUTO (0 to 7), which its "Select objects" follows (M3-04 part 4). */
+  | {
+      readonly kind: 'sysvar';
+      readonly name: typeof PICKADD | typeof PICKAUTO;
+      readonly value: number;
+    };
 
 export type EngineEdit =
   LayerStateEdit | LayoutEdit | XrefLoadEdit | NamedViewEdit | ViewTableEdit | SessionVariableEdit;
@@ -523,6 +531,14 @@ export class EngineSession {
   }
 
   #sessionVariable(e: SessionVariableEdit): EditResult {
+    if (e.name === PICKADD || e.name === PICKAUTO) {
+      const max = e.name === PICKADD ? 3 : 7;
+      if (!Number.isInteger(e.value) || e.value < 0 || e.value > max) {
+        return { ok: false, message: `Cannot set ${e.name} to ${e.value}.` };
+      }
+      this.#bus.setPickVariable(e.name, e.value);
+      return { ok: true, change: {} };
+    }
     const known = e.name === REVCLOUDGRIPS || e.name === PICKFIRST;
     if (!known || (e.value !== 0 && e.value !== 1)) {
       return { ok: false, message: `Cannot set ${String(e.name)} here.` };

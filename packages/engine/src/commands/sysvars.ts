@@ -162,6 +162,13 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // selection, 3 both; kept per user (Saved in: Registry), initially 1, so the drawing's
   // $PICKSTYLE stays as read. Ctrl+Shift+A turns group selection on and off.
   { name: 'PICKSTYLE', store: 'app', kind: 'integer', min: 0, max: 3 },
+  // M3-04 part 4 (AutoCAD 2024 Help): PICKBOX the pickbox's half size in pixels (0 to 50,
+  // initially 3); PICKADD 0 to 3 whether a step adds to the set or replaces it (initially 2);
+  // PICKAUTO's bits 1 a window where a pick finds nothing, 2 a window dragged from an object at
+  // `Command:`, 4 a lasso where a drag starts on nothing (initially 5).
+  { name: 'PICKBOX', store: 'app', kind: 'integer', min: 0, max: 50 },
+  { name: 'PICKADD', store: 'app', kind: 'integer', min: 0, max: 3 },
+  { name: 'PICKAUTO', store: 'app', kind: 'integer', min: 0, max: 7 },
 ];
 
 /**

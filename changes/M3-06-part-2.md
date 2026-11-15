@@ -1,0 +1,1 @@
+- M3-06 part 2 (#392): the Drafting Settings dialog's Snap and Grid tab (Snap On, Grid On, snap and grid spacing with Equal X and Y spacing, Major line every), kept in the drawing's `*Active` viewport, and the SNAP (SN) and GRID commands (spacing, ON, OFF, Aspect; GRID Snap, Major and `2x`); the cursor and the grid follow the spacing as soon as it changes, and U takes it back.
