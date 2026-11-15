@@ -10,8 +10,9 @@
 // A multi-functional grip (M3-05 part 1, `edit/grip-functions.ts`): STRETCH is its first
 // function, and a tap of Ctrl goes on to the next that takes a point, as AutoCAD's Ctrl cycles
 // them ("** ADD VERTEX **", "** LENGTHEN **", …), round to STRETCH again. Each function can also
-// be typed by name (AutoCAD offers them in a menu at the grip, still to come); Remove Vertex and
-// Convert to Line take no point and act at once. A function edits only the first selected object
+// be typed by name, or picked from the grip's hover menu (part 2: the grip starts in it); Remove
+// Vertex and Convert to Line take no point and act at once. Part 2 also takes a point clicked
+// with Ctrl held at a grip mode's prompt as Copy turned on, that click placing the first copy. A function edits only the first selected object
 // with that grip, in one undo step; Enter goes on to MOVE, as from STRETCH.
 import type { Vec2 } from '../../geom/types';
 import { add, sub } from '../../geom/vec';
