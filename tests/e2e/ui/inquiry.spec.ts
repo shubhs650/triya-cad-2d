@@ -50,11 +50,11 @@ test('ID, DIST, AREA and MEASUREGEOM report at the command line', async ({ page 
     'AREA',
     'Specify first corner point or [Object/Add area/Subtract area] <Object>:',
   );
-  await answer(page, '-260,575', 'Specify next point or [Length/Undo]:');
-  await answer(page, '-200,575', 'Specify next point or [Length/Undo]:');
-  await answer(page, '-200,600', 'Specify next point or [Length/Undo/Total] <Total>:');
+  await answer(page, '-260,575', 'Specify next point or [Arc/Length/Undo]:');
+  await answer(page, '-200,575', 'Specify next point or [Arc/Length/Undo]:');
+  await answer(page, '-200,600', 'Specify next point or [Arc/Length/Undo/Total] <Total>:');
   await shot('1-area-points.png');
-  await answer(page, '-260,600', 'Specify next point or [Length/Undo/Total] <Total>:');
+  await answer(page, '-260,600', 'Specify next point or [Arc/Length/Undo/Total] <Total>:');
   await answer(page, '', 'Command:');
   await expect(log).toContainText('Area = 1500.0000, Perimeter = 170.0000');
   await shot('2-area-measured.png');

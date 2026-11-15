@@ -21,17 +21,26 @@
 // offers it when PLINE's arc segments exist (M3-01), and MEASUREGEOM's Quick mode (measuring
 // what the cursor hovers over) is M3-07's next part. The help pages show the result lines but
 // not every space in them: the spacing above is AutoCAD 2024's command line as commonly quoted.
-import type { Arc, Line } from '../../geom/curves';
+import type { Arc, Line, Polyline } from '../../geom/curves';
+import { arcEnd, arcStartDirectionEnd } from '../../geom/construct';
+import { bulgeOf } from '../../geom/shapes';
 import { explodePolyline } from '../../geom/eval';
 import { closestPoint } from '../../geom/closest';
 import { toleranceForSize } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
-import { angleOf, distance, dot, length, normalize, sub, add, scale, cross } from '../../geom/vec';
+import { angleOf, distance, dot, length, sub, add, scale, cross } from '../../geom/vec';
 import type { DocumentModel } from '../../model/document';
-import type { Entity, EntityGeometry, LineGeometry } from '../../model/types';
+import type { Entity, EntityGeometry } from '../../model/types';
+import { currentLayer } from '../../properties/current';
+import { polylineLength } from '../../properties/measure';
+import { INVALID_ARC } from '../draw/arc';
+import { lineDirection } from '../draw/last-drawn';
+import { arcSegment, type ArcStep } from '../draw/pline-arc';
+import { sketchTolerance } from '../draw/sketch';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { drawingUnits, formatAngle, formatDistance, type DrawingUnits } from '../units';
+import { listCommand } from './list';
 import { areaText, measureObject, measurePolygon, volumeText, type Measured } from './measure';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -71,70 +80,124 @@ function distanceLines(a: Vec2, b: Vec2, u: DrawingUnits): [string, string] {
   ];
 }
 
-const pathLength = (points: readonly Vec2[]): number =>
-  points.slice(1).reduce((sum, p, i) => sum + distance(points[i]!, p), 0);
+/** A measured path's points: each with the bulge of the segment to the next (an arc's). */
+type PathVertex = { x: number; y: number; bulge: number };
 
-const segmentsOf = (points: readonly Vec2[], closed: boolean): LineGeometry[] => {
-  const lines: LineGeometry[] = points
-    .slice(1)
-    .map((p, i) => ({ kind: 'LINE', start: points[i]!, end: p }));
-  if (closed && points.length > 2) {
-    lines.push({ kind: 'LINE', start: points.at(-1)!, end: points[0]! });
-  }
-  return lines;
-};
+const pathOf = (vertices: readonly PathVertex[], closed: boolean): Polyline => ({
+  kind: 'LWPOLYLINE',
+  closed,
+  vertices,
+});
+
+const pathLength = (vertices: readonly PathVertex[]): number =>
+  polylineLength(pathOf(vertices, false));
 
 /**
- * The points after the first of a measured path ("Specify next point or [Length/Undo/Total]"),
- * until Enter or Total: undefined when the command is cancelled. `closed` previews the polygon
- * closed back to the first point (AREA); `report` writes the running total after each point
- * (DIST Multiple points).
+ * The points after the first of a measured path ("Specify next point or [Arc/Length/Undo/
+ * Total]"), until Enter or Total: undefined when the command is cancelled. Arc draws the next
+ * segments as arcs with PLINE's prompts (`arcSegment`; MEASUREGEOM help, "Distance, Area, and
+ * Volume Options"), each tangent to the path by default; Line goes back to straight ones;
+ * CLose ends the path with an arc back to its first point. `closed` previews the path closed
+ * back to the first point (AREA); `report` writes the running total after each segment (DIST
+ * Multiple points).
  */
 async function* nextPoints(
   ctx: CommandContext,
   first: Vec2,
   o: { readonly prefix: string; readonly closed: boolean; readonly report?: boolean },
-): Sub<Vec2[] | undefined> {
-  const points: Vec2[] = [first];
+): Sub<PathVertex[] | undefined> {
+  const vertices: PathVertex[] = [{ x: first.x, y: first.y, bulge: 0 }];
+  /** The direction the path travels at the end of each segment. */
+  const directions: Vec2[] = [];
+  const layer = currentLayer(ctx.model);
+  let arcMode = false;
+  const last = () => vertices.at(-1)!;
+  const point = (): Vec2 => ({ x: last().x, y: last().y });
+  // Before any segment an arc leaves eastwards, as the path has no direction yet.
+  const direction = (): Vec2 => directions.at(-1) ?? { x: 1, y: 0 };
   const total = () => {
-    if (o.report) ctx.message(`Distance = ${formatDistance(pathLength(points), unitsOf(ctx))}`);
+    if (o.report) ctx.message(`Distance = ${formatDistance(pathLength(vertices), unitsOf(ctx))}`);
+  };
+  const segment = (to: Vec2, bulge: number, travel: Vec2) => {
+    last().bulge = bulge;
+    vertices.push({ x: to.x, y: to.y, bulge: 0 });
+    directions.push(travel);
+    total();
+  };
+  const end = (result: PathVertex[] | undefined) => {
+    ctx.preview([]);
+    return result;
   };
   for (;;) {
-    ctx.preview(segmentsOf(points, o.closed));
-    const enough = points.length >= (o.closed ? 3 : 2);
-    const last = points.at(-1)!;
-    const a = yield ctx.prompt.point({
-      message: `${o.prefix}Specify next point or`,
-      options: enough ? ['Length', 'Undo', 'Total'] : ['Length', 'Undo'],
-      ...(enough && { default: { kind: 'keyword', keyword: 'Total' } }),
-      rubberBand: { from: last },
-    });
-    if (a.kind === 'point') {
-      points.push(a.point);
-      total();
+    ctx.preview(vertices.length >= 2 ? [pathOf(vertices, o.closed)] : []);
+    const segments = vertices.length - 1;
+    // An arc and the chord closing it enclose an area; straight segments need two.
+    const enough = o.closed ? segments >= 2 || vertices.some((v) => v.bulge !== 0) : segments >= 1;
+    let a: PromptAnswer | ArcStep;
+    if (!arcMode) {
+      a = yield ctx.prompt.point({
+        message: `${o.prefix}Specify next point or`,
+        options: enough ? ['Arc', 'Length', 'Undo', 'Total'] : ['Arc', 'Length', 'Undo'],
+        ...(enough && { default: { kind: 'keyword', keyword: 'Total' } }),
+        rubberBand: { from: point() },
+      });
+    } else {
+      const step = yield* arcSegment(ctx, {
+        start: point(),
+        direction: direction(),
+        options: segments >= 1 ? ['CLose', 'Line', 'Undo'] : ['Line', 'Undo'],
+        ...(enough && { after: ['Total'], default: 'Total' }),
+        layer,
+        prefix: o.prefix,
+      });
+      if (!step) return end(undefined);
+      a = step;
+    }
+    if (a.kind === 'arc') {
+      const e = arcEnd(a.arc);
+      segment(e.point, bulgeOf(a.arc), e.direction);
+    } else if (a.kind === 'point') {
+      segment(a.point, 0, lineDirection(point(), a.point, direction()));
+    } else if (a.kind === 'keyword' && a.keyword === 'Arc') {
+      arcMode = true;
+    } else if (a.kind === 'keyword' && a.keyword === 'Line') {
+      arcMode = false;
+    } else if (a.kind === 'keyword' && a.keyword === 'CLose') {
+      const start = vertices[0]!;
+      const arc = arcStartDirectionEnd(
+        point(),
+        direction(),
+        start,
+        sketchTolerance(point(), start),
+      );
+      if (!arc) {
+        ctx.message(INVALID_ARC);
+        continue;
+      }
+      // AREA closes the path with it; DIST measures it as one more segment.
+      if (o.closed) last().bulge = bulgeOf(arc);
+      else segment(start, bulgeOf(arc), arcEnd(arc).direction);
+      return end(vertices);
     } else if (a.kind === 'keyword' && a.keyword === 'Length') {
-      // PLINE's Length: on in the last segment's direction (east before there is one).
-      const before = points.at(-2);
-      const dir = before ? normalize(sub(last, before)) : { x: 1, y: 0 };
-      const l = yield ctx.prompt.distance({ message: 'Specify length of line', base: last });
+      // PLINE's Length: on in the last segment's direction, tangent to it after an arc.
+      const l = yield ctx.prompt.distance({ message: 'Specify length of line', base: point() });
       if (l.kind !== 'distance') {
         if (l.kind === 'enter') continue;
-        ctx.preview([]);
-        return undefined;
+        return end(undefined);
       }
-      points.push(add(last, scale(dir, l.value)));
-      total();
+      const d = direction();
+      segment(add(point(), scale(d, l.value)), 0, l.value < 0 ? scale(d, -1) : d);
     } else if (a.kind === 'keyword' && a.keyword === 'Undo') {
-      if (points.length > 1) {
-        points.pop();
+      if (segments > 0) {
+        vertices.pop();
+        directions.pop();
+        last().bulge = 0;
         total();
       } else ctx.message('All segments already undone.');
     } else if (a.kind === 'enter' || (a.kind === 'keyword' && a.keyword === 'Total')) {
-      ctx.preview([]);
-      return points;
+      return end(vertices);
     } else {
-      ctx.preview([]);
-      return undefined;
+      return end(undefined);
     }
   }
 }
@@ -473,6 +536,7 @@ function measuregeomCommand(): CommandDef {
 export const INQUIRY_COMMANDS: readonly (() => CommandDef)[] = [
   idCommand,
   distCommand,
+  listCommand,
   areaCommand,
   measuregeomCommand,
 ];

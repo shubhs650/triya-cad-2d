@@ -22,12 +22,15 @@ export interface Measured {
   readonly label: 'Perimeter' | 'Circumference' | 'Length';
 }
 
-/** The polygon through `points`, closed back to the first. */
-export function measurePolygon(points: readonly Vec2[]): Measured {
+/**
+ * The path through `points`, closed back to the first: straight segments, or arcs where a
+ * point has a bulge (the Arc option, a polyline's bulge to the next point).
+ */
+export function measurePolygon(points: readonly (Vec2 & { readonly bulge?: number })[]): Measured {
   const p: Polyline = {
     kind: 'LWPOLYLINE',
     closed: true,
-    vertices: points.map((v) => ({ x: v.x, y: v.y, bulge: 0 })),
+    vertices: points.map((v) => ({ x: v.x, y: v.y, bulge: v.bulge ?? 0 })),
   };
   return { area: polylineArea(p), perimeter: polylineLength(p), label: 'Perimeter' };
 }
