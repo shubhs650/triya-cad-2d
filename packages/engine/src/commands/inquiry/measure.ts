@@ -6,6 +6,7 @@
 // measured "as if a line segment connects the start point and endpoint", that segment's length
 // left out (AutoCAD then reports a Length, not a Perimeter). Regions (ACIS bodies Triya keeps
 // unread) and solids are not measured here.
+import { integrate, smoothSpans } from '../../geom/arclength';
 import type { Curve, Polyline } from '../../geom/curves';
 import { derivativeAt, domain, endPoint, pointAt, startPoint } from '../../geom/eval';
 import type { Vec2 } from '../../geom/types';
@@ -31,47 +32,6 @@ export function measurePolygon(points: readonly Vec2[]): Measured {
   return { area: polylineArea(p), perimeter: polylineLength(p), label: 'Perimeter' };
 }
 
-// 16-point Gauss–Legendre nodes and weights on [−1, 1] (Abramowitz and Stegun, table 25.4).
-const GL_X = [
-  0.0950125098376374, 0.2816035507792589, 0.4580167776572274, 0.6178762444026438, 0.755404408355003,
-  0.8656312023878318, 0.9445750230732326, 0.9894009349916499,
-];
-const GL_W = [
-  0.1894506104550685, 0.1826034150449236, 0.1691565193950025, 0.1495959888165767,
-  0.1246289712555339, 0.0951585116824928, 0.0622535239386479, 0.0271524594117541,
-];
-
-/** ∫ f over [a, b], split in `pieces` 16-point Gauss–Legendre panels. */
-function integrate(f: (t: number) => number, a: number, b: number, pieces: number): number {
-  let sum = 0;
-  const h = (b - a) / pieces;
-  for (let k = 0; k < pieces; k++) {
-    const mid = a + h * (k + 0.5);
-    for (let i = 0; i < GL_X.length; i++) {
-      const dx = (h / 2) * GL_X[i]!;
-      sum += GL_W[i]! * (f(mid - dx) + f(mid + dx));
-    }
-  }
-  return (sum * h) / 2;
-}
-
-/**
- * The smooth stretches of a curve's parameter domain, integrated one by one: a spline's knot
- * spans (its derivative may jump at a knot), an ellipse's quarter turns.
- */
-function spans(c: Curve): [number, number][] {
-  const d = domain(c);
-  const cuts = new Set<number>([d.start, d.end]);
-  if (c.kind === 'SPLINE') {
-    for (const k of c.knots) if (k > d.start && k < d.end) cuts.add(k);
-  } else {
-    const n = Math.max(1, Math.ceil((d.end - d.start) / (Math.PI / 2)));
-    for (let i = 1; i < n; i++) cuts.add(d.start + ((d.end - d.start) * i) / n);
-  }
-  const sorted = [...cuts].sort((a, b) => a - b);
-  return sorted.slice(1).map((b, i) => [sorted[i]!, b]);
-}
-
 /**
  * Length and enclosed area of a curve by Green's theorem (A = ½∮ x dy − y dx), closed by the
  * chord from its end back to its start when it is open.
@@ -79,7 +39,7 @@ function spans(c: Curve): [number, number][] {
 function measureCurve(c: Curve): { area: number; length: number } {
   let area = 0;
   let length = 0;
-  for (const [a, b] of spans(c)) {
+  for (const [a, b] of smoothSpans(c)) {
     length += integrate((t) => Math.hypot(derivativeAt(c, t).x, derivativeAt(c, t).y), a, b, 4);
     area += integrate(
       (t) => {

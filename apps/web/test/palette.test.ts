@@ -20,6 +20,11 @@ describe('palette search', () => {
       'ARC',
       // M3-07: the inquiry commands.
       'AREA',
+      // M3-03: the arrays.
+      'ARRAY',
+      'ARRAYPATH',
+      'ARRAYPOLAR',
+      'ARRAYRECT',
       'ATTEDIT',
       'CIRCLE',
       'CLOSE',
