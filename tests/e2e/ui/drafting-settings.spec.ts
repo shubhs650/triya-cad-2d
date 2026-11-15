@@ -7,7 +7,7 @@
 // sets QPMODE, QPLOCATION, the quadrant, the distance and the row count, and Quick Properties
 // follows them. Cancel (Esc) leaves everything as it was. The dialog's model is unit-tested in
 // apps/web/test/drafting-settings.test.ts. Part 3: PolarSnap, polar angles relative to the last
-// segment and Settings' Shift to acquire.
+// segment and Settings' Shift to acquire. Part 4: TK's tracking points and the Dynamic Input tab.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
@@ -450,6 +450,115 @@ test('snaps along polar paths by the polar distance, relative to the last segmen
   await page.mouse.move(below.x, below.y);
   await expect(tip(page)).toHaveText('Endpoint: 20.0000 < 270°');
   await shot(page, '13-shift-acquired');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+});
+
+// M3-06 part 4: TK (tracking) finds a rectangle's centre from the midpoints of two sides; the
+// Dynamic Input tab sets pointer input to absolute Cartesian points without dimension input or
+// the prompt (DYNMODE, DYNPICOORDS, DYNPIFORMAT, DYNPROMPT), which the tooltip then follows.
+test('tracks a point with TK and sets the Dynamic Input tab', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0 - 30},${Y0 - 5}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 40},${Y0 + 45}`, 'Command:');
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => {
+    const p = view.at(x, y);
+    return { x: view.box.x + p.x, y: view.box.y + p.y };
+  };
+  const dyn = page.getByTestId('dyn');
+
+  // A 10 × 40 rectangle, typed (absolute with `#` wherever the cursor is, M2-71).
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `#${X0},${Y0}`, 'Specify next point or [Undo]:');
+  await type(page, `#${X0 + 10},${Y0}`, 'Specify next point or [Undo]:');
+  await type(page, `#${X0 + 10},${Y0 + 40}`, 'Specify next point or [Close/Undo]:');
+  await type(page, `#${X0},${Y0 + 40}`, 'Specify next point or [Close/Undo]:');
+  await type(page, 'C', 'Command:');
+
+  // LINE from its centre: TK, the top's midpoint, then the left side's, Enter.
+  let p = at(X0 + 20, Y0 + 20);
+  await page.mouse.move(p.x, p.y);
+  await type(page, 'L', 'Specify first point:');
+  await expect(dyn.getByLabel('X', { exact: true })).toBeVisible();
+  await type(page, 'TK', 'First tracking point:');
+  await type(page, 'MID', 'of');
+  p = at(X0 + 4, Y0 + 40.2);
+  await page.mouse.move(p.x, p.y);
+  await expect(tip(page)).toHaveText('Midpoint');
+  await page.mouse.click(p.x, p.y);
+  await expect(prompt(page)).toHaveText('Next point (Press ENTER to end tracking):');
+  await type(page, 'MID', 'of');
+  p = at(X0 + 0.2, Y0 + 22);
+  await page.mouse.move(p.x, p.y);
+  await expect(tip(page)).toHaveText('Midpoint');
+  await shot(page, '14-tracking-to-midpoint');
+  await page.mouse.click(p.x, p.y);
+  await expect(prompt(page)).toHaveText('Next point (Press ENTER to end tracking):');
+  await type(page, '', 'Specify next point or [Undo]:');
+  await type(page, `#${X0 + 30},${Y0 + 20}`, 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+  await expect
+    .poll(async () => (await linesAdded(page)).at(-1))
+    .toEqual([X0 + 5, Y0 + 20, X0 + 30, Y0 + 20]);
+
+  // The Dynamic Input tab shows AutoCAD's initial settings.
+  await type(page, 'DS', 'Drafting Settings:');
+  const d = dialog(page);
+  await d.getByRole('tab', { name: 'Dynamic Input' }).click();
+  const check = (name: string) => d.getByRole('checkbox', { name });
+  await expect(check('Enable Pointer Input')).toBeChecked();
+  await expect(check('Enable Dimension Input where possible')).toBeChecked();
+  const prompting = 'Show command prompting and command input near the crosshairs';
+  await expect(check(prompting)).toBeChecked();
+  await expect(d.getByRole('radio', { name: 'Polar format' })).toBeChecked();
+  await expect(d.getByRole('radio', { name: 'Relative coordinates' })).toBeChecked();
+  await check('Enable Dimension Input where possible').uncheck();
+  await d.getByRole('radio', { name: 'Cartesian format' }).check();
+  await d.getByRole('radio', { name: 'Absolute coordinates' }).check();
+  await check(prompting).uncheck();
+  await shot(page, '15-dynamic-input-tab');
+  await d.getByRole('button', { name: 'OK' }).click();
+  await expect(d).toBeHidden();
+  for (const [name, value] of [
+    ['DYNMODE', '1'],
+    ['DYNPICOORDS', '1'],
+    ['DYNPIFORMAT', '1'],
+    ['DYNPROMPT', '0'],
+  ] as const) {
+    await type(page, name, `Enter new value for ${name} <${value}>:`);
+    await type(page, '', 'Command:');
+  }
+
+  // LINE: X and Y fields without the prompt; the next point typed x,y is absolute.
+  p = at(X0 + 20, Y0 + 5);
+  await page.mouse.move(p.x, p.y);
+  await type(page, 'L', 'Specify first point:');
+  await expect(dyn.getByLabel('X', { exact: true })).toBeVisible();
+  await expect(dyn.locator('.dyn-prompt')).toHaveCount(0);
+  await page.keyboard.type(`${X0 + 20},${Y0}`);
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
+  await expect(dyn.getByLabel('Y', { exact: true })).toBeVisible();
+  await page.keyboard.type(`${X0 + 30},${Y0 + 5}`);
+  await shot(page, '16-absolute-cartesian-pointer-input');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await linesAdded(page)).at(-1))
+    .toEqual([X0 + 20, Y0, X0 + 30, Y0 + 5]);
+  await type(page, '', 'Command:');
+
+  // Without pointer input or the prompt, a first point shows no tooltip.
+  await type(page, 'DYNMODE', 'Enter new value for DYNMODE <1>:');
+  await type(page, '2', 'Command:');
+  await canvas.hover();
+  await type(page, 'L', 'Specify first point:');
+  await expect(dyn).toBeHidden();
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
 });

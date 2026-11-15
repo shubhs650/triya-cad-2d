@@ -573,7 +573,14 @@ describe('PromptBus', () => {
     await bus.submit('0,10');
     expect(bus.promptText).toBe('Next point (Press ENTER to end tracking):');
     expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 0, y: 10 } }, ortho: true });
-    // A picked point (a snap off the axis) keeps the coordinate it is further along: vertical here.
+    // A snap off the axis keeps the coordinate it is further along: vertical here. A typed
+    // override's "of" still goes orthogonally from the last tracking point.
+    await bus.submit('end');
+    expect(bus.prompt).toMatchObject({
+      osnap: OSNAP.END,
+      ortho: true,
+      rubberBand: { from: { x: 0, y: 10 } },
+    });
     await bus.answer({ kind: 'point', point: { x: -3, y: 4 } });
     expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 0, y: 4 } } });
     // `@` counts from the last tracking point; a number goes that far towards the cursor.

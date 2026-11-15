@@ -1404,6 +1404,8 @@ export class PromptBus {
           : undefined;
     const deferred = shown?.kind === 'point' ? shown.deferred : undefined;
     const drag = shown?.drag;
+    // At TK's next tracking point the snap goes on orthogonally from it (M3-06 part 4).
+    const ortho = shown?.kind === 'point' && shown.ortho === true && band !== undefined;
     this.#log(`${this.promptText} ${echo}`);
     this.#collectors.push({
       text: overrideAsks(modes),
@@ -1411,6 +1413,7 @@ export class PromptBus {
       ...(band && { band }),
       ...(deferred && { deferred }),
       ...(drag && { drag }),
+      ...(ortho && { ortho: true as const }),
       accept: (p) => p,
     });
     this.#showPrompt();
