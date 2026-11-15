@@ -123,6 +123,19 @@ describe('ARRAYRECT', () => {
     expect(s.rings()).toEqual(grid([0, 6, 12, 18], [0, 3, 6]));
   });
 
+  it('spaces rows of a flat selection by its width', async () => {
+    const s = setup();
+    s.pick('33');
+    await s.bus.script(['ARRAYRECT', '2,0', '', 'COU', '2', '2', '']);
+    // The stick is 1 long and has no height: rows are 1.5 apart, as its columns are.
+    expect(s.sticks()).toEqual([
+      [2, 0, 3, 0],
+      [2, 1.5, 3, 1.5],
+      [3.5, 0, 4.5, 0],
+      [3.5, 1.5, 4.5, 1.5],
+    ]);
+  });
+
   it('remakes the array as COUnt and Spacing change it', async () => {
     const s = setup();
     await start(s, 'ARRAYRECT');

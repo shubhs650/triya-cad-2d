@@ -93,8 +93,12 @@ async function extentsOf(ctx: CommandContext, ids: readonly EntityId[]): Promise
 
 const centreOf = (b: Box): Vec2 => ({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
 
-/** 1.5 × a size, or 1 when the selection has no size that way. */
-const defaultSpacing = (size: number): number => (size > 0 ? size * 1.5 : 1);
+/**
+ * 1.5 × a size of the selection; a selection with no size that way (a horizontal line's
+ * height) takes the other size, and a point 1.
+ */
+const defaultSpacing = (size: number, other = 0): number =>
+  size > 0 ? size * 1.5 : other > 0 ? other * 1.5 : 1;
 
 const isIdentity = (t: Similarity): boolean =>
   Math.abs(t.m.a - 1) <= 1e-12 &&
@@ -277,8 +281,8 @@ async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<
   const s = {
     columns: 4,
     rows: 3,
-    columnSpacing: defaultSpacing(box.maxX - box.minX),
-    rowSpacing: defaultSpacing(box.maxY - box.minY),
+    columnSpacing: defaultSpacing(box.maxX - box.minX, box.maxY - box.minY),
+    rowSpacing: defaultSpacing(box.maxY - box.minY, box.maxX - box.minX),
   };
   ctx.message('Type = Rectangular  Associative = No');
   const live = new LiveArray(ids);
