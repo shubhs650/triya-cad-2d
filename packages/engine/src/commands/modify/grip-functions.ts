@@ -6,14 +6,16 @@ import { reshapeObject } from '../../edit/edit';
 import { ARRAY_GRIP_FUNCTIONS, gripInfoOf } from '../../edit/array-grips';
 import {
   gripFunctionEdit,
+  gripFunctionValue,
   gripFunctionsOf,
   type GripFunction,
   type GripFunctionProblem,
 } from '../../edit/grip-functions';
 import { breakCurveOf } from '../../edit/break';
+import { toleranceForSize, type Tolerance } from '../../geom/tolerance';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
-import type { ArcGeometry } from '../../model/types';
+import type { ArcGeometry, EntityGeometry } from '../../model/types';
 import type { CommandContext } from '../command';
 import { GRIP_CYCLE, type Prompt, type PromptAnswer } from '../prompt';
 import { toleranceFor } from './offset';
@@ -33,6 +35,9 @@ const KEYWORD_OF: Readonly<Record<GripFunction, string>> = {
   'Extend Vertex': 'EXTend vertex',
   'Convert to Arc': 'ARc',
   'Convert to Line': 'LIne',
+  'Origin Point': 'ORigin point',
+  'Hatch Angle': 'ANgle',
+  'Hatch Scale': 'HAtch scale',
 };
 
 /** Each function keyword's function; STretch is either Stretch, as the grip has it. */
@@ -105,6 +110,9 @@ const ASKS: Readonly<Partial<Record<GripFunction, string>>> = {
   'Add Vertex': 'Specify new vertex point',
   'Extend Vertex': 'Specify new vertex point',
   'Convert to Arc': 'Specify arc midpoint',
+  'Origin Point': 'Specify origin point',
+  'Hatch Angle': 'Specify hatch angle',
+  'Hatch Scale': 'Specify hatch scale',
 };
 
 export type GripFunctionResult =
@@ -133,10 +141,9 @@ export async function* runGripFunction(
   const immediate = fn === 'Remove Vertex' || fn === 'Convert to Line';
   for (;;) {
     const e = ctx.model.entity(id);
-    const c = e && breakCurveOf(e.geom);
-    if (!e || !c) return { kind: 'done' };
+    if (!e) return { kind: 'done' };
     let to: Vec2 = hot;
-    let radius: number | undefined;
+    let value: number | undefined;
     if (!immediate) {
       ctx.message(`** ${fn.toUpperCase()} **`);
       const common = {
@@ -146,11 +153,14 @@ export async function* runGripFunction(
         ctrlCycles: true as const,
         drag: { kind: 'grip' as const, ids: [id], grip: hot, from: hot, fn },
       };
-      const arc = e.geom as ArcGeometry;
       const a =
         fn === 'Radius'
-          ? yield ctx.prompt.distance({ ...common, base: arc.center })
-          : yield ctx.prompt.point({ ...common, rubberBand: { from: hot } });
+          ? yield ctx.prompt.distance({ ...common, base: (e.geom as ArcGeometry).center })
+          : fn === 'Hatch Scale'
+            ? yield ctx.prompt.distance({ ...common, base: hot })
+            : fn === 'Hatch Angle'
+              ? yield ctx.prompt.angle({ ...common, base: hot })
+              : yield ctx.prompt.point({ ...common, rubberBand: { from: hot } });
       if (a.kind === 'enter') return { kind: 'enter' };
       if (a.kind === 'keyword') {
         if (a.keyword === 'eXit') return { kind: 'done' };
@@ -158,17 +168,15 @@ export async function* runGripFunction(
         return { kind: 'keyword', keyword: a.keyword };
       }
       if (a.kind === 'point') to = a.point;
-      else if (a.kind === 'distance') radius = a.value;
+      else if (a.kind === 'distance' || a.kind === 'angle') value = a.value;
       else return { kind: 'done' };
     }
-    const tol = toleranceFor(ctx.model, c);
+    const tol = toleranceOf(ctx.model, e.geom, hot);
     const r =
-      radius === undefined
+      value === undefined
         ? gripFunctionEdit(e.geom, hot, fn, to, tol, gripInfoOf(ctx.model, e))
-        : // A typed radius is the radius itself, not a point's distance worked out again.
-          radius > tol.linear
-          ? { ...(e.geom as ArcGeometry), radius }
-          : 'invalid';
+        : // A typed value is the radius, angle or scale itself, not a point's worked out again.
+          gripFunctionValue(e.geom, fn as 'Radius' | 'Hatch Angle' | 'Hatch Scale', value, tol);
     if (typeof r === 'string') {
       ctx.message(PROBLEM[r]);
       if (immediate) return { kind: 'refused' };
@@ -177,4 +185,21 @@ export async function* runGripFunction(
     ctx.edit((b) => reshapeObject(b, ctx.model, id, [r]));
     return { kind: 'done' };
   }
+}
+
+/**
+ * The tolerance a function's edit is made to: a curve's, else one for the drawing's extents and
+ * the grip (a hatch's).
+ */
+function toleranceOf(model: DocumentModel, geom: EntityGeometry, hot: Vec2): Tolerance {
+  const c = breakCurveOf(geom);
+  if (c) return toleranceFor(model, c);
+  const min = model.header.get('$EXTMIN');
+  const max = model.header.get('$EXTMAX');
+  const isPoint = (v: unknown): v is Vec2 =>
+    typeof v === 'object' && v !== null && 'x' in v && 'y' in v;
+  // Empty extents (AutoCAD writes min 1e20, max -1e20) say nothing.
+  const box =
+    isPoint(min) && isPoint(max) && min.x <= max.x && min.y <= max.y ? [min, max, hot] : [hot];
+  return toleranceForSize(Math.max(...box.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y)))));
 }

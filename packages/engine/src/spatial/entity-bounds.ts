@@ -251,7 +251,7 @@ function sweepOf(edge: {
  * it sweeps counter-clockwise from −end to −start. Exact edges matter beyond culling: COPYCLIP's
  * base point is the extents' lower-left corner (M2-14 part 2).
  */
-function hatchBounds(geom: HatchGeometry, tol: Tolerance): EntityBounds {
+export function hatchBounds(geom: HatchGeometry, tol: Tolerance): EntityBounds {
   let out: Box | undefined;
   const add = (b: Box) => {
     out = out ? unionBox(out, b) : b;

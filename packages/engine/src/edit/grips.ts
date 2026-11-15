@@ -25,8 +25,9 @@
 //   manual height): `mtext-grips.ts`.
 // - an associative array Triya made (M3-11 part 3) shows its array grips (`array-grips.ts`) in
 //   place of its block reference's insertion point.
-// Hatches, multileaders, multilines, regions and viewports have no grips yet: their grips
-// (hatch origin, viewport corners) need FR-D4's multi-functional grips.
+// - an ellipse's axis ends, an elliptical arc's ends, a hatch's control grip and a layout
+//   viewport's corners (M3-05 part 3): `shape-grips.ts`.
+// Multileaders, multilines and regions have no grips yet.
 import { ccwSweep } from '../geom/angle';
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, fromAngle, midpoint, sub } from '../geom/vec';
@@ -35,6 +36,14 @@ import { dimensionLineEnds } from './dimension';
 import { columnGrips, moveColumnGrip } from './mtext-grips';
 import type { ArrayGripRole, GripInfo } from './array-grips';
 import { cloudCorners, isCloudShaped, moveCloudCorner, type CloudInfo } from './revcloud';
+import {
+  ellipseGrips,
+  hatchGripPoint,
+  moveEllipseAxis,
+  moveEllipseEnd,
+  moveViewportCorner,
+  viewportCorners,
+} from './shape-grips';
 import { stretchGeometry, type StretchResult } from './stretch';
 
 export type GripKind =
@@ -61,7 +70,13 @@ export type GripKind =
   /** A columned MTEXT's column height (one column's, with manual heights). */
   | 'columnHeight'
   /** An associative array's grip that sizes it (`array` says how): the grip command edits it. */
-  | 'array';
+  | 'array'
+  /** An ellipse's axis end: that axis's length (M3-05 part 3). */
+  | 'axis'
+  /** An elliptical arc's end: it moves along the ellipse. */
+  | 'ellipseEnd'
+  /** A layout viewport's corner: the viewport is resized about the opposite one. */
+  | 'viewport';
 
 export interface Grip {
   readonly point: Vec2;
@@ -171,7 +186,16 @@ export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
     case 'LEADER':
       return stretchAll(geom.vertices);
     case 'ELLIPSE':
-      return [g(geom.center, 'move')];
+      return [
+        g(geom.center, 'move'),
+        ...ellipseGrips(geom).map((x) => g(x.point, x.end ? 'ellipseEnd' : 'axis')),
+      ];
+    case 'HATCH': {
+      const at = hatchGripPoint(geom);
+      return at ? [g(at, 'move')] : [];
+    }
+    case 'VIEWPORT':
+      return viewportCorners(geom).map((p) => g(p, 'viewport'));
     case 'POINT':
       return [g(geom.position, 'move')];
     case 'XLINE':
@@ -276,6 +300,23 @@ export function moveGrip(
       if (!isDimension(geom)) return { kind: 'none' };
       const definitionPoint = add(geom.definitionPoint, d);
       return { kind: 'shape', geom: { ...geom, definitionPoint } };
+    }
+    case 'axis':
+    case 'ellipseEnd':
+    case 'viewport': {
+      const shaped =
+        geom.kind === 'ELLIPSE'
+          ? found.kind === 'axis'
+            ? moveEllipseAxis(geom, grip, to)
+            : moveEllipseEnd(geom, grip, to)
+          : geom.kind === 'VIEWPORT'
+            ? moveViewportCorner(
+                geom,
+                viewportCorners(geom).findIndex((p) => sameGrip(p, grip)),
+                to,
+              )
+            : undefined;
+      return shaped ? { kind: 'shape', geom: shaped } : { kind: 'none' };
     }
     case 'radius': {
       if (geom.kind !== 'CIRCLE') return { kind: 'none' };
