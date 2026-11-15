@@ -4,6 +4,7 @@
 // font files (M1-38, M1-37), as OPTIONS > Files lists its support files, and "Clear all local
 // data" (PRD FR-F11). One scrolling modal <dialog>, so focus stays inside it and Esc closes it.
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { GripColorsDialog } from './GripColorsDialog';
 import { OSNAP, OSNAP_MODES } from '@triya/engine';
 import {
   AUTOSNAP_MAGNET,
@@ -517,7 +518,7 @@ const AUTOSNAP_CHECKS = [
 
 /**
  * DRAFTINGSETTINGS' object snap modes and polar increment, OPTIONS > Drafting's AutoSnap
- * settings, Alignment point acquisition (POLARMODE 8, M3-06 part 3) and marker and aperture sizes, OPTIONS > Selection's grip size and Noun/verb selection, and
+ * settings, Alignment point acquisition (POLARMODE 8, M3-06 part 3) and marker and aperture sizes, OPTIONS > Selection's grip size, Grip Colors (M3-05 part 5) and Noun/verb selection, and
  * Dynamic Input. They act on the status bar's drafting aids,
  * which keep them between sessions (preferences.ts).
  */
@@ -525,6 +526,7 @@ function DraftingSettings() {
   const d = useSyncExternalStore(drafting.subscribe, drafting.get);
   const dyn = useSyncExternalStore(dynMode.subscribe, dynMode.get);
   const id = useId();
+  const [gripColors, setGripColors] = useState(false);
   return (
     <section aria-labelledby={`${id}-drafting`}>
       <h3 id={`${id}-drafting`}>Drafting</h3>
@@ -599,6 +601,24 @@ function DraftingSettings() {
           <span className="range-value">{d.gripSize}</span>
         </span>
       </div>
+      <div className="setting-row">
+        <span>Grip colors</span>
+        <button type="button" onClick={() => setGripColors(true)}>
+          Grip Colors...
+        </button>
+      </div>
+      {gripColors && (
+        // AutoCAD's Options > Selection > Grip Colors (M3-05 part 5): GRIPCOLOR, GRIPHOT,
+        // GRIPHOVER and GRIPCONTOUR.
+        <GripColorsDialog
+          initial={d.gripColors}
+          onOk={(c) => {
+            drafting.configure({ gripColors: c });
+            setGripColors(false);
+          }}
+          onCancel={() => setGripColors(false)}
+        />
+      )}
       <fieldset>
         <legend>Alignment point acquisition</legend>
         {[

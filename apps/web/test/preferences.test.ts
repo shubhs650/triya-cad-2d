@@ -61,6 +61,8 @@ describe('preferences', () => {
       pickfirst: true,
       // GRIPSIZE 5 (M2-59 part 3).
       gripSize: 5,
+      // GRIPCOLOR 150, GRIPHOVER 11, GRIPHOT 12 and GRIPCONTOUR 251, AutoCAD's (M3-05 part 5).
+      gripColors: { unselected: 150, hover: 11, selected: 12, contour: 251 },
       // ROLLOVERTIPS 1 (M2-35 part 21).
       rolloverTips: true,
       // ARRAYASSOCIATIVITY 1 (M3-11).
@@ -327,6 +329,22 @@ describe('preferences', () => {
     expect(normalizePreferences({ drafting: { qpmode: 2 } }).drafting.qpmode).toBe(2);
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
     expect(normalizePreferences('junk')).toEqual(DEFAULT_PREFERENCES);
+  });
+
+  it('keep the grip colours as ACI 1 to 255, each on its own (M3-05 part 5)', () => {
+    const colors = (gripColors: unknown) =>
+      normalizePreferences({ drafting: { gripColors } }).drafting.gripColors;
+    expect(colors({ unselected: 3, hover: 4, selected: 5, contour: 6 })).toEqual({
+      unselected: 3,
+      hover: 4,
+      selected: 5,
+      contour: 6,
+    });
+    // Out of range, not a whole number or missing: that colour's default.
+    expect(colors({ unselected: 0, hover: 256, selected: 2.5 })).toEqual(
+      DEFAULT_PREFERENCES.drafting.gripColors,
+    );
+    expect(colors('red')).toEqual(DEFAULT_PREFERENCES.drafting.gripColors);
   });
 
   it('load the stored record, save each change, and skip a change that changes nothing', async () => {

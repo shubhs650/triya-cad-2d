@@ -159,7 +159,7 @@ describe('Canvas2DRenderer grips', () => {
     let fill = '';
     for (const c of calls) {
       if (c[0] === 'fillStyle') fill = String(c[1]);
-      if (c[0] === 'fillRect' && fill !== '#1a1a1a') {
+      if (c[0] === 'fillRect' && fill !== aciHex(251)) {
         const [x, y, w] = c.slice(1) as number[];
         out.push([fill, x! + w! / 2, y! + w! / 2, w!]);
       }
@@ -272,6 +272,35 @@ describe('Canvas2DRenderer grips', () => {
     transient().clear();
     r.frame();
     expect(squares(transient().calls)[2]![0]).toBe(aciHex(12));
+  });
+
+  it('draws grips in the style’s GRIPCOLOR, GRIPHOVER, GRIPHOT and GRIPCONTOUR (M3-05 part 5)', () => {
+    const { r, id, transient } = setup();
+    r.setStyle({
+      background: '#000000',
+      foreground: '#ffffff',
+      showLineweights: false,
+      gripColors: { unselected: 3, hover: 4, selected: 5, contour: 6 },
+    });
+    r.setGrips([id('20')], { x: 10, y: 0 });
+    r.setGripHover({ x: 5, y: 0 }, 0.5);
+    transient().clear();
+    r.frame();
+    const fills: string[] = [];
+    for (const c of transient().calls) if (c[0] === 'fillStyle') fills.push(String(c[1]));
+    // Each grip: its contour, then its fill.
+    expect(fills).toEqual([aciHex(6), aciHex(3), aciHex(6), aciHex(4), aciHex(6), aciHex(5)]);
+  });
+
+  it('draws the grip contour in ACI 251 by default, AutoCAD’s GRIPCONTOUR', () => {
+    const { r, id, transient } = setup();
+    r.setGrips([id('20')]);
+    transient().clear();
+    r.frame();
+    const fills: string[] = [];
+    for (const c of transient().calls) if (c[0] === 'fillStyle') fills.push(String(c[1]));
+    expect(fills.filter((_, i) => i % 2 === 0)).toEqual([aciHex(251), aciHex(251), aciHex(251)]);
+    expect(fills.filter((_, i) => i % 2 === 1)).toEqual([aciHex(150), aciHex(150), aciHex(150)]);
   });
 
   it('draws a selected group’s one grip at its centre, and its bounding box (M3-13)', () => {

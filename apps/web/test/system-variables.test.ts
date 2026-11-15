@@ -128,6 +128,20 @@ describe('system variables the app keeps', () => {
     expect(d.get().gripSize).toBe(9);
   });
 
+  it('keep GRIPCOLOR, GRIPHOVER, GRIPHOT and GRIPCONTOUR, the Grip Colors dialog (M3-05 part 5)', () => {
+    const d = new Drafting();
+    // AutoCAD's initial 150, 11, 12 and 251.
+    expect(systemVariableReply(d, 'GRIPCOLOR')).toEqual({ ok: true, value: 150 });
+    expect(systemVariableReply(d, 'GRIPHOVER')).toEqual({ ok: true, value: 11 });
+    expect(systemVariableReply(d, 'GRIPHOT')).toEqual({ ok: true, value: 12 });
+    expect(systemVariableReply(d, 'GRIPCONTOUR')).toEqual({ ok: true, value: 251 });
+    systemVariableReply(d, 'GRIPCOLOR', 3);
+    systemVariableReply(d, 'GRIPHOVER', 4);
+    systemVariableReply(d, 'GRIPHOT', 5);
+    expect(systemVariableReply(d, 'GRIPCONTOUR', 6)).toEqual({ ok: true, value: 6 });
+    expect(d.get().gripColors).toEqual({ unselected: 3, hover: 4, selected: 5, contour: 6 });
+  });
+
   it('keep AUTOSNAPSIZE, DYNMODE and PICKFIRST (M2-59)', () => {
     const d = new Drafting();
     const dyn = new DynMode();
