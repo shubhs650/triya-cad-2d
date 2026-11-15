@@ -546,9 +546,12 @@ function byName(model: DocumentModel, table: TableName, name: string): Handle | 
   return undefined;
 }
 
-/** What a paste scales the Clipboard's objects by to keep their size in `model`'s units. */
-export function pasteScale(model: DocumentModel, clip: Clipboard): number {
-  return insUnitsScale(clip.insUnits ?? 0, insUnitsOf(model));
+/**
+ * What a paste scales the Clipboard's objects by to keep their size in `model`'s units, or in
+ * `units` (INSUNITS) where the drafter named the units of a unitless drawing (M3-09).
+ */
+export function pasteScale(model: DocumentModel, clip: Clipboard, units?: number): number {
+  return insUnitsScale(clip.insUnits ?? 0, units ?? insUnitsOf(model));
 }
 
 /**
@@ -559,9 +562,10 @@ export function pastePlacement(
   model: DocumentModel,
   clip: Clipboard,
   at: Vec2,
+  units?: number,
 ): Similarity | undefined {
   const d = sub(at, clip.base);
-  const k = pasteScale(model, clip);
+  const k = pasteScale(model, clip, units);
   const move = d.x !== 0 || d.y !== 0 ? moveBy(d) : undefined;
   if (k === 1) return move;
   const scale = scaleAbout(clip.base, k);
@@ -570,7 +574,8 @@ export function pastePlacement(
 
 /**
  * PASTECLIP: the Clipboard's objects pasted into `owner` with its base point at `at` (PASTEORIG:
- * `at` is the base point itself), scaled into `model`'s units. Returns the objects pasted.
+ * `at` is the base point itself), scaled into `model`'s units (or `units`, see `pasteScale`).
+ * Returns the objects pasted.
  */
 export function pasteObjects(
   b: ChangeSetBuilder,
@@ -578,8 +583,9 @@ export function pasteObjects(
   clip: Clipboard,
   owner: Handle,
   at: Vec2,
+  units?: number,
 ): EditReport {
-  return pasteInto(b, model, clip, owner, pastePlacement(model, clip, at));
+  return pasteInto(b, model, clip, owner, pastePlacement(model, clip, at, units));
 }
 
 /** The Clipboard's objects pasted into `owner`, carried by `t` (left where they are without). */
@@ -869,6 +875,7 @@ export function pasteAsBlock(
   owner: Handle,
   props: Handle | GeneralProps,
   at: Vec2,
+  units?: number,
 ): EditReport {
   const taken = new Set([...model.tables.blockRecords.values()].map((r) => r.name.toUpperCase()));
   let n = Number.parseInt(model.handles.handSeed, 16);
@@ -877,10 +884,14 @@ export function pasteAsBlock(
     name = `A$C${(n++ % 0x100000000).toString(16).toUpperCase().padStart(8, '0')}`;
   } while (taken.has(name));
   // The block is in the Clipboard's units; its reference takes the scale into the drawing's.
-  const units = clip.insUnits ?? 0;
-  const def = b.addBlock({ name, basePoint: clip.base, ...(units !== 0 ? { units } : {}) });
+  const blockUnits = clip.insUnits ?? 0;
+  const def = b.addBlock({
+    name,
+    basePoint: clip.base,
+    ...(blockUnits !== 0 ? { units: blockUnits } : {}),
+  });
   pasteInto(b, model, clip, def.handle);
-  const k = pasteScale(model, clip);
+  const k = pasteScale(model, clip, units);
   const ref = b.addEntity({
     owner,
     ...(typeof props === 'string' ? { layer: props } : props),

@@ -3331,3 +3331,50 @@ button {
   flex: 1;
   min-width: 8ch;
 }
+
+/* UNITS' Drawing Units and Direction Control (M3-09). */
+.units-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.units-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 12px;
+}
+
+.units-group {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  border: 1px solid var(--chrome-border);
+  padding: 6px 8px 8px;
+}
+
+.units-group > legend {
+  padding: 0 4px;
+}
+
+.units-field {
+  flex-wrap: wrap;
+}
+
+.units-field > span {
+  min-width: 0;
+}
+
+.units-sample {
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.units-base .units-base-angle {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--chrome-text-muted);
+}
+
+.units-other input {
+  width: 9em;
+}

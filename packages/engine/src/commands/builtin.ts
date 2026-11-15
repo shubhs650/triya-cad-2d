@@ -30,6 +30,7 @@ import { peditCommand } from './modify/pedit';
 import { splineditCommand } from './modify/splinedit';
 import { overkillCommand } from './modify/overkill';
 import { DRAFTING_SETTINGS_COMMANDS } from './drafting-settings';
+import { UNITS_COMMANDS } from './drawing-units';
 import { changeCommand, chpropCommand } from './modify/chprop';
 import { matchpropCommand } from './modify/matchprop';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
@@ -114,6 +115,7 @@ export function builtinCommands(): CommandRegistry {
     ...CLIPBOARD_COMMANDS.map((make) => make()),
     ...PALETTE_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
+    ...UNITS_COMMANDS.map((make) => make()),
     underlayLayersCommand(),
     ...INQUIRY_COMMANDS.map((make) => make()),
     ...ARRAY_COMMANDS.map((make) => make()),
