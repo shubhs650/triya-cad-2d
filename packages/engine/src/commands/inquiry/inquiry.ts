@@ -12,15 +12,16 @@
 //               Distance = 14.1421,  Angle in XY Plane = 45,  Angle from XY Plane = 0
 //               Delta X = 10.0000,  Delta Y = 10.0000,  Delta Z = 0.0000
 //   AREA        Specify first corner point or [Object/Add area/Subtract area] <Object>:
-//               Specify next point or [Length/Undo/Total] <Total>:
+//               Specify next point or [Arc/Length/Undo/Total] <Total>:
 //               Area = 50.0000, Perimeter = 30.0000
-//   MEASUREGEOM Enter an option [Distance/Radius/Angle/ARea/Volume] <Distance>:
-//               (again after each measurement, with eXit, the default)
+//   MEASUREGEOM Move cursor or [Distance/Radius/Angle/ARea/Volume/Quick/Mode/eXit] <eXit>:
+//               (Quick, `quick.ts`, unless Mode says to start at the last option used), then
+//               Enter an option [Distance/Radius/Angle/ARea/Volume/Quick/Mode/eXit] <eXit>:
+//               after each measurement
 //
-// AutoCAD's "next point" prompts also offer Arc (an arc segment drawn as PLINE's are); Triya
-// offers it when PLINE's arc segments exist (M3-01), and MEASUREGEOM's Quick mode (measuring
-// what the cursor hovers over) is M3-07's next part. The help pages show the result lines but
-// not every space in them: the spacing above is AutoCAD 2024's command line as commonly quoted.
+// The "next point" prompts offer Arc: arc segments drawn with PLINE's prompts (M3-07 part 2).
+// The help pages show the result lines but not every space in them: the spacing above is
+// AutoCAD 2024's command line as commonly quoted. LIST is in `list.ts`.
 import type { Arc, Line, Polyline } from '../../geom/curves';
 import { arcEnd, arcStartDirectionEnd } from '../../geom/construct';
 import { bulgeOf } from '../../geom/shapes';
@@ -41,6 +42,7 @@ import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { drawingUnits, formatAngle, formatDistance, type DrawingUnits } from '../units';
 import { listCommand } from './list';
+import type { EnclosedSpace } from './quick';
 import { areaText, measureObject, measurePolygon, volumeText, type Measured } from './measure';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -493,7 +495,70 @@ async function* measureAngle(ctx: CommandContext): Sub<boolean> {
 
 // --- MEASUREGEOM -------------------------------------------------------------------------------
 
-const MEASURE_OPTIONS = ['Distance', 'Radius', 'Angle', 'ARea', 'Volume'];
+const MEASURE_OPTIONS = ['Distance', 'Radius', 'Angle', 'ARea', 'Volume', 'Quick', 'Mode'];
+
+/**
+ * MEASUREGEOM's Mode, per drawing for the session (AutoCAD keeps it in the user's profile):
+ * whether it starts in Quick, else at the option used last.
+ */
+interface MeasureSettings {
+  quick: boolean;
+  last: string;
+}
+
+const SETTINGS = new WeakMap<DocumentModel, MeasureSettings>();
+
+function settingsOf(model: DocumentModel): MeasureSettings {
+  let s = SETTINGS.get(model);
+  if (!s) SETTINGS.set(model, (s = { quick: true, last: 'Distance' }));
+  return s;
+}
+
+/** Whether two measured spaces are one (a Shift-click on a space already picked). */
+const sameSpace = (a: EnclosedSpace, b: EnclosedSpace): boolean =>
+  Math.abs(a.area - b.area) <= 1e-9 * Math.max(1, Math.abs(a.area)) &&
+  Math.abs(a.perimeter - b.perimeter) <= 1e-9 * Math.max(1, a.perimeter);
+
+/**
+ * Quick: "Move cursor or …", the front-end measuring under the cursor (`prompt.quick`). A click
+ * measures the space it is in, a Shift-click adds that space to (or takes it from) the ones
+ * picked, and the total is written. Returns the option chosen, 'eXit' for Enter, or undefined
+ * when cancelled.
+ */
+async function* quickMode(ctx: CommandContext): Sub<string | undefined> {
+  let picked: EnclosedSpace[] = [];
+  for (;;) {
+    const a = yield ctx.prompt.point({
+      message: 'Move cursor or',
+      options: [...MEASURE_OPTIONS, 'eXit'],
+      default: { kind: 'keyword', keyword: 'eXit' },
+      pickbox: true,
+      quick: { loops: picked.flatMap((s) => s.loops) },
+    });
+    if (a.kind === 'keyword') {
+      if (a.keyword !== 'Quick') return a.keyword;
+      continue;
+    }
+    if (a.kind !== 'point') return a.kind === 'enter' ? 'eXit' : undefined;
+    const reply = await ctx.view.request({ op: 'enclosed', point: a.point });
+    const space = reply.ok ? reply.enclosed : undefined;
+    if (!a.shift) picked = space ? [space] : [];
+    else if (space) {
+      const i = picked.findIndex((p) => sameSpace(p, space));
+      if (i >= 0) picked.splice(i, 1);
+      else picked.push(space);
+    }
+    if (picked.length === 0) continue;
+    const u = unitsOf(ctx);
+    const area = picked.reduce((sum, p) => sum + p.area, 0);
+    const perimeter = picked.reduce((sum, p) => sum + p.perimeter, 0);
+    const [a1, p1] = picked.length > 1 ? ['Total area', 'Total perimeter'] : ['Area', 'Perimeter'];
+    ctx.message(`${a1} = ${areaText(area, u)}, ${p1} = ${formatDistance(perimeter, u)}`);
+    const r = results(ctx);
+    r.area = area;
+    r.perimeter = perimeter;
+  }
+}
 
 function measuregeomCommand(): CommandDef {
   return {
@@ -501,16 +566,41 @@ function measuregeomCommand(): CommandDef {
     transparent: true,
     usesSelection: 'none',
     async *run(ctx) {
+      const settings = settingsOf(ctx.model);
+      // What to do next: an option, or undefined to ask for one.
+      let option: string | undefined = settings.quick ? 'Quick' : undefined;
       let first = true;
       for (;;) {
-        const a = yield ctx.prompt.keyword({
-          message: 'Enter an option',
-          options: first ? MEASURE_OPTIONS : [...MEASURE_OPTIONS, 'eXit'],
-          default: { kind: 'keyword', keyword: first ? 'Distance' : 'eXit' },
-        });
-        if (a.kind !== 'keyword' || a.keyword === 'eXit') return;
+        if (option === undefined) {
+          const a = yield ctx.prompt.keyword({
+            message: 'Enter an option',
+            options: first ? MEASURE_OPTIONS : [...MEASURE_OPTIONS, 'eXit'],
+            default: { kind: 'keyword', keyword: first ? settings.last : 'eXit' },
+          });
+          if (a.kind !== 'keyword' || a.keyword === 'eXit') return;
+          option = a.keyword;
+        }
         first = false;
-        switch (a.keyword) {
+        const now = option;
+        option = undefined;
+        if (now !== 'Quick' && now !== 'Mode') settings.last = now;
+        switch (now) {
+          case 'Quick': {
+            const next = yield* quickMode(ctx);
+            if (next === undefined || next === 'eXit') return;
+            option = next;
+            break;
+          }
+          case 'Mode': {
+            const m = yield ctx.prompt.keyword({
+              message: 'Enter default option',
+              options: ['Quick', 'Last used'],
+              default: { kind: 'keyword', keyword: settings.quick ? 'Quick' : 'Last used' },
+            });
+            if (m.kind !== 'keyword') return;
+            settings.quick = m.keyword === 'Quick';
+            break;
+          }
           case 'Distance':
             yield* measureDistance(ctx);
             break;

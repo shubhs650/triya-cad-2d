@@ -63,6 +63,7 @@ describe('palette search', () => {
       'JOIN',
       'LENGTHEN',
       'LINE',
+      'LIST',
       'MEASURE',
       'MEASUREGEOM',
       'MIRROR',

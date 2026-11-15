@@ -57,4 +57,13 @@ export {
 } from './modify/dimensions';
 export { FILE_COMMANDS } from './file';
 export { INQUIRY_COMMANDS, inquiryResults } from './inquiry/inquiry';
+export {
+  enclosedSpace,
+  quickMeasure,
+  type EnclosedSpace,
+  type QuickAngle,
+  type QuickMeasure,
+  type QuickQuery,
+  type QuickSpan,
+} from './inquiry/quick';
 export { measureObject, measurePolygon, type Measured } from './inquiry/measure';

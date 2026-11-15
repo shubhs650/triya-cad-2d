@@ -583,10 +583,26 @@ function extended(c: Simple): Curve {
 
 // ── Collecting the geometry under the aperture ───────────────────────────────────────────
 
-function collect(src: OsnapSource, q: OsnapQuery): Parts {
+/**
+ * The curves of the objects shown within `box`, carried into the space shown (block contents
+ * and, in a layout, model space through the viewport the cursor `point` is in), each with the
+ * object of the space shown it belongs to: what MEASUREGEOM's Quick mode measures (M3-07).
+ */
+export function curvesIn(
+  src: OsnapSource,
+  point: Vec2,
+  box: Box,
+): { readonly id: EntityId; readonly curve: Curve }[] {
+  const half = Math.max(box.maxX - box.minX, box.maxY - box.minY) / 2;
+  const parts = collect(src, { point, aperture: half, modes: 0 }, box);
+  return parts.curves.map((c) => ({ id: c.id, curve: c.curve as Curve }));
+}
+
+/** The geometry under the aperture, or within `area` where given. */
+function collect(src: OsnapSource, q: OsnapQuery, area?: Box): Parts {
   const parts: Parts = { curves: [], points: [], loops: [], clips: new Map() };
   const r = q.aperture;
-  const box: Box = {
+  const box: Box = area ?? {
     minX: q.point.x - r,
     minY: q.point.y - r,
     maxX: q.point.x + r,
