@@ -50,7 +50,14 @@ export {
   type TextContext,
 } from './text';
 export { primitivesBox, textBounds, textOutline } from './text-bounds';
-export { primCrosses, primInside } from './select';
+export {
+  primCrosses,
+  primCrossesFence,
+  primCrossesPolygon,
+  primInside,
+  primInsidePolygon,
+  type PathPoint,
+} from './select';
 export { createPaint, defaultPaint, type PaintFunction, type PaintOptions } from './paint';
 export {
   IDENTITY,

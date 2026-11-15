@@ -96,7 +96,13 @@ import {
 } from './underlay';
 import { annotationLinetypeScale, patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
-import { primCrosses, primInside } from './select';
+import {
+  primCrosses,
+  primCrossesFence,
+  primCrossesPolygon,
+  primInside,
+  primInsidePolygon,
+} from './select';
 import { patternLibrary, tessellate, type TessellateContext } from './tessellate';
 import {
   figureSize,
@@ -813,14 +819,23 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   select(query: SelectQuery): EntityId[] {
-    const test = query.kind === 'window' ? primInside : primCrosses;
+    const poly = query.polygon;
+    const test: (p: RenderPrimitive) => boolean = poly
+      ? query.kind === 'window'
+        ? (p) => primInsidePolygon(p, poly)
+        : query.kind === 'crossing'
+          ? (p) => primCrossesPolygon(p, poly)
+          : (p) => primCrossesFence(p, poly)
+      : query.kind === 'window'
+        ? (p) => primInside(p, query.box)
+        : (p) => primCrosses(p, query.box);
     const all = query.kind === 'window' ? 'every' : 'some';
     const out: EntityId[] = [];
     for (const id of this.#index.query(this.#block, query.box)) {
       const prims = this.#cache[id]?.prims;
       // Nothing drawn (a layer off or frozen): nothing to take.
       if (!prims || prims.length === 0) continue;
-      if (prims[all]((p) => test(p, query.box))) out.push(id);
+      if (prims[all](test)) out.push(id);
     }
     return out.sort((a, b) => a - b);
   }

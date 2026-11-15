@@ -49,6 +49,10 @@ class Target implements ViewTarget {
     this.calls.push(`select ${a.x},${a.y} ${b.x},${b.y}${crossing ? ' crossing' : ''}`),
     Promise.resolve([7, 8])
   );
+  selectPath = (points: readonly Vec2[], kind: string) => (
+    this.calls.push(`path ${kind} ${points.map((p) => `${p.x},${p.y}`).join(' ')}`),
+    Promise.resolve([9])
+  );
   objectsKnown = true;
   zoomObjects = (ids: readonly number[]) => (
     this.calls.push(`objects ${ids.join(',')}`),
@@ -297,6 +301,21 @@ describe('answerView', () => {
       message: 'The objects have no extents.',
     });
     expect(t.calls).toEqual(['pick 1,2', 'select 0,0 5,5 crossing', 'objects 7,8', 'objects 9']);
+  });
+
+  it('answers a selection polygon or fence from the renderer (M3-04)', async () => {
+    const t = new Target();
+    const { ctx } = context(t);
+    const points = [
+      { x: 0, y: 0 },
+      { x: 5, y: 0 },
+      { x: 2, y: 4 },
+    ];
+    expect(await answerView({ op: 'selectPath', kind: 'fence', points }, ctx)).toEqual({
+      ok: true,
+      ids: [9],
+    });
+    expect(t.calls).toEqual(['path fence 0,0 5,0 2,4']);
   });
 
   it('measures text with the renderer (M2-09, MLEADEREDIT)', async () => {

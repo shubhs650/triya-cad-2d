@@ -283,7 +283,7 @@ describe('SELECT', () => {
     await s.bus.script(['SELECT', 'XYZ']);
     expect(s.results()).toEqual([
       '*Invalid selection*',
-      'Expects a point or Window/Last/Crossing/BOX/ALL/Add/Remove/Previous/Undo/AUto/SIngle',
+      'Expects a point or Window/Last/Crossing/BOX/ALL/Fence/WPolygon/CPolygon/Group/Add/Remove/Multiple/Previous/Undo/AUto/SIngle',
     ]);
     expect(s.bus.promptText).toBe('Select objects:');
   });
