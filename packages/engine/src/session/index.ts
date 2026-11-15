@@ -18,6 +18,7 @@ import {
   viewCategoryProblem,
   type PaperView,
 } from '../edit/named-view';
+import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
@@ -148,6 +149,8 @@ export type CommandInput =
       readonly missed?: boolean;
       /** How near a grip, in drawing units, counts as on it (M2-06 grip editing). */
       readonly grip?: number;
+      /** The Deferred Tangent or Perpendicular the point was snapped with (M3-01 part 2). */
+      readonly deferred?: DeferredPick;
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
@@ -359,6 +362,7 @@ export class EngineSession {
           ...(input.release && { release: true }),
           ...(input.missed && { missed: true }),
           ...(input.grip !== undefined && { grip: input.grip }),
+          ...(input.deferred && { deferred: input.deferred }),
         });
       case 'select-all':
         return this.#bus.selectAll();

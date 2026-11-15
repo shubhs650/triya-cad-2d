@@ -10,7 +10,9 @@
 // It owns selection too (M2-03): a command's "Select objects" prompt is built pick by pick here
 // (`SelectionLoop`), picks and windows made at `Command:` are the pre-selection (PICKFIRST) the
 // next command that selects takes, and the set it last selected is the Previous set.
+import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
+import { OSNAP, type DeferredModes } from '../input/osnap';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
@@ -212,6 +214,8 @@ interface Collector {
   readonly osnap?: number;
   /** The rubber band the prompt it was typed at had, kept while the override asks "of". */
   readonly band?: Vec2;
+  /** The deferred snaps the prompt it was typed at takes, kept for the override (M3-01). */
+  readonly deferred?: DeferredModes;
   accept(p: Vec2): Vec2 | Collector | { readonly answer: PromptAnswer };
 }
 
@@ -337,6 +341,7 @@ export class PromptBus {
         message: c.text.replace(/:$/, ''),
         ...(c.band && { rubberBand: { from: c.band } }),
         ...(c.osnap !== undefined && { osnap: c.osnap }),
+        ...(c.deferred && { deferred: c.deferred }),
       });
     }
     const frame = this.#stack.at(-1);
@@ -456,6 +461,7 @@ export class PromptBus {
       readonly release?: boolean;
       readonly grip?: number;
       readonly missed?: boolean;
+      readonly deferred?: DeferredPick;
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
@@ -477,7 +483,10 @@ export class PromptBus {
       if (frame?.select && this.#collectors.length === 0) {
         return this.#step(frame, await frame.select.point(point, o));
       }
-      if (frame) return o.release ? undefined : this.#direct({ kind: 'point', point });
+      if (frame) {
+        if (o.release) return;
+        return this.#direct({ kind: 'point', point, ...(o.deferred && { deferred: o.deferred }) });
+      }
       if (!this.#pickfirstOn) return;
       this.#step(undefined, await this.#idle.point(point, o));
     });
@@ -851,7 +860,7 @@ export class PromptBus {
     if (this.#collectors.length > 0) {
       if (answer.kind !== 'point') return this.#reject('Invalid point.');
       this.#log(`${this.promptText} ${echo}`.trimEnd());
-      return this.#feedPoint(answer.point);
+      return this.#feedPoint(answer.point, answer.deferred);
     }
     if (answer.kind === 'point' && frame.prompt!.kind !== 'point' && takesPoints(frame.prompt!)) {
       return this.#pointFor(answer.point, echo);
@@ -1335,8 +1344,15 @@ export class PromptBus {
         : shown && 'base' in shown
           ? shown.base
           : undefined;
+    const deferred = shown?.kind === 'point' ? shown.deferred : undefined;
     this.#log(`${this.promptText} ${echo}`);
-    this.#collectors.push({ text: 'of', osnap: modes, ...(band && { band }), accept: (p) => p });
+    this.#collectors.push({
+      text: overrideAsks(modes),
+      osnap: modes,
+      ...(band && { band }),
+      ...(deferred && { deferred }),
+      accept: (p) => p,
+    });
     this.#showPrompt();
   }
 
@@ -1353,7 +1369,8 @@ export class PromptBus {
     return this.#feedPoint(p);
   }
 
-  async #feedPoint(p: Vec2): Promise<void> {
+  /** A point for the innermost collector; `deferred` goes on with it through an override's. */
+  async #feedPoint(p: Vec2, deferred?: DeferredPick): Promise<void> {
     const c = this.#collectors.pop()!;
     const r = c.accept(p);
     if (isCollector(r)) {
@@ -1361,17 +1378,21 @@ export class PromptBus {
       return this.#showPrompt();
     }
     if (isAnswer(r)) return this.#deliver(r.answer, '', false);
-    if (this.#collectors.length > 0) return this.#feedPoint(r);
-    return this.#pointFor(r, '', false);
+    // An override's "of" hands the point on as it came; any other collector made a new one.
+    const kept = r === p ? deferred : undefined;
+    if (this.#collectors.length > 0) return this.#feedPoint(r, kept);
+    return this.#pointFor(r, '', false, kept);
   }
 
   /** A point given at the command's prompt: the point itself, or a distance or angle from it. */
-  async #pointFor(p: Vec2, echo: string, log = true): Promise<void> {
+  async #pointFor(p: Vec2, echo: string, log = true, deferred?: DeferredPick): Promise<void> {
     const frame = this.#stack.at(-1)!;
     // A point made with FROM or a filter at "Select objects" picks there.
     if (frame.select) return this.#step(frame, await frame.select.point(p));
     const prompt = frame.prompt!;
-    if (prompt.kind === 'point') return this.#deliver({ kind: 'point', point: p }, echo, log);
+    if (prompt.kind === 'point') {
+      return this.#deliver({ kind: 'point', point: p, ...(deferred && { deferred }) }, echo, log);
+    }
     if (prompt.kind !== 'distance' && prompt.kind !== 'angle') {
       return this.#reject(INVALID[prompt.kind]);
     }
@@ -1393,7 +1414,11 @@ export class PromptBus {
   async #deliver(answer: PromptAnswer, echo: string, log = true): Promise<void> {
     const frame = this.#stack.at(-1)!;
     const prompt = frame.prompt!;
-    const given = answer.kind === 'enter' && prompt.default ? prompt.default : answer;
+    let given = answer.kind === 'enter' && prompt.default ? prompt.default : answer;
+    // A deferred snap reaches only a prompt that solves it; anywhere else it is its point.
+    if (given.kind === 'point' && given.deferred && !takesDeferred(prompt, given.deferred)) {
+      given = { kind: 'point', point: given.point };
+    }
     if (!answerFits(prompt, given)) {
       if (log) this.#log(`${this.promptText} ${echo}`.trimEnd());
       return this.#reject(INVALID[prompt.kind]);
@@ -1435,4 +1460,19 @@ function nearestGrip(
     }
   }
   return best;
+}
+
+/** Whether a prompt solves this deferred TAN or PER (M3-01 part 2). */
+function takesDeferred(prompt: Prompt, d: DeferredPick): boolean {
+  if (prompt.kind !== 'point' || !prompt.deferred) return false;
+  return (prompt.deferred.modes & OSNAP[d.mode]) !== 0;
+}
+
+/**
+ * What a typed object snap override asks: AutoCAD's "to" after TANgent, PERpendicular and
+ * NEArest ("_tan to"), "of" after the others ("_end of").
+ */
+function overrideAsks(modes: number): string {
+  const to = OSNAP.TAN | OSNAP.PER | OSNAP.NEA;
+  return modes !== 0 && (modes & ~to) === 0 ? 'to' : 'of';
 }
