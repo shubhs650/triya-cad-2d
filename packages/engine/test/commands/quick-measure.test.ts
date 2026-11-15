@@ -57,6 +57,13 @@ describe('quickMeasure', () => {
     expect(quickMeasure(src, { point: at(3, 0), aperture: 0.2, view: VIEW }).spans).toEqual([]);
   });
 
+  it('shows a line once when the cursor runs along it', () => {
+    const src = source([rect(0, 0, 10, 10)]);
+    const m = quickMeasure(src, { point: at(5, 0), aperture: 0.2, view: VIEW });
+    // The cursor on the edge has nothing below it, and across it only the edge's own ends.
+    expect(m.spans).toEqual([{ from: at(0, 0), to: at(10, 0), text: '10.0000' }]);
+  });
+
   it("gives a hovered line's length and the angles at its ends, 90° marked", () => {
     const src = source([rect(0, 0, 10, 10), lineGeom(10, 0, 14, 4)]);
     const m = quickMeasure(src, { point: at(5, 0.1), aperture: 0.2, view: VIEW });

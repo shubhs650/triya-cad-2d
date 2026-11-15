@@ -140,6 +140,12 @@ export function quickMeasure(src: OsnapSource, q: QuickQuery): QuickMeasure {
   }
   if (over?.curve.kind === 'LINE') {
     const line = over.curve;
+    // A distance across the cursor along the line itself is its length: shown once.
+    const near = (a: Vec2, b: Vec2) => distance(a, b) <= q.aperture;
+    const along = (s: QuickSpan) =>
+      (near(s.from, line.start) && near(s.to, line.end)) ||
+      (near(s.from, line.end) && near(s.to, line.start));
+    for (let i = spans.length - 1; i >= 0; i--) if (along(spans[i]!)) spans.splice(i, 1);
     spans.push({ from: line.start, to: line.end, text: d(distance(line.start, line.end)) });
     for (const [end, other] of [
       [line.start, line.end],
