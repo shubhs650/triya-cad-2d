@@ -84,6 +84,7 @@ describe('preferences', () => {
       selectionCycling: 0,
       // PICKSTYLE 1, group selection (M3-08).
       pickStyle: 1,
+      groupDisplayMode: 2,
       // PICKBOX 3, PICKADD 2 and PICKAUTO 5, AutoCAD's initial values (M3-04 part 4).
       pickbox: 3,
       pickadd: 2,

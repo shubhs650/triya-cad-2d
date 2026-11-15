@@ -232,6 +232,18 @@ describe('system variables the app keeps', () => {
     expect(d.isOn('groups')).toBe(false);
   });
 
+  it('keep GROUPDISPLAYMODE, which the Group Bounding Box toggle switches (M3-13)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'GROUPDISPLAYMODE')).toEqual({ ok: true, value: 2 });
+    expect(d.isOn('groupBox')).toBe(true);
+    expect(systemVariableReply(d, 'GROUPDISPLAYMODE', 0)).toEqual({ ok: true, value: 0 });
+    expect(d.isOn('groupBox')).toBe(false);
+    d.toggle('groupBox');
+    expect(d.get().groupDisplayMode).toBe(2);
+    d.toggle('groupBox');
+    expect(d.get().groupDisplayMode).toBe(1);
+  });
+
   it('keep PICKBOX, PICKADD and PICKAUTO (M3-04 part 4)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'PICKBOX')).toEqual({ ok: true, value: 3 });

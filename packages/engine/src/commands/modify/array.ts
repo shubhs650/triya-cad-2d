@@ -20,6 +20,7 @@
 // Here the column, row and path item spacings start at 1.5 × the selection's width and height
 // (the larger of the two for rows round a circle or along a path), which leaves a half-size gap
 // between items, as AutoCAD's defaults look on screen.
+import { removeCopies } from '../../edit/groups';
 import type { Box } from '../../geom/bounds';
 import type { Vec2 } from '../../geom/types';
 import { distance, sub } from '../../geom/vec';
@@ -161,7 +162,7 @@ class LiveArray {
   show(ctx: CommandContext, items: readonly Similarity[]): void {
     const o = mirrorOptions(ctx.model);
     ctx.edit((b) => {
-      for (const id of this.#copies) b.removeEntity(id);
+      removeCopies(b, this.#copies);
       this.#copies = [];
       this.#first = [];
       const refused = new Map<string, number>();
@@ -186,7 +187,7 @@ class LiveArray {
     if (item0) {
       const first = new Set(this.#first);
       ctx.edit((b) => {
-        for (const id of first) b.removeEntity(id);
+        removeCopies(b, [...first]);
         transformObjects(b, ctx.model, this.ids, item0, mirrorOptions(ctx.model));
       });
       this.#copies = this.#copies.filter((id) => !first.has(id));
@@ -207,7 +208,7 @@ class LiveArray {
   associate(ctx: CommandContext, make: (b: ChangeSetBuilder) => EditReport): void {
     let report: EditReport | undefined;
     ctx.edit((b) => {
-      for (const id of this.#copies) if (b.entity(id)) b.removeEntity(id);
+      removeCopies(b, this.#copies);
       report = make(b);
     });
     this.#copies = [];

@@ -78,6 +78,10 @@ const VALUES: Readonly<
     set: (selectionCycling) => ({ selectionCycling }),
   },
   PICKSTYLE: { get: (s) => s.pickStyle, set: (pickStyle) => ({ pickStyle }) },
+  GROUPDISPLAYMODE: {
+    get: (s) => s.groupDisplayMode,
+    set: (groupDisplayMode) => ({ groupDisplayMode }),
+  },
   PICKBOX: { get: (s) => s.pickbox, set: (pickbox) => ({ pickbox }) },
   PICKADD: { get: (s) => s.pickadd, set: (pickadd) => ({ pickadd }) },
   PICKAUTO: { get: (s) => s.pickauto, set: (pickauto) => ({ pickauto }) },

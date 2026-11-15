@@ -77,14 +77,48 @@ export function nextUnnamedGroup(source: DocumentModel | ChangeSetBuilder): stri
  * Grouping Dialog Box).
  */
 export function selectableMembers(model: DocumentModel, g: Group, space: Handle): EntityId[] {
+  return selectableHandles(model, g.entities, space);
+}
+
+/**
+ * The objects of `handles` in `space` a selection can take along (a group's members, an
+ * associative hatch's boundary, M3-13): not those gone or on frozen or locked layers.
+ */
+export function selectableHandles(
+  model: DocumentModel,
+  handles: readonly Handle[],
+  space: Handle,
+): EntityId[] {
   const out: EntityId[] = [];
-  for (const h of g.entities) {
+  for (const h of handles) {
     const id = model.ids.idOf(h);
     const e = id === undefined ? undefined : model.entity(id);
-    if (!e || e.owner !== space) continue;
+    if (!e || e.owner !== space || out.includes(e.id)) continue;
     const l = model.tables.layers.get(e.layer);
     if (l && (l.frozen || l.locked)) continue;
     out.push(e.id);
+  }
+  return out;
+}
+
+/**
+ * The selectable groups `ids` hold whole, with the members they hold (M3-13): a group whose
+ * every member a selection could take (`selectableMembers`) is selected. What GROUPDISPLAYMODE
+ * shows one grip for.
+ */
+export function wholeGroups(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  space: Handle,
+): { readonly group: Group; readonly ids: readonly EntityId[] }[] {
+  const chosen = new Set(ids);
+  const out: { group: Group; ids: EntityId[] }[] = [];
+  for (const g of groupsOf(model)) {
+    if (!g.selectable || !g.entities.some((h) => chosen.has(model.ids.idOf(h)!))) continue;
+    const members = selectableMembers(model, g, space);
+    if (members.length > 0 && members.every((id) => chosen.has(id))) {
+      out.push({ group: g, ids: members });
+    }
   }
   return out;
 }
@@ -218,4 +252,36 @@ export function reorderGroup(
     entities = rest;
   }
   b.updateObject(g.handle, { entities } as Partial<Group>);
+}
+
+/**
+ * Copies of whole groups (M3-13; AutoCAD Help, "About Groups": a copy of a group is an unnamed
+ * group): each group of the drawing whose every member `copies` copied (source handle → copy)
+ * gets an unnamed group of the copies, in the group's order, as selectable as it is.
+ */
+export function copyGroups(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  copies: ReadonlyMap<Handle, { readonly id: EntityId }>,
+): void {
+  for (const g of groupsOf(model)) {
+    if (g.entities.length === 0 || !g.entities.every((h) => copies.has(h))) continue;
+    createGroup(b, model, {
+      ids: g.entities.map((h) => copies.get(h)!.id),
+      selectable: g.selectable,
+    });
+  }
+}
+
+/**
+ * Takes copies back (COPY's, a grip mode's or ARRAY's Undo) with the groups their copying made:
+ * a group a copy lists in its reactors is one made of copies.
+ */
+export function removeCopies(b: ChangeSetBuilder, ids: readonly EntityId[]): void {
+  for (const id of ids) {
+    const e = b.entity(id);
+    if (!e) continue;
+    for (const r of e.reactors ?? []) if (isGroup(b.object(r))) b.removeObject(r);
+    b.removeEntity(id);
+  }
 }

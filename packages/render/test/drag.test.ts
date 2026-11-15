@@ -274,6 +274,46 @@ describe('Canvas2DRenderer grips', () => {
     expect(squares(transient().calls)[2]![0]).toBe(aciHex(12));
   });
 
+  it('draws a selected group’s one grip at its centre, and its bounding box (M3-13)', () => {
+    const { r, id, transient } = setup();
+    transient().clear();
+    // Line 20, (0,0)-(10,0), a group shown by one grip: its centre (5, 0) is device (50, 50).
+    r.setGrips([id('21')], undefined, [{ ids: [id('20')], box: true }]);
+    r.frame();
+    const plain = squares(transient().calls)[0]![0];
+    expect(squares(transient().calls).map(([, x, y]) => [x, y])).toEqual([
+      [50, 50],
+      [0, -150],
+      [0, -200],
+      [0, -250],
+    ]);
+    // The box round the group's extents, drawn before the grips.
+    // A device pixel wide, on pixel centres.
+    expect(devicePoints(transient().calls)).toEqual([
+      [0.5, 50.5],
+      [100.5, 50.5],
+      [100.5, 50.5],
+      [0.5, 50.5],
+    ]);
+    // No box at GROUPDISPLAYMODE 1; the centre grip takes the hover and hot colours.
+    r.setGrips([], undefined, [{ ids: [id('20')] }]);
+    r.setGripHover({ x: 5.2, y: 0.1 }, 0.5);
+    transient().clear();
+    r.frame();
+    expect(devicePoints(transient().calls)).toEqual([]);
+    expect(squares(transient().calls)).toEqual([[aciHex(11), 50, 50, 8]]);
+    r.setGrips([], { x: 5, y: 0 }, [{ ids: [id('20')] }]);
+    transient().clear();
+    r.frame();
+    expect(squares(transient().calls)[0]![0]).toBe(aciHex(12));
+    expect(plain).not.toBe(aciHex(12));
+    // A group whose objects have no extents shows nothing.
+    r.setGrips([], undefined, [{ ids: [], box: true }]);
+    transient().clear();
+    r.frame();
+    expect(squares(transient().calls)).toEqual([]);
+  });
+
   it('hides them with none', () => {
     const { r, id, transient } = setup();
     r.setGrips([id('20')]);

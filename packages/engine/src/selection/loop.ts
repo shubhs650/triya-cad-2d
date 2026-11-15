@@ -35,7 +35,7 @@ import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Group, NonGraphicalObject } from '../model/types';
-import { selectableMembers } from '../edit/groups';
+import { selectableHandles, selectableMembers } from '../edit/groups';
 import {
   matchKeyword,
   type Prompt,
@@ -59,13 +59,27 @@ const CYCLING_LIST = 2;
  */
 export const PICKSTYLE = 'PICKSTYLE';
 export const DEFAULT_PICKSTYLE = 1;
-const GROUP_SELECTION = 1;
+export const GROUP_SELECTION = 1;
+/** PICKSTYLE bit 2 (M3-13): selecting an associative hatch selects its boundary objects too. */
+const HATCH_SELECTION = 2;
+
+/**
+ * GROUPDISPLAYMODE (AutoCAD 2024 Help), while group selection is on: 0 grips on every object of
+ * a selected group, 1 one grip at its centre, 2 that grip and the group's bounding box. AutoCAD
+ * keeps it per user, initially 2 (M3-13).
+ */
+export const GROUPDISPLAYMODE = 'GROUPDISPLAYMODE';
+export const DEFAULT_GROUPDISPLAYMODE = 2;
 
 /** PICKADD's and PICKAUTO's names, and AutoCAD's initial values (2 and 5). */
 export const PICKADD = 'PICKADD';
 export const PICKAUTO = 'PICKAUTO';
 export const DEFAULT_PICKADD = 2;
 export const DEFAULT_PICKAUTO = 5;
+
+/** The per-user selection variables the app tells each drawing's engine (M3-04 part 4, M3-13). */
+export type PickVariable =
+  typeof PICKADD | typeof PICKAUTO | typeof PICKSTYLE | typeof GROUPDISPLAYMODE;
 /** PICKAUTO 1: a pick that finds nothing at "Select objects" starts a window. */
 const PICKAUTO_WINDOW = 1;
 
@@ -573,8 +587,9 @@ export class SelectionLoop {
 
   /**
    * `found` with the other members of the selectable groups it takes, while group selection is
-   * on (PICKSTYLE), and how many groups that is. PICKSTYLE is only asked for when `found` holds
-   * a member of one.
+   * on (PICKSTYLE bit 1), and how many groups that is; then, with associative hatch selection
+   * on (bit 2, M3-13), the boundary objects of the associative hatches among them. PICKSTYLE is
+   * only asked for when `found` holds a member of a group or an associative hatch.
    */
   async #grouped(found: readonly EntityId[]): Promise<{ ids: EntityId[]; groups: number }> {
     const ids = [...found];
@@ -587,19 +602,38 @@ export class SelectionLoop {
         (o as Group).selectable &&
         (o as Group).entities.some((h) => handles.has(h)),
     );
-    if (hit.length === 0) return { ids, groups: 0 };
+    const hatched = (list: readonly EntityId[]) =>
+      list.some((id) => {
+        const g = model.entity(id)?.geom;
+        return g?.kind === 'HATCH' && g.associative;
+      });
+    if (hit.length === 0 && !hatched(ids)) return { ids, groups: 0 };
     const style = await this.#host.request({ op: 'sysvar', name: PICKSTYLE });
     const mode = style.ok && typeof style.value === 'number' ? style.value : DEFAULT_PICKSTYLE;
-    if ((mode & GROUP_SELECTION) === 0) return { ids, groups: 0 };
     const space = this.#host.space();
     const seen = new Set(ids);
-    for (const g of hit) {
-      for (const id of selectableMembers(model, g, space)) {
+    const take = (more: readonly EntityId[]) => {
+      for (const id of more) {
         if (!seen.has(id)) ids.push(id);
         seen.add(id);
       }
+    };
+    const groups = (mode & GROUP_SELECTION) === 0 ? 0 : hit.length;
+    if (groups > 0) for (const g of hit) take(selectableMembers(model, g, space));
+    if ((mode & HATCH_SELECTION) !== 0) {
+      for (const id of [...ids]) {
+        const g = model.entity(id)!.geom;
+        if (g.kind !== 'HATCH' || !g.associative) continue;
+        take(
+          selectableHandles(
+            model,
+            g.loops.flatMap((l) => l.sources ?? []),
+            space,
+          ),
+        );
+      }
     }
-    return { ids, groups: hit.length };
+    return { ids, groups };
   }
 
   /** Adds, removes, replaces or toggles `found`, saying what happened as AutoCAD does. */
