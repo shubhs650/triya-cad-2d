@@ -45,6 +45,33 @@ const lineStarts = (page: Page) =>
       .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
   });
 
+/** Zooms to a clear patch right of the drawing's hatch (its fill hides white strokes). */
+async function clearOfHatch(page: Page): Promise<void> {
+  await answer(page, 'ZOOM', /^Specify corner of window/);
+  await answer(page, 'W', /^Specify first corner/);
+  await answer(page, '-222,550', /^Specify opposite corner/);
+  await answer(page, '-183,602', 'Command:');
+}
+
+async function stroke(page: Page): Promise<void> {
+  await answer(page, 'LINE', 'Specify first point:');
+  await answer(page, '-216,580', 'Specify next point or [Undo]:');
+  await answer(page, '-214,582', 'Specify next point or [Undo]:');
+  await answer(page, '', 'Command:');
+}
+
+/** The INSERTs this test added (the array objects), as the change sets left them. */
+const inserts = (page: Page) =>
+  page.evaluate(() => {
+    const out = new Map<string, Entity>();
+    for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+      for (const a of cs.entities?.added ?? []) out.set(a.entity.handle, a.entity);
+      for (const u of cs.entities?.updated ?? []) out.set(u.after.handle, u.after);
+      for (const r of cs.entities?.removed ?? []) out.delete(r.entity.handle);
+    }
+    return [...out.values()].filter((e) => e.geom.kind === 'INSERT').map((e) => e.owner);
+  });
+
 const EDIT_RECT =
   'Select grip to edit array or [ASsociative/Base point/COUnt/Spacing/COLumns/Rows/eXit] <eXit>:';
 const EDIT_POLAR =
@@ -64,17 +91,13 @@ test('ARRAYRECT, ARRAYPOLAR and ARRAYPATH copy objects in rows, round a centre a
   const log = page.getByRole('log', { name: 'Recent command lines' });
   const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
 
-  // Clear of the drawing's hatch, on its right.
-  await answer(page, 'ZOOM', /^Specify corner of window/);
-  await answer(page, 'W', /^Specify first corner/);
-  await answer(page, '-222,550', /^Specify opposite corner/);
-  await answer(page, '-183,602', 'Command:');
+  await clearOfHatch(page);
+  // Separate objects (ARRAYASSOCIATIVITY 0); associative arrays are the test below.
+  await answer(page, 'ARRAYASSOCIATIVITY', 'Enter new value for ARRAYASSOCIATIVITY <1>:');
+  await answer(page, '0', 'Command:');
 
   // A short diagonal stroke, the object the rectangular array copies.
-  await answer(page, 'LINE', 'Specify first point:');
-  await answer(page, '-216,580', 'Specify next point or [Undo]:');
-  await answer(page, '-214,582', 'Specify next point or [Undo]:');
-  await answer(page, '', 'Command:');
+  await stroke(page);
   await shot('1-before.png');
 
   await answer(page, 'ARRAYRECT', 'Select objects:');
@@ -128,4 +151,44 @@ test('ARRAYRECT, ARRAYPOLAR and ARRAYPATH copy objects in rows, round a centre a
   await answer(page, '', 'Command:');
   const all = await lineStarts(page);
   for (const x of [-216, -209, -202, -195, -188]) expect(all).toContainEqual([x, 557]);
+});
+
+test('ARRAYRECT makes one associative array object, which ARRAYEDIT changes (M3-11)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await expectDrawn(page);
+  await expect(prompt(page)).toHaveText('Command:');
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await clearOfHatch(page);
+  await stroke(page);
+
+  await answer(page, 'ARRAYRECT', 'Select objects:');
+  await answer(page, 'L', 'Select objects:');
+  await answer(page, '', EDIT_RECT);
+  await expect(log).toContainText('Type = Rectangular  Associative = Yes');
+  await answer(page, '', 'Command:');
+  // The stroke and its copies are one array object: an INSERT in model space (its item INSERTs
+  // are in its own block).
+  await expect.poll(() => inserts(page).then((o) => o.length)).toBeGreaterThan(1);
+  const spaces = await inserts(page);
+  const space = spaces.find((o) => spaces.filter((x) => x === o).length === 1)!;
+  expect(spaces.filter((o) => o !== space)).toHaveLength(12);
+  await shot('5-associative.png');
+
+  await answer(page, 'ARRAYEDIT', 'Select array:');
+  await answer(page, 'L', 'Enter an option [Rows/Columns/eXit] <eXit>:');
+  await answer(page, 'C', 'Enter number of columns <4>:');
+  await answer(page, '5', /^Specify the distance between columns or \[Total\]/);
+  await answer(page, '', 'Enter an option [Rows/Columns/eXit] <eXit>:');
+  await answer(page, 'R', 'Enter the number of rows <3>:');
+  await answer(page, '2', /^Specify the distance between rows or \[Total\]/);
+  await answer(page, '', 'Enter an option [Rows/Columns/eXit] <eXit>:');
+  await expect.poll(() => inserts(page).then((o) => o.filter((x) => x !== space).length)).toBe(10);
+  await shot('6-arrayedit.png');
+  await answer(page, '', 'Command:');
 });
