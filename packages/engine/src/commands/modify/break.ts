@@ -18,6 +18,10 @@
 // AutoCAD 2024 shows: the help does not name the first default). Each pick then changes the end
 // nearer the pick, until Enter; Undo takes back the last change. DElta and Total take an
 // Angle for arcs. The geometry is `edit/break.ts`'s.
+//
+// COMMANDPREVIEW (M3-12 part 6, `command-preview.ts`): BREAK's second point prompt shows the
+// object broken to the cursor; LENGTHEN shows the change a pick at the cursor would make, and
+// DYnamic the object with its end at the cursor.
 import { ccwSweep } from '../../geom/angle';
 import type { Curve } from '../../geom/curves';
 import { closestPoint } from '../../geom/closest';
@@ -37,7 +41,9 @@ import { reshapeObject, revertChanges } from '../../edit/edit';
 import { isClosedCurve } from '../../edit/trim';
 import type { ChangeSet } from '../../model/changeset';
 import type { EntityId } from '../../model/entity-ids';
+import type { Entity, EntityGeometry } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
+import { reshapePreview, type CommandPreviewSource, type PreviewQuery } from '../command-preview';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { drawingUnits, formatAngle, formatDistance } from '../units';
 import { toleranceFor } from './offset';
@@ -56,9 +62,12 @@ export async function pickedObject(
   point: Vec2,
 ): Promise<EntityId | undefined> {
   const r = await ctx.view.request({ op: 'pick', point });
-  const hits = (r.ok ? (r.ids ?? []) : []).filter(
-    (id) => ctx.model.entity(id)?.owner === ctx.space,
-  );
+  return pickTarget(ctx, r.ok ? (r.ids ?? []) : []);
+}
+
+/** Of the objects `ids` under a pick: in the space being drawn in, one with a curve first. */
+function pickTarget(ctx: CommandContext, ids: readonly EntityId[]): EntityId | undefined {
+  const hits = ids.filter((id) => ctx.model.entity(id)?.owner === ctx.space);
   // Under a hatch the line it is drawn up to is what a drafter means.
   return hits.find((h) => breakCurveOf(ctx.model.entity(h)!.geom)) ?? hits[0];
 }
@@ -91,6 +100,7 @@ export function breakCommand(): CommandDef {
           options: ['First point'],
           lastPoint: first,
           rubberBand: { from: first },
+          commandPreview: breakPreview(ctx, id, c, first),
         });
         if (s.kind === 'point') second = s.point;
         else if (s.kind !== 'keyword') return;
@@ -104,6 +114,7 @@ export function breakCommand(): CommandDef {
           message: 'Specify second break point',
           lastPoint: first,
           rubberBand: { from: first },
+          commandPreview: breakPreview(ctx, id, c, first),
         });
         if (s.kind !== 'point') return;
         second = s.point;
@@ -143,19 +154,52 @@ function curveOf(ctx: CommandContext, id: EntityId): Curve | undefined {
   return c;
 }
 
-function breakAt(ctx: CommandContext, id: EntityId, c: Curve, p1: Vec2, p2: Vec2): void {
+/** What breaking `id` from `p1` to `p2` makes, or AutoCAD's message why it cannot. */
+function breakShapes(
+  ctx: CommandContext,
+  id: EntityId,
+  c: Curve,
+  p1: Vec2,
+  p2: Vec2,
+): readonly EntityGeometry[] | string {
   const e = ctx.model.entity(id)!;
   const tol = toleranceFor(ctx.model, c);
   const t1 = closestPoint(c, p1, tol).t;
   const t2 = p1 === p2 ? t1 : closestPoint(c, p2, tol).t;
   const r = breakGeometry(e.geom, c, t1, t2, tol);
+  return typeof r === 'string' ? BREAK_PROBLEM[r] : r;
+}
+
+function breakAt(ctx: CommandContext, id: EntityId, c: Curve, p1: Vec2, p2: Vec2): void {
+  const e = ctx.model.entity(id)!;
+  const r = breakShapes(ctx, id, c, p1, p2);
   if (typeof r === 'string') {
-    ctx.message(BREAK_PROBLEM[r]);
+    ctx.message(r);
     return;
   }
   // Both points at one end leave the object as it was.
   if (r.length === 1 && r[0] === e.geom) return;
   ctx.edit((b) => reshapeObject(b, ctx.model, id, r));
+}
+
+/**
+ * COMMANDPREVIEW (M3-12 part 6): the object broken from `first` to the second point at the
+ * cursor, as AutoCAD's preview shows the gap before the point is picked.
+ */
+function breakPreview(
+  ctx: CommandContext,
+  id: EntityId,
+  c: Curve,
+  first: Vec2,
+): CommandPreviewSource {
+  return {
+    at: (q) => {
+      if (!ctx.model.entity(id) || locked(ctx, id)) return undefined;
+      const r = breakShapes(ctx, id, c, first, q.cursor);
+      if (typeof r === 'string') return undefined;
+      return reshapePreview(ctx.model, [[id, r]]);
+    },
+  };
 }
 
 // ── LENGTHEN ────────────────────────────────────────────────────────────────────────────────
@@ -315,6 +359,19 @@ async function* changeObjects(ctx: CommandContext, s: LengthenSettings): Sub<voi
       message: 'Select an object to change or',
       options: ['Undo'],
       pickbox: true,
+      // COMMANDPREVIEW (M3-12 part 6): the change a pick at the cursor would make (DYnamic's
+      // shows once the object is picked, as its end follows the cursor).
+      ...(s.mode !== 'DYnamic' && {
+        commandPreview: {
+          hover: true as const,
+          at: (q: PreviewQuery) => {
+            const t = target(ctx, pickTarget(ctx, q.hits), q.cursor);
+            if (typeof t === 'string') return undefined;
+            const r = lengthened(t, newLength(t.c, s, t.tol));
+            return typeof r === 'string' ? undefined : reshapePreview(ctx.model, [[t.id, [r]]]);
+          },
+        },
+      }),
     });
     if (a.kind === 'keyword') {
       const last = done.pop();
@@ -323,37 +380,61 @@ async function* changeObjects(ctx: CommandContext, s: LengthenSettings): Sub<voi
       continue;
     }
     if (a.kind !== 'point') return;
-    const id = await pickedObject(ctx, a.point);
-    const e = id === undefined ? undefined : ctx.model.entity(id);
-    const c = e && breakCurveOf(e.geom);
-    if (id === undefined || !e || !c || c.kind === 'RAY' || c.kind === 'XLINE') {
-      ctx.message('Cannot lengthen that object.');
+    const t = target(ctx, await pickedObject(ctx, a.point), a.point);
+    if (typeof t === 'string') {
+      ctx.message(t);
       continue;
     }
-    if (locked(ctx, id)) {
-      ctx.message('The object is on a locked layer.');
-      continue;
-    }
-    const tol = toleranceFor(ctx.model, c);
-    if (isClosedCurve(c, tol)) {
-      ctx.message(LENGTHEN_PROBLEM.closed);
-      continue;
-    }
-    const atEnd = movesEnd(c, closestPoint(c, a.point, tol).t);
-    let target: number | LengthenProblem;
+    let length: number | LengthenProblem;
     if (s.mode === 'DYnamic') {
-      const p = yield ctx.prompt.point({ message: 'Specify new end point' });
+      const p = yield ctx.prompt.point({
+        message: 'Specify new end point',
+        commandPreview: {
+          at: (q) => {
+            const r = lengthened(t, lengthTo(t.c, t.atEnd, q.cursor, t.tol) ?? 'invalid');
+            return typeof r === 'string' ? undefined : reshapePreview(ctx.model, [[t.id, [r]]]);
+          },
+        },
+      });
       if (p.kind !== 'point') return;
-      target = lengthTo(c, atEnd, p.point, tol) ?? 'invalid';
-    } else target = newLength(c, s, tol);
-    const r = typeof target === 'string' ? target : lengthenGeometry(e.geom, c, atEnd, target, tol);
+      length = lengthTo(t.c, t.atEnd, p.point, t.tol) ?? 'invalid';
+    } else length = newLength(t.c, s, t.tol);
+    const r = lengthened(t, length);
     if (typeof r === 'string') {
-      ctx.message(LENGTHEN_PROBLEM[r]);
+      ctx.message(r);
       continue;
     }
-    if (r === e.geom) continue;
-    done.push(ctx.edit((b) => reshapeObject(b, ctx.model, id, [r])));
+    if (r === t.e.geom) continue;
+    done.push(ctx.edit((b) => reshapeObject(b, ctx.model, t.id, [r])));
   }
+}
+
+/** An object LENGTHEN changes, at the end nearer the pick. */
+interface Target {
+  readonly id: EntityId;
+  readonly e: Entity;
+  readonly c: Curve;
+  readonly tol: Tolerance;
+  readonly atEnd: boolean;
+}
+
+/** The object `id` picked at `p` as LENGTHEN's target, or AutoCAD's message why it is none. */
+function target(ctx: CommandContext, id: EntityId | undefined, p: Vec2): Target | string {
+  const e = id === undefined ? undefined : ctx.model.entity(id);
+  const c = e && breakCurveOf(e.geom);
+  if (id === undefined || !e || !c || c.kind === 'RAY' || c.kind === 'XLINE')
+    return 'Cannot lengthen that object.';
+  if (locked(ctx, id)) return 'The object is on a locked layer.';
+  const tol = toleranceFor(ctx.model, c);
+  if (isClosedCurve(c, tol)) return LENGTHEN_PROBLEM.closed;
+  return { id, e, c, tol, atEnd: movesEnd(c, closestPoint(c, p, tol).t) };
+}
+
+/** `t`'s object at `length`, or AutoCAD's message why it cannot be. */
+function lengthened(t: Target, length: number | LengthenProblem): EntityGeometry | string {
+  const r =
+    typeof length === 'string' ? length : lengthenGeometry(t.e.geom, t.c, t.atEnd, length, t.tol);
+  return typeof r === 'string' ? LENGTHEN_PROBLEM[r] : r;
 }
 
 /** The length the mode gives `c`. */

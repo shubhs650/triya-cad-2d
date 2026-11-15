@@ -566,6 +566,8 @@ export class PromptBus {
       readonly ctrl?: boolean;
       readonly gripFunction?: string;
       readonly dragged?: boolean;
+      /** With `release`: the path a press was dragged along (M3-12 part 6, `freehand`). */
+      readonly freehand?: readonly Vec2[];
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
@@ -612,7 +614,12 @@ export class PromptBus {
         return this.#step(frame, await frame.select.point(point, o));
       }
       if (frame) {
-        if (o.release) return undefined;
+        if (o.release) {
+          // TRIM's freehand fence (M3-12 part 6): the path, at a prompt that takes one.
+          const p = this.prompt;
+          if (!o.freehand || p?.kind !== 'point' || !p.rubberBand?.freehand) return undefined;
+          return this.#direct({ kind: 'point', point, freehand: o.freehand });
+        }
         return this.#direct({
           kind: 'point',
           point,

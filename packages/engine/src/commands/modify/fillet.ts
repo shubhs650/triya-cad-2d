@@ -17,6 +17,9 @@
 // (chamfer) of the command. Polyline does every vertex of a 2D polyline. The geometry is
 // `edit/corner.ts`'s.
 //
+// COMMANDPREVIEW (M3-12 part 6, `command-preview.ts`): as the cursor hovers over a second object,
+// the fillet (chamfer) a pick there would make shows, the two objects faded under it.
+//
 // Messages AutoCAD's help does not word are worded here after its other messages ("Radius is
 // too large", "Lines are parallel"); the PR notes the ambiguity.
 import { normalizeAngle } from '../../geom/angle';
@@ -41,9 +44,15 @@ import { trimCurveOf } from '../../edit/trim';
 import type { ChangeSet } from '../../model/changeset';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
-import type { Entity } from '../../model/types';
+import type { Entity, EntityGeometry } from '../../model/types';
 import { currentProps } from '../../properties/current';
 import type { CommandContext, CommandDef } from '../command';
+import {
+  reshapePreview,
+  type CommandPreview,
+  type PreviewQuery,
+  type PreviewShape,
+} from '../command-preview';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { drawingUnits, formatAngle, formatDistance } from '../units';
 import { toleranceFor } from './offset';
@@ -75,6 +84,12 @@ export const cornerSettings = (): CornerSettings => ({
   length: 0,
   angle: 0,
 });
+
+/** What a fillet (chamfer) does: objects reshaped (none: erased) and the arc (line) added. */
+interface Plan {
+  readonly reshaped: readonly (readonly [EntityId, readonly EntityGeometry[]])[];
+  readonly added?: PreviewShape;
+}
 
 type Saved = 'radius' | 'dist1' | 'dist2' | 'length' | 'angle';
 
@@ -256,9 +271,12 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
   /** What is under a pick: the object a fillet (chamfer) can take, else any object. */
   async function pickAt(ctx: CommandContext, p: Vec2): Promise<EntityId | undefined> {
     const r = await ctx.view.request({ op: 'pick', point: p });
-    const hits = (r.ok ? (r.ids ?? []) : []).filter(
-      (id) => ctx.model.entity(id)?.owner === ctx.space,
-    );
+    return pickOf(ctx, r.ok ? (r.ids ?? []) : [], p);
+  }
+
+  /** Of the objects `ids` under a pick at `p`: the one a fillet (chamfer) can take, else any. */
+  function pickOf(ctx: CommandContext, ids: readonly EntityId[], p: Vec2): EntityId | undefined {
+    const hits = ids.filter((id) => ctx.model.entity(id)?.owner === ctx.space);
     return hits.find((h) => legOfId(ctx, h, p)) ?? hits[0];
   }
 
@@ -267,20 +285,34 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
     return e && legOf(e.geom, p, tolOf(ctx, [e]));
   }
 
-  /** The object picked at `p` as a leg, or undefined (with AutoCAD's message). */
-  async function picked(ctx: CommandContext, p: Vec2): Promise<Picked | undefined> {
-    const id = await pickAt(ctx, p);
+  /**
+   * The leg a pick at `p` with `ids` under it takes, or AutoCAD's message for why there is none
+   * (undefined: nothing there).
+   */
+  function legAt(ctx: CommandContext, ids: readonly EntityId[], p: Vec2): Picked | undefined {
+    const r = pickedOf(ctx, pickOf(ctx, ids, p), p);
+    return typeof r === 'string' ? undefined : r;
+  }
+
+  function pickedOf(
+    ctx: CommandContext,
+    id: EntityId | undefined,
+    p: Vec2,
+  ): Picked | string | undefined {
     if (id === undefined) return undefined;
     const leg = legOfId(ctx, id, p);
-    if (!leg || (!fillet && leg.carrier.kind !== 'line' && !isPolyline2d(leg.g))) {
-      ctx.message(fillet ? 'Cannot fillet that object.' : 'Cannot chamfer that object.');
-      return undefined;
-    }
-    if (locked(ctx.model, id)) {
-      ctx.message('The object is on a locked layer.');
-      return undefined;
-    }
+    if (!leg || (!fillet && leg.carrier.kind !== 'line' && !isPolyline2d(leg.g)))
+      return fillet ? 'Cannot fillet that object.' : 'Cannot chamfer that object.';
+    if (locked(ctx.model, id)) return 'The object is on a locked layer.';
     return { id, leg };
+  }
+
+  /** The object picked at `p` as a leg, or undefined (with AutoCAD's message). */
+  async function picked(ctx: CommandContext, p: Vec2): Promise<Picked | undefined> {
+    const r = pickedOf(ctx, await pickAt(ctx, p), p);
+    if (typeof r !== 'string') return r;
+    ctx.message(r);
+    return undefined;
   }
 
   const size = (ctx: CommandContext, sharp: boolean): ChamferSize =>
@@ -289,6 +321,47 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
       : s.angleMethod
         ? { method: 'angle', length: read(ctx, s, 'length'), angle: read(ctx, s, 'angle') }
         : { method: 'distance', d1: read(ctx, s, 'dist1'), d2: read(ctx, s, 'dist2') };
+
+  /**
+   * What the fillet (chamfer) of two picked objects makes: each object reshaped (none: no
+   * change) and the arc (line) added, null when it is made with no change (lines already
+   * meeting, radius 0), or AutoCAD's message for why it cannot be.
+   */
+  function plan(ctx: CommandContext, a: Picked, b: Picked, sharp: boolean): Plan | null | string {
+    const model = ctx.model;
+    const ea = model.entity(a.id)!;
+    const eb = model.entity(b.id)!;
+    const tol = tolOf(ctx, [ea, eb]);
+    const samePolyline = a.id === b.id && isPolyline2d(ea.geom);
+    if (a.id === b.id && (!samePolyline || a.leg.segment === b.leg.segment))
+      return `Cannot ${w.verb} an object to itself.`;
+    if (!fillet && (a.leg.carrier.kind !== 'line' || b.leg.carrier.kind !== 'line'))
+      return 'Cannot chamfer arc segments.';
+    let c: Corner | CornerProblem | 'not-lines';
+    if (fillet) {
+      c = filletCorner(a.leg, b.leg, sharp ? 0 : read(ctx, s, 'radius'), tol);
+      if (c === 'parallel' && !sharp) c = parallelFillet(a.leg, b.leg, tol);
+    } else c = chamferCorner(a.leg, b.leg, size(ctx, sharp), tol);
+    if (typeof c === 'string') return problemMessage(c);
+    const made = c;
+    const props = pieceProps(model, ea, eb);
+    if (samePolyline) {
+      if (!s.trim) {
+        if (!made.piece) return null;
+        return { reshaped: [], added: { geom: made.piece.geom, props } };
+      }
+      const g = samePolylineCorner(a.leg, b.leg, made, tol);
+      if (typeof g === 'string') return problemMessage(g);
+      return { reshaped: [[a.id, [g]]] };
+    }
+    const edit = cornerEdit(a.leg, b.leg, made, s.trim, tol);
+    if (typeof edit === 'string') return problemMessage(edit);
+    if (edit.first === undefined && edit.second === undefined && !edit.added) return null;
+    const reshaped: [EntityId, EntityGeometry[]][] = [];
+    if (edit.first !== undefined) reshaped.push([a.id, edit.first ? [edit.first] : []]);
+    if (edit.second !== undefined) reshaped.push([b.id, edit.second ? [edit.second] : []]);
+    return { reshaped, ...(edit.added && { added: { geom: edit.added, props } }) };
+  }
 
   /**
    * The fillet (chamfer) of two picked objects: its edit, null when it is made with no change
@@ -300,56 +373,33 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
     b: Picked,
     sharp: boolean,
   ): ChangeSet | null | undefined {
+    const p = plan(ctx, a, b, sharp);
+    if (typeof p === 'string') {
+      ctx.message(p);
+      return undefined;
+    }
+    if (!p) return null;
     const model = ctx.model;
-    const ea = model.entity(a.id)!;
-    const eb = model.entity(b.id)!;
-    const tol = tolOf(ctx, [ea, eb]);
-    const samePolyline = a.id === b.id && isPolyline2d(ea.geom);
-    if (a.id === b.id && (!samePolyline || a.leg.segment === b.leg.segment)) {
-      ctx.message(`Cannot ${w.verb} an object to itself.`);
-      return undefined;
-    }
-    if (!fillet && (a.leg.carrier.kind !== 'line' || b.leg.carrier.kind !== 'line')) {
-      ctx.message('Cannot chamfer arc segments.');
-      return undefined;
-    }
-    let c: Corner | CornerProblem | 'not-lines';
-    if (fillet) {
-      c = filletCorner(a.leg, b.leg, sharp ? 0 : read(ctx, s, 'radius'), tol);
-      if (c === 'parallel' && !sharp) c = parallelFillet(a.leg, b.leg, tol);
-    } else c = chamferCorner(a.leg, b.leg, size(ctx, sharp), tol);
-    if (typeof c === 'string') {
-      ctx.message(problemMessage(c));
-      return undefined;
-    }
-    const made = c;
-    if (samePolyline) {
-      if (!s.trim) {
-        if (!made.piece) return null;
-        return ctx.edit((bd) => {
-          bd.addEntity({ owner: ctx.space, ...pieceProps(model, ea, eb), geom: made.piece!.geom });
-        });
-      }
-      const g = samePolylineCorner(a.leg, b.leg, made, tol);
-      if (typeof g === 'string') {
-        ctx.message(problemMessage(g));
-        return undefined;
-      }
-      return ctx.edit((bd) => reshapeObject(bd, model, a.id, [g]));
-    }
-    const edit = cornerEdit(a.leg, b.leg, made, s.trim, tol);
-    if (typeof edit === 'string') {
-      ctx.message(problemMessage(edit));
-      return undefined;
-    }
-    if (edit.first === undefined && edit.second === undefined && !edit.added) return null;
-    const props = pieceProps(model, ea, eb);
     return ctx.edit((bd) => {
-      if (edit.first !== undefined) reshapeObject(bd, model, a.id, edit.first ? [edit.first] : []);
-      if (edit.second !== undefined)
-        reshapeObject(bd, model, b.id, edit.second ? [edit.second] : []);
-      if (edit.added) bd.addEntity({ owner: ctx.space, ...props, geom: edit.added });
+      for (const [id, geoms] of p.reshaped) reshapeObject(bd, model, id, geoms);
+      if (p.added) bd.addEntity({ owner: ctx.space, ...p.added.props, geom: p.added.geom });
     });
+  }
+
+  /**
+   * COMMANDPREVIEW (M3-12 part 6): the fillet (chamfer) of `first` with the object under the
+   * cursor, as a pick there would make it; Shift held, the sharp corner.
+   */
+  function preview(
+    ctx: CommandContext,
+    first: Picked,
+    q: PreviewQuery,
+  ): CommandPreview | undefined {
+    const second = legAt(ctx, q.hits, q.cursor);
+    if (!second) return undefined;
+    const p = plan(ctx, first, second, q.shift === true);
+    if (!p || typeof p === 'string') return undefined;
+    return reshapePreview(ctx.model, p.reshaped, p.added ? [p.added] : []);
   }
 
   function problemMessage(p: CornerProblem | 'not-lines' | 'polyline-segment'): string {
@@ -436,6 +486,7 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
             message: w.second,
             options: w.secondOptions,
             pickbox: true,
+            commandPreview: { hover: true, at: (q) => preview(ctx, first, q) },
           });
           if (b.kind === 'keyword') {
             if (!(yield* option(ctx, b.keyword))) return;

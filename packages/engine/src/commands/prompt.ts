@@ -13,6 +13,7 @@ import type { QuickSelectCriteria, QuickSelectType } from '../selection/qselect'
 import type { FilterItem, FilterNameKey } from '../selection/filter';
 import type { PropertyUnits } from '../properties/sheet';
 import type { MatchSettings } from '../properties/match';
+import type { CommandPreviewSource } from './command-preview';
 import type { DragPreview } from './drag';
 import type { UnitsSettings } from './drawing-units';
 import {
@@ -90,6 +91,11 @@ interface PromptBase {
   /** The objects dragged with the cursor while this prompt waits (M2-06 part 2). */
   readonly drag?: DragPreview;
   /**
+   * COMMANDPREVIEW (M3-12 part 6, `command-preview.ts`): what a pick or point at the cursor would
+   * do, which the front-end shows while COMMANDPREVIEW is 1.
+   */
+  readonly commandPreview?: CommandPreviewSource;
+  /**
    * Esc answers `{ kind: 'escape' }` rather than cancelling the command: PLOT's window corners
    * go back to the Plot dialog, as AutoCAD's do (M2-17 part 3). A command typed or picked
    * meanwhile still cancels it.
@@ -155,6 +161,13 @@ export interface PointPrompt extends PromptBase {
      * first unless `open` (a fence), as `selection` says (a window or a crossing).
      */
     readonly path?: { readonly points: readonly Vec2[]; readonly open?: true };
+    /**
+     * A press at `from` dragged and let go answers with the path the cursor took (`freehand`
+     * on the answer): TRIM's and EXTEND's freehand fence in Quick mode (M3-12 part 6; AutoCAD
+     * 2024 Help, "TRIM (Command)": "click and drag to start a freehand selection path"). The
+     * front-end draws the path as a fence while it is dragged.
+     */
+    readonly freehand?: true;
     /**
      * The direction, a unit vector, of the last segment drawn where it ends at `from` (LINE's
      * and PLINE's next point, M3-06 part 3): with POLARMODE 1 the front-end counts the polar
@@ -660,6 +673,11 @@ export type PromptAnswer =
        * `point` is where the object was picked, which the command solves from.
        */
       readonly deferred?: DeferredPick;
+      /**
+       * The path a press was dragged along, `point` (where it was let go) its last point, at a
+       * prompt that takes it (`rubberBand.freehand`, M3-12 part 6).
+       */
+      readonly freehand?: readonly Vec2[];
     }
   | {
       readonly kind: 'distance';
