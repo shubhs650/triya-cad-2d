@@ -6,8 +6,9 @@
 // AutoCAD shows even when the pattern file differs; the library supplies lines only for a
 // hatch stored without them (`hatchLines`) and for hatches made in Triya (M4).
 
-import type { HatchGeometry, HatchPatternLine } from '@triya/engine';
+import type { HatchGeometry, HatchLinesOf, HatchPatternLine } from '@triya/engine';
 import { TRIYA_ISO_PAT } from './bundled';
+import { hatchPattern, type HatchPatternOptions } from './pattern';
 import { parsePat, patternLines, userDefinedLines, type PatFile, type PatPattern } from './pat';
 
 export class PatternLibrary {
@@ -57,4 +58,23 @@ export function hatchLines(
   }
   const p = library.get(g.pattern);
   return p ? patternLines(p, { angle: g.patternAngle, scale: g.patternScale }) : [];
+}
+
+/**
+ * What EXPLODE turns a pattern hatch into (M3-12 part 3, the engine's `HatchLinesOf`): every
+ * dash and dot its pattern draws inside its boundary, or undefined when it draws none (an
+ * unknown pattern) or more lines than HPMAXLINES, which AutoCAD would not generate either.
+ */
+export function explodedHatchLines(
+  library: PatternLibrary,
+  options: HatchPatternOptions = {},
+): HatchLinesOf {
+  return (g) => {
+    const p = hatchPattern({ ...g, patternLines: hatchLines(g, library) }, options);
+    if (p.kind !== 'lines' || p.families.length === 0) return undefined;
+    return {
+      segments: p.families.flatMap((f) => f.segments),
+      dots: p.families.flatMap((f) => f.dots),
+    };
+  };
 }
