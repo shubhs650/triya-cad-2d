@@ -7,6 +7,8 @@
 import { OSMODE_DEFAULT, OSNAP_OFF } from '@triya/engine';
 import {
   AUTOSNAP_KEPT,
+  INITIAL_MODIFY_OPTIONS,
+  MODIFY_OPTIONS,
   QP_DISTANCES,
   QP_QUADRANTS,
   QP_ROW_COUNTS,
@@ -82,6 +84,7 @@ export type DraftingPreferences = Pick<
   | 'qpDistance'
   | 'qpCollapse'
   | 'qpRows'
+  | 'modifyOptions'
 >;
 
 export interface Preferences {
@@ -149,6 +152,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     qpDistance: 50,
     qpCollapse: true,
     qpRows: 3,
+    modifyOptions: INITIAL_MODIFY_OPTIONS,
   },
   filters: {},
   aliasFile: '',
@@ -167,6 +171,17 @@ function within(v: unknown, range: { min: number; max: number }, fallback: numbe
   return typeof v === 'number' && Number.isInteger(v) && v >= range.min && v <= range.max
     ? v
     : fallback;
+}
+
+/** The modify commands' options stored (M3-12): each one valid, else its initial value. */
+function modifyOptions(v: unknown): Readonly<Record<string, number>> {
+  const stored = isRecord(v) ? v : {};
+  return Object.fromEntries(
+    Object.entries(MODIFY_OPTIONS).map(([name, o]) => [
+      name,
+      within(stored[name], { min: 0, max: o.max }, o.initial),
+    ]),
+  );
 }
 
 function int(v: unknown, range: { min: number; max: number }, fallback: number): number {
@@ -256,6 +271,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       qpDistance: int(k['qpDistance'], QP_DISTANCES, d.drafting.qpDistance),
       qpCollapse: bool(k['qpCollapse'], d.drafting.qpCollapse),
       qpRows: int(k['qpRows'], QP_ROW_COUNTS, d.drafting.qpRows),
+      modifyOptions: modifyOptions(k['modifyOptions']),
     },
   };
 }
@@ -342,6 +358,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,
     qpRows: s.qpRows,
+    modifyOptions: s.modifyOptions,
   };
 }
 

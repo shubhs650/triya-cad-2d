@@ -11,8 +11,8 @@
 //
 // The radius and the chamfer distances, length and angle are the drawing's FILLETRAD and
 // CHAMFERA–D (header variables, saved with it); the Trim mode (TRIMMODE) is shared by FILLET and
-// CHAMFER and the chamfer method (CHAMMODE) is CHAMFER's, both kept while the drawing is open,
-// as AutoCAD keeps its unsaved variables. Shift with the second pick makes a sharp corner
+// CHAMFER and the chamfer method (CHAMMODE) is CHAMFER's, both variables the app keeps (M3-12,
+// `option-variables.ts`): each command starts from them and sets them when its option changes. Shift with the second pick makes a sharp corner
 // (radius or distances 0). Multiple repeats until Enter; Undo takes back the last fillet
 // (chamfer) of the command. Polyline does every vertex of a 2D polyline. The geometry is
 // `edit/corner.ts`'s.
@@ -47,6 +47,7 @@ import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { drawingUnits, formatAngle, formatDistance } from '../units';
 import { toleranceFor } from './offset';
+import { optionVariable, setOptionVariable } from './option-variables';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -162,6 +163,12 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
       : `${mode} Current chamfer Dist1 = ${d('dist1')}, Dist2 = ${d('dist2')}`;
   };
 
+  /** CHAMFER's method chosen: CHAMMODE. */
+  async function setAngleMethod(ctx: CommandContext, angle: boolean): Promise<void> {
+    s.angleMethod = angle;
+    await setOptionVariable(ctx, 'CHAMMODE', angle ? 1 : 0);
+  }
+
   /** A non-negative distance for `k`, asked with `message`; false when the command ends. */
   async function* distanceFor(
     ctx: CommandContext,
@@ -200,7 +207,7 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
           ))
         )
           return false;
-        s.angleMethod = false;
+        await setAngleMethod(ctx, false);
         return true;
       }
       case 'Angle': {
@@ -216,7 +223,7 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
           write(ctx, s, 'angle', normalizeAngle(a.value));
           break;
         }
-        s.angleMethod = true;
+        await setAngleMethod(ctx, true);
         return true;
       }
       case 'Method':
@@ -227,7 +234,7 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
           default: { kind: 'keyword', keyword: s.angleMethod ? 'Angle' : 'Distance' },
         });
         if (m.kind !== 'keyword') return false;
-        s.angleMethod = m.keyword === 'Angle';
+        await setAngleMethod(ctx, m.keyword === 'Angle');
         return true;
       }
       case 'Trim': {
@@ -238,6 +245,7 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
         });
         if (t.kind !== 'keyword') return false;
         s.trim = keywordOf(t) === 'Trim';
+        await setOptionVariable(ctx, 'TRIMMODE', s.trim ? 1 : 0);
         return true;
       }
     }
@@ -384,6 +392,8 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
     name: w.name,
     usesSelection: 'during',
     async *run(ctx) {
+      s.trim = (await optionVariable(ctx, 'TRIMMODE', s.trim ? 1 : 0)) === 1;
+      s.angleMethod = (await optionVariable(ctx, 'CHAMMODE', s.angleMethod ? 1 : 0)) === 1;
       ctx.message(settingsLine(ctx));
       let multiple = false;
       /** Each fillet (chamfer) made, for Undo. */
