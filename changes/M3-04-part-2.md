@@ -1,0 +1,1 @@
+- M3-04 part 2 (#390): lasso selection (dragged left a crossing lasso, right a window lasso, Spacebar cycling Crossing, Window and Fence) and QSELECT with its Quick Select dialog.

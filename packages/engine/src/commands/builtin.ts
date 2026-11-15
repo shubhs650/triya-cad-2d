@@ -37,6 +37,7 @@ import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
+import { qselectCommand } from './qselect';
 import { setvarCommand } from './setvar';
 import { PALETTE_COMMANDS } from './palettes';
 import { viewCommand } from './view/named-view';
@@ -78,6 +79,7 @@ export function builtinCommands(): CommandRegistry {
     regenCommand(true),
     viewCommand(),
     selectCommand(),
+    qselectCommand(),
     setvarCommand(),
     ...EDIT_COMMANDS.map((make) => make()),
     offsetCommand(),
