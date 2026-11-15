@@ -126,6 +126,11 @@ export interface ViewContext {
    */
   readonly sysvar?: (name: string, value?: number | string) => ViewReply;
   /**
+   * Selection cycling (M3-04 part 3): the Selection list of the overlapping objects a pick found,
+   * by the pick; the reply holds the one chosen, none when the list is dismissed.
+   */
+  readonly cycle?: (r: Extract<ViewRequest, { op: 'cycle' }>) => Promise<ViewReply>;
+  /**
    * SETVAR CTAB and TILEMODE (M2-59 part 5): the app shows the tab `name` names, or the layout
    * tab shown last.
    */
@@ -180,6 +185,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'sysvar') {
     return ctx.sysvar ? ctx.sysvar(r.name, r.text ?? r.value) : { ok: false, message: NO_SETTINGS };
+  }
+  if (r.op === 'cycle') {
+    return ctx.cycle ? ctx.cycle(r) : { ok: false, message: NO_DIALOGS };
   }
   if (r.op === 'tab') {
     return ctx.tab ? ctx.tab(r.name) : { ok: false, message: NO_TABS };

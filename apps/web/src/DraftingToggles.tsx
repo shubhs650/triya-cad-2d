@@ -1,5 +1,5 @@
 // The status bar's drafting aids (M2-04): GRID, SNAP, ORTHO, POLAR, OTRACK and OSNAP, then
-// LWT, TPY and QP (Quick Properties), in AutoCAD's order, each with its function key in the tooltip, and OSNAP's menu
+// LWT, TPY, QP (Quick Properties) and SC (Selection Cycling), in AutoCAD's order, each with its function key in the tooltip, and OSNAP's menu
 // of running object snap modes (AutoCAD's arrow beside the OSNAP button), a checkbox per mode.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { OSNAP, OSNAP_MODES } from '@triya/engine';
@@ -16,6 +16,8 @@ const TOGGLES: readonly { toggle: DraftingToggle; label: string; title: string }
   { toggle: 'tpy', label: 'TPY', title: 'Show/Hide Transparency' },
   // AutoCAD's Quick Properties button (QPMODE, M2-35 part 16), after TPY as in its status bar.
   { toggle: 'qp', label: 'QP', title: 'Quick Properties (Ctrl+Shift+P)' },
+  // Selection Cycling (SELECTIONCYCLING, M3-04 part 3), AutoCAD's SC button.
+  { toggle: 'sc', label: 'SC', title: 'Selection Cycling (Ctrl+W)' },
 ];
 
 export function DraftingToggles() {

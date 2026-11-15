@@ -87,6 +87,18 @@ export interface DraftingState {
    */
   readonly polarAddAngles: string;
   /**
+   * SELECTSIMILARMODE (M3-04 part 3): the properties SELECTSIMILAR matches, AutoCAD's bits (1
+   * Color, 2 Layer, 4 Linetype, 8 Linetype scale, 16 Lineweight, 32 Plot style, 64 Object
+   * style, 128 Name). AutoCAD keeps it per user, initially 130.
+   */
+  readonly selectSimilarMode: number;
+  /**
+   * SELECTIONCYCLING (M3-04 part 3): 0 off, 1 a badge, 2 the badge and the Selection list; a
+   * negative value is off keeping what Ctrl+W turns back on. AutoCAD keeps it per user,
+   * initially 0.
+   */
+  readonly selectionCycling: number;
+  /**
    * The Drafting Settings dialog's Quick Properties tab (AutoCAD 2024 Help, "Quick Properties
    * Tab (Drafting Settings Dialog Box)"), kept per user: by the cursor, the quadrant and the
    * distance in pixels it goes at; whether it collapses, and to how many rows.
@@ -182,7 +194,7 @@ export const AUTOSNAP_TRACK_TIP = 32;
 export const AUTOSNAP_KEPT = AUTOSNAP_MARKER | AUTOSNAP_TIP | AUTOSNAP_MAGNET | AUTOSNAP_TRACK_TIP;
 
 export type DraftingToggle =
-  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp';
+  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp' | 'sc';
 
 /** The function keys AutoCAD gives the toggles. */
 export const DRAFTING_KEYS: Readonly<Record<string, DraftingToggle>> = {
@@ -205,6 +217,7 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:lwt', label: 'Show/Hide Lineweight', keys: '' },
   { id: 'drafting:tpy', label: 'Show/Hide Transparency', keys: '' },
   { id: 'drafting:qp', label: 'Quick Properties on/off', keys: 'Ctrl+Shift+P' },
+  { id: 'drafting:sc', label: 'Selection Cycling on/off', keys: 'Ctrl+W' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -230,6 +243,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   arrayAssociativity: true,
   polarMode: 0,
   polarAddAngles: '',
+  selectSimilarMode: 130,
+  selectionCycling: 0,
   qpQuadrant: 'top-right',
   qpDistance: 50,
   qpCollapse: true,
@@ -244,6 +259,7 @@ export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): bo
   if (t === 'osnap') return (s.osmode & OSNAP_OFF) === 0 && s.osmode !== 0;
   if (t === 'lwt') return s.lwt ?? lwdisplay;
   if (t === 'qp') return s.qpmode > 0;
+  if (t === 'sc') return s.selectionCycling > 0;
   return s[t];
 }
 
@@ -299,6 +315,13 @@ export class Drafting {
       // QPMODE's sign: on keeps its mode (1 or 2) for when it is turned on again; 0 turns on 1.
       case 'qp':
         return this.#set({ ...s, qpmode: s.qpmode === 0 ? 1 : -s.qpmode });
+      // SELECTIONCYCLING's sign likewise (M3-04 part 3); 0 turns on 2, the badge and the list,
+      // as the Drafting Settings' "Display selection cycling list box" is checked at first.
+      case 'sc':
+        return this.#set({
+          ...s,
+          selectionCycling: s.selectionCycling === 0 ? 2 : -s.selectionCycling,
+        });
       case 'snap':
       case 'otrack':
       case 'grid':

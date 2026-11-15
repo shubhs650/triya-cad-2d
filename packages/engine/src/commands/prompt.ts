@@ -459,6 +459,11 @@ export type DialogRequest =
        */
       readonly type: 'dsettings';
       readonly tab?: DraftingSettingsTab;
+    }
+  | {
+      /** SELECTSIMILAR's Select Similar Settings (M3-04 part 3), opened on SELECTSIMILARMODE. */
+      readonly type: 'selectsimilar';
+      readonly mode: number;
     };
 
 /** The Drafting Settings tabs Triya has (M3-06 part 1). */
@@ -564,6 +569,8 @@ export type PromptAnswer =
       readonly overkill?: OverkillSettings;
       /** Quick Select's criteria as OK (or Select objects) closed it. */
       readonly qselect?: QuickSelectCriteria;
+      /** Select Similar Settings' checkboxes as OK closed it, SELECTSIMILARMODE's bits. */
+      readonly selectSimilar?: number;
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }

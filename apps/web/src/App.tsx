@@ -37,7 +37,14 @@ import {
   tilesOf,
   whenRegistered,
 } from './canvas/registry';
-import { answerView, type PlotScriptRequest, type ViewContext } from './canvas/view-host';
+import {
+  answerView,
+  NO_CANVAS,
+  type PlotScriptRequest,
+  type ViewContext,
+} from './canvas/view-host';
+import { selectionList } from './selection-list';
+import { SelectionList } from './SelectionList';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
@@ -423,6 +430,12 @@ function viewContext(id: number): ViewContext {
       return { ok: true };
     },
     clipboard: (content) => clipboardRequest(id, content),
+    // Selection cycling's list (M3-04 part 3), opened by the pick in the canvas shown.
+    cycle: (r) => {
+      const at = target?.clientOf(r.point);
+      if (!at) return Promise.resolve({ ok: false, message: NO_CANVAS });
+      return selectionList.show(id, { candidates: r.candidates, at });
+    },
     // ULAYERS (M2-56 part 1): the Underlay Layers dialog, waited for as VIEW waits for its own.
     underlayLayers: (r) =>
       underlayLayersDialog.show(id, {
@@ -1387,6 +1400,12 @@ export function App() {
         e.preventDefault();
         drafting.toggle('qp');
       }
+      // Ctrl+W turns selection cycling on or off (SELECTIONCYCLING, M3-04 part 3), as in
+      // AutoCAD. A browser tab keeps Ctrl+W for itself; the installed app's window passes it on.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        drafting.toggle('sc');
+      }
       // Ctrl+1 opens or closes the Properties palette (PROPERTIES, M2-21), as in AutoCAD.
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === '1') {
         e.preventDefault();
@@ -1637,6 +1656,18 @@ export function App() {
             />
           )}
           {active && <RolloverTooltip key={active.id} doc={active.id} />}
+          {active && (
+            <SelectionList
+              key={`cycle-${active.id}`}
+              doc={active.id}
+              onHover={(id) => {
+                // The row's object shows highlighted with the selection, as AutoCAD's list does.
+                const selected = selections.get(active.id) ?? [];
+                const shown = id === undefined ? selected : [...selected, id];
+                for (const c of controllersOf(active.id)) c.setHighlight(shown);
+              }}
+            />
+          )}
           <PlotPreview active={state.active} />
           {state.docs.length === 0 && (
             <div className="start" data-testid="start">

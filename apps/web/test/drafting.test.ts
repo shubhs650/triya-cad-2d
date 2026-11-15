@@ -91,4 +91,17 @@ describe('drafting aids', () => {
       false,
     ]);
   });
+
+  it('SC (Ctrl+W) turns SELECTIONCYCLING on as 2, off by its sign (M3-04 part 3)', () => {
+    const d = new Drafting();
+    expect(d.isOn('sc')).toBe(false);
+    d.toggle('sc');
+    expect([d.isOn('sc'), d.get().selectionCycling]).toEqual([true, 2]);
+    d.toggle('sc');
+    expect([d.isOn('sc'), d.get().selectionCycling]).toEqual([false, -2]);
+    // Off at 1 (the badge only) turns back on at 1.
+    d.configure({ selectionCycling: -1 });
+    d.toggle('sc');
+    expect(d.get().selectionCycling).toBe(1);
+  });
 });
