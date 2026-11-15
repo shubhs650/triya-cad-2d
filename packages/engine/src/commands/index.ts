@@ -13,6 +13,9 @@ export { chordEnd, sketchArc, sketchGeometry, type ArcSketch, type Sketch } from
 export { arcSegment, type ArcSegmentOptions, type ArcStep } from './draw/pline-arc';
 export { plineCommand } from './draw/pline';
 export { polygonCommand } from './draw/polygon';
+export { splineCommand, splineOfFitPolyline } from './draw/spline';
+export { splineOf, type SplineSpec } from './draw/spline-shape';
+export { divideCommand, measureCommand } from './draw/divide';
 export { rectangCommand } from './draw/rectang';
 export * from './view/host';
 export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale } from './view/zoom';

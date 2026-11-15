@@ -488,6 +488,7 @@ describe('triyaToAcad', () => {
         ],
         startTangent: { x: 1, y: 1 },
         endTangent: { x: 1, y: -1 },
+        fitTolerance: 0.5,
         closed: false,
         periodic: false,
         normal: { x: 0, y: 0, z: -1 },

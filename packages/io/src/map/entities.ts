@@ -1495,6 +1495,8 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
       ...(e.fitPoints.length > 0 && (kp === 1 || kp === 2)
         ? { knotParameterization: kp === 1 ? ('sqrt' as const) : ('uniform' as const) }
         : {}),
+      // DXF 44 (M3-01 part 5): 1e-10 is what acad-ts and AutoCAD write for "none".
+      ...(e.fitPoints.length > 0 && e.fitTolerance > 1e-10 ? { fitTolerance: e.fitTolerance } : {}),
       closed: e.isClosed,
       periodic: e.isPeriodic,
       ...(pl !== 'up' && Math.hypot(e.normal.x, e.normal.y, e.normal.z) > 0
