@@ -491,3 +491,202 @@ describe('ALIGN', () => {
     expect(bus.command).toBeUndefined();
   });
 });
+
+describe('the less common answers', () => {
+  const ellipseArc: EntityGeometry = {
+    kind: 'ELLIPSE',
+    center: { x: 20, y: 0 },
+    majorAxis: { x: 4, y: 0 },
+    ratio: 0.5,
+    startParam: 0,
+    endParam: Math.PI,
+  };
+
+  it('ends BREAK and BREAKATPOINT on Esc or Enter at any prompt', async () => {
+    const { bus, byHandle, ends } = setup();
+    await bus.script(['BREAK', '']);
+    expect(bus.command).toBeUndefined();
+    await bus.script(['BREAK']);
+    await bus.pick({ x: 3, y: 0 });
+    await bus.cancel();
+    await bus.script(['BREAK']);
+    await bus.pick({ x: 3, y: 0 });
+    await bus.script(['F']);
+    await bus.cancel();
+    await bus.script(['BREAK']);
+    await bus.pick({ x: 3, y: 0 });
+    await bus.script(['F', '4,0']);
+    await bus.cancel();
+    await bus.script(['BREAKATPOINT', '']);
+    await bus.script(['BREAKATPOINT']);
+    await bus.pick({ x: 3, y: 0 });
+    await bus.cancel();
+    await bus.script(['BREAK', 'W', '-1,-1', '11,1']);
+    await bus.cancel();
+    expect(ends(byHandle('30')!)).toEqual([0, 0, 10, 0]);
+    // Both points at one end leave the line whole; past both ends there would be nothing left.
+    await bus.script(['BREAK']);
+    await bus.pick({ x: 0.1, y: 0 });
+    await bus.script(['-5,0']);
+    expect(ends(byHandle('30')!)).toEqual([0.1, 0, 10, 0].map(r6));
+  });
+
+  it('refuses at BREAKATPOINT what it cannot break', async () => {
+    const { bus, log } = setup([{ kind: 'POINT', position: { x: 20, y: 0 } } as EntityGeometry]);
+    await bus.script(['BREAKATPOINT', 'L']);
+    expect(log).toContain('Cannot break that object.');
+    const s = setup();
+    await s.bus.script(['BREAK']);
+    await s.bus.pick({ x: 1, y: 0 });
+    await s.bus.script(['-1,0']);
+    await s.bus.script(['BREAK']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.script(['F', '-1,0', '12,0']);
+    expect(s.log).toContain('The break points leave nothing of the object.');
+  });
+
+  it('says what LENGTHEN cannot do and checks its values', async () => {
+    const { bus, log } = setup([
+      ellipseArc,
+      {
+        kind: 'SPLINE',
+        degree: 1,
+        knots: [0, 0, 1, 1],
+        controlPoints: [
+          { x: 30, y: 10 },
+          { x: 40, y: 10 },
+        ],
+        closed: false,
+        periodic: false,
+      } as EntityGeometry,
+      { kind: 'XLINE', base: { x: 0, y: 30 }, direction: { x: 1, y: 0 } },
+    ]);
+    await bus.script(['LENGTHEN']);
+    await bus.pick({ x: 100, y: 100 });
+    expect(log).toContain('That object has no length to measure.');
+    await bus.script(['P', '0']);
+    expect(log).toContain('Value must be positive and nonzero.');
+    await bus.script(['-5']);
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'T', '-1']);
+    expect(bus.promptText).toBe('Specify total length or [Angle] <1.0000>:');
+    await bus.script(['100']);
+    await bus.pick({ x: 38, y: 10 });
+    expect(log).toContain('A spline can only be shortened.');
+    await bus.pick({ x: 5, y: 30 });
+    expect(log).toContain('Cannot lengthen that object.');
+    await bus.script(['U']);
+    expect(log).toContain('Nothing to undo.');
+    await bus.pick({ x: 24, y: 0 });
+    expect(log).toContain('Arc cannot be full 360 degrees.');
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'T', 'A', '90']);
+    await bus.pick({ x: 8, y: 0 });
+    expect(log).toContain('Only an arc has an included angle.');
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'DE', '-20']);
+    await bus.pick({ x: 8, y: 0 });
+    expect(log).toContain('The new length must be more than zero.');
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'DE', 'A']);
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'T', 'A']);
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'DY']);
+    await bus.pick({ x: 8, y: 0 });
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'DE']);
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'P']);
+    await bus.cancel();
+    await bus.script(['LENGTHEN', 'T']);
+    await bus.cancel();
+    await bus.script(['LENGTHEN']);
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+  });
+
+  it('joins and closes elliptical arcs, and ends JOIN on an empty selection', async () => {
+    const { bus, log, kinds } = setup([
+      ellipseArc,
+      { ...ellipseArc, startParam: Math.PI, endParam: 1.5 * Math.PI } as EntityGeometry,
+    ]);
+    await bus.script(['JOIN', '']);
+    expect(bus.command).toBeUndefined();
+    await bus.script(['JOIN', 'C', '15,-3', '25,3', '']);
+    expect(log).toContain('2 elliptical arcs joined into 1 elliptical arc');
+    await bus.script(['JOIN', 'L', '']);
+    expect(bus.promptText).toBe('Select elliptical arcs to join to source or [cLose]:');
+    await bus.script(['L']);
+    expect(log).toContain('Elliptical arc converted to an ellipse.');
+    expect(kinds().filter((k) => k === 'ELLIPSE')).toHaveLength(1);
+    const s = setup([
+      ellipseArc,
+      { ...ellipseArc, startParam: Math.PI, endParam: 2 * Math.PI } as EntityGeometry,
+      { kind: 'ARC', center: { x: 50, y: 0 }, radius: 5, startAngle: 0, endAngle: Math.PI },
+      {
+        kind: 'ARC',
+        center: { x: 50, y: 0 },
+        radius: 5,
+        startAngle: Math.PI,
+        endAngle: 2 * Math.PI - 1e-12,
+      },
+    ]);
+    await s.bus.script(['JOIN', 'ALL', '']);
+    expect(s.log).toContain('2 elliptical arcs joined into 1 ellipse');
+    expect(s.log).toContain('2 arcs joined into 1 circle');
+    await s.bus.script(['JOIN']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.script(['']);
+    await s.bus.cancel();
+  });
+
+  it('explodes a polyline without widths quietly and refuses MINSERTs and xrefs', async () => {
+    const { bus, log } = setup([
+      {
+        kind: 'POLYLINE',
+        closed: true,
+        is3d: true,
+        vertices: [
+          { x: 0, y: 20, bulge: 0 },
+          { x: 10, y: 20, bulge: 0 },
+          { x: 10, y: 30, bulge: 0 },
+        ],
+      },
+      {
+        kind: 'INSERT',
+        block: BLOCK,
+        position: { x: 100, y: 0 },
+        scale: { x: 1, y: 1, z: 1 },
+        rotation: 0,
+        attributes: [],
+        array: { columns: 2, rows: 1, columnSpacing: 5, rowSpacing: 0 },
+      },
+    ]);
+    await bus.script(['EXPLODE', 'C', '-1,19', '11,31', '']);
+    expect(log.some((l) => l.includes('lost width'))).toBe(false);
+    await bus.script(['EXPLODE', 'L', '']);
+    expect(log).toContain('1 object was not exploded: MINSERT arrays cannot be exploded.');
+    await bus.script(['EXPLODE', '']);
+    expect(bus.command).toBeUndefined();
+    await bus.script(['REVERSE', '']);
+    expect(bus.command).toBeUndefined();
+  });
+
+  it('ends ALIGN on Esc or Enter, keeps three pairs that do not flip, and refuses a zero length', async () => {
+    const { bus, log, byHandle, ends } = setup();
+    await bus.script(['ALIGN', '']);
+    await bus.script(['ALIGN', 'W', '-1,-1', '11,1', '', '']);
+    await bus.script(['ALIGN', 'W', '-1,-1', '11,1', '', '0,0']);
+    await bus.cancel();
+    await bus.script(['ALIGN', 'W', '-1,-1', '11,1', '', '0,0', '0,0', '0,0', '5,5', '']);
+    expect(log).toContain('Source and destination points must differ.');
+    await bus.script(['ALIGN', 'W', '-1,-1', '11,1', '', '0,0', '0,10', '10,0', '0,20']);
+    await bus.script(['5,5', '-5,15']);
+    expect(ends(byHandle('30')!)).toEqual([0, 10, 0, 20]);
+    await bus.script(['ALIGN', 'W', '-1,9', '1,21', '', '0,10', '0,10', '0,20', '0,20', '']);
+    expect(bus.promptText).toBe('Scale objects based on alignment points? [Yes/No] <N>:');
+    await bus.submit('');
+    expect(ends(byHandle('30')!)).toEqual([0, 10, 0, 20]);
+  });
+});
