@@ -77,6 +77,11 @@ const VALUES: Readonly<
   PICKBOX: { get: (s) => s.pickbox, set: (pickbox) => ({ pickbox }) },
   PICKADD: { get: (s) => s.pickadd, set: (pickadd) => ({ pickadd }) },
   PICKAUTO: { get: (s) => s.pickauto, set: (pickauto) => ({ pickauto }) },
+  SELECTIONPREVIEW: {
+    get: (s) => s.selectionPreview,
+    set: (selectionPreview) => ({ selectionPreview }),
+  },
+  PREVIEWFILTER: { get: (s) => s.previewFilter, set: (previewFilter) => ({ previewFilter }) },
   ARRAYASSOCIATIVITY: {
     get: (s) => bit(s.arrayAssociativity),
     set: (v) => ({ arrayAssociativity: v === 1 }),

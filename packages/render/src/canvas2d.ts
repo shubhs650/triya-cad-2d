@@ -44,6 +44,7 @@ import {
   sameGrip,
   translation,
   paperUnitsPerMm,
+  previewObjects,
   viewportFrame,
   viewportScale,
   viewportShowsModel,
@@ -136,6 +137,7 @@ import {
   type Renderer,
   type ScreenRect,
   type SelectQuery,
+  type SelectionPreview,
   type UnderlayFill,
   type UnderlayRaster,
   type UnderlayRequest,
@@ -337,6 +339,12 @@ const SELECTION_COLOR = '#4da3ff';
 const SELECTION_GLOW_PX = 5;
 const SELECTION_GLOW_ALPHA = 0.35;
 const SELECTION_DASH = [4, 3];
+/**
+ * The selection preview (M3-04 part 5): the selection's glow with a solid line this wide, CSS
+ * pixels. AutoCAD previews an object thickened (its retired PREVIEWEFFECT's "thickened lines");
+ * solid, it tells apart from the dashed selection.
+ */
+const PREVIEW_LINE_PX = 2;
 
 export const DEFAULT_STYLE: RenderStyle = {
   background: '#212830',
@@ -602,6 +610,8 @@ export class Canvas2DRenderer implements Renderer {
   #grips: { readonly ids: readonly EntityId[]; readonly hot: Vec2 | undefined } | undefined;
   /** The cursor, and how near a grip counts as under it (M3-05 part 2), for GRIPHOVER. */
   #gripHover: { readonly at: Vec2; readonly within: number } | undefined;
+  /** The objects the selection preview highlights (M3-04 part 5). */
+  #previewed: readonly EntityId[] = [];
   /** The locked layers (M1-69), found again after a layer change; undefined until needed. */
   #locked: ReadonlySet<Handle> | undefined;
   #sceneDirty = true;
@@ -833,6 +843,22 @@ export class Canvas2DRenderer implements Renderer {
     if (this.#grips) this.#transientDirty = true;
   }
 
+  setSelectionPreview(preview: SelectionPreview | undefined): void {
+    const hit = preview && this.hitTest(preview.screen, preview.aperture)[0];
+    const ids =
+      preview && hit !== undefined
+        ? previewObjects(this.#model, hit, {
+            filter: preview.filter,
+            groups: preview.groups,
+            space: this.#block,
+          })
+        : [];
+    const was = this.#previewed;
+    if (ids.length === was.length && ids.every((id, i) => id === was[i])) return;
+    this.#previewed = ids;
+    this.#transientDirty = true;
+  }
+
   select(query: SelectQuery): EntityId[] {
     const poly = query.polygon;
     const test: (p: RenderPrimitive) => boolean = poly
@@ -987,6 +1013,7 @@ export class Canvas2DRenderer implements Renderer {
         false,
         this.#viewFrame(),
       );
+      if (this.#previewed.length > 0) this.#drawPreview(t.ctx);
       if (this.#grips) this.#drawGrips(t.ctx);
       this.#transientDirty = false;
     }
@@ -1553,13 +1580,48 @@ export class Canvas2DRenderer implements Renderer {
    * the selection colour. Text shows by the boxes of its runs; fills by their outlines.
    */
   #drawHighlight(ctx: Canvas2D, frame: DrawFrame): void {
-    if (this.#highlight.size === 0) return;
+    if (this.#highlight.size === 0 || !this.#outline(ctx, frame, this.#highlight)) return;
+    const color = this.#style.selection ?? SELECTION_COLOR;
+    const px = this.#dpr;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = SELECTION_GLOW_ALPHA;
+    ctx.lineWidth = SELECTION_GLOW_PX * px;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = px;
+    ctx.setLineDash(SELECTION_DASH.map((d) => d * px));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  /**
+   * The selection preview over everything (M3-04 part 5, SELECTIONPREVIEW): the objects under
+   * the pickbox as the selection's glow, then a solid line `PREVIEW_LINE_PX` wide, in the
+   * selection colour, on the transient layer, so moving the cursor never redraws the scene.
+   */
+  #drawPreview(ctx: Canvas2D): void {
+    if (!this.#outline(ctx, this.#viewFrame(), this.#previewed)) return;
+    const px = this.#dpr;
+    ctx.strokeStyle = this.#style.selection ?? SELECTION_COLOR;
+    ctx.globalAlpha = SELECTION_GLOW_ALPHA;
+    ctx.lineWidth = SELECTION_GLOW_PX * px;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = PREVIEW_LINE_PX * px;
+    ctx.stroke();
+  }
+
+  /**
+   * Builds the path of `ids` as drawn in the space shown (text by its runs' boxes, fills by
+   * their outlines) on `ctx`, in device pixels; false when none of them is in view.
+   */
+  #outline(ctx: Canvas2D, frame: DrawFrame, ids: Iterable<EntityId>): boolean {
     const { ox, oy, m, scale, box } = frame;
     const dot = 2 / scale;
     let any = false;
     ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
     ctx.beginPath();
-    for (const id of this.#highlight) {
+    for (const id of ids) {
       const entry = this.#cache[id];
       // In a layout the cache holds model space too (for its viewports); only the space shown
       // is selected in.
@@ -1590,18 +1652,7 @@ export class Canvas2DRenderer implements Renderer {
       }
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (!any) return;
-    const color = this.#style.selection ?? SELECTION_COLOR;
-    const px = this.#dpr;
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = SELECTION_GLOW_ALPHA;
-    ctx.lineWidth = SELECTION_GLOW_PX * px;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = px;
-    ctx.setLineDash(SELECTION_DASH.map((d) => d * px));
-    ctx.stroke();
-    ctx.setLineDash([]);
+    return any;
   }
 
   /** Sends what the scene just drawn needed of each page and its raster does not show (M1-20). */

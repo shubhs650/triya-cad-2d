@@ -98,6 +98,7 @@ import {
 import type { OpenResult } from '@triya/io';
 import { ROLLOVER_DELAY_MS, type RestAt } from '../rollover';
 import { RestWatch } from './rest';
+import { previewsSelection } from '../selection-preview';
 import { layoutsOf } from '../documents';
 import { appliedPageSetupName, pageSetupOf, pageSetupsOf, type PlotSpace } from '../plot';
 import type { ImageClient } from '../images';
@@ -234,6 +235,11 @@ export interface CanvasHooks {
    * the cursor moves on, a button is pressed, the wheel rolls or the cursor leaves.
    */
   readonly onRest?: (at: RestAt | undefined) => void;
+  /**
+   * The drawing waits at `Command:` with no command running, where SELECTIONPREVIEW's bit 1
+   * previews the object under the pickbox (M3-04 part 5).
+   */
+  readonly atCommand?: () => boolean;
   /**
    * The drafter changed the view (M2-47 part 4): a ZOOM or PAN (a command's, the navigation
    * bar's, the wheel's at the start of a roll, a drag's at its first move) or a named view
@@ -382,6 +388,10 @@ export class CanvasController {
   #gripsHoverable = false;
   /** The renderer was last told a cursor for GRIPHOVER. */
   #gripHovering = false;
+  /** The prompt the drawing waits at, as told (`#prompt` keeps only those that take points). */
+  #asked: Prompt | undefined;
+  /** The renderer was last told a pickbox for the selection preview (M3-04 part 5). */
+  #previewing = false;
   /** Where the cursor rests, for rollover tooltips (M2-35 part 21). */
   readonly #rest = new RestWatch<{
     readonly x: number;
@@ -713,6 +723,8 @@ export class CanvasController {
         prompt.kind === 'distance' ||
         prompt.kind === 'angle');
     this.#prompt = picking ? prompt : undefined;
+    this.#asked = prompt;
+    this.#previewAgain();
     this.#quick = prompt?.kind === 'point' ? prompt.quick : undefined;
     if (!this.#quick) {
       this.#quickMeasure = undefined;
@@ -886,6 +898,7 @@ export class CanvasController {
     const before = this.#drafting;
     this.#drafting = state;
     this.#hit = undefined;
+    this.#previewAgain();
     if (!state.otrack) this.#acquired = this.#acquired.filter((a) => a.kind !== 'point');
     if (
       before.grid !== state.grid ||
@@ -961,6 +974,38 @@ export class CanvasController {
     this.#gripHovering = at !== undefined;
     this.#host.setGripHover(at, this.gripReach());
     this.#requestFrame();
+  }
+
+  /**
+   * SELECTIONPREVIEW (M3-04 part 5): the pickbox at `screen` (CSS pixels on the canvas) lights
+   * up the object a click there would select, when the prompt the drawing waits at previews;
+   * undefined, nothing does. Only a change, or a pickbox shown, asks for a frame.
+   */
+  #hoverPreview(screen: { readonly x: number; readonly y: number } | undefined): void {
+    const d = this.#drafting;
+    const on =
+      screen &&
+      previewsSelection(d.selectionPreview, this.#asked, this.#hooks.atCommand?.() ?? false);
+    if (!on && !this.#previewing) return;
+    this.#previewing = !!on;
+    this.#host.setSelectionPreview(
+      on
+        ? {
+            screen,
+            aperture: d.pickbox,
+            filter: d.previewFilter,
+            groups: (d.pickStyle & 1) !== 0,
+          }
+        : undefined,
+    );
+    this.#requestFrame();
+  }
+
+  /** The prompt or the settings changed: the preview follows them where the cursor rests. */
+  #previewAgain(): void {
+    const p = this.#pointer;
+    const resting = p && !this.#drag && !this.#corner && !this.#press && this.#mode === 'none';
+    this.#hoverPreview(resting ? { x: p.offsetX, y: p.offsetY } : undefined);
   }
 
   /** The objects to draw selected (M2-03). */
@@ -1698,6 +1743,7 @@ export class CanvasController {
       (e) => {
         e.preventDefault();
         this.#rest.cancel();
+        this.#hoverPreview(undefined);
         if (!this.#view) return;
         // The wheel zooms the viewport under the cursor, which becomes current (as a press
         // would), so the navigation bar then acts on the viewport just zoomed.
@@ -1821,6 +1867,7 @@ export class CanvasController {
         const world = this.#world(e);
         const resting = e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none';
         this.#hoverGrip(resting ? world : undefined);
+        this.#hoverPreview(resting ? { x: e.offsetX, y: e.offsetY } : undefined);
         if (press?.pointer === e.pointerId) {
           if (Math.hypot(e.offsetX - press.x, e.offsetY - press.y) > CLICK_PX && !press.dragged) {
             press.dragged = true;
@@ -1887,6 +1934,7 @@ export class CanvasController {
       () => {
         this.#rest.cancel();
         this.#hoverGrip(undefined);
+        this.#hoverPreview(undefined);
         this.#pointer = undefined;
         this.#hit = undefined;
         this.#hits = [];
