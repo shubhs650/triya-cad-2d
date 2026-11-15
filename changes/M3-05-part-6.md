@@ -1,0 +1,1 @@
+- M3-05 part 6 (#TBD): grips on multileaders, multilines, tables, regions and non-associative hatch boundaries; Ctrl's offset and rotation snap for later grip copies.
