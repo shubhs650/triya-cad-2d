@@ -1,7 +1,8 @@
 // The Quick Properties palette (M2-35 part 16, UI_SPEC.md §4; AutoCAD 2024 Help, "Quick
 // Properties Palette"): while QPMODE is on, the objects picked at `Command:` show a short list
-// of their properties by the cursor (`quick-properties.ts` places it), collapsed to three rows
-// until the pointer or the focus is in it. Its object list narrows it to one type, and an edit is
+// of their properties by the cursor (`quick-properties.ts` places it), collapsed to the Drafting
+// Settings dialog's Minimum Number of Rows (three at first; M3-06 part 1) until the pointer or the
+// focus is in it, unless Collapse Palette Automatically is off. Its object list narrows it to one type, and an edit is
 // the Properties palette's (one undo step). It does not show while a command runs or while the
 // Properties palette is open; its close button hides it until the selection changes. Static
 // (QPLOCATION 1), its title bar drags it to where it then stays. QUICKPROPERTIES (M2-35 part 21)
@@ -108,9 +109,11 @@ export function QuickProperties({
       size: { width: el.offsetWidth, height: el.offsetHeight },
       area: { width: area.clientWidth, height: area.clientHeight },
       dragged,
+      quadrant: state.qpQuadrant,
+      distance: state.qpDistance,
     });
     setPlaced({ key, at });
-  }, [shown, key, placed?.key, state.qpLocation]);
+  }, [shown, key, placed?.key, state.qpLocation, state.qpQuadrant, state.qpDistance]);
 
   if (!shown || !sheet) return null;
   const set = (k: string, value: string) =>
@@ -157,6 +160,7 @@ export function QuickProperties({
       role="dialog"
       aria-label="Quick Properties"
       data-location={state.qpLocation === 1 ? 'static' : 'cursor'}
+      data-rows={state.qpCollapse ? state.qpRows : undefined}
       style={{
         left: placed?.at.left ?? 0,
         top: placed?.at.top ?? 0,
@@ -164,6 +168,10 @@ export function QuickProperties({
         visibility: placed?.key === key ? 'visible' : 'hidden',
       }}
     >
+      {state.qpCollapse && (
+        // Collapsed to the Minimum Number of Rows until the pointer or the focus is in it.
+        <style>{`.quick-properties:not(:hover, :focus-within) tbody tr:nth-child(n + ${state.qpRows + 1}) { display: none; }`}</style>
+      )}
       <header onPointerDown={startDrag}>
         <h2>Quick Properties</h2>
         <button type="button" aria-label="Close Quick Properties" onClick={() => setClosed(key)}>

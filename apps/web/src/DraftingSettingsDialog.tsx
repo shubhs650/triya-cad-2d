@@ -1,0 +1,422 @@
+// DSETTINGS' Drafting Settings dialog (M3-06 part 1), with AutoCAD 2024's structure and labels
+// (AutoCAD Help, "Drafting Settings Dialog Box" and its "Polar Tracking Tab", "Object Snap Tab"
+// and "Quick Properties Tab" pages; UI_SPEC.md §7). The Snap and Grid, Dynamic Input and
+// Selection Cycling tabs come with the rest of M3-06; 3D Object Snap is out of scope (PRD
+// non-goal: no 3D). Polar Angle measurement's Relative to last segment waits for them too.
+// It opens on the tab shown last (OSNAP: Object Snap), edits a copy of the drafting aids and
+// sets them on OK; Cancel (or Esc) leaves them as they were. Options... is left out: Triya's
+// Settings panel is not a dialog to open over it.
+import { OSNAP, OSNAP_MODES, type DialogRequest, type PromptAnswer } from '@triya/engine';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Modal } from './AttributeDialogs';
+import { markerSvgPath } from './canvas/autosnap';
+import { QP_QUADRANTS, angleText, drafting, type QpQuadrant } from './drafting';
+import {
+  DRAFTING_SETTINGS_TABS,
+  addAngle,
+  draftOf,
+  draftPatch,
+  draftProblem,
+  type DraftingSettingsDraft,
+} from './drafting-settings';
+import { engines } from './engine/registry';
+import { POLAR_ANGLES } from './preferences';
+
+type Request = Extract<DialogRequest, { type: 'dsettings' }>;
+type Tab = (typeof DRAFTING_SETTINGS_TABS)[number]['tab'];
+
+const answer = (doc: number, a: PromptAnswer) =>
+  engines.command(doc, { kind: 'answer', answer: a });
+
+/** The tab shown last, which DSETTINGS opens on (AutoCAD remembers it). */
+let lastTab: Tab = 'polar';
+
+const ALL_MODES = OSNAP_MODES.reduce((bits, m) => bits | OSNAP[m.mode], 0);
+
+export function DraftingSettingsDialog({ doc, request }: { doc: number; request: Request }) {
+  const [tab, setTab] = useState<Tab>(request.tab ?? lastTab);
+  const [d, setD] = useState<DraftingSettingsDraft>(() => draftOf(drafting.get()));
+  const problem = draftProblem(d);
+  const set = (patch: Partial<DraftingSettingsDraft>) => setD((was) => ({ ...was, ...patch }));
+  useEffect(() => {
+    lastTab = tab;
+  }, [tab]);
+  const ok = () => {
+    if (problem) return;
+    drafting.configure(draftPatch(d, drafting.get()));
+    void answer(doc, { kind: 'dialog', action: 'ok' });
+  };
+  const cancel = () => engines.command(doc, { kind: 'cancel' });
+  return (
+    <Modal label="Drafting Settings" className="dsettings" onOk={ok} onCancel={cancel}>
+      <div role="tablist" className="cad-dialog-tabs">
+        {DRAFTING_SETTINGS_TABS.map(({ tab: t, label }) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" className="cad-dialog-panel" aria-label={tabLabel(tab)}>
+        {tab === 'polar' && <PolarTab d={d} set={set} />}
+        {tab === 'osnap' && <ObjectSnapTab d={d} set={set} />}
+        {tab === 'qp' && <QuickPropertiesTab d={d} set={set} />}
+      </div>
+      {problem && (
+        <p role="alert" className="dsettings-error">
+          {problem}
+        </p>
+      )}
+      <div className="cad-dialog-buttons">
+        <button type="button" onClick={ok} disabled={problem !== undefined}>
+          OK
+        </button>
+        <button type="button" onClick={cancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const tabLabel = (t: Tab) => DRAFTING_SETTINGS_TABS.find((x) => x.tab === t)!.label;
+
+interface TabProps {
+  d: DraftingSettingsDraft;
+  set: (patch: Partial<DraftingSettingsDraft>) => void;
+}
+
+function Check({
+  checked,
+  onChange,
+  disabled,
+  children,
+}: {
+  checked: boolean;
+  onChange: (on: boolean) => void;
+  disabled?: boolean;
+  children: string;
+}) {
+  return (
+    <label className="cad-dialog-check">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.currentTarget.checked)}
+      />
+      {children}
+    </label>
+  );
+}
+
+function Radio({
+  name,
+  checked,
+  onChange,
+  disabled,
+  children,
+}: {
+  name: string;
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+  children: string;
+}) {
+  return (
+    <label className="cad-dialog-check">
+      <input type="radio" name={name} checked={checked} disabled={disabled} onChange={onChange} />
+      {children}
+    </label>
+  );
+}
+
+/**
+ * Polar Tracking: on and off (F10), the Increment angle, the Additional angles with New and
+ * Delete, and Object Snap Tracking Settings (orthogonally only, or along all polar angles).
+ */
+function PolarTab({ d, set }: TabProps) {
+  const id = useId();
+  const [selected, setSelected] = useState<number | undefined>();
+  const [typing, setTyping] = useState<string | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  const input = useRef<HTMLInputElement>(null);
+  const commit = () => {
+    if (typing === undefined) return;
+    if (typing.trim() === '') {
+      setTyping(undefined);
+      setError(undefined);
+      return;
+    }
+    const r = addAngle(d.angles, typing);
+    if ('problem' in r) {
+      setError(r.problem);
+      input.current?.focus();
+      return;
+    }
+    set({ angles: r.angles });
+    setSelected(r.angles.at(-1));
+    setTyping(undefined);
+    setError(undefined);
+  };
+  return (
+    <div className="dsettings-tab">
+      <Check checked={d.polar} onChange={(polar) => set({ polar })}>
+        Polar Tracking On (F10)
+      </Check>
+      <fieldset>
+        <legend>Polar Angle Settings</legend>
+        <label className="cad-dialog-field">
+          <span>Increment angle:</span>
+          <select
+            value={String(d.polarAngle)}
+            onChange={(e) => set({ polarAngle: Number(e.currentTarget.value) })}
+          >
+            {POLAR_ANGLES.map((a) => (
+              <option key={a} value={String(a)}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Check checked={d.additional} onChange={(additional) => set({ additional })}>
+          Additional angles
+        </Check>
+        <div className="dsettings-angles">
+          <div
+            role="listbox"
+            aria-label="Additional angles"
+            id={`${id}-angles`}
+            tabIndex={0}
+            className="dsettings-angle-list"
+            aria-disabled={!d.additional}
+            onKeyDown={(e) => {
+              const i = selected === undefined ? -1 : d.angles.indexOf(selected);
+              const next =
+                e.key === 'ArrowDown'
+                  ? d.angles[i + 1]
+                  : e.key === 'ArrowUp'
+                    ? d.angles[i - 1]
+                    : undefined;
+              if (next !== undefined) {
+                e.preventDefault();
+                setSelected(next);
+              }
+            }}
+          >
+            {d.angles.map((a) => (
+              <div
+                key={a}
+                role="option"
+                aria-selected={selected === a}
+                onClick={() => setSelected(a)}
+              >
+                {angleText(a)}
+              </div>
+            ))}
+            {typing !== undefined && (
+              <input
+                ref={input}
+                autoFocus
+                aria-label="New additional angle"
+                inputMode="decimal"
+                value={typing}
+                aria-invalid={error !== undefined}
+                onChange={(e) => setTyping(e.currentTarget.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                  // Enter takes the angle and Esc drops it: neither closes the dialog.
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    commit();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTyping(undefined);
+                    setError(undefined);
+                  }
+                }}
+              />
+            )}
+          </div>
+          <div className="dsettings-angle-buttons">
+            <button
+              type="button"
+              disabled={!d.additional || typing !== undefined || d.angles.length >= 10}
+              onClick={() => setTyping('')}
+            >
+              New
+            </button>
+            <button
+              type="button"
+              disabled={!d.additional || selected === undefined}
+              onClick={() => {
+                set({ angles: d.angles.filter((a) => a !== selected) });
+                setSelected(undefined);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+        {error && (
+          <p role="alert" className="dsettings-error">
+            {error}
+          </p>
+        )}
+      </fieldset>
+      <fieldset>
+        <legend>Object Snap Tracking Settings</legend>
+        <Radio
+          name={`${id}-track`}
+          checked={!d.trackPolar}
+          onChange={() => set({ trackPolar: false })}
+        >
+          Track orthogonally only
+        </Radio>
+        <Radio
+          name={`${id}-track`}
+          checked={d.trackPolar}
+          onChange={() => set({ trackPolar: true })}
+        >
+          Track using all polar angle settings
+        </Radio>
+      </fieldset>
+    </div>
+  );
+}
+
+/** A mode's marker, drawn as AutoSnap draws it on the canvas. */
+function Marker({ mode }: { mode: (typeof OSNAP_MODES)[number]['mode'] }) {
+  return (
+    <svg viewBox="-7 -7 14 14" width="14" height="14" aria-hidden="true" className="osnap-marker">
+      <path d={markerSvgPath(mode, 5)} fill="none" stroke="currentColor" strokeWidth="1.25" />
+    </svg>
+  );
+}
+
+/** Object Snap: on and off (F3), Object Snap Tracking (F11), the modes, Select All and Clear All. */
+function ObjectSnapTab({ d, set }: TabProps) {
+  return (
+    <div className="dsettings-tab">
+      <div className="dsettings-row">
+        <Check checked={d.osnap} onChange={(osnap) => set({ osnap })}>
+          Object Snap On (F3)
+        </Check>
+        <Check checked={d.otrack} onChange={(otrack) => set({ otrack })}>
+          Object Snap Tracking On (F11)
+        </Check>
+      </div>
+      <fieldset>
+        <legend>Object Snap modes</legend>
+        <div className="dsettings-modes">
+          {OSNAP_MODES.map(({ mode, label }) => (
+            <label key={mode} className="cad-dialog-check">
+              <input
+                type="checkbox"
+                checked={(d.modes & OSNAP[mode]) !== 0}
+                onChange={(e) =>
+                  set({
+                    modes: e.currentTarget.checked ? d.modes | OSNAP[mode] : d.modes & ~OSNAP[mode],
+                  })
+                }
+              />
+              <Marker mode={mode} />
+              {label}
+            </label>
+          ))}
+        </div>
+        <div className="dsettings-mode-buttons">
+          <button type="button" onClick={() => set({ modes: ALL_MODES })}>
+            Select All
+          </button>
+          <button type="button" onClick={() => set({ modes: 0 })}>
+            Clear All
+          </button>
+        </div>
+      </fieldset>
+    </div>
+  );
+}
+
+/**
+ * Quick Properties: whether it shows on selection (Ctrl+Shift+P) and for which objects, where
+ * (by the cursor in a quadrant, some pixels away, or static), and whether it collapses.
+ */
+function QuickPropertiesTab({ d, set }: TabProps) {
+  const id = useId();
+  const cursor = d.qpLocation === 0;
+  return (
+    <div className="dsettings-tab">
+      <Check checked={d.qp} onChange={(qp) => set({ qp })}>
+        Display the Quick Properties palette on selection (Ctrl+Shift+P)
+      </Check>
+      <fieldset>
+        <legend>Palette Display</legend>
+        <Radio name={`${id}-display`} checked={d.qpMode === 1} onChange={() => set({ qpMode: 1 })}>
+          All objects
+        </Radio>
+        <Radio name={`${id}-display`} checked={d.qpMode === 2} onChange={() => set({ qpMode: 2 })}>
+          Only objects with specified properties
+        </Radio>
+      </fieldset>
+      <fieldset>
+        <legend>Palette Location</legend>
+        <Radio name={`${id}-location`} checked={cursor} onChange={() => set({ qpLocation: 0 })}>
+          Cursor-dependent
+        </Radio>
+        <div className="dsettings-sub">
+          <label className="cad-dialog-field">
+            <span>Quadrant</span>
+            <select
+              value={d.quadrant}
+              disabled={!cursor}
+              onChange={(e) => set({ quadrant: e.currentTarget.value as QpQuadrant })}
+            >
+              {QP_QUADRANTS.map((q) => (
+                <option key={q.value} value={q.value}>
+                  {q.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="cad-dialog-field">
+            <span>Distance in pixels</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={d.distance}
+              disabled={!cursor}
+              onChange={(e) => set({ distance: e.currentTarget.value })}
+            />
+          </label>
+        </div>
+        <Radio name={`${id}-location`} checked={!cursor} onChange={() => set({ qpLocation: 1 })}>
+          Static
+        </Radio>
+      </fieldset>
+      <fieldset>
+        <legend>Palette Behavior</legend>
+        <Check checked={d.collapse} onChange={(collapse) => set({ collapse })}>
+          Collapse palette automatically
+        </Check>
+        <label className="cad-dialog-field dsettings-sub">
+          <span>Minimum number of rows</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={d.rows}
+            disabled={!d.collapse}
+            onChange={(e) => set({ rows: e.currentTarget.value })}
+          />
+        </label>
+      </fieldset>
+    </div>
+  );
+}

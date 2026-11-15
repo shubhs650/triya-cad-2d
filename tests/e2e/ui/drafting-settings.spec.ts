@@ -1,0 +1,212 @@
+// M3-06 part 1: the Drafting Settings dialog (DSETTINGS, DS, SE; OSNAP opens it on Object Snap),
+// as a drafter uses it (AutoCAD 2024 Help, "Drafting Settings Dialog Box"). The Polar Tracking
+// tab adds an additional angle polar tracking then locks onto, and sets POLARMODE and
+// POLARADDANG; the Object Snap tab chooses the modes and turns OSNAP off; the Quick Properties tab
+// sets QPMODE, QPLOCATION, the quadrant, the distance and the row count, and Quick Properties
+// follows them. Cancel (Esc) leaves everything as it was. The dialog's model is unit-tested in
+// apps/web/test/drafting-settings.test.ts.
+import { expect, test, type Page } from '@playwright/test';
+import path from 'node:path';
+import { DXF, activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
+import { startApp } from '../app/server';
+
+let app: { url: string; close(): Promise<void> };
+test.beforeAll(async () => {
+  app = await startApp();
+});
+test.afterAll(async () => {
+  await app.close();
+});
+
+const prompt = (page: Page) => page.getByTestId('command-prompt');
+const tip = (page: Page) => page.getByTestId('autosnap-tip');
+const toggle = (page: Page, name: string) =>
+  page.getByRole('contentinfo').getByRole('button', { name, exact: true });
+const dialog = (page: Page) => page.getByRole('dialog', { name: 'Drafting Settings' });
+
+async function type(page: Page, text: string, next: string | RegExp): Promise<void> {
+  if (text) await page.keyboard.type(text);
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText(next);
+}
+
+/** Screenshots for the PR, taken when TRIYA_SCREENSHOTS names a folder. */
+async function shot(page: Page, name: string): Promise<void> {
+  const dir = process.env['TRIYA_SCREENSHOTS'];
+  if (dir) await page.screenshot({ path: path.join(dir, `${name}.png`) });
+}
+
+const X0 = 1_000_000;
+const Y0 = 1_000_000;
+
+test('sets polar tracking, object snaps and Quick Properties', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+
+  // An empty part of the plan with one line across it.
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0},${Y0 - 50}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 160},${Y0 + 50}`, 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `${X0 + 70},${Y0}`, 'Specify next point or [Undo]:');
+  await type(page, `${X0 + 90},${Y0}`, 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+
+  // DSETTINGS opens on Polar Tracking (the first tab Triya has) with the status bar's settings.
+  await type(page, 'DS', 'Drafting Settings:');
+  const d = dialog(page);
+  await expect(d).toBeVisible();
+  await expect(d.getByRole('tab', { name: 'Polar Tracking' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(d.getByRole('checkbox', { name: 'Polar Tracking On (F10)' })).toBeChecked();
+  await expect(d.getByRole('combobox', { name: 'Increment angle:' })).toHaveValue('90');
+  await expect(d.getByRole('radio', { name: 'Track orthogonally only' })).toBeChecked();
+  const add = d.getByRole('button', { name: 'New' });
+  await expect(add).toBeDisabled();
+  await d.getByRole('checkbox', { name: 'Additional angles' }).check();
+  await add.click();
+  await d.getByRole('textbox', { name: 'New additional angle' }).fill('12.5');
+  // Enter takes the angle and leaves the dialog open.
+  await page.keyboard.press('Enter');
+  const angles = d.getByRole('listbox', { name: 'Additional angles' });
+  await expect(angles.getByRole('option')).toHaveText(['12.5']);
+  await expect(d).toBeVisible();
+  // A second angle, then Delete takes it out again.
+  await add.click();
+  await d.getByRole('textbox', { name: 'New additional angle' }).fill('80');
+  await page.keyboard.press('Enter');
+  await expect(angles.getByRole('option')).toHaveText(['12.5', '80']);
+  await angles.getByRole('option', { name: '80' }).click();
+  await d.getByRole('button', { name: 'Delete' }).click();
+  await expect(angles.getByRole('option')).toHaveText(['12.5']);
+  await d.getByRole('radio', { name: 'Track using all polar angle settings' }).check();
+  await shot(page, '1-polar-tracking-tab');
+  await d.getByRole('button', { name: 'OK' }).click();
+  await expect(d).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // SETVAR reads what the dialog set: POLARMODE 2 + 4, POLARADDANG the angle.
+  await canvas.hover();
+  await type(page, 'POLARMODE', 'Enter new value for POLARMODE <6>:');
+  await type(page, '', 'Command:');
+  await type(page, 'POLARADDANG', 'Enter new value for POLARADDANG <"12.5">:');
+  await type(page, '', 'Command:');
+
+  // Polar tracking now locks onto 12.5° from a line's first point.
+  const view = await viewOf(page);
+  const move = (x: number, y: number) => {
+    const p = view.at(x, y);
+    return page.mouse.move(view.box.x + p.x, view.box.y + p.y);
+  };
+  const rad = (12.4 * Math.PI) / 180;
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `${X0 + 10},${Y0 - 30}`, 'Specify next point or [Undo]:');
+  await move(X0 + 10 + 40 * Math.cos(rad), Y0 - 30 + 40 * Math.sin(rad));
+  await expect(tip(page)).toHaveText(/^Polar: \d+\.\d{4} < 12\.50°$/);
+  await shot(page, '2-additional-angle-tracked');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // OSNAP opens on Object Snap: Clear All, Midpoint only, and Object Snap off.
+  await type(page, 'OSNAP', 'Drafting Settings:');
+  await expect(d.getByRole('tab', { name: 'Object Snap' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(d.getByRole('checkbox', { name: 'Endpoint' })).toBeChecked();
+  await d.getByRole('button', { name: 'Clear All' }).click();
+  await expect(d.getByRole('checkbox', { name: 'Endpoint' })).not.toBeChecked();
+  await d.getByRole('checkbox', { name: 'Midpoint' }).check();
+  await d.getByRole('checkbox', { name: 'Object Snap On (F3)' }).uncheck();
+  await shot(page, '3-object-snap-tab');
+  await d.getByRole('button', { name: 'OK' }).click();
+  await expect(toggle(page, 'OSNAP')).toHaveAttribute('aria-pressed', 'false');
+  // F3 turns back on the modes the dialog chose.
+  await canvas.hover();
+  await page.keyboard.press('F3');
+  await expect(toggle(page, 'OSNAP')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Object snap modes' }).click();
+  const menu = page.getByRole('menu', { name: 'Object snap modes' });
+  await expect(menu.getByRole('menuitemcheckbox', { checked: true })).toHaveText(['✓Midpoint']);
+  await page.keyboard.press('Escape');
+
+  // Esc cancels: nothing changes. DSETTINGS opens on the tab shown last.
+  await canvas.hover();
+  await type(page, 'SE', 'Drafting Settings:');
+  await expect(d.getByRole('tab', { name: 'Object Snap' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await d.getByRole('button', { name: 'Select All' }).click();
+  await page.keyboard.press('Escape');
+  await expect(d).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.getByRole('button', { name: 'Object snap modes' }).click();
+  await expect(menu.getByRole('menuitemcheckbox', { checked: true })).toHaveText(['✓Midpoint']);
+  await page.keyboard.press('Escape');
+
+  // Quick Properties: on, by the cursor at bottom left, 20 pixels away, collapsed to 2 rows.
+  await canvas.hover();
+  await type(page, 'DSETTINGS', 'Drafting Settings:');
+  await d.getByRole('tab', { name: 'Quick Properties' }).click();
+  const qpOn = d.getByRole('checkbox', {
+    name: 'Display the Quick Properties palette on selection (Ctrl+Shift+P)',
+  });
+  await expect(qpOn).not.toBeChecked();
+  await qpOn.check();
+  await d.getByRole('radio', { name: 'Only objects with specified properties' }).check();
+  await d.getByRole('combobox', { name: 'Quadrant' }).selectOption({ label: 'Bottom-left' });
+  const distance = d.getByRole('textbox', { name: 'Distance in pixels' });
+  await distance.fill('500');
+  await expect(d.getByRole('alert')).toHaveText(
+    'Distance in pixels must be a whole number from 0 to 400.',
+  );
+  await expect(d.getByRole('button', { name: 'OK' })).toBeDisabled();
+  await distance.fill('20');
+  await d.getByRole('textbox', { name: 'Minimum number of rows' }).fill('2');
+  await shot(page, '4-quick-properties-tab');
+  await d.getByRole('button', { name: 'OK' }).click();
+  await expect(toggle(page, 'QP')).toHaveAttribute('aria-pressed', 'true');
+
+  await canvas.hover();
+  await type(page, 'QPMODE', 'Enter new value for QPMODE <2>:');
+  await type(page, '', 'Command:');
+  const at = view.at(X0 + 80, Y0);
+  const pick = { x: view.box.x + at.x, y: view.box.y + at.y };
+  await page.mouse.click(pick.x, pick.y);
+  const quick = page.getByRole('dialog', { name: 'Quick Properties' });
+  await expect(quick).toBeVisible();
+  const placed = (await quick.boundingBox())!;
+  // Below and to the left of the pick, 20 pixels away.
+  expect(Math.round(placed.x + placed.width)).toBeLessThanOrEqual(Math.round(pick.x - 19));
+  expect(Math.round(placed.y)).toBeGreaterThanOrEqual(Math.round(pick.y + 19));
+  await page.mouse.move(pick.x, pick.y - 40);
+  const rows = quick.getByRole('row');
+  await expect(rows.filter({ visible: true })).toHaveCount(2);
+  await shot(page, '5-quick-properties-bottom-left');
+  await page.keyboard.press('Escape');
+  await expect(quick).toBeHidden();
+
+  // Static, and no collapse: QPLOCATION 1, and every row shown.
+  await type(page, 'DS', 'Drafting Settings:');
+  await expect(d.getByRole('tab', { name: 'Quick Properties' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await d.getByRole('radio', { name: 'Static' }).check();
+  await expect(d.getByRole('combobox', { name: 'Quadrant' })).toBeDisabled();
+  await d.getByRole('checkbox', { name: 'Collapse palette automatically' }).uncheck();
+  await d.getByRole('button', { name: 'OK' }).click();
+  await canvas.hover();
+  await type(page, 'QPLOCATION', 'Enter new value for QPLOCATION <1>:');
+  await type(page, '', 'Command:');
+  await page.mouse.click(pick.x, pick.y);
+  await expect(quick).toBeVisible();
+  await page.mouse.move(pick.x, pick.y - 40);
+  await expect(rows.filter({ visible: true })).toHaveCount(5);
+});
