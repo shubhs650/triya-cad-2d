@@ -62,8 +62,10 @@ import {
   type TextGeometry,
   type TextOutline,
   type DeferredPick,
+  type EnclosedSpace,
   type OsnapHit,
   type Prompt,
+  type QuickMeasure,
   type UnderlaySnapPage,
   type UndoView,
   type Vec2,
@@ -162,6 +164,18 @@ const DASH_PX = 6;
  * (M2-06; M2-59 part 3 sizes it).
  */
 const gripPickPx = (gripSize: number): number => gripHalfSize(gripSize) + 1;
+/**
+ * MEASUREGEOM Quick (M3-07): the green a space clicked is filled with, the orange square that
+ * marks a right angle (the help's "orange squares … at precisely 90 degrees"), the size of the
+ * ticks ending a measured distance and of an angle's arc, and how far the cursor goes from a
+ * click before the spaces shown clear ("simply move the mouse a small distance"), CSS pixels.
+ */
+const QUICK_FILL = '#2fb344';
+const QUICK_FILL_OPACITY = 0.35;
+const QUICK_RIGHT = '#ff8c1a';
+const QUICK_TICK_PX = 5;
+const QUICK_ARC_PX = 18;
+const QUICK_CLEAR_PX = 8;
 
 /**
  * What the left button does: select (nothing yet), real-time PAN or ZOOM, or pick ZOOM Window
@@ -369,6 +383,17 @@ export class CanvasController {
   #vertexMark: Vec2 | undefined;
   /** The AutoSnap and polar tracking tooltip. */
   readonly #tip: HTMLDivElement;
+  /** MEASUREGEOM Quick's prompt (M3-07): the spaces clicked, while it waits. */
+  #quick: { readonly loops: readonly (readonly Vec2[])[] } | undefined;
+  /** What Quick measured at the cursor last. */
+  #quickMeasure: QuickMeasure | undefined;
+  #quickAsking = false;
+  #quickAgain = false;
+  /** Where the last Quick click was (CSS pixels), while the spaces clicked show. */
+  #quickClick: { readonly x: number; readonly y: number } | undefined;
+  #quickOverlay: readonly RenderPrimitive[] = [];
+  /** Quick's values, written beside what they measure. */
+  readonly #quickLabels: HTMLDivElement;
 
   constructor(container: HTMLElement, opened: OpenResult, block: Handle, hooks: CanvasHooks) {
     this.#opened = opened;
@@ -410,6 +435,10 @@ export class CanvasController {
     this.#tip.dataset['testid'] = 'autosnap-tip';
     this.#tip.hidden = true;
     container.append(this.#tip);
+    this.#quickLabels = document.createElement('div');
+    this.#quickLabels.className = 'quick-measure';
+    this.#quickLabels.dataset['testid'] = 'quick-measure';
+    container.append(this.#quickLabels);
     this.#host = this.#createHost();
     this.#images = hooks.images?.((definition, pixels) => {
       this.#host.setImage(definition, pixels);
@@ -630,6 +659,11 @@ export class CanvasController {
         prompt.kind === 'distance' ||
         prompt.kind === 'angle');
     this.#prompt = picking ? prompt : undefined;
+    this.#quick = prompt?.kind === 'point' ? prompt.quick : undefined;
+    if (!this.#quick) {
+      this.#quickMeasure = undefined;
+      this.#quickClick = undefined;
+    }
     this.#traced = false;
     this.canvas.dataset['picking'] = String(!!picking);
     // A new prompt has a new base point, which PER and TAN are drawn from.
@@ -641,6 +675,156 @@ export class CanvasController {
     if (this.#mode !== 'none') return;
     if (this.#prompt) this.#requestSnap();
     this.#track();
+    if (this.#quick) this.#requestQuick();
+    else this.#drawQuick();
+  }
+
+  /** What the view shows, in drawing units; undefined before it has a size. */
+  #viewBox(): Box | undefined {
+    const v = this.#view;
+    const { width, height } = this.#size;
+    if (!v || !(width > 0) || !(height > 0)) return undefined;
+    const a = screenToWorld(v, width, height, { x: 0, y: 0 });
+    const b = screenToWorld(v, width, height, { x: width, y: height });
+    return {
+      minX: Math.min(a.x, b.x),
+      minY: Math.min(a.y, b.y),
+      maxX: Math.max(a.x, b.x),
+      maxY: Math.max(a.y, b.y),
+    };
+  }
+
+  /** The space enclosed around a point by the objects shown (MEASUREGEOM Quick's click). */
+  enclosed(point: Vec2): Promise<EnclosedSpace | undefined> {
+    const view = this.#viewBox();
+    return view ? this.#host.enclosedSpace(point, view) : Promise.resolve(undefined);
+  }
+
+  /** Asks what Quick measures at the cursor: one request in flight, the latest cursor next. */
+  #requestQuick(): void {
+    if (this.#quickAsking) {
+      this.#quickAgain = true;
+      return;
+    }
+    const world = this.#pointer && this.#world(this.#pointer);
+    const view = this.#viewBox();
+    if (!this.#quick || !world || !view || this.#mode !== 'none') {
+      this.#quickMeasure = undefined;
+      this.#drawQuick();
+      return;
+    }
+    this.#quickAsking = true;
+    const aperture = this.#drafting.aperture * this.#px();
+    void this.#host
+      .quickMeasure({ point: world, aperture, view })
+      .catch(() => undefined)
+      .then((m) => {
+        this.#quickAsking = false;
+        this.#quickMeasure = this.#quick ? m : undefined;
+        this.#drawQuick();
+        if (this.#quickAgain) {
+          this.#quickAgain = false;
+          this.#requestQuick();
+        }
+      });
+  }
+
+  /**
+   * Draws Quick's measurements: each distance as a line with ticks at its ends, each angle as
+   * an arc (a square at 90°), the spaces clicked filled green, and the values as labels.
+   */
+  #drawQuick(): void {
+    const prims: RenderPrimitive[] = [];
+    const labels: { at: Vec2; text: string; kind: string }[] = [];
+    const v = this.#view;
+    if (this.#quick && v) {
+      const px = this.#px();
+      const color = this.#ui().autotrack;
+      const loops = this.#quickClick ? this.#quick.loops : [];
+      if (loops.length > 0) {
+        const path: number[] = [];
+        for (const loop of loops) {
+          loop.forEach((p, i) => path.push(i === 0 ? PATH_M : PATH_L, p.x, p.y));
+          path.push(PATH_Z);
+        }
+        prims.push({
+          kind: 'fill',
+          color: QUICK_FILL,
+          path,
+          opacity: QUICK_FILL_OPACITY,
+          evenOdd: true,
+        });
+      }
+      for (const s of this.#quickMeasure?.spans ?? []) {
+        const len = Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y);
+        if (!(len > 0)) continue;
+        // Ticks across each end, as a dimension's.
+        const nx = (-(s.to.y - s.from.y) / len) * QUICK_TICK_PX * px;
+        const ny = ((s.to.x - s.from.x) / len) * QUICK_TICK_PX * px;
+        const path = [PATH_M, s.from.x, s.from.y, PATH_L, s.to.x, s.to.y];
+        for (const p of [s.from, s.to])
+          path.push(PATH_M, p.x - nx, p.y - ny, PATH_L, p.x + nx, p.y + ny);
+        prims.push({ kind: 'stroke', color, path });
+        labels.push({
+          at: { x: (s.from.x + s.to.x) / 2, y: (s.from.y + s.to.y) / 2 },
+          text: s.text,
+          kind: 'distance',
+        });
+      }
+      for (const a of this.#quickMeasure?.angles ?? []) {
+        const r = QUICK_ARC_PX * px;
+        const { x, y } = a.vertex;
+        const dir = (t: number) => ({ x: Math.cos(t), y: Math.sin(t) });
+        const u = dir(a.start);
+        const w = dir(a.start + a.sweep);
+        if (a.right) {
+          const h = r / 2;
+          prims.push({
+            kind: 'stroke',
+            color: QUICK_RIGHT,
+            path: [
+              PATH_M,
+              x + u.x * h,
+              y + u.y * h,
+              PATH_L,
+              x + (u.x + w.x) * h,
+              y + (u.y + w.y) * h,
+              PATH_L,
+              x + w.x * h,
+              y + w.y * h,
+            ],
+          });
+        } else {
+          const path: number[] = [];
+          const steps = Math.max(4, Math.ceil(a.sweep / (Math.PI / 24)));
+          for (let i = 0; i <= steps; i++) {
+            const p = dir(a.start + (a.sweep * i) / steps);
+            path.push(i === 0 ? PATH_M : PATH_L, x + p.x * r, y + p.y * r);
+          }
+          prims.push({ kind: 'stroke', color, path });
+        }
+        const m = dir(a.start + a.sweep / 2);
+        labels.push({
+          at: { x: x + m.x * r * 1.8, y: y + m.y * r * 1.8 },
+          text: a.text,
+          kind: 'angle',
+        });
+      }
+    }
+    this.#quickOverlay = prims;
+    this.#quickLabels.replaceChildren(
+      ...labels.map((l) => {
+        const s = worldToScreen(v!, this.#size.width, this.#size.height, l.at);
+        const el = document.createElement('div');
+        el.className = 'quick-measure-label';
+        el.dataset['kind'] = l.kind;
+        el.textContent = l.text;
+        el.style.left = `${s.x}px`;
+        el.style.top = `${s.y}px`;
+        return el;
+      }),
+    );
+    this.#rubberBand(undefined);
   }
 
   /** The status bar's drafting aids changed (M2-04). */
@@ -1123,6 +1307,8 @@ export class CanvasController {
     this.#view = view;
     this.#viewed();
     this.#requestFrame();
+    // Quick's values sit on the screen where what they measure was: measured again.
+    if (this.#quick) this.#requestQuick();
     // The point under a cursor that has not moved is another one now: the status bar (and a
     // prompt's rubber band) follow it, as the cursor that came onto the canvas before there was
     // a view (a layout's first, M2-37) showed no coordinates until it next moved.
@@ -1262,7 +1448,13 @@ export class CanvasController {
             },
           ]
         : [];
-    this.#host.setTransient([...preview, ...band, ...this.#overlay, ...this.#vertexMarker()]);
+    this.#host.setTransient([
+      ...preview,
+      ...band,
+      ...this.#overlay,
+      ...this.#quickOverlay,
+      ...this.#vertexMarker(),
+    ]);
     this.#requestFrame();
   }
 
@@ -1376,7 +1568,12 @@ export class CanvasController {
           if (!world) return;
           this.#press = { pointer: e.pointerId, x: e.offsetX, y: e.offsetY, dragged: false };
           c.setPointerCapture(e.pointerId);
-          const shift = e.shiftKey;
+          let shift = e.shiftKey;
+          if (this.#quick) {
+            // Shift adds to the spaces shown; once they have cleared, a click starts afresh.
+            shift &&= this.#quickClick !== undefined;
+            this.#quickClick = { x: e.offsetX, y: e.offsetY };
+          }
           if (!this.#precise()) {
             this.#hooks.onPick?.(world, {
               shift,
@@ -1445,6 +1642,17 @@ export class CanvasController {
           this.#track();
           return;
         }
+        if (this.#quick && this.#mode === 'none') {
+          const click = this.#quickClick;
+          if (
+            click &&
+            !e.shiftKey &&
+            Math.hypot(e.offsetX - click.x, e.offsetY - click.y) > QUICK_CLEAR_PX
+          ) {
+            this.#quickClick = undefined;
+          }
+          this.#requestQuick();
+        }
         this.#hooks.onCursor(world);
       },
       opts,
@@ -1477,6 +1685,10 @@ export class CanvasController {
         this.#candidate = undefined;
         clearTimeout(this.#acquireTimer);
         if (this.#prompt && this.#mode === 'none') this.#track();
+        if (this.#quick) {
+          this.#quickMeasure = undefined;
+          this.#drawQuick();
+        }
         this.#hooks.onCursor(undefined);
       },
       opts,

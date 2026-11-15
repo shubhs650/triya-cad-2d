@@ -118,6 +118,13 @@ export interface PointPrompt extends PromptBase {
    * break point", where `@` is the first break point however it was given (M3-02 part 4).
    */
   readonly lastPoint?: Vec2;
+  /**
+   * MEASUREGEOM's Quick mode (M3-07 part 2): as the cursor moves the front-end shows what it
+   * measures there (`quickMeasure`: distances across it, an object's length or radius, the
+   * angles at a line's ends), and fills `loops`, the spaces clicked so far, green. Asked with
+   * `pickbox`, so a click answers with its own point and Shift.
+   */
+  readonly quick?: { readonly loops: readonly (readonly Vec2[])[] };
 }
 
 /** A distance: a number, or two points (one when `base` is given). */
@@ -132,6 +139,12 @@ export interface DistancePrompt extends PromptBase {
 export interface AnglePrompt extends PromptBase {
   readonly kind: 'angle';
   readonly base?: Vec2;
+  /**
+   * The world direction (radians) a typed angle counts from, in place of ANGBASE: an elliptical
+   * arc's angles count from its first axis, XLINE Reference's from the line (M3-01 part 4).
+   * Picked points still answer their world angle.
+   */
+  readonly zero?: number;
 }
 
 /** One of the options only. */

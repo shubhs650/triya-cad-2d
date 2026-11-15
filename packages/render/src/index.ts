@@ -3,6 +3,14 @@
 export * from './types';
 export { patternLibrary, tessellate, type Paint, type TessellateContext } from './tessellate';
 export {
+  figureOf,
+  figureSize,
+  pointFigurePath,
+  pointHasDot,
+  pointStyle,
+  type PointStyle,
+} from './point-style';
+export {
   adjustPixels,
   imageLabel,
   imagePrimitives,

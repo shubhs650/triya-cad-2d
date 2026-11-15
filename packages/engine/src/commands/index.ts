@@ -17,6 +17,10 @@ export { splineCommand, splineOfFitPolyline } from './draw/spline';
 export { splineOf, type SplineSpec } from './draw/spline-shape';
 export { divideCommand, measureCommand } from './draw/divide';
 export { rectangCommand } from './draw/rectang';
+export { type ShapeSketch } from './draw/sketch-shapes';
+export { ellipseCommand } from './draw/ellipse';
+export { donutCommand, pointCommand } from './draw/point';
+export { rayCommand, xlineCommand } from './draw/xline';
 export * from './view/host';
 export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale } from './view/zoom';
 export { viewCommand, viewNameMatches } from './view/named-view';
@@ -57,5 +61,14 @@ export {
 } from './modify/dimensions';
 export { FILE_COMMANDS } from './file';
 export { INQUIRY_COMMANDS, inquiryResults } from './inquiry/inquiry';
+export {
+  enclosedSpace,
+  quickMeasure,
+  type EnclosedSpace,
+  type QuickAngle,
+  type QuickMeasure,
+  type QuickQuery,
+  type QuickSpan,
+} from './inquiry/quick';
 export { measureObject, measurePolygon, type Measured } from './inquiry/measure';
 export { colorFromText, lineweightFromText } from './modify/chprop';

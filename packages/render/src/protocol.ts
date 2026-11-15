@@ -9,8 +9,11 @@ import type {
   DragMotion,
   EntityId,
   MTextGeometry,
+  EnclosedSpace,
   OsnapHit,
   OsnapQuery,
+  QuickMeasure,
+  QuickQuery,
   TextGeometry,
   TextOutline,
   Vec2,
@@ -119,6 +122,15 @@ export type HostMessage =
     }
   /** The object snap points under the aperture (M2-04); the answer is a `snap`. */
   | { readonly type: 'snap'; readonly id: number; readonly query: OsnapQuery }
+  /** What MEASUREGEOM Quick shows at the cursor (M3-07); the answer is a `quick`. */
+  | { readonly type: 'quick'; readonly id: number; readonly query: QuickQuery }
+  /** The space enclosed around a point, in a view (M3-07); the answer is an `enclosed`. */
+  | {
+      readonly type: 'enclosed';
+      readonly id: number;
+      readonly point: Vec2;
+      readonly view: Box;
+    }
   /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
   | { readonly type: 'entitiesIn'; readonly id: number; readonly rect: ScreenRect }
   | { readonly type: 'flush'; readonly id: number }
@@ -143,6 +155,10 @@ export type WorkerMessage =
   | { readonly type: 'thumbnail'; readonly id: number; readonly bitmap: ImageBitmap | null }
   /** The object snap points asked for (M2-04), best first. */
   | { readonly type: 'snap'; readonly id: number; readonly hits: readonly OsnapHit[] }
+  /** What Quick measures at the cursor (M3-07). */
+  | { readonly type: 'quick'; readonly id: number; readonly measure: QuickMeasure }
+  /** The space around the point, or null where none is (M3-07). */
+  | { readonly type: 'enclosed'; readonly id: number; readonly space: EnclosedSpace | null }
   /** The extents asked for; null when nothing drawn has a known extent. */
   | { readonly type: 'extents'; readonly id: number; readonly box: Box | null }
   /** The text widths asked for, null for a text no loaded font draws. */

@@ -10,13 +10,16 @@ import {
   DocumentModel,
   SpatialIndex,
   applyToReplica,
+  enclosedSpace,
   osnap,
+  quickMeasure,
   toleranceForSize,
   toleranceFromExtents,
   unionBox,
   type Box,
   type ChangeSet,
   type DocumentInit,
+  type EnclosedSpace,
   type Entity,
   type EntityId,
   type Handle,
@@ -24,10 +27,14 @@ import {
   type MTextGeometry,
   type OsnapHit,
   type OsnapQuery,
+  type OsnapSource,
+  type QuickMeasure,
+  type QuickQuery,
   type TextGeometry,
   type TextOutline,
   type Tolerance,
   type UnderlaySnapPage,
+  type Vec2,
 } from '@triya/engine';
 import {
   FontBook,
@@ -321,21 +328,33 @@ export class RenderSession {
    * Tracking acquisitions (EXT, PAR) follow them, marked `track`.
    */
   snap(query: OsnapQuery): OsnapHit[] {
+    return osnap(this.#snapSource(), query);
+  }
+
+  /** What snaps and Quick measuring see: the space drawn, model space through its viewports. */
+  #snapSource(): OsnapSource {
     // In a layout, model space is snapped to through its viewports (M2-04 part 2).
     const model = [...this.model.tables.blockRecords.values()].find(
       (r) => r.name.toLowerCase() === '*model_space',
     )?.handle;
-    return osnap(
-      {
-        model: this.model,
-        index: this.index,
-        block: this.#block,
-        tol: this.#tol,
-        ...(model !== undefined && { modelSpace: model }),
-        underlays: (h) => this.#underlaySnaps.get(h),
-      },
-      query,
-    );
+    return {
+      model: this.model,
+      index: this.index,
+      block: this.#block,
+      tol: this.#tol,
+      ...(model !== undefined && { modelSpace: model }),
+      underlays: (h) => this.#underlaySnaps.get(h),
+    };
+  }
+
+  /** What MEASUREGEOM's Quick mode shows with the cursor at `query.point` (M3-07). */
+  quickMeasure(query: QuickQuery): QuickMeasure {
+    return quickMeasure(this.#snapSource(), query);
+  }
+
+  /** The space enclosed around `point` by the objects shown in `view` (M3-07), if any. */
+  enclosedSpace(point: Vec2, view: Box): EnclosedSpace | undefined {
+    return enclosedSpace(this.#snapSource(), point, view);
   }
 
   /** The last frame drawn, fitted inside `max` (the document tab hover preview, M1-22). */
@@ -418,6 +437,7 @@ export class RenderSession {
     const parts = plotParts(this.model, request.block ?? this.#block, {
       resolver: new PlotResolver(request.table),
       tessellate: this.renderer.tessellateContext,
+      viewHeight: this.renderer.viewHeight,
       images: (h) => this.#images.get(h),
       ...(request.paperspaceLast && { paperspaceLast: true }),
       ...(request.handles && { only: new Set(request.handles) }),

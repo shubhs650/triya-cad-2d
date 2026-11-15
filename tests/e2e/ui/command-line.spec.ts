@@ -102,7 +102,8 @@ test('Esc cancels and keeps the segments drawn; Up recalls; F2 shows the history
   await open(page);
   const input = page.getByLabel('Command', { exact: true });
   await input.click();
-  await page.keyboard.type('LI');
+  // LI is LIST's alias (M3-07 part 2), so type one more letter.
+  await page.keyboard.type('LIN');
   await expect(page.getByRole('listbox', { name: 'Matching commands' })).toContainText('LINE');
   await page.keyboard.press('Tab');
   await expect(input).toHaveValue('LINE');
