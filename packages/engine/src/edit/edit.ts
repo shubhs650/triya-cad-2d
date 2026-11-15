@@ -38,7 +38,7 @@ import { isAssocArray } from '../model/types';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry, type StretchOptions } from './stretch';
 import { moveGrip } from './grips';
-import { revcloudOf } from './revcloud';
+import { gripInfoOf } from './array-grips';
 import { sub } from '../geom/vec';
 import {
   annotativeData,
@@ -453,7 +453,7 @@ export function planGrip(
   for (const id of ids) {
     const e = model.entity(id);
     if (!e) continue;
-    const r = moveGrip(e.geom, grip, to, revcloudOf(model, e));
+    const r = moveGrip(e.geom, grip, to, gripInfoOf(model, e));
     if (r.kind === 'move') move.push(id);
     else if (r.kind === 'shape') shape.set(id, r.geom);
   }
