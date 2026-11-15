@@ -13,6 +13,7 @@ import {
   type Preferences,
   type PreferencesPersistence,
 } from '../src/preferences';
+import { ALIAS_FILE_MAX } from '../src/user-aliases';
 
 function memory(initial?: unknown): PreferencesPersistence & { saved: Preferences[] } {
   const saved: Preferences[] = [];
@@ -84,6 +85,14 @@ describe('preferences', () => {
     });
     // No named filters (FILTER, M3-04 part 4).
     expect(DEFAULT_PREFERENCES.filters).toEqual({});
+    // No user alias file (M3-10).
+    expect(DEFAULT_PREFERENCES.aliasFile).toBe('');
+  });
+
+  it('keep the user alias file, unless it is not text or too long (M3-10)', () => {
+    expect(normalizePreferences({ aliasFile: 'C,*COPY\n' }).aliasFile).toBe('C,*COPY\n');
+    expect(normalizePreferences({ aliasFile: 7 }).aliasFile).toBe('');
+    expect(normalizePreferences({ aliasFile: 'x'.repeat(ALIAS_FILE_MAX + 1) }).aliasFile).toBe('');
   });
 
   it('keep the Drafting Settings dialog\u2019s values when valid (M3-06 part 1)', () => {

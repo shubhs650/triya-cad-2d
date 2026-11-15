@@ -1,29 +1,26 @@
 // The Ctrl+K palette's search (M2-02 part 2, UI_SPEC.md §5, FR-C3): fuzzy search over the
 // commands (with their aliases) and the app's settings and windows. Discoverability only: a
 // command found here runs exactly as typed at the command line would.
-import { ALIASES, type CommandRegistry } from '@triya/engine';
+import type { CommandRegistry } from '@triya/engine';
 
 export interface PaletteItem {
   /** What runs: a command name, or an app action's id. */
   readonly id: string;
   readonly kind: 'command' | 'action';
   readonly label: string;
-  /** The acad.pgp aliases of a command: `L`, `Z`. */
+  /** The aliases of a command: `L`, `Z` (acad.pgp's, and the user alias file's, M3-10). */
   readonly aliases: readonly string[];
   /** Its keyboard shortcut: `F2`, `F12`, `Ctrl+O`. */
   readonly keys?: string;
 }
 
-/** The registered commands, each with the aliases that name it. */
+/** The registered commands, each with the aliases that name it now. */
 export function commandItems(registry: CommandRegistry): PaletteItem[] {
   return registry.names().map((name) => ({
     id: name,
     kind: 'command',
     label: name,
-    aliases: Object.entries(ALIASES)
-      .filter(([, n]) => n === name)
-      .map(([a]) => a)
-      .sort(),
+    aliases: registry.aliasesOf(name),
   }));
 }
 

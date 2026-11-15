@@ -85,3 +85,4 @@ export {
 export { measureObject, measurePolygon, type Measured } from './inquiry/measure';
 export { colorFromText, lineweightFromText } from './modify/chprop';
 export { GROUP_COMMANDS, groupRows } from './modify/group';
+export * from './pgp';
