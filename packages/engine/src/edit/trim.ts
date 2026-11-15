@@ -317,14 +317,14 @@ function subPolyline(
 
 // ── Splines ────────────────────────────────────────────────────────────────────────────────
 
-interface Homogeneous {
+export interface Homogeneous {
   readonly degree: number;
   knots: number[];
   /** x·w, y·w, w. */
   points: [number, number, number][];
 }
 
-const toHomogeneous = (s: Spline): Homogeneous => ({
+export const toHomogeneous = (s: Spline): Homogeneous => ({
   degree: s.degree,
   knots: [...s.knots],
   points: s.controlPoints.map((p, i) => {
@@ -333,7 +333,7 @@ const toHomogeneous = (s: Spline): Homogeneous => ({
   }),
 });
 
-function fromHomogeneous(h: Homogeneous, rational: boolean): Spline {
+export function fromHomogeneous(h: Homogeneous, rational: boolean): Spline {
   const weights = h.points.map((q) => q[2]);
   return {
     kind: 'SPLINE',
@@ -345,7 +345,7 @@ function fromHomogeneous(h: Homogeneous, rational: boolean): Spline {
 }
 
 /** Inserts knot `u` once (Boehm; The NURBS Book A5.1 with r = 1). */
-function insertKnot(h: Homogeneous, u: number): void {
+export function insertKnot(h: Homogeneous, u: number): void {
   const p = h.degree;
   const U = h.knots;
   const P = h.points;
@@ -401,7 +401,7 @@ export function subSpline(s: Spline, a: number, b: number): Spline | undefined {
 }
 
 /** `b` joined on to the end of `a` (where it starts), as one clamped NURBS of their degree. */
-function joinSplines(a: Spline | undefined, b: Spline | undefined): Spline | undefined {
+export function joinSplines(a: Spline | undefined, b: Spline | undefined): Spline | undefined {
   if (!a || !b) return a ?? b;
   const ha = toHomogeneous(a);
   const hb = toHomogeneous(b);
