@@ -36,6 +36,7 @@ import { MatchPropDialog } from './MatchPropDialog';
 import { PointStyleDialog } from './PointStyleDialog';
 import { OverkillDialog } from './OverkillDialog';
 import { SelectSimilarDialog } from './SelectSimilarDialog';
+import { FilterDialog } from './FilterDialog';
 import { QSelectDialog } from './QSelectDialog';
 import { DraftingSettingsDialog } from './DraftingSettingsDialog';
 
@@ -73,6 +74,8 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
       return <DraftingSettingsDialog key={key} doc={doc.id} request={d} />;
     case 'selectsimilar':
       return <SelectSimilarDialog key={key} doc={doc.id} request={d} />;
+    case 'filter':
+      return <FilterDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

@@ -914,6 +914,28 @@ describe('PICKFIRST', () => {
   });
 });
 
+describe('PICKADD and PICKAUTO', () => {
+  it('are session settings of each drawing’s "Select objects", in their ranges', () => {
+    const session = new EngineSession(sampleInit());
+    expect(session.edit({ kind: 'sysvar', name: 'PICKADD', value: 0 })).toEqual({
+      ok: true,
+      change: {},
+    });
+    expect(session.edit({ kind: 'sysvar', name: 'PICKAUTO', value: 7 })).toEqual({
+      ok: true,
+      change: {},
+    });
+    expect(session.undoState.undoable).toBe(0);
+    expect(session.edit({ kind: 'sysvar', name: 'PICKADD', value: 4 })).toEqual({
+      ok: false,
+      message: 'Cannot set PICKADD to 4.',
+    });
+    expect(session.edit({ kind: 'sysvar', name: 'PICKAUTO', value: 1.5 })).toMatchObject({
+      ok: false,
+    });
+  });
+});
+
 describe('REVCLOUDGRIPS', () => {
   it('is a session setting of each drawing, never an undo step', () => {
     const session = new EngineSession(sampleInit());

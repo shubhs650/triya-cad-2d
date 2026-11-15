@@ -116,12 +116,15 @@ test('picks, Shift, windows, crossing windows, Ctrl+A and Esc at Command:', asyn
   await page.keyboard.press('Escape');
   await expect.poll(() => selected(page)).toEqual([]);
 
-  // SELECT builds its set from the same clicks; its set is then the Previous set.
+  // SELECT builds its set from the same clicks; its set is then the Previous set, and with
+  // PICKADD 2 (AutoCAD's initial value, M3-04 part 4) it stays selected after SELECT ends.
   await type(page, 'SELECT', 'Select objects:');
   await click(0.5, 0.7);
   await expect(history(page)).toContainText('Select objects: 1 found');
   await expect.poll(() => selected(page)).toEqual([b]);
   await type(page, '', 'Command:');
+  await expect.poll(() => selected(page)).toEqual([b]);
+  await page.keyboard.press('Escape');
   await expect.poll(() => selected(page)).toEqual([]);
 
   // ZOOM Object takes the pre-selection.

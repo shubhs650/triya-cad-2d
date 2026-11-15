@@ -17,6 +17,7 @@ import {
 } from './drafting';
 import type { DynMode } from './dynamic-input';
 import { closeOnDelete } from './local-data';
+import { normalizeFilters, type NamedFilters } from './selection-filters';
 
 /** The chrome's colours: the system's light or dark setting, or one of them always. */
 export type Theme = 'system' | 'light' | 'dark';
@@ -72,6 +73,9 @@ export type DraftingPreferences = Pick<
   | 'polarAddAngles'
   | 'selectSimilarMode'
   | 'selectionCycling'
+  | 'pickbox'
+  | 'pickadd'
+  | 'pickauto'
   | 'qpQuadrant'
   | 'qpDistance'
   | 'qpCollapse'
@@ -85,6 +89,8 @@ export interface Preferences {
   /** DYNMODE on (F12). */
   readonly dynMode: boolean;
   readonly drafting: DraftingPreferences;
+  /** FILTER's named filters (M3-04 part 4), AutoCAD's filter.nfl. */
+  readonly filters: NamedFilters;
 }
 
 /** POLARANG's choices in AutoCAD's Drafting Settings, degrees. */
@@ -131,11 +137,15 @@ export const DEFAULT_PREFERENCES: Preferences = {
     polarAddAngles: '',
     selectSimilarMode: 130,
     selectionCycling: 0,
+    pickbox: 3,
+    pickadd: 2,
+    pickauto: 5,
     qpQuadrant: 'top-right',
     qpDistance: 50,
     qpCollapse: true,
     qpRows: 3,
   },
+  filters: {},
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -184,6 +194,7 @@ export function normalizePreferences(raw: unknown): Preferences {
     },
     coordinates: coordinates === 'decimal' ? 'decimal' : 'drawing',
     dynMode: bool(raw['dynMode'], d.dynMode),
+    filters: normalizeFilters(raw['filters']),
     drafting: {
       // OSMODE's 14 mode bits and OSNAP_OFF.
       osmode:
@@ -221,6 +232,9 @@ export function normalizePreferences(raw: unknown): Preferences {
         { min: -2, max: 2 },
         d.drafting.selectionCycling,
       ),
+      pickbox: within(k['pickbox'], { min: 0, max: 50 }, d.drafting.pickbox),
+      pickadd: within(k['pickadd'], { min: 0, max: 3 }, d.drafting.pickadd),
+      pickauto: within(k['pickauto'], { min: 0, max: 7 }, d.drafting.pickauto),
       polarAddAngles:
         typeof polarAddAngles === 'string' && additionalAngles(polarAddAngles)
           ? polarAddAngles
@@ -309,6 +323,9 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     polarAddAngles: s.polarAddAngles,
     selectSimilarMode: s.selectSimilarMode,
     selectionCycling: s.selectionCycling,
+    pickbox: s.pickbox,
+    pickadd: s.pickadd,
+    pickauto: s.pickauto,
     qpQuadrant: s.qpQuadrant,
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,

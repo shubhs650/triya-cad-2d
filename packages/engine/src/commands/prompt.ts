@@ -6,10 +6,11 @@ import type { Vec2 } from '../geom/types';
 import type { DeferredModes } from '../input/osnap';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { Color, LinetypeRef, Lineweight } from '../model/types';
+import type { Color, EntityType, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
 import type { OverkillSettings } from '../edit/overkill';
 import type { QuickSelectCriteria, QuickSelectType } from '../selection/qselect';
+import type { FilterItem, FilterNameKey } from '../selection/filter';
 import type { PropertyUnits } from '../properties/sheet';
 import type { MatchSettings } from '../properties/match';
 import type { DragPreview } from './drag';
@@ -458,6 +459,18 @@ export type DialogRequest =
       /** SELECTSIMILAR's Select Similar Settings (M3-04 part 3), opened on SELECTSIMILARMODE. */
       readonly type: 'selectsimilar';
       readonly mode: number;
+    }
+  | {
+      /**
+       * FILTER's Object Selection Filters (M3-04 part 4). `list` and `name`: the filter it closed
+       * with when Add Selected Object reopens it (absent: the app's current filter). `names`
+       * offers each name property's values in the drawing, `types` the object types.
+       */
+      readonly type: 'filter';
+      readonly list?: readonly FilterItem[];
+      readonly name?: string;
+      readonly names: Readonly<Record<FilterNameKey, readonly string[]>>;
+      readonly types: readonly { readonly type: EntityType; readonly label: string }[];
     };
 
 /** The Drafting Settings tabs Triya has (M3-06 part 1). */
@@ -565,6 +578,8 @@ export type PromptAnswer =
       readonly qselect?: QuickSelectCriteria;
       /** Select Similar Settings' checkboxes as OK closed it, SELECTSIMILARMODE's bits. */
       readonly selectSimilar?: number;
+      /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
+      readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }
