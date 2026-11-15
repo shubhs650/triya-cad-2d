@@ -4,7 +4,7 @@ This is the command surface a drafter expects. Aliases are the AutoCAD `acad.pgp
 
 Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants (`-NAME`) are required where noted.
 
-The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/src/commands/aliases.ts`, M2-01); `tests/docs/commands-aliases.test.ts` fails if the two differ, so change both together. Keyboard shortcuts (Ctrl+…, F-keys) in that column belong to the UI.
+The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/src/commands/aliases.ts`, M2-01); `tests/docs/commands-aliases.test.ts` fails if the two differ, so change both together. Keyboard shortcuts (Ctrl+…, F-keys) in that column belong to the UI. The user alias file (M3-10, Settings' Edit Aliases, acad.pgp syntax) overrides these defaults per user: `CommandRegistry.setUserAliases`, `parseAliasFile`.
 
 ## Draw
 

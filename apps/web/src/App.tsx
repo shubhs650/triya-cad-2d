@@ -157,6 +157,8 @@ import { UndoToast } from './UndoToast';
 import { PdfPages, fileKey } from './underlay/pages';
 import { openPdf } from './underlay/pdfjs';
 import { PlotPreview } from './PlotPreview';
+import { AliasEditor } from './AliasEditor';
+import { aliasesOf, applyAliasFile } from './user-aliases';
 import {
   lastPlotSettings,
   plotRequest,
@@ -383,7 +385,14 @@ preferences.subscribe(() => {
   }
   applyTheme(p.theme);
   selectionFilters.bind(p.filters, (filters) => preferences.update({ filters }));
+  if (applyAliasFile(p.aliasFile)) for (const d of store.getSnapshot().docs) tellAliases(d.id);
 });
+applyAliasFile(preferences.get().aliasFile);
+
+/** The user alias file's aliases (M3-10), which a drawing's command line runs over the defaults. */
+function tellAliases(doc: number): void {
+  void engines.edit(doc, { kind: 'aliases', aliases: aliasesOf(preferences.get().aliasFile) });
+}
 selectionFilters.bind(preferences.get().filters, (filters) => preferences.update({ filters }));
 void preferences.load();
 
@@ -1186,6 +1195,7 @@ async function open(
     // The drawing's authoritative document goes to its engine worker (M1-67).
     engines.start(id, opened.init, recovered?.changes);
     tellSessionVariables(id);
+    tellAliases(id);
     // The Properties palette, docked, showed the drawing before its engine started (M2-21).
     if (dockedPalette.get() === 'properties' && store.getSnapshot().active === id)
       engines.command(id, { kind: 'properties', open: true });
@@ -1352,6 +1362,8 @@ export function App() {
   const patternNames = useMemo(() => hatchPatternNames(patterns.sources()), [patternState]);
   const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
   const [settings, setSettings] = useState(false);
+  const [aliasEditor, setAliasEditor] = useState(false);
+  const aliasFile = useSyncExternalStore(preferences.subscribe, preferences.get).aliasFile;
   // One palette docks at a time until the palette stack (M7-03); PROPERTIES opens one too.
   const palette = useSyncExternalStore(dockedPalette.subscribe, dockedPalette.get);
   const quickOn = useSyncExternalStore(drafting.subscribe, () => drafting.isOn('qp'));
@@ -1579,7 +1591,18 @@ export function App() {
         onAdd={addPatterns}
         onAddFonts={addFonts}
         onAddFiles={addSupportFiles}
+        onEditAliases={() => setAliasEditor(true)}
       />
+      {aliasEditor && (
+        <AliasEditor
+          file={aliasFile}
+          onOk={(file) => {
+            preferences.update({ aliasFile: file });
+            setAliasEditor(false);
+          }}
+          onCancel={() => setAliasEditor(false)}
+        />
+      )}
 
       <UpdateBanner pwa={pwa} />
       <RecoveryBanner offers={recoveryOffers} onRecover={(key) => void recover(key)} />
@@ -1810,6 +1833,7 @@ export function App() {
         lines={commandLines}
         cursor={() => lastCursor}
         onSettings={() => setSettings(true)}
+        onEditAliases={() => setAliasEditor(true)}
         recent={recentFiles}
         onOpenRecent={(key) => void openRecent(key)}
       />

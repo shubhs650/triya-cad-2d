@@ -77,3 +77,4 @@ export {
 } from './inquiry/quick';
 export { measureObject, measurePolygon, type Measured } from './inquiry/measure';
 export { colorFromText, lineweightFromText } from './modify/chprop';
+export * from './pgp';

@@ -18,6 +18,7 @@ import {
 import type { DynMode } from './dynamic-input';
 import { closeOnDelete } from './local-data';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
+import { ALIAS_FILE_MAX } from './user-aliases';
 
 /** The chrome's colours: the system's light or dark setting, or one of them always. */
 export type Theme = 'system' | 'light' | 'dark';
@@ -91,6 +92,8 @@ export interface Preferences {
   readonly drafting: DraftingPreferences;
   /** FILTER's named filters (M3-04 part 4), AutoCAD's filter.nfl. */
   readonly filters: NamedFilters;
+  /** The user alias file (M3-10, user-aliases.ts), acad.pgp syntax; '' for none. */
+  readonly aliasFile: string;
 }
 
 /** POLARANG's choices in AutoCAD's Drafting Settings, degrees. */
@@ -146,6 +149,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     qpRows: 3,
   },
   filters: {},
+  aliasFile: '',
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -195,6 +199,10 @@ export function normalizePreferences(raw: unknown): Preferences {
     coordinates: coordinates === 'decimal' ? 'decimal' : 'drawing',
     dynMode: bool(raw['dynMode'], d.dynMode),
     filters: normalizeFilters(raw['filters']),
+    aliasFile:
+      typeof raw['aliasFile'] === 'string' && raw['aliasFile'].length <= ALIAS_FILE_MAX
+        ? raw['aliasFile']
+        : d.aliasFile,
     drafting: {
       // OSMODE's 14 mode bits and OSNAP_OFF.
       osmode:

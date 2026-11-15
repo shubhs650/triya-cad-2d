@@ -146,6 +146,11 @@ export interface ResolvedCommand {
 export class CommandRegistry {
   readonly #defs = new Map<string, CommandDef>();
   readonly #aliases = new Map<string, string>(Object.entries(ALIASES));
+  /**
+   * The user alias file's aliases (M3-10, `parseAliasFile`), over the default ones; never one
+   * that is a command's name, which AutoCAD looks up before aliases ("Command Search Order").
+   */
+  #user = new Map<string, string>();
 
   constructor(defs: Iterable<CommandDef> = []) {
     for (const def of defs) this.register(def);
@@ -163,6 +168,24 @@ export class CommandRegistry {
     }
   }
 
+  /** Sets the user's aliases (alias to command, `-NAME` for a dash form), replacing the last. */
+  setUserAliases(aliases: Readonly<Record<string, string>>): void {
+    this.#user = new Map(
+      Object.entries(aliases)
+        .map(([a, c]) => [a.trim().toUpperCase(), c.trim().toUpperCase()] as const)
+        .filter(([a, c]) => a !== '' && c !== '' && !this.#defs.has(a)),
+    );
+  }
+
+  /** The aliases that name a command now, sorted: the defaults less those the user's took. */
+  aliasesOf(name: string): string[] {
+    const n = name.toUpperCase();
+    const out: string[] = [];
+    for (const [a, c] of this.#user) if (c === n) out.push(a);
+    for (const [a, c] of this.#aliases) if (c === n && !this.#user.has(a)) out.push(a);
+    return out.sort();
+  }
+
   get(name: string): CommandDef | undefined {
     return this.#defs.get(name.toUpperCase());
   }
@@ -172,23 +195,33 @@ export class CommandRegistry {
     return [...this.#defs.keys()].sort();
   }
 
-  /** The command an alias names (registered or not). */
+  /** The command an alias names (registered or not); `-NAME` for a user alias to a dash form. */
   alias(alias: string): string | undefined {
-    return this.#aliases.get(alias.toUpperCase());
+    const a = alias.toUpperCase();
+    return this.#user.get(a) ?? this.#aliases.get(a);
   }
 
   /**
-   * The command typed at `Command:`: a name or alias (an alias of its own, like `-CH` for
-   * CHANGE, first), or `-` before a name or alias of a command with a dash variant.
+   * The command typed at `Command:`: a name, else an alias (a user alias first; an alias of its
+   * own, like `-CH` for CHANGE, too), else `-` before a name or alias of a command with a dash
+   * variant. Names come before aliases, as in AutoCAD's "Command Search Order".
    */
   resolve(input: string): ResolvedCommand | undefined {
     const t = input.trim().toUpperCase();
     if (t === '') return undefined;
-    const direct = this.#defs.get(this.#aliases.get(t) ?? t);
-    if (direct) return { def: direct, dash: false };
+    const named = this.#defs.get(t);
+    if (named) return { def: named, dash: false };
+    const aliased = this.alias(t);
+    if (aliased !== undefined) return this.#command(aliased);
     if (!t.startsWith('-')) return undefined;
-    const rest = t.slice(1);
-    const def = this.#defs.get(this.#aliases.get(rest) ?? rest);
-    return def?.dashVariant ? { def, dash: true } : undefined;
+    const rest = this.alias(t.slice(1)) ?? t.slice(1);
+    return rest.startsWith('-') ? undefined : this.#command(`-${rest}`);
+  }
+
+  /** A command by name, `-NAME` for its dash form. */
+  #command(name: string): ResolvedCommand | undefined {
+    const dash = name.startsWith('-');
+    const def = this.#defs.get(dash ? name.slice(1) : name);
+    return def && (!dash || def.dashVariant) ? { def, dash } : undefined;
   }
 }

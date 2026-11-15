@@ -148,10 +148,12 @@ describe('palette search', () => {
     const erase = commandItems(builtinCommands()).find((i) => i.id === 'ERASE');
     expect(erase?.aliases).toEqual(expect.arrayContaining(['E', 'DEL']));
     const text = commandItems(builtinCommands()).find((i) => i.id === 'TEXT');
-    expect(text?.aliases).toEqual(['DT']);
+    // The registry's own aliases (DTEXT) are listed too since M3-10 (`aliasesOf`).
+    expect(text?.aliases).toEqual(['DT', 'DTEXT']);
     const mleader = commandItems(builtinCommands()).find((i) => i.id === 'MLEADER');
     expect(mleader?.aliases).toEqual(['MLD']);
     expect(commandItems(builtinCommands()).find((i) => i.id === 'TEXTEDIT')?.aliases).toEqual([
+      'DDEDIT',
       'ED',
     ]);
     expect(commandItems(builtinCommands()).find((i) => i.id === 'DIMLINEAR')?.aliases).toEqual([
