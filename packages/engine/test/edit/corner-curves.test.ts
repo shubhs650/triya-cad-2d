@@ -161,6 +161,21 @@ describe('fillet of ellipses', () => {
     expect(cutLeg(g, t, { x: 1, y: 0 }, tol)).toMatchObject({ endParam: Math.PI / 2 });
   });
 
+  it('fillets an ellipse a million units from the origin as near it', () => {
+    // The same ellipse and line at the origin and at (1e6, 1e6), at a tight tolerance.
+    const at = (o: number) => {
+      const g = ellipse(o + 40, o + 50, 20, 0.5);
+      const a = leg(g, o + 52, o + 58);
+      const b = leg(line(o + 10, o + 65, o + 70, o + 65), o + 60, o + 65);
+      return { g, c: corner(filletCorner(a, b, 3, tol)) };
+    };
+    const near = at(0);
+    const far = at(1e6);
+    expectTangent(far.g, far.c, far.c.t1);
+    expect(far.c.t1.x - 1e6).toBeCloseTo(near.c.t1.x, 6);
+    expect(far.c.t2.x - 1e6).toBeCloseTo(near.c.t2.x, 6);
+  });
+
   it('fillets two ellipses outside each other', () => {
     const g1 = ellipse(0, 0, 4, 0.5);
     const g2 = ellipse(12, 0, 4, 0.5);

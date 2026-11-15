@@ -334,17 +334,26 @@ export function filletCorner(a: Leg, b: Leg, r: number, tol: Tolerance): Corner 
   const all: Candidate[] = [];
   const ca = a.carrier;
   const cb = b.carrier;
-  const centres: Vec2[] = [];
+  const add3 = (c: Vec2, la: Carrier, lb: Carrier, o: Vec2) => {
+    const t1 = footOn(la, c, tol);
+    const t2 = footOn(lb, c, tol);
+    if (!t1 || !t2 || distance(t1, t2) <= tol.linear) return;
+    all.push({ c: add(c, o), t1: add(t1, o), t2: add(t2, o) });
+  };
   if (ca.kind !== 'curve' && cb.kind !== 'curve') {
     for (const oa of offsetsOf(ca, r, tol)) {
-      for (const ob of offsetsOf(cb, r, tol)) centres.push(...meet(oa, ob, tol));
+      for (const ob of offsetsOf(cb, r, tol)) {
+        for (const c of meet(oa, ob, tol)) add3(c, ca, cb, { x: 0, y: 0 });
+      }
     }
-  } else centres.push(...curveCentres(ca, cb, r, tol));
-  for (const c of centres) {
-    const t1 = footOn(ca, c, tol);
-    const t2 = footOn(cb, c, tol);
-    if (!t1 || !t2 || distance(t1, t2) <= tol.linear) continue;
-    all.push({ c, t1, t2 });
+  } else {
+    // Worked out near the origin: the nearest point of a curve to a point off it is found by
+    // a search on a distance that is flat at its minimum, so far from the origin (a drawing at
+    // 1,000,000) rounding would leave the centre short of its tolerance.
+    const o = a.pick;
+    const la = shifted(ca, o);
+    const lb = shifted(cb, o);
+    for (const c of curveCentres(la, lb, r, tol)) add3(c, la, lb, o);
   }
   if (all.length === 0) return 'no-fillet';
   // The centre is on the side of each object where the other was picked.
@@ -381,6 +390,18 @@ function curveCentres(a: Carrier, b: Carrier, r: number, tol: Tolerance): Vec2[]
     if (c && !out.some((q) => distance(q, c) <= same)) out.push(c);
   }
   return out;
+}
+
+/** A carrier moved by −`o`. */
+function shifted(c: Carrier, o: Vec2): Carrier {
+  if (c.kind === 'line') return { ...c, p: sub(c.p, o) };
+  if (c.kind === 'circle') return { ...c, c: sub(c.c, o) };
+  const k = c.curve;
+  if (k.kind === 'ELLIPSE') return { kind: 'curve', curve: { ...k, center: sub(k.center, o) } };
+  if (k.kind === 'SPLINE') {
+    return { kind: 'curve', curve: { ...k, controlPoints: k.controlPoints.map((p) => sub(p, o)) } };
+  }
+  return c;
 }
 
 /** An offset of a carrier: exact for a line or circle, a flattened path for a curve. */
