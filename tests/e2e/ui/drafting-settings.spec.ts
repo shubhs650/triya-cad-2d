@@ -37,7 +37,10 @@ async function type(page: Page, text: string, next: string | RegExp): Promise<vo
 /** Screenshots for the PR, taken when TRIYA_SCREENSHOTS names a folder. */
 async function shot(page: Page, name: string): Promise<void> {
   const dir = process.env['TRIYA_SCREENSHOTS'];
-  if (dir) await page.screenshot({ path: path.join(dir, `${name}.png`) });
+  if (!dir) return;
+  // The canvas draws the cursor's overlay a frame or two after the tooltip shows.
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(dir, `${name}.png`) });
 }
 
 const X0 = 1_000_000;
