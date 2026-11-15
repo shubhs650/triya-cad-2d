@@ -3,7 +3,8 @@
 // INSERT of an anonymous block of item INSERTs of an anonymous source block), with its definition
 // in a TRIYA_ARRAY XRECORD in the INSERT's extension dictionary; a save of the reopened drawing
 // that changes nothing has no structural difference. The drawing is authored here (DEC-047): a
-// circle r 1 at the origin and a line (0,10)-(20,10), the path.
+// circle r 1 at the origin, a line (0,10)-(20,10), the path, and a line (2,0)-(3,0), the
+// replacement objects (part 2).
 import {
   ACadVersion,
   CadDictionary,
@@ -33,7 +34,7 @@ import { withPinnedClock } from '../roundtrip/clock.ts';
 import { roundTrip } from '../roundtrip/roundtrip.ts';
 import { assocArrayDrawing } from '../roundtrip/assoc-array-drawing.ts';
 
-function authored(): { bytes: Uint8Array; circle: string; path: string } {
+function authored(): { bytes: Uint8Array; circle: string; path: string; stick: string } {
   const doc = new CadDocument(ACadVersion.AC1032);
   const circle = new Circle();
   circle.center = new XYZ(0, 0, 0);
@@ -41,11 +42,14 @@ function authored(): { bytes: Uint8Array; circle: string; path: string } {
   doc.entities!.add(circle);
   const path = new Line(new XYZ(0, 10, 0), new XYZ(20, 10, 0));
   doc.entities!.add(path);
+  const stick = new Line(new XYZ(2, 0, 0), new XYZ(3, 0, 0));
+  doc.entities!.add(stick);
   const hex = (n: number) => n.toString(16).toUpperCase();
   return {
     bytes: writeCadDocument(doc, { format: 'dxf' }),
     circle: hex(circle.handle),
     path: hex(path.handle),
+    stick: hex(stick.handle),
   };
 }
 
@@ -215,5 +219,74 @@ describe('associative arrays Triya makes', () => {
     expect(a.log.at(-1)).toBe(
       'Triya cannot edit this array: it was not made in Triya, and its parameters are not documented.',
     );
+  });
+
+  it('keep replaced items and edited source objects through a save, and RESet after reopening', async () => {
+    const a = open(source.bytes);
+    a.pick(source.circle);
+    await a.bus.script(['ARRAYRECT', '0,0', '', 'COU', '2', '1', '']);
+    a.pick(a.arrays()[0]!.handle);
+    await a.bus.script(['ARRAYEDIT', '0,0']);
+    a.pick(source.stick);
+    await a.bus.script(['REP', '0,0', '', '2,0', '3,0', '', 'S', '0.5,0']);
+    // The edited source item takes a second circle, saved while it is open.
+    await a.bus.script(['CIRCLE', '0,0', '0.5', 'ARRAYCLOSE', 'Y']);
+    const made = a.record();
+    expect(made.replaced).toEqual([{ item: 1, row: 0, block: expect.any(String) }]);
+    expect(a.model.blockEntities(made.source)).toHaveLength(2);
+    const saved = a.save();
+    expect(groups(saved).slice(-3)).toEqual([
+      [92, 1],
+      [93, 0],
+      [341, Number.parseInt(made.replaced![0]!.block, 16)],
+    ]);
+    const b = open(saved);
+    const { params, source: from, replaced } = made;
+    expect(b.record()).toMatchObject({ params, source: from, replaced });
+    const r = roundTrip(saved);
+    expect(r.status, JSON.stringify(r.sample)).toBe('clean');
+
+    b.pick(b.arrays()[0]!.handle);
+    await b.bus.script(['ARRAYEDIT', '0,0', 'RES', '']);
+    const c = open(b.save());
+    expect(c.record()).not.toHaveProperty('replaced');
+    const items = (c.arrays()[0]!.geom as { block: string }).block;
+    for (const id of c.model.blockEntities(items)) {
+      expect(c.model.entity(id)!.geom).toMatchObject({ block: made.source });
+    }
+  });
+
+  it('leave out a replaced item whose block is gone, and follow a moved path after reopening', async () => {
+    const a = open(source.bytes);
+    a.pick(source.circle);
+    await a.bus.script(['ARRAYRECT', '0,0', '', 'COU', '2', '1', '']);
+    a.pick(a.arrays()[0]!.handle);
+    await a.bus.script(['ARRAYEDIT', '0,0']);
+    a.pick(source.stick);
+    await a.bus.script(['REP', '0,0', '', '', '3,0', '', '']);
+    const text = new TextDecoder().decode(a.save());
+    const block = Number.parseInt(a.record().replaced![0]!.block, 16).toString(16).toUpperCase();
+    const gone = text.replace(
+      new RegExp(`(\\r?\\n\\s*341\\r?\\n\\s*)${block}(\\r?\\n)`),
+      '$1FFFFF$2',
+    );
+    expect(gone).not.toBe(text);
+    expect(open(new TextEncoder().encode(gone)).record()).not.toHaveProperty('replaced');
+
+    const p = open(source.bytes);
+    p.pick(source.circle);
+    await p.bus.script(['ARRAYPATH', '0,0', '']);
+    p.pick(source.path);
+    await p.bus.script(['0,10', 'B', '0,0', 'M', 'D', 'I', '3', '']);
+    const q = open(p.save());
+    q.pick(source.path);
+    await q.bus.script(['MOVE', '0,0', '', '0,0', '0,5']);
+    const moved = open(q.save());
+    const array = moved.arrays()[0]!;
+    const g = array.geom as { block: string; position: { x: number; y: number } };
+    const ys = moved.model
+      .blockEntities(g.block)
+      .map((id) => (moved.model.entity(id)!.geom as { position: { y: number } }).position.y);
+    expect(ys.map((y) => Math.round((y + g.position.y) * 1e6) / 1e6)).toEqual([15, 15, 15]);
   });
 });

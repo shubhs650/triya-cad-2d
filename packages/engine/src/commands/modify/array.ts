@@ -40,16 +40,34 @@ import {
 } from '../../edit/array';
 import { copyObjects, refusalMessages, transformObjects, type EditReport } from '../../edit/edit';
 import {
+  arrayItemAt,
   assocArrayOf,
   assocItems,
+  closeSourceEdit,
+  dropSourceEdit,
   insertMatrix,
   localParams,
   makeAssocArray,
+  openSourceEdit,
+  rebaseRectangular,
   remakeAssocArray,
+  replacementBlock,
+  sameItem,
+  sourceEditIds,
+  sourceEditOf,
+  syncSourceEdit,
 } from '../../edit/assoc-array';
 import { applyPoint, compose, invert } from '../../geom/transform';
 import type { ChangeSetBuilder } from '../../model/builder';
-import type { AssocArray, AssocArrayParams, Entity, InsertGeometry } from '../../model/types';
+import type { ChangeSet } from '../../model/changeset';
+import type { Handle } from '../../model/handle';
+import {
+  isAssocArray as isAssocArrayObject,
+  type AssocArray,
+  type AssocArrayParams,
+  type Entity,
+  type InsertGeometry,
+} from '../../model/types';
 import { currentProps } from '../../properties/current';
 import type { Similarity } from '../../edit/similarity';
 import type { TransformOptions } from '../../edit/transform';
@@ -759,22 +777,41 @@ const madeElsewhere = (ctx: CommandContext, e: Entity): boolean =>
   /^\*U/i.test(ctx.model.blocks.get(e.geom.block)?.name ?? '');
 
 const EDIT_OPTIONS: Readonly<Record<AssocArrayParams['kind'], readonly string[]>> = {
-  rectangular: ['Rows', 'Columns'],
-  polar: ['Base point', 'Items', 'Angle between', 'Fill angle', 'Rows', 'ROTate items'],
-  path: ['Method', 'Base point', 'Items', 'Rows', 'Align items'],
+  rectangular: ['Source', 'REPlace', 'Base point', 'Rows', 'Columns', 'RESet'],
+  polar: [
+    'Source',
+    'REPlace',
+    'Base point',
+    'Items',
+    'Angle between',
+    'Fill angle',
+    'Rows',
+    'ROTate items',
+    'RESet',
+  ],
+  path: ['Source', 'REPlace', 'Method', 'Base point', 'Items', 'Rows', 'Align items', 'RESet'],
 };
+
+const EDITING = 'An array is being edited: save or discard its changes with ARRAYCLOSE first.';
 
 /**
  * ARRAYEDIT (AutoCAD 2024 Help, "ARRAYEDIT (Command)"): picks an associative array Triya made
- * and changes it option by option, each change remaking its items at once. Not yet offered:
- * Source, REPlace and RESet (M3-11 part 2), Levels and Z direction (3D). An array made in
- * AutoCAD keeps its parameters in undocumented objects (DEC-059), so it is refused.
+ * and changes it option by option, each change remaking its items at once. Source opens one
+ * item's objects for editing until ARRAYCLOSE; REPlace puts other objects in chosen items (or
+ * in place of the source objects), and RESet takes the replaced items back. Not offered: Levels
+ * and Z direction (3D), Key point and Expression (no parametric constraints or expressions). An
+ * array made in AutoCAD keeps its parameters in undocumented objects (DEC-059), so it is
+ * refused.
  */
 function arrayEditCommand(): CommandDef {
   return {
     name: 'ARRAYEDIT',
     usesSelection: 'during',
     async *run(ctx) {
+      if (sourceEditOf(ctx.model)) {
+        ctx.message(EDITING);
+        return;
+      }
       for (;;) {
         const a = yield ctx.prompt.selection({
           message: 'Select array',
@@ -796,8 +833,13 @@ function arrayEditCommand(): CommandDef {
   };
 }
 
+interface ArrayNow {
+  readonly insert: Entity;
+  readonly record: AssocArray;
+}
+
 async function* editArray(ctx: CommandContext, insertHandle: string, handle: string): Sub<void> {
-  const current = () => ({
+  const current = (): ArrayNow => ({
     insert: ctx.model.entityByHandle(insertHandle)!,
     record: ctx.model.objects.get(handle) as AssocArray,
   });
@@ -809,12 +851,37 @@ async function* editArray(ctx: CommandContext, insertHandle: string, handle: str
       default: { kind: 'keyword', keyword: 'eXit' },
     });
     if (a.kind !== 'keyword' || a.keyword === 'eXit') return;
+    if (a.keyword === 'Source') {
+      if (yield* editSource(ctx, current)) return;
+      continue;
+    }
+    if (a.keyword === 'REPlace') {
+      yield* replaceItems(ctx, current);
+      continue;
+    }
     const { insert, record } = current();
+    if (a.keyword === 'RESet') {
+      ctx.edit((b) =>
+        remakeAssocArray(b, ctx.model, insert, record, record.params, { replaced: [] }),
+      );
+      continue;
+    }
     const g = insert.geom as InsertGeometry;
     const w = insertMatrix(g, ctx.model.blocks.get(g.block)?.basePoint ?? { x: 0, y: 0 });
     const p = record.params;
     let next: AssocArrayParams;
     if (p.kind === 'rectangular') {
+      if (a.keyword === 'Base point') {
+        // The base point is the array's grip, where its INSERT is; the items stay put.
+        const b = yield ctx.prompt.point({
+          message: 'Specify base point',
+          defaultLabel: 'current',
+        });
+        if (b.kind !== 'point') continue;
+        const q = applyPoint(invert(w), b.point);
+        ctx.edit((cs) => rebaseRectangular(cs, ctx.model, insert, record, q));
+        continue;
+      }
       const s = { ...p };
       yield* rectOption(ctx, a.keyword === 'Columns' ? 'COLumns' : a.keyword, s);
       next = s;
@@ -853,6 +920,178 @@ async function* editArray(ctx: CommandContext, insertHandle: string, handle: str
       if (problem) ctx.message(`The array cannot be remade: ${problem}.`);
     });
   }
+}
+
+/** Picks an item of the array, again until one is found; undefined on Enter or Esc. */
+async function* pickItem(
+  ctx: CommandContext,
+  now: () => ArrayNow,
+  message: string,
+  options: readonly string[] = [],
+): Sub<ReturnType<typeof arrayItemAt> | string | undefined> {
+  for (;;) {
+    const a = yield ctx.prompt.point({
+      message: options.length ? `${message} or` : message,
+      options,
+    });
+    if (a.kind === 'keyword') return a.keyword;
+    if (a.kind !== 'point') return undefined;
+    const { insert, record } = now();
+    const at = arrayItemAt(ctx.model, insert, record, a.point);
+    if (at) return at;
+    ctx.message('No item of the array is there.');
+  }
+}
+
+/**
+ * Source: opens the picked item's objects for editing (`openSourceEdit`) and ends ARRAYEDIT, as
+ * AutoCAD's editing state does; true once it is open.
+ */
+async function* editSource(ctx: CommandContext, now: () => ArrayNow): Sub<boolean> {
+  const at = yield* pickItem(ctx, now, 'Select item in array');
+  if (at === undefined || typeof at === 'string') return false;
+  const { insert, record } = now();
+  let r: EditReport | string = '';
+  ctx.edit((b) => {
+    r = openSourceEdit(b, ctx.model, ctx.space, insert, record, at, mirrorOptions(ctx.model));
+  });
+  if (typeof r === 'string') {
+    ctx.message(`The item cannot be edited: ${r}.`);
+    return false;
+  }
+  for (const line of refusalMessages((r as EditReport).refused, 'opened for editing')) {
+    ctx.message(line);
+  }
+  ctx.message('Edit the item, then save or discard the changes with ARRAYCLOSE.');
+  return true;
+}
+
+/**
+ * REPlace: the replacement objects (they stay in the drawing) go into a block of their own
+ * with their base point at its origin, and each item picked shows it in place of its objects,
+ * its base point where the item's is; Source objects puts it in place of the source objects,
+ * for every item not replaced already.
+ */
+async function* replaceItems(ctx: CommandContext, now: () => ArrayNow): Sub<void> {
+  const picked = yield ctx.prompt.selection({ message: 'Select replacement objects' });
+  const all = picked.kind === 'selection' ? picked.ids : [];
+  const ids = all.filter((id) => ctx.model.entity(id)?.handle !== now().insert.handle);
+  if (ids.length < all.length) ctx.message('An array cannot replace its own items.');
+  if (ids.length === 0) return;
+  const box = await extentsOf(ctx, ids);
+  const a = yield ctx.prompt.point({
+    message: 'Select base point of replacement objects',
+    defaultLabel: 'centroid',
+  });
+  const base = a.kind === 'point' ? a.point : centreOf(box);
+  let block: Handle | undefined;
+  /** Makes the replacement block on first use, in the edit that first uses it. */
+  const blockIn = (b: ChangeSetBuilder): Handle | undefined => {
+    if (block !== undefined) return block;
+    const made = replacementBlock(b, ctx.model, ids, base, mirrorOptions(ctx.model));
+    for (const line of refusalMessages(made.report.refused, 'used')) ctx.message(line);
+    return (block = made.block);
+  };
+  for (;;) {
+    const at = yield* pickItem(ctx, now, 'Select an item in array to replace', ['Source objects']);
+    if (at === undefined) return;
+    const { insert, record } = now();
+    ctx.edit((b) => {
+      const into = blockIn(b);
+      if (into === undefined) return;
+      if (typeof at === 'string') {
+        remakeAssocArray(b, ctx.model, insert, record, record.params, { source: into });
+      } else {
+        const replaced = (record.replaced ?? []).filter((r) => !sameItem(r, at.key));
+        replaced.push({ ...at.key, block: into });
+        remakeAssocArray(b, ctx.model, insert, record, record.params, { replaced });
+      }
+    });
+    if (block === undefined || typeof at === 'string') return;
+  }
+}
+
+// ── ARRAYCLOSE, and what follows edits (M3-11 part 2) ───────────────────────────────────────
+
+/**
+ * ARRAYCLOSE (AutoCAD 2024 Help, "ARRAYCLOSE (Command)"): ends ARRAYEDIT Source's editing
+ * state. Yes keeps the edits in the array (all erased leaves nothing to keep: the changes are
+ * discarded), No puts the objects back as they were.
+ */
+function arrayCloseCommand(): CommandDef {
+  return {
+    name: 'ARRAYCLOSE',
+    usesSelection: 'none',
+    async *run(ctx) {
+      const edit = sourceEditOf(ctx.model);
+      if (!edit) {
+        ctx.message('No array is being edited.');
+        return;
+      }
+      let save = (yield* choose(ctx, 'Save changes to array', ['Yes', 'No'], 'Yes')) === 'Yes';
+      if (save && sourceEditIds(ctx.model, edit).length === 0) {
+        ctx.message("The item's objects are all erased: the changes are discarded.");
+        save = false;
+      }
+      ctx.edit((b) => closeSourceEdit(b, ctx.model, save));
+    },
+  };
+}
+
+/**
+ * What a command's edits carry along as it ends, in its undo step (the bus calls this): an
+ * array's item being edited takes the edits made to its objects (and the objects drawn beside
+ * them) into its block, and a path array is remade along its path when the path changed.
+ * Undo and redo do not come here: they put back these follow-ups with the rest.
+ */
+export function followAssociations(ctx: CommandContext, changes: readonly ChangeSet[]): void {
+  const updated = new Set<Handle>();
+  const touched = new Set<Handle>();
+  const added: Entity[] = [];
+  for (const cs of changes) {
+    for (const u of cs.entities?.updated ?? []) {
+      updated.add(u.after.handle);
+      touched.add(u.after.handle);
+    }
+    for (const r of cs.entities?.removed ?? []) touched.add(r.entity.handle);
+    for (const a of cs.entities?.added ?? []) added.push(a.entity);
+  }
+  const edit = sourceEditOf(ctx.model);
+  if (edit) {
+    const insert = ctx.model.entityByHandle(edit.insert);
+    const record = ctx.model.objects.get(edit.record);
+    if (!insert || !assocArrayOf(ctx.model.objects.values(), insert) || !record) {
+      dropSourceEdit(ctx.model);
+    } else {
+      let changed = [...edit.handles].some((h) => touched.has(h));
+      for (const e of added) {
+        if (e.owner !== edit.space || edit.handles.has(e.handle) || e.handle === edit.insert)
+          continue;
+        edit.handles.add(e.handle);
+        changed = true;
+      }
+      if (changed) ctx.edit((b) => syncSourceEdit(b, ctx.model, edit, mirrorOptions(ctx.model)));
+    }
+  }
+  if (updated.size === 0) return;
+  const follow: AssocArray[] = [];
+  for (const o of ctx.model.objects.values()) {
+    if (!isAssocArrayObject(o) || o.params.kind !== 'path' || o.params.path === undefined) continue;
+    if (updated.has(o.params.path) && ctx.model.entityByHandle(o.insert)) follow.push(o);
+  }
+  if (follow.length === 0) return;
+  ctx.edit((b) => {
+    for (const r of follow) {
+      const problem = remakeAssocArray(
+        b,
+        ctx.model,
+        ctx.model.entityByHandle(r.insert)!,
+        r,
+        r.params,
+      );
+      if (problem) ctx.message(`An array along the path cannot be remade: ${problem}.`);
+    }
+  });
 }
 
 // ── The commands ────────────────────────────────────────────────────────────────────────────
@@ -1030,4 +1269,5 @@ export const ARRAY_COMMANDS: readonly (() => CommandDef)[] = [
   () => typed('ARRAYPOLAR', 'POlar'),
   () => typed('ARRAYPATH', 'PAth'),
   arrayEditCommand,
+  arrayCloseCommand,
 ];

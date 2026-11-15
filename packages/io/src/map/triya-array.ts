@@ -8,7 +8,10 @@
 //   spacing, 290 rotate items;
 //   path: 331 the path object (absent once it is erased), 72 method (0 divide, 1 measure), 11
 //   base point, 12 tangent direction, 40 item spacing, 90 items, 91 rows, 41 row spacing, 290
-//   align items, 291 from the curve's end.
+//   align items, 291 from the curve's end;
+//   then, for each item REPlace gave other objects (M3-11 part 2, same version): 92 the item
+//   along its row, 93 the row, 341 the BLOCK_RECORD of the block it shows. An entry whose block
+//   is gone is left out (the item shows the source block).
 //
 // A record of another version or type, one missing a group, or one whose source block is gone
 // is not mapped: the array stays a plain block reference and the record is kept as read.
@@ -20,7 +23,7 @@ import {
   XRecord,
   type CadDocument,
 } from '@node-projects/acad-ts';
-import type { AssocArray, AssocArrayParams, Vec2 } from '@triya/engine';
+import type { AssocArray, AssocArrayParams, ReplacedItem, Vec2 } from '@triya/engine';
 import { common, hex } from './common';
 
 /** The extension dictionary entry an array's record is filed under. */
@@ -113,6 +116,34 @@ function params(g: Groups, doc: CadDocument): AssocArrayParams | undefined {
   }
 }
 
+/** The replaced items: each 92, 93, 341 run in the record's order. */
+function replacedItems(entries: readonly { code: number; value: unknown }[], doc: CadDocument) {
+  const out: ReplacedItem[] = [];
+  let item: number | undefined;
+  let row: number | undefined;
+  for (const { code, value } of entries) {
+    const n = typeof value === 'bigint' ? Number(value) : value;
+    if (code === 92) {
+      item = typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : undefined;
+      row = undefined;
+    } else if (code === 93) {
+      row = typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : undefined;
+    } else if (code === 341) {
+      const b =
+        value instanceof CadObject
+          ? value
+          : typeof n === 'number'
+            ? doc.getCadObject(n)
+            : undefined;
+      if (item !== undefined && row !== undefined && b instanceof BlockRecord) {
+        out.push({ item, row, block: hex(b.handle) });
+      }
+      item = row = undefined;
+    }
+  }
+  return out;
+}
+
 /** The arrays' records, by handle. */
 export function mapTriyaArrays(doc: CadDocument): AssocArray[] {
   const out: AssocArray[] = [];
@@ -133,6 +164,7 @@ export function mapTriyaArrays(doc: CadDocument): AssocArray[] {
     if (!(source instanceof BlockRecord)) continue;
     const p = params(g, doc);
     if (!p) continue;
+    const replaced = replacedItems(o.entries, doc);
     out.push({
       ...common(o),
       type: 'TRIYA_ARRAY',
@@ -140,6 +172,7 @@ export function mapTriyaArrays(doc: CadDocument): AssocArray[] {
       insert: hex(insert.handle),
       source: hex(source.handle),
       params: p,
+      ...(replaced.length > 0 && { replaced }),
     });
   }
   return out;
