@@ -1,1 +1,1 @@
-- M3-04 part 6 (#PR6): a selection window, polygon, fence or lasso being dragged previews what it would take (SELECTIONPREVIEWLIMIT), PICKAUTO 2 starts a window from a press on an object at `Command:`, and STRETCH stretches by a crossing polygon or lasso.
+- M3-04 part 6 (#409): a selection window, polygon, fence or lasso being dragged previews what it would take (SELECTIONPREVIEWLIMIT), PICKAUTO 2 starts a window from a press on an object at `Command:`, and STRETCH stretches by a crossing polygon or lasso.
