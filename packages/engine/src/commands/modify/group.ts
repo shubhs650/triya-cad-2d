@@ -159,8 +159,8 @@ async function* objects(ctx: CommandContext, remove: boolean): Sub<readonly Enti
   return a.kind === 'selection' ? a.ids : [];
 }
 
-function created(ctx: CommandContext, g: Group | undefined): void {
-  if (!g) return ctx.message(NO_DICTIONARY);
+/** What GROUP says; the commands make a group only in a drawing with ACAD_GROUP. */
+function created(ctx: CommandContext, g: Group): void {
   ctx.message(
     isUnnamedGroup(g) ? 'Unnamed group has been created.' : `Group ${quoted(g)} has been created.`,
   );
@@ -175,7 +175,7 @@ async function* group(ctx: CommandContext): CommandGenerator {
     ctx.edit((b) => {
       made = createGroup(b, ctx.model, { ids });
     });
-    return created(ctx, made);
+    return created(ctx, made!);
   }
   let name: string | undefined;
   let description = '';
@@ -206,7 +206,7 @@ async function* group(ctx: CommandContext): CommandGenerator {
         ids,
       });
     });
-    return created(ctx, made);
+    return created(ctx, made!);
   }
 }
 
@@ -237,7 +237,7 @@ async function* dashGroup(ctx: CommandContext): CommandGenerator {
           ids: s.ids,
         });
       });
-      return created(ctx, made);
+      return created(ctx, made!);
     }
     case 'REName': {
       const g = yield* namedGroup(ctx, 'Enter old group name or');

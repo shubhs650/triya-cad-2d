@@ -11,6 +11,11 @@ import { describe, expect, it } from 'vitest';
 import {
   ChangeSetBuilder,
   PromptBus,
+  addToGroup,
+  createGroup,
+  explodeGroup,
+  removeFromGroup,
+  selectableMembers,
   builtinCommands,
   type DialogRequest,
   type EntityGeometry,
@@ -625,5 +630,112 @@ describe('CLASSICGROUP (Object Grouping)', () => {
     t.bus.cancel();
     await t.flush();
     expect(t.bus.command).toBeUndefined();
+  });
+});
+
+describe('Enter with no answer, and other edges', () => {
+  /** Runs `steps` (typed text, or ENTER: Enter with no answer) and says whether it ended. */
+  const ENTER = { enter: true } as const;
+  async function run(
+    t: ReturnType<typeof drawing>,
+    steps: (string | typeof ENTER | [number, number])[],
+  ) {
+    for (const s of steps) {
+      if (typeof s === 'string') await t.bus.submit(s);
+      else if (Array.isArray(s)) await t.bus.pick({ x: s[0], y: s[1] });
+      else await t.bus.answer({ kind: 'enter' });
+    }
+    await t.flush();
+    return t.bus.command;
+  }
+
+  it('ends every prompt without a change', async () => {
+    const cases: (string | typeof ENTER | [number, number])[][] = [
+      ['-GROUP', '?', ENTER],
+      ['-GROUP', 'E', ENTER],
+      ['-GROUP', 'E', '?', '', ENTER],
+      ['-GROUP', 'C', 'x1', ENTER, ''],
+      ['-GROUP', 'C', 'x1', 'd', ''],
+      ['-GROUP', 'REN', ENTER],
+      ['-GROUP', 'REN', 'doors', ENTER],
+      ['-GROUP', 'A', 'doors', ''],
+      ['-GROUP', 'O', 'doors', ENTER],
+      ['GROUP', 'N', ENTER, ''],
+      ['GROUP', 'D', ENTER, ''],
+      ['UNGROUP', ENTER],
+      ['UNGROUP', 'N', ENTER],
+      ['GROUPEDIT', ENTER],
+      ['GROUPEDIT', [25, 0], ENTER],
+      ['GROUPEDIT', [25, 0], 'A', ''],
+      ['CLASSICGROUP', ENTER],
+    ];
+    for (const steps of cases) {
+      const t = drawing();
+      const before = JSON.stringify(t.groups());
+      expect(await run(t, steps), JSON.stringify(steps)).toBeUndefined();
+      expect(JSON.stringify(t.groups()), JSON.stringify(steps)).toBe(before);
+    }
+  });
+
+  it('-GROUP Order ends on Enter at its position prompts', async () => {
+    for (const later of [[ENTER], ['0', ENTER]] as const) {
+      const t = drawing();
+      expect(await run(t, ['-GROUP', 'O', 'doors', ...later])).toBeUndefined();
+      expect(t.group('DOORS')?.entities).toEqual(['40', '41']);
+    }
+  });
+
+  it('GROUP: Name answered by Enter keeps the group unnamed; ? lists every group', async () => {
+    const t = drawing();
+    await run(t, ['GROUP', 'N', '', [25, 20], '']);
+    expect(t.group('*A3')?.entities).toEqual(['43']);
+    await t.bus.submit('-GROUP');
+    await t.bus.submit('?');
+    await t.bus.answer({ kind: 'string', value: '' });
+    expect(t.log.slice(-4)).toEqual(['Defined groups.', '  *A2', '  *A3', '  DOORS  front doors']);
+  });
+
+  it('Object Grouping: Find with nothing picked, Add with nothing, a rename to its own name', async () => {
+    const t = drawing({ pair: false });
+    await t.bus.submit('CLASSICGROUP');
+    await t.press({ op: 'find' });
+    await t.bus.answer({ kind: 'enter' });
+    expect(t.dialog()?.memberOf).toBeUndefined();
+    await t.press({ op: 'add', group: 'DOORS' });
+    await t.bus.submit('');
+    expect(t.group('DOORS')?.entities).toEqual(['40', '41']);
+    await t.press({ op: 'rename', group: 'DOORS', name: 'doors' });
+    expect(t.dialog()).toMatchObject({ selected: 'DOORS' });
+    expect(t.dialog()?.note).toBeUndefined();
+  });
+});
+
+describe('group edits', () => {
+  it('skip objects that are gone or in another space, and do nothing twice', () => {
+    const t = drawing({ pair: false });
+    const doors = t.group('DOORS')!;
+    const b = new ChangeSetBuilder(t.model);
+    b.updateObject(DOORS, { entities: ['40', '41', '99', '31'] } as Partial<Group>);
+    const paper = t.model.ids.idOf('31')!;
+    b.moveEntity(paper, '1B');
+    t.model.apply(b.build());
+    const now = t.group('DOORS')!;
+    expect(selectableMembers(t.model, now, '1F').map((id) => t.model.ids.handleOf(id))).toEqual([
+      '40',
+      '41',
+    ]);
+
+    const e = new ChangeSetBuilder(t.model);
+    const id40 = t.byHandle('40')!.id;
+    // Already a member, or not one: nothing to add or remove.
+    expect(addToGroup(e, t.model, doors, [id40])).toBe(0);
+    expect(removeFromGroup(e, t.model, doors, [t.byHandle('43')!.id])).toBe(0);
+    explodeGroup(e, t.model, now);
+    explodeGroup(e, t.model, now);
+    expect(e.object(DOORS)).toBeUndefined();
+    // A drawing without ACAD_GROUP makes no group.
+    const bare = drawing({ dictionary: false });
+    const n = new ChangeSetBuilder(bare.model);
+    expect(createGroup(n, bare.model, { ids: [bare.byHandle('43')!.id] })).toBeUndefined();
   });
 });
