@@ -3,14 +3,7 @@
 // redo shows a toast with what it did and how many steps are left.
 import { describe, expect, it } from 'vitest';
 import type { UndoState } from '@triya/engine';
-import {
-  UndoStates,
-  undoButtons,
-  undoKeyCommand,
-  undoList,
-  undoListPick,
-  undoToast,
-} from '../src/undo';
+import { UndoStates, undoButtons, undoList, undoListPick, undoToast } from '../src/undo';
 
 const state = (o: Partial<UndoState> = {}): UndoState => ({
   undoable: 0,
@@ -22,40 +15,17 @@ const state = (o: Partial<UndoState> = {}): UndoState => ({
   ...o,
 });
 
-describe('undoKeyCommand', () => {
-  const press = (key: string, o: { shift?: boolean; meta?: boolean; alt?: boolean } = {}) =>
-    undoKeyCommand({
-      key,
-      ctrlKey: !o.meta,
-      metaKey: o.meta === true,
-      shiftKey: o.shift === true,
-      altKey: o.alt === true,
-    });
-
-  it('binds Ctrl+Z to U and Ctrl+Y to REDO, as AutoCAD does (Cmd on a Mac)', () => {
-    expect(press('z')).toBe('U');
-    expect(press('Z')).toBe('U');
-    expect(press('y')).toBe('REDO');
-    expect(press('z', { meta: true })).toBe('U');
-    // Cmd+Shift+Z is the Mac's redo key (AutoCAD for Mac binds it).
-    expect(press('Z', { shift: true, meta: true })).toBe('REDO');
-  });
-
-  it('leaves other keys alone', () => {
-    expect(press('z', { alt: true })).toBeUndefined();
-    expect(press('y', { shift: true })).toBeUndefined();
-    expect(press('x')).toBeUndefined();
-    expect(
-      undoKeyCommand({ key: 'z', ctrlKey: false, metaKey: false, shiftKey: false, altKey: false }),
-    ).toBeUndefined();
-  });
-});
-
 describe('undoButtons', () => {
   it('names the step each button would undo or redo, with its key', () => {
     const b = undoButtons(state({ undoable: 2, redoable: 1, nextUndo: 'LINE', nextRedo: 'LAYER' }));
     expect(b.undo).toEqual({ enabled: true, title: 'Undo LINE (Ctrl+Z)' });
     expect(b.redo).toEqual({ enabled: true, title: 'Redo LAYER (Ctrl+Y)' });
+    // The user's keys (M3-10 part 2), or none.
+    const mine = undoButtons(state({ undoable: 1, redoable: 1, nextUndo: 'LINE' }), {
+      undo: 'Ctrl+Alt+Z',
+    });
+    expect(mine.undo.title).toBe('Undo LINE (Ctrl+Alt+Z)');
+    expect(mine.redo.title).toBe('Redo');
   });
 
   it('turns a button off when there is nothing to undo or redo, or no drawing', () => {

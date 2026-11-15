@@ -9,7 +9,6 @@ import { keywordShortcut, type Vec2 } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from './CommandPalette';
 import {
-  clipboardCommand,
   completions,
   holdsKey,
   promptParts,
@@ -17,14 +16,22 @@ import {
   replayAhead,
   type CommandLines,
 } from './command-line';
-import { undoKeyCommand } from './undo';
 import { DynamicInput } from './DynamicInput';
 import { dynMode } from './dynamic-input';
-import { DRAFTING_ITEMS, DRAFTING_KEYS, drafting, type DraftingToggle } from './drafting';
+import { DRAFTING_ITEMS, drafting, type DraftingToggle } from './drafting';
 import { cycleSnap } from './canvas/registry';
 import { engines } from './engine/registry';
 import { commandItems, type PaletteItem } from './palette';
 import { aliasFileVersion, appRegistry as registry } from './user-aliases';
+import { commandOf, keysText } from './keymap';
+import {
+  commandInput,
+  keymap,
+  keymapVersion,
+  onShortcuts,
+  runShortcut,
+  type ShortcutHandler,
+} from './shortcuts';
 
 /** Lines of history the docked window shows above the prompt (AutoCAD's default is 3). */
 const SHOWN_LINES = 2;
@@ -57,6 +64,7 @@ export function CommandLine({
   recent = [],
   onOpenRecent,
   onEditAliases,
+  onEditShortcuts,
 }: {
   /** The drawing shown, or undefined with none open. */
   doc: number | undefined;
@@ -69,6 +77,8 @@ export function CommandLine({
   onSettings: () => void;
   /** Opens the Edit Aliases dialog (from the palette, M3-10). */
   onEditAliases?: () => void;
+  /** Opens the Keyboard Shortcuts dialog (from the palette, M3-10 part 2). */
+  onEditShortcuts?: () => void;
   /** The recent drawings the palette lists (M2-14, UI_SPEC §5), newest first. */
   recent?: readonly { readonly key: string; readonly name: string }[];
   /** Opens a recent drawing by its key. */
@@ -77,6 +87,8 @@ export function CommandLine({
   useSyncExternalStore(lines.subscribe, lines.version);
   // The user alias file changes completion and the palette's aliases (M3-10).
   const aliasVersion = useSyncExternalStore(aliasFileVersion.subscribe, aliasFileVersion.get);
+  // The palette shows each action's keys as the keyboard map has them now (M3-10 part 2).
+  const keysVersion = useSyncExternalStore(keymapVersion.subscribe, keymapVersion.get);
   const state = doc === undefined ? undefined : lines.get(doc);
   const [text, setText] = useState('');
   const [recall, setRecall] = useState<number | undefined>();
@@ -127,12 +139,20 @@ export function CommandLine({
     if (doc !== undefined)
       engines.command(doc, { kind: 'answer', answer: { kind: 'keyword', keyword } });
   };
-  const paletteItems = useMemo<PaletteItem[]>(
-    () => [
-      ...commandItems(registry),
-      { id: 'history', kind: 'action', label: 'Command history', aliases: [], keys: 'F2' },
-      { id: 'dyn', kind: 'action', label: 'Dynamic Input on/off', aliases: [], keys: 'F12' },
-      ...DRAFTING_ITEMS,
+  const paletteItems = useMemo<PaletteItem[]>(() => {
+    const map = keymap();
+    const keys = (id: string) => keysText(map.keysOf(id));
+    return [
+      ...commandItems(registry, (name) => keys(`command:${name}`)),
+      {
+        id: 'history',
+        kind: 'action',
+        label: 'Command history',
+        aliases: [],
+        keys: keys('history'),
+      },
+      { id: 'dyn', kind: 'action', label: 'Dynamic Input on/off', aliases: [], keys: keys('dyn') },
+      ...DRAFTING_ITEMS.map((i) => ({ ...i, keys: keys(i.id) })),
       {
         id: 'settings',
         kind: 'action',
@@ -147,22 +167,29 @@ export function CommandLine({
         // AutoCAD's Edit Aliases (Manage tab), which opens acad.pgp (M3-10).
         aliases: ['acad.pgp', 'Command aliases', 'ALIASEDIT'],
       },
+      {
+        id: 'shortcuts',
+        kind: 'action',
+        label: 'Keyboard Shortcuts',
+        // AutoCAD's CUI editor, Keyboard Shortcuts > Shortcut Keys (M3-10 part 2).
+        aliases: ['CUI', 'Shortcut keys', 'Customize keyboard', 'Keyboard map'],
+      },
       ...recent.map((r): PaletteItem => ({
         id: `recent:${r.key}`,
         kind: 'action',
         label: `Open recent: ${r.name}`,
         aliases: [],
       })),
-    ],
-    // The registry's aliases change with aliasVersion.
-    [recent, aliasVersion],
-  );
+    ];
+    // The registry's aliases change with aliasVersion, the keys with keysVersion.
+  }, [recent, aliasVersion, keysVersion]);
   const runItem = (item: PaletteItem) => {
     if (item.kind === 'command') {
       if (doc !== undefined) engines.command(doc, { kind: 'invoke', name: item.id });
     } else if (item.id === 'history') setHistoryOpen(true);
     else if (item.id === 'dyn') dynMode.toggle();
     else if (item.id === 'aliases') onEditAliases?.();
+    else if (item.id === 'shortcuts') onEditShortcuts?.();
     else if (item.id.startsWith('recent:')) onOpenRecent?.(item.id.slice('recent:'.length));
     else if (item.id.startsWith('drafting:'))
       drafting.toggle(item.id.slice('drafting:'.length) as DraftingToggle);
@@ -222,52 +249,63 @@ export function CommandLine({
     held.current = [];
   }, [doc]);
 
+  // The command line's shortcut actions (M3-10 part 2, keymap.ts): F2 history, F12 Dynamic
+  // Input, the drafting aids' F-keys (M2-04), Ctrl+K the palette, Ctrl+A select all (M2-03),
+  // Ctrl+J/Ctrl+M Enter, and every command's key (the Clipboard keys, M2-14 part 2; Ctrl+Z U and
+  // Ctrl+Y REDO, M2-23; Ctrl+P PLOT): like a ribbon button, a command cancels a running one.
+  useEffect(() => {
+    const own: Record<string, ShortcutHandler> = {
+      history: () => {
+        setHistoryOpen((o) => !o);
+        return true;
+      },
+      dyn: () => {
+        dynMode.toggle();
+        return true;
+      },
+      palette: () => {
+        setPaletteOpen(true);
+        return true;
+      },
+      'select-all': () => {
+        selectAllRef.current();
+        return true;
+      },
+      // AutoCAD's Ctrl+J and Ctrl+M are Enter at the command line; another field keeps them.
+      enter: (_, focus) => {
+        if (focus.kind === 'input' || focus.kind === 'text') return false;
+        if (!holdRef.current('Enter')) sendRef.current(textRef.current);
+        return true;
+      },
+      'command:': (id) => {
+        invokeRef.current(commandOf(id)!);
+        return true;
+      },
+    };
+    for (const item of DRAFTING_ITEMS)
+      own[item.id] = () => {
+        drafting.toggle(item.id.slice('drafting:'.length) as DraftingToggle);
+        return true;
+      };
+    return onShortcuts(own);
+  }, []);
+  // The keyboard map tells the command line from other fields (Ctrl+A on an empty one).
+  useEffect(() => {
+    commandInput.current = input.current;
+    return () => {
+      if (commandInput.current === input.current) commandInput.current = null;
+    };
+  }, []);
+
   // Keys typed outside any field go to the command line, as in AutoCAD.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'F2') {
+      // The shortcut keys first (M3-10 part 2): whatever the keyboard map gives the chord, run
+      // by the part of the app that owns it, unless the field with the focus keeps the key
+      // (Ctrl+C copies typed text). F2, F3–F12, Ctrl+K, Ctrl+A, the Clipboard and undo keys…
+      if (!e.defaultPrevented && runShortcut(e)) {
         e.preventDefault();
-        setHistoryOpen((o) => !o);
         return;
-      }
-      if (e.key === 'F12') {
-        e.preventDefault();
-        dynMode.toggle();
-        return;
-      }
-      // F3 OSNAP, F8 ORTHO, F9 SNAP, F10 POLAR (M2-04), wherever the focus is, as in AutoCAD.
-      const aid = DRAFTING_KEYS[e.key];
-      if (aid && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
-        e.preventDefault();
-        drafting.toggle(aid);
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setPaletteOpen(true);
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
-        // Ctrl+A selects every object (M2-03, AutoCAD's SELECTALL), unless it would select
-        // text typed in a field.
-        const field = e.target instanceof HTMLInputElement ? e.target : undefined;
-        if ((field && field.value !== '') || (!field && takesText(e.target))) return;
-        e.preventDefault();
-        return selectAllRef.current();
-      }
-      // The Clipboard keys (M2-14 part 2) copy and paste objects, and Ctrl+Z and Ctrl+Y run U
-      // and REDO (M2-23), unless they would copy, paste or undo text: anywhere text is typed
-      // but an empty command line. Like a ribbon button, each cancels a running command first.
-      const clip = clipboardCommand(e) ?? undoKeyCommand(e);
-      if (clip) {
-        const field = e.target instanceof HTMLInputElement ? e.target : undefined;
-        const typing =
-          field === input.current
-            ? field?.value !== ''
-            : field !== undefined || takesText(e.target);
-        if (typing) return;
-        e.preventDefault();
-        return invokeRef.current(clip);
       }
       // Tab with nothing typed steps AutoSnap through the snap points under the cursor (M2-04).
       const empty = e.target === input.current ? input.current?.value === '' : !takesText(e.target);

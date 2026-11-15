@@ -3394,6 +3394,98 @@ button {
   flex: 1;
 }
 
+/* Keyboard Shortcuts (M3-10 part 2): AutoCAD's CUI Shortcut Keys list and its Shortcut Keys dialog. */
+.cad-dialog.keyboard-shortcuts {
+  width: min(640px, calc(100vw - 32px));
+  max-width: min(640px, calc(100vw - 32px));
+}
+
+.keyboard-shortcuts-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.keyboard-shortcuts-search input {
+  flex: 1;
+}
+
+.keyboard-shortcuts-list {
+  max-height: 260px;
+  overflow: auto;
+  margin-bottom: 8px;
+}
+
+.keyboard-shortcuts-list .eattedit-list {
+  margin-bottom: 0;
+}
+
+.keyboard-shortcuts-list .eattedit-list td:first-child {
+  max-width: 300px;
+}
+
+.keyboard-shortcuts-empty,
+.keyboard-shortcuts-owner,
+.keyboard-shortcuts-problem,
+.keyboard-shortcuts-note {
+  margin: 4px 0;
+}
+
+.keyboard-shortcuts-problem {
+  color: var(--danger-text);
+}
+
+.keyboard-shortcuts-note {
+  font-size: 12px;
+  color: var(--chrome-text-muted);
+}
+
+.keyboard-shortcuts-edit {
+  margin: 0 0 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.keyboard-shortcuts-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.keyboard-shortcuts-keys li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.keyboard-shortcuts-keys kbd {
+  padding: 0 4px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  font-family: inherit;
+}
+
+.keyboard-shortcuts-press {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.keyboard-shortcuts-press input {
+  flex: 1;
+}
+
+.keyboard-shortcuts-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 /* UNITS' Drawing Units and Direction Control (M3-09). */
 .units-dialog {
   width: min(480px, calc(100vw - 32px));

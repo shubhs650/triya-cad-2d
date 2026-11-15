@@ -10,6 +10,13 @@ const items: PaletteItem[] = [
 ];
 
 describe('palette search', () => {
+  it("shows a command's keys from the keyboard map (M3-10 part 2)", () => {
+    const keys = (name: string) => (name === 'PLOT' ? 'Ctrl+P' : '');
+    const all = commandItems(builtinCommands(), keys);
+    expect(all.find((i) => i.id === 'PLOT')?.keys).toBe('Ctrl+P');
+    expect(all.find((i) => i.id === 'ZOOM')).not.toHaveProperty('keys');
+  });
+
   it('lists every command with its aliases', () => {
     const zoom = commandItems(builtinCommands()).find((i) => i.id === 'ZOOM');
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
