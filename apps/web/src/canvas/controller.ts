@@ -2225,6 +2225,9 @@ export class CanvasController {
    * else the constrained cursor; missed when the prompt's override found nothing there.
    */
   async #pointAt(world: Vec2): Promise<PickedPoint> {
+    // The aids as they are at the click: an override key let go while the snaps are worked out
+    // still counts (M3-06 part 5), as the modes asked for already do.
+    const constrained = this.#constrain(world).point;
     const hits = (await this.#snapAt(world)).filter((h) => !h.track);
     const hit = hits[this.#cycle < hits.length ? this.#cycle : 0];
     if (hit) {
@@ -2233,7 +2236,7 @@ export class CanvasController {
     }
     const p = this.#prompt;
     const missed = p?.kind === 'point' && p.osnap !== undefined && p.osnap !== 0;
-    return { point: this.#constrain(world).point, ...(missed && { missed: true }) };
+    return { point: constrained, ...(missed && { missed: true }) };
   }
 
   /**

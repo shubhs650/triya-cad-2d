@@ -7,6 +7,7 @@ import {
   keymap,
   keymapVersion,
   onShortcuts,
+  overrideKey,
   releaseShortcut,
   runShortcut,
 } from '../src/shortcuts';
@@ -114,6 +115,13 @@ describe('held override keys', () => {
     off();
     takes = true;
     expect(runShortcut(key('E', { shift: true, code: 'KeyE' }))).toBe(false);
+  });
+
+  it('tells Dynamic Input which keys are override keys', () => {
+    expect(overrideKey(key('M', { shift: true, code: 'KeyM' }))).toBe(true);
+    expect(overrideKey(key('m', { code: 'KeyM' }))).toBe(false);
+    expect(overrideKey(key('Shift', { shift: true, code: 'ShiftLeft' }))).toBe(false);
+    expect(overrideKey(key('F3'))).toBe(false);
   });
 
   it("follows the user's override keys", () => {

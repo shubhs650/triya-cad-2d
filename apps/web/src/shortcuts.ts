@@ -95,6 +95,12 @@ export function runShortcut(e: KeyPress & { readonly target: EventTarget | null 
   return handler?.(id, focus) ?? false;
 }
 
+/** Whether a key press is a temporary override's key in the keyboard map (M3-06 part 5). */
+export function overrideKey(e: KeyPress): boolean {
+  const chord = chordOf(e);
+  return chord !== undefined && keyAction(map.actionFor(chord) ?? '')?.hold === true;
+}
+
 const shiftAlone = (e: KeyPress): boolean =>
   e.key === 'Shift' && !e.ctrlKey && !e.metaKey && !e.altKey;
 

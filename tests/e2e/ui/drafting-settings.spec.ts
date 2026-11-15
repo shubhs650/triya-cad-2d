@@ -8,6 +8,7 @@
 // follows them. Cancel (Esc) leaves everything as it was. The dialog's model is unit-tested in
 // apps/web/test/drafting-settings.test.ts. Part 3: PolarSnap, polar angles relative to the last
 // segment and Settings' Shift to acquire. Part 4: TK's tracking points and the Dynamic Input tab.
+// Part 5: the temporary override keys (Shift for ORTHO, Shift+M Midpoint; TEMPOVERRIDES).
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
@@ -561,4 +562,98 @@ test('tracks a point with TK and sets the Dynamic Input tab', async ({ page }) =
   await expect(dyn).toBeHidden();
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
+});
+
+// M3-06 part 5: the temporary override keys (AutoCAD 2024 Help, "TEMPOVERRIDES"): Shift held
+// turns ORTHO on for the next point, Shift+M held snaps to midpoints only, the status bar
+// unchanged; TEMPOVERRIDES 0 turns them off. The Keyboard Shortcuts dialog lists them.
+test('holds the temporary override keys', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0},${Y0 - 50}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 160},${Y0 + 50}`, 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `#${X0 + 70},${Y0}`, 'Specify next point or [Undo]:');
+  await type(page, `#${X0 + 90},${Y0}`, 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => {
+    const p = view.at(x, y);
+    return { x: view.box.x + p.x, y: view.box.y + p.y };
+  };
+  await expect(toggle(page, 'ORTHO')).toHaveAttribute('aria-pressed', 'false');
+
+  // Shift held: the next point goes orthogonally; ORTHO's button stays off.
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `#${X0 + 10},${Y0 + 10}`, 'Specify next point or [Undo]:');
+  let p = at(X0 + 40, Y0 + 30);
+  await page.mouse.move(p.x, p.y);
+  await page.keyboard.down('Shift');
+  await page.mouse.move(p.x + 1, p.y);
+  await shot(page, '17-shift-ortho');
+  await page.mouse.click(p.x + 1, p.y);
+  await page.keyboard.up('Shift');
+  await expect(toggle(page, 'ORTHO')).toHaveAttribute('aria-pressed', 'false');
+  await type(page, '', 'Command:');
+  const end = (await linesAdded(page)).at(-1)!;
+  expect(end.slice(0, 2)).toEqual([X0 + 10, Y0 + 10]);
+  expect(end[3]).toBe(Y0 + 10);
+  expect(end[2]).toBeGreaterThan(X0 + 39);
+
+  // Shift+M held over the line near its middle: Midpoint rather than the running Endpoint.
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `#${X0 + 80},${Y0 + 30}`, 'Specify next point or [Undo]:');
+  p = at(X0 + 79, Y0 + 0.3);
+  await page.mouse.move(p.x, p.y);
+  await expect(tip(page)).toHaveText('Endpoint');
+  await page.keyboard.down('Shift');
+  await page.keyboard.down('M');
+  await expect(tip(page)).toHaveText('Midpoint');
+  await shot(page, '18-shift-m-midpoint');
+  await page.mouse.click(p.x, p.y);
+  await page.keyboard.up('M');
+  await page.keyboard.up('Shift');
+  await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
+  await expect
+    .poll(async () => (await linesAdded(page)).at(-1))
+    .toEqual([X0 + 80, Y0 + 30, X0 + 80, Y0]);
+  // Let go, the running snaps are back.
+  await page.mouse.move(p.x, p.y + 1);
+  await expect(tip(page)).toHaveText('Endpoint');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // TEMPOVERRIDES 0: Shift+M is a capital M again.
+  await type(page, 'TEMPOVERRIDES', 'Enter new value for TEMPOVERRIDES <1>:');
+  await type(page, '0', 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `#${X0 + 80},${Y0 + 30}`, 'Specify next point or [Undo]:');
+  await page.mouse.move(p.x, p.y);
+  await page.keyboard.down('Shift');
+  await page.keyboard.down('M');
+  await expect(tip(page)).toHaveText('Endpoint');
+  await page.keyboard.up('M');
+  await page.keyboard.up('Shift');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // The Keyboard Shortcuts dialog lists them as Temporary Overrides.
+  await page.keyboard.press('Control+k');
+  await page.keyboard.type('keyboard shortcuts');
+  await page.keyboard.press('Enter');
+  const keys = page.getByRole('dialog', { name: 'Keyboard Shortcuts' });
+  await keys.getByRole('searchbox').fill('override');
+  const list = keys.getByRole('listbox', { name: 'Shortcut keys' });
+  await expect(
+    list.getByRole('option', {
+      name: 'Object Snap Override: Midpoint Shift+M, Shift+V Temporary Override',
+    }),
+  ).toBeVisible();
+  await shot(page, '19-keyboard-shortcuts-overrides');
+  await keys.getByRole('button', { name: 'Cancel' }).click();
+  await expect(keys).toBeHidden();
 });
