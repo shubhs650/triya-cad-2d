@@ -421,7 +421,7 @@ describe('triyaToAcad', () => {
         definedHeight: 10,
         rotation: 0.7,
         attachment: 5,
-        direction: 1,
+        direction: 3,
         lineSpacingStyle: 2,
         lineSpacing: 1.5,
         background: { flags: 1, color: { kind: 'aci', index: 3 }, scale: 1.25 },

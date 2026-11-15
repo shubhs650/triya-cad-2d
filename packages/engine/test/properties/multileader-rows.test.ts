@@ -160,11 +160,12 @@ describe('a multileader’s Text rows (M2-35 part 11)', () => {
     const s = setup([entityInit('60', textLeader()), entityInit('61', textLeader())]);
     const one = propertySheet(s.model, s.ids('60'));
     const text = one.sections.find((x) => x.title === 'Text');
-    // Part 14 adds the rows after Text height.
-    expect(text?.rows.map((r) => r.label).slice(0, 4)).toEqual([
+    // Part 14 adds the rows after Text height, part 27 Direction after Justify.
+    expect(text?.rows.map((r) => r.label).slice(0, 5)).toEqual([
       'Contents',
       'Text style',
       'Justify',
+      'Direction',
       'Text height',
     ]);
     expect(rowOf(one, 'Contents')).toMatchObject({ value: 'VALVE', readOnly: true, editor: true });
@@ -351,6 +352,7 @@ describe('a multileader’s other Text rows (M2-35 part 14)', () => {
       'Contents',
       'Text style',
       'Justify',
+      'Direction',
       'Text height',
       'Text rotation',
       'Line space factor',

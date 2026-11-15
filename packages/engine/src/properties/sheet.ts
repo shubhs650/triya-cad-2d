@@ -35,7 +35,7 @@ import {
 } from './dimension';
 import { JUSTIFICATIONS } from '../commands/modify/attributes';
 import { colorBooks, colorValue, type ColorBook } from './color-books';
-import { multiLeaderTextRows } from './multileader';
+import { DIRECTION_OPTIONS, directionValue, multiLeaderTextRows } from './multileader';
 import {
   BLOCK_CONNECTIONS,
   blockConnectionOf,
@@ -888,6 +888,14 @@ function typeSections(
           kind: 'choice',
           options: MTEXT_JUSTIFY_OPTIONS,
           get: (e) => MTEXT_JUSTIFY[g(e).attachment] ?? 'Top left',
+        }),
+        // M2-35 part 27: AutoCAD lists Direction after Justify.
+        row(es, {
+          key: 'direction',
+          label: 'Direction',
+          kind: 'choice',
+          options: DIRECTION_OPTIONS,
+          get: (e) => directionValue(g(e).direction),
         }),
         row(es, { key: 'height', label: 'Text height', kind: 'distance', get: (e) => g(e).height }),
         row(es, { key: 'rotation', label: 'Rotation', kind: 'angle', get: (e) => g(e).rotation }),

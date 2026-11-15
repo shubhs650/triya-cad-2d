@@ -25,8 +25,14 @@
 // mask turned on uses the drawing window colour and a border of 1.5, the Background Mask
 // dialog's defaults, and keeps a mask already on as it is. These are kept per annotation scale in
 // the context data, so an annotative multileader refuses them; Text frame is the entity's (DXF
-// 292) and flags ENABLE_FRAME_TEXT (bit 17). Direction (DXF 172) is not shown: the text layout
-// does not draw a top-to-bottom flow yet.
+// 292) and flags ENABLE_FRAME_TEXT (bit 17).
+//
+// M2-35 part 27 adds Direction after Justify, as an MTEXT's palette lists it (ActiveX
+// AcadMText.DrawingDirection's acLeftToRight, acTopToBottom and acByStyle: DXF 172 of the context
+// data's MTEXT, 72 of an MTEXT, 1, 3 and 5). The text stays where it is: a top-to-bottom text is
+// drawn down its columns only in a font with vertical glyphs (M1-110), as AutoCAD draws it. The
+// direction is kept per annotation scale, so an annotative multileader refuses it; MLEADERSTYLE has
+// no direction, so no override bit is set.
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
@@ -54,6 +60,26 @@ const LINE_SPACE_STYLE_OPTIONS: readonly PropertyOption[] = [
   { value: '1', label: 'At least' },
   { value: '2', label: 'Exactly' },
 ];
+
+/**
+ * MTEXT's drawing direction (DXF 72; a multileader's text DXF 172), as AutoCAD's palette offers it.
+ * AutoCAD writes no 2 (right to left) or 4 (bottom to top), and its palette offers neither.
+ */
+export const DIRECTION_OPTIONS: readonly PropertyOption[] = [
+  { value: '1', label: 'Left to right' },
+  { value: '3', label: 'Top to bottom' },
+  { value: '5', label: 'By style' },
+];
+
+/** The Direction row's value: a direction AutoCAD does not write reads as left to right. */
+export const directionValue = (direction: number | undefined): string =>
+  direction === 3 || direction === 5 ? String(direction) : '1';
+
+/** A Direction typed or chosen; undefined for anything else. */
+export function directionOf(v: PropertyValue): number | undefined {
+  const s = typeof v === 'number' ? String(v) : v;
+  return DIRECTION_OPTIONS.some((o) => o.value === s) ? Number(s) : undefined;
+}
 
 const YES_NO_OPTIONS: readonly PropertyOption[] = [
   { value: 'yes', label: 'Yes' },
@@ -116,6 +142,11 @@ export function multiLeaderTextRows(
       ts.map((t) => JUSTIFY[columnOf(t.attachment)]!),
       { key: 'justify', label: 'Justify', kind: 'choice', options: JUSTIFY_OPTIONS },
     ),
+    // M2-35 part 27.
+    sharedRow(
+      ts.map((t) => directionValue(t.flow)),
+      { key: 'direction', label: 'Direction', kind: 'choice', options: DIRECTION_OPTIONS },
+    ),
     sharedRow(
       ts.map((t) => t.height),
       { key: 'height', label: 'Text height', kind: 'distance' },
@@ -153,8 +184,9 @@ export function multiLeaderTextRows(
   ];
 }
 
-/** The keys of the part 14 rows, which leave the text where it is. */
+/** The keys of the part 14 and 27 rows, which leave the text where it is. */
 const TEXT_KEYS = new Set([
+  'direction',
   'textRotation',
   'lineSpacing',
   'lineSpaceDistance',
@@ -196,6 +228,10 @@ export function multiLeaderTextRowChange(
     if (v !== 'yes' && v !== 'no') return 'invalid';
     const { mask, ...rest } = t;
     next = v === 'no' ? rest : { ...rest, mask: mask ?? { scale: MASK_SCALE } };
+  } else if (key === 'direction') {
+    const flow = directionOf(v);
+    if (flow === undefined) return 'invalid';
+    next = { ...t, flow };
   } else if (key === 'lineSpacingStyle') {
     if (v !== '1' && v !== '2' && v !== 1 && v !== 2) return 'invalid';
     next = { ...t, lineSpacingStyle: Number(v) };
