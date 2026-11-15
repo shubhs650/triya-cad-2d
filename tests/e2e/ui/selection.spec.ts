@@ -82,14 +82,16 @@ test('picks, Shift, windows, crossing windows, Ctrl+A and Esc at Command:', asyn
   await page.keyboard.up('Shift');
   await expect.poll(() => selected(page)).toEqual([]);
 
-  // A window dragged left to right takes the line wholly inside it.
+  // A lasso dragged round from left to right (a window lasso, M3-04 part 2) takes the line
+  // wholly inside it.
   const drag = async (from: [number, number], to: [number, number]) => {
     const p = at(...from);
     const q = at(...to);
     await page.mouse.move(p.x, p.y);
     await page.mouse.down();
-    await page.mouse.move((p.x + q.x) / 2, (p.y + q.y) / 2, { steps: 4 });
+    await page.mouse.move(q.x, p.y, { steps: 4 });
     await page.mouse.move(q.x, q.y, { steps: 4 });
+    await page.mouse.move(p.x, q.y, { steps: 4 });
     await page.mouse.up();
   };
   await drag([0.1, 0.2], [0.9, 0.4]);

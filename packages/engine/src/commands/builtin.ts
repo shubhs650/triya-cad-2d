@@ -29,6 +29,7 @@ import { explodeCommand, joinCommand, reverseCommand } from './modify/join';
 import { peditCommand } from './modify/pedit';
 import { splineditCommand } from './modify/splinedit';
 import { overkillCommand } from './modify/overkill';
+import { DRAFTING_SETTINGS_COMMANDS } from './drafting-settings';
 import { changeCommand, chpropCommand } from './modify/chprop';
 import { matchpropCommand } from './modify/matchprop';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
@@ -36,6 +37,7 @@ import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
+import { qselectCommand } from './qselect';
 import { setvarCommand } from './setvar';
 import { PALETTE_COMMANDS } from './palettes';
 import { viewCommand } from './view/named-view';
@@ -77,6 +79,7 @@ export function builtinCommands(): CommandRegistry {
     regenCommand(true),
     viewCommand(),
     selectCommand(),
+    qselectCommand(),
     setvarCommand(),
     ...EDIT_COMMANDS.map((make) => make()),
     offsetCommand(),
@@ -106,6 +109,7 @@ export function builtinCommands(): CommandRegistry {
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
     ...PALETTE_COMMANDS.map((make) => make()),
+    ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
     underlayLayersCommand(),
     ...INQUIRY_COMMANDS.map((make) => make()),
     ...ARRAY_COMMANDS.map((make) => make()),

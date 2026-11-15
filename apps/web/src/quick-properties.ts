@@ -2,17 +2,18 @@
 // "Quick Properties Tab (Drafting Settings Dialog Box)"): when it shows and where. It shows for
 // the objects picked at `Command:` while QPMODE is on, unless the Properties palette is open
 // (which shows them already); QPMODE 2 only where a selected type has quick properties of its
-// own. By the cursor (QPLOCATION 0) it goes above and to the right of where the pick was made,
-// 50 pixels away: the Drafting Settings tab's Quadrant and Distance in Pixels, whose values
-// Help does not state, so Triya takes the dialog's (top right, 50). Static (QPLOCATION 1) it
-// stays where the drafter dragged it, top left of the drawing area at first. Either way it is
-// kept inside the drawing area. QUICKPROPERTIES (M2-35 part 21) shows it for the objects it
+// own. By the cursor (QPLOCATION 0) it goes in a quadrant of where the pick was made, some
+// pixels away: the Drafting Settings dialog's Quadrant and Distance in Pixels (M3-06 part 1),
+// whose initial values Help does not state, so Triya takes the dialog's (top right, 50). Static
+// (QPLOCATION 1) it stays where the drafter dragged it, top left of the drawing area at first.
+// Either way it is kept inside the drawing area. QUICKPROPERTIES (M2-35 part 21) shows it for the objects it
 // leaves selected whatever QPMODE says, until the selection changes.
 import { hasQuickProperties, type PropertySheet } from '@triya/engine';
+import type { QpQuadrant } from './drafting';
 
-/** Distance in Pixels: how far from the cursor. */
+/** Distance in Pixels' initial value: how far from the cursor. */
 export const QP_DISTANCE = 50;
-/** Collapse Palette Automatically's Minimum Number of Rows. */
+/** Collapse Palette Automatically's initial Minimum Number of Rows. */
 export const QP_ROWS = 3;
 /** The static place before it has been dragged, CSS pixels from the area's top left. */
 const STATIC = { left: 8, top: 8 } as const;
@@ -38,11 +39,19 @@ export function quickPlacement(o: {
   area: Size;
   /** Where the drafter dragged it (static). */
   dragged?: Placement | undefined;
+  /** By the cursor: the quadrant it goes in (top right) and how far away (QP_DISTANCE). */
+  quadrant?: QpQuadrant;
+  distance?: number;
 }): Placement {
   const { size, area } = o;
+  const d = o.distance ?? QP_DISTANCE;
+  const q = o.quadrant ?? 'top-right';
   const at =
     o.location === 0 && o.pointer
-      ? { left: o.pointer.x + QP_DISTANCE, top: o.pointer.y - QP_DISTANCE - size.height }
+      ? {
+          left: q.endsWith('right') ? o.pointer.x + d : o.pointer.x - d - size.width,
+          top: q.startsWith('top') ? o.pointer.y - d - size.height : o.pointer.y + d,
+        }
       : (o.dragged ?? STATIC);
   const clamp = (v: number, max: number) => Math.round(Math.max(0, Math.min(v, max)));
   return {

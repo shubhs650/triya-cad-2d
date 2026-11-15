@@ -35,6 +35,8 @@ import { SelectColorDialog } from './SelectColorDialog';
 import { MatchPropDialog } from './MatchPropDialog';
 import { PointStyleDialog } from './PointStyleDialog';
 import { OverkillDialog } from './OverkillDialog';
+import { QSelectDialog } from './QSelectDialog';
+import { DraftingSettingsDialog } from './DraftingSettingsDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -64,6 +66,10 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
       return <PointStyleDialog key={key} doc={doc.id} request={d} />;
     case 'overkill':
       return <OverkillDialog key={key} doc={doc.id} request={d} />;
+    case 'qselect':
+      return <QSelectDialog key={key} doc={doc.id} request={d} />;
+    case 'dsettings':
+      return <DraftingSettingsDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

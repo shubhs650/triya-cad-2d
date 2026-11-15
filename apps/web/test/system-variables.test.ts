@@ -131,6 +131,34 @@ describe('system variables the app keeps', () => {
     expect(d.get().pickfirst).toBe(false);
   });
 
+  it('keep POLARMODE and POLARADDANG, the polar tracking settings (M3-06 part 1)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'POLARMODE')).toEqual({ ok: true, value: 0 });
+    expect(systemVariableReply(d, 'POLARMODE', 6)).toEqual({ ok: true, value: 6 });
+    expect(d.get().polarMode).toBe(6);
+    expect(systemVariableReply(d, 'POLARADDANG')).toEqual({ ok: true, value: '' });
+    // Written back as decimal degrees, without the spaces typed.
+    expect(systemVariableReply(d, 'POLARADDANG', ' 12.50 ; 80')).toEqual({
+      ok: true,
+      value: '12.5;80',
+    });
+    const refused = systemVariableReply(d, 'POLARADDANG', '12;north');
+    expect(refused).toEqual({
+      ok: false,
+      message: 'Requires up to 10 angles in degrees separated by semicolons.',
+    });
+    expect(systemVariableReply(d, 'POLARADDANG', '1;2;3;4;5;6;7;8;9;10;11')).toMatchObject({
+      ok: false,
+    });
+    expect(d.get().polarAddAngles).toBe('12.5;80');
+    expect(systemVariableReply(d, 'POLARADDANG', '')).toEqual({ ok: true, value: '' });
+    // Text is not a number variable's value.
+    expect(systemVariableReply(d, 'POLARMODE', '2')).toEqual({
+      ok: false,
+      message: 'POLARMODE takes a number.',
+    });
+  });
+
   it('are answered by the view host, refused where the app keeps none', () => {
     const d = new Drafting();
     const ctx = { target: undefined, all: () => [], views: () => [] };

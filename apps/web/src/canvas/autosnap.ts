@@ -225,6 +225,34 @@ export function markerPath(mode: OsnapMode, p: Vec2, px: number): number[] {
   }
 }
 
+/**
+ * A mode's marker as an SVG path in a box `2 × half` wide centred on the origin, y down: the
+ * Drafting Settings dialog's Object Snap tab shows it beside the mode (M3-06 part 1), as
+ * AutoCAD's does. The marker's circles are full circles, drawn as two half arcs.
+ */
+export function markerSvgPath(mode: OsnapMode, half: number): string {
+  const p = markerPath(mode, { x: 0, y: 0 }, half / MARKER_PX);
+  const n = (v: number) => +v.toFixed(3);
+  const out: string[] = [];
+  for (let i = 0; i < p.length;) {
+    const op = p[i++];
+    if (op === PATH_M || op === PATH_L) {
+      out.push(`${op === PATH_M ? 'M' : 'L'}${n(p[i]!)} ${n(-p[i + 1]!)}`);
+      i += 2;
+    } else if (op === PATH_A) {
+      const [cx, cy, r] = [p[i]!, -p[i + 1]!, p[i + 2]!];
+      out.push(
+        `M${n(cx + r)} ${n(cy)}A${n(r)} ${n(r)} 0 1 0 ${n(cx - r)} ${n(cy)}` +
+          `A${n(r)} ${n(r)} 0 1 0 ${n(cx + r)} ${n(cy)}`,
+      );
+      i += 6;
+    } else {
+      out.push('Z');
+    }
+  }
+  return out.join('');
+}
+
 export function markerPrimitives(
   mode: OsnapMode,
   p: Vec2,

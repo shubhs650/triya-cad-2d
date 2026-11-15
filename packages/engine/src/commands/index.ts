@@ -29,6 +29,7 @@ export { setvarCommand, variableCommand, UNKNOWN_VARIABLE } from './setvar';
 export * from './sysvars';
 export * from '../selection/loop';
 export * from '../selection/rules';
+export * from '../selection/qselect';
 export * from './undo';
 export * from './undo-commands';
 export * from './modify/edit';

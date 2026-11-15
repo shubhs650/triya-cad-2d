@@ -18,7 +18,7 @@ import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import { SelectionLoop, type StepResult } from '../selection/loop';
+import { SelectionLoop, type Lasso, type StepResult } from '../selection/loop';
 import { onLockedLayers } from '../selection/rules';
 import type { Entity, EntityGeometry } from '../model/types';
 import { hasEditableAttributes } from './modify/attributes';
@@ -444,7 +444,8 @@ export class PromptBus {
   /**
    * A click on the canvas (M2-03). At "Select objects" or at `Command:` it picks, or starts or
    * ends a selection window, removing with `shift`; at a prompt for a point it is the point.
-   * `release` ends a dragged window and does nothing when no window is open. `missed` says the
+   * `release` ends a dragged window, or the `lasso` dragged from its first corner (M3-04 part
+   * 2), and does nothing when no window is open. `missed` says the
    * prompt's object snap override found nothing at the point, which refuses it (M2-04). `ctrl`:
    * Ctrl was held, which a prompt that switches an arc's direction takes (M3-01 part 6).
    */
@@ -453,6 +454,7 @@ export class PromptBus {
     o: {
       readonly shift?: boolean;
       readonly release?: boolean;
+      readonly lasso?: Lasso;
       readonly grip?: number;
       readonly missed?: boolean;
       readonly deferred?: DeferredPick;
@@ -971,7 +973,9 @@ export class PromptBus {
   /** A "Select objects" prompt: answered by the pre-selection, or built pick by pick. */
   async #beginSelection(frame: Frame, prompt: Extract<Prompt, { kind: 'selection' }>) {
     const pre =
-      frame.transparent || (prompt.single && !prompt.pickfirst) ? undefined : this.#pickfirst;
+      frame.transparent || prompt.pickfirst === false || (prompt.single && !prompt.pickfirst)
+        ? undefined
+        : this.#pickfirst;
     const preWindow = this.#pickfirstWindow;
     const prePick = this.#pickfirstPick;
     const preTakes = this.#pickfirstTakes;

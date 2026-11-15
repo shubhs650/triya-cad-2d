@@ -64,6 +64,54 @@ describe('preferences', () => {
       rolloverTips: true,
       // ARRAYASSOCIATIVITY 1 (M3-11).
       arrayAssociativity: true,
+      // M3-06 part 1: POLARMODE 0 and POLARADDANG "" (AutoCAD's initial values), and the
+      // Drafting Settings dialog's Quick Properties tab: top right, 50 pixels, collapsed to 3 rows.
+      polarMode: 0,
+      polarAddAngles: '',
+      qpQuadrant: 'top-right',
+      qpDistance: 50,
+      qpCollapse: true,
+      qpRows: 3,
+    });
+  });
+
+  it('keep the Drafting Settings dialog\u2019s values when valid (M3-06 part 1)', () => {
+    const kept = normalizePreferences({
+      drafting: {
+        polarMode: 6,
+        polarAddAngles: '12.5;80',
+        qpQuadrant: 'bottom-left',
+        qpDistance: 120,
+        qpCollapse: false,
+        qpRows: 5,
+      },
+    }).drafting;
+    expect(kept).toMatchObject({
+      polarMode: 6,
+      polarAddAngles: '12.5;80',
+      qpQuadrant: 'bottom-left',
+      qpDistance: 120,
+      qpCollapse: false,
+      qpRows: 5,
+    });
+    const bad = normalizePreferences({
+      drafting: {
+        polarMode: 16,
+        polarAddAngles: 'north',
+        qpQuadrant: 'middle',
+        qpDistance: 'far',
+        qpCollapse: 'yes',
+        qpRows: 99,
+      },
+    }).drafting;
+    expect(bad).toMatchObject({
+      polarMode: 0,
+      polarAddAngles: '',
+      qpQuadrant: 'top-right',
+      qpDistance: 50,
+      qpCollapse: true,
+      // Out of range is brought to the nearest end, as the sizes are.
+      qpRows: 30,
     });
   });
 

@@ -6,7 +6,7 @@
 // React (.claude/rules/ui.md).
 import { keywordShortcut, type Prompt, type Vec2 } from '@triya/engine';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { cycleSnap } from './canvas/registry';
+import { cycleLasso, cycleSnap } from './canvas/registry';
 import {
   dynAhead,
   dynBackspace,
@@ -137,6 +137,12 @@ export function DynamicInput({
   // Keys typed outside a text field, before the command line's own listener sees them.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Spacebar while a lasso is dragged cycles its kind (M3-04 part 2), whatever has focus.
+      if (e.key === ' ' && cycleLasso()) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
       const { prompt: p, shown: visible } = props.current;
       // Fields set for an earlier prompt are this prompt's as soon as it has arrived.
       const s = dynCurrent(latest.current, p, typed.current);

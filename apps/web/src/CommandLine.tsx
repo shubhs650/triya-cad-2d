@@ -329,7 +329,9 @@ export function CommandLine({
     }
   };
 
-  const parts = promptParts(state?.promptText ?? 'Command:', prompt?.options);
+  const parts = state?.lasso
+    ? promptParts(state.lasso, undefined)
+    : promptParts(state?.promptText ?? 'Command:', prompt?.options);
   const shown = state?.lines.slice(-SHOWN_LINES) ?? [];
   return (
     <section

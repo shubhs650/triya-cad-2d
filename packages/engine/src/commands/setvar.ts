@@ -142,7 +142,11 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
       setWipeoutFrame(ctx, value as WipeoutFrame);
       return;
     case 'app': {
-      const r = await ctx.view.request({ op: 'sysvar', name: v.name, value: value as number });
+      const r = await ctx.view.request(
+        typeof value === 'string'
+          ? { op: 'sysvar', name: v.name, text: value }
+          : { op: 'sysvar', name: v.name, value: value as number },
+      );
       if (!r.ok) ctx.message(r.message);
       return;
     }
