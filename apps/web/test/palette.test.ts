@@ -16,6 +16,8 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       'AIMLEADEREDITADD',
       'AIMLEADEREDITREMOVE',
+      // M3-07: the inquiry commands.
+      'AREA',
       'ATTEDIT',
       'CLOSE',
       'CLOSEALL',
@@ -30,6 +32,7 @@ describe('palette search', () => {
       'DIMDIAMETER',
       'DIMLINEAR',
       'DIMRADIUS',
+      'DIST',
       'DRAWINGRECOVERY',
       'DRAWORDER',
       'EATTEDIT',
@@ -37,7 +40,9 @@ describe('palette search', () => {
       'EXPORT',
       'EXPORTPDF',
       'HATCHTOBACK',
+      'ID',
       'LINE',
+      'MEASUREGEOM',
       'MIRROR',
       'MLEADER',
       'MLEADEREDIT',

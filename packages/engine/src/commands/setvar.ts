@@ -27,6 +27,7 @@ import {
   type VariableValue,
 } from './sysvars';
 import { drawingUnits } from './units';
+import { inquiryResults } from './inquiry/inquiry';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -66,6 +67,12 @@ async function computed(
       return { value: shownLayout(ctx)?.name ?? 'Model' };
     case 'TILEMODE':
       return { value: ctx.space === modelSpaceOf(ctx.model) ? 1 : 0 };
+    case 'AREA':
+      return { value: inquiryResults(ctx.model).area };
+    case 'PERIMETER':
+      return { value: inquiryResults(ctx.model).perimeter };
+    case 'DISTANCE':
+      return { value: inquiryResults(ctx.model).distance };
     default: {
       // VIEWSIZE and VIEWCTR: the view the canvas shows; SCREENSIZE: its size in pixels, X and Y.
       const r = await ctx.view.request({ op: 'get' });
