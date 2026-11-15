@@ -27,6 +27,7 @@ import { toleranceForSize, type Tolerance } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
 import { angleOf, distance, midpoint, sub } from '../../geom/vec';
 import type { EntityGeometry } from '../../model/types';
+import { isShapeSketch, shapeSketchGeometry, type ShapeSketch } from './sketch-shapes';
 
 /** A circle or arc being drawn, what the cursor gives it named by the construction. */
 export type Sketch =
@@ -55,7 +56,9 @@ export type Sketch =
       readonly end: Vec2;
     }
   /** ARC continuing tangent, or Start, Direction, End: the cursor is the end. */
-  | { readonly shape: 'arcTangent'; readonly start: Vec2; readonly direction: Vec2 };
+  | { readonly shape: 'arcTangent'; readonly start: Vec2; readonly direction: Vec2 }
+  /** ELLIPSE, XLINE, RAY and DONUT (M3-01 part 4, `sketch-shapes.ts`). */
+  | ShapeSketch;
 
 /** The tolerance for constructing from these points (their magnitude, `toleranceForSize`). */
 export function sketchTolerance(...points: readonly Vec2[]): Tolerance {
@@ -69,6 +72,7 @@ export function sketchTolerance(...points: readonly Vec2[]): Tolerance {
  * cursor on the start, three collinear points).
  */
 export function sketchGeometry(s: Sketch, cursor: Vec2): EntityGeometry | undefined {
+  if (isShapeSketch(s)) return shapeSketchGeometry(s, cursor);
   switch (s.shape) {
     case 'circle': {
       const d = distance(s.center, cursor);
@@ -94,7 +98,7 @@ export function sketchGeometry(s: Sketch, cursor: Vec2): EntityGeometry | undefi
 
 /** The arc an arc sketch makes with the cursor at `cursor`. */
 export function sketchArc(
-  s: Exclude<Sketch, { shape: 'circle' | 'circle2p' | 'circle3p' | 'line' }>,
+  s: Exclude<Sketch, ShapeSketch | { shape: 'circle' | 'circle2p' | 'circle3p' | 'line' }>,
   cursor: Vec2,
 ): BulgeArc | undefined {
   switch (s.shape) {

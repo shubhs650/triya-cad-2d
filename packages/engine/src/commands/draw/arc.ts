@@ -26,6 +26,7 @@ import type { Prompt, PromptAnswer } from '../prompt';
 import { currentProps } from '../../properties/current';
 import { lastDrawn, type LastDrawn } from './last-drawn';
 import { sketchTolerance, type Sketch } from './sketch';
+import type { ShapeSketch } from './sketch-shapes';
 import {
   arcEnd,
   arcStartCenterAngle,
@@ -40,7 +41,7 @@ import {
 } from '../../geom/construct';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
-type ArcSketch = Exclude<Sketch, { shape: 'circle' | 'circle2p' | 'circle3p' }>;
+type ArcSketch = Exclude<Sketch, ShapeSketch | { shape: 'circle' | 'circle2p' | 'circle3p' }>;
 
 export const INVALID_ARC = '*Invalid*';
 

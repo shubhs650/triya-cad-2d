@@ -5,6 +5,9 @@ import { CommandRegistry } from './command';
 import { dimensionCommands } from './draw/dimension';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
+import { ellipseCommand } from './draw/ellipse';
+import { donutCommand, pointCommand } from './draw/point';
+import { rayCommand, xlineCommand } from './draw/xline';
 import { lastDrawn } from './draw/last-drawn';
 import { lineCommand } from './draw/line';
 import { MLEADER_COMMANDS } from './draw/mleader';
@@ -37,6 +40,11 @@ export function builtinCommands(): CommandRegistry {
     lineCommand(last),
     arcCommand(last),
     circleCommand(),
+    ellipseCommand(),
+    xlineCommand(),
+    rayCommand(),
+    pointCommand(),
+    donutCommand(),
     textCommand(),
     mtextCommand(),
     textEditCommand(),
