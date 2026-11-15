@@ -3,7 +3,7 @@
 // the edit it makes. The geometry is `edit/grip-functions.ts`'s.
 import type { Vec2 } from '../../geom/types';
 import { reshapeObject } from '../../edit/edit';
-import { gripInfoOf } from '../../edit/array-grips';
+import { ARRAY_GRIP_FUNCTIONS, gripInfoOf } from '../../edit/array-grips';
 import {
   gripFunctionEdit,
   gripFunctionsOf,
@@ -17,6 +17,7 @@ import type { ArcGeometry } from '../../model/types';
 import type { CommandContext } from '../command';
 import { GRIP_CYCLE, type Prompt, type PromptAnswer } from '../prompt';
 import { toleranceFor } from './offset';
+import { arrayGripAt } from './array-grips';
 
 /** The grip mode names typed at a grip prompt, in GRIP_MODES' order. */
 export const MODE_KEYWORDS = ['STretch', 'MOve', 'ROtate', 'SCale', 'MIrror'] as const;
@@ -69,6 +70,26 @@ export function functionsAt(
     };
   }
   return undefined;
+}
+
+/**
+ * What the hover menu of the grip at `hot` offers (M3-05 part 2): an array grip's functions, or
+ * the first selected object with that grip's, by AutoCAD's names ("Stretch Vertex"); fewer than
+ * two means no menu.
+ */
+export function gripMenuAt(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  hot: Vec2,
+): readonly string[] {
+  const array = arrayGripAt(model, ids, hot);
+  if (array) return ARRAY_GRIP_FUNCTIONS[array.role];
+  for (const id of ids) {
+    const e = model.entity(id);
+    const functions = e ? gripFunctionsOf(e.geom, hot, gripInfoOf(model, e)) : [];
+    if (functions.length > 0) return functions;
+  }
+  return [];
 }
 
 const PROBLEM: Readonly<Record<GripFunctionProblem, string>> = {

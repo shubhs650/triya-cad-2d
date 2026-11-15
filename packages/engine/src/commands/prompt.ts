@@ -62,6 +62,12 @@ interface PromptBase {
    * (M3-05).
    */
   readonly ctrlCycles?: true;
+  /**
+   * A point, distance or angle picked with Ctrl held answers with `ctrl`: the grip modes take it
+   * as Copy turned on (M3-05 part 2; AutoCAD 2024 Help, "To Make Multiple Copies with Grips":
+   * "You can also make multiple copies by holding down Ctrl as you click the first point").
+   */
+  readonly ctrlCopies?: true;
   /** What Enter gives, shown as `<…>`; without one Enter answers `{ kind: 'enter' }`. */
   readonly default?: PromptAnswer;
   /**

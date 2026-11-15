@@ -435,6 +435,8 @@ function touchesSortEnts(c: KeyedChanges<NonGraphicalObject> | undefined): boole
  */
 const GRIP_COLOR = rgbHex(aciRgb(150));
 const GRIP_HOT = rgbHex(aciRgb(12));
+/** GRIPHOVER (M3-05 part 2): the grip under the cursor, AutoCAD's initial ACI 11. */
+const GRIP_HOVER = rgbHex(aciRgb(11));
 const GRIP_EDGE = '#1a1a1a';
 
 /**
@@ -598,6 +600,8 @@ export class Canvas2DRenderer implements Renderer {
     | undefined;
   /** The objects grips show on, and the hot grip (M2-06 part 2). */
   #grips: { readonly ids: readonly EntityId[]; readonly hot: Vec2 | undefined } | undefined;
+  /** The cursor, and how near a grip counts as under it (M3-05 part 2), for GRIPHOVER. */
+  #gripHover: { readonly at: Vec2; readonly within: number } | undefined;
   /** The locked layers (M1-69), found again after a layer change; undefined until needed. */
   #locked: ReadonlySet<Handle> | undefined;
   #sceneDirty = true;
@@ -816,6 +820,17 @@ export class Canvas2DRenderer implements Renderer {
     if (ids.length === 0 && !this.#grips) return;
     this.#grips = ids.length > 0 ? { ids, hot } : undefined;
     this.#transientDirty = true;
+  }
+
+  /**
+   * Where the cursor is, for the grip under it to draw in GRIPHOVER (ACI 11, AutoCAD's initial
+   * colour, M3-05 part 2): the grip nearest it within `within` drawing units; undefined, none.
+   */
+  setGripHover(at: Vec2 | undefined, within: number): void {
+    const was = this.#gripHover;
+    if (!at && !was) return;
+    this.#gripHover = at && { at, within };
+    if (this.#grips) this.#transientDirty = true;
   }
 
   select(query: SelectQuery): EntityId[] {
@@ -1361,6 +1376,7 @@ export class Canvas2DRenderer implements Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     const seen = new Set<string>();
+    const hover = this.#hoveredGrip();
     for (const id of grips.ids) {
       const e = this.#model.entity(id);
       if (!e) continue;
@@ -1370,22 +1386,43 @@ export class Canvas2DRenderer implements Renderer {
         if (seen.has(`${x},${y}`)) continue;
         seen.add(`${x},${y}`);
         const hot = grips.hot !== undefined && sameGrip(g.point, grips.hot);
+        const fill = hot ? GRIP_HOT : hover && sameGrip(g.point, hover) ? GRIP_HOVER : GRIP_COLOR;
         if (g.towards) {
           // An arrow grip (M2-26 part 2: an MTEXT's column width and height), pointing the way
           // it sizes, as AutoCAD draws them.
           const dx = m.a * g.towards.x + m.c * g.towards.y;
           const dy = m.b * g.towards.x + m.d * g.towards.y;
           const len = Math.hypot(dx, dy) || 1;
-          arrowGrip(ctx, x, y, dx / len, dy / len, half, hot ? GRIP_HOT : GRIP_COLOR);
+          arrowGrip(ctx, x, y, dx / len, dy / len, half, fill);
           continue;
         }
         // A dark edge keeps the grip visible on any background.
         ctx.fillStyle = GRIP_EDGE;
         ctx.fillRect(x - half - 1, y - half - 1, 2 * half + 2, 2 * half + 2);
-        ctx.fillStyle = hot ? GRIP_HOT : GRIP_COLOR;
+        ctx.fillStyle = fill;
         ctx.fillRect(x - half, y - half, 2 * half, 2 * half);
       }
     }
+  }
+
+  /** The grip nearest the cursor within its reach, of the objects grips show on. */
+  #hoveredGrip(): Vec2 | undefined {
+    const h = this.#gripHover;
+    if (!h || !this.#grips) return undefined;
+    let best: Vec2 | undefined;
+    let bestD = h.within;
+    for (const id of this.#grips.ids) {
+      const e = this.#model.entity(id);
+      if (!e) continue;
+      for (const g of gripsOf(e.geom, gripInfoOf(this.#model, e))) {
+        const d = Math.hypot(g.point.x - h.at.x, g.point.y - h.at.y);
+        if (d <= bestD) {
+          best = g.point;
+          bestD = d;
+        }
+      }
+    }
+    return best;
   }
 
   #viewFrame(): DrawFrame {

@@ -4,7 +4,10 @@
 import { rotation, translation, type EntityId, type MTextGeometry } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer, gripHalfSize } from '../src/index';
+import { aciRgb, rgbHex } from '../src/style/aci';
 import { drawing, entity, LAYER_0, line, MODEL, surface, type Call } from './fixtures';
+
+const aciHex = (aci: number) => rgbHex(aciRgb(aci));
 
 /** Static columns 3 wide, gutter 1, 2 high, inserted top left at (0, 4) (M2-26 part 2). */
 const columned: MTextGeometry = {
@@ -240,6 +243,35 @@ describe('Canvas2DRenderer grips', () => {
       [46, 10],
       [15, 36],
     ]);
+  });
+
+  it('draws the grip under the cursor in GRIPHOVER, the hot one staying GRIPHOT (M3-05 part 2)', () => {
+    const { r, id, transient } = setup();
+    r.setGrips([id('20')]);
+    r.frame();
+    const plain = squares(transient().calls)[0]![0];
+    transient().clear();
+    // Within 0.5 drawing units of the line's end grip at (10, 0): it takes the hover colour.
+    r.setGripHover({ x: 10.3, y: 0.2 }, 0.5);
+    r.frame();
+    const [a, b, c] = squares(transient().calls);
+    expect(a![0]).toBe(plain);
+    expect(b![0]).toBe(plain);
+    expect(c![0]).toBe(aciHex(11));
+    // Away from every grip, or none: all plain again.
+    transient().clear();
+    r.setGripHover({ x: 3, y: 3 }, 0.5);
+    r.frame();
+    expect(squares(transient().calls).map(([f]) => f)).toEqual([plain, plain, plain]);
+    r.setGrips([id('20')], { x: 10, y: 0 });
+    r.setGripHover({ x: 10, y: 0 }, 0.5);
+    transient().clear();
+    r.frame();
+    expect(squares(transient().calls)[2]![0]).toBe(aciHex(12));
+    r.setGripHover(undefined, 0);
+    transient().clear();
+    r.frame();
+    expect(squares(transient().calls)[2]![0]).toBe(aciHex(12));
   });
 
   it('hides them with none', () => {

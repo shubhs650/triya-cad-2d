@@ -126,6 +126,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'grips':
         r.setGrips(m.ids, m.hot ?? undefined);
         break;
+      case 'grip-hover':
+        r.setGripHover(m.at ?? undefined, m.within);
+        break;
       case 'bounds':
         port.postMessage({ type: 'extents', id: m.id, box: session.boundsOf(m.ids) ?? null });
         break;

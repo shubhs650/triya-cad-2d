@@ -162,8 +162,10 @@ export type CommandInput =
       readonly grip?: number;
       /** The Deferred Tangent or Perpendicular the point was snapped with (M3-01 part 2). */
       readonly deferred?: DeferredPick;
-      /** Ctrl was held: an arc's direction switched (M3-01 part 6). */
+      /** Ctrl was held: an arc's direction switched (M3-01 part 6), or a grip copy (M3-05). */
       readonly ctrl?: boolean;
+      /** The function picked from a grip's hover menu, with `grip` (M3-05 part 2). */
+      readonly gripFunction?: string;
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
@@ -207,7 +209,12 @@ export type CommandInput =
    * The cursor rests on object `id` (M2-35 part 21, ROLLOVERTIPS): the engine answers with its
    * rollover tooltip (`rolloverSheet`), whether or not it is selected; the selection stays.
    */
-  | { readonly kind: 'rollover'; readonly id: EntityId };
+  | { readonly kind: 'rollover'; readonly id: EntityId }
+  /**
+   * The cursor rests at `point` (M3-05 part 2): the engine answers with the grip of the selection
+   * at `Command:` within `within` drawing units and its hover menu (`PromptBus.gripMenu`).
+   */
+  | { readonly kind: 'grip-menu'; readonly point: Vec2; readonly within: number };
 
 /**
  * What the command engine tells the front-ends: the bus's events, with every edit a command
@@ -234,7 +241,17 @@ export type CommandOutput =
   /** The Properties palette's sheet for the objects selected now (M2-21), while it is open. */
   | { readonly type: 'properties'; readonly sheet: PropertySheet }
   /** The rollover tooltip of object `id` (M2-35 part 21); no sheet when the object is gone. */
-  | { readonly type: 'rollover'; readonly id: EntityId; readonly sheet?: PropertySheet };
+  | { readonly type: 'rollover'; readonly id: EntityId; readonly sheet?: PropertySheet }
+  /**
+   * The grip under a resting cursor at `point` and its hover menu's functions (M3-05 part 2):
+   * no grip when there is none there, no items when it has one function.
+   */
+  | {
+      readonly type: 'grip-menu';
+      readonly point: Vec2;
+      readonly grip?: Vec2;
+      readonly items: readonly string[];
+    };
 
 /** What the app hands the engine from the packages above it. */
 export interface EngineServices {
@@ -378,6 +395,7 @@ export class EngineSession {
           ...(input.grip !== undefined && { grip: input.grip }),
           ...(input.deferred && { deferred: input.deferred }),
           ...(input.ctrl && { ctrl: true }),
+          ...(input.gripFunction && { gripFunction: input.gripFunction }),
         });
       case 'select-all':
         return this.#bus.selectAll();
@@ -414,6 +432,16 @@ export class EngineSession {
       case 'rollover': {
         const sheet = rolloverSheet(this.model, input.id);
         this.#emit({ type: 'rollover', id: input.id, ...(sheet && { sheet }) });
+        return Promise.resolve();
+      }
+      case 'grip-menu': {
+        const menu = this.#bus.gripMenu(input.point, input.within);
+        this.#emit({
+          type: 'grip-menu',
+          point: input.point,
+          ...(menu && { grip: menu.grip }),
+          items: menu?.items ?? [],
+        });
         return Promise.resolve();
       }
       case 'view-step':
