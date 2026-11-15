@@ -22,6 +22,8 @@
 // - an MTEXT set in columns (M2-26 part 2) shows, besides its insertion point, a column width
 //   grip, a gutter grip and a column height grip (one under each column for dynamic columns of
 //   manual height): `mtext-grips.ts`.
+// - an associative array Triya made (M3-11 part 3) shows its array grips (`array-grips.ts`) in
+//   place of its block reference's insertion point.
 // Hatches, multileaders, multilines, regions and viewports have no grips yet: their grips
 // (hatch origin, viewport corners) need FR-D4's multi-functional grips.
 import { ccwSweep } from '../geom/angle';
@@ -30,6 +32,7 @@ import { add, angleOf, distance, fromAngle, midpoint, sub } from '../geom/vec';
 import type { DimensionGeometry, EntityGeometry, LwPolylineGeometry } from '../model/types';
 import { dimensionLineEnds } from './dimension';
 import { columnGrips, moveColumnGrip } from './mtext-grips';
+import type { ArrayGripRole, GripInfo } from './array-grips';
 import { cloudCorners, isCloudShaped, moveCloudCorner, type CloudInfo } from './revcloud';
 import { stretchGeometry, type StretchResult } from './stretch';
 
@@ -53,7 +56,9 @@ export type GripKind =
   /** A columned MTEXT's gutter. */
   | 'columnGutter'
   /** A columned MTEXT's column height (one column's, with manual heights). */
-  | 'columnHeight';
+  | 'columnHeight'
+  /** An associative array's grip that sizes it (`array` says how): the grip command edits it. */
+  | 'array';
 
 export interface Grip {
   readonly point: Vec2;
@@ -63,6 +68,8 @@ export interface Grip {
    * direction (an MTEXT's column width and height) as triangles. Square grips have none.
    */
   readonly towards?: Vec2;
+  /** An `array` grip's role (M3-11 part 3). */
+  readonly array?: ArrayGripRole;
 }
 
 const g = (point: Vec2, kind: GripKind): Grip => ({ point, kind });
@@ -96,11 +103,18 @@ function dimensionGrips(dim: DimensionGeometry): Grip[] {
   return out;
 }
 
+/** `info` as a cloud's (`revcloudOf`), not an array's. */
+const cloudOf = (info: GripInfo | undefined): CloudInfo | undefined =>
+  info && 'arc' in info ? info : undefined;
+
 /**
- * The grips an object shows, none for kinds without standard grips yet. `cloud`: the object is
- * a revision cloud (`revcloudOf`), which shows its corners.
+ * The grips an object shows, none for kinds without standard grips yet. `info` (`gripInfoOf`):
+ * the object is a revision cloud, which shows its corners, or an associative array, which shows
+ * its array grips.
  */
-export function gripsOf(geom: EntityGeometry, cloud?: CloudInfo): Grip[] {
+export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
+  if (info && 'grips' in info && geom.kind === 'INSERT') return [...info.grips];
+  const cloud = cloudOf(info);
   if (isDimension(geom)) return dimensionGrips(geom);
   if (cloud && isCloudShaped(geom)) {
     return cloudCorners(geom).map((i) => g(geom.vertices[i]!, 'cloud'));
@@ -214,14 +228,18 @@ export function moveGrip(
   geom: EntityGeometry,
   grip: Vec2,
   to: Vec2,
-  cloud?: CloudInfo,
+  info?: GripInfo,
 ): StretchResult {
-  const found = gripsOf(geom, cloud).find((x) => sameGrip(x.point, grip));
+  const found = gripsOf(geom, info).find((x) => sameGrip(x.point, grip));
+  const cloud = cloudOf(info);
   if (!found) return { kind: 'none' };
   const d = sub(to, grip);
   switch (found.kind) {
     case 'move':
       return { kind: 'move' };
+    case 'array':
+      // An array grip edits the array's definition: the grip command does that.
+      return { kind: 'none' };
     case 'stretch':
       return stretchGeometry(geom, (p) => sameGrip(p, grip), d, {
         dimensions: isDimension(geom),
