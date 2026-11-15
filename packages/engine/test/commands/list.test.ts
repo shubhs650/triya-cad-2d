@@ -7,13 +7,17 @@ import {
   PromptBus,
   builtinCommands,
   type BusEvent,
+  type Color,
   type DocumentInit,
+  type EntityGeometry,
+  type EntityInit,
   type EntityId,
   type HeaderValue,
   type ViewHost,
   type ViewReply,
 } from '../../src/index';
-import { blockRecord, entityInit, linetype, sampleInit } from '../model/fixtures';
+import { listObject } from '../../src/commands/inquiry/list';
+import { LAYER_0, blockRecord, entityInit, linetype, sampleInit } from '../model/fixtures';
 
 function host(picked: () => EntityId[]): ViewHost {
   return {
@@ -266,5 +270,407 @@ describe('LIST', () => {
     await s.bus.script(['LI']);
     expect(s.bus.command).toBeUndefined();
     expect(s.bus.history).toContain('                at point, X=7.0000  Y=8.0000  Z=0.0000');
+  });
+});
+
+describe('listObject', () => {
+  const DIM = {
+    kind: 'DIMENSION',
+    style: '27',
+    definitionPoint: { x: 0, y: 0 },
+    textPosition: { x: 5, y: 6 },
+    textUserPositioned: false,
+    text: '',
+    textRotation: 0,
+    horizontalDirection: 0,
+    attachment: 5,
+    lineSpacingStyle: 1,
+    lineSpacing: 1,
+  } as const;
+  const TEXT = {
+    style: '16',
+    position: { x: 1, y: 2 },
+    height: 1,
+    rotation: 0,
+    widthFactor: 1,
+    oblique: 0,
+    halign: 0,
+    valign: 0,
+  } as const;
+
+  /** LIST's lines for `geom` (with `extra` entity properties), past its header and handle. */
+  function lines(geom: object, extra: Partial<EntityInit> = {}, skip = 3): string[] {
+    const base = drawing();
+    const model = DocumentModel.create({
+      ...base,
+      entities: [...(base.entities ?? []), entityInit('90', geom as EntityGeometry, extra)],
+    });
+    return listObject(model, model.entityByHandle('90')!).slice(skip);
+  }
+
+  it('writes BYBLOCK and true colours, and an extrusion that is not +Z', () => {
+    expect(
+      lines(
+        { kind: 'POINT', position: { x: 0, y: 0 }, normal: { x: 0, y: 0, z: -1 } },
+        {
+          color: { kind: 'byBlock' },
+          linetype: 'ByBlock',
+          lineweight: 'ByBlock',
+          transparency: 'ByBlock',
+        },
+        2,
+      ).slice(0, 6),
+    ).toEqual([
+      '                   Color: BYBLOCK',
+      '                Linetype: "BYBLOCK"',
+      '              Lineweight: BYBLOCK',
+      '            Transparency: BYBLOCK',
+      '                 Handle = 90',
+      '      Extrusion direction relative to UCS: X=0.0000  Y=0.0000  Z=-1.0000',
+    ]);
+    const color = (c: Color, lw: EntityInit['lineweight'] = 'ByLayer') =>
+      lines({ kind: 'POINT', position: { x: 0, y: 0 } }, { color: c, lineweight: lw }, 2);
+    expect(color({ kind: 'rgb', r: 1, g: 2, b: 3 })[0]).toBe('                   Color: RGB:1,2,3');
+    expect(color({ kind: 'rgb', r: 1, g: 2, b: 3, bookName: 'BOOK', colorName: 'TEAL' })[0]).toBe(
+      '                   Color: BOOK$TEAL',
+    );
+    expect(color({ kind: 'aci', index: 30 }, 'Default')).toEqual(
+      expect.arrayContaining(['                   Color: 30', '              Lineweight: Default']),
+    );
+  });
+
+  it('lists xlines and rays by base and second point', () => {
+    for (const kind of ['XLINE', 'RAY']) {
+      expect(lines({ kind, base: { x: 1, y: 1 }, direction: { x: 0, y: 1 } })).toEqual([
+        '              base point, X=1.0000  Y=1.0000  Z=0.0000',
+        '            second point, X=1.0000  Y=2.0000  Z=0.0000',
+      ]);
+    }
+  });
+
+  it('lists the widths of each vertex of a polyline whose widths vary, and its elevation', () => {
+    const out = lines({
+      kind: 'LWPOLYLINE',
+      closed: false,
+      elevation: 3,
+      vertices: [
+        { x: 0, y: 0, bulge: 0, startWidth: 1, endWidth: 0 },
+        { x: 5, y: 0, bulge: 0 },
+      ],
+    });
+    expect(out.slice(0, 5)).toEqual([
+      '                     Open',
+      '                elevation 3.0000',
+      '                     area 0.0000',
+      '                   length 5.0000',
+      '',
+    ]);
+    expect(out.slice(5, 8)).toEqual([
+      '                 at point X=0.0000  Y=0.0000  Z=3.0000',
+      '           starting width 1.0000',
+      '             ending width 0.0000',
+    ]);
+    const heavy = lines({
+      kind: 'POLYLINE',
+      closed: false,
+      is3d: false,
+      vertices: [{ x: 0, y: 0, bulge: 0 }],
+    });
+    expect(heavy).toEqual([
+      '                     Open',
+      '           Constant width 0.0000',
+      '',
+      '                 at point X=0.0000  Y=0.0000  Z=0.0000',
+    ]);
+  });
+
+  it('lists an elliptical arc with its length and angles', () => {
+    const out = lines({
+      kind: 'ELLIPSE',
+      center: { x: 0, y: 0 },
+      majorAxis: { x: 2, y: 0 },
+      ratio: 1,
+      startParam: 0,
+      endParam: Math.PI,
+    });
+    expect(out[1]).toBe(`                  Length: ${(2 * Math.PI).toFixed(4)}`);
+    expect(out.slice(-2)).toEqual(['             Start Angle: 0', '               End Angle: 180']);
+  });
+
+  it('lists a spline: order, properties, range, control and fit points', () => {
+    const out = lines({
+      kind: 'SPLINE',
+      degree: 1,
+      knots: [0, 0, 1, 1],
+      controlPoints: [
+        { x: 0, y: 0 },
+        { x: 3, y: 4 },
+      ],
+      weights: [1, 2],
+      fitPoints: [{ x: 0, y: 0 }],
+      closed: false,
+      periodic: true,
+    });
+    expect(out).toEqual([
+      '                  Length: 5.0000',
+      '                   Order: 2',
+      '              Properties: Planar, Rational, Periodic',
+      '        Parametric Range: Start 0.0000',
+      '                          End 1.0000',
+      'Number of control points: 2',
+      '          Control Points: X=0.0000  Y=0.0000  Z=0.0000',
+      '                          X=3.0000  Y=4.0000  Z=0.0000',
+      '    Number of fit points: 1',
+      '    User Data: Fit Points X=0.0000  Y=0.0000  Z=0.0000',
+    ]);
+    const closed = lines({
+      kind: 'SPLINE',
+      degree: 1,
+      knots: [0, 0, 1, 1],
+      controlPoints: [
+        { x: 0, y: 0 },
+        { x: 3, y: 4 },
+      ],
+      closed: true,
+      periodic: false,
+    });
+    expect(closed[0]).toMatch(/^ +Perimeter: /);
+    expect(closed).toContain('              Properties: Planar, Non-Rational, Non-Periodic');
+    expect(closed.at(-1)).toBe('    Number of fit points: 0');
+  });
+
+  it('lists an attribute definition and how a text is mirrored', () => {
+    const out = lines({
+      kind: 'ATTDEF',
+      ...TEXT,
+      value: 'D1',
+      tag: 'NUM',
+      prompt: 'Number?',
+      flags: 0,
+      backward: true,
+      upsideDown: true,
+    });
+    expect(out.slice(0, 4)).toEqual([
+      '                  Style = "Standard"',
+      '                     Tag: NUM',
+      '                  Prompt: Number?',
+      '                 Default: D1',
+    ]);
+    expect(out.at(-1)).toBe('               generation backward, upside down');
+    const text = (backward: boolean, upsideDown: boolean) =>
+      lines({ kind: 'TEXT', ...TEXT, value: 'A', backward, upsideDown }).at(-1);
+    expect(text(true, false)).toBe('               generation backward');
+    expect(text(false, true)).toBe('               generation upside down');
+  });
+
+  it('lists an mtext', () => {
+    expect(
+      lines({
+        kind: 'MTEXT',
+        contents: 'one\\Ptwo',
+        style: '16',
+        position: { x: 1, y: 2 },
+        height: 2.5,
+        width: 30,
+        rotation: 0,
+        attachment: 1,
+        direction: 1,
+        lineSpacingStyle: 1,
+        lineSpacing: 1,
+      }),
+    ).toEqual([
+      '                Location: X=1.0000  Y=2.0000  Z=0.0000',
+      '                   Width: 30.0000',
+      '                Rotation: 0',
+      '              Text style: "Standard"',
+      '             Text height: 2.5000',
+      '              Attachment: TopLeft',
+      '                Contents: one\\Ptwo',
+    ]);
+    expect(
+      lines({
+        kind: 'MTEXT',
+        contents: '',
+        style: '99',
+        position: { x: 0, y: 0 },
+        height: 1,
+        width: 0,
+        rotation: 0,
+        attachment: 12,
+        direction: 1,
+        lineSpacingStyle: 1,
+        lineSpacing: 1,
+      }).slice(3, 6),
+    ).toEqual([
+      '              Text style: ""',
+      '             Text height: 1.0000',
+      '              Attachment: 12',
+    ]);
+  });
+
+  it('lists a block reference array and its attributes, and one of an unknown block', () => {
+    const out = lines({
+      kind: 'INSERT',
+      block: '17',
+      position: { x: 0, y: 0 },
+      scale: { x: 1, y: 1, z: 1 },
+      rotation: 0,
+      array: { columns: 2, rows: 3, columnSpacing: 4, rowSpacing: 5 },
+      attributes: [
+        {
+          ...TEXT,
+          handle: '9A',
+          layer: LAYER_0,
+          tag: 'NUM',
+          value: '7',
+          flags: 0,
+          backward: false,
+          upsideDown: false,
+        },
+      ],
+    });
+    expect(out.slice(8)).toEqual([
+      '                 Columns: 2',
+      '                    Rows: 3',
+      '          Column spacing: 4.0000',
+      '             Row spacing: 5.0000',
+      '',
+      `${' '.repeat(18)}ATTRIBUTE  Layer: "0"`,
+      '                 Handle = 9a',
+      '                  Style = "Standard"',
+      '                     Tag: NUM',
+      '                   Value: 7',
+      '             start point, X=1.0000  Y=2.0000  Z=0.0000',
+      '                   height 1.0000',
+      '           rotation angle 0',
+    ]);
+    const unknown = lines({
+      kind: 'INSERT',
+      block: '99',
+      position: { x: 0, y: 0 },
+      scale: { x: 1, y: 1, z: 1 },
+      rotation: 0,
+      attributes: [],
+    });
+    expect(unknown[0]).toBe('              Block Name: ""');
+    expect(unknown).toHaveLength(6);
+  });
+
+  it('lists a dimension: type, measurement, text override and style', () => {
+    const dim = (geom: object) => lines({ ...DIM, ...geom });
+    expect(
+      dim({ dimType: 'aligned', first: { x: 0, y: 0 }, second: { x: 3, y: 4 }, text: 'W=<>' }),
+    ).toEqual([
+      '                    type: Aligned',
+      '             measurement: 5.0000',
+      '           text override: W=<>',
+      '           text position, X=5.0000  Y=6.0000  Z=0.0000',
+      '         dimension style: ""',
+    ]);
+    const measured = (geom: object) => dim(geom)[1];
+    expect(
+      measured({
+        dimType: 'linear',
+        first: { x: 0, y: 0 },
+        second: { x: 3, y: 4 },
+        rotation: Math.PI / 2,
+      }),
+    ).toBe('             measurement: 4.0000');
+    expect(measured({ dimType: 'linear', first: { x: 0, y: 0 }, second: { x: 3, y: 4 } })).toBe(
+      '             measurement: 3.0000',
+    );
+    for (const dimType of ['radius', 'diameter']) {
+      expect(measured({ dimType, chordPoint: { x: 0, y: 2 }, leaderLength: 0, text: '<>' })).toBe(
+        '             measurement: 2.0000',
+      );
+    }
+    expect(
+      measured({
+        kind: 'LARGE_RADIAL_DIMENSION',
+        dimType: 'jogged',
+        chordPoint: { x: 3, y: 0 },
+        overrideCenter: { x: 0, y: 0 },
+        jogPoint: { x: 0, y: 0 },
+        leaderLength: 0,
+      }),
+    ).toBe('             measurement: 3.0000');
+    for (const second of [
+      { x: 0, y: 1 },
+      { x: 0, y: -1 },
+      { x: -1, y: -0.0001 },
+    ]) {
+      expect(
+        measured({
+          dimType: 'angular3pt',
+          vertex: { x: 0, y: 0 },
+          first: { x: 1, y: 0 },
+          second,
+        }),
+      ).toMatch(/measurement: (90|180)$/);
+    }
+    expect(
+      measured({
+        kind: 'ARC_DIMENSION',
+        dimType: 'arc',
+        first: { x: 2, y: 0 },
+        second: { x: -2, y: 0 },
+        center: { x: 0, y: 0 },
+        startAngle: Math.PI,
+        endAngle: 0,
+        partial: false,
+      }),
+    ).toBe(`             measurement: ${(2 * Math.PI).toFixed(4)}`);
+    const angular = dim({
+      dimType: 'angular',
+      line1Start: { x: 0, y: 0 },
+      line1End: { x: 1, y: 0 },
+      line2Start: { x: 0, y: 0 },
+      arcPoint: { x: 1, y: 1 },
+    });
+    expect(angular[0]).toBe('                    type: Angular');
+    expect(angular[1]).toMatch(/text position,/);
+    expect(
+      dim({
+        dimType: 'ordinate',
+        axis: 'x',
+        feature: { x: 0, y: 0 },
+        leaderEnd: { x: 0, y: 0 },
+      })[0],
+    ).toBe('                    type: Ordinate');
+  });
+
+  it('lists a hatch: pattern, scale and angle, associativity', () => {
+    const hatch = (solid: boolean) =>
+      lines({
+        kind: 'HATCH',
+        pattern: solid ? 'SOLID' : 'ANSI31',
+        solid,
+        associative: solid,
+        style: 0,
+        patternType: 1,
+        patternAngle: Math.PI / 4,
+        patternScale: 2,
+        double: false,
+        loops: [],
+        patternLines: [],
+        seedPoints: [],
+      });
+    expect(hatch(true)).toEqual([
+      '            Hatch pattern SOLID',
+      '             Associative: Yes',
+    ]);
+    expect(hatch(false)).toEqual([
+      '            Hatch pattern ANSI31',
+      '              Hatch scale 2.0000',
+      '              Hatch angle 45',
+      '             Associative: No',
+    ]);
+  });
+
+  it('lists only the header of a type it does not read further', () => {
+    expect(lines({ kind: 'REGION' }, {}, 0)).toEqual([
+      ...HEADER('REGION'),
+      '                 Handle = 90',
+    ]);
   });
 });

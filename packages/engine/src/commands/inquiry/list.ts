@@ -58,7 +58,6 @@ function colorText(c: Color): string | undefined {
 /** The DXF type name LIST heads an object with (a block reference is "BLOCK REFERENCE"). */
 function typeName(e: Entity): string {
   if (e.geom.kind === 'INSERT') return 'BLOCK REFERENCE';
-  if (e.geom.kind === 'IMAGE' || e.geom.kind === 'WIPEOUT') return e.geom.kind;
   return e.type;
 }
 
@@ -397,8 +396,8 @@ function dimensionMeasurement(g: DimGeometry): number | undefined {
     }
     case 'radius':
     case 'jogged':
-      return distance(g.definitionPoint, g.chordPoint);
     case 'diameter':
+      // 10 is the centre for a radius, the far chord point for a diameter.
       return distance(g.definitionPoint, g.chordPoint);
     case 'angular3pt': {
       const a1 = angleOf(sub(g.first, g.vertex));

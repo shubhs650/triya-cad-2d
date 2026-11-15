@@ -294,6 +294,38 @@ describe('Arc option of the next-point prompts', () => {
       `Total area = ${area}`,
     ]);
   });
+  it('starts an arc from the first point, CLoses DIST with an arc, and refuses a bad CLose', async () => {
+    const s = setup();
+    // From the first point there is nothing to close or undo yet.
+    await s.bus.script(['AREA', '0,0', 'A']);
+    expect(s.bus.promptText).toBe(
+      'Specify endpoint of arc or [Angle/CEnter/Direction/Line/Radius/Second pt/Undo]:',
+    );
+    await s.bus.script(['U']);
+    expect(s.log.at(-1)).toBe('All segments already undone.');
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    // Straight on from (20,0) the first point lies behind: no arc tangent to the path reaches it.
+    await s.bus.script(['AREA', '0,0', '10,0', '20,0', 'A', 'CL']);
+    expect(s.log.at(-1)).toMatch(/invalid/i);
+    expect(s.bus.command).toBeDefined();
+    await s.bus.cancel();
+    // DIST measures the closing arc as one more segment: 270° of radius 10 from (10,10).
+    await s.bus.script(['DIST', '0,0', 'M', '10,0', '10,10', 'A', 'CL']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.log.at(-1)).toBe(`Distance = ${(20 + 15 * Math.PI).toFixed(4)}`);
+  });
+
+  it('takes a Length back the way the path came, and Enter or Esc at the Length prompt', async () => {
+    const s = setup();
+    await s.bus.script(['DIST', '0,0', 'M', '10,0', 'L', '']);
+    expect(s.bus.promptText).toBe('Specify next point or [Arc/Length/Undo/Total] <Total>:');
+    await s.bus.script(['L', '-4']);
+    expect(s.log.at(-1)).toBe('Distance = 14.0000');
+    await s.bus.script(['L']);
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+  });
 });
 
 describe('AREA', () => {
@@ -514,6 +546,29 @@ describe('MEASUREGEOM', () => {
       'Move cursor or [Distance/Radius/Angle/ARea/Volume/Quick/Mode/eXit] <eXit>:',
     );
     await s.bus.script(['']);
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it('Quick: a click in no space clears the picks, Quick asks again, Esc ends', async () => {
+    const s = setup();
+    await s.bus.script(['MEASUREGEOM', 'Q']);
+    expect(s.bus.promptText).toBe(
+      'Move cursor or [Distance/Radius/Angle/ARea/Volume/Quick/Mode/eXit] <eXit>:',
+    );
+    await s.bus.pick({ x: 5, y: 6.5 });
+    // Outside every outline a Shift-click adds nothing (the circle's area stands), a click
+    // clears the picks and writes nothing.
+    await s.bus.pick({ x: 90, y: 90 }, { shift: true });
+    const circle = `Area = ${(4 * Math.PI).toFixed(4)}, Perimeter = ${(4 * Math.PI).toFixed(4)}`;
+    expect(s.log.at(-1)).toBe(circle);
+    const before = s.log.length;
+    await s.bus.pick({ x: 90, y: 90 });
+    expect(s.log.slice(before).filter((l) => /^(Total )?Area =/.test(l))).toEqual([]);
+    expect(s.bus.prompt).toMatchObject({ quick: { loops: [] } });
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.script(['MEASUREGEOM', 'M']);
+    await s.bus.cancel();
     expect(s.bus.command).toBeUndefined();
   });
 

@@ -81,6 +81,20 @@ describe('quickMeasure', () => {
     expect(r4(square.sweep)).toBe(r4(Math.PI / 2));
   });
 
+  it('measures the angle where a line meets the end of an arc, along its tangent', () => {
+    const src = source([
+      lineGeom(0, 0, 10, 0),
+      { kind: 'ARC', center: at(15, 0), radius: 5, startAngle: 0, endAngle: Math.PI },
+      { kind: 'ARC', center: at(-5, 0), radius: 5, startAngle: Math.PI, endAngle: 0 },
+    ]);
+    const m = quickMeasure(src, { point: at(5, 0.1), aperture: 0.2, view: VIEW });
+    // The first arc leaves (10,0) heading north, the second leaves (0,0) heading north too.
+    expect(m.angles.map((a) => [a.vertex, a.text, a.right])).toEqual([
+      [at(0, 0), '90°', true],
+      [at(10, 0), '90°', true],
+    ]);
+  });
+
   it("gives a hovered circle's radius towards the cursor", () => {
     const src = source([circleGeom(0, 0, 5)]);
     const m = quickMeasure(src, { point: at(0, 5.1), aperture: 0.2, view: VIEW });
