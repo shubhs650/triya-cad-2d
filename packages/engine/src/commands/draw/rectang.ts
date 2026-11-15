@@ -169,7 +169,9 @@ export function rectangCommand(): CommandDef {
           ...ctx.prompt.point({
             message: 'Specify other corner point or',
             options: ['Area', 'Dimensions', 'Rotation'],
-            ...(!size && { rubberBand: { from: corner } }),
+            // Typed coordinates count from the first corner (Dynamic Input's X and Y), the
+            // dragged rectangle drawn rather than a band.
+            ...(!size && { rubberBand: { from: corner, box: true, drawn: false } }),
           }),
           drag: { kind: 'sketch', sketch, layer: currentProps(ctx.model).layer },
         };

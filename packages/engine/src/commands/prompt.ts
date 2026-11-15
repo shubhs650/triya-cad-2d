@@ -71,6 +71,11 @@ export interface PointPrompt extends PromptBase {
   readonly rubberBand?: {
     readonly from: Vec2;
     readonly box?: boolean;
+    /**
+     * False: nothing is drawn for it, the drag draws the shape (RECTANG's rounded or turned
+     * rectangle, M3-01 part 3); the cursor is still measured from `from`.
+     */
+    readonly drawn?: false;
     readonly selection?: 'auto' | 'window' | 'crossing';
   };
   /**
