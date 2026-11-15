@@ -95,6 +95,8 @@ import { QuickProperties } from './QuickProperties';
 import { quickRequests, selectionKey } from './quick-properties';
 import { RolloverTooltip } from './RolloverTooltip';
 import { hoverRollover, rollovers } from './rollover';
+import { gripMenus } from './grip-menu';
+import { GripMenu } from './GripMenu';
 import { hatchPatternNames, hatchPatternReply } from './hatch-patterns';
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
@@ -284,6 +286,10 @@ engines.onCommand((doc, o) => {
   // A rollover tooltip's answer shows; a command starting takes it away (M2-35 part 21).
   if (o.type === 'rollover') rollovers.answer(doc, o.id, o.sheet);
   if (o.type === 'start') rollovers.clear(doc);
+  // A grip's hover menu (M3-05 part 2): shown from the engine's answer, gone as a command
+  // starts or the grips change.
+  if (o.type === 'grip-menu') gripMenus.answer(doc, o.point, o.grip, o.items);
+  if (o.type === 'start' || o.type === 'grips') gripMenus.close(doc);
   // The Quick Access Undo and Redo buttons and the undo toast follow the history (M2-23).
   if (o.type === 'undo') undoStates.set(doc, o.state, o.action);
   if (o.type === 'selection') {
@@ -1752,6 +1758,7 @@ export function App() {
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
+      <GripMenu />
       <CommandLine
         doc={active?.id}
         variables={variables}
@@ -2048,13 +2055,20 @@ function ViewportCanvas({
         }),
       onSnapMenu: (at) => snapMenu.open(id, at),
       // Rollover tooltips (M2-35 part 21): the object under a resting cursor at `Command:`.
-      onRest: (at) =>
+      onRest: (at) => {
         void hoverRollover(rollovers, id, at, {
           enabled: () => drafting.get().rolloverTips,
           idle: () => atCommand(id),
           pick: (world) => c.pick(world),
           ask: (entity) => engines.command(id, { kind: 'rollover', id: entity }),
-        }),
+        });
+        // A grip's hover menu (M3-05 part 2): the grip of the selection under the cursor.
+        gripMenus.rest(id, at, {
+          idle: () => atCommand(id) && (grips.get(id)?.ids.length ?? 0) > 0,
+          reach: () => c.gripReach(),
+          ask: (point, within) => engines.command(id, { kind: 'grip-menu', point, within }),
+        });
+      },
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },

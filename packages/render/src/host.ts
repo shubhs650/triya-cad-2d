@@ -302,6 +302,12 @@ export class RendererHost {
     else this.#post({ type: 'grips', ids, hot: hot ?? null });
   }
 
+  /** The cursor for the grip hover colour (M3-05 part 2); undefined, none. */
+  setGripHover(at: Vec2 | undefined, within: number): void {
+    if (this.#session) this.#session.renderer.setGripHover(at, within);
+    else this.#post({ type: 'grip-hover', at: at ?? null, within });
+  }
+
   /** The extents of some entities (ZOOM Object, M2-03); undefined when none is known. */
   boundsOf(ids: readonly EntityId[]): Promise<Box | undefined> {
     if (this.#session) return Promise.resolve(this.#session.boundsOf(ids));
