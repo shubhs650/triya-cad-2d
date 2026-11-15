@@ -275,29 +275,22 @@ export const AUTOSNAP_KEPT = AUTOSNAP_MARKER | AUTOSNAP_TIP | AUTOSNAP_MAGNET | 
 export type DraftingToggle =
   'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp' | 'sc' | 'groups';
 
-/** The function keys AutoCAD gives the toggles. */
-export const DRAFTING_KEYS: Readonly<Record<string, DraftingToggle>> = {
-  F3: 'osnap',
-  F7: 'grid',
-  F8: 'ortho',
-  F9: 'snap',
-  F10: 'polar',
-  F11: 'otrack',
-};
-
-/** The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). */
+/**
+ * The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). Their keys (F3, F7–F11,
+ * Ctrl+Shift+P, Ctrl+W, Ctrl+Shift+A, AutoCAD's) are the keyboard map's (keymap.ts, M3-10 part 2).
+ */
 export const DRAFTING_ITEMS = [
-  { id: 'drafting:osnap', label: 'Object Snap on/off', keys: 'F3' },
-  { id: 'drafting:grid', label: 'Grid Display on/off', keys: 'F7' },
-  { id: 'drafting:ortho', label: 'Ortho Mode on/off', keys: 'F8' },
-  { id: 'drafting:snap', label: 'Snap Mode on/off', keys: 'F9' },
-  { id: 'drafting:polar', label: 'Polar Tracking on/off', keys: 'F10' },
-  { id: 'drafting:otrack', label: 'Object Snap Tracking on/off', keys: 'F11' },
-  { id: 'drafting:lwt', label: 'Show/Hide Lineweight', keys: '' },
-  { id: 'drafting:tpy', label: 'Show/Hide Transparency', keys: '' },
-  { id: 'drafting:qp', label: 'Quick Properties on/off', keys: 'Ctrl+Shift+P' },
-  { id: 'drafting:sc', label: 'Selection Cycling on/off', keys: 'Ctrl+W' },
-  { id: 'drafting:groups', label: 'Group Selection on/off', keys: 'Ctrl+Shift+A' },
+  { id: 'drafting:osnap', label: 'Object Snap on/off' },
+  { id: 'drafting:grid', label: 'Grid Display on/off' },
+  { id: 'drafting:ortho', label: 'Ortho Mode on/off' },
+  { id: 'drafting:snap', label: 'Snap Mode on/off' },
+  { id: 'drafting:polar', label: 'Polar Tracking on/off' },
+  { id: 'drafting:otrack', label: 'Object Snap Tracking on/off' },
+  { id: 'drafting:lwt', label: 'Show/Hide Lineweight' },
+  { id: 'drafting:tpy', label: 'Show/Hide Transparency' },
+  { id: 'drafting:qp', label: 'Quick Properties on/off' },
+  { id: 'drafting:sc', label: 'Selection Cycling on/off' },
+  { id: 'drafting:groups', label: 'Group Selection on/off' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {

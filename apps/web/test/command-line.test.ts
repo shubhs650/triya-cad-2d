@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 import {
   CommandLines,
   IDLE,
-  clipboardCommand,
   completions,
   follow,
   holdsKey,
@@ -270,39 +269,5 @@ describe('promptParts', () => {
       after: '',
     });
     expect(promptParts('Odd:', ['X'])).toEqual({ before: 'Odd:', options: [], after: '' });
-  });
-});
-
-describe('clipboardCommand (M2-14 part 2)', () => {
-  const press = (key: string, o: { shift?: boolean; meta?: boolean; alt?: boolean } = {}) =>
-    clipboardCommand({
-      key,
-      ctrlKey: !o.meta,
-      metaKey: o.meta === true,
-      shiftKey: o.shift === true,
-      altKey: o.alt === true,
-    });
-
-  it('binds the Clipboard keys as AutoCAD does', () => {
-    expect(press('c')).toBe('COPYCLIP');
-    expect(press('x')).toBe('CUTCLIP');
-    expect(press('v')).toBe('PASTECLIP');
-    expect(press('C', { shift: true })).toBe('COPYBASE');
-    expect(press('V', { shift: true })).toBe('PASTEBLOCK');
-    expect(press('v', { meta: true })).toBe('PASTECLIP');
-  });
-
-  it('leaves other keys alone', () => {
-    expect(press('x', { shift: true })).toBeUndefined();
-    expect(press('c', { alt: true })).toBeUndefined();
-    expect(
-      clipboardCommand({
-        key: 'c',
-        ctrlKey: false,
-        metaKey: false,
-        shiftKey: false,
-        altKey: false,
-      }),
-    ).toBeUndefined();
   });
 });

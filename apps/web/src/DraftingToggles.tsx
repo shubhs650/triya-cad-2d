@@ -1,27 +1,34 @@
 // The status bar's drafting aids (M2-04): GRID, SNAP, ORTHO, POLAR, OTRACK and OSNAP, then
-// LWT, TPY, QP (Quick Properties) and SC (Selection Cycling), in AutoCAD's order, each with its function key in the tooltip, and OSNAP's menu
-// of running object snap modes (AutoCAD's arrow beside the OSNAP button), a checkbox per mode.
+// LWT, TPY, QP (Quick Properties) and SC (Selection Cycling), in AutoCAD's order, each with its
+// first key in the tooltip as the keyboard map has it (M3-10 part 2), and OSNAP's menu of
+// running object snap modes (AutoCAD's arrow beside the OSNAP button), a checkbox per mode.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { OSNAP, OSNAP_MODES } from '@triya/engine';
 import { drafting, isOn, type DraftingToggle } from './drafting';
+import { keymap, keymapVersion } from './shortcuts';
 
 const TOGGLES: readonly { toggle: DraftingToggle; label: string; title: string }[] = [
-  { toggle: 'grid', label: 'GRID', title: 'Grid Display (F7)' },
-  { toggle: 'snap', label: 'SNAP', title: 'Snap Mode (F9)' },
-  { toggle: 'ortho', label: 'ORTHO', title: 'Ortho Mode (F8)' },
-  { toggle: 'polar', label: 'POLAR', title: 'Polar Tracking (F10)' },
-  { toggle: 'otrack', label: 'OTRACK', title: 'Object Snap Tracking (F11)' },
-  { toggle: 'osnap', label: 'OSNAP', title: 'Object Snap (F3)' },
+  { toggle: 'grid', label: 'GRID', title: 'Grid Display' },
+  { toggle: 'snap', label: 'SNAP', title: 'Snap Mode' },
+  { toggle: 'ortho', label: 'ORTHO', title: 'Ortho Mode' },
+  { toggle: 'polar', label: 'POLAR', title: 'Polar Tracking' },
+  { toggle: 'otrack', label: 'OTRACK', title: 'Object Snap Tracking' },
+  { toggle: 'osnap', label: 'OSNAP', title: 'Object Snap' },
   { toggle: 'lwt', label: 'LWT', title: 'Show/Hide Lineweight' },
   { toggle: 'tpy', label: 'TPY', title: 'Show/Hide Transparency' },
   // AutoCAD's Quick Properties button (QPMODE, M2-35 part 16), after TPY as in its status bar.
-  { toggle: 'qp', label: 'QP', title: 'Quick Properties (Ctrl+Shift+P)' },
+  { toggle: 'qp', label: 'QP', title: 'Quick Properties' },
   // Selection Cycling (SELECTIONCYCLING, M3-04 part 3), AutoCAD's SC button.
-  { toggle: 'sc', label: 'SC', title: 'Selection Cycling (Ctrl+W)' },
+  { toggle: 'sc', label: 'SC', title: 'Selection Cycling' },
 ];
 
 export function DraftingToggles() {
   const state = useSyncExternalStore(drafting.subscribe, drafting.get);
+  useSyncExternalStore(keymapVersion.subscribe, keymapVersion.get);
+  const title = (t: (typeof TOGGLES)[number]) => {
+    const key = keymap().keysOf(`drafting:${t.toggle}`)[0];
+    return key === undefined ? t.title : `${t.title} (${key})`;
+  };
   const [menu, setMenu] = useState(false);
   const close = useCallback(() => setMenu(false), []);
   return (
@@ -32,7 +39,7 @@ export function DraftingToggles() {
             type="button"
             className="status-toggle"
             aria-pressed={isOn(state, t.toggle, drafting.drawingLineweights)}
-            title={t.title}
+            title={title(t)}
             onClick={() => drafting.toggle(t.toggle)}
           >
             {t.label}

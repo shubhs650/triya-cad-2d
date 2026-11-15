@@ -100,6 +100,18 @@ describe('preferences', () => {
     expect(DEFAULT_PREFERENCES.filters).toEqual({});
     // No user alias file (M3-10).
     expect(DEFAULT_PREFERENCES.aliasFile).toBe('');
+    // AutoCAD's default shortcut keys (M3-10 part 2).
+    expect(DEFAULT_PREFERENCES.keys).toEqual({});
+  });
+
+  it('keep the user shortcut keys they can use (M3-10 part 2)', () => {
+    expect(
+      normalizePreferences({ keys: { 'command:LINE': ['ctrl+alt+l'], 'drafting:osnap': [] } }).keys,
+    ).toEqual({ 'command:LINE': ['Ctrl+Alt+L'], 'drafting:osnap': [] });
+    expect(normalizePreferences({ keys: { 'command:LINE': ['L'] } }).keys).toEqual({
+      'command:LINE': [],
+    });
+    expect(normalizePreferences({ keys: 'F1' }).keys).toEqual({});
   });
 
   it('keep the user alias file, unless it is not text or too long (M3-10)', () => {

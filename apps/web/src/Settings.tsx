@@ -45,6 +45,7 @@ export function Settings({
   onAddFonts,
   onAddFiles,
   onEditAliases,
+  onEditShortcuts,
 }: {
   preferences: PreferencesStore;
   /** Deletes everything on the device; the page reloads unless something could not go. */
@@ -62,6 +63,8 @@ export function Settings({
   onAddFiles: (files: Iterable<File>) => void;
   /** Opens the Edit Aliases dialog (M3-10). */
   onEditAliases?: () => void;
+  /** Opens the Keyboard Shortcuts dialog (M3-10 part 2). */
+  onEditShortcuts?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -213,6 +216,13 @@ export function Settings({
         <p>Your own aliases, in acad.pgp syntax, run in place of the default ones.</p>
         <button type="button" onClick={onEditAliases}>
           Edit aliases…
+        </button>
+      </section>
+      <section aria-labelledby="shortcuts-title">
+        <h3 id="shortcuts-title">Keyboard shortcuts</h3>
+        <p>AutoCAD&apos;s shortcut keys (F1–F12, Ctrl+…), and your own for any command.</p>
+        <button type="button" onClick={onEditShortcuts}>
+          Edit shortcut keys…
         </button>
       </section>
       <LocalData onClearAll={onClearAll} />
