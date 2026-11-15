@@ -84,6 +84,8 @@ describe('palette search', () => {
       'MTEXT',
       'OFFSET',
       'OOPS',
+      // M3-02 part 6: OVERKILL and SPLINEDIT.
+      'OVERKILL',
       'PAN',
       'PASTEBLOCK',
       'PASTECLIP',
@@ -116,6 +118,7 @@ describe('palette search', () => {
       'SELECT',
       'SETVAR',
       'SPLINE',
+      'SPLINEDIT',
       'STRETCH',
       'TEXT',
       'TEXTEDIT',

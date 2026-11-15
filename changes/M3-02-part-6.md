@@ -1,0 +1,1 @@
+- M3-02 part 6 (#384): SPLINEDIT (Fit data, Edit vertex, Join, Close/Open, convert to Polyline, Reverse, Undo) and OVERKILL with its Delete Duplicate Objects dialog and -OVERKILL; M3-02 is complete, its leftovers moved to M3-12.
