@@ -12,8 +12,15 @@
 // cursor snaps from the first point specified to distances of 0, 4, 8, 12, 16, and so on");
 // off every path it is free. And polar angles relative to the last segment (POLARMODE 1).
 //
-// Not in this version: SNAPANG, UCS. Isometric snap is PRD non-goal 7 (DEC-060).
+// M3-06 part 7: the UCS and SNAPANG. AutoCAD 2024 Help, "SNAPANG": the snap and grid turn by
+// it "relative to the current UCS", and ORTHO "restricts cursor movement to the horizontal or
+// vertical directions, relative to the UCS", turned with the snap angle; polar tracking's
+// angles and object snap tracking's horizontal and vertical paths count from the UCS's X axis
+// ("Polar angle measurement: Absolute: Bases polar tracking angles on the current user
+// coordinate system"). `ucs` is the UCS X axis's world angle, `snapAngle` SNAPANG on top of it.
+// Isometric snap is PRD non-goal 7 (DEC-060).
 import type { Vec2 } from '../geom/types';
+import { unitAt } from './ucs';
 import {
   orthoTrack,
   polarAngles,
@@ -24,11 +31,24 @@ import {
   type TrackPath,
 } from './track';
 
-/** ORTHO: the horizontal or vertical from `base`, whichever the cursor is nearer to. */
-export function orthoPoint(base: Vec2, p: Vec2): Vec2 {
-  return Math.abs(p.x - base.x) >= Math.abs(p.y - base.y)
-    ? { x: p.x, y: base.y }
-    : { x: base.x, y: p.y };
+/**
+ * ORTHO: the horizontal or vertical from `base`, whichever the cursor is nearer to; with `angle`
+ * (the UCS and snap angle), the axes turned by it.
+ */
+export function orthoPoint(base: Vec2, p: Vec2, angle = 0): Vec2 {
+  if (angle === 0)
+    return Math.abs(p.x - base.x) >= Math.abs(p.y - base.y)
+      ? { x: p.x, y: base.y }
+      : { x: base.x, y: p.y };
+  const u = unitAt(angle);
+  const dx = p.x - base.x;
+  const dy = p.y - base.y;
+  const along = dx * u.x + dy * u.y;
+  const across = -dx * u.y + dy * u.x;
+  const keep = (v: number) => +v.toPrecision(15);
+  return Math.abs(along) >= Math.abs(across)
+    ? { x: keep(base.x + along * u.x), y: keep(base.y + along * u.y) }
+    : { x: keep(base.x - across * u.y), y: keep(base.y + across * u.x) };
 }
 
 export interface PolarSettings {
@@ -41,6 +61,11 @@ export interface PolarSettings {
    * radians, which the polar angles count from.
    */
   readonly relative?: number;
+  /**
+   * The UCS X axis's world angle (M3-06 part 7), which the polar angles count from when they
+   * are not relative to the last segment, and which the tooltip's angles are measured from.
+   */
+  readonly zero?: number;
 }
 
 export interface PolarLock {
@@ -52,6 +77,8 @@ export interface PolarLock {
   readonly distance: number;
   /** The last segment's angle the path's angle counts from (POLARMODE 1). */
   readonly relative?: number;
+  /** The UCS X axis's angle the tooltip counts an absolute path's angle from. */
+  readonly zero?: number;
 }
 
 const TAU = 2 * Math.PI;
@@ -106,11 +133,21 @@ export function polarLabel(t: PolarLock, precision = 4): string {
   return `${name}: ${t.distance.toFixed(precision)} < ${shown}°`;
 }
 
-/** SNAP: the nearest snap point, `spacing` apart from `base` (SNAPUNIT, SNAPBASE). */
-export function snapToGrid(p: Vec2, spacing: Vec2, base: Vec2 = { x: 0, y: 0 }): Vec2 {
+/**
+ * SNAP: the nearest snap point, `spacing` apart from `base` (SNAPUNIT, SNAPBASE), along axes
+ * turned by `angle` (the UCS and SNAPANG) about the base.
+ */
+export function snapToGrid(p: Vec2, spacing: Vec2, base: Vec2 = { x: 0, y: 0 }, angle = 0): Vec2 {
   const round = (v: number, o: number, s: number) =>
     s > 0 ? +(o + Math.round((v - o) / s) * s).toPrecision(15) : v;
-  return { x: round(p.x, base.x, spacing.x), y: round(p.y, base.y, spacing.y) };
+  if (angle === 0) return { x: round(p.x, base.x, spacing.x), y: round(p.y, base.y, spacing.y) };
+  const u = unitAt(angle);
+  const dx = p.x - base.x;
+  const dy = p.y - base.y;
+  const i = round(dx * u.x + dy * u.y, 0, spacing.x);
+  const j = round(-dx * u.y + dy * u.x, 0, spacing.y);
+  const keep = (v: number) => +v.toPrecision(15);
+  return { x: keep(base.x + i * u.x - j * u.y), y: keep(base.y + i * u.y + j * u.x) };
 }
 
 export interface ConstrainOptions {
@@ -134,6 +171,10 @@ export interface ConstrainOptions {
   readonly acquired?: readonly Acquired[];
   /** POLARMODE bit 2: OTRACK follows the polar angles. */
   readonly trackPolar?: boolean;
+  /** The UCS X axis's world angle, radians (M3-06 part 7). */
+  readonly ucs?: number;
+  /** SNAPANG: the snap, grid and ORTHO axes turned from the UCS's, radians. */
+  readonly snapAngle?: number;
 }
 
 export interface Constrained {
@@ -151,15 +192,17 @@ export interface Constrained {
  */
 export function constrainCursor(p: Vec2, o: ConstrainOptions): Constrained {
   const polarSnap = o.polarSnap !== undefined && o.polarSnap > 0 ? o.polarSnap : undefined;
-  const snapped = o.snap && !polarSnap ? snapToGrid(p, o.snap, o.snapBase) : p;
+  const zero = o.ucs ?? 0;
+  const axes = zero + (o.snapAngle ?? 0);
+  const snapped = o.snap && !polarSnap ? snapToGrid(p, o.snap, o.snapBase, axes) : p;
   const acquired = o.acquired ?? [];
   const tolerance = o.tolerance ?? 0;
   if (o.base && o.ortho) {
-    const point = orthoPoint(o.base, snapped);
+    const point = orthoPoint(o.base, snapped, axes);
     const axis = Math.atan2(point.y - o.base.y, point.x - o.base.x);
     const lock =
       acquired.length > 0 && (point.x !== o.base.x || point.y !== o.base.y)
-        ? orthoTrack(o.base, axis, p, acquired, tolerance)
+        ? orthoTrack(o.base, axis, p, acquired, tolerance, zero)
         : undefined;
     return lock ? { point: lock.point, track: lock } : { point };
   }
@@ -167,9 +210,10 @@ export function constrainCursor(p: Vec2, o: ConstrainOptions): Constrained {
   if (polar || acquired.length > 0) {
     const found = trackCursor(p, {
       ...(o.base && { base: o.base }),
-      ...(o.polar && { polar: o.polar }),
+      ...(o.polar && { polar: zero ? { ...o.polar, zero } : o.polar }),
       acquired,
       ...(o.trackPolar && { trackPolar: true }),
+      ...(zero && { zero }),
       tolerance,
     });
     const only = found?.paths.length === 1 ? found.paths[0]! : undefined;
@@ -186,6 +230,7 @@ export function constrainCursor(p: Vec2, o: ConstrainOptions): Constrained {
           angle: only.angle,
           distance,
           ...(only.relative !== undefined && { relative: only.relative }),
+          ...(only.zero !== undefined && { zero: only.zero }),
         },
       };
     }

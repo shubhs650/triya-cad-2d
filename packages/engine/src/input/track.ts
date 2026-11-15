@@ -40,6 +40,8 @@ export interface TrackPath {
   readonly polar?: true;
   /** POLARMODE 1: the last segment's angle, which the tooltip's angle counts from. */
   readonly relative?: number;
+  /** The UCS X axis's angle, which the tooltip's angle counts from otherwise (M3-06 part 7). */
+  readonly zero?: number;
 }
 
 export interface TrackLock {
@@ -56,6 +58,11 @@ export interface TrackOptions {
   readonly acquired?: readonly Acquired[];
   /** POLARMODE bit 2: OTRACK follows the polar angles rather than horizontal and vertical. */
   readonly trackPolar?: boolean;
+  /**
+   * The UCS X axis's world angle (M3-06 part 7): OTRACK's horizontal and vertical paths are the
+   * UCS's, and the tooltips count angles from it.
+   */
+  readonly zero?: number;
   /** How near the cursor must pass a path, drawing units. */
   readonly tolerance: number;
 }
@@ -74,7 +81,7 @@ const norm = (a: number): number => ((a % TAU) + TAU) % TAU;
  */
 export function polarAngles(s: PolarSettings, fromLast = true): number[] {
   const out: number[] = [];
-  const turn = fromLast ? (s.relative ?? 0) : 0;
+  const turn = (fromLast ? s.relative : undefined) ?? s.zero ?? 0;
   if (s.increment > 1e-9) {
     const n = Math.min(Math.round(TAU / s.increment), 3600);
     for (let k = 0; k < n; k++) out.push(norm(turn + k * s.increment));
@@ -87,6 +94,8 @@ export function polarAngles(s: PolarSettings, fromLast = true): number[] {
 export function trackPaths(o: Omit<TrackOptions, 'tolerance'>): TrackPath[] {
   const paths: TrackPath[] = [];
   const { base, polar } = o;
+  const zero = o.zero ?? polar?.zero;
+  const z = zero ? { zero } : {};
   if (base && polar) {
     const relative = polar.relative;
     const label = relative === undefined ? 'Polar' : 'Relative Polar';
@@ -96,22 +105,25 @@ export function trackPaths(o: Omit<TrackOptions, 'tolerance'>): TrackPath[] {
         angle: a,
         label,
         polar: true,
-        ...(relative !== undefined && { relative }),
+        ...(relative !== undefined ? { relative } : z),
       });
     }
   }
-  const otrack = o.trackPolar && polar ? polarAngles(polar, false) : ORTHOGONAL;
+  const otrack =
+    o.trackPolar && polar
+      ? polarAngles(polar, false)
+      : ORTHOGONAL.map((a) => (zero ? norm(a + zero) : a));
   for (const q of o.acquired ?? []) {
     if (q.kind === 'point') {
       const label = LABEL.get(q.mode) ?? q.mode;
-      for (const a of otrack) paths.push({ from: q.point, angle: a, label });
+      for (const a of otrack) paths.push({ from: q.point, angle: a, label, ...z });
     } else if (q.kind === 'extension') {
       const a = norm(Math.atan2(q.direction.y, q.direction.x));
-      paths.push({ from: q.point, angle: a, label: 'Extension' });
+      paths.push({ from: q.point, angle: a, label: 'Extension', ...z });
     } else if (base) {
       const a = norm(Math.atan2(q.direction.y, q.direction.x));
-      paths.push({ from: base, angle: a, label: 'Parallel' });
-      paths.push({ from: base, angle: norm(a + Math.PI), label: 'Parallel' });
+      paths.push({ from: base, angle: a, label: 'Parallel', ...z });
+      paths.push({ from: base, angle: norm(a + Math.PI), label: 'Parallel', ...z });
     }
   }
   return paths;
@@ -189,10 +201,11 @@ export function orthoTrack(
   p: Vec2,
   acquired: readonly Acquired[],
   tolerance: number,
+  zero = 0,
 ): TrackLock | undefined {
-  const lock = lockOnto(p, trackPaths({ acquired }), tolerance);
+  const lock = lockOnto(p, trackPaths({ acquired, ...(zero && { zero }) }), tolerance);
   if (!lock) return undefined;
-  const ortho: TrackPath = { from: base, angle: axis, label: 'Ortho' };
+  const ortho: TrackPath = { from: base, angle: norm(axis), label: 'Ortho', ...(zero && { zero }) };
   for (const path of lock.paths) {
     const x = crossing(ortho, path);
     if (x) return { point: x, paths: [ortho, path] };
@@ -200,9 +213,12 @@ export function orthoTrack(
   return undefined;
 }
 
-/** The angle a tooltip gives a path: from the last segment for a relative polar path. */
-export const shownAngle = (path: { angle: number; relative?: number }): number =>
-  path.relative === undefined ? path.angle : norm(path.angle - path.relative);
+/**
+ * The angle a tooltip gives a path: from the last segment for a relative polar path, else from
+ * the UCS's X axis.
+ */
+export const shownAngle = (path: { angle: number; relative?: number; zero?: number }): number =>
+  norm(path.angle - (path.relative ?? path.zero ?? 0));
 
 const degrees = (a: number): string => {
   const d = (a * 180) / Math.PI;

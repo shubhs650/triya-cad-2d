@@ -734,3 +734,83 @@ test('holds the temporary override keys', async ({ page }) => {
   await keys.getByRole('button', { name: 'Cancel' }).click();
   await expect(keys).toBeHidden();
 });
+
+// M3-06 part 7: the UCS in plan. Typed points, the status bar's coordinates, the grid and the
+// UCS icon follow it; SNAPANG turns the grid further; UCSICON hides the icon or puts it at the
+// origin; UCS World and U go back.
+test('sets a UCS that typed points, the coordinates, the grid and the icon follow', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0 - 40},${Y0 - 30}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 40},${Y0 + 30}`, 'Command:');
+  // The view in world coordinates, read from the status bar while the UCS is the WCS.
+  const v = await viewOf(page);
+  const icon = page.getByTestId('ucs-icon');
+  await expect(icon).toBeVisible();
+  await expect(icon).toHaveAttribute('data-world', 'true');
+  await type(page, 'GRID', /^Specify grid spacing/);
+  await type(page, 'ON', 'Command:');
+  await canvas.hover();
+  await shot(page, '14-ucs-world');
+
+  // Origin at X0,Y0, X axis up the world's Y.
+  await type(page, 'UCS', 'Specify origin of UCS or [NAmed/OBject/Previous/View/World/Z] <World>:');
+  await type(page, `${X0},${Y0}`, 'Specify point on X-axis or <Accept>:');
+  // Dynamic Input reads a second point as relative (DYNPICOORDS 0), as AutoCAD does.
+  await type(page, '@0,10', 'Specify point on the XY plane or <Accept>:');
+  await type(page, '', 'Command:');
+  await expect(icon).toHaveAttribute('data-world', 'false');
+  // World X0+4,Y0+3 is UCS 3,-4.
+  const p = v.at(X0 + 4, Y0 + 3);
+  const box = v.box;
+  await page.mouse.move(box.x + p.x, box.y + p.y);
+  await expect(page.getByTestId('coords')).toHaveText(/^3\.0+, -4\.0+, 0\.0+$/);
+  await shot(page, '15-ucs-turned-grid-and-icon');
+
+  // A line typed 0,0 to 20,0 runs from the UCS origin along its X axis; *x,y is the WCS.
+  await type(page, 'L', 'Specify first point:');
+  await type(page, '0,0', /^Specify next point/);
+  await type(page, '20,0', /^Specify next point/);
+  await type(page, `*${X0 + 20},${Y0}`, /^Specify next point/);
+  await type(page, '', 'Command:');
+  expect(await linesAdded(page)).toEqual([
+    [X0, Y0, X0, Y0 + 20],
+    [X0, Y0 + 20, X0 + 20, Y0],
+  ]);
+
+  // SNAPANG turns the grid on from the UCS's axes.
+  await type(page, 'SNAPANG', /^Enter new value for SNAPANG <0[.0]*>:$/);
+  await type(page, '30', 'Command:');
+  await canvas.hover();
+  await shot(page, '16-snapang-30');
+
+  // UCSICON: off, then on at the origin, which is on the canvas.
+  await type(page, 'UCSICON', 'Enter an option [ON/OFF/Noorigin/ORigin] <ON>:');
+  await type(page, 'OFF', 'Command:');
+  await expect(icon).toBeHidden();
+  await type(page, 'UCSICON', 'Enter an option [ON/OFF/Noorigin/ORigin] <OFF>:');
+  await type(page, 'ON', 'Command:');
+  await type(page, 'UCSICON', 'Enter an option [ON/OFF/Noorigin/ORigin] <ON>:');
+  await type(page, 'OR', 'Command:');
+  await expect(icon).toBeVisible();
+  const origin = v.at(X0, Y0);
+  const at = (await icon.boundingBox())!;
+  expect(Math.abs(at.x + at.width / 2 - (box.x + origin.x))).toBeLessThan(2);
+  expect(Math.abs(at.y + at.height / 2 - (box.y + origin.y))).toBeLessThan(2);
+  await shot(page, '17-ucs-icon-at-origin');
+
+  // World again: the status bar shows world coordinates.
+  await type(page, 'UCS', /^Specify origin of UCS/);
+  await type(page, 'W', 'Command:');
+  await expect(icon).toHaveAttribute('data-world', 'true');
+  await page.mouse.move(box.x + p.x, box.y + p.y);
+  await expect(page.getByTestId('coords')).toHaveText(
+    new RegExp(`^${X0 + 4}\\.0+, ${Y0 + 3}\\.0+, 0\\.0+$`),
+  );
+});

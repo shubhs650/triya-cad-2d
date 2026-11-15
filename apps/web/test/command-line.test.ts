@@ -4,6 +4,7 @@ import {
   builtinCommands,
   DECIMAL_UNITS,
   DEFAULT_ANGLES,
+  WORLD_UCS,
   type CommandOutput,
   type Prompt,
 } from '@triya/engine';
@@ -31,6 +32,7 @@ describe('the command line state', () => {
         text: 'Specify first point:',
         units: { ...DECIMAL_UNITS, lunits: 4 },
         angles: DEFAULT_ANGLES,
+        ucs: WORLD_UCS,
       },
       { type: 'change', change: {} },
     ];
@@ -39,7 +41,11 @@ describe('the command line state', () => {
     expect(s.promptText).toBe('Specify first point:');
     expect(s.prompt?.kind).toBe('point');
     // Dynamic Input shows the cursor's values in the units the prompt came with (M2-35 part 20).
-    expect(s.units).toEqual({ units: { ...DECIMAL_UNITS, lunits: 4 }, angles: DEFAULT_ANGLES });
+    expect(s.units).toEqual({
+      units: { ...DECIMAL_UNITS, lunits: 4 },
+      angles: DEFAULT_ANGLES,
+      ucs: WORLD_UCS,
+    });
     const idle = follow(s, { type: 'idle' });
     expect([idle.prompt, idle.promptText]).toEqual([undefined, 'Command:']);
   });
@@ -51,6 +57,7 @@ describe('the command line state', () => {
       text: 'Specify opposite corner:',
       units: DECIMAL_UNITS,
       angles: DEFAULT_ANGLES,
+      ucs: WORLD_UCS,
     };
     const s = follow(follow(IDLE, at), { type: 'waiting', command: 'PLOT' });
     expect([s.prompt, s.promptText]).toEqual([undefined, '']);

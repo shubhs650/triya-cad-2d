@@ -266,6 +266,10 @@ export const VPORT_VARIABLES: readonly SystemVariable[] = [
   { name: 'GRIDUNIT', store: 'vport', kind: 'point' },
   { name: 'SNAPBASE', store: 'vport', kind: 'point' },
   { name: 'SNAPUNIT', store: 'vport', kind: 'point' },
+  // M3-06 part 7: the snap and grid angle (DXF 50, relative to the UCS) and the UCS icon's bits
+  // (DXF 74: 1 on, 2 at the origin; AutoCAD 2024 Help, "SNAPANG", "UCSICON").
+  { name: 'SNAPANG', store: 'vport', kind: 'angle' },
+  { name: 'UCSICON', store: 'vport', kind: 'integer', min: 0, max: 3 },
 ];
 
 /**

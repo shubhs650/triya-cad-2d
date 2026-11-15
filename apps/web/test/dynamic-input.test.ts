@@ -235,6 +235,22 @@ describe('Dynamic Input fields', () => {
   });
 });
 
+// M3-06 part 7: X and Y are the current UCS's coordinates, and the angle counts from its X axis
+// (the bus folds the UCS into `angles.base`), so what the fields show types back to the cursor.
+describe('Dynamic Input in a UCS', () => {
+  const ucs = { origin: { x: 10, y: 10 }, angle: Math.PI / 2 };
+  const u = { units: DECIMAL_UNITS, angles: { base: Math.PI / 2, clockwise: false }, ucs };
+  it("shows the cursor's UCS coordinates and the angle from the UCS's X axis", () => {
+    // World 13,14 is UCS 4,-3; from the base 10,10 it is 4 along X and 3 against Y.
+    expect(dynLive(dynFor(first), first, cursor, u)).toEqual(['4.0000', '-3.0000']);
+    expect(dynLive(dynFor(corner), corner, cursor, u)).toEqual(['4.0000', '-3.0000']);
+    expect(dynLive(dynFor(next), next, { x: 10, y: 15 }, u)).toEqual(['5.0000', '0']);
+    const text = dynText(typing(first, '2,'), first, cursor, u);
+    expect(text).toBe('2,-3.0000');
+    expect(parseCoordinate(text, { ucs, angles: u.angles })).toEqual({ x: 13, y: 12 });
+  });
+});
+
 describe('what a relative point counts from (M2-71)', () => {
   it("is the rubber band's base, which the fields measure from", () => {
     expect(dynRelativeTo('@10,0', next)).toEqual({ x: 10, y: 10 });

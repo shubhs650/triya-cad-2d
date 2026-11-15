@@ -172,6 +172,7 @@ async function* afterStartCenter(
         ctx,
         sketch('angle'),
         ctx.prompt.angle({
+          turn: true,
           message: `Specify included angle${CTRL_SWITCH}`,
           base: center,
           switchDirection: true,
@@ -233,6 +234,7 @@ async function* afterStartEnd(
           ctx,
           sketch('angle'),
           ctx.prompt.angle({
+            turn: true,
             message: `Specify included angle${CTRL_SWITCH}`,
             base: start,
             switchDirection: true,

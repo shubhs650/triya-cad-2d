@@ -251,6 +251,7 @@ async function* askValue(ctx: CommandContext, s: LengthenSettings): Sub<boolean>
       }
       if (a.kind !== 'keyword') return false;
       const g = yield ctx.prompt.angle({
+        turn: true,
         message: 'Enter delta angle',
         default: { kind: 'angle', value: s.deltaAngle },
       });
@@ -291,6 +292,7 @@ async function* askValue(ctx: CommandContext, s: LengthenSettings): Sub<boolean>
         }
         if (a.kind !== 'keyword') return false;
         const g = yield ctx.prompt.angle({
+          turn: true,
           message: 'Specify total angle',
           default: { kind: 'angle', value: s.totalAngle },
         });

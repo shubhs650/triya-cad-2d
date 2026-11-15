@@ -1,0 +1,1 @@
+- M3-06 part 7 (#413): the UCS in plan (UCS with World, Previous, origin/X axis/XY plane, Z, OBject, View and NAmed; UCSICON and the UCS icon), SNAPANG turning snap, ORTHO and the grid, and typed points, angles, ID, DIST, the status bar, Dynamic Input, polar tracking and object snap tracking following the UCS (DEC-061).

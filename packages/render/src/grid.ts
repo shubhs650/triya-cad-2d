@@ -9,6 +9,10 @@
 // (bit 4) zooming in adds lines GRIDMAJOR to a grid space, the lines that were there staying the
 // major ones; without bit 1 the grid stays within the limits; a dotted grid (GRIDSTYLE) is a dot
 // where the lines cross.
+// M3-06 part 7: the grid runs along the current UCS's axes turned by SNAPANG ("SNAPANG: Sets the
+// snap and grid rotation angle for the current viewport relative to the current UCS"): `angle`
+// turns it about its base, and its lines are then in that turned frame. A turned grid kept within
+// the limits runs over the frame's box around them, as the limits are a world rectangle.
 import type { Box } from '@triya/engine';
 
 export interface GridSpec {
@@ -31,6 +35,8 @@ export interface GridSpec {
   readonly limits?: Box;
   /** Dots where the lines cross (GRIDSTYLE), not lines. */
   readonly dots?: boolean;
+  /** The grid's X axis, radians counter-clockwise from world +X (the UCS and SNAPANG). */
+  readonly angle?: number;
 }
 
 /** The grid's lines in the box, drawing coordinates. */
@@ -42,6 +48,41 @@ export interface GridLines {
   readonly majorYs: readonly number[];
   /** The limits the lines run between; absent, they cross the whole view. */
   readonly extent?: Box;
+  /**
+   * A turned grid (`GridSpec.angle`): the lines' X and Y are in the frame turned by `angle` about
+   * `base`, and run between `frame`'s sides (that frame's coordinates).
+   */
+  readonly turned?: { readonly angle: number; readonly base: Vec2; readonly frame: Box };
+}
+
+interface Vec2 {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** The box, in the frame turned by `angle` about `base`, that holds `box`. */
+function frameBox(box: Box, base: Vec2, angle: number): Box {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const [x, y] of [
+    [box.minX, box.minY],
+    [box.maxX, box.minY],
+    [box.maxX, box.maxY],
+    [box.minX, box.maxY],
+  ] as const) {
+    const dx = x - base.x;
+    const dy = y - base.y;
+    xs.push(dx * c + dy * s);
+    ys.push(-dx * s + dy * c);
+  }
+  return {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys),
+  };
 }
 
 /** Grid lines closer than this on screen, CSS pixels, are left out (adaptive display). */
@@ -90,6 +131,20 @@ export function gridLines(spec: GridSpec, box: Box, scale: number): GridLines | 
       }
     : box;
   if (within.minX > within.maxX || within.minY > within.maxY) return undefined;
+  if (spec.angle) {
+    const base = spec.base ?? { x: 0, y: 0 };
+    const frame = frameBox(within, base, spec.angle);
+    const x = axis(frame.minX, frame.maxX, 0, spec.spacing.x);
+    const y = axis(frame.minY, frame.maxY, 0, spec.spacing.y);
+    if (!x || !y) return undefined;
+    return {
+      xs: x.all,
+      ys: y.all,
+      majorXs: x.major,
+      majorYs: y.major,
+      turned: { angle: spec.angle, base, frame },
+    };
+  }
   const x = axis(within.minX, within.maxX, spec.base?.x ?? 0, spec.spacing.x);
   const y = axis(within.minY, within.maxY, spec.base?.y ?? 0, spec.spacing.y);
   if (!x || !y) return undefined;
