@@ -240,6 +240,7 @@ describe('completions of system variables', () => {
     expect(c.slice(first).map((s) => s.name)).toEqual([
       'CDATE',
       'CETRANSPARENCY',
+      'CHAMMODE',
       'CLAYER',
       'CTAB',
     ]);

@@ -85,6 +85,16 @@ describe('preferences', () => {
       qpDistance: 50,
       qpCollapse: true,
       qpRows: 3,
+      // M3-12: the modify commands' options AutoCAD keeps per user, at its initial values.
+      modifyOptions: {
+        OFFSETERASE: 0,
+        OFFSETGAPTYPE: 0,
+        TRIMEXTENDMODE: 1,
+        EDGEMODE: 0,
+        PROJMODE: 1,
+        TRIMMODE: 1,
+        PEDITACCEPT: 0,
+      },
     });
     // No named filters (FILTER, M3-04 part 4).
     expect(DEFAULT_PREFERENCES.filters).toEqual({});
@@ -168,6 +178,28 @@ describe('preferences', () => {
       // Out of range is brought to the nearest end, as the sizes are.
       qpRows: 30,
     });
+  });
+
+  it('keep the modify commands\u2019 options when valid (M3-12)', () => {
+    const kept = normalizePreferences({
+      drafting: { modifyOptions: { OFFSETGAPTYPE: 2, TRIMMODE: 0, PEDITACCEPT: 1, NOSUCH: 4 } },
+    }).drafting.modifyOptions;
+    expect(kept).toEqual({
+      OFFSETERASE: 0,
+      OFFSETGAPTYPE: 2,
+      TRIMEXTENDMODE: 1,
+      EDGEMODE: 0,
+      PROJMODE: 1,
+      TRIMMODE: 0,
+      PEDITACCEPT: 1,
+    });
+    const bad = normalizePreferences({
+      drafting: { modifyOptions: { OFFSETGAPTYPE: 3, PROJMODE: 'View', EDGEMODE: 0.5 } },
+    }).drafting.modifyOptions;
+    expect(bad).toMatchObject({ OFFSETGAPTYPE: 0, PROJMODE: 1, EDGEMODE: 0 });
+    expect(normalizePreferences({ drafting: { modifyOptions: 7 } }).drafting.modifyOptions).toEqual(
+      DEFAULT_PREFERENCES.drafting.modifyOptions,
+    );
   });
 
   it('keep what is valid of a stored record and default the rest', () => {

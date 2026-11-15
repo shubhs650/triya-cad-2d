@@ -173,6 +173,23 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'PICKBOX', store: 'app', kind: 'integer', min: 0, max: 50 },
   { name: 'PICKADD', store: 'app', kind: 'integer', min: 0, max: 3 },
   { name: 'PICKAUTO', store: 'app', kind: 'integer', min: 0, max: 7 },
+  // M3-12 (AutoCAD 2024 Help): the modify commands' options. OFFSETDIST the offset distance, a
+  // negative value Through (initially −1), and CHAMMODE CHAMFER's method, 0 two distances or 1
+  // a length and an angle (initially 0), are AutoCAD's unsaved variables: the app keeps them
+  // while it runs. OFFSETERASE (0), OFFSETGAPTYPE 0 extended, 1 filleted, 2 chamfered gaps (0),
+  // TRIMEXTENDMODE 1 Quick or 0 Standard (1), EDGEMODE 1 implied edges (0), PROJMODE 0 None,
+  // 1 UCS, 2 View (1), TRIMMODE (1) and PEDITACCEPT 1 PEDIT turns what it picks into a polyline
+  // without asking (0) are kept per user (Saved in: Registry). Each command reads them as it
+  // starts and sets them when its option changes.
+  { name: 'OFFSETDIST', store: 'app', kind: 'distance' },
+  { name: 'OFFSETERASE', store: 'app', kind: 'switch' },
+  { name: 'OFFSETGAPTYPE', store: 'app', kind: 'integer', min: 0, max: 2 },
+  { name: 'TRIMEXTENDMODE', store: 'app', kind: 'switch' },
+  { name: 'EDGEMODE', store: 'app', kind: 'switch' },
+  { name: 'PROJMODE', store: 'app', kind: 'integer', min: 0, max: 2 },
+  { name: 'TRIMMODE', store: 'app', kind: 'switch' },
+  { name: 'CHAMMODE', store: 'app', kind: 'switch' },
+  { name: 'PEDITACCEPT', store: 'app', kind: 'switch' },
 ];
 
 /**

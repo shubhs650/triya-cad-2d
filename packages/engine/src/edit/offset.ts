@@ -32,7 +32,7 @@ import { fitSpline } from '../geom/fit';
 import { flatten } from '../geom/flatten';
 import { intersect } from '../geom/intersect';
 import { splineDomain, splinePoint } from '../geom/nurbs';
-import { offset, offsetPolylineTraced, sideOf } from '../geom/offset';
+import { offset, offsetPolylineTraced, sideOf, type GapType } from '../geom/offset';
 import type { Tolerance } from '../geom/tolerance';
 import type { Vec2, Vec3 } from '../geom/types';
 import { add, angleOf, distance, dot, fromAngle, lerp, normalize, sub } from '../geom/vec';
@@ -75,9 +75,15 @@ export function offsetCurveOf(g: EntityGeometry): Curve | undefined {
 /**
  * The objects offsetting `g` by `d` makes (positive to the left of its direction, as the
  * kernel's `offset`): none when it collapses or cannot be offset, more than one when an inward
- * polyline offset falls apart into several.
+ * polyline offset falls apart into several. A polyline's corners meet as OFFSETGAPTYPE `gapType`
+ * says (extended, filleted or chamfered where they part).
  */
-export function offsetGeometry(g: EntityGeometry, d: number, tol: Tolerance): EntityGeometry[] {
+export function offsetGeometry(
+  g: EntityGeometry,
+  d: number,
+  tol: Tolerance,
+  gapType: GapType = 0,
+): EntityGeometry[] {
   switch (g.kind) {
     case 'LINE':
     case 'ARC':
@@ -91,7 +97,7 @@ export function offsetGeometry(g: EntityGeometry, d: number, tol: Tolerance): En
     case 'LWPOLYLINE':
     case 'POLYLINE':
       if (g.kind === 'POLYLINE' && g.is3d) return [];
-      return offsetPolylineGeometry(g, d, tol);
+      return offsetPolylineGeometry(g, d, tol, gapType);
     case 'ELLIPSE': {
       const s = offsetFitted(g, d, tol, undefined);
       return s ? [s] : [];
@@ -140,10 +146,11 @@ function offsetPolylineGeometry(
   g: LwPolylineGeometry | PolylineGeometry,
   d: number,
   tol: Tolerance,
+  gapType: GapType,
 ): EntityGeometry[] {
   const { curve, index } = cleanPolyline(g);
   if (polylineSegmentCount(curve) === 0) return [];
-  const traced = offsetPolylineTraced(curve, d, tol);
+  const traced = offsetPolylineTraced(curve, d, tol, gapType);
   if (!traced) return [];
   const widths = segmentWidths(g, index, polylineSegmentCount(curve));
   // Pieces straight on from one another are one segment, unless their widths may differ.

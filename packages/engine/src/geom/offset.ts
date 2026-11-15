@@ -4,9 +4,13 @@
 // a CCW circle or arc that is towards the centre. The OFFSET command picks the sign from the
 // side point the user gives (`sideOf`), so the kernel never guesses a side.
 //
-// Polylines follow OFFSETGAPTYPE = 0 (AutoCAD's default): each segment is offset on its own
-// and neighbours are extended or trimmed to the intersection of their offset carriers; where
-// the carriers do not meet, a straight segment closes the gap. Arc segments that collapse
+// Polylines follow OFFSETGAPTYPE (AutoCAD 2024 Help, "OFFSETGAPTYPE"): each segment is offset on
+// its own and neighbours are extended or trimmed to the intersection of their offset carriers
+// (0, AutoCAD's default); where the carriers do not meet, a straight segment closes the gap.
+// Where the segments of a corner part on the outside, 1 fills the gap with an arc of the offset
+// distance round the source vertex, and 2 with a straight segment as far from the vertex as the
+// offset distance, square to the corner's bisector (the "chamfer"), the segments extended to it
+// (M3-12). Arc segments that collapse
 // (offset radius ≤ 0) are dropped. Removing the self-intersecting loops an inward offset of a
 // tight polyline can produce is the OFFSET command's (`edit/offset.ts`, M3-02), which takes the
 // traced offset (`offsetPolylineTraced`) to know which segment came from where.
@@ -33,6 +37,7 @@ import {
   angleOf,
   cross,
   distance,
+  dot,
   fromAngle,
   length,
   normalize,
@@ -75,6 +80,12 @@ function offsetSeg(
   return { kind: 'arc', c: center, r, a0: startAngle, sweep };
 }
 
+/** Where source segment `i` of `p` starts. */
+function segStartOf(p: Polyline, i: number): Vec2 {
+  const v = p.vertices[i]!;
+  return { x: v.x, y: v.y };
+}
+
 const carrier = (s: Seg): Curve =>
   s.kind === 'line'
     ? { kind: 'XLINE', base: s.a, direction: sub(s.b, s.a) }
@@ -91,6 +102,59 @@ function join(a: Seg, b: Seg, tol: Tolerance): Vec2[] {
     if (!best || distance(x.point, mid) < distance(best, mid)) best = x.point;
   }
   return best ? [best] : [ea, sb];
+}
+
+/** OFFSETGAPTYPE: gaps extended (0), filleted (1) or chamfered (2). */
+export type GapType = 0 | 1 | 2;
+
+/** A segment's direction of travel at its start or end. */
+const tangentAt = (s: Seg, end: boolean): Vec2 => {
+  if (s.kind === 'line') return sub(s.b, s.a);
+  const a = s.a0 + (end ? s.sweep : 0);
+  return scale(perp(fromAngle(a, 1)), Math.sign(s.sweep));
+};
+
+/**
+ * The bridge OFFSETGAPTYPE 1 or 2 puts across the outside of a corner at source vertex `v`
+ * between offset segments `a` and `b` (offset by `d`): the ends it moves `a` and `b` to and the
+ * bulge of the bridge, or undefined where the corner is no gap (the inside of the corner, or
+ * straight on), which the segments' intersection closes as with 0.
+ */
+function gapBridge(
+  a: Seg,
+  b: Seg,
+  v: Vec2,
+  d: number,
+  type: 1 | 2,
+  tol: Tolerance,
+): { end: Vec2; start: Vec2; bulge: number } | undefined {
+  const t1 = normalize(tangentAt(a, true));
+  const t2 = normalize(tangentAt(b, false));
+  const turn = cross(t1, t2);
+  // The left (d > 0) side is the outside of a corner turning right. A half turn back has two
+  // outsides: the fillet goes round it, a chamfer has no bisector to be square to.
+  const outside = Math.abs(turn) > 1e-9 ? turn * d < 0 : type === 1 && dot(t1, t2) < 0;
+  if (!outside) return undefined;
+  const ea = segEnd(a);
+  const sb = segStart(b);
+  if (type === 1) {
+    // Round the outside, the way the corner turns: a half turn goes the way away from the offset.
+    let sweep = wrapPi(angleOf(sub(sb, v)) - angleOf(sub(ea, v)));
+    if (Math.abs(turn) <= 1e-9) sweep = -Math.sign(d) * Math.PI;
+    return { end: ea, start: sb, bulge: Math.tan(sweep / 4) };
+  }
+  const u = normalize(add(normalize(sub(ea, v)), normalize(sub(sb, v))));
+  const line: Curve = { kind: 'XLINE', base: add(v, scale(u, Math.abs(d))), direction: perp(u) };
+  const nearest = (s: Seg, p: Vec2): Vec2 | undefined => {
+    let best: Vec2 | undefined;
+    for (const x of intersect(carrier(s), line, tol)) {
+      if (!best || distance(x.point, p) < distance(best, p)) best = x.point;
+    }
+    return best;
+  };
+  const end = nearest(a, ea);
+  const start = nearest(b, sb);
+  return end && start ? { end, start, bulge: 0 } : undefined;
 }
 
 /** Signed difference a − b wrapped to (−π, π]. */
@@ -125,10 +189,12 @@ export function offsetPolylineTraced(
   p: Polyline,
   d: number,
   tol: Tolerance,
+  gapType: GapType = 0,
 ): TracedOffset | undefined {
+  const count = polylineSegmentCount(p);
   const segs: Seg[] = [];
   const src: number[] = [];
-  for (let i = 0; i < polylineSegmentCount(p); i++) {
+  for (let i = 0; i < count; i++) {
     const s = offsetSeg(polylineSegment(p, i), d, tol);
     if (s) {
       segs.push(s);
@@ -141,9 +207,22 @@ export function offsetPolylineTraced(
   const starts: Vec2[] = segs.map(segStart);
   const ends: Vec2[] = segs.map(segEnd);
   const gap: boolean[] = new Array<boolean>(n).fill(false);
+  const gapBulge: number[] = new Array<number>(n).fill(0);
   const joints = p.closed ? n : n - 1;
   for (let k = 0; k < joints; k++) {
     const next = (k + 1) % n;
+    // A corner of the source (its segments next to one another, none collapsed between).
+    const bridge =
+      gapType !== 0 && src[next] === (src[k]! + 1) % count
+        ? gapBridge(segs[k]!, segs[next]!, segStartOf(p, src[next]!), d, gapType, tol)
+        : undefined;
+    if (bridge) {
+      ends[k] = bridge.end;
+      starts[next] = bridge.start;
+      gap[k] = distance(bridge.end, bridge.start) > tol.linear;
+      gapBulge[k] = bridge.bulge;
+      continue;
+    }
     const j = join(segs[k]!, segs[next]!, tol);
     if (j.length === 1) {
       ends[k] = j[0]!;
@@ -159,7 +238,7 @@ export function offsetPolylineTraced(
     vertices.push({ x: s.x, y: s.y, bulge: bulgeFor(segs[k]!, s, ends[k]!) });
     from.push(src[k]!);
     if (gap[k]) {
-      vertices.push({ x: ends[k]!.x, y: ends[k]!.y, bulge: 0 });
+      vertices.push({ x: ends[k]!.x, y: ends[k]!.y, bulge: gapBulge[k]! });
       from.push(-1);
     }
   }

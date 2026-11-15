@@ -127,7 +127,40 @@ export interface DraftingState {
   readonly qpDistance: number;
   readonly qpCollapse: boolean;
   readonly qpRows: number;
+  /**
+   * The modify commands' options AutoCAD keeps per user (M3-12, `MODIFY_OPTIONS`): OFFSETERASE,
+   * OFFSETGAPTYPE, TRIMEXTENDMODE, EDGEMODE, PROJMODE, TRIMMODE and PEDITACCEPT, by name.
+   */
+  readonly modifyOptions: Readonly<Record<string, number>>;
+  /** OFFSETDIST and CHAMMODE, AutoCAD's unsaved variables: kept while the app runs, never stored. */
+  readonly sessionOptions: Readonly<Record<string, number>>;
 }
+
+/**
+ * M3-12 (AutoCAD 2024 Help for each): the modify commands' options AutoCAD keeps per user (Saved
+ * in: Registry), their initial values and highest values (each starts at 0). OFFSET, TRIM, EXTEND,
+ * FILLET, CHAMFER and PEDIT read them as they start and set them when their options change.
+ */
+export const MODIFY_OPTIONS: Readonly<Record<string, { initial: number; max: number }>> = {
+  OFFSETERASE: { initial: 0, max: 1 },
+  OFFSETGAPTYPE: { initial: 0, max: 2 },
+  TRIMEXTENDMODE: { initial: 1, max: 1 },
+  EDGEMODE: { initial: 0, max: 1 },
+  PROJMODE: { initial: 1, max: 2 },
+  TRIMMODE: { initial: 1, max: 1 },
+  PEDITACCEPT: { initial: 0, max: 1 },
+};
+
+/** The initial values of `MODIFY_OPTIONS`. */
+export const INITIAL_MODIFY_OPTIONS: Readonly<Record<string, number>> = Object.fromEntries(
+  Object.entries(MODIFY_OPTIONS).map(([name, o]) => [name, o.initial]),
+);
+
+/** OFFSETDIST −1 (Through) and CHAMMODE 0 (two distances), AutoCAD's initial values. */
+export const INITIAL_SESSION_OPTIONS: Readonly<Record<string, number>> = {
+  OFFSETDIST: -1,
+  CHAMMODE: 0,
+};
 
 /** Quick Properties' Quadrant, as the Drafting Settings dialog lists them. */
 export type QpQuadrant = 'top-right' | 'top-left' | 'bottom-left' | 'bottom-right';
@@ -302,6 +335,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   qpDistance: 50,
   qpCollapse: true,
   qpRows: 3,
+  modifyOptions: INITIAL_MODIFY_OPTIONS,
+  sessionOptions: INITIAL_SESSION_OPTIONS,
 };
 
 /**
