@@ -488,8 +488,13 @@ export class PromptBus {
         return this.#step(frame, await frame.select.point(point, o));
       }
       if (frame) {
-        if (o.release) return;
-        return this.#direct({ kind: 'point', point, ...(o.deferred && { deferred: o.deferred }) });
+        if (o.release) return undefined;
+        return this.#direct({
+          kind: 'point',
+          point,
+          ...(o.shift && { shift: true as const }),
+          ...(o.deferred && { deferred: o.deferred }),
+        });
       }
       if (!this.#pickfirstOn) return;
       this.#step(undefined, await this.#idle.point(point, o));
@@ -1423,7 +1428,8 @@ export class PromptBus {
     let given = answer.kind === 'enter' && prompt.default ? prompt.default : answer;
     // A deferred snap reaches only a prompt that solves it; anywhere else it is its point.
     if (given.kind === 'point' && given.deferred && !takesDeferred(prompt, given.deferred)) {
-      given = { kind: 'point', point: given.point };
+      const { deferred: _, ...plain } = given;
+      given = plain;
     }
     if (!answerFits(prompt, given)) {
       if (log) this.#log(`${this.promptText} ${echo}`.trimEnd());

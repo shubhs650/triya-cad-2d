@@ -14,6 +14,7 @@ import { DRAW_ORDER_COMMANDS } from './modify/draw-order';
 import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
 import { offsetCommand } from './modify/offset';
+import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
@@ -29,6 +30,8 @@ import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 export function builtinCommands(): CommandRegistry {
   // LINE and ARC continue from the last line or arc either drew (M3-01).
   const last = lastDrawn();
+  // TRIM and EXTEND share their Mode, Edge and Project settings, as AutoCAD's variables.
+  const trim = trimSettings();
   return new CommandRegistry([
     lineCommand(last),
     arcCommand(last),
@@ -45,6 +48,8 @@ export function builtinCommands(): CommandRegistry {
     setvarCommand(),
     ...EDIT_COMMANDS.map((make) => make()),
     offsetCommand(),
+    trimCommand(trim),
+    extendCommand(trim),
     revcloudCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),

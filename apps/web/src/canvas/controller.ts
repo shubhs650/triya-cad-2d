@@ -622,8 +622,13 @@ export class CanvasController {
    * cursor from it.
    */
   setPrompt(prompt: Prompt | undefined): void {
+    // An object pick (TRIM's "Select object to trim") is a click with the pickbox, as at
+    // `Command:`: no snaps, no tracking, its own point.
     const picking =
-      prompt && (prompt.kind === 'point' || prompt.kind === 'distance' || prompt.kind === 'angle');
+      prompt &&
+      ((prompt.kind === 'point' && !prompt.pickbox) ||
+        prompt.kind === 'distance' ||
+        prompt.kind === 'angle');
     this.#prompt = picking ? prompt : undefined;
     this.#traced = false;
     this.canvas.dataset['picking'] = String(!!picking);

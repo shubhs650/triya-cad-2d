@@ -18,6 +18,7 @@
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
+import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
@@ -706,4 +707,73 @@ export function refusalMessages(refused: ReadonlyMap<string, number>, verb: stri
   return [...refused].map(
     ([reason, n]) => `${n} ${n === 1 ? 'object was' : 'objects were'} not ${verb}: ${reason}.`,
   );
+}
+
+// ── TRIM, EXTEND ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * An object given new shapes (TRIM, EXTEND; M3-02 part 2): the first replaces its geometry
+ * (keeping its handle) when it is of the same kind, the rest are new objects with its
+ * properties, as AutoCAD makes the second part of a line trimmed in the middle; a circle
+ * trimmed to an arc is a new object, and no shapes erase it (TRIM's Quick mode on an object
+ * no edge crosses). A hatch or dimension associated with it lets go, as STRETCH's reshaping
+ * does. Returns the objects it now is.
+ */
+export function reshapeObject(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  id: EntityId,
+  geoms: readonly EntityGeometry[],
+): EntityId[] {
+  const e = b.entity(id);
+  if (!e) return [];
+  const links = new Links(b, model);
+  for (const r of e.reactors ?? []) {
+    const other = links.entity(r);
+    if (other?.geom.kind === 'HATCH') links.dissociateHatch(other);
+  }
+  for (const a of links.assocs) if (assocGeometry(a).includes(e.handle)) links.disassociate(a);
+  const [first, ...rest] = geoms;
+  if (!first) {
+    eraseObjects(b, model, [id]);
+    return [];
+  }
+  const props = copiedProps(b, e);
+  const ids: EntityId[] = [];
+  const same = first.kind === e.geom.kind;
+  if (same) {
+    b.updateEntity(id, { geom: first });
+    ids.push(id);
+  } else ids.push(b.addEntity({ owner: e.owner, ...props, geom: first }).id);
+  for (const geom of rest) ids.push(b.addEntity({ owner: e.owner, ...props, geom }).id);
+  if (!same) eraseObjects(b, model, [id]);
+  return ids;
+}
+
+const FIXED_FIELDS = new Set(['id', 'handle', 'owner', 'type']);
+
+/** The patch that turns `after` back into `before` (fields `after` added are taken off). */
+function patchBack(before: object, after: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(after)) if (!(k in before)) out[k] = undefined;
+  for (const [k, v] of Object.entries(before)) if (!FIXED_FIELDS.has(k)) out[k] = v;
+  return out;
+}
+
+/**
+ * Takes back the entity and object changes of `cs`, the last edit made (TRIM's and EXTEND's
+ * Undo option, M3-02 part 2): what it added goes, what it changed is put back, what it removed
+ * is restored under its own handle. New handles are not given back (handles only grow).
+ */
+export function revertChanges(b: ChangeSetBuilder, cs: ChangeSet): void {
+  const e = cs.entities;
+  for (const a of e?.added ?? []) if (b.entity(a.entity.id)) b.removeEntity(a.entity.id);
+  for (const u of e?.updated ?? []) b.updateEntity(u.before.id, patchBack(u.before, u.after));
+  for (const r of e?.removed ?? []) b.restoreEntity(r.entity);
+  const o = cs.objects;
+  for (const a of o?.added ?? []) if (b.object(a.handle)) b.removeObject(a.handle);
+  for (const u of o?.updated ?? []) {
+    b.updateObject(u.before.handle, patchBack(u.before, u.after) as never);
+  }
+  for (const r of o?.removed ?? []) b.restoreObject(r);
 }
