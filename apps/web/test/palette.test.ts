@@ -14,6 +14,8 @@ describe('palette search', () => {
     const zoom = commandItems(builtinCommands()).find((i) => i.id === 'ZOOM');
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
+      // M3-09: the Drawing Units questions at the command line.
+      '-UNITS',
       'AIMLEADEREDITADD',
       'AIMLEADEREDITREMOVE',
       // M3-02 part 4: BREAK, BREAKATPOINT, JOIN, EXPLODE, LENGTHEN, REVERSE and ALIGN.
@@ -145,6 +147,8 @@ describe('palette search', () => {
       'ULAYERS',
       'UNDO',
       'UNGROUP',
+      // M3-09: the Drawing Units dialog.
+      'UNITS',
       'VIEW',
       'WIPEOUT',
       'XLINE',

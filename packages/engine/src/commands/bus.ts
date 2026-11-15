@@ -1278,7 +1278,8 @@ export class PromptBus {
           if (d !== undefined) return this.#deliver({ kind: 'distance', value: d }, t);
         } else if (prompt.kind === 'angle') {
           const zero = prompt.zero;
-          const a = parseAngle(t, zero === undefined ? angles : { ...angles, base: zero });
+          const from = zero === undefined ? angles : { ...angles, base: zero };
+          const a = parseAngle(t, prompt.counterClockwise ? { ...from, clockwise: false } : from);
           if (a !== undefined) return this.#deliver({ kind: 'angle', value: a }, t);
         } else {
           const d = parseDistance(t, lunits);
