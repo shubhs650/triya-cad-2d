@@ -33,6 +33,7 @@ import {
   type ResolvedCommand,
 } from './command';
 import { blocklessDimensionBlocks, regenerateRestyled } from './modify/dimensions';
+import { applyProperty } from './modify/property-edit';
 import {
   DEFAULT_ANGLES,
   parseAngle,
@@ -66,23 +67,10 @@ import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
 import type { DragPreview } from './drag';
 import { UndoStack, type UndoAction, type UndoState } from './undo';
-import {
-  applyCurrentEdit,
-  applyPropertyEdit,
-  arrowheadByName,
-  hatchesToPattern,
-  multiLeaderTextsToMeasure,
-  placedPatterns,
-  textsToMeasure,
-  type HatchPatterns,
-  type PropertyEdit,
-  type TextOutlines,
-} from '../properties/edit';
+import type { PropertyEdit } from '../properties/edit';
 import { filtered } from '../properties/sheet';
-import { textOf, type MultiLeaderWidths } from '../properties/multileader';
+import { textOf } from '../properties/multileader';
 import type { EntityType } from '../model/types';
-import { refusalMessages } from '../edit/edit';
-import { addArrowheadBlock, arrowheadBlock } from '../edit/arrowhead-blocks';
 
 /**
  * What a double click on an object of each type runs (AutoCAD's DBLCLKEDIT; its CUI's
@@ -632,83 +620,14 @@ export class PromptBus {
     if (this.#history.length > logged) this.#showPrompt();
   }
 
-  /** The body of a palette edit: measures what it must, then edits `ids` in one go. */
+  /** The body of a palette edit: `applyProperty`, on this bus's drawing. */
   async #applyProperty(
     ctx: CommandContext,
     ids: readonly EntityId[],
     edit: PropertyEdit,
     filter: EntityType | undefined,
   ): Promise<void> {
-    const model = this.#model;
-    let report: ReturnType<typeof applyPropertyEdit> | undefined;
-    const entities = filtered(model, ids, filter);
-    // A text given another justification is measured where the canvas draws it first.
-    const measure = textsToMeasure(entities, edit);
-    let outlines: TextOutlines | undefined;
-    if (measure.length > 0) {
-      const texts = measure.map((e) => e.geom as Extract<EntityGeometry, { kind: 'TEXT' }>);
-      const r = await ctx.view.request({ op: 'textOutlines', texts });
-      outlines = new Map(measure.map((e, i) => [e.id, (r.ok && r.outlines?.[i]) || null]));
-    }
-    // A hatch given another pattern is placed by the app's pattern library first.
-    const toPlace = hatchesToPattern(entities, edit);
-    let patterns: HatchPatterns | undefined;
-    if (toPlace.length > 0) {
-      const r = await ctx.view.request({
-        op: 'hatchPattern',
-        name: String(edit.value).trim(),
-        placements: toPlace.map((h) => h.placement),
-      });
-      if (!r.ok || !r.pattern) {
-        ctx.message(r.ok ? 'Invalid input.' : r.message);
-        return;
-      }
-      patterns = placedPatterns(toPlace, r.pattern);
-    }
-    // A multileader's text placed again on its landing is measured first (M2-35 part 11).
-    const leaders = multiLeaderTextsToMeasure(model, entities, edit);
-    let widths: MultiLeaderWidths | undefined;
-    if (leaders.length > 0) {
-      const texts = leaders.flatMap((l) => [l.before, l.after].filter((t) => t !== undefined));
-      const r = await ctx.view.request({ op: 'textWidths', texts });
-      const got = r.ok ? (r.widths ?? []) : [];
-      let i = 0;
-      const next = (t: unknown) => (t === undefined ? undefined : (got[i++] ?? undefined));
-      widths = new Map(
-        leaders.map((l) => {
-          const before = next(l.before);
-          const after = next(l.after);
-          return [
-            l.id,
-            {
-              ...(before !== undefined && { before }),
-              ...(after !== undefined && { after }),
-            },
-          ];
-        }),
-      );
-    }
-    // An arrowhead chosen by name names the drawing's block for it, which is added first
-    // where the drawing lacks it (M2-35 part 22), in the same undo step.
-    const named = ids.length === 0 ? undefined : arrowheadByName(model, entities, edit);
-    let chosen = edit;
-    if (named !== undefined) {
-      let block = arrowheadBlock(model.blocks, named)?.handle;
-      if (block === undefined) {
-        ctx.edit((b) => {
-          block = addArrowheadBlock(b, model, named);
-        });
-      }
-      chosen = { ...edit, value: block! };
-    }
-    ctx.edit((b) => {
-      report =
-        ids.length === 0
-          ? applyCurrentEdit(b, model, edit)
-          : applyPropertyEdit(b, model, entities, chosen, outlines, patterns, widths);
-    });
-    if (report!.invalid) ctx.message(`${report!.invalid}.`);
-    for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
+    await applyProperty(ctx, ids, edit, filter);
   }
 
   /**

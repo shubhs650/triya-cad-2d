@@ -32,6 +32,9 @@ describe('palette search', () => {
       'BREAKATPOINT',
       // M3-02 part 3: CHAMFER and FILLET.
       'CHAMFER',
+      // M3-02 part 5: CHANGE and CHPROP.
+      'CHANGE',
+      'CHPROP',
       'CIRCLE',
       'CLOSE',
       'CLOSEALL',

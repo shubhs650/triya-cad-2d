@@ -24,11 +24,25 @@ import {
   entityInit,
   layer,
   lineGeom,
+  linetype,
   sampleInit,
 } from '../model/fixtures';
 
 export const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
 const BLOCK = '50';
+
+/** STANDARD (16, no fixed height) and NOTES (17, 3.5 high) are the drawing's text styles. */
+const textStyle = (handle: string, name: string, height: number) => ({
+  handle,
+  name,
+  font: 'txt',
+  height,
+  widthFactor: 1,
+  obliqueAngle: 0,
+  lastHeight: 2.5,
+  generation: 0,
+  trueTypeFlags: 0,
+});
 
 /** A canvas whose picks take the objects within 0.25 of the pick, nearest first. */
 export function host(model: () => DocumentModel): ViewHost {
@@ -60,8 +74,8 @@ export function host(model: () => DocumentModel): ViewHost {
             const bounded = c && c.kind !== 'RAY' && c.kind !== 'XLINE' ? c : undefined;
             const pts = bounded
               ? flatten(bounded, 0.01).points
-              : g.kind === 'INSERT'
-                ? [g.position]
+              : 'position' in g
+                ? [g.position as Vec2]
                 : [];
             const n = pts.filter(inside).length;
             return r.crossing ? n > 0 : n === pts.length && n > 0;
@@ -85,6 +99,8 @@ export function setup(extra: (EntityGeometry | [EntityGeometry, Partial<Entity>]
     tables: {
       ...init.tables,
       layers: [layer(LAYER_0, '0'), layer(LAYER_WALLS, 'WALLS')],
+      linetypes: [...(init.tables?.linetypes ?? []), linetype('15', 'DASHED')],
+      textStyles: [textStyle('16', 'Standard', 0), textStyle('17', 'NOTES', 3.5)],
       blockRecords: [...(init.tables?.blockRecords ?? []), blockRecord(BLOCK, 'B')],
     },
     blocks: [...(init.blocks ?? []), { handle: BLOCK, name: 'B', basePoint: { x: 0, y: 0 } }],
