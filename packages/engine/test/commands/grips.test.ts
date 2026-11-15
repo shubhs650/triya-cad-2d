@@ -7,8 +7,10 @@ import {
   DocumentModel,
   PromptBus,
   builtinCommands,
+  gripDimensionsOf,
   type BusEvent,
   type Entity,
+  type EntityGeometry,
 } from '../../src/index';
 import { MODEL_SPACE, sampleInit } from '../model/fixtures';
 
@@ -250,5 +252,44 @@ describe('grip dimension input (M3-06 part 8, DYNDIGRIP)', () => {
     await s.bus.selectAll();
     await s.bus.pick({ x: 0, y: 0 }, { grip: 0.5 });
     expect(s.bus.prompt).not.toHaveProperty('gripDimensions');
+  });
+});
+
+describe('gripDimensionsOf', () => {
+  it('measures a polyline vertex from the one before, a first vertex from the next', () => {
+    const poly = {
+      kind: 'LWPOLYLINE',
+      closed: false,
+      vertices: [
+        { x: 0, y: 0, bulge: 0 },
+        { x: 5, y: 0, bulge: 0 },
+        { x: 5, y: 5, bulge: 0 },
+      ],
+    } as EntityGeometry;
+    expect(gripDimensionsOf(poly, { x: 5, y: 5 })).toEqual({
+      grip: { x: 5, y: 5 },
+      anchor: { x: 5, y: 0 },
+    });
+    expect(gripDimensionsOf(poly, { x: 0, y: 0 })?.anchor).toEqual({ x: 5, y: 0 });
+    // Closed: the first vertex counts from the last.
+    expect(
+      gripDimensionsOf({ ...poly, closed: true } as EntityGeometry, { x: 0, y: 0 })?.anchor,
+    ).toEqual({ x: 5, y: 5 });
+    // A segment's midpoint grip, a line's midpoint and a circle's centre measure nothing.
+    expect(gripDimensionsOf(poly, { x: 2.5, y: 0 })).toBeUndefined();
+    const line = { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 4, y: 0 } } as EntityGeometry;
+    expect(gripDimensionsOf(line, { x: 0, y: 0 })?.anchor).toEqual({ x: 4, y: 0 });
+    expect(gripDimensionsOf(line, { x: 2, y: 0 })).toBeUndefined();
+    const circle = { kind: 'CIRCLE', center: { x: 0, y: 0 }, radius: 1 } as EntityGeometry;
+    expect(gripDimensionsOf(circle, { x: 0, y: 0 })).toBeUndefined();
+    expect(gripDimensionsOf({ kind: 'POINT', position: { x: 0, y: 0 } }, { x: 0, y: 0 })).toBe(
+      undefined,
+    );
+    expect(
+      gripDimensionsOf({ ...poly, kind: 'POLYLINE', fit: true } as unknown as EntityGeometry, {
+        x: 5,
+        y: 5,
+      }),
+    ).toBeUndefined();
   });
 });

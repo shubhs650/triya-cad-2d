@@ -505,3 +505,22 @@ describe('pointer input visibility and tips (M3-06 part 8)', () => {
     });
   });
 });
+
+describe('angles in a UCS (M3-06 part 8)', () => {
+  const ucs = { origin: { x: 0, y: 0 }, angle: Math.PI / 2 };
+  const base = { x: 10, y: 10 };
+  it('shows a bearing from the UCS’s Y axis, and a turn from its X axis', () => {
+    const bearing = {
+      units: { ...DECIMAL_UNITS, aunits: 4 },
+      angles: { base: Math.PI / 2, clockwise: false, ucs: Math.PI / 2 },
+      ucs,
+    };
+    const next = prompts.point({ message: 'Next', rubberBand: { from: base } });
+    // World −X is the UCS's north.
+    expect(dynLive(dynFor(next), next, { x: 5, y: 10 }, bearing)[1]).toBe('N');
+    const turn = prompts.angle({ message: 'Rotation', base, turn: true });
+    const u = { units: DECIMAL_UNITS, angles: { base: 0, clockwise: false }, ucs };
+    // World 180° is 90° from the UCS's X axis.
+    expect(dynLive(dynFor(turn), turn, { x: 5, y: 10 }, u)).toEqual(['90']);
+  });
+});

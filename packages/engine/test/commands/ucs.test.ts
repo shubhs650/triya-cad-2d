@@ -517,5 +517,20 @@ describe('the UCS, part 8', () => {
     } as unknown as EntityGeometry;
     // The boundary's corner nearest the pick, X along the edge on from it.
     expect(objectUcs(hatch, pick)).toEqual({ origin: { x: 10, y: 0 }, angle: deg(90) });
+    // Edge loops: each edge from its start; no boundary aligns nothing.
+    const edges = {
+      kind: 'HATCH',
+      loops: [
+        {
+          flags: 1,
+          edges: [
+            { type: 'line', start: { x: 0, y: 0 }, end: { x: 0, y: 8 } },
+            { type: 'line', start: { x: 0, y: 8 }, end: { x: 0, y: 0 } },
+          ],
+        },
+      ],
+    } as unknown as EntityGeometry;
+    expect(objectUcs(edges, { x: 1, y: 7 })).toEqual({ origin: { x: 0, y: 8 }, angle: deg(270) });
+    expect(objectUcs({ ...hatch, loops: [] } as EntityGeometry, pick)).toBeUndefined();
   });
 });
