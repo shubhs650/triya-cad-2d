@@ -79,6 +79,7 @@ export type DraftingPreferences = Pick<
   | 'selectSimilarMode'
   | 'selectionCycling'
   | 'pickStyle'
+  | 'groupDisplayMode'
   | 'pickbox'
   | 'pickadd'
   | 'pickauto'
@@ -149,6 +150,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     selectSimilarMode: 130,
     selectionCycling: 0,
     pickStyle: 1,
+    groupDisplayMode: 2,
     pickbox: 3,
     pickadd: 2,
     pickauto: 5,
@@ -262,6 +264,11 @@ export function normalizePreferences(raw: unknown): Preferences {
         d.drafting.selectionCycling,
       ),
       pickStyle: within(k['pickStyle'], { min: 0, max: 3 }, d.drafting.pickStyle),
+      groupDisplayMode: within(
+        k['groupDisplayMode'],
+        { min: 0, max: 2 },
+        d.drafting.groupDisplayMode,
+      ),
       pickbox: within(k['pickbox'], { min: 0, max: 50 }, d.drafting.pickbox),
       pickadd: within(k['pickadd'], { min: 0, max: 3 }, d.drafting.pickadd),
       pickauto: within(k['pickauto'], { min: 0, max: 7 }, d.drafting.pickauto),
@@ -362,6 +369,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     selectSimilarMode: s.selectSimilarMode,
     selectionCycling: s.selectionCycling,
     pickStyle: s.pickStyle,
+    groupDisplayMode: s.groupDisplayMode,
     pickbox: s.pickbox,
     pickadd: s.pickadd,
     pickauto: s.pickauto,
