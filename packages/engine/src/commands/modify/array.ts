@@ -7,9 +7,12 @@
 // watches it change; Enter or eXit keeps it, and so does Esc, since every edit a command made is
 // kept when it is cancelled (as Esc keeps LINE's segments).
 //
-// Triya makes arrays as separate objects, AutoCAD's "Associative = No" (ARRAYASSOCIATIVITY 0).
-// An associative array object (an anonymous block with AutoCAD's ACDBASSOC* action objects)
-// read from a file is kept as it is and saved back untouched. The 3D options (Levels, the
+// An array is associative (one array object, M3-11) or separate objects, as ARRAYASSOCIATIVITY
+// says (initially 1, as AutoCAD's) and the ASsociative option sets. While its options are edited
+// the array is shown as separate copies; when it ends (Enter, eXit or Esc) an associative one is
+// made into the array object (`edit/assoc-array.ts`, saved with its TRIYA_ARRAY record, DEC-059),
+// which ARRAYEDIT changes. An associative array object made in AutoCAD (its ACDBASSOC* action
+// objects) read from a file is kept as it is and saved back untouched. The 3D options (Levels, the
 // incrementing row elevation, Z direction, Axis of rotation) and the Expression and Key point
 // options are not offered: Triya draws in the XY plane and has no parameter expressions.
 //
@@ -26,6 +29,7 @@ import {
   MAX_ARRAY_ITEMS,
   measureMaxItems,
   pathCurveOf,
+  pathFrame,
   pathItems,
   pathLength,
   pathStart,
@@ -34,7 +38,19 @@ import {
   rectangularItems,
   type ArrayPath,
 } from '../../edit/array';
-import { copyObjects, refusalMessages, transformObjects } from '../../edit/edit';
+import { copyObjects, refusalMessages, transformObjects, type EditReport } from '../../edit/edit';
+import {
+  assocArrayOf,
+  assocItems,
+  insertMatrix,
+  localParams,
+  makeAssocArray,
+  remakeAssocArray,
+} from '../../edit/assoc-array';
+import { applyPoint, compose, invert } from '../../geom/transform';
+import type { ChangeSetBuilder } from '../../model/builder';
+import type { AssocArray, AssocArrayParams, Entity, InsertGeometry } from '../../model/types';
+import { currentProps } from '../../properties/current';
 import type { Similarity } from '../../edit/similarity';
 import type { TransformOptions } from '../../edit/transform';
 import type { EntityId } from '../../model/entity-ids';
@@ -165,6 +181,20 @@ class LiveArray {
       );
     }
   }
+
+  /**
+   * Takes the copies away and makes the associative array of the source objects in the same
+   * edit (`make`), saying what it could not take in.
+   */
+  associate(ctx: CommandContext, make: (b: ChangeSetBuilder) => EditReport): void {
+    let report: EditReport | undefined;
+    ctx.edit((b) => {
+      for (const id of this.#copies) if (b.entity(id)) b.removeEntity(id);
+      report = make(b);
+    });
+    this.#copies = [];
+    for (const line of refusalMessages(report!.refused, 'arrayed')) ctx.message(line);
+  }
 }
 
 // Esc cancels a command without answering its prompt, so each prompt below is answered by its
@@ -188,13 +218,6 @@ async function* choose(
 
 async function* yesNo(ctx: CommandContext, message: string, current: boolean): Sub<boolean> {
   return (yield* choose(ctx, message, ['Yes', 'No'], current ? 'Yes' : 'No')) === 'Yes';
-}
-
-/** The shared option: Triya makes separate objects; Yes says so and keeps them separate. */
-async function* associative(ctx: CommandContext): Sub<void> {
-  if (yield* yesNo(ctx, 'Create associative array', false)) {
-    ctx.message('Triya does not make associative arrays yet: the items are separate objects.');
-  }
 }
 
 /** A count of at least `min`, `current` by default. */
@@ -293,6 +316,246 @@ async function* editOption(
   return a.kind === 'keyword' && a.keyword !== 'eXit' ? a.keyword : undefined;
 }
 
+// ── Associative arrays (M3-11) ──────────────────────────────────────────────────────────────
+
+const ASSOCIATIVITY = 'ARRAYASSOCIATIVITY';
+
+/** ARRAYASSOCIATIVITY as the app keeps it: on (AutoCAD's initial 1) unless it says 0. */
+async function associativity(ctx: CommandContext): Promise<boolean> {
+  const r = await ctx.view.request({ op: 'sysvar', name: ASSOCIATIVITY });
+  return !(r.ok && r.value === 0);
+}
+
+/** The ASsociative option: Yes or No, kept as ARRAYASSOCIATIVITY for the next array. */
+async function* associative(ctx: CommandContext, current: boolean): Sub<boolean> {
+  const on = yield* yesNo(ctx, 'Create associative array', current);
+  await ctx.view.request({ op: 'sysvar', name: ASSOCIATIVITY, value: on ? 1 : 0 });
+  return on;
+}
+
+const typeLine = (type: string, on: boolean): string =>
+  `Type = ${type}  Associative = ${on ? 'Yes' : 'No'}`;
+
+/**
+ * Ends the array: separate objects stay as the live array made them; an associative one
+ * replaces them with the array object, made from the source objects where they were.
+ */
+function finish(
+  ctx: CommandContext,
+  live: LiveArray,
+  on: boolean,
+  world: () => { params: AssocArrayParams; origin: Vec2 },
+): void {
+  if (!on) return live.finish(ctx);
+  const { params, origin } = world();
+  live.associate(ctx, (b) => {
+    const r = makeAssocArray(b, ctx.model, live.ids, {
+      space: ctx.space,
+      props: currentProps(ctx.model),
+      origin,
+      params: localParams(params, origin),
+      transform: mirrorOptions(ctx.model),
+    });
+    if (r.insert) ctx.setPrevious([r.insert.id]);
+    return r.report;
+  });
+}
+
+// ── Each type's options, shared by ARRAY and ARRAYEDIT ──────────────────────────────────────
+
+interface RectState {
+  columns: number;
+  rows: number;
+  columnSpacing: number;
+  rowSpacing: number;
+}
+
+async function* rectOption(ctx: CommandContext, option: string, s: RectState): Sub<void> {
+  if (option === 'COUnt') {
+    const c = yield* count(ctx, 'Enter number of columns', s.columns);
+    const r = yield* count(ctx, 'Enter number of rows', s.rows);
+    if (!tooMany(ctx, c * r)) Object.assign(s, { columns: c, rows: r });
+  } else if (option === 'Spacing') {
+    const a = yield ctx.prompt.distance({
+      message: 'Specify the distance between columns or',
+      options: ['Unit cell'],
+      default: { kind: 'distance', value: s.columnSpacing },
+    });
+    if (a.kind === 'keyword') {
+      const cell = yield* twoPoints(
+        ctx,
+        'Specify first corner of unit cell',
+        'Specify other corner',
+        true,
+      );
+      const d = cell ? sub(cell[1], cell[0]) : { x: 0, y: 0 };
+      if (d.x === 0 || d.y === 0) ctx.message(NOT_POSITIVE);
+      else Object.assign(s, { columnSpacing: d.x, rowSpacing: d.y });
+    } else {
+      const c = a.kind === 'distance' ? a.value : s.columnSpacing;
+      const r = yield* spacing(ctx, 'Specify the distance between rows', s.rowSpacing, s.rows);
+      if (c === 0) ctx.message(NOT_POSITIVE);
+      else Object.assign(s, { columnSpacing: c, rowSpacing: r });
+    }
+  } else if (option === 'COLumns') {
+    const c = yield* count(ctx, 'Enter number of columns', s.columns);
+    if (tooMany(ctx, c * s.rows)) return;
+    const d = yield* spacing(
+      ctx,
+      'Specify the distance between columns',
+      s.columnSpacing,
+      c,
+      'Specify the total distance between first and last columns',
+    );
+    Object.assign(s, { columns: c, columnSpacing: d });
+  } else {
+    // Rows
+    const r = yield* count(ctx, 'Enter the number of rows', s.rows);
+    if (tooMany(ctx, r * s.columns)) return;
+    const d = yield* spacing(
+      ctx,
+      'Specify the distance between rows',
+      s.rowSpacing,
+      r,
+      'Specify the total distance between start and end rows',
+    );
+    Object.assign(s, { rows: r, rowSpacing: d });
+  }
+}
+
+interface PolarState {
+  items: number;
+  fillAngle: number;
+  rows: number;
+  rowSpacing: number;
+  rotateItems: boolean;
+}
+
+/** A polar option; `center` is the centre where the drafter sees it, for the angle prompts. */
+async function* polarOption(
+  ctx: CommandContext,
+  option: string,
+  s: PolarState,
+  center: Vec2,
+): Sub<void> {
+  if (option === 'Items') {
+    const n = yield* count(ctx, 'Enter number of items in array', s.items);
+    if (!tooMany(ctx, n * s.rows)) s.items = n;
+  } else if (option === 'Angle between') {
+    const step = polarAngleBetween(s.items, s.fillAngle);
+    const a = yield ctx.prompt.angle({
+      message: 'Specify angle between items',
+      defaultLabel: sweepText(ctx, step),
+      base: center,
+    });
+    if (a.kind !== 'angle') return;
+    const between = sweepOf(ctx, a.value);
+    // Items that close the circle exactly fill it; otherwise the last item ends the fill.
+    const closes = Math.abs(Math.abs(between * s.items) - 2 * Math.PI) <= 1e-9;
+    const fill = closes ? Math.sign(between) * 2 * Math.PI : between * Math.max(s.items - 1, 1);
+    if (between === 0) ctx.message(NOT_POSITIVE);
+    else if (Math.abs(fill) > 2 * Math.PI + 1e-9) {
+      ctx.message('The fill angle cannot exceed 360 degrees.');
+    } else s.fillAngle = fill;
+  } else if (option === 'Fill angle') {
+    const a = yield ctx.prompt.angle({
+      message: 'Specify the angle to fill (+=ccw, -=cw)',
+      defaultLabel: sweepText(ctx, s.fillAngle),
+      base: center,
+    });
+    if (a.kind !== 'angle') return;
+    const fill = sweepOf(ctx, a.value);
+    if (fill === 0) ctx.message(NOT_POSITIVE);
+    else if (Math.abs(fill) > 2 * Math.PI + 1e-9) {
+      ctx.message('The fill angle cannot exceed 360 degrees.');
+    } else s.fillAngle = fill;
+  } else if (option === 'ROWs') {
+    const r = yield* count(ctx, 'Enter number of rows', s.rows);
+    if (tooMany(ctx, r * s.items)) return;
+    const d = yield* spacing(
+      ctx,
+      'Specify the distance between rows',
+      s.rowSpacing,
+      r,
+      'Specify the total distance between start and end rows',
+    );
+    Object.assign(s, { rows: r, rowSpacing: d });
+  } else {
+    // ROTate items
+    s.rotateItems = yield* yesNo(ctx, 'Rotate arrayed items?', s.rotateItems);
+  }
+}
+
+interface PathState {
+  method: 'measure' | 'divide';
+  spacing: number;
+  items: number;
+  rows: number;
+  rowSpacing: number;
+  align: boolean;
+}
+
+async function* pathOption(
+  ctx: CommandContext,
+  option: string,
+  s: PathState,
+  path: ArrayPath,
+): Sub<void> {
+  if (option === 'Method') {
+    const method = yield* choose(
+      ctx,
+      'Enter path method',
+      ['Divide', 'Measure'],
+      s.method === 'divide' ? 'Divide' : 'Measure',
+    );
+    s.method = method === 'Divide' ? 'divide' : 'measure';
+    if (s.method === 'measure') s.items = Math.min(s.items, measureMaxItems(path, s.spacing));
+  } else if (option === 'Items') {
+    if (s.method === 'divide') {
+      const n = yield* count(ctx, 'Enter number of items along path', s.items);
+      if (!tooMany(ctx, n * s.rows)) s.items = n;
+      return;
+    }
+    const d = yield ctx.prompt.distance({
+      message: 'Specify the distance between items along path',
+      default: { kind: 'distance', value: s.spacing },
+    });
+    const step = d.kind === 'distance' ? d.value : s.spacing;
+    if (!(step > 0)) {
+      ctx.message(NOT_POSITIVE);
+      return;
+    }
+    const max = measureMaxItems(path, step);
+    ctx.message(`Maximum items = ${max}`);
+    const n = yield ctx.prompt.integer({
+      message: 'Specify number of items or',
+      options: ['Fill entire path'],
+      default: { kind: 'number', value: max },
+    });
+    // Fill entire path, or Enter: the most there is room for.
+    const items = n.kind === 'number' ? n.value : max;
+    if (items < 1 || items > max) {
+      ctx.message(`Value must be between 1 and ${max}.`);
+      return;
+    }
+    if (!tooMany(ctx, items * s.rows)) Object.assign(s, { spacing: step, items });
+  } else if (option === 'Rows') {
+    const r = yield* count(ctx, 'Enter number of rows', s.rows);
+    if (tooMany(ctx, r * s.items)) return;
+    const d = yield* spacing(
+      ctx,
+      'Specify the distance between rows',
+      s.rowSpacing,
+      r,
+      'Specify the total distance between start and end rows',
+    );
+    Object.assign(s, { rows: r, rowSpacing: d });
+  } else {
+    // Align items
+    s.align = yield* yesNo(ctx, 'Align arrayed items to the path?', s.align);
+  }
+}
+
 // ── ARRAYRECT ───────────────────────────────────────────────────────────────────────────────
 
 async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> {
@@ -303,77 +566,32 @@ async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<
     columnSpacing: defaultSpacing(box.maxX - box.minX, box.maxY - box.minY),
     rowSpacing: defaultSpacing(box.maxY - box.minY, box.maxX - box.minX),
   };
-  ctx.message('Type = Rectangular  Associative = No');
+  // The base point is the array object's position (its grip); separate items have no use for it.
+  let base = centreOf(box);
+  let on = await associativity(ctx);
+  ctx.message(typeLine('Rectangular', on));
   const live = new LiveArray(ids);
   const show = () => live.show(ctx, rectangularItems(s));
   show();
-  for (;;) {
-    const option = yield* editOption(ctx, [
-      'ASsociative',
-      'Base point',
-      'COUnt',
-      'Spacing',
-      'COLumns',
-      'Rows',
-    ]);
-    if (option === undefined) break;
-    if (option === 'ASsociative') yield* associative(ctx);
-    else if (option === 'Base point') {
-      // The base point is an associative array's grip; separate items have no use for it.
-      yield* basePoint(ctx, centreOf(box), 'centroid');
-    } else if (option === 'COUnt') {
-      const c = yield* count(ctx, 'Enter number of columns', s.columns);
-      const r = yield* count(ctx, 'Enter number of rows', s.rows);
-      if (!tooMany(ctx, c * r)) Object.assign(s, { columns: c, rows: r });
-    } else if (option === 'Spacing') {
-      const a = yield ctx.prompt.distance({
-        message: 'Specify the distance between columns or',
-        options: ['Unit cell'],
-        default: { kind: 'distance', value: s.columnSpacing },
-      });
-      if (a.kind === 'keyword') {
-        const cell = yield* twoPoints(
-          ctx,
-          'Specify first corner of unit cell',
-          'Specify other corner',
-          true,
-        );
-        const d = cell ? sub(cell[1], cell[0]) : { x: 0, y: 0 };
-        if (d.x === 0 || d.y === 0) ctx.message(NOT_POSITIVE);
-        else Object.assign(s, { columnSpacing: d.x, rowSpacing: d.y });
-      } else {
-        const c = a.kind === 'distance' ? a.value : s.columnSpacing;
-        const r = yield* spacing(ctx, 'Specify the distance between rows', s.rowSpacing, s.rows);
-        if (c === 0) ctx.message(NOT_POSITIVE);
-        else Object.assign(s, { columnSpacing: c, rowSpacing: r });
-      }
-    } else if (option === 'COLumns') {
-      const c = yield* count(ctx, 'Enter number of columns', s.columns);
-      if (tooMany(ctx, c * s.rows)) continue;
-      const d = yield* spacing(
-        ctx,
-        'Specify the distance between columns',
-        s.columnSpacing,
-        c,
-        'Specify the total distance between first and last columns',
-      );
-      Object.assign(s, { columns: c, columnSpacing: d });
-    } else {
-      // Rows
-      const r = yield* count(ctx, 'Enter the number of rows', s.rows);
-      if (tooMany(ctx, r * s.columns)) continue;
-      const d = yield* spacing(
-        ctx,
-        'Specify the distance between rows',
-        s.rowSpacing,
-        r,
-        'Specify the total distance between start and end rows',
-      );
-      Object.assign(s, { rows: r, rowSpacing: d });
+  try {
+    for (;;) {
+      const option = yield* editOption(ctx, [
+        'ASsociative',
+        'Base point',
+        'COUnt',
+        'Spacing',
+        'COLumns',
+        'Rows',
+      ]);
+      if (option === undefined) break;
+      if (option === 'ASsociative') on = yield* associative(ctx, on);
+      else if (option === 'Base point') base = yield* basePoint(ctx, centreOf(box), 'centroid');
+      else yield* rectOption(ctx, option, s);
+      show();
     }
-    show();
+  } finally {
+    finish(ctx, live, on, () => ({ params: { kind: 'rectangular', ...s }, origin: base }));
   }
-  live.finish(ctx);
 }
 
 // ── ARRAYPOLAR ──────────────────────────────────────────────────────────────────────────────
@@ -381,7 +599,8 @@ async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<
 async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> {
   const box = await extentsOf(ctx, ids);
   let base = centreOf(box);
-  ctx.message('Type = Polar  Associative = No');
+  let on = await associativity(ctx);
+  ctx.message(typeLine('Polar', on));
   let center: Vec2 | undefined;
   while (!center) {
     const a = yield ctx.prompt.point({
@@ -404,68 +623,26 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
   const live = new LiveArray(ids);
   const show = () => live.show(ctx, polarItems(s));
   show();
-  for (;;) {
-    const option = yield* editOption(ctx, [
-      'ASsociative',
-      'Base point',
-      'Items',
-      'Angle between',
-      'Fill angle',
-      'ROWs',
-      'ROTate items',
-    ]);
-    if (option === undefined) break;
-    if (option === 'ASsociative') yield* associative(ctx);
-    else if (option === 'Base point') s.base = yield* basePoint(ctx, centreOf(box), 'centroid');
-    else if (option === 'Items') {
-      const n = yield* count(ctx, 'Enter number of items in array', s.items);
-      if (!tooMany(ctx, n * s.rows)) s.items = n;
-    } else if (option === 'Angle between') {
-      const step = polarAngleBetween(s.items, s.fillAngle);
-      const a = yield ctx.prompt.angle({
-        message: 'Specify angle between items',
-        defaultLabel: sweepText(ctx, step),
-        base: s.center,
-      });
-      if (a.kind !== 'angle') continue;
-      const between = sweepOf(ctx, a.value);
-      // Items that close the circle exactly fill it; otherwise the last item ends the fill.
-      const closes = Math.abs(Math.abs(between * s.items) - 2 * Math.PI) <= 1e-9;
-      const fill = closes ? Math.sign(between) * 2 * Math.PI : between * Math.max(s.items - 1, 1);
-      if (between === 0) ctx.message(NOT_POSITIVE);
-      else if (Math.abs(fill) > 2 * Math.PI + 1e-9) {
-        ctx.message('The fill angle cannot exceed 360 degrees.');
-      } else s.fillAngle = fill;
-    } else if (option === 'Fill angle') {
-      const a = yield ctx.prompt.angle({
-        message: 'Specify the angle to fill (+=ccw, -=cw)',
-        defaultLabel: sweepText(ctx, s.fillAngle),
-        base: s.center,
-      });
-      if (a.kind !== 'angle') continue;
-      const fill = sweepOf(ctx, a.value);
-      if (fill === 0) ctx.message(NOT_POSITIVE);
-      else if (Math.abs(fill) > 2 * Math.PI + 1e-9) {
-        ctx.message('The fill angle cannot exceed 360 degrees.');
-      } else s.fillAngle = fill;
-    } else if (option === 'ROWs') {
-      const r = yield* count(ctx, 'Enter number of rows', s.rows);
-      if (tooMany(ctx, r * s.items)) continue;
-      const d = yield* spacing(
-        ctx,
-        'Specify the distance between rows',
-        s.rowSpacing,
-        r,
-        'Specify the total distance between start and end rows',
-      );
-      Object.assign(s, { rows: r, rowSpacing: d });
-    } else {
-      // ROTate items
-      s.rotateItems = yield* yesNo(ctx, 'Rotate arrayed items?', s.rotateItems);
+  try {
+    for (;;) {
+      const option = yield* editOption(ctx, [
+        'ASsociative',
+        'Base point',
+        'Items',
+        'Angle between',
+        'Fill angle',
+        'ROWs',
+        'ROTate items',
+      ]);
+      if (option === undefined) break;
+      if (option === 'ASsociative') on = yield* associative(ctx, on);
+      else if (option === 'Base point') s.base = yield* basePoint(ctx, centreOf(box), 'centroid');
+      else yield* polarOption(ctx, option, s, s.center);
+      show();
     }
-    show();
+  } finally {
+    finish(ctx, live, on, () => ({ params: { kind: 'polar', ...s }, origin: s.base }));
   }
-  live.finish(ctx);
 }
 
 // ── ARRAYPATH ───────────────────────────────────────────────────────────────────────────────
@@ -473,7 +650,7 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
 async function* pickPath(
   ctx: CommandContext,
   ids: readonly EntityId[],
-): Sub<ArrayPath | undefined> {
+): Sub<{ path: ArrayPath; handle: string } | undefined> {
   for (;;) {
     const a = yield ctx.prompt.selection({ message: 'Select path curve', single: true });
     const id = a.kind === 'selection' ? a.ids[0] : undefined;
@@ -497,26 +674,19 @@ async function* pickPath(
       ctx.message('The object selected is not a valid path curve.');
       continue;
     }
-    return path;
+    return { path, handle: e!.handle };
   }
 }
 
 async function* along(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> {
   const box = await extentsOf(ctx, ids);
-  ctx.message('Type = Path  Associative = No');
-  const path = yield* pickPath(ctx, ids);
-  if (!path) return;
+  let on = await associativity(ctx);
+  ctx.message(typeLine('Path', on));
+  const picked = yield* pickPath(ctx, ids);
+  if (!picked) return;
+  const { path } = picked;
   const size = defaultSpacing(Math.max(box.maxX - box.minX, box.maxY - box.minY));
-  const s: {
-    method: 'measure' | 'divide';
-    base: Vec2;
-    spacing: number;
-    items: number;
-    rows: number;
-    rowSpacing: number;
-    align: boolean;
-    tangent?: Vec2;
-  } = {
+  const s: PathState & { base: Vec2; tangent?: Vec2 } = {
     method: 'measure',
     base: pathStart(path),
     spacing: size,
@@ -529,86 +699,157 @@ async function* along(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
   const live = new LiveArray(ids);
   const show = () => live.show(ctx, pathItems({ path, ...s }));
   show();
-  for (;;) {
-    const option = yield* editOption(ctx, [
-      'ASsociative',
-      'Method',
-      'Base point',
-      'Tangent direction',
-      'Items',
-      'Rows',
-      'Align items',
-    ]);
-    if (option === undefined) break;
-    if (option === 'ASsociative') yield* associative(ctx);
-    else if (option === 'Method') {
-      const method = yield* choose(
-        ctx,
-        'Enter path method',
-        ['Divide', 'Measure'],
-        s.method === 'divide' ? 'Divide' : 'Measure',
-      );
-      s.method = method === 'Divide' ? 'divide' : 'measure';
-      if (s.method === 'measure') s.items = Math.min(s.items, measureMaxItems(path, s.spacing));
-    } else if (option === 'Base point') {
-      s.base = yield* basePoint(ctx, pathStart(path), 'end of path curve');
-    } else if (option === 'Tangent direction') {
-      const vector = yield* twoPoints(
-        ctx,
-        'Specify first point of tangent vector',
-        'Specify second point of tangent vector',
-        false,
-      );
-      const v = vector ? sub(vector[1], vector[0]) : { x: 0, y: 0 };
-      if (v.x === 0 && v.y === 0) ctx.message('The tangent vector must have a length.');
-      else s.tangent = v;
-    } else if (option === 'Items') {
-      if (s.method === 'divide') {
-        const n = yield* count(ctx, 'Enter number of items along path', s.items);
-        if (!tooMany(ctx, n * s.rows)) s.items = n;
-      } else {
-        const d = yield ctx.prompt.distance({
-          message: 'Specify the distance between items along path',
-          default: { kind: 'distance', value: s.spacing },
-        });
-        const step = d.kind === 'distance' ? d.value : s.spacing;
-        if (!(step > 0)) {
-          ctx.message(NOT_POSITIVE);
-          continue;
-        }
-        const max = measureMaxItems(path, step);
-        ctx.message(`Maximum items = ${max}`);
-        const n = yield ctx.prompt.integer({
-          message: 'Specify number of items or',
-          options: ['Fill entire path'],
-          default: { kind: 'number', value: max },
-        });
-        // Fill entire path, or Enter: the most there is room for.
-        const items = n.kind === 'number' ? n.value : max;
-        if (items < 1 || items > max) {
-          ctx.message(`Value must be between 1 and ${max}.`);
-          continue;
-        }
-        if (!tooMany(ctx, items * s.rows)) Object.assign(s, { spacing: step, items });
-      }
-    } else if (option === 'Rows') {
-      const r = yield* count(ctx, 'Enter number of rows', s.rows);
-      if (tooMany(ctx, r * s.items)) continue;
-      const d = yield* spacing(
-        ctx,
-        'Specify the distance between rows',
-        s.rowSpacing,
-        r,
-        'Specify the total distance between start and end rows',
-      );
-      Object.assign(s, { rows: r, rowSpacing: d });
-    } else {
-      // Align items
-      s.align = yield* yesNo(ctx, 'Align arrayed items to the path?', s.align);
+  try {
+    for (;;) {
+      const option = yield* editOption(ctx, [
+        'ASsociative',
+        'Method',
+        'Base point',
+        'Tangent direction',
+        'Items',
+        'Rows',
+        'Align items',
+      ]);
+      if (option === undefined) break;
+      if (option === 'ASsociative') on = yield* associative(ctx, on);
+      else if (option === 'Base point') {
+        s.base = yield* basePoint(ctx, pathStart(path), 'end of path curve');
+      } else if (option === 'Tangent direction') {
+        const vector = yield* twoPoints(
+          ctx,
+          'Specify first point of tangent vector',
+          'Specify second point of tangent vector',
+          false,
+        );
+        const v = vector ? sub(vector[1], vector[0]) : { x: 0, y: 0 };
+        if (v.x === 0 && v.y === 0) ctx.message('The tangent vector must have a length.');
+        else s.tangent = v;
+      } else yield* pathOption(ctx, option, s, path);
+      show();
     }
-    show();
+  } finally {
+    finish(ctx, live, on, () => ({
+      params: {
+        kind: 'path',
+        path: picked.handle,
+        method: s.method,
+        base: s.base,
+        tangent: s.tangent ?? pathFrame(path, 0).direction,
+        spacing: s.spacing,
+        items: s.items,
+        rows: s.rows,
+        rowSpacing: s.rowSpacing,
+        align: s.align,
+        reversed: path.reversed,
+      },
+      origin: s.base,
+    }));
   }
-  live.finish(ctx);
+}
+
+// ── ARRAYEDIT (M3-11) ───────────────────────────────────────────────────────────────────────
+
+/** An INSERT that looks like an associative array AutoCAD made: an anonymous block with reactors. */
+const madeElsewhere = (ctx: CommandContext, e: Entity): boolean =>
+  e.geom.kind === 'INSERT' &&
+  (e.reactors?.length ?? 0) > 0 &&
+  /^\*U/i.test(ctx.model.blocks.get(e.geom.block)?.name ?? '');
+
+const EDIT_OPTIONS: Readonly<Record<AssocArrayParams['kind'], readonly string[]>> = {
+  rectangular: ['Rows', 'Columns'],
+  polar: ['Base point', 'Items', 'Angle between', 'Fill angle', 'Rows', 'ROTate items'],
+  path: ['Method', 'Base point', 'Items', 'Rows', 'Align items'],
+};
+
+/**
+ * ARRAYEDIT (AutoCAD 2024 Help, "ARRAYEDIT (Command)"): picks an associative array Triya made
+ * and changes it option by option, each change remaking its items at once. Not yet offered:
+ * Source, REPlace and RESet (M3-11 part 2), Levels and Z direction (3D). An array made in
+ * AutoCAD keeps its parameters in undocumented objects (DEC-059), so it is refused.
+ */
+function arrayEditCommand(): CommandDef {
+  return {
+    name: 'ARRAYEDIT',
+    usesSelection: 'during',
+    async *run(ctx) {
+      for (;;) {
+        const a = yield ctx.prompt.selection({
+          message: 'Select array',
+          single: true,
+          pickfirst: true,
+        });
+        const id = a.kind === 'selection' ? a.ids[0] : undefined;
+        if (id === undefined) return;
+        const e = ctx.model.entity(id)!;
+        const record = assocArrayOf(ctx.model.objects.values(), e);
+        if (record) return yield* editArray(ctx, e.handle, record.handle);
+        ctx.message(
+          madeElsewhere(ctx, e)
+            ? 'Triya cannot edit this array: it was not made in Triya, and its parameters are not documented.'
+            : 'The object selected is not an associative array.',
+        );
+      }
+    },
+  };
+}
+
+async function* editArray(ctx: CommandContext, insertHandle: string, handle: string): Sub<void> {
+  const current = () => ({
+    insert: ctx.model.entityByHandle(insertHandle)!,
+    record: ctx.model.objects.get(handle) as AssocArray,
+  });
+  const kind = current().record.params.kind;
+  for (;;) {
+    const a = yield ctx.prompt.keyword({
+      message: 'Enter an option',
+      options: [...EDIT_OPTIONS[kind], 'eXit'],
+      default: { kind: 'keyword', keyword: 'eXit' },
+    });
+    if (a.kind !== 'keyword' || a.keyword === 'eXit') return;
+    const { insert, record } = current();
+    const g = insert.geom as InsertGeometry;
+    const w = insertMatrix(g, ctx.model.blocks.get(g.block)?.basePoint ?? { x: 0, y: 0 });
+    const p = record.params;
+    let next: AssocArrayParams;
+    if (p.kind === 'rectangular') {
+      const s = { ...p };
+      yield* rectOption(ctx, a.keyword === 'Columns' ? 'COLumns' : a.keyword, s);
+      next = s;
+    } else if (p.kind === 'polar') {
+      const s = { ...p };
+      if (a.keyword === 'Base point') {
+        const b = yield* basePoint(ctx, applyPoint(w, s.base), 'current');
+        s.base = applyPoint(invert(w), b);
+      } else {
+        const option = a.keyword === 'Rows' ? 'ROWs' : a.keyword;
+        yield* polarOption(ctx, option, s, applyPoint(w, s.center));
+      }
+      next = s;
+    } else {
+      const e = p.path === undefined ? undefined : ctx.model.entityByHandle(p.path);
+      const found = e ? pathCurveOf(e.geom) : undefined;
+      if (!found) {
+        ctx.message("The array's path is gone: its items stay where they are.");
+        continue;
+      }
+      const s = { ...p };
+      if (a.keyword === 'Base point') {
+        // The point is picked on item 0, whose base point lands on the start of the path.
+        const items = assocItems(ctx.model, insert, p) as Similarity[];
+        const item0 = compose(items[0]!.m, w);
+        const b = yield* basePoint(ctx, applyPoint(item0, s.base), 'current');
+        s.base = applyPoint(invert(item0), b);
+      } else {
+        const path = arrayPath(found.curve, found.closed, p.reversed);
+        yield* pathOption(ctx, a.keyword, s, path);
+      }
+      next = s;
+    }
+    ctx.edit((b) => {
+      const problem = remakeAssocArray(b, ctx.model, insert, record, next);
+      if (problem) ctx.message(`The array cannot be remade: ${problem}.`);
+    });
+  }
 }
 
 // ── The commands ────────────────────────────────────────────────────────────────────────────
@@ -785,4 +1026,5 @@ export const ARRAY_COMMANDS: readonly (() => CommandDef)[] = [
   () => typed('ARRAYRECT', 'Rectangular'),
   () => typed('ARRAYPOLAR', 'POlar'),
   () => typed('ARRAYPATH', 'PAth'),
+  arrayEditCommand,
 ];

@@ -56,6 +56,10 @@ const VALUES: Readonly<
   PICKFIRST: { get: (s) => bit(s.pickfirst), set: (v) => ({ pickfirst: v === 1 }) },
   GRIPSIZE: { get: (s) => s.gripSize, set: (gripSize) => ({ gripSize }) },
   ROLLOVERTIPS: { get: (s) => bit(s.rolloverTips), set: (v) => ({ rolloverTips: v === 1 }) },
+  ARRAYASSOCIATIVITY: {
+    get: (s) => bit(s.arrayAssociativity),
+    set: (v) => ({ arrayAssociativity: v === 1 }),
+  },
 };
 
 /**

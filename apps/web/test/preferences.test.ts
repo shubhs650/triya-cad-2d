@@ -62,6 +62,8 @@ describe('preferences', () => {
       gripSize: 5,
       // ROLLOVERTIPS 1 (M2-35 part 21).
       rolloverTips: true,
+      // ARRAYASSOCIATIVITY 1 (M3-11).
+      arrayAssociativity: true,
     });
   });
 
