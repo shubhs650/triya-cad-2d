@@ -9,6 +9,8 @@ import type { Handle } from '../model/handle';
 import type { Color, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
 import type { OverkillSettings } from '../edit/overkill';
+import type { QuickSelectCriteria, QuickSelectType } from '../selection/qselect';
+import type { PropertyUnits } from '../properties/sheet';
 import type { MatchSettings } from '../properties/match';
 import type { DragPreview } from './drag';
 import {
@@ -279,7 +281,8 @@ export interface SelectionPrompt extends PromptBase {
   readonly single?: boolean;
   /**
    * With `single`, the pre-selection still answers it, as for any "Select objects" (TEXTEDIT,
-   * M2-07 part 2: a text selected first, or double-clicked, is edited).
+   * M2-07 part 2: a text selected first, or double-clicked, is edited). `false` without `single`:
+   * the pre-selection does not answer it either (QSELECT's Select objects, M3-04 part 2).
    */
   readonly pickfirst?: boolean;
 }
@@ -414,6 +417,18 @@ export type DialogRequest =
       /** OVERKILL's Delete Duplicate Objects (M3-02 part 6): its settings as it opens. */
       readonly type: 'overkill';
       readonly settings: OverkillSettings;
+    }
+  | {
+      /** QSELECT's Quick Select (M3-04 part 2), opened on `criteria`. */
+      readonly type: 'qselect';
+      readonly criteria: QuickSelectCriteria;
+      /** How many objects are selected (Apply to offers Current selection when any are). */
+      readonly selected: number;
+      /** The Object type lists of the entire drawing and of the current selection. */
+      readonly drawing: readonly QuickSelectType[];
+      readonly selection: readonly QuickSelectType[];
+      /** How the Value of a distance or angle is shown and typed. */
+      readonly units: PropertyUnits;
     };
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
@@ -514,6 +529,8 @@ export type PromptAnswer =
       readonly pointStyle?: { readonly mode: number; readonly size: number };
       /** Delete Duplicate Objects' settings as OK closed it. */
       readonly overkill?: OverkillSettings;
+      /** Quick Select's criteria as OK (or Select objects) closed it. */
+      readonly qselect?: QuickSelectCriteria;
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }

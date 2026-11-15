@@ -361,3 +361,77 @@ it('lists the new modes when a word is no mode', async () => {
     'Expects a point or Window/Last/Crossing/BOX/ALL/Fence/WPolygon/CPolygon/Group/Add/Remove/Multiple/Previous/Undo/AUto/SIngle',
   );
 });
+
+// Lasso (M3-04 part 2; AutoCAD 2024 Help, "To Select Objects": "To create a lasso selection,
+// click, drag, and release the mouse button"; dragged right a window lasso, left a crossing
+// lasso, and Spacebar cycles Window, Crossing and Fence). The canvas sends the lasso's path with
+// the release that ends the drag; the press found nothing and started the window.
+describe('Lasso', () => {
+  const points = (...xy: string[]) =>
+    xy.map((p) => {
+      const [x, y] = p.split(',').map(Number) as [number, number];
+      return { x, y };
+    });
+
+  it('a window lasso takes what lies wholly inside the path dragged', async () => {
+    const s = setup();
+    await s.submit('SELECT');
+    const path = points(...U);
+    await s.bus.pick(path[0]!);
+    expect(s.bus.promptText).toBe('Specify opposite corner:');
+    await s.bus.pick(path.at(-1)!, { release: true, lasso: { kind: 'window', points: path } });
+    expect(s.asked.at(-1)).toEqual({ op: 'selectPath', kind: 'window', points: path });
+    expect(s.results()).toEqual(['Window Lasso  Press Spacebar to cycle options: 1 found']);
+    expect(s.selections()).toEqual(['30']);
+    expect(s.bus.promptText).toBe('Select objects:');
+  });
+
+  it('a crossing lasso at `Command:` is the pre-selection, picked silently', async () => {
+    const s = setup();
+    const path = points(...U);
+    await s.bus.pick(path[0]!);
+    await s.bus.pick(path.at(-1)!, { release: true, lasso: { kind: 'crossing', points: path } });
+    expect(s.selections()).toEqual(['30', '31']);
+    expect(s.log()).toEqual([]);
+    await s.submit('ERASE');
+    expect(s.model.entityByHandle('31')).toBeUndefined();
+  });
+
+  it('a fence lasso takes what its open path crosses', async () => {
+    const s = setup();
+    await s.submit('SELECT');
+    const path = points('4,6.5', '6,6.5', '6,6.8');
+    await s.bus.pick(path[0]!);
+    await s.bus.pick(path.at(-1)!, { release: true, lasso: { kind: 'fence', points: path } });
+    expect(s.asked.at(-1)).toMatchObject({ op: 'selectPath', kind: 'fence' });
+    expect(s.results()).toEqual(['Fence Lasso  Press Spacebar to cycle options: 1 found']);
+    expect(s.selections()).toEqual(['33']);
+  });
+
+  it('a Shift press lassos to remove; Undo takes the step back', async () => {
+    const s = setup();
+    await s.submit('SELECT', 'ALL');
+    const path = points(...U);
+    await s.bus.pick(path[0]!, { shift: true });
+    await s.bus.pick(path.at(-1)!, {
+      release: true,
+      lasso: { kind: 'crossing', points: path },
+    });
+    expect(s.results().at(-1)).toBe(
+      'Crossing Lasso  Press Spacebar to cycle options: 2 removed, 2 total',
+    );
+    expect(s.selections()).toEqual(['32', '33']);
+    await s.submit('U');
+    expect(s.selections()).toEqual(['30', '31', '32', '33']);
+  });
+
+  it('a path too short to enclose anything ends as the window it started', async () => {
+    const s = setup();
+    await s.submit('SELECT');
+    const path = points('0,0', '10,10');
+    await s.bus.pick(path[0]!);
+    await s.bus.pick(path[1]!, { release: true, lasso: { kind: 'window', points: path } });
+    expect(s.asked.at(-1)).toMatchObject({ op: 'select', crossing: false });
+    expect(s.asked.some((r) => r.op === 'selectPath')).toBe(false);
+  });
+});
