@@ -210,6 +210,7 @@ export function gripCommand(
             break;
           case 'ROTATE':
             a = yield ctx.prompt.angle({
+              turn: true,
               message: 'Specify rotation angle or',
               options: withReference,
               ...extra,

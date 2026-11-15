@@ -1625,6 +1625,20 @@ button {
   pointer-events: none;
 }
 
+/* The UCS icon (M3-06 part 7): the axes' corner sits at the box's centre, placed by the canvas. */
+.ucs-icon {
+  position: absolute;
+  z-index: 3;
+  width: 72px;
+  height: 72px;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.ucs-icon svg {
+  display: block;
+}
+
 /* MEASUREGEOM Quick (M3-07): the values measured under the cursor, centred on what they measure. */
 .quick-measure {
   position: absolute;

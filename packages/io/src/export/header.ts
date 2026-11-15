@@ -17,6 +17,7 @@ import {
   MultiLeaderStyle,
   TableStyle,
   TextStyle,
+  UCS,
   type CadObject,
   type CadDocument,
   type CadSystemVariable,
@@ -81,15 +82,22 @@ const WRITER_OWNED = new Set([
 ]);
 
 /**
- * The UCS name variables are the name of the UCS object the header holds, which is the UCS
- * table's own record when one is current: setting one would rename that record.
+ * The UCS base and orthographic reference variables are the name of the UCS object the header
+ * holds for them, which may be the UCS table's own record: setting one would rename that record.
+ * $UCSNAME and $PUCSNAME (M3-06 part 7) name the current UCS: acad-ts reads them into a UCS of
+ * the header's own, outside the table, and writes its name back, so the UCS command sets them to
+ * a UCS record's name, or '' for an unnamed UCS (`NAME_TABLES`).
  */
-const UCS_NAMES = /^\$P?UCS(NAME|BASE|ORTHOREF)$/;
+const UCS_NAMES = /^\$P?UCS(BASE|ORTHOREF)$/;
 
 /** The records a name can name: the drawing's, and those of its table the same save adds. */
 type Records = (doc: CadDocument, added: readonly CadObject[]) => Iterable<{ name: string }> | null;
 
 const blocks: Records = (d) => d.blockRecords;
+const ucsRecords: Records = (d, added) => [
+  ...(d.uCSs ?? []),
+  ...added.filter((r) => r instanceof UCS),
+];
 const linetypes: Records = (d, added) => [
   ...(d.lineTypes ?? []),
   ...added.filter((r) => r instanceof LineType),
@@ -130,6 +138,8 @@ const NAME_TABLES: Record<string, { readonly records: Records; readonly empty?: 
   $DIMLTYPE: { records: linetypes, empty: true },
   $DIMLTEX1: { records: linetypes, empty: true },
   $DIMLTEX2: { records: linetypes, empty: true },
+  $UCSNAME: { records: ucsRecords, empty: true },
+  $PUCSNAME: { records: ucsRecords, empty: true },
 };
 
 /**
@@ -514,6 +524,19 @@ export function writeHeader(doc: CadDocument, changes: readonly HeaderChange[]):
       dictionary.get(name)!.value = value as string;
       continue;
     }
-    header.setValue(name, dxfValues(variable, value));
+    // acad-ts's setValue skips an empty name, and a UCS record cannot be renamed to nothing; an
+    // unnamed current UCS (M3-06 part 7) is a fresh unnamed UCS of the header's with the same
+    // origin and axes, whose name the DXF writer writes empty, as AutoCAD writes it.
+    if (value === '' && (name === '$UCSNAME' || name === '$PUCSNAME')) {
+      const paper = name === '$PUCSNAME';
+      const was = paper ? header.paperSpaceUcs : header.modelSpaceUcs;
+      const now = new UCS();
+      now.origin = was.origin;
+      now.xAxis = was.xAxis;
+      now.yAxis = was.yAxis;
+      now.elevation = was.elevation;
+      if (paper) header.paperSpaceUcs = now;
+      else header.modelSpaceUcs = now;
+    } else header.setValue(name, dxfValues(variable, value));
   }
 }

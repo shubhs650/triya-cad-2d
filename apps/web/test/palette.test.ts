@@ -150,6 +150,9 @@ describe('palette search', () => {
       'TRIM',
       // M2-23: the undo commands run in every drawing.
       'U',
+      // M3-06 part 7: the UCS in plan and its icon.
+      'UCS',
+      'UCSICON',
       // M2-56 part 1: the Underlay Layers dialog.
       'ULAYERS',
       'UNDO',

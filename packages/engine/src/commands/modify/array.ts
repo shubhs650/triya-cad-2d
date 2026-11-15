@@ -463,6 +463,7 @@ async function* polarOption(
   } else if (option === 'Angle between') {
     const step = polarAngleBetween(s.items, s.fillAngle);
     const a = yield ctx.prompt.angle({
+      turn: true,
       message: 'Specify angle between items',
       defaultLabel: sweepText(ctx, step),
       base: center,
@@ -478,6 +479,7 @@ async function* polarOption(
     } else s.fillAngle = fill;
   } else if (option === 'Fill angle') {
     const a = yield ctx.prompt.angle({
+      turn: true,
       message: 'Specify the angle to fill (+=ccw, -=cw)',
       defaultLabel: sweepText(ctx, s.fillAngle),
       base: center,
@@ -1233,6 +1235,7 @@ function dashArray(): (ctx: CommandContext) => Sub<void> {
         let fill = 2 * Math.PI;
         for (;;) {
           const f = yield ctx.prompt.angle({
+            turn: true,
             message: 'Specify the angle to fill (+=ccw, -=cw)',
             defaultLabel: '360',
             base: center,

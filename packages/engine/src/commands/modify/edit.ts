@@ -303,6 +303,7 @@ export function rotateCommand(): CommandDef {
       let copying = false;
       for (;;) {
         const a = yield ctx.prompt.angle({
+          turn: true,
           message: 'Specify rotation angle or',
           options: ['Copy', 'Reference'],
           default: { kind: 'angle', value: last },
