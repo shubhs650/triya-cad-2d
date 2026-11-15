@@ -64,6 +64,7 @@ import {
   type DeferredPick,
   type EnclosedSpace,
   type OsnapHit,
+  type Lasso,
   type Prompt,
   type QuickMeasure,
   type UnderlaySnapPage,
@@ -202,13 +203,25 @@ export interface CanvasHooks {
       readonly grip?: number;
       /** Ctrl was held: an arc's direction switched where the prompt says so (M3-01 part 6). */
       readonly ctrl?: boolean;
+      /** With `release`: the lasso dragged from the window's first corner (M3-04 part 2). */
+      readonly lasso?: Lasso;
     },
   ) => void;
+  /**
+   * A lasso is dragged (M3-04 part 2): its kind, for the command line to say, as AutoCAD's
+   * does; undefined when it ends.
+   */
+  readonly onLasso?: (kind: Lasso['kind'] | undefined) => void;
   /**
    * A left double click (M2-07 part 2): the world point under it, for the command engine to
    * edit the object there (TEXTEDIT on a text, AutoCAD's DBLCLKEDIT).
    */
   readonly onDoubleClick?: (p: Vec2) => void;
+  /**
+   * A tap of Ctrl at a prompt that `ctrlCycles` (M3-05): the hot multi-functional grip's next
+   * function, as AutoCAD's Ctrl cycles them.
+   */
+  readonly onCtrlCycle?: () => void;
   /** Shift+right-click at a point prompt (M2-04 part 2): the object snap menu, at client px. */
   readonly onSnapMenu?: (at: { readonly x: number; readonly y: number }) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
@@ -333,9 +346,21 @@ export class CanvasController {
   #lastMiddle: { readonly t: number; readonly x: number; readonly y: number } | undefined;
   #lastWheel = -Infinity;
   #corner: { readonly world: Point; readonly screen: Point; dragged: boolean } | undefined;
-  /** A left press sent to the command engine, and whether it has since been dragged. */
+  /**
+   * A left press sent to the command engine, and whether it has since been dragged; the world
+   * points it was dragged through, and the kind of lasso they make (M3-04 part 2: dragged left
+   * a crossing, right a window, as AutoCAD's; Spacebar cycles them and Fence).
+   */
   #press:
-    | { readonly pointer: number; readonly x: number; readonly y: number; dragged: boolean }
+    | {
+        readonly pointer: number;
+        readonly x: number;
+        readonly y: number;
+        dragged: boolean;
+        readonly path: Point[];
+        lasso: Lasso['kind'] | undefined;
+        shown: boolean;
+      }
     | undefined;
   /** Where the pointer is over the canvas (offset), or undefined when it is not. */
   #pointer: { readonly offsetX: number; readonly offsetY: number } | undefined;
@@ -344,6 +369,11 @@ export class CanvasController {
    * (`switchDirection`), the dragged arc goes the other way round, as AutoCAD's does.
    */
   #ctrl = false;
+  /**
+   * Ctrl went down and nothing else has been pressed since (M3-05): let go, it is a tap, which
+   * cycles a hot multi-functional grip's functions at a prompt that says so (`ctrlCycles`).
+   */
+  #ctrlTap = false;
   /** Where the cursor rests, for rollover tooltips (M2-35 part 21). */
   readonly #rest = new RestWatch<{
     readonly x: number;
@@ -920,6 +950,15 @@ export class CanvasController {
     return this.#host.hitTest(screen, PICKBOX);
   }
 
+  /** Where a world point is shown, in window pixels (M3-04 part 3: the Selection list). */
+  clientOf(point: Vec2): Vec2 | undefined {
+    const v = this.#view;
+    if (!v) return undefined;
+    const s = worldToScreen(v, this.#size.width, this.#size.height, point);
+    const r = this.#canvas.getBoundingClientRect();
+    return { x: r.left + s.x, y: r.top + s.y };
+  }
+
   /** The objects a selection window between two world points takes (M2-03). */
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]> {
     const box = {
@@ -1453,11 +1492,21 @@ export class CanvasController {
     const selection = p?.kind === 'point' ? p.rubberBand?.selection : undefined;
     if (from && cursor && selection && this.#mode === 'none') {
       const crossing = selection === 'auto' ? cursor.x < from.x : selection === 'crossing';
-      const path = p?.kind === 'point' ? p.rubberBand?.path : undefined;
+      const lasso = this.#lasso();
+      const path =
+        lasso && lasso.points.length > 1
+          ? { points: lasso.points, open: lasso.kind === 'fence' }
+          : p?.kind === 'point'
+            ? p.rubberBand?.path
+            : undefined;
       this.#host.setTransient([
         ...preview,
         ...(path
-          ? this.#selectionPath([...path.points, cursor], crossing, path.open !== true)
+          ? this.#selectionPath(
+              [...path.points, cursor],
+              lasso ? lasso.kind !== 'window' : crossing,
+              path.open !== true,
+            )
           : this.#selectionBand(from, cursor, crossing)),
         ...this.#vertexMarker(),
       ]);
@@ -1593,10 +1642,21 @@ export class CanvasController {
     const opts = { signal: this.#listeners.signal };
     // Ctrl pressed or let go with the cursor still (M3-01 part 6): the dragged arc switches.
     const ctrlKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Control' || this.#ctrl === e.ctrlKey) return;
+      if (e.key !== 'Control') {
+        this.#ctrlTap = false;
+        return;
+      }
+      if (e.type === 'keydown' && !e.repeat) this.#ctrlTap = true;
+      if (e.type === 'keyup' && this.#ctrlTap) {
+        this.#ctrlTap = false;
+        if (this.#prompt?.ctrlCycles) this.#hooks.onCtrlCycle?.();
+      }
+      if (this.#ctrl === e.ctrlKey) return;
       this.#ctrl = e.ctrlKey;
       if (this.#prompt?.switchDirection && this.#pointer && this.#mode === 'none') this.#track();
     };
+    // A button pressed while Ctrl is down makes it no tap.
+    window.addEventListener('pointerdown', () => (this.#ctrlTap = false), opts);
     window.addEventListener('keydown', ctrlKey, opts);
     window.addEventListener('keyup', ctrlKey, opts);
     c.addEventListener(
@@ -1650,7 +1710,15 @@ export class CanvasController {
         if (this.#mode === 'none') {
           const world = this.#world(e);
           if (!world) return;
-          this.#press = { pointer: e.pointerId, x: e.offsetX, y: e.offsetY, dragged: false };
+          this.#press = {
+            pointer: e.pointerId,
+            x: e.offsetX,
+            y: e.offsetY,
+            dragged: false,
+            path: [world],
+            lasso: undefined,
+            shown: false,
+          };
           c.setPointerCapture(e.pointerId);
           let shift = e.shiftKey;
           if (this.#quick) {
@@ -1715,12 +1783,17 @@ export class CanvasController {
           this.#rest.move({ x: e.clientX, y: e.clientY, offsetX: e.offsetX, offsetY: e.offsetY });
         } else this.#rest.cancel();
         const press = this.#press;
-        if (
-          press?.pointer === e.pointerId &&
-          Math.hypot(e.offsetX - press.x, e.offsetY - press.y) > CLICK_PX
-        )
-          press.dragged = true;
         const world = this.#world(e);
+        if (press?.pointer === e.pointerId) {
+          if (Math.hypot(e.offsetX - press.x, e.offsetY - press.y) > CLICK_PX && !press.dragged) {
+            press.dragged = true;
+            press.lasso = e.offsetX < press.x ? 'crossing' : 'window';
+          }
+          // A point every few pixels is path enough, and keeps a long lasso's test quick.
+          const last = press.path.at(-1);
+          if (world && (!last || Math.hypot(world.x - last.x, world.y - last.y) >= 2 * this.#px()))
+            press.path.push(world);
+        }
         const corner = this.#corner;
         if (corner && world) {
           const moved = Math.hypot(e.offsetX - corner.screen.x, e.offsetY - corner.screen.y);
@@ -1753,12 +1826,18 @@ export class CanvasController {
       // A window dragged out ends on release; one clicked waits for the second click.
       const world = this.#world(e);
       if (e.button === 0 && this.#corner?.dragged && world) this.#finishWindow(world);
-      // A drag begun with a click at the command engine ends its selection window.
+      // A drag begun with a click at the command engine ends its selection window, or lasso.
       const press = this.#press;
       if (press?.pointer === e.pointerId) {
+        const lasso = this.#lasso();
         this.#press = undefined;
+        if (press.shown) this.#hooks.onLasso?.(undefined);
         if (press.dragged && world && e.type === 'pointerup') {
-          this.#hooks.onPick?.(world, { shift: e.shiftKey, release: true });
+          this.#hooks.onPick?.(world, {
+            shift: e.shiftKey,
+            release: true,
+            ...(lasso && { lasso: { kind: lasso.kind, points: [...lasso.points, world] } }),
+          });
         }
       }
     };
@@ -1815,6 +1894,40 @@ export class CanvasController {
       return false;
     this.#cycle = (this.#cycle + 1) % this.#hits.length;
     this.#hit = this.#hits[this.#cycle];
+    this.#track();
+    return true;
+  }
+
+  /**
+   * The lasso being dragged (M3-04 part 2): a press that found nothing, started a selection
+   * window there and has been dragged. Says so to the command line as it starts.
+   */
+  #lasso(): Lasso | undefined {
+    const press = this.#press;
+    const p = this.#prompt;
+    if (!press?.dragged || !press.lasso || p?.kind !== 'point') return undefined;
+    const band = p.rubberBand;
+    const start = press.path[0]!;
+    // The window this press started, not one a click began before it.
+    if (!band?.box || band.selection !== 'auto' || band.from.x !== start.x) return undefined;
+    if (band.from.y !== start.y) return undefined;
+    if (!press.shown) {
+      press.shown = true;
+      this.#hooks.onLasso?.(press.lasso);
+    }
+    return { kind: press.lasso, points: press.path };
+  }
+
+  /**
+   * Spacebar while a lasso is dragged (M3-04 part 2): its next kind, Crossing, Window, Fence,
+   * as AutoCAD cycles them; false when no lasso is dragged.
+   */
+  cycleLasso(): boolean {
+    const press = this.#press;
+    if (!this.#lasso() || !press?.lasso) return false;
+    const order = ['crossing', 'window', 'fence'] as const;
+    press.lasso = order[(order.indexOf(press.lasso) + 1) % order.length];
+    this.#hooks.onLasso?.(press.lasso);
     this.#track();
     return true;
   }

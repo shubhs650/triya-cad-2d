@@ -96,3 +96,8 @@ export function controllersOf(doc: number): CanvasController[] {
 export function cycleSnap(): boolean {
   return allControllers().some((c) => c.cycleSnap());
 }
+
+/** Spacebar while a lasso is dragged (M3-04 part 2): its next kind; false when none is. */
+export function cycleLasso(): boolean {
+  return allControllers().some((c) => c.cycleLasso());
+}

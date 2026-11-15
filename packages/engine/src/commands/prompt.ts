@@ -9,6 +9,8 @@ import type { Handle } from '../model/handle';
 import type { Color, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
 import type { OverkillSettings } from '../edit/overkill';
+import type { QuickSelectCriteria, QuickSelectType } from '../selection/qselect';
+import type { PropertyUnits } from '../properties/sheet';
 import type { MatchSettings } from '../properties/match';
 import type { DragPreview } from './drag';
 import {
@@ -47,6 +49,18 @@ interface PromptBase {
    * ("Undo", "Close", "eXit", "LAst"). Shown as `[Undo/Close]`.
    */
   readonly options?: readonly string[];
+  /**
+   * Keywords taken as `options` are but not shown (AutoCAD's keywords a prompt accepts without
+   * listing them): the grip mode names MO, RO, SC, MI and ST typed at a grip prompt, and a
+   * multi-functional grip's functions (M3-05).
+   */
+  readonly hiddenOptions?: readonly string[];
+  /**
+   * A tap of Ctrl (pressed and let go with no other key or button) answers the keyword
+   * `GRIP_CYCLE`: a hot multi-functional grip's next function, as AutoCAD's Ctrl cycles them
+   * (M3-05).
+   */
+  readonly ctrlCycles?: true;
   /** What Enter gives, shown as `<…>`; without one Enter answers `{ kind: 'enter' }`. */
   readonly default?: PromptAnswer;
   /**
@@ -70,6 +84,9 @@ interface PromptBase {
    */
   readonly switchDirection?: true;
 }
+
+/** The keyword a Ctrl tap answers at a prompt that `ctrlCycles`. */
+export const GRIP_CYCLE = 'Ctrl';
 
 /** What a prompt that takes Ctrl (`switchDirection`) puts after its message's first words. */
 export const CTRL_SWITCH = ' (hold Ctrl to switch direction)';
@@ -279,7 +296,8 @@ export interface SelectionPrompt extends PromptBase {
   readonly single?: boolean;
   /**
    * With `single`, the pre-selection still answers it, as for any "Select objects" (TEXTEDIT,
-   * M2-07 part 2: a text selected first, or double-clicked, is edited).
+   * M2-07 part 2: a text selected first, or double-clicked, is edited). `false` without `single`:
+   * the pre-selection does not answer it either (QSELECT's Select objects, M3-04 part 2).
    */
   readonly pickfirst?: boolean;
 }
@@ -416,6 +434,18 @@ export type DialogRequest =
       readonly settings: OverkillSettings;
     }
   | {
+      /** QSELECT's Quick Select (M3-04 part 2), opened on `criteria`. */
+      readonly type: 'qselect';
+      readonly criteria: QuickSelectCriteria;
+      /** How many objects are selected (Apply to offers Current selection when any are). */
+      readonly selected: number;
+      /** The Object type lists of the entire drawing and of the current selection. */
+      readonly drawing: readonly QuickSelectType[];
+      readonly selection: readonly QuickSelectType[];
+      /** How the Value of a distance or angle is shown and typed. */
+      readonly units: PropertyUnits;
+    }
+  | {
       /**
        * DSETTINGS' Drafting Settings (M3-06 part 1): the app's per-user drafting settings, which
        * the dialog sets itself; `tab` the tab it opens on (OSNAP's Object Snap), none for the
@@ -428,6 +458,11 @@ export type DialogRequest =
        * `*Active` VPORT; none when it has no such viewport.
        */
       readonly snapGrid?: SnapGridSettings;
+    }
+  | {
+      /** SELECTSIMILAR's Select Similar Settings (M3-04 part 3), opened on SELECTSIMILARMODE. */
+      readonly type: 'selectsimilar';
+      readonly mode: number;
     };
 
 /** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
@@ -543,6 +578,10 @@ export type PromptAnswer =
       readonly overkill?: OverkillSettings;
       /** Drafting Settings' Snap and Grid tab as OK closed it (M3-06 part 2). */
       readonly snapGrid?: SnapGridSettings;
+      /** Quick Select's criteria as OK (or Select objects) closed it. */
+      readonly qselect?: QuickSelectCriteria;
+      /** Select Similar Settings' checkboxes as OK closed it, SELECTSIMILARMODE's bits. */
+      readonly selectSimilar?: number;
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }
@@ -567,7 +606,10 @@ export function answerFits(prompt: Prompt, answer: PromptAnswer): boolean {
   if (answer.kind === 'enter') return true;
   if (answer.kind === 'escape') return prompt.escape === true;
   if (answer.kind === 'keyword') {
-    return (prompt.options ?? []).some((o) => o.toUpperCase() === answer.keyword.toUpperCase());
+    if (prompt.ctrlCycles && answer.keyword === GRIP_CYCLE) return true;
+    return [...(prompt.options ?? []), ...(prompt.hiddenOptions ?? [])].some(
+      (o) => o.toUpperCase() === answer.keyword.toUpperCase(),
+    );
   }
   if (answer.kind === 'string' && 'arbitrary' in prompt && prompt.arbitrary) return true;
   if (answer.kind === 'point' && prompt.kind === 'string' && prompt.pick) return true;

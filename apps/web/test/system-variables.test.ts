@@ -159,6 +159,16 @@ describe('system variables the app keeps', () => {
     });
   });
 
+  it('keep SELECTSIMILARMODE and SELECTIONCYCLING (M3-04 part 3)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'SELECTSIMILARMODE')).toEqual({ ok: true, value: 130 });
+    expect(systemVariableReply(d, 'SELECTSIMILARMODE', 1)).toEqual({ ok: true, value: 1 });
+    expect(d.get().selectSimilarMode).toBe(1);
+    expect(systemVariableReply(d, 'SELECTIONCYCLING')).toEqual({ ok: true, value: 0 });
+    systemVariableReply(d, 'SELECTIONCYCLING', 2);
+    expect(d.isOn('sc')).toBe(true);
+  });
+
   it('are answered by the view host, refused where the app keeps none', () => {
     const d = new Drafting();
     const ctx = { target: undefined, all: () => [], views: () => [] };

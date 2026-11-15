@@ -28,6 +28,11 @@ export interface CommandLineState {
   readonly sent: number;
   /** The number of the last input the engine has read: `prompt` is that input's prompt. */
   readonly read: number;
+  /**
+   * What the prompt line says while a lasso is dragged (M3-04 part 2: "Crossing Lasso  Press
+   * Spacebar to cycle options"), shown over the prompt; the canvas says it, not the engine.
+   */
+  readonly lasso?: string;
 }
 
 export const IDLE: CommandLineState = {
@@ -204,6 +209,12 @@ export class CommandLines {
 
   follow(doc: number, o: CommandOutput): void {
     this.#set(doc, follow(this.get(doc), o));
+  }
+
+  /** A lasso dragged on `doc`'s canvas, as the prompt line says it; undefined when it ends. */
+  lasso(doc: number, text: string | undefined): void {
+    const { lasso: _, ...state } = this.get(doc);
+    this.#set(doc, text === undefined ? state : { ...state, lasso: text });
   }
 
   typed(doc: number, text: string): void {

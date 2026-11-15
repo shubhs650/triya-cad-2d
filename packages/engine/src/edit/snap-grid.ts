@@ -3,7 +3,7 @@
 // DXF reference, VPORT codes 14/24, 15/25 and 61): Triya's is the model-space `*Active` VPORT,
 // the first one when tiles share the name (the DXF reference: the first is the current
 // viewport). The Snap and Grid tab, SNAP and GRID edit it; a drawing without one keeps the
-// canvas's 10 × 10 spacing. Isometric snap is not built (PRD non-goal 7, DEC-026).
+// canvas's 10 × 10 spacing. Isometric snap is not built (PRD non-goal 7, DEC-026, DEC-060).
 import type { DocumentModel } from '../model/document';
 import type { VportRecord } from '../model/types';
 import type { SnapGridSettings } from '../commands/prompt';

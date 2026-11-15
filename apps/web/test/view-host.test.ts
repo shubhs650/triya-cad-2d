@@ -1,6 +1,7 @@
 // M2-02 part 2: the app's answers to the view commands, against a recording canvas, and the view
 // maths they add (ZOOM n relative to the limits, real-time ZOOM's drag factor).
 import type {
+  EntityId,
   MTextGeometry,
   TextGeometry,
   UndoView,
@@ -15,6 +16,7 @@ import { realtimeZoomFactor } from '../src/canvas/navigate';
 import {
   NO_CANVAS,
   NO_CLIPBOARD,
+  NO_DIALOGS,
   NO_PATTERNS,
   NO_TABS,
   answerView,
@@ -223,6 +225,19 @@ describe('answerView', () => {
     expect(now(answerView({ op: 'tab', name: 'Layout1' }, { ...ctx, tab }))).toEqual({ ok: true });
     expect(now(answerView({ op: 'tab' }, { ...ctx, tab }))).toEqual({ ok: true });
     expect(asked).toEqual(['Layout1', undefined]);
+  });
+
+  it('hands the Selection list to the app, refused where there is none (M3-04 part 3)', async () => {
+    const { ctx } = context(undefined);
+    const r = {
+      op: 'cycle' as const,
+      point: { x: 1, y: 2 },
+      candidates: [{ id: 7 as EntityId, label: 'Line' }],
+    };
+    expect(await answerView(r, ctx)).toEqual({ ok: false, message: NO_DIALOGS });
+    const cycle = (q: Extract<ViewRequest, { op: 'cycle' }>) =>
+      Promise.resolve<ViewReply>({ ok: true, ids: [q.candidates[0]!.id] });
+    expect(await answerView(r, { ...ctx, cycle })).toEqual({ ok: true, ids: [7] });
   });
 
   it('hands the Clipboard to the app, with or without a canvas (M2-14 part 2)', () => {

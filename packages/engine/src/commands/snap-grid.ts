@@ -9,7 +9,7 @@
 // `2x` for twice the snap spacing and Snap for spacing 0 (the grid follows the snap spacing).
 // ON and OFF are the status bar's toggles (SNAPMODE, GRIDMODE: the app's, as SETVAR sets them);
 // the spacing and Major are the drawing's `*Active` VPORT's (`edit/snap-grid.ts`), one undo step.
-// Left out: SNAP's Style (isometric snap is PRD non-goal 7, DEC-026), Type and Legacy (PolarSnap
+// Left out: SNAP's Style (isometric snap is PRD non-goal 7, DEC-026, DEC-060), Type and Legacy (PolarSnap
 // comes with a later M3-06 part); GRID's aDaptive, Limits and Follow (Triya's grid is always
 // adaptive and runs past the limits; no dynamic UCS). AutoCAD's command line refuses a spacing
 // of 0 or less with "Value must be positive and nonzero."

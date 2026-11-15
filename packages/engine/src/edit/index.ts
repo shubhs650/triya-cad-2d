@@ -25,6 +25,7 @@ export {
 export { stretchGeometry, type StretchOptions, type StretchResult } from './stretch';
 export { gripsOf, moveGrip, sameGrip, type Grip, type GripKind } from './grips';
 export * from './array-grips';
+export * from './grip-functions';
 export { hasDynamicColumns, withColumnCount } from './mtext-grips';
 export * from './revcloud';
 export * from './clipboard';

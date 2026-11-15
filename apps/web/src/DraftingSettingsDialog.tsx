@@ -1,7 +1,7 @@
 // DSETTINGS' Drafting Settings dialog (M3-06 part 1), with AutoCAD 2024's structure and labels
 // (AutoCAD Help, "Drafting Settings Dialog Box" and its "Polar Tracking Tab", "Object Snap Tab"
 // and "Quick Properties Tab" pages; UI_SPEC.md §7). The Snap and Grid tab came with part 2,
-// without Snap type (PolarSnap is a later part; Isometric snap is PRD non-goal 7, DEC-026), Grid
+// without Snap type (PolarSnap is a later part; Isometric snap is PRD non-goal 7, DEC-060), Grid
 // style and Grid behavior (Triya's grid is lines, adaptive and past the limits); the Dynamic Input and Selection
 // Cycling tabs come with the rest of M3-06; 3D Object Snap is out of scope (PRD non-goal: no 3D). Polar Angle measurement's Relative to last segment waits for them too.
 // It opens on the tab shown last (OSNAP: Object Snap), edits a copy of the drafting aids and

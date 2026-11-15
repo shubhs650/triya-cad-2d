@@ -3196,6 +3196,41 @@ button {
   color: var(--danger-text);
 }
 
+/* QSELECT's Quick Select (M3-04 part 2): labels left of their fields, as AutoCAD's. */
+.qselect-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(16ch, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.qselect-grid > label {
+  align-self: start;
+  padding-top: 4px;
+}
+
+.qselect-apply {
+  display: flex;
+  gap: 6px;
+}
+
+.qselect-apply select {
+  flex: 1;
+}
+
+.qselect-apply-how {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  border: 1px solid var(--chrome-border);
+}
+
+.qselect-append {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* OVERKILL's Delete Duplicate Objects (M3-02 part 6): settings above, options below. */
 .overkill-dialog fieldset {
   margin: 0 0 8px;
@@ -3227,4 +3262,48 @@ button {
 
 .overkill-sub {
   padding-left: 20px;
+}
+
+/* Selection cycling's Selection list (M3-04 part 3): beside the pick, a title and one row per
+   overlapping object, each a button. */
+.selection-list {
+  position: fixed;
+  z-index: 31;
+  min-width: 140px;
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  border: 1px solid var(--tip-border);
+  border-radius: 2px;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 25%);
+  font-size: 12px;
+}
+
+.selection-list-title {
+  padding: 3px 8px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--tip-border);
+}
+
+.selection-list ul {
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.selection-list button {
+  display: block;
+  width: 100%;
+  padding: 3px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.selection-list button:hover,
+.selection-list button:focus-visible {
+  background: var(--accent, #0078d4);
+  color: #fff;
+  outline: none;
 }

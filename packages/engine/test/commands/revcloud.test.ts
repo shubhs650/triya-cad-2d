@@ -879,8 +879,9 @@ describe('revision cloud editing geometry', () => {
       [4, 2, 'cloud'],
       [0, 2, 'cloud'],
     ]);
-    // Without the cloud's xdata a polyline's grips: every vertex.
-    expect(gripsOf(g)).toHaveLength(12);
+    // Without the cloud's xdata a polyline's grips: every vertex and (M3-05) every arc's midpoint.
+    expect(gripsOf(g).filter((x) => x.kind === 'stretch')).toHaveLength(12);
+    expect(gripsOf(g).filter((x) => x.kind === 'arcSegment')).toHaveLength(12);
     const circle = cloudRunsOf({ kind: 'CIRCLE', center: { x: 0, y: 0 }, radius: 2 }, 1e-3)!;
     const round = cloudPoints(circle.runs, true, style);
     expect(

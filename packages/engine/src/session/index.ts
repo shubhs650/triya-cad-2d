@@ -20,6 +20,7 @@ import {
 } from '../edit/named-view';
 import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
+import type { Lasso } from '../selection/loop';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
@@ -146,6 +147,8 @@ export type CommandInput =
       readonly point: Vec2;
       readonly shift?: boolean;
       readonly release?: boolean;
+      /** The lasso dragged from the window's first corner, with `release` (M3-04 part 2). */
+      readonly lasso?: Lasso;
       readonly missed?: boolean;
       /** How near a grip, in drawing units, counts as on it (M2-06 grip editing). */
       readonly grip?: number;
@@ -362,6 +365,7 @@ export class EngineSession {
         return this.#bus.pick(input.point, {
           ...(input.shift && { shift: true }),
           ...(input.release && { release: true }),
+          ...(input.lasso && { lasso: input.lasso }),
           ...(input.missed && { missed: true }),
           ...(input.grip !== undefined && { grip: input.grip }),
           ...(input.deferred && { deferred: input.deferred }),
