@@ -45,6 +45,57 @@ describe('gridLines', () => {
 
 // M3-06 part 6: Grid behavior and Grid style (AutoCAD 2024 Help, "GRIDDISPLAY", "GRIDSTYLE",
 // "Snap and Grid Tab (Drafting Settings Dialog Box)").
+// M3-06 part 7: a grid along a UCS turned by 90° from its base, or by SNAPANG.
+describe('a turned grid', () => {
+  it('lays its lines out in the frame turned about the base, over the view', () => {
+    const box = { minX: 0, minY: 0, maxX: 100, maxY: 40 };
+    const g = gridLines(
+      { spacing: { x: 10, y: 20 }, base: { x: 0, y: 0 }, major: 5, angle: Math.PI / 2 },
+      box,
+      1,
+    )!;
+    // The frame's X runs up the world's Y (0–40), its Y towards world −X (−100–0).
+    expect(g.turned!.frame.minX).toBeCloseTo(0, 9);
+    expect(g.turned!.frame.maxX).toBeCloseTo(40, 9);
+    expect(g.turned!.frame.minY).toBeCloseTo(-100, 9);
+    expect(g.turned!.frame.maxY).toBeCloseTo(0, 9);
+    expect(g.xs).toEqual([0, 10, 20, 30, 40]);
+    expect(g.ys).toEqual([-100, -80, -60, -40, -20, 0]);
+    expect(g.extent).toBeUndefined();
+  });
+
+  it('draws each line slanted between the frame’s sides', () => {
+    const style = { background: '#000000', foreground: '#ffffff', showLineweights: false };
+    const d = drawing([]);
+    const layers: ReturnType<typeof surface>[] = [];
+    const r = new Canvas2DRenderer({
+      model: d.model,
+      index: d.index,
+      block: MODEL,
+      surface: surface('visible'),
+      createLayer: () => {
+        const s = surface(layers.length === 0 ? 'scene' : 'transient');
+        layers.push(s);
+        return s;
+      },
+      style: { ...style, grid: { spacing: { x: 10, y: 10 }, major: 5, angle: Math.PI / 4 } },
+      requestIdle: () => {},
+    });
+    r.resize(200, 100, 1);
+    r.setView({ center: { x: 0, y: 0 }, scale: 2 });
+    layers[0]!.ctx.clear();
+    r.frame();
+    const moves = layers[0]!.ctx.calls.filter((c) => c[0] === 'moveTo' || c[0] === 'lineTo');
+    expect(moves.length).toBeGreaterThan(0);
+    // Not one line is horizontal or vertical on the device.
+    for (let i = 0; i + 1 < moves.length; i += 2) {
+      const [, x0, y0] = moves[i] as [string, number, number];
+      const [, x1, y1] = moves[i + 1] as [string, number, number];
+      expect(Math.abs(Math.abs(x1 - x0) - Math.abs(y1 - y0))).toBeLessThan(1e-6);
+    }
+  });
+});
+
 describe('gridLines behaviour', () => {
   it('without adaptive display shows no grid too dense to see, rather than coarsening', () => {
     expect(gridLines({ spacing: { x: 10, y: 10 }, major: 5, adaptive: false }, box, 0.5)).toBe(

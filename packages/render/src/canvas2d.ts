@@ -78,7 +78,7 @@ import { expandInsert, expands, insertClips, type BlockSource, type InsertClip }
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { aciRgb, rgbHex } from './style/aci';
-import { gridLines } from './grid';
+import { gridLines, type GridLines, type GridSpec } from './grid';
 import { mixColors, parseHex, tintColor } from './style/mix';
 import { adjustPixels, imageLabel, type ImageFrames } from './image';
 import {
@@ -1767,6 +1767,7 @@ export class Canvas2DRenderer implements Renderer {
     const toward = spec.color ?? foreground;
     const dx = (x: number) => m.a * (x - ox) + m.e;
     const dy = (y: number) => m.d * (y - oy) + m.f;
+    if (lines.turned) return this.#drawTurnedGrid(ctx, lines, dx, dy, spec);
     if (spec.dots) {
       // GRIDSTYLE (M3-06 part 6): a dot of a device pixel or two where the lines cross.
       const size = Math.max(1, Math.round(this.#dpr));
@@ -1794,6 +1795,63 @@ export class Canvas2DRenderer implements Renderer {
         const d = Math.round(dy(y)) + 0.5;
         ctx.moveTo(left, d);
         ctx.lineTo(right, d);
+      }
+      ctx.strokeStyle = mixColors(background, toward, mix);
+      ctx.lineWidth = this.#dpr;
+      ctx.stroke();
+    };
+    const majorX = new Set(lines.majorXs);
+    const majorY = new Set(lines.majorYs);
+    stroke(
+      lines.xs.filter((x) => !majorX.has(x)),
+      lines.ys.filter((y) => !majorY.has(y)),
+      spec.color ? 0.5 : GRID_MINOR_MIX,
+    );
+    stroke(lines.majorXs, lines.majorYs, spec.color ? 1 : GRID_MAJOR_MIX);
+  }
+
+  /**
+   * A grid turned by the UCS and SNAPANG (M3-06 part 7): each line between the turned frame's
+   * sides, or a dot where two cross, mapped to the device; not snapped to whole pixels, as a
+   * slanted line has none to keep to.
+   */
+  #drawTurnedGrid(
+    ctx: Canvas2D,
+    lines: GridLines,
+    dx: (x: number) => number,
+    dy: (y: number) => number,
+    spec: GridSpec,
+  ): void {
+    const { angle, base, frame } = lines.turned!;
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const at = (u: number, v: number): [number, number] => [
+      dx(base.x + u * c - v * s),
+      dy(base.y + u * s + v * c),
+    ];
+    const { background, foreground } = this.#style;
+    const toward = spec.color ?? foreground;
+    if (spec.dots) {
+      const size = Math.max(1, Math.round(this.#dpr));
+      ctx.beginPath();
+      for (const u of lines.xs)
+        for (const v of lines.ys) {
+          const [px, py] = at(u, v);
+          ctx.rect(Math.round(px), Math.round(py), size, size);
+        }
+      ctx.fillStyle = mixColors(background, toward, spec.color ? 1 : GRID_DOT_MIX);
+      ctx.fill();
+      return;
+    }
+    const stroke = (us: readonly number[], vs: readonly number[], mix: number) => {
+      ctx.beginPath();
+      for (const u of us) {
+        ctx.moveTo(...at(u, frame.minY));
+        ctx.lineTo(...at(u, frame.maxY));
+      }
+      for (const v of vs) {
+        ctx.moveTo(...at(frame.minX, v));
+        ctx.lineTo(...at(frame.maxX, v));
       }
       ctx.strokeStyle = mixColors(background, toward, mix);
       ctx.lineWidth = this.#dpr;

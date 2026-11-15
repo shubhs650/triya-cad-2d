@@ -204,6 +204,12 @@ export interface AnglePrompt extends PromptBase {
    * angle 0 before (or apart from) whether angles run clockwise (M3-09).
    */
   readonly counterClockwise?: true;
+  /**
+   * The angle is an amount of turning (an included angle, a rotation, an angle between items),
+   * not a direction (M3-06 part 7): a typed one counts from ANGBASE alone, the current UCS
+   * leaving it as typed. Picked points still answer their world angle.
+   */
+  readonly turn?: true;
 }
 
 /** One of the options only. */

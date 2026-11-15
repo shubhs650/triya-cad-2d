@@ -42,6 +42,8 @@ import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { drawingUnits, formatAngle, formatDistance, type DrawingUnits } from '../units';
 import { listCommand } from './list';
+import { turnToUcs, type PlanUcs } from '../../input/ucs';
+import { currentUcs, pointInUcs } from '../ucs';
 import type { EnclosedSpace } from './quick';
 import { areaText, measureObject, measurePolygon, volumeText, type Measured } from './measure';
 
@@ -72,10 +74,13 @@ function angleText(radians: number, u: DrawingUnits): string {
   return u.aunits === 0 ? `${text}°` : text;
 }
 
-/** ID's line, and DIST's two lines, for points `a` to `b`. */
-function distanceLines(a: Vec2, b: Vec2, u: DrawingUnits): [string, string] {
+/**
+ * DIST's two lines, for points `a` to `b`: the angle and deltas along the current UCS's axes
+ * (M3-06 part 7), as AutoCAD reports them.
+ */
+function distanceLines(a: Vec2, b: Vec2, u: DrawingUnits, ucs: PlanUcs): [string, string] {
   const d = (v: number) => formatDistance(v, u);
-  const delta = sub(b, a);
+  const delta = turnToUcs(ucs, sub(b, a));
   return [
     `Distance = ${d(length(delta))},  Angle in XY Plane = ${formatAngle(angleOf(delta), u)},  Angle from XY Plane = ${formatAngle(0, u)}`,
     `Delta X = ${d(delta.x)},  Delta Y = ${d(delta.y)},  Delta Z = ${d(0)}`,
@@ -228,7 +233,9 @@ function idCommand(): CommandDef {
       if (a.kind !== 'point') return;
       // The bus makes the point LASTPOINT, as ID does in AutoCAD.
       const d = (v: number) => formatDistance(v, unitsOf(ctx));
-      ctx.message(`X = ${d(a.point.x)}     Y = ${d(a.point.y)}     Z = ${d(0)}`);
+      // In the current UCS (M3-06 part 7).
+      const p = pointInUcs(ctx, a.point);
+      ctx.message(`X = ${d(p.x)}     Y = ${d(p.y)}     Z = ${d(0)}`);
     },
   };
 }
@@ -245,7 +252,8 @@ async function* measureDistance(ctx: CommandContext): Sub<boolean> {
     rubberBand: { from: first },
   });
   if (b.kind === 'point') {
-    for (const line of distanceLines(first, b.point, unitsOf(ctx))) ctx.message(line);
+    for (const line of distanceLines(first, b.point, unitsOf(ctx), currentUcs(ctx)))
+      ctx.message(line);
     results(ctx).distance = distance(first, b.point);
     return true;
   }

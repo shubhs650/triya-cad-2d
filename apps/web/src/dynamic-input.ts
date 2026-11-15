@@ -23,7 +23,11 @@ import {
   formatAngle,
   formatDistance,
   formatNumber,
+  toUcs,
+  turnToUcs,
+  WORLD_UCS,
   type AngleConvention,
+  type PlanUcs,
   type DrawingUnits,
   type Prompt,
   type Vec2,
@@ -284,10 +288,15 @@ export function dynCurrent(
 /** Whether anything was typed. */
 export const dynTyped = (s: DynState): boolean => s.fields.some((f) => f.text !== '');
 
-/** How the fields show values: the drawing's units and how its typed angles turn (ANGBASE, ANGDIR). */
+/**
+ * How the fields show values: the drawing's units, how its typed angles turn (ANGBASE, ANGDIR,
+ * counting from the UCS's X axis) and the current UCS, whose coordinates X and Y show (M3-06
+ * part 7), as the command line reads them.
+ */
 export interface DynUnits {
   readonly units: DrawingUnits;
   readonly angles?: AngleConvention;
+  readonly ucs?: PlanUcs;
 }
 
 /** AutoCAD's defaults: four decimal places, whole degrees counter-clockwise from east. */
@@ -317,8 +326,12 @@ export function dynLive(
   const base =
     prompt.kind === 'point' ? prompt.rubberBand?.from : 'base' in prompt ? prompt.base : undefined;
   if (s.kind === 'pointer') {
-    const rel = base && s.relative && !s.fields[0]!.text.startsWith('#') ? base : { x: 0, y: 0 };
-    return [length(cursor.x - rel.x), length(cursor.y - rel.y)];
+    const ucs = u.ucs ?? WORLD_UCS;
+    const v =
+      base && s.relative && !s.fields[0]!.text.startsWith('#')
+        ? turnToUcs(ucs, { x: cursor.x - base.x, y: cursor.y - base.y })
+        : toUcs(ucs, cursor);
+    return [length(v.x), length(v.y)];
   }
   if (!base) return s.fields.map(() => '');
   const d = Math.hypot(cursor.x - base.x, cursor.y - base.y);

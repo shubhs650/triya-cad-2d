@@ -49,7 +49,10 @@ import {
   layoutSheet,
   polarLabel,
   trackLabel,
+  toWorld,
+  ucsOf,
   type Acquired,
+  type PlanUcs,
   unionBox,
   type Box,
   type ChangeSet,
@@ -459,6 +462,8 @@ export class CanvasController {
   #quickOverlay: readonly RenderPrimitive[] = [];
   /** Quick's values, written beside what they measure. */
   readonly #quickLabels: HTMLDivElement;
+  /** The UCS icon (M3-06 part 7), over the canvas's lower-left corner or at the UCS origin. */
+  readonly #ucsIcon: HTMLDivElement;
 
   constructor(container: HTMLElement, opened: OpenResult, block: Handle, hooks: CanvasHooks) {
     this.#opened = opened;
@@ -507,6 +512,12 @@ export class CanvasController {
     this.#quickLabels.className = 'quick-measure';
     this.#quickLabels.dataset['testid'] = 'quick-measure';
     container.append(this.#quickLabels);
+    this.#ucsIcon = document.createElement('div');
+    this.#ucsIcon.className = 'ucs-icon';
+    this.#ucsIcon.dataset['testid'] = 'ucs-icon';
+    this.#ucsIcon.setAttribute('aria-hidden', 'true');
+    this.#ucsIcon.hidden = true;
+    container.append(this.#ucsIcon);
     this.#host = this.#createHost();
     this.#images = hooks.images?.((definition, pixels) => {
       this.#host.setImage(definition, pixels);
@@ -1196,8 +1207,9 @@ export class CanvasController {
     // The snap and grid spacing or behaviour, or the limits a grid may stay within (M3-06
     // part 6), changed: the grid shows them.
     const limits = this.#followHeader(change);
-    if (this.#followVports(change) || (limits && this.#drafting.grid))
-      this.#host.setStyle(this.#style());
+    const vports = this.#followVports(change);
+    if (vports) this.#showUcsIcon();
+    if (vports || (limits && this.#drafting.grid)) this.#host.setStyle(this.#style());
     // Drawn now rather than on the next animation frame, so `flush` resolves once the change
     // is on screen (the palette measures toggle → canvas, M1-23). The view is sent only when it
     // is not the one the renderer has: setting a view redraws the whole scene, and a render
@@ -1277,15 +1289,21 @@ export class CanvasController {
     return (v?.added?.length ?? 0) + (v?.updated?.length ?? 0) > 0;
   }
 
-  /** Keeps the header as `change` leaves it; true when model space's limits changed. */
+  /**
+   * Keeps the header as `change` leaves it; true when the grid may follow what changed: model
+   * space's limits, or a UCS (M3-06 part 7), which the UCS icon follows too.
+   */
   #followHeader(change: ChangeSet): boolean {
     let limits = false;
+    let ucs = false;
     for (const h of change.header ?? []) {
       if (h.after === undefined) this.#header.delete(h.name);
       else this.#header.set(h.name, h.after);
       if (h.name === '$LIMMIN' || h.name === '$LIMMAX') limits = true;
+      if (/^\$P?UCS(ORG|XDIR|YDIR)$/.test(h.name)) ucs = true;
     }
-    return limits;
+    if (ucs) this.#showUcsIcon();
+    return limits || ucs;
   }
 
   /**
@@ -1422,12 +1440,58 @@ export class CanvasController {
       layout: this.#layout !== undefined,
       gridStyle: this.#drafting.gridStyle,
     });
+    // The grid runs along the UCS's axes turned by SNAPANG, from the snap base, which is a UCS
+    // point (M3-06 part 7; AutoCAD 2024 Help, "SNAPANG", "SNAPBASE").
+    const ucs = this.#ucs();
+    const angle = ucs.angle + (vport?.snapRotation ?? 0);
+    const base = toWorld(ucs, vport?.snapBase ?? { x: 0, y: 0 });
     return {
       spacing,
-      ...(vport?.snapBase && { base: vport.snapBase }),
+      ...((base.x !== 0 || base.y !== 0) && { base }),
+      ...(angle !== 0 && { angle }),
       major: vport?.gridMajor && vport.gridMajor > 0 ? vport.gridMajor : 5,
       ...display,
     };
+  }
+
+  /** The current UCS of the space shown: model space's, or the layout's paper space's. */
+  #ucs(): PlanUcs {
+    return ucsOf(this.#header, this.#layout !== undefined);
+  }
+
+  /**
+   * The UCS icon (M3-06 part 7; AutoCAD 2024 Help, "UCSICON"): the X and Y axes' arrows turned as
+   * the current UCS's, with a square at their corner in the WCS. UCSICON's bits are the viewport's
+   * (DXF 74): 1 shows it, 2 puts it at the UCS origin while the origin is on the canvas with
+   * room for it, else it sits in the lower-left corner. A layout's icon shows its paper space's
+   * UCS, always on, as Triya keeps no layout VPORT.
+   */
+  #showUcsIcon(): void {
+    const icon = this.#ucsIcon;
+    const bits = this.#layout ? 1 : (this.#vport()?.ucsIcon ?? 1);
+    const { width, height } = this.#size;
+    if (!(bits & 1) || width === 0 || !this.#view) {
+      icon.hidden = true;
+      return;
+    }
+    const ucs = this.#ucs();
+    // The arms may point any way, so the corner keeps an arm's length from every edge.
+    const room = UCS_ICON_ARM + UCS_ICON_MARGIN;
+    let corner = { x: room, y: height - room };
+    if (bits & 2) {
+      const o = worldToScreen(this.#view, width, height, ucs.origin);
+      if (o.x >= room && o.x <= width - room && o.y >= room && o.y <= height - room) corner = o;
+    }
+    const world = ucs.angle === 0 && ucs.origin.x === 0 && ucs.origin.y === 0;
+    const key = `${corner.x},${corner.y},${ucs.angle},${world}`;
+    icon.hidden = false;
+    icon.style.left = `${corner.x - UCS_ICON_ARM}px`;
+    icon.style.top = `${corner.y - UCS_ICON_ARM}px`;
+    if (icon.dataset['key'] === key) return;
+    icon.dataset['key'] = key;
+    icon.dataset['world'] = String(world);
+    icon.style.color = foregroundOn(this.#layout ? this.#colours.paper : this.#colours.model);
+    icon.innerHTML = ucsIconSvg(ucs.angle, world);
   }
 
   /** The `*Active` VPORT of model space, or this tile's, as edited; none in a layout. */
@@ -1445,6 +1509,7 @@ export class CanvasController {
     if (width === 0 || height === 0) return;
     if (width === this.#size.width && height === this.#size.height) return;
     this.#size = { width, height };
+    this.#showUcsIcon();
     this.#host.resize(width, height, devicePixelRatio);
     if (this.#view) {
       // Until something else moves it, the view a space opened in is its saved one, a height
@@ -1496,6 +1561,7 @@ export class CanvasController {
     this.#view = view;
     this.#viewed();
     this.#requestFrame();
+    this.#showUcsIcon();
     // Quick's values sit on the screen where what they measure was: measured again.
     if (this.#quick) this.#requestQuick();
     // The point under a cursor that has not moved is another one now: the status bar (and a
@@ -2100,13 +2166,18 @@ export class CanvasController {
     const p = this.#prompt;
     const last = p?.kind === 'point' ? p.rubberBand?.direction : undefined;
     const polarSnap = polarSnapDistance(d, this.#snapSpacing().x);
+    // In the current UCS, turned by SNAPANG for the snap and ORTHO (M3-06 part 7).
+    const ucs = this.#ucs();
+    const snapBase = toWorld(ucs, vport?.snapBase ?? { x: 0, y: 0 });
     return constrainCursor(world, {
       ...(base && { base }),
       ...(d.snap &&
         polarSnap === undefined && {
           snap: this.#snapSpacing(),
-          ...(vport?.snapBase && { snapBase: vport.snapBase }),
+          ...((snapBase.x !== 0 || snapBase.y !== 0) && { snapBase }),
         }),
+      ...(ucs.angle !== 0 && { ucs: ucs.angle }),
+      ...(vport?.snapRotation && { snapAngle: vport.snapRotation }),
       ...(polarSnap !== undefined && { polarSnap }),
       // TK's next tracking point goes orthogonally whatever ORTHO says (M3-06 part 4).
       ortho: d.ortho || (p?.kind === 'point' && p.ortho === true),
@@ -2389,3 +2460,31 @@ const sameAt = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;
 
 const sameTransform = (a: ViewTransform, b: ViewTransform): boolean =>
   a.scale === b.scale && sameAt(a.center, b.center);
+
+/** The UCS icon's arm length and its corner's distance from the canvas edges, CSS pixels. */
+const UCS_ICON_ARM = 36;
+const UCS_ICON_MARGIN = 4;
+
+/**
+ * The UCS icon's SVG: a box twice the arm across with the axes' corner at its centre, X along
+ * `angle` (radians counter-clockwise, so turned the other way in the SVG's downward Y) and Y a
+ * quarter turn on, each an arrow with its letter; `world` adds AutoCAD's WCS square at the corner.
+ */
+function ucsIconSvg(angle: number, world: boolean): string {
+  const a = UCS_ICON_ARM;
+  const c = a; // the corner, in the middle of a 2a × 2a box
+  const deg = (-angle * 180) / Math.PI;
+  const head = (x: number, y: number, dx: number, dy: number) =>
+    `M${x} ${y}L${x - 5 * dx + 3 * dy} ${y - 5 * dy - 3 * dx}M${x} ${y}L${x - 5 * dx - 3 * dy} ${y - 5 * dy + 3 * dx}`;
+  const tip = a - 6;
+  const square = world ? `<rect x="${c}" y="${c - 6}" width="6" height="6" />` : '';
+  return (
+    `<svg width="${2 * a}" height="${2 * a}" viewBox="0 0 ${2 * a} ${2 * a}" fill="none" ` +
+    `stroke="currentColor" stroke-width="1.5"><g transform="rotate(${deg.toFixed(3)} ${c} ${c})">` +
+    `<path d="M${c} ${c}H${c + tip}${head(c + tip, c, 1, 0)}M${c} ${c}V${c - tip}${head(c, c - tip, 0, -1)}" />` +
+    square +
+    `<text x="${c + tip - 2}" y="${c + 12}" fill="currentColor" stroke="none" font-size="10">X</text>` +
+    `<text x="${c - 11}" y="${c - tip + 6}" fill="currentColor" stroke="none" font-size="10">Y</text>` +
+    `</g></svg>`
+  );
+}

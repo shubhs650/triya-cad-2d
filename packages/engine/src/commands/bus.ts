@@ -14,6 +14,7 @@ import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
 import { OSNAP, type DeferredModes } from '../input/osnap';
 import { orthoPoint } from '../input/constrain';
+import { toUcs, toWorld, ucsOf, type PlanUcs } from '../input/ucs';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
@@ -58,6 +59,7 @@ import {
   parseOsnapOverride,
   parsePointModifier,
   type AngleConvention,
+  type CoordinateContext,
   type PointModifier,
 } from './parse';
 import {
@@ -143,6 +145,11 @@ export type BusEvent =
       readonly text: string;
       readonly units: DrawingUnits;
       readonly angles: AngleConvention;
+      /**
+       * The current UCS (M3-06 part 7), whose X axis `angles.base` already counts from:
+       * Dynamic Input's X and Y fields show the cursor in it.
+       */
+      readonly ucs: PlanUcs;
     }
   /** No command runs: the `Command:` prompt. */
   | { readonly type: 'idle' }
@@ -265,22 +272,30 @@ interface Collector {
  * goes further), until Enter gives the last as the point. A snap off the axis keeps its X or Y,
  * so `TK`, the midpoint of a rectangle's top, then of its side, finds its centre.
  */
-function trackingPoints(): Collector {
+function trackingPoints(axes: number): Collector {
   const next = (last: Vec2): Collector => ({
     text: 'Next point (Press ENTER to end tracking):',
     band: last,
     relativeTo: last,
     ortho: true,
     enter: () => last,
-    accept: (p) => next(orthoPoint(last, p)),
+    accept: (p) => next(orthoPoint(last, p, axes)),
   });
   return { text: 'First tracking point:', accept: (p) => next(p) };
 }
 
-/** `d` from `base` along the horizontal or vertical towards `cursor`; undefined without one. */
-function orthoDistance(base: Vec2, cursor: Vec2 | undefined, d: number): Vec2 | undefined {
+/**
+ * `d` from `base` along the horizontal or vertical (of the UCS, `axes` its X axis's angle)
+ * towards `cursor`; undefined without one.
+ */
+function orthoDistance(
+  base: Vec2,
+  cursor: Vec2 | undefined,
+  d: number,
+  axes: number,
+): Vec2 | undefined {
   if (!cursor) return undefined;
-  const to = orthoPoint(base, cursor);
+  const to = orthoPoint(base, cursor, axes);
   const len = Math.hypot(to.x - base.x, to.y - base.y);
   if (len === 0) return undefined;
   return { x: base.x + ((to.x - base.x) / len) * d, y: base.y + ((to.y - base.y) / len) * d };
@@ -841,21 +856,45 @@ export class PromptBus {
     return typeof v === 'number' ? v : 2;
   }
 
-  /** ANGBASE (radians, as acad-ts carries the header) and ANGDIR, for typed angles. */
-  #angles(): AngleConvention {
+  /**
+   * ANGBASE (radians, as acad-ts carries the header) and ANGDIR, for typed angles, which count
+   * from the current UCS's X axis (M3-06 part 7; AutoCAD 2024 Help, "ANGBASE": "Sets the base
+   * angle to 0 with respect to the current UCS"). `turn` leaves the UCS out, for an angle that
+   * is an amount of turning (an included angle, a rotation), not a direction.
+   */
+  #angles(turn = false): AngleConvention {
     const base = this.#model.header.get('$ANGBASE');
     const dir = this.#model.header.get('$ANGDIR');
+    const angbase = typeof base === 'number' ? base : DEFAULT_ANGLES.base;
     return {
-      base: typeof base === 'number' ? base : DEFAULT_ANGLES.base,
+      base: turn ? angbase : angbase + this.#ucs().angle,
       clockwise: dir === 1 || dir === true,
     };
+  }
+
+  /** The current UCS of the space the commands draw in (M3-06 part 7). */
+  #ucs(): PlanUcs {
+    return ucsOf(this.#model.header, this.#space() !== modelSpaceOf(this.#model));
+  }
+
+  /** How text typed for a point reads: from `lastPoint`, in the drawing's units and UCS. */
+  #coordinates(lastPoint: Vec2 | undefined): CoordinateContext {
+    return { lastPoint, angles: this.#angles(), lunits: this.#lunits(), ucs: this.#ucs() };
   }
 
   #showPrompt(): void {
     const prompt = this.prompt;
     if (prompt) {
       const units = this.#units();
-      this.#emit({ type: 'prompt', prompt, text: this.promptText, units, angles: this.#angles() });
+      const turn = prompt.kind === 'angle' && prompt.turn === true;
+      this.#emit({
+        type: 'prompt',
+        prompt,
+        text: this.promptText,
+        units,
+        angles: this.#angles(turn),
+        ucs: this.#ucs(),
+      });
     } else this.#emit({ type: 'idle' });
   }
 
@@ -869,11 +908,7 @@ export class PromptBus {
     if (!frame) {
       // A point typed while a window opened at `Command:` waits for its corner ends it.
       if (this.#idle.wantsPoint) {
-        const p = parseCoordinate(text.trim(), {
-          lastPoint: this.#relativeBase(),
-          angles: this.#angles(),
-          lunits: this.#lunits(),
-        });
+        const p = parseCoordinate(text.trim(), this.#coordinates(this.#relativeBase()));
         if (p !== undefined && p !== 'invalid') {
           this.#log(`${this.promptText} ${text.trim()}`);
           return this.#step(undefined, await this.#idle.point(p));
@@ -1174,11 +1209,7 @@ export class PromptBus {
       return this.#step(frame, 'more');
     }
     const parsePoint = () => {
-      const p = parseCoordinate(t, {
-        lastPoint: this.#relativeBase(),
-        angles: this.#angles(),
-        lunits: this.#lunits(),
-      });
+      const p = parseCoordinate(t, this.#coordinates(this.#relativeBase()));
       return p === 'invalid' ? undefined : p;
     };
     if (loop.wantsPoint) {
@@ -1384,7 +1415,7 @@ export class PromptBus {
         // A prompt may say what `@` counts from (BREAK's second point: the first, M3-02 part 4).
         const from = this.#relativeTo ?? (prompt.kind === 'point' ? prompt.lastPoint : undefined);
         const lastPoint = from ?? this.#relativeBase();
-        const p = parseCoordinate(t, { lastPoint, angles, lunits });
+        const p = parseCoordinate(t, this.#coordinates(lastPoint));
         if (p !== undefined && p !== 'invalid') return this.#pointFor(p, t);
         const arbitrary = prompt.kind !== 'angle' && prompt.arbitrary;
         if (arbitrary && (prompt.kind === 'point' || parseDistance(t, lunits) === undefined)) {
@@ -1395,7 +1426,12 @@ export class PromptBus {
           if (d !== undefined) return this.#deliver({ kind: 'distance', value: d }, t);
         } else if (prompt.kind === 'angle') {
           const zero = prompt.zero;
-          const from = zero === undefined ? angles : { ...angles, base: zero };
+          const from =
+            zero !== undefined
+              ? { ...angles, base: zero }
+              : prompt.turn
+                ? this.#angles(true)
+                : angles;
           const a = parseAngle(t, prompt.counterClockwise ? { ...from, clockwise: false } : from);
           if (a !== undefined) return this.#deliver({ kind: 'angle', value: a }, t);
         } else {
@@ -1441,7 +1477,7 @@ export class PromptBus {
         accept: (base) => ({ text: '<Offset>:', relativeTo: base, accept: (p) => p }),
       });
     } else if (m.kind === 'tracking') {
-      this.#collectors.push(trackingPoints());
+      this.#collectors.push(trackingPoints(this.#ucs().angle));
     } else if (m.kind === 'm2p') {
       this.#collectors.push({
         text: 'First point of mid:',
@@ -1454,11 +1490,17 @@ export class PromptBus {
       this.#collectors.push({ text: '.XY of', accept: (p) => p });
     } else {
       const need = m.take === 'x' ? 'Y' : m.take === 'y' ? 'X' : 'XY';
+      // The coordinates are the current UCS's (M3-06 part 7): `.X` takes the first point's X
+      // along the UCS's X axis.
+      const u = this.#ucs();
       this.#collectors.push({
         text: `.${m.take === '' ? 'Z' : m.take.toUpperCase()} of`,
         accept: (a) => ({
           text: `(need ${need}):`,
-          accept: (b) => ({ x: m.take === 'x' ? a.x : b.x, y: m.take === 'y' ? a.y : b.y }),
+          accept: (b) => {
+            const [ua, ub] = [toUcs(u, a), toUcs(u, b)];
+            return toWorld(u, { x: m.take === 'x' ? ua.x : ub.x, y: m.take === 'y' ? ua.y : ub.y });
+          },
         }),
       });
     }
@@ -1508,10 +1550,10 @@ export class PromptBus {
     }
     const lastPoint = c.relativeTo ?? this.#relativeBase();
     const lunits = this.#lunits();
-    let p = parseCoordinate(t, { lastPoint, angles: this.#angles(), lunits });
+    let p = parseCoordinate(t, this.#coordinates(lastPoint));
     // A number at an orthogonal collector: that far from its base towards the cursor (TK).
     const d = c.ortho && c.band && p === undefined ? parseDistance(t, lunits) : undefined;
-    if (d !== undefined && c.band) p = orthoDistance(c.band, this.#cursor, d);
+    if (d !== undefined && c.band) p = orthoDistance(c.band, this.#cursor, d, this.#ucs().angle);
     if (p === undefined || p === 'invalid') return this.#reject('Invalid point.');
     this.#log(`${this.promptText} ${t}`);
     return this.#feedPoint(p);
