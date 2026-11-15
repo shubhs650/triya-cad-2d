@@ -24,6 +24,7 @@ describe('palette search', () => {
       'AREA',
       // M3-03: the arrays.
       'ARRAY',
+      'ARRAYEDIT',
       'ARRAYPATH',
       'ARRAYPOLAR',
       'ARRAYRECT',

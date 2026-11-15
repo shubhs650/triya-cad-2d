@@ -58,6 +58,7 @@ export type DraftingPreferences = Pick<
   | 'pickfirst'
   | 'gripSize'
   | 'rolloverTips'
+  | 'arrayAssociativity'
 >;
 
 export interface Preferences {
@@ -108,6 +109,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     pickfirst: true,
     gripSize: 5,
     rolloverTips: true,
+    arrayAssociativity: true,
   },
 };
 
@@ -180,6 +182,7 @@ export function normalizePreferences(raw: unknown): Preferences {
           : d.drafting.autosnap,
       pickfirst: bool(k['pickfirst'], d.drafting.pickfirst),
       rolloverTips: bool(k['rolloverTips'], d.drafting.rolloverTips),
+      arrayAssociativity: bool(k['arrayAssociativity'], d.drafting.arrayAssociativity),
     },
   };
 }
@@ -253,6 +256,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     pickfirst: s.pickfirst,
     gripSize: s.gripSize,
     rolloverTips: s.rolloverTips,
+    arrayAssociativity: s.arrayAssociativity,
   };
 }
 

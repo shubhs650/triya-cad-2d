@@ -33,6 +33,8 @@ import type {
   SpatialFilter,
   Xdata,
 } from '../model/types';
+import { copyAssocArrays } from './assoc-array';
+import { isAssocArray } from '../model/types';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry, type StretchOptions } from './stretch';
 import { moveGrip } from './grips';
@@ -175,7 +177,8 @@ export function eraseObjects(
     else erased.push(e);
   }
   const gone = new Set(erased.map((e) => e.handle));
-  // An XCLIP goes with its reference.
+  // An XCLIP goes with its reference, and so does an associative array's record; a path
+  // array whose path goes keeps its items where they are (M3-11).
   for (const o of model.objects.values()) {
     if (
       o.type === 'SPATIAL_FILTER' &&
@@ -183,6 +186,12 @@ export function eraseObjects(
       b.object(o.handle)
     ) {
       b.removeObject(o.handle);
+    }
+    if (!isAssocArray(o) || !b.object(o.handle)) continue;
+    if (gone.has(o.insert)) b.removeObject(o.handle);
+    else if (o.params.kind === 'path' && o.params.path !== undefined && gone.has(o.params.path)) {
+      const { path: _path, ...params } = o.params;
+      b.updateObject(o.handle, { params } as Partial<NonGraphicalObject>);
     }
   }
   for (const a of links.assocs) {
@@ -558,6 +567,8 @@ export function copyObjects(
       b.updateEntity(s.id, { reactors: [...(s.reactors ?? []), copy.handle] });
     }
   }
+  // A copy of an associative array is an array of its own (M3-11).
+  copyAssocArrays(b, model, copies, names);
   const made = [...copies.values()];
   return {
     ids: made.map((e) => e.id),

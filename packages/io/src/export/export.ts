@@ -59,6 +59,7 @@ import { IMAGE_OBJECT_TYPES, planImageObjects, writeImageObjects } from './image
 import { planGroups, writeGroupMembers, writeGroups } from './groups';
 import { newDimAssocDictionaries, planDimAssocs, writeDimAssocs } from './dim-assocs';
 import { newSpatialFilterDictionaries, planSpatialFilters, writeSpatialFilters } from './xclips';
+import { newTriyaArrayDictionaries, planTriyaArrays, writeTriyaArrays } from './triya-arrays';
 import { planLayouts, writeLayouts } from './layouts';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
@@ -183,13 +184,14 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   }
   // Draw order tables, the image objects, groups, DIMASSOCs, XCLIP filters and coded objects have
   // writers (draw-order.ts, image-objects.ts, groups.ts, dim-assocs.ts, xclips.ts,
-  // coded-objects.ts).
+  // coded-objects.ts) and so do associative arrays' records (triya-arrays.ts).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'GROUP' &&
     o.type !== 'DIMASSOC' &&
     o.type !== 'SPATIAL_FILTER' &&
     o.type !== 'CODED_OBJECT' &&
+    o.type !== 'TRIYA_ARRAY' &&
     !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
@@ -528,6 +530,8 @@ export function triyaToAcad(
   const dimAssocs = planDimAssocs(original, base, model, r);
   // Before the entities: a reference's new extension dictionary is the new clip's.
   const xclips = planSpatialFilters(original, base, model, r);
+  // Before the entities: a new array's INSERT holds its record's new extension dictionary.
+  const triyaArrays = planTriyaArrays(original, base, model, r);
   // A current style variable may name a style, and an arrow-block variable a block, by the name
   // the same save gives it (RENAME).
   const renamed = new Map<CadObject, string>(
@@ -551,6 +555,7 @@ export function triyaToAcad(
       ...newDimAssocDictionaries(dimAssocs.plan),
       ...newSpatialFilterDictionaries(xclips.plan),
       ...newCodedDictionaries(coded.plan),
+      ...newTriyaArrayDictionaries(triyaArrays.plan),
     ]),
   );
   // After the entities: a record the save removes may lose its last referrer in the same save.
@@ -573,6 +578,7 @@ export function triyaToAcad(
     ...groups.problems,
     ...dimAssocs.problems,
     ...xclips.problems,
+    ...triyaArrays.problems,
     ...coded.problems,
     ...purge.problems,
   );
@@ -651,6 +657,7 @@ export function triyaToAcad(
   writeGroupMembers(r, groups.plan);
   writeDimAssocs(r, dimAssocs.plan);
   writeSpatialFilters(r, xclips.plan);
+  writeTriyaArrays(r, triyaArrays.plan);
   writeCodedObjects(r, coded.plan);
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
