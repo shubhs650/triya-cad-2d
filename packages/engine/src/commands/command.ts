@@ -9,6 +9,7 @@ import type { Handle } from '../model/handle';
 import type { EntityId } from '../model/entity-ids';
 import type { EntityGeometry } from '../model/types';
 import type { DimensionRegenerator } from '../edit/dimension-block';
+import type { HatchLinesOf } from '../edit/explode';
 import { ALIASES } from './aliases';
 import type { ViewHost } from './view/host';
 import type { UndoStack } from './undo';
@@ -104,6 +105,11 @@ export interface CommandContext {
    * Without it (scripts, tests that do not give one) dimensions are only carried whole.
    */
   readonly dimensions?: DimensionRegenerator | undefined;
+  /**
+   * A pattern hatch's lines (`@triya/hatch`), which EXPLODE turns into lines (M3-12 part 3).
+   * Without it (scripts, tests that do not give one) hatches are not exploded.
+   */
+  readonly hatchLines?: HatchLinesOf | undefined;
   /** The time, for the variables that tell it (DATE, CDATE; M2-59). */
   readonly clock: Clock;
 }

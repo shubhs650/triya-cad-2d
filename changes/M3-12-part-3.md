@@ -1,0 +1,1 @@
+- M3-12 part 3 (#411): EXPLODE breaks leaders and multileaders into their lines, arrowheads, text and blocks, tables into their lines and text, regions into lines, arcs and circles, multilines into lines and arcs, pattern hatches into lines and points, and associative arrays into copies of their source objects.

@@ -15,6 +15,9 @@ import { closeArc, closeEllipse, joinable, joinObjects, type Joined } from '../.
 import { explodeObjects } from '../../edit/explode';
 import { breakCurveOf, reverseGeometry } from '../../edit/break';
 import type { EntityId } from '../../model/entity-ids';
+import type { MTextGeometry } from '../../model/types';
+import { multiLeaderParts } from '../../annotation/multileader';
+import type { TextMeasure } from '../../annotation/tolerance';
 import type { CommandContext, CommandDef } from '../command';
 import { toleranceFor } from './offset';
 import { toleranceForSize } from '../../geom/tolerance';
@@ -130,9 +133,10 @@ export function explodeCommand(): CommandDef {
     async *run(ctx) {
       const a = yield ctx.prompt.selection({ message: 'Select objects', editable: true });
       if (a.kind !== 'selection' || a.ids.length === 0) return;
+      const measure = await multileaderWidths(ctx, a.ids);
       let report: ReturnType<typeof explodeObjects> | undefined;
       ctx.edit((b) => {
-        report = explodeObjects(b, ctx.model, a.ids);
+        report = explodeObjects(b, ctx.model, a.ids, { hatchLines: ctx.hatchLines, measure });
       });
       const r = report!;
       for (const line of refusalMessages(r.refused, 'exploded')) ctx.message(line);
@@ -142,6 +146,33 @@ export function explodeCommand(): CommandDef {
       }
     },
   };
+}
+
+/**
+ * A measure of the multileaders' texts among `ids`, each measured once on the canvas
+ * (`textWidths`), so an exploded multileader keeps its underline or overline (M1-111); a text
+ * the canvas cannot measure (no canvas, a font not loaded) loses it.
+ */
+async function multileaderWidths(
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+): Promise<TextMeasure | undefined> {
+  const texts = new Map<string, MTextGeometry>();
+  const asked: TextMeasure = (t) => {
+    texts.set(JSON.stringify(t), t);
+    return undefined;
+  };
+  for (const id of ids) {
+    const g = ctx.model.entity(id)?.geom;
+    if (g?.kind === 'MULTILEADER') multiLeaderParts(g, ctx.model, asked);
+  }
+  if (texts.size === 0) return undefined;
+  const reply = await ctx.view.request({ op: 'textWidths', texts: [...texts.values()] });
+  const widths = new Map<string, number | undefined>();
+  [...texts.keys()].forEach((k, i) =>
+    widths.set(k, (reply.ok ? reply.widths?.[i] : undefined) ?? undefined),
+  );
+  return (t) => widths.get(JSON.stringify(t));
 }
 
 // ── REVERSE ─────────────────────────────────────────────────────────────────────────────────
