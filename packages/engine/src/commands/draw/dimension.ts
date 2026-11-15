@@ -36,6 +36,7 @@ import {
 } from '../../geom/vec';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
+import type { DocumentModel } from '../../model/document';
 import type { DimensionGeometry, Entity, EntityGeometry, Xdata } from '../../model/types';
 import { dstyleOverrides } from '../../annotation/leader';
 import { withDimvarOverride } from '../../annotation/dstyle';
@@ -70,6 +71,21 @@ type Ordinate = Extract<DimensionGeometry, { dimType: 'ordinate' }>;
 /** The dimension DIMCONTINUE and DIMBASELINE start from: the last one made, per drawing. */
 interface DimensionState {
   last: Handle | undefined;
+}
+
+/**
+ * Each drawing's state, by its model: shared by the dimension commands and the grip functions
+ * that run DIMCONTINUE and DIMBASELINE (M3-05 part 4).
+ */
+const STATES = new WeakMap<DocumentModel, DimensionState>();
+
+function stateOf(model: DocumentModel): DimensionState {
+  let s = STATES.get(model);
+  if (!s) {
+    s = { last: undefined };
+    STATES.set(model, s);
+  }
+  return s;
 }
 
 const unitOf = (v: Vec2): Vec2 | undefined => {
@@ -409,7 +425,7 @@ function circlePlacement(
   };
 }
 
-function linearCommand(state: DimensionState, kind: 'linear' | 'aligned'): CommandDef {
+function linearCommand(kind: 'linear' | 'aligned'): CommandDef {
   return {
     name: kind === 'linear' ? 'DIMLINEAR' : 'DIMALIGNED',
     usesSelection: 'none',
@@ -429,7 +445,7 @@ function linearCommand(state: DimensionState, kind: 'linear' | 'aligned'): Comma
         'Specify dimension line location or',
         kind === 'linear' ? LINEAR_OPTIONS : TEXT_OPTIONS,
       );
-      if (g) await makeDimension(ctx, state, g, style.xdata);
+      if (g) await makeDimension(ctx, stateOf(ctx.model), g, style.xdata);
     },
   };
 }
@@ -445,7 +461,7 @@ function radialAppId(ctx: CommandContext): Handle {
   return appId!;
 }
 
-function radialCommand(state: DimensionState, kind: 'radius' | 'diameter'): CommandDef {
+function radialCommand(kind: 'radius' | 'diameter'): CommandDef {
   return {
     name: kind === 'radius' ? 'DIMRADIUS' : 'DIMDIAMETER',
     usesSelection: 'none',
@@ -480,12 +496,12 @@ function radialCommand(state: DimensionState, kind: 'radius' | 'diameter'): Comm
         'Specify dimension line location or',
         TEXT_OPTIONS,
       );
-      if (g) await makeDimension(ctx, state, g, xdata);
+      if (g) await makeDimension(ctx, stateOf(ctx.model), g, xdata);
     },
   };
 }
 
-function angularCommand(state: DimensionState): CommandDef {
+function angularCommand(): CommandDef {
   return {
     name: 'DIMANGULAR',
     usesSelection: 'none',
@@ -565,7 +581,7 @@ function angularCommand(state: DimensionState): CommandDef {
         'Specify dimension arc line location or',
         ANGULAR_OPTIONS,
       );
-      if (g) await makeDimension(ctx, state, g, style.xdata);
+      if (g) await makeDimension(ctx, stateOf(ctx.model), g, style.xdata);
     },
   };
 }
@@ -662,80 +678,100 @@ function chained(
   );
 }
 
-function chainCommand(state: DimensionState, baseline: boolean): CommandDef {
-  const what = baseline ? 'base' : 'continued';
+function chainCommand(baseline: boolean): CommandDef {
   return {
     name: baseline ? 'DIMBASELINE' : 'DIMCONTINUE',
     usesSelection: 'none',
     async *run(ctx): CommandGenerator {
-      const select = async function* (): Sub<Chain | undefined> {
-        for (;;) {
-          const o = yield* pickObject(ctx, `Select ${what} dimension`);
-          if (o === undefined || o === 'enter') return undefined;
-          const c = chainOf(o.entity, o.at, baseline, ctx);
-          if (c) return c;
-          ctx.message('Dimension must be linear, ordinate, or angular.');
-        }
-      };
+      const state = stateOf(ctx.model);
       const last = state.last === undefined ? undefined : ctx.model.entityByHandle(state.last);
-      let chain: Chain | undefined = last ? chainOf(last, undefined, baseline, ctx) : undefined;
-      if (!chain) chain = yield* select();
-      if (!chain) return;
-      const made: { id: EntityId; chain: Chain }[] = [];
-      for (;;) {
-        const a: PromptAnswer = yield ctx.prompt.point({
-          message:
-            chain.base.dimType === 'ordinate'
-              ? 'Specify feature location or'
-              : 'Specify a second extension line origin or',
-          options: ['Undo', 'Select'],
-          default: { kind: 'keyword', keyword: 'Select' },
-        });
-        if (a.kind === 'point') {
-          const g = chained(ctx, chain, a.point, baseline);
-          if (!g) {
-            ctx.message('Invalid point.');
-            continue;
-          }
-          const id = await makeDimension(ctx, state, g, chain.style.xdata);
-          made.push({ id, chain });
-          const e = ctx.model.entity(id)!;
-          // The next one goes on from this one: its second origin (DIMCONTINUE), or the same
-          // first origin a spacing further out (DIMBASELINE).
-          const next = e.geom as Linear | Angular3 | Ordinate;
-          chain = { ...chain, base: next, from: baseline ? chain.from : a.point };
-          continue;
-        }
-        if (a.kind !== 'keyword') return;
-        if (a.keyword === 'Undo') {
-          const undone = made.pop();
-          if (!undone) {
-            ctx.message('Everything has been undone.');
-            continue;
-          }
-          unmake(ctx, undone.id);
-          chain = undone.chain;
-          continue;
-        }
-        // Select (Enter): another dimension to go on from; Enter there ends the command.
-        const c = yield* select();
-        if (!c) return;
-        chain = c;
-      }
+      const chain = last ? chainOf(last, undefined, baseline, ctx) : undefined;
+      yield* goOn(ctx, baseline, chain);
     },
   };
 }
 
+/**
+ * DIMCONTINUE or DIMBASELINE going on from the dimension `id` at its extension line origin
+ * `from`, as AutoCAD's Continue Dimension and Baseline Dimension grip functions start them
+ * (M3-05 part 4): its prompts, as the command's.
+ */
+export async function* continueDimension(
+  ctx: CommandContext,
+  id: EntityId,
+  from: Vec2,
+  baseline: boolean,
+): Sub<void> {
+  const e = ctx.model.entity(id);
+  yield* goOn(ctx, baseline, e ? chainOf(e, from, baseline, ctx) : undefined);
+}
+
+/** DIMCONTINUE's or DIMBASELINE's prompts, from `start` (asked for when there is none). */
+async function* goOn(ctx: CommandContext, baseline: boolean, start: Chain | undefined): Sub<void> {
+  const what = baseline ? 'base' : 'continued';
+  const select = async function* (): Sub<Chain | undefined> {
+    for (;;) {
+      const o = yield* pickObject(ctx, `Select ${what} dimension`);
+      if (o === undefined || o === 'enter') return undefined;
+      const c = chainOf(o.entity, o.at, baseline, ctx);
+      if (c) return c;
+      ctx.message('Dimension must be linear, ordinate, or angular.');
+    }
+  };
+  let chain = start ?? (yield* select());
+  if (!chain) return;
+  const made: { id: EntityId; chain: Chain }[] = [];
+  for (;;) {
+    const a: PromptAnswer = yield ctx.prompt.point({
+      message:
+        chain.base.dimType === 'ordinate'
+          ? 'Specify feature location or'
+          : 'Specify a second extension line origin or',
+      options: ['Undo', 'Select'],
+      default: { kind: 'keyword', keyword: 'Select' },
+    });
+    if (a.kind === 'point') {
+      const g = chained(ctx, chain, a.point, baseline);
+      if (!g) {
+        ctx.message('Invalid point.');
+        continue;
+      }
+      const id = await makeDimension(ctx, stateOf(ctx.model), g, chain.style.xdata);
+      made.push({ id, chain });
+      const e = ctx.model.entity(id)!;
+      // The next one goes on from this one: its second origin (DIMCONTINUE), or the same
+      // first origin a spacing further out (DIMBASELINE).
+      const next = e.geom as Linear | Angular3 | Ordinate;
+      chain = { ...chain, base: next, from: baseline ? chain.from : a.point };
+      continue;
+    }
+    if (a.kind !== 'keyword') return;
+    if (a.keyword === 'Undo') {
+      const undone = made.pop();
+      if (!undone) {
+        ctx.message('Everything has been undone.');
+        continue;
+      }
+      unmake(ctx, undone.id);
+      chain = undone.chain;
+      continue;
+    }
+    // Select (Enter): another dimension to go on from; Enter there ends the command.
+    const c = yield* select();
+    if (!c) return;
+    chain = c;
+  }
+}
+
 /** The dimension commands of one drawing, sharing the last dimension made. */
 export function dimensionCommands(): CommandDef[] {
-  const state: DimensionState = { last: undefined };
   return [
-    linearCommand(state, 'linear'),
-    linearCommand(state, 'aligned'),
-    radialCommand(state, 'radius'),
-    radialCommand(state, 'diameter'),
-    angularCommand(state),
-    chainCommand(state, false),
-    chainCommand(state, true),
+    linearCommand('linear'),
+    linearCommand('aligned'),
+    radialCommand('radius'),
+    radialCommand('diameter'),
+    angularCommand(),
+    chainCommand(false),
+    chainCommand(true),
   ];
 }

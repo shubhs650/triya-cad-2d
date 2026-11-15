@@ -1,8 +1,9 @@
 // Command-line text to values (M2-01, ARCHITECTURE.md §5.1): numbers with `'cal`-lite arithmetic,
-// angles, and AutoCAD's coordinate forms. Everything here is in world coordinates: there is no
-// UCS yet, so AutoCAD's `*` (WCS) prefix means the same as `#` (absolute).
+// angles, and AutoCAD's coordinate forms. Coordinates are typed in the current UCS (M3-06 part
+// 7) and answered in world coordinates; AutoCAD's `*` prefix types them in the WCS.
 import type { Vec2 } from '../geom/types';
 import { OSNAP, type OsnapMode } from '../input/osnap';
+import { isWorld, turnToWorld, type PlanUcs } from '../input/ucs';
 
 /**
  * A number, allowing `+ - * / ( )` between numbers (`'cal`-lite, ARCHITECTURE.md §5.1), so
@@ -194,13 +195,20 @@ export interface CoordinateContext {
   readonly angles?: AngleConvention;
   /** LUNITS: how a coordinate's lengths read (`parseDistance`); Decimal when not given. */
   readonly lunits?: number;
+  /**
+   * The current UCS (M3-06 part 7), whose axes `angles.base` already counts from: `x,y` and
+   * `#x,y` are its coordinates and `@x,y` runs along its axes; `*x,y` and `@*x,y` are the WCS's.
+   */
+  readonly ucs?: PlanUcs;
 }
 
 /**
  * A typed coordinate: `x,y` (a third value, Z, is accepted and dropped), `d<a` polar, either
- * with `@` (relative to the last point) or `#`/`*` (absolute), and `@` alone for the last point.
- * `'invalid'` when it is shaped like a coordinate but does not read; undefined when it is not
- * a coordinate at all.
+ * with `@` (relative to the last point) or `#` (absolute), and `@` alone for the last point; in
+ * the current UCS, or with `*` after `@` or alone in the WCS (AutoCAD 2024 Help, "Enter 2D
+ * Coordinates": "precede the coordinate value with an asterisk (*)"), answered in world
+ * coordinates. `'invalid'` when it is shaped like a coordinate but does not read; undefined
+ * when it is not a coordinate at all.
  */
 export function parseCoordinate(
   text: string,
@@ -209,21 +217,33 @@ export function parseCoordinate(
   // Spaces may stand around the values (`3, 4`), and inside a palette-style `2'-6 1/2"`.
   let t = text.trim();
   let relative = false;
+  let world = false;
   if (t.startsWith('@')) {
     relative = true;
     t = t.slice(1).trim();
+    if (t.startsWith('*')) {
+      world = true;
+      t = t.slice(1).trim();
+    }
   } else if (t.startsWith('#') || t.startsWith('*')) {
+    world = t.startsWith('*');
     t = t.slice(1).trim();
   }
   const lunits = ctx.lunits ?? 2;
   const from = ctx.lastPoint ?? { x: 0, y: 0 };
+  const ucs = ctx.ucs && !world && !isWorld(ctx.ucs) ? ctx.ucs : undefined;
   if (relative && t === '') return from;
   let p: Vec2;
   if (t.includes('<')) {
     const [d, a, ...rest] = t.split('<');
     if (rest.length > 0) return 'invalid';
     const dist = parseDistance(d!, lunits);
-    const ang = parseAngle(a!.replace(/\s+/g, ''), ctx.angles);
+    // The UCS's angle is in `angles.base`: a WCS angle counts from world +X.
+    const angles =
+      world && ctx.ucs && ctx.angles
+        ? { ...ctx.angles, base: ctx.angles.base - ctx.ucs.angle }
+        : ctx.angles;
+    const ang = parseAngle(a!.replace(/\s+/g, ''), angles);
     if (dist === undefined || ang === undefined) return 'invalid';
     p = { x: dist * Math.cos(ang), y: dist * Math.sin(ang) };
   } else if (t.includes(',')) {
@@ -231,11 +251,14 @@ export function parseCoordinate(
     if (parts.length > 3) return 'invalid';
     const values = parts.map((v) => parseDistance(v, lunits));
     if (values.some((v) => v === undefined)) return 'invalid';
-    p = { x: values[0]!, y: values[1]! };
+    p = ucs ? turnToWorld(ucs, { x: values[0]!, y: values[1]! }) : { x: values[0]!, y: values[1]! };
   } else {
     return relative ? 'invalid' : undefined;
   }
-  return relative ? { x: from.x + p.x, y: from.y + p.y } : p;
+  if (relative) return { x: from.x + p.x, y: from.y + p.y };
+  return ucs
+    ? { x: +(ucs.origin.x + p.x).toPrecision(15), y: +(ucs.origin.y + p.y).toPrecision(15) }
+    : p;
 }
 
 /**

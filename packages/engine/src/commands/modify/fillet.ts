@@ -215,6 +215,7 @@ function cornerCommand(s: CornerSettings, w: Words): CommandDef {
           return false;
         for (;;) {
           const a = yield ctx.prompt.angle({
+            turn: true,
             message: 'Specify chamfer angle from the first line',
             default: { kind: 'angle', value: read(ctx, s, 'angle') },
           });

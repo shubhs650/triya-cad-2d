@@ -220,7 +220,7 @@ async function* byAngle(
 ): Sub<BulgeArc | undefined> {
   const g = yield ask(
     undefined,
-    ctx.prompt.angle({ message: 'Specify included angle', base: start }),
+    ctx.prompt.angle({ turn: true, message: 'Specify included angle', base: start }),
   );
   if (g.kind !== 'angle') return undefined;
   const angle = g.value;
@@ -301,6 +301,7 @@ async function* byCenter(
       return yield* last(
         { shape: 'arcSC', by: 'angle', start, center },
         ctx.prompt.angle({
+          turn: true,
           message: `Specify included angle${CTRL_SWITCH}`,
           base: center,
           switchDirection: true,
@@ -353,7 +354,7 @@ async function* byRadius(
     if (a.kind !== 'keyword') return undefined;
     const g = yield ask(
       undefined,
-      ctx.prompt.angle({ message: 'Specify included angle', base: start }),
+      ctx.prompt.angle({ turn: true, message: 'Specify included angle', base: start }),
     );
     if (g.kind !== 'angle') return undefined;
     return yield* chordDirection(ctx, start, direction, g.value, r, last);

@@ -9,17 +9,22 @@
 // undo change the header through change sets, as every edit, so the status bar reads the header
 // as the drawing's change log leaves it, as Dynamic Input and the command line read the units
 // the engine's header holds now.
+//
+// M3-06 part 7: they are the current UCS's (the header's $UCSORG and axes, $PUCS* in a layout),
+// as AutoCAD's are.
 import { formatLinear } from '@triya/dims';
-import type { ChangeSet, Vec2 } from '@triya/engine';
+import { toUcs, ucsOf, type ChangeSet, type Vec2 } from '@triya/engine';
 import type { CoordinateDisplay } from './preferences';
 
 const MAX_PLACES = 8;
 
 export function coordinateText(
-  p: Vec2,
+  world: Vec2,
   header: ReadonlyMap<string, unknown>,
   mode: CoordinateDisplay,
+  paper = false,
 ): string {
+  const p = toUcs(ucsOf(header, paper), world);
   const luprec = header.get('$LUPREC');
   const lunits = header.get('$LUNITS');
   const places = typeof luprec === 'number' ? Math.min(Math.max(luprec, 0), MAX_PLACES) : 4;

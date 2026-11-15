@@ -14,6 +14,10 @@
 // Vertex and Convert to Line take no point and act at once. Part 2 also takes a point clicked
 // with Ctrl held at a grip mode's prompt as Copy turned on, that click placing the first copy. A function edits only the first selected object
 // with that grip, in one undo step; Enter goes on to MOVE, as from STRETCH.
+//
+// A dimension's grips (M3-05 part 4): Flip Arrow and the text placements that take no point act at
+// once; Continue and Baseline Dimension end grip editing in DIMCONTINUE's or DIMBASELINE's
+// prompts, going on from the extension line at the grip's end.
 import { removeCopies } from '../../edit/groups';
 import type { Vec2 } from '../../geom/types';
 import { add, sub } from '../../geom/vec';
@@ -30,7 +34,12 @@ import { arrayGripAt, editArrayByGrip } from './array-grips';
 import { regenerateDimensions } from './dimensions';
 import { functionsAt, runGripFunction, FUNCTION_KEYWORDS, MODE_KEYWORDS } from './grip-functions';
 import { GRIP_CYCLE } from '../prompt';
-import type { GripFunction } from '../../edit/grip-functions';
+import {
+  COMMAND_FUNCTIONS,
+  IMMEDIATE_FUNCTIONS,
+  type GripFunction,
+} from '../../edit/grip-functions';
+import { continueDimension } from '../draw/dimension';
 import { recountColumns } from './mtext-columns';
 
 export const GRIP_MODES = ['STRETCH', 'MOVE', 'ROTATE', 'SCALE', 'MIRROR'] as const;
@@ -141,11 +150,12 @@ export function gripCommand(
         mode = 0;
         return true;
       };
+      /** The functions Ctrl goes through: those that take a point. */
+      const takes: readonly GripFunction[] = (multi?.functions ?? []).filter(
+        (f) => !IMMEDIATE_FUNCTIONS.has(f) && !COMMAND_FUNCTIONS.has(f),
+      );
       /** Ctrl: the next function that takes a point, after `fn`, round to STRETCH. */
       const cycle = () => {
-        const takes: readonly GripFunction[] = multi!.functions.filter(
-          (f) => f !== 'Remove Vertex' && f !== 'Convert to Line',
-        );
         const next = takes[(takes.indexOf(fn ?? takes[0]!) + 1) % takes.length]!;
         fn = next === takes[0] ? undefined : next;
         mode = 0;
@@ -155,6 +165,9 @@ export function gripCommand(
         if (fn && multi) {
           const r = yield* runGripFunction(ctx, multi.id, hot, fn, hidden);
           if (r.kind === 'done') return;
+          // Continue or Baseline Dimension: grip editing goes on as DIMCONTINUE or DIMBASELINE.
+          if (r.kind === 'chain')
+            return yield* continueDimension(ctx, multi.id, r.from, r.baseline);
           if (r.kind === 'cycle') cycle();
           else if (r.kind !== 'keyword' || !switched(r.keyword)) {
             // Enter goes on to MOVE; an immediate function refused goes back to STRETCH.
@@ -168,7 +181,7 @@ export function gripCommand(
         const stretching = name === 'STRETCH' && multi !== undefined;
         const extra = {
           hiddenOptions: stretching ? hidden : MODE_KEYWORDS,
-          ...(stretching && { ctrlCycles: true as const }),
+          ...(stretching && takes.length > 1 && { ctrlCycles: true as const }),
           ctrlCopies: true as const,
         };
         const options = ['Base point', 'Copy', 'Undo', 'eXit'];
@@ -197,6 +210,7 @@ export function gripCommand(
             break;
           case 'ROTATE':
             a = yield ctx.prompt.angle({
+              turn: true,
               message: 'Specify rotation angle or',
               options: withReference,
               ...extra,
@@ -231,7 +245,7 @@ export function gripCommand(
         }
         if (a.kind === 'keyword') {
           if (a.keyword === GRIP_CYCLE) {
-            if (stretching) cycle();
+            if (stretching && takes.length > 1) cycle();
             continue;
           }
           // A mode or function typed: the loop goes there (Remove Vertex and Convert to Line

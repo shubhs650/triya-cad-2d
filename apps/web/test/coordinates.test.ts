@@ -34,6 +34,17 @@ describe('status bar coordinates', () => {
     );
   });
 
+  // M3-06 part 7: the current UCS's coordinates, model space's or (in a layout) paper space's.
+  it('shows the coordinates in the current UCS', () => {
+    const ucs = new Map<string, unknown>([
+      ['$UCSORG', { x: 10, y: 10, z: 0 }],
+      ['$UCSXDIR', { x: 0, y: 1, z: 0 }],
+      ['$UCSYDIR', { x: -1, y: 0, z: 0 }],
+    ]);
+    expect(coordinateText({ x: 13, y: 14 }, ucs, 'drawing')).toBe('4.0000, -3.0000, 0.0000');
+    expect(coordinateText({ x: 13, y: 14 }, ucs, 'drawing', true)).toBe('13.0000, 14.0000, 0.0000');
+  });
+
   it("'decimal' shows LUPREC decimal places whatever LUNITS says", () => {
     expect(coordinateText({ x: 126.5, y: 36 }, header(4, 3), 'decimal')).toBe(
       '126.500, 36.000, 0.000',

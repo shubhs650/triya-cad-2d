@@ -2262,6 +2262,8 @@ function StatusBar({
     [doc],
   );
   const lwdisplay = header.get('$LWDISPLAY');
+  // A layout's coordinates are in its paper space's UCS (M3-06 part 7).
+  const paper = doc !== undefined && doc.block !== doc.opened.modelSpace;
   // The drawing's units or decimal, as Settings has it (M2-20, coordinates.ts).
   const display = useSyncExternalStore(preferences.subscribe, preferences.get).coordinates;
   // LWT shows the drawing's LWDISPLAY until the drafter turns it (M2-04 part 2).
@@ -2272,13 +2274,13 @@ function StatusBar({
     showCursor = (p) => {
       cursor.current = p;
       if (!coords.current) return;
-      coords.current.textContent = p ? coordinateText(p, header, display) : '';
+      coords.current.textContent = p ? coordinateText(p, header, display, paper) : '';
     };
     showCursor(cursor.current);
     return () => {
       showCursor = () => {};
     };
-  }, [header, display]);
+  }, [header, display, paper]);
   return (
     <footer className="status-bar">
       <span className="coords" data-testid="coords" ref={coords} />

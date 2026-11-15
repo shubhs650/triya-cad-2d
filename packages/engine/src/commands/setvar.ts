@@ -73,6 +73,11 @@ function vportValue(vport: VportRecord, name: string): VariableValue {
       return { x: vport.snapBase.x, y: vport.snapBase.y };
     case 'GRIDMAJOR':
       return vport.gridMajor;
+    case 'SNAPANG':
+      // Shown in degrees, as SETVAR shows the header's angles.
+      return (vport.snapRotation * 180) / Math.PI;
+    case 'UCSICON':
+      return vport.ucsIcon;
     default:
       return vport.gridFlags;
   }
@@ -86,6 +91,16 @@ function writeVport(ctx: CommandContext, v: SystemVariable, value: VariableValue
   const vport = currentVport(ctx.model);
   if (!vport) {
     ctx.message(noVport(v));
+    return;
+  }
+  // SNAPANG (radians, finite) and UCSICON (0–3, which the variable's range checked) are
+  // patched as they are (M3-06 part 7).
+  if (v.name === 'SNAPANG' || v.name === 'UCSICON') {
+    const n = v.name === 'SNAPANG' ? ((value as number) * Math.PI) / 180 : (value as number);
+    if (!Number.isFinite(n)) return;
+    const patch = v.name === 'SNAPANG' ? { snapRotation: n } : { ucsIcon: n };
+    if ((v.name === 'SNAPANG' ? vport.snapRotation : vport.ucsIcon) === n) return;
+    ctx.edit((b) => b.updateTableRecord('vports', vport.handle, patch));
     return;
   }
   if (v.name === 'SNAPBASE') {

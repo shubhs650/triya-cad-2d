@@ -180,6 +180,47 @@ describe('header variables', () => {
     }
   });
 
+  it('saves the current UCS the UCS command sets, named after a UCS record or unnamed (M3-06 part 7)', () => {
+    const bytes = drawing();
+    const { model } = open(bytes);
+    edit(model, (b) => {
+      b.addTableRecord('ucs', {
+        name: 'Turned',
+        origin: { x: 10, y: 5, z: 0 },
+        xAxis: { x: 0, y: 1, z: 0 },
+        yAxis: { x: -1, y: 0, z: 0 },
+        elevation: 0,
+        orthographic: 0,
+      });
+      b.setHeader('$UCSORG', { x: 10, y: 5, z: 0 });
+      b.setHeader('$UCSXDIR', { x: 0, y: 1, z: 0 });
+      b.setHeader('$UCSYDIR', { x: -1, y: 0, z: 0 });
+      b.setHeader('$UCSNAME', 'Turned');
+      b.setHeader('$PUCSORG', { x: 1, y: 2, z: 0 });
+    });
+    const back = saved(bytes, model, 'dxf');
+    const header = new Map(back.header);
+    expect(header.get('$UCSORG')).toEqual({ x: 10, y: 5, z: 0 });
+    expect(header.get('$UCSXDIR')).toEqual({ x: 0, y: 1, z: 0 });
+    expect(header.get('$UCSYDIR')).toEqual({ x: -1, y: 0, z: 0 });
+    expect(header.get('$UCSNAME')).toBe('Turned');
+    expect(header.get('$PUCSORG')).toEqual({ x: 1, y: 2, z: 0 });
+    expect(back.tables?.ucs?.map((u) => u.name)).toEqual(['Turned']);
+
+    // World again: unnamed.
+    const again = open(exportDocument(readCadDocument(bytes), model, { format: 'dxf' }));
+    edit(again.model, (b) => {
+      b.setHeader('$UCSORG', { x: 0, y: 0, z: 0 });
+      b.setHeader('$UCSXDIR', { x: 1, y: 0, z: 0 });
+      b.setHeader('$UCSYDIR', { x: 0, y: 1, z: 0 });
+      b.setHeader('$UCSNAME', '');
+    });
+    const first = exportDocument(readCadDocument(bytes), model, { format: 'dxf' });
+    const world = new Map(saved(first, again.model, 'dxf').header);
+    expect(world.get('$UCSNAME')).toBe('');
+    expect(world.get('$UCSXDIR')).toEqual({ x: 1, y: 0, z: 0 });
+  });
+
   it('keeps CETRANSPARENCY for the session unless the drawing has a DICTIONARYVAR for it (M2-35)', () => {
     // DXF has no HEADER variable for CETRANSPARENCY: a save writes it only into an existing
     // AcDbVariableDictionary entry, and leaves a drawing without one as it was.

@@ -59,7 +59,7 @@ export function follow(state: CommandLineState, o: CommandOutput): CommandLineSt
         ...state,
         prompt: o.prompt,
         promptText: o.text,
-        units: { units: o.units, angles: o.angles },
+        units: { units: o.units, angles: o.angles, ucs: o.ucs },
       };
     case 'idle':
       return { ...state, prompt: undefined, promptText: 'Command:' };
