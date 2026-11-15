@@ -1826,6 +1826,61 @@ export interface SpatialFilter extends NonGraphicalObject {
 }
 
 /**
+ * An associative array Triya made (M3-11, DEC-059): its definition, the `TRIYA_ARRAY` XRECORD in
+ * the array INSERT's extension dictionary (`owner`, which the INSERT's `extDict` names). The array
+ * is that INSERT of an anonymous `*U` block whose items are INSERTs of the source block, another
+ * anonymous `*U` block holding the source objects; ARRAYEDIT remakes the items from this record.
+ * The centre is in the array block's coordinates, the base point and tangent direction in the
+ * source block's.
+ */
+export interface AssocArray extends NonGraphicalObject {
+  readonly type: 'TRIYA_ARRAY';
+  /** The array's INSERT (the owner of its extension dictionary). */
+  readonly insert: Handle;
+  /** DXF 340: the source block's BLOCK_RECORD. */
+  readonly source: Handle;
+  readonly params: AssocArrayParams;
+}
+
+export type AssocArrayParams =
+  | {
+      readonly kind: 'rectangular';
+      readonly columns: number;
+      readonly rows: number;
+      readonly columnSpacing: number;
+      readonly rowSpacing: number;
+    }
+  | {
+      readonly kind: 'polar';
+      readonly center: Vec2;
+      readonly base: Vec2;
+      readonly items: number;
+      /** Radians, + counterclockwise; ±2π fills the circle. */
+      readonly fillAngle: number;
+      readonly rows: number;
+      readonly rowSpacing: number;
+      readonly rotateItems: boolean;
+    }
+  | {
+      readonly kind: 'path';
+      /** DXF 331: the path curve; absent once it is erased (the items then stay as they are). */
+      readonly path?: Handle;
+      readonly method: 'divide' | 'measure';
+      readonly base: Vec2;
+      readonly tangent: Vec2;
+      readonly spacing: number;
+      readonly items: number;
+      readonly rows: number;
+      readonly rowSpacing: number;
+      readonly align: boolean;
+      /** Items run from the curve's end point back to its start. */
+      readonly reversed: boolean;
+    };
+
+export const isAssocArray = (o: NonGraphicalObject | undefined): o is AssocArray =>
+  o?.type === 'TRIYA_ARRAY';
+
+/**
  * One DXF group code of a `CodedObject`, as the save writes it. A handle code's value (DXF 5,
  * 105, 320–369, 390–399, 480, 481 and 1005: `isHandleCode`) is the handle.
  */
