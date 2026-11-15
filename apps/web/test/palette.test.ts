@@ -32,6 +32,9 @@ describe('palette search', () => {
       'BREAKATPOINT',
       // M3-02 part 3: CHAMFER and FILLET.
       'CHAMFER',
+      // M3-02 part 5: CHANGE and CHPROP.
+      'CHANGE',
+      'CHPROP',
       'CIRCLE',
       'CLOSE',
       'CLOSEALL',
@@ -64,6 +67,8 @@ describe('palette search', () => {
       'LENGTHEN',
       'LINE',
       'LIST',
+      // M3-02 part 5: MATCHPROP.
+      'MATCHPROP',
       'MEASURE',
       'MEASUREGEOM',
       'MIRROR',
@@ -78,6 +83,8 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      // M3-02 part 5: PEDIT.
+      'PEDIT',
       // M3-01 part 3: PLINE, POLYGON and RECTANG.
       'PLINE',
       'PLOT',
