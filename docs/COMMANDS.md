@@ -16,12 +16,12 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | x (#368: 3P, SCE, SCA, SCL, SEC, SEA, SED, SER, CSE, CSA, CSL and ↵ tangent from the last line or arc, dragged while the last value is asked; negative angles, chords and radii draw the other way; AutoCAD's Ctrl direction switch is not offered) |
 | RECTANG | REC | 1 | Chamfer, Elevation(ignored), Fillet, Thickness(ignored), Width, Area, Dimensions, Rotation | |
 | POLYGON | POL | 2 | Edge, Inscribed/Circumscribed | |
-| ELLIPSE | EL | 2 | Arc, Center, Rotation | |
+| ELLIPSE | EL | 2 | Arc, Center, Rotation | x (#376: Axis, End; Center; Rotation (up to 89.4°); Arc by start and end Angle, Parameter or Included angle, counted from the first axis endpoint; dragged while asked; Isocircle (needs isometric snap) and PELLIPSE 1 not yet) |
 | SPLINE | SPL | 2 | Method (Fit/CV), Knots, Degree, Object, Close, Tolerance | |
-| XLINE | XL | 2 | Hor, Ver, Ang, Bisect, Offset | |
-| RAY | — | 2 | | |
-| POINT | PO | 2 | PDMODE, PDSIZE, Multiple | |
-| DONUT | DO | 3 | | |
+| XLINE | XL | 2 | Hor, Ver, Ang, Bisect, Offset | x (#376: through points, Hor, Ver, Ang (last angle offered) with Reference to a line, Bisect, Offset by a distance (remembered) or Through from a line, xline, ray or straight polyline segment; each dragged with the cursor) |
+| RAY | — | 2 | | x (#376: a start point and through points until Enter, dragged) |
+| POINT | PO | 2 | PDMODE, PDSIZE, Multiple | ~ (#376: one point, with "Current point modes" reported; drawn and plotted by PDMODE and PDSIZE, which are set by typing them; Multiple Points with the ribbon, M7-01; the DDPTYPE dialog is left on M3-01) |
+| DONUT | DO | 3 | | x (#376: inside and outside diameters (remembered, 0.5 and 1 at first; a zero inside fills it), then centres until Enter, dragged; a closed LWPOLYLINE of two half circles with a constant width) |
 | HATCH | H, BH | 2 | contextual tab; -HATCH dash variant required | |
 | GRADIENT | GD | 2 | | |
 | BOUNDARY | BO | 2 | Island detection, object type (polyline/region) | |
