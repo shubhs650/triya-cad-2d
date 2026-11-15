@@ -19,19 +19,28 @@
 //   arcs of one circle turning the same way; the joined segment starts as the one before did and
 //   ends as the one after did;
 // - Convert to Arc makes the arc through the segment's ends and the point given.
-import { ccwSweep, TAU } from '../geom/angle';
+//
+// A patterned hatch's control grip (M3-05 part 3, "To Modify Hatch Objects Using Grips"):
+// Stretch (it moves the hatch), Origin Point, Hatch Angle, Hatch Scale. The help gives the
+// prompts but not what a picked point means: here the origin goes to it, the angle is the
+// grip's direction to it and the scale its distance from the grip, as a typed number is the
+// angle or scale itself; the lines are laid out again about the origin, as the Properties
+// palette's Angle and Scale rows do (a user-defined hatch's Scale is its spacing).
+import { ccwSweep, normalizeAngle, TAU } from '../geom/angle';
 import { toleranceForSize, type Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, sub } from '../geom/vec';
 import type {
   ArcGeometry,
   EntityGeometry,
+  HatchGeometry,
   LwPolylineGeometry,
   PolylineGeometry,
   PolylineVertex,
 } from '../model/types';
 import type { GripInfo } from './array-grips';
 import { breakCurveOf, lengthenGeometry, lengthTo } from './break';
+import { relaidLines } from './hatch-lines';
 import { arcThrough, bulgeMidpoint, bulgeThrough, gripsOf, moveGrip, sameGrip } from './grips';
 import type { StretchResult } from './stretch';
 
@@ -44,7 +53,21 @@ export type GripFunction =
   | 'Remove Vertex'
   | 'Extend Vertex'
   | 'Convert to Arc'
-  | 'Convert to Line';
+  | 'Convert to Line'
+  | 'Origin Point'
+  | 'Hatch Angle'
+  | 'Hatch Scale';
+
+/** The hatch grip's functions after Stretch (M3-05 part 3). */
+const HATCH_FUNCTIONS: readonly GripFunction[] = [
+  'Stretch',
+  'Origin Point',
+  'Hatch Angle',
+  'Hatch Scale',
+];
+
+/** A hatch with pattern lines to lay out: not a solid fill or a gradient. */
+const patterned = (g: HatchGeometry) => !g.solid && !g.gradient && g.patternLines.length > 0;
 
 /** The functions that are the STRETCH grip mode itself. */
 export const isStretchFunction = (fn: GripFunction | undefined): boolean =>
@@ -109,6 +132,8 @@ export function gripFunctionsOf(
         ...(end ? (['Extend Vertex'] as const) : []),
       ];
     }
+    case 'HATCH':
+      return patterned(geom) ? HATCH_FUNCTIONS : [];
     default:
       return [];
   }
@@ -221,10 +246,18 @@ export function gripFunctionEdit(
       if (r === 'too long') return 'too long';
       return typeof r === 'string' ? 'invalid' : r;
     }
-    case 'Radius': {
-      const a = geom as ArcGeometry;
-      const radius = distance(a.center, to);
-      return radius > tol.linear ? { ...a, radius } : 'invalid';
+    case 'Radius':
+      return gripFunctionValue(geom, fn, distance((geom as ArcGeometry).center, to), tol);
+    case 'Hatch Angle':
+      if (distance(grip, to) <= tol.linear) return 'invalid';
+      return gripFunctionValue(geom, fn, angleOf(sub(to, grip)), tol);
+    case 'Hatch Scale':
+      return gripFunctionValue(geom, fn, distance(grip, to), tol);
+    case 'Origin Point': {
+      const h = geom as HatchGeometry;
+      const d = sub(to, h.patternLines[0]!.base);
+      const patternLines = h.patternLines.map((l) => ({ ...l, base: add(l.base, d) }));
+      return { ...h, patternLines };
     }
     default:
       break;
@@ -271,6 +304,32 @@ export function gripFunctionEdit(
     default:
       return 'invalid';
   }
+}
+
+/**
+ * What a function that takes a value (Radius, Hatch Angle, Hatch Scale) does with the value
+ * typed: the arc's radius, the hatch's pattern angle or scale.
+ */
+export function gripFunctionValue(
+  geom: EntityGeometry,
+  fn: 'Radius' | 'Hatch Angle' | 'Hatch Scale',
+  value: number,
+  tol: Tolerance,
+): EntityGeometry | GripFunctionProblem {
+  if (fn === 'Radius') {
+    return value > tol.linear ? { ...(geom as ArcGeometry), radius: value } : 'invalid';
+  }
+  const h = geom as HatchGeometry;
+  const origin = h.patternLines[0]!.base;
+  if (fn === 'Hatch Angle') {
+    const patternAngle = normalizeAngle(value);
+    const patternLines = relaidLines(h.patternLines, origin, patternAngle - h.patternAngle, 1);
+    return { ...h, patternAngle, patternLines };
+  }
+  if (!(value > 0)) return 'invalid';
+  // A stored scale of 0 (a file's) lays the lines out as they are, at scale 1.
+  const k = value / (h.patternScale > 0 ? h.patternScale : 1);
+  return { ...h, patternScale: value, patternLines: relaidLines(h.patternLines, origin, 0, k) };
 }
 
 const polar = (theta: number, r: number): Vec2 => ({
