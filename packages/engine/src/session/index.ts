@@ -110,8 +110,23 @@ export type SessionVariableEdit =
       readonly value: number;
     };
 
+/**
+ * The user alias file's aliases (M3-10, `parseAliasFile`), which the command line follows over
+ * the default acad.pgp ones. Per user, like the session variables: never saved in the drawing.
+ */
+export interface AliasEdit {
+  readonly kind: 'aliases';
+  readonly aliases: Readonly<Record<string, string>>;
+}
+
 export type EngineEdit =
-  LayerStateEdit | LayoutEdit | XrefLoadEdit | NamedViewEdit | ViewTableEdit | SessionVariableEdit;
+  | LayerStateEdit
+  | LayoutEdit
+  | XrefLoadEdit
+  | NamedViewEdit
+  | ViewTableEdit
+  | SessionVariableEdit
+  | AliasEdit;
 
 /**
  * Characters AutoCAD refuses in a layout name (LAYOUT Rename: "Invalid layout name"), and its
@@ -263,6 +278,8 @@ export interface EngineServices {
 export class EngineSession {
   readonly model: DocumentModel;
   readonly #bus: PromptBus;
+  /** Its commands, with the user's aliases (M3-10). */
+  readonly #registry = builtinCommands();
   #space: Handle | undefined;
   readonly #listeners = new Set<(o: CommandOutput) => void>();
   readonly #viewReplies = new Map<number, (r: ViewReply) => void>();
@@ -296,7 +313,7 @@ export class EngineSession {
     for (const cs of changes) applyToReplica(this.model, cs, 'recovered drawing');
     this.#bus = new PromptBus({
       model: this.model,
-      registry: builtinCommands(),
+      registry: this.#registry,
       dimensions: services.dimensions,
       apply: (change) => {
         this.model.apply(change);
@@ -485,6 +502,10 @@ export class EngineSession {
     if (e.kind === 'view-delete' || e.kind === 'view-rename' || e.kind === 'view-category')
       return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
+    if (e.kind === 'aliases') {
+      this.#registry.setUserAliases(e.aliases);
+      return { ok: true, change: {} };
+    }
     return e.kind === 'layout' ? this.#layoutEdit(e) : this.#layerEdit(e);
   }
 

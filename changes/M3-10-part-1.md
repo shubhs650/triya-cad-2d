@@ -1,0 +1,1 @@
+- M3-10 part 1 (#399): your own command aliases. Settings' Edit aliases… (or Edit Aliases in Ctrl+K) opens the user alias file in acad.pgp syntax (`C,*COPY`); its lines are checked as you type, its aliases override the default ones in every open drawing at once (C runs COPY instead of CIRCLE), and it is kept on this device. A .pgp file can be imported or the file exported.
