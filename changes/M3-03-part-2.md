@@ -1,0 +1,1 @@
+- M3-03 part 2 (#PR): associative arrays read from a file are kept: a save writes their ACDBASSOC* objects back untouched, and the array moves, turns, scales, mirrors, copies and erases as the block reference it is. Associative arrays Triya makes and ARRAYEDIT move to M3-11, waiting on the owner's choice of how to save them (#379).

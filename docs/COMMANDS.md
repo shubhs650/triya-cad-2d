@@ -54,7 +54,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | BREAKATPOINT | — | 2 | | |
 | JOIN | J | 2 | lines/arcs/polylines/splines/ellipses | |
 | EXPLODE | X | 1 | blocks, polylines, dims, mleaders, tables, hatches(to lines), arrays | |
-| ARRAY | AR | 2 | Rectangular, Polar, PAth; associative; ARRAYEDIT basic; -ARRAY dash | ~ (#371 part 1: ARRAY, ARRAYRECT, ARRAYPOLAR, ARRAYPATH and -ARRAY with AutoCAD 2024's prompts and options, made at once and remade as each option changes; separate objects only (Associative = No); default spacings 1.5 × the selection's extents. Left: associative arrays, ARRAYEDIT, array grips. Not offered: Levels, row elevation, Z direction, Axis of rotation, Expression, Key point) |
+| ARRAY | AR | 2 | Rectangular, Polar, PAth; associative; ARRAYEDIT basic; -ARRAY dash | ~ (#371 part 1: ARRAY, ARRAYRECT, ARRAYPOLAR, ARRAYPATH and -ARRAY with AutoCAD 2024's prompts and options, made at once and remade as each option changes; separate objects only (Associative = No); default spacings 1.5 × the selection's extents. Associative arrays read from files are kept and saved untouched, and edit as block references (#PR part 2). Moved to M3-11 (waits on #379): associative arrays Triya makes, ARRAYEDIT, array grips. Not offered: Levels, row elevation, Z direction, Axis of rotation, Expression, Key point) |
 | ARRAYCLASSIC | — | 3 | dialog | |
 | ALIGN | AL | 2 | 2-point scale | |
 | LENGTHEN | LEN | 2 | DElta, Percent, Total, DYnamic | |
