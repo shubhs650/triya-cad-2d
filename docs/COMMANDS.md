@@ -10,10 +10,10 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Options / notes | Status |
 |---|---|---|---|---|
-| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | ~ (#222: Undo, Close, ↵ from the last line; #226: running osnaps incl. PER and TAN from the last point; arcs M3-01) |
+| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | x (#222: Undo, Close, ↵ from the last line; #226: running osnaps incl. PER and TAN from the last point; #368: ↵ after an arc continues tangent to it, asking the length) |
 | PLINE | PL | 1 | Arc (Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width), Halfwidth, Length, Undo, Width, Close | |
-| CIRCLE | C | 1 | 3P, 2P, TTR, TTT, Diameter | |
-| ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | |
+| CIRCLE | C | 1 | 3P, 2P, TTR, TTT, Diameter | ~ (#368: Center with Radius or Diameter, the last radius as the default (CIRCLERAD, session only), 3P, 2P, Ttr nearest the picks on lines, rays, xlines, circles, arcs and polyline segments, dragged while the last value is asked; TTT waits for the deferred TANgent snap, M3-01 part 2) |
+| ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | x (#368: 3P, SCE, SCA, SCL, SEC, SEA, SED, SER, CSE, CSA, CSL and ↵ tangent from the last line or arc, dragged while the last value is asked; negative angles, chords and radii draw the other way; AutoCAD's Ctrl direction switch is not offered) |
 | RECTANG | REC | 1 | Chamfer, Elevation(ignored), Fillet, Thickness(ignored), Width, Area, Dimensions, Rotation | |
 | POLYGON | POL | 2 | Edge, Inscribed/Circumscribed | |
 | ELLIPSE | EL | 2 | Arc, Center, Rotation | |

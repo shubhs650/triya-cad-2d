@@ -10,6 +10,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { EntityGeometry, Xdata } from '../model/types';
 import { placeDimension, type DimPlacement } from '../edit/dimension';
+import { sketchGeometry, type Sketch } from './draw/sketch';
 
 export type DragPreview =
   /**
@@ -66,7 +67,12 @@ export type DragPreview =
       readonly place: DimPlacement;
       readonly layer: Handle;
       readonly xdata?: Xdata;
-    };
+    }
+  /**
+   * A circle or arc being drawn (CIRCLE, ARC; M3-01): drawn, on `layer`, as `sketchGeometry`
+   * makes it with the cursor.
+   */
+  | { readonly kind: 'sketch'; readonly sketch: Sketch; readonly layer: Handle };
 
 /** What the renderer draws for a cursor position: `ids` through `m`, `shape` stretched by `d`. */
 export interface DragMotion {
@@ -135,6 +141,10 @@ export function dragMotion(drag: DragPreview, cursor: Vec2): DragMotion | undefi
           adding: { layer: drag.layer, geom, ...(drag.xdata && { xdata: drag.xdata }) },
         }
       );
+    }
+    case 'sketch': {
+      const geom = sketchGeometry(drag.sketch, cursor);
+      return geom && { ids: [], m: IDENTITY, adding: { layer: drag.layer, geom } };
     }
   }
 }
