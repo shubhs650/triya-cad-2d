@@ -83,6 +83,8 @@ export type DraftingPreferences = Pick<
   | 'pickbox'
   | 'pickadd'
   | 'pickauto'
+  | 'selectionPreview'
+  | 'previewFilter'
   | 'qpQuadrant'
   | 'qpDistance'
   | 'qpCollapse'
@@ -155,6 +157,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     pickbox: 3,
     pickadd: 2,
     pickauto: 5,
+    selectionPreview: 3,
+    previewFilter: 3,
     qpQuadrant: 'top-right',
     qpDistance: 50,
     qpCollapse: true,
@@ -270,6 +274,12 @@ export function normalizePreferences(raw: unknown): Preferences {
       pickbox: within(k['pickbox'], { min: 0, max: 50 }, d.drafting.pickbox),
       pickadd: within(k['pickadd'], { min: 0, max: 3 }, d.drafting.pickadd),
       pickauto: within(k['pickauto'], { min: 0, max: 7 }, d.drafting.pickauto),
+      selectionPreview: within(
+        k['selectionPreview'],
+        { min: 0, max: 3 },
+        d.drafting.selectionPreview,
+      ),
+      previewFilter: within(k['previewFilter'], { min: 0, max: 63 }, d.drafting.previewFilter),
       polarAddAngles:
         typeof polarAddAngles === 'string' && additionalAngles(polarAddAngles)
           ? polarAddAngles
@@ -370,6 +380,8 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     pickbox: s.pickbox,
     pickadd: s.pickadd,
     pickauto: s.pickauto,
+    selectionPreview: s.selectionPreview,
+    previewFilter: s.previewFilter,
     qpQuadrant: s.qpQuadrant,
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,

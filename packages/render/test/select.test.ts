@@ -164,7 +164,7 @@ function setup(entities: EntityInit[]) {
   r.resize(200, 100, 1);
   r.setView({ center: { x: 10, y: 0 }, scale: 10 });
   const handles = (ids: readonly number[]) => ids.map((id) => d.model.ids.handleOf(id));
-  return { d, r, scene: () => layers[0]!.ctx, handles };
+  return { d, r, scene: () => layers[0]!.ctx, transient: () => layers[1]!.ctx, handles };
 }
 
 describe('Canvas2DRenderer.select', () => {
@@ -217,5 +217,75 @@ describe('Canvas2DRenderer.select', () => {
     expect(
       (scene().calls as Call[]).filter((c) => c[0] === 'stroke' && c[1] === '#4da3ff'),
     ).toEqual([]);
+  });
+});
+
+// M3-04 part 5 (AutoCAD 2024 Help, "SELECTIONPREVIEW (System Variable)"): "objects are
+// highlighted when the pickbox cursor rolls over them", here on the transient layer so the
+// scene is not drawn again; PREVIEWFILTER leaves some out (`previewObjects`, engine tests).
+describe('Canvas2DRenderer.setSelectionPreview', () => {
+  const entities = [
+    entity('20', line(0, 0, 10, 0)),
+    entity('23', line(0, 5, 10, 5), { layer: LAYER_RED }),
+  ];
+  // World (x, y) is canvas (10x, 50 − 10y): the line 20 runs along y = 50, 23 along y = 0.
+  const at = (x: number, y: number, filter = 3) => ({
+    screen: { x, y },
+    aperture: 3,
+    filter,
+    groups: true,
+  });
+  const strokes = (calls: readonly Call[]) =>
+    calls.filter((c) => c[0] === 'stroke' && c[1] === '#4da3ff');
+
+  it('highlights the object under the pickbox: the glow and a solid 2 px line, scene untouched', () => {
+    const { r, scene, transient } = setup(entities);
+    r.frame();
+    scene().clear();
+    transient().clear();
+    r.setSelectionPreview(at(50, 52));
+    r.frame();
+    const calls = transient().calls as Call[];
+    expect(strokes(calls)).toHaveLength(2);
+    expect(calls.filter((c) => c[0] === 'lineWidth').map((c) => c[1])).toEqual(
+      expect.arrayContaining([5, 2]),
+    );
+    expect(calls.some((c) => c[0] === 'setLineDash' && (c[1] as number[]).length > 0)).toBe(false);
+    expect(scene().calls).toEqual([]);
+  });
+
+  it('draws again only when the object under the pickbox changes', () => {
+    const { r, transient } = setup(entities);
+    r.setSelectionPreview(at(50, 52));
+    r.frame();
+    transient().clear();
+    // Along the same line: nothing to draw again.
+    r.setSelectionPreview(at(60, 49));
+    r.frame();
+    expect(transient().calls).toEqual([]);
+    // Off every object: the preview goes.
+    r.setSelectionPreview(at(50, 30));
+    r.frame();
+    expect(strokes(transient().calls as Call[])).toEqual([]);
+    expect(transient().calls.length).toBeGreaterThan(0);
+    r.setSelectionPreview(at(50, 52));
+    r.frame();
+    transient().clear();
+    r.setSelectionPreview(undefined);
+    r.frame();
+    expect(strokes(transient().calls as Call[])).toEqual([]);
+  });
+
+  it('leaves out what PREVIEWFILTER excludes: an object on a locked layer with bit 1', () => {
+    const { d, r, transient } = setup(entities);
+    r.apply(change(d, (b) => b.updateTableRecord('layers', LAYER_RED, { locked: true })));
+    r.frame();
+    transient().clear();
+    r.setSelectionPreview(at(50, 1));
+    r.frame();
+    expect(strokes(transient().calls as Call[])).toEqual([]);
+    r.setSelectionPreview(at(50, 1, 0));
+    r.frame();
+    expect(strokes(transient().calls as Call[])).toHaveLength(2);
   });
 });

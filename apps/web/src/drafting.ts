@@ -119,6 +119,14 @@ export interface DraftingState {
   readonly pickadd: number;
   readonly pickauto: number;
   /**
+   * M3-04 part 5 (AutoCAD 2024 Help), kept per user and initially 3: SELECTIONPREVIEW's bits 1
+   * the hover highlight at `Command:`, 2 at a command's object selection; PREVIEWFILTER's bits
+   * leave out of it objects on locked layers (1), in xrefs (2), tables (4), multiline text (8),
+   * hatches (16) and objects in groups (32).
+   */
+  readonly selectionPreview: number;
+  readonly previewFilter: number;
+  /**
    * The Drafting Settings dialog's Quick Properties tab (AutoCAD 2024 Help, "Quick Properties
    * Tab (Drafting Settings Dialog Box)"), kept per user: by the cursor, the quadrant and the
    * distance in pixels it goes at; whether it collapses, and to how many rows.
@@ -324,6 +332,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   pickbox: 3,
   pickadd: 2,
   pickauto: 5,
+  selectionPreview: 3,
+  previewFilter: 3,
   qpQuadrant: 'top-right',
   qpDistance: 50,
   qpCollapse: true,

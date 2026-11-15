@@ -496,6 +496,15 @@ function AutoColour(props: {
 const GRIP_SLIDER = { min: 1, max: 20 } as const;
 
 /**
+ * The Options dialog's Selection tab's "Selection preview" (AutoCAD 2024 Help, "Selection Tab
+ * (Options Dialog Box)"): SELECTIONPREVIEW's bits 2 and 1 (M3-04 part 5).
+ */
+const SELECTION_PREVIEW_CHECKS = [
+  { bit: 2, label: 'When a command is active' },
+  { bit: 1, label: 'When no command is active' },
+] as const;
+
+/**
  * OPTIONS > Drafting's AutoSnap and AutoTrack settings, AUTOSNAP's bits but POLAR's and OTRACK's
  * (the status bar's buttons), labelled as AutoCAD 2024's Options dialog labels them (M2-59).
  */
@@ -635,6 +644,25 @@ function DraftingSettings() {
         />
         Noun/verb selection (PICKFIRST)
       </label>
+      <fieldset>
+        <legend>Selection preview (SELECTIONPREVIEW)</legend>
+        {SELECTION_PREVIEW_CHECKS.map(({ bit, label }) => (
+          <label key={bit} className="setting-check">
+            <input
+              type="checkbox"
+              checked={(d.selectionPreview & bit) !== 0}
+              onChange={(e) =>
+                drafting.configure({
+                  selectionPreview: e.currentTarget.checked
+                    ? d.selectionPreview | bit
+                    : d.selectionPreview & ~bit,
+                })
+              }
+            />
+            {label}
+          </label>
+        ))}
+      </fieldset>
       <label className="setting-check">
         <input
           type="checkbox"

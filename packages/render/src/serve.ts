@@ -129,6 +129,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'grip-hover':
         r.setGripHover(m.at ?? undefined, m.within);
         break;
+      case 'selection-preview':
+        r.setSelectionPreview(m.preview ?? undefined);
+        break;
       case 'bounds':
         port.postMessage({ type: 'extents', id: m.id, box: session.boundsOf(m.ids) ?? null });
         break;
