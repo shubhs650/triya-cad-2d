@@ -1008,14 +1008,15 @@ export class Canvas2DRenderer implements Renderer {
     const layout = cs.layouts?.updated?.find((l) => l.after.handle === this.#layoutHandle)?.after;
     if (layout) this.#readLayout(layout);
     // A layer, linetype, text style, LTSCALE, FILLMODE or ATTMODE change can restyle or hide any
-    // entity, and an IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the
-    // whole block.
+    // entity, a multiline style change redraws its multilines (M3-14), and an IMAGEFRAME or
+    // WIPEOUTFRAME change reframes every image: re-resolve the whole block.
     if (
       frames ||
       clips ||
       cs.tables?.layers ||
       cs.tables?.linetypes ||
       cs.tables?.textStyles ||
+      cs.tables?.mlineStyles ||
       cs.header?.some((h) => PAINT_HEADER.has(h.name))
     )
       this.#cacheBlock();

@@ -267,8 +267,8 @@ export function generatedDimension(
 
 /**
  * Whether an entity draws through `expandInsert`: a block reference (`referenceOf`), an
- * annotation drawn as parts (MULTILEADER, LEADER and TOLERANCE, M1-52), or a dimension the
- * engine generates (M2-10).
+ * annotation drawn as parts (MULTILEADER, LEADER and TOLERANCE, M1-52), a multiline (its
+ * elements, caps, joints and fill, M3-14), or a dimension the engine generates (M2-10).
  */
 export function expands(e: Entity, def: (block: Handle) => BlockDefinition | undefined): boolean {
   const k = e.geom.kind;
@@ -276,6 +276,7 @@ export function expands(e: Entity, def: (block: Handle) => BlockDefinition | und
     k === 'MULTILEADER' ||
     k === 'LEADER' ||
     k === 'TOLERANCE' ||
+    k === 'MLINE' ||
     referenceOf(e, def) !== undefined ||
     generatedDimension(e, def)
   );
@@ -434,7 +435,12 @@ export function expandInsert(
         ? dimensionParts(e, src.model, measure)?.filter((p) => !p.defpoint)
         : undefined);
     if (parts) {
-      for (const part of parts) draw(partEntity(e, part), m, outer, depth, chain, clip);
+      for (const part of parts) {
+        // FILLMODE off leaves a multiline's fill out (AutoCAD 2024 help, FILLMODE).
+        if (e.geom.kind === 'MLINE' && part.geom.kind === 'HATCH' && src.tessellate?.fill === false)
+          continue;
+        draw(partEntity(e, part), m, outer, depth, chain, clip);
+      }
       return;
     }
     const ref = referenceOf(e, def);
