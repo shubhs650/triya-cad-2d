@@ -20,6 +20,13 @@ export { rectangCommand } from './draw/rectang';
 export { type ShapeSketch } from './draw/sketch-shapes';
 export { ellipseCommand } from './draw/ellipse';
 export { POINT_MODES, ddptypeCommand, donutCommand, pointCommand } from './draw/point';
+export {
+  INSUNITS_NAMES,
+  unitsSample,
+  unitsSettings,
+  validUnitsSettings,
+  type UnitsSettings,
+} from './drawing-units';
 export { rayCommand, xlineCommand } from './draw/xline';
 export * from './view/host';
 export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale } from './view/zoom';

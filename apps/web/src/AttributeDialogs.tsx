@@ -39,6 +39,7 @@ import { SelectSimilarDialog } from './SelectSimilarDialog';
 import { FilterDialog } from './FilterDialog';
 import { QSelectDialog } from './QSelectDialog';
 import { DraftingSettingsDialog } from './DraftingSettingsDialog';
+import { UnitsDialog } from './UnitsDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -76,6 +77,8 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
       return <SelectSimilarDialog key={key} doc={doc.id} request={d} />;
     case 'filter':
       return <FilterDialog key={key} doc={doc.id} request={d} />;
+    case 'units':
+      return <UnitsDialog key={key} doc={doc.id} request={d} />;
   }
 }
 
