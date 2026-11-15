@@ -31,7 +31,7 @@ describe('gripsOf', () => {
     ]);
   });
 
-  it('a polyline: its vertices, and the midpoints of its straight segments', () => {
+  it('a polyline: its vertices, and the midpoints of its segments (arcs too, M3-05)', () => {
     expect(
       pts({
         kind: 'LWPOLYLINE',
@@ -47,6 +47,7 @@ describe('gripsOf', () => {
       [10, 0, 'stretch'],
       [10, 10, 'stretch'],
       [5, 0, 'segment'],
+      [15, 5, 'arcSegment'],
     ]);
   });
 });

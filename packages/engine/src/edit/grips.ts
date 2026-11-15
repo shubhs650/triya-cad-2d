@@ -6,7 +6,8 @@
 // - an arc's ends stretch (keeping its chord height, as STRETCH does), its midpoint reshapes it
 //   through its ends, its centre moves it;
 // - a circle's centre moves it and its quadrants set its radius;
-// - polyline vertices stretch, and a straight segment's midpoint moves the segment;
+// - polyline vertices stretch, a straight segment's midpoint moves the segment, and an arc
+//   segment's midpoint reshapes it through its ends (M3-05);
 // - spline control (or fit) points, solid and face corners and leader vertices stretch;
 // - an object placed by one point (text, a block reference, a point, an ellipse's centre, a
 //   table, an image…) has that one grip, which moves it.
@@ -47,6 +48,8 @@ export type GripKind =
   | 'arc'
   /** A straight polyline segment's midpoint: both its ends move. */
   | 'segment'
+  /** An arc polyline segment's midpoint: the arc through its ends and the new point (M3-05). */
+  | 'arcSegment'
   /** A linear or aligned dimension's dimension line end: the dimension line moves. */
   | 'dimline'
   /** A revision cloud's corner: the sides on either side are cut into arcs afresh. */
@@ -153,6 +156,7 @@ export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
         const a = v[i]!;
         const b = v[(i + 1) % v.length]!;
         if (a.bulge === 0) out.push(g(midpoint(a, b), 'segment'));
+        else out.push(g(bulgeMidpoint(a, b, a.bulge), 'arcSegment'));
       }
       return out;
     }
@@ -197,12 +201,36 @@ export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
   }
 }
 
+/** The midpoint of the arc segment from `a` to `b` with `bulge`. */
+export function bulgeMidpoint(a: Vec2, b: Vec2, bulge: number): Vec2 {
+  // The sagitta, bulge × half the chord, off the chord's midpoint to its right for a positive
+  // (counterclockwise) bulge.
+  const m = midpoint(a, b);
+  const h = sub(b, a);
+  return { x: m.x + (h.y * bulge) / 2, y: m.y - (h.x * bulge) / 2 };
+}
+
+/**
+ * The bulge of the arc from `a` through `p` to `b`: 0 when they are in line (or `p` is on an
+ * end), as the segment is then straight.
+ */
+export function bulgeThrough(a: Vec2, p: Vec2, b: Vec2): number {
+  const arc = arcThrough(a, p, b);
+  if (!arc || sameGrip(p, a) || sameGrip(p, b)) return 0;
+  const sa = angleOf(sub(a, arc.center));
+  const sp = angleOf(sub(p, arc.center));
+  const sb = angleOf(sub(b, arc.center));
+  // Counterclockwise from a, p before b: the arc runs counterclockwise.
+  const sweep = ccwSweep(sa, sp) < ccwSweep(sa, sb) ? ccwSweep(sa, sb) : -ccwSweep(sb, sa);
+  return Math.tan(sweep / 4);
+}
+
 /** Two grip points are one: the point a grip was found at is read from the same geometry. */
 export const sameGrip = (a: Vec2, b: Vec2): boolean =>
   distance(a, b) <= 1e-9 * Math.max(1, Math.abs(a.x), Math.abs(a.y));
 
 /** The arc through three points, as centre, radius and CCW angles from `a` to `c`. */
-function arcThrough(a: Vec2, b: Vec2, c: Vec2) {
+export function arcThrough(a: Vec2, b: Vec2, c: Vec2) {
   const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
   const scale = Math.max(distance(a, b), distance(b, c), distance(a, c));
   if (!(Math.abs(d) > 1e-12 * scale * scale)) return undefined;
@@ -273,6 +301,22 @@ export function moveGrip(
       if (geom.kind !== 'MTEXT') return { kind: 'none' };
       const shaped = moveColumnGrip(geom, grip, d);
       return shaped ? { kind: 'shape', geom: shaped } : { kind: 'none' };
+    }
+    case 'arcSegment': {
+      if (geom.kind !== 'LWPOLYLINE' && geom.kind !== 'POLYLINE') return { kind: 'none' };
+      const v = geom.vertices;
+      const i = v.findIndex((a, k) => {
+        const b = v[(k + 1) % v.length]!;
+        return (
+          (geom.closed || k < v.length - 1) &&
+          a.bulge !== 0 &&
+          sameGrip(bulgeMidpoint(a, b, a.bulge), grip)
+        );
+      });
+      if (i < 0) return { kind: 'none' };
+      const bulge = bulgeThrough(v[i]!, to, v[(i + 1) % v.length]!);
+      const vertices = v.map((p, k) => (k === i ? { ...p, bulge } : p));
+      return { kind: 'shape', geom: { ...geom, vertices } };
     }
     case 'segment': {
       if (geom.kind !== 'LWPOLYLINE' && geom.kind !== 'POLYLINE') return { kind: 'none' };
