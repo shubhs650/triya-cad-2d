@@ -38,6 +38,7 @@ import {
 import { multiLeaderLeaderChange } from './multileader-leaders';
 import { multiLeaderBlockChange } from './multileader-block';
 import { multiLeaderMiscChange } from './multileader-misc';
+import { STYLE_KEY, multiLeaderStyleChange, multiLeaderStylesToMeasure } from './multileader-style';
 import type { GeneralProps } from './sheet';
 import { DIMVAR_DEFAULTS, DIMVAR_ROWS, dimensionUnits, rowVars } from './dimension';
 import {
@@ -181,6 +182,10 @@ function typeRowChange(
   const g = e.geom;
   if (g.kind === 'HATCH') return hatchChange(e.id, g, key, v, patterns);
   if (g.kind === 'MULTILEADER') {
+    // M2-35 part 28: another Multileader style.
+    const restyled = multiLeaderStyleChange(model, e, key, v, widths);
+    if (restyled === 'invalid' || (restyled && 'skip' in restyled)) return restyled;
+    if (restyled) return 'refuse' in restyled ? restyled : geomPatch(restyled);
     const c =
       multiLeaderLeaderChange(model, e, key, v) ??
       multiLeaderBlockChange(model, e, key, v) ??
@@ -866,6 +871,7 @@ export function multiLeaderTextsToMeasure(
   entities: readonly Entity[],
   edit: PropertyEdit,
 ): ReturnType<typeof multiLeadersToMeasure> {
+  if (edit.key === STYLE_KEY) return multiLeaderStylesToMeasure(model, entities, edit.value);
   const read = readDistance(model, entities, edit);
   return read ? multiLeadersToMeasure(model, entities, read.key, read.value) : [];
 }

@@ -1429,7 +1429,7 @@ function multiLeaderBlockRows(model: DocumentModel, es: readonly Entity[]): Prop
   ];
 }
 
-/** A multileader's Misc rows (M2-35 part 25, `multileader-misc.ts`). */
+/** A multileader's Misc rows (M2-35 parts 25 and 28, `multileader-misc.ts`, `multileader-style.ts`). */
 function multiLeaderMiscRows(model: DocumentModel, es: readonly Entity[]): PropertyRow[] {
   const g = (e: Entity) => geomOf<'MULTILEADER'>(e);
   const styles = [...model.tables.mleaderStyles.values()]
@@ -1440,7 +1440,7 @@ function multiLeaderMiscRows(model: DocumentModel, es: readonly Entity[]): Prope
       key: 'mleaderStyle',
       label: 'Multileader style',
       kind: 'choice',
-      readOnly: true,
+      // M2-35 part 28: another style re-applies its values (`multileader-style.ts`).
       options: styles,
       get: (e) => g(e).style ?? '',
     }),

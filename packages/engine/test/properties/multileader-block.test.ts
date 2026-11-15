@@ -472,7 +472,6 @@ describe('a multileader’s Misc rows (M2-35 part 25)', () => {
         label: 'Multileader style',
         kind: 'choice',
         value: STANDARD,
-        readOnly: true,
         options: [
           { value: '42', label: 'Callouts' },
           { value: STANDARD, label: 'Standard' },

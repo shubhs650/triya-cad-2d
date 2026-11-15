@@ -1173,3 +1173,79 @@ test('edits two gradient hatches’ name, colour, angle and centring, and lets t
   await page.mouse.move(300, 640);
   await page.screenshot({ path: test.info().outputPath('2-spherical-orange-45.png') });
 });
+
+// M2-35 part 28: another Multileader style chosen in the palette gives the multileader that
+// style's values where it overrides none: ezdxf's text.dxf makes ML_5 (text 5 at scale 1)
+// current, and holds Standard (text 4) and ML_3 (text 0.25 drawn at scale 12).
+test('gives a multileader another multileader style from the palette', async ({ page }) => {
+  test.setTimeout(120_000);
+  const file = path.join(CORPUS, 'ezdxf/examples_dxf/text.dxf');
+  await page.goto(app.url);
+  await openWithPicker(page, file);
+  await expectShown(page, path.basename(file));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '-40,-40', 'Specify opposite corner:');
+  await type(page, '120,60', 'Command:');
+  await type(page, 'MLD', /^Specify leader arrowhead location/);
+  await type(page, '0,-10', 'Specify leader landing location:');
+  await type(page, '20,20', 'Enter text:');
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('GATE VALVE');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  const leader = () =>
+    page.evaluate(() => {
+      let g: MultiLeaderGeometry | undefined;
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const a of cs.entities?.added ?? [])
+          if (a.entity.geom.kind === 'MULTILEADER') g = a.entity.geom;
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'MULTILEADER') g = u.after.geom;
+      }
+      return g;
+    });
+  await expect.poll(async () => (await leader())?.text?.height).toBe(5);
+  const placed = (await leader())!;
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/MultiLeader \(1\)/);
+  await objects.selectOption({ label: 'MultiLeader (1)' });
+  const style = palette.getByRole('combobox', { name: 'Multileader style' });
+  await expect(style).toBeEnabled();
+  await expect(style.locator('option:checked')).toHaveText('ML_5');
+  await style.scrollIntoViewIfNeeded();
+  await page.mouse.move(300, 560);
+  await page.screenshot({ path: test.info().outputPath('1-ml-5.png') });
+
+  await style.selectOption({ label: 'Standard' });
+  await expect.poll(async () => (await leader())?.text?.height).toBe(4);
+  const standard = (await leader())!;
+  expect(standard.style).not.toBe(placed.style);
+  expect(standard.overrideFlags).toBe(placed.overrideFlags);
+  // The text's left edge stays a gap from the landing.
+  expect(standard.text!.position.x).toBeCloseTo(placed.text!.position.x, 6);
+  await expect(style.locator('option:checked')).toHaveText('Standard');
+  await style.scrollIntoViewIfNeeded();
+  await page.mouse.move(300, 560);
+  await page.screenshot({ path: test.info().outputPath('2-standard.png') });
+
+  await style.selectOption({ label: 'ML_3' });
+  await expect.poll(async () => (await leader())?.scale).toBe(12);
+  expect((await leader())!.text!.height).toBeCloseTo(3, 9);
+  await expect(palette.getByRole('textbox', { name: 'Overall scale', exact: true })).toHaveValue(
+    /^12(\.0+)?$/,
+  );
+  await style.scrollIntoViewIfNeeded();
+  await page.mouse.move(300, 560);
+  await page.screenshot({ path: test.info().outputPath('3-ml-3-at-12.png') });
+
+  // One undo step each.
+  await activeCanvas(page).hover();
+  await type(page, 'U', 'Command:');
+  await expect.poll(async () => (await leader())?.text?.height).toBe(4);
+});
