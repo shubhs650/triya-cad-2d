@@ -1234,8 +1234,10 @@ export class CanvasController {
       this.#requestFrame();
       return;
     }
+    // A band the prompt does not draw (RECTANG's: its drag is the rectangle, M3-01 part 3).
+    const drawn = !(p?.kind === 'point' && p.rubberBand?.drawn === false);
     const band: RenderPrimitive[] =
-      from && cursor && this.#mode === 'none'
+      from && cursor && drawn && this.#mode === 'none'
         ? [
             {
               kind: 'stroke',

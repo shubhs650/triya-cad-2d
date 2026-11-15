@@ -371,10 +371,11 @@ describe('PromptBus', () => {
       { kind: 'distance', value: 10 },
       { kind: 'distance', value: 5 },
       { kind: 'keyword', keyword: 'Diameter' },
-      { kind: 'distance', value: 5 },
-      { kind: 'distance', value: 2 },
-      { kind: 'distance', value: 7 },
-      { kind: 'distance', value: 5 },
+      // A distance given by points carries the second (M3-01 part 3, POLYGON's radius).
+      { kind: 'distance', value: 5, to: { x: 8, y: 9 } },
+      { kind: 'distance', value: 2, to: { x: 5, y: 7 } },
+      { kind: 'distance', value: 7, to: { x: 0, y: 7 } },
+      { kind: 'distance', value: 5, to: { x: 4, y: 5 } },
     ]);
   });
 
@@ -574,7 +575,7 @@ describe('PromptBus', () => {
     expect(bus.lastPoint).toEqual({ x: 2, y: 1 });
     await bus.cancel();
     await bus.script(['DIST', 'm2p', '0,0', '2,0', '1,3']);
-    expect(got.at(-1)).toEqual({ kind: 'distance', value: 3 });
+    expect(got.at(-1)).toEqual({ kind: 'distance', value: 3, to: { x: 1, y: 3 } });
   });
 
   it('asks "of" after a typed object snap override, keeping the rubber band (M2-04)', async () => {
@@ -633,7 +634,7 @@ describe('PromptBus', () => {
     expect(bus.prompt).toMatchObject({ kind: 'point', osnap: OSNAP.INT });
     await bus.pick({ x: 1, y: 1 });
     await bus.script(['@0,4']);
-    expect(got.at(-1)).toEqual({ kind: 'distance', value: 4 });
+    expect(got.at(-1)).toEqual({ kind: 'distance', value: 4, to: { x: 1, y: 5 } });
   });
 
   it('takes a number at a rubber band as a direct distance towards the cursor', async () => {

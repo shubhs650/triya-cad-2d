@@ -25,7 +25,7 @@ import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { currentProps } from '../../properties/current';
 import { lastDrawn, type LastDrawn } from './last-drawn';
-import { sketchTolerance, type Sketch } from './sketch';
+import { sketchTolerance, type ArcSketch } from './sketch';
 import {
   arcEnd,
   arcStartCenterAngle,
@@ -40,7 +40,6 @@ import {
 } from '../../geom/construct';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
-type ArcSketch = Exclude<Sketch, { shape: 'circle' | 'circle2p' | 'circle3p' }>;
 
 export const INVALID_ARC = '*Invalid*';
 
