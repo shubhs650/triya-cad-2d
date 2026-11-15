@@ -22,7 +22,8 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Entity, EntityGeometry } from '../model/types';
-import { copyObjects, copyProblem, eraseObjects, reshapeObject } from './edit';
+import { AnonymousNames, copyObjects, copyProblem, eraseObjects, reshapeObject } from './edit';
+import { normalizeAngle } from '../geom/angle';
 import { cleanPolyline } from './offset';
 import { similarity, type Similarity } from './similarity';
 
@@ -49,6 +50,8 @@ export function explodeObjects(
   const refused = new Map<string, number>();
   let exploded = 0;
   let lostWidth = false;
+  // The `*D` blocks of dimensions copied out of blocks are named afresh across the whole edit.
+  const names = new AnonymousNames(model);
   for (const id of ids) {
     const e = b.entity(id);
     if (!e) continue;
@@ -85,6 +88,7 @@ export function explodeObjects(
           problem,
           { mirrorText: true, mirrorHatch: true },
           e.owner,
+          names,
         );
         made.push(...r.ids);
         eraseObjects(b, model, [id]);
@@ -100,7 +104,7 @@ export function explodeObjects(
         }
         const contents = b.blockEntities(g.block);
         const identity = similarity(translation(0, 0));
-        const r = copyObjects(b, model, contents, identity, {}, e.owner);
+        const r = copyObjects(b, model, contents, identity, {}, e.owner, names);
         for (const c of r.ids) asDrawnBy(b, model, c, e);
         made.push(...r.ids);
         eraseObjects(b, model, [id]);
@@ -127,7 +131,17 @@ function polylinePieces(g: Extract<EntityGeometry, { kind: 'LWPOLYLINE' | 'POLYL
     ...(g.thickness !== undefined && g.thickness !== 0 && { thickness: g.thickness }),
     ...(g.normal !== undefined && !flat && { normal: g.normal }),
   };
-  return explodePolyline(curve).map((piece): EntityGeometry => ({ ...piece, ...planar }));
+  // Arc angles in [0, 2π), as the file has them.
+  return explodePolyline(curve).map((piece): EntityGeometry =>
+    piece.kind === 'ARC'
+      ? {
+          ...piece,
+          startAngle: normalizeAngle(piece.startAngle),
+          endAngle: normalizeAngle(piece.endAngle),
+          ...planar,
+        }
+      : { ...piece, ...planar },
+  );
 }
 
 function hasWidth(g: Extract<EntityGeometry, { kind: 'LWPOLYLINE' | 'POLYLINE' }>): boolean {

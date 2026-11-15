@@ -91,7 +91,11 @@ class Links {
   constructor(b: ChangeSetBuilder, model: DocumentModel) {
     this.#b = b;
     this.#model = model;
-    const all = [...model.objects.values()];
+    // As the builder has them: an edit that erased objects before has updated them already.
+    const all = [...model.objects.values()].flatMap((o) => {
+      const now = b.object(o.handle);
+      return now ? [now] : [];
+    });
     this.assocs = all.filter((o): o is DimAssoc => o.type === 'DIMASSOC');
     this.groups = all.filter((o): o is Group => o.type === 'GROUP');
   }
@@ -512,10 +516,11 @@ export function copyObjects(
   o: TransformOptions = {},
   /** Where the copies go: each object's own space unless given (EXPLODE copies a block's out). */
   into?: Handle,
+  /** The anonymous block names taken so far in this edit (EXPLODE copies out of many blocks). */
+  names: AnonymousNames = new AnonymousNames(model),
 ): EditReport {
   const refused = new Map<string, number>();
   const copies = new Map<Handle, Entity>();
-  const names = new AnonymousNames(model);
   let unannotated = 0;
   for (const id of ids) {
     const e = b.entity(id);
