@@ -34,6 +34,7 @@ import { engines } from './engine/registry';
 import { SelectColorDialog } from './SelectColorDialog';
 import { MatchPropDialog } from './MatchPropDialog';
 import { PointStyleDialog } from './PointStyleDialog';
+import { OverkillDialog } from './OverkillDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -61,6 +62,8 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
       return <MatchPropDialog key={key} doc={doc.id} request={d} />;
     case 'pointstyle':
       return <PointStyleDialog key={key} doc={doc.id} request={d} />;
+    case 'overkill':
+      return <OverkillDialog key={key} doc={doc.id} request={d} />;
   }
 }
 
