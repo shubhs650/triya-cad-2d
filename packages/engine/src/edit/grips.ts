@@ -27,7 +27,8 @@
 //   place of its block reference's insertion point.
 // - an ellipse's axis ends, an elliptical arc's ends, a hatch's control grip and a layout
 //   viewport's corners (M3-05 part 3): `shape-grips.ts`.
-// Multileaders, multilines and regions have no grips yet.
+// - a multiline's vertices, a multileader's leader vertices, landing and content, a region's
+//   centre and a non-associative hatch's boundary vertices (M3-05 part 6): `object-grips.ts`.
 import { ccwSweep } from '../geom/angle';
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, fromAngle, midpoint, sub } from '../geom/vec';
@@ -45,6 +46,16 @@ import {
   viewportCorners,
 } from './shape-grips';
 import { stretchGeometry, type StretchResult } from './stretch';
+import {
+  hatchBoundaryGrips,
+  mlineGrips,
+  moveHatchVertex,
+  moveLanding,
+  moveLeaderVertex,
+  moveMlineVertex,
+  multileaderGrips,
+  regionGripPoint,
+} from './object-grips';
 
 export type GripKind =
   /** Stretches the point (and any of the object's points on it). */
@@ -76,7 +87,15 @@ export type GripKind =
   /** An elliptical arc's end: it moves along the ellipse. */
   | 'ellipseEnd'
   /** A layout viewport's corner: the viewport is resized about the opposite one. */
-  | 'viewport';
+  | 'viewport'
+  /** A multiline's vertex: its segments turn (M3-05 part 6). */
+  | 'mlineVertex'
+  /** A multileader's leader line vertex (its arrowhead too): it moves alone. */
+  | 'leaderVertex'
+  /** A multileader's landing end or content: the landings and the content move together. */
+  | 'landing'
+  /** A non-associative hatch's boundary vertex: the boundary stretches. */
+  | 'boundary';
 
 export interface Grip {
   readonly point: Vec2;
@@ -192,6 +211,21 @@ export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
       ];
     case 'HATCH': {
       const at = hatchGripPoint(geom);
+      if (!at) return [];
+      return [g(at, 'move'), ...hatchBoundaryGrips(geom).map((p) => g(p, 'boundary'))];
+    }
+    case 'MLINE':
+      return mlineGrips(geom).map((p) => g(p, 'mlineVertex'));
+    case 'MULTILEADER': {
+      const m = multileaderGrips(geom);
+      const out = m.vertices.map((p) => g(p, 'leaderVertex'));
+      for (const p of m.landing) {
+        if (!out.some((x) => sameGrip(x.point, p))) out.push(g(p, 'landing'));
+      }
+      return out;
+    }
+    case 'REGION': {
+      const at = regionGripPoint(geom);
       return at ? [g(at, 'move')] : [];
     }
     case 'VIEWPORT':
@@ -355,6 +389,24 @@ export function moveGrip(
             : undefined;
       return shaped ? { kind: 'shape', geom: shaped } : { kind: 'none' };
     }
+    case 'mlineVertex': {
+      if (geom.kind !== 'MLINE') return { kind: 'none' };
+      const i = geom.vertices.findIndex((v) => sameGrip(v.position, grip));
+      const shaped = i < 0 ? undefined : moveMlineVertex(geom, i, to);
+      return shaped ? { kind: 'shape', geom: shaped } : { kind: 'none' };
+    }
+    case 'leaderVertex':
+      return geom.kind === 'MULTILEADER'
+        ? { kind: 'shape', geom: moveLeaderVertex(geom, grip, d) }
+        : { kind: 'none' };
+    case 'landing':
+      return geom.kind === 'MULTILEADER'
+        ? { kind: 'shape', geom: moveLanding(geom, d) }
+        : { kind: 'none' };
+    case 'boundary':
+      return geom.kind === 'HATCH'
+        ? { kind: 'shape', geom: moveHatchVertex(geom, grip, d) }
+        : { kind: 'none' };
     case 'radius': {
       if (geom.kind !== 'CIRCLE') return { kind: 'none' };
       const radius = distance(geom.center, to);

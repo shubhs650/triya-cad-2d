@@ -47,6 +47,7 @@ import type {
   EntityGeometry,
   HatchGeometry,
   LwPolylineGeometry,
+  MultiLeaderGeometry,
   PolylineGeometry,
   PolylineVertex,
 } from '../model/types';
@@ -54,6 +55,7 @@ import type { GripInfo } from './array-grips';
 import { breakCurveOf, lengthenGeometry, lengthTo } from './break';
 import { dimensionDirection, dimensionLineEnds } from './dimension';
 import { relaidLines } from './hatch-lines';
+import { landingEndAt, lengthenLanding } from './object-grips';
 import { arcThrough, bulgeMidpoint, bulgeThrough, gripsOf, moveGrip, sameGrip } from './grips';
 import type { StretchResult } from './stretch';
 
@@ -78,7 +80,8 @@ export type GripFunction =
   | 'Move with Leader'
   | 'Above Dim Line'
   | 'Center Vertically'
-  | 'Reset Text Position';
+  | 'Reset Text Position'
+  | 'Lengthen Landing';
 
 /** The functions that take no point: they act at once, and Ctrl passes them by. */
 export const IMMEDIATE_FUNCTIONS: ReadonlySet<GripFunction> = new Set<GripFunction>([
@@ -226,7 +229,10 @@ export function gripFunctionsOf(
       ];
     }
     case 'HATCH':
-      return patterned(geom) ? HATCH_FUNCTIONS : [];
+      return found.kind === 'move' && patterned(geom) ? HATCH_FUNCTIONS : [];
+    case 'MULTILEADER':
+      // The landing's far end (M3-05 part 6).
+      return landingEndAt(geom, grip) ? ['Stretch', 'Lengthen Landing'] : [];
     case 'DIMENSION':
       if (!isLinearDimension(geom)) return [];
       if (found.kind === 'dimline') return DIMENSION_LINE_FUNCTIONS;
@@ -386,6 +392,11 @@ export function gripFunctionEdit(
     case 'Continue Dimension':
     case 'Baseline Dimension':
       return 'invalid';
+    case 'Lengthen Landing': {
+      const m = geom as MultiLeaderGeometry;
+      const r = lengthenLanding(m, landingEndAt(m, grip)!, to);
+      return r ?? 'invalid';
+    }
     case 'Origin Point': {
       const h = geom as HatchGeometry;
       const d = sub(to, h.patternLines[0]!.base);

@@ -264,6 +264,95 @@ describe('Ctrl-copy at the grip modes', () => {
     );
   });
 
+  // M3-05 part 6, "To Make Multiple Copies with Grips": once a copy is placed, holding Ctrl
+  // snaps the later ones to multiples of its offset (Offset Snap) or, rotating, of its angle
+  // (Rotation Snap). Help does not say whether the offset snaps along the first copy's line or
+  // as a grid: here along its line, copies evenly spaced the common expectation.
+  it('Ctrl snaps later copies to the first copy’s offset', async () => {
+    const s = setup();
+    await s.select('43');
+    await s.bus.pick({ x: 50, y: 0 }, { grip: 0.25 });
+    expect(s.bus.prompt?.offsetSnap).toBeUndefined();
+    await s.bus.pick({ x: 60, y: 0 }, { ctrl: true });
+    // The prompt says so, for the drag preview.
+    expect(s.bus.prompt?.offsetSnap).toEqual({
+      kind: 'offset',
+      from: { x: 50, y: 0 },
+      step: { x: 10, y: 0 },
+    });
+    await s.bus.pick({ x: 78, y: 3 }, { ctrl: true });
+    // Without Ctrl, where it is clicked.
+    await s.bus.pick({ x: 73, y: 4 });
+    // The other way too; never on the original.
+    await s.bus.pick({ x: 48, y: 1 }, { ctrl: true });
+    await s.bus.submit('');
+    expect(s.circles().sort()).toEqual(
+      [
+        [50, 0],
+        [60, 0],
+        [80, 0],
+        [73, 4],
+        [40, 0],
+      ].sort(),
+    );
+  });
+
+  it('in MOVE from the base point, and ROTATE snaps to the first copy’s angle', async () => {
+    const s = setup();
+    await s.select('43');
+    await s.bus.pick({ x: 50, y: 0 }, { grip: 0.25 });
+    await s.bus.script(['', 'B', '40,0']);
+    await s.bus.pick({ x: 43, y: 4 }, { ctrl: true });
+    await s.bus.pick({ x: 48, y: 7 }, { ctrl: true });
+    await s.bus.submit('X');
+    expect(s.circles().sort()).toEqual(
+      [
+        [50, 0],
+        [53, 4],
+        [56, 8],
+      ].sort(),
+    );
+    await s.bus.pick({ x: 50, y: 0 }, { grip: 0.25 });
+    await s.bus.script(['', '', 'B', '40,0']);
+    await s.bus.pick({ x: 40, y: 10 }, { ctrl: true });
+    expect(s.bus.prompt?.offsetSnap).toMatchObject({
+      kind: 'rotation',
+      base: { x: 40, y: 0 },
+    });
+    // 171.5° snaps to 180°.
+    await s.bus.pick({ x: 30, y: 1.5 }, { ctrl: true });
+    await s.bus.submit('');
+    expect(s.circles().sort()).toEqual(
+      [
+        [50, 0],
+        [53, 4],
+        [56, 8],
+        [40, 10],
+        [30, 0],
+      ].sort(),
+    );
+  });
+
+  it('a typed point is not snapped, and SCALE and MIRROR have no snap', async () => {
+    const s = setup();
+    await s.select('43');
+    await s.bus.pick({ x: 50, y: 0 }, { grip: 0.25 });
+    await s.bus.pick({ x: 60, y: 0 }, { ctrl: true });
+    await s.bus.submit('77,0');
+    await s.bus.submit('');
+    expect(s.circles().sort()).toEqual(
+      [
+        [50, 0],
+        [60, 0],
+        [77, 0],
+      ].sort(),
+    );
+    await s.bus.pick({ x: 50, y: 0 }, { grip: 0.25 });
+    await s.bus.script(['', '', '', 'B', '40,0']);
+    await s.bus.pick({ x: 42, y: 0 }, { ctrl: true });
+    expect(s.bus.prompt?.offsetSnap).toBeUndefined();
+  });
+
   it('Ctrl does not copy at a function’s prompt', async () => {
     const s = setup();
     await s.select('40');
