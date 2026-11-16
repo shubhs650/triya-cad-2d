@@ -33,6 +33,7 @@
 import {
   applyPoint,
   arrayGripPreview,
+  tableGridLines,
   assocArrayOf,
   stretchInside,
   invert,
@@ -840,9 +841,20 @@ export class Canvas2DRenderer implements Renderer {
       for (const id of g.ids) {
         const e = this.#model.entity(id);
         if (!e || !this.#cache[id]) continue;
-        const r = moveGripBy(e.geom, g.from, g.to, gripInfoOf(this.#model, e), g.fn);
+        const info = gripInfoOf(this.#model, e);
+        const r = moveGripBy(e.geom, g.from, g.to, info, g.fn);
         if (r.kind === 'move') gripMoved.push(this.#cache[id]);
         if (r.kind !== 'shape') continue;
+        if (r.geom.kind === 'ACAD_TABLE') {
+          // A table's grip sizes its rows or columns (M4-05 part 4): its grid as it would be,
+          // its block being drawn again only once the grip is placed.
+          const style = info && 'tableStyle' in info ? info.tableStyle : undefined;
+          for (const line of tableGridLines(r.geom, style)) {
+            const entry = this.#entryOf({ ...e, geom: line }, id, this.#model, this.#blockSource);
+            if (entry) stretched.push(entry);
+          }
+          continue;
+        }
         // A dimension's grip reshapes it and the engine regenerates it (M2-11): drawn afresh.
         // A column grip's dynamic columns take what the text needs, as they will (M2-26 part 2).
         const geom = recounted(unblocked(r.geom), this.#tessellate.text);

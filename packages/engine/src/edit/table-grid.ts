@@ -31,9 +31,16 @@ export interface TableCellRange {
 /** How Merge Cells merges a range: into one cell, a cell per row, or a cell per column. */
 export type TableMerge = 'all' | 'rows' | 'columns';
 
-/** The options of the Table Cell menu, in its order, as typed at the command line. */
+/**
+ * The options of the Table Cell menu, in its order, as typed at the command line: the cell's
+ * text, its formatting (M4-05 part 4), then rows, columns and merging.
+ */
 export const TABLE_CELL_OPTIONS = [
   'Text',
+  'BAckground',
+  'ALignment',
+  'BOrders',
+  'Height',
   'Above',
   'Below',
   'DeleteRows',
@@ -285,6 +292,10 @@ export function tableCellOptions(
   );
   const on: Record<TableCellOption, boolean> = {
     Text: true,
+    BAckground: true,
+    ALignment: true,
+    BOrders: true,
+    Height: true,
     Above: r.r0 >= first,
     Below: r.r1 + 1 >= first,
     DeleteRows: r.r0 >= first && r.r1 - r.r0 + 1 < rows,
