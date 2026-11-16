@@ -107,7 +107,7 @@ const at = (i: number, j: number) => ({
 });
 
 const OPTIONS =
-  'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
 describe('a table cell selected at Command:', () => {
   it('is a click inside it, shown by its outline, with the Table Cell options', async () => {
@@ -137,6 +137,8 @@ describe('a table cell selected at Command:', () => {
       'Alignment',
       'Borders',
       'Text Height',
+      'Match Cell',
+      'Remove All Property Overrides (off)',
       'Insert Rows Above',
       'Insert Rows Below',
       'Delete Rows',
@@ -510,6 +512,58 @@ describe('the Table Cell menu’s formatting (M4-05 part 4)', () => {
     expect(s.bus.command).toBe('TABLECELL');
     await s.bus.submit('MA');
     expect(s.table().geom.cells[2]![0]).toMatchObject({ rowSpan: 3, columnSpan: 2 });
+  });
+});
+
+describe('Match Cell and Remove All Property Overrides (M4-05 part 7)', () => {
+  it('match the cells clicked to the first cell selected, until Enter, in one undo step', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('AL');
+    await s.bus.submit('MR');
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('BA');
+    await s.bus.submit('yellow');
+    const source = { alignment: 6, background: { kind: 'aci', index: 2 } };
+    expect(formatOf(s, 2, 0)).toEqual(source);
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('M');
+    expect(s.bus.promptText).toBe('Select destination cell:');
+    await s.bus.pick(at(3, 1));
+    expect(formatOf(s, 3, 1)).toEqual(source);
+    // A click outside the table says so and asks again; the merged title takes it whole.
+    await s.bus.pick({ x: 500, y: 500 });
+    expect(s.messages.at(-1)).toBe('Select a cell of the same table.');
+    await s.bus.pick(at(0, 0));
+    expect(formatOf(s, 0, 0)).toEqual(source);
+    expect(formatOf(s, 0, 1)).toEqual(source);
+    await s.bus.submit('');
+    expect(s.bus.promptText).toBe('Command:');
+    await s.bus.submit('U');
+    expect(formatOf(s, 3, 1)).toBeUndefined();
+    expect(formatOf(s, 0, 0)).toBeUndefined();
+    expect(formatOf(s, 2, 0)).toEqual(source);
+  });
+
+  it('removes what the cells selected override, offered only where they override something', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.pick(at(3, 1), { shift: true });
+    await s.bus.submit('AL');
+    await s.bus.submit('BL');
+    await s.bus.pick(at(2, 1));
+    const menu = s.prompt()!.shortcutMenu!;
+    expect(menu.find((m) => m.keyword === 'RemoveOverrides')!.disabled).toBeUndefined();
+    await s.bus.submit('RO');
+    expect(s.bus.promptText).toBe('Command:');
+    expect(formatOf(s, 2, 1)).toBeUndefined();
+    expect(formatOf(s, 2, 0)).toEqual({ alignment: 7 });
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('RO');
+    expect(s.messages.at(-1)).toBe('The cells selected override nothing of their cell style.');
+    expect(s.bus.promptText).toBe(OPTIONS);
   });
 });
 

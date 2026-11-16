@@ -180,3 +180,52 @@ export function tableTextScaled(
   };
   return { ...g, cells, overrides: { ...g.overrides, margins } };
 }
+
+/** Cell `c` with `format` as its format, none when it is undefined or empty. */
+function withFormat(c: TableCell, format: TableCellFormat | undefined): TableCell {
+  const { format: _, ...rest } = c;
+  return format && Object.keys(format).length > 0 ? { ...rest, format } : rest;
+}
+
+/**
+ * Table `g` with the cells of range `r` overriding nothing of their cell style (AutoCAD's Table
+ * Cell tab and cell shortcut menu, Remove All Property Overrides, M4-05 part 7): each keeps only
+ * what the table itself overrides for its row type (`TableGeometry.overrides`), which the file
+ * states for the table, not the cell. The text and merges stay.
+ */
+export function withCellOverridesRemoved(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  r: TableCellRange,
+): TableGeometry {
+  const types = tableRowTypes(style, g.cells.length);
+  const cells: Cells = g.cells.map((row, i) =>
+    i < r.r0 || i > r.r1
+      ? [...row]
+      : row.map((c, j) => {
+          if (j < r.c0 || j > r.c1) return c;
+          const table = g.overrides?.[types[i]!];
+          return withFormat(c, table && { ...table });
+        }),
+  );
+  return { ...g, cells };
+}
+
+/**
+ * Table `g` with the cells of range `r` formatted as cell `from` is (AutoCAD's Match Cell, M4-05
+ * part 7): its whole format, none where it has none. The value's data format (`valueFormat`) is
+ * not matched: a save can only keep the one a cell came with.
+ */
+export function withCellMatched(
+  g: TableGeometry,
+  from: readonly [number, number],
+  r: TableCellRange,
+): TableGeometry {
+  const format = g.cells[from[0]]?.[from[1]]?.format;
+  const cells: Cells = g.cells.map((row, i) =>
+    i < r.r0 || i > r.r1
+      ? [...row]
+      : row.map((c, j) => (j < r.c0 || j > r.c1 ? c : withFormat(c, format))),
+  );
+  return { ...g, cells };
+}

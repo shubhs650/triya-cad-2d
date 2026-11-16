@@ -15,7 +15,8 @@
 // header row and the data rows. The command's prompts, the engine's drawing and the save are
 // unit- and corpus-tested in packages/engine and packages/testkit.
 // M4-05 part 7: keys typed straight on after Tab, before the next cell's editor opens, are typed
-// into that cell (AutoCAD's cell editor keeps them).
+// into that cell (AutoCAD's cell editor keeps them); the cell menu's Match Cell and Remove All
+// Property Overrides.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, TableGeometry } from '@triya/engine';
 import { activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
@@ -261,7 +262,7 @@ test('a click selects table cells and the right-click menu edits them', async ({
     return { x: box.x + s.x, y: box.y + s.y };
   };
   const options =
-    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
   const menu = page.getByRole('menu', { name: 'Table cell options' });
   const choose = async (item: string) => {
     await page.mouse.click(cell(3, 2).x, cell(3, 2).y, { button: 'right' });
@@ -343,7 +344,7 @@ test('cells dragged across are formatted from the menu, and a column grip resize
   const cell = (i: number, j: number) =>
     at(1.25 + 2.5 * j, i === 0 ? -0.2267 : i === 1 ? -0.6333 : -0.9933 - 0.36 * (i - 2));
   const options =
-    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
   // A press in cell (2, 1) dragged to cell (4, 2) selects the six cells.
   await page.mouse.move(cell(2, 1).x, cell(2, 1).y);
@@ -426,6 +427,89 @@ test('cells dragged across are formatted from the menu, and a column grip resize
   await shot('12-column-resized.png');
 });
 
+test('Match Cell formats the cells clicked; Remove All Property Overrides undoes it', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const box = (await activeCanvas(page).boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, p(-1, -3), 'Specify opposite corner:');
+  await type(page, p(11, 1), 'Command:');
+  await type(page, '-TABLE', 'Enter number of columns or [Auto] <5>:');
+  await type(page, '3', 'Enter number of rows or [Auto] <1>:');
+  await type(page, '2', 'Specify insertion point or [Style/Width/Height]:');
+  await type(page, p(0, 0), 'Enter text:');
+  for (const [k, text] of ['NOZZLES', 'Mark', 'Size', 'Service', 'N1', '2"', 'Inlet'].entries()) {
+    if (k > 0) await page.keyboard.press('Tab');
+    await page.keyboard.type(text);
+  }
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(async () => (await tables(page))[0]?.texts[2]).toEqual(['N1', '2"', 'Inlet']);
+
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => {
+    const s = view.at(O + x, O + y);
+    return { x: box.x + s.x, y: box.y + s.y };
+  };
+  const cell = (i: number, j: number) =>
+    at(1.25 + 2.5 * j, i === 0 ? -0.2267 : i === 1 ? -0.6333 : -0.9933 - 0.36 * (i - 2));
+  const options =
+    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  const menu = page.getByRole('menu', { name: 'Table cell options' });
+
+  // N1 filled and aligned middle left: the source.
+  await page.mouse.click(cell(2, 0).x, cell(2, 0).y);
+  await expect(prompt(page)).toHaveText(options);
+  await type(page, 'BA', 'Enter background fill color [None] <None>:');
+  await type(page, '51', 'Command:');
+  await page.mouse.click(cell(2, 0).x, cell(2, 0).y);
+  await type(page, 'AL', 'Enter cell alignment [TL/TC/TR/ML/MC/MR/BL/BC/BR] <TC>:');
+  await type(page, 'ML', 'Command:');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 40);
+  await page.waitForTimeout(300);
+  await shot('1-before-match-cell.png');
+
+  await page.mouse.click(cell(2, 0).x, cell(2, 0).y);
+  await expect(prompt(page)).toHaveText(options);
+  await page.mouse.click(cell(2, 0).x, cell(2, 0).y, { button: 'right' });
+  await menu.getByRole('menuitem', { name: 'Match Cell' }).click();
+  await expect(prompt(page)).toHaveText('Select destination cell:');
+  await page.mouse.click(cell(2, 1).x, cell(2, 1).y);
+  await page.mouse.click(cell(1, 2).x, cell(1, 2).y);
+  const source = { background: { kind: 'aci', index: 51 }, alignment: 4 };
+  await expect
+    .poll(async () => (await tables(page))[0]?.formats.slice(1, 3))
+    .toEqual([
+      [undefined, undefined, source],
+      [source, source, undefined],
+    ]);
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 40);
+  await page.waitForTimeout(300);
+  await shot('2-after-match-cell.png');
+
+  await page.mouse.click(cell(1, 2).x, cell(1, 2).y);
+  await expect(prompt(page)).toHaveText(options);
+  await page.mouse.click(cell(1, 2).x, cell(1, 2).y, { button: 'right' });
+  await menu.getByRole('menuitem', { name: 'Remove All Property Overrides' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(async () => (await tables(page))[0]?.formats[1]?.[2]).toBeUndefined();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 40);
+  await page.waitForTimeout(300);
+  await shot('3-after-remove-overrides.png');
+});
+
 test('a cell grip sizes its column, Ctrl+V pastes cells, Ctrl sizes the table', async ({
   page,
 }) => {
@@ -462,7 +546,7 @@ test('a cell grip sizes its column, Ctrl+V pastes cells, Ctrl sizes the table', 
   const cell = (i: number, j: number) =>
     at(1.25 + 2.5 * j, i === 0 ? -0.2267 : i === 1 ? -0.6333 : -0.9933 - 0.36 * (i - 2));
   const options =
-    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
   const widths = async () => (await tables(page))[0]?.columns.map((w) => Math.round(w * 100) / 100);
 
   // Cell (2, 1) selected shows four grips; its right one drags the column's right edge.
