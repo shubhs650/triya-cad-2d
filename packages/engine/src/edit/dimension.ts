@@ -107,6 +107,43 @@ export type DimPlacement =
       readonly line2: readonly [Vec2, Vec2];
       readonly quadrant?: Vec2;
       readonly base: NewDimension;
+    }
+  /**
+   * DIMORDINATE (M4-02): the location is the leader end; `axis` fixed by Xdatum or Ydatum, else
+   * chosen by it. Measured from the origin of `ucs`, the UCS current when it is made.
+   */
+  | {
+      readonly kind: 'ordinate';
+      readonly feature: Vec2;
+      readonly ucs: { readonly origin: Vec2; readonly angle: number };
+      readonly axis?: 'x' | 'y';
+      readonly base: NewDimension;
+    }
+  /**
+   * DIMJOGGED (M4-02): the location is the dimension line location (the text), until it is
+   * given as `location`; then the jog's.
+   */
+  | {
+      readonly kind: 'jogged';
+      readonly center: Vec2;
+      readonly radius: number;
+      readonly overrideCenter: Vec2;
+      readonly location?: Vec2;
+      readonly base: NewDimension;
+    }
+  /**
+   * DIMARC (M4-02): the arc measured, counter-clockwise from `startAngle` to `endAngle` (only
+   * part of the one selected when `partial`), with a leader when `leader`.
+   */
+  | {
+      readonly kind: 'arc';
+      readonly center: Vec2;
+      readonly radius: number;
+      readonly startAngle: number;
+      readonly endAngle: number;
+      readonly partial?: boolean;
+      readonly leader?: boolean;
+      readonly base: NewDimension;
     };
 
 /** The current dimension style (DIMSTYLE): `$DIMSTYLE`'s, else STANDARD, else the first. */
@@ -267,6 +304,77 @@ export function placeDimension(p: DimPlacement, at: Vec2): DimensionGeometry | u
         line2Start: c,
         definitionPoint: d,
         arcPoint: locked ? towards(centre, q, distance(at, centre)) : at,
+      };
+    }
+    case 'ordinate': {
+      // "If the difference in the Y coordinate is greater, the dimension measures the X
+      // coordinate. Otherwise, it measures the Y coordinate" (AutoCAD 2024 Help, DIMORDINATE),
+      // in the UCS: the leader runs across the axis measured.
+      const run = sub(at, p.feature);
+      if (length(run) === 0) return undefined;
+      const x = fromAngle(p.ucs.angle);
+      const dx = Math.abs(dot(run, x));
+      const dy = Math.abs(dot(run, perp(x)));
+      const axis = p.axis ?? (dy > dx ? 'x' : 'y');
+      return {
+        kind: 'DIMENSION',
+        ...fields,
+        // DXF 51 is "the negative of the angle between the OCS X axis and the UCS X axis".
+        horizontalDirection: p.ucs.angle === 0 ? 0 : -p.ucs.angle,
+        dimType: 'ordinate',
+        axis,
+        definitionPoint: p.ucs.origin,
+        feature: p.feature,
+        leaderEnd: at,
+      };
+    }
+    case 'jogged': {
+      // DIMJOGGED: the dimension line from the displaced centre to the chord point toward the
+      // location, where the text is (kept there, as DIMRADIUS's); the jog at the second point,
+      // halfway along until it is given.
+      const location = p.location ?? at;
+      const v = unitOf(sub(location, p.center));
+      if (!v || !(p.radius > 0)) return undefined;
+      const chordPoint = add(p.center, scale(v, p.radius));
+      const jogPoint = p.location
+        ? at
+        : add(p.overrideCenter, scale(sub(chordPoint, p.overrideCenter), 0.5));
+      return {
+        kind: 'LARGE_RADIAL_DIMENSION',
+        ...fields,
+        textPosition: location,
+        textUserPositioned: true,
+        dimType: 'jogged',
+        definitionPoint: p.center,
+        chordPoint,
+        overrideCenter: p.overrideCenter,
+        jogPoint,
+        leaderLength: 0,
+      };
+    }
+    case 'arc': {
+      // DIMARC: the dimension arc concentric through the location (DXF 10), the arc's ends 13
+      // and 14, its centre 15, and the angles of its ends (40, 41) as AutoCAD files them.
+      const r = distance(at, p.center);
+      if (!(r > 0) || !(p.radius > 0)) return undefined;
+      const on = (a: number, radius: number) => add(p.center, fromAngle(a, radius));
+      const sweep = normalizeAngle(p.endAngle - p.startAngle) || 2 * Math.PI;
+      const mid = p.startAngle + sweep / 2;
+      return {
+        kind: 'ARC_DIMENSION',
+        ...fields,
+        dimType: 'arc',
+        definitionPoint: at,
+        first: on(p.startAngle, p.radius),
+        second: on(p.endAngle, p.radius),
+        center: p.center,
+        startAngle: normalizeAngle(p.startAngle),
+        endAngle: normalizeAngle(p.endAngle),
+        partial: p.partial ?? false,
+        // "The leader is drawn radially, pointing towards the center of the arc being
+        // dimensioned" (AutoCAD 2024 Help, DIMARC, Leader): from the dimension arc's middle,
+        // where the text is, to the arc.
+        ...(p.leader && { leader: [on(mid, p.radius), on(mid, r)] as const }),
       };
     }
   }

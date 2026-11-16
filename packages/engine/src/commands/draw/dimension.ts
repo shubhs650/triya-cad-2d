@@ -22,6 +22,7 @@
 // are where the picks put them, and its grips move them (edit/grips.ts). Where the placement
 // rules come from is in edit/dimension.ts.
 import type { Vec2 } from '../../geom/types';
+import { normalizeAngle } from '../../geom/angle';
 import {
   add,
   angleOf,
@@ -69,7 +70,7 @@ type Angular3 = Extract<DimensionGeometry, { dimType: 'angular3pt' }>;
 type Ordinate = Extract<DimensionGeometry, { dimType: 'ordinate' }>;
 
 /** The dimension DIMCONTINUE and DIMBASELINE start from: the last one made, per drawing. */
-interface DimensionState {
+export interface DimensionState {
   last: Handle | undefined;
 }
 
@@ -79,7 +80,7 @@ interface DimensionState {
  */
 const STATES = new WeakMap<DocumentModel, DimensionState>();
 
-function stateOf(model: DocumentModel): DimensionState {
+export function stateOf(model: DocumentModel): DimensionState {
   let s = STATES.get(model);
   if (!s) {
     s = { last: undefined };
@@ -94,7 +95,7 @@ const unitOf = (v: Vec2): Vec2 | undefined => {
 };
 
 /** The style a new dimension is made in, and the overrides it is made with. */
-interface NewStyle {
+export interface NewStyle {
   readonly handle: Handle;
   readonly xdata?: Xdata;
 }
@@ -103,7 +104,7 @@ interface NewStyle {
  * The current dimension style, with the header's DIMVARs that differ from it as overrides;
  * undefined (and said) in a drawing without one.
  */
-function currentStyle(ctx: CommandContext): NewStyle | undefined {
+export function currentStyle(ctx: CommandContext): NewStyle | undefined {
   const style = currentDimStyle(ctx.model);
   if (!style) {
     ctx.message('The drawing has no dimension style.');
@@ -130,7 +131,7 @@ function styleOf(ctx: CommandContext, base: Entity): NewStyle {
 }
 
 /** What a dimension measures, formatted, as the dimension engine shows it. */
-function measurementOf(
+export function measurementOf(
   ctx: CommandContext,
   geom: DimensionGeometry,
   xdata: Xdata | undefined,
@@ -160,27 +161,38 @@ function sampleLocation(p: DimPlacement): Vec2 {
     }
     case 'angular':
       return midpoint(p.line1[1], p.line2[1]);
+    case 'ordinate':
+      return add(p.feature, fromAngle(p.ucs.angle + Math.PI / 2, 1));
+    case 'jogged':
+      return p.location ?? add(p.center, fromAngle(Math.PI / 4, p.radius * 2));
+    case 'arc': {
+      const sweep = normalizeAngle(p.endAngle - p.startAngle) || 2 * Math.PI;
+      return add(p.center, fromAngle(p.startAngle + sweep / 2, p.radius * 1.5));
+    }
   }
 }
+
+/** The options a location prompt offers for the dimension being placed. */
+export type LocationOptions = readonly string[] | ((p: DimPlacement) => readonly string[]);
 
 /**
  * "Specify dimension line location or [...]", with the dimension dragged under the cursor; the
  * options change the text, its angle or (DIMLINEAR) the dimension line's. Returns the
  * dimension as placed; undefined when the command ends.
  */
-async function* askLocation(
+export async function* askLocation(
   ctx: CommandContext,
   start: DimPlacement,
   xdata: Xdata | undefined,
   message: string,
-  options: readonly string[],
+  options: LocationOptions,
 ): Sub<DimensionGeometry | undefined> {
   let place = start;
   const layer = currentLayer(ctx.model);
   for (;;) {
     const a = yield ctx.prompt.point({
       message,
-      options,
+      options: typeof options === 'function' ? options(place) : options,
       drag: { kind: 'dimension', place, layer, ...(xdata && { xdata }) },
     });
     if (a.kind === 'point') {
@@ -254,16 +266,78 @@ async function* askLocation(
         if (e.kind === 'point') place = { ...place, quadrant: e.point };
         continue;
       }
+      case 'Xdatum':
+      case 'Ydatum':
+        // The axis measured, whichever way the leader then runs (DIMORDINATE).
+        if (place.kind === 'ordinate')
+          place = { ...place, axis: a.keyword === 'Xdatum' ? 'x' : 'y' };
+        continue;
+      case 'Leader':
+      case 'No leader':
+        if (place.kind === 'arc') place = { ...place, leader: a.keyword === 'Leader' };
+        continue;
+      case 'Partial': {
+        if (place.kind !== 'arc') continue;
+        const part = yield* askPartial(ctx, place);
+        if (part) place = part;
+        continue;
+      }
     }
   }
 }
 
+type ArcPlacement = Extract<DimPlacement, { kind: 'arc' }>;
+
+/**
+ * DIMARC's Partial: "Reduces the length of the arc length dimension" to the part between two
+ * points on the arc (AutoCAD 2024 Help, DIMARC), counter-clockwise as the arc runs. A point is
+ * taken by its angle about the centre; one outside the arc is refused.
+ */
+async function* askPartial(ctx: CommandContext, arc: ArcPlacement): Sub<ArcPlacement | undefined> {
+  const sweep = normalizeAngle(arc.endAngle - arc.startAngle) || 2 * Math.PI;
+  /** How far round the arc from its start the point `p` is; undefined off the arc. */
+  const along = (p: Vec2): number | undefined => {
+    if (distance(p, arc.center) === 0) return undefined;
+    const t = normalizeAngle(angleOf(sub(p, arc.center)) - arc.startAngle);
+    const tol = 1e-9;
+    if (t <= sweep + tol) return Math.min(t, sweep);
+    return t >= 2 * Math.PI - tol ? 0 : undefined;
+  };
+  const ask = async function* (message: string): Sub<number | undefined> {
+    for (;;) {
+      const a = yield ctx.prompt.point({ message });
+      if (a.kind !== 'point') return undefined;
+      const t = along(a.point);
+      if (t !== undefined) return t;
+      ctx.message('Point is not on the arc.');
+    }
+  };
+  const t1 = yield* ask('Specify first point for arc length dimension');
+  if (t1 === undefined) return undefined;
+  const t2 = yield* ask('Specify second point for arc length dimension');
+  if (t2 === undefined) return undefined;
+  if (Math.abs(t1 - t2) < 1e-9) {
+    ctx.message('Points must be different.');
+    return undefined;
+  }
+  const [lo, hi] = t1 < t2 ? [t1, t2] : [t2, t1];
+  return {
+    ...arc,
+    startAngle: arc.startAngle + lo,
+    endAngle: arc.startAngle + hi,
+    partial: true,
+    // The leader is offered only for an arc over 90°.
+    leader: arc.leader === true && hi - lo > Math.PI / 2,
+  };
+}
+
 /** Makes the dimension, has the engine draw it and says what it measures. */
-async function makeDimension(
+export async function makeDimension(
   ctx: CommandContext,
   state: DimensionState,
   geom: DimensionGeometry,
   xdata: Xdata | undefined,
+  say = true,
 ): Promise<EntityId> {
   const props = currentProps(ctx.model);
   let made: Entity | undefined;
@@ -273,7 +347,7 @@ async function makeDimension(
   const id = made!.id;
   const drawn = await regenerateDimensions(ctx, [id]);
   const m = drawn.get(id)?.measurement;
-  if (m !== undefined) ctx.message(`Dimension text = ${m}`);
+  if (m !== undefined && say) ctx.message(`Dimension text = ${m}`);
   if (chainOf(made!, undefined, false)) state.last = made!.handle;
   return id;
 }
@@ -293,7 +367,7 @@ function unmake(ctx: CommandContext, id: EntityId): void {
 }
 
 /** "Select object": one object picked, with where it was picked; undefined when none. */
-async function* pickObject(
+export async function* pickObject(
   ctx: CommandContext,
   message: string,
   defaultLabel?: string,
@@ -397,7 +471,7 @@ async function* askOrigins(ctx: CommandContext): Sub<[Vec2, Vec2] | PickedCircle
 }
 
 const LINEAR_OPTIONS = ['Mtext', 'Text', 'Angle', 'Horizontal', 'Vertical', 'Rotated'];
-const TEXT_OPTIONS = ['Mtext', 'Text', 'Angle'];
+export const TEXT_OPTIONS = ['Mtext', 'Text', 'Angle'];
 const ANGULAR_OPTIONS = ['Mtext', 'Text', 'Angle', 'Quadrant'];
 
 /**
@@ -450,15 +524,23 @@ function linearCommand(kind: 'linear' | 'aligned'): CommandDef {
   };
 }
 
-/** The drawing's `ACAD_DSTYLE_DIMRADIAL_EXTENSION` APPID, registered when it has none. */
-function radialAppId(ctx: CommandContext): Handle {
-  let appId = radialExtensionAppId(ctx.model);
+/** The drawing's APPID record named `name`, registered when it has none. */
+export function appIdNamed(ctx: CommandContext, name: string): Handle {
+  let appId: Handle | undefined;
+  for (const r of ctx.model.tables.appIds.values()) {
+    if (r.name.toUpperCase() === name.toUpperCase()) appId = r.handle;
+  }
   if (appId === undefined) {
     ctx.edit((b) => {
-      appId = b.addTableRecord('appIds', { name: RADIAL_EXTENSION_APP, flags: 0 }).handle;
+      appId = b.addTableRecord('appIds', { name, flags: 0 }).handle;
     });
   }
   return appId!;
+}
+
+/** The drawing's `ACAD_DSTYLE_DIMRADIAL_EXTENSION` APPID, registered when it has none. */
+function radialAppId(ctx: CommandContext): Handle {
+  return radialExtensionAppId(ctx.model) ?? appIdNamed(ctx, RADIAL_EXTENSION_APP);
 }
 
 function radialCommand(kind: 'radius' | 'diameter'): CommandDef {

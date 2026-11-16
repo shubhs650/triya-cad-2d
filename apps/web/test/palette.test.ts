@@ -23,6 +23,8 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       // M4-03 part 2: dimension styles at the command line.
       '-DIMSTYLE',
+      // M4-05: a table on the command line.
+      '-TABLE',
       // M3-09: the Drawing Units questions at the command line.
       '-UNITS',
       'AIMLEADEREDITADD',
@@ -61,10 +63,15 @@ describe('palette search', () => {
       'DDPTYPE',
       'DIMALIGNED',
       'DIMANGULAR',
+      // M4-02 part 1: DIMARC, DIMJOGGED, DIMJOGLINE and DIMORDINATE.
+      'DIMARC',
       'DIMBASELINE',
       'DIMCONTINUE',
       'DIMDIAMETER',
+      'DIMJOGGED',
+      'DIMJOGLINE',
       'DIMLINEAR',
+      'DIMORDINATE',
       'DIMRADIUS',
       // M4-03: the Dimension Style Manager.
       'DIMSTYLE',

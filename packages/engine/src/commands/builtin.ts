@@ -3,6 +3,8 @@
 // per drawing.
 import { CommandRegistry } from './command';
 import { dimensionCommands } from './draw/dimension';
+import { moreDimensionCommands } from './draw/dimension-more';
+import { dimensionEditCommands } from './modify/dimension-edit';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
 import { ellipseCommand } from './draw/ellipse';
@@ -12,6 +14,7 @@ import { lastDrawn } from './draw/last-drawn';
 import { lineCommand } from './draw/line';
 import { plineCommand } from './draw/pline';
 import { polygonCommand } from './draw/polygon';
+import { tableCommand } from './draw/table';
 import { rectangCommand } from './draw/rectang';
 import { splineCommand } from './draw/spline';
 import { divideCommand, measureCommand } from './draw/divide';
@@ -111,10 +114,13 @@ export function builtinCommands(): CommandRegistry {
     changeCommand(),
     matchpropCommand(),
     revcloudCommand(),
+    tableCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
     ...MLEADER_COMMANDS.map((make) => make()),
     ...dimensionCommands(),
+    ...moreDimensionCommands(),
+    ...dimensionEditCommands(),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
