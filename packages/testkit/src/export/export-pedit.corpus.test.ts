@@ -1,7 +1,8 @@
 // PEDIT and MATCHPROP (M3-02 part 5) on every readable public corpus file. On one copy of the
-// drawing every 2D polyline a drafter can select in model space is, in turn, curve-fit,
-// spline-fit, spline-fit and decurved, or given one width; every 3D polyline is spline-fit; every
-// line, arc and spline is turned into a polyline. On a second copy every object takes the
+// drawing every 2D polyline a drafter can select in model space is, in turn, curve-fit (with a
+// tangent given at its first vertex, saved as VERTEX 50, M3-16), spline-fit, spline-fit and
+// decurved, or given one width; every 3D polyline is spline-fit or given a vertex in its first
+// segment, its heights kept (DEC-062); every line, arc and spline is turned into a polyline. On a second copy every object takes the
 // properties of the first line, arc or circle (MATCHPROP with every setting on), and every
 // layout viewport takes the switches and scale of its layout's first one (Viewport, M3-16). Both
 // save as AC1032 DXF (DEC-047) and reopen with each object where PEDIT put it and with the
@@ -13,7 +14,9 @@ import {
   ChangeSetBuilder,
   DocumentModel,
   decurvePolyline,
+  editVertices,
   fitPolyline,
+  insertVertex,
   isPolyline,
   matchedPatch,
   polylineFrom,
@@ -21,7 +24,9 @@ import {
   splineFit,
   toleranceForSize,
   toleranceFromExtents,
+  vertexTangent,
   widthPolyline,
+  withEditVertices,
   type EntityGeometry,
   type EntityId,
   type Vec2,
@@ -151,6 +156,8 @@ function matchViewports(bytes: Uint8Array, model: DocumentModel): number {
 
 describe('PEDIT and MATCHPROP on the public corpus', () => {
   let edited = 0;
+  let tangents = 0;
+  let heights = 0;
   let matched = 0;
   let matchedViewports = 0;
 
@@ -170,9 +177,18 @@ describe('PEDIT and MATCHPROP on the public corpus', () => {
           let out: EntityGeometry | undefined;
           if (isPolyline(g)) {
             if (g.vertices.length < 2) return;
-            if (g.kind === 'POLYLINE' && g.is3d) out = splineFit(g, 6, 4);
-            else if (i % 4 === 0) out = fitPolyline(g, tol);
-            else if (i % 4 === 1) out = splineFit(g, i % 8 === 1 ? 5 : 6, 4);
+            if (g.kind === 'POLYLINE' && g.is3d) {
+              if (g.vertices.some((v) => v.z !== undefined)) heights++;
+              if (i % 2 === 0) out = splineFit(g, 6, 4);
+              else {
+                const vs = editVertices(g);
+                const mid = { x: (vs[0]!.x + vs[1]!.x) / 2, y: (vs[0]!.y + vs[1]!.y) / 2 };
+                out = withEditVertices(g, insertVertex(vs, 0, mid, g.closed), 4);
+              }
+            } else if (i % 4 === 0) {
+              out = fitPolyline(vertexTangent(g, editVertices(g), 0, 0.7), tol);
+              tangents++;
+            } else if (i % 4 === 1) out = splineFit(g, i % 8 === 1 ? 5 : 6, 4);
             else if (i % 4 === 2) out = decurvePolyline(splineFit(g, 6, 4));
             else out = widthPolyline(g, 0.25);
           } else if (g.kind === 'LINE' || g.kind === 'ARC' || g.kind === 'SPLINE') {
@@ -214,6 +230,8 @@ describe('PEDIT and MATCHPROP on the public corpus', () => {
 
   it('changed objects', () => {
     expect(edited).toBeGreaterThan(1000);
+    expect(tangents).toBeGreaterThan(100);
+    expect(heights).toBeGreaterThan(5);
     expect(matched).toBeGreaterThan(1000);
     expect(matchedViewports).toBeGreaterThan(10);
   });
