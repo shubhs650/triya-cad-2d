@@ -1081,6 +1081,12 @@ export interface HatchGeometry extends PlanarProps {
   readonly loops: readonly HatchLoop[];
   readonly patternLines: readonly HatchPatternLine[];
   readonly seedPoints: readonly Vec2[];
+  /**
+   * A pattern hatch's background colour, AutoCAD's HPBACKGROUNDCOLOR (M4-07 part 3): read from
+   * its `HATCHBACKGROUNDCOLOR` xdata (1071, an AcCmEntityColor), which stays the record a save
+   * writes (edit/hatch-background.ts keeps the two together); absent for none.
+   */
+  readonly background?: Color;
   /** DXF 450–470, when the hatch is a gradient fill. */
   readonly gradient?: {
     readonly name: string;

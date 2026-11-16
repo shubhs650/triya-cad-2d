@@ -103,4 +103,12 @@ export {
   type IslandStyle,
   type PickedBoundary,
 } from './hatch-boundary';
+export {
+  HATCH_BACKGROUND_APP,
+  backgroundColorOf,
+  backgroundColorValue,
+  hatchBackgroundAppId,
+  withHatchBackground,
+  type BackgroundColor,
+} from './hatch-background';
 export { retainedBoundary } from './hatch-retain';

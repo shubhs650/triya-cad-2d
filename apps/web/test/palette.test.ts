@@ -109,6 +109,8 @@ describe('palette search', () => {
       'EXTEND',
       'FILLET',
       'FILTER',
+      // M4-07 part 3: GRADIENT (HATCH with a gradient).
+      'GRADIENT',
       // M3-06 part 2: GRID and SNAP.
       'GRID',
       'GROUP',
