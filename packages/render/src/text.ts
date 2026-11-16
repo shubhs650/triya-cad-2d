@@ -663,6 +663,25 @@ export function columnCounter(ctx: TextContext): (g: MTextGeometry) => number | 
 }
 
 /**
+ * The frame an MTEXT is laid out in (M4-09: JUSTIFYTEXT and SCALETEXT read its attachment
+ * points off it): the width of its reference rectangle or widest line (all its columns), and
+ * its height from its top to its last baseline, as the attachment point places it. Undefined
+ * while its style's font is not loaded, or for one drawn top to bottom.
+ */
+export function mtextFrameSize(
+  ctx: TextContext,
+): (g: MTextGeometry) => { width: number; height: number } | undefined {
+  return (g) => {
+    const record = ctx.style(g.style);
+    if (!ctx.fonts.face(record ? styleFont(record) : STANDARD_FONT)) return undefined;
+    if (verticalMText(g, ctx)) return undefined;
+    if (!(g.height > 0) || g.contents === '') return { width: g.width, height: 0 };
+    const { layout } = mtextLayout(g, ctx);
+    return { width: layout.width, height: layout.height };
+  };
+}
+
+/**
  * `TextMeasure` for TOLERANCE frames (M1-52 part 4): the width the renderer lays an MTEXT out
  * at, its widest line's advance, or undefined while its style's font is not loaded.
  */

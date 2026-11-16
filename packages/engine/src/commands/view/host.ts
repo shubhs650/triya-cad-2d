@@ -13,6 +13,7 @@ import type { SheetCells } from '../../edit/spreadsheet';
 import type { UndoView } from '../undo';
 import type { UnderlayLayersInfo } from '../../edit/underlay-layers';
 import type { EnclosedSpace } from '../inquiry/quick';
+import type { TextFrame } from '../../edit/text-justify';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -116,6 +117,12 @@ export type ViewRequest =
    * loaded now, null for one no loaded font draws: what a column grip recounts by (M2-26 part 2).
    */
   | { readonly op: 'columnCounts'; readonly texts: readonly MTextGeometry[] }
+  /**
+   * The frames MTEXTs are laid out in (M4-09: JUSTIFYTEXT moves an MTEXT's insertion point to
+   * another point of its frame, SCALETEXT scales it about one), null for one no loaded font
+   * draws or that is drawn top to bottom.
+   */
+  | { readonly op: 'textFrames'; readonly texts: readonly MTextGeometry[] }
   /**
    * Where TEXTs and MTEXTs lie as the renderer draws them (M2-27): an attribute picked by its
    * text (EATTEDIT, a double click), and the baseline start of an attribute given another
@@ -403,6 +410,8 @@ export type ViewReply =
       readonly widths?: readonly (number | null)[];
       /** What `columnCounts` counted, one per text. */
       readonly counts?: readonly (number | null)[];
+      /** What `textFrames` laid out, one per text. */
+      readonly frames?: readonly (TextFrame | null)[];
       /** What `textOutlines` found, one per text (null: no loaded font draws it). */
       readonly outlines?: readonly (TextOutline | null)[];
       /** What `textPieces` laid out, one per text (null: no loaded font draws it). */

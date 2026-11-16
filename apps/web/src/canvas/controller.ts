@@ -1374,6 +1374,13 @@ export class CanvasController {
     return this.#host.textPieces(texts);
   }
 
+  /** The frames MTEXTs are laid out in (M4-09: JUSTIFYTEXT and SCALETEXT). */
+  textFrames(
+    texts: readonly MTextGeometry[],
+  ): Promise<({ readonly width: number; readonly height: number } | null)[]> {
+    return this.#host.textFrames(texts);
+  }
+
   /** How many dynamic columns MTEXTs take (M2-26 part 2: a column grip recounts them). */
   columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
     return this.#host.columnCounts(texts);

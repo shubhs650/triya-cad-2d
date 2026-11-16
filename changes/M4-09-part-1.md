@@ -1,0 +1,1 @@
+- M4-09 part 1 (#455): SCALETEXT and JUSTIFYTEXT. SCALETEXT resizes text, multiline text, attribute definitions and block attributes about each one's own insertion or justification point (new height, paper height, match an object, or scale factor); JUSTIFYTEXT changes their justification without moving them.

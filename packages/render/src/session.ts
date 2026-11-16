@@ -48,7 +48,7 @@ import {
 import { dimensionParts, drawingDimensionHealth, type DrawingDimensionHealth } from '@triya/dims';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
-import { columnCounter, textMeasure, textPieces, type TextContext } from './text';
+import { columnCounter, mtextFrameSize, textMeasure, textPieces, type TextContext } from './text';
 import { textBounds, textOutline } from './text-bounds';
 import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
 import { dimStylePreviewImage, type PreviewSize } from './dim-style-preview';
@@ -311,6 +311,16 @@ export class RenderSession {
   textPieces(texts: readonly MTextGeometry[]): (TextPiece[] | null)[] {
     const pieces = textPieces(this.#text);
     return texts.map((t) => pieces(t) ?? null);
+  }
+
+  /**
+   * The frames MTEXTs are laid out in, in the fonts loaded now (`mtextFrameSize`), null for one
+   * no loaded font draws or drawn top to bottom: what JUSTIFYTEXT and SCALETEXT, in the engine
+   * worker without fonts, read an MTEXT's attachment points off (M4-09).
+   */
+  textFrames(texts: readonly MTextGeometry[]): ({ width: number; height: number } | null)[] {
+    const frame = mtextFrameSize(this.#text);
+    return texts.map((t) => frame(t) ?? null);
   }
 
   /**

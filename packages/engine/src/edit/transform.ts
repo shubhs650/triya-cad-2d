@@ -293,6 +293,11 @@ function attribute(t: Similarity, a: InsertAttribute, o: TransformOptions): Inse
   };
 }
 
+/** One attribute of a reference carried by `t` on its own (SCALETEXT, M4-09). */
+export function transformAttribute(t: Similarity, a: InsertAttribute): InsertAttribute {
+  return attribute(t, a, {});
+}
+
 // ── Block references ────────────────────────────────────────────────────────────────────────
 
 /**

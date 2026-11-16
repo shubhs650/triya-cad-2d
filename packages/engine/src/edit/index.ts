@@ -112,3 +112,4 @@ export {
   type BackgroundColor,
 } from './hatch-background';
 export { retainedBoundary } from './hatch-retain';
+export * from './text-justify';

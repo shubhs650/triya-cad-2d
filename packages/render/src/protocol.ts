@@ -127,6 +127,8 @@ export type HostMessage =
   | { readonly type: 'textWidths'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The TEXT runs and strokes MTEXTs explode into (M3-12 part 7); the answer is a `pieces`. */
   | { readonly type: 'textPieces'; readonly id: number; readonly texts: readonly MTextGeometry[] }
+  /** The frames MTEXTs are laid out in (M4-09); the answer is a `frames`. */
+  | { readonly type: 'textFrames'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The dynamic column counts of MTEXTs (M2-26 part 2); the answer is a `counts`. */
   | { readonly type: 'columnCounts'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The drawing's dimensions against their stored blocks (M2-30 part 3); answered by `dimensionHealth`. */
@@ -192,6 +194,12 @@ export type WorkerMessage =
       readonly type: 'pieces';
       readonly id: number;
       readonly pieces: readonly (readonly TextPiece[] | null)[];
+    }
+  /** The frames asked for, null for a text no loaded font draws. */
+  | {
+      readonly type: 'frames';
+      readonly id: number;
+      readonly frames: readonly ({ readonly width: number; readonly height: number } | null)[];
     }
   /** The column counts asked for, null for a text no loaded font draws. */
   | { readonly type: 'counts'; readonly id: number; readonly counts: readonly (number | null)[] }
