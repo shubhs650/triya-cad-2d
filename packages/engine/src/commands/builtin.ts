@@ -21,6 +21,7 @@ import { rectangCommand } from './draw/rectang';
 import { splineCommand } from './draw/spline';
 import { divideCommand, measureCommand } from './draw/divide';
 import { MLEADER_COMMANDS } from './draw/mleader';
+import { MLEADER_ALIGN_COMMANDS } from './modify/mleader-align';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
 import { hatchCommand } from './draw/hatch';
@@ -125,6 +126,7 @@ export function builtinCommands(): CommandRegistry {
     hatchCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
     ...MLEADER_COMMANDS.map((make) => make()),
+    ...MLEADER_ALIGN_COMMANDS.map((make) => make()),
     ...dimensionCommands(),
     ...moreDimensionCommands(),
     qdimCommand(),
