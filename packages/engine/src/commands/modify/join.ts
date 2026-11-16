@@ -14,6 +14,7 @@ import { eraseObjects, refusalMessages, reshapeObject } from '../../edit/edit';
 import { closeArc, closeEllipse, joinable, joinObjects, type Joined } from '../../edit/join';
 import { explodeObjects, type TextPiecesOf } from '../../edit/explode';
 import { breakCurveOf, reverseGeometry } from '../../edit/break';
+import { edgeCurvesOf } from '../../edit/trim';
 import type { EntityId } from '../../model/entity-ids';
 import type { MTextGeometry } from '../../model/types';
 import { multiLeaderParts } from '../../annotation/multileader';
@@ -101,7 +102,10 @@ function join(ctx: CommandContext, ids: readonly EntityId[], source: EntityId | 
     const e = ctx.model.entity(id);
     return e ? [{ id, geom: e.geom }] : [];
   });
-  const first = parts.map((p) => breakCurveOf(p.geom)).find((c) => c !== undefined);
+  // A 3D polyline's tolerance comes from its plan view (M3-17).
+  const first = parts
+    .map((p) => breakCurveOf(p.geom) ?? edgeCurvesOf(p.geom, false)[0])
+    .find((c) => c !== undefined);
   const tol = first ? toleranceFor(ctx.model, first) : toleranceForSize(1);
   const r = joinObjects(parts, source, tol);
   const lines: string[] = [];

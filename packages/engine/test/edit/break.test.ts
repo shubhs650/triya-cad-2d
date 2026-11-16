@@ -465,6 +465,191 @@ describe('JOIN', () => {
     const whole = join([e(0, Math.PI), e(Math.PI, 2 * Math.PI - 1e-12)]);
     expect(whole.joined[0]!.geom).toMatchObject({ startParam: 0, endParam: 2 * Math.PI });
   });
+
+  // M3-17: 3D polylines join each other where their ends meet in plan and in height (AutoCAD
+  // Help, "JOIN (Command)": "3D Polyline ... All the objects must be contiguous, but can be
+  // noncoplanar"), now that the model carries their heights (DEC-062).
+  describe('3D polylines (M3-17)', () => {
+    const p3 = (pts: [number, number, number][], extra: Partial<PolylineGeometry> = {}) =>
+      ({
+        kind: 'POLYLINE',
+        is3d: true,
+        closed: false,
+        vertices: pts.map(([x, y, z]) => ({ x, y, bulge: 0, ...(z !== 0 && { z }) })),
+        ...extra,
+      }) as PolylineGeometry;
+    const xyz = (g: EntityGeometry) =>
+      (g as PolylineGeometry).vertices.map((v) => [r6(v.x), r6(v.y), r6(v.z ?? 0)]);
+
+    it('joins 3D polylines meeting end to end in plan and height into the first one', () => {
+      const r = join([
+        p3([
+          [0, 0, 0],
+          [10, 0, 5],
+        ]),
+        p3([
+          [10, 0, 5],
+          [10, 10, 8],
+          [0, 10, 2],
+        ]),
+      ]);
+      expect(r.discarded).toBe(0);
+      expect(r.joined).toHaveLength(1);
+      expect(r.joined[0]).toMatchObject({ keep: 1, parts: [1, 2], made: 'polyline' });
+      const g = r.joined[0]!.geom as PolylineGeometry;
+      expect(g).toMatchObject({ kind: 'POLYLINE', is3d: true, closed: false });
+      expect(xyz(g)).toEqual([
+        [0, 0, 0],
+        [10, 0, 5],
+        [10, 10, 8],
+        [0, 10, 2],
+      ]);
+      // A vertex at height 0 states none, as the file maps it.
+      expect('z' in g.vertices[0]!).toBe(false);
+    });
+
+    it('chains both ways from a source, reversing pieces, and closes back at its start', () => {
+      const r = join(
+        [
+          p3([
+            [10, 10, 3],
+            [0, 10, 1],
+          ]),
+          p3([
+            [0, 0, 0],
+            [10, 0, 2],
+          ]),
+          p3([
+            [10, 10, 3],
+            [10, 0, 2],
+          ]),
+          p3([
+            [0, 0, 0],
+            [0, 10, 1],
+          ]),
+        ],
+        3,
+      );
+      expect(r.joined).toHaveLength(1);
+      expect(r.joined[0]).toMatchObject({ keep: 3, parts: [3, 1, 2, 4] });
+      const g = r.joined[0]!.geom as PolylineGeometry;
+      expect(g.closed).toBe(true);
+      expect(xyz(g)).toEqual([
+        [10, 10, 3],
+        [10, 0, 2],
+        [0, 0, 0],
+        [0, 10, 1],
+      ]);
+    });
+
+    it('leaves apart ends that meet in plan at another height', () => {
+      const r = join([
+        p3([
+          [0, 0, 0],
+          [10, 0, 5],
+        ]),
+        p3([
+          [10, 0, 6],
+          [20, 0, 6],
+        ]),
+      ]);
+      expect(r).toEqual({ joined: [], discarded: 2 });
+      // Within the drawing's tolerance they meet; the end already in the chain stays.
+      const close = join([
+        p3([
+          [0, 0, 0],
+          [10, 0, 5],
+        ]),
+        p3([
+          [10, 0, 5 + tol.linear / 2],
+          [20, 0, 6],
+        ]),
+      ]);
+      expect(xyz(close.joined[0]!.geom)).toEqual([
+        [0, 0, 0],
+        [10, 0, 5],
+        [20, 0, 6],
+      ]);
+    });
+
+    it('keeps the source 3D polyline and its properties, taking only the chain through it', () => {
+      const r = join(
+        [
+          p3([
+            [50, 0, 0],
+            [60, 0, 0],
+          ]),
+          p3(
+            [
+              [0, 0, 1],
+              [10, 0, 1],
+            ],
+            { plinegen: true },
+          ),
+          p3([
+            [10, 0, 1],
+            [20, 0, 4],
+          ]),
+          p3([
+            [60, 0, 0],
+            [70, 0, 0],
+          ]),
+        ],
+        2,
+      );
+      expect(r.joined).toHaveLength(1);
+      expect(r.joined[0]).toMatchObject({ keep: 2, parts: [2, 3] });
+      expect(r.joined[0]!.geom).toMatchObject({ plinegen: true, is3d: true });
+      expect(r.discarded).toBe(2);
+    });
+
+    it('joins no lines, arcs, 2D polylines or splines to a 3D polyline, nor closed or fitted ones', () => {
+      const flat = p3([
+        [0, 0, 0],
+        [10, 0, 0],
+      ]);
+      const twoD: EntityGeometry = {
+        kind: 'LWPOLYLINE',
+        closed: false,
+        vertices: [
+          { x: 10, y: 0, bulge: 0 },
+          { x: 10, y: 5, bulge: 0 },
+        ],
+      };
+      // Lines and 2D chains still join each other beside it (M3-02 part 4).
+      const r = join([flat, line(0, 0, 0, -5), arc(5, 0, 5, 0, 180), twoD]);
+      expect(r.joined).toHaveLength(1);
+      expect(r.joined[0]).toMatchObject({ parts: [2, 3, 4] });
+      expect(r.joined[0]!.geom.kind).toBe('LWPOLYLINE');
+      expect(r.discarded).toBe(1);
+      expect(join([flat, line(10, 0, 20, 0)], 1)).toEqual({ joined: [], discarded: 2 });
+      // Closed objects cannot be joined; a spline-fit 3D polyline is not either.
+      const closed = p3(
+        [
+          [10, 0, 0],
+          [20, 0, 0],
+          [20, 5, 0],
+        ],
+        { closed: true },
+      );
+      const fitted = p3(
+        [
+          [10, 0, 0],
+          [15, 2, 0],
+          [20, 0, 0],
+        ],
+        {
+          fit: 'cubic',
+          frame: [
+            { x: 10, y: 0 },
+            { x: 20, y: 0 },
+          ],
+        },
+      );
+      expect(join([flat, closed]).joined).toEqual([]);
+      expect(join([flat, fitted]).joined).toEqual([]);
+    });
+  });
 });
 
 describe('inch drawings: tolerance-sensitive cases', () => {
