@@ -460,6 +460,30 @@ describe('the Table Cell menu’s formatting (M4-05 part 4)', () => {
     expect(s.table().geom.rowHeights).toEqual([11, 9, 10, 9, 9]);
   });
 
+  it('changes nothing when a formatting prompt is cancelled, and asks again on a bad answer', async () => {
+    const s = setup();
+    await nozzles(s);
+    const before = JSON.stringify(s.table().geom);
+    for (const [option, ...answers] of [
+      ['AL'],
+      ['H'],
+      ['BA'],
+      ['BO'],
+      ['BO', 'A'],
+      ['BO', 'A', 'mauve'],
+      ['BO', 'A', '', 'thick'],
+    ]) {
+      await s.bus.pick(at(2, 0));
+      await s.bus.submit(option!);
+      for (const x of answers) await s.bus.submit(x);
+      await s.bus.cancel();
+      expect(s.bus.promptText).toBe('Command:');
+      expect(JSON.stringify(s.table().geom)).toBe(before);
+    }
+    expect(s.messages.filter((m) => m === 'Invalid color.')).toHaveLength(1);
+    expect(s.messages.filter((m) => m === 'Invalid lineweight.')).toHaveLength(1);
+  });
+
   it('selects the cells a press is dragged across', async () => {
     const s = setup();
     await nozzles(s);

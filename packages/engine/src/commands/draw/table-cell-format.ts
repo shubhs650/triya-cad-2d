@@ -78,7 +78,7 @@ export async function* formattedTable(
       });
       if (a.kind !== 'keyword') return undefined;
       const alignment = ALIGNMENTS.indexOf(a.keyword as (typeof ALIGNMENTS)[number]) + 1;
-      return alignment > 0 ? withCellsFormatted(g, r, { alignment }) : undefined;
+      return withCellsFormatted(g, r, { alignment });
     }
     case 'Height': {
       for (;;) {
