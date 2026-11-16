@@ -1832,7 +1832,7 @@ export function App() {
         fonts={fontState.files.map((f) => f.name)}
         sources={fonts.sources()}
       />
-      <AttributeDialogs doc={active} />
+      <AttributeDialogs doc={active} docs={state.docs} />
       <PlotDialog
         doc={active}
         missingUnderlays={missingUnderlaysNote(references)}

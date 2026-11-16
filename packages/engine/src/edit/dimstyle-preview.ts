@@ -47,6 +47,12 @@ export interface DimStylePreview {
   readonly vars?: DimStyleVars;
   /** The one kind of dimension shown (a sub-style's Use for); absent or `all`, the full sample. */
   readonly use?: DimStyleUse;
+  /**
+   * The DIMVARs the sample is sized from (a dialog's as it opened), so that changing the text
+   * height or DIMSCALE in the dialog shows the text growing on the same sample; absent, the
+   * style's own.
+   */
+  readonly sizedBy?: DimStyleVars;
 }
 
 /** The name the dialog's DIMVARs are given in the preview drawing: no style can be named it. */
@@ -112,7 +118,7 @@ export function dimStylePreviewModel(
   const zero = plainLayerZero(b, pm);
   if (zero === undefined) return undefined;
   const style = named ?? previewStyle(b, pm, preview.vars ?? {});
-  const unit = sampleUnit(pm, b.tableRecord('dimStyles', style.handle) ?? style);
+  const unit = sampleUnit(pm, preview.sizedBy ?? style.vars);
   const space = modelSpace.handle;
   const add = (geom: EntityGeometry) => b.addEntity({ owner: space, layer: zero, geom });
   for (const geom of sample(style.handle, preview.use ?? 'all', unit)) add(geom);
@@ -180,14 +186,14 @@ function previewStyle(
  * The sample's unit: the style's text height in the drawing (DIMTXT × DIMSCALE, or its text
  * style's fixed height), as AutoCAD's sample grows with it.
  */
-function sampleUnit(pm: DocumentModel, style: DimStyleRecord): number {
+function sampleUnit(pm: DocumentModel, vars: DimStyleVars): number {
   const num = (v: DimVarValue | undefined, fallback: number) =>
     typeof v === 'number' && Number.isFinite(v) ? v : fallback;
-  const textStyle = style.vars.DIMTXSTY;
+  const textStyle = vars.DIMTXSTY;
   const fixed =
     typeof textStyle === 'string' ? (pm.tables.textStyles.get(textStyle)?.height ?? 0) : 0;
-  const scale = num(style.vars.DIMSCALE, 1) || 1;
-  const h = fixed > 0 ? fixed : num(style.vars.DIMTXT, FALLBACK_HEIGHT) * scale;
+  const scale = num(vars.DIMSCALE, 1) || 1;
+  const h = fixed > 0 ? fixed : num(vars.DIMTXT, FALLBACK_HEIGHT) * scale;
   return h > 0 ? h : FALLBACK_HEIGHT;
 }
 

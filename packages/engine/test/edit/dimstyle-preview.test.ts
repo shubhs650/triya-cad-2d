@@ -147,6 +147,12 @@ describe('Dimension style preview (M4-03 part 3)', () => {
     expect(width(scaled)).toBeCloseTo(9 * 1.8);
     const fixed = dimStylePreviewModel(source, { vars: dialogVars({ DIMTXSTY: BIG_TEXT }) })!;
     expect(width(fixed)).toBeCloseTo(9 * 5);
+    // A dialog's sample keeps the size it opened with as its text height is changed.
+    const sized = dimStylePreviewModel(source, {
+      vars: dialogVars({ DIMTXT: 5, DIMTXSTY: TEXT }),
+      sizedBy: dialogVars({ DIMTXT: 2.5, DIMTXSTY: TEXT }),
+    })!;
+    expect(width(sized)).toBeCloseTo(9 * 2.5);
   });
 
   it('shows the dialog’s DIMVARs on a style of their own, without sub-styles', () => {

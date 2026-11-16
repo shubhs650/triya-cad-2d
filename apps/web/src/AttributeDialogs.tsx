@@ -42,6 +42,8 @@ import { QSelectDialog } from './QSelectDialog';
 import { DraftingSettingsDialog } from './DraftingSettingsDialog';
 import { UnitsDialog } from './UnitsDialog';
 import { DimStyleDialog } from './DimStyleDialog';
+import { openDrawingModel } from './dimstyle-import';
+import type { OpenDocument } from './documents';
 import { InsertTableDialog } from './InsertTableDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
@@ -53,7 +55,14 @@ const shownValue = (v: string, multiline: boolean) => (multiline ? v.replace(/\\
 const storedValue = (v: string, multiline: boolean) =>
   multiline ? v.replace(/\r?\n/g, '\\P') : v.replace(/\r?\n/g, ' ');
 
-export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
+export function AttributeDialogs({
+  doc,
+  docs = [],
+}: {
+  doc: { id: number } | undefined;
+  /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
+  docs?: readonly OpenDocument[];
+}) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
   if (!doc || prompt?.kind !== 'dialog') return null;
@@ -85,7 +94,20 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
     case 'units':
       return <UnitsDialog key={key} doc={doc.id} request={d} />;
     case 'dimstyle':
-      return <DimStyleDialog key={key} doc={doc.id} request={d} />;
+      return (
+        <DimStyleDialog
+          key={key}
+          doc={doc.id}
+          request={d}
+          sources={docs
+            .filter((o) => o.id !== doc.id)
+            .map((o) => ({
+              id: o.id,
+              name: o.name,
+              model: () => openDrawingModel(o, engines.changesOf(o.id)),
+            }))}
+        />
+      );
     case 'inserttable':
       return <InsertTableDialog key={key} doc={doc.id} request={d} />;
   }
