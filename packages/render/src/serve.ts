@@ -141,6 +141,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'textWidths':
         port.postMessage({ type: 'widths', id: m.id, widths: session.textWidths(m.texts) });
         break;
+      case 'textPieces':
+        port.postMessage({ type: 'pieces', id: m.id, pieces: session.textPieces(m.texts) });
+        break;
       case 'columnCounts':
         port.postMessage({ type: 'counts', id: m.id, counts: session.columnCounts(m.texts) });
         break;

@@ -34,7 +34,8 @@
 // (extend; Shift held, the other), and in Quick mode a press on nothing dragged and let go is a
 // freehand fence (AutoCAD 2024 Help, "TRIM (Command)": "click and drag to start a freehand
 // selection path"), trimming (extending) every object the path crosses. Projection has nothing
-// to do in plan (DEC-039).
+// to do in plan (DEC-039). M3-12 part 7: a fence's next point and a crossing window's opposite
+// corner preview what the fence (window) would trim to the cursor.
 import { boxOf, curveBounds } from '../../geom/bounds';
 import type { Curve } from '../../geom/curves';
 import { domain, pointAt } from '../../geom/eval';
@@ -257,7 +258,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
             case 'Fence': {
               const first = yield ctx.prompt.point({ message: 'Specify first fence point' });
               if (first.kind !== 'point') continue;
-              const points = yield* fencePoints(ctx, first.point, false);
+              const points = yield* fencePoints(ctx, run, first.point, false, w.work);
               await run.measure();
               const done = run.fence(points, w.work);
               if (done.length > 0) history.push(done);
@@ -286,7 +287,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
         // A pick on nothing: Quick mode's fence of two points, Standard mode's crossing window.
         let done: ChangeSet[];
         if (s.quick) {
-          const points = yield* fencePoints(ctx, a.point, true);
+          const points = yield* fencePoints(ctx, run, a.point, true, work);
           await run.measure();
           done = run.fence(points, work);
         } else done = yield* crossing(ctx, run, a.point, work, true);
@@ -323,14 +324,23 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
  * The rest of a fence after its first point: Quick mode's ends at the second point, Standard
  * mode's Fence at Enter; none when Undo or Enter leaves it a single point.
  */
-async function* fencePoints(ctx: CommandContext, first: Vec2, quick: boolean): Sub<Vec2[]> {
+async function* fencePoints(
+  ctx: CommandContext,
+  run: Runner,
+  first: Vec2,
+  quick: boolean,
+  work: Work,
+): Sub<Vec2[]> {
   const points = [first];
   for (;;) {
+    const so = [...points];
     const a = yield ctx.prompt.point({
       message: 'Specify next fence point or',
       options: ['Undo'],
       // Quick mode's fence starts where a press found nothing; dragged, it is freehand.
       rubberBand: { from: points.at(-1)!, ...(quick && { freehand: true as const }) },
+      // M3-12 part 7: what the fence so far and on to the cursor would trim (extend).
+      commandPreview: { at: (q) => run.fencePreview([...so, q.cursor], work) },
     });
     if (a.kind === 'point' && a.freehand && quick) {
       // The path from where the press began, which is the fence's first point.
@@ -358,6 +368,8 @@ async function* crossing(
   const a = yield ctx.prompt.point({
     message: 'Specify opposite corner',
     rubberBand: { from: first, box: true, selection: implied ? 'auto' : 'crossing' },
+    // M3-12 part 7: what the window to the cursor would trim (extend).
+    commandPreview: { at: (q) => run.windowPreview(first, q.cursor, work) },
   });
   if (a.kind !== 'point') return [];
   await run.measure();
@@ -452,22 +464,27 @@ class Runner {
    * What trimming (extending) `id` where `at` is on it makes: the shapes it becomes (none: it
    * goes), or AutoCAD's message for why it cannot be.
    */
-  result(id: EntityId, at: Vec2, work: Work): readonly EntityGeometry[] | string {
+  result(
+    id: EntityId,
+    at: Vec2,
+    work: Work,
+    /** The shape worked on: the object's own, or a piece a preview has cut it into. */
+    geom: EntityGeometry | undefined = this.#ctx.model.entity(id)?.geom,
+  ): readonly EntityGeometry[] | string {
     const ctx = this.#ctx;
-    const e = ctx.model.entity(id);
-    const c = e && trimCurveOf(e.geom);
-    if (!e || !c)
+    const c = geom && trimCurveOf(geom);
+    if (!geom || !c)
       return work === 'trim' ? 'Cannot trim that object.' : 'Cannot extend that object.';
     if (locked(ctx.model, id)) return 'The object is on a locked layer.';
     const tol = toleranceFor(ctx.model, c);
     const edges = this.#edgeCurves(id);
     const t = pickParam(c, at, tol);
     if (work === 'extend') {
-      const g = extendGeometry(e.geom, c, edges, t, tol);
+      const g = extendGeometry(geom, c, edges, t, tol);
       return g ? [g] : NO_EDGE;
     }
     const cuts = cutParams(c, edges, tol);
-    const geoms = trimGeometry(e.geom, c, cuts, t, tol);
+    const geoms = trimGeometry(geom, c, cuts, t, tol);
     // Quick mode deletes an object no edge crosses (AutoCAD 2021 and later).
     if (!geoms && this.#s.quick && cuts.length === 0) return [];
     return geoms ?? NO_EDGE;
@@ -540,9 +557,55 @@ class Runner {
     return done;
   }
 
+  /**
+   * COMMANDPREVIEW along a fence or crossing window (M3-12 part 7): what the work at `at` would
+   * make of each object, worked out on its shapes without editing the drawing. An object cut in
+   * two by an earlier point is worked on again as the piece the next point is on, as `#each`
+   * does; the edges stay the drawing's as it is now.
+   */
+  #planned(at: readonly { id: EntityId; point: Vec2 }[], work: Work): CommandPreview | undefined {
+    const model = this.#ctx.model;
+    const now = new Map<EntityId, EntityGeometry[]>();
+    for (const { id, point } of at) {
+      const own = model.entity(id)?.geom;
+      if (!own) continue;
+      const pieces = now.get(id) ?? [own];
+      const i = pieces.findIndex((g) => {
+        const c = trimCurveOf(g);
+        if (!c) return false;
+        const tol = toleranceFor(model, c);
+        return closestPoint(c, point, tol).distance <= tol.linear * 1e3;
+      });
+      if (i < 0) continue;
+      const r = this.result(id, point, work, pieces[i]);
+      if (typeof r === 'string') continue;
+      now.set(id, [...pieces.slice(0, i), ...r, ...pieces.slice(i + 1)]);
+    }
+    return now.size > 0 ? reshapePreview(model, [...now]) : undefined;
+  }
+
+  /** COMMANDPREVIEW of a fence through `points` (the last at the cursor). */
+  async fencePreview(points: readonly Vec2[], work: Work): Promise<CommandPreview | undefined> {
+    if (points.length < 2) return undefined;
+    await this.measure();
+    return this.#planned(this.#fenceCrossings(points), work);
+  }
+
+  /** COMMANDPREVIEW of a crossing window from `a` to the cursor `b`. */
+  async windowPreview(a: Vec2, b: Vec2, work: Work): Promise<CommandPreview | undefined> {
+    if (a.x === b.x || a.y === b.y) return undefined;
+    await this.measure();
+    return this.#planned(this.#windowCrossings(a, b), work);
+  }
+
   /** A fence: every object it crosses, at each crossing, in the fence's order. */
   fence(points: readonly Vec2[], work: Work): ChangeSet[] {
     if (points.length < 2) return [];
+    return this.#each(this.#fenceCrossings(points), work);
+  }
+
+  /** Where a fence crosses each object, in the fence's order. */
+  #fenceCrossings(points: readonly Vec2[]): { id: EntityId; point: Vec2 }[] {
     // A freehand fence has many short segments: each is tried only on the objects whose
     // bounds it reaches.
     const targets = this.#targets().map((t) => ({ ...t, box: curveBounds(t.c, t.tol) }));
@@ -563,11 +626,16 @@ class Runner {
       }
     }
     at.sort((a, b) => a.k - b.k || a.along - b.along);
-    return this.#each(at, work);
+    return at;
   }
 
   /** A crossing window: each object in it or crossing it, nearest the first corner. */
   window(a: Vec2, b: Vec2, work: Work): ChangeSet[] {
+    return this.#each(this.#windowCrossings(a, b), work);
+  }
+
+  /** The point of each object in a crossing window nearest its first corner, nearest first. */
+  #windowCrossings(a: Vec2, b: Vec2): { id: EntityId; point: Vec2 }[] {
     const lo = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) };
     const hi = { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) };
     const inside = (p: Vec2, tol: Tolerance): boolean =>
@@ -583,11 +651,20 @@ class Runner {
     }));
     const at: { id: EntityId; point: Vec2; d: number }[] = [];
     for (const { id, c, tol } of this.#targets()) {
+      // Only what reaches the window: the preview asks at every cursor move.
+      const box = curveBounds(c, tol);
+      if (
+        box.minX > hi.x + tol.linear ||
+        box.maxX < lo.x - tol.linear ||
+        box.minY > hi.y + tol.linear ||
+        box.maxY < lo.y - tol.linear
+      )
+        continue;
       const p = nearestInside(c, sides, a, (q) => inside(q, tol), tol);
       if (p) at.push({ id, point: p, d: distance(p, a) });
     }
     at.sort((x, y) => x.d - y.d);
-    return this.#each(at, work);
+    return at;
   }
 }
 

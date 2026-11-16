@@ -464,8 +464,8 @@ describe('EXPLODE', () => {
     expect(model.blockEntities(BLOCK)).toHaveLength(2);
   });
 
-  it('refuses a nonuniformly scaled reference and what cannot be exploded', async () => {
-    const { bus, log, kinds } = setup([
+  it('explodes a nonuniformly scaled reference, circles into ellipses (M3-12 part 7)', async () => {
+    const { bus, kinds, space } = setup([
       {
         kind: 'INSERT',
         block: BLOCK,
@@ -475,10 +475,25 @@ describe('EXPLODE', () => {
         attributes: [],
       },
     ]);
+    await bus.script(['EXPLODE', 'L', '']);
+    expect(kinds()).toEqual(['LINE', 'CIRCLE', 'LINE', 'ELLIPSE']);
+    expect(space()[3]!.geom).toMatchObject({ center: { x: 102, y: 0 }, ratio: 0.5 });
+  });
+
+  it('refuses what cannot be exploded', async () => {
+    const { bus, log, kinds } = setup([
+      {
+        kind: 'INSERT',
+        block: BLOCK,
+        position: { x: 100, y: 0 },
+        scale: { x: 2, y: 2, z: 2 },
+        rotation: 0,
+        attributes: [],
+        array: { columns: 2, rows: 1, columnSpacing: 5, rowSpacing: 0 },
+      },
+    ]);
     await bus.script(['EXPLODE', 'ALL', '']);
-    expect(log).toContain(
-      '1 object was not exploded: nonuniformly scaled block references cannot be exploded yet.',
-    );
+    expect(log).toContain('1 object was not exploded: MINSERT arrays cannot be exploded.');
     expect(log).toContain('1 object was not exploded: a LINE cannot be exploded.');
     expect(log).toContain('1 object was not exploded: a CIRCLE cannot be exploded.');
     expect(kinds()).toContain('INSERT');

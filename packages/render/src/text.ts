@@ -37,6 +37,8 @@
 import {
   bulgeArc,
   type AttributeFields,
+  type Color,
+  type TextPiece,
   type Handle,
   type MTextGeometry,
   type TextGeometry,
@@ -54,6 +56,7 @@ import {
   type MTextBase,
   type MTextCharStyle,
   type MTextColor,
+  type MTextFont,
   type MTextLayout,
   type MTextLayoutOptions,
   type ShxFont,
@@ -64,7 +67,7 @@ import {
   verticalAdvance,
   verticalFace,
 } from '@triya/text';
-import { composeAffine, transformPath, type Affine } from './affine';
+import { applyAffine, composeAffine, transformPath, type Affine } from './affine';
 import type { EmbedPlacement } from './style/dash';
 import { colorValue } from './style/resolve';
 import type { Paint } from './tessellate';
@@ -716,32 +719,122 @@ function mtextLayout(
  */
 function background(out: Collector, g: MTextGeometry, layout: MTextLayout, frame: Affine): void {
   const bg = g.background;
-  if (!bg || !layout.mask || (bg.flags & 0x13) === 0) return;
-  const pad = (bg.scale - 1) * g.height;
-  const columns = layout.columns.filter((c) => Number.isFinite(c.minY));
-  const boxes =
-    columns.length > 0 && columns.length === layout.columns.length
-      ? columns.map((c) => ({
-          minX: c.minX - pad,
-          minY: c.minY - pad,
-          maxX: c.maxX + pad,
-          maxY: c.maxY + pad,
-        }))
-      : [layout.mask];
+  const boxes = fillBoxes(g, layout);
+  if (!bg || !boxes) return;
   const paths = boxes.map((b) => transformPath(rect(b.minX, b.minY, b.maxX, b.maxY), frame));
   if (bg.flags & 3) {
     const color: PrimitiveColor = bg.flags & 2 || !bg.color ? 'background' : colorValue(bg.color);
     for (const p of paths) out.mask(p, color);
   }
-  if ((bg.flags & 16) === 0) return;
-  // A multileader's frame keeps its landing gap where its mask has a scale of its own (M2-44).
-  if (bg.frameScale === undefined || bg.frameScale === bg.scale || boxes.length !== 1) {
-    for (const p of paths) out.frame(p);
-    return;
+  for (const b of frameBoxes(g, layout) ?? []) {
+    out.frame(transformPath(rect(b.minX, b.minY, b.maxX, b.maxY), frame));
   }
+}
+
+type LayoutBox = MTextLayout['bounds'];
+
+/** The boxes an MTEXT's background fills, in its own frame, or undefined when it has none. */
+function fillBoxes(g: MTextGeometry, layout: MTextLayout): LayoutBox[] | undefined {
+  const bg = g.background;
+  if (!bg || !layout.mask || (bg.flags & 0x13) === 0) return undefined;
+  const pad = (bg.scale - 1) * g.height;
+  const columns = layout.columns.filter((c) => Number.isFinite(c.minY));
+  return columns.length > 0 && columns.length === layout.columns.length
+    ? columns.map((c) => ({
+        minX: c.minX - pad,
+        minY: c.minY - pad,
+        maxX: c.maxX + pad,
+        maxY: c.maxY + pad,
+      }))
+    : [layout.mask];
+}
+
+/** The boxes an MTEXT's background frame (DXF 90 bit 16) draws, in its own frame. */
+function frameBoxes(g: MTextGeometry, layout: MTextLayout): LayoutBox[] | undefined {
+  const bg = g.background;
+  const boxes = fillBoxes(g, layout);
+  if (!bg || !boxes || (bg.flags & 16) === 0) return undefined;
+  // A multileader's frame keeps its landing gap where its mask has a scale of its own (M2-44).
+  if (bg.frameScale === undefined || bg.frameScale === bg.scale || boxes.length !== 1) return boxes;
   const b = layout.bounds;
   const k = (bg.frameScale - 1) * g.height;
-  out.frame(transformPath(rect(b.minX - k, b.minY - k, b.maxX + k, b.maxY + k), frame));
+  return [{ minX: b.minX - k, minY: b.minY - k, maxX: b.maxX + k, maxY: b.maxY + k }];
+}
+
+/**
+ * An MTEXT as EXPLODE makes TEXTs of it (M3-12 part 7; AutoCAD Help, "EXPLODE (Command)":
+ * "Multiline Text: Explodes into text objects"): each run of one format laid out in the fonts
+ * loaded now, from its baseline start, with the strokes (underlines, overlines, strike-throughs,
+ * fraction bars, the background's frame) as lines. Undefined while the style's font is not
+ * loaded or for an MTEXT drawn top to bottom. Tracking and the background fill have no TEXT to
+ * go into: runs keep their place, as ezdxf's MTextExplode (MIT) leaves them too.
+ */
+export function textPieces(ctx: TextContext): (g: MTextGeometry) => TextPiece[] | undefined {
+  return (g) => {
+    const record = ctx.style(g.style);
+    const own = record ? styleFont(record) : STANDARD_FONT;
+    if (!ctx.fonts.face(own)) return undefined;
+    if (!(g.height > 0) || g.contents === '') return [];
+    if (verticalMText(g, ctx)) return undefined;
+    const frame = textFrame(g.position, g.rotation, false, !!g.upsideDown);
+    const at = (x: number, y: number) => applyAffine(frame, { x, y });
+    const { layout } = mtextLayout(g, ctx);
+    const out: TextPiece[] = [];
+    const text = (raw: string, x: number, y: number, style: MTextCharStyle) => {
+      // Control characters (a file's caret-encoded ^A…^_) draw nothing and a TEXT cannot keep them.
+      // eslint-disable-next-line no-control-regex
+      const value = raw.replace(/[\u0000-\u001f]/g, '');
+      if (value.trim() === '') return;
+      const color = pieceColor(style.color);
+      out.push({
+        kind: 'text',
+        value,
+        position: at(x, y),
+        height: style.height,
+        widthFactor: style.widthFactor,
+        oblique: (style.oblique * Math.PI) / 180,
+        ...(!sameFont(style.font, own) && { font: style.font }),
+        ...(color && { color }),
+      });
+    };
+    const line = (x1: number, y1: number, x2: number, y2: number, c?: MTextColor) => {
+      const color = pieceColor(c);
+      out.push({ kind: 'line', start: at(x1, y1), end: at(x2, y2), ...(color && { color }) });
+    };
+    for (const l of layout.lines) {
+      for (const run of l.runs) {
+        if (run.kind === 'text') text(run.text, run.x, run.y, run.style);
+        else if (run.kind === 'stack') {
+          for (const part of [run.upper, run.lower]) text(part.text, part.x, part.y, part.style);
+          if (run.bar) line(...run.bar, run.style.color);
+        }
+        // A big-font character (\M+) has no code a TEXT can hold: it is left out.
+      }
+      for (const d of l.decorations) line(d.x1, d.y, d.x2, d.y);
+    }
+    for (const b of frameBoxes(g, layout) ?? []) {
+      line(b.minX, b.minY, b.maxX, b.minY);
+      line(b.maxX, b.minY, b.maxX, b.maxY);
+      line(b.maxX, b.maxY, b.minX, b.maxY);
+      line(b.minX, b.maxY, b.minX, b.minY);
+    }
+    return out;
+  };
+}
+
+const sameFont = (a: MTextFont, b: MTextFont): boolean =>
+  fontKey(a.name) === fontKey(b.name) && a.bold === b.bold && a.italic === b.italic;
+const fontKey = (name: string): string =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/\.(shx|ttf|ttc|otf)$/, '');
+
+/** A run's own colour as an entity colour; ByBlock (0) and ByLayer (256) draw the MTEXT's. */
+function pieceColor(c: MTextColor | undefined): Color | undefined {
+  if (!c) return undefined;
+  if (c.kind === 'aci') return c.index <= 0 || c.index >= 256 ? undefined : c;
+  return { kind: 'rgb', r: c.r, g: c.g, b: c.b };
 }
 
 /**

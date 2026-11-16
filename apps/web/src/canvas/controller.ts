@@ -69,6 +69,7 @@ import {
   type MTextGeometry,
   type TextGeometry,
   type TextOutline,
+  type TextPiece,
   type DeferredPick,
   type EnclosedSpace,
   type OsnapHit,
@@ -1251,11 +1252,15 @@ export class CanvasController {
   /**
    * The selection window, polygon, fence or lasso being dragged (M3-04 part 6): what `area`
    * would take lights up, when SELECTIONPREVIEW previews at the prompt it is dragged at, unless
-   * it takes more than SELECTIONPREVIEWLIMIT; undefined, the window is gone.
+   * it takes more than SELECTIONPREVIEWLIMIT or the prompt previews the command instead;
+   * undefined, the window is gone.
    */
   #areaPreview(area: SelectQuery | undefined): void {
     const d = this.#drafting;
-    const on = area && areaPreviewed(d.selectionPreview, this.#prompt);
+    // A command preview of what the window (fence) would do takes its place (M3-12 part 7), as
+    // it does the pickbox's (part 6): the objects it would trim show faded, not lit up.
+    const commandPreviews = this.#asked?.commandPreview !== undefined && d.commandPreview === 1;
+    const on = area && !commandPreviews && areaPreviewed(d.selectionPreview, this.#prompt);
     if (!on && !this.#areaPreviewing) return;
     this.#areaPreviewing = !!on;
     this.#previewing = false;
@@ -1346,6 +1351,11 @@ export class CanvasController {
   /** The widths MTEXTs are laid out at (M2-10 part 3: dimension regeneration). */
   textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
     return this.#host.textWidths(texts);
+  }
+
+  /** The TEXT runs and strokes MTEXTs explode into (M3-12 part 7: EXPLODE of MTEXT). */
+  textPieces(texts: readonly MTextGeometry[]): Promise<(readonly TextPiece[] | null)[]> {
+    return this.#host.textPieces(texts);
   }
 
   /** How many dynamic columns MTEXTs take (M2-26 part 2: a column grip recounts them). */

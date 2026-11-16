@@ -260,3 +260,88 @@ describe("TRIM's freehand fence", () => {
     );
   });
 });
+
+// M3-12 part 7: the preview along a fence or crossing window, the cursor as its last point
+// (opposite corner): what each object it crosses would become, as the fence (window) then makes
+// it, with nothing edited before.
+describe('COMMANDPREVIEW along a fence or crossing window', () => {
+  const verticals = (): EntityGeometry[] => [
+    { kind: 'LINE', start: { x: 3, y: -5 }, end: { x: 3, y: 5 } },
+    { kind: 'LINE', start: { x: 7, y: -5 }, end: { x: 7, y: 5 } },
+  ];
+  const lineShapes = (t: ReturnType<typeof setup>) =>
+    t
+      .space()
+      .filter((e) => e.geom.kind === 'LINE')
+      .map((e) => JSON.stringify(shape(e.geom)))
+      .sort();
+
+  it("previews Quick mode's fence to the cursor, as the fence then trims", async () => {
+    const t = setup(verticals());
+    await t.bus.script(['TRIM']);
+    await t.bus.pick({ x: 5, y: -1 });
+    expect(t.bus.prompt?.commandPreview?.hover).toBeUndefined();
+    const before = lineShapes(t);
+    const p = await previewAt(t.bus, { cursor: { x: 5, y: 1 }, hits: [] });
+    // Only the horizontal line is crossed: its middle third between the verticals goes.
+    expect(p?.faded).toEqual([t.byHandle('30')!.id]);
+    expect(lineShapes(t)).toEqual(before);
+    const unchanged = before.filter((s) => !s.includes('"y":0}') || s.includes('"y":-5'));
+    await t.bus.pick({ x: 5, y: 1 });
+    const after = lineShapes(t);
+    expect([...unchanged, ...shapes(p)].sort()).toEqual(after);
+  });
+
+  it('previews each crossing of a fence in turn, one object cut twice', async () => {
+    const t = setup(verticals());
+    await t.bus.script(['TRIM', 'O', 'S', '', 'F']);
+    await t.bus.pick({ x: 5, y: -1 });
+    await t.bus.pick({ x: 5, y: 1 });
+    await t.bus.pick({ x: 9, y: 1 });
+    // On to (9,-1): the line is cut at x = 5, then its piece past x = 7 found again at x = 9
+    // (Standard mode keeps it: no edge crosses it there), and the vertical at x = 7 at y = 1.
+    const p = await previewAt(t.bus, { cursor: { x: 9, y: -1 }, hits: [] });
+    expect(p?.faded).toHaveLength(2);
+    expect(shapes(p)).toEqual(
+      [
+        { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 3, y: 0 } },
+        { kind: 'LINE', start: { x: 7, y: 0 }, end: { x: 10, y: 0 } },
+        { kind: 'LINE', start: { x: 7, y: -5 }, end: { x: 7, y: 0 } },
+      ]
+        .map((g) => JSON.stringify(g))
+        .sort(),
+    );
+    const want = shapes(p);
+    await t.bus.pick({ x: 9, y: -1 });
+    await t.bus.submit('');
+    for (const s of want) expect(lineShapes(t)).toContain(s);
+  });
+
+  it("previews Standard mode's crossing window, and EXTEND's, and nothing for an empty one", async () => {
+    const t = setup(verticals());
+    await t.bus.script(['TRIM', 'O', 'S', '']);
+    await t.bus.pick({ x: 4, y: -1 });
+    const p = await previewAt(t.bus, { cursor: { x: 6, y: 1 }, hits: [] });
+    expect(shapes(p)).toEqual(
+      [
+        { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 3, y: 0 } },
+        { kind: 'LINE', start: { x: 7, y: 0 }, end: { x: 10, y: 0 } },
+      ]
+        .map((g) => JSON.stringify(g))
+        .sort(),
+    );
+    expect(await previewAt(t.bus, { cursor: { x: 4, y: -1 }, hits: [] })).toBeUndefined();
+    expect(await previewAt(t.bus, { cursor: { x: 4.5, y: -0.5 }, hits: [] })).toBeUndefined();
+    const want = shapes(p);
+    await t.bus.pick({ x: 6, y: 1 });
+    for (const s of want) expect(lineShapes(t)).toContain(s);
+
+    const x = setup([{ kind: 'LINE', start: { x: 12, y: -5 }, end: { x: 12, y: 5 } }]);
+    await x.bus.script(['EXTEND', 'O', 'S', '']);
+    await x.bus.pick({ x: 9, y: -1 });
+    const ext = await previewAt(x.bus, { cursor: { x: 10.5, y: 1 }, hits: [] });
+    expect(shapes(ext)).toEqual([
+      JSON.stringify({ kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 12, y: 0 } }),
+    ]);
+  });
+});
