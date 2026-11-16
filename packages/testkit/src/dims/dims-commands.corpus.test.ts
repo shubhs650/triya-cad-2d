@@ -9,8 +9,8 @@
 // kept in ACAD_DSTYLE_DIMRADIAL_EXTENSION xdata and its arc extension line drawn; M4-02's
 // DIMORDINATE, DIMJOGGED on the circle, DIMARC's Partial on the arc, and DIMJOGLINE on the
 // first dimension, its jog kept in ACAD_DSTYLE_DIMJAG_POSITION xdata; M4-02 part 2's DIMOVERRIDE,
-// DIMEDIT Oblique, DIMTEDIT Left and QDIM Radius. The drawing is saved as
-// AC1032 DXF (DEC-047),
+// DIMEDIT Oblique, DIMTEDIT Left and QDIM Radius; M4-02 part 3's DIMREASSOCIATE of the first
+// dimension's first origin. The drawing is saved as AC1032 DXF (DEC-047),
 // read back by acad-ts and mapped: each dimension comes back where it was made, with its `*D`
 // block, and the health check (stored block against what the engine draws, M2-10) passes on it.
 // With TRIYA_DXF_AUDIT_DIR set the save goes to the ezdxf audit as the file's `dimension` save.
@@ -276,6 +276,16 @@ describe('dimension commands on the public corpus (M2-11)', () => {
       await bus.script(['', 'R', '560,40']);
       expect(bus.command).toBeUndefined();
       expect((added().at(-1)!.geom as DimensionGeometry).dimType).toBe('radius');
+      // M4-02 part 3: DIMREASSOCIATE re-picks the first dimension's first origin.
+      const was = model.entity(first.id)!.geom as DimensionGeometry & { dimType: 'linear' };
+      await bus.script(['DIMREASSOCIATE']);
+      await bus.pick(was.textPosition);
+      await bus.script(['', `${was.first.x - 5},${was.first.y}`, '']);
+      expect(bus.command).toBeUndefined();
+      expect(model.entity(first.id)!.geom).toMatchObject({
+        first: { x: was.first.x - 5, y: was.first.y },
+        second: was.second,
+      });
 
       const dims = added();
       for (const e of dims) {

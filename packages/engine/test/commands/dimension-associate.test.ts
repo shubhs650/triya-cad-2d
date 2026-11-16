@@ -3,7 +3,13 @@
 // dimension-harness.ts. The sample drawing has lines (0,0)-(10,0), (0,0)-(0,10) and
 // (0,20)-(10,20), a circle at (5,5) radius 2 and an arc centred on (50,0), radius 10, 0° to 60°.
 import { describe, expect, it } from 'vitest';
-import { ChangeSetBuilder, type DimAssoc, type DimAssocPoint, type Entity } from '../../src/index';
+import {
+  ChangeSetBuilder,
+  type DimAssoc,
+  type DimAssocPoint,
+  type DimensionGeometry,
+  type Entity,
+} from '../../src/index';
 import { entityInit, snapshot } from '../model/fixtures';
 import { said, setup } from './dimension-harness';
 
@@ -45,7 +51,8 @@ function associate(s: ReturnType<typeof setup>, dim: Entity, line: Entity): stri
 
 /** Picks the dimensions at `indices` by their text, and ends the selection. */
 async function pickDims(s: ReturnType<typeof setup>, ...indices: number[]): Promise<void> {
-  for (const i of indices) await s.bus.pick(s.dims().at(i)!.geom.textPosition);
+  for (const i of indices)
+    await s.bus.pick((s.dims().at(i)!.geom as DimensionGeometry).textPosition);
   await s.bus.submit('');
 }
 
@@ -60,9 +67,7 @@ describe('DIMREASSOCIATE', () => {
     await s.bus.submit('DIMREASSOCIATE');
     expect(s.bus.promptText).toBe('Select dimensions to reassociate:');
     await pickDims(s, 0);
-    expect(s.bus.promptText).toBe(
-      'Specify first extension line origin or [Select object] <next>:',
-    );
+    expect(s.bus.promptText).toBe('Specify first extension line origin or [Select object] <next>:');
     await s.bus.submit('2,0');
     expect(s.bus.promptText).toBe('Specify second extension line origin <next>:');
     await s.bus.submit('');
@@ -87,9 +92,7 @@ describe('DIMREASSOCIATE', () => {
     // The circle has no ends: asked again.
     await s.bus.pick({ x: 7, y: 5 });
     expect(said(s.bus)).toContain('Object selected is not a line, arc or polyline segment.');
-    expect(s.bus.promptText).toBe(
-      'Specify first extension line origin or [Select object] <next>:',
-    );
+    expect(s.bus.promptText).toBe('Specify first extension line origin or [Select object] <next>:');
     await s.bus.submit('S');
     await s.bus.pick({ x: 5, y: 20 });
     expect(s.bus.command).toBeUndefined();
@@ -124,7 +127,7 @@ describe('DIMREASSOCIATE', () => {
     expect(s.bus.promptText).toBe('Select arc or circle <next>:');
     await s.bus.pick({ x: 5, y: 7 });
     expect(s.bus.command).toBeUndefined();
-    const [radius, diameter] = s.dims().map((e) => e.geom);
+    const [radius, diameter] = s.dims().map((e) => e.geom as DimensionGeometry);
     expect(radius).toMatchObject({ dimType: 'radius', definitionPoint: { x: 5, y: 5 } });
     close((radius as { chordPoint: { x: number; y: number } }).chordPoint, 7, 5);
     expect(diameter?.dimType).toBe('diameter');
@@ -272,6 +275,91 @@ describe('DIMREASSOCIATE', () => {
   });
 });
 
+describe('DIMREASSOCIATE ends', () => {
+  const ARC_42 = entityInit('42', {
+    kind: 'ARC',
+    center: { x: 0, y: -50 },
+    radius: 5,
+    startAngle: 0,
+    endAngle: Math.PI / 2,
+  });
+  // Each dimension, made, then the answers given before Esc.
+  const cases: [string, (s: ReturnType<typeof setup>) => Promise<void>, string[]][] = [
+    ['linear, first origin', (s) => s.bus.script(['DIMLINEAR', '0,0', '10,0', '5,5']), []],
+    ['linear, object', (s) => s.bus.script(['DIMLINEAR', '0,0', '10,0', '5,5']), ['S']],
+    ['linear, second origin', (s) => s.bus.script(['DIMLINEAR', '0,0', '10,0', '5,5']), ['2,0']],
+    ['angular, vertex', (s) => s.bus.script(['DIMANGULAR', '', '0,0', '10,0', '0,10', '7,7']), []],
+    ['angular, arc', (s) => s.bus.script(['DIMANGULAR', '', '0,0', '10,0', '0,10', '7,7']), ['S']],
+    [
+      'angular, first end',
+      (s) => s.bus.script(['DIMANGULAR', '', '0,0', '10,0', '0,10', '7,7']),
+      [''],
+    ],
+    [
+      'angular, second end',
+      (s) => s.bus.script(['DIMANGULAR', '', '0,0', '10,0', '0,10', '7,7']),
+      ['', ''],
+    ],
+    [
+      'two lines',
+      async (s) => {
+        await s.bus.script(['DIMANGULAR']);
+        await s.bus.pick({ x: 5, y: 0 });
+        await s.bus.pick({ x: 0, y: 5 });
+        await s.bus.submit('3,3');
+      },
+      [],
+    ],
+    [
+      'radius',
+      async (s) => {
+        await s.bus.script(['DIMRADIUS']);
+        await s.bus.pick({ x: 60, y: 0 });
+        await s.bus.submit('65,0');
+      },
+      [],
+    ],
+    ['ordinate', (s) => s.bus.script(['DIMORDINATE', '10,5', '20,6']), []],
+    [
+      'arc length',
+      async (s) => {
+        await s.bus.script(['DIMARC']);
+        await s.bus.pick({ x: 0, y: -45 });
+        await s.bus.submit(`${7 * Math.SQRT1_2},${-50 + 7 * Math.SQRT1_2}`);
+      },
+      [],
+    ],
+  ];
+
+  it.each(cases)('Esc ends it and changes nothing (%s)', async (_name, make, answers) => {
+    const s = setup({ entities: [ARC_42] });
+    await make(s);
+    const before = snapshot(s.model);
+    await s.bus.script(['DIMREASSOCIATE']);
+    const g = s.dims()[0]!.geom as DimensionGeometry;
+    await s.bus.pick(g.dimType === 'ordinate' ? g.leaderEnd : g.textPosition);
+    await s.bus.submit('');
+    for (const a of answers) await s.bus.submit(a);
+    expect(s.bus.command).toBe('DIMREASSOCIATE');
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    expect(snapshot(s.model)).toEqual(before);
+  });
+
+  it('selecting no dimension, or Esc at the selection, does nothing', async () => {
+    const s = setup();
+    const before = snapshot(s.model);
+    await s.bus.script(['DIMREASSOCIATE']);
+    await s.bus.pick({ x: 5, y: 20 });
+    await s.bus.submit('');
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.script(['DIMDISASSOCIATE']);
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    expect(snapshot(s.model)).toEqual(before);
+  });
+});
+
 describe('DIMDISASSOCIATE', () => {
   it('removes the associations of the dimensions selected, in one undo step', async () => {
     const s = setup();
@@ -282,8 +370,8 @@ describe('DIMDISASSOCIATE', () => {
     const before = snapshot(s.model);
     await s.bus.submit('DIMDISASSOCIATE');
     expect(s.bus.promptText).toBe('Select dimensions to disassociate:');
-    await s.bus.pick(a!.geom.textPosition);
-    await s.bus.pick(b!.geom.textPosition);
+    await s.bus.pick((a!.geom as DimensionGeometry).textPosition);
+    await s.bus.pick((b!.geom as DimensionGeometry).textPosition);
     await s.bus.pick({ x: 5, y: 20 });
     await s.bus.submit('');
     expect(s.bus.command).toBeUndefined();

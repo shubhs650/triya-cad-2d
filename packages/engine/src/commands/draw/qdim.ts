@@ -18,7 +18,6 @@
 //   ("Indicate dimension point to remove, or [Add/eXit] <eXit>:"). seTtings: AutoCAD's
 //   "Associative dimension priority [Endpoint/Intersection]"; the dimensions Triya makes are not
 //   associative (DIMASSOC 1, as DIMLINEAR's), so the answer is taken and changes nothing.
-// AutoCAD's QDIM makes associative dimensions; Triya's are not yet (M4-02 DIMREASSOCIATE).
 import type { Vec2 } from '../../geom/types';
 import { add, distance, dot, fromAngle, perp, scale, sub } from '../../geom/vec';
 import type { DimensionGeometry, EntityGeometry } from '../../model/types';
