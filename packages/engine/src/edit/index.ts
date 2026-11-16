@@ -122,4 +122,5 @@ export {
 export * from './text-justify';
 export * from './text-align';
 export * from './find-text';
+export * from './fields';
 export * from './spelling';

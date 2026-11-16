@@ -1,0 +1,1 @@
+- M4-10 part 1 (#459): fields in drawings are read (dates, file name, layout name, plot scale, drawing variables and object properties on text, multiline text and attributes), and UPDATEFIELD evaluates them again so the text shows today's date, the file's name or the object's area, saving the new values with the drawing.
