@@ -10,7 +10,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, DimensionGeometry, Entity } from '@triya/engine';
 import path from 'node:path';
-import { activeCanvas, enterCommand, expectShown, openWithPicker } from '../app/page';
+import { activeCanvas, enterCommand, expectShown, inkOf, openWithPicker } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -254,4 +254,74 @@ test('Use for makes a sub-style, and Compare lists how two styles differ', async
   await expect.poll(() => textHeight(page)).toBe(0.18);
   await manager.getByRole('button', { name: 'Close' }).click();
   await expect(manager).toBeHidden();
+});
+
+// M4-03 part 3: the preview image. The manager shows the selected style drawn by the renderer
+// (a plate with linear, angular and radius dimensions), the Modify dialog the same sample
+// following each change; Import... reads a drawing file's styles (ezdxf's
+// text_negative_extrusion.dxf: Arch_*, Mech-*, and ISO-25 and Standard, which this drawing has
+// already and which are greyed) and brings the checked ones in, the first one selected; U takes
+// the import back.
+test('the preview image follows the style, and Import... brings in another drawing’s styles', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+
+  await enterCommand(page, 'DIMSTYLE');
+  const manager = page.getByRole('dialog', { name: 'Dimension Style Manager' });
+  const list = manager.getByRole('listbox', { name: 'Styles:' });
+  const preview = manager.getByTestId('dimstyle-preview');
+  await expect(manager.getByText(`Preview of: ${CURRENT}`)).toBeVisible();
+  await expect(preview).toHaveAttribute('data-drawn', /custom_style_ltypes/, { timeout: 15_000 });
+  expect(await inkOf(page, preview)).toBeGreaterThan(500);
+  await shot(page, '9-manager-preview');
+  await list.getByRole('option', { name: 'ISO-25' }).click();
+  await expect(manager.getByText('Preview of: ISO-25')).toBeVisible();
+  await expect(preview).toHaveAttribute('data-drawn', /ISO-25/);
+
+  // Modify...: the sample follows the text height as it is typed.
+  await manager.getByRole('button', { name: 'Modify...' }).click();
+  const modify = page.getByRole('dialog', { name: 'Modify Dimension Style: ISO-25' });
+  const sample = modify.getByTestId('dimstyle-preview');
+  await expect(sample).toHaveAttribute('data-drawn', /"DIMTXT":2\.5/, { timeout: 15_000 });
+  await modify.getByRole('tab', { name: 'Text', exact: true }).click();
+  await modify.getByLabel('Text height:').fill('5');
+  await expect(sample).toHaveAttribute('data-drawn', /"DIMTXT":5/);
+  expect(await inkOf(page, sample)).toBeGreaterThan(500);
+  await shot(page, '10-modify-preview');
+  await modify.getByRole('button', { name: 'Cancel' }).click();
+  await expect(modify).toBeHidden();
+
+  // Import...: a drawing file's styles, the ones this drawing has greyed.
+  await manager.getByRole('button', { name: 'Import...' }).click();
+  const importer = page.getByRole('dialog', { name: 'Import Dimension Styles' });
+  await expect(importer.getByLabel('From drawing:')).toContainText('No other drawing is open');
+  await importer
+    .getByLabel('Drawing to import from')
+    .setInputFiles(path.join(CORPUS, 'ezdxf/examples_dxf/text_negative_extrusion.dxf'));
+  const box = (name: string) => importer.getByRole('checkbox', { name, exact: true });
+  await expect(box('Mech-2.5')).toBeEnabled({ timeout: 15_000 });
+  await expect(importer.getByRole('checkbox', { name: /^ISO-25/ })).toBeDisabled();
+  await expect(importer.getByRole('checkbox', { name: /^Standard/ })).toBeDisabled();
+  await box('Mech-2.5').check();
+  await box('Arch_25').check();
+  await shot(page, '11-import-dialog');
+  await importer.getByRole('button', { name: 'Import' }).click();
+  await expect(importer).toBeHidden();
+  await expect(list.getByRole('option', { name: 'Arch_25' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(list.getByRole('option', { name: 'Mech-2.5' })).toBeVisible();
+  await expect(preview).toHaveAttribute('data-drawn', /Arch_25/, { timeout: 15_000 });
+  await shot(page, '12-imported');
+  await manager.getByRole('button', { name: 'Close' }).click();
+  await expect(manager).toBeHidden();
+  await type(page, 'U', 'Command:');
+  await enterCommand(page, 'DIMSTYLE');
+  await expect(list.getByRole('option', { name: 'Arch_25' })).toHaveCount(0);
+  await manager.getByRole('button', { name: 'Close' }).click();
 });

@@ -4,6 +4,7 @@
 
 import type { DrawingDimensionHealth } from '@triya/dims';
 import type {
+  DimStylePreview,
   Box,
   ChangeSet,
   DragMotion,
@@ -21,6 +22,7 @@ import type {
   Vec2,
   UnderlaySnapPage,
 } from '@triya/engine';
+import type { PreviewSize } from './dim-style-preview';
 import type { PlotPart } from './plot/job';
 import type { FontSources, PlotRequest, RenderDocument } from './session';
 import type {
@@ -161,6 +163,13 @@ export type HostMessage =
       readonly id: number;
       readonly width: number;
       readonly height: number;
+    }
+  /** A dimension style's preview image (M4-03 part 3); the answer is a `thumbnail`. */
+  | {
+      readonly type: 'dimStylePreview';
+      readonly id: number;
+      readonly preview: DimStylePreview;
+      readonly size: PreviewSize;
     };
 
 export type WorkerMessage =

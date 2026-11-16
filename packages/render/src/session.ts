@@ -18,6 +18,7 @@ import {
   unionBox,
   type Box,
   type ChangeSet,
+  type DimStylePreview,
   type DocumentInit,
   type EnclosedSpace,
   type Entity,
@@ -50,6 +51,7 @@ import type { Paint } from './tessellate';
 import { columnCounter, textMeasure, textPieces, type TextContext } from './text';
 import { textBounds, textOutline } from './text-bounds';
 import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
+import { dimStylePreviewImage, type PreviewSize } from './dim-style-preview';
 import { plotParts, type PlotPart } from './plot/job';
 import type { PlotStyleTable } from './plot/plot-style-table';
 import { PlotResolver } from './plot/resolver';
@@ -182,6 +184,7 @@ export class RenderSession {
   /** PDF underlay pages' vector geometry by PDFDEFINITION handle, for osnap (M2-22). */
   readonly #underlaySnaps = new Map<Handle, UnderlaySnapPage>();
   readonly #surface: Surface;
+  readonly #createLayer: () => Surface;
   /** The block record drawn: model space or a layout's paper space. */
   readonly #block: Handle;
   readonly #tol: Tolerance;
@@ -199,6 +202,7 @@ export class RenderSession {
 
   constructor(o: RenderSessionOptions) {
     this.#surface = o.surface;
+    this.#createLayer = o.createLayer;
     this.#clock = o.clock ?? (() => performance.timeOrigin + performance.now());
     const { init, block } = o.document;
     this.#block = block;
@@ -371,6 +375,25 @@ export class RenderSession {
   /** The last frame drawn, fitted inside `max` (the document tab hover preview, M1-22). */
   thumbnail(max: ThumbnailSize, createBitmap?: BitmapFactory): Promise<ImageBitmap | undefined> {
     return thumbnailOf(this.#surface, max, createBitmap);
+  }
+
+  /**
+   * A dimension style's preview image (M4-03 part 3): the engine's sample drawing in this
+   * drawing's styles, drawn in the fonts and display style the canvas draws with.
+   */
+  dimStylePreview(
+    preview: DimStylePreview,
+    size: PreviewSize,
+    createBitmap?: BitmapFactory,
+  ): Promise<ImageBitmap | undefined> {
+    const c = {
+      model: this.model,
+      text: this.#text,
+      style: this.renderer.style,
+      createLayer: this.#createLayer,
+      tol: this.#tol,
+    };
+    return dimStylePreviewImage(c, preview, size, createBitmap);
   }
 
   /**

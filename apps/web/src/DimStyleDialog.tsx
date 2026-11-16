@@ -22,13 +22,15 @@
 // opens Compare Dimension Styles (Compare, With and the variables they set differently, or every
 // variable of one style With <none>); the fields AutoCAD keeps in xdata (Break size, Jog height
 // factor, sub-units, Tolerance alignment) are on their tabs, greyed in Override, as the header has
-// no variable for them. The preview image is still to come (ROADMAP M4-03).
+// no variable for them. Part 3: the preview image (StylePreview) and Import... (ImportStyles).
 import {
   DIMSTYLE_FIELDS,
   DIMSTYLE_TABS,
   DIMSTYLE_USES,
   compareDimStyles,
+  copyDimStyles,
   dialogVars,
+  dimStyleOffers,
   fieldOptions,
   isDimStyleXdataVar,
   setField,
@@ -38,10 +40,16 @@ import {
   type DimStyleField,
   type DimStyleLists,
   type DimStyleTab,
+  type DimStyleOffer,
+  type DimStylePreview,
   type DimStyleVars,
+  type Clipboard,
+  type DocumentModel,
   type PromptAnswer,
 } from '@triya/engine';
-import { useId, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { controllersOf } from './canvas/registry';
+import { drawingFileModel, type StyleSource } from './dimstyle-import';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
 
@@ -55,6 +63,7 @@ const OVERRIDES = '<style overrides>';
 type Editing =
   | { readonly mode: 'create' }
   | { readonly mode: 'compare' }
+  | { readonly mode: 'import' }
   | {
       readonly mode: 'new' | 'modify' | 'override';
       readonly name: string;
@@ -91,7 +100,16 @@ function shownValue(v: unknown): string {
   return String(v);
 }
 
-export function DimStyleDialog({ doc, request }: { doc: number; request: Request }) {
+export function DimStyleDialog({
+  doc,
+  request,
+  sources = [],
+}: {
+  doc: number;
+  request: Request;
+  /** The other open drawings, which Import... can read styles from. */
+  sources?: readonly StyleSource[];
+}) {
   const [selected, setSelected] = useState(request.selected);
   const [list, setList] = useState<'all' | 'used'>('all');
   const [editing, setEditing] = useState<Editing>();
@@ -152,6 +170,15 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
     : style?.parent !== undefined
       ? `${style.parent}: ${useLabel(style.use)}`
       : (style?.name ?? '');
+
+  // The preview shows the style selected as the drawing draws it (a sub-style its kind alone),
+  // the overrides on the current style's DIMVARs.
+  const previewTitle = onOverrides ? `${request.current} ${OVERRIDES}` : description;
+  const managerPreview: DimStylePreview | undefined = !style
+    ? undefined
+    : onOverrides
+      ? { vars: dialogVars({ ...style.vars, ...request.overrides }) }
+      : { style: style.name, ...(style.use && { use: style.use }) };
 
   return (
     <Modal
@@ -215,6 +242,8 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
           </label>
         </div>
         <div className="dimstyle-right">
+          <span>Preview of: {previewTitle}</span>
+          <StylePreview doc={doc} preview={managerPreview} size={MANAGER_PREVIEW} />
           <span>Description</span>
           <p className="dimstyle-description" data-testid="dimstyle-description">
             {description}
@@ -256,6 +285,9 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
             </button>
             <button type="button" disabled={!style} onClick={() => setEditing({ mode: 'compare' })}>
               Compare...
+            </button>
+            <button type="button" onClick={() => setEditing({ mode: 'import' })}>
+              Import...
             </button>
           </div>
         </div>
@@ -323,41 +355,116 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
           onClose={() => setEditing(undefined)}
         />
       )}
-      {editing && editing.mode !== 'create' && editing.mode !== 'compare' && (
-        <StyleEditor
-          title={
-            editing.mode === 'new'
-              ? `New Dimension Style: ${
-                  editing.use && editing.use !== 'all'
-                    ? `${editing.from}: ${useLabel(editing.use)}`
-                    : editing.name
-                }`
-              : editing.mode === 'modify'
-                ? `Modify Dimension Style: ${editing.name}`
-                : `Override Current Style: ${editing.name}`
-          }
-          vars={editing.vars}
-          lists={request.lists}
-          override={editing.mode === 'override'}
+      {editing?.mode === 'import' && (
+        <ImportStyles
+          sources={sources}
+          have={request.styles.map((s) => s.name)}
           onCancel={() => setEditing(undefined)}
-          onOk={(vars) => {
-            if (editing.mode === 'new') {
-              void send({
-                op: 'new',
-                name: editing.name,
-                from: editing.from!,
-                vars,
-                ...(editing.use && editing.use !== 'all' && { use: editing.use }),
-              });
-            } else if (editing.mode === 'modify') {
-              void send({ op: 'modify', name: editing.name, vars });
-            } else {
-              void send({ op: 'override', vars });
-            }
-          }}
+          onImport={(styles) => void send({ op: 'import', styles })}
         />
       )}
+      {editing &&
+        editing.mode !== 'create' &&
+        editing.mode !== 'compare' &&
+        editing.mode !== 'import' && (
+          <StyleEditor
+            title={
+              editing.mode === 'new'
+                ? `New Dimension Style: ${
+                    editing.use && editing.use !== 'all'
+                      ? `${editing.from}: ${useLabel(editing.use)}`
+                      : editing.name
+                  }`
+                : editing.mode === 'modify'
+                  ? `Modify Dimension Style: ${editing.name}`
+                  : `Override Current Style: ${editing.name}`
+            }
+            doc={doc}
+            vars={editing.vars}
+            lists={request.lists}
+            {...(editing.mode === 'new' &&
+              editing.use &&
+              editing.use !== 'all' && { use: editing.use })}
+            {...(editing.mode === 'modify' && {
+              use: request.styles.find((s) => s.name === editing.name)?.use,
+            })}
+            override={editing.mode === 'override'}
+            onCancel={() => setEditing(undefined)}
+            onOk={(vars) => {
+              if (editing.mode === 'new') {
+                void send({
+                  op: 'new',
+                  name: editing.name,
+                  from: editing.from!,
+                  vars,
+                  ...(editing.use && editing.use !== 'all' && { use: editing.use }),
+                });
+              } else if (editing.mode === 'modify') {
+                void send({ op: 'modify', name: editing.name, vars });
+              } else {
+                void send({ op: 'override', vars });
+              }
+            }}
+          />
+        )}
     </Modal>
+  );
+}
+
+/** The preview pictures' sizes in CSS pixels. */
+const MANAGER_PREVIEW = { width: 240, height: 170 };
+const EDITOR_PREVIEW = { width: 300, height: 190 };
+/** How long the preview waits for typing to pause before it is drawn again. */
+const PREVIEW_DELAY_MS = 60;
+
+/**
+ * The preview image (M4-03 part 3): drawn by the drawing's renderer (the engine's sample drawing
+ * in the style) and shown on a `bitmaprenderer` canvas, as no 2D drawing happens outside the
+ * renderer. It keeps its last picture until the next one arrives.
+ */
+function StylePreview({
+  doc,
+  preview,
+  size,
+}: {
+  doc: number;
+  preview: DimStylePreview | undefined;
+  size: { readonly width: number; readonly height: number };
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const key = preview ? JSON.stringify(preview) : '';
+  useEffect(() => {
+    if (!preview) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      const controller = controllersOf(doc)[0];
+      void controller?.dimStylePreview(preview, size).then((bitmap) => {
+        const c = canvas.current;
+        if (!live || !c || !bitmap) {
+          bitmap?.close();
+          return;
+        }
+        c.width = bitmap.width;
+        c.height = bitmap.height;
+        c.getContext('bitmaprenderer')?.transferFromImageBitmap(bitmap);
+        c.dataset['drawn'] = key;
+      });
+    }, PREVIEW_DELAY_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // `key` stands for the preview's content, which is a new object each render.
+  }, [doc, key, size]);
+  return (
+    <canvas
+      ref={canvas}
+      className="dimstyle-preview"
+      role="img"
+      aria-label="Preview"
+      data-testid="dimstyle-preview"
+      style={{ width: size.width, height: size.height }}
+    />
   );
 }
 
@@ -517,7 +624,10 @@ let lastTab: DimStyleTab = 'lines';
 /** New, Modify or Override Dimension Style: AutoCAD's seven tabs over the style's DIMVARs. */
 function StyleEditor(props: {
   title: string;
+  doc: number;
   vars: DimStyleVars;
+  /** A sub-style's kind: the preview shows it alone. */
+  use?: DimStyleUse | undefined;
   lists: DimStyleLists;
   /** Override: the fields AutoCAD keeps in the style's xdata are greyed. */
   override: boolean;
@@ -533,6 +643,16 @@ function StyleEditor(props: {
   const fields = DIMSTYLE_FIELDS.filter((f) => f.tab === tab);
   const groups = [...new Set(fields.map((f) => f.group))];
   const label = DIMSTYLE_TABS.find((t) => t.id === tab)!.label;
+  // AutoCAD's sample image, at the top right of every tab, following each change.
+  const preview = (
+    <div key="preview" className="dimstyle-editor-preview">
+      <StylePreview
+        doc={props.doc}
+        preview={{ vars, sizedBy: props.vars, ...(props.use && { use: props.use }) }}
+        size={EDITOR_PREVIEW}
+      />
+    </div>
+  );
   return (
     <Modal
       label={props.title}
@@ -554,7 +674,8 @@ function StyleEditor(props: {
         ))}
       </div>
       <div role="tabpanel" className="cad-dialog-panel dimstyle-tab" aria-label={label}>
-        {groups.map((g) => (
+        {groups.map((g, i) => [
+          i === 1 && preview,
           <fieldset key={g}>
             <legend>{g}</legend>
             {fields
@@ -569,8 +690,9 @@ function StyleEditor(props: {
                   onChange={(value) => setVars((v) => setField(v, f.key, value))}
                 />
               ))}
-          </fieldset>
-        ))}
+          </fieldset>,
+        ])}
+        {groups.length < 2 && preview}
         {tab === 'fit' && (
           <label
             className="cad-dialog-check"
@@ -712,6 +834,148 @@ const NONE = '';
  * Variable and each style's value), or every variable of Compare when With is <none>, with a
  * count and AutoCAD's Copy to clipboard.
  */
+/**
+ * Import Dimension Styles (M4-03 part 3, Triya's: AutoCAD drags them in from DesignCenter): From
+ * another open drawing or a drawing file (Browse...), the styles it has, each with its sub-styles
+ * under it; a style this drawing has already by that name is shown greyed, as the import would
+ * ignore it as a duplicate. Import brings the checked ones in with what they use.
+ */
+function ImportStyles(props: {
+  sources: readonly StyleSource[];
+  /** This drawing's styles, by name. */
+  have: readonly string[];
+  onCancel: () => void;
+  onImport: (styles: Clipboard) => void;
+}) {
+  const id = useId();
+  const file = useRef<HTMLInputElement>(null);
+  const [source, setSource] = useState<{ name: string; model: DocumentModel }>();
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  const [status, setStatus] = useState<string>();
+  const have = new Set(props.have.map((n) => n.toUpperCase()));
+  const offers: readonly DimStyleOffer[] = source ? dimStyleOffers(source.model) : [];
+  const duplicate = (o: DimStyleOffer) => have.has((o.parent ?? o.name).toUpperCase());
+  const parents = offers.filter((o) => o.parent === undefined && !duplicate(o));
+  const pick = (name: string, model: () => DocumentModel | Promise<DocumentModel>) => {
+    setStatus(`Reading ${name}…`);
+    setChecked(new Set());
+    void Promise.resolve()
+      .then(model)
+      .then(
+        (m) => {
+          setSource({ name, model: m });
+          setStatus(undefined);
+        },
+        (e: unknown) => {
+          setSource(undefined);
+          setStatus(`${name} could not be read: ${e instanceof Error ? e.message : String(e)}`);
+        },
+      );
+  };
+  const go = () => {
+    if (!source || checked.size === 0) return;
+    props.onImport(copyDimStyles(source.model, [...checked], props.have));
+  };
+  return (
+    <Modal
+      label="Import Dimension Styles"
+      className="dimstyle-import"
+      onOk={go}
+      onCancel={props.onCancel}
+    >
+      <div className="cad-dialog-field">
+        <label htmlFor={`${id}-from`}>From drawing:</label>
+        <select
+          id={`${id}-from`}
+          value={props.sources.find((s) => s.name === source?.name)?.id ?? ''}
+          onChange={(e) => {
+            const s = props.sources.find((x) => String(x.id) === e.target.value);
+            if (s) pick(s.name, s.model);
+          }}
+        >
+          <option value="" disabled>
+            {source && !props.sources.some((s) => s.name === source.name)
+              ? source.name
+              : props.sources.length > 0
+                ? 'Choose an open drawing'
+                : 'No other drawing is open'}
+          </option>
+          {props.sources.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <button type="button" onClick={() => file.current?.click()}>
+          Browse...
+        </button>
+        <input
+          ref={file}
+          type="file"
+          accept=".dwg,.dxf"
+          hidden
+          aria-label="Drawing to import from"
+          onChange={(e) => {
+            const f = e.currentTarget.files?.[0];
+            e.currentTarget.value = '';
+            if (f) pick(f.name, () => drawingFileModel(f));
+          }}
+        />
+      </div>
+      <span id={`${id}-styles`}>Dimension styles:</span>
+      <ul className="dimstyle-import-list" aria-labelledby={`${id}-styles`}>
+        {offers.map((o) => (
+          <li key={o.name} className={o.parent !== undefined ? 'dimstyle-substyle' : undefined}>
+            {o.parent === undefined ? (
+              <label className="cad-dialog-check">
+                <input
+                  type="checkbox"
+                  disabled={duplicate(o)}
+                  checked={checked.has(o.name)}
+                  onChange={(e) => {
+                    const next = new Set(checked);
+                    if (e.target.checked) next.add(o.name);
+                    else next.delete(o.name);
+                    setChecked(next);
+                  }}
+                />
+                {o.name}
+                {duplicate(o) && (
+                  <span className="dimstyle-import-note"> (already in this drawing)</span>
+                )}
+              </label>
+            ) : (
+              <span>{useLabel(o.use)}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p role="status" className="dimstyle-note">
+        {status ?? (source && offers.length === 0 ? `${source.name} has no dimension styles.` : '')}
+      </p>
+      <div className="cad-dialog-buttons">
+        <button
+          type="button"
+          disabled={parents.length === 0}
+          onClick={() =>
+            setChecked(
+              checked.size === parents.length ? new Set() : new Set(parents.map((o) => o.name)),
+            )
+          }
+        >
+          {checked.size === parents.length && parents.length > 0 ? 'Clear All' : 'Select All'}
+        </button>
+        <button type="button" disabled={!source || checked.size === 0} onClick={go}>
+          Import
+        </button>
+        <button type="button" onClick={props.onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function CompareStyles(props: {
   styles: readonly { readonly name: string; readonly vars: DimStyleVars }[];
   compare: string;
