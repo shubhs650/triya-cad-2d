@@ -385,6 +385,45 @@ export interface TextEditorRequest {
    * colour is in the drawing window colour. Absent when the text has neither.
    */
   readonly background?: TextEditorBackground;
+  /**
+   * A table cell's text (TABLEDIT, M4-05 part 2): Tab, Shift+Tab and the arrow keys at the
+   * edge of the text close the editor with the move to the next cell (`TableCellMove`).
+   */
+  readonly cell?: true;
+}
+
+/**
+ * Where the cell editor goes next (M4-05 part 2; AutoCAD's Help on entering text in table
+ * cells: Tab moves to the next cell, Shift+Tab to the previous one, the arrow keys to the cell
+ * beside when the cursor is at the start or end of the text).
+ */
+export type TableCellMove = 'next' | 'previous' | 'left' | 'right' | 'up' | 'down';
+
+/**
+ * The Insert Table dialog's settings (TABLE, M4-05 part 2; AutoCAD 2024 Help, "Insert Table
+ * Dialog Box"): the table style by name, Insertion behavior (`window`: Specify window), and the
+ * Column & row settings. With Specify window one of each pair comes from the window:
+ * `autoColumns` the number of columns (else the column width), `autoRows` the number of data
+ * rows (else the row height in lines).
+ */
+export interface InsertTableSettings {
+  readonly style: string;
+  readonly window: boolean;
+  readonly columns: number;
+  readonly width: number;
+  readonly dataRows: number;
+  readonly lines: number;
+  readonly autoColumns: boolean;
+  readonly autoRows: boolean;
+}
+
+/** A table style as the Insert Table dialog lists and previews it. */
+export interface TableStyleEntry {
+  readonly name: string;
+  readonly suppressTitle: boolean;
+  readonly suppressHeader: boolean;
+  /** The table reads from the bottom up (DXF 70 = 1). */
+  readonly up: boolean;
 }
 
 /** What `TextEditorRequest.background` shows. */
@@ -629,6 +668,12 @@ export type DialogRequest =
       readonly settings: UnitsSettings;
       readonly direction?: true;
     }
+  | {
+      /** TABLE's Insert Table (M4-05 part 2), opened on the settings of the last table. */
+      readonly type: 'inserttable';
+      readonly settings: InsertTableSettings;
+      readonly styles: readonly TableStyleEntry[];
+    }
   /** DIMSTYLE's Dimension Style Manager (M4-03). */
   | DimStyleRequest
   | ObjectGroupingRequest;
@@ -771,6 +816,8 @@ export type PromptAnswer =
        * Undefined: as requested.
        */
       readonly columns?: TextEditorColumns | null;
+      /** From a table cell's editor: the cell it moves to next (M4-05 part 2). */
+      readonly cell?: TableCellMove;
     }
   | { readonly kind: 'number'; readonly value: number }
   | {
@@ -816,6 +863,8 @@ export type PromptAnswer =
        * Drawing Units' settings as OK (or Direction Control's Pick an angle, `select`) closed it.
        */
       readonly units?: UnitsSettings;
+      /** Insert Table's settings as OK closed it (TABLE, M4-05 part 2). */
+      readonly table?: InsertTableSettings;
       /** A Dimension Style Manager action (DIMSTYLE, M4-03), sent with `apply`. */
       readonly dimstyle?: DimStyleAction;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
