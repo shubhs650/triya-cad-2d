@@ -1992,7 +1992,10 @@ export const isAssocArray = (o: NonGraphicalObject | undefined): o is AssocArray
  */
 export interface DimBreak extends NonGraphicalObject {
   readonly type: 'TRIYA_DIMBREAK';
-  /** The dimension (the owner of its extension dictionary). */
+  /**
+   * The dimension (the owner of its extension dictionary), or the LEADER or MULTILEADER whose
+   * breaks these are (M4-15, DEC-065).
+   */
   readonly dimension: Handle;
   /**
    * DXF 331 each: the objects that break it (picked, or found by Auto); the gaps follow them
