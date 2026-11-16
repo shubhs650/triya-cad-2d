@@ -117,6 +117,7 @@ import type {
 import { HATCH_BACKGROUND_APP, backgroundColorOf } from '@triya/engine';
 import { regionBoundary } from '../acis/region';
 import { readSab, readSat } from '../acis/records';
+import { textField } from './fields';
 import { common, hex, mapColor, mapEntityColor, mapLineweight, ref } from './common';
 import { proxyCurves } from './proxy';
 
@@ -307,6 +308,7 @@ function textFields(t: TextEntity, pl: Plane, ctx: Ctx): TextFields {
     backward: (mirror & 2) !== 0,
     upsideDown: ((mirror & 4) !== 0) !== down,
     ...planar(pl, t.normal, t.insertPoint.z, t.thickness),
+    ...textField(t),
   };
 }
 
@@ -338,6 +340,7 @@ function mtextGeometry(m: MText, ctx: Ctx): MTextGeometry | UnmappedEntity['reas
   return {
     kind: 'MTEXT',
     contents: m.value,
+    ...textField(m),
     style: ctx.style(m.style),
     position: xy(m.insertPoint),
     height: m.height,
