@@ -23,6 +23,7 @@ import type { TextStyleAction, TextStyleRequest } from './textstyle';
 import type { TableStyleAction, TableStyleRequest } from './tablestyle';
 import type { MLeaderStyleAction, MLeaderStyleRequest } from './mleaderstyle';
 import type { FindAction, FindRequest, FindSettings } from './modify/find';
+import type { SpellAction, SpellRequest, SpellSettings } from './modify/spell';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -723,6 +724,8 @@ export type DialogRequest =
   | MLeaderStyleRequest
   /** FIND's Find and Replace (M4-09 part 2). */
   | FindRequest
+  /** SPELL's Check Spelling (M4-09 part 4). */
+  | SpellRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -937,6 +940,15 @@ export type PromptAnswer =
       readonly mleaderstyle?: MLeaderStyleAction;
       /** A Find and Replace button (FIND, M4-09 part 2) with the dialog's settings, sent with `apply`. */
       readonly find?: { readonly settings: FindSettings; readonly action?: FindAction };
+      /**
+       * A Check Spelling button (SPELL, M4-09 part 4) with the dialog's settings and the user's
+       * custom dictionary, sent with `apply`.
+       */
+      readonly spell?: {
+        readonly settings: SpellSettings;
+        readonly custom: readonly string[];
+        readonly action?: SpellAction;
+      };
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

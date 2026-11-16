@@ -149,11 +149,12 @@ const dimension = {
   lineSpacing: 1,
 } as DimensionGeometry;
 
-function setup(o: { measure?: boolean; references?: boolean } = {}) {
+function setup(o: { measure?: boolean; references?: boolean; noLayouts?: boolean } = {}) {
   const base = sampleInit();
   const model = DocumentModel.create({
     ...base,
     handSeed: '100',
+    ...(o.noLayouts && { layouts: [] }),
     tables: {
       ...base.tables,
       layers: [
@@ -590,5 +591,12 @@ describe('FIND', () => {
     await s.press({ op: 'replaceAll' }, { find: 'door' });
     expect(s.geom<TextGeometry>('70').value).toBe('DOOR IN XREF');
     expect(s.dialog()!.note).toMatch(/1 match in an xref was not\.$/);
+  });
+
+  it('Entire drawing in a drawing with no layouts listed searches the current space', async () => {
+    const s = setup({ noLayouts: true });
+    await s.bus.submit('FIND');
+    await s.press({ op: 'find' }, { find: 'door', where: 'drawing', listResults: true });
+    expect(s.dialog()!.results!.length).toBeGreaterThan(0);
   });
 });

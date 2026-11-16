@@ -21,6 +21,7 @@ import {
 import type { DynMode } from './dynamic-input';
 import { normalizeKeyOverrides, type KeyOverrides } from './keymap';
 import { closeOnDelete } from './local-data';
+import { normalizeWords } from './custom-dictionary';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
 import { DEFAULT_TOOLTIP, tooltipAppearanceOf } from './tooltip-appearance';
 import { ALIAS_FILE_MAX } from './user-aliases';
@@ -126,6 +127,8 @@ export interface Preferences {
   readonly aliasFile: string;
   /** The user's shortcut keys over AutoCAD's defaults (M3-10 part 2, keymap.ts). */
   readonly keys: KeyOverrides;
+  /** SPELL's custom dictionary (M4-09 part 4, custom-dictionary.ts), AutoCAD's .cus file. */
+  readonly customDictionary: readonly string[];
 }
 
 /** POLARANG's choices in AutoCAD's Drafting Settings, degrees. */
@@ -208,6 +211,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   filters: {},
   aliasFile: '',
   keys: {},
+  customDictionary: [],
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -287,6 +291,7 @@ export function normalizePreferences(raw: unknown): Preferences {
         ? raw['aliasFile']
         : d.aliasFile,
     keys: normalizeKeyOverrides(raw['keys']),
+    customDictionary: normalizeWords(raw['customDictionary']),
     drafting: {
       // OSMODE's 14 mode bits and OSNAP_OFF.
       osmode:

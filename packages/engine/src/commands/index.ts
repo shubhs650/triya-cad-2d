@@ -88,6 +88,7 @@ export * from '../selection/loop';
 export * from '../selection/rules';
 export * from '../selection/qselect';
 export * from './modify/find';
+export * from './modify/spell';
 export * from '../selection/similar';
 export * from '../selection/preview';
 export * from '../selection/filter';

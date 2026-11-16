@@ -4163,3 +4163,61 @@ button {
 .dimstyle-import-note {
   opacity: 0.7;
 }
+
+/* SPELL's Check Spelling (M4-09 part 4): the word and its suggestions on the left, the word
+   buttons on the right, as AutoCAD lays it out; stacked on a narrow screen. */
+.cad-dialog.spell-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.spell-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.spell-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.spell-main .cad-dialog-field > :first-child {
+  min-width: 112px;
+}
+
+.spell-actions {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.spell-context {
+  margin: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--chrome-border);
+  overflow-wrap: anywhere;
+}
+
+.spell-context mark {
+  background: var(--accent);
+  color: #fff;
+}
+
+.spell-suggestions,
+.spell-custom select {
+  width: 100%;
+}
+
+.spell-custom {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  border: 1px solid var(--chrome-border);
+}
+
+@media (max-width: 520px) {
+  .spell-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

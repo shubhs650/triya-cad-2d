@@ -147,6 +147,7 @@ import { saveChanges } from './save-changes';
 import { SaveChanges } from './SaveChanges';
 import { Settings } from './Settings';
 import { PreferencesStore, bindPreferences, indexedDbPreferences, type Theme } from './preferences';
+import { customDictionary } from './custom-dictionary';
 import { browserLocalData, clearLocalData, type ClearReport } from './local-data';
 import { coordinateText, editedHeader } from './coordinates';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
@@ -403,6 +404,9 @@ preferences.subscribe(() => {
   }
   applyTheme(p.theme);
   selectionFilters.bind(p.filters, (filters) => preferences.update({ filters }));
+  customDictionary.bind(p.customDictionary, (words) =>
+    preferences.update({ customDictionary: words }),
+  );
   if (applyAliasFile(p.aliasFile)) for (const d of store.getSnapshot().docs) tellAliases(d.id);
   applyKeyOverrides(p.keys);
 });
@@ -414,6 +418,9 @@ function tellAliases(doc: number): void {
   void engines.edit(doc, { kind: 'aliases', aliases: aliasesOf(preferences.get().aliasFile) });
 }
 selectionFilters.bind(preferences.get().filters, (filters) => preferences.update({ filters }));
+customDictionary.bind(preferences.get().customDictionary, (words) =>
+  preferences.update({ customDictionary: words }),
+);
 void preferences.load();
 
 /** Set while "Clear all local data" reloads the page, so leaving it asks nothing. */

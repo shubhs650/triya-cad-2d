@@ -140,10 +140,10 @@ interface Within {
 function search(ctx: CommandContext, s: FindSettings, selection: readonly EntityId[]): Hit[] {
   const { model } = ctx;
   const o = s.options;
+  // A drawing with no layouts listed (as some writers leave it) is its current space.
+  const layouts = [...model.layouts].sort((a, b) => a.tabOrder - b.tabOrder);
   const spaces =
-    s.where === 'drawing'
-      ? [...model.layouts].sort((a, b) => a.tabOrder - b.tabOrder).map((l) => l.blockRecord)
-      : [ctx.space];
+    s.where === 'drawing' && layouts.length > 0 ? layouts.map((l) => l.blockRecord) : [ctx.space];
   const only = s.where === 'selection' ? new Set(selection) : undefined;
   const hits: Hit[] = [];
   const seenBlocks = new Set<Handle>();
@@ -217,21 +217,22 @@ function lockedHit(ctx: CommandContext, h: Hit): boolean {
   );
 }
 
+/** Matches in one piece of text of an object, as found in the drawing as it is now. */
+export interface SlotMatches {
+  readonly id: EntityId;
+  readonly slot: TextSlot;
+  readonly matches: readonly TextMatch[];
+}
+
 /**
- * Replaces `hits` (matches as found in the drawing as it is now) by `replacement`, as one edit;
- * returns how many were replaced. Tables are fitted and drawn again, dimensions regenerated.
+ * Replaces each group's matches by `replacement`, as one edit (FIND, and SPELL's Change, M4-09
+ * part 4). Tables are fitted and drawn again, dimensions regenerated.
  */
-async function replaceHits(
+export async function replaceInSlots(
   ctx: CommandContext,
-  hits: readonly Hit[],
+  groups: readonly SlotMatches[],
   replacement: string,
-): Promise<number> {
-  const groups: { id: EntityId; slot: TextSlot; matches: TextMatch[] }[] = [];
-  for (const h of hits) {
-    const g = groups.find((x) => x.id === h.id && sameSlot(x.slot, h.slot));
-    if (g) g.matches.push(h.match);
-    else groups.push({ id: h.id, slot: h.slot, matches: [h.match] });
-  }
+): Promise<void> {
   const changes = new Map<EntityId, Entity>();
   const tables = new Set<EntityId>();
   const dimensions: EntityId[] = [];
@@ -253,12 +254,37 @@ async function replaceHits(
     if (g.slot.kind === 'dimension') dimensions.push(g.id);
     changes.set(g.id, changed);
   }
-  if (changes.size === 0) return 0;
+  await writeEntities(ctx, changes, tables, dimensions);
+}
+
+/** Writes `changes` as one edit, tables drawn again and dimensions regenerated. */
+export async function writeEntities(
+  ctx: CommandContext,
+  changes: ReadonlyMap<EntityId, Entity>,
+  tables: ReadonlySet<EntityId>,
+  dimensions: readonly EntityId[],
+): Promise<void> {
+  if (changes.size === 0) return;
   ctx.edit((b) => {
     for (const [id, e] of changes) b.updateEntity(id, { geom: e.geom, xdata: e.xdata });
     for (const id of tables) writeTableBlock(b, ctx.model, id);
   });
   await regenerateDimensions(ctx, dimensions);
+}
+
+/** Replaces `hits` by `replacement`, as one edit; returns how many were replaced. */
+async function replaceHits(
+  ctx: CommandContext,
+  hits: readonly Hit[],
+  replacement: string,
+): Promise<number> {
+  const groups: { id: EntityId; slot: TextSlot; matches: TextMatch[] }[] = [];
+  for (const h of hits) {
+    const g = groups.find((x) => x.id === h.id && sameSlot(x.slot, h.slot));
+    if (g) g.matches.push(h.match);
+    else groups.push({ id: h.id, slot: h.slot, matches: [h.match] });
+  }
+  await replaceInSlots(ctx, groups, replacement);
   return hits.length;
 }
 

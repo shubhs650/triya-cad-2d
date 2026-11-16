@@ -182,6 +182,8 @@ describe('palette search', () => {
       'SELECTSIMILAR',
       'SETVAR',
       'SNAP',
+      // M4-09 part 4: the Check Spelling dialog.
+      'SPELL',
       'SPLINE',
       'SPLINEDIT',
       'STRETCH',
