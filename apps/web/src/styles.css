@@ -3785,6 +3785,56 @@ button {
   gap: 2px;
 }
 
+/* STYLE's Text Style dialog (M4-04): the styles list, the Font, Size and Effects groups and the
+   buttons side by side, wrapping under each other when narrow. */
+.cad-dialog.textstyle-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-width: min(680px, calc(100vw - 32px));
+}
+
+.textstyle-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.textstyle-body .dimstyle-left {
+  flex: 1 1 160px;
+}
+
+.textstyle-groups {
+  display: flex;
+  flex: 2 1 280px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.textstyle-groups fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--chrome-border);
+}
+
+.textstyle-groups .cad-dialog-field > span {
+  flex: 0 0 104px;
+  min-width: 0;
+}
+
+.textstyle-groups .cad-dialog-field select,
+.textstyle-groups .cad-dialog-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.textstyle-buttons {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
 /* TABLE's Insert Table (M4-05 part 2). */
 .insert-table-dialog {
   width: min(620px, calc(100vw - 32px));

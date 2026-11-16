@@ -21,6 +21,8 @@ describe('palette search', () => {
     const zoom = commandItems(builtinCommands()).find((i) => i.id === 'ZOOM');
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
+      // M4-04: a text style made at the command line.
+      '-STYLE',
       // M4-05: a table on the command line.
       '-TABLE',
       // M3-09: the Drawing Units questions at the command line.
@@ -162,6 +164,8 @@ describe('palette search', () => {
       'SPLINE',
       'SPLINEDIT',
       'STRETCH',
+      // M4-04: the Text Style dialog.
+      'STYLE',
       // M4-05 part 2: the Insert Table dialog and the cell editor.
       'TABLE',
       'TABLEDIT',

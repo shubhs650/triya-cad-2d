@@ -35,6 +35,19 @@ export {
   type DimStyleRequest,
   type DimStyleRow,
 } from './dimstyle';
+export {
+  dashStyleCommand,
+  isTrueTypeFont,
+  styleCommand,
+  textStyleProblem,
+  textStyleRequest,
+  textStyleSettings,
+  usedTextStyles,
+  type TextStyleAction,
+  type TextStyleRequest,
+  type TextStyleRow,
+  type TextStyleSettings,
+} from './textstyle';
 export * from './view/host';
 export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale } from './view/zoom';
 export { viewCommand, viewNameMatches } from './view/named-view';
