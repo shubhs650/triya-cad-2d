@@ -49,6 +49,7 @@ import type {
   DimVarValue,
   DimensionFields,
   DimensionGeometry,
+  EntityGeometry,
   Xdata,
 } from '../model/types';
 import { dimNum, dimVars } from '../annotation/leader';
@@ -346,6 +347,108 @@ export function angularAsThreePoint(g: Angular2): Angular3 | undefined {
     second: end(b, g.line2Start, g.definitionPoint),
     definitionPoint: g.arcPoint,
   };
+}
+
+type ArcLength = Extract<DimensionGeometry, { dimType: 'arc' }>;
+
+/** An arc length dimension's extension line from `origin` along `dir` by `t` to `tip`. */
+export interface ArcLengthExtension {
+  readonly origin: Vec2;
+  readonly dir: Vec2;
+  readonly t: number;
+  /** Where it meets the dimension arc: an end of the arc, where an arrowhead is. */
+  readonly tip: Vec2;
+}
+
+/** Where the line from `o` along `d` meets the circle (`c`, `r`) nearest `o`, as a distance. */
+function toCircle(o: Vec2, d: Vec2, c: Vec2, r: number): number | undefined {
+  const w = sub(o, c);
+  const b = dot(w, d);
+  const disc = b * b - (dot(w, w) - r * r);
+  if (disc < 0) return undefined;
+  const t1 = -b + Math.sqrt(disc);
+  const t2 = -b - Math.sqrt(disc);
+  return Math.abs(t1) <= Math.abs(t2) ? t1 : t2;
+}
+
+/**
+ * An arc length dimension's two extension lines, from the measured arc's ends (DXF 13, 14) to
+ * the dimension arc through DXF 10: parallel to the arc's bisector when it spans under 90°,
+ * radial otherwise (DIMARC: "extension lines … are displayed orthogonally if the included angle
+ * is less than 90 degrees"). Undefined for a degenerate one. The dimension engine draws them and
+ * the grips (M3-05 part 7) sit on their tips.
+ */
+export function arcLengthExtensions(
+  g: ArcLength,
+): readonly [ArcLengthExtension, ArcLengthExtension] | undefined {
+  const c = g.center;
+  const r0 = distance(c, g.first);
+  const r = distance(c, g.definitionPoint);
+  if (!(r0 > 0) || !(r > 0)) return undefined;
+  const a1 = angleOf(sub(g.first, c));
+  const span = normalizeAngle(angleOf(sub(g.second, c)) - a1) || 2 * Math.PI;
+  const bisector = fromAngle(a1 + span / 2);
+  const ext = (o: Vec2, i: number): ArcLengthExtension => {
+    const radial = fromAngle(i === 0 ? a1 : a1 + span);
+    const parallel = span < Math.PI / 2 ? toCircle(o, bisector, c, r) : undefined;
+    const dir = parallel === undefined ? radial : bisector;
+    const t = parallel ?? r - r0;
+    return { origin: o, dir, t, tip: add(o, scale(dir, t)) };
+  };
+  return [ext(g.first, 0), ext(g.second, 1)];
+}
+
+/** A dimension drawn with a dimension arc: angular (two-line, three-point) or arc length. */
+export type ArcDimension = Extract<
+  DimensionGeometry,
+  { dimType: 'angular' | 'angular3pt' | 'arc' }
+>;
+
+export const isArcDimension = (g: EntityGeometry): g is ArcDimension =>
+  (g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION') &&
+  (g.dimType === 'angular' || g.dimType === 'angular3pt' || g.dimType === 'arc');
+
+/**
+ * An angular or arc length dimension's dimension arc: its centre and radius, and its ends, where
+ * its arrowheads are, `ends[0]` on the first extension line (its arrowhead DXF 74 flips, M3-05
+ * part 7). Undefined for a degenerate one.
+ */
+export function dimensionArcOf(
+  g: ArcDimension,
+):
+  | { readonly centre: Vec2; readonly radius: number; readonly ends: readonly [Vec2, Vec2] }
+  | undefined {
+  if (g.dimType === 'arc') {
+    const ext = arcLengthExtensions(g);
+    if (!ext) return undefined;
+    return {
+      centre: g.center,
+      radius: distance(g.center, g.definitionPoint),
+      ends: [ext[0].tip, ext[1].tip],
+    };
+  }
+  const three = g.dimType === 'angular' ? angularAsThreePoint(g) : g;
+  if (!three) return undefined;
+  const c = three.vertex;
+  const radius = distance(c, three.definitionPoint);
+  const a = unitOf(sub(three.first, c));
+  const b = unitOf(sub(three.second, c));
+  if (!a || !b || !(radius > 0)) return undefined;
+  return { centre: c, radius, ends: [add(c, scale(a, radius)), add(c, scale(b, radius))] };
+}
+
+/**
+ * The dimension with its dimension arc at radius `radius` about the same centre (the point that
+ * places it moved along its own direction from the centre); undefined for a degenerate one.
+ */
+export function withArcRadius(g: ArcDimension, radius: number): ArcDimension | undefined {
+  const arc = dimensionArcOf(g);
+  if (!arc || !(radius > 0)) return undefined;
+  const placed = g.dimType === 'angular' ? g.arcPoint : g.definitionPoint;
+  const u = unitOf(sub(placed, arc.centre));
+  if (!u) return undefined;
+  const at = add(arc.centre, scale(u, radius));
+  return g.dimType === 'angular' ? { ...g, arcPoint: at } : { ...g, definitionPoint: at };
 }
 
 /** DIMVARs AutoCAD no longer uses: DIMFIT (now DIMATFIT, DIMTMOVE), DIMUNIT (DIMLUNIT, DIMFRAC). */

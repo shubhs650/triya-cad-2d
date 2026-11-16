@@ -18,7 +18,13 @@
 //   line ending at the arrowhead's back. AutoCAD's help does not say which point is which, so
 //   the nearer one is taken whatever their order.
 
-import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
+import {
+  arcLengthExtensions,
+  type AnnotationTables,
+  type DimensionGeometry,
+  type TextMeasure,
+  type Vec2,
+} from '@triya/engine';
 import { arcLine } from './angular';
 import { linearText, textAlign } from './format';
 import {
@@ -29,7 +35,6 @@ import {
   atTip,
   defpoint,
   dist,
-  dot,
   fromAngle,
   linePart,
   normAngle,
@@ -50,17 +55,6 @@ type ArcLength = Extract<DimensionGeometry, { dimType: 'arc' }>;
 /** The arc symbol's radius in text heights, as AutoCAD files store it. */
 const SYMBOL = 0.817;
 
-/** Where the line from `o` along `d` meets the circle (`c`, `r`) nearest `o`. */
-function toCircle(o: Vec2, d: Vec2, c: Vec2, r: number): number | undefined {
-  const w = sub(o, c);
-  const b = dot(w, d);
-  const disc = b * b - (dot(w, w) - r * r);
-  if (disc < 0) return undefined;
-  const t1 = -b + Math.sqrt(disc);
-  const t2 = -b - Math.sqrt(disc);
-  return Math.abs(t1) <= Math.abs(t2) ? t1 : t2;
-}
-
 export function arcLengthParts(
   g: ArcLength,
   s: DimStyle,
@@ -76,15 +70,12 @@ export function arcLengthParts(
   const span = normAngle(angleOf(sub(g.second, c)) - a1) || 2 * Math.PI;
   const out: DimPart[] = [];
 
-  // Extension lines, and where they meet the dimension arc (its ends).
-  const bisector = fromAngle(a1 + span / 2);
-  const ends = [g.first, g.second].map((o, i) => {
-    const radial = fromAngle(i === 0 ? a1 : a1 + span);
-    const parallel = span < Math.PI / 2 ? toCircle(o, bisector, c, r) : undefined;
-    const d = parallel === undefined ? radial : bisector;
-    const t = parallel ?? r - r0;
+  // Extension lines, and where they meet the dimension arc (its ends): the engine's, which
+  // the grips on the arc's ends use too (M3-05 part 7).
+  const extensions = arcLengthExtensions(g);
+  if (!extensions) return undefined;
+  const ends = extensions.map(({ origin: o, dir: d, t, tip }, i) => {
     const k = t < 0 ? -1 : 1;
-    const tip = add(o, d, t);
     if (!(i === 0 ? s.se1 : s.se2) && Math.abs(t) > s.exo)
       out.push(linePart(add(o, d, k * s.exo), add(o, d, t + k * s.exe), i === 0 ? s.ext1 : s.ext2));
     return angleOf(sub(tip, c));
@@ -119,7 +110,12 @@ export function arcLengthParts(
     text = { ...probe, position: at, rotation: viewed(rotation, s) };
   }
   const box = text ? textBox(text, width, s) : undefined;
-  out.push(...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [s.blk1, s.blk2], s, model));
+  out.push(
+    ...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [s.blk1, s.blk2], s, model, [
+      g.flipArrows?.[0] ?? false,
+      g.flipArrows?.[1] ?? false,
+    ]),
+  );
 
   if (text) {
     out.push({ ...s.text, geom: text, textPosition: text.position });

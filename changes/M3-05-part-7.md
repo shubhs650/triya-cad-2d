@@ -1,0 +1,1 @@
+- M3-05 part 7 (#422): grip menus on radial, angular, ordinate and arc length dimensions (Flip Arrow, Continue and Baseline Dimension, the text placements), their flipped arrowheads drawn; the array drawn remade while a triangle grip is dragged; Dynamic Input's count field at array count grips. M3-05 is complete.

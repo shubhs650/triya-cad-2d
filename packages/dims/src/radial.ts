@@ -126,7 +126,13 @@ export function radialParts(
       ? add(add(p, v, 2 * s.asz), { x: side, y: 0 }, s.asz + s.gap + width / 2)
       : add(p, v, 2 * s.asz + width / 2);
   const inside = dist(t, c) < r;
-  const base = add(p, v, inside ? -s.asz : s.asz);
+  // A flipped arrowhead (DXF 74; Flip Arrow, M3-05 part 7) turns round at its tip: the line
+  // from the text runs on to the tip, and a DIMASZ tail goes on behind the arrow's back unless
+  // DIMTOFL's line from the centre is there already.
+  const [flip, flipFar] = g.flipArrows ?? [false, false];
+  const arrowIn = inside !== flip;
+  const back = add(p, v, arrowIn ? -s.asz : s.asz);
+  const base = flip ? p : back;
   const lines: [Vec2, Vec2][] = [];
   let text: MTextGeometry | undefined;
   if (probe) {
@@ -149,6 +155,7 @@ export function radialParts(
       lines.push([add(c, v, k), base]);
     }
   }
+  if (flip && !(arrowIn && s.tofl)) lines.push([back, add(back, v, arrowIn ? -s.asz : s.asz)]);
   if (!inside && s.tofl) {
     lines.push([diameter ? g.definitionPoint : c, p]);
   } else if (!inside) {
@@ -159,11 +166,17 @@ export function radialParts(
     for (const [q, w] of clipSegment(a, b, box)) out.push(linePart(q, w, s.dimLine));
   }
   // The chord point's arrowhead is the first one (as ezdxf draws it; AutoCAD does not say).
-  out.push(...arrowParts(p, base, s.blk1, s, model, unit(sub(p, base)) ?? v));
+  out.push(...arrowParts(p, back, s.blk1, s, model, unit(sub(p, back)) ?? v));
   if (diameter && !inside && s.tofl) {
-    // The far end's arrowhead, from inside the circle.
+    // The far end's arrowhead, from inside the circle (DXF 75 turns it outside, with a tail).
     const far = g.definitionPoint;
-    out.push(...arrowParts(far, add(far, v, s.asz), s.blk2, s, model, v));
+    const k = flipFar ? -1 : 1;
+    const farBack = add(far, v, k * s.asz);
+    out.push(...arrowParts(far, farBack, s.blk2, s, model, { x: k * v.x, y: k * v.y }));
+    if (flipFar) {
+      for (const [q, w] of clipSegment(farBack, add(farBack, v, -s.asz), box))
+        out.push(linePart(q, w, s.dimLine));
+    }
   }
   if (arc && !s.se1) {
     out.push(...arcExtension(c, r, angleOf(v), arc, s));

@@ -37,10 +37,21 @@
 // places it, as Reset Text Position does. Move with Dim Line moves the dimension line across by
 // as much as the text moves across it. Continue and Baseline Dimension run DIMCONTINUE and
 // DIMBASELINE from the extension line at the grip's end (the grip command does that).
+//
+// The other dimensions (M3-05 part 7): AutoCAD's help names the dimension line and text grips'
+// functions without saying which dimensions have which. Here, as drafters expect from the
+// commands each runs, an angular dimension's arc ends offer the linear dimension's four
+// (DIMCONTINUE and DIMBASELINE take angular dimensions), an arc length dimension's Stretch and
+// Flip Arrow (they take no arc length dimension), a radius, diameter or jogged radius
+// dimension's arrowhead grips Stretch and Flip Arrow, an ordinate dimension's leader end
+// Stretch, Continue Dimension and Baseline Dimension (it has no arrowhead), and every
+// dimension's text grip the seven text functions. Move with Dim Line takes each dimension's own
+// dimension line with the text: a radial one turns about the centre to point at it, an angular
+// or arc length one's arc goes through it, an ordinate one's leader end moves as it does.
 import { ccwSweep, normalizeAngle, TAU } from '../geom/angle';
 import { toleranceForSize, type Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
-import { add, angleOf, distance, dot, scale, sub } from '../geom/vec';
+import { add, angleOf, distance, dot, fromAngle, scale, sub } from '../geom/vec';
 import type {
   ArcGeometry,
   DimensionGeometry,
@@ -53,7 +64,14 @@ import type {
 } from '../model/types';
 import type { GripInfo } from './array-grips';
 import { breakCurveOf, lengthenGeometry, lengthTo } from './break';
-import { dimensionDirection, dimensionLineEnds } from './dimension';
+import {
+  angularAsThreePoint,
+  dimensionArcOf,
+  dimensionDirection,
+  dimensionLineEnds,
+  isArcDimension,
+  withArcRadius,
+} from './dimension';
 import { relaidLines } from './hatch-lines';
 import { landingEndAt, lengthenLanding } from './object-grips';
 import { arcThrough, bulgeMidpoint, bulgeThrough, gripsOf, moveGrip, sameGrip } from './grips';
@@ -107,6 +125,16 @@ const DIMENSION_LINE_FUNCTIONS: readonly GripFunction[] = [
   'Flip Arrow',
 ];
 
+/** An arc length dimension's arc ends' (DIMCONTINUE and DIMBASELINE take none). */
+const ARROW_FUNCTIONS: readonly GripFunction[] = ['Stretch', 'Flip Arrow'];
+
+/** An ordinate dimension's leader end's: it has no arrowhead. */
+const ORDINATE_FUNCTIONS: readonly GripFunction[] = [
+  'Stretch',
+  'Continue Dimension',
+  'Baseline Dimension',
+];
+
 /** Its text grip's. */
 const DIMENSION_TEXT_FUNCTIONS: readonly GripFunction[] = [
   'Stretch',
@@ -152,6 +180,123 @@ export function dimensionLineEnd(g: LinearDimension, grip: Vec2): 0 | 1 | undefi
   const [a, b] = dimensionLineEnds(g);
   if (sameGrip(a, grip)) return 0;
   return sameGrip(b, grip) ? 1 : undefined;
+}
+
+/**
+ * The arrowhead of a dimension the grip at `grip` is on (M3-05 part 7): 0 the first (DXF 74),
+ * 1 the second (75); undefined for another grip. A linear or aligned dimension's dimension line
+ * ends, an angular or arc length dimension's arc ends (the first on the first extension line), a
+ * radius or jogged radius dimension's chord point, a diameter's chord point and far end.
+ */
+export function arrowEnd(g: DimensionGeometry, grip: Vec2): 0 | 1 | undefined {
+  if (isLinearDimension(g)) return dimensionLineEnd(g, grip);
+  if (isArcDimension(g)) {
+    const arc = dimensionArcOf(g);
+    if (!arc) return undefined;
+    if (sameGrip(arc.ends[0], grip)) return 0;
+    return sameGrip(arc.ends[1], grip) ? 1 : undefined;
+  }
+  if (g.dimType === 'radius' || g.dimType === 'diameter' || g.dimType === 'jogged') {
+    if (sameGrip(g.chordPoint, grip)) return 0;
+    return g.dimType === 'diameter' && sameGrip(g.definitionPoint, grip) ? 1 : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Where Continue Dimension and Baseline Dimension at the grip `grip` go on from: the extension
+ * line origin at that end (an angular dimension's as its three-point one has it, which DIMCONTINUE
+ * goes on from), an ordinate dimension's feature.
+ */
+export function chainOrigin(g: DimensionGeometry, grip: Vec2): Vec2 | undefined {
+  if (g.dimType === 'ordinate') return g.feature;
+  const end = arrowEnd(g, grip);
+  if (end === undefined) return undefined;
+  if (isLinearDimension(g)) return end === 1 ? g.second : g.first;
+  const three = g.dimType === 'angular' ? angularAsThreePoint(g) : g;
+  if (!three || three.dimType !== 'angular3pt') return undefined;
+  return end === 1 ? three.second : three.first;
+}
+
+/** The functions of a dimension's grip `found` at `grip` (parts 4 and 7). */
+function dimensionFunctions(
+  g: DimensionGeometry,
+  found: { readonly kind: string },
+  grip: Vec2,
+): readonly GripFunction[] {
+  // The text's grip (one on a definition point is that point's).
+  const onPoint = Object.entries(g).some(
+    ([k, v]) =>
+      k !== 'textPosition' &&
+      typeof v === 'object' &&
+      v !== null &&
+      'x' in v &&
+      'y' in v &&
+      sameGrip(v as Vec2, grip),
+  );
+  if (found.kind === 'stretch' && sameGrip(g.textPosition, grip) && !onPoint) {
+    return DIMENSION_TEXT_FUNCTIONS;
+  }
+  if (isLinearDimension(g)) return found.kind === 'dimline' ? DIMENSION_LINE_FUNCTIONS : [];
+  if (g.dimType === 'ordinate') return sameGrip(g.leaderEnd, grip) ? ORDINATE_FUNCTIONS : [];
+  if (arrowEnd(g, grip) === undefined) return [];
+  return g.dimType === 'angular' || g.dimType === 'angular3pt'
+    ? DIMENSION_LINE_FUNCTIONS
+    : ARROW_FUNCTIONS;
+}
+
+/**
+ * Move with Dim Line (M3-05 parts 4 and 7): the text at `to` with the dimension line it sits on
+ * following it, by the dimension's kind; undefined where there is none to give.
+ */
+function moveWithDimLine(g: DimensionGeometry, to: Vec2): DimensionGeometry | undefined {
+  const placed = { textPosition: to, textUserPositioned: true } as const;
+  if (isLinearDimension(g)) {
+    // The dimension line moves across by as much as the text does.
+    const u = dimensionDirection(g);
+    const moved = sub(to, g.textPosition);
+    const across = sub(moved, scale(u, dot(moved, u)));
+    return { ...g, definitionPoint: add(g.definitionPoint, across), ...placed };
+  }
+  if (isArcDimension(g)) {
+    const arc = dimensionArcOf(g);
+    const moved = arc && withArcRadius(g, distance(arc.centre, to));
+    return moved && { ...moved, ...placed };
+  }
+  if (g.dimType === 'ordinate') {
+    return { ...g, leaderEnd: add(g.leaderEnd, sub(to, g.textPosition)), ...placed };
+  }
+  // A radial one turns about its centre to point at the text.
+  const c =
+    g.dimType === 'diameter' ? scale(add(g.definitionPoint, g.chordPoint), 0.5) : g.definitionPoint;
+  if (distance(c, to) === 0) return undefined;
+  const turn = angleOf(sub(to, c)) - angleOf(sub(g.chordPoint, c));
+  const about = (p: Vec2): Vec2 => {
+    const v = sub(p, c);
+    const r = Math.hypot(v.x, v.y);
+    return add(c, scale(fromAngle(angleOf(v) + turn), r));
+  };
+  switch (g.dimType) {
+    case 'radius':
+      return { ...g, chordPoint: about(g.chordPoint), ...placed };
+    case 'diameter':
+      return {
+        ...g,
+        chordPoint: about(g.chordPoint),
+        definitionPoint: about(g.definitionPoint),
+        ...placed,
+      };
+    case 'jogged':
+      return {
+        ...g,
+        chordPoint: about(g.chordPoint),
+        overrideCenter: about(g.overrideCenter),
+        jogPoint: about(g.jogPoint),
+        ...placed,
+      };
+    default:
+      return undefined;
+  }
 }
 
 /** The hatch grip's functions after Stretch (M3-05 part 3). */
@@ -234,15 +379,9 @@ export function gripFunctionsOf(
       // The landing's far end (M3-05 part 6).
       return landingEndAt(geom, grip) ? ['Stretch', 'Lengthen Landing'] : [];
     case 'DIMENSION':
-      if (!isLinearDimension(geom)) return [];
-      if (found.kind === 'dimline') return DIMENSION_LINE_FUNCTIONS;
-      // The text's grip (one on a definition point is that point's).
-      return found.kind === 'stretch' &&
-        sameGrip(geom.textPosition, grip) &&
-        !sameGrip(geom.first, grip) &&
-        !sameGrip(geom.second, grip)
-        ? DIMENSION_TEXT_FUNCTIONS
-        : [];
+    case 'ARC_DIMENSION':
+    case 'LARGE_RADIAL_DIMENSION':
+      return dimensionFunctions(geom, found, grip);
     default:
       return [];
   }
@@ -363,32 +502,21 @@ export function gripFunctionEdit(
     case 'Hatch Scale':
       return gripFunctionValue(geom, fn, distance(grip, to), tol);
     case 'Flip Arrow': {
-      const d = geom as LinearDimension;
-      const end = dimensionLineEnd(d, grip)!;
+      const d = geom as DimensionGeometry;
+      const end = arrowEnd(d, grip)!;
       const flipArrows: [boolean, boolean] = [...(d.flipArrows ?? [false, false])];
       flipArrows[end] = !flipArrows[end];
       return { ...d, flipArrows };
     }
     case 'Move Text Only':
     case 'Move with Leader':
-      return { ...(geom as LinearDimension), textPosition: to, textUserPositioned: true };
-    case 'Move with Dim Line': {
-      // The dimension line moves across by as much as the text does.
-      const d = geom as LinearDimension;
-      const u = dimensionDirection(d);
-      const moved = sub(to, d.textPosition);
-      const across = sub(moved, scale(u, dot(moved, u)));
-      return {
-        ...d,
-        definitionPoint: add(d.definitionPoint, across),
-        textPosition: to,
-        textUserPositioned: true,
-      };
-    }
+      return { ...(geom as DimensionGeometry), textPosition: to, textUserPositioned: true };
+    case 'Move with Dim Line':
+      return moveWithDimLine(geom as DimensionGeometry, to) ?? 'invalid';
     case 'Above Dim Line':
     case 'Center Vertically':
     case 'Reset Text Position':
-      return { ...(geom as LinearDimension), textUserPositioned: false };
+      return { ...(geom as DimensionGeometry), textUserPositioned: false };
     case 'Continue Dimension':
     case 'Baseline Dimension':
       return 'invalid';

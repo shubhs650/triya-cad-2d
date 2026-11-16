@@ -591,3 +591,41 @@ describe('angles in a UCS (M3-06 part 8)', () => {
     expect(dynLive(dynFor(turn), turn, { x: 5, y: 10 }, u)).toEqual(['90']);
   });
 });
+
+describe("an array count grip's count field (M3-05 part 7)", () => {
+  // A rectangular array's last column grip, columns 3 apart along X from the origin.
+  const columns = prompts.point({
+    message: 'Specify number of columns or',
+    options: ['Total spacing', 'eXit'],
+    rubberBand: { from: { x: 9, y: 0 } },
+    arbitrary: true,
+    drag: { kind: 'array', id: 1 as never, role: 'columnCount', fn: 'Column count' },
+    arrayCount: {
+      kind: 'along',
+      toLocal: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+      origin: { x: 0, y: 0 },
+      axis: { x: 1, y: 0 },
+      spacing: 3,
+    },
+  });
+
+  it('shows the count the cursor gives, named for the function', () => {
+    const s = dynFor(columns);
+    expect(s.kind).toBe('single');
+    expect(s.fields.map((f) => f.label)).toEqual(['Column count']);
+    expect(dynLive(s, columns, { x: 15.4, y: 2 })).toEqual(['6']);
+    expect(dynLive(s, columns, { x: -20, y: 0 })).toEqual(['1']);
+  });
+
+  it('sends a count typed in it, and nothing typed is Enter', () => {
+    expect(dynText(typing(columns, '7'), columns, cursor)).toBe('7');
+    expect(dynText(dynFor(columns), columns, cursor)).toBe('');
+    // An option is taken as typed.
+    expect(dynText(typing(columns, 'T'), columns, cursor)).toBe('T');
+  });
+
+  it('without dimension input the point fields stay', () => {
+    const s = dynFor(columns, { ...DYN_SETTINGS, dimension: false });
+    expect(s.fields.map((f) => f.label)).not.toContain('Column count');
+  });
+});

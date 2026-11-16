@@ -1211,3 +1211,157 @@ describe('flipped arrowheads, DXF 74 and 75 (M3-05 part 4)', () => {
     ]);
   });
 });
+
+describe('flipped arrowheads on radial, angular, arc length and jogged dimensions (M3-05 part 7)', () => {
+  // As on a linear dimension (part 4): a flipped arrowhead turns round at its tip, its back on
+  // the other side with a DIMASZ tail behind it, and the dimension line runs on to the tip.
+  type Line = Extract<EntityGeometry, { kind: 'LINE' }>;
+  type Arc = Extract<EntityGeometry, { kind: 'ARC' }>;
+  const solids = (ps: DimPart[]) => of(ps, 'SOLID') as Extract<EntityGeometry, { kind: 'SOLID' }>[];
+  const lines = (ps: DimPart[]) =>
+    (of(ps, 'LINE') as Line[]).map((l) => [l.start.x, l.start.y, l.end.x, l.end.y]);
+  const sameLines = (got: number[][], want: number[][]) => {
+    expect(got).toHaveLength(want.length);
+    got.forEach((l, i) => l.forEach((v, j) => close(v, want[i]![j]!)));
+  };
+  const radius = (extra: object = {}): DimensionGeometry => ({
+    ...common,
+    dimType: 'radius',
+    definitionPoint: { x: 0, y: 0 },
+    chordPoint: { x: 10, y: 0 },
+    leaderLength: 0,
+    textPosition: { x: 20, y: 0 },
+    textUserPositioned: true,
+    ...extra,
+  });
+
+  it('a radius with its text outside: the arrow turned inside, the line on to its tip', () => {
+    const ps = parts(radius({ flipArrows: [true, false] }));
+    const [solid] = solids(ps);
+    close(solid!.corners[0].x, 7.5);
+    expect(solid!.corners[2]).toEqual({ x: 10, y: 0 });
+    // DIMTOFL's line from the centre is behind the turned arrow: no tail.
+    sameLines(lines(ps), [
+      [23.75, 0, 10, 0],
+      [0, 0, 10, 0],
+    ]);
+    // Without DIMTOFL the turned arrow has its tail inside.
+    const bare = parts(radius({ flipArrows: [true, false] }), model({ ...ISO, DIMTOFL: false }));
+    expect(lines(bare)).toContainEqual([23.75, 0, 10, 0]);
+    expect(lines(bare)).toContainEqual([7.5, 0, 5, 0]);
+  });
+
+  it('a radius with its text inside: the arrow turned outside with a tail', () => {
+    const ps = parts(radius({ textPosition: { x: 4, y: 0 }, flipArrows: [true, false] }));
+    close(solids(ps)[0]!.corners[0].x, 12.5);
+    sameLines(lines(ps), [
+      [0.25, 0, 10, 0],
+      [12.5, 0, 15, 0],
+    ]);
+  });
+
+  it("a diameter's far arrow is the second", () => {
+    const geom = radius({
+      dimType: 'diameter',
+      definitionPoint: { x: -10, y: 0 },
+      flipArrows: [false, true],
+    });
+    const ps = parts(geom);
+    const [near, far] = solids(ps);
+    close(near!.corners[0].x, 12.5);
+    close(far!.corners[0].x, -12.5);
+    expect(far!.corners[2]).toEqual({ x: -10, y: 0 });
+    expect(lines(ps).at(-1)).toEqual([-12.5, 0, -15, 0]);
+  });
+
+  const angle3 = (extra: object = {}): DimensionGeometry => ({
+    ...common,
+    dimType: 'angular3pt',
+    vertex: { x: 0, y: 0 },
+    first: { x: 10, y: 0 },
+    second: { x: 0, y: 10 },
+    definitionPoint: { x: 14.142135623730951, y: 14.142135623730951 },
+    textPosition: { x: 25, y: 25 },
+    ...extra,
+  });
+  const step = 2 * Math.asin(2.5 / 40);
+  const arcs = (ps: DimPart[], r: number) =>
+    (of(ps, 'ARC') as Arc[]).filter((a) => Math.abs(a.radius - r) < 1e-9);
+
+  it('an angle: the first arrow turned outside, the arc whole at its end and a tail beyond', () => {
+    const ps = parts(angle3({ flipArrows: [true, false] }));
+    const [arc, tail] = arcs(ps, 20);
+    close(arc!.startAngle, 0);
+    close(arc!.endAngle, Math.PI / 2 - step);
+    // Angles are kept in [0, 2π).
+    close(tail!.startAngle, 2 * Math.PI - 2 * step);
+    close(tail!.endAngle, 2 * Math.PI - step);
+    const [a] = solids(ps);
+    // Its back is beyond the first extension line.
+    expect(a!.corners[0].y).toBeLessThan(0);
+    expect(a!.corners[2]).toMatchObject({ y: 0 });
+  });
+
+  it("an angle drawn from its second extension line: the first arrow is still the first line's", () => {
+    // The arc runs counter-clockwise from the second line (0°) to the first (90°).
+    const ps = parts(
+      angle3({ first: { x: 0, y: 10 }, second: { x: 10, y: 0 }, flipArrows: [true, false] }),
+    );
+    const [arc, tail] = arcs(ps, 20);
+    close(arc!.startAngle, step);
+    close(arc!.endAngle, Math.PI / 2);
+    close(tail!.startAngle, Math.PI / 2 + step);
+    close(tail!.endAngle, Math.PI / 2 + 2 * step);
+  });
+
+  it('an arc length dimension: the second arrow turned outside', () => {
+    const sweep = Math.PI / 3;
+    const geom = (flipArrows?: [boolean, boolean]): DimensionGeometry => ({
+      ...common,
+      kind: 'ARC_DIMENSION',
+      dimType: 'arc',
+      center: { x: 0, y: 0 },
+      first: { x: 10, y: 0 },
+      second: { x: 10 * Math.cos(sweep), y: 10 * Math.sin(sweep) },
+      startAngle: 0,
+      endAngle: sweep,
+      partial: false,
+      definitionPoint: { x: 15 * Math.cos(sweep / 2), y: 15 * Math.sin(sweep / 2) },
+      textPosition: { x: 0, y: 0 },
+      ...(flipArrows && { flipArrows }),
+    });
+    const m = model({ ...ISO, DIMARCSYM: 2 });
+    const s = 2 * Math.asin(2.5 / 30);
+    const [plain] = arcs(parts(geom(), m), 15);
+    const a0 = plain!.startAngle - s;
+    const a1 = plain!.endAngle + s;
+    const [arc, tail] = arcs(parts(geom([false, true]), m), 15);
+    close(arc!.startAngle, a0 + s);
+    close(arc!.endAngle, a1);
+    close(tail!.startAngle, a1 + s);
+    close(tail!.endAngle, a1 + 2 * s);
+  });
+
+  it('a jogged radius: the arrow turned outside with a tail', () => {
+    const geom: DimensionGeometry = {
+      ...common,
+      kind: 'LARGE_RADIAL_DIMENSION',
+      dimType: 'jogged',
+      definitionPoint: { x: 0, y: 0 },
+      chordPoint: { x: 40, y: 0 },
+      overrideCenter: { x: 0, y: 4 },
+      jogPoint: { x: 20, y: 2 },
+      leaderLength: 0,
+      textPosition: { x: 30, y: 0 },
+      textUserPositioned: true,
+      flipArrows: [true, false],
+    };
+    const ps = parts(geom, model({ ...ISO, DIMTAD: 0, DIMJOGANG: Math.PI / 4 }));
+    close(solids(ps)[0]!.corners[0].x, 42.5);
+    sameLines(lines(ps).slice(2), [
+      [18, 0, 25.625, 0],
+      [34.375, 0, 40, 0],
+      [42.5, 0, 45, 0],
+    ]);
+  });
+});

@@ -12,9 +12,13 @@ import {
   PromptBus,
   applyPoint,
   arrayGripEdit,
+  arrayCountAt,
+  arrayGripPreview,
   assocArrayOf,
   builtinCommands,
   compose,
+  dragMotion,
+  GRIP_CYCLE,
   gripInfoOf,
   gripsOf,
   insertMatrix,
@@ -505,5 +509,162 @@ describe('array grip helpers', () => {
       'An array is being edited: save or discard its changes with ARRAYCLOSE first.',
     );
     expect(s.bus.command).toBeUndefined();
+  });
+});
+
+// M3-05 part 7: AutoCAD redraws the array as a triangle grip is dragged. The prompt says what
+// is dragged (`drag` kind `array`), `dragMotion` passes the cursor on, and `arrayGripPreview`
+// gives each item of the array the click would make: its block and where it goes.
+describe('the array redrawn as its grip is dragged', () => {
+  /** Where each preview item puts its block's objects' first points, sorted. */
+  function previewed(
+    s: ReturnType<typeof setup>,
+    role: Parameters<typeof arrayGripPreview>[3],
+    fn: string,
+    to: { x: number; y: number },
+  ): number[][] | undefined {
+    const items = arrayGripPreview(s.model, s.array(), s.record(), role, fn, to);
+    if (!items) return undefined;
+    const out: number[][] = [];
+    for (const { block, m } of items) {
+      for (const id of s.model.blockEntities(block)) {
+        const g = s.model.entity(id)!.geom;
+        if (g.kind !== 'CIRCLE' && g.kind !== 'LINE') continue;
+        const p = applyPoint(m, g.kind === 'CIRCLE' ? g.center : g.start);
+        out.push([r4(p.x), r4(p.y)]);
+      }
+    }
+    return out.sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
+  }
+
+  it('a count grip drags the array its click would make', async () => {
+    const s = await rectangular();
+    await s.hot({ x: 9, y: 0 });
+    const drag = s.bus.prompt!.drag!;
+    expect(drag).toEqual({
+      kind: 'array',
+      id: s.array().id,
+      role: 'columnCount',
+      fn: 'Column count',
+    });
+    expect(dragMotion(drag, { x: 15.4, y: 2 })).toEqual({
+      ids: [],
+      m: IDENTITY,
+      array: { id: s.array().id, role: 'columnCount', fn: 'Column count', to: { x: 15.4, y: 2 } },
+    });
+    expect(previewed(s, 'columnCount', 'Column count', { x: 15.4, y: 2 })).toEqual(
+      grid([0, 3, 6, 9, 12, 15], [0, 3, 6]),
+    );
+    // What the click makes is what was drawn.
+    await s.bus.submit('15.4,2');
+    expect(s.drawn()).toEqual(grid([0, 3, 6, 9, 12, 15], [0, 3, 6]));
+  });
+
+  it('follows the function Ctrl or an option goes on to', async () => {
+    const s = await rectangular();
+    await s.hot({ x: 9, y: 0 });
+    await s.bus.answer({ kind: 'keyword', keyword: GRIP_CYCLE });
+    expect(s.bus.prompt!.drag).toMatchObject({ kind: 'array', fn: 'Total spacing' });
+    // Four columns spread over 12.
+    expect(previewed(s, 'columnCount', 'Total spacing', { x: 12, y: 0 })).toEqual(
+      grid([0, 4, 8, 12], [0, 3, 6]),
+    );
+  });
+
+  it('a polar array: the item angle, and the radius stretched with its objects shifted', async () => {
+    const s = await polar();
+    expect(previewed(s, 'itemAngle', 'Item angle', { x: 1, y: 1 })).toHaveLength(4);
+    // The base grip at (2.5, 0) dragged to (5, 0): the sticks 2.5 further out.
+    const out = previewed(s, 'radius', 'Stretch radius', { x: 5, y: 0 })!;
+    expect(out).toEqual([
+      [-4.5, 0],
+      [0, -4.5],
+      [0, 4.5],
+      [4.5, 0],
+    ]);
+  });
+
+  it('a path array along its path', async () => {
+    const s = await path();
+    const out = previewed(s, 'itemCount', 'Count', { x: 9.2, y: 10 })!;
+    expect(out).toEqual([
+      [0, 10],
+      [3, 10],
+      [6, 10],
+      [9, 10],
+    ]);
+  });
+
+  it('draws nothing where the point makes no array', async () => {
+    const s = await rectangular();
+    expect(previewed(s, 'columnSpacing', 'Column spacing', { x: 0, y: 0 })).toBeUndefined();
+  });
+});
+
+// M3-05 part 7: Dynamic Input's count field. The count grips' prompt carries what the field
+// counts from (`arrayCount`), plain data the app reads the count at the cursor from
+// (`arrayCountAt`), the same count the click there makes.
+describe("Dynamic Input's count at an array's count grips", () => {
+  const counted = (p: AssocArray['params']): number[] =>
+    p.kind === 'rectangular' ? [p.columns, p.rows] : [p.items, p.rows];
+
+  it('a rectangular count grip: the columns the cursor gives', async () => {
+    const s = await rectangular();
+    await s.hot({ x: 9, y: 0 });
+    const field = s.bus.prompt!.kind === 'point' ? s.bus.prompt!.arrayCount : undefined;
+    expect(field).toBeDefined();
+    for (const at of [
+      { x: 15.4, y: 2 },
+      { x: -7, y: 0 },
+      { x: 4.4, y: 9 },
+      { x: 30.1, y: -3 },
+    ]) {
+      const edit = arrayGripEdit(s.model, s.array(), s.record(), 'columnCount', 'Column count', {
+        point: at,
+      });
+      expect(typeof edit).toBe('object');
+      expect(arrayCountAt(field!, at)).toBe(
+        counted((edit as { params: AssocArray['params'] }).params)[0],
+      );
+    }
+    // Total spacing counts nothing.
+    await s.bus.answer({ kind: 'keyword', keyword: GRIP_CYCLE });
+    expect(s.bus.prompt).not.toHaveProperty('arrayCount');
+  });
+
+  it('a polar array’s item count and a path array’s, as their clicks make them', async () => {
+    const p = await polar();
+    const lastItem = { x: 0, y: -2.5 };
+    await p.hot(lastItem);
+    await p.bus.submit('C');
+    const field = p.bus.prompt!.kind === 'point' ? p.bus.prompt!.arrayCount : undefined;
+    for (const at of [
+      { x: -1, y: -1 },
+      { x: 1, y: -0.2 },
+      { x: -3, y: 0.5 },
+    ]) {
+      const edit = arrayGripEdit(p.model, p.array(), p.record(), 'lastItem', 'Count', {
+        point: at,
+      });
+      expect(typeof edit).toBe('object');
+      expect(arrayCountAt(field!, at)).toBe(
+        counted((edit as { params: AssocArray['params'] }).params)[0],
+      );
+    }
+    const q = await path();
+    await q.hot({ x: 18, y: 10 });
+    const along = q.bus.prompt!.kind === 'point' ? q.bus.prompt!.arrayCount : undefined;
+    expect(arrayCountAt(along!, { x: 9.2, y: 12 })).toBe(4);
+    expect(arrayCountAt(along!, { x: -5, y: 10 })).toBe(1);
+  });
+
+  it('a row count grip counts across the rows; spacing grips have no count field', async () => {
+    const s = await rectangular();
+    await s.hot({ x: 0, y: 6 });
+    const field = s.bus.prompt!.kind === 'point' ? s.bus.prompt!.arrayCount : undefined;
+    expect(arrayCountAt(field!, { x: 3, y: 11.6 })).toBe(5);
+    await s.bus.script(['X']);
+    await s.hot({ x: 3, y: 0 });
+    expect(s.bus.prompt).not.toHaveProperty('arrayCount');
   });
 });
