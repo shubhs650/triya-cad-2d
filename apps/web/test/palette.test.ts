@@ -23,6 +23,8 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       // M4-03 part 2: dimension styles at the command line.
       '-DIMSTYLE',
+      // M4-04: a text style made at the command line.
+      '-STYLE',
       // M4-05: a table on the command line.
       '-TABLE',
       // M3-09: the Drawing Units questions at the command line.
@@ -164,6 +166,8 @@ describe('palette search', () => {
       'SPLINE',
       'SPLINEDIT',
       'STRETCH',
+      // M4-04: the Text Style dialog.
+      'STYLE',
       // M4-05 part 2: the Insert Table dialog and the cell editor.
       'TABLE',
       // M4-05 part 3: table cells selected, the Table Cell menu.

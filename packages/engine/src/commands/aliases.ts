@@ -67,6 +67,7 @@ export const ALIASES: Readonly<Record<string, string>> = {
   MT: 'MTEXT',
   ED: 'TEXTEDIT',
   ST: 'STYLE',
+  DDSTYLE: 'STYLE',
   SP: 'SPELL',
   DLI: 'DIMLINEAR',
   DAL: 'DIMALIGNED',

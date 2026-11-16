@@ -45,6 +45,7 @@ import { DimStyleDialog } from './DimStyleDialog';
 import { openDrawingModel } from './dimstyle-import';
 import type { OpenDocument } from './documents';
 import { InsertTableDialog } from './InsertTableDialog';
+import { TextStyleDialog } from './TextStyleDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -58,10 +59,13 @@ const storedValue = (v: string, multiline: boolean) =>
 export function AttributeDialogs({
   doc,
   docs = [],
+  fonts,
 }: {
   doc: { id: number } | undefined;
   /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
   docs?: readonly OpenDocument[];
+  /** The user's font files (M1-38), for the Text Style dialog's font lists. */
+  fonts?: readonly string[];
 }) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
@@ -110,6 +114,8 @@ export function AttributeDialogs({
       );
     case 'inserttable':
       return <InsertTableDialog key={key} doc={doc.id} request={d} />;
+    case 'textstyle':
+      return <TextStyleDialog key={key} doc={doc.id} request={d} fonts={fonts ?? []} />;
   }
 }
 
