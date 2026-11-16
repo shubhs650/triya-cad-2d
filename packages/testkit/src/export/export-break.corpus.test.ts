@@ -358,8 +358,9 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
 
   // M3-18 (DEC-063): every open 3D polyline (spline-fit ones too) gets a sloped line on from its
   // last vertex and a level line back from its first, at that vertex's height, and JOIN takes
-  // both into it; every sloped line in model space gets a sloped line on from its end and the
-  // two join at once into a new 3D polyline. All reopen with their heights.
+  // both into it; two new sloped lines from its first vertex, and every sloped line in model
+  // space with a sloped line on from its end, join at once into a new 3D polyline (the readable
+  // corpus has its sloped lines in blocks or none). All reopen with their heights.
   let linesOnto3d = 0;
   let slopedJoined = 0;
   it.each(readable.map((f) => [f.path, f] as const))(
@@ -393,8 +394,22 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
               end: { x: first.x, y: first.y },
               ...(z0 !== 0 && { elevation: z0 }),
             };
-            const [, a, c] = reshapeObject(b, model, id, [g, on, back]);
+            // And two new sloped lines from its first vertex, up and back down, joined at once.
+            const up: EntityGeometry = {
+              kind: 'LINE',
+              start: { x: first.x, y: first.y },
+              end: { x: first.x + s, y: first.y - s },
+              heights: [z0, z0 + s],
+            };
+            const down: EntityGeometry = {
+              kind: 'LINE',
+              start: { x: first.x + s, y: first.y - s },
+              end: { x: first.x + 2 * s, y: first.y - s },
+              heights: [z0 + s, z0],
+            };
+            const [, a, c, u, w] = reshapeObject(b, model, id, [g, on, back, up, down]);
             groups.push({ source: id, parts: [id, a!, c!], vertices: g.vertices.length + 2 });
+            groups.push({ parts: [u!, w!], vertices: 3 });
           } else if (g.kind === 'LINE' && g.heights) {
             const s = 1 + Math.abs(g.end.x - g.start.x) + Math.abs(g.end.y - g.start.y);
             const on: EntityGeometry = {
