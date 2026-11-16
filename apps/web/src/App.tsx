@@ -2178,9 +2178,10 @@ function ViewportCanvas({
       onSnapMenu: (at) => snapMenu.open(id, at),
       // A plain right-click (M3-05 part 5): the prompt's shortcut menu, the grip modes' options.
       onShortcutMenu: (at) => {
-        const items = commandLines.get(id).prompt?.shortcutMenu;
+        const prompt = commandLines.get(id).prompt;
+        const items = prompt?.shortcutMenu;
         if (!items?.length) return false;
-        shortcutMenu.open(id, at, items);
+        shortcutMenu.open(id, at, items, prompt?.shortcutMenuTitle);
         return true;
       },
       // SELECTIONPREVIEW's bit 1 (M3-04 part 5) previews at `Command:` only.

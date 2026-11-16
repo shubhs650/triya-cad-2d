@@ -284,6 +284,21 @@ export function tableCellAt(
   return l.heads[i]![j]!;
 }
 
+/** The box rows `r0`–`r1` and columns `c0`–`c1` fill, in block coordinates. */
+export function tableCellBox(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  r: { readonly r0: number; readonly c0: number; readonly r1: number; readonly c1: number },
+): Box {
+  const l = rowLayout(g, style);
+  return {
+    minX: l.xs[r.c0]!,
+    maxX: l.xs[r.c1 + 1]!,
+    minY: Math.min(l.yBottom(r.r0), l.yBottom(r.r1)),
+    maxY: Math.max(l.yTop(r.r0), l.yTop(r.r1)),
+  };
+}
+
 /**
  * Where cell (`i`, `j`)'s text is drawn, as an MTEXT in block coordinates, `text` in place of
  * the cell's own when given: what the cell editor opens on and what a row is fitted to. The

@@ -8,6 +8,7 @@ import {
   DocumentModel,
   PromptBus,
   builtinCommands,
+  tableCellBox,
   tableCellText,
   tableDrawingOf,
   tableToPlan,
@@ -109,5 +110,97 @@ describe('a row added by Tab in the last cell (M4-05 part 2)', () => {
     expect(g.cells.slice(0, rows).map((r) => r.map((c) => c.text))).toEqual(
       table.geom.cells.map((r) => r.map((c) => c.text)),
     );
+  });
+});
+
+/** Each cell's text, `^` for a covered one, a merged head's span after it. */
+const layout = (g: TableGeometry) =>
+  g.cells.map((r) =>
+    r.map((c) =>
+      c.merged
+        ? '^'
+        : `${c.text}${c.rowSpan * c.columnSpan > 1 ? `/${c.rowSpan}x${c.columnSpan}` : ''}`,
+    ),
+  );
+
+describe('rows and columns inserted and deleted, cells merged (M4-05 part 3)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+
+  /** The bus with table `id` picked wherever the view is asked, and TABLECELL's steps on it. */
+  function cells(model: DocumentModel, id: () => EntityId | undefined) {
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) =>
+          Promise.resolve(
+            r.op === 'pick' ? { ok: true, ids: [] } : { ok: false, message: 'no view' },
+          ),
+      },
+    });
+    const centre = (i: number, j: number) => {
+      const g = (model.entity(id()!) as Table).geom;
+      const style = g.style !== undefined ? model.tables.tableStyles.get(g.style) : undefined;
+      const b = tableCellBox(g, style, { r0: i, c0: j, r1: i, c1: j });
+      return tableToPlan(g, { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    /** Selects cells (`a` to `b`) and runs `option` on them. */
+    const run = async (a: [number, number], b: [number, number], option: string) => {
+      await bus.pick(centre(...a), { grip: 1e-6 });
+      expect(bus.command).toBe('TABLECELL');
+      if (b !== a) await bus.pick(centre(...b), { shift: true });
+      await bus.submit(option);
+      expect(bus.promptText).toBe('Command:');
+    };
+    return { bus, run };
+  }
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const made = () =>
+      [...model.entities()].find(
+        (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+      );
+    const { bus, run } = cells(model, () => made()?.id);
+    for (const a of ['-TABLE', '3', '3', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', 'C', '1', '2', '3', '4', '5', '6']);
+    await run([2, 0], [3, 1], 'MA');
+    await run([2, 2], [2, 2], 'R');
+    await run([4, 0], [4, 0], 'B');
+    await run([1, 1], [1, 1], 'DC');
+    const g = made()!.geom;
+    expect(layout(g)).toEqual([
+      ['T/1x3', '^', '^'],
+      ['A', 'C', ''],
+      ['1/2x1', '3', ''],
+      ['^', '6', ''],
+      ['', '', ''],
+      ['', '', ''],
+    ]);
+    const back = saved(bytes, model, made()!.handle);
+    expect(layout(back)).toEqual(layout(g));
+    expect(back.columnWidths).toEqual(g.columnWidths);
+    expect(back.rowHeights).toEqual(g.rowHeights);
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    const { run } = cells(model, () => table.id);
+    const rows = table.geom.rowHeights.length;
+    const columns = table.geom.columnWidths.length;
+    await run([rows - 1, 0], [rows - 1, 0], 'B');
+    await run([rows - 1, columns - 1], [rows - 1, columns - 1], 'R');
+    await run([rows, 0], [rows, 1], 'MA');
+    const g = (model.entity(table.id) as Table).geom;
+    expect(g.rowHeights).toHaveLength(rows + 1);
+    expect(g.columnWidths).toHaveLength(columns + 1);
+    expect(g.cells[rows]![0]).toMatchObject({ columnSpan: 2 });
+    const back = saved(bytes, model, table.handle);
+    expect(layout(back)).toEqual(layout(g));
+    expect(back.columnWidths).toEqual(g.columnWidths);
   });
 });

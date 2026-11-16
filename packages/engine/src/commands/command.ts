@@ -138,6 +138,11 @@ export interface CommandDef {
    * M2-06), where any other command that does not select deselects them.
    */
   readonly keepsSelection?: boolean;
+  /**
+   * A double click on the canvas cancels it and runs what a double click runs at `Command:`
+   * (TABLECELL, M4-05 part 3: the first click of a double click on a cell selects the cell).
+   */
+  readonly yieldsToDoubleClick?: boolean;
   /** Where its selection comes from (PICKFIRST pre-selection, M2-03). */
   readonly usesSelection?: 'before' | 'during' | 'none';
   run(ctx: CommandContext): CommandGenerator;
