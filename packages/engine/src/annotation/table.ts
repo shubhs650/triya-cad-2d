@@ -376,7 +376,9 @@ export function tableParts(
         position: at({ x: local.x - anchor.x, y: local.y - anchor.y }),
         scale: { x: k, y: k, z: k },
         rotation: r.c.rotation,
-      } as AnnotationPart['geom'],
+        // AutoCAD writes a block cell's INSERT into the table's block without attributes.
+        attributes: [],
+      },
       color,
     });
   }
