@@ -118,7 +118,7 @@ describe('gradient fills (M4-07 part 3)', () => {
   it('GRADIENT hatches with the last gradient (GD), Linear at first', async () => {
     const s = setup([...square(0, 0, 10), ...square(20, 0, 10)]);
     await s.bus.script(['GD']);
-    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo]:');
+    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo/seTtings]:');
     await s.bus.script(['5,5', '']);
     expect(s.hatches()[0]!.geom.gradient).toMatchObject({ name: 'LINEAR', shift: 0 });
     // AutoCAD has no -GRADIENT: -HATCH Properties Gradient is the command line's way.
