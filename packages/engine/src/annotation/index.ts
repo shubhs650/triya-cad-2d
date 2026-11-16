@@ -6,3 +6,4 @@ export * from './tolerance';
 export * from './dimvars';
 export * from './dstyle';
 export * from './radial-extension';
+export * from './table';
