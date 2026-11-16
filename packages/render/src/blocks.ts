@@ -48,6 +48,7 @@ import {
   clipBoundary,
   partEntity,
   tableAxes,
+  withLeaderBreaks,
   type SpatialFilter,
   type BlockDefinition,
   type DocumentModel,
@@ -428,9 +429,11 @@ export function expandInsert(
     const own = depth > 0 ? effectiveLayer(e, { layers, lwDefault: 0 }, outer)?.handle : undefined;
     const chain = own === undefined || above.includes(own) ? above : [...above, own];
     // A MULTILEADER draws its parts where it stands, each painted as an entity of its own
-    // (M1-52); its arrowhead blocks expand as inserts.
+    // (M1-52); its arrowhead blocks expand as inserts. A leader's DIMBREAK gaps are cut out of
+    // its leader lines (M4-15).
+    const annotation = annotationParts(e.geom, src.model, e.xdata, measure);
     const parts =
-      annotationParts(e.geom, src.model, e.xdata, measure) ??
+      (annotation && withLeaderBreaks(src.model, e, annotation)) ??
       (measure && generatedDimension(e, def)
         ? dimensionParts(e, src.model, measure)?.filter((p) => !p.defpoint)
         : undefined);
