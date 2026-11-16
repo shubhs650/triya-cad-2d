@@ -6,6 +6,7 @@ export * from './tolerance';
 export * from './dimvars';
 export * from './dstyle';
 export * from './dimstyle-fields';
+export * from './mleaderstyle-fields';
 export * from './radial-extension';
 export * from './table';
 export * from './linear-jog';
