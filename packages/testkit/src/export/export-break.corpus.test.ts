@@ -38,6 +38,7 @@ import {
   sub,
   type Curve,
   type EntityGeometry,
+  type PolylineGeometry,
 } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
 import { textPieces } from '@triya/render';
@@ -288,6 +289,70 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
     PER_FILE_BUDGET_MS,
   );
 
+  // M3-17: every open 3D polyline gets a copy set end to end with it, its first vertex on the
+  // polyline's last one in plan and height, and JOIN takes the copy into the polyline, which
+  // reopens with every vertex's height (DEC-062).
+  let joined3d = 0;
+  it.each(readable.map((f) => [f.path, f] as const))(
+    '%s saves its 3D polylines joined to a copy of themselves',
+    (_path, f) => {
+      const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
+      withPinnedClock(() => {
+        const fourth = open(bytes);
+        if (!fourth) return;
+        const { model, ids, tol } = fourth;
+        const b = new ChangeSetBuilder(model);
+        const pairs: [EntityId, EntityId][] = [];
+        for (const id of ids) {
+          const g = model.entity(id)!.geom;
+          if (g.kind !== 'POLYLINE' || !g.is3d || g.closed || g.fit || g.vertices.length < 2) {
+            continue;
+          }
+          const first = g.vertices[0]!;
+          const last = g.vertices.at(-1)!;
+          const [dx, dy, dz] = [last.x - first.x, last.y - first.y, (last.z ?? 0) - (first.z ?? 0)];
+          const copy: PolylineGeometry = {
+            ...g,
+            vertices: g.vertices.map((v, i) => {
+              // The copy's first vertex is the polyline's last, exactly.
+              const z = i === 0 ? (last.z ?? 0) : (v.z ?? 0) + dz;
+              const { z: _z, ...plan } = v;
+              const at = i === 0 ? { x: last.x, y: last.y } : { x: v.x + dx, y: v.y + dy };
+              return { ...plan, ...at, ...(z !== 0 && { z }) };
+            }),
+          };
+          const [, made] = reshapeObject(b, model, id, [g, copy]);
+          if (made !== undefined) pairs.push([id, made]);
+        }
+        if (pairs.length === 0) return;
+        model.apply(b.build());
+        const b2 = new ChangeSetBuilder(model);
+        const kept: EntityId[] = [];
+        for (const [id, copy] of pairs) {
+          const g = model.entity(id)!.geom as PolylineGeometry;
+          const j = joinObjects(
+            [
+              { id, geom: g },
+              { id: copy, geom: model.entity(copy)!.geom },
+            ],
+            id,
+            tol,
+          );
+          const one = j.joined[0];
+          expect(one?.parts, f.path).toEqual([id, copy]);
+          if (!one) continue;
+          expect((one.geom as PolylineGeometry).vertices).toHaveLength(2 * g.vertices.length - 1);
+          kept.push(...reshapeObject(b2, model, id, [one.geom]));
+          eraseObjects(b2, model, [copy]);
+          joined3d++;
+        }
+        model.apply(b2.build());
+        expect(wrongAfterSave(bytes, model, kept, []).slice(0, 10), f.path).toEqual([]);
+      });
+    },
+    PER_FILE_BUDGET_MS,
+  );
+
   it('changed objects', () => {
     // Most corpus files hold lines, arcs, circles, polylines and blocks; the counts guard the sweep.
     expect(reshaped).toBeGreaterThan(1000);
@@ -296,6 +361,7 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
     expect(splinesGrown).toBeGreaterThan(0);
     expect(splinesJoined).toBe(splinesGrown);
     expect(raysExtended).toBeGreaterThan(0);
+    expect(joined3d).toBeGreaterThan(0);
     expect(new Set(explodedKinds.keys())).toEqual(EXPLODED_KINDS);
     expect(nonuniform).toBeGreaterThan(0);
     expect(mtexts).toBeGreaterThan(10);

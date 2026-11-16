@@ -399,6 +399,49 @@ describe('JOIN', () => {
     expect(kinds().filter((k) => k === 'SPLINE')).toHaveLength(1);
   });
 
+  it('joins 3D polylines meeting in plan and height into the source (M3-17)', async () => {
+    const p3 = (pts: [number, number, number][]): EntityGeometry => ({
+      kind: 'POLYLINE',
+      is3d: true,
+      closed: false,
+      vertices: pts.map(([x, y, z]) => ({ x, y, bulge: 0, ...(z !== 0 && { z }) })),
+    });
+    const { bus, log, byHandle } = setup([
+      p3([
+        [20, 0, 0],
+        [30, 0, 4],
+      ]),
+      p3([
+        [40, 10, 9],
+        [30, 10, 6],
+        [30, 0, 4],
+      ]),
+      // Over the source's start in plan, but higher.
+      p3([
+        [20, 0, 2],
+        [20, 10, 2],
+      ]),
+    ]);
+    await bus.script(['JOIN']);
+    await bus.pick({ x: 25, y: 0 });
+    await bus.script(['', 'C', '19,-1', '41,11', '']);
+    expect(log).toContain('1 segment added to polyline');
+    expect(log).toContain('1 object discarded from the operation');
+    const g = byHandle('40')!.geom as unknown as {
+      is3d: boolean;
+      vertices: { x: number; y: number; z?: number }[];
+    };
+    expect(g.is3d).toBe(true);
+    expect(g.vertices.map((v) => [v.x, v.y, v.z ?? 0])).toEqual([
+      [20, 0, 0],
+      [30, 0, 4],
+      [30, 10, 6],
+      [40, 10, 9],
+    ]);
+    expect(byHandle('41')).toBeUndefined();
+    expect(byHandle('42')).toBeDefined();
+  });
+
   it('closes a source arc into a circle', async () => {
     const { bus, log, kinds } = setup([
       { kind: 'ARC', center: { x: 20, y: 0 }, radius: 2, startAngle: 0, endAngle: Math.PI },
