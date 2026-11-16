@@ -6,6 +6,7 @@
 import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
+import type { CommandPreview } from '../commands/command-preview';
 import { PICKFIRST } from '../commands/sysvars';
 import { GROUPDISPLAYMODE, PICKADD, PICKAUTO, PICKSTYLE } from '../selection/loop';
 import type { UndoState, ViewStep } from '../commands/undo';
@@ -187,6 +188,19 @@ export type CommandInput =
       readonly gripFunction?: string;
       /** The press made at `point` has been dragged (PICKAUTO 2, M3-04 part 6). */
       readonly dragged?: boolean;
+      /** With `release`: the path the press was dragged along (M3-12 part 6, `freehand`). */
+      readonly freehand?: readonly Vec2[];
+    }
+  /**
+   * COMMANDPREVIEW (M3-12 part 6, `PromptBus.commandPreview`): what a pick (point) at `cursor`
+   * would do at the prompt the command waits at; answered with `command-preview` and `seq`.
+   */
+  | {
+      readonly kind: 'command-preview';
+      readonly seq: number;
+      readonly cursor: Vec2;
+      readonly hits: readonly EntityId[];
+      readonly shift?: boolean;
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
@@ -261,6 +275,8 @@ export type CommandOutput =
   | { readonly type: 'view'; readonly id: number; readonly request: ViewRequest }
   /** The Properties palette's sheet for the objects selected now (M2-21), while it is open. */
   | { readonly type: 'properties'; readonly sheet: PropertySheet }
+  /** A command preview asked for with `seq` (M3-12 part 6); none where the prompt shows none. */
+  | { readonly type: 'command-preview'; readonly seq: number; readonly preview?: CommandPreview }
   /** The rollover tooltip of object `id` (M2-35 part 21); no sheet when the object is gone. */
   | { readonly type: 'rollover'; readonly id: EntityId; readonly sheet?: PropertySheet }
   /**
@@ -339,7 +355,13 @@ export class EngineSession {
       },
     });
     this.#bus.on((e) => {
-      this.#emit(e.type === 'commit' ? { type: 'commit', command: e.record.command } : e);
+      // A prompt's preview source stays here: the app asks for its previews (M3-12 part 6), and
+      // a function cannot go to the app's thread.
+      const cp = e.type === 'prompt' ? e.prompt.commandPreview : undefined;
+      if (e.type === 'prompt' && cp) {
+        const commandPreview = cp.hover ? { hover: cp.hover } : {};
+        this.#emit({ ...e, prompt: { ...e.prompt, commandPreview } });
+      } else this.#emit(e.type === 'commit' ? { type: 'commit', command: e.record.command } : e);
       if (e.type === 'selection' || e.type === 'commit' || e.type === 'undo') this.#queueSheet();
     });
   }
@@ -423,6 +445,7 @@ export class EngineSession {
           ...(input.ctrl && { ctrl: true }),
           ...(input.gripFunction && { gripFunction: input.gripFunction }),
           ...(input.dragged && { dragged: true }),
+          ...(input.freehand && { freehand: input.freehand }),
         });
       case 'select-all':
         return this.#bus.selectAll();
@@ -456,6 +479,18 @@ export class EngineSession {
         this.#vertex = Math.max(0, Math.trunc(input.vertex));
         if (this.#properties) this.#sendSheet();
         return Promise.resolve();
+      case 'command-preview': {
+        const { seq } = input;
+        return this.#bus
+          .commandPreview({
+            cursor: input.cursor,
+            hits: input.hits,
+            ...(input.shift && { shift: true }),
+          })
+          .then((preview) =>
+            this.#emit({ type: 'command-preview', seq, ...(preview && { preview }) }),
+          );
+      }
       case 'rollover': {
         const sheet = rolloverSheet(this.model, input.id);
         this.#emit({ type: 'rollover', id: input.id, ...(sheet && { sheet }) });

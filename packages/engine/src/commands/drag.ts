@@ -12,6 +12,7 @@ import type { EntityGeometry, Xdata } from '../model/types';
 import { placeDimension, type DimPlacement } from '../edit/dimension';
 import type { GripFunction } from '../edit/grip-functions';
 import type { ArrayGripRole } from '../edit/array-grips';
+import type { CommandPreview } from './command-preview';
 import { sketchGeometry, type Sketch } from './draw/sketch';
 
 export type DragPreview =
@@ -121,6 +122,11 @@ export interface DragMotion {
     readonly geom: EntityGeometry;
     readonly xdata?: Xdata;
   };
+  /**
+   * COMMANDPREVIEW (M3-12 part 6): what a command's pick at the cursor would do, its objects
+   * faded and the shapes drawn over them.
+   */
+  readonly preview?: CommandPreview;
 }
 
 /**

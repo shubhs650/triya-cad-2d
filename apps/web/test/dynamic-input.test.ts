@@ -487,6 +487,73 @@ describe('grip stretching’s dimension input (M3-06 part 8, DYNDIVIS, DYNDIGRIP
   });
 });
 
+describe('an arc’s grip dimension fields (M3-15)', () => {
+  // A half circle about the origin, radius 5, from (5,0) to (−5,0) through (0,5).
+  const end = prompts.point({
+    message: 'Specify stretch point or',
+    rubberBand: { from: { x: 5, y: 0 } },
+    gripDimensions: { grip: { x: 5, y: 0 }, anchor: { x: -5, y: 0 }, height: 5 },
+  });
+  const mid = prompts.point({
+    message: 'Specify stretch point or',
+    rubberBand: { from: { x: 0, y: 5 } },
+    gripDimensions: {
+      grip: { x: 0, y: 5 },
+      ends: [
+        { x: 5, y: 0 },
+        { x: -5, y: 0 },
+      ],
+    },
+  });
+  const all = { ...DYN_SETTINGS, dimensionVisibility: 2 as const, gripFields: 31 };
+  const enter = (p: Prompt, keys: string, at: { x: number; y: number }) => {
+    let s = dynFor(p, all);
+    for (const k of keys) s = k === '\t' ? dynTab(s) : dynType(s, k);
+    return parseCoordinate(dynText(s, p, at), {}) as { x: number; y: number };
+  };
+
+  it('shows an end’s chord length and angle from the other end and the radius it makes', () => {
+    const s = dynFor(end, all);
+    expect(s.fields.map((f) => f.label)).toEqual([
+      'Resulting Dimension',
+      'Length Change',
+      'Absolute Angle',
+      'Angle Change',
+      'Arc Radius',
+    ]);
+    // The end at (3,0): a chord of 8 with the height 5 kept, radius (16 + 25) / 10 = 4.1.
+    expect(dynLive(s, end, { x: 3, y: 0 })).toEqual(['8.0000', '-2.0000', '0', '0', '4.1000']);
+  });
+
+  it('sets an end by its radius, along the cursor’s direction from the other end', () => {
+    // Radius 6.5 with height 5: half chord √(5 · (13 − 5)) = √40.
+    const p = enter(end, '\t\t\t\t6.5', { x: 3, y: 0 });
+    expect(p.x).toBeCloseTo(-5 + 2 * Math.sqrt(40), 9);
+    expect(p.y).toBeCloseTo(0, 9);
+    // A radius shorter than half the height makes no arc: sent as typed.
+    let s = dynFor(end, all);
+    for (const k of '\t\t\t\t2') s = k === '\t' ? dynTab(s) : dynType(s, k);
+    expect(dynText(s, end, { x: 3, y: 0 })).toBe('2');
+  });
+
+  it('shows the middle’s radius through both ends, and sets it on the cursor’s side', () => {
+    const s = dynFor(mid, all);
+    expect(s.fields.map((f) => f.label)).toEqual(['Arc Radius']);
+    // Through (5,0), (0,3) and (−5,0): radius (25 + 9) / 6.
+    expect(dynLive(s, mid, { x: 0, y: 3 })).toEqual([(34 / 6).toFixed(4)]);
+    // Radius 13 on the upper side, the cursor near the shallow arc: its middle at 13 − 12 = 1.
+    const p = enter(mid, '13', { x: 0, y: 2 });
+    expect(p.x).toBeCloseTo(0, 9);
+    expect(p.y).toBeCloseTo(1, 9);
+    // The cursor far out: the arc's long way round, its middle at 13 + 12 = 25.
+    const q = enter(mid, '13', { x: 0, y: 20 });
+    expect(q.y).toBeCloseTo(25, 9);
+    // Below the chord: the arc turns over.
+    const r = enter(mid, '13', { x: 0, y: -2 });
+    expect(r.y).toBeCloseTo(-1, 9);
+  });
+});
+
 describe('pointer input visibility and tips (M3-06 part 8)', () => {
   it('reads DYNPIVIS, DYNDIVIS, DYNDIGRIP and DYNINFOTIPS from the drafting aids', () => {
     expect(

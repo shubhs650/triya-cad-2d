@@ -18,7 +18,9 @@
 // xlines as themselves, polylines as polylines with their loops cut out, ellipses and splines as
 // splines. They keep the source's properties and xdata (Layer Current: on the current layer).
 //
-// Left for later (roadmap M3-12): the preview of the offset that follows the cursor.
+// COMMANDPREVIEW (M3-12 part 6, `command-preview.ts`): at the side (through) point prompt the
+// offset a point at the cursor would make follows the cursor, the source faded when Erase takes
+// it.
 import { boxOf } from '../../geom/bounds';
 import type { Curve } from '../../geom/curves';
 import { flatten } from '../../geom/flatten';
@@ -29,9 +31,10 @@ import { offsetCurveOf, offsetGeometry, offsetSide } from '../../edit/offset';
 import type { GapType } from '../../geom/offset';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
-import type { Entity } from '../../model/types';
+import type { Entity, EntityGeometry } from '../../model/types';
 import { currentLayer } from '../../properties/current';
 import type { CommandContext, CommandDef } from '../command';
+import { shapeProps, type CommandPreview } from '../command-preview';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { optionVariable, setOptionVariable } from './option-variables';
 
@@ -126,6 +129,27 @@ export function offsetCommand(): CommandDef {
   }
 
   /**
+   * The shapes offsetting `source` by `d` (Through: undefined) to the side of `through` makes:
+   * none when the point is on the object, 'cannot' when the offset makes nothing.
+   */
+  function offsetShapes(
+    ctx: CommandContext,
+    source: EntityId,
+    through: Vec2,
+    d: number | undefined,
+  ): EntityGeometry[] | 'cannot' | undefined {
+    const e = ctx.model.entity(source);
+    const c = e && offsetCurveOf(e.geom);
+    if (!e || !c) return undefined;
+    const tol = toleranceFor(ctx.model, c);
+    const where = offsetSide(c, through, tol);
+    if (where.side === 0) return undefined;
+    const signed = (d ?? where.distance) * where.side;
+    const geoms = offsetGeometry(e.geom, signed, tol, gapType);
+    return geoms.length === 0 ? 'cannot' : geoms;
+  }
+
+  /**
    * Offsets `source` by `d` to the side of `side`, erasing it when Erase says so and it is the
    * object picked: the record for Undo, or undefined when nothing could be made.
    */
@@ -137,18 +161,13 @@ export function offsetCommand(): CommandDef {
     d: number | undefined,
     eraseNow: boolean,
   ): Made | undefined {
-    const e = ctx.model.entity(source);
-    const c = e && offsetCurveOf(e.geom);
-    if (!e || !c) return undefined;
-    const tol = toleranceFor(ctx.model, c);
-    const where = offsetSide(c, through, tol);
-    if (where.side === 0) return undefined;
-    const signed = (d ?? where.distance) * where.side;
-    const geoms = offsetGeometry(e.geom, signed, tol, gapType);
-    if (geoms.length === 0) {
+    const geoms = offsetShapes(ctx, source, through, d);
+    if (!geoms) return undefined;
+    if (geoms === 'cannot') {
       ctx.message('Cannot offset that object.');
       return undefined;
     }
+    const e = ctx.model.entity(source)!;
     const ids: EntityId[] = [];
     let erased: Entity | undefined;
     ctx.edit((b) => {
@@ -162,6 +181,27 @@ export function offsetCommand(): CommandDef {
       }
     });
     return { ids, source, ...(erased && { erased }) };
+  }
+
+  /**
+   * COMMANDPREVIEW (M3-12 part 6): what offsetting `source` to the side of (through) `at` would
+   * make, `picked` faded when Erase would take it.
+   */
+  function preview(
+    ctx: CommandContext,
+    source: EntityId,
+    picked: EntityId,
+    at: Vec2,
+    eraseNow: boolean,
+  ): CommandPreview | undefined {
+    const geoms = offsetShapes(ctx, source, at, dist < 0 ? undefined : dist);
+    const e = ctx.model.entity(source);
+    if (!geoms || geoms === 'cannot' || !e) return undefined;
+    const props = {
+      ...shapeProps(e),
+      ...(currentLayerOption && { layer: currentLayer(ctx.model) }),
+    };
+    return { faded: eraseNow ? [picked] : [], shapes: geoms.map((geom) => ({ geom, props })) };
   }
 
   /** Erases `picked` as Erase source says, after a Through Multiple run that kept it: for Undo. */
@@ -229,10 +269,16 @@ export function offsetCommand(): CommandDef {
           if (m) made.push(m);
         };
         for (;;) {
+          const keepSource = through && multiple;
+          const from = ctx.model.entity(source) ? source : picked;
           const p = yield ctx.prompt.point({
             message: through ? 'Specify through point or' : 'Specify point on side to offset or',
             options: multiple ? ['Exit', 'Undo'] : ['Exit', 'Multiple', 'Undo'],
             defaultLabel: multiple ? 'next object' : 'Exit',
+            // COMMANDPREVIEW (M3-12 part 6): the offset the point at the cursor would make.
+            commandPreview: {
+              at: (q) => preview(ctx, from, picked, q.cursor, erase && !keepSource),
+            },
           });
           if (p.kind === 'keyword' && p.keyword === 'Exit') {
             endRun();
@@ -257,10 +303,9 @@ export function offsetCommand(): CommandDef {
             endRun();
             return;
           }
-          const keepSource = through && multiple;
           const m = offsetOnce(
             ctx,
-            ctx.model.entity(source) ? source : picked,
+            from,
             picked,
             p.point,
             through ? undefined : dist,

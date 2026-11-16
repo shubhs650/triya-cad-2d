@@ -64,6 +64,43 @@ describe('EngineSession commands', () => {
     expect(out.some((o) => o.type === 'read')).toBe(false);
   });
 
+  it('sends a prompt that cloning can carry, and answers command previews (M3-12 part 6)', async () => {
+    const { s, out } = setup();
+    await s.command({ kind: 'submit', text: 'L' });
+    await s.command({ kind: 'submit', text: '0,0' });
+    await s.command({ kind: 'submit', text: '10,0' });
+    await s.command({ kind: 'submit', text: '' });
+    await s.command({ kind: 'submit', text: 'LENGTHEN' });
+    await s.command({ kind: 'submit', text: 'DE' });
+    await s.command({ kind: 'submit', text: '2' });
+    const prompt = out.filter((o) => o.type === 'prompt').at(-1);
+    // The preview source's function stays in the engine: the prompt is plain data.
+    expect(prompt?.type === 'prompt' && prompt.prompt.commandPreview).toEqual({ hover: true });
+    const functions = (v: unknown): number =>
+      typeof v === 'function'
+        ? 1
+        : v && typeof v === 'object'
+          ? Object.values(v).reduce<number>((n, x) => n + functions(x), 0)
+          : 0;
+    expect(functions(prompt)).toBe(0);
+    const line = [...s.model.entities()].find((e) => e.geom.kind === 'LINE')!;
+    await s.command({
+      kind: 'command-preview',
+      seq: 7,
+      cursor: { x: 9, y: 0 },
+      hits: [line.id],
+    });
+    const reply = out.at(-1);
+    expect(reply).toMatchObject({ type: 'command-preview', seq: 7, preview: { faded: [line.id] } });
+    expect(reply?.type === 'command-preview' && reply.preview?.shapes[0]?.geom).toMatchObject({
+      start: { x: 0, y: 0 },
+      end: { x: 12, y: 0 },
+    });
+    // Nothing under the cursor: an answer with no preview.
+    await s.command({ kind: 'command-preview', seq: 8, cursor: { x: 50, y: 50 }, hits: [] });
+    expect(out.at(-1)).toEqual({ type: 'command-preview', seq: 8 });
+  });
+
   it('keeps a replica in step through the change outputs', async () => {
     const { s, out } = setup();
     const replica = DocumentModel.create(sampleInit());

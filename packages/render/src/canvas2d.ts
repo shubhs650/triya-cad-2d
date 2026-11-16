@@ -56,6 +56,7 @@ import {
   viewportLayers,
   viewportTransform,
   ucsOf,
+  viewportUcs,
   type ViewportLayers,
   type Box,
   type ChangeSet,
@@ -301,6 +302,8 @@ interface DrawFrame {
    * on the Model tab under MSLTSCALE (M1-63), else 1.
    */
   readonly linetypeScale?: number;
+  /** Every entry drawn this much faded (a command preview's faded objects, M3-12 part 6). */
+  readonly alpha?: number;
 }
 
 /** A POINT shown as its PDMODE figure, which the view sizes (M3-01 part 4). */
@@ -348,6 +351,11 @@ const SELECTION_COLOR = '#4da3ff';
 const SELECTION_GLOW_PX = 5;
 const SELECTION_GLOW_ALPHA = 0.35;
 const SELECTION_DASH = [4, 3];
+/**
+ * COMMANDPREVIEW (M3-12 part 6): how much of the objects a command's pick would change shows
+ * while its preview is drawn over them (AutoCAD fades them; its help gives no amount).
+ */
+export const COMMAND_PREVIEW_FADE = 0.3;
 /**
  * The selection preview (M3-04 part 5): the selection's glow with a solid line this wide, CSS
  * pixels. AutoCAD previews an object thickened (its retired PREVIEWEFFECT's "thickened lines");
@@ -630,10 +638,14 @@ export class Canvas2DRenderer implements Renderer {
         readonly gripMove: Matrix2D;
         /** An array's items remade by its grip (M3-05 part 7): a block's entry through `m`. */
         readonly items: readonly { readonly entry: CacheEntry; readonly m: Matrix2D }[];
+        /** A command preview's faded objects (M3-12 part 6), left out of the scene. */
+        readonly faded: readonly CacheEntry[];
       }
     | undefined;
   /** The array preview's blocks tessellated once per drag: an INSERT of each at its base. */
   #itemBlocks = new Map<string, CacheEntry | undefined>();
+  /** The objects a command preview fades (M3-12 part 6): the scene leaves them out. */
+  #faded: ReadonlySet<EntityId> = new Set();
   /**
    * The objects grips show on, and the hot grip (M2-06 part 2); the groups shown by one grip
    * each (GROUPDISPLAYMODE, M3-13).
@@ -788,6 +800,7 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   setDrag(motion: DragMotion | undefined): void {
+    this.#setFaded(motion?.preview?.faded ?? []);
     if (!motion) {
       this.#itemBlocks.clear();
       if (!this.#drag) return;
@@ -854,9 +867,30 @@ export class Canvas2DRenderer implements Renderer {
       const entry = this.#entryOf(e, ADDING, this.#model, this.#blockSource);
       if (entry) stretched.push(entry);
     }
+    // A command preview (M3-12 part 6): each shape as an object with its properties would be
+    // drawn, over the objects it changes, which are faded.
+    const faded: CacheEntry[] = [];
+    const pv = motion.preview;
+    for (const fid of pv?.faded ?? []) {
+      const entry = this.#cache[fid];
+      if (entry) faded.push(entry);
+    }
+    for (const shape of pv?.shapes ?? []) {
+      const e: Entity = {
+        id: ADDING,
+        handle: '',
+        type: shape.geom.kind,
+        owner: this.#block,
+        ...shape.props,
+        visible: true,
+        geom: unblocked(shape.geom),
+      };
+      const entry = this.#entryOf(e, ADDING, this.#model, this.#blockSource);
+      if (entry) stretched.push(entry);
+    }
     const gripMove = g ? translation(g.to.x - g.from.x, g.to.y - g.from.y) : motion.m;
     const items = motion.array ? this.#arrayItems(motion.array) : [];
-    this.#drag = { moved, m: motion.m, stretched, gripMoved, gripMove, items };
+    this.#drag = { moved, m: motion.m, stretched, gripMoved, gripMove, items, faded };
     this.#transientDirty = true;
   }
 
@@ -891,6 +925,17 @@ export class Canvas2DRenderer implements Renderer {
       if (entry) out.push({ entry, m });
     }
     return out;
+  }
+
+  /**
+   * The objects a command preview fades (M3-12 part 6): the scene is drawn again without them,
+   * only when they change, and the transient layer draws them faded.
+   */
+  #setFaded(ids: readonly EntityId[]): void {
+    const was = this.#faded;
+    if (ids.length === was.size && ids.every((id) => was.has(id))) return;
+    this.#faded = new Set(ids);
+    this.#sceneDirty = this.#contentDirty = true;
   }
 
   /**
@@ -1108,6 +1153,9 @@ export class Canvas2DRenderer implements Renderer {
       const drag = this.#drag;
       if (drag) {
         const view = this.#viewFrame();
+        if (drag.faded.length > 0) {
+          this.#drawPrimitives(t.ctx, drag.faded, false, { ...view, alpha: COMMAND_PREVIEW_FADE });
+        }
         this.#drawPrimitives(t.ctx, drag.moved, false, this.#dragFrame(view, drag.m));
         this.#drawPrimitives(t.ctx, drag.stretched, false, view);
         if (drag.gripMoved.length > 0) {
@@ -1720,7 +1768,13 @@ export class Canvas2DRenderer implements Renderer {
     if (this.#style.viewportUcsIcons) {
       for (const vp of this.#viewportList()) this.#drawViewportUcsIcon(ctx, vp, view);
     }
-    const entries = this.#visibleEntries(this.#block, view.box);
+    // A command preview's faded objects are drawn on the transient layer (M3-12 part 6).
+    const faded = this.#faded;
+    const entries = this.#visibleEntries(
+      this.#block,
+      view.box,
+      faded.size > 0 ? (id, entry) => (faded.has(id) ? undefined : entry) : undefined,
+    );
     this.#sceneEntries += entries.length;
     // MSLTSCALE 1 "scales linetypes displayed on the Model tab by the annotation scale". Read
     // per scene, so a header change needs no re-tessellation (dashes are kept per multiplier).
@@ -1975,14 +2029,16 @@ export class Canvas2DRenderer implements Renderer {
   /** One viewport's view of model space, clipped to its frame. */
   /**
    * The UCS icon of a viewport (M3-06 part 8; AutoCAD 2024 Help, "UCSICON"): with its UCSICON bit
-   * (DXF 90 bit 32) on, model space's current UCS's X and Y arrows as the viewport turns them, at
+   * (DXF 90 bit 32) on, the X and Y arrows of the UCS it shows (its own with UCSVP on, else model
+   * space's current one: `viewportUcs`, M3-15) as the viewport turns them, at
    * the UCS origin with bit 64 while it sits inside the frame with room, else in the frame's
    * lower-left corner; a square at the corner while the UCS is the WCS.
    */
   #drawViewportUcsIcon(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame): void {
     const flags = vp.geom.flags;
     if ((flags & VIEWPORT_UCS_ICON) === 0) return;
-    const ucs = ucsOf(this.#model.header, false);
+    // Its own UCS while its UCSVP is on (M3-15).
+    const ucs = viewportUcs(vp.geom, ucsOf(this.#model.header, false));
     const t = vp.toPaper;
     const k = view.m.a;
     const device = (p: Vec2) => ({
@@ -2236,7 +2292,8 @@ export class Canvas2DRenderer implements Renderer {
     for (const entry of entries) {
       if (frozen && entry.layer !== undefined && frozen.has(entry.layer)) continue;
       const entryAlpha =
-        fade && entry.layer !== undefined && fade.locked.has(entry.layer) ? fade.alpha : 1;
+        (frame.alpha ?? 1) *
+        (fade && entry.layer !== undefined && fade.locked.has(entry.layer) ? fade.alpha : 1);
       // LOD: an entity under a pixel is a dot, or nothing in a reduced frame. A POINT with a
       // PDMODE figure is sized by the view, not by the entity (M3-01 part 4).
       if (entry.size * scale < 1 && !hasFigure(entry)) {
@@ -2266,8 +2323,8 @@ export class Canvas2DRenderer implements Renderer {
         // In a block, a part fades when the reference's layer (the entry's) or a layer below it
         // is locked; AutoCAD's help does not say for the nested case (ambiguity noted, M1-69).
         const a =
-          (entryAlpha === 1 && fade && prim.layers?.some((l) => fade.locked.has(l))
-            ? fade.alpha
+          (entryAlpha === (frame.alpha ?? 1) && fade && prim.layers?.some((l) => fade.locked.has(l))
+            ? entryAlpha * fade.alpha
             : entryAlpha) * opacity(prim);
         const color = this.#color(prim.color);
         if (prim.kind === 'point') {

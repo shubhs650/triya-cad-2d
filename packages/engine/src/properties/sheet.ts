@@ -1196,6 +1196,20 @@ function typeSections(
       ]);
       break;
     }
+    case 'VIEWPORT': {
+      // AutoCAD 2024's palette for a viewport, Misc: UCS per viewport (UCSVP, DXF 71; M3-15),
+      // Yes to keep the viewport's own UCS, No to show model space's current one.
+      add('Misc', [
+        row(es, {
+          key: 'ucsPerViewport',
+          label: 'UCS per viewport',
+          kind: 'choice',
+          options: YES_NO,
+          get: (e) => yesNo(geomOf<'VIEWPORT'>(e).ucsPerViewport ?? false),
+        }),
+      ]);
+      break;
+    }
     case 'PDFUNDERLAY': {
       // AutoCAD 2024's palette for a PDF underlay, Misc: Layer display override reads Applied
       // when ULAYERS turned any of its layers off (M2-56 part 1), None otherwise; ULAYERS edits it.

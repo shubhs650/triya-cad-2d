@@ -80,6 +80,7 @@ export {
 } from './blocks';
 export {
   Canvas2DRenderer,
+  COMMAND_PREVIEW_FADE,
   DEFAULT_STYLE,
   type Canvas2D,
   type Canvas2DRendererOptions,

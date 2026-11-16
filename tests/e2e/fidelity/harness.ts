@@ -16,7 +16,7 @@ import {
   type DrawnEntity,
   type SpaceTriage,
 } from '../../../packages/testkit/src/fidelity/triage';
-import { activeCanvas, openWithPicker } from '../app/page';
+import { activeCanvas, expectDrawn, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 /**
@@ -87,6 +87,10 @@ export async function openDrawing(page: Page, file: string) {
  */
 export async function settled(page: Page): Promise<Buffer> {
   await page.waitForLoadState('networkidle');
+  // A canvas that has not drawn its first frame yet (a layout's, while its render worker builds
+  // it on a loaded CI runner) shoots the same blank twice and would pass as settled: wait for
+  // the frame first (M3-15, which met layouts shot blank in three CI runs).
+  await expectDrawn(page, { timeout: 60_000 });
   const shot = () => activeCanvas(page).screenshot({ animations: 'disabled', style: HIDE_CHROME });
   let last = await shot();
   let same = 0;

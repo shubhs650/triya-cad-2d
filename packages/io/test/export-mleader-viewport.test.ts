@@ -678,4 +678,32 @@ describe('triyaToAcad multileaders and viewports', () => {
       }
     }
   });
+
+  it('writes a viewport’s own UCS and UCSVP (M3-15, DXF 71, 110–112) so they map back', () => {
+    const model = open();
+    const e = find(model, 'VIEWPORT', 1);
+    const ucs = {
+      origin: { x: 5, y: 6, z: 0 },
+      xAxis: { x: 0, y: 1, z: 0 },
+      yAxis: { x: -1, y: 0, z: 0 },
+      elevation: 0,
+      orthographic: 0,
+    };
+    const next = changed(e.geom, { ucsPerViewport: true, ucs });
+    edit(model, (b) => b.updateEntity(e.id, { geom: next }));
+    const bytes = save(model, 'dxf');
+    expectGeometry(reopened(bytes, e.handle)?.geom, next);
+    // UCSVP off again keeps the UCS, which no longer shows.
+    const off = changed(next, { ucsPerViewport: undefined });
+    edit(model, (b) => b.updateEntity(e.id, { geom: off }));
+    expectGeometry(reopened(save(model, 'dxf'), e.handle)?.geom, off);
+    // R14 has no viewport UCS.
+    const file = drawing(ACadVersion.AC1014);
+    const r14 = open(file);
+    const v = find(r14, 'VIEWPORT', 1);
+    edit(r14, (b) => b.updateEntity(v.id, { geom: changed(v.geom, { ucsPerViewport: true }) }));
+    expect(() => exportDocument(readCadDocument(file), r14, { format: 'dxf' })).toThrow(
+      new RegExp(`VIEWPORT ${v.handle}: AC1014 cannot store a viewport's UCS`),
+    );
+  });
 });

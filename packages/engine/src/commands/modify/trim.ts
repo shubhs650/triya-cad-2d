@@ -30,8 +30,12 @@
 // or window the canvas measures the boxes of the texts among the edges (`textOutlines`), once
 // per text for the command.
 //
-// Left for later (roadmap M3-12): Quick mode's freehand fence (press and drag) and the highlight
-// of what a pick would trim. Projection has nothing to do in plan (DEC-039).
+// M3-12 part 6: COMMANDPREVIEW (`command-preview.ts`) shows what a pick at the cursor would trim
+// (extend; Shift held, the other), and in Quick mode a press on nothing dragged and let go is a
+// freehand fence (AutoCAD 2024 Help, "TRIM (Command)": "click and drag to start a freehand
+// selection path"), trimming (extending) every object the path crosses. Projection has nothing
+// to do in plan (DEC-039).
+import { boxOf, curveBounds } from '../../geom/bounds';
 import type { Curve } from '../../geom/curves';
 import { domain, pointAt } from '../../geom/eval';
 import { intersect } from '../../geom/intersect';
@@ -50,8 +54,9 @@ import {
 import type { ChangeSet } from '../../model/changeset';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
-import type { Entity } from '../../model/types';
+import type { Entity, EntityGeometry } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
+import { reshapePreview, type CommandPreview, type PreviewQuery } from '../command-preview';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { toleranceFor } from './offset';
 import { optionVariable, setOptionVariable } from './option-variables';
@@ -97,6 +102,21 @@ async function loadSettings(ctx: CommandContext, s: TrimSettings): Promise<void>
 async function setQuick(ctx: CommandContext, s: TrimSettings, quick: boolean): Promise<void> {
   s.quick = quick;
   await setOptionVariable(ctx, 'TRIMEXTENDMODE', quick ? 1 : 0);
+}
+
+/** The other command's work, which Shift does. */
+const other = (w: Work): Work => (w === 'trim' ? 'extend' : 'trim');
+
+/** "Object does not intersect an edge." */
+const NO_EDGE = 'Object does not intersect an edge.';
+
+/**
+ * The object a pick takes of the objects `hits` under it: in the space, one with a curve first
+ * (under a hatch the line it is drawn up to is what a drafter means).
+ */
+function pickTarget(ctx: CommandContext, hits: readonly EntityId[]): EntityId | undefined {
+  const here = hits.filter((id) => ctx.model.entity(id)?.owner === ctx.space);
+  return here.find((h) => trimCurveOf(ctx.model.entity(h)!.geom)) ?? here[0];
 }
 
 /** Objects on layers that are off or frozen are not drawn, so they are no edges. */
@@ -169,7 +189,15 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
       const history: ChangeSet[][] = [];
       const run = new Runner(ctx, s, () => edges);
       for (;;) {
-        const a = yield ctx.prompt.point({ message: w.select, options: options(), pickbox: true });
+        const a = yield ctx.prompt.point({
+          message: w.select,
+          options: options(),
+          pickbox: true,
+          commandPreview: {
+            hover: true,
+            at: (q) => run.preview(q, q.shift ? other(w.work) : w.work),
+          },
+        });
         if (a.kind === 'keyword') {
           switch (a.keyword) {
             case w.edgeOption:
@@ -246,14 +274,10 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
           continue;
         }
         if (a.kind !== 'point') return;
-        const work: Work = a.shift ? (w.work === 'trim' ? 'extend' : 'trim') : w.work;
+        const work: Work = a.shift ? other(w.work) : w.work;
         const r = await ctx.view.request({ op: 'pick', point: a.point });
-        const hits = (r.ok ? (r.ids ?? []) : []).filter(
-          (id) => ctx.model.entity(id)?.owner === ctx.space,
-        );
-        if (hits.length > 0) {
-          // Under a hatch the line it is drawn up to is what a drafter means.
-          const id = hits.find((h) => trimCurveOf(ctx.model.entity(h)!.geom)) ?? hits[0]!;
+        const id = pickTarget(ctx, r.ok ? (r.ids ?? []) : []);
+        if (id !== undefined) {
           await run.measure();
           const cs = run.one(id, a.point, work, true);
           if (cs) history.push([cs]);
@@ -305,8 +329,13 @@ async function* fencePoints(ctx: CommandContext, first: Vec2, quick: boolean): S
     const a = yield ctx.prompt.point({
       message: 'Specify next fence point or',
       options: ['Undo'],
-      rubberBand: { from: points.at(-1)! },
+      // Quick mode's fence starts where a press found nothing; dragged, it is freehand.
+      rubberBand: { from: points.at(-1)!, ...(quick && { freehand: true as const }) },
     });
+    if (a.kind === 'point' && a.freehand && quick) {
+      // The path from where the press began, which is the fence's first point.
+      return [first, ...a.freehand.filter((p, i) => i > 0 || distance(p, first) > 0)];
+    }
     if (a.kind === 'keyword') {
       if (points.length > 1) points.pop();
       else return [];
@@ -420,44 +449,55 @@ class Runner {
   }
 
   /**
+   * What trimming (extending) `id` where `at` is on it makes: the shapes it becomes (none: it
+   * goes), or AutoCAD's message for why it cannot be.
+   */
+  result(id: EntityId, at: Vec2, work: Work): readonly EntityGeometry[] | string {
+    const ctx = this.#ctx;
+    const e = ctx.model.entity(id);
+    const c = e && trimCurveOf(e.geom);
+    if (!e || !c)
+      return work === 'trim' ? 'Cannot trim that object.' : 'Cannot extend that object.';
+    if (locked(ctx.model, id)) return 'The object is on a locked layer.';
+    const tol = toleranceFor(ctx.model, c);
+    const edges = this.#edgeCurves(id);
+    const t = pickParam(c, at, tol);
+    if (work === 'extend') {
+      const g = extendGeometry(e.geom, c, edges, t, tol);
+      return g ? [g] : NO_EDGE;
+    }
+    const cuts = cutParams(c, edges, tol);
+    const geoms = trimGeometry(e.geom, c, cuts, t, tol);
+    // Quick mode deletes an object no edge crosses (AutoCAD 2021 and later).
+    if (!geoms && this.#s.quick && cuts.length === 0) return [];
+    return geoms ?? NO_EDGE;
+  }
+
+  /**
    * Trims (extends) `id` where `at` is on it: the edit, or undefined (with AutoCAD's message)
    * when it does nothing. `say` is false for the objects of a fence or window, which pass over
    * what they cannot work on.
    */
   one(id: EntityId, at: Vec2, work: Work, say: boolean): ChangeSet | undefined {
     const ctx = this.#ctx;
-    const e = ctx.model.entity(id);
-    const c = e && trimCurveOf(e.geom);
-    if (!e || !c) {
-      if (say)
-        ctx.message(work === 'trim' ? 'Cannot trim that object.' : 'Cannot extend that object.');
+    const r = this.result(id, at, work);
+    if (typeof r === 'string') {
+      if (say) ctx.message(r);
       return undefined;
     }
-    if (locked(ctx.model, id)) {
-      if (say) ctx.message('The object is on a locked layer.');
-      return undefined;
-    }
-    const tol = toleranceFor(ctx.model, c);
-    const edges = this.#edgeCurves(id);
-    const t = pickParam(c, at, tol);
-    if (work === 'extend') {
-      const g = extendGeometry(e.geom, c, edges, t, tol);
-      if (!g) {
-        if (say) ctx.message('Object does not intersect an edge.');
-        return undefined;
-      }
-      return ctx.edit((b) => reshapeObject(b, ctx.model, id, [g]));
-    }
-    const cuts = cutParams(c, edges, tol);
-    let geoms = trimGeometry(e.geom, c, cuts, t, tol);
-    // Quick mode deletes an object no edge crosses (AutoCAD 2021 and later).
-    if (!geoms && this.#s.quick && cuts.length === 0) geoms = [];
-    if (!geoms) {
-      if (say) ctx.message('Object does not intersect an edge.');
-      return undefined;
-    }
-    const shapes = geoms;
-    return ctx.edit((b) => reshapeObject(b, ctx.model, id, shapes));
+    return ctx.edit((b) => reshapeObject(b, ctx.model, id, r));
+  }
+
+  /**
+   * COMMANDPREVIEW (M3-12 part 6): what a pick at the cursor would do, on the object a pick
+   * there would take.
+   */
+  async preview(q: PreviewQuery, work: Work): Promise<CommandPreview | undefined> {
+    const id = pickTarget(this.#ctx, q.hits);
+    if (id === undefined) return undefined;
+    await this.measure();
+    const r = this.result(id, q.cursor, work);
+    return typeof r === 'string' ? undefined : reshapePreview(this.#ctx.model, [[id, r]]);
   }
 
   /** The objects that can be trimmed or extended: in the space, shown and not locked. */
@@ -503,11 +543,22 @@ class Runner {
   /** A fence: every object it crosses, at each crossing, in the fence's order. */
   fence(points: readonly Vec2[], work: Work): ChangeSet[] {
     if (points.length < 2) return [];
-    const targets = this.#targets();
+    // A freehand fence has many short segments: each is tried only on the objects whose
+    // bounds it reaches.
+    const targets = this.#targets().map((t) => ({ ...t, box: curveBounds(t.c, t.tol) }));
     const at: { id: EntityId; point: Vec2; k: number; along: number }[] = [];
     for (let k = 0; k + 1 < points.length; k++) {
       const seg: Curve = { kind: 'LINE', start: points[k]!, end: points[k + 1]! };
-      for (const { id, c, tol } of targets) {
+      const s = boxOf([seg.start, seg.end]);
+      for (const { id, c, tol, box } of targets) {
+        const pad = tol.linear;
+        if (
+          s.minX > box.maxX + pad ||
+          s.maxX < box.minX - pad ||
+          s.minY > box.maxY + pad ||
+          s.maxY < box.minY - pad
+        )
+          continue;
         for (const x of intersect(seg, c, tol)) at.push({ id, point: x.point, k, along: x.ta });
       }
     }

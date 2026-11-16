@@ -617,6 +617,13 @@ function geometryChange(
       }
       return undefined;
     }
+    case 'VIEWPORT':
+      // UCS per viewport (UCSVP, M3-15).
+      if (key === 'ucsPerViewport') {
+        if (b === undefined) return 'invalid';
+        return geomPatch({ ...g, ucsPerViewport: b });
+      }
+      return undefined;
     case 'LWPOLYLINE':
       if (key === 'closed') {
         if (b === undefined) return 'invalid';
