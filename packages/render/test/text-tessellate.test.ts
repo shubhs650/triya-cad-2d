@@ -415,3 +415,66 @@ describe('MTEXT background and frame (M1-41 part 2)', () => {
     ]);
   });
 });
+
+// M4-10 part 3: FIELDDISPLAY. A field's characters get a grey, half-opaque box under the glyphs,
+// from the descender line to the text height, on each line the field is on; the attribute
+// definition's tag (which is no field) and text without fields get none.
+describe('field shading (FIELDDISPLAY)', () => {
+  const child = (code: string, value: string) => ({
+    evaluator: 'AcVar',
+    code,
+    children: [],
+    objects: [],
+    value,
+  });
+  const field = (code: string, ...children: ReturnType<typeof child>[]) => ({
+    evaluator: '_text',
+    code,
+    children,
+    objects: [],
+  });
+  const shades = (prims: RenderPrimitive[]) =>
+    prims.filter((p): p is PathPrim => p.kind === 'fill' && p.fieldShade === true);
+  const xs = (p: PathPrim) => points(p.path).map(([x]) => x!);
+  const ys = (p: PathPrim) => points(p.path).map(([, y]) => y!);
+
+  it("shades a TEXT's field under its glyphs, from its value's start to its end", () => {
+    const g = text('AA', { field: field('A%<\\_FldIdx 0>%', child('\\AcVar Filename', 'A')) });
+    const prims = tessellate(g, paint, { text: ctx() });
+    const [shade] = shades(prims);
+    expect(prims[0]).toBe(shade);
+    expect(shade).toMatchObject({ color: '#808080', opacity: 0.5, evenOdd: false });
+    // The second A, 11 to 12, up to the text's height above the baseline at 20.
+    expect([Math.min(...xs(shade!)), Math.max(...xs(shade!))]).toEqual([11, 12]);
+    expect(Math.max(...ys(shade!))).toBe(25);
+    expect(Math.min(...ys(shade!))).toBeLessThanOrEqual(20);
+    // The glyphs are the same as the text's without its field.
+    expect(prims.slice(1)).toEqual(tessellate(text('AA'), paint, { text: ctx() }));
+  });
+
+  it("shades each line of an MTEXT's fields, one box per field per line", () => {
+    const g = mtext('A\\PAA', {
+      field: field(
+        '%<\\_FldIdx 0>%\\PA%<\\_FldIdx 1>%',
+        child('\\AcVar Filename', 'A'),
+        child('\\AcVar ctab', 'A'),
+      ),
+    });
+    const s = shades(tessellate(g, paint, { text: ctx() }));
+    expect(s).toHaveLength(2);
+    expect(s.map((p) => Math.min(...xs(p)))).toEqual([0, 2]);
+  });
+
+  it("gives an attribute definition's tag and plain text no shading", () => {
+    const f = field('%<\\_FldIdx 0>%', child('\\AcVar Filename', 'A'));
+    const attdef = {
+      ...text('A', { field: f }),
+      kind: 'ATTDEF',
+      tag: 'TAG',
+      prompt: '',
+      flags: 0,
+    } as const;
+    expect(shades(tessellate(attdef, paint, { text: ctx() }))).toEqual([]);
+    expect(shades(tessellate(text('AA'), paint, { text: ctx() }))).toEqual([]);
+  });
+});

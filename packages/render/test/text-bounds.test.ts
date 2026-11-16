@@ -235,3 +235,15 @@ describe('textOutline', () => {
     expect(textOutline(ctx(new FontBook()))(m)).toBeUndefined();
   });
 });
+
+describe('field shading in text extents (M4-10 part 3)', () => {
+  it('leaves a field’s grey background out of the extents', () => {
+    const shade = {
+      kind: 'fill',
+      path: [0, -1, -1, 1, 9, 9],
+      color: '#808080',
+      fieldShade: true,
+    } as const;
+    expect(primitivesBox([shade])).toBeUndefined();
+  });
+});

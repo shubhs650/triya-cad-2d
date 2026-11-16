@@ -219,6 +219,19 @@ describe('SETVAR', () => {
     expect(s.model.header.get('CETRANSPARENCY')).toBe('40');
   });
 
+  it('knows FIELDEVAL in a drawing without it, AutoCAD’s initial 31 (M4-10 part 3)', async () => {
+    const s = setup(withHeader(HEADER));
+    await s.bus.script(['FIELDEVAL']);
+    expect(s.bus.promptText).toBe('Enter new value for FIELDEVAL <31>:');
+    await s.bus.script(['32']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 31.');
+    // Kept as AutoCAD keeps it, a DICTIONARYVAR's text.
+    await s.bus.script(['3']);
+    expect(s.model.header.get('FIELDEVAL')).toBe('3');
+    await s.bus.script(['FIELDEVAL']);
+    expect(s.bus.promptText).toBe('Enter new value for FIELDEVAL <3>:');
+  });
+
   it('sets WIPEOUTFRAME in the drawing’s WIPEOUTVARIABLES', async () => {
     const init = { ...sampleInit(), meta: { ...sampleInit().meta, rootDictionary: 'C' } };
     const s = setup(init);

@@ -115,6 +115,14 @@ describe('fields made in Triya save as DXF and read back', () => {
     expect(fields(DocumentModel.create(documentInit(doc)))).toEqual(before);
     const roots = made.map((h) => rootOf(doc, h)!);
     expect(roots.map((r) => r.evaluatorId)).toEqual(['_text', '_text']);
+    // M4-10 part 3: when each may be evaluated (DXF 91): the Date field on demand only, as
+    // AutoCAD makes it, the Object field and the roots on every event.
+    expect(
+      roots.map((r) => [r.evaluationOptionFlags, r.children[0]!.evaluationOptionFlags]),
+    ).toEqual([
+      [63, 32],
+      [63, 63],
+    ]);
     expect(
       roots[1]!.children[0]!.cadObjects.map((o) => o.handle.toString(16).toUpperCase()),
     ).toEqual([circle.handle]);

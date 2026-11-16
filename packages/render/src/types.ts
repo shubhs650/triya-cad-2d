@@ -40,6 +40,11 @@ export interface RenderStyle {
    * AutoCAD's initial value is 1, so absent shows it.
    */
   readonly showTransparency?: boolean;
+  /**
+   * FIELDDISPLAY (M4-10 part 3): fields shown on a grey background; false shows them as the rest
+   * of their text. AutoCAD's initial value is 1, so absent shows it.
+   */
+  readonly showFields?: boolean;
   /** The selection highlight's colour (M2-03, UI_SPEC.md §6), a CSS colour; a blue by default. */
   readonly selection?: string;
   /** GRID on (M2-04 part 2): the grid drawn under the drawing; absent draws none. */
@@ -324,6 +329,12 @@ export type RenderPrimitive =
        * IMAGEDEF, which the renderer asks each frame as bitmaps arrive after tessellation.
        */
       readonly missingImage?: string;
+      /**
+       * A field's grey background (FIELDDISPLAY, M4-10 part 3): drawn on screen while
+       * `RenderStyle.showFields` is not false, at its own opacity whatever TRANSPARENCYDISPLAY
+       * says, and never plotted.
+       */
+      readonly fieldShade?: true;
     }
   /** XLINE (both directions) or RAY (one direction), clipped to the view when drawn. */
   | {

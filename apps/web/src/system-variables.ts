@@ -127,6 +127,8 @@ const VALUES: Readonly<
     get: (s) => bit(s.arrayAssociativity),
     set: (v) => ({ arrayAssociativity: v === 1 }),
   },
+  // M4-10 part 3: fields on a grey background, the canvas's (`RenderStyle.showFields`).
+  FIELDDISPLAY: { get: (s) => bit(s.fieldDisplay), set: (v) => ({ fieldDisplay: v === 1 }) },
 };
 
 /**

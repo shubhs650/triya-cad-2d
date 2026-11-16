@@ -60,6 +60,8 @@ export interface FieldContext {
   readonly space: Handle;
   /** Set while plotting: the time PlotDate fields take. */
   readonly plotDate?: Date;
+  /** Set while saving: the time SaveDate fields take, the save's own (M4-10 part 3). */
+  readonly saveDate?: Date;
 }
 
 /** What `evaluateFields` gives for one text. */
@@ -421,6 +423,7 @@ interface FieldSource {
   readonly fileName?: string;
   readonly folder: string;
   readonly plotDate?: Date;
+  readonly saveDate?: Date;
   readonly units: DrawingUnits;
   /** A header variable by its name without `$`, in upper case. */
   variable(name: string): number | string | undefined;
@@ -459,7 +462,7 @@ function variable(name: string, format: string, src: FieldSource): Value | undef
       return d && dateValue(d, format);
     }
     case 'SAVEDATE': {
-      const d = headerDate(src, 'TDUPDATE');
+      const d = src.saveDate ?? headerDate(src, 'TDUPDATE');
       return d && dateValue(d, format);
     }
     case 'PLOTDATE':
@@ -568,9 +571,14 @@ function evaluateOne(f: DrawingField, src: FieldSource): Value | undefined {
   return undefined;
 }
 
-function evaluateWith(root: DrawingField, src: FieldSource): EvaluatedFields {
+/** DXF 91's every bit: a FIELD without options may be evaluated at any time. */
+export const FIELD_OPTIONS_ALL = 63;
+
+function evaluateWith(root: DrawingField, src: FieldSource, when?: number): EvaluatedFields {
   let evaluated = 0;
   const children = root.children.map((c): DrawingField => {
+    // A field whose own options leave out the event is not evaluated then (M4-10 part 3).
+    if (when !== undefined && ((c.options ?? FIELD_OPTIONS_ALL) & when) === 0) return c;
     const v = evaluateOne(c, src);
     if (!v) return c;
     evaluated++;
@@ -596,6 +604,7 @@ function modelSource(ctx: FieldContext): FieldSource {
     ...(ctx.fileName === undefined ? {} : { fileName: ctx.fileName }),
     folder: ctx.folder,
     ...(ctx.plotDate === undefined ? {} : { plotDate: ctx.plotDate }),
+    ...(ctx.saveDate === undefined ? {} : { saveDate: ctx.saveDate }),
     units: drawingUnits(header),
     variable: (name) => {
       const v = header.get(`$${name}`);
@@ -608,10 +617,15 @@ function modelSource(ctx: FieldContext): FieldSource {
 
 /**
  * Evaluates the fields of one text (its root `_text` field): each child Triya can evaluate takes
- * its new value, the others keep theirs, and the text is rebuilt around them.
+ * its new value, the others keep theirs, and the text is rebuilt around them. `when`, an event's
+ * DXF 91 bit (edit/field-eval.ts), evaluates only the fields whose options include it.
  */
-export function evaluateFields(root: DrawingField, ctx: FieldContext): EvaluatedFields {
-  return evaluateWith(root, modelSource(ctx));
+export function evaluateFields(
+  root: DrawingField,
+  ctx: FieldContext,
+  when?: number,
+): EvaluatedFields {
+  return evaluateWith(root, modelSource(ctx), when);
 }
 
 // ── Fields typed into text (M4-10 part 2) ────────────────────────────────────────────────────
@@ -684,6 +698,9 @@ function replaceFields(s: string, f: (code: string) => string): string {
 /** The evaluator a code names (`\AcVar Date` → AcVar). */
 const evaluatorOf = (code: string): string => /^\\([A-Za-z_]\w*)/.exec(code)?.[1] ?? '';
 
+/** DXF 91's on-demand bit: UPDATEFIELD only. */
+const ON_DEMAND = 32;
+
 /** The FIELD of one code: nested fields its children, `\_ObjId` handles its objects. */
 function fieldOfCode(code: string): DrawingField {
   const children: DrawingField[] = [];
@@ -697,7 +714,16 @@ function fieldOfCode(code: string): DrawingField {
     children.push(fieldOfCode(inner));
     return `%<\\_FldIdx ${children.length - 1}>%`;
   });
-  return { evaluator: evaluatorOf(own), code: own, children, objects };
+  return {
+    evaluator: evaluatorOf(own),
+    code: own,
+    children,
+    objects,
+    // AutoCAD makes a Date field to be evaluated on demand only (DXF 91 = 32, as the Date fields
+    // of ezdxf's uncommon.dxf are): FIELDEVAL leaves it as it is, UPDATEFIELD brings it up to
+    // date. Every other field takes all the events (63, absent).
+    ...(/^\\AcVar(?:\.[\d.]+)?\s+Date\b/i.test(own) && { options: ON_DEMAND }),
+  };
 }
 
 /**

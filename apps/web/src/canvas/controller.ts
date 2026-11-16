@@ -1012,6 +1012,7 @@ export class CanvasController {
       before.grid !== state.grid ||
       before.lwt !== state.lwt ||
       before.tpy !== state.tpy ||
+      before.fieldDisplay !== state.fieldDisplay ||
       before.gripSize !== state.gripSize ||
       before.gripColors !== state.gripColors ||
       before.gridStyle !== state.gridStyle
@@ -1696,6 +1697,8 @@ export class CanvasController {
       showLineweights,
       selection: c.selection,
       ...(!d.tpy && { showTransparency: false }),
+      // FIELDDISPLAY (M4-10 part 3): the fields' grey background.
+      ...(!d.fieldDisplay && { showFields: false }),
       gripSize: d.gripSize,
       gripColors: d.gripColors,
       ...(d.grid && { grid: { ...this.#grid(), ...(c.grid && { color: c.grid }) } }),

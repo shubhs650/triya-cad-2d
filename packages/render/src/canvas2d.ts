@@ -1884,6 +1884,8 @@ export class Canvas2DRenderer implements Renderer {
       )
         continue;
       for (const prim of entry.prims) {
+        // A field's grey background is no part of its text's outline.
+        if (prim.kind === 'fill' && prim.fieldShade) continue;
         any = true;
         if (prim.kind === 'point') {
           ctx.moveTo(prim.x - ox - dot, prim.y - oy - dot);
@@ -2270,7 +2272,10 @@ export class Canvas2DRenderer implements Renderer {
     const fade = this.#fade();
     // Object transparency (M1-108) multiplies in, unless TRANSPARENCYDISPLAY is off.
     const transparent = this.#style.showTransparency !== false;
-    const opacity = (p: RenderPrimitive): number => (transparent ? (p.opacity ?? 1) : 1);
+    const opacity = (p: RenderPrimitive): number =>
+      transparent || (p.kind === 'fill' && p.fieldShade) ? (p.opacity ?? 1) : 1;
+    // FIELDDISPLAY (M4-10 part 3): fields' grey backgrounds, unless turned off.
+    const fieldShades = this.#style.showFields !== false;
     let alpha = 1;
     const setAlpha = (a: number): void => {
       if (a === alpha) return;
@@ -2352,6 +2357,7 @@ export class Canvas2DRenderer implements Renderer {
         if (prim.kind !== 'point' && prim.kind !== 'infinite' && prim.missingImage !== undefined) {
           if (this.#hasBitmap(prim.missingImage)) continue;
         }
+        if (prim.kind === 'fill' && prim.fieldShade && !fieldShades) continue;
         setClip(prim.clip);
         // In a block, a part fades when the reference's layer (the entry's) or a layer below it
         // is locked; AutoCAD's help does not say for the nested case (ambiguity noted, M1-69).

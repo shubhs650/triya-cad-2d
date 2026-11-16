@@ -36,7 +36,10 @@
 
 import {
   bulgeArc,
+  fieldCodeText,
+  UNEVALUATED_FIELD,
   type AttributeFields,
+  type DrawingField,
   type Color,
   type TextPiece,
   type Handle,
@@ -185,6 +188,17 @@ interface Group {
   height: number;
 }
 
+/**
+ * FIELDDISPLAY (M4-10 part 3; AutoCAD 2024 Help, "FIELDDISPLAY (System Variable)": "Controls
+ * whether fields are displayed with a gray background", 1 initially, "The background is not
+ * plotted"). The shading is a grey box behind each field's characters, from the font's descender
+ * line to the run's height above the baseline (the help gives no size: our reading), drawn half
+ * opaque so the same grey reads on a white and a black canvas. Every renderer draws it only on
+ * screen (`RenderStyle.showFields`); plots leave it out.
+ */
+const FIELD_SHADE = '#808080';
+const FIELD_SHADE_OPACITY = 0.5;
+
 /** Collects one entity's glyph paths, one stroke or fill per colour. */
 class Collector {
   readonly #groups = new Map<string, Group>();
@@ -238,6 +252,18 @@ class Collector {
   /** The background mask (or fill) under the glyphs. */
   mask(path: number[], color: PrimitiveColor): void {
     this.#under.push({ kind: 'fill', path, color, evenOdd: false });
+  }
+
+  /** A field's shading under its glyphs (FIELDDISPLAY), on screen only. */
+  shade(path: number[]): void {
+    this.#under.push({
+      kind: 'fill',
+      path,
+      color: FIELD_SHADE,
+      evenOdd: false,
+      opacity: FIELD_SHADE_OPACITY,
+      fieldShade: true,
+    });
   }
 
   /** The text frame over the glyphs, in the entity's colour and lineweight. */
@@ -496,7 +522,48 @@ function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
   const placed = placedText(g, ctx);
   if (!placed) return;
   if (placed.vertical) return drawVerticalText(out, g, placed.layout, ctx);
+  if (g.field) {
+    // The fields' shading: the text laid out again on its codes, each shown by its value.
+    const coded = placedText({ ...g, value: fieldCodeText(g.field) }, fieldContext(g.field, ctx));
+    if (coded && !coded.vertical) shadeFields(out, coded.layout, coded.frame, ctx.fonts);
+  }
   drawLayout(out, placed.layout, placed.frame, ctx.fonts, undefined);
+}
+
+/** `ctx` where each field of `root` shows its value, as the text holding it does. */
+function fieldContext(root: DrawingField, ctx: TextContext): TextContext {
+  const values = new Map(root.children.map((c) => [fieldCodeText(c), c.value]));
+  return { ...ctx, evaluateField: (code) => values.get(code) ?? UNEVALUATED_FIELD };
+}
+
+/** A grey box behind each field's runs, one per line it is on (see FIELD_SHADE). */
+function shadeFields(out: Collector, layout: MTextLayout, frame: Affine, fonts: TextFonts): void {
+  for (const line of layout.lines) {
+    let box: { field: string; x0: number; x1: number; y0: number; y1: number } | undefined;
+    const flush = () => {
+      if (box && box.x1 > box.x0)
+        out.shade(transformPath(rect(box.x0, box.y0, box.x1, box.y1), frame));
+      box = undefined;
+    };
+    for (const run of line.runs) {
+      if (run.kind !== 'text' || run.field === undefined) {
+        flush();
+        continue;
+      }
+      const h = run.style.height;
+      const y0 = run.y - descent(fonts.face(run.style.font), h);
+      const y1 = run.y + h;
+      if (box?.field === run.field && Math.abs(box.x1 - run.x) < 1e-9 * Math.max(1, h)) {
+        box.x1 = run.x + run.width;
+        box.y0 = Math.min(box.y0, y0);
+        box.y1 = Math.max(box.y1, y1);
+        continue;
+      }
+      flush();
+      box = { field: run.field, x0: run.x, x1: run.x + run.width, y0, y1 };
+    }
+    flush();
+  }
 }
 
 /**
@@ -613,6 +680,14 @@ function mtextPrimitives(g: MTextGeometry, paint: Paint, ctx: TextContext): Rend
   }
   const { layout, bigFont } = mtextLayout(g, ctx);
   background(out, g, layout, frame);
+  if (g.field) {
+    // The fields' shading: the text laid out again on its codes, each shown by its value.
+    const coded = mtextLayout(
+      { ...g, contents: fieldCodeText(g.field) },
+      fieldContext(g.field, ctx),
+    );
+    shadeFields(out, coded.layout, frame, ctx.fonts);
+  }
   drawLayout(out, layout, frame, ctx.fonts, bigFont);
   return out.primitives();
 }

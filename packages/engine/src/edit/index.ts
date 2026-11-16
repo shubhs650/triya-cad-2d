@@ -124,4 +124,5 @@ export * from './text-align';
 export * from './find-text';
 export * from './fields';
 export * from './field-codes';
+export * from './field-eval';
 export * from './spelling';

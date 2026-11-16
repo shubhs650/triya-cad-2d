@@ -457,6 +457,8 @@ class Plotter {
     }
     // A missing image's name shows only while its bitmap is not loaded.
     if (prim.missingImage !== undefined && this.#src.images?.(prim.missingImage)) return undefined;
+    // A field's grey background is the screen's only: "The background is not plotted" (FIELDDISPLAY).
+    if (prim.fieldShade) return undefined;
     const solid: PlotProperties = { ...props, linetype: { kind: 'object' }, fillStyle: 'solid' };
     // A colour other than the object's (a gradient's, an MTEXT run's) plots through the style
     // that colour takes (ours: the help is silent).

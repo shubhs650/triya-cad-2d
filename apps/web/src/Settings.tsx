@@ -704,6 +704,14 @@ function DraftingSettings() {
       <label className="setting-check">
         <input
           type="checkbox"
+          checked={d.fieldDisplay}
+          onChange={(e) => drafting.configure({ fieldDisplay: e.currentTarget.checked })}
+        />
+        Display background of fields (FIELDDISPLAY)
+      </label>
+      <label className="setting-check">
+        <input
+          type="checkbox"
           checked={d.pdfOsnap}
           onChange={(e) => drafting.configure({ pdfOsnap: e.currentTarget.checked })}
         />
