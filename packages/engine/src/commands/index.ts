@@ -153,3 +153,9 @@ export { measureObject, measurePolygon, type Measured } from './inquiry/measure'
 export { colorFromText, lineweightFromText } from './modify/chprop';
 export { GROUP_COMMANDS, groupRows } from './modify/group';
 export * from './pgp';
+export {
+  MLEADER_STYLE_SAMPLE,
+  TEXT_STYLE_SAMPLE,
+  stylePreviewModel,
+  type StylePreview,
+} from './style-preview';

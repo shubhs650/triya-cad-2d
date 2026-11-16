@@ -5,6 +5,7 @@
 import type { DrawingDimensionHealth } from '@triya/dims';
 import type {
   DimStylePreview,
+  StylePreview,
   Box,
   ChangeSet,
   DragMotion,
@@ -171,6 +172,13 @@ export type HostMessage =
       readonly type: 'dimStylePreview';
       readonly id: number;
       readonly preview: DimStylePreview;
+      readonly size: PreviewSize;
+    }
+  /** A text or multileader style dialog's preview image (M4-14); the answer is a `thumbnail`. */
+  | {
+      readonly type: 'stylePreview';
+      readonly id: number;
+      readonly preview: StylePreview;
       readonly size: PreviewSize;
     };
 

@@ -19,6 +19,7 @@ import {
   type Box,
   type ChangeSet,
   type DimStylePreview,
+  type StylePreview,
   type DocumentInit,
   type EnclosedSpace,
   type Entity,
@@ -51,7 +52,7 @@ import type { Paint } from './tessellate';
 import { columnCounter, mtextFrameSize, textMeasure, textPieces, type TextContext } from './text';
 import { textBounds, textOutline } from './text-bounds';
 import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
-import { dimStylePreviewImage, type PreviewSize } from './dim-style-preview';
+import { dimStylePreviewImage, stylePreviewImage, type PreviewSize } from './dim-style-preview';
 import { plotParts, type PlotPart } from './plot/job';
 import type { PlotStyleTable } from './plot/plot-style-table';
 import { PlotResolver } from './plot/resolver';
@@ -404,6 +405,22 @@ export class RenderSession {
       tol: this.#tol,
     };
     return dimStylePreviewImage(c, preview, size, createBitmap);
+  }
+
+  /** A text or multileader style dialog's preview image (M4-14), as `dimStylePreview`'s. */
+  stylePreview(
+    preview: StylePreview,
+    size: PreviewSize,
+    createBitmap?: BitmapFactory,
+  ): Promise<ImageBitmap | undefined> {
+    const c = {
+      model: this.model,
+      text: this.#text,
+      style: this.renderer.style,
+      createLayer: this.#createLayer,
+      tol: this.#tol,
+    };
+    return stylePreviewImage(c, preview, size, createBitmap);
   }
 
   /**
