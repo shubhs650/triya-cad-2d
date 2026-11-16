@@ -19,6 +19,8 @@
 // spreadsheet) is that the top-left one stays.
 import type { TableCell, TableGeometry, TableStyleRecord } from '../model/types';
 import { tableRangeHeads, tableRowTypes } from '../annotation/table';
+import { mtextLiteral } from './clipboard-data';
+import type { SheetCells } from './spreadsheet';
 
 /** Rows `r0`–`r1` and columns `c0`–`c1` of a table, inclusive, `r0` ≤ `r1` and `c0` ≤ `c1`. */
 export interface TableCellRange {
@@ -37,6 +39,7 @@ export type TableMerge = 'all' | 'rows' | 'columns';
  */
 export const TABLE_CELL_OPTIONS = [
   'Text',
+  'Paste',
   'BAckground',
   'ALignment',
   'BOrders',
@@ -292,6 +295,7 @@ export function tableCellOptions(
   );
   const on: Record<TableCellOption, boolean> = {
     Text: true,
+    Paste: true,
     BAckground: true,
     ALignment: true,
     BOrders: true,
@@ -308,4 +312,38 @@ export function tableCellOptions(
     Unmerge: merged,
   };
   return TABLE_CELL_OPTIONS.filter((k) => on[k]);
+}
+
+/**
+ * A spreadsheet's cells pasted into table `g` from cell `at` (M4-13), as AutoCAD pastes cells
+ * into the cells selected: each cell's text into the cell as far right and down from `at` as it
+ * is in the copy, rows and columns added past the table's last ones like them (as Insert Below
+ * and Insert Right add them) where the copy goes further. A cell keeps its format, a block cell
+ * becomes a text cell, and the table's merged cells stay as they are: a cell another covers
+ * takes nothing, nor does a cell the copy's merged cells cover give any. What the copy fills is
+ * `range`.
+ */
+export function withCellsPasted(
+  g: TableGeometry,
+  at: readonly [number, number],
+  cells: SheetCells,
+): { geom: TableGeometry; range: TableCellRange } {
+  const [r0, c0] = at;
+  const r1 = r0 + cells.length - 1;
+  const c1 = c0 + Math.max(...cells.map((r) => r.length)) - 1;
+  let geom = g;
+  const rows = geom.cells.length;
+  if (r1 >= rows) geom = withRowsInserted(geom, rows, r1 - rows + 1, rows - 1);
+  const columns = geom.columnWidths.length;
+  if (c1 >= columns) geom = withColumnsInserted(geom, columns, c1 - columns + 1, columns - 1);
+  const out: Cells = geom.cells.map((row) => [...row]);
+  cells.forEach((row, i) =>
+    row.forEach((c, j) => {
+      const target = out[r0 + i]![c0 + j]!;
+      if (c.merged || target.merged) return;
+      const { block: _, ...rest } = target;
+      out[r0 + i]![c0 + j] = { ...rest, type: 'text', text: mtextLiteral(c.text) };
+    }),
+  );
+  return { geom: { ...geom, cells: out }, range: { r0, c0, r1, c1 } };
 }

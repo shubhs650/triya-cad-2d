@@ -77,6 +77,22 @@ const mirrorOptions = (model: DocumentModel): TransformOptions => {
   return { mirrorText: on('$MIRRTEXT'), mirrorHatch: on('$MIRRHATCH') };
 };
 
+/**
+ * Whether the grip at `grip` is a table's column grip (M4-05 part 6): with Ctrl held it sizes the
+ * column and the table with it, in place of Copy.
+ */
+function isTableColumnGrip(model: DocumentModel, ids: readonly EntityId[], grip: Vec2): boolean {
+  return ids.some((id) => {
+    const e = model.entity(id);
+    return (
+      e?.geom.kind === 'ACAD_TABLE' &&
+      gripsOf(e.geom, gripInfoOf(model, e)).some(
+        (g) => g.table?.kind === 'column' && sameGrip(g.point, grip),
+      )
+    );
+  });
+}
+
 /** Copies of the objects with a grip at `grip`, that grip dragged to `to` (STRETCH with Copy). */
 function copyStretched(
   ctx: CommandContext,
@@ -129,6 +145,7 @@ export function gripCommand(
       if (array) return yield* editArrayByGrip(ctx, array.id, array.role, hot, first);
       // The hot grip's functions, if it has more than one (M3-05).
       const multi = group ? undefined : functionsAt(ctx.model, ids, hot);
+      const tableColumn = !group && isTableColumnGrip(ctx.model, ids, hot);
       const picked = first === 'Stretch Vertex' ? 'Stretch' : first;
       let fn: GripFunction | undefined =
         multi && picked !== multi.functions[0]
@@ -208,6 +225,8 @@ export function gripCommand(
         const name = GRIP_MODES[mode]!;
         ctx.message(`** ${name}${copying ? ' (multiple)' : ''} **`);
         const stretching = name === 'STRETCH' && multi !== undefined;
+        // Ctrl with a table's column grip sizes the table, as AutoCAD's does (M4-05 part 6).
+        const sizesTable = name === 'STRETCH' && tableColumn;
         const hiddenOptions = stretching ? hidden : [...MODE_KEYWORDS, PROPERTIES_KEYWORD];
         const options = ['Base point', 'Copy', 'Undo', 'eXit'];
         const withReference = ['Base point', 'Copy', 'Undo', 'Reference', 'eXit'];
@@ -217,7 +236,7 @@ export function gripCommand(
           hiddenOptions,
           ...(offsetSnap && { offsetSnap }),
           ...(stretching && takes.length > 1 && { ctrlCycles: true as const }),
-          ctrlCopies: true as const,
+          ...(sizesTable ? { ctrlSizesTable: true as const } : { ctrlCopies: true as const }),
           // The right-click menu (M3-05 part 5): what this prompt takes, the rest greyed.
           shortcutMenu: gripShortcutMenu(
             [...(referenced ? withReference : options), ...hiddenOptions],
@@ -325,7 +344,8 @@ export function gripCommand(
         }
         // A point clicked with Ctrl held turns Copy on, this one placing the first copy; once a
         // copy is placed, it snaps to that copy's offset or angle.
-        if ('ctrl' in a && a.ctrl) {
+        const ctrlSized = sizesTable && 'ctrl' in a && a.ctrl === true;
+        if ('ctrl' in a && a.ctrl && !ctrlSized) {
           if (offsetSnap?.kind === 'offset' && a.kind === 'point') {
             a = { ...a, point: offsetSnapPoint(offsetSnap, a.point) };
           } else if (offsetSnap?.kind === 'rotation' && a.kind === 'angle') {
@@ -350,7 +370,7 @@ export function gripCommand(
           } else {
             let r: ReturnType<typeof gripObjects> | undefined;
             ctx.edit((b) => {
-              r = gripObjects(b, ctx.model, ids, hot, to);
+              r = gripObjects(b, ctx.model, ids, hot, to, ctrlSized);
             });
             say(refusalMessages(r!.refused, 'stretched'));
             // A dimension's grip reshapes it: the dimension engine draws it afresh (M2-11).

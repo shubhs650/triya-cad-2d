@@ -44,6 +44,7 @@ export function dynTips(prompt: Prompt): string[] {
   const tips: string[] = [];
   if (prompt.ctrlCycles) tips.push('Press Ctrl to cycle through the grip’s options');
   if (prompt.ctrlCopies) tips.push('Hold Ctrl as you click to make copies');
+  if (prompt.ctrlSizesTable) tips.push('Hold Ctrl to size the table with the column');
   return tips;
 }
 

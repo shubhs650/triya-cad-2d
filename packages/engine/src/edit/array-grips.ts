@@ -97,6 +97,8 @@ export interface ArrayGrips {
 /** A table's table style, which places its grips and limits its sizes (M4-05 part 4). */
 export interface TableGripInfo {
   readonly tableStyle: TableStyleRecord | undefined;
+  /** Ctrl is held: a column grip sizes the column and the table with it (M4-05 part 6). */
+  readonly ctrl?: true;
 }
 
 /**

@@ -519,28 +519,40 @@ export function planGrip(
   ids: readonly EntityId[],
   grip: Vec2,
   to: Vec2,
+  ctrl = false,
 ): StretchPlan {
   const move: EntityId[] = [];
   const shape = new Map<EntityId, EntityGeometry>();
   for (const id of ids) {
     const e = model.entity(id);
     if (!e) continue;
-    const r = moveGrip(e.geom, grip, to, gripInfoOf(model, e));
+    const info = gripInfoOf(model, e);
+    // Ctrl with a table's column grip sizes the table (M4-05 part 6).
+    const r = moveGrip(
+      e.geom,
+      grip,
+      to,
+      ctrl && info && 'tableStyle' in info ? { ...info, ctrl: true } : info,
+    );
     if (r.kind === 'move') move.push(id);
     else if (r.kind === 'shape') shape.set(id, r.geom);
   }
   return { move, shape, refused: new Map() };
 }
 
-/** The STRETCH grip mode: the grip at `grip` of each of `ids` that has one dragged to `to`. */
+/**
+ * The STRETCH grip mode: the grip at `grip` of each of `ids` that has one dragged to `to`;
+ * `ctrl`, with Ctrl held, which a table's column grip takes (M4-05 part 6).
+ */
 export function gripObjects(
   b: ChangeSetBuilder,
   model: DocumentModel,
   ids: readonly EntityId[],
   grip: Vec2,
   to: Vec2,
+  ctrl = false,
 ): EditReport {
-  return applyStretch(b, model, planGrip(model, ids, grip, to), sub(to, grip));
+  return applyStretch(b, model, planGrip(model, ids, grip, to, ctrl), sub(to, grip));
 }
 
 /** A stretch plan carried out: reshaped objects let go of their links, moved ones carry them. */

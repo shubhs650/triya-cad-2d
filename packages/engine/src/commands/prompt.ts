@@ -81,6 +81,14 @@ interface PromptBase {
    */
   readonly ctrlCopies?: true;
   /**
+   * A table's column grip is hot (M4-05 part 6; AutoCAD 2024 Help, "About Modifying Tables": "To
+   * change the size of the table proportionally to the size of the row or column you are
+   * editing, press Ctrl while using a column grip"): a point picked with Ctrl held answers with
+   * `ctrl`, which sizes the column and the table with it in place of Copy, and the front-end
+   * drags the table so while Ctrl is held.
+   */
+  readonly ctrlSizesTable?: true;
+  /**
    * Offset or rotation snap (M3-05 part 6; AutoCAD 2024 Help, "To Make Multiple Copies with
    * Grips"): once a grip mode has placed a copy, a point or angle picked with Ctrl held snaps to
    * whole multiples of that copy's offset or angle (`offsetSnapPoint`). The command snaps the
@@ -236,6 +244,17 @@ export interface PointPrompt extends PromptBase {
    * cells selected by dragging across them (TABLECELL, M4-05 part 4).
    */
   readonly releaseExtends?: true;
+  /**
+   * Points shown as grips while the prompt waits, no object's: the middles of the edges of the
+   * table cells selected (TABLECELL, M4-05 part 6). A click within the grip size of one answers
+   * that grip's point, as a click on an object's grip picks the grip.
+   */
+  readonly grips?: readonly Vec2[];
+  /**
+   * The option Ctrl+V answers at this prompt in place of starting PASTECLIP: TABLECELL's Paste,
+   * which pastes into the cells selected (M4-13).
+   */
+  readonly pasteKeyword?: string;
   /**
    * A one-shot object snap override typed at the prompt before (M2-04: `END`, `MID,END`,
    * `NONe`): the OSMODE bits the front-end snaps this point with instead of the running ones;
