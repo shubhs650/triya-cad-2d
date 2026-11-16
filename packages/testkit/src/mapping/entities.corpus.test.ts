@@ -1133,6 +1133,13 @@ function compareTable(
             .map(([, v]) => v)
             .join('') + c[one]![1];
     if (type === 'text' && !sameText(text, e.text)) bad('cell 1', `${at} ${text}`, e.text);
+    // The value's format string (M4-05 part 7): DXF 300 inside the CELL_VALUE block only, a 300
+    // outside it being a block cell's attribute value.
+    const v0 = c.findIndex(([code, v]) => code === 301 && v.trim() === 'CELL_VALUE');
+    const v1 = c.findIndex(([code]) => code === 304);
+    const valueFormat = v0 < 0 ? '' : (first(c.slice(v0, v1 < 0 ? undefined : v1), 300) ?? '');
+    if (type === 'text' && valueFormat !== (e.valueFormat ?? ''))
+      bad('cell 300', `${at} ${valueFormat}`, e.valueFormat);
     const fileFormat = JSON.stringify(digits(cellFormatOf(c, t)));
     const mappedFormat = JSON.stringify(digits(e.format));
     if (fileFormat !== mappedFormat) bad('cell format', `${at} ${fileFormat}`, mappedFormat);

@@ -1,6 +1,6 @@
 // The cell editor's added row saved (M4-05 part 2), rows and columns inserted and deleted and
 // cells merged (part 3), cells formatted, grips dragged and the table scaled (part 4), cell grips
-// dragged, Ctrl with a column grip and a spreadsheet's cells pasted into cells (part 6, M4-13): Tab in a table's last cell adds a row, which
+// dragged, Ctrl with a column grip and a spreadsheet's cells pasted into cells (part 6, M4-13), Match Cell and Remove All Property Overrides (part 7): Tab in a table's last cell adds a row, which
 // the save writes as an inserted row (`rowOrigins`, DEC-046), for a table made in the drawing
 // (-TABLE) and for one the drawing came with (acadsharp's AC1032 sample table A35). The drawing
 // is saved as AC1032 DXF (DEC-047) and read back: the table is as edited.
@@ -426,5 +426,69 @@ describe('cell grips, Ctrl with a column grip and cells pasted (M4-05 part 6, M4
     expect(g.rowHeights.length).toBe(was.rowHeights.length + 2);
     const back = saved(bytes, model, table.handle);
     expect(kept(back)).toEqual(kept(g));
+  });
+});
+
+describe('Match Cell and Remove All Property Overrides (M4-05 part 7)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+
+  /**
+   * Formats the last row's first cell, matches the cells of the row above to it, and removes the
+   * overrides of the last row's second cell.
+   */
+  async function edit(model: DocumentModel, id: () => EntityId) {
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    const g = () => (model.entity(id()) as Table).geom;
+    const style = () => model.tables.tableStyles.get(g().style!);
+    const centre = (i: number, j: number) => {
+      const b = tableCellBox(g(), style(), { r0: i, c0: j, r1: i, c1: j });
+      return tableToPlan(g(), { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    const last = g().rowHeights.length - 1;
+    const run = async (cell: [number, number], ...answers: string[]) => {
+      await bus.pick(centre(...cell), { grip: 1e-6 });
+      expect(bus.command).toBe('TABLECELL');
+      for (const x of answers) await bus.submit(x);
+    };
+    await run([last, 0], 'BA', '3');
+    await run([last, 0], 'AL', 'BR');
+    await run([last, 1], 'AL', 'ML');
+    await run([last, 0], 'M');
+    for (let j = 0; j < g().columnWidths.length; j++) await bus.pick(centre(last - 1, j));
+    await bus.submit('');
+    await run([last, 1], 'RO');
+    expect(bus.promptText).toBe('Command:');
+    return g();
+  }
+
+  const formats = (t: TableGeometry) => t.cells.map((r) => r.map((c) => c.format));
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '2', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', '1', '2', '3', '4']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const g = await edit(model, () => made.id);
+    const matched = { background: { kind: 'aci', index: 3 }, alignment: 9 };
+    expect(formats(g).slice(2)).toEqual([
+      [matched, matched],
+      [matched, undefined],
+    ]);
+    expect(formats(saved(bytes, model, made.handle))).toEqual(formats(g));
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    const g = await edit(model, () => table.id);
+    const last = g.cells.length - 1;
+    expect(g.cells[last - 1]!.every((c) => c.merged || c.format?.alignment === 9)).toBe(true);
+    expect(formats(saved(bytes, model, table.handle))).toEqual(formats(g));
   });
 });
