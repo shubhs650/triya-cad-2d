@@ -437,13 +437,15 @@ function count(map: Map<string, number>, reason: string): void {
 
 /**
  * COPYCLIP: `ids` and the definitions they use, `base` the point a paste puts at its insertion
- * point. Objects the Clipboard cannot carry are left out, counted by reason.
+ * point. Objects the Clipboard cannot carry are left out, counted by reason. `alsoRecords` (table
+ * records' handles) are carried as well, with what they name, though no object uses them.
  */
 export function copyToClipboard(
   model: DocumentModel,
   ids: readonly EntityId[],
   base: Vec2,
   extents?: Box,
+  alsoRecords: readonly Handle[] = [],
 ): ClipboardCopy {
   const refused = new Map<string, number>();
   let unannotated = 0;
@@ -493,6 +495,9 @@ export function copyToClipboard(
     references(c, pending, layers);
   };
   for (const e of sorted) take(e, entities);
+  // Records asked for by themselves (M4-03 part 3: dimension styles imported from a drawing),
+  // with what they name, as an object's.
+  pending.push(...alsoRecords);
   const carried = new Set(entities.map((e) => e.handle));
   const groups = groupsOf(model)
     .filter((g) => g.entities.length > 0 && g.entities.every((h) => carried.has(h)))

@@ -42,6 +42,8 @@ import { QSelectDialog } from './QSelectDialog';
 import { DraftingSettingsDialog } from './DraftingSettingsDialog';
 import { UnitsDialog } from './UnitsDialog';
 import { DimStyleDialog } from './DimStyleDialog';
+import { openDrawingModel } from './dimstyle-import';
+import type { OpenDocument } from './documents';
 import { InsertTableDialog } from './InsertTableDialog';
 import { TextStyleDialog } from './TextStyleDialog';
 
@@ -56,9 +58,12 @@ const storedValue = (v: string, multiline: boolean) =>
 
 export function AttributeDialogs({
   doc,
+  docs = [],
   fonts,
 }: {
   doc: { id: number } | undefined;
+  /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
+  docs?: readonly OpenDocument[];
   /** The user's font files (M1-38), for the Text Style dialog's font lists. */
   fonts?: readonly string[];
 }) {
@@ -93,7 +98,20 @@ export function AttributeDialogs({
     case 'units':
       return <UnitsDialog key={key} doc={doc.id} request={d} />;
     case 'dimstyle':
-      return <DimStyleDialog key={key} doc={doc.id} request={d} />;
+      return (
+        <DimStyleDialog
+          key={key}
+          doc={doc.id}
+          request={d}
+          sources={docs
+            .filter((o) => o.id !== doc.id)
+            .map((o) => ({
+              id: o.id,
+              name: o.name,
+              model: () => openDrawingModel(o, engines.changesOf(o.id)),
+            }))}
+        />
+      );
     case 'inserttable':
       return <InsertTableDialog key={key} doc={doc.id} request={d} />;
     case 'textstyle':
