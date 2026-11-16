@@ -2,9 +2,10 @@
 // drawing every 2D polyline a drafter can select in model space is, in turn, curve-fit,
 // spline-fit, spline-fit and decurved, or given one width; every 3D polyline is spline-fit; every
 // line, arc and spline is turned into a polyline. On a second copy every object takes the
-// properties of the first line, arc or circle (MATCHPROP with every setting on). Both save as
-// AC1032 DXF (DEC-047) and reopen with each object where PEDIT put it and with the properties
-// MATCHPROP gave it.
+// properties of the first line, arc or circle (MATCHPROP with every setting on), and every
+// layout viewport takes the switches and scale of its layout's first one (Viewport, M3-16). Both
+// save as AC1032 DXF (DEC-047) and reopen with each object where PEDIT put it and with the
+// properties MATCHPROP gave it.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -118,9 +119,40 @@ const plainEnough = (g: EntityGeometry): boolean => {
   return !n || (n.x === 0 && n.y === 0 && n.z > 0);
 };
 
+/**
+ * Each layout's viewports after its first given the first's on/off, lock, snap, grid, UCS icon
+ * and scale (MATCHPROP's Viewport, M3-16), saved and reopened: the number changed.
+ */
+function matchViewports(bytes: Uint8Array, model: DocumentModel): number {
+  const b = new ChangeSetBuilder(model);
+  const changed: EntityId[] = [];
+  const viewportOnly = Object.fromEntries(
+    Object.keys(ALL_MATCH_SETTINGS).map((k) => [k, k === 'viewport']),
+  ) as unknown as typeof ALL_MATCH_SETTINGS;
+  for (const layout of model.layouts) {
+    if (!model.hasBlock(layout.blockRecord)) continue;
+    const vps = model
+      .blockEntities(layout.blockRecord)
+      .map((id) => model.entity(id)!)
+      .filter((e) => e.geom.kind === 'VIEWPORT' && e.geom.id !== 1);
+    const [source, ...rest] = vps;
+    for (const t of rest) {
+      const patch = matchedPatch(model, source!, t, viewportOnly);
+      if (!patch) continue;
+      b.updateEntity(t.id, patch);
+      changed.push(t.id);
+    }
+  }
+  if (changed.length === 0) return 0;
+  model.apply(b.build());
+  expect(wrongAfterSave(bytes, model, changed).slice(0, 10), 'viewports').toEqual([]);
+  return changed.length;
+}
+
 describe('PEDIT and MATCHPROP on the public corpus', () => {
   let edited = 0;
   let matched = 0;
+  let matchedViewports = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves its polylines fit, splined, decurved and widened, and matched properties',
@@ -156,6 +188,7 @@ describe('PEDIT and MATCHPROP on the public corpus', () => {
 
         const second = open(bytes)!;
         const m2 = second.model;
+        matchedViewports += matchViewports(bytes, m2);
         const source = second.ids
           .map((id) => m2.entity(id)!)
           .find((e) => e.geom.kind === 'LINE' || e.geom.kind === 'ARC' || e.geom.kind === 'CIRCLE');
@@ -182,5 +215,6 @@ describe('PEDIT and MATCHPROP on the public corpus', () => {
   it('changed objects', () => {
     expect(edited).toBeGreaterThan(1000);
     expect(matched).toBeGreaterThan(1000);
+    expect(matchedViewports).toBeGreaterThan(10);
   });
 });

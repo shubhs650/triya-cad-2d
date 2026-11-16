@@ -69,4 +69,17 @@ describe('crosshairs, AutoSnap and AutoTrack colours', () => {
     expect(svg(Math.PI / 6)).toContain('transform="rotate(-30 15.5 15.5)"');
     expect(svg(Math.PI / 2)).not.toContain('rotate(');
   });
+
+  it('adds MATCHPROP’s paintbrush above and right of the crosshairs, upright (M3-16)', () => {
+    const svg = (badge?: 'paintbrush') =>
+      decodeURIComponent(
+        /data:image\/svg\+xml,(.*)"\)/.exec(crosshairCursor('#ff0000', Math.PI / 6, badge))![1]!,
+      );
+    expect(svg()).not.toContain('class="paintbrush"');
+    const brush = svg('paintbrush');
+    expect(brush).toContain('<g class="paintbrush"');
+    // Drawn after the turned crosshairs, outside their group: it stays upright.
+    expect(brush.indexOf('class="paintbrush"')).toBeGreaterThan(brush.lastIndexOf('</g></g>'));
+    expect(brush).toContain('fill="#ff0000"');
+  });
 });

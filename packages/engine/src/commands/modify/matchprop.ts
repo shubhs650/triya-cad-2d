@@ -41,6 +41,8 @@ export function matchpropCommand(): CommandDef {
           message: 'Select destination object(s) or',
           options: ['Settings'],
           single: true,
+          // AutoCAD's paintbrush beside the pickbox while destinations are picked.
+          cursor: 'paintbrush',
         });
         if (b.kind === 'keyword') {
           const d = yield ctx.prompt.dialog({

@@ -124,7 +124,7 @@ describe('OVERKILL', () => {
   });
 
   it('optimizes polyline segments and deletes lines lying on them', async () => {
-    const { log, byHandle } = await overkill([
+    const { log, byHandle, ends } = await overkill([
       lw([
         [0, 20],
         [0, 20],
@@ -135,15 +135,15 @@ describe('OVERKILL', () => {
       line(2, 20, 8, 20),
       line(10, 25, 10, 35),
     ]);
-    expect(log).toContain('3 overlapping object(s) or segment(s) deleted');
+    expect(log).toContain('4 overlapping object(s) or segment(s) deleted');
     expect((byHandle('40')!.geom as LwPolylineGeometry).vertices.map((v) => [v.x, v.y])).toEqual([
       [0, 20],
       [10, 20],
       [10, 30],
     ]);
     expect(byHandle('41')).toBeUndefined();
-    // Only partly on the polyline: kept (the polyline is never broken or stretched).
-    expect(byHandle('42')).toBeDefined();
+    // Only partly on the polyline: cut back to what lies off it (M3-16).
+    expect(ends(byHandle('42')!)).toEqual([10, 30, 10, 35]);
     const off = await overkill(
       [
         lw([
@@ -230,6 +230,283 @@ describe('OVERKILL', () => {
     expect([r6(a.startAngle), r6(a.endAngle)]).toEqual([0, r6(2 * q)]);
     const apart = await overkill([arc(0, 5, 0, q), arc(0, 5, q, 2 * q)]);
     expect(apart.log).toContain('0 overlapping object(s) or segment(s) deleted');
+  });
+
+  // M3-16: "If a polyline segment duplicates a line or arc object, one of them is deleted";
+  // "Do not break polylines: polyline objects are unchanged" (AutoCAD Help, "Delete Duplicate
+  // Objects Dialog Box"). Which one goes is not documented: the one drawn later, as for
+  // duplicates, and a segment lying within a longer object; a polyline loses the segment by
+  // breaking there.
+  it('breaks a polyline at a segment a line or another polyline duplicates', async () => {
+    const pts = (e: { geom: unknown }) =>
+      (e.geom as LwPolylineGeometry).vertices.map((v) => [r6(v.x), r6(v.y)]);
+    // The polyline drawn first keeps its segment; the line goes.
+    const first = await overkill([
+      lw([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+      ]),
+      line(0, 0, 10, 0),
+    ]);
+    expect(first.log).toContain('1 overlapping object(s) or segment(s) deleted');
+    expect(first.byHandle('41')).toBeUndefined();
+    expect(pts(first.byHandle('40')!)).toEqual([
+      [0, 0],
+      [10, 0],
+      [10, 10],
+    ]);
+    // Drawn after the line: the polyline loses its segment.
+    const later = await overkill([
+      line(10, 0, 0, 0),
+      lw([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+      ]),
+    ]);
+    expect(later.log).toContain('1 overlapping object(s) or segment(s) deleted');
+    expect(later.ends(later.byHandle('40')!)).toEqual([10, 0, 0, 0]);
+    expect(pts(later.byHandle('41')!)).toEqual([
+      [10, 0],
+      [10, 10],
+    ]);
+    // A segment within a longer line goes, whichever came first, and splits its polyline in two.
+    const split = await overkill([
+      lw([
+        [5, 10],
+        [5, 0],
+        [10, 0],
+        [10, 10],
+      ]),
+      line(0, 0, 20, 0),
+    ]);
+    expect(split.log).toContain('1 overlapping object(s) or segment(s) deleted');
+    const polylines = split.space().filter((e) => e.geom.kind === 'LWPOLYLINE');
+    expect(polylines.map(pts)).toEqual([
+      [
+        [5, 10],
+        [5, 0],
+      ],
+      [
+        [10, 0],
+        [10, 10],
+      ],
+    ]);
+    expect(polylines[1]!.layer).toBe(polylines[0]!.layer);
+    expect(split.ends(split.byHandle('41')!)).toEqual([0, 0, 20, 0]);
+    // A closed polyline opens where its closing segment went.
+    const closed = await overkill([
+      line(0, 0, 0, 10),
+      lw(
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+        ],
+        { closed: true },
+      ),
+    ]);
+    const g = closed.byHandle('41')!.geom as LwPolylineGeometry;
+    expect(g.closed).toBe(false);
+    expect(pts(closed.byHandle('41')!)).toEqual([
+      [0, 0],
+      [10, 0],
+      [10, 10],
+      [0, 10],
+    ]);
+    // Of two polylines on one segment, the later one breaks.
+    const two = await overkill([
+      lw([
+        [0, 0],
+        [10, 0],
+      ]),
+      lw([
+        [0, 5],
+        [0, 0],
+        [10, 0],
+        [10, 5],
+      ]),
+    ]);
+    expect(two.log).toContain('1 overlapping object(s) or segment(s) deleted');
+    expect(
+      two
+        .space()
+        .filter((e) => e.geom.kind === 'LWPOLYLINE')
+        .map(pts),
+    ).toEqual([
+      [
+        [0, 0],
+        [10, 0],
+      ],
+      [
+        [0, 5],
+        [0, 0],
+      ],
+      [
+        [10, 0],
+        [10, 5],
+      ],
+    ]);
+    // A polyline wholly duplicated goes.
+    const whole = await overkill([
+      line(0, 0, 10, 0),
+      lw([
+        [0, 0],
+        [10, 0],
+      ]),
+    ]);
+    expect(whole.byHandle('41')).toBeUndefined();
+    expect(whole.byHandle('40')).toBeDefined();
+  });
+
+  it('leaves polylines whole with Do not break polylines, and wide segments unless widths are ignored', async () => {
+    const objects: Parameters<typeof setup>[0] = [
+      line(0, 0, 10, 0),
+      lw([
+        [0, 0],
+        [10, 0],
+        [10, 10],
+      ]),
+    ];
+    const kept = await overkill(objects, { keepPolylines: true });
+    // The line goes instead.
+    expect(kept.byHandle('40')).toBeUndefined();
+    expect((kept.byHandle('41')!.geom as LwPolylineGeometry).vertices).toHaveLength(3);
+    const wide: Parameters<typeof setup>[0] = [
+      line(0, 0, 10, 0),
+      lw(
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+        ],
+        { constantWidth: 1 },
+      ),
+    ];
+    const w = await overkill(wide);
+    expect((w.byHandle('41')!.geom as LwPolylineGeometry).vertices).toHaveLength(3);
+    expect(w.byHandle('40')).toBeUndefined();
+    const ignored = await overkill(wide, { ignoreWidths: true });
+    expect((ignored.byHandle('41')!.geom as LwPolylineGeometry).vertices).toHaveLength(2);
+    expect(ignored.byHandle('40')).toBeDefined();
+  });
+
+  it('cuts lines back where they partly overlap polyline segments', async () => {
+    // Running past both ends of a segment: the segment within the line goes, or, with
+    // Do not break polylines, the line is cut in two.
+    const objects: Parameters<typeof setup>[0] = [
+      lw([
+        [0, 0],
+        [10, 0],
+        [10, 5],
+      ]),
+      line(-5, 0, 15, 0),
+    ];
+    const broken = await overkill(objects);
+    expect((broken.byHandle('40')!.geom as LwPolylineGeometry).vertices).toHaveLength(2);
+    expect(broken.ends(broken.byHandle('41')!)).toEqual([-5, 0, 15, 0]);
+    const cut = await overkill(objects, { keepPolylines: true });
+    expect(cut.log).toContain('1 overlapping object(s) or segment(s) deleted');
+    const lines = cut.space().filter((e) => e.geom.kind === 'LINE' && e.handle !== '30');
+    expect(lines.map(cut.ends)).toEqual([
+      [-5, 0, 0, 0],
+      [10, 0, 15, 0],
+    ]);
+    // Partly on one segment: cut back to what lies off it, its own way round.
+    const part = await overkill([
+      lw([
+        [0, 0],
+        [10, 0],
+      ]),
+      line(15, 0, 5, 0),
+    ]);
+    expect(part.log).toContain('1 overlapping object(s) or segment(s) deleted');
+    expect(part.ends(part.byHandle('41')!)).toEqual([15, 0, 10, 0]);
+    // On two polylines' segments end to end: nothing of it is left.
+    const covered = await overkill([
+      lw([
+        [0, 5],
+        [0, 0],
+        [5, 0],
+      ]),
+      lw([
+        [5, 0],
+        [10, 0],
+        [10, 5],
+      ]),
+      line(2, 0, 8, 0),
+    ]);
+    expect(covered.byHandle('42')).toBeUndefined();
+    expect(covered.log).toContain('1 overlapping object(s) or segment(s) deleted');
+    // Combine partial overlaps off: the line stays as it is.
+    const off = await overkill(
+      [
+        lw([
+          [0, 0],
+          [10, 0],
+        ]),
+        line(5, 0, 15, 0),
+      ],
+      { combinePartial: false },
+    );
+    expect(off.ends(off.byHandle('41')!)).toEqual([5, 0, 15, 0]);
+  });
+
+  it('compares polyline arc segments with arcs and circles', async () => {
+    const q = Math.PI / 2;
+    // A half circle at (0,100) r 10, then a straight piece down.
+    const half = (cx: number): LwPolylineGeometry => ({
+      kind: 'LWPOLYLINE',
+      closed: false,
+      vertices: [
+        { x: cx + 10, y: 100, bulge: 1 },
+        { x: cx - 10, y: 100, bulge: 0 },
+        { x: cx - 10, y: 90, bulge: 0 },
+      ],
+    });
+    const on = await overkill([half(0), arc(0, 10, q / 2, q), arc(0, 10, q, 3 * q)]);
+    expect(on.log).toContain('2 overlapping object(s) or segment(s) deleted');
+    // Within the segment: deleted.
+    expect(on.byHandle('41')).toBeUndefined();
+    // Partly on it: cut back to the part off it.
+    const g = on.byHandle('42')!.geom as ArcGeometry;
+    expect([r6(g.startAngle), r6(g.endAngle)]).toEqual([r6(2 * q), r6(3 * q)]);
+    expect((on.byHandle('40')!.geom as LwPolylineGeometry).vertices).toHaveLength(3);
+    // A clockwise segment (negative bulge) is the same arc.
+    const cw: LwPolylineGeometry = {
+      kind: 'LWPOLYLINE',
+      closed: false,
+      vertices: [
+        { x: -10, y: 100, bulge: -1 },
+        { x: 10, y: 100, bulge: 0 },
+      ],
+    };
+    const back = await overkill([cw, arc(0, 10, q / 2, q)]);
+    expect(back.byHandle('41')).toBeUndefined();
+    // An arc drawn first, or a circle: the polyline's segment goes.
+    const before = await overkill([arc(0, 10, 0, 2 * q), half(0)]);
+    expect(before.log).toContain('1 overlapping object(s) or segment(s) deleted');
+    expect(
+      (before.byHandle('41')!.geom as LwPolylineGeometry).vertices.map((v) => [v.x, v.y]),
+    ).toEqual([
+      [-10, 100],
+      [-10, 90],
+    ]);
+    const circle = await overkill([
+      { kind: 'CIRCLE', center: { x: 0, y: 100 }, radius: 10 },
+      half(0),
+    ]);
+    expect((circle.byHandle('41')!.geom as LwPolylineGeometry).vertices).toHaveLength(2);
+    const kept = await overkill(
+      [{ kind: 'CIRCLE', center: { x: 0, y: 100 }, radius: 10 }, half(0)],
+      {
+        keepPolylines: true,
+      },
+    );
+    expect((kept.byHandle('41')!.geom as LwPolylineGeometry).vertices).toHaveLength(3);
+    expect(kept.log).toContain('0 overlapping object(s) or segment(s) deleted');
   });
 
   it('works within an inch drawing’s tolerance', async () => {

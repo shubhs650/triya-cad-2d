@@ -10,6 +10,7 @@ import {
   type DialogPrompt,
   type EntityGeometry,
   type HatchGeometry,
+  type ViewportGeometry,
 } from '../../src/index';
 import { LAYER_0, LAYER_WALLS, entityInit, sampleInit } from '../model/fixtures';
 import { setup } from './edit-harness';
@@ -51,11 +52,14 @@ describe('MATCHPROP', () => {
     ]);
     await bus.script(['MA']);
     expect(bus.promptText).toBe('Select source object:');
+    expect((bus.prompt as { cursor?: string }).cursor).toBeUndefined();
     await bus.pick({ x: 5, y: 5 });
     expect(log).toContain(
-      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Dim Text Hatch Polyline Material Multileader',
+      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Dim Text Hatch Polyline Viewport Material Multileader',
     );
     expect(bus.promptText).toBe('Select destination object(s) or [Settings]:');
+    // The paintbrush beside the pickbox (M3-16), only while destinations are picked.
+    expect((bus.prompt as { cursor?: string }).cursor).toBe('paintbrush');
     await bus.pick({ x: 5, y: 0 });
     // Each pick takes the properties at once; the prompt comes back for more.
     const line = byHandle('30')!;
@@ -207,9 +211,75 @@ describe('matched properties', () => {
     expect(matchedPatch(model, src, src, ALL_MATCH_SETTINGS)).toBeUndefined();
   });
 
+  // M3-16: Viewport (AutoCAD Help, "Property Settings Dialog Box": "on/off, display locking,
+  // standard or custom scale, shade plot, snap, grid, and UCS icon visibility and location.
+  // Settings for clipping and for UCS per viewport and freeze/thaw state of the layers are not
+  // transferred"). Triya keeps no shade plot or snap and grid spacing of a viewport's own, so
+  // the on/off bits are what snap and grid copy.
+  it('gives a viewport the source’s on/off, lock, scale, snap, grid and UCS icon', () => {
+    const vp = (over: Partial<ViewportGeometry>): ViewportGeometry => ({
+      kind: 'VIEWPORT',
+      center: { x: 100, y: 50 },
+      width: 40,
+      height: 20,
+      id: 2,
+      status: 1,
+      flags: 0,
+      viewCenter: { x: 10, y: 10 },
+      viewHeight: 10,
+      viewDirection: { x: 0, y: 0, z: 1 },
+      viewTarget: { x: 0, y: 0, z: 0 },
+      twist: 0,
+      lensLength: 50,
+      frontClip: 0,
+      backClip: 0,
+      frozenLayers: [],
+      plotStyleSheet: '',
+      renderMode: 0,
+      ...over,
+    });
+    // Off, locked, snap and grid on, UCS icon on at the origin; scale 1:4 (10 tall shows 40).
+    const OFF = 0x20000;
+    const LOCK = 0x4000;
+    const src = {
+      ...entityInit(
+        '60',
+        vp({ flags: OFF | LOCK | 256 | 512 | 32 | 64 | 0x10000, height: 10, viewHeight: 40 }),
+      ),
+      id: 1 as never,
+    };
+    // Its own clip (65536), UCS per viewport and frozen layers stay.
+    const dst = {
+      ...entityInit(
+        '61',
+        vp({ flags: 8, ucsPerViewport: true, frozenLayers: ['10'], viewCenter: { x: 5, y: 6 } }),
+      ),
+      id: 2 as never,
+    };
+    const g = matchedPatch(model, src, dst, ALL_MATCH_SETTINGS)!.geom as ViewportGeometry;
+    expect(g.flags).toBe(OFF | LOCK | 256 | 512 | 32 | 64 | 8);
+    // The same scale: 20 tall shows 80, about its own view centre.
+    expect(g.viewHeight).toBe(80);
+    expect(g.viewCenter).toEqual({ x: 5, y: 6 });
+    expect(g.ucsPerViewport).toBe(true);
+    expect(g.frozenLayers).toEqual(['10']);
+    // Viewport off: only the basic properties.
+    expect(
+      (
+        matchedPatch(model, src, dst, { ...ALL_MATCH_SETTINGS, viewport: false })?.geom as
+          ViewportGeometry | undefined
+      )?.flags,
+    ).toBeUndefined();
+    // A source showing nothing (no view) gives no scale; the paper-space viewport takes nothing.
+    const flat = { ...src, geom: vp({ viewHeight: 0 }) };
+    expect(matchedPatch(model, flat, dst, ALL_MATCH_SETTINGS)).toBeUndefined();
+    const paper = { ...dst, geom: vp({ id: 1 }) };
+    expect(matchedPatch(model, src, paper, ALL_MATCH_SETTINGS)?.geom).toBeUndefined();
+  });
+
   it('lists the settings left on', () => {
     expect(activeSettingsLine({ ...ALL_MATCH_SETTINGS, hatch: false, dimension: false })).toBe(
-      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Text Polyline Material Multileader',
+      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Text Polyline Viewport Material Multileader',
     );
   });
 });
