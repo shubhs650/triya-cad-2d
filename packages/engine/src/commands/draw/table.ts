@@ -250,10 +250,16 @@ export function tableCommands(): CommandDef[] {
           message: 'Insert Table',
           dialog: { type: 'inserttable', settings, styles: insertTableStyles(ctx) },
         });
-        // The table style launcher: the Table Style dialog, then Insert Table again on the
-        // style it closed on (AutoCAD 2024 Help, "Insert Table Dialog Box", Table Style).
+        // The table style launcher (AutoCAD 2024 Help, "Insert Table Dialog Box", Table Style):
+        // the Table Style dialog, then Insert Table again on the style made current there, else
+        // on the one chosen before (Standard if it was deleted or renamed meanwhile).
         if (a.kind !== 'dialog' || a.action !== 'select' || !a.table) break;
-        const chosen = yield* tableStyleDialog(ctx, a.table.style);
+        const before = currentTableStyle(ctx.model)?.handle;
+        yield* tableStyleDialog(ctx, a.table.style);
+        const now = currentTableStyle(ctx.model);
+        const kept = styleNamed(ctx, a.table.style);
+        const chosen =
+          now && now.handle !== before ? now.name : kept ? kept.name : (now?.name ?? 'Standard');
         settings = { ...a.table, style: chosen };
       }
       if (a.kind !== 'dialog' || a.action !== 'ok' || !a.table) return;

@@ -387,13 +387,11 @@ describe('TABLESTYLE', () => {
 });
 
 describe('the Insert Table dialog’s table style launcher', () => {
-  it('opens the Table Style dialog and comes back on the style it closed on', async () => {
+  type Insert = { kind: string; dialog: { type: string; settings: InsertTableSettings } };
+  it('opens the Table Style dialog and comes back on the style chosen before', async () => {
     const t = setup();
     await t.bus.script(['TABLE']);
-    let p = t.bus.prompt as {
-      kind: string;
-      dialog: { type: string; settings: InsertTableSettings };
-    };
+    let p = t.bus.prompt as Insert;
     expect(p.dialog.type).toBe('inserttable');
     const settings = { ...p.dialog.settings, columns: 3 };
     await t.bus.answer({
@@ -404,13 +402,42 @@ describe('the Insert Table dialog’s table style launcher', () => {
     expect(t.request()!.selected).toBe('Parts');
     await t.act({ op: 'new', name: 'Fresh', settings: t.request()!.styles[0]!.settings });
     await t.bus.answer({ kind: 'dialog', action: 'ok' });
-    p = t.bus.prompt as typeof p;
+    p = t.bus.prompt as Insert;
     expect(p.dialog.type).toBe('inserttable');
-    expect(p.dialog.settings).toMatchObject({ style: 'Fresh', columns: 3 });
-    expect(
-      (p.dialog as unknown as { styles: { name: string }[] }).styles.map((s) => s.name),
-    ).toContain('Fresh');
+    expect(p.dialog.settings).toMatchObject({ style: 'Parts', columns: 3 });
+    const listed = (p.dialog as unknown as { styles: { name: string }[] }).styles;
+    expect(listed.map((s) => s.name)).toContain('Fresh');
     await t.bus.cancel();
+  });
+
+  it('comes back on the style made current there, or Standard when the one chosen is gone', async () => {
+    const t = setup();
+    await t.bus.script(['TABLE']);
+    let p = t.bus.prompt as Insert;
+    await t.bus.answer({ kind: 'dialog', action: 'select', table: p.dialog.settings });
+    await t.act({ op: 'current', name: 'Parts' });
+    await t.bus.answer({ kind: 'dialog', action: 'ok' });
+    p = t.bus.prompt as Insert;
+    expect(p.dialog.settings.style).toBe('Parts');
+    // A style chosen that is gone by then: back on the current style.
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'select',
+      table: { ...p.dialog.settings, style: 'Gone' },
+    });
+    await t.bus.answer({ kind: 'dialog', action: 'ok' });
+    p = t.bus.prompt as Insert;
+    expect(p.dialog.settings.style).toBe('Parts');
+    await t.bus.cancel();
+    // In a drawing without table styles the chosen Standard stays.
+    const u = setup({ tableStyles: [] });
+    await u.bus.script(['TABLE']);
+    let q = u.bus.prompt as Insert;
+    await u.bus.answer({ kind: 'dialog', action: 'select', table: q.dialog.settings });
+    await u.bus.answer({ kind: 'dialog', action: 'ok' });
+    q = u.bus.prompt as Insert;
+    expect(q.dialog.settings.style).toBe('Standard');
+    await u.bus.cancel();
   });
 });
 

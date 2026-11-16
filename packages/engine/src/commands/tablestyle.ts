@@ -629,17 +629,14 @@ export function tableStylePreview(s: TableStyleSettings): TableStylePreview {
   };
 }
 
-/**
- * The Table Style dialog until Close: TABLESTYLE's, and the Insert Table dialog's launcher's.
- * Returns the style selected when it closed.
- */
-export async function* tableStyleDialog(ctx: CommandContext, start?: string): Sub<string> {
+/** The Table Style dialog until Close: TABLESTYLE's, and the Insert Table dialog's launcher's. */
+export async function* tableStyleDialog(ctx: CommandContext, start?: string): Sub<void> {
   let selected: string | undefined = start;
   let note: string | undefined;
   for (;;) {
     const request = tableStyleRequest(ctx.model, selected, note);
     const a: PromptAnswer = yield ctx.prompt.dialog({ message: 'Table Style', dialog: request });
-    if (a.kind !== 'dialog' || a.action !== 'apply' || !a.tablestyle) return request.selected;
+    if (a.kind !== 'dialog' || a.action !== 'apply' || !a.tablestyle) return;
     const shown = await act(ctx, a.tablestyle);
     selected = shown.selected ?? selected;
     note = shown.note;

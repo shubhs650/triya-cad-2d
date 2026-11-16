@@ -7,7 +7,7 @@
 // for the insertion point (dragging the table) or the window's corners.
 //
 // The button beside Table style launches the Table Style dialog (TABLESTYLE, M4-05 part 5), the
-// dialog opening again on the style it closed on. Left out or shown greyed, for the reasons
+// dialog opening again on the style made current there. Left out or shown greyed, for the reasons
 // given: From a data link (data links are passthrough only, FILE_FIDELITY.md)
 // and From object data (Data Extraction is not in Triya), Set cell styles (the rows take their
 // table style's title, header and data cell styles in order; choosing others needs per-row cell
