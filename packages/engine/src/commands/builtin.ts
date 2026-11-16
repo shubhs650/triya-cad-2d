@@ -3,6 +3,8 @@
 // per drawing.
 import { CommandRegistry } from './command';
 import { dimensionCommands } from './draw/dimension';
+import { moreDimensionCommands } from './draw/dimension-more';
+import { dimensionEditCommands } from './modify/dimension-edit';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
 import { ellipseCommand } from './draw/ellipse';
@@ -113,6 +115,8 @@ export function builtinCommands(): CommandRegistry {
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
     ...MLEADER_COMMANDS.map((make) => make()),
     ...dimensionCommands(),
+    ...moreDimensionCommands(),
+    ...dimensionEditCommands(),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),

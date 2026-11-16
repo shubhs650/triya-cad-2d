@@ -6,7 +6,10 @@
 // Quadrant with the text outside the angle, DIMCONTINUE from it and from an ordinate dimension,
 // and the header's DIMVARs that differ from the current style as each new dimension's DSTYLE
 // overrides, kept by the save; M2-31 part 2's DIMRADIUS on an arc placed past its end, its arc
-// kept in ACAD_DSTYLE_DIMRADIAL_EXTENSION xdata and its arc extension line drawn. The drawing is saved as AC1032 DXF (DEC-047),
+// kept in ACAD_DSTYLE_DIMRADIAL_EXTENSION xdata and its arc extension line drawn; M4-02's
+// DIMORDINATE, DIMJOGGED on the circle, DIMARC's Partial on the arc, and DIMJOGLINE on the
+// first dimension, its jog kept in ACAD_DSTYLE_DIMJAG_POSITION xdata. The drawing is saved as
+// AC1032 DXF (DEC-047),
 // read back by acad-ts and mapped: each dimension comes back where it was made, with its `*D`
 // block, and the health check (stored block against what the engine draws, M2-10) passes on it.
 // With TRIYA_DXF_AUDIT_DIR set the save goes to the ezdxf audit as the file's `dimension` save.
@@ -29,6 +32,7 @@ import {
   type ViewReply,
   currentDimStyle,
   dstyleOverrides,
+  linearJog,
   radialArc,
 } from '@triya/engine';
 import { aciOfTrueColor, documentInit, readCadDocument } from '@triya/io';
@@ -190,6 +194,15 @@ describe('dimension commands on the public corpus (M2-11)', () => {
       await bus.script(['DIMRADIUS']);
       await bus.pick({ x: 700, y: 20 });
       await bus.submit('650,0');
+      // M4-02: an ordinate dimension measuring X, a jogged radius on the circle and an arc
+      // length dimension on part of the arc.
+      await bus.script(['DIMORDINATE', '0,-500', '20,-560']);
+      await bus.script(['DIMJOGGED']);
+      await bus.pick({ x: 520, y: 0 });
+      await bus.script(['560,-80', '550,-30', '545,-55']);
+      await bus.script(['DIMARC']);
+      await bus.pick({ x: 720, y: 0 });
+      await bus.script(['P', '720,0', '710,17.32050807568877', '740,40']);
       expect(bus.command).toBeUndefined();
       const added = () =>
         [...model.entities()].filter((e) => !before.has(e.id) && e.owner === space);
@@ -208,6 +221,9 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         'angular3pt',
         'ordinate',
         'radius',
+        'ordinate',
+        'jogged',
+        'arc',
       ]);
       const radial = added()[13]!;
       expect(radialArc(radial.xdata, model)).toEqual({ startAngle: 0, endAngle: Math.PI / 2 });
@@ -229,6 +245,11 @@ describe('dimension commands on the public corpus (M2-11)', () => {
       await bus.cancel();
       const moved = model.entity(first.id)!.geom as DimensionGeometry;
       expect(moved.textUserPositioned).toBe(true);
+      // M4-02: a jog on it where Enter puts one.
+      await bus.script(['DIMJOGLINE']);
+      await bus.pick(moved.textPosition);
+      await bus.submit('');
+      expect(linearJog(model.entity(first.id)!.xdata, model)).toBeDefined();
 
       const dims = added();
       for (const e of dims) {
@@ -252,6 +273,9 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         expect(radialArc(r!.xdata, back), `${f.path} ${e.handle}`).toEqual(
           radialArc(e.xdata, model),
         );
+        expect(rounded(linearJog(r!.xdata, back)), `${f.path} ${e.handle}`).toEqual(
+          rounded(linearJog(model.entity(e.id)!.xdata, model)),
+        );
         const health = dimensionHealth(r!, back, again, colors);
         expect(health?.problems ?? ['no health'], `${f.path} ${e.handle}`).toEqual([]);
       }
@@ -264,7 +288,7 @@ describe('dimension commands on the public corpus (M2-11)', () => {
   it('made dimensions on every readable file with a dimension style', () => {
     expect(saved + styleless.length).toBe(readable.length);
     expect(saved).toBeGreaterThan(readable.length / 2);
-    expect(made).toBe(saved * 14);
+    expect(made).toBe(saved * 17);
     // Drawings whose header DIMVARs differ from their current style (ezdxf's minimal one).
     expect(overridden.size).toBeGreaterThan(0);
   });
