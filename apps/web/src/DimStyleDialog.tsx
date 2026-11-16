@@ -38,10 +38,19 @@ import {
   type DimStyleField,
   type DimStyleLists,
   type DimStyleTab,
+  type DimStylePreview,
   type DimStyleVars,
   type PromptAnswer,
 } from '@triya/engine';
-import { useId, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
+import { controllersOf } from './canvas/registry';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
 
@@ -153,6 +162,15 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
       ? `${style.parent}: ${useLabel(style.use)}`
       : (style?.name ?? '');
 
+  // The preview shows the style selected as the drawing draws it (a sub-style its kind alone),
+  // the overrides on the current style's DIMVARs.
+  const previewTitle = onOverrides ? `${request.current} ${OVERRIDES}` : description;
+  const managerPreview: DimStylePreview | undefined = !style
+    ? undefined
+    : onOverrides
+      ? { vars: dialogVars({ ...style.vars, ...request.overrides }) }
+      : { style: style.name, ...(style.use && { use: style.use }) };
+
   return (
     <Modal
       label="Dimension Style Manager"
@@ -215,6 +233,8 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
           </label>
         </div>
         <div className="dimstyle-right">
+          <span>Preview of: {previewTitle}</span>
+          <StylePreview doc={doc} preview={managerPreview} size={MANAGER_PREVIEW} />
           <span>Description</span>
           <p className="dimstyle-description" data-testid="dimstyle-description">
             {description}
@@ -336,8 +356,15 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
                 ? `Modify Dimension Style: ${editing.name}`
                 : `Override Current Style: ${editing.name}`
           }
+          doc={doc}
           vars={editing.vars}
           lists={request.lists}
+          {...(editing.mode === 'new' &&
+            editing.use &&
+            editing.use !== 'all' && { use: editing.use })}
+          {...(editing.mode === 'modify' && {
+            use: request.styles.find((s) => s.name === editing.name)?.use,
+          })}
           override={editing.mode === 'override'}
           onCancel={() => setEditing(undefined)}
           onOk={(vars) => {
@@ -358,6 +385,63 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
         />
       )}
     </Modal>
+  );
+}
+
+/** The preview pictures' sizes in CSS pixels. */
+const MANAGER_PREVIEW = { width: 240, height: 170 };
+const EDITOR_PREVIEW = { width: 300, height: 190 };
+/** How long the preview waits for typing to pause before it is drawn again. */
+const PREVIEW_DELAY_MS = 60;
+
+/**
+ * The preview image (M4-03 part 3): drawn by the drawing's renderer (the engine's sample drawing
+ * in the style) and shown on a `bitmaprenderer` canvas, as no 2D drawing happens outside the
+ * renderer. It keeps its last picture until the next one arrives.
+ */
+function StylePreview({
+  doc,
+  preview,
+  size,
+}: {
+  doc: number;
+  preview: DimStylePreview | undefined;
+  size: { readonly width: number; readonly height: number };
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const key = preview ? JSON.stringify(preview) : '';
+  useEffect(() => {
+    if (!preview) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      const controller = controllersOf(doc)[0];
+      void controller?.dimStylePreview(preview, size).then((bitmap) => {
+        const c = canvas.current;
+        if (!live || !c || !bitmap) {
+          bitmap?.close();
+          return;
+        }
+        c.width = bitmap.width;
+        c.height = bitmap.height;
+        c.getContext('bitmaprenderer')?.transferFromImageBitmap(bitmap);
+        c.dataset['drawn'] = key;
+      });
+    }, PREVIEW_DELAY_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // `key` stands for the preview's content, which is a new object each render.
+  }, [doc, key, size]);
+  return (
+    <canvas
+      ref={canvas}
+      className="dimstyle-preview"
+      role="img"
+      aria-label="Preview"
+      data-testid="dimstyle-preview"
+      style={{ width: size.width, height: size.height }}
+    />
   );
 }
 
@@ -517,7 +601,10 @@ let lastTab: DimStyleTab = 'lines';
 /** New, Modify or Override Dimension Style: AutoCAD's seven tabs over the style's DIMVARs. */
 function StyleEditor(props: {
   title: string;
+  doc: number;
   vars: DimStyleVars;
+  /** A sub-style's kind: the preview shows it alone. */
+  use?: DimStyleUse | undefined;
   lists: DimStyleLists;
   /** Override: the fields AutoCAD keeps in the style's xdata are greyed. */
   override: boolean;
@@ -533,6 +620,16 @@ function StyleEditor(props: {
   const fields = DIMSTYLE_FIELDS.filter((f) => f.tab === tab);
   const groups = [...new Set(fields.map((f) => f.group))];
   const label = DIMSTYLE_TABS.find((t) => t.id === tab)!.label;
+  // AutoCAD's sample image, at the top right of every tab, following each change.
+  const preview = (
+    <div key="preview" className="dimstyle-editor-preview">
+      <StylePreview
+        doc={props.doc}
+        preview={{ vars, ...(props.use && { use: props.use }) }}
+        size={EDITOR_PREVIEW}
+      />
+    </div>
+  );
   return (
     <Modal
       label={props.title}
@@ -554,7 +651,8 @@ function StyleEditor(props: {
         ))}
       </div>
       <div role="tabpanel" className="cad-dialog-panel dimstyle-tab" aria-label={label}>
-        {groups.map((g) => (
+        {groups.map((g, i) => [
+          i === 1 && preview,
           <fieldset key={g}>
             <legend>{g}</legend>
             {fields
@@ -569,8 +667,9 @@ function StyleEditor(props: {
                   onChange={(value) => setVars((v) => setField(v, f.key, value))}
                 />
               ))}
-          </fieldset>
-        ))}
+          </fieldset>,
+        ])}
+        {groups.length < 2 && preview}
         {tab === 'fit' && (
           <label
             className="cad-dialog-check"

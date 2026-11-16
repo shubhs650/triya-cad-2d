@@ -58,6 +58,7 @@ import {
   unionBox,
   type Box,
   type ChangeSet,
+  type DimStylePreview,
   type EntityId,
   PREVIEW_AT_COMMAND,
   PREVIEW_SELECTING,
@@ -615,6 +616,17 @@ export class CanvasController {
   thumbnail(max: { width: number; height: number }): Promise<ImageBitmap | undefined> {
     const dpr = devicePixelRatio;
     return this.#host.thumbnail({ width: max.width * dpr, height: max.height * dpr });
+  }
+
+  /**
+   * A dimension style's preview image of `size` CSS pixels at this screen's pixel ratio (M4-03
+   * part 3), in the drawing's styles and the canvas's display style.
+   */
+  dimStylePreview(
+    preview: DimStylePreview,
+    size: { width: number; height: number },
+  ): Promise<ImageBitmap | undefined> {
+    return this.#host.dimStylePreview(preview, { ...size, dpr: devicePixelRatio });
   }
 
   /** The entities drawn in a rectangle of the canvas, CSS pixels (M1-106 fidelity triage). */
