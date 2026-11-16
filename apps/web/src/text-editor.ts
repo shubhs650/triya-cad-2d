@@ -270,3 +270,37 @@ export function withMeasurements(spans: Spans): MTextSpan[] {
 /** MTEXT contents written from the editor's spans, each measurement atom back as `<>`. */
 export const measurementsWritten = (contents: string): string =>
   contents.split(`%<${MEASUREMENT}>%`).join('<>');
+
+/** Where a key moves a table cell's editor (TABLEDIT, M4-05 part 2). */
+export type CellMove = 'next' | 'previous' | 'left' | 'right' | 'up' | 'down';
+
+/**
+ * The cell a key moves the editor to from a table cell holding `spans`, the selection `a`..`b`,
+ * as AutoCAD's table cell editor: Tab the next cell and Shift+Tab the previous; an arrow key
+ * moves to the cell beside only from the edge of the text (Left at its start, Right at its end,
+ * Up in its first paragraph, Down in its last) with nothing selected, and moves the caret
+ * otherwise. Undefined: the key is the editor's own.
+ */
+export function cellMoveFor(
+  key: string,
+  shift: boolean,
+  spans: Spans,
+  a: number,
+  b: number,
+): CellMove | undefined {
+  if (key === 'Tab') return shift ? 'previous' : 'next';
+  if (shift || a !== b) return undefined;
+  const end = unitsOf(spans);
+  switch (key) {
+    case 'ArrowLeft':
+      return a === 0 ? 'left' : undefined;
+    case 'ArrowRight':
+      return a === end ? 'right' : undefined;
+    case 'ArrowUp':
+      return paragraphIndex(spans, a) === 0 ? 'up' : undefined;
+    case 'ArrowDown':
+      return paragraphIndex(spans, a) === paragraphIndex(spans, end) ? 'down' : undefined;
+    default:
+      return undefined;
+  }
+}

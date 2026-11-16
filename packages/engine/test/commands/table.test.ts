@@ -87,6 +87,9 @@ describe('-TABLE', () => {
     await bus.submit('2');
     expect(bus.promptText).toBe('Specify insertion point or [Style/Width/Height]:');
     await bus.submit('10,20');
+    // The In-Place Text Editor opens in the title cell; Esc leaves it and keeps the table.
+    expect(bus.promptText).toBe('Enter text:');
+    await bus.cancel();
     expect(bus.promptText).toBe('Command:');
     const [t] = tables();
     expect(tables()).toHaveLength(1);
@@ -145,6 +148,7 @@ describe('-TABLE', () => {
     await bus.submit('0');
     await bus.submit('2');
     await bus.submit('0,0');
+    await bus.cancel();
     expect(tables()[0]!.geom.columnWidths).toEqual([40, 40]);
     expect(tables()[0]!.geom.rowHeights.map(r4)).toEqual([19, 15, 15, 15, 15]);
     await bus.submit('-TABLE');
@@ -227,12 +231,17 @@ describe('-TABLE', () => {
     await bus.submit('-TABLE');
     await bus.submit('0');
     expect(messages).toContain('Value must be between 1 and 32767.');
-    await bus.submit('A');
-    expect(messages).toContain('Auto is not available yet: enter a number.');
     expect(bus.promptText).toBe('Enter number of columns or [Auto] <5>:');
     await bus.cancel();
     expect(bus.promptText).toBe('Command:');
-    for (const answers of [['2'], ['2', '1', 'S'], ['2', '1', 'W'], ['2', '1', 'H'], ['2', '1']]) {
+    for (const answers of [
+      ['2'],
+      ['2', '1', 'S'],
+      ['2', '1', 'W'],
+      ['2', '1', 'H'],
+      ['2', '1'],
+      ['A', '1', '0,0'],
+    ]) {
       await bus.submit('-TABLE');
       for (const a of answers) await bus.submit(a);
       await bus.cancel();

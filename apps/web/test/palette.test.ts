@@ -162,6 +162,9 @@ describe('palette search', () => {
       'SPLINE',
       'SPLINEDIT',
       'STRETCH',
+      // M4-05 part 2: the Insert Table dialog and the cell editor.
+      'TABLE',
+      'TABLEDIT',
       'TEXT',
       'TEXTEDIT',
       'TEXTTOFRONT',
