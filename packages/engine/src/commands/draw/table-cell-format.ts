@@ -73,7 +73,11 @@ export async function* formattedTable(
       const a = yield ctx.prompt.keyword({
         message: 'Enter cell alignment',
         options: ALIGNMENTS,
-        default: { kind: 'keyword', keyword: ALIGNMENTS[now.alignment - 1] ?? 'TL' },
+        // A file's alignment out of 1–9 reads as the nearest.
+        default: {
+          kind: 'keyword',
+          keyword: ALIGNMENTS[Math.min(Math.max(Math.round(now.alignment), 1), 9) - 1]!,
+        },
         shortcutMenu: menu,
       });
       if (a.kind !== 'keyword') return undefined;
