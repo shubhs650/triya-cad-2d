@@ -144,3 +144,90 @@ test('JUSTIFYTEXT keeps notes where they are; SCALETEXT scales them about a corn
   await expectDrawn(page, { timeout: 15_000 });
   await page.screenshot({ path: test.info().outputPath('3-scaled-tl.png') });
 });
+
+// M4-09 part 3: TEXTALIGN lines three notes up under the first, each keeping its height on the
+// page (Current vertical), then spaces them 2 apart (Set spacing). The placing is unit-tested in
+// packages/engine/test/commands/text-tools.test.ts; this checks the render worker measures the
+// texts in their fonts for it end to end.
+test('TEXTALIGN lines notes up under the first and spaces them', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await page.mouse.move(20, 400);
+
+  // Three notes typed where they fell, at different starts.
+  for (const [at, note] of [
+    ['1000020,1000080', 'NOTES'],
+    ['1000034,1000062', '1. DEBURR ALL EDGES'],
+    ['1000027,1000041', '2. PAINT RAL 7035'],
+  ] as const) {
+    await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+    await type(page, `#${at}`, /Specify height/);
+    await type(page, '5', /Specify rotation angle of text/);
+    await type(page, '', 'Enter text:');
+    await type(page, note, 'Enter text:');
+    await type(page, '', 'Command:');
+  }
+  await expectDrawn(page, { timeout: 15_000 });
+  const at = async () => (await texts(page)).map((t) => t['at'] as number[]);
+  expect(await at()).toEqual([
+    [20, 80],
+    [34, 62],
+    [27, 41],
+  ]);
+  await page.mouse.move(640, 560);
+  await page.screenshot({ path: test.info().outputPath('4-before-textalign.png') });
+
+  await type(page, 'TEXTALIGN', 'Select text objects to align [alIgnment/Options]:');
+  await type(page, 'W', 'Specify first corner:');
+  await type(page, '#1000000,1000000', 'Specify opposite corner:');
+  await type(page, '#1000160,1000100', /Select text objects to align/);
+  await type(page, '', 'Select text object to align to or [Points]:');
+  await type(page, '#1000020,1000080', 'Pick second point or [Options]:');
+  // The preview follows the cursor: the notes along the line from NOTES to it.
+  await page.mouse.move(420, 560);
+  await page.mouse.move(430, 570);
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: test.info().outputPath('5-preview-at-cursor.png') });
+  await type(page, '#1000020,1000000', 'Command:');
+  // Left aligned under NOTES's baseline start, each at its own height.
+  await expect.poll(at).toEqual([
+    [20, 80],
+    [20, 62],
+    [20, 41],
+  ]);
+  await expectDrawn(page, { timeout: 15_000 });
+  await page.mouse.move(640, 560);
+  await page.screenshot({ path: test.info().outputPath('6-aligned-current-vertical.png') });
+
+  await type(page, 'TEXTALIGN', 'Select text objects to align [alIgnment/Options]:');
+  await type(page, 'O', /Enter an option \[Distribute\/Set spacing/);
+  await type(page, 'S', 'Specify spacing:');
+  await type(page, '2', 'Select text objects to align [alIgnment/Options]:');
+  await type(page, 'W', 'Specify first corner:');
+  await type(page, '#1000000,1000000', 'Specify opposite corner:');
+  await type(page, '#1000160,1000100', /Select text objects to align/);
+  await type(page, '', 'Select text object to align to or [Points]:');
+  await type(page, '#1000020,1000080', 'Pick second point or [Options]:');
+  await type(page, '#1000020,1000000', 'Command:');
+  // Each note's box starts 2 below the last one's: the baselines move up, as far apart as
+  // the boxes' heights (the font's ascent and descent at 5) and the gap.
+  await expect.poll(async () => (await at())[1]![1]!).toBeGreaterThan(62);
+  const spaced = await at();
+  expect(spaced.map((p) => p[0])).toEqual([20, 20, 20]);
+  const step1 = spaced[0]![1]! - spaced[1]![1]!;
+  const step2 = spaced[1]![1]! - spaced[2]![1]!;
+  expect(step1).toBeCloseTo(step2, 2);
+  expect(step1).toBeGreaterThan(7);
+  await expectDrawn(page, { timeout: 15_000 });
+  await page.mouse.move(640, 560);
+  await page.screenshot({ path: test.info().outputPath('7-set-spacing.png') });
+});
