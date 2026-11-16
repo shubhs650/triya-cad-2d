@@ -781,6 +781,28 @@ export function refusalMessages(refused: ReadonlyMap<string, number>, verb: stri
   );
 }
 
+// ── DIMDISASSOCIATE ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * DIMDISASSOCIATE (M4-02): the dimensions among `ids` let go of the geometry they are associated
+ * with, their DIMASSOCs removed and taken off every reactor list. Returns how many did.
+ */
+export function disassociateDimensions(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  ids: readonly EntityId[],
+): number {
+  const links = new Links(b, model);
+  const dims = new Set(ids.flatMap((id) => b.entity(id)?.handle ?? []));
+  const done = new Set<Handle>();
+  for (const a of links.assocs) {
+    if (!dims.has(a.dimension)) continue;
+    links.disassociate(a);
+    done.add(a.dimension);
+  }
+  return done.size;
+}
+
 // ── TRIM, EXTEND ────────────────────────────────────────────────────────────────────────────
 
 /**

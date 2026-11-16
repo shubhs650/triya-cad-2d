@@ -6,6 +6,7 @@ import { dimensionCommands } from './draw/dimension';
 import { moreDimensionCommands } from './draw/dimension-more';
 import { qdimCommand } from './draw/qdim';
 import { dimensionEditCommands } from './modify/dimension-edit';
+import { dimensionAssociateCommands } from './modify/dimension-associate';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
 import { ellipseCommand } from './draw/ellipse';
@@ -123,6 +124,7 @@ export function builtinCommands(): CommandRegistry {
     ...moreDimensionCommands(),
     qdimCommand(),
     ...dimensionEditCommands(),
+    ...dimensionAssociateCommands(),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),

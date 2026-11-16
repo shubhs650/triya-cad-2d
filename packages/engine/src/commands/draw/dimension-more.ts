@@ -151,7 +151,7 @@ function toArc(p: Vec2, a: MeasuredArc): number {
   );
 }
 
-function arcOf(g: EntityGeometry, at: Vec2 | undefined): MeasuredArc | undefined {
+export function arcOf(g: EntityGeometry, at: Vec2 | undefined): MeasuredArc | undefined {
   if (g.kind === 'ARC') return g.radius > 0 ? g : undefined;
   if (g.kind !== 'LWPOLYLINE' && g.kind !== 'POLYLINE') return undefined;
   const v = g.vertices;

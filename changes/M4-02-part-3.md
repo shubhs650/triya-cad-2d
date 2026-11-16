@@ -1,0 +1,1 @@
+- M4-02 part 3 (#437): DIMREASSOCIATE and DIMDISASSOCIATE: a dimension's definition points re-picked, point by point or from an object, and measured again; associations read from a drawing removed.
