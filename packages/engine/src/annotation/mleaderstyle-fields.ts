@@ -4,8 +4,8 @@
 // (the DXF reference's MLEADERSTYLE object).
 //
 // What the dialog shows and the record has no field for, our reading (noted in the PR):
-// - "Maximum leader points" is DXF 90, 2 or more: the save keeps it in AutoCAD's range, so the
-//   check box that turns the limit off is not offered (ROADMAP M4-04).
+// - "Maximum leader points" is DXF 90, 2 or more; its check box unchecked is 0, no limit (M4-14;
+//   ODA's OdDbMLeaderStyle::setMaxLeaderSegmentsPoints: "a value of 0 ... indicates no limit").
 // - "First segment angle" and "Second segment angle" unchecked are DXF 40/41 = 0, no constraint,
 //   the angle kept in radians as MLEADER reads it (`constrainSegment`).
 // - "Automatically include landing" sets both DXF 290 (landing) and 291 (dogleg), as MLEADER's
@@ -13,7 +13,8 @@
 //   distance is always set (its check box is not offered).
 // - "Scale multileaders to layout" is DXF 142 = 0, as DIMSCALE 0 scales a dimension to its
 //   layout; MLEADER draws such a style at scale 1 (it has no viewport scale to take).
-// - "Extend leader to text" has no field Triya maps, so it is not offered.
+// - "Extend leader to text" is DXF 298 (M4-14, see `MLeaderStyleRecord.extendLeaderToText`),
+//   shown with horizontal attachment as AutoCAD shows it.
 // - Annotative is shown and never set (DEC-013, DEC-058).
 import type { Color, Lineweight, MLeaderStyleRecord } from '../model/types';
 import type { Handle } from '../model/handle';
@@ -57,6 +58,8 @@ export interface MLeaderStyleSettings {
   readonly arrowheadSize: number;
   readonly breakSize: number;
   // Leader Structure: Constraints, Landing settings, Scale.
+  /** Maximum leader points checked: false is no limit (DXF 90 = 0). */
+  readonly maxPointsOn: boolean;
   readonly maxPoints: number;
   readonly firstAngleOn: boolean;
   readonly firstAngle: number;
@@ -84,6 +87,8 @@ export interface MLeaderStyleSettings {
   readonly leftAttachment: string;
   readonly rightAttachment: string;
   readonly landingGap: number;
+  /** Extend leader to text (DXF 298). */
+  readonly extendToText: boolean;
   /** DXF 273 / 272: '9' center, '10' overline (underline) and center. */
   readonly topAttachment: string;
   readonly bottomAttachment: string;
@@ -248,11 +253,20 @@ export const MLEADERSTYLE_FIELDS: readonly MLeaderStyleField[] = [
   },
   // Leader Structure.
   {
+    key: 'maxPointsOn',
+    tab: 'structure',
+    group: 'Constraints',
+    label: 'Maximum leader points',
+    kind: 'check',
+  },
+  {
     key: 'maxPoints',
     tab: 'structure',
     group: 'Constraints',
     label: 'Maximum leader points',
     kind: 'number',
+    checkedBy: 'maxPointsOn',
+    enabled: (s) => s.maxPointsOn,
     takes: (n) => Number.isInteger(n) && n >= 2,
   },
   {
@@ -469,6 +483,14 @@ export const MLEADERSTYLE_FIELDS: readonly MLeaderStyleField[] = [
     takes: atLeast0,
   },
   {
+    key: 'extendToText',
+    tab: 'content',
+    group: 'Leader connection',
+    label: 'Extend leader to text',
+    kind: 'check',
+    shown: horizontal,
+  },
+  {
     key: 'block',
     tab: 'content',
     group: 'Block options',
@@ -564,6 +586,7 @@ export function mleaderStyleSettings(s: MLeaderStyleRecord): MLeaderStyleSetting
     arrowhead: s.arrowhead ?? '',
     arrowheadSize: s.arrowheadSize,
     breakSize: s.breakGap,
+    maxPointsOn: s.maxLeaderPoints !== 0,
     maxPoints: s.maxLeaderPoints >= 2 ? s.maxLeaderPoints : 2,
     firstAngleOn: s.firstSegmentAngle !== 0,
     firstAngle: s.firstSegmentAngle !== 0 ? deg(s.firstSegmentAngle) : 15,
@@ -585,6 +608,7 @@ export function mleaderStyleSettings(s: MLeaderStyleRecord): MLeaderStyleSetting
     leftAttachment: choice(s.textLeftAttachment),
     rightAttachment: choice(s.textRightAttachment),
     landingGap: s.landingGap,
+    extendToText: s.extendLeaderToText,
     topAttachment: choice(s.textTopAttachment === 10 ? 10 : 9),
     bottomAttachment: choice(s.textBottomAttachment === 10 ? 10 : 9),
     block: s.block ?? '',
@@ -645,7 +669,7 @@ export const MLEADERSTYLE_RECORD_KEYS: Readonly<Record<string, readonly MLeaderS
   arrowhead: ['arrowhead'],
   arrowheadSize: ['arrowheadSize'],
   breakGap: ['breakSize'],
-  maxLeaderPoints: ['maxPoints'],
+  maxLeaderPoints: ['maxPointsOn', 'maxPoints'],
   firstSegmentAngle: ['firstAngleOn', 'firstAngle'],
   secondSegmentAngle: ['secondAngleOn', 'secondAngle'],
   landing: ['landing'],
@@ -664,6 +688,7 @@ export const MLEADERSTYLE_RECORD_KEYS: Readonly<Record<string, readonly MLeaderS
   textLeftAttachment: ['leftAttachment'],
   textRightAttachment: ['rightAttachment'],
   landingGap: ['landingGap'],
+  extendLeaderToText: ['extendToText'],
   textTopAttachment: ['topAttachment'],
   textBottomAttachment: ['bottomAttachment'],
   block: ['block'],
@@ -719,7 +744,7 @@ export function mleaderStyleFields(
     arrowhead: refs.arrowhead,
     arrowheadSize: s.arrowheadSize,
     breakGap: s.breakSize,
-    maxLeaderPoints: s.maxPoints,
+    maxLeaderPoints: s.maxPointsOn ? s.maxPoints : 0,
     firstSegmentAngle: s.firstAngleOn ? s.firstAngle * DEG : 0,
     secondSegmentAngle: s.secondAngleOn ? s.secondAngle * DEG : 0,
     landing: s.landing,
@@ -738,6 +763,7 @@ export function mleaderStyleFields(
     textLeftAttachment: n(s.leftAttachment),
     textRightAttachment: n(s.rightAttachment),
     landingGap: s.landingGap,
+    extendLeaderToText: s.extendToText,
     textTopAttachment: n(s.topAttachment),
     textBottomAttachment: n(s.bottomAttachment),
     block: refs.block,

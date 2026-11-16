@@ -37,6 +37,9 @@ export type MLeaderStylePlan = RecordPlan<MultiLeaderStyle, MLeaderStyleRecord>;
 
 type Field = keyof MLeaderStyleRecord;
 
+/** Fields the DWG MLEADERSTYLE holds from R2013 (DXF writes 298 in every version). */
+const R2013_FIELDS: readonly Field[] = ['extendLeaderToText'];
+
 /** Fields the DWG MLEADERSTYLE holds from R2010 (its object version 2). */
 const R2010_FIELDS: readonly Field[] = [
   'textAttachmentDirection',
@@ -51,8 +54,6 @@ const WHOLE: Partial<Record<Field, readonly [number, number]>> = {
   // DXF 171 / 172: content or leader first; leader head or tail first.
   mleaderDrawOrder: [0, 1],
   leaderDrawOrder: [0, 1],
-  // DXF 90: the leader's maximum points; AutoCAD's dialog takes 2 and up.
-  maxLeaderPoints: [2, 0x7fffffff],
   // DXF 173: 0 invisible, 1 straight, 2 spline.
   pathType: [0, 2],
   // DXF 174 / 178: the nine horizontal attachments; 273 / 272: the vertical ones (9 centre,
@@ -97,6 +98,7 @@ const BOOLEANS: readonly Field[] = [
   'dogleg',
   'textFrame',
   'textAlignAlwaysLeft',
+  'extendLeaderToText',
   'blockScaleOn',
   'blockRotationOn',
   'overwriteProperties',
@@ -170,6 +172,21 @@ function mleaderStyleProblems(
     for (const k of R2010_FIELDS.filter((k) => changed(k)))
       out.push(`${k}: a DWG MLEADERSTYLE before R2010 does not store it`);
   }
+  if (format === 'dwg' && known(version) && version < ACadVersion.AC1027) {
+    // Off is what such a DWG means, so only on is refused.
+    for (const k of R2013_FIELDS.filter((k) => changed(k) && a[k] === true))
+      out.push(`${k}: a DWG MLEADERSTYLE before R2013 does not store it`);
+  }
+  // DXF 90: the leader's maximum points, 2 and up as AutoCAD's dialog takes them, or 0 for no
+  // limit (the check box unchecked, M4-14).
+  const points = a.maxLeaderPoints;
+  if (
+    changed('maxLeaderPoints') &&
+    !(Number.isInteger(points) && (points === 0 || (points >= 2 && points <= 0x7fffffff)))
+  )
+    out.push(
+      `maxLeaderPoints: ${JSON.stringify(points)} is not 0 (no limit) or a whole number from 2`,
+    );
   for (const [k, [min, max]] of Object.entries(WHOLE) as [Field, [number, number]][]) {
     const v = a[k];
     if (changed(k) && !(typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max))
@@ -253,6 +270,7 @@ function writeMLeaderStyle(
   if (changed('textHeight')) s.textHeight = a.textHeight;
   if (changed('textFrame')) s.textFrame = a.textFrame;
   if (changed('textAlignAlwaysLeft')) s.textAlignAlwaysLeft = a.textAlignAlwaysLeft;
+  if (changed('extendLeaderToText')) s.unknownFlag298 = a.extendLeaderToText;
   if (changed('alignSpace')) s.alignSpace = a.alignSpace;
   if (changed('block')) s.blockContent = ref(a.block, BlockRecord);
   if (changed('blockColor')) s.blockContentColor = acadColor(a.blockColor);

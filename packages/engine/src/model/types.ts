@@ -696,6 +696,11 @@ export interface MultiLeaderGeometry extends PlanarProps {
   readonly textAlignment: number;
   /** DXF 292. */
   readonly textFrame: boolean;
+  /**
+   * DXF 295 (R2013): the landing runs to the text line rather than the text box's edge (M4-14).
+   * Absent when off.
+   */
+  readonly extendLeaderToText?: boolean;
   /** DXF 10 in the context data: where the content attaches. */
   readonly contentBase: Vec2;
   /** DXF 145. */
@@ -1383,6 +1388,10 @@ export interface MLeaderStyleRecord extends SymbolTableRecord {
   /** DXF 171 / 172. */
   readonly mleaderDrawOrder: number;
   readonly leaderDrawOrder: number;
+  /**
+   * DXF 90: the most points a leader line takes; 0 is no limit (the dialog's Maximum leader
+   * points unchecked, M4-14; ODA's OdDbMLeaderStyle::setMaxLeaderSegmentsPoints).
+   */
   readonly maxLeaderPoints: number;
   /** DXF 40 / 41, as the file states them (every corpus file has 0, so the unit is untested). */
   readonly firstSegmentAngle: number;
@@ -1414,6 +1423,12 @@ export interface MLeaderStyleRecord extends SymbolTableRecord {
   readonly textHeight: number;
   readonly textFrame: boolean;
   readonly textAlignAlwaysLeft: boolean;
+  /**
+   * DXF 298 (R2013): the Content tab's Extend leader to text (M4-14). acad-ts and ezdxf name it
+   * an unknown flag; it is stored next to MULTILEADER's DXF 295 in the same R2013 DWG section,
+   * as ObjectARX gives both objects `extendLeaderToText`.
+   */
+  readonly extendLeaderToText: boolean;
   readonly alignSpace: number;
   readonly block?: Handle;
   readonly blockColor: Color;

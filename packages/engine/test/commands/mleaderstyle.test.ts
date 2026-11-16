@@ -687,3 +687,118 @@ describe('MLEADERSTYLE: what the manager refuses or leaves alone', () => {
     );
   });
 });
+
+// M4-14: the Leader Structure tab's Maximum leader points check box (unchecked is DXF 90 = 0, no
+// limit: ODA's OdDbMLeaderStyle::setMaxLeaderSegmentsPoints, "a value of 0 ... indicates no
+// limit") and the Content tab's Extend leader to text (the style's DXF 298 and the multileader's
+// DXF 295, both added in R2013).
+describe('MLEADERSTYLE: Maximum leader points unchecked and Extend leader to text (M4-14)', () => {
+  it('shows a style without a point limit unchecked, and Extend leader to text', () => {
+    expect(mleaderStyleSettings({ ...standard, maxLeaderPoints: 0 })).toMatchObject({
+      maxPointsOn: false,
+      maxPoints: 2,
+      extendToText: false,
+    });
+    expect(
+      mleaderStyleSettings({ ...standard, maxLeaderPoints: 5, extendLeaderToText: true }),
+    ).toMatchObject({ maxPointsOn: true, maxPoints: 5, extendToText: true });
+    const box = MLEADERSTYLE_FIELDS.find((f) => f.key === 'maxPointsOn')!;
+    expect(box).toMatchObject({ tab: 'structure', kind: 'check', label: 'Maximum leader points' });
+    const points = MLEADERSTYLE_FIELDS.find((f) => f.key === 'maxPoints')!;
+    expect(points.checkedBy).toBe('maxPointsOn');
+    expect(points.enabled!(settings({ maxPointsOn: false }))).toBe(false);
+    expect(points.enabled!(settings({ maxPointsOn: true }))).toBe(true);
+    const extend = MLEADERSTYLE_FIELDS.find((f) => f.key === 'extendToText')!;
+    expect(extend).toMatchObject({
+      tab: 'content',
+      group: 'Leader connection',
+      kind: 'check',
+      label: 'Extend leader to text',
+    });
+    // Horizontal attachment only, as AutoCAD's dialog shows it.
+    expect(extend.shown!(settings({ contentType: '2', attachment: '0' }))).toBe(true);
+    expect(extend.shown!(settings({ contentType: '2', attachment: '1' }))).toBe(false);
+    expect(extend.shown!(settings({ contentType: '1' }))).toBe(false);
+    // The fields sit after the landing gap in the Leader connection group.
+    const order = MLEADERSTYLE_FIELDS.filter((f) => f.group === 'Leader connection').map(
+      (f) => f.key,
+    );
+    expect(order.indexOf('extendToText')).toBe(order.indexOf('landingGap') + 1);
+    expect(mleaderStyleProblem(settings({ maxPointsOn: false, extendToText: true }))).toBe(
+      undefined,
+    );
+  });
+
+  it('saves the style with no point limit and extending its leaders, and MLEADER follows it', async () => {
+    const s = setup();
+    await s.bus.submit('MLEADERSTYLE');
+    const was = s.request().styles.find((x) => x.name === 'Notes')!.settings;
+    expect(was).toMatchObject({ maxPointsOn: true, extendToText: false });
+    await s.act({
+      op: 'modify',
+      name: 'Notes',
+      settings: { ...was, maxPointsOn: false, extendToText: true },
+    });
+    expect(s.request().note).toBeUndefined();
+    expect(s.styleNamed('Notes')).toMatchObject({ maxLeaderPoints: 0, extendLeaderToText: true });
+    // The style's multileaders take it, but not one whose own value DXF 90's bit 30 keeps.
+    expect(s.leader(LEADER).extendLeaderToText).toBe(true);
+    await s.act({ op: 'new', name: 'Limited', from: 'Notes', settings: { ...was, maxPoints: 4 } });
+    expect(s.styleNamed('Limited')).toMatchObject({
+      maxLeaderPoints: 4,
+      extendLeaderToText: false,
+    });
+    await s.bus.answer({ kind: 'dialog', action: 'ok' });
+    // MLEADER with Notes current asks for points until Enter, past the old limit of two.
+    await s.bus.submit('MLEADER');
+    for (const p of [
+      { x: 100, y: 0 },
+      { x: 110, y: 5 },
+      { x: 120, y: 0 },
+      { x: 130, y: 5 },
+      { x: 140, y: 5 },
+    ]) {
+      expect(s.bus.prompt?.kind).toBe('point');
+      await s.bus.answer({ kind: 'point', point: p });
+    }
+    expect(s.bus.prompt?.kind).toBe('point');
+    await s.bus.submit('');
+    expect(s.bus.prompt?.kind).not.toBe('point');
+  });
+
+  it('keeps a multileader’s own Extend leader to text when its override bit is set', async () => {
+    const own: MultiLeaderGeometry = {
+      ...textLeader(MLEADER_OVERRIDES.extendLeaderToText),
+    };
+    const s = setup({ more: [entityInit('B2', own)] });
+    await s.bus.submit('MLEADERSTYLE');
+    const was = s.request().styles.find((x) => x.name === 'Notes')!.settings;
+    await s.act({ op: 'modify', name: 'Notes', settings: { ...was, extendToText: true } });
+    expect(s.leader(LEADER).extendLeaderToText).toBe(true);
+    expect(s.leader('B2').extendLeaderToText).toBeUndefined();
+    await s.act({ op: 'modify', name: 'Notes', settings: { ...was, extendToText: false } });
+    expect(s.leader(LEADER).extendLeaderToText).toBeUndefined();
+  });
+
+  it('gives a new multileader its style’s Extend leader to text', () => {
+    const g = newMultiLeader({
+      style: { ...notes, extendLeaderToText: true },
+      settings: settingsOf({ ...notes, maxLeaderPoints: 0 }),
+      vertices: [{ x: 0, y: 0 }],
+      landing: { connection: { x: 10, y: 10 }, direction: { x: 1, y: 0 }, end: { x: 18, y: 10 } },
+      scale: 1,
+      text: {
+        content: 'A',
+        style: STANDARD_TEXT,
+        position: { x: 20, y: 12 },
+        attachment: 1,
+        width: 0,
+      },
+    });
+    expect(g.extendLeaderToText).toBe(true);
+    expect(g.overrideFlags & MLEADER_OVERRIDES.extendLeaderToText).toBe(0);
+    expect(textLeader().extendLeaderToText).toBeUndefined();
+    expect(settingsOf({ ...notes, maxLeaderPoints: 0 }).maxPoints).toBe(0);
+    expect(settingsOf({ ...notes, maxLeaderPoints: 1 }).maxPoints).toBe(2);
+  });
+});

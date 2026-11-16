@@ -521,6 +521,34 @@ describe('triyaToAcad multileaders and viewports', () => {
     expect(ml(reopened(bytes, e.handle)!.geom).blockConnection).toBe(1);
   });
 
+  // M4-14: Extend leader to text, DXF 295 from R2013 (AC1027), refused in an older drawing.
+  it('writes Extend leader to text, and refuses it before R2013', () => {
+    const model = open();
+    const e = find(model, 'MULTILEADER');
+    const g = ml(e.geom);
+    expect(g.extendLeaderToText).toBeUndefined();
+    edit(model, (b) => b.updateEntity(e.id, { geom: changed(g, { extendLeaderToText: true }) }));
+    for (const format of ['dxf', 'dwg'] as const) {
+      const bytes = save(model, format);
+      const saved = readCadDocument(bytes).getCadObject(Number.parseInt(e.handle, 16));
+      expect((saved as MultiLeader).extendedToText, format).toBe(true);
+      expect(ml(reopened(bytes, e.handle)!.geom).extendLeaderToText, format).toBe(true);
+    }
+    // Turned off again.
+    const on = find(model, 'MULTILEADER');
+    edit(model, (b) =>
+      b.updateEntity(on.id, { geom: changed(on.geom, { extendLeaderToText: undefined }) }),
+    );
+    expect(ml(reopened(save(model), e.handle)!.geom).extendLeaderToText).toBeUndefined();
+    const old = drawing(ACadVersion.AC1024);
+    const m2 = open(old);
+    const e2 = find(m2, 'MULTILEADER');
+    edit(m2, (b) =>
+      b.updateEntity(e2.id, { geom: changed(e2.geom, { extendLeaderToText: true }) }),
+    );
+    expect(() => triyaToAcad(readCadDocument(old), m2)).toThrow(/Extend leader to text/);
+  });
+
   it('adds new multileaders and viewports under the engine handles', () => {
     const model = open();
     const text = find(model, 'MULTILEADER');

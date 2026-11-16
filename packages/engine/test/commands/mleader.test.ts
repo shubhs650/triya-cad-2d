@@ -713,10 +713,12 @@ describe('MLEADER', () => {
       landing: { connection: { x: 5, y: 5 }, direction: { x: 1, y: 0 }, end: { x: 5.36, y: 5 } },
     });
     expect(g.overrideFlags).toBe(MLEADER_OVERRIDES.scale);
+    // DXF 90 = 0 is no limit (M4-14); a value below 2 otherwise takes AutoCAD's least, 2.
     expect(settingsOf({ ...standard, contentType: 3, maxLeaderPoints: 0 })).toMatchObject({
       contentType: 0,
-      maxPoints: 2,
+      maxPoints: 0,
     });
+    expect(settingsOf({ ...standard, maxLeaderPoints: 1 }).maxPoints).toBe(2);
   });
 });
 
