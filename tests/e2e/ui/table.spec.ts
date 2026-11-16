@@ -14,6 +14,8 @@
 // table is drawn from the `*T` block the table engine wrote for it, a title row merged across, a
 // header row and the data rows. The command's prompts, the engine's drawing and the save are
 // unit- and corpus-tested in packages/engine and packages/testkit.
+// M4-05 part 7: keys typed straight on after Tab, before the next cell's editor opens, are typed
+// into that cell (AutoCAD's cell editor keeps them).
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, TableGeometry } from '@triya/engine';
 import { activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
@@ -108,6 +110,41 @@ test('-TABLE inserts a table the table engine draws', async ({ page }) => {
     ]);
   await page.waitForTimeout(300);
   await shot('2-after.png');
+});
+
+test('keys typed on after Tab reach the next cell', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const box = (await activeCanvas(page).boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, p(-1, -3), 'Specify opposite corner:');
+  await type(page, p(11, 1), 'Command:');
+  await type(page, '-TABLE', 'Enter number of columns or [Auto] <5>:');
+  await type(page, '2', 'Enter number of rows or [Auto] <1>:');
+  await type(page, '1', 'Specify insertion point or [Style/Width/Height]:');
+  await type(page, p(0, 0), 'Enter text:');
+  await expect(page.getByRole('textbox', { name: 'Multiline text' })).toBeFocused();
+  // Typed without waiting for each cell's editor, as a drafter types a schedule.
+  for (const [k, text] of ['SCHEDULE', 'Mark', 'Size', 'N1', '2"'].entries()) {
+    if (k > 0) await page.keyboard.press('Tab');
+    await page.keyboard.type(text);
+  }
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => (await tables(page))[0]?.texts)
+    .toEqual([
+      ['SCHEDULE', ''],
+      ['Mark', 'Size'],
+      ['N1', '2"'],
+    ]);
 });
 
 test('TABLE opens Insert Table, drags the table and types its cells', async ({ page }) => {

@@ -304,3 +304,57 @@ export function cellMoveFor(
       return undefined;
   }
 }
+
+/** A key typed while a table cell's editor gives way to the next cell's. */
+export interface CarriedKey {
+  readonly key: string;
+  readonly shift: boolean;
+  /** Ctrl or Cmd held: Ctrl+Enter ends the editing. */
+  readonly ctrl?: boolean;
+}
+
+/** What a carried key does in the next cell's editor. */
+export type AheadOp =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'backspace' }
+  | { readonly kind: 'break' }
+  | { readonly kind: 'move'; readonly move: CellMove }
+  | { readonly kind: 'cancel' }
+  | { readonly kind: 'finish' };
+
+/**
+ * Keys typed after Tab (or an arrow) left a table cell and before the next cell's editor opened
+ * (M4-05 part 7): AutoCAD's cell editor keeps them, so a drafter typing a schedule row by row
+ * loses nothing. They are typed into the next cell in order up to a Tab, Shift+Tab, Esc or
+ * Ctrl+Enter, which moves on, cancels or ends the editing as it would have; `rest` are the keys after that, for the cell it leads
+ * to. A key that does not type (an arrow, Shift alone) is dropped: where the caret was is gone.
+ */
+export function cellAhead(keys: readonly CarriedKey[]): {
+  ops: AheadOp[];
+  rest: readonly CarriedKey[];
+} {
+  const ops: AheadOp[] = [];
+  for (let i = 0; i < keys.length; i++) {
+    const { key, shift, ctrl } = keys[i]!;
+    if (key === 'Enter' && ctrl) {
+      ops.push({ kind: 'finish' });
+      return { ops, rest: [] };
+    }
+    if (ctrl) continue;
+    if (key === 'Tab') {
+      ops.push({ kind: 'move', move: shift ? 'previous' : 'next' });
+      return { ops, rest: keys.slice(i + 1) };
+    }
+    if (key === 'Escape') {
+      ops.push({ kind: 'cancel' });
+      return { ops, rest: [] };
+    }
+    const last = ops.at(-1);
+    if (key.length === 1) {
+      if (last?.kind === 'text') ops[ops.length - 1] = { kind: 'text', text: last.text + key };
+      else ops.push({ kind: 'text', text: key });
+    } else if (key === 'Backspace') ops.push({ kind: 'backspace' });
+    else if (key === 'Enter') ops.push({ kind: 'break' });
+  }
+  return { ops, rest: [] };
+}
