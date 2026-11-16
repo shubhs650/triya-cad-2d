@@ -511,6 +511,30 @@ function headerOverride(
 }
 
 /**
+ * The DIMVARs the drawing's header sets other than its current style `style` ("<style
+ * overrides>", M4-03), as a `DSTYLE` list holds them: references as handles, DIMDSEP as its
+ * character code. Empty when the header's `$DIMSTYLE` is another style.
+ */
+export function headerDimvarOverrides(
+  model: DocumentModel,
+  style: DimStyleRecord,
+): Record<string, DimVarValue> {
+  const out: Record<string, DimVarValue> = {};
+  const current = model.header.get('$DIMSTYLE');
+  if (typeof current !== 'string' || current.toUpperCase() !== style.name.toUpperCase()) {
+    return out;
+  }
+  for (const [code, name] of Object.entries(DIMVAR_BY_CODE)) {
+    if (OBSOLETE.has(name)) continue;
+    const header = model.header.get(`$${name}`);
+    if (header === undefined || typeof header === 'object') continue;
+    const value = headerOverride(model, Number(code), name, header, style.vars[name]);
+    if (value !== undefined) out[name] = value;
+  }
+  return out;
+}
+
+/**
  * A new dimension's `DSTYLE` overrides (M2-31): the DIMVARs the drawing's header sets other
  * than its current style, as AutoCAD gives a dimension made while DIMVARs are set without
  * saving them to a style ("<style overrides>"; AutoCAD 2024 Help, "About Overriding Dimension
@@ -522,17 +546,8 @@ export function headerDimensionXdata(
   model: DocumentModel,
   style: DimStyleRecord,
 ): Xdata | undefined {
-  const current = model.header.get('$DIMSTYLE');
-  if (typeof current !== 'string' || current.toUpperCase() !== style.name.toUpperCase()) {
-    return undefined;
-  }
   let e: { readonly xdata?: Xdata } = {};
-  for (const [code, name] of Object.entries(DIMVAR_BY_CODE)) {
-    if (OBSOLETE.has(name)) continue;
-    const header = model.header.get(`$${name}`);
-    if (header === undefined || typeof header === 'object') continue;
-    const value = headerOverride(model, Number(code), name, header, style.vars[name]);
-    if (value === undefined) continue;
+  for (const [name, value] of Object.entries(headerDimvarOverrides(model, style))) {
     const xdata = withDimvarOverride(e, style.handle, model, name, value);
     if (xdata === 'no-acad') return undefined;
     e = xdata === undefined ? {} : { xdata };

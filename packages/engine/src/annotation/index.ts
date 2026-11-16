@@ -5,4 +5,5 @@ export { mlineParts, mlineProblem } from './mline';
 export * from './tolerance';
 export * from './dimvars';
 export * from './dstyle';
+export * from './dimstyle-fields';
 export * from './radial-extension';
