@@ -141,6 +141,48 @@ test("another app's text pastes as multiline text", async ({ page }) => {
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
+test("a spreadsheet's cells paste as a table (M4-06)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+
+  // As Excel copies cells: tab-separated rows beside an HTML table, here with a merged title.
+  await page.evaluate(() =>
+    navigator.clipboard.write([
+      new ClipboardItem({
+        'text/plain': new Blob(['DOOR SCHEDULE\t\r\nMark\tSize\r\nD1\t900 x 2100\r\n'], {
+          type: 'text/plain',
+        }),
+        'text/html': new Blob(
+          [
+            '<table><tr><td colspan=2>DOOR SCHEDULE</td></tr><tr><td>Mark</td><td>Size</td></tr>' +
+              '<tr><td>D1</td><td>900&nbsp;x 2100</td></tr></table>',
+          ],
+          { type: 'text/html' },
+        ),
+      }),
+    ]),
+  );
+  await page.keyboard.press('Control+v');
+  await expect(prompt(page)).toHaveText('Specify insertion point:');
+  await type(page, '10,20', 'Command:');
+  await expect.poll(async () => (await added(page)).map((e) => e.type)).toContain('ACAD_TABLE');
+  const table = (await added(page)).find((e) => e.type === 'ACAD_TABLE')!;
+  const g = table.geom as unknown as {
+    position: { x: number; y: number };
+    cells: { text: string; columnSpan: number; merged: boolean }[][];
+  };
+  expect(g.position).toEqual({ x: 10, y: 20 });
+  expect(g.cells.map((row) => row.map((c) => (c.merged ? null : c.text)))).toEqual([
+    ['DOOR SCHEDULE', null],
+    ['Mark', 'Size'],
+    ['D1', '900 x 2100'],
+  ]);
+  expect(g.cells[0]![0]!.columnSpan).toBe(2);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
 type Rgb = readonly number[];
 const isRed = ([r, g, b]: Rgb) => r! > 200 && g! < 60 && b! < 60;
 const isBlue = ([r, g, b]: Rgb) => b! > 200 && r! < 60 && g! < 60;

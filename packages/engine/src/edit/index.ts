@@ -56,6 +56,7 @@ export * from './dimstyle-preview';
 export * from './dimstyle-import';
 export * from './table';
 export * from './table-grid';
+export * from './spreadsheet';
 export * from './named-view';
 export { offsetCurveOf, offsetGeometry, offsetSide } from './offset';
 export {

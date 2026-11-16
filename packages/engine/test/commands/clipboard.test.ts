@@ -592,3 +592,178 @@ describe("another app's picture (M2-54)", () => {
     expect(previews.at(-1)).toEqual([]);
   });
 });
+
+describe("a spreadsheet's cells (M4-06)", () => {
+  const STANDARD = '30';
+  /**
+   * A drawing whose app found a spreadsheet's cells on the system clipboard: `reply` is what it
+   * answers the paste's read with. `fonts` measures text as the renderer would: 5 units a
+   * character, each MTEXT paragraph a line (no wrapping).
+   */
+  function withClipboard(reply: ViewReply, fonts = false) {
+    const init = sampleInit();
+    const model = DocumentModel.create({
+      ...init,
+      tables: {
+        ...init.tables,
+        textStyles: [
+          {
+            handle: STANDARD,
+            name: 'Standard',
+            font: 'arial.ttf',
+            height: 0,
+            widthFactor: 1,
+            obliqueAngle: 0,
+            lastHeight: 2.5,
+            generation: 0,
+            trueTypeFlags: 0,
+          } satisfies TextStyleRecord,
+        ],
+      },
+    });
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const asked: string[] = [];
+    const paragraphs = (t: MTextGeometry) => t.contents.split('\\P');
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) => {
+          asked.push(r.op);
+          if (r.op === 'clipboard') return Promise.resolve(reply);
+          if (fonts && r.op === 'textWidths') {
+            return Promise.resolve<ViewReply>({
+              ok: true,
+              widths: r.texts.map((t) => Math.max(...paragraphs(t).map((p) => p.length * 5))),
+            });
+          }
+          if (fonts && r.op === 'textBox') {
+            const n = paragraphs(r.text).length;
+            const h = r.text.height * (1 + ((n - 1) * 5) / 3);
+            return Promise.resolve<ViewReply>({
+              ok: true,
+              box: { minX: 0, minY: -h, maxX: 1, maxY: 0 },
+            });
+          }
+          return Promise.resolve<ViewReply>({ ok: false, message: 'no canvas' });
+        },
+      },
+    });
+    const previews: (readonly EntityGeometry[])[] = [];
+    bus.on((e: BusEvent) => {
+      if (e.type === 'preview') previews.push(e.geometry);
+    });
+    const added = () => [...model.entities()].filter((e) => !before.has(e.id));
+    return { model, bus, added, asked, previews };
+  }
+
+  const table = (e: Entity | undefined) => {
+    if (e?.geom.kind !== 'ACAD_TABLE') throw new Error(`not a table: ${e?.type}`);
+    return e.geom;
+  };
+
+  it('pastes tab-separated rows as a table at the insertion point, as one undo step', async () => {
+    const { model, bus, added, previews } = withClipboard({
+      ok: true,
+      text: 'Mark\tQty\tSize\r\nB1\t4\t12 {typ}\r\nB2\t\t16\r\n',
+    });
+    await bus.script(['PASTECLIP']);
+    expect(bus.promptText).toBe('Specify insertion point:');
+    // The table's lines are dragged by its upper left corner.
+    expect(previews.at(-1)!.length).toBeGreaterThan(0);
+    expect(previews.at(-1)!.every((g) => g.kind === 'LINE')).toBe(true);
+    await bus.script(['100,200']);
+    expect(bus.command).toBeUndefined();
+    const [e] = added().filter((x) => x.type === 'ACAD_TABLE');
+    const g = table(e);
+    expect(e!.owner).toBe(MODEL_SPACE);
+    expect(model.tables.layers.get(e!.layer)?.name).toBe('WALLS');
+    expect(g.position).toEqual({ x: 100, y: 200 });
+    expect(g.cells.map((row) => row.map((c) => c.text))).toEqual([
+      ['Mark', 'Qty', 'Size'],
+      ['B1', '4', '12 \\{typ\\}'],
+      ['B2', '', '16'],
+    ]);
+    expect(g.cells.flat().every((c) => !c.merged && c.columnSpan === 1)).toBe(true);
+    // The drawing had no table style: it gets AutoCAD's Standard, metric here, as TABLE does.
+    const style = model.tables.tableStyles.get(g.style!);
+    expect(style?.name).toBe('Standard');
+    // Without the fonts the columns take TABLE's width and the rows a line each.
+    expect(g.columnWidths).toEqual([63.5, 63.5, 63.5]);
+    expect(g.rowHeights.map(r6)).toEqual([11, 9, 9]);
+    // Its block is drawn.
+    expect(g.block).toBeDefined();
+    await bus.script(['U']);
+    expect(added()).toHaveLength(0);
+    expect(model.tables.tableStyles.size).toBe(0);
+  });
+
+  it('pastes the cells the app read from an HTML table, merged ranges kept', async () => {
+    const { bus, added } = withClipboard({
+      ok: true,
+      text: 'ignored\tfor the cells',
+      cells: [
+        [
+          { text: 'Schedule', rowSpan: 1, columnSpan: 2, merged: false },
+          { text: '', rowSpan: 1, columnSpan: 1, merged: true },
+        ],
+        [
+          { text: 'A', rowSpan: 1, columnSpan: 1, merged: false },
+          { text: 'B', rowSpan: 1, columnSpan: 1, merged: false },
+        ],
+      ],
+    });
+    await bus.script(['PASTECLIP', '0,0']);
+    const g = table(added().find((x) => x.type === 'ACAD_TABLE'));
+    expect(g.cells[0]![0]).toMatchObject({ text: 'Schedule', columnSpan: 2, merged: false });
+    expect(g.cells[0]![1]).toMatchObject({ merged: true });
+    expect(g.cells[1]!.map((c) => c.text)).toEqual(['A', 'B']);
+  });
+
+  it('fits the columns to their text and the rows to their lines, as the renderer lays them out', async () => {
+    const long = 'x'.repeat(80);
+    const { bus, added, asked } = withClipboard(
+      { ok: true, text: `Mark\tNote\tLong\nB1\t"two lines here\nok"\t${long}\n` },
+      true,
+    );
+    await bus.script(['PASTECLIP', '0,0']);
+    expect(asked).toContain('textWidths');
+    const g = table(added().find((x) => x.type === 'ACAD_TABLE'));
+    // Widest text and the margins either side, at least half TABLE's width and at most four times.
+    expect(g.columnWidths.map(r6)).toEqual([31.75, 73, 254]);
+    // The header row holds a paragraph more: its row grows by a line spacing of its text.
+    expect(g.rowHeights.map(r6)).toEqual([11, 15]);
+  });
+
+  it('pastes into the current table style', async () => {
+    const reply: ViewReply = { ok: true, text: 'a\tb\n' };
+    const { model, bus, added } = withClipboard(reply);
+    await bus.script(['PASTECLIP', '0,0']);
+    const first = table(added().find((x) => x.type === 'ACAD_TABLE')).style;
+    await bus.script(['PASTECLIP', '0,50']);
+    const tables = added().filter((x) => x.type === 'ACAD_TABLE');
+    expect(tables).toHaveLength(2);
+    expect(table(tables[1]).style).toBe(first);
+    expect(model.tables.tableStyles.size).toBe(1);
+  });
+
+  it('pastes the cells with PASTECLIP only, and text that is no spreadsheet as multiline text', async () => {
+    const cells = withClipboard({ ok: true, text: 'a\tb\nc\td' });
+    await cells.bus.script(['PASTEBLOCK']);
+    expect(cells.added()).toHaveLength(0);
+    expect(cells.bus.history.at(-1)).toBe(
+      "The Clipboard holds a spreadsheet's cells, which PASTECLIP pastes as a table.",
+    );
+    const words = withClipboard({ ok: true, text: 'one\ttab\nnone here\n' });
+    await words.bus.script(['PASTECLIP', '0,0']);
+    expect(words.added().map((e) => e.type)).toEqual(['MTEXT']);
+  });
+
+  it('ends on Esc at the insertion point, adding nothing', async () => {
+    const { bus, added } = withClipboard({ ok: true, text: 'a\tb\n' });
+    await bus.script(['PASTECLIP']);
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+    expect(added()).toHaveLength(0);
+  });
+});
