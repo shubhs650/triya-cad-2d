@@ -84,6 +84,7 @@ import { systemVariable } from './sysvars';
 import { gripInfoOf } from '../edit/array-grips';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
+import type { SpellService } from '../edit/spelling';
 import { distance } from '../geom/vec';
 import { wholeGroups } from '../edit/groups';
 import type { DragPreview } from './drag';
@@ -234,6 +235,8 @@ export interface PromptBusOptions {
   readonly dimensions?: DimensionRegenerator | undefined;
   /** A pattern hatch's lines, for EXPLODE (M3-12 part 3); none by default. */
   readonly hatchLines?: HatchLinesOf | undefined;
+  /** The spelling dictionary SPELL checks with (M4-09 part 4); none by default. */
+  readonly spelling?: SpellService | undefined;
   /** The time DATE and CDATE tell (M2-59); the system's local time by default. */
   readonly clock?: Clock;
 }
@@ -350,6 +353,7 @@ export class PromptBus {
   readonly #view: ViewHost;
   readonly #dimensions: DimensionRegenerator | undefined;
   readonly #hatchLines: HatchLinesOf | undefined;
+  readonly #spelling: SpellService | undefined;
   readonly #listeners = new Set<(e: BusEvent) => void>();
   readonly #stack: Frame[] = [];
   #collectors: Collector[] = [];
@@ -403,6 +407,7 @@ export class PromptBus {
     this.#view = options.view ?? NO_VIEW;
     this.#dimensions = options.dimensions;
     this.#hatchLines = options.hatchLines;
+    this.#spelling = options.spelling;
     this.#clock = options.clock ?? SYSTEM_CLOCK;
     this.#pickfirstOn = options.pickfirst ?? true;
     this.#pickadd = options.pickadd ?? DEFAULT_PICKADD;
@@ -1151,6 +1156,7 @@ export class PromptBus {
       view: { request: (r) => this.#hostRequest(r) },
       dimensions: this.#dimensions,
       hatchLines: this.#hatchLines,
+      spelling: this.#spelling,
       clock: this.#clock,
     };
   }

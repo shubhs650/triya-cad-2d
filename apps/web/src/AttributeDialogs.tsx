@@ -50,6 +50,7 @@ import { TextStyleDialog } from './TextStyleDialog';
 import { TableStyleDialog } from './TableStyleDialog';
 import { MLeaderStyleDialog } from './MLeaderStyleDialog';
 import { FindReplaceDialog } from './FindReplaceDialog';
+import { SpellDialog } from './SpellDialog';
 import { HatchDialog } from './HatchDialog';
 import { ToleranceDialog } from './ToleranceDialog';
 
@@ -133,6 +134,8 @@ export function AttributeDialogs({
       return <MLeaderStyleDialog key={key} doc={doc.id} request={d} />;
     case 'find':
       return <FindReplaceDialog key={key} doc={doc.id} request={d} />;
+    case 'spell':
+      return <SpellDialog key={key} doc={doc.id} request={d} />;
     case 'hatch':
       return <HatchDialog key={key} doc={doc.id} request={d} patternSources={patternSources} />;
     case 'tolerance':

@@ -42,6 +42,9 @@ const FROZEN = '33';
 const LOCKED = '34';
 const PE_URL = '35';
 const ANON = '36';
+const DYNAMIC = '37';
+const STATE = '38';
+const XREF = '39';
 
 const insert = (block: string): InsertGeometry => ({
   kind: 'INSERT',
@@ -146,11 +149,12 @@ const dimension = {
   lineSpacing: 1,
 } as DimensionGeometry;
 
-function setup(o: { measure?: boolean } = {}) {
+function setup(o: { measure?: boolean; references?: boolean; noLayouts?: boolean } = {}) {
   const base = sampleInit();
   const model = DocumentModel.create({
     ...base,
     handSeed: '100',
+    ...(o.noLayouts && { layouts: [] }),
     tables: {
       ...base.tables,
       layers: [
@@ -164,12 +168,39 @@ function setup(o: { measure?: boolean } = {}) {
         ...base.tables!.blockRecords!,
         blockRecord(DOORTAG, 'DOORTAG'),
         blockRecord(ANON, '*U9'),
+        ...(o.references
+          ? [
+              blockRecord(DYNAMIC, 'DOOR_DYN'),
+              blockRecord(STATE, '*U12'),
+              { ...blockRecord(XREF, 'PLAN'), flags: 4 },
+            ]
+          : []),
       ],
     },
     blocks: [
       ...base.blocks!,
       { handle: DOORTAG, name: 'DOORTAG', basePoint: { x: 0, y: 0 } },
       { handle: ANON, name: '*U9', basePoint: { x: 0, y: 0 } },
+      // M4-09 part 4: a dynamic block's state and a loaded xref.
+      ...(o.references
+        ? [
+            {
+              handle: DYNAMIC,
+              name: 'DOOR_DYN',
+              basePoint: { x: 0, y: 0 },
+              dynamic: { name: 'Door' },
+            },
+            { handle: STATE, name: '*U12', basePoint: { x: 0, y: 0 }, dynamicOf: DYNAMIC },
+            {
+              handle: XREF,
+              name: 'PLAN',
+              basePoint: { x: 0, y: 0 },
+              flags: 4,
+              xrefPath: 'plan.dxf',
+              xrefLoaded: ['70'],
+            },
+          ]
+        : []),
     ],
     entities: [
       ...base.entities!,
@@ -206,6 +237,14 @@ function setup(o: { measure?: boolean } = {}) {
       entityInit('5C', { ...insert(DOORTAG), position: { x: 300, y: 0 } }),
       entityInit('5D', text('DOOR ANONYMOUS', { x: 0, y: 0 }), { owner: ANON }),
       entityInit('5E', insert(ANON)),
+      ...(o.references
+        ? [
+            entityInit('62', text('DOOR STATE', { x: 0, y: 0 }), { owner: STATE }),
+            entityInit('63', { ...insert(STATE), position: { x: 400, y: 0 } }),
+            entityInit('70', text('DOOR IN XREF', { x: 0, y: 0 }), { owner: XREF }),
+            entityInit('64', { ...insert(XREF), position: { x: 500, y: 0 } }),
+          ]
+        : []),
     ],
   });
   const asked: ViewRequest[] = [];
@@ -515,5 +554,49 @@ describe('FIND', () => {
     const t = s.geom<TableGeometry>('56');
     expect(t.cells[0]![0]!.text).toBe('DOOR LIST');
     expect(t.rowHeights).toEqual(table.rowHeights);
+  });
+
+  it("Search blocks finds text in a dynamic block's state, listed by the block's name", async () => {
+    const s = setup({ references: true });
+    await s.bus.submit('FIND');
+    const only = { ...DEFAULT_FIND_SETTINGS.options, types: ['text' as const] };
+    await s.press({ op: 'find' }, { find: 'state', listResults: true, options: only });
+    expect(handles(s.dialog()!.results!)).toEqual(['Model (block Door)|Text|DOOR STATE']);
+    // Shown through the reference that draws it.
+    expect(s.zoomed()).toEqual(['63']);
+    await s.press({ op: 'replaceAll' }, { replace: 'OPEN' });
+    expect(s.geom<TextGeometry>('62').value).toBe('DOOR OPEN');
+    await s.press({ op: 'find' }, { find: 'door', options: { ...only, searchBlocks: false } });
+    expect(handles(s.dialog()!.results!)).not.toContain('Model (block Door)|Text|DOOR OPEN');
+    // Other anonymous blocks stay out.
+    expect(handles(s.dialog()!.results!).some((r) => r.includes('ANONYMOUS'))).toBe(false);
+  });
+
+  it('Search xrefs finds the text of a loaded xref but never replaces it', async () => {
+    const s = setup({ references: true });
+    await s.bus.submit('FIND');
+    const only = { ...DEFAULT_FIND_SETTINGS.options, types: ['text' as const] };
+    expect(DEFAULT_FIND_SETTINGS.options.searchXrefs).toBe(false);
+    await s.press({ op: 'find' }, { find: 'xref', listResults: true, options: only });
+    expect(s.dialog()).toMatchObject({ note: NOT_FOUND });
+    await s.press(
+      { op: 'find' },
+      { find: 'xref', replace: 'X', options: { ...only, searchXrefs: true } },
+    );
+    expect(handles(s.dialog()!.results!)).toEqual(['Model (xref PLAN)|Text|DOOR IN XREF']);
+    expect(s.zoomed()).toEqual(['64']);
+    await s.press({ op: 'replace' });
+    expect(s.geom<TextGeometry>('70').value).toBe('DOOR IN XREF');
+    expect(s.dialog()).toMatchObject({ note: 'The text is in an xref and cannot be replaced.' });
+    await s.press({ op: 'replaceAll' }, { find: 'door' });
+    expect(s.geom<TextGeometry>('70').value).toBe('DOOR IN XREF');
+    expect(s.dialog()!.note).toMatch(/1 match in an xref was not\.$/);
+  });
+
+  it('Entire drawing in a drawing with no layouts listed searches the current space', async () => {
+    const s = setup({ noLayouts: true });
+    await s.bus.submit('FIND');
+    await s.press({ op: 'find' }, { find: 'door', where: 'drawing', listResults: true });
+    expect(s.dialog()!.results!.length).toBeGreaterThan(0);
   });
 });

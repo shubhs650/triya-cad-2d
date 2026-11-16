@@ -12,6 +12,7 @@ import { GROUPDISPLAYMODE, PICKADD, PICKAUTO, PICKSTYLE } from '../selection/loo
 import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
+import type { SpellService } from '../edit/spelling';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
 import {
   paperViewsChange,
@@ -297,6 +298,8 @@ export interface EngineServices {
   readonly measureDimension?: DimensionMeasure;
   /** A pattern hatch's lines, which EXPLODE turns into lines (M3-12 part 3, `@triya/hatch`). */
   readonly hatchLines?: HatchLinesOf;
+  /** The spelling dictionary SPELL checks with (M4-09 part 4, `@triya/text`'s). */
+  readonly spelling?: SpellService;
 }
 
 export class EngineSession {
@@ -340,6 +343,7 @@ export class EngineSession {
       registry: this.#registry,
       dimensions: services.dimensions,
       hatchLines: services.hatchLines,
+      spelling: services.spelling,
       apply: (change) => {
         this.model.apply(change);
         this.#emit({ type: 'change', change });

@@ -10,6 +10,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { EntityGeometry } from '../model/types';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
+import type { SpellService } from '../edit/spelling';
 import { ALIASES } from './aliases';
 import type { ViewHost } from './view/host';
 import type { UndoStack } from './undo';
@@ -110,6 +111,11 @@ export interface CommandContext {
    * Without it (scripts, tests that do not give one) hatches are not exploded.
    */
   readonly hatchLines?: HatchLinesOf | undefined;
+  /**
+   * The spelling dictionary SPELL checks with (M4-09 part 4, loaded when first asked for).
+   * Without it (scripts, tests that do not give one) SPELL says it has none.
+   */
+  readonly spelling?: SpellService | undefined;
   /** The time, for the variables that tell it (DATE, CDATE; M2-59). */
   readonly clock: Clock;
 }
