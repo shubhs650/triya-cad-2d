@@ -239,6 +239,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // TEXTALIGNSPACING 0 Distribute, 1 Set spacing, 2 Current vertical, 3 Current horizontal (2).
   { name: 'TEXTALIGNMODE', store: 'app', kind: 'integer', min: 0, max: 11 },
   { name: 'TEXTALIGNSPACING', store: 'app', kind: 'integer', min: 0, max: 3 },
+  // M4-07 part 5 (AutoCAD 2024 Help, "HPDLGMODE", Saved in: Registry): whether HATCH, GRADIENT
+  // and HATCHEDIT open the Hatch and Gradient and Hatch Edit dialogs: 0 not (HATCH's seTtings
+  // still does), 1 always, 2 when the ribbon is closed (2; Triya has no ribbon until M7-01).
+  { name: 'HPDLGMODE', store: 'app', kind: 'integer', min: 0, max: 2 },
 ];
 
 /**

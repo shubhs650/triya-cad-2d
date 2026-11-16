@@ -1046,6 +1046,8 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
       const record = k?.blockRecord ?? (c.value instanceof BlockRecord ? c.value : null);
       const block = isBlock ? ref(record) : undefined;
       const format = cellFormat(t, i, j, c);
+      // DXF 300 in the cell's CELL_VALUE; DWG R2010+ repeats it in the content format.
+      const valueFormat = isBlock ? '' : (k?.cadValue.format ?? '');
       return {
         type: isBlock ? 'block' : 'text',
         text: isBlock ? '' : cellText(c),
@@ -1058,6 +1060,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
           t.rows[i]?.cellStyleOverride,
           c,
         ),
+        ...(valueFormat ? { valueFormat } : {}),
         ...(format ? { format } : {}),
       };
     }),

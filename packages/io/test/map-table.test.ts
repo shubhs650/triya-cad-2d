@@ -95,6 +95,15 @@ describe('ACAD_TABLE', () => {
     });
   });
 
+  it('maps a value’s format string (DXF 300 in CELL_VALUE) for a text cell (M4-05 part 7)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const { t } = table(doc);
+    t.rows[0]!.cells[0]!.content!.cadValue.format = '%tc1';
+    const g = mapOne(doc, t);
+    expect(g.cells[0]![0]).toEqual({ ...plain, text: 'PARTS LIST', valueFormat: '%tc1' });
+    expect(g.cells[0]![1]).not.toHaveProperty('valueFormat');
+  });
+
   it('derives spans from merged ranges, as DWG states them', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     const { t } = table(doc);

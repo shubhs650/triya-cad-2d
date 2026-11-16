@@ -186,14 +186,17 @@ describe('merging', () => {
 
 describe('what the Table Cell menu offers', () => {
   it('inserts and deletes rows only among the data rows', () => {
-    // The cells' formatting (M4-05 part 4) applies to any cells.
-    const FORMATS = ['BAckground', 'ALignment', 'BOrders', 'Height'];
+    // The cells' formatting (M4-05 part 4) applies to any cells, Match Cell too (part 7);
+    // Remove All Property Overrides only where a cell overrides something.
+    const FORMATS = ['BAckground', 'ALignment', 'BOrders', 'Height', 'Match'];
     const at = (r0: number, r1: number, c0 = 0, c1 = 0) =>
       tableCellOptions(table(), STYLE, { r0, c0, r1, c1 });
     expect(at(2, 3)).toEqual([
       'Text',
       'Paste',
       ...FORMATS,
+      // Its first data row's first cell has a colour of its own.
+      'RemoveOverrides',
       'Above',
       'Below',
       'DeleteRows',
@@ -231,5 +234,18 @@ describe('what the Table Cell menu offers', () => {
       'Left',
       'Right',
     ]);
+    const overriding = table({
+      rowHeights: [1],
+      columnWidths: [1],
+      cells: [[cell('x', { format: { alignment: 5 } })]],
+    });
+    expect(tableCellOptions(overriding, plain, { r0: 0, c0: 0, r1: 0, c1: 0 })).toContain(
+      'RemoveOverrides',
+    );
+    // What the table overrides of the row type is not the cell's own.
+    const typeWide = { ...overriding, overrides: { data: { alignment: 5 } } };
+    expect(tableCellOptions(typeWide, plain, { r0: 0, c0: 0, r1: 0, c1: 0 })).not.toContain(
+      'RemoveOverrides',
+    );
   });
 });

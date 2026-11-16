@@ -2317,6 +2317,9 @@ const tableWriter: Writer<TableGeometry> = {
       // A new cell nothing was typed into holds no value, as AutoCAD leaves one.
       if (a.type === 'text' && (b ? b.text !== a.text : a.text !== '')) {
         writeCellText(cell, a.text);
+        // A new cell (a copied table's, M4-05 part 7) states its value's format string (DXF 300);
+        // an existing cell keeps the one it has.
+        if (!b && a.valueFormat) cell.contents[0]!.cadValue.format = a.valueFormat;
       }
       if (a.type === 'block' && (!b || b.block !== a.block)) {
         const block = insertable(r, a.block!)!;

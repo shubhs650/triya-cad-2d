@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   standardTableStyle,
+  tableCellShown,
   tableParts,
   tableRowHeight,
   tableRowTypes,
@@ -348,6 +349,34 @@ describe('table engine (M4-05)', () => {
     expect(
       tableParts(g, STYLE, { textStyle: 'STD' }).filter((p) => p.geom.kind === 'INSERT'),
     ).toEqual([]);
+  });
+
+  describe('a value format string’s text case (%tc, M4-05 part 7)', () => {
+    it('draws %tc1 upper case, %tc2 lower case, %tc3 a first capital and %tc4 title case', () => {
+      const shown = (text: string, valueFormat: string) =>
+        tableCellShown(cell(text, { valueFormat }));
+      expect(shown('cell format 1', '%tc1')).toBe('CELL FORMAT 1');
+      expect(shown('Cell FORMAT 2', '%tc2')).toBe('cell format 2');
+      expect(shown('cell format 3', '%tc3')).toBe('Cell format 3');
+      expect(shown('cell format 4', '%tc4')).toBe('Cell Format 4');
+      // A format without a text case, or none at all, leaves the value as typed.
+      expect(shown('35.00%', '%lu2%pr2%ps[,%]')).toBe('35.00%');
+      expect(tableCellShown(cell('as typed'))).toBe('as typed');
+    });
+
+    it('changes the text, never the MTEXT format codes around it', () => {
+      const c = cell('{\\C1;\\fArial|b1;bolt} m\\Pnut \\S1/2;', { valueFormat: '%tc1' });
+      expect(tableCellShown(c)).toBe('{\\C1;\\fArial|b1;BOLT} M\\PNUT \\S1/2;');
+    });
+
+    it('draws the cell so and leaves the value as typed for the editor', () => {
+      const g = table();
+      const rows = g.cells.map((r) => [...r]);
+      rows[2]![0] = cell('n1', { valueFormat: '%tc1' });
+      const t = texts(draw({ ...g, cells: rows }));
+      expect(t.map((x) => x.text)).toContain('N1');
+      expect(rows[2]![0]!.text).toBe('n1');
+    });
   });
 
   it('draws nothing for a table without rows or columns', () => {

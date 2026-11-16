@@ -112,6 +112,9 @@ export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
   LARGE_RADIAL_DIMENSION: 'TEXTEDIT',
   // A table opens the cell double-clicked in the In-Place Text Editor (M4-05 part 2).
   ACAD_TABLE: 'TABLEDIT',
+  // A hatch opens HATCHEDIT's Hatch Edit dialog (M4-07 part 5), as AutoCAD's does without the
+  // ribbon.
+  HATCH: 'HATCHEDIT',
 };
 
 /**

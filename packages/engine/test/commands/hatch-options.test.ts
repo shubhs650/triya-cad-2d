@@ -292,7 +292,7 @@ describe('HATCH boundaries (M4-07 part 2)', () => {
     const s = setup([...square(0, 0, 100), circle(50, 50, 30), circle(50, 50, 10)]);
     await s.bus.script(['HATCH', '5,5']);
     expect(s.bus.promptText).toBe(
-      'Pick internal point or [Select objects/remove Boundaries/Undo]:',
+      'Pick internal point or [Select objects/remove Boundaries/Undo/seTtings]:',
     );
     await s.bus.script(['B']);
     expect(s.bus.promptText).toBe('Select objects or [Add boundaries]:');

@@ -24,6 +24,7 @@ import type { TableStyleAction, TableStyleRequest } from './tablestyle';
 import type { MLeaderStyleAction, MLeaderStyleRequest } from './mleaderstyle';
 import type { FindAction, FindRequest, FindSettings } from './modify/find';
 import type { SpellAction, SpellRequest, SpellSettings } from './modify/spell';
+import type { HatchDialogAnswer, HatchDialogRequest } from './draw/hatch-dialog';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -726,6 +727,8 @@ export type DialogRequest =
   | FindRequest
   /** SPELL's Check Spelling (M4-09 part 4). */
   | SpellRequest
+  /** HATCH's Hatch and Gradient, HATCHEDIT's Hatch Edit (M4-07 part 5). */
+  | HatchDialogRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -949,6 +952,11 @@ export type PromptAnswer =
         readonly custom: readonly string[];
         readonly action?: SpellAction;
       };
+      /**
+       * The Hatch and Gradient or Hatch Edit dialog's state (HATCH, HATCHEDIT, M4-07 part 5),
+       * with the button that closed it to pick (`apply`), or none for OK.
+       */
+      readonly hatch?: HatchDialogAnswer;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

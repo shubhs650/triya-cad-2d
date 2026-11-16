@@ -13,8 +13,9 @@
 //     Reassociate hatch with new boundary? [Yes/No] <N>:                   (recreate Boundary)
 // Properties, Origin, COlor, LAyer and Transparency ask what -HATCH asks (hatch-options.ts), of
 // the hatch picked, and change it; each option changes the hatch once, as one undo step, and
-// ends the command, as AutoCAD's -HATCHEDIT does. HATCHEDIT runs the same prompts until the
-// Hatch Edit dialog comes (a later part of M4-07).
+// ends the command, as AutoCAD's -HATCHEDIT does. HATCHEDIT opens the Hatch Edit dialog
+// (hatch-dialog.ts, `hatchEditDialog`) when HPDLGMODE says so, and otherwise asks the same
+// prompts; a double click on a hatch runs HATCHEDIT.
 //
 // - A pattern laid out again at a new angle, scale or origin keeps the lines the hatch stores
 //   (turned and scaled about its origin, as the Properties palette does), so a pattern the
@@ -48,15 +49,29 @@ import { objectEdgeCurves } from '../../edit/trim-edges';
 import type { ChangeSetBuilder } from '../../model/builder';
 import type { EntityId } from '../../model/entity-ids';
 import type { EntityPatch } from '../../model/update';
-import type { Entity, HatchGeometry, HatchPatternLine, Transparency } from '../../model/types';
+import type { Entity, HatchGeometry, HatchLoop, HatchPatternLine } from '../../model/types';
 import { currentProps, currentTransparency } from '../../properties/current';
-import { patternPlacement } from '../../properties/edit';
-import { isPatterned, patternOrigin } from '../../properties/sheet';
+import { isPatterned } from '../../properties/sheet';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
+import {
+  addBoundaries as pickBoundaries,
+  assignSettings,
+  copySettings,
+  hatchDialog,
+  inheritFrom,
+  layerNames,
+  openHatchDialog,
+  originPoint,
+  previewHatch,
+  viewSelections,
+  type HatchDialogState,
+} from './hatch-dialog';
 import {
   HatchRun,
   NOT_BOUNDARIES,
+  dialogMode,
   drawHatchCommands,
+  extentsOrigin,
   hatchFill,
   hatchLayerRecord,
   initialSettings,
@@ -66,7 +81,6 @@ import {
 } from './hatch';
 import {
   DRAW_ORDERS,
-  GRADIENTS,
   SOLID,
   STYLES,
   USE_CURRENT,
@@ -79,6 +93,8 @@ import {
   origin,
   placed,
   properties,
+  settingsOf,
+  transparencyText,
   yesNo,
   type HatchDrawOrder,
   type HatchSettings,
@@ -109,7 +125,7 @@ const NON_ASSOCIATIVE = 'Triya makes non-associative hatches.';
 export function hatchCommands(): CommandDef[] {
   let settings: HatchSettings | undefined;
   const settingsFor = (ctx: CommandContext) => (settings ??= initialSettings(ctx));
-  return [...drawHatchCommands(settingsFor), hatcheditCommand(settingsFor)];
+  return [...drawHatchCommands(settingsFor, hatchDialog), hatcheditCommand(settingsFor)];
 }
 
 export function hatchCommand(): CommandDef {
@@ -135,12 +151,161 @@ export function hatcheditCommand(settingsFor: (ctx: CommandContext) => HatchSett
           ctx.message('Object selected is not a hatch.');
           continue;
         }
-        yield* editHatch(ctx, e as HatchEntity, settingsFor(ctx));
+        if (!ctx.dash && (await dialogMode(ctx))) {
+          yield* hatchEditDialog(ctx, e as HatchEntity, settingsFor(ctx));
+        } else yield* editHatch(ctx, e as HatchEntity, settingsFor(ctx));
         ctx.preview([]);
         return;
       }
     },
   };
+}
+
+/**
+ * The Hatch Edit dialog (hatch-dialog.ts) on the hatch picked. OK makes every change it holds
+ * in one undo step: boundaries added and removed, the pattern or gradient and its placement
+ * (`applySettings`), the island style, transparency, draw order and separate hatches.
+ */
+async function* hatchEditDialog(
+  ctx: CommandContext,
+  e: HatchEntity,
+  shared: HatchSettings,
+): Sub<void> {
+  const before = settingsOf(ctx, e, shared);
+  // Boundaries added are found as HATCH finds them, with the hatch's settings.
+  const run = new HatchRun(ctx, { ...copySettings(before), originMode: 0 });
+  run.setOrigin(before.origin);
+  const removed = new Set<number>();
+  let state: HatchDialogState = {
+    settings: { ...copySettings(before), drawOrder: 'none', separate: false },
+    transparency: transparencyText(e.transparency),
+    specified: false,
+    origin: before.origin,
+    extents: 0,
+    storeOrigin: false,
+    inheritOrigin: false,
+    tab: isGradient(before.pattern) ? 'gradient' : 'hatch',
+    more: false,
+  };
+  const loops = () => [...e.geom.loops.filter((_, i) => !removed.has(i)), ...run.found().loops];
+  const edited = async (): Promise<HatchGeometry | undefined> => {
+    const after = editedSettings(ctx, state, before, loops());
+    const lines = await editedLines(ctx, e.geom, before, after);
+    if (!lines) return undefined;
+    return { ...e.geom, loops: loops(), ...hatchFill(after, lines) };
+  };
+  for (;;) {
+    const { state: next, button } = yield* openHatchDialog(ctx, {
+      type: 'hatch',
+      edit: true,
+      ...state,
+      layers: layerNames(ctx),
+      boundaries: loops().length,
+      boundarySet: false,
+    });
+    state = next;
+    assignSettings(run.s, state.settings);
+    switch (button) {
+      case undefined:
+        await applyEdit(ctx, e, shared, before, state, run, removed);
+        return;
+      case 'pick':
+      case 'select':
+        yield* pickBoundaries(ctx, run, button === 'select', async () => {
+          const g = await edited();
+          ctx.preview(g ? [g] : []);
+        });
+        break;
+      case 'remove': {
+        const a = yield ctx.prompt.selection({ message: 'Select Objects' });
+        if (a.kind !== 'selection' || a.ids.length === 0) break;
+        const gone = [...boundaryObjects(ctx, e, a.ids).values()].flat();
+        const left = e.geom.loops.length - new Set([...removed, ...gone]).size;
+        if (left + run.found().loops.length === 0) {
+          ctx.message('A hatch keeps at least one boundary.');
+        } else for (const i of gone) removed.add(i);
+        break;
+      }
+      case 'recreate':
+        yield* recreateBoundary(ctx, e);
+        break;
+      case 'view':
+        yield* viewSelections(ctx, loops());
+        break;
+      case 'preview':
+        if (yield* previewHatch(ctx, await edited())) {
+          await applyEdit(ctx, e, shared, before, state, run, removed);
+          return;
+        }
+        break;
+      case 'inherit':
+        state = (yield* inheritFrom(ctx, state)) ?? state;
+        break;
+      case 'origin':
+        state = { ...state, specified: true, origin: yield* originPoint(ctx), extents: 0 };
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+/** The settings Hatch Edit's OK gives the hatch: its own origin unless another is specified. */
+function editedSettings(
+  ctx: CommandContext,
+  state: HatchDialogState,
+  before: HatchSettings,
+  loops: readonly HatchLoop[],
+): HatchSettings {
+  const origin = !state.specified
+    ? before.origin
+    : state.extents > 0
+      ? (extentsOrigin(loops, state.extents, tolerance(ctx)) ?? state.origin)
+      : state.origin;
+  return { ...copySettings(state.settings), origin };
+}
+
+/** Hatch Edit's OK (see `hatchEditDialog`). */
+async function applyEdit(
+  ctx: CommandContext,
+  e: HatchEntity,
+  shared: HatchSettings,
+  before: HatchSettings,
+  state: HatchDialogState,
+  run: HatchRun,
+  removed: ReadonlySet<number>,
+): Promise<void> {
+  const added = run.found();
+  if (removed.size > 0 || added.loops.length > 0) {
+    ctx.edit((b) => {
+      const g = loose(b, ctx, e);
+      b.updateEntity(e.id, {
+        geom: {
+          ...g,
+          loops: [...g.loops.filter((_, i) => !removed.has(i)), ...added.loops],
+          seedPoints: [...g.seedPoints, ...added.seedPoints],
+        },
+      });
+    });
+  }
+  const now = () => ctx.model.entity(e.id) as HatchEntity;
+  const after = editedSettings(ctx, state, before, now().geom.loops);
+  if (state.specified && state.storeOrigin) {
+    shared.origin = state.origin;
+    shared.originMode = state.extents;
+  }
+  await applySettings(ctx, now(), settingsOf(ctx, now(), shared), after);
+  const style = after.islands ? STYLES.indexOf(after.style) : 2;
+  if (style !== now().geom.style) {
+    ctx.edit((b) => b.updateEntity(e.id, { geom: { ...now().geom, style } }));
+  }
+  if (state.transparency !== transparencyText(e.transparency)) {
+    const t = state.transparency;
+    const value = t === USE_CURRENT ? currentProps(ctx.model).transparency : currentTransparency(t);
+    ctx.edit((b) => b.updateEntity(e.id, { transparency: value }));
+  }
+  reorder(ctx, now(), after.drawOrder);
+  if (after.separate) separate(ctx, now());
 }
 
 async function* editHatch(ctx: CommandContext, e: HatchEntity, shared: HatchSettings): Sub<void> {
@@ -205,54 +370,6 @@ async function* editHatch(ctx: CommandContext, e: HatchEntity, shared: HatchSett
       yield* properties(ctx, after);
   }
   await applySettings(ctx, e, before, after);
-}
-
-/** The settings a hatch was made with, as -HATCH would ask for them. */
-export function settingsOf(
-  ctx: CommandContext,
-  e: HatchEntity,
-  base: HatchSettings,
-): HatchSettings {
-  const g = e.geom;
-  const gradient = g.gradient && GRADIENTS.find(([, file]) => file === g.gradient!.name);
-  const user = !g.solid && g.patternType === 0;
-  const colors = g.gradient?.colors ?? [];
-  const plain = (i: number, fallback: BackgroundColor): BackgroundColor => {
-    const c = colors[i]?.color;
-    return c && (c.kind === 'aci' || c.kind === 'rgb') ? (c as BackgroundColor) : fallback;
-  };
-  return {
-    ...base,
-    pattern: g.gradient
-      ? (gradient?.[0] ?? 'GR_LINEAR')
-      : g.solid
-        ? SOLID
-        : user
-          ? USER
-          : g.pattern,
-    custom: g.patternType === 2,
-    scale: patternPlacement(g).scale,
-    angle: g.solid ? base.angle : g.patternAngle,
-    spacing: user && g.patternScale > 0 ? g.patternScale : base.spacing,
-    double: g.double,
-    style: STYLES[g.style] ?? 'normal',
-    islands: true,
-    origin: patternOrigin(g),
-    color: e.color,
-    layer: ctx.model.tables.layers.get(e.layer)?.name,
-    background: g.background as BackgroundColor | undefined,
-    gradient: g.gradient
-      ? {
-          name: gradient?.[0] ?? 'GR_LINEAR',
-          angle: g.gradient.angle,
-          centered: g.gradient.shift === 0,
-          color1: plain(0, base.gradient.color1),
-          color2: plain(1, base.gradient.color2),
-          oneColor: g.gradient.singleColor,
-          tint: g.gradient.tint,
-        }
-      : { ...base.gradient },
-  };
 }
 
 /** What a hatch's settings say of its fill, but for the background. */
@@ -340,11 +457,6 @@ async function applySettings(
   });
 }
 
-/** A transparency as -HATCH's prompt shows it: ByLayer, ByBlock or a percentage. */
-function transparencyText(t: Transparency): string {
-  return typeof t === 'string' ? t : String(Math.round((1 - t.alpha / 255) * 100));
-}
-
 /** Style: the island detection style, DXF 75. */
 async function* style(ctx: CommandContext, e: HatchEntity): Sub<void> {
   const names = ['Ignore', 'Outer', 'Normal'];
@@ -409,7 +521,11 @@ async function* drawOrder(ctx: CommandContext, e: HatchEntity): Sub<void> {
     options: names.map(([, n]) => n),
     default: { kind: 'keyword', keyword: 'do Not change' },
   });
-  const order = names.find(([, n]) => n === keyword(a))?.[0] ?? 'none';
+  reorder(ctx, e, names.find(([, n]) => n === keyword(a))?.[0] ?? 'none');
+}
+
+/** The hatch moved in the draw order as `order` says ('none': left where it is). */
+function reorder(ctx: CommandContext, e: HatchEntity, order: HatchDrawOrder): void {
   let move: DrawOrderMove | undefined;
   if (order === 'back' || order === 'front') move = { to: order };
   else if (order === 'behind' || order === 'above') {
