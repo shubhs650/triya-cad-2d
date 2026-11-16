@@ -42,7 +42,7 @@ import { applyProperty } from './property-edit';
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
 /** COlorbook's two prompts: the colour's palette value, or undefined (Enter, or not found). */
-async function* bookColor(ctx: CommandContext): Sub<string | undefined> {
+export async function* bookColor(ctx: CommandContext): Sub<string | undefined> {
   const a = yield ctx.prompt.string({ message: 'Enter Color Book name', spaces: true });
   const name = (a as { value?: string }).value?.trim() ?? '';
   if (name === '') return undefined;

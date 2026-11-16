@@ -100,3 +100,4 @@ export {
   type IslandStyle,
   type PickedBoundary,
 } from './hatch-boundary';
+export { retainedBoundary } from './hatch-retain';

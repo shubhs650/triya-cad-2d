@@ -106,12 +106,18 @@ const pathLength = (vertices: readonly PathVertex[]): number =>
  * Volume Options"), each tangent to the path by default; Line goes back to straight ones;
  * CLose ends the path with an arc back to its first point. `closed` previews the path closed
  * back to the first point (AREA); `report` writes the running total after each segment (DIST
- * Multiple points).
+ * Multiple points). `total: false` leaves Total out, Enter alone ending the path (-HATCH draW
+ * boundary, M4-07).
  */
-async function* nextPoints(
+export async function* nextPoints(
   ctx: CommandContext,
   first: Vec2,
-  o: { readonly prefix: string; readonly closed: boolean; readonly report?: boolean },
+  o: {
+    readonly prefix: string;
+    readonly closed: boolean;
+    readonly report?: boolean;
+    readonly total?: false;
+  },
 ): Sub<PathVertex[] | undefined> {
   const vertices: PathVertex[] = [{ x: first.x, y: first.y, bulge: 0 }];
   /** The direction the path travels at the end of each segment. */
@@ -139,7 +145,9 @@ async function* nextPoints(
     ctx.preview(vertices.length >= 2 ? [pathOf(vertices, o.closed)] : []);
     const segments = vertices.length - 1;
     // An arc and the chord closing it enclose an area; straight segments need two.
-    const enough = o.closed ? segments >= 2 || vertices.some((v) => v.bulge !== 0) : segments >= 1;
+    const enough =
+      o.total !== false &&
+      (o.closed ? segments >= 2 || vertices.some((v) => v.bulge !== 0) : segments >= 1);
     let a: PromptAnswer | ArcStep;
     if (!arcMode) {
       a = yield ctx.prompt.point({

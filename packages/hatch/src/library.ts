@@ -34,6 +34,11 @@ export class PatternLibrary {
   names(): string[] {
     return [...this.#patterns.values()].map((p) => p.name);
   }
+
+  /** The patterns, a later file's winning on a shared name. */
+  patterns(): PatPattern[] {
+    return [...this.#patterns.values()];
+  }
 }
 
 /** The bundled patterns (`assets/patterns/triya-iso.pat`). */

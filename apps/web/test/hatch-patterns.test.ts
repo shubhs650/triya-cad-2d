@@ -1,7 +1,7 @@
 // M2-35 part 3: the app places a pattern for a hatch given it by name in Properties, from the
 // bundled patterns and the user's .pat files.
 import { describe, expect, it } from 'vitest';
-import { hatchPatternNames, hatchPatternReply } from '../src/hatch-patterns';
+import { hatchPatternListReply, hatchPatternNames, hatchPatternReply } from '../src/hatch-patterns';
 
 const USER = `*MY_LINES, Lines 2 apart\n0, 0,0, 0,2, 1,-1\n*TRIYA_GRID, My grid\n0, 0,0, 0,5\n`;
 
@@ -47,5 +47,17 @@ describe('hatch patterns for Properties', () => {
     expect(names).toContain('TRIYA_LINES45');
     expect(names).toContain('MY_LINES');
     expect(names.filter((n) => n === 'TRIYA_GRID')).toHaveLength(1);
+  });
+
+  it('lists the library’s patterns with their descriptions for -HATCH ? (M4-07)', () => {
+    const r = hatchPatternListReply([USER]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.patterns).toContainEqual({ name: 'MY_LINES', description: 'Lines 2 apart' });
+    // The user's file wins on a shared name, as everywhere.
+    expect(r.patterns!.filter((p) => p.name === 'TRIYA_GRID')).toEqual([
+      { name: 'TRIYA_GRID', description: 'My grid' },
+    ]);
+    expect(r.patterns!.some((p) => p.name === 'TRIYA_LINES45')).toBe(true);
   });
 });

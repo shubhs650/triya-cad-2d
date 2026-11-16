@@ -31,23 +31,27 @@ export function sortTableOf(
   model: DocumentModel,
   block: Handle,
 ): SortEntsTable | undefined {
-  for (const o of model.objects.values()) {
-    if (o.type !== 'SORTENTSTABLE') continue;
-    const now = b.object(o.handle) as SortEntsTable | undefined;
-    if (now?.block === block) return now;
+  // The builder's objects: a table this change made already (a second hatch moved, M4-07).
+  for (const o of b.objects()) {
+    if (o.type === 'SORTENTSTABLE' && (o as SortEntsTable).block === block) {
+      return o as SortEntsTable;
+    }
   }
   return undefined;
 }
 
-/** The block's objects in the order they are drawn, with the sort handle each is drawn by. */
+/**
+ * The block's objects in the order they are drawn, with the sort handle each is drawn by.
+ * `ids`: the block's objects, when a change being built adds some (HATCH, M4-07).
+ */
 export function blockDrawOrder(
   model: DocumentModel,
   block: Handle,
   table: SortEntsTable | undefined,
+  ids: readonly EntityId[] = model.blockEntities(block),
 ): { id: EntityId; sort: Handle }[] {
   const sortOf = new Map(table?.entries.map((e) => [e.entity, e.sort]));
-  return model
-    .blockEntities(block)
+  return ids
     .map((id, i) => {
       const h = model.ids.handleOf(id)!;
       const sort = sortOf.get(h) ?? h;
@@ -93,7 +97,7 @@ export function writeDrawOrder(
   order: readonly EntityId[],
 ): boolean {
   const table = sortTableOf(b, model, block);
-  const now = blockDrawOrder(model, block, table);
+  const now = blockDrawOrder(model, block, table, b.blockEntities(block));
   if (now.every((e, i) => e.id === order[i])) return false;
   let sorts = now.map((e) => e.sort).sort((a, c) => (key(a) < key(c) ? -1 : 1));
   if (new Set(sorts).size !== sorts.length) {
@@ -138,7 +142,8 @@ export function writeDrawOrder(
 
 /**
  * DRAWORDER: moves `ids` in each block they belong to. Returns how many objects moved place in
- * the draw order (objects already where they go do not count).
+ * the draw order (objects already where they go do not count). Objects the change adds move
+ * too (a new hatch behind its boundary, M4-07).
  */
 export function moveInDrawOrder(
   b: ChangeSetBuilder,
@@ -148,7 +153,7 @@ export function moveInDrawOrder(
 ): number {
   const byBlock = new Map<Handle, Set<EntityId>>();
   for (const id of ids) {
-    const e = model.entity(id);
+    const e = b.entity(id);
     if (!e) continue;
     let set = byBlock.get(e.owner);
     if (!set) byBlock.set(e.owner, (set = new Set()));
@@ -157,7 +162,7 @@ export function moveInDrawOrder(
   let moved = 0;
   for (const [block, set] of byBlock) {
     const table = sortTableOf(b, model, block);
-    const before = blockDrawOrder(model, block, table).map((e) => e.id);
+    const before = blockDrawOrder(model, block, table, b.blockEntities(block)).map((e) => e.id);
     const after = rearranged(before, set, move);
     if (writeDrawOrder(b, model, block, after)) {
       moved += after.filter((id, i) => set.has(id) && before[i] !== id).length;

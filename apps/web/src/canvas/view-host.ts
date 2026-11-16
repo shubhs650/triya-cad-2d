@@ -123,6 +123,8 @@ export interface ViewContext {
   readonly plot?: (r: PlotScriptRequest) => Promise<ViewReply>;
   /** Properties' Pattern name (M2-35 part 3): a pattern from the app's library, placed. */
   readonly hatchPattern?: (name: string, placements: readonly PatternPlacement[]) => ViewReply;
+  /** -HATCH's `?` (M4-07): the library's patterns, described. */
+  readonly hatchPatternList?: () => ViewReply;
   /**
    * SETVAR (M2-42): a system variable the app keeps (the drafting aids, the per-user settings),
    * set to `value` when given, answered with its value.
@@ -180,6 +182,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };
+  }
+  if (r.op === 'hatchPatternList') {
+    return ctx.hatchPatternList ? ctx.hatchPatternList() : { ok: false, message: NO_PATTERNS };
   }
   if (r.op === 'hatchPattern') {
     return ctx.hatchPattern
