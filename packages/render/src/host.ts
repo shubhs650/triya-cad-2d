@@ -351,6 +351,16 @@ export class RendererHost {
     );
   }
 
+  /** The frames MTEXTs are laid out in (M4-09); null for one no loaded font draws. */
+  textFrames(
+    texts: readonly MTextGeometry[],
+  ): Promise<({ readonly width: number; readonly height: number } | null)[]> {
+    if (this.#session) return Promise.resolve(this.#session.textFrames(texts));
+    return this.#request((id) => ({ type: 'textFrames', id, texts })).then((m) =>
+      m.type === 'frames' ? [...m.frames] : texts.map(() => null),
+    );
+  }
+
   /** How many dynamic columns MTEXTs take (M2-26 part 2); null for one no loaded font draws. */
   columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
     if (this.#session) return Promise.resolve(this.#session.columnCounts(texts));

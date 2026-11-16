@@ -45,6 +45,7 @@ export {
   attributeShown,
   attributeText,
   columnCounter,
+  mtextFrameSize,
   textPieces,
   textMeasure,
   textPrimitives,

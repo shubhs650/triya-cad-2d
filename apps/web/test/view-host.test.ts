@@ -88,6 +88,12 @@ class Target implements ViewTarget {
       ),
     )
   );
+  textFrames = (texts: readonly MTextGeometry[]) => (
+    this.calls.push(`frames ${texts.map((t) => t.contents).join(',')}`),
+    Promise.resolve(
+      texts.map((t) => (this.textKnown ? { width: t.contents.length, height: t.height } : null)),
+    )
+  );
   columnCounts = (texts: readonly MTextGeometry[]) => (
     this.calls.push(`counts ${texts.map((t) => t.contents).join(',')}`),
     Promise.resolve(texts.map((t) => (this.textKnown ? t.contents.length : null)))
@@ -474,6 +480,34 @@ describe('answerView', () => {
       counts: [null],
     });
     expect(t.calls).toEqual(['counts one', 'counts one']);
+  });
+
+  it('answers the frames texts are laid out in (M4-09: JUSTIFYTEXT, SCALETEXT)', async () => {
+    const t = new Target(true);
+    const ctx = context(t).ctx;
+    const text: MTextGeometry = {
+      kind: 'MTEXT',
+      contents: 'four',
+      style: '11',
+      position: { x: 0, y: 0 },
+      height: 2,
+      width: 0,
+      rotation: 0,
+      attachment: 1,
+      direction: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    };
+    expect(await answerView({ op: 'textFrames', texts: [text] }, ctx)).toEqual({
+      ok: true,
+      frames: [{ width: 4, height: 2 }],
+    });
+    t.textKnown = false;
+    expect(await answerView({ op: 'textFrames', texts: [text] }, ctx)).toEqual({
+      ok: true,
+      frames: [null],
+    });
+    expect(t.calls).toEqual(['frames four', 'frames four']);
   });
 
   it('answers where texts lie as drawn, with the pickbox in drawing units (M2-27)', async () => {

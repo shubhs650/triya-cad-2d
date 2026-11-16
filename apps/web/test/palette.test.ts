@@ -120,6 +120,8 @@ describe('palette search', () => {
       'HATCHTOBACK',
       'ID',
       'JOIN',
+      // M4-09 part 1: JUSTIFYTEXT and SCALETEXT.
+      'JUSTIFYTEXT',
       'LENGTHEN',
       'LINE',
       'LIST',
@@ -174,6 +176,7 @@ describe('palette search', () => {
       'SAVE',
       'SAVEAS',
       'SCALE',
+      'SCALETEXT',
       'SELECT',
       'SELECTSIMILAR',
       'SETVAR',
