@@ -35,6 +35,8 @@ import {
   type TextEditorRequest,
 } from '../prompt';
 import { currentProps } from '../../properties/current';
+import { editableFieldText, fieldValues, textWithFields } from '../../edit/fields';
+import { askEditorText, fieldContextOf } from './field';
 import { drawingUnits, formatDistance } from '../units';
 
 /** AutoCAD's single line spacing: 5/3 of the text height (DXF 44 = 1 for MTEXT). */
@@ -471,29 +473,34 @@ export function mtextCommand(): CommandDef {
       let contents = '';
       const lines: string[] = [];
       for (;;) {
-        const a = yield ctx.prompt.string({
-          message: 'Enter text',
-          spaces: true,
-          ...(lines.length === 0 &&
-            !ctx.dash && {
-              editor: {
-                kind: 'mtext' as const,
-                position,
-                rotation,
-                height: h,
-                width,
-                attachment,
-                style: style.handle,
-                fontFile: style.font,
-                trueTypeFlags: style.trueTypeFlags,
-                widthFactor: style.widthFactor,
-                obliqueAngle: style.obliqueAngle,
-                lineSpacingStyle: spacing.style,
-                lineSpacing: spacing.factor,
-                ...(columns && { columns }),
-              },
-            }),
-        });
+        const a: PromptAnswer = yield* askEditorText(
+          ctx,
+          {
+            message: 'Enter text',
+            spaces: true,
+            ...(lines.length === 0 &&
+              !ctx.dash && {
+                editor: {
+                  kind: 'mtext' as const,
+                  position,
+                  rotation,
+                  height: h,
+                  width,
+                  attachment,
+                  style: style.handle,
+                  fontFile: style.font,
+                  trueTypeFlags: style.trueTypeFlags,
+                  widthFactor: style.widthFactor,
+                  obliqueAngle: style.obliqueAngle,
+                  lineSpacingStyle: spacing.style,
+                  lineSpacing: spacing.factor,
+                  ...(columns && { columns }),
+                  fields: {},
+                },
+              }),
+          },
+          ctx.space,
+        );
         if (a.kind === 'string' && a.editor) {
           contents = a.value;
           if (a.columns !== undefined) columns = a.columns ?? undefined;
@@ -508,9 +515,15 @@ export function mtextCommand(): CommandDef {
       if (contents === '') return;
       const props = currentProps(ctx.model);
       const s = style;
+      // Fields typed or inserted are kept as the text's FIELD, their values shown (M4-10 part 2).
+      const typed = contents.includes('%<')
+        ? textWithFields(contents, { ...(await fieldContextOf(ctx)), space: ctx.space })
+        : { text: contents };
+      contents = typed.text;
       const geom: MTextGeometry = {
         kind: 'MTEXT',
         contents,
+        ...(typed.field && { field: typed.field }),
         style: s.handle,
         position,
         height: h,
@@ -1045,28 +1058,37 @@ async function* editText(
     widthFactor: style?.widthFactor ?? 1,
     obliqueAngle: style?.obliqueAngle ?? 0,
   };
-  const old = g.kind === 'TEXT' ? g.value : g.contents;
+  // An MTEXT's fields open as their codes, each shown by its value (M4-10 part 2).
+  const old = g.kind === 'TEXT' ? g.value : g.field ? editableFieldText(g.field) : g.contents;
   const cols = g.kind === 'MTEXT' ? editorColumns(g) : undefined;
-  const a = yield ctx.prompt.string({
-    message: 'Enter text',
-    spaces: true,
-    editor:
-      g.kind === 'TEXT'
-        ? {
-            kind: 'text',
-            // The point the justification names: DXF 10 for left-baseline text, else DXF 11.
-            position:
-              g.halign === 0 && g.valign === 0 ? g.position : (g.alignmentPoint ?? g.position),
-            rotation: g.rotation,
-            height: g.height,
-            width: 0,
-            attachment: attachmentOf(g.halign, g.valign),
-            style: g.style,
-            ...font,
-            value: old,
-          }
-        : mtextEditorRequest(ctx.model, g),
-  });
+  const a: PromptAnswer = yield* askEditorText(
+    ctx,
+    {
+      message: 'Enter text',
+      spaces: true,
+      editor:
+        g.kind === 'TEXT'
+          ? {
+              kind: 'text',
+              // The point the justification names: DXF 10 for left-baseline text, else DXF 11.
+              position:
+                g.halign === 0 && g.valign === 0 ? g.position : (g.alignmentPoint ?? g.position),
+              rotation: g.rotation,
+              height: g.height,
+              width: 0,
+              attachment: attachmentOf(g.halign, g.valign),
+              style: g.style,
+              ...font,
+              value: old,
+            }
+          : {
+              ...mtextEditorRequest(ctx.model, g),
+              value: old,
+              fields: g.field ? fieldValues(g.field) : {},
+            },
+    },
+    entity.owner,
+  );
   if (a.kind === 'enter') return false;
   if (a.kind !== 'string') return undefined;
   // Columns the editor left as they were stay as written (manual heights, flow direction).
@@ -1079,12 +1101,25 @@ async function* editText(
     ctx.edit((b) => b.removeEntity(entity.id));
     return { id: entity.id, before: entity, erased: true };
   }
-  const geom =
-    g.kind === 'TEXT'
-      ? { ...g, value: a.value }
-      : newColumns !== undefined
-        ? withColumns({ ...g, contents: a.value }, newColumns)
-        : { ...g, contents: a.value };
+  let geom: TextGeometry | MTextGeometry;
+  if (g.kind === 'TEXT') {
+    // The line editor has no fields: a TEXT edited keeps what was typed, its fields dropped,
+    // so AutoCAD does not put their values back over it when it opens the drawing.
+    const { field: _dropped, ...rest } = g;
+    geom = { ...rest, value: a.value };
+  } else {
+    const { field: _was, ...rest } = g;
+    const typed =
+      a.value.includes('%<') || g.field
+        ? textWithFields(a.value, { ...(await fieldContextOf(ctx)), space: entity.owner }, g.field)
+        : { text: a.value };
+    const m: MTextGeometry = {
+      ...rest,
+      contents: typed.text,
+      ...(typed.field && { field: typed.field }),
+    };
+    geom = newColumns !== undefined ? withColumns(m, newColumns) : m;
+  }
   ctx.edit((b) => b.updateEntity(entity.id, { geom }));
   return { id: entity.id, before: entity, erased: false };
 }

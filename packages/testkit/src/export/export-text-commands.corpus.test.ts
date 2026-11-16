@@ -3,7 +3,9 @@
 // the real commands run on the PromptBus, as the command line and the in-place editor drive
 // them: a TEXT line and an MTEXT whose contents the editor wrote from formatted spans (every
 // format, stacks of each kind, a field, paragraphs). Each drawing saves as AC1032 DXF
-// (DEC-047) and reopens with the new objects' contents exactly as written. One drawing also
+// (DEC-047) and reopens with the new objects' contents exactly as written. The field is kept as
+// AutoCAD keeps one (M4-10 part 2): the contents show its value (`----` here, with no file name to
+// give), and its code is in the MTEXT's FIELD, which reads back with the editor's text. One drawing also
 // takes a few hundred random editor contents.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +13,7 @@ import {
   DocumentModel,
   PromptBus,
   builtinCommands,
+  editableFieldText,
   type Entity,
   type MTextGeometry,
   type StringPrompt,
@@ -114,7 +117,8 @@ describe('TEXT and MTEXT made in Triya save as DXF and read back', () => {
       const mine = made[1]!.geom as MTextGeometry;
       expect(g?.contents, f.path).toBe(mine.contents);
       const base = baseOf(model, mine);
-      expect(spansOf(parseMText(g!.contents, base), base)).toEqual(
+      expect(g?.field, f.path).toEqual(mine.field);
+      expect(spansOf(parseMText(editableFieldText(g!.field!), base), base)).toEqual(
         normalizeSpans(EDITOR_SPANS, base.font),
       );
     });

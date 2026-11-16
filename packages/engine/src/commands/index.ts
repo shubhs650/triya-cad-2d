@@ -101,6 +101,7 @@ export { GRIP_MODES, GRIP_OBJECT_LIMIT, gripCommand, type GripMode } from './mod
 export { revcloudCommand, revcloudAppId, revcloudXdata, type CloudType } from './draw/revcloud';
 export { setWipeoutFrame, wipeoutCommand, wipeoutFrame } from './draw/wipeout';
 export { hatchCommand, hatchCommands } from './draw/hatchedit';
+export { fieldCommand, type FieldDialogRequest } from './draw/field';
 export type {
   HatchDialogAnswer,
   HatchDialogButton,

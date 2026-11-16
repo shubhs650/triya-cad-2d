@@ -52,6 +52,7 @@ import { MLeaderStyleDialog } from './MLeaderStyleDialog';
 import { FindReplaceDialog } from './FindReplaceDialog';
 import { SpellDialog } from './SpellDialog';
 import { HatchDialog } from './HatchDialog';
+import { FieldDialog } from './FieldDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -137,6 +138,8 @@ export function AttributeDialogs({
       return <SpellDialog key={key} doc={doc.id} request={d} />;
     case 'hatch':
       return <HatchDialog key={key} doc={doc.id} request={d} patternSources={patternSources} />;
+    case 'field':
+      return <FieldDialog key={key} doc={doc.id} request={d} />;
   }
 }
 
