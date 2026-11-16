@@ -64,6 +64,8 @@ describe('palette search', () => {
       'DIMDIAMETER',
       'DIMLINEAR',
       'DIMRADIUS',
+      // M4-03: the Dimension Style Manager.
+      'DIMSTYLE',
       'DIST',
       // M3-01 part 5: DIVIDE, MEASURE and SPLINE.
       'DIVIDE',

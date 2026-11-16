@@ -20,6 +20,8 @@ import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { Color, DimStyleRecord, DimVarValue, HeaderValue } from '../model/types';
 import type { PromptAnswer } from './prompt';
+import type { ChangeSet } from '../model/changeset';
+import { regenerateRestyled } from './modify/dimensions';
 import { DIMVAR_BY_CODE } from '../annotation/dimvars';
 import {
   DIMSTYLE_REFERENCES,
@@ -334,8 +336,14 @@ function nameProblem(model: DocumentModel, name: string, except?: Handle): strin
   return other && other.handle !== except ? NAME_IN_USE : undefined;
 }
 
-/** Makes `a`; what to show next (the style left selected, a refusal). */
-function act(ctx: CommandContext, a: DimStyleAction): { selected?: string; note?: string } {
+/**
+ * Makes `a`; what to show next (the style left selected, a refusal) and the change that restyled
+ * dimensions, which are drawn again at once.
+ */
+function act(
+  ctx: CommandContext,
+  a: DimStyleAction,
+): { selected?: string; note?: string; restyled?: ChangeSet } {
   const model = ctx.model;
   const current = currentDimStyle(model);
   switch (a.op) {
@@ -374,7 +382,7 @@ function act(ctx: CommandContext, a: DimStyleAction): { selected?: string; note?
       if (changes.size === 0) return { selected: s.name };
       const isCurrent = s.handle === current?.handle;
       const overridden = isCurrent ? headerDimvarOverrides(model, s) : {};
-      ctx.edit((b) => {
+      const restyled = ctx.edit((b) => {
         const vars = withChanges(b, model, s.vars, changes);
         b.updateTableRecord('dimStyles', s.handle, { vars, ...keptTrueColors(s, changes) });
         // The header follows the current style, its own overrides kept.
@@ -382,7 +390,7 @@ function act(ctx: CommandContext, a: DimStyleAction): { selected?: string; note?
           setHeaderVars(b, model, vars, (n, inHeader) => inHeader && !Object.hasOwn(overridden, n));
         }
       });
-      return { selected: s.name };
+      return { selected: s.name, restyled };
     }
     case 'override': {
       if (!current) return {};
@@ -405,13 +413,13 @@ function act(ctx: CommandContext, a: DimStyleAction): { selected?: string; note?
         vars[name] = typeof was === 'boolean' && typeof value === 'number' ? value !== 0 : value;
       }
       const changes = new Map(Object.keys(overrides).map((n) => [n, vars[n]]));
-      ctx.edit((b) =>
+      const restyled = ctx.edit((b) =>
         b.updateTableRecord('dimStyles', current.handle, {
           vars,
           ...keptTrueColors(current, changes),
         }),
       );
-      return { selected: current.name };
+      return { selected: current.name, restyled };
     }
     case 'rename': {
       const s = styleNamed(model, a.name);
@@ -470,6 +478,8 @@ export function dimstyleCommand(): CommandDef {
         });
         if (a.kind !== 'dialog' || a.action !== 'apply' || !a.dimstyle) return;
         const shown = act(ctx, a.dimstyle);
+        // AutoCAD redraws a style's dimensions as Modify's OK closes.
+        if (shown.restyled) await regenerateRestyled(ctx, [shown.restyled]);
         selected = shown.selected ?? selected;
         note = shown.note;
       }

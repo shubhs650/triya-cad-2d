@@ -3759,16 +3759,24 @@ button {
   overflow-y: auto;
 }
 
+/* A fieldset is as wide as its widest list by default; here it takes its column's width. */
 .dimstyle-tab fieldset {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
   margin: 0;
   border: 1px solid var(--chrome-border);
 }
 
 .dimstyle-tab .cad-dialog-field > span {
-  min-width: 150px;
+  flex: 0 0 132px;
+  min-width: 0;
+}
+
+.dimstyle-tab .cad-dialog-field select,
+.dimstyle-tab .cad-dialog-field input {
+  width: 100%;
 }
 
 .dimstyle-radios {
