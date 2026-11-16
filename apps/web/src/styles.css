@@ -3693,8 +3693,39 @@ button {
   color: #fff;
 }
 
-.dimstyle-list .dimstyle-overrides {
+.dimstyle-list .dimstyle-overrides,
+.dimstyle-list .dimstyle-substyle {
   padding-left: 16px;
+}
+
+.cad-dialog.dimstyle-compare {
+  width: min(640px, calc(100vw - 32px));
+  max-width: min(640px, calc(100vw - 32px));
+}
+
+.dimstyle-compare-table {
+  max-height: min(50vh, 360px);
+  overflow: auto;
+  border: 1px solid var(--chrome-border);
+}
+
+.dimstyle-compare-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dimstyle-compare-table th,
+.dimstyle-compare-table td {
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--chrome-border);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.dimstyle-compare-table th {
+  position: sticky;
+  top: 0;
+  background: var(--chrome-bg-raised);
 }
 
 .dimstyle-description {

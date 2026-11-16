@@ -6,7 +6,8 @@
 // A new record may carry xdata (M2-32 part 3: PASTECLIP brings records with theirs), written as
 // an entity's is (xdata.ts) before the table's own writer, which rewrites the applications it
 // keeps in fields (a layer's transparency and description, a text style's TrueType bits). A
-// record the file has keeps its xdata as read: editing it is not written yet.
+// record the file has keeps its xdata as read, unless its table writes xdata edits
+// (`xdataEdits`: a dimension style's `ACAD_DSTYLE_*` settings, M4-03 part 2).
 
 import {
   ACadVersion,
@@ -46,6 +47,8 @@ export interface RecordRules<A extends CadObject & { name: string }, R extends S
   readonly mayBeNameless?: (after: R) => boolean;
   /** Removing a record is purge.ts's to check (PURGE, M1-75 part 25). */
   readonly removable?: true;
+  /** The table's writer writes a record's xdata edits (`writeXdata` on `updated`). */
+  readonly xdataEdits?: true;
 }
 
 /** The model's changes to one table against the original's mapping, and why any cannot be written. */
@@ -108,8 +111,9 @@ export function planRecords<A extends CadObject & { name: string }, R extends Sy
         out.push(`${JSON.stringify(a.name)} is not a valid ${rules.what} name`);
     }
     for (const k of UNSUPPORTED) {
-      if (!b && k === 'xdata') out.push(...xdataProblems(r, undefined, a.xdata));
-      else if (b ? !same(b[k], a[k]) : a[k] !== undefined) out.push(`${k} changes`);
+      if (k === 'xdata' && (!b || rules.xdataEdits)) {
+        if (!b || !same(b.xdata, a.xdata)) out.push(...xdataProblems(r, b?.xdata, a.xdata));
+      } else if (b ? !same(b[k], a[k]) : a[k] !== undefined) out.push(`${k} changes`);
     }
     out.push(...rules.problems(b, a, acad));
     if (out.length > 0) {

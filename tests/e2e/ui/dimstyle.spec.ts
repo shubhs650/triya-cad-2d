@@ -183,3 +183,74 @@ test('the Dimension Style Manager modifies, makes, overrides and renames styles'
   await manager.getByRole('button', { name: 'Close' }).click();
   await expect(manager).toBeHidden();
 });
+
+// M4-03 part 2: Use for makes a sub-style (the Linear dimensions of the current style, text
+// 0.4), which the list shows under its parent and which redraws the linear dimension at once;
+// Compare... lists it against its parent; deleting it draws the dimension with the parent again.
+// The Symbols and Arrows tab has Break size and Jog height factor.
+test('Use for makes a sub-style, and Compare lists how two styles differ', async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-4, -8), 'Specify opposite corner:');
+  await type(page, p(12, 6), 'Command:');
+  await page.keyboard.press('F3');
+  await type(page, 'DIMLINEAR', 'Specify first extension line origin or <select object>:');
+  await type(page, p(0, 0), 'Specify second extension line origin:');
+  await type(page, p(8, 0), /^Specify dimension line location/);
+  await type(page, p(4, -1.5), 'Command:');
+  await expect.poll(() => textHeight(page)).toBe(0.18);
+
+  await enterCommand(page, 'DIMSTYLE');
+  const manager = page.getByRole('dialog', { name: 'Dimension Style Manager' });
+  const list = manager.getByRole('listbox', { name: 'Styles:' });
+  await manager.getByRole('button', { name: 'New...' }).click();
+  const create = page.getByRole('dialog', { name: 'Create New Dimension Style' });
+  await create.getByLabel('Use for:').selectOption({ label: 'Linear dimensions' });
+  await expect(create.getByLabel('New Style Name:')).toBeDisabled();
+  await expect(create.getByLabel('New Style Name:')).toHaveValue(`${CURRENT}: Linear`);
+  await shot(page, '5-use-for');
+  await create.getByRole('button', { name: 'Continue' }).click();
+  const sub = page.getByRole('dialog', { name: `New Dimension Style: ${CURRENT}: Linear` });
+  await sub.getByRole('tab', { name: 'Symbols and Arrows' }).click();
+  await expect(sub.getByLabel('Break size:')).toHaveValue('0.125');
+  await expect(sub.getByLabel('Jog height factor:')).toHaveValue('1.5');
+  await sub.getByRole('tab', { name: 'Text', exact: true }).click();
+  await sub.getByLabel('Text height:').fill('0.4');
+  await sub.getByRole('button', { name: 'OK' }).click();
+  await expect(sub).toBeHidden();
+  const linear = list.getByRole('option', { name: `${CURRENT}: Linear` });
+  await expect(linear).toHaveText('Linear');
+  await expect(linear).toHaveAttribute('aria-selected', 'true');
+  await expect(manager.getByTestId('dimstyle-description')).toHaveText(`${CURRENT}: Linear`);
+  await expect(manager.getByRole('button', { name: 'Set Current' })).toBeDisabled();
+  await expect.poll(() => textHeight(page)).toBe(0.4);
+  await shot(page, '6-substyle-in-list');
+
+  await manager.getByRole('button', { name: 'Compare...' }).click();
+  const compare = page.getByRole('dialog', { name: 'Compare Dimension Styles' });
+  await expect(compare.getByLabel('Compare:')).toHaveValue(`${CURRENT}$0`);
+  await expect(compare.getByTestId('dimstyle-compare-summary')).toHaveText(
+    `All properties of ${CURRENT}$0:`,
+  );
+  await compare.getByLabel('With:').selectOption(CURRENT);
+  await expect(compare.getByTestId('dimstyle-compare-summary')).toHaveText('Found 1 difference:');
+  await expect(compare.getByRole('row', { name: /DIMTXT/ })).toHaveText(
+    /Text height\s*DIMTXT\s*0\.4000\s*0\.1800/,
+  );
+  await shot(page, '7-compare');
+  await compare.getByRole('button', { name: 'Close' }).click();
+  await expect(compare).toBeHidden();
+
+  await list.focus();
+  await list.press('Delete');
+  await expect(list.getByRole('option', { name: `${CURRENT}: Linear` })).toHaveCount(0);
+  await expect.poll(() => textHeight(page)).toBe(0.18);
+  await manager.getByRole('button', { name: 'Close' }).click();
+  await expect(manager).toBeHidden();
+});
