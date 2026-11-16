@@ -16,12 +16,13 @@ import {
   type StringPrompt,
   type TableGeometry,
   type TableStyleRecord,
+  type ViewReply,
 } from '../../src/index';
 import { sampleInit } from '../model/fixtures';
 
 const ACADISO: TableStyleRecord = { handle: '90', ...standardTableStyle(true, '16') };
 
-function setup(picked: () => EntityId[] = () => []) {
+function setup(picked: () => EntityId[] = () => [], clipboard?: () => ViewReply) {
   const init = sampleInit();
   const withStyles: DocumentInit = {
     ...init,
@@ -52,7 +53,11 @@ function setup(picked: () => EntityId[] = () => []) {
     view: {
       request: (r) =>
         Promise.resolve(
-          r.op === 'pick' ? { ok: true, ids: picked() } : { ok: false, message: 'no' },
+          r.op === 'pick'
+            ? { ok: true, ids: picked() }
+            : r.op === 'clipboard' && clipboard
+              ? clipboard()
+              : { ok: false, message: 'no' },
         ),
     },
   });
@@ -101,7 +106,7 @@ const at = (i: number, j: number) => ({
 });
 
 const OPTIONS =
-  'Enter a table cell option [Text/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
 describe('a table cell selected at Command:', () => {
   it('is a click inside it, shown by its outline, with the Table Cell options', async () => {
@@ -558,5 +563,139 @@ describe('a table’s grips and SCALE (M4-05 part 4)', () => {
       .map((id) => s.model.entity(id)!.geom)
       .find((x) => x.kind === 'MTEXT' && x.contents === 'DN80');
     expect(n1).toMatchObject({ height: 9, position: { x: 130, y: -61 } });
+  });
+});
+
+describe('the grips of the cells selected (M4-05 part 6)', () => {
+  it('are the middles of the selection’s edges; the right one sizes its column', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 1), { grip: 1 });
+    expect(s.prompt()?.grips).toEqual([
+      { x: 95.25, y: -20 },
+      { x: 127, y: -24.5 },
+      { x: 95.25, y: -29 },
+      { x: 63.5, y: -24.5 },
+    ]);
+    await s.bus.pick({ x: 127, y: -24.5 });
+    expect(s.bus.promptText).toBe('Specify stretch point:');
+    expect(s.prompt()?.drag).toMatchObject({ kind: 'table', role: { kind: 'cellColumn', j: 1 } });
+    await s.bus.pick({ x: 137, y: -30 });
+    expect(s.bus.command).toBeUndefined();
+    expect(s.table().geom.columnWidths).toEqual([63.5, 73.5]);
+    expect(blockLines(s)).toContain('137,-11 137,-47 byBlock ByBlock');
+    await s.bus.submit('U');
+    expect(s.table().geom.columnWidths).toEqual([63.5, 63.5]);
+  });
+
+  it('size a row by its top edge, the rows above moving up; Esc changes nothing', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(3, 0));
+    await s.bus.pick({ x: 31.75, y: -29 });
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    expect(s.table().geom.rowHeights).toEqual([11, 9, 9, 9, 9]);
+    await s.bus.pick(at(3, 0));
+    await s.bus.pick({ x: 31.75, y: -29 });
+    await s.bus.pick({ x: 40, y: -25 });
+    expect(s.table().geom.rowHeights).toEqual([11, 9, 9, 13, 9]);
+    expect(s.table().geom.position).toEqual({ x: 0, y: 4 });
+  });
+
+  it('a click beside the grips still picks a cell', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 1));
+    await s.bus.pick(at(2, 0));
+    expect(s.bus.promptText).toBe(OPTIONS);
+    expect(s.prompt()?.grips?.[3]).toEqual({ x: 0, y: -24.5 });
+  });
+});
+
+describe('cells pasted into the cells selected (M4-13)', () => {
+  const sheet = (rows: string[][]) =>
+    rows.map((r) => r.map((text) => ({ text, rowSpan: 1, columnSpan: 1, merged: false })));
+
+  it('fill them from the first, adding rows, in one undo step', async () => {
+    const s = setup(
+      () => [],
+      () => ({
+        ok: true,
+        cells: sheet([
+          ['N9', 'DN99'],
+          ['N10', 'DN10'],
+        ]),
+      }),
+    );
+    await nozzles(s);
+    await s.bus.pick(at(4, 0));
+    expect(s.prompt()?.pasteKeyword).toBe('Paste');
+    await s.bus.submit('P');
+    expect(s.bus.command).toBeUndefined();
+    expect(s.texts().slice(4)).toEqual([
+      ['N9', 'DN99'],
+      ['N10', 'DN10'],
+    ]);
+    expect(s.table().geom.rowOrigins).toEqual([0, 1, 2, 3, 4, null]);
+    expect(s.table().geom.rowHeights).toEqual([11, 9, 9, 9, 9, 9]);
+    await s.bus.submit('U');
+    expect(s.texts()).toHaveLength(5);
+  });
+
+  it('take a spreadsheet’s tab-separated rows, or text into the first cell', async () => {
+    let text = 'a\tb\nc\td\n';
+    const s = setup(
+      () => [],
+      () => ({ ok: true, text }),
+    );
+    await nozzles(s);
+    await s.bus.pick(at(1, 0));
+    await s.bus.submit('P');
+    expect(s.texts().slice(1, 3)).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    text = 'A {note}';
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('P');
+    expect(s.texts()[3]).toEqual(['N2', 'A \\{note\\}']);
+  });
+
+  it('say why nothing is pasted, the cells staying selected', async () => {
+    let reply: ViewReply = { ok: true, text: '  ' };
+    const s = setup(
+      () => [],
+      () => reply,
+    );
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('P');
+    expect(s.messages).toContain('The Clipboard holds no cells or text to paste into the table.');
+    expect(s.bus.command).toBe('TABLECELL');
+    reply = { ok: false, message: 'The Clipboard could not be read.' };
+    await s.bus.submit('P');
+    expect(s.messages).toContain('The Clipboard could not be read.');
+    expect(s.bus.command).toBe('TABLECELL');
+  });
+});
+
+describe('Ctrl with a table’s column grip (M4-05 part 6)', () => {
+  it('sizes the column and the table with it, in place of a copy', async () => {
+    let ids: EntityId[] = [];
+    const s = setup(() => ids);
+    await nozzles(s);
+    ids = [s.table().id];
+    await s.bus.pick({ x: 63.8, y: -24.5 }, { grip: 1 });
+    ids = [];
+    await s.bus.pick({ x: 63.5, y: 0 }, { grip: 1 });
+    expect(s.bus.prompt).toMatchObject({ ctrlSizesTable: true });
+    expect(s.bus.prompt?.ctrlCopies).toBeUndefined();
+    await s.bus.pick({ x: 73.5, y: 5 }, { ctrl: true });
+    expect(s.table().geom.columnWidths).toEqual([73.5, 63.5]);
+    expect([...s.model.entities()].filter((e) => e.geom.kind === 'ACAD_TABLE')).toHaveLength(1);
+    expect(s.bus.command).toBeUndefined();
+    // Another grip of the table copies with Ctrl as any grip does.
+    await s.bus.pick({ x: 63.8, y: -24.5 }, { grip: 1 });
   });
 });
