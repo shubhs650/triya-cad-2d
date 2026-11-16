@@ -1549,7 +1549,8 @@ export abstract class DxfSectionWriterBase {
       this._writer.write(40, vertex.startWidth);
       this._writer.write(41, vertex.endWidth);
       this._writer.write(42, vertex.bulge);
-      this._writer.write(50, vertex.curveTangent);
+      // An angle, in degrees as the reader takes it (IsAngle), not the radians held (0184).
+      this._writer.write(50, MathHelper.radToDegRoundTrip(vertex.curveTangent));
     } else if (vertex instanceof VertexFaceRecord) {
       this._writer.write(71, vertex.index1);
       this._writer.write(72, vertex.index2);
