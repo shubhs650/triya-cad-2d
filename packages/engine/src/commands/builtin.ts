@@ -37,6 +37,7 @@ import { overkillCommand } from './modify/overkill';
 import { DRAFTING_SETTINGS_COMMANDS } from './drafting-settings';
 import { UNITS_COMMANDS } from './drawing-units';
 import { dimstyleCommand } from './dimstyle';
+import { dashStyleCommand, styleCommand } from './textstyle';
 import { dashDimstyleCommand } from './dimstyle-dash';
 import { SNAP_GRID_COMMANDS } from './snap-grid';
 import { UCS_COMMANDS } from './ucs';
@@ -132,6 +133,8 @@ export function builtinCommands(): CommandRegistry {
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
     ...UNITS_COMMANDS.map((make) => make()),
     dimstyleCommand(),
+    styleCommand(),
+    dashStyleCommand(),
     dashDimstyleCommand(),
     ...SNAP_GRID_COMMANDS.map((make) => make()),
     ...UCS_COMMANDS.map((make) => make()),
