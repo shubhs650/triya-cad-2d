@@ -15,14 +15,24 @@
 // New... asks Create New Dimension Style (New Style Name, Start With, Use for) and Continue opens
 // New Dimension Style; Modify... and Override... open the same seven tabs on the selected style
 // (Override on the current one, with its overrides). Their fields are the engine's
-// (`DIMSTYLE_FIELDS`); OK sends the style's DIMVARs and the engine writes what changed. The
-// preview image, Compare... and Use for a single dimension type (child styles) come with part 2.
+// (`DIMSTYLE_FIELDS`); OK sends the style's DIMVARs and the engine writes what changed.
+//
+// Part 2: Use for makes the Start With style's sub-style for one kind of dimension, which the
+// list shows under its parent by that kind's name (Modify and Delete act on it alone); Compare...
+// opens Compare Dimension Styles (Compare, With and the variables they set differently, or every
+// variable of one style With <none>); the fields AutoCAD keeps in xdata (Break size, Jog height
+// factor, sub-units, Tolerance alignment) are on their tabs, greyed in Override, as the header has
+// no variable for them. The preview image is still to come (ROADMAP M4-03).
 import {
   DIMSTYLE_FIELDS,
   DIMSTYLE_TABS,
+  DIMSTYLE_USES,
+  compareDimStyles,
   dialogVars,
   fieldOptions,
+  isDimStyleXdataVar,
   setField,
+  type DimStyleUse,
   type DialogRequest,
   type DimStyleAction,
   type DimStyleField,
@@ -44,12 +54,31 @@ const OVERRIDES = '<style overrides>';
 
 type Editing =
   | { readonly mode: 'create' }
+  | { readonly mode: 'compare' }
   | {
       readonly mode: 'new' | 'modify' | 'override';
       readonly name: string;
       readonly from?: string;
+      readonly use?: DimStyleUse;
       readonly vars: DimStyleVars;
     };
+
+/** A sub-style's kind as the list and titles name it ("Linear"). */
+const useLabel = (use: DimStyleUse | undefined): string =>
+  DIMSTYLE_USES.find((u) => u.value === use)?.label.replace(/ dimensions$/, '') ?? '';
+
+/** How a referenced record reads in Compare: by the dialog's own lists. */
+function listNames(lists: DimStyleLists) {
+  return (name: string, handle: string): string => {
+    const list =
+      name === 'DIMTXSTY'
+        ? lists.textStyles
+        : name === 'DIMLTYPE' || name === 'DIMLTEX1' || name === 'DIMLTEX2'
+          ? lists.linetypes
+          : lists.arrowheads;
+    return list.find((o) => o.value === handle)?.label ?? handle;
+  };
+}
 
 /** A DIMVAR's label in the dialog, for the overrides' description. */
 function varLabel(name: string): string {
@@ -73,14 +102,18 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
     answer(doc, { kind: 'dialog', action: 'apply', dimstyle });
   const close = () => answer(doc, { kind: 'dialog', action: 'ok' });
   const hasOverrides = Object.keys(request.overrides).length > 0;
-  const styles = request.styles.filter(
-    (s) => list === 'all' || s.used || s.name === request.current,
-  );
+  const shownStyle = (name: string) => {
+    const s = request.styles.find((x) => x.name === name);
+    return !!s && (list === 'all' || s.used || s.name === request.current);
+  };
+  // A sub-style shows with its parent.
+  const styles = request.styles.filter((s) => shownStyle(s.parent ?? s.name));
   const rows: string[] = styles.flatMap((s) =>
     s.name === request.current && hasOverrides ? [s.name, OVERRIDES] : [s.name],
   );
   const onOverrides = selected === OVERRIDES;
   const style = request.styles.find((s) => s.name === (onOverrides ? request.current : selected));
+  const isSub = style?.parent !== undefined;
   const currentStyle = request.styles.find((s) => s.name === request.current);
 
   const setCurrent = (name: string) => {
@@ -95,7 +128,7 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
       const next =
         rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
       if (next) setSelected(next);
-    } else if (e.key === 'F2' && style && !onOverrides) {
+    } else if (e.key === 'F2' && style && !onOverrides && !isSub) {
       e.preventDefault();
       setRenaming(style.name);
     } else if (e.key === 'Delete' && style && !onOverrides) {
@@ -116,7 +149,9 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
     ? `${request.current} + ${Object.entries(request.overrides)
         .map(([n, v]) => `${varLabel(n)} = ${shownValue(v)}`)
         .join(', ')}`
-    : (style?.name ?? '');
+    : style?.parent !== undefined
+      ? `${style.parent}: ${useLabel(style.use)}`
+      : (style?.name ?? '');
 
   return (
     <Modal
@@ -138,32 +173,38 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
             tabIndex={0}
             onKeyDown={keys}
           >
-            {rows.map((r) => (
-              <li
-                key={r}
-                role="option"
-                aria-selected={r === selected}
-                className={r === OVERRIDES ? 'dimstyle-overrides' : undefined}
-                onClick={() => setSelected(r)}
-                onDoubleClick={() => r !== OVERRIDES && setRenaming(r)}
-                onContextMenu={(e) => contextMenu(e, r)}
-              >
-                {renaming === r ? (
-                  <RenameInput
-                    name={r}
-                    onDone={(to) => {
-                      setRenaming(undefined);
-                      if (to !== undefined && to !== r) void send({ op: 'rename', name: r, to });
-                    }}
-                  />
-                ) : (
-                  <>
-                    {r === request.current && <span aria-label="current">▸ </span>}
-                    {r}
-                  </>
-                )}
-              </li>
-            ))}
+            {rows.map((r) => {
+              const sub = request.styles.find((x) => x.name === r && x.parent !== undefined);
+              return (
+                <li
+                  key={r}
+                  role="option"
+                  aria-selected={r === selected}
+                  aria-label={sub ? `${sub.parent}: ${useLabel(sub.use)}` : undefined}
+                  className={
+                    r === OVERRIDES ? 'dimstyle-overrides' : sub ? 'dimstyle-substyle' : undefined
+                  }
+                  onClick={() => setSelected(r)}
+                  onDoubleClick={() => r !== OVERRIDES && !sub && setRenaming(r)}
+                  onContextMenu={(e) => contextMenu(e, r)}
+                >
+                  {renaming === r ? (
+                    <RenameInput
+                      name={r}
+                      onDone={(to) => {
+                        setRenaming(undefined);
+                        if (to !== undefined && to !== r) void send({ op: 'rename', name: r, to });
+                      }}
+                    />
+                  ) : (
+                    <>
+                      {r === request.current && <span aria-label="current">▸ </span>}
+                      {sub ? useLabel(sub.use) : r}
+                    </>
+                  )}
+                </li>
+              );
+            })}
           </ul>
           <label className="cad-dialog-field">
             <span>List:</span>
@@ -181,7 +222,7 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
           <div className="dimstyle-buttons">
             <button
               type="button"
-              disabled={!style || onOverrides || style.name === request.current}
+              disabled={!style || onOverrides || isSub || style.name === request.current}
               onClick={() => style && setCurrent(style.name)}
             >
               Set Current
@@ -213,6 +254,9 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
             >
               Override...
             </button>
+            <button type="button" disabled={!style} onClick={() => setEditing({ mode: 'compare' })}>
+              Compare...
+            </button>
           </div>
         </div>
       </div>
@@ -230,6 +274,7 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
         <StyleMenu
           at={menu}
           overrides={onOverrides}
+          substyle={isSub}
           onClose={() => setMenu(undefined)}
           onCurrent={() => style && setCurrent(style.name)}
           onRename={() => style && setRenaming(style.name)}
@@ -256,30 +301,54 @@ export function DimStyleDialog({ doc, request }: { doc: number; request: Request
       )}
       {editing?.mode === 'create' && style && (
         <CreateNewStyle
-          styles={request.styles.map((s) => s.name)}
-          from={style.name}
+          styles={request.styles.filter((s) => s.parent === undefined).map((s) => s.name)}
+          from={style.parent ?? style.name}
           onCancel={() => setEditing(undefined)}
-          onContinue={(name, from) => {
-            const base = request.styles.find((s) => s.name === from)!;
-            setEditing({ mode: 'new', name, from, vars: dialogVars(base.vars) });
+          onContinue={(name, from, use) => {
+            // A sub-style there is already opens as it is: Continue edits it.
+            const child =
+              use === 'all'
+                ? undefined
+                : request.styles.find((s) => s.parent === from && s.use === use);
+            const base = child ?? request.styles.find((s) => s.name === from)!;
+            setEditing({ mode: 'new', name, from, use, vars: dialogVars(base.vars) });
           }}
         />
       )}
-      {editing && editing.mode !== 'create' && (
+      {editing?.mode === 'compare' && style && (
+        <CompareStyles
+          styles={request.styles}
+          compare={style.name}
+          lists={request.lists}
+          onClose={() => setEditing(undefined)}
+        />
+      )}
+      {editing && editing.mode !== 'create' && editing.mode !== 'compare' && (
         <StyleEditor
           title={
             editing.mode === 'new'
-              ? `New Dimension Style: ${editing.name}`
+              ? `New Dimension Style: ${
+                  editing.use && editing.use !== 'all'
+                    ? `${editing.from}: ${useLabel(editing.use)}`
+                    : editing.name
+                }`
               : editing.mode === 'modify'
                 ? `Modify Dimension Style: ${editing.name}`
                 : `Override Current Style: ${editing.name}`
           }
           vars={editing.vars}
           lists={request.lists}
+          override={editing.mode === 'override'}
           onCancel={() => setEditing(undefined)}
           onOk={(vars) => {
             if (editing.mode === 'new') {
-              void send({ op: 'new', name: editing.name, from: editing.from!, vars });
+              void send({
+                op: 'new',
+                name: editing.name,
+                from: editing.from!,
+                vars,
+                ...(editing.use && editing.use !== 'all' && { use: editing.use }),
+              });
             } else if (editing.mode === 'modify') {
               void send({ op: 'modify', name: editing.name, vars });
             } else {
@@ -321,6 +390,8 @@ function RenameInput({ name, onDone }: { name: string; onDone: (to?: string) => 
 function StyleMenu(props: {
   at: { x: number; y: number };
   overrides: boolean;
+  /** A sub-style is neither made current nor renamed. */
+  substyle: boolean;
   onClose: () => void;
   onCurrent: () => void;
   onRename: () => void;
@@ -358,8 +429,8 @@ function StyleMenu(props: {
         item('Save to current style', props.onSave)
       ) : (
         <>
-          {item('Set current', props.onCurrent)}
-          {item('Rename', props.onRename)}
+          {!props.substyle && item('Set current', props.onCurrent)}
+          {!props.substyle && item('Rename', props.onRename)}
           {item('Delete', props.onDelete)}
         </>
       )}
@@ -371,13 +442,16 @@ function CreateNewStyle(props: {
   styles: readonly string[];
   from: string;
   onCancel: () => void;
-  onContinue: (name: string, from: string) => void;
+  onContinue: (name: string, from: string, use: DimStyleUse) => void;
 }) {
   const id = useId();
   const [name, setName] = useState(`Copy of ${props.from}`);
   const [from, setFrom] = useState(props.from);
+  const [use, setUse] = useState<DimStyleUse>('all');
+  // A sub-style is named after its Start With style: the name is not typed.
+  const sub = use !== 'all';
   const go = () => {
-    if (name.trim() !== '') props.onContinue(name.trim(), from);
+    if (sub || name.trim() !== '') props.onContinue(name.trim(), from, use);
   };
   return (
     <Modal
@@ -388,7 +462,13 @@ function CreateNewStyle(props: {
     >
       <label className="cad-dialog-field">
         <span>New Style Name:</span>
-        <input type="text" value={name} maxLength={255} onChange={(e) => setName(e.target.value)} />
+        <input
+          type="text"
+          value={sub ? `${from}: ${useLabel(use)}` : name}
+          maxLength={255}
+          disabled={sub}
+          onChange={(e) => setName(e.target.value)}
+        />
       </label>
       <label className="cad-dialog-field">
         <span>Start With:</span>
@@ -408,12 +488,20 @@ function CreateNewStyle(props: {
       </label>
       <label className="cad-dialog-field" htmlFor={`${id}-use`}>
         <span>Use for:</span>
-        <select id={`${id}-use`} value="all" disabled>
-          <option value="all">All dimensions</option>
+        <select
+          id={`${id}-use`}
+          value={use}
+          onChange={(e) => setUse(e.target.value as DimStyleUse)}
+        >
+          {DIMSTYLE_USES.map((u) => (
+            <option key={u.value} value={u.value}>
+              {u.label}
+            </option>
+          ))}
         </select>
       </label>
       <div className="cad-dialog-buttons">
-        <button type="button" onClick={go} disabled={name.trim() === ''}>
+        <button type="button" onClick={go} disabled={!sub && name.trim() === ''}>
           Continue
         </button>
         <button type="button" onClick={props.onCancel}>
@@ -431,6 +519,8 @@ function StyleEditor(props: {
   title: string;
   vars: DimStyleVars;
   lists: DimStyleLists;
+  /** Override: the fields AutoCAD keeps in the style's xdata are greyed. */
+  override: boolean;
   onCancel: () => void;
   onOk: (vars: DimStyleVars) => void;
 }) {
@@ -475,6 +565,7 @@ function StyleEditor(props: {
                   field={f}
                   vars={vars}
                   lists={props.lists}
+                  locked={props.override && isDimStyleXdataVar(f.vars[0]!)}
                   onChange={(value) => setVars((v) => setField(v, f.key, value))}
                 />
               ))}
@@ -505,14 +596,16 @@ function Field({
   field: f,
   vars,
   lists,
+  locked,
   onChange,
 }: {
   field: DimStyleField;
   vars: DimStyleVars;
   lists: DimStyleLists;
+  locked: boolean;
   onChange: (value: string | number | boolean) => void;
 }) {
-  const disabled = f.enabled ? !f.enabled(vars) : false;
+  const disabled = locked || (f.enabled ? !f.enabled(vars) : false);
   const value = f.get(vars);
   if (f.kind === 'check') {
     return (
@@ -609,5 +702,103 @@ function TextField(props: {
         onBlur={() => setText(undefined)}
       />
     </label>
+  );
+}
+
+const NONE = '';
+
+/**
+ * Compare Dimension Styles: the variables Compare and With set differently (Description,
+ * Variable and each style's value), or every variable of Compare when With is <none>, with a
+ * count and AutoCAD's Copy to clipboard.
+ */
+function CompareStyles(props: {
+  styles: readonly { readonly name: string; readonly vars: DimStyleVars }[];
+  compare: string;
+  lists: DimStyleLists;
+  onClose: () => void;
+}) {
+  const id = useId();
+  const [a, setA] = useState(props.compare);
+  const [b, setB] = useState(NONE);
+  const varsOf = (name: string) => props.styles.find((s) => s.name === name)?.vars;
+  const rows = compareDimStyles(
+    varsOf(a) ?? {},
+    b === NONE ? undefined : varsOf(b),
+    listNames(props.lists),
+  );
+  const same = b !== NONE && rows.length === 0;
+  const copy = () => {
+    const lines = rows.map((r) => [r.description, r.variable, ...r.values].join('\t'));
+    void navigator.clipboard?.writeText(lines.join('\n')).catch(() => undefined);
+  };
+  const options = (withNone: boolean) => (
+    <>
+      {withNone && <option value={NONE}>&lt;none&gt;</option>}
+      {props.styles.map((s) => (
+        <option key={s.name} value={s.name}>
+          {s.name}
+        </option>
+      ))}
+    </>
+  );
+  return (
+    <Modal
+      label="Compare Dimension Styles"
+      className="dimstyle-compare"
+      onOk={props.onClose}
+      onCancel={props.onClose}
+    >
+      <label className="cad-dialog-field">
+        <span>Compare:</span>
+        <select value={a} onChange={(e) => setA(e.target.value)}>
+          {options(false)}
+        </select>
+      </label>
+      <label className="cad-dialog-field">
+        <span>With:</span>
+        <select value={b} onChange={(e) => setB(e.target.value)}>
+          {options(true)}
+        </select>
+      </label>
+      <p id={`${id}-summary`} role="status" data-testid="dimstyle-compare-summary">
+        {same
+          ? 'The two styles are identical.'
+          : b === NONE
+            ? `All properties of ${a}:`
+            : `Found ${rows.length} ${rows.length === 1 ? 'difference' : 'differences'}:`}
+      </p>
+      <div className="dimstyle-compare-table">
+        <table aria-describedby={`${id}-summary`}>
+          <thead>
+            <tr>
+              <th scope="col">Description</th>
+              <th scope="col">Variable</th>
+              <th scope="col">{a}</th>
+              {b !== NONE && <th scope="col">{b}</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.variable}>
+                <td>{r.description}</td>
+                <td>{r.variable}</td>
+                {r.values.map((v, i) => (
+                  <td key={i}>{v}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="cad-dialog-buttons">
+        <button type="button" onClick={copy} disabled={rows.length === 0}>
+          Copy to Clipboard
+        </button>
+        <button type="button" onClick={props.onClose}>
+          Close
+        </button>
+      </div>
+    </Modal>
   );
 }

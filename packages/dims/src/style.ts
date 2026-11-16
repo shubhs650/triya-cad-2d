@@ -8,6 +8,7 @@ import {
   dimColor,
   dimLineweight,
   dimTrueColors,
+  dimStyleXdataVars,
   dimVars,
   linetypeRef,
   type AnnotationScale,
@@ -169,7 +170,15 @@ export function dimStyle(
   model: AnnotationTables,
   annotationScale?: number,
 ): DimStyle {
-  const vars = { ...DEFAULTS, ...legacyVars(style, model), ...dimVars(style, xdata, model) };
+  // The settings the style (or the dimension itself) files in `ACAD_DSTYLE_*` xdata: sub-units
+  // among them (M4-03 part 2).
+  const vars = {
+    ...DEFAULTS,
+    ...legacyVars(style, model),
+    ...dimStyleXdataVars(model, model.tables.dimStyles.get(style)?.xdata),
+    ...dimStyleXdataVars(model, xdata),
+    ...dimVars(style, xdata, model),
+  };
   const trueColors = dimTrueColors(style, xdata, model);
   const scale = annotationScale ?? (num(vars.DIMSCALE, 1) || 1);
   const len = (name: string): number => num(vars[name]) * scale;

@@ -2,6 +2,7 @@
 // ARC_DIMENSION).
 
 import {
+  drawnDimStyle,
   jogHeightFactor,
   linearJog,
   radialArc,
@@ -38,7 +39,9 @@ export function dimensionParts(
 ): DimPart[] | undefined {
   const g = e.geom;
   if (!('dimType' in g) || !generates(g)) return undefined;
-  const s = dimStyle(g.style, e.xdata, model, annotationScaleOf(e, model));
+  // Its style's sub-style for its kind, when the drawing has one (M4-03 part 2).
+  const style = drawnDimStyle(model, g);
+  const s = dimStyle(style, e.xdata, model, annotationScaleOf(e, model));
   // The text stays where the writer put it while the dimension keeps its stored graphics or
   // the user moved it; otherwise the engine places it, as AutoCAD does when it regenerates.
   const stored = !options.regenerate && g.block !== undefined && !!model.blocks.get(g.block);
@@ -47,7 +50,7 @@ export function dimensionParts(
     case 'linear':
     case 'aligned': {
       const at = linearJog(e.xdata, model);
-      const jog = at && { at, height: jogHeightFactor(g.style, e.xdata, model) * s.textHeight };
+      const jog = at && { at, height: jogHeightFactor(style, e.xdata, model) * s.textHeight };
       return linearParts(g, s, model, measure, keepText, jog);
     }
     case 'radius':

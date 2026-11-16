@@ -21,6 +21,8 @@ describe('palette search', () => {
     const zoom = commandItems(builtinCommands()).find((i) => i.id === 'ZOOM');
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
+      // M4-03 part 2: dimension styles at the command line.
+      '-DIMSTYLE',
       // M4-05: a table on the command line.
       '-TABLE',
       // M3-09: the Drawing Units questions at the command line.
@@ -66,6 +68,8 @@ describe('palette search', () => {
       'DIMBASELINE',
       'DIMCONTINUE',
       'DIMDIAMETER',
+      // M4-02 part 3: DIMDISASSOCIATE and DIMREASSOCIATE.
+      'DIMDISASSOCIATE',
       // M4-02 part 2: DIMEDIT, DIMOVERRIDE, DIMSPACE, DIMTEDIT and QDIM.
       'DIMEDIT',
       'DIMJOGGED',
@@ -74,6 +78,7 @@ describe('palette search', () => {
       'DIMORDINATE',
       'DIMOVERRIDE',
       'DIMRADIUS',
+      'DIMREASSOCIATE',
       'DIMSPACE',
       // M4-03: the Dimension Style Manager.
       'DIMSTYLE',

@@ -199,3 +199,30 @@ describe('DIMTOLJ and angular tolerances (M2-30)', () => {
     expect(angularText('', deg(90), { ...tol, DIMPOST: '<> REF' })).toBe('90%%d REF');
   });
 });
+
+describe('sub-units (M4-03 part 2)', () => {
+  const metres = { DIMLUNIT: 2, DIMDEC: 2, DIMZIN: 4, DIMMZF: 100, DIMMZS: 'cm' };
+
+  it('a distance under one unit is shown in sub-units once leading zeros are suppressed', () => {
+    expect(formatLinear(0.5, metres)).toBe('50cm');
+    expect(formatLinear(0.125, { ...metres, DIMDEC: 3 })).toBe('12.5cm');
+    expect(formatLinear(-0.5, metres)).toBe('-50cm');
+    expect(formatLinear(0.5, { ...metres, DIMDSEP: ',', DIMDEC: 4 })).toBe('50,00cm');
+    // One unit and more, zero, leading zeros kept, no suffix, other units: as before.
+    expect(formatLinear(1.5, metres)).toBe('1.50');
+    expect(formatLinear(0, metres)).toBe('.00');
+    expect(formatLinear(0.5, { ...metres, DIMZIN: 0 })).toBe('0.50');
+    expect(formatLinear(0.5, { ...metres, DIMMZS: '' })).toBe('.50');
+    expect(formatLinear(0.5, { ...metres, DIMLUNIT: 5 })).not.toContain('cm');
+  });
+
+  it('the sub-unit suffix takes the place of DIMPOST’s; alternate units take their own', () => {
+    expect(linearText('', 0.5, { ...metres, DIMPOST: '<> m' })).toBe('50cm');
+    expect(linearText('', 0.5, { ...metres, DIMPOST: 'L=<> m' })).toBe('L=50cm');
+    expect(linearText('', 2, { ...metres, DIMPOST: '<> m' })).toBe('2.00 m');
+    const alt = { DIMALT: 1, DIMALTF: 1000, DIMALTD: 0, DIMALTU: 2, DIMALTZ: 4 };
+    expect(
+      linearText('', 0.0005, { ...metres, ...alt, DIMDEC: 4, DIMALTMZF: 1000, DIMALTMZS: 'µm' }),
+    ).toBe('.05cm [500µm]');
+  });
+});

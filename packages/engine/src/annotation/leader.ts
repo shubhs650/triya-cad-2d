@@ -30,6 +30,7 @@ import type {
   Lineweight,
 } from '../model/types';
 import { DIMVAR_BY_CODE } from './dimvars';
+import { drawnDimStyle } from './dimstyle-family';
 import {
   arrowheadParts,
   linetypeRef,
@@ -113,9 +114,11 @@ export function leaderParts(
 ): AnnotationPart[] {
   const pts: Vec2[] = [...g.vertices];
   if (pts.length < 2) return [];
-  const vars = dimVars(g.style, xdata, model);
+  // Its style's Leaders and Tolerances sub-style when there is one (M4-03 part 2).
+  const style = drawnDimStyle(model, g);
+  const vars = dimVars(style, xdata, model);
   const dimscale = dimNum(vars.DIMSCALE, 1) || 1;
-  const color = dimTrueColors(g.style, xdata, model).DIMCLRD ?? dimColor(vars.DIMCLRD);
+  const color = dimTrueColors(style, xdata, model).DIMCLRD ?? dimColor(vars.DIMCLRD);
   const linetype: LinetypeRef | undefined =
     typeof vars.DIMLTYPE === 'string' ? linetypeRef(model, vars.DIMLTYPE) : undefined;
   const lineweight = dimLineweight(vars.DIMLWD);

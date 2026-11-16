@@ -9,14 +9,16 @@
 // The DIMVARs are AutoCAD's DIMSTYLE reference:
 // https://help.autodesk.com/view/OARX/2024/ENU/?guid=GUID-F2FAD36F-0CE3-4943-9DAD-A9BCD2AE81DA
 //
-// What the dialog has but a DIMSTYLE record does not hold is left out: Dimension Break's break
-// size, Linear Jog's height factor, the sub-units factor and suffix and Tolerance Alignment are
-// AutoCAD's `ACAD_DSTYLE_*` xdata on the record. Annotative is shown and never set (DEC-013,
-// DEC-058). DIMTVP and DIMTSZ are not in AutoCAD's dialog either; the dialog keeps them as they
+// What the dialog has but a DIMSTYLE record has no group for (Dimension Break's break size,
+// Linear Jog's height factor, the sub-units factor and suffix, Tolerance Alignment) is AutoCAD's
+// `ACAD_DSTYLE_*` xdata on the record (part 2, dimstyle-xdata.ts): the fields set them under the
+// names DIMBREAK, DIMJAG, DIMMZF, DIMMZS, DIMALTMZF, DIMALTMZS and DIMTALN, which the command
+// writes there. Annotative is shown and never set (DEC-013, DEC-058). DIMTVP and DIMTSZ are not in AutoCAD's dialog either; the dialog keeps them as they
 // were (SETVAR and -DIMSTYLE set them).
 import type { DimVarValue } from '../model/types';
 import { parseNumber } from '../commands/parse';
 import { DIMVAR_DEFAULTS } from '../properties/dimension';
+import { DIMSTYLE_XDATA_DEFAULTS } from './dimstyle-xdata';
 
 export type DimStyleVars = Readonly<Record<string, DimVarValue>>;
 
@@ -372,6 +374,13 @@ const SYMBOLS: DimStyleField[] = [
     'radio',
   ),
   jogAngle,
+  numberField('DIMBREAK', { tab: 'symbols', group: 'Dimension Break', label: 'Break size' }),
+  // AutoCAD's "Jog height factor: <n> * Text height".
+  numberField(
+    'DIMJAG',
+    { tab: 'symbols', group: 'Linear jog dimension', label: 'Jog height factor' },
+    (n) => n > 0,
+  ),
 ];
 
 // --- Text ---------------------------------------------------------------------------------------
@@ -693,6 +702,32 @@ function zeroField(
   };
 }
 
+/**
+ * Sub-units factor and Sub-unit suffix, which AutoCAD offers once Leading zeros are suppressed:
+ * a distance under one unit is then shown in sub-units (AutoCAD Help, "Primary Units Tab").
+ */
+function subUnitFields(
+  zin: string,
+  factor: string,
+  suffix: string,
+  at: Omit<FieldBase, 'label'>,
+): DimStyleField[] {
+  const enabled = (v: DimStyleVars) => (at.enabled?.(v) ?? true) && (num(v[zin]) & 4) !== 0;
+  return [
+    numberField(factor, { ...at, label: 'Sub-units factor', enabled }, (n) => n > 0),
+    {
+      key: suffix,
+      ...at,
+      label: 'Sub-unit suffix',
+      kind: 'text',
+      vars: [suffix],
+      enabled,
+      get: (v) => str(v[suffix]),
+      set: (value) => (typeof value === 'string' ? { [suffix]: value } : undefined),
+    },
+  ];
+}
+
 /** Feet and inches are shown by Engineering and Architectural units only. */
 const feetInches =
   (name: string, ...formats: number[]) =>
@@ -810,6 +845,7 @@ const PRIMARY: DimStyleField[] = [
   lfacField,
   layoutOnlyField,
   zeroField('DIMZIN', 'leading', linearZeros),
+  ...subUnitFields('DIMZIN', 'DIMMZF', 'DIMMZS', linearZeros),
   zeroField('DIMZIN', 'trailing', linearZeros),
   zeroField('DIMZIN', 'feet', { ...linearZeros, enabled: feetInches('DIMLUNIT', 3, 4) }),
   zeroField('DIMZIN', 'inches', { ...linearZeros, enabled: feetInches('DIMLUNIT', 3, 4) }),
@@ -896,6 +932,7 @@ const ALTERNATE: DimStyleField[] = [
   affixField('DIMAPOST', 'prefix', altUnits),
   affixField('DIMAPOST', 'suffix', altUnits),
   zeroField('DIMALTZ', 'leading', altZeros),
+  ...subUnitFields('DIMALTZ', 'DIMALTMZF', 'DIMALTMZS', altZeros),
   zeroField('DIMALTZ', 'trailing', altZeros),
   zeroField('DIMALTZ', 'feet', {
     ...altZeros,
@@ -1010,6 +1047,20 @@ const TOLERANCES: DimStyleField[] = [
       [2, 'Top'],
     ]),
   ),
+  choiceField(
+    'DIMTALN',
+    {
+      tab: 'tolerances',
+      group: 'Tolerance alignment',
+      label: 'Tolerance alignment',
+      enabled: tolerances,
+    },
+    opts([
+      [0, 'Align decimal separators'],
+      [1, 'Align operational symbols'],
+    ]),
+    'radio',
+  ),
   zeroField('DIMTZIN', 'leading', {
     tab: 'tolerances',
     group: 'Zero suppression',
@@ -1078,7 +1129,7 @@ export const DIMSTYLE_DIALOG_KEEPS: readonly string[] = ['DIMTVP', 'DIMTSZ', 'DI
 
 /** A style's DIMVARs as the dialog shows them: AutoCAD's defaults for what it does not state. */
 export function dialogVars(vars: DimStyleVars): DimStyleVars {
-  return { ...DIMSTYLE_DEFAULTS, ...vars };
+  return { ...DIMSTYLE_DEFAULTS, ...DIMSTYLE_XDATA_DEFAULTS, ...vars };
 }
 
 /** The options a field offers for `v`. */

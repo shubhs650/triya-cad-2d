@@ -1535,3 +1535,49 @@ describe('annotative dimensions (M4-01)', () => {
     expect(extOf({ geom: linear(), annotative: at('77') })!.start).toEqual({ x: 0, y: 1.875 });
   });
 });
+
+describe('sub-styles and xdata settings (M4-03 part 2)', () => {
+  /** The drawing with ISO-25 (`vars`, `xdata`) and its sub-style `ISO-25$<digit>` (DIMTXT 5). */
+  function withChild(
+    digit: number,
+    vars: DimStyleRecord['vars'] = ISO,
+    xdata?: DimStyleRecord['xdata'],
+  ): DocumentModel {
+    const init = initOf(vars);
+    return DocumentModel.create({
+      ...init,
+      tables: {
+        ...init.tables,
+        appIds: [...init.tables!.appIds!, { handle: '13', name: 'ACAD_DSTYLE_DIMMZS' }],
+        dimStyles: [
+          { handle: STYLE, name: 'ISO-25', vars, ...(xdata ? { xdata } : {}) },
+          { handle: '28', name: 'ISO-25$' + digit, vars: { ...vars, DIMTXT: 5 } },
+        ],
+      },
+    });
+  }
+  const textOf = (ps: DimPart[]) =>
+    of(ps, 'MTEXT')[0] as Extract<EntityGeometry, { kind: 'MTEXT' }>;
+
+  it('a linear dimension of the parent style is drawn with its Linear sub-style', () => {
+    expect(textOf(parts(linear(), withChild(0))).height).toBe(5);
+    // Another kind's sub-style leaves it alone.
+    expect(textOf(parts(linear(), withChild(2))).height).toBe(2.5);
+  });
+
+  it('shows the sub-units its style keeps in xdata', () => {
+    const cm = [
+      {
+        appId: '13',
+        values: [
+          { code: 1070, value: 394 },
+          { code: 1000, value: 'cm' },
+        ],
+      },
+    ];
+    const short = linear({ second: { x: 0.5, y: 0 }, definitionPoint: { x: 0.5, y: 20 } });
+    // Leading zeros kept: no sub-units.
+    expect(textOf(parts(short, withChild(2, ISO, cm))).contents).toBe('0.5');
+    expect(textOf(parts(short, withChild(2, { ...ISO, DIMZIN: 12 }, cm))).contents).toBe('50cm');
+  });
+});

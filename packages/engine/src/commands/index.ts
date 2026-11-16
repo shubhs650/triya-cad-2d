@@ -28,6 +28,7 @@ export {
   type UnitsSettings,
 } from './drawing-units';
 export { rayCommand, xlineCommand } from './draw/xline';
+export { dashDimstyleCommand } from './dimstyle-dash';
 export {
   dimStyleRequest,
   dimstyleCommand,

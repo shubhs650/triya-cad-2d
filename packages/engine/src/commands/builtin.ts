@@ -6,6 +6,7 @@ import { dimensionCommands } from './draw/dimension';
 import { moreDimensionCommands } from './draw/dimension-more';
 import { qdimCommand } from './draw/qdim';
 import { dimensionEditCommands } from './modify/dimension-edit';
+import { dimensionAssociateCommands } from './modify/dimension-associate';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
 import { ellipseCommand } from './draw/ellipse';
@@ -36,6 +37,7 @@ import { overkillCommand } from './modify/overkill';
 import { DRAFTING_SETTINGS_COMMANDS } from './drafting-settings';
 import { UNITS_COMMANDS } from './drawing-units';
 import { dimstyleCommand } from './dimstyle';
+import { dashDimstyleCommand } from './dimstyle-dash';
 import { SNAP_GRID_COMMANDS } from './snap-grid';
 import { UCS_COMMANDS } from './ucs';
 import { changeCommand, chpropCommand } from './modify/chprop';
@@ -122,6 +124,7 @@ export function builtinCommands(): CommandRegistry {
     ...moreDimensionCommands(),
     qdimCommand(),
     ...dimensionEditCommands(),
+    ...dimensionAssociateCommands(),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
@@ -129,6 +132,7 @@ export function builtinCommands(): CommandRegistry {
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
     ...UNITS_COMMANDS.map((make) => make()),
     dimstyleCommand(),
+    dashDimstyleCommand(),
     ...SNAP_GRID_COMMANDS.map((make) => make()),
     ...UCS_COMMANDS.map((make) => make()),
     underlayLayersCommand(),

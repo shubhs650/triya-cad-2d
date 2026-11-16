@@ -4,7 +4,8 @@
 // measured by the canvas (`textWidths`), each once, and drawing is tried again with the widths
 // it asked for until nothing is missing (a dimension measures its main text and, for some
 // rules, a second one).
-import type { Entity, MTextGeometry } from '../../model/types';
+import type { DimStyleRecord, Entity, MTextGeometry } from '../../model/types';
+import { childStyleUse } from '../../annotation/dimstyle-family';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
 import type { DocumentModel } from '../../model/document';
@@ -109,12 +110,30 @@ export function restyledDimensions(
   const out = new Set<EntityId>();
   const styles = new Set<Handle>();
   const drawnInto = new Set<Handle>();
+  // A sub-style changed, added or removed restyles its parent's dimensions (M4-03 part 2).
+  const restyle = (s: DimStyleRecord): void => {
+    styles.add(s.handle);
+    const child = childStyleUse(s.name);
+    if (!child) return;
+    const parent = child.parent.toUpperCase();
+    for (const p of model.tables.dimStyles.values())
+      if (p.name.toUpperCase() === parent) styles.add(p.handle);
+  };
   for (const cs of changes) {
     for (const { before, after } of cs.tables?.dimStyles?.updated ?? []) {
-      if (!same(before.vars, after.vars) || !same(before.trueColors, after.trueColors)) {
-        styles.add(after.handle);
+      if (
+        !same(before.vars, after.vars) ||
+        !same(before.trueColors, after.trueColors) ||
+        !same(before.xdata, after.xdata)
+      ) {
+        restyle(after);
       }
     }
+    for (const s of [
+      ...(cs.tables?.dimStyles?.added ?? []),
+      ...(cs.tables?.dimStyles?.removed ?? []),
+    ])
+      if (childStyleUse(s.name)) restyle(s);
     for (const { entity } of cs.entities?.added ?? []) drawnInto.add(entity.owner);
     for (const { before, after } of cs.entities?.updated ?? []) {
       if (!isDimension(before) || !isDimension(after)) continue;
