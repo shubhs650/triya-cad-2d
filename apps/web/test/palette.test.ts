@@ -107,6 +107,8 @@ describe('palette search', () => {
       'GRID',
       'GROUP',
       'GROUPEDIT',
+      // M4-07 part 1: HATCH and -HATCH on the command line.
+      'HATCH',
       'HATCHTOBACK',
       'ID',
       'JOIN',
