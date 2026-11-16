@@ -18,7 +18,8 @@
 // the least-squares cubic of Piegl and Tiller, "The NURBS Book" §9.4.1: knots by averaging
 // (eq. 9.69), the ends kept, and the end derivatives the interpolation has when tangents are
 // given or the spline is closed (so it stays closed and smooth), with the fewest control points
-// that keep every fit point within the tolerance at its own parameter. When none do, it
+// (fewer than the points) that keep every fit point within the tolerance at its own parameter
+// and the curve within twice the tolerance of the interpolation between them. When none do, it
 // interpolates.
 
 import { basisFunctions, findSpan } from './nurbs';
@@ -83,7 +84,14 @@ export function fitSpline(d: FitData): Spline | undefined {
   const fixStart = closed || start !== undefined;
   const fixEnd = closed || d.endTangent !== undefined;
   return (
-    approximate(pts, t, fixStart ? D[0] : undefined, fixEnd ? D[S] : undefined, tol) ?? interpolated
+    approximate(
+      pts,
+      t,
+      fixStart ? D[0] : undefined,
+      fixEnd ? D[S] : undefined,
+      tol,
+      interpolated,
+    ) ?? interpolated
   );
 }
 
@@ -92,8 +100,7 @@ export function fitSpline(d: FitData): Spline | undefined {
 /**
  * The cubic with the fewest control points that passes within `tol` of each point at its
  * parameter, its ends at the first and last point and, when given, its end derivatives; or
- * undefined when only the interpolation (n + 2 control points for n + 1 points) does. The count
- * is searched by doubling, then halving the gap, so a fit within the tolerance is kept.
+ * undefined when only the interpolation (n + 2 control points for n + 1 points) does.
  */
 function approximate(
   pts: readonly Vec2[],
@@ -101,18 +108,27 @@ function approximate(
   d0: Vec2 | undefined,
   d1: Vec2 | undefined,
   tol: number,
+  interpolated: Spline,
 ): Spline | undefined {
   const m = pts.length - 1;
-  // Fewer control points than the interpolation's m + 3, and no more unknown ones than inner
-  // points to fit them to (more leave the least squares free to swing between the points).
-  const fixed = 2 + (d0 ? 1 : 0) + (d1 ? 1 : 0);
-  const most = Math.min(m + 3, m - 1 + fixed + 1);
+  // Fewer control points than points (Piegl and Tiller's m > n), so that the averaged knots
+  // leave points in every span and the least squares cannot swing between them.
+  const most = m + 1;
   const least = 4;
   if (most <= least) return undefined;
   const within = (n: number): Spline | undefined => {
     const s = leastSquares(pts, t, n, d0, d1);
-    return s && furthest(s, pts, t) <= tol ? s : undefined;
+    return s && furthest(s, pts, t) <= tol && hugs(s, interpolated, t, tol) ? s : undefined;
   };
+  // Few points: every count in turn, as fits are not monotonic in the count. Many: doubling,
+  // then halving the gap, so a fit within the tolerance is kept (a few dense solves only).
+  if (m <= 60) {
+    for (let n = least; n < most; n++) {
+      const s = within(n);
+      if (s) return s;
+    }
+    return undefined;
+  }
   let failed = least - 1;
   let found: { n: number; s: Spline } | undefined;
   for (let n = least; n < most; n = Math.min(most - 1, 2 * n - 2)) {
@@ -132,6 +148,23 @@ function approximate(
     else failed = n;
   }
   return found.s;
+}
+
+/**
+ * Whether the approximation keeps near the interpolation between the points as well: within
+ * twice the tolerance at the quarter points of each span (a guard against a fit that passes
+ * near the points but swings away between them; the factor is ours).
+ */
+function hugs(s: Spline, interpolated: Spline, t: readonly number[], tol: number): boolean {
+  for (let k = 0; k + 1 < t.length; k++) {
+    for (const f of [0.25, 0.5, 0.75]) {
+      const u = t[k]! + (t[k + 1]! - t[k]!) * f;
+      const a = point(s, u);
+      const b = point(interpolated, u);
+      if (Math.hypot(a.x - b.x, a.y - b.y) > 2 * tol) return false;
+    }
+  }
+  return true;
 }
 
 /** How far the curve passes from the points at their parameters. */

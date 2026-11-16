@@ -231,6 +231,39 @@ describe('fit tolerance', () => {
     expect(fitSpline({ fitPoints: wavy, tolerance: 1e-12 })).toEqual(exact);
   });
 
+  // Found while taking the PR's screenshots: with as many control points as points, the
+  // averaged knots left a span without a point and the least squares swung far out between
+  // points it still passed near.
+  it('does not swing away between the points', () => {
+    const pts = Array.from({ length: 13 }, (_, i) =>
+      v(
+        10 + i * 10,
+        Math.round((60 + 12 * Math.sin(i / 2) + (i % 2 === 0 ? 2.5 : -2.5)) * 100) / 100,
+      ),
+    );
+    const s = fitSpline({ fitPoints: pts, tolerance: 3 })!;
+    expect(s.controlPoints.length).toBeLessThan(pts.length);
+    expect(farthest(s, pts)).toBeLessThanOrEqual(3);
+    for (const p of s.controlPoints) {
+      expect(p.x).toBeGreaterThan(0);
+      expect(p.x).toBeLessThan(140);
+      expect(p.y).toBeGreaterThan(30);
+      expect(p.y).toBeLessThan(90);
+    }
+  });
+
+  it('approximates a long run of points, searching the count by halving', () => {
+    const many = Array.from({ length: 121 }, (_, i) =>
+      v(i / 2, 5 * Math.sin(i / 15) + (i % 2 === 0 ? 0.03 : -0.03)),
+    );
+    const s = fitSpline({ fitPoints: many, tolerance: 0.1 })!;
+    expect(s.controlPoints.length).toBeLessThan(30);
+    expect(farthest(s, many)).toBeLessThanOrEqual(0.1);
+    // Nothing fewer than the points passes this close: the interpolation.
+    const exact = fitSpline({ fitPoints: many })!;
+    expect(fitSpline({ fitPoints: many, tolerance: 0.001 })).toEqual(exact);
+  });
+
   it('keeps the end tangents given', () => {
     const s = fitSpline({
       fitPoints: wavy,
