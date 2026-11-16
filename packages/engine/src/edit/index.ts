@@ -93,3 +93,11 @@ export * from './overkill';
 export * from './groups';
 export * from './snap-grid';
 export * from './mleader-align';
+export {
+  boundaryAt,
+  boundaryOfObjects,
+  boundedCurves,
+  type BoundaryOptions,
+  type IslandStyle,
+  type PickedBoundary,
+} from './hatch-boundary';

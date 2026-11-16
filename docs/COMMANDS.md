@@ -22,7 +22,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | RAY | — | 2 | | x (#376: a start point and through points until Enter, dragged) |
 | POINT | PO | 2 | PDMODE, PDSIZE, Multiple | ~ (#376: one point, with "Current point modes" reported; drawn and plotted by PDMODE and PDSIZE, set by typing them or with DDPTYPE's Point Style dialog (#385); Multiple Points with the ribbon, M7-01) |
 | DONUT | DO | 3 | | x (#376: inside and outside diameters (remembered, 0.5 and 1 at first; a zero inside fills it), then centres until Enter, dragged; a closed LWPOLYLINE of two half circles with a constant width) |
-| HATCH | H, BH | 2 | contextual tab; -HATCH dash variant required | |
+| HATCH | H, BH | 2 | contextual tab; -HATCH dash variant required | ~ (#444, M4-07 part 1: HATCH and -HATCH on the command line: pick points with islands (Normal, Outer, Ignore) and gap tolerance, typed loop edges, text as islands, Select objects, Undo; -HATCH Properties (pattern, scale, angle, Solid, User defined), Advanced (Island detection, Style, Associativity refused by DEC-015, Gap tolerance, separate Hatches) and Origin; settings kept while the drawing is open. Not yet: the contextual tab and dialog, gradients, draw order, Retain boundary, Boundary set, draW boundary, remove Boundaries, COlor/LAyer/Transparency) |
 | GRADIENT | GD | 2 | | |
 | BOUNDARY | BO | 2 | Island detection, object type (polyline/region) | |
 | REGION | REG | 3 | 2D only | |
