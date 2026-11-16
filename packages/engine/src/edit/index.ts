@@ -53,6 +53,7 @@ export {
 } from './dimension-block';
 export * from './dimension';
 export * from './table';
+export * from './table-grid';
 export * from './named-view';
 export { offsetCurveOf, offsetGeometry, offsetSide } from './offset';
 export {

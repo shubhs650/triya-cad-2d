@@ -92,6 +92,8 @@ interface PromptBase {
    * typed; the front-end draws the items in order, a separator before each `separatorBefore`.
    */
   readonly shortcutMenu?: readonly ShortcutMenuItem[];
+  /** The shortcut menu's accessible name; "Grip options" when absent. */
+  readonly shortcutMenuTitle?: string;
   /** What Enter gives, shown as `<…>`; without one Enter answers `{ kind: 'enter' }`. */
   readonly default?: PromptAnswer;
   /**
