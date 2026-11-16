@@ -19,6 +19,7 @@ export interface SplineData {
   readonly endTangent?: Vec2 | undefined;
   readonly closed?: boolean | undefined;
   readonly knotParameterization?: KnotParameterization | undefined;
+  readonly fitTolerance?: number | undefined;
 }
 
 // Geometry is immutable, so one interpolation per stored spline is enough.
@@ -49,6 +50,7 @@ export function splineCurve(s: SplineData): Spline | undefined {
         endTangent: s.endTangent,
         closed: s.closed,
         parameterization: s.knotParameterization,
+        tolerance: s.fitTolerance,
       }) ?? null;
     fitted.set(s, curve);
   }

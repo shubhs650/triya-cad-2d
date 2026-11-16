@@ -130,6 +130,8 @@ const unit = (v: Vec2 | undefined): Vec2 | undefined => {
  */
 export function withFitData(g: SplineGeometry, f: FitEdit): SplineGeometry | undefined {
   const parameterization = g.knotParameterization;
+  // Within the fit tolerance when there is one (fit.ts, M3-16).
+  const tolerance = g.fitTolerance;
   const n = f.points.length;
   const closed = f.closed && n >= 3;
   const startTangent = unit(f.startTangent);
@@ -137,7 +139,14 @@ export function withFitData(g: SplineGeometry, f: FitEdit): SplineGeometry | und
   const kinks = f.kinks.flatMap((k, i) => (k && (closed || (i > 0 && i < n - 1)) ? [i] : []));
   let c: Spline | undefined;
   if (kinks.length === 0) {
-    c = fitSpline({ fitPoints: f.points, startTangent, endTangent, closed, parameterization });
+    c = fitSpline({
+      fitPoints: f.points,
+      startTangent,
+      endTangent,
+      closed,
+      parameterization,
+      tolerance,
+    });
   } else {
     // Runs from kink to kink, each fitted on its own (natural ends at the kinks); a closed
     // spline starts at its first kink and goes round to it again.
@@ -151,6 +160,7 @@ export function withFitData(g: SplineGeometry, f: FitEdit): SplineGeometry | und
         startTangent: !closed && r === 0 ? startTangent : undefined,
         endTangent: !closed && r === cuts.length - 2 ? endTangent : undefined,
         parameterization,
+        tolerance,
       });
       if (!run) return undefined;
       c = joinSplines(c, run);

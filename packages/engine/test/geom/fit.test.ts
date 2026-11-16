@@ -174,4 +174,87 @@ describe('fitSpline', () => {
     expect(fitSpline({ fitPoints: [v(1, 1), v(1, 1)] })).toBeUndefined();
     expect(fitSpline({ fitPoints: [v(1, 1)] })).toBeUndefined();
   });
+
+  // M3-16: AutoCAD's SPLINE and SPLINEDIT Tangents ask a closed spline for one tangent, at its
+  // first point. The curve still goes round smoothly (C1 at the seam, along that tangent).
+  it('gives a closed spline the tangent asked for at its seam, still smooth there', () => {
+    const fitPoints = [v(0, 0), v(10, 0), v(12, 8), v(3, 9)];
+    const s = fitSpline({ fitPoints, closed: true, startTangent: v(1, -1) })!;
+    expectPoints(atKnots(s), [...fitPoints, fitPoints[0]!]);
+    const { start, end } = splineDomain(s);
+    const a = evaluateDerivatives(s, start, 1)[1]!;
+    const b = evaluateDerivatives(s, end, 1)[1]!;
+    expectPoints([a], [b]);
+    expectPoints([unit(a)], [unit(v(1, -1))]);
+    // No tangent: as before, C2 round the seam.
+    const free = fitSpline({ fitPoints, closed: true, startTangent: undefined })!;
+    expect(free.controlPoints).toEqual(fitSpline({ fitPoints, closed: true })!.controlPoints);
+  });
+});
+
+/** The farthest any fit point lies from the curve (sampled finely). */
+function farthest(s: Spline, pts: readonly Vec2[]): number {
+  const { start, end } = splineDomain(s);
+  const samples = Array.from({ length: 4001 }, (_, i) =>
+    evaluate(s, start + ((end - start) * i) / 4000),
+  );
+  return Math.max(
+    ...pts.map((p) => Math.min(...samples.map((q) => Math.hypot(q.x - p.x, q.y - p.y)))),
+  );
+}
+
+// M3-16 (M1-65): a fit tolerance above 0 lets the curve pass within that distance of the fit
+// points instead of through them (AutoCAD 2024 Help, "SPLINE (Command)", toLerance). AutoCAD
+// does not document its algorithm, so ours is the least-squares cubic of Piegl and Tiller's
+// "The NURBS Book" §9.4.1 (knots by averaging, eq. 9.69) with the fewest control points that
+// keeps every fit point within the tolerance, the ends (and their tangents) kept.
+describe('fit tolerance', () => {
+  const wavy = Array.from({ length: 31 }, (_, i) =>
+    v(i, 3 * Math.sin(i / 4) + (i % 2 === 0 ? 0.04 : -0.04)),
+  );
+
+  it('approximates with fewer control points, every fit point within the tolerance', () => {
+    const exact = fitSpline({ fitPoints: wavy })!;
+    const s = fitSpline({ fitPoints: wavy, tolerance: 0.2 })!;
+    expect(s.degree).toBe(3);
+    expect(s.controlPoints.length).toBeLessThan(exact.controlPoints.length / 2);
+    expect(farthest(s, wavy)).toBeLessThanOrEqual(0.2);
+    // It still starts and ends at the end points.
+    const { start, end } = splineDomain(s);
+    expectPoints([evaluate(s, start), evaluate(s, end)], [wavy[0]!, wavy.at(-1)!]);
+    // A tighter tolerance takes more control points; 0 interpolates.
+    const tight = fitSpline({ fitPoints: wavy, tolerance: 0.01 })!;
+    expect(tight.controlPoints.length).toBeGreaterThan(s.controlPoints.length);
+    expect(farthest(tight, wavy)).toBeLessThanOrEqual(0.01);
+    expect(fitSpline({ fitPoints: wavy, tolerance: 0 })).toEqual(exact);
+    // Too tight to approximate with fewer points: the interpolation.
+    expect(fitSpline({ fitPoints: wavy, tolerance: 1e-12 })).toEqual(exact);
+  });
+
+  it('keeps the end tangents given', () => {
+    const s = fitSpline({
+      fitPoints: wavy,
+      tolerance: 0.2,
+      startTangent: v(0, 1),
+      endTangent: v(1, 0),
+    })!;
+    const { start, end } = splineDomain(s);
+    expectPoints([unit(evaluateDerivatives(s, start, 1)[1]!)], [v(0, 1)]);
+    expectPoints([unit(evaluateDerivatives(s, end, 1)[1]!)], [v(1, 0)]);
+    expect(farthest(s, wavy)).toBeLessThanOrEqual(0.2);
+  });
+
+  it('keeps a closed spline closed and smooth through its seam', () => {
+    const ring = Array.from({ length: 24 }, (_, i) => {
+      const a = (i / 24) * 2 * Math.PI;
+      const r = 10 + (i % 2 === 0 ? 0.05 : -0.05);
+      return v(r * Math.cos(a), r * Math.sin(a));
+    });
+    const s = fitSpline({ fitPoints: ring, closed: true, tolerance: 0.2 })!;
+    expect(s.controlPoints.length).toBeLessThan(ring.length);
+    expect(farthest(s, ring)).toBeLessThanOrEqual(0.2);
+    const { start, end } = splineDomain(s);
+    expectPoints([evaluate(s, start)], [evaluate(s, end)]);
+    expectPoints([evaluateDerivatives(s, start, 1)[1]!], [evaluateDerivatives(s, end, 1)[1]!]);
+  });
 });

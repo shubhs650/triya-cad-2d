@@ -170,6 +170,66 @@ describe('SPLINEDIT', () => {
     expect(bus.command).toBeUndefined();
   });
 
+  // M3-16: the tangent asked for at a closed spline's first point is its own, the curve still
+  // going round smoothly; a fit tolerance makes the curve pass near the fit points (fit.ts).
+  it('uses a closed spline’s tangent and approximates within the fit tolerance', async () => {
+    const wavy = Array.from({ length: 21 }, (_, i) =>
+      P(i, 10 + 3 * Math.sin(i / 3) + (i % 2) * 0.1),
+    );
+    const { bus, byHandle } = setup([fit(), fit(wavy)]);
+    const spline = (h: string) => byHandle(h)!.geom as SplineGeometry;
+    await bus.script(['SPE']);
+    await bus.pick(P(0, 10));
+    await bus.script(['F', 'C', 'T', '10,20']);
+    const closed = spline('40');
+    expect(closed.closed).toBe(true);
+    expect(closed.startTangent!.x).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(closed.startTangent!.y).toBeCloseTo(Math.SQRT1_2, 12);
+    const c = splineCurve(closed)!;
+    const { start, end } = splineDomain(c);
+    const at = (u: number) => {
+      const a = splinePoint(c, u + 1e-7);
+      const b = splinePoint(c, u - 1e-7);
+      return Math.atan2(a.y - b.y, a.x - b.x);
+    };
+    expect(at(start + 1e-6)).toBeCloseTo(Math.PI / 4, 4);
+    expect(at(end - 1e-6)).toBeCloseTo(Math.PI / 4, 4);
+    await bus.script(['X', 'X']);
+
+    await bus.script(['SPE']);
+    await bus.pick(wavy[5]!);
+    const before = spline('41').controlPoints.length;
+    await bus.script(['F', 'L', '0.3']);
+    expect(spline('41').fitTolerance).toBe(0.3);
+    expect(spline('41').controlPoints.length).toBeLessThan(before);
+    await bus.script(['L', '0']);
+    expect(spline('41').controlPoints).toHaveLength(before);
+    await bus.script(['X', 'X']);
+  });
+
+  it('shows the control frame while editing vertices', async () => {
+    const { bus, byHandle } = setup([cv([...S, P(40, 10)])]);
+    const spline = () => byHandle('40')!.geom as SplineGeometry;
+    const previews: (readonly EntityGeometry[])[] = [];
+    bus.on((e) => (e.type === 'preview' ? previews.push(e.geometry) : undefined));
+    const frame = () => {
+      const f = previews.at(-1)!.find((g) => g.kind === 'LWPOLYLINE');
+      return f && xy((f as unknown as { vertices: Vec2[] }).vertices);
+    };
+    await bus.script(['SPE']);
+    await bus.pick(P(0, 10));
+    await bus.script(['E']);
+    expect(frame()).toEqual(xy(spline().controlPoints));
+    // Moving a vertex: the frame and the X at the vertex, the frame following the move.
+    await bus.script(['M']);
+    expect(previews.at(-1)!.filter((g) => g.kind === 'LINE')).toHaveLength(2);
+    await bus.script(['-5,10']);
+    expect(frame()![0]).toEqual([-5, 10]);
+    await bus.script(['X', 'X']);
+    expect(previews.at(-1)).toEqual([]);
+    await bus.script(['X']);
+  });
+
   it('edits control vertices: add, delete, elevate order, move and weight', async () => {
     const { bus, byHandle, log } = setup([cv([...S, P(40, 10)])]);
     const spline = () => byHandle('40')!.geom as SplineGeometry;

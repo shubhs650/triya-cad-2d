@@ -187,8 +187,9 @@ export interface SplineGeometry extends Spline {
   readonly knotParameterization?: KnotParameterization;
   /**
    * DXF 44: how far a spline drawn by fit points may pass from them (SPLINE toLerance, M3-01
-   * part 5); absent for 0 or AutoCAD's 1e-10 default. Kept, not drawn: the curve is the NURBS
-   * stored beside the fit points.
+   * part 5); absent for 0 or AutoCAD's 1e-10 default. SPLINE and SPLINEDIT's fit edits
+   * approximate within it (`fitSpline`, M3-16); the curve drawn is the NURBS stored beside the
+   * fit points.
    */
   readonly fitTolerance?: number;
   readonly closed: boolean;

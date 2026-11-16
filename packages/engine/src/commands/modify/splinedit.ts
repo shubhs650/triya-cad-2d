@@ -9,8 +9,10 @@
 // A spline-fit polyline picked becomes a spline at once (AutoCAD: "even if you immediately exit
 // SPLINEDIT"). Fit edits refit through the fit points; control-vertex edits drop the fit data.
 // Undo takes back the options one by one as far as the start of the command. Moving along fit
-// points or control vertices marks the current one with an X, as PEDIT's Edit vertex does. The
-// geometry is `edit/splinedit.ts`'s.
+// points or control vertices marks the current one with an X, as PEDIT's Edit vertex does, and
+// Edit vertex shows the control frame (M3-16). A closed spline's tangent shapes the curve at its
+// seam, and toLerance refits within the tolerance (`geom/fit.ts`, M3-16). The geometry is
+// `edit/splinedit.ts`'s.
 //
 // Prompts AutoCAD does not document word for word (the sub-prompts of Add, Delete, Kink, Move,
 // Weight and Join) follow its documented option names; the messages for what cannot be done
@@ -202,6 +204,22 @@ async function* main(s: Session): Sub<void> {
 /** Marks point `i` of `pts` with an X. */
 const mark = (s: Session, pts: readonly Vec2[], i: number) => s.ctx.preview(marker(pts, pts[i]!));
 
+/**
+ * The control frame (M3-16), shown while control vertices are edited as AutoCAD shows it: the
+ * polygon through the editable vertices, closed round a closed spline.
+ */
+function controlFrame(g: SplineGeometry): EntityGeometry[] {
+  const pts = controlPositions(g);
+  if (pts.length < 2) return [];
+  return [
+    {
+      kind: 'LWPOLYLINE',
+      vertices: pts.map((p) => ({ x: p.x, y: p.y, bulge: 0 })),
+      closed: g.closed && pts.length > 2,
+    },
+  ];
+}
+
 /** A point picked at an "<exit>" prompt: the point, or undefined for Enter (exit). */
 async function* pointOrExit(s: Session, message: string): Sub<Vec2 | undefined> {
   const a = yield s.ctx.prompt.point({ message, defaultLabel: 'exit' });
@@ -273,9 +291,11 @@ async function* fitData(s: Session): Sub<void> {
             ctx.message('Value must be positive or zero.');
             continue;
           }
-          // Kept, as SPLINE keeps it: the curve still passes through the fit points (fit.ts).
+          // AutoCAD: "Refits the spline to the existing points with new tolerance values": the
+          // curve passes within it of the fit points, or through them at 0 (fit.ts, M3-16).
           const { fitTolerance: _t, ...rest } = g;
-          s.change(v > 0 ? { ...rest, fitTolerance: v } : rest);
+          const next: SplineGeometry = v > 0 ? { ...rest, fitTolerance: v } : rest;
+          s.change(withFitData(next, fitEditOf(g, s.tol)) ?? next);
           break;
         }
         break;
@@ -397,8 +417,9 @@ async function* tangents(s: Session): Sub<void> {
 
 async function* editVertex(s: Session): Sub<void> {
   const { ctx } = s;
+  const frame = () => ctx.preview(controlFrame(s.geom));
   for (;;) {
-    ctx.preview([]);
+    frame();
     const a = yield ctx.prompt.keyword({
       message: 'Enter a vertex editing option',
       options: ['Add', 'Delete', 'Elevate order', 'Move', 'Weight', 'eXit'],
@@ -407,9 +428,11 @@ async function* editVertex(s: Session): Sub<void> {
     if (a.kind !== 'keyword') return;
     switch (a.keyword) {
       case 'eXit':
+        ctx.preview([]);
         return;
       case 'Add':
         for (;;) {
+          frame();
           const p = yield* pointOrExit(s, 'Specify a point on the spline');
           if (!p) break;
           if (!s.change(addControlVertex(s.geom, p, s.tol))) {
@@ -419,6 +442,7 @@ async function* editVertex(s: Session): Sub<void> {
         break;
       case 'Delete':
         for (;;) {
+          frame();
           const p = yield* pointOrExit(s, 'Specify control point');
           if (!p) break;
           const g = s.geom;
@@ -467,7 +491,8 @@ async function* walk(s: Session, what: 'fit' | 'move' | 'weight'): Sub<void> {
     const g = s.geom;
     const pts = points();
     i = Math.min(i, pts.length - 1);
-    mark(s, pts, i);
+    if (what === 'fit') mark(s, pts, i);
+    else ctx.preview([...controlFrame(g), ...marker(pts, pts[i]!)]);
     const options = ['Next', 'Previous', 'Select point', 'eXit'];
     const a: PromptAnswer =
       what === 'weight'
