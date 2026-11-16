@@ -895,6 +895,12 @@ export interface TableCell {
   readonly merged: boolean;
   /** DXF 145, radians. */
   readonly rotation: number;
+  /**
+   * The value's format string (DXF 300 in the cell's CELL_VALUE, e.g. `%tc1`), as AutoCAD's
+   * Data Format sets it; absent when none. A number, date or angle value is mapped as its
+   * formatted text already; a string value is drawn through its text case (`tableCellShown`).
+   */
+  readonly valueFormat?: string;
   /** What the cell overrides of its table style, its row's and column's folded in; absent when nothing. */
   readonly format?: TableCellFormat;
 }
