@@ -603,7 +603,9 @@ describe('JOIN', () => {
       expect(r.discarded).toBe(2);
     });
 
-    it('joins no lines, arcs, 2D polylines or splines to a 3D polyline, nor closed or fitted ones', () => {
+    // M3-18 (DEC-063): linear objects meeting a 3D polyline in plan and height join it too, and a
+    // spline-fit one joins as the vertices it draws (test/edit/join-3d.test.ts has the rest).
+    it('joins lines and straight 2D polylines to a 3D polyline, but not closed objects', () => {
       const flat = p3([
         [0, 0, 0],
         [10, 0, 0],
@@ -616,14 +618,23 @@ describe('JOIN', () => {
           { x: 10, y: 5, bulge: 0 },
         ],
       };
-      // Lines and 2D chains still join each other beside it (M3-02 part 4).
+      // Several at once: the arc is a curve, which joins a 3D polyline only as its source.
       const r = join([flat, line(0, 0, 0, -5), arc(5, 0, 5, 0, 180), twoD]);
       expect(r.joined).toHaveLength(1);
-      expect(r.joined[0]).toMatchObject({ parts: [2, 3, 4] });
-      expect(r.joined[0]!.geom.kind).toBe('LWPOLYLINE');
+      expect(r.joined[0]).toMatchObject({ keep: 1, parts: [1, 2, 4], made: 'polyline' });
+      expect(xyz(r.joined[0]!.geom)).toEqual([
+        [0, -5, 0],
+        [0, 0, 0],
+        [10, 0, 0],
+        [10, 5, 0],
+      ]);
       expect(r.discarded).toBe(1);
-      expect(join([flat, line(10, 0, 20, 0)], 1)).toEqual({ joined: [], discarded: 2 });
-      // Closed objects cannot be joined; a spline-fit 3D polyline is not either.
+      expect(xyz(join([flat, line(10, 0, 20, 0)], 1).joined[0]!.geom)).toEqual([
+        [0, 0, 0],
+        [10, 0, 0],
+        [20, 0, 0],
+      ]);
+      // Closed objects cannot be joined.
       const closed = p3(
         [
           [10, 0, 0],
@@ -632,6 +643,7 @@ describe('JOIN', () => {
         ],
         { closed: true },
       );
+      expect(join([flat, closed]).joined).toEqual([]);
       const fitted = p3(
         [
           [10, 0, 0],
@@ -646,8 +658,12 @@ describe('JOIN', () => {
           ],
         },
       );
-      expect(join([flat, closed]).joined).toEqual([]);
-      expect(join([flat, fitted]).joined).toEqual([]);
+      expect(xyz(join([flat, fitted]).joined[0]!.geom)).toEqual([
+        [0, 0, 0],
+        [10, 0, 0],
+        [15, 2, 0],
+        [20, 0, 0],
+      ]);
     });
   });
 });

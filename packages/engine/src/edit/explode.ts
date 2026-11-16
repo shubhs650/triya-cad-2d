@@ -75,6 +75,7 @@ import type {
   Entity,
   EntityGeometry,
   HatchGeometry,
+  LineGeometry,
   MTextGeometry,
   RegionGeometry,
   TextStyleRecord,
@@ -95,6 +96,7 @@ import {
 } from './edit';
 import { normalizeAngle } from '../geom/angle';
 import { cleanPolyline } from './offset';
+import { withHeights } from './line-heights';
 import { similarity, type Similarity } from './similarity';
 
 export interface ExplodeReport {
@@ -541,16 +543,34 @@ function hatchPieces(
 
 const article = (kind: string): string => (/^[AEIOU]/.test(kind) ? `an ${kind}` : `a ${kind}`);
 
-/** A polyline's lines and arcs (3D: lines), with its elevation and thickness. */
-function polylinePieces(g: Extract<EntityGeometry, { kind: 'LWPOLYLINE' | 'POLYLINE' }>) {
-  const flat = g.kind === 'POLYLINE' && g.is3d;
-  const curve = cleanPolyline(
-    flat ? { ...g, vertices: g.vertices.map((v) => ({ ...v, bulge: 0 })) } : g,
-  ).curve;
+/**
+ * A polyline's lines and arcs, with its elevation and thickness; a 3D polyline's lines run from
+ * vertex to vertex in plan and height (DEC-063), a vertical segment (no plan view) left out.
+ */
+function polylinePieces(
+  g: Extract<EntityGeometry, { kind: 'LWPOLYLINE' | 'POLYLINE' }>,
+): EntityGeometry[] {
+  if (g.kind === 'POLYLINE' && g.is3d) {
+    const vs = g.vertices;
+    const out: EntityGeometry[] = [];
+    for (let i = 0; i < (g.closed ? vs.length : vs.length - 1); i++) {
+      const a = vs[i]!;
+      const b = vs[(i + 1) % vs.length]!;
+      if (a.x === b.x && a.y === b.y) continue;
+      const line: LineGeometry = {
+        kind: 'LINE',
+        start: { x: a.x, y: a.y },
+        end: { x: b.x, y: b.y },
+      };
+      out.push(withHeights(line, a.z ?? 0, b.z ?? 0));
+    }
+    return out;
+  }
+  const curve = cleanPolyline(g).curve;
   const planar = {
-    ...(g.elevation !== undefined && g.elevation !== 0 && !flat && { elevation: g.elevation }),
+    ...(g.elevation !== undefined && g.elevation !== 0 && { elevation: g.elevation }),
     ...(g.thickness !== undefined && g.thickness !== 0 && { thickness: g.thickness }),
-    ...(g.normal !== undefined && !flat && { normal: g.normal }),
+    ...(g.normal !== undefined && { normal: g.normal }),
   };
   // Arc angles in [0, 2π), as the file has them.
   return explodePolyline(curve).map((piece): EntityGeometry =>

@@ -23,6 +23,7 @@
 //
 // Lengths along the object come from its curve's parameter (geom/curves.ts); everything is to
 // the drawing's tolerance (DEC-036).
+import { alongLine } from './line-heights';
 import { ccwSweep, normalizeAngle, TAU } from '../geom/angle';
 import type { Curve, Polyline, Spline } from '../geom/curves';
 import { closestPoint } from '../geom/closest';
@@ -217,7 +218,7 @@ export function subGeometry(
       const a = pointAt(c, t0);
       const b = pointAt(c, t1);
       if (distance(a, b) <= tol.linear) return undefined;
-      return { ...(g as LineGeometry), start: a, end: b };
+      return alongLine(g as LineGeometry, a, b);
     }
     case 'RAY':
     case 'XLINE': {
@@ -433,7 +434,7 @@ export function extendGeometry(
       const to = reachAlong(from, atEnd ? sub(c.end, c.start) : sub(c.start, c.end), edges, tol);
       if (!to) return undefined;
       const l = g as LineGeometry;
-      return atEnd ? { ...l, end: to } : { ...l, start: to };
+      return atEnd ? alongLine(l, l.start, to) : alongLine(l, to, l.end);
     }
     case 'ARC': {
       const sweep = arcSweep(c);

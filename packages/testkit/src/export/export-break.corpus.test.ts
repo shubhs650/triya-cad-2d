@@ -9,7 +9,9 @@
 // with what meets them into splines). Both save as AC1032 DXF
 // (DEC-047) and reopen with each object where the command put it; what an explode copied out of
 // a block (any kind) reopens under its handle. On a fourth copy every open 3D polyline is joined
-// to a copy of itself set end to end and reopens with its heights (M3-17).
+// to a copy of itself set end to end and reopens with its heights (M3-17); on a fifth, lines
+// are joined onto every open 3D polyline and every sloped line joins another into a new 3D
+// polyline, reopening with their heights (M3-18).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -354,6 +356,104 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
     PER_FILE_BUDGET_MS,
   );
 
+  // M3-18 (DEC-063): every open 3D polyline (spline-fit ones too) gets a sloped line on from its
+  // last vertex and a level line back from its first, at that vertex's height, and JOIN takes
+  // both into it; two new sloped lines from its first vertex, and every sloped line in model
+  // space with a sloped line on from its end, join at once into a new 3D polyline (the readable
+  // corpus has its sloped lines in blocks or none). All reopen with their heights.
+  let linesOnto3d = 0;
+  let slopedJoined = 0;
+  it.each(readable.map((f) => [f.path, f] as const))(
+    '%s saves lines joined onto its 3D polylines, and its sloped lines joined',
+    (_path, f) => {
+      const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
+      withPinnedClock(() => {
+        const fifth = open(bytes);
+        if (!fifth) return;
+        const { model, ids, tol } = fifth;
+        const b = new ChangeSetBuilder(model);
+        const groups: { source?: EntityId; parts: EntityId[]; vertices: number }[] = [];
+        for (const id of ids) {
+          const e = model.entity(id)!;
+          const g = e.geom;
+          if (g.kind === 'POLYLINE' && g.is3d && !g.closed && g.vertices.length > 1) {
+            const first = g.vertices[0]!;
+            const last = g.vertices.at(-1)!;
+            const s = 1 + Math.abs(last.x - first.x) + Math.abs(last.y - first.y);
+            const z0 = first.z ?? 0;
+            const z1 = last.z ?? 0;
+            const on: EntityGeometry = {
+              kind: 'LINE',
+              start: { x: last.x, y: last.y },
+              end: { x: last.x + s, y: last.y + s / 2 },
+              heights: [z1, z1 + s],
+            };
+            const back: EntityGeometry = {
+              kind: 'LINE',
+              start: { x: first.x - s, y: first.y },
+              end: { x: first.x, y: first.y },
+              ...(z0 !== 0 && { elevation: z0 }),
+            };
+            // And two new sloped lines from its first vertex, up and back down, joined at once.
+            const up: EntityGeometry = {
+              kind: 'LINE',
+              start: { x: first.x, y: first.y },
+              end: { x: first.x + s, y: first.y - s },
+              heights: [z0, z0 + s],
+            };
+            const down: EntityGeometry = {
+              kind: 'LINE',
+              start: { x: first.x + s, y: first.y - s },
+              end: { x: first.x + 2 * s, y: first.y - s },
+              heights: [z0 + s, z0],
+            };
+            const [, a, c, u, w] = reshapeObject(b, model, id, [g, on, back, up, down]);
+            groups.push({ source: id, parts: [id, a!, c!], vertices: g.vertices.length + 2 });
+            groups.push({ parts: [u!, w!], vertices: 3 });
+          } else if (g.kind === 'LINE' && g.heights) {
+            const s = 1 + Math.abs(g.end.x - g.start.x) + Math.abs(g.end.y - g.start.y);
+            const on: EntityGeometry = {
+              kind: 'LINE',
+              start: g.end,
+              end: { x: g.end.x + s / 2, y: g.end.y + s },
+              heights: [g.heights[1], g.heights[1] - s],
+            };
+            const [, a] = reshapeObject(b, model, id, [g, on]);
+            groups.push({ parts: [id, a!], vertices: 3 });
+          }
+        }
+        if (groups.length === 0) return;
+        model.apply(b.build());
+        const b2 = new ChangeSetBuilder(model);
+        const kept: EntityId[] = [];
+        for (const { source, parts, vertices } of groups) {
+          const j = joinObjects(
+            parts.map((id) => ({ id, geom: model.entity(id)!.geom })),
+            source,
+            tol,
+          );
+          const one = j.joined[0];
+          expect(one?.parts.length, f.path).toBe(parts.length);
+          if (!one) continue;
+          const geom = one.geom as PolylineGeometry;
+          expect(geom).toMatchObject({ kind: 'POLYLINE', is3d: true });
+          expect(geom.vertices).toHaveLength(vertices);
+          kept.push(...reshapeObject(b2, model, one.keep, [one.geom]));
+          eraseObjects(
+            b2,
+            model,
+            parts.filter((id) => id !== one.keep),
+          );
+          if (source === undefined) slopedJoined++;
+          else linesOnto3d++;
+        }
+        model.apply(b2.build());
+        expect(wrongAfterSave(bytes, model, kept, []).slice(0, 10), f.path).toEqual([]);
+      });
+    },
+    PER_FILE_BUDGET_MS,
+  );
+
   it('changed objects', () => {
     // Most corpus files hold lines, arcs, circles, polylines and blocks; the counts guard the sweep.
     expect(reshaped).toBeGreaterThan(1000);
@@ -363,6 +463,8 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
     expect(splinesJoined).toBe(splinesGrown);
     expect(raysExtended).toBeGreaterThan(0);
     expect(joined3d).toBeGreaterThan(0);
+    expect(linesOnto3d).toBeGreaterThanOrEqual(joined3d);
+    expect(slopedJoined).toBeGreaterThan(0);
     expect(new Set(explodedKinds.keys())).toEqual(EXPLODED_KINDS);
     expect(nonuniform).toBeGreaterThan(0);
     expect(mtexts).toBeGreaterThan(10);

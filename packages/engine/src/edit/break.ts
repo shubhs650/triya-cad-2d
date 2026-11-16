@@ -17,6 +17,7 @@
 //   (negated) and widths (swapped).
 //
 // The curve each works on is TRIM's (`trimCurveOf`): parameters are its parameters.
+import { alongLine } from './line-heights';
 import { ccwSweep, normalizeAngle, TAU } from '../geom/angle';
 import { arcLengthTable, curveLength, paramAtLength } from '../geom/arclength';
 import type { BoundedCurve, Curve, Ellipse, Polyline } from '../geom/curves';
@@ -174,8 +175,8 @@ export function lengthenGeometry(
       const l = g as LineGeometry;
       const dir = normalize(sub(c.end, c.start));
       return atEnd
-        ? { ...l, end: add(c.end, scale(dir, more)) }
-        : { ...l, start: sub(c.start, scale(dir, more)) };
+        ? alongLine(l, l.start, add(c.end, scale(dir, more)))
+        : alongLine(l, sub(c.start, scale(dir, more)), l.end);
     }
     case 'ARC': {
       const sweep = newLength / c.radius;
@@ -348,8 +349,10 @@ function ellipseParamOf(e: Ellipse, p: Vec2): number {
 /** `g` run the other way (REVERSE), or undefined for an object REVERSE leaves alone. */
 export function reverseGeometry(g: EntityGeometry): EntityGeometry | undefined {
   switch (g.kind) {
-    case 'LINE':
-      return { ...g, start: g.end, end: g.start };
+    case 'LINE': {
+      const turned = { ...g, start: g.end, end: g.start };
+      return g.heights ? { ...turned, heights: [g.heights[1], g.heights[0]] } : turned;
+    }
     case 'LWPOLYLINE':
     case 'POLYLINE':
       return g.vertices.length < 2 ? undefined : reversePolyline(g);

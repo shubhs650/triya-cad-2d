@@ -1425,13 +1425,14 @@ function hatchGeometry(h: Hatch): EntityGeometry | UnmappedEntity['reason'] {
 /** Plan-view geometry of an entity, or why it has none in Triya yet. */
 function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   if (e instanceof Line) {
-    const z = e.startPoint.z === e.endPoint.z ? e.startPoint.z : 0;
+    // A level line's height is its elevation; a sloped one's end heights ride along (DEC-063).
+    const [z0, z1] = [e.startPoint.z, e.endPoint.z];
     const pl = plane(e.normal);
     return {
       kind: 'LINE',
       start: xy(e.startPoint),
       end: xy(e.endPoint),
-      ...(z !== 0 ? { elevation: z } : {}),
+      ...(z0 !== z1 ? { heights: [z0, z1] as const } : z0 !== 0 ? { elevation: z0 } : {}),
       ...(e.thickness !== 0 ? { thickness: e.thickness } : {}),
       ...(pl !== 'up' ? { normal: { x: e.normal.x, y: e.normal.y, z: e.normal.z } } : {}),
     };
