@@ -1,3 +1,6 @@
+// M4-05 part 6 and M4-13: the cells selected show grips in the middle of their edges, which size
+// their column; Ctrl+V pastes a spreadsheet's rows into them; Ctrl with a column grip sizes the
+// table with the column.
 // M4-05 part 4: cells selected by dragging across them, filled, aligned and given borders from
 // the right-click menu, and a column grip dragged.
 // M4-05 part 3: a click inside a table cell selects it, Shift+click the cells up to another, and
@@ -384,4 +387,98 @@ test('cells dragged across are formatted from the menu, and a column grip resize
   await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
   await page.waitForTimeout(300);
   await shot('12-column-resized.png');
+});
+
+test('a cell grip sizes its column, Ctrl+V pastes cells, Ctrl sizes the table', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, p(-1, -3), 'Specify opposite corner:');
+  await type(page, p(11, 1), 'Command:');
+  await type(page, '-TABLE', 'Enter number of columns or [Auto] <5>:');
+  await type(page, '4', 'Enter number of rows or [Auto] <1>:');
+  await type(page, '3', 'Specify insertion point or [Style/Width/Height]:');
+  await type(page, p(0, 0), 'Enter text:');
+  await page.keyboard.type('NOZZLES');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(async () => (await tables(page)).length).toBe(1);
+
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => {
+    const s = view.at(O + x, O + y);
+    return { x: box.x + s.x, y: box.y + s.y };
+  };
+  const cell = (i: number, j: number) =>
+    at(1.25 + 2.5 * j, i === 0 ? -0.2267 : i === 1 ? -0.6333 : -0.9933 - 0.36 * (i - 2));
+  const options =
+    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  const widths = async () => (await tables(page))[0]?.columns.map((w) => Math.round(w * 100) / 100);
+
+  // Cell (2, 1) selected shows four grips; its right one drags the column's right edge.
+  await page.mouse.click(cell(2, 1).x, cell(2, 1).y);
+  await expect(prompt(page)).toHaveText(options);
+  await page.waitForTimeout(300);
+  await shot('13-cell-grips.png');
+  await page.mouse.click(at(5, -0.9933).x, at(5, -0.9933).y);
+  await expect(prompt(page)).toHaveText('Specify stretch point:');
+  await page.mouse.move(at(6, -1.2).x, at(6, -1.2).y, { steps: 5 });
+  await page.waitForTimeout(300);
+  await shot('14-cell-grip-dragged.png');
+  await page.mouse.click(at(6, -1.2).x, at(6, -1.2).y);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(widths).toEqual([2.5, 3.5, 2.5, 2.5]);
+
+  // A spreadsheet's rows on the clipboard; Ctrl+V with cell (2, 0) selected fills from it,
+  // adding a row.
+  await page.evaluate(() =>
+    navigator.clipboard.writeText('N1\tDN50\r\nN2\tDN80\r\nN3\tDN100\r\nN4\tDN150\r\n'),
+  );
+  await page.mouse.click(cell(2, 0).x, cell(2, 0).y);
+  await expect(prompt(page)).toHaveText(options);
+  await page.keyboard.press('Control+v');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => (await tables(page))[0]?.texts.slice(2).map((r) => r.slice(0, 2)))
+    .toEqual([
+      ['N1', 'DN50'],
+      ['N2', 'DN80'],
+      ['N3', 'DN100'],
+      ['N4', 'DN150'],
+    ]);
+  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
+  await page.waitForTimeout(300);
+  await shot('15-cells-pasted.png');
+
+  // The table picked on its left edge; Ctrl held with its first column grip widens the first
+  // column and the table with it.
+  await page.mouse.click(at(0, -1.5).x, at(0, -1.5).y);
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.mouse.click(at(2.5, 0).x, at(2.5, 0).y);
+  await expect(prompt(page)).toHaveText(/^\*\* STRETCH \*\*|Specify stretch point/);
+  await page.keyboard.down('Control');
+  await page.mouse.move(at(3.5, 0.3).x, at(3.5, 0.3).y, { steps: 5 });
+  await page.waitForTimeout(300);
+  await shot('16-ctrl-column-grip.png');
+  await page.mouse.click(at(3.5, 0.3).x, at(3.5, 0.3).y);
+  await page.keyboard.up('Control');
+  await expect.poll(widths).toEqual([3.5, 3.5, 2.5, 2.5]);
+  await expect.poll(async () => (await tables(page)).length).toBe(1);
+  await page.keyboard.press('Escape');
+  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
+  await page.waitForTimeout(300);
+  await shot('17-table-sized-with-column.png');
 });

@@ -1,0 +1,1 @@
+- M4-05 part 6 (#447): table cells selected show a grip in the middle of each edge, which sizes their column or row and the table with it; Ctrl held with a table's column grip widens or narrows that column and the table with it instead of copying. Both save and read back.
