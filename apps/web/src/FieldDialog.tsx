@@ -97,13 +97,13 @@ const withCase = (spec: FieldSpec, n: number): FieldSpec => {
 export function FieldDialog({ doc, request }: { doc: number; request: FieldDialogRequest }) {
   const s = request.snapshot;
   const [category, setCategory] = useState(0);
-  const [spec, setSpec] = useState<FieldSpec>(request.spec ?? { name: 'Date' });
+  const [spec, setSpec] = useState<FieldSpec>(
+    request.spec ?? { name: 'Date', date: DATE_EXAMPLES[0]! },
+  );
   const names = FIELD_CATEGORIES[category]!.fields;
   const choose = (name: FieldName) => {
     if (name === spec.name) return;
-    setSpec(
-      name === 'Date' || DATE_FIELDS.has(name) ? { name, date: DATE_EXAMPLES[0]! } : { name },
-    );
+    setSpec(DATE_FIELDS.has(name) ? { name, date: DATE_EXAMPLES[0]! } : { name });
   };
   const code = fieldCode(spec);
   const preview = code === undefined ? '' : previewField(code, s);

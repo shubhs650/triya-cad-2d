@@ -27,6 +27,7 @@ import type { SpellAction, SpellRequest, SpellSettings } from './modify/spell';
 import type { HatchDialogAnswer, HatchDialogRequest } from './draw/hatch-dialog';
 import type { FieldDialogRequest } from './draw/field';
 import type { FieldSpec } from '../edit/field-codes';
+import { FIELD_INSERT } from '../edit/fields';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -1059,7 +1060,8 @@ export function formatAnswer(answer: PromptAnswer, units: DrawingUnits = DECIMAL
     case 'keyword':
       return answer.keyword;
     case 'string':
-      return answer.value;
+      // Insert Field's place in the MTEXT editor's text is not echoed (M4-10 part 2).
+      return answer.value.split(`%<${FIELD_INSERT}>%`).join('');
     case 'selection':
       return `${answer.ids.length} found`;
     case 'dialog':

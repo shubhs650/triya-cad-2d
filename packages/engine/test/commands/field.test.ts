@@ -248,6 +248,17 @@ describe('Insert Field in the MTEXT editor', () => {
     expect(g.field?.children[0]?.value).toBe('16/11/2026');
   });
 
+  it("does not echo the field's place on the command line", async () => {
+    const s = setup();
+    const log: string[] = [];
+    s.bus.on((e) => {
+      if (e.type === 'log') log.push(e.line);
+    });
+    await s.bus.script(['MTEXT', '0,0', '60,-20']);
+    await s.bus.answer({ kind: 'string', value: `A %<${FIELD_INSERT}>%`, editor: true });
+    expect(log.at(-1)).toBe('Enter text: A');
+  });
+
   it('leaves the text as it was when the dialog is cancelled', async () => {
     const s = setup();
     await s.bus.script(['MTEXT', '0,0', '60,-20']);
