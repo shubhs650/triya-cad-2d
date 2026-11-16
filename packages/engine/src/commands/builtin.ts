@@ -27,6 +27,7 @@ import { MLEADER_ALIGN_COMMANDS } from './modify/mleader-align';
 import { TEXT_TOOL_COMMANDS } from './modify/text-tools';
 import { updateFieldCommand } from './modify/fields';
 import { FIND_COMMANDS } from './modify/find';
+import { SPELL_COMMANDS } from './modify/spell';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
 import { hatchCommands } from './draw/hatchedit';
@@ -135,6 +136,7 @@ export function builtinCommands(): CommandRegistry {
     ...TEXT_TOOL_COMMANDS.map((make) => make()),
     updateFieldCommand(),
     ...FIND_COMMANDS.map((make) => make()),
+    ...SPELL_COMMANDS.map((make) => make()),
     ...dimensionCommands(),
     ...moreDimensionCommands(),
     qdimCommand(),

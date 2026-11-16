@@ -5,3 +5,4 @@ export * from './ttf/index';
 export * from './mtext/index';
 export * from './draw/index';
 export * from './hershey/index';
+export * from './spelling/index';
