@@ -60,16 +60,6 @@ const KNOWN: Readonly<Record<string, string>> = {
   // The program that wrote ezdxf's example split one column line in two where it runs on alike;
   // the engine draws it as one line, the same drawing.
   'public/third-party/ezdxf/examples_dxf/acad_table_with_blk_ref.dxf CF': 'a line split in two',
-  // A cell value's format string (DXF 300 "%tc1", upper case) shows "CELL FORMAT 1"; Triya maps
-  // the value as typed. Formatted cell values are a later part of M4-05.
-  ...Object.fromEntries(
-    ['AC1021', 'AC1024', 'AC1027', 'AC1032'].flatMap((v) =>
-      ['ascii', 'binary'].map((k) => [
-        `public/third-party/acadsharp/sample_${v}_${k}.dxf A35`,
-        'cell value format %tc1',
-      ]),
-    ),
-  ),
 };
 
 /** Written by AutoCAD: its block's order is compared too. */

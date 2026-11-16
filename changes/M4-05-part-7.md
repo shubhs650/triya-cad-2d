@@ -1,0 +1,1 @@
+- M4-05 part 7 (#450): tables draw a cell value's text case format (`%tc1` upper case and the like, as AutoCAD shows it), keys typed on after Tab reach the next cell instead of being lost, and the cell menu gains Match Cell and Remove All Property Overrides. M4-05 is complete; its file-format leftovers moved to M4-16.

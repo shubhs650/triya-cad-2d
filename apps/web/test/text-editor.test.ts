@@ -4,6 +4,7 @@ import { writeMText, type MTextSpan } from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import {
   autoStack,
+  cellAhead,
   cellMoveFor,
   formatAt,
   paragraphAt,
@@ -218,5 +219,55 @@ describe('table cell moves (M4-05 part 2)', () => {
     expect(cellMoveFor('ArrowLeft', true, two, 0, 0)).toBeUndefined();
     expect(cellMoveFor('ArrowDown', false, [], 0, 0)).toBe('down');
     expect(cellMoveFor('a', false, two, 0, 0)).toBeUndefined();
+  });
+});
+
+describe('keys typed while the editor moves to the next cell (M4-05 part 7)', () => {
+  const k = (key: string, shift = false) => ({ key, shift });
+  it('types the characters, Backspace and Enter in order, merging the characters', () => {
+    expect(cellAhead([k('N'), k('3'), k('Backspace'), k('4'), k('Enter'), k('x')])).toEqual({
+      ops: [
+        { kind: 'text', text: 'N3' },
+        { kind: 'backspace' },
+        { kind: 'text', text: '4' },
+        { kind: 'break' },
+        { kind: 'text', text: 'x' },
+      ],
+      rest: [],
+    });
+  });
+
+  it('stops at Tab, Shift+Tab or Esc, the keys after it left for the cell it leads to', () => {
+    expect(cellAhead([k('a'), k('Tab'), k('b'), k('Tab', true)])).toEqual({
+      ops: [
+        { kind: 'text', text: 'a' },
+        { kind: 'move', move: 'next' },
+      ],
+      rest: [k('b'), k('Tab', true)],
+    });
+    expect(cellAhead([k('Tab', true), k('c')])).toEqual({
+      ops: [{ kind: 'move', move: 'previous' }],
+      rest: [k('c')],
+    });
+    expect(cellAhead([k('d'), k('Escape'), k('e')])).toEqual({
+      ops: [{ kind: 'text', text: 'd' }, { kind: 'cancel' }],
+      rest: [],
+    });
+  });
+
+  it('ends the editing at Ctrl+Enter', () => {
+    expect(cellAhead([k('f'), { key: 'Enter', shift: false, ctrl: true }, k('g')])).toEqual({
+      ops: [{ kind: 'text', text: 'f' }, { kind: 'finish' }],
+      rest: [],
+    });
+  });
+
+  it('drops keys that do not type, such as an arrow, Shift alone or a Ctrl chord', () => {
+    expect(
+      cellAhead([k('Shift'), k('ArrowLeft'), { key: 'b', shift: false, ctrl: true }, k('F', true)]),
+    ).toEqual({
+      ops: [{ kind: 'text', text: 'F' }],
+      rest: [],
+    });
   });
 });

@@ -12,6 +12,8 @@
 // `tableCellGrips`): a click on one asks for the point it goes to, its column or row sized so.
 // Paste (Ctrl+V while cells are selected, M4-13) pastes a spreadsheet's cells into the cells
 // from the first one selected (`withCellsPasted`), or another app's text into that cell.
+// Match Cell gives the cells clicked the first cell's format; Remove All Property Overrides
+// leaves the cells selected their cell style's (M4-05 part 7).
 import { tableCellAt, tableCellBox, tableCellText, tableRangeHeads } from '../../annotation/table';
 import {
   fitTableRow,
@@ -21,6 +23,7 @@ import {
   writeTableBlock,
 } from '../../edit/table';
 import { tableCellGrips, type TableGripRole } from '../../edit/table-grips';
+import { withCellMatched, withCellOverridesRemoved } from '../../edit/table-format';
 import { tabSeparatedCells, type SheetCells } from '../../edit/spreadsheet';
 import { sameGrip } from '../../edit/grips';
 import {
@@ -61,6 +64,8 @@ const LABELS: Readonly<Record<TableCellOption, string>> = {
   BOrders: 'Borders',
   // Not on AutoCAD's cell menu (Properties sets it): here as Triya has no Properties for cells.
   Height: 'Text Height',
+  Match: 'Match Cell',
+  RemoveOverrides: 'Remove All Property Overrides',
   Above: 'Insert Rows Above',
   Below: 'Insert Rows Below',
   DeleteRows: 'Delete Rows',
@@ -84,6 +89,7 @@ function refusal(o: TableCellOption, g: TableGeometry, r: TableCellRange): strin
     return 'The last row cannot be deleted.';
   }
   if (o === 'Unmerge') return 'No merged cell is selected.';
+  if (o === 'RemoveOverrides') return 'The cells selected override nothing of their cell style.';
   if (o === 'Below') return 'Rows can be inserted below the header row and the data rows only.';
   if (o.startsWith('Merge')) return 'Select more than one cell to merge.';
   return 'Rows can be inserted above and deleted only among the data rows.';
@@ -181,6 +187,38 @@ async function* draggedCellGrip(
   return movedTableGrip(t.g, t.style, role, sub(a.point, grip));
 }
 
+/**
+ * Match Cell (M4-05 part 7): each cell of table `id` clicked takes the format of cell `from`, a
+ * merged cell whole, its rows growing to fit, until Enter or Esc, as AutoCAD's Match Cell asks
+ * for one destination cell after another. Only cells of the same table are taken: AutoCAD's
+ * documentation names no other, and a click elsewhere says so.
+ */
+async function* matchCells(
+  ctx: CommandContext,
+  id: EntityId,
+  from: Cell,
+): AsyncGenerator<Prompt, void, PromptAnswer> {
+  ctx.preview([]);
+  for (;;) {
+    const a = yield ctx.prompt.point({ message: 'Select destination cell', osnap: 0 });
+    const t = tableOf(ctx, id);
+    if (a.kind !== 'point' || !t) return;
+    const cell = cellAt(ctx, id, a.point);
+    if (!cell) {
+      ctx.message('Select a cell of the same table.');
+      continue;
+    }
+    const [i, j] = cell;
+    const c = t.g.cells[i]![j]!;
+    const range = { r0: i, c0: j, r1: i + c.rowSpan - 1, c1: j + c.columnSpan - 1 };
+    const g = await fittedRows(ctx, withCellMatched(t.g, from, range), t.style, range);
+    ctx.edit((b) => {
+      b.updateEntity(id, { geom: g });
+      writeTableBlock(b, ctx.model, id);
+    });
+  }
+}
+
 /** The cell (head of its range) of table `g` that a point in plan lies in, or undefined. */
 function cellAt(ctx: CommandContext, id: EntityId, p: Vec2): Cell | undefined {
   const t = tableOf(ctx, id);
@@ -268,12 +306,18 @@ export function tableCellCommand(start?: {
           continue;
         }
         if (o === 'Text') return yield* editTableCells(ctx, id, r.r0, r.c0);
+        if (o === 'Match') {
+          const head = tableRangeHeads(t.g)[r.r0]![r.c0]!;
+          return yield* matchCells(ctx, id, head);
+        }
         let g: TableGeometry | undefined;
         if (o === 'Paste') {
           const cells = await clipboardCells(ctx);
           if (!cells) continue;
           const pasted = withCellsPasted(t.g, [r.r0, r.c0], cells);
           g = await fittedRows(ctx, pasted.geom, t.style, pasted.range);
+        } else if (o === 'RemoveOverrides') {
+          g = withCellOverridesRemoved(t.g, t.style, r);
         } else if (FORMATS.has(o)) {
           g = yield* formattedTable(ctx, t.g, t.style, r, o as TableCellFormatOption);
           if (!g) return;

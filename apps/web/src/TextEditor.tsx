@@ -84,7 +84,9 @@ import {
   paragraphAt,
   paragraphCodes,
   paragraphIndex,
+  cellAhead,
   cellMoveFor,
+  type CarriedKey,
   type CellMove,
   removeRange,
   toggleStack,
@@ -200,6 +202,15 @@ function boxStyle(p: Placement, request: TextEditorRequest): CSSProperties {
 }
 
 const cancel = (doc: number) => engines.command(doc, { kind: 'cancel' });
+
+/**
+ * Keys typed after a table cell's editor moved on (Tab, an arrow at the edge) and before the next
+ * cell's editor opened, by drawing: the editor left stays up meanwhile and keeps them for the
+ * next (`cellAhead`, M4-05 part 7). Kept a few seconds at most, in case no editor follows.
+ */
+const carried = new Map<number, { readonly keys: CarriedKey[]; readonly until: number }>();
+const CARRY_MS = 5000;
+const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock']);
 
 /** TEXT's in-place line: Enter places it and moves below for the next; Enter on none ends. */
 function TextLine({
@@ -911,6 +922,8 @@ function MTextBox({
   const finish = (cell?: CellMove) => {
     if (done.current) return;
     done.current = true;
+    if (cell) carried.set(doc, { keys: [], until: performance.now() + CARRY_MS });
+    else carried.delete(doc);
     const now = spans();
     const old = initial.current;
     const value =
@@ -1091,6 +1104,42 @@ function MTextBox({
     };
   }, []);
 
+  // The keys typed while the editor moved here from another cell, typed in order (M4-05 part 7).
+  useEffect(() => {
+    const carry = carried.get(doc);
+    if (!request.cell || !carry) return;
+    carried.delete(doc);
+    if (performance.now() > carry.until) return;
+    const { ops, rest } = cellAhead(carry.keys);
+    for (const op of ops) {
+      switch (op.kind) {
+        case 'text':
+          insert([{ type: 'text', text: op.text, format: {} }]);
+          break;
+        case 'break':
+          breakHere();
+          break;
+        case 'backspace': {
+          const [a, b] = selection();
+          if (a !== b) commit(removeRange(spans(), a, b), a);
+          else if (a > 0) commit(removeRange(spans(), a - 1, a), a - 1);
+          break;
+        }
+        case 'move':
+          finish(op.move);
+          carried.get(doc)?.keys.push(...rest);
+          break;
+        case 'finish':
+          finish();
+          break;
+        case 'cancel':
+          done.current = true;
+          cancel(doc);
+          break;
+      }
+    }
+  }, []);
+
   // New columns or a new zoom lay the text out again.
   useEffect(refit, [columns, placement.scale]);
 
@@ -1121,6 +1170,18 @@ function MTextBox({
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     e.stopPropagation();
+    const carry = done.current ? carried.get(doc) : undefined;
+    if (carry) {
+      e.preventDefault();
+      if (!MODIFIERS.has(e.key)) {
+        carry.keys.push({
+          key: e.key,
+          shift: e.shiftKey,
+          ...((e.ctrlKey || e.metaKey) && { ctrl: true }),
+        });
+      }
+      return;
+    }
     // A table cell: Tab, Shift+Tab and the arrows at the edge of the text move to another cell.
     const move =
       request.cell && e.target === root.current && !e.ctrlKey && !e.altKey && !e.metaKey

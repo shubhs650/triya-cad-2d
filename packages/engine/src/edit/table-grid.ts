@@ -17,8 +17,9 @@
 // Merging keeps the text of the range's first cell, the covered cells holding nothing: AutoCAD's
 // Help does not say what becomes of the others' contents; the common expectation (as in a
 // spreadsheet) is that the top-left one stays.
-import type { TableCell, TableGeometry, TableStyleRecord } from '../model/types';
+import type { TableCell, TableCellFormat, TableGeometry, TableStyleRecord } from '../model/types';
 import { tableRangeHeads, tableRowTypes } from '../annotation/table';
+import { withCellOverridesRemoved } from './table-format';
 import { mtextLiteral } from './clipboard-data';
 import type { SheetCells } from './spreadsheet';
 
@@ -35,7 +36,8 @@ export type TableMerge = 'all' | 'rows' | 'columns';
 
 /**
  * The options of the Table Cell menu, in its order, as typed at the command line: the cell's
- * text, its formatting (M4-05 part 4), then rows, columns and merging.
+ * text, its formatting (M4-05 part 4; Match Cell and Remove All Property Overrides, part 7), then
+ * rows, columns and merging.
  */
 export const TABLE_CELL_OPTIONS = [
   'Text',
@@ -44,6 +46,8 @@ export const TABLE_CELL_OPTIONS = [
   'ALignment',
   'BOrders',
   'Height',
+  'Match',
+  'RemoveOverrides',
   'Above',
   'Below',
   'DeleteRows',
@@ -59,6 +63,17 @@ export const TABLE_CELL_OPTIONS = [
 export type TableCellOption = (typeof TABLE_CELL_OPTIONS)[number];
 
 type Cells = TableCell[][];
+
+/** `v` as JSON with its keys in order, so formats compare whatever order they were built in. */
+const canonical = (v: unknown): string =>
+  JSON.stringify(v, (_, x: unknown) =>
+    x && typeof x === 'object' && !Array.isArray(x)
+      ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1)))
+      : x,
+  );
+
+const sameFormat = (a: TableCellFormat | undefined, b: TableCellFormat | undefined) =>
+  canonical(a ?? {}) === canonical(b ?? {});
 type Origins = readonly (number | null)[] | undefined;
 
 const empty = (format: TableCell['format']): TableCell => ({
@@ -300,6 +315,10 @@ export function tableCellOptions(
     ALignment: true,
     BOrders: true,
     Height: true,
+    Match: true,
+    RemoveOverrides: withCellOverridesRemoved(g, style, r).cells.some((row, i) =>
+      row.some((c, j) => c !== g.cells[i]![j] && !sameFormat(c.format, g.cells[i]![j]!.format)),
+    ),
     Above: r.r0 >= first,
     Below: r.r1 + 1 >= first,
     DeleteRows: r.r0 >= first && r.r1 - r.r0 + 1 < rows,

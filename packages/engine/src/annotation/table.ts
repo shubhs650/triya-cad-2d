@@ -50,6 +50,65 @@ import type {
 } from '../model/types';
 import type { AnnotationPart } from './multileader';
 
+/** MTEXT format codes running to a `;` (AutoCAD's MTEXT format codes reference). */
+const MTEXT_ARGUMENT_CODES = new Set('AaCcFfHhQqTtWwpSs');
+
+/**
+ * `text`'s visible characters through `map`, its MTEXT format codes and `%%` special
+ * characters left as they are: a font name in `\fArial;` is not text.
+ */
+function mapVisibleText(text: string, map: (ch: string) => string): string {
+  let out = '';
+  for (let k = 0; k < text.length; k++) {
+    const ch = text[k]!;
+    if (ch === '\\' && k + 1 < text.length) {
+      const code = text[k + 1]!;
+      if (MTEXT_ARGUMENT_CODES.has(code)) {
+        const end = text.indexOf(';', k + 2);
+        const stop = end < 0 ? text.length : end + 1;
+        out += text.slice(k, stop);
+        k = stop - 1;
+      } else if ((code === 'U' || code === 'M') && text[k + 2] === '+') {
+        // \U+XXXX and \M+NXXXX: hex digits, not text.
+        const stop = Math.min(text.length, k + (code === 'U' ? 7 : 8));
+        out += text.slice(k, stop);
+        k = stop - 1;
+      } else {
+        out += ch + code;
+        k++;
+      }
+    } else if (ch === '%' && text[k + 1] === '%' && k + 2 < text.length) {
+      out += text.slice(k, k + 3);
+      k += 2;
+    } else if (ch === '{' || ch === '}') out += ch;
+    else out += map(ch);
+  }
+  return out;
+}
+
+/**
+ * A text cell's value as the table draws it: its value format's text case applied (AutoCAD's
+ * Data Format dialog, Text: Uppercase `%tc1`, Lowercase `%tc2`, First capital `%tc3`, Title case
+ * `%tc4`). AutoCAD's documentation does not say whether First capital and Title case lower the
+ * other letters; they are left as typed here, the least surprising for a drafter who typed an
+ * acronym (noted in the M4-05 part 7 PR).
+ */
+export function tableCellShown(c: TableCell): string {
+  const tc = /%tc([1-4])/.exec(c.valueFormat ?? '')?.[1];
+  if (tc === undefined || c.text === '') return c.text;
+  if (tc === '1') return mapVisibleText(c.text, (ch) => ch.toUpperCase());
+  if (tc === '2') return mapVisibleText(c.text, (ch) => ch.toLowerCase());
+  let first = true;
+  let wordStart = true;
+  return mapVisibleText(c.text, (ch) => {
+    const letter = ch.toLowerCase() !== ch.toUpperCase();
+    const up = tc === '3' ? first : wordStart;
+    if (letter) first = false;
+    wordStart = /\s/.test(ch);
+    return letter && up ? ch.toUpperCase() : ch;
+  });
+}
+
 /** The kind of row a table row is, by its table style. */
 export type TableRowType = 'title' | 'header' | 'data';
 
@@ -369,7 +428,7 @@ export function tableParts(
     const { ax, ay, hm, vm, w, h, local, at, color } = contentFrame(g, style, l, r);
     if (r.c.type === 'text') {
       if (r.c.text === '') continue;
-      parts.push({ geom: cellMText(g, style, drawing, l, r), color });
+      parts.push({ geom: cellMText(g, style, drawing, l, r, tableCellShown(r.c)), color });
       continue;
     }
     const box = r.c.block !== undefined ? drawing.blockExtents?.(r.c.block) : undefined;
