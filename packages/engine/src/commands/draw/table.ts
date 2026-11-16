@@ -37,6 +37,7 @@ import type { CommandContext, CommandDef } from '../command';
 import type { InsertTableSettings, Prompt, PromptAnswer } from '../prompt';
 import { drawingUnits, formatDistance } from '../units';
 import { editTableCells, tableditCommand } from './table-cells';
+import { tableCellCommand } from './table-cell-menu';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -375,5 +376,5 @@ export function tableCommands(): CommandDef[] {
     },
   };
 
-  return [table, dashTable, tableditCommand()];
+  return [table, dashTable, tableditCommand(), tableCellCommand()];
 }

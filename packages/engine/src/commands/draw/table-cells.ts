@@ -29,7 +29,7 @@ import { mtextEditorRequest } from './text';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
-function tableOf(
+export function tableOf(
   ctx: CommandContext,
   id: EntityId,
 ): { g: TableGeometry; style: TableStyleRecord | undefined } | undefined {
@@ -105,6 +105,30 @@ export async function* editTableCells(
 }
 
 /**
+ * "Pick a table cell:" until a table cell is picked (or the drafter ends it): the table and the
+ * cell heading the range picked. A table picked first, or double-clicked, is taken with the
+ * point it was picked at.
+ */
+export async function* pickTableCell(
+  ctx: CommandContext,
+): Sub<{ id: EntityId; cell: [number, number] } | undefined> {
+  for (;;) {
+    const a = yield ctx.prompt.selection({
+      message: 'Pick a table cell',
+      editable: true,
+      single: true,
+      pickfirst: true,
+    });
+    if (a.kind !== 'selection' || a.ids.length === 0) return undefined;
+    const id = a.ids.find((x) => ctx.model.entity(x)?.geom.kind === 'ACAD_TABLE');
+    const t = id !== undefined ? tableOf(ctx, id) : undefined;
+    const cell = t && a.pick ? tableCellAt(t.g, t.style, tableFromPlan(t.g, a.pick)) : undefined;
+    if (id !== undefined && cell) return { id, cell };
+    ctx.message('The object selected is not a table cell.');
+  }
+}
+
+/**
  * TABLEDIT (AutoCAD 2024 Help, "TABLEDIT (Command)"): "Pick a table cell:", then the cell's text
  * in the In-Place Text Editor. A double click on a table runs it (`DOUBLE_CLICK`) on the cell
  * double-clicked.
@@ -114,25 +138,8 @@ export function tableditCommand(): CommandDef {
     name: 'TABLEDIT',
     usesSelection: 'before',
     async *run(ctx) {
-      for (;;) {
-        const a = yield ctx.prompt.selection({
-          message: 'Pick a table cell',
-          editable: true,
-          single: true,
-          pickfirst: true,
-        });
-        if (a.kind !== 'selection' || a.ids.length === 0) return;
-        const id = a.ids.find((x) => ctx.model.entity(x)?.geom.kind === 'ACAD_TABLE');
-        const t = id !== undefined ? tableOf(ctx, id) : undefined;
-        const cell =
-          t && a.pick ? tableCellAt(t.g, t.style, tableFromPlan(t.g, a.pick)) : undefined;
-        if (id === undefined || !cell) {
-          ctx.message('The object selected is not a table cell.');
-          continue;
-        }
-        yield* editTableCells(ctx, id, cell[0], cell[1]);
-        return;
-      }
+      const picked = yield* pickTableCell(ctx);
+      if (picked) yield* editTableCells(ctx, picked.id, picked.cell[0], picked.cell[1]);
     },
   };
 }

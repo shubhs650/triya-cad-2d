@@ -1,0 +1,300 @@
+// A table's rows and columns inserted and deleted, and its cells merged and unmerged (M4-05
+// part 3): what AutoCAD 2024's Table Cell tab and the cell shortcut menu do ("Table Cell
+// Ribbon Contextual Tab": Insert Above / Below, Delete Row(s), Insert Left / Right, Delete
+// Column(s), Merge All / By Row / By Column, Unmerge). Each edit returns the table's new
+// geometry; the command redraws its `*T` block (`writeTableBlock`).
+//
+// A row or column inserted or deleted is stated in `rowOrigins` / `columnOrigins`, which a save
+// needs to move what each row and cell holds beyond what Triya maps (DEC-046). Columns are done
+// as rows of the table turned on its side (`turned`), so both follow the same rules:
+// - as many are inserted as the selection holds, each as high (wide) as the row (column) the
+//   selection starts or ends with, its cells taking that row's cell formats (AutoCAD's Help:
+//   the new row takes the formatting of the row it is inserted next to);
+// - a merged cell an insertion falls inside grows across the new rows; one spanning the whole
+//   table (the title across every column) grows even when the insertion is at its edge, as a
+//   drafter expects a title to stay across the table (AutoCAD's Help does not say);
+// - a merged cell losing rows shrinks, and keeps its text in its first row left.
+// Merging keeps the text of the range's first cell, the covered cells holding nothing: AutoCAD's
+// Help does not say what becomes of the others' contents; the common expectation (as in a
+// spreadsheet) is that the top-left one stays.
+import type { TableCell, TableGeometry, TableStyleRecord } from '../model/types';
+import { tableRangeHeads, tableRowTypes } from '../annotation/table';
+
+/** Rows `r0`–`r1` and columns `c0`–`c1` of a table, inclusive, `r0` ≤ `r1` and `c0` ≤ `c1`. */
+export interface TableCellRange {
+  readonly r0: number;
+  readonly c0: number;
+  readonly r1: number;
+  readonly c1: number;
+}
+
+/** How Merge Cells merges a range: into one cell, a cell per row, or a cell per column. */
+export type TableMerge = 'all' | 'rows' | 'columns';
+
+/** The options of the Table Cell menu, in its order, as typed at the command line. */
+export const TABLE_CELL_OPTIONS = [
+  'Text',
+  'Above',
+  'Below',
+  'DeleteRows',
+  'Left',
+  'Right',
+  'DeleteColumns',
+  'MergeAll',
+  'MergeRows',
+  'MergeColumns',
+  'Unmerge',
+] as const;
+
+export type TableCellOption = (typeof TABLE_CELL_OPTIONS)[number];
+
+type Cells = TableCell[][];
+type Origins = readonly (number | null)[] | undefined;
+
+const empty = (format: TableCell['format']): TableCell => ({
+  type: 'text',
+  text: '',
+  rowSpan: 1,
+  columnSpan: 1,
+  merged: false,
+  rotation: 0,
+  ...(format && { format }),
+});
+
+/** Cell `c` covered by a merged cell: its format kept, its contents gone. */
+function cover(c: TableCell): TableCell {
+  return { ...empty(c.format), rotation: c.rotation, merged: true };
+}
+
+/** `g` with its rows, columns and their origins as given, origins left out when undefined. */
+function regrid(
+  g: TableGeometry,
+  cells: Cells,
+  rowHeights: readonly number[],
+  columnWidths: readonly number[],
+  rowOrigins: Origins,
+  columnOrigins: Origins,
+): TableGeometry {
+  const { rowOrigins: _r, columnOrigins: _c, ...rest } = g;
+  return {
+    ...rest,
+    cells,
+    rowHeights,
+    columnWidths,
+    ...(rowOrigins && { rowOrigins }),
+    ...(columnOrigins && { columnOrigins }),
+  };
+}
+
+/** Table `g` turned on its side: its columns as rows, each cell's spans swapped. */
+function turned(g: TableGeometry): TableGeometry {
+  const cells = g.columnWidths.map((_, j) =>
+    g.cells.map((row) => {
+      const c = row[j]!;
+      return { ...c, rowSpan: c.columnSpan, columnSpan: c.rowSpan };
+    }),
+  );
+  return regrid(g, cells, g.columnWidths, g.rowHeights, g.columnOrigins, g.rowOrigins);
+}
+
+const origins = (o: Origins, n: number): (number | null)[] =>
+  o ? [...o] : Array.from({ length: n }, (_, k) => k);
+
+/** The cells heading a merged cell (spanning more than one), with where they are. */
+function mergedHeads(g: TableGeometry): { i: number; j: number; c: TableCell }[] {
+  const out: { i: number; j: number; c: TableCell }[] = [];
+  g.cells.forEach((row, i) =>
+    row.forEach((c, j) => {
+      if (!c.merged && (c.rowSpan > 1 || c.columnSpan > 1)) out.push({ i, j, c });
+    }),
+  );
+  return out;
+}
+
+/**
+ * The range from cell `a` to cell `b` (`[row, column]`), grown until every merged cell it
+ * touches lies wholly inside it, as AutoCAD selects a merged cell whole.
+ */
+export function tableCellRange(
+  g: TableGeometry,
+  a: readonly [number, number],
+  b: readonly [number, number],
+): TableCellRange {
+  let r = {
+    r0: Math.min(a[0], b[0]),
+    c0: Math.min(a[1], b[1]),
+    r1: Math.max(a[0], b[0]),
+    c1: Math.max(a[1], b[1]),
+  };
+  const heads = mergedHeads(g);
+  for (let grown = true; grown;) {
+    grown = false;
+    for (const { i, j, c } of heads) {
+      const i1 = i + c.rowSpan - 1;
+      const j1 = j + c.columnSpan - 1;
+      if (i > r.r1 || i1 < r.r0 || j > r.c1 || j1 < r.c0) continue;
+      const next = {
+        r0: Math.min(r.r0, i),
+        c0: Math.min(r.c0, j),
+        r1: Math.max(r.r1, i1),
+        c1: Math.max(r.c1, j1),
+      };
+      if (JSON.stringify(next) !== JSON.stringify(r)) grown = true;
+      r = next;
+    }
+  }
+  return r;
+}
+
+/** `count` rows inserted before row `at`, as high as row `like` and with its cell formats. */
+export function withRowsInserted(
+  g: TableGeometry,
+  at: number,
+  count: number,
+  like: number,
+): TableGeometry {
+  const n = g.cells.length;
+  const likeRow = g.cells[like]!;
+  const fresh = () => likeRow.map((c) => empty(c.format));
+  const cells: Cells = [
+    ...g.cells.slice(0, at).map((r) => [...r]),
+    ...Array.from({ length: count }, fresh),
+    ...g.cells.slice(at).map((r) => [...r]),
+  ];
+  for (const { i, j, c } of mergedHeads(g)) {
+    const whole = i === 0 && c.rowSpan === n && (at === 0 || at === n);
+    if (!whole && !(i < at && at < i + c.rowSpan)) continue;
+    const head = i === at ? at : i;
+    const was = i < at ? i : i + count;
+    for (let r = head; r < head + c.rowSpan + count; r++) {
+      for (let k = j; k < j + c.columnSpan; k++) cells[r]![k] = cover(cells[r]![k]!);
+    }
+    cells[head]![j] = { ...c, rowSpan: c.rowSpan + count };
+    if (was !== head) cells[was]![j] = cover(c);
+  }
+  const h = g.rowHeights;
+  const o = origins(g.rowOrigins, n);
+  return regrid(
+    g,
+    cells,
+    [...h.slice(0, at), ...Array.from({ length: count }, () => h[like]!), ...h.slice(at)],
+    g.columnWidths,
+    [...o.slice(0, at), ...Array.from({ length: count }, () => null), ...o.slice(at)],
+    g.columnOrigins,
+  );
+}
+
+/** Rows `from`–`to` deleted. */
+export function withRowsDeleted(g: TableGeometry, from: number, to: number): TableGeometry {
+  const cells: Cells = g.cells.map((r) => [...r]);
+  for (const { i, j, c } of mergedHeads(g)) {
+    const last = i + c.rowSpan - 1;
+    const gone = Math.max(0, Math.min(last, to) - Math.max(i, from) + 1);
+    if (gone === 0 || gone === c.rowSpan) continue;
+    cells[i < from ? i : to + 1]![j] = { ...c, rowSpan: c.rowSpan - gone };
+  }
+  const keep = (_: unknown, k: number) => k < from || k > to;
+  return regrid(
+    g,
+    cells.filter(keep),
+    g.rowHeights.filter(keep),
+    g.columnWidths,
+    origins(g.rowOrigins, g.cells.length).filter(keep),
+    g.columnOrigins,
+  );
+}
+
+/** `count` columns inserted before column `at`, as wide as column `like`, with its formats. */
+export function withColumnsInserted(
+  g: TableGeometry,
+  at: number,
+  count: number,
+  like: number,
+): TableGeometry {
+  return turned(withRowsInserted(turned(g), at, count, like));
+}
+
+/** Columns `from`–`to` deleted. */
+export function withColumnsDeleted(g: TableGeometry, from: number, to: number): TableGeometry {
+  return turned(withRowsDeleted(turned(g), from, to));
+}
+
+/** Every merged cell heading in range `r` made single cells again, their cells empty. */
+export function withCellsUnmerged(g: TableGeometry, r: TableCellRange): TableGeometry {
+  const cells: Cells = g.cells.map((row) => [...row]);
+  for (const { i, j, c } of mergedHeads(g)) {
+    if (i < r.r0 || i > r.r1 || j < r.c0 || j > r.c1) continue;
+    for (let a = i; a < Math.min(i + c.rowSpan, cells.length); a++) {
+      for (let b = j; b < Math.min(j + c.columnSpan, cells[a]!.length); b++) {
+        cells[a]![b] = { ...cells[a]![b]!, merged: false };
+      }
+    }
+    cells[i]![j] = { ...c, rowSpan: 1, columnSpan: 1 };
+  }
+  return { ...g, cells };
+}
+
+/** Range `r` (whole merged cells, `tableCellRange`) merged as `how` says. */
+export function withCellsMerged(
+  g: TableGeometry,
+  r: TableCellRange,
+  how: TableMerge,
+): TableGeometry {
+  const cells: Cells = withCellsUnmerged(g, r).cells.map((row) => [...row]);
+  for (let i = r.r0; i <= r.r1; i++) {
+    for (let j = r.c0; j <= r.c1; j++) {
+      const hi = how === 'rows' ? i : r.r0;
+      const hj = how === 'columns' ? j : r.c0;
+      const c = cells[i]![j]!;
+      cells[i]![j] =
+        i === hi && j === hj
+          ? {
+              ...c,
+              rowSpan: how === 'rows' ? 1 : r.r1 - r.r0 + 1,
+              columnSpan: how === 'columns' ? 1 : r.c1 - r.c0 + 1,
+            }
+          : cover(c);
+    }
+  }
+  return { ...g, cells };
+}
+
+/**
+ * The Table Cell menu's options that apply to range `r`, in its order. Rows are inserted and
+ * deleted among the data rows only: Triya draws a table's first rows as its title and header
+ * by their place (`tableRowTypes`), so a row inserted above them, or one of them deleted, would
+ * change which rows are drawn as what. The last row or column is not deleted. Merging needs more
+ * than one cell; Unmerge, a merged cell.
+ */
+export function tableCellOptions(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  r: TableCellRange,
+): TableCellOption[] {
+  const rows = g.cells.length;
+  const columns = g.columnWidths.length;
+  const first = tableRowTypes(style, rows).filter((t) => t !== 'data').length;
+  const heads = new Set<string>();
+  const all = tableRangeHeads(g);
+  for (let i = r.r0; i <= r.r1; i++) {
+    for (let j = r.c0; j <= r.c1; j++) heads.add(String(all[i]![j]));
+  }
+  const many = heads.size > 1;
+  const merged = mergedHeads(g).some(
+    ({ i, j }) => i >= r.r0 && i <= r.r1 && j >= r.c0 && j <= r.c1,
+  );
+  const on: Record<TableCellOption, boolean> = {
+    Text: true,
+    Above: r.r0 >= first,
+    Below: r.r1 + 1 >= first,
+    DeleteRows: r.r0 >= first && r.r1 - r.r0 + 1 < rows,
+    Left: true,
+    Right: true,
+    DeleteColumns: r.c1 - r.c0 + 1 < columns,
+    MergeAll: many,
+    MergeRows: many && r.c1 > r.c0,
+    MergeColumns: many && r.r1 > r.r0,
+    Unmerge: merged,
+  };
+  return TABLE_CELL_OPTIONS.filter((k) => on[k]);
+}
