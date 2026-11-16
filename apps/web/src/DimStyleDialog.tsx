@@ -47,8 +47,8 @@ import {
   type DocumentModel,
   type PromptAnswer,
 } from '@triya/engine';
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { controllersOf } from './canvas/registry';
+import { useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { StylePreview } from './StylePreview';
 import { drawingFileModel, type StyleSource } from './dimstyle-import';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
@@ -414,60 +414,6 @@ export function DimStyleDialog({
 /** The preview pictures' sizes in CSS pixels. */
 const MANAGER_PREVIEW = { width: 240, height: 170 };
 const EDITOR_PREVIEW = { width: 300, height: 190 };
-/** How long the preview waits for typing to pause before it is drawn again. */
-const PREVIEW_DELAY_MS = 60;
-
-/**
- * The preview image (M4-03 part 3): drawn by the drawing's renderer (the engine's sample drawing
- * in the style) and shown on a `bitmaprenderer` canvas, as no 2D drawing happens outside the
- * renderer. It keeps its last picture until the next one arrives.
- */
-function StylePreview({
-  doc,
-  preview,
-  size,
-}: {
-  doc: number;
-  preview: DimStylePreview | undefined;
-  size: { readonly width: number; readonly height: number };
-}) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const key = preview ? JSON.stringify(preview) : '';
-  useEffect(() => {
-    if (!preview) return;
-    let live = true;
-    const timer = setTimeout(() => {
-      const controller = controllersOf(doc)[0];
-      void controller?.dimStylePreview(preview, size).then((bitmap) => {
-        const c = canvas.current;
-        if (!live || !c || !bitmap) {
-          bitmap?.close();
-          return;
-        }
-        c.width = bitmap.width;
-        c.height = bitmap.height;
-        c.getContext('bitmaprenderer')?.transferFromImageBitmap(bitmap);
-        c.dataset['drawn'] = key;
-      });
-    }, PREVIEW_DELAY_MS);
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-    // `key` stands for the preview's content, which is a new object each render.
-  }, [doc, key, size]);
-  return (
-    <canvas
-      ref={canvas}
-      className="dimstyle-preview"
-      role="img"
-      aria-label="Preview"
-      data-testid="dimstyle-preview"
-      style={{ width: size.width, height: size.height }}
-    />
-  );
-}
-
 function RenameInput({ name, onDone }: { name: string; onDone: (to?: string) => void }) {
   const [text, setText] = useState(name);
   return (

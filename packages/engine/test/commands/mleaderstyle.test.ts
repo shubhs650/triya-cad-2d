@@ -764,6 +764,12 @@ describe('MLEADERSTYLE: Maximum leader points unchecked and Extend leader to tex
     expect(s.bus.prompt?.kind).toBe('point');
     await s.bus.submit('');
     expect(s.bus.prompt?.kind).not.toBe('point');
+    await s.bus.cancel();
+    // Its Maxpoints option offers no default while there is no limit, and sets one.
+    await s.bus.script(['MLEADER', 'O', 'M']);
+    expect(s.bus.promptText).toBe('Enter the maximum points for leader line:');
+    await s.bus.script(['3', 'X', '0,0', '5,5']);
+    expect(s.bus.promptText).toBe('Specify leader landing location:');
   });
 
   it('keeps a multileader’s own Extend leader to text when its override bit is set', async () => {

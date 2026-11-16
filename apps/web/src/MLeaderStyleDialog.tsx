@@ -37,6 +37,7 @@ import {
 } from '@triya/engine';
 import { useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Modal } from './AttributeDialogs';
+import { StylePreview } from './StylePreview';
 import { SelectColorDialog } from './SelectColorDialog';
 import { engines } from './engine/registry';
 
@@ -153,6 +154,13 @@ export function MLeaderStyleDialog({ doc, request }: { doc: number; request: Req
           </label>
         </div>
         <div className="dimstyle-right">
+          <span>Preview of: {style?.name ?? ''}</span>
+          <StylePreview
+            doc={doc}
+            preview={style && { kind: 'mleaderstyle', settings: style.settings, from: style.name }}
+            size={MANAGER_PREVIEW}
+            testId="mleaderstyle-preview"
+          />
           <div className="dimstyle-buttons">
             <button
               type="button"
@@ -217,6 +225,8 @@ export function MLeaderStyleDialog({ doc, request }: { doc: number; request: Req
         <StyleEditor
           // AutoCAD titles New's tabs as Modify's, with the new style's name.
           title={`Modify Multileader Style: ${editing.name}`}
+          doc={doc}
+          from={editing.mode === 'new' ? editing.from! : editing.name}
           settings={editing.settings}
           lists={request.lists}
           onCancel={() => setEditing(undefined)}
@@ -351,8 +361,15 @@ function CreateNewStyle(props: {
 let lastTab: MLeaderStyleTab = 'format';
 
 /** Modify Multileader Style: AutoCAD's three tabs over the style's settings. */
+/** The preview pictures' sizes in CSS pixels, as the Dimension Style Manager's. */
+const MANAGER_PREVIEW = { width: 240, height: 170 };
+const EDITOR_PREVIEW = { width: 300, height: 190 };
+
 function StyleEditor(props: {
   title: string;
+  doc: number;
+  /** The style the settings come from (Modify's own, New's Start with). */
+  from: string;
   settings: MLeaderStyleSettings;
   lists: MLeaderStyleLists;
   onCancel: () => void;
@@ -370,6 +387,17 @@ function StyleEditor(props: {
   const fields = MLEADERSTYLE_FIELDS.filter((f) => f.tab === tab && (f.shown?.(settings) ?? true));
   const groups = [...new Set(fields.map((f) => f.group))];
   const label = MLEADERSTYLE_TABS.find((t) => t.id === tab)!.label;
+  // AutoCAD's sample image, beside every tab, following each change (M4-14).
+  const preview = (
+    <div key="preview" className="dimstyle-editor-preview">
+      <StylePreview
+        doc={props.doc}
+        preview={{ kind: 'mleaderstyle', settings, from: props.from }}
+        size={EDITOR_PREVIEW}
+        testId="mleaderstyle-editor-preview"
+      />
+    </div>
+  );
   return (
     <Modal
       label={props.title}
@@ -391,7 +419,8 @@ function StyleEditor(props: {
         ))}
       </div>
       <div role="tabpanel" className="cad-dialog-panel dimstyle-tab" aria-label={label}>
-        {groups.map((g) => (
+        {groups.map((g, i) => [
+          i === 1 && preview,
           <fieldset key={g}>
             <legend>{g}</legend>
             {fields
@@ -418,8 +447,9 @@ function StyleEditor(props: {
                 <input type="checkbox" checked={false} disabled readOnly /> Annotative
               </label>
             )}
-          </fieldset>
-        ))}
+          </fieldset>,
+        ])}
+        {groups.length < 2 && preview}
       </div>
       {picking && (
         <SelectColorDialog
