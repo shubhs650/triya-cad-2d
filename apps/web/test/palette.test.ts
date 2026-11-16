@@ -166,6 +166,8 @@ describe('palette search', () => {
       'STRETCH',
       // M4-05 part 2: the Insert Table dialog and the cell editor.
       'TABLE',
+      // M4-05 part 3: table cells selected, the Table Cell menu.
+      'TABLECELL',
       'TABLEDIT',
       'TEXT',
       'TEXTEDIT',

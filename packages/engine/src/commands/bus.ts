@@ -78,6 +78,7 @@ import { drawingUnits, type DrawingUnits } from './units';
 import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
 import { gripMenuAt } from './modify/grip-functions';
 import { gripsOf } from '../edit/grips';
+import { tableCellCommand, tableCellUnder } from './draw/table-cell-menu';
 import { variableCommand } from './setvar';
 import { systemVariable } from './sysvars';
 import { gripInfoOf } from '../edit/array-grips';
@@ -613,6 +614,15 @@ export class PromptBus {
           );
         }
       }
+      // A click inside a table cell, clear of its lines, selects the cell (TABLECELL, M4-05
+      // part 3); a click on a table's lines still selects the table.
+      if (!frame && this.#pickfirstOn && !o.shift && !o.release && !this.#idle.wantsPoint) {
+        const cell = tableCellUnder(this.#model, this.#space(), point, o.grip ?? 0);
+        if (cell) {
+          this.#idle.clear();
+          return this.#start(tableCellCommand(cell), false, false);
+        }
+      }
       if (frame?.select && this.#collectors.length === 0) {
         return this.#step(frame, await frame.select.point(point, o));
       }
@@ -661,10 +671,13 @@ export class PromptBus {
   doubleClick(point: Vec2): Promise<void> {
     return this.#enqueue(async () => {
       const top = this.#stack.at(-1);
-      if (top && !top.def.keepsSelection) return;
+      if (top && !top.def.keepsSelection && !top.def.yieldsToDoubleClick) return;
       const r = await this.#view.request({ op: 'pick', point });
       const ids = r.ok ? (r.ids ?? []) : [];
-      const id = ids.find((i) => doubleClickCommand(this.#model.entity(i)) !== undefined);
+      // Inside an empty table cell nothing drawn is under the cursor: the cell's table is.
+      const id =
+        ids.find((i) => doubleClickCommand(this.#model.entity(i)) !== undefined) ??
+        tableCellUnder(this.#model, this.#space(), point, 0)?.id;
       if (id === undefined) return;
       const found = this.#registry.resolve(doubleClickCommand(this.#model.entity(id))!);
       if (!found) return;

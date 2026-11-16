@@ -2,8 +2,9 @@
 // AutoCAD's grip options (Enter, Move, Mirror, Rotate, Scale, Stretch, Base Point, Copy,
 // Reference, Undo, Properties, Exit, and a multi-functional grip's functions). Choosing an item
 // answers the prompt as its keyword typed would, so the command line, Dynamic Input and this
-// menu are one way in. Greyed items are not chosen; arrow keys move, Enter chooses, Esc or a
-// click elsewhere closes it.
+// menu are one way in. A selected table cell's prompt (TABLECELL, M4-05 part 3) lists the Table
+// Cell options here, AutoCAD's cell shortcut menu. Greyed items are not chosen; arrow keys
+// move, Enter chooses, Esc or a click elsewhere closes it.
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { engines } from './engine/registry';
 import { shortcutMenu } from './shortcut-menu';
@@ -29,7 +30,7 @@ export function ShortcutMenu() {
       ref={ref}
       className="snap-menu"
       role="menu"
-      aria-label="Grip options"
+      aria-label={state.title}
       style={{
         left: Math.min(state.at.x, window.innerWidth - 220),
         top: Math.min(state.at.y, Math.max(0, window.innerHeight - state.items.length * 28 - 16)),
