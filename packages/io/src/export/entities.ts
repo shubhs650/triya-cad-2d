@@ -2272,15 +2272,14 @@ const tableWriter: Writer<TableGeometry> = {
     for (const [i, j, b, a] of cells(was, g)) {
       const at = `cell (${i}, ${j})`;
       out.push(...formatValueProblems(r, a, b).map((p) => `${at}: ${p}`));
-      if (b && a.type !== b.type) {
-        out.push(`${at}: a change between text and block`);
-        continue;
-      }
       if (a.type === 'block') {
         if (a.text !== '') out.push(`${at}: text in a block cell`);
         if (a.block === undefined) out.push(`${at}: a block cell without a block`);
         else if (a.block !== b?.block && !insertable(r, a.block)) {
           out.push(`${at}: block ${a.block} cannot be a cell's block`);
+        }
+        if (a.blockScale !== undefined && !(a.blockScale > 0)) {
+          out.push(`${at}: a block scale of 0 or less`);
         }
       } else if (a.block !== undefined) {
         out.push(`${at}: a block in a text cell`);
@@ -2325,6 +2324,8 @@ const tableWriter: Writer<TableGeometry> = {
     // Cells by their own before, not `differ`'s: a plane change must not rewrite every value.
     for (const [i, j, b, a] of cells(was, g)) {
       const cell = t.rows[i]!.cells[j]!;
+      // A text cell given a block, or a block cell typed in (TINSERT, TABLEDIT; M4-16).
+      if (b && b.type !== a.type) writeCellType(cell, a.type);
       // A new cell nothing was typed into holds no value, as AutoCAD leaves one.
       if (a.type === 'text' && (b ? b.text !== a.text : a.text !== '')) {
         writeCellText(cell, a.text);
@@ -2332,12 +2333,18 @@ const tableWriter: Writer<TableGeometry> = {
         // an existing cell keeps the one it has.
         if (!b && a.valueFormat) cell.contents[0]!.cadValue.format = a.valueFormat;
       }
-      if (a.type === 'block' && (!b || b.block !== a.block)) {
+      if (a.type === 'block' && (!b || b.block !== a.block || b.type !== a.type)) {
         const block = insertable(r, a.block!)!;
         if (cell.type === CellType.Block || cell.value instanceof BlockRecord) cell.value = block;
         for (const k of cell.contents) {
           if (k.blockRecord || k.contentType & TableCellContentType.Block) k.blockRecord = block;
         }
+      }
+      if (a.type === 'block') {
+        if (a.blockScale !== undefined && (!b || b.blockScale !== a.blockScale)) {
+          cell.blockScale = a.blockScale;
+        }
+        if (a.autoFit !== undefined && (!b || b.autoFit !== a.autoFit)) cell.autoFit = a.autoFit;
       }
       if (!b || b.rotation !== a.rotation) {
         if (styles) writeCellRotation(t, i, j, a.rotation);
@@ -2378,6 +2385,31 @@ function writeCellRotation(t: TableEntity, i: number, j: number, rotation: numbe
     beginCellStyle(s, CellStyleType.Cell);
     s.cellPropertyOverrideFlags = (s.cellPropertyOverrideFlags ?? 0) | bit;
     s.rotation = rotation;
+  }
+}
+
+/**
+ * Cell `cell` turned into a text or a block cell, as AutoCAD states each (a new table's cells,
+ * table-new.ts `newCell`): a block cell's type 2 with one block content holding an empty string
+ * value, its block and scale set after; a text cell's type 1 holding no value until text is
+ * written. What the cell held of the other kind goes.
+ */
+function writeCellType(cell: TableEntityCell, type: TableCell['type']): void {
+  cell.contents.splice(0, cell.contents.length);
+  if (type === 'block') {
+    cell.type = CellType.Block;
+    cell.blockScale = 1;
+    const content = new CellContent();
+    content.contentType = TableCellContentType.Block;
+    content.cadValue.valueType = CadValueType.String;
+    content.cadValue.isEmpty = true;
+    cell.contents.push(content);
+  } else {
+    // Its text, if any, is written after (`writeCellText` adds the value content).
+    cell.type = CellType.Text;
+    cell.value = null;
+    cell.blockScale = 0;
+    cell.autoFit = false;
   }
 }
 

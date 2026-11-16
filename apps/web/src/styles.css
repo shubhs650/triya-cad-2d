@@ -4535,3 +4535,40 @@ button {
   width: 30px;
   height: 30px;
 }
+
+/* TINSERT's Insert a Block in a Table Cell dialog (M4-16). */
+.cad-dialog.cell-block-dialog {
+  width: min(360px, calc(100vw - 32px));
+}
+
+.cell-block-dialog > .cad-dialog-field > span,
+.cell-block-group .cad-dialog-field > span {
+  min-width: 150px;
+}
+
+.cell-block-group {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  border: 1px solid var(--chrome-border);
+  padding: 6px 8px 8px;
+}
+
+.cell-block-group > legend {
+  padding: 0 4px;
+}
+
+.cell-block-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cell-block-row > .cad-dialog-field {
+  flex: 1 1 auto;
+}
+
+.cell-block-error {
+  margin: 4px 0 0;
+  color: var(--chrome-danger, #c42b1c);
+}

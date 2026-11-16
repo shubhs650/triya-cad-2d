@@ -492,3 +492,104 @@ describe('Match Cell and Remove All Property Overrides (M4-05 part 7)', () => {
     expect(formats(saved(bytes, model, table.handle))).toEqual(formats(g));
   });
 });
+
+describe('a block put in a cell, a block cell typed in (M4-16 part 1, TINSERT)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+  /** acadsharp's `my_block`, the block A35's AutoFit block cell holds. */
+  const MY_BLOCK = 'A0B';
+
+  /**
+   * TINSERT `block` into cell (`i`, `j`) at `scale` (AutoFit off unless `scale` is 'fit'), then
+   * the text `typed` into cell (`ti`, `tj`) through the Table Cell menu's Edit Text.
+   */
+  async function edit(
+    model: DocumentModel,
+    id: EntityId,
+    [i, j]: [number, number],
+    block: string,
+    scale: number | 'fit',
+    [ti, tj]: [number, number],
+    typed: string,
+  ): Promise<TableGeometry> {
+    const g = () => (model.entity(id) as Table).geom;
+    const style = () => model.tables.tableStyles.get(g().style!);
+    const centre = (r: number, c: number) => {
+      const b = tableCellBox(g(), style(), { r0: r, c0: c, r1: r, c1: c });
+      return tableToPlan(g(), { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) =>
+          Promise.resolve(r.op === 'pick' ? { ok: true, ids: [id] } : { ok: false, message: 'no' }),
+      },
+    });
+    await bus.submit('TINSERT');
+    await bus.pick(centre(i, j));
+    for (let k = 0; k < 100 && bus.prompt?.kind !== 'dialog'; k++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      tableBlock: {
+        block,
+        scale: scale === 'fit' ? 1 : scale,
+        autoFit: scale === 'fit',
+        rotation: 0,
+        alignment: 5,
+      },
+    });
+    expect(bus.promptText).toBe('Command:');
+    await bus.pick(centre(ti, tj), { grip: 1e-6 });
+    expect(bus.command).toBe('TABLECELL');
+    await bus.submit('T');
+    await bus.answer({ kind: 'string', value: typed, editor: true });
+    expect(bus.promptText).toBe('Command:');
+    return g();
+  }
+
+  /** What each cell holds: its text, or its block with its scale and AutoFit. */
+  const held = (t: TableGeometry) =>
+    t.cells.map((r) =>
+      r.map((c) =>
+        c.type === 'block'
+          ? { block: c.block, scale: Number(c.blockScale?.toFixed(6)), fit: c.autoFit }
+          : c.text,
+      ),
+    );
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '2', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', '1', '2', '3', '4']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const g = await edit(model, made.id, [2, 1], MY_BLOCK, 0.01, [3, 0], 'x');
+    expect(held(g)[2]).toEqual(['1', { block: MY_BLOCK, scale: 0.01, fit: false }]);
+    expect(held(saved(bytes, model, made.handle))).toEqual(held(g));
+  });
+
+  it('saves in a table the drawing came with: text to block and block to text', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    // The file's two block cells: my_block fitted, an anonymous block at scale 1.
+    expect(held(table.geom)[1]!.slice(3)).toEqual([
+      { block: MY_BLOCK, scale: 0.005964, fit: true },
+      { block: expect.any(String), scale: 1, fit: false },
+    ]);
+    const last = table.geom.rowHeights.length - 1;
+    const g = await edit(model, table.id, [last, 0], MY_BLOCK, 'fit', [1, 3], 'was a block');
+    expect(held(g)[1]![3]).toBe('was a block');
+    expect(held(g)[last]![0]).toEqual({ block: MY_BLOCK, scale: expect.any(Number), fit: true });
+    const back = saved(bytes, model, table.handle);
+    expect(held(back)).toEqual(held(g));
+    expect(back.cells[last]![0]!.format?.alignment).toBe(5);
+  });
+});

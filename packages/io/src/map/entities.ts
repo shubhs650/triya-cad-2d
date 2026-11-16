@@ -1057,6 +1057,9 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
         type: isBlock ? 'block' : 'text',
         text: isBlock ? '' : cellText(c),
         ...(block ? { block } : {}),
+        // A block cell's AutoFit and block scale (DXF 174 / 144, DWG's cell fields up to R2007).
+        // A DWG R2010+ cell leaves them unread (scale 0): its block keeps fitting the cell.
+        ...(isBlock && c.blockScale > 0 ? { blockScale: c.blockScale, autoFit: c.autoFit } : {}),
         rowSpan: ranges ? (span?.rows ?? 1) : Math.max(1, c.borderHeight),
         columnSpan: ranges ? (span?.columns ?? 1) : Math.max(1, c.borderWidth),
         merged: ranges ? covered.has(`${i},${j}`) : c.mergedValue !== 0,

@@ -918,6 +918,16 @@ export interface TableCell {
   /** BLOCK_RECORD handle of a block cell (DXF 340). */
   readonly block?: Handle;
   /**
+   * A block cell's block scale (DXF 144): what the block is drawn at unless `autoFit`, when
+   * AutoCAD states the scale it fitted the block at. Absent on a text cell.
+   */
+  readonly blockScale?: number;
+  /**
+   * A block cell's AutoFit (DXF 174): the block scaled to fit in the cell, as TINSERT's AutoFit
+   * sets it. Absent on a text cell; a block cell that states neither field fits its block.
+   */
+  readonly autoFit?: boolean;
+  /**
    * Rows and columns the cell spans when it heads a merged range. DXF states them per cell
    * (176 / 175); DWG states the merged ranges, from which they are derived.
    */

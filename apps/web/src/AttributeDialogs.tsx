@@ -54,6 +54,7 @@ import { SpellDialog } from './SpellDialog';
 import { HatchDialog } from './HatchDialog';
 import { FieldDialog } from './FieldDialog';
 import { ToleranceDialog } from './ToleranceDialog';
+import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -143,6 +144,8 @@ export function AttributeDialogs({
       return <FieldDialog key={key} doc={doc.id} request={d} />;
     case 'tolerance':
       return <ToleranceDialog key={key} doc={doc.id} request={d} />;
+    case 'tinsert':
+      return <InsertCellBlockDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

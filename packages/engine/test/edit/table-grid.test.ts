@@ -194,6 +194,7 @@ describe('what the Table Cell menu offers', () => {
     expect(at(2, 3)).toEqual([
       'Text',
       'Paste',
+      'BLock',
       ...FORMATS,
       // Its first data row's first cell has a colour of its own.
       'RemoveOverrides',
@@ -210,6 +211,7 @@ describe('what the Table Cell menu offers', () => {
     expect(at(1, 1)).toEqual([
       'Text',
       'Paste',
+      'BLock',
       ...FORMATS,
       'Below',
       'Left',
@@ -217,7 +219,15 @@ describe('what the Table Cell menu offers', () => {
       'DeleteColumns',
     ]);
     // The title across every column: no column can go, and it unmerges.
-    expect(at(0, 0, 0, 2)).toEqual(['Text', 'Paste', ...FORMATS, 'Left', 'Right', 'Unmerge']);
+    expect(at(0, 0, 0, 2)).toEqual([
+      'Text',
+      'Paste',
+      'BLock',
+      ...FORMATS,
+      'Left',
+      'Right',
+      'Unmerge',
+    ]);
     // The last column cannot go; nor can every data row in a style without title and header.
     const one = table({
       rowHeights: [1],
@@ -228,6 +238,7 @@ describe('what the Table Cell menu offers', () => {
     expect(tableCellOptions(one, plain, { r0: 0, c0: 0, r1: 0, c1: 0 })).toEqual([
       'Text',
       'Paste',
+      'BLock',
       ...FORMATS,
       'Above',
       'Below',

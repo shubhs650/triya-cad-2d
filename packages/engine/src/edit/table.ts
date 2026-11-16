@@ -21,6 +21,7 @@ import type {
 } from '../model/types';
 import type { Vec2 } from '../geom/types';
 import {
+  tableBlockCellScale,
   tableParts,
   tableRangeHeads,
   tableRowHeight,
@@ -218,12 +219,110 @@ export function fitTableRow(
   return { ...g, rowHeights };
 }
 
-/** Table `g` with cell (`i`, `j`)'s text set to `text`. */
+/** Table `g` with cell (`i`, `j`)'s text set to `text`: a block cell typed in holds the text. */
 export function withCellText(g: TableGeometry, i: number, j: number, text: string): TableGeometry {
   const cells = g.cells.map((row, k) =>
-    k !== i ? row : row.map((c, l) => (l !== j ? c : { ...c, type: 'text' as const, text })),
+    k !== i ? row : row.map((c, l) => (l !== j ? c : { ...textOnly(c), text })),
   );
   return { ...g, cells };
+}
+
+/** Cell `c` as a text cell: a block cell's block and its scale gone. */
+function textOnly(c: TableCell): TableCell {
+  const { block: _block, blockScale: _scale, autoFit: _fit, ...rest } = c;
+  return { ...rest, type: 'text' };
+}
+
+/** What TINSERT's Insert a Block in a Table Cell dialog puts in a cell (M4-16). */
+export interface TableCellBlock {
+  /** BLOCK_RECORD handle. */
+  readonly block: Handle;
+  /** The block scale; with `autoFit` the block is scaled to fit the cell instead. */
+  readonly scale: number;
+  readonly autoFit: boolean;
+  /** Radians, the cell's rotation (DXF 145), which turns its content. */
+  readonly rotation: number;
+  /** Overall cell alignment, 1 top left … 9 bottom right; absent keeps the cell's. */
+  readonly alignment?: number;
+}
+
+/**
+ * Table `g` with block `b` in cell (`i`, `j`) (the head of its range) in place of what it held,
+ * as TINSERT inserts one (AutoCAD 2024 Help, "TINSERT (Command)"). With AutoFit the cell states
+ * the scale the block is fitted at, as AutoCAD writes it (DXF 144 beside 174 = 1 in the corpus
+ * tables); without it the cell's row grows to hold the block at its scale (`fitTableBlockRow`).
+ * An alignment the cell's row style already gives is not kept as an override.
+ */
+export function withCellBlock(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  drawing: TableDrawing,
+  i: number,
+  j: number,
+  b: TableCellBlock,
+): TableGeometry {
+  const c = g.cells[i]?.[j];
+  if (!c) return g;
+  const type = tableRowTypes(style, g.rowHeights.length)[i]!;
+  const styled = rowCellStyle(style, type)?.alignment ?? 1;
+  const { alignment: _alignment, ...kept } = c.format ?? {};
+  const alignment = b.alignment ?? c.format?.alignment;
+  const format = alignment !== undefined && alignment !== styled ? { ...kept, alignment } : kept;
+  const { valueFormat: _valueFormat, format: _format, ...rest } = c;
+  const cell: TableCell = {
+    ...rest,
+    type: 'block',
+    text: '',
+    block: b.block,
+    blockScale: b.scale,
+    autoFit: b.autoFit,
+    rotation: b.rotation,
+    ...(Object.keys(format).length > 0 && { format }),
+  };
+  const cells = g.cells.map((row, k) => (k !== i ? row : row.map((x, l) => (l !== j ? x : cell))));
+  let out: TableGeometry = { ...g, cells };
+  if (b.autoFit) {
+    const fitted = tableBlockCellScale(out, style, drawing, i, j);
+    if (fitted !== undefined) out = withBlockScale(out, i, j, fitted);
+  } else out = fitTableBlockRow(out, style, drawing, i, j);
+  return out;
+}
+
+function withBlockScale(g: TableGeometry, i: number, j: number, blockScale: number): TableGeometry {
+  const cells = g.cells.map((row, k) =>
+    k !== i ? row : row.map((c, l) => (l !== j ? c : { ...c, blockScale })),
+  );
+  return { ...g, cells };
+}
+
+/**
+ * Table `g` with the row of block cell (`i`, `j`) grown, as `fitTableRow` grows a row to its
+ * text, to hold the cell's block at the block scale with the cell's margins above and below
+ * (turned by the cell's rotation). Only the row grows: AutoCAD's documentation does not say a
+ * column widens for a block, and a column keeps its width for text too.
+ */
+export function fitTableBlockRow(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  drawing: TableDrawing,
+  i: number,
+  j: number,
+): TableGeometry {
+  const c = g.cells[i]?.[j];
+  if (!c || c.type !== 'block' || c.autoFit !== false || c.block === undefined) return g;
+  const box = drawing.blockExtents?.(c.block);
+  if (!box) return g;
+  const k = c.blockScale !== undefined && c.blockScale > 0 ? c.blockScale : 1;
+  const bw = (box.maxX - box.minX) * k;
+  const bh = (box.maxY - box.minY) * k;
+  const tall = Math.abs(bw * Math.sin(c.rotation)) + Math.abs(bh * Math.cos(c.rotation));
+  const vm = c.format?.margins?.top ?? g.overrides?.margins?.top ?? style?.verticalMargin ?? 0;
+  const need = tall + 2 * vm;
+  const last = Math.min(i + c.rowSpan, g.rowHeights.length) - 1;
+  const have = g.rowHeights.slice(i, last + 1).reduce((a, x) => a + x, 0);
+  if (need <= have * (1 + 1e-9)) return g;
+  const rowHeights = g.rowHeights.map((h, k2) => (k2 === last ? h + need - have : h));
+  return { ...g, rowHeights };
 }
 
 /**

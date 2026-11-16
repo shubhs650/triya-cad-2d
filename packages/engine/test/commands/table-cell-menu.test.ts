@@ -107,7 +107,7 @@ const at = (i: number, j: number) => ({
 });
 
 const OPTIONS =
-  'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  'Enter a table cell option [Text/Paste/BLock/BAckground/ALignment/BOrders/Height/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
 describe('a table cell selected at Command:', () => {
   it('is a click inside it, shown by its outline, with the Table Cell options', async () => {
@@ -133,6 +133,7 @@ describe('a table cell selected at Command:', () => {
     expect(menu.map((m) => `${m.label}${m.disabled ? ' (off)' : ''}`)).toEqual([
       'Edit Text',
       'Paste',
+      'Insert Block...',
       'Background Fill',
       'Alignment',
       'Borders',

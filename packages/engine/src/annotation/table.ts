@@ -302,6 +302,20 @@ function contentFrame(
   return { s, f, alignment, ax, ay, hm, vm, w, h, local, at, color, turned };
 }
 
+/**
+ * The scale block cell `c` draws its block (extents `box`) at, in a cell with `room` inside its
+ * margins: AutoFit's (the block as large as fits, its proportions kept), or the cell's block
+ * scale (DXF 144) with AutoFit off (AutoCAD 2024 Help, "Insert a Block in a Table Cell Dialog
+ * Box": "Scale ... or select AutoFit to scale the block to fit in the selected cell").
+ */
+export function blockCellScale(c: TableCell, box: Box, room: Vec2): number {
+  if (c.autoFit === false) return c.blockScale !== undefined && c.blockScale > 0 ? c.blockScale : 1;
+  const bw = box.maxX - box.minX;
+  const bh = box.maxY - box.minY;
+  const scale = Math.min(bw > 0 ? room.x / bw : Infinity, bh > 0 ? room.y / bh : Infinity);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
 /** The MTEXT a range's text draws as, `text` in place of the cell's own when given. */
 function cellMText(
   g: TableGeometry,
@@ -356,6 +370,26 @@ export function tableCellBox(
     minY: Math.min(l.yBottom(r.r0), l.yBottom(r.r1)),
     maxY: Math.max(l.yTop(r.r0), l.yTop(r.r1)),
   };
+}
+
+/**
+ * The scale block cell (`i`, `j`) (the head of its merged range) draws its block at, as
+ * `tableParts` draws it; undefined for a text cell or a block without extents.
+ */
+export function tableBlockCellScale(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  drawing: TableDrawing,
+  i: number,
+  j: number,
+): number | undefined {
+  const c = g.cells[i]?.[j];
+  const box =
+    c?.type === 'block' && c.block !== undefined ? drawing.blockExtents?.(c.block) : undefined;
+  if (!c || !box) return undefined;
+  const l = rowLayout(g, style);
+  const { hm, vm, w, h } = contentFrame(g, style, l, rangeOf(g, l, i, j));
+  return blockCellScale(c, box, { x: w - 2 * hm, y: h - 2 * vm });
 }
 
 /**
@@ -433,11 +467,7 @@ export function tableParts(
     }
     const box = r.c.block !== undefined ? drawing.blockExtents?.(r.c.block) : undefined;
     if (!box || r.c.block === undefined) continue;
-    const bw = box.maxX - box.minX;
-    const bh = box.maxY - box.minY;
-    const room = { x: w - 2 * hm, y: h - 2 * vm };
-    const scale = Math.min(bw > 0 ? room.x / bw : Infinity, bh > 0 ? room.y / bh : Infinity);
-    const k = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    const k = blockCellScale(r.c, box, { x: w - 2 * hm, y: h - 2 * vm });
     // The scaled extents' point the alignment names goes to the cell's.
     const anchor = {
       x: (ax < 0 ? box.minX : ax > 0 ? box.maxX : (box.minX + box.maxX) / 2) * k,
