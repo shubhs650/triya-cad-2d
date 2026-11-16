@@ -187,6 +187,8 @@ export type ViewRequest =
       readonly name: string;
       readonly placements: readonly PatternPlacement[];
     }
+  /** The pattern library's patterns, named and described as their files have them (-HATCH ?). */
+  | { readonly op: 'hatchPatternList' }
   /**
    * A system variable the app keeps (SETVAR, M2-42: the drafting aids and the per-user settings
    * of `APP_VARIABLES`): set to `value` when one is given (already checked against the
@@ -443,6 +445,8 @@ export type ViewReply =
       readonly plotSetup?: PlotScriptSetup;
       /** What `hatchPattern` placed (M2-35 part 3). */
       readonly pattern?: PlacedPattern;
+      /** What `hatchPatternList` found (M4-07). */
+      readonly patterns?: readonly { readonly name: string; readonly description: string }[];
       /** What a `sysvar` variable holds (M2-42): a number, or text (DWGNAME, M2-59). */
       readonly value?: number | string;
       /**

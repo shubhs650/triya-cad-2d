@@ -119,7 +119,7 @@ import { RolloverTooltip } from './RolloverTooltip';
 import { hoverRollover, rollovers } from './rollover';
 import { gripMenus } from './grip-menu';
 import { GripMenu } from './GripMenu';
-import { hatchPatternNames, hatchPatternReply } from './hatch-patterns';
+import { hatchPatternListReply, hatchPatternNames, hatchPatternReply } from './hatch-patterns';
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
@@ -464,6 +464,7 @@ function viewContext(id: number): ViewContext {
     plot: (r) => plotScript(id, r),
     // Properties' Pattern name (M2-35 part 3), from the library the canvases draw with.
     hatchPattern: (name, placements) => hatchPatternReply(patterns.sources(), name, placements),
+    hatchPatternList: () => hatchPatternListReply(patterns.sources()),
     // SETVAR's variables the app keeps (M2-42), and those of the drawing it tells (M2-59).
     sysvar: (name, value) =>
       (doc && drawingVariableReply(doc, name)) ?? systemVariableReply(drafting, name, value),
