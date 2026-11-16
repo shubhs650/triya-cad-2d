@@ -246,8 +246,33 @@ export interface Face3dGeometry {
  * extrusion (which mirrors the OCS in X) shows as the baseline turned to π − θ with
  * `upsideDown` toggled (DEC-039). `halign`/`valign` are DXF 72/73 (74 for ATTDEF) as stored.
  */
+/**
+ * A FIELD object (M4-10): a text's fields as AutoCAD keeps them, in the `TEXT` entry of the
+ * `ACAD_FIELD` dictionary in the text's extension dictionary. The root's evaluator is `_text`
+ * and its code the text with `%<\_FldIdx n>%` where child n's value goes; a child's code is
+ * the field itself (`\AcVar Date \f "M/d/yyyy"`), with `%<\_ObjIdx n>%` naming `objects[n]`.
+ * The text's own value or contents stay as the file has them: the field values as last
+ * evaluated, which is what draws.
+ */
+export interface DrawingField {
+  /** DXF 1: the evaluator (`_text`, `AcVar`, `AcObjProp`, `AcExpr`, `AcDiesel`, …). */
+  readonly evaluator: string;
+  /** DXF 2 and 3: the field code. */
+  readonly code: string;
+  /** DXF 360: the child fields, in `\_FldIdx` order. */
+  readonly children: readonly DrawingField[];
+  /** DXF 331: the objects the code names by `\_ObjIdx`. */
+  readonly objects: readonly Handle[];
+  /** DXF 301: the value as last evaluated and shown; absent when the file holds none. */
+  readonly value?: string;
+  /** A date value's time (ms since the epoch), kept with `value` for the FIELD's date data. */
+  readonly time?: number;
+}
+
 export interface TextFields extends PlanarProps {
   readonly value: string;
+  /** The text's fields (M4-10), when its extension dictionary holds them. */
+  readonly field?: DrawingField;
   /** STYLE record handle. */
   readonly style: Handle;
   /** DXF 10: the first alignment point (the baseline start for left-baseline text). */
@@ -299,6 +324,8 @@ export interface MTextGeometry extends PlanarProps {
   readonly kind: 'MTEXT';
   /** The contents with their formatting codes, as stored (DXF 1 and 3). */
   readonly contents: string;
+  /** The text's fields (M4-10), when its extension dictionary holds them. */
+  readonly field?: DrawingField;
   readonly style: Handle;
   readonly position: Vec2;
   readonly height: number;
