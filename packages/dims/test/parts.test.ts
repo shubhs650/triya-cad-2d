@@ -1365,3 +1365,173 @@ describe('flipped arrowheads on radial, angular, arc length and jogged dimension
     ]);
   });
 });
+
+describe('jog lines of linear and aligned dimensions (M4-01)', () => {
+  const JOG_APP = '13';
+  const JAG_APP = '15';
+  const withApps = (vars: DimStyleRecord['vars'] = ISO, factor?: number) => {
+    const init = initOf(vars);
+    return DocumentModel.create({
+      ...init,
+      tables: {
+        ...init.tables,
+        appIds: [
+          ...init.tables!.appIds!,
+          { handle: JOG_APP, name: 'ACAD_DSTYLE_DIMJAG_POSITION' },
+          { handle: JAG_APP, name: 'ACAD_DSTYLE_DIMJAG' },
+        ],
+        dimStyles: [
+          {
+            handle: STYLE,
+            name: 'ISO-25',
+            vars,
+            ...(factor === undefined
+              ? {}
+              : {
+                  xdata: [
+                    {
+                      appId: JAG_APP,
+                      values: [
+                        { code: 1070, value: 388 },
+                        { code: 1040, value: factor },
+                      ],
+                    },
+                  ],
+                }),
+          },
+        ],
+      },
+    });
+  };
+  /** AutoCAD's layout: 387 then 1, 389 then the point the jog was placed at. */
+  const jogAt = (x: number, y: number) => [
+    {
+      appId: JOG_APP,
+      values: [
+        { code: 1070, value: 387 },
+        { code: 1070, value: 1 },
+        { code: 1070, value: 389 },
+        { code: 1010, value: { x, y, z: 0 } },
+      ],
+    },
+  ];
+  type Line = Extract<EntityGeometry, { kind: 'LINE' }>;
+  const linesOf = (geom: DimensionGeometry, xdata: unknown, m = withApps()) =>
+    (of(dimensionParts({ geom, xdata: xdata as never }, m, measure)!, 'LINE') as Line[]).map((l) =>
+      [l.start.x, l.start.y, l.end.x, l.end.y].map((v) => Math.round(v * 1e6) / 1e6),
+    );
+  // The jog of height h (1.5 × the text height 2.5) centred at J: its two vertices h apart on a
+  // line through J at 60° to the dimension line, each joined back to the line at 45°.
+  const h = 1.5 * 2.5;
+  const r = (v: number) => Math.round(v * 1e6) / 1e6;
+  const jogLines = (jx: number, y: number, k = h) => {
+    const dx = k / 4;
+    const dy = (k * Math.sqrt(3)) / 4;
+    return [
+      [r(jx - dx - dy), y, r(jx - dx), r(y + dy)],
+      [r(jx - dx), r(y + dy), r(jx + dx), r(y - dy)],
+      [r(jx + dx), r(y - dy), r(jx + dx + dy), y],
+    ];
+  };
+
+  it('breaks the dimension line at the jog and draws the zigzag through it', () => {
+    const lines = linesOf(linear(), jogAt(30, 20));
+    const dy = (h * Math.sqrt(3)) / 4;
+    expect(lines).toEqual([
+      [0, 0.625, 0, 21.25],
+      [100, 0.625, 100, 21.25],
+      [2.5, 20, r(30 - h / 4 - dy), 20],
+      [r(30 + h / 4 + dy), 20, 97.5, 20],
+      ...jogLines(30, 20),
+    ]);
+  });
+
+  it('puts a jog stored off the dimension line where it falls on the line', () => {
+    expect(linesOf(linear(), jogAt(30, 5))).toEqual(linesOf(linear(), jogAt(30, 20)));
+  });
+
+  it("sizes the jog by the style's Jog Height Factor times the text height", () => {
+    const lines = linesOf(linear(), jogAt(30, 20), withApps({ ...ISO, DIMSCALE: 2 }, 1));
+    // Text height 2.5 × DIMSCALE 2, factor 1.
+    expect(lines.slice(-3)).toEqual(jogLines(30, 20, 5));
+  });
+
+  it('draws an aligned dimension’s jog along its line', () => {
+    const aligned: DimensionGeometry = {
+      ...common,
+      dimType: 'aligned',
+      first: { x: 0, y: 0 },
+      second: { x: 0, y: 100 },
+      definitionPoint: { x: -20, y: 100 },
+      textPosition: { x: -21.875, y: 50 },
+    };
+    const lines = linesOf(aligned, jogAt(-20, 40));
+    // The line runs up x = -20 from the first extension line; the jog's cross line turns 60°
+    // from it, towards its left.
+    const dx = h / 4;
+    const dy = (h * Math.sqrt(3)) / 4;
+    expect(lines.slice(-3)).toEqual([
+      [-20, r(40 - dx - dy), r(-20 - dy), r(40 - dx)],
+      [r(-20 - dy), r(40 - dx), r(-20 + dy), r(40 + dx)],
+      [r(-20 + dy), r(40 + dx), -20, r(40 + dx + dy)],
+    ]);
+  });
+
+  it('draws no jog without the xdata', () => {
+    expect(linesOf(linear(), undefined)).toEqual(linesOf(linear(), []));
+    expect(linesOf(linear(), undefined)).toHaveLength(3);
+  });
+});
+
+describe('annotative dimensions (M4-01)', () => {
+  const SCALE_1_2 = '51';
+  const annotativeModel = (vars: DimStyleRecord['vars'] = { ...ISO, DIMSCALE: 3 }) => {
+    const init = initOf(vars);
+    return DocumentModel.create({
+      ...init,
+      meta: {
+        ...init.meta,
+        annotationScales: [
+          { name: '1:1', value: 1, handle: '50' },
+          { name: '1:2', value: 0.5, handle: SCALE_1_2 },
+        ],
+      },
+    });
+  };
+  const at = (scale: string, isDefault = true) => ({
+    representations: [
+      { handle: '60', scale: '50', isDefault: false },
+      { handle: '61', scale, isDefault },
+    ],
+  });
+  const extOf = (e: Parameters<typeof dimensionParts>[0], m = annotativeModel()) =>
+    (of(dimensionParts(e, m, measure)!, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[])[0];
+
+  it('draws at its default representation’s annotation scale, DIMSCALE ignored', () => {
+    // 1:2: lengths twice the style's; DIMEXO 0.625 and DIMEXE 1.25 become 1.25 and 2.5.
+    expect(extOf({ geom: linear(), annotative: at(SCALE_1_2) })).toEqual({
+      kind: 'LINE',
+      start: { x: 0, y: 1.25 },
+      end: { x: 0, y: 22.5 },
+    });
+    const [text] = of(
+      dimensionParts({ geom: linear(), annotative: at(SCALE_1_2) }, annotativeModel(), measure)!,
+      'MTEXT',
+    ) as Extract<EntityGeometry, { kind: 'MTEXT' }>[];
+    expect(text!.height).toBe(5);
+  });
+
+  it('takes the first representation when none is the default', () => {
+    // The first is 1:1.
+    expect(extOf({ geom: linear(), annotative: at(SCALE_1_2, false) })!.start).toEqual({
+      x: 0,
+      y: 0.625,
+    });
+  });
+
+  it('keeps DIMSCALE for a plain dimension, or a scale the list does not hold', () => {
+    // DIMSCALE 3: DIMEXO 1.875.
+    expect(extOf({ geom: linear() })!.start).toEqual({ x: 0, y: 1.875 });
+    expect(extOf({ geom: linear(), annotative: at('77') })!.start).toEqual({ x: 0, y: 1.875 });
+  });
+});

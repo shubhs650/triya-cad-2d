@@ -26,7 +26,7 @@ import type {
 } from '@triya/engine';
 import { add, dist, dot, fromAngle, normAngle, sub, type DimPart } from './geometry';
 import { dimensionParts } from './parts';
-import { dimStyle } from './style';
+import { annotationScaleOf, dimStyle } from './style';
 
 /** What reading a dimension's stored block needs. */
 export interface StoredBlocks extends AnnotationTables {
@@ -319,6 +319,6 @@ export function dimensionHealth(
   if (!('dimType' in g) || g.block === undefined || !model.blocks.get(g.block)) return undefined;
   const generated = dimensionParts(e, model, measure);
   if (!generated) return undefined;
-  const h = dimStyle(g.style, e.xdata, model).textHeight;
+  const h = dimStyle(g.style, e.xdata, model, annotationScaleOf(e, model)).textHeight;
   return compareParts(generated, storedParts(g.block, model), h, colors);
 }

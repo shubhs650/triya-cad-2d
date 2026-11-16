@@ -27,6 +27,13 @@
 //   (upright), its middle DIMGAP and half its width beyond the dimension line, beside the line
 //   by DIMTAD as text beside a dimension line is; the extension line stays out of its box. The
 //   text then takes no room between the extension lines.
+// - A jog line (DIMJOGLINE; xdata read by the engine's annotation/linear-jog.ts) breaks the
+//   dimension line where its stored point falls on it. AutoCAD's help gives the jog's height
+//   (Jog Height Factor × text height, "the distance between the two vertices of the angles
+//   that make up the jog") and no other measure, so its shape is ours (noted in the M4-01 PR):
+//   the two vertices lie on a line through the point at 60° to the dimension line, half the
+//   height either side, the first towards the line's left, and each is joined back to the
+//   line at 45°, forwards along it, a zigzag like a break line's.
 
 import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
 import { linearText, textAlign } from './format';
@@ -156,12 +163,49 @@ export function linearDefinitionPoint(g: Linear): Vec2 {
   return meet(g.second, extDir, g.definitionPoint, u);
 }
 
+/**
+ * The dimension line's pieces with a jog of `height` where `at` falls on the line (through `s1`
+ * along `along`): each piece over the jog's width broken there, then the jog's three strokes.
+ */
+function jogged(
+  lines: readonly [Vec2, Vec2][],
+  at: Vec2,
+  height: number,
+  s1: Vec2,
+  along: Vec2,
+): [Vec2, Vec2][] {
+  const t = dot(sub(at, s1), along);
+  const j = add(s1, along, t);
+  const n = perp(along);
+  const dx = height / 4;
+  const dy = (height * Math.sqrt(3)) / 4;
+  const v1 = add(add(j, along, -dx), n, dy);
+  const v2 = add(add(j, along, dx), n, -dy);
+  const a = add(j, along, -dx - dy);
+  const b = add(j, along, dx + dy);
+  const [ta, tb] = [t - dx - dy, t + dx + dy];
+  const out: [Vec2, Vec2][] = [];
+  for (const [p, q] of lines) {
+    const [tp, tq] = [dot(sub(p, s1), along), dot(sub(q, s1), along)];
+    const [lo, hi, from, to] = tp <= tq ? [tp, tq, p, q] : [tq, tp, q, p];
+    if (hi <= ta || lo >= tb) {
+      out.push([p, q]);
+      continue;
+    }
+    if (lo < ta) out.push([from, a]);
+    if (hi > tb) out.push([b, to]);
+  }
+  out.push([a, v1], [v1, v2], [v2, b]);
+  return out;
+}
+
 export function linearParts(
   g: Linear,
   s: DimStyle,
   model: AnnotationTables,
   measure: TextMeasure,
   keepText: boolean,
+  jog?: { readonly at: Vec2; readonly height: number },
 ): DimPart[] | undefined {
   const u =
     g.dimType === 'aligned'
@@ -311,7 +355,8 @@ export function linearParts(
     const reach = dot(sub(far, near), along) * k;
     if (reach > 0) lines.push([near, add(near, along, k * reach)]);
   }
-  for (const [a, b] of lines) {
+  const drawn = jog && jog.height > 0 ? jogged(lines, jog.at, jog.height, s1, along) : lines;
+  for (const [a, b] of drawn) {
     for (const [p, q] of clipSegment(a, b, lineBox)) out.push(linePart(p, q, s.dimLine));
   }
   if (leader) {

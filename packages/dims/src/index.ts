@@ -4,10 +4,11 @@
 // `dimensionParts` draws a DIMENSION as AutoCAD would regenerate it (ARCHITECTURE.md §9): the
 // lines, arcs, arrowheads, text and definition points its `*D` block holds. M2-10 part 1
 // covers linear, aligned, radius, diameter and angular dimensions; part 2 ordinate, jogged
-// radius and arc length dimensions, tolerances, limits, alternate units and DIMJUST 3/4.
+// radius and arc length dimensions, tolerances, limits, alternate units and DIMJUST 3/4; M4-01
+// jog lines on linear and aligned dimensions and annotative dimensions' scale.
 
 export type { DimPart } from './geometry';
-export { dimStyle, type DimStyle } from './style';
+export { annotationScaleOf, dimStyle, type DimStyle, type DimensionTables } from './style';
 export {
   angularText,
   applyPost,
