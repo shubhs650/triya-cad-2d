@@ -5,6 +5,7 @@
 // it asked for until nothing is missing (a dimension measures its main text and, for some
 // rules, a second one).
 import type { DimStyleRecord, Entity, MTextGeometry } from '../../model/types';
+import { isDimBreak, isDimInspect } from '../../model/types';
 import { childStyleUse } from '../../annotation/dimstyle-family';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
@@ -145,6 +146,34 @@ export function restyledDimensions(
         out.add(after.id);
       }
     }
+  }
+  // Breaks follow their objects and their dimension (M4-02 part 4): a dimension is drawn again
+  // when an object breaking it, the dimension itself or its records change.
+  const touched = new Set<Handle>();
+  const recorded = new Set<Handle>();
+  for (const cs of changes) {
+    for (const { before, after } of cs.entities?.updated ?? []) {
+      touched.add(before.handle);
+      touched.add(after.handle);
+    }
+    for (const { entity } of [...(cs.entities?.added ?? []), ...(cs.entities?.removed ?? [])])
+      touched.add(entity.handle);
+    for (const o of [
+      ...(cs.objects?.added ?? []),
+      ...(cs.objects?.removed ?? []),
+      ...(cs.objects?.updated ?? []).flatMap(({ before, after }) => [before, after]),
+    ]) {
+      if (isDimBreak(o) || isDimInspect(o)) recorded.add(o.dimension);
+    }
+  }
+  for (const o of model.objects.values()) {
+    if (!isDimBreak(o) || o.objects.length === 0) continue;
+    if (touched.has(o.dimension) || o.objects.some((h) => touched.has(h)))
+      recorded.add(o.dimension);
+  }
+  for (const h of recorded) {
+    const e = model.entityByHandle(h);
+    if (e) out.add(e.id);
   }
   if (styles.size > 0) {
     for (const e of model.entities()) {

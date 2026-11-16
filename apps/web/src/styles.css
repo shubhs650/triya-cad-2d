@@ -3110,6 +3110,30 @@ button {
   padding: 0;
 }
 
+/* DIMINSPECT's Inspection Dimension (M4-02 part 4): selection row, Shape, and the two fields. */
+.inspection-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.inspection-select [role='status'] {
+  flex: 1;
+}
+
+.inspection-shape,
+.inspection-fields {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.inspection-fields {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
 /* DSETTINGS' Drafting Settings (M3-06 part 1): tabs of check boxes and grouped options. */
 .cad-dialog.dsettings {
   width: min(520px, calc(100vw - 32px));
@@ -3386,6 +3410,82 @@ button {
 
 .grouping-note {
   margin: 0 0 8px;
+}
+
+/* FIND's Find and Replace (M4-09 part 2): the fields, the results list, More Options. */
+.cad-dialog.find-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.find-fields {
+  display: grid;
+  gap: 6px;
+}
+
+.find-fields .cad-dialog-field > label {
+  min-width: 84px;
+}
+
+.find-list tbody {
+  display: block;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.find-list thead,
+.find-list tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.find-list mark {
+  background: var(--accent);
+  color: #fff;
+}
+
+.find-list tr[aria-selected='true'] mark {
+  background: #fff;
+  color: var(--accent);
+}
+
+.find-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.find-note {
+  margin: 8px 0 0;
+}
+
+.find-more {
+  margin-top: 8px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.find-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.find-options fieldset {
+  margin: 0;
+  border: 1px solid var(--chrome-border);
+  display: grid;
+  gap: 2px;
+}
+
+@media (max-width: 520px) {
+  .find-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* FILTER's Object Selection Filters (M3-04 part 4): the list on top, Select Filter and Named

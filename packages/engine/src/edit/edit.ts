@@ -36,7 +36,9 @@ import type {
 } from '../model/types';
 import { copyAssocArrays } from './assoc-array';
 import { copyGroups } from './groups';
-import { isAssocArray } from '../model/types';
+import { isAssocArray, isDimBreak, isDimInspect } from '../model/types';
+import { carryDimensionRecords, copyDimensionRecords } from './dimension-records';
+import { copyCenterMarks } from './center-marks';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry, type StretchOptions } from './stretch';
 import { moveGrip } from './grips';
@@ -191,6 +193,10 @@ export function eraseObjects(
     ) {
       b.removeObject(o.handle);
     }
+    // A dimension's breaks and inspection data go with it (M4-02 part 4).
+    if ((isDimBreak(o) || isDimInspect(o)) && gone.has(o.dimension) && b.object(o.handle)) {
+      b.removeObject(o.handle);
+    }
     if (!isAssocArray(o) || !b.object(o.handle)) continue;
     if (gone.has(o.insert)) b.removeObject(o.handle);
     else if (o.params.kind === 'path' && o.params.path !== undefined && gone.has(o.params.path)) {
@@ -316,6 +322,7 @@ export function transformObjects(
     });
     carryBlock(b, cur.geom, t, blocksDone);
   }
+  carryDimensionRecords(b, moving, t);
   for (const a of keptAssocs) {
     const points = a.points.map((p) => {
       if (!p) return p;
@@ -649,6 +656,10 @@ export function copyObjects(
   }
   // A copy of an associative array is an array of its own (M3-11).
   copyAssocArrays(b, model, copies, names);
+  // A copy of a dimension keeps its breaks and inspection data (M4-02 part 4).
+  copyDimensionRecords(b, copies, t);
+  // A copy of a center mark draws from a block of its own (M4-08).
+  copyCenterMarks(b, model, copies, names);
   // A copy of a whole group, left in its space, is a group of its own (M3-13).
   if (into === undefined) copyGroups(b, model, copies);
   const made = [...copies.values()];

@@ -4,162 +4,9 @@
 // the area around them (edit/hatch-boundary.ts); Enter makes the hatch, non-associative
 // (DEC-015), its pattern lines placed by the app's pattern library (`hatchPattern`).
 import { describe, expect, it } from 'vitest';
-import {
-  DocumentModel,
-  PromptBus,
-  builtinCommands,
-  type BusEvent,
-  type DocumentInit,
-  type Entity,
-  type EntityGeometry,
-  type HatchGeometry,
-  type HeaderValue,
-  type PatternPlacement,
-  type ViewHost,
-  type ViewReply,
-  type ViewRequest,
-} from '../../src/index';
-import { LAYER_WALLS, MODEL_SPACE, entityInit, layer, sampleInit } from '../model/fixtures';
-
-const line = (x1: number, y1: number, x2: number, y2: number): EntityGeometry => ({
-  kind: 'LINE',
-  start: { x: x1, y: y1 },
-  end: { x: x2, y: y2 },
-});
-const square = (x: number, y: number, s: number): EntityGeometry[] => [
-  line(x, y, x + s, y),
-  line(x + s, y, x + s, y + s),
-  line(x + s, y + s, x, y + s),
-  line(x, y + s, x, y),
-];
-const text = (x: number, y: number): EntityGeometry => ({
-  kind: 'TEXT',
-  value: 'T',
-  style: 'STANDARD',
-  position: { x, y },
-  height: 2,
-  rotation: 0,
-  widthFactor: 1,
-  oblique: 0,
-  halign: 0,
-  valign: 0,
-  backward: false,
-  upsideDown: false,
-});
-const circle = (x: number, y: number, r: number): EntityGeometry => ({
-  kind: 'CIRCLE',
-  center: { x, y },
-  radius: r,
-});
-
-/** The app's side: a view of (−50,−50)–(150,150), a library that knows every name but NOPE. */
-function host(requests: ViewRequest[]): ViewHost {
-  return {
-    request: (r): Promise<ViewReply> => {
-      requests.push(r);
-      if (r.op === 'get') {
-        return Promise.resolve({
-          ok: true,
-          view: { center: { x: 50, y: 50 }, width: 200, height: 200, paper: false },
-        });
-      }
-      if (r.op === 'hatchPattern') {
-        if (r.name.toUpperCase() === 'EMPTY') return Promise.resolve({ ok: true });
-        if (r.name.toUpperCase() === 'NOPE') {
-          return Promise.resolve({
-            ok: false,
-            message: 'Pattern "NOPE" is not in the pattern library.',
-          });
-        }
-        const lines = (p: PatternPlacement) => [
-          {
-            angle: Math.PI / 4 + p.angle,
-            base: p.origin,
-            offset: { x: -3 * p.scale * Math.SQRT1_2, y: 3 * p.scale * Math.SQRT1_2 },
-            dashes: [],
-          },
-        ];
-        return Promise.resolve({
-          ok: true,
-          pattern: {
-            name: r.name.toUpperCase(),
-            custom: r.name.toUpperCase() === 'MINE',
-            lines: r.placements.map(lines),
-          },
-        });
-      }
-      if (r.op === 'textOutlines') {
-        // Every text 4 wide and 2 high from its position.
-        return Promise.resolve({
-          ok: true,
-          outlines: r.texts.map((t) => {
-            const p = t.position;
-            return {
-              corners: [
-                p,
-                { x: p.x + 4, y: p.y },
-                { x: p.x + 4, y: p.y + 2 },
-                { x: p.x, y: p.y + 2 },
-              ],
-              width: 4,
-              below: 0,
-            };
-          }),
-        });
-      }
-      return Promise.resolve({ ok: false, message: 'no' });
-    },
-  };
-}
-
-interface SetupOptions {
-  readonly header?: readonly [string, HeaderValue][];
-  /** No canvas or pattern library (scripts). */
-  readonly noView?: boolean;
-  /** Entities by index that are made invisible. */
-  readonly invisible?: readonly number[];
-}
-
-function setup(geoms: (EntityGeometry | [EntityGeometry, string])[], o: SetupOptions = {}) {
-  const base = sampleInit();
-  const init: DocumentInit = {
-    ...base,
-    header: new Map([...(base.header ?? []), ...(o.header ?? [])]),
-    tables: {
-      ...base.tables,
-      layers: [...(base.tables?.layers ?? []), { ...layer('12', 'OFF'), on: false }],
-    },
-    entities: geoms.map((g, i) => {
-      const [geom, onLayer] = Array.isArray(g) ? g : [g, undefined];
-      return entityInit((0x100 + i).toString(16).toUpperCase(), geom, {
-        ...(onLayer && { layer: onLayer }),
-        ...(o.invisible?.includes(i) && { visible: false }),
-      });
-    }),
-  };
-  const model = DocumentModel.create(init);
-  const requests: ViewRequest[] = [];
-  const bus = new PromptBus({
-    model,
-    registry: builtinCommands(),
-    ...(!o.noView && { view: host(requests) }),
-  });
-  const log: string[] = [];
-  const previews: (readonly EntityGeometry[])[] = [];
-  bus.on((e: BusEvent) => {
-    if (e.type === 'log') log.push(e.line);
-    if (e.type === 'preview') previews.push(e.geometry);
-  });
-  const hatches = (): (Entity & { geom: HatchGeometry })[] =>
-    [...model.entities()].filter(
-      (e): e is Entity & { geom: HatchGeometry } => e.geom.kind === 'HATCH',
-    );
-  const idOf = (handle: string) => model.ids.idOf(handle)!;
-  return { model, bus, log, previews, requests, hatches, idOf };
-}
-
-const placements = (requests: ViewRequest[]) =>
-  requests.flatMap((r) => (r.op === 'hatchPattern' ? [r] : []));
+import type { EntityGeometry } from '../../src/index';
+import { LAYER_WALLS, MODEL_SPACE } from '../model/fixtures';
+import { circle, line, placements, setup, square, text } from './hatch-fixtures';
 
 describe('HATCH (M4-07)', () => {
   it('hatches the area around a picked point with the current pattern, once Enter is pressed', async () => {
@@ -170,7 +17,9 @@ describe('HATCH (M4-07)', () => {
     // Previewed until Enter, the prompt asked again.
     expect(s.previews.at(-1)?.[0]).toMatchObject({ kind: 'HATCH', pattern: 'TRIYA_LINES45' });
     expect(s.hatches()).toHaveLength(0);
-    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo]:');
+    expect(s.bus.promptText).toBe(
+      'Pick internal point or [Select objects/remove Boundaries/Undo]:',
+    );
     await s.bus.submit('');
     const [h] = s.hatches();
     expect(h).toBeDefined();
@@ -259,11 +108,13 @@ describe('HATCH (M4-07)', () => {
     const s = setup(curves);
     await s.bus.script(['-HATCH']);
     expect(s.bus.promptText).toBe(
-      'Specify internal point or [Properties/Select objects/Advanced/Origin/Undo]:',
+      'Specify internal point or [Properties/Select objects/draW boundary/remove Boundaries/' +
+        'Advanced/DRaw order/Origin/hatch COlor/LAyer/Transparency/Undo]:',
     );
     await s.bus.script(['A']);
     expect(s.bus.promptText).toBe(
-      'Enter an option [Island detection/Style/Associativity/Gap tolerance/separate Hatches]:',
+      'Enter an option [Boundary set/Retain boundary/Island detection/Style/Associativity/' +
+        'Gap tolerance/separate Hatches]:',
     );
     await s.bus.script(['S']);
     expect(s.bus.promptText).toBe('Enter island detection style [Ignore/Outer/Normal] <Normal>:');
@@ -317,7 +168,9 @@ describe('HATCH (M4-07)', () => {
   it('sets the pattern, scale and angle (-HATCH Properties), kept for HATCH', async () => {
     const s = setup(square(0, 0, 10));
     await s.bus.script(['-HATCH', 'P']);
-    expect(s.bus.promptText).toBe('Enter a pattern name or [Solid/User defined] <TRIYA_LINES45>:');
+    expect(s.bus.promptText).toBe(
+      'Enter a pattern name or [?/Solid/User defined/Gradient] <TRIYA_LINES45>:',
+    );
     await s.bus.script(['triya_grid']);
     expect(s.bus.promptText).toBe('Specify a scale for the pattern <1.0000>:');
     await s.bus.script(['2']);
@@ -338,7 +191,9 @@ describe('HATCH (M4-07)', () => {
     const s = setup(square(0, 0, 10));
     await s.bus.script(['-HATCH', 'P', 'NOPE']);
     expect(s.log).toContain('Pattern "NOPE" is not in the pattern library.');
-    expect(s.bus.promptText).toBe('Enter a pattern name or [Solid/User defined] <TRIYA_LINES45>:');
+    expect(s.bus.promptText).toBe(
+      'Enter a pattern name or [?/Solid/User defined/Gradient] <TRIYA_LINES45>:',
+    );
   });
 
   it('fills solid', async () => {
@@ -448,7 +303,7 @@ describe('HATCH (M4-07)', () => {
   it('shows a user-defined pattern as U, single lines unless doubled', async () => {
     const s = setup(square(0, 0, 10));
     await s.bus.script(['-HATCH', 'P', 'U', '0', '', '', '-HATCH', 'P']);
-    expect(s.bus.promptText).toBe('Enter a pattern name or [Solid/User defined] <U>:');
+    expect(s.bus.promptText).toBe('Enter a pattern name or [?/Solid/User defined/Gradient] <U>:');
     await s.bus.script(['', '5,5', '']);
     expect(s.hatches()[0]!.geom.patternLines).toHaveLength(1);
   });

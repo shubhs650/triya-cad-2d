@@ -31,3 +31,13 @@ export function hatchPatternReply(
 export function hatchPatternNames(sources: readonly string[]): string[] {
   return ['SOLID', ...patternLibrary(sources).names()];
 }
+
+/** The library's patterns for -HATCH's `?` list (M4-07): each name and its file's description. */
+export function hatchPatternListReply(sources: readonly string[]): ViewReply {
+  return {
+    ok: true,
+    patterns: patternLibrary(sources)
+      .patterns()
+      .map((p) => ({ name: p.name, description: p.description })),
+  };
+}

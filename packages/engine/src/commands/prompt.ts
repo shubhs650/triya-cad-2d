@@ -6,7 +6,7 @@ import type { Vec2 } from '../geom/types';
 import type { DeferredModes } from '../input/osnap';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { Color, EntityType, LinetypeRef, Lineweight } from '../model/types';
+import type { Color, EntityType, InspectionShape, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
 import type { OverkillSettings } from '../edit/overkill';
 import type { GripDimensions } from '../edit/grips';
@@ -22,6 +22,7 @@ import type { DimStyleAction, DimStyleRequest } from './dimstyle';
 import type { TextStyleAction, TextStyleRequest } from './textstyle';
 import type { TableStyleAction, TableStyleRequest } from './tablestyle';
 import type { MLeaderStyleAction, MLeaderStyleRequest } from './mleaderstyle';
+import type { FindAction, FindRequest, FindSettings } from './modify/find';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -641,6 +642,15 @@ export type DialogRequest =
       readonly size: number;
     }
   | {
+      /**
+       * DIMINSPECT's Inspection Dimension (M4-02 part 4): the settings it opens on, and how many
+       * dimensions are selected (OK applies the settings to them).
+       */
+      readonly type: 'diminspect';
+      readonly settings: InspectionSettings;
+      readonly selected: number;
+    }
+  | {
       /** OVERKILL's Delete Duplicate Objects (M3-02 part 6): its settings as it opens. */
       readonly type: 'overkill';
       readonly settings: OverkillSettings;
@@ -711,6 +721,8 @@ export type DialogRequest =
   | TableStyleRequest
   /** MLEADERSTYLE's Multileader Style Manager (M4-04 part 2). */
   | MLeaderStyleRequest
+  /** FIND's Find and Replace (M4-09 part 2). */
+  | FindRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -778,6 +790,16 @@ export interface SnapGridSettings {
   readonly gridMajor: number;
   /** GRIDDISPLAY (`edit/snap-grid.ts` GRID_DISPLAY bits); absent keeps the viewport's. */
   readonly gridDisplay?: number;
+}
+
+/**
+ * An inspection dimension's settings (AutoCAD's Inspection Dimension dialog): the frame's shape,
+ * and the label and inspection rate, each absent when its box is cleared.
+ */
+export interface InspectionSettings {
+  readonly shape: InspectionShape;
+  readonly label?: string;
+  readonly rate?: string;
 }
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
@@ -875,7 +897,7 @@ export type PromptAnswer =
        * makes them and picks another block; `mtext` makes them and opens the MTEXT editor on the
        * multiline attribute `target` (the value's `...` button).
        */
-      readonly action: 'ok' | 'apply' | 'select' | 'mtext';
+      readonly action: 'ok' | 'apply' | 'select' | 'mtext' | 'remove';
       readonly attributes?: readonly AttributePatch[];
       /** Edit Attribute Definition's fields. */
       readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
@@ -883,6 +905,8 @@ export type PromptAnswer =
       readonly matchprop?: MatchSettings;
       /** Point Style's PDMODE and PDSIZE as OK closed it (negative: relative to the screen). */
       readonly pointStyle?: { readonly mode: number; readonly size: number };
+      /** Inspection Dimension's settings as OK closed it (M4-02 part 4). */
+      readonly inspection?: InspectionSettings;
       /** Delete Duplicate Objects' settings as OK closed it. */
       readonly overkill?: OverkillSettings;
       /** Drafting Settings' Snap and Grid tab as OK closed it (M3-06 part 2). */
@@ -911,6 +935,8 @@ export type PromptAnswer =
       readonly tablestyle?: TableStyleAction;
       /** A Multileader Style Manager action (MLEADERSTYLE, M4-04 part 2), sent with `apply`. */
       readonly mleaderstyle?: MLeaderStyleAction;
+      /** A Find and Replace button (FIND, M4-09 part 2) with the dialog's settings, sent with `apply`. */
+      readonly find?: { readonly settings: FindSettings; readonly action?: FindAction };
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

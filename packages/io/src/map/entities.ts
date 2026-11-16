@@ -114,6 +114,7 @@ import type {
   Transparency,
   Vec2,
 } from '@triya/engine';
+import { HATCH_BACKGROUND_APP, backgroundColorOf } from '@triya/engine';
 import { regionBoundary } from '../acis/region';
 import { readSab, readSat } from '../acis/records';
 import { common, hex, mapColor, mapEntityColor, mapLineweight, ref } from './common';
@@ -1386,10 +1387,28 @@ function hatchLoop(path: HatchBoundaryPath, pl: Plane): HatchLoop {
   };
 }
 
+/**
+ * A pattern hatch's background colour (M4-07 part 3): the first 1071 of its
+ * `HATCHBACKGROUNDCOLOR` xdata, an AcCmEntityColor (ACI or true colour; none, ByLayer and ByBlock
+ * draw nothing behind the lines). The xdata stays the record a save writes.
+ */
+function hatchBackground(h: Hatch): Color | undefined {
+  for (const [app, data] of h.extendedData) {
+    if (app.name.toUpperCase() !== HATCH_BACKGROUND_APP) continue;
+    const r = data.records.find((x) => (x.code as number) === 1071);
+    const v = r?.rawValue;
+    return typeof v === 'number' || typeof v === 'bigint'
+      ? backgroundColorOf(Number(v))
+      : undefined;
+  }
+  return undefined;
+}
+
 function hatchGeometry(h: Hatch): EntityGeometry | UnmappedEntity['reason'] {
   const pl = plane(h.normal);
   if (pl === 'tilted') return 'tilted plane';
   const g = h.gradientColor;
+  const background = hatchBackground(h);
   return {
     kind: 'HATCH',
     pattern: h.pattern.name,
@@ -1409,6 +1428,7 @@ function hatchGeometry(h: Hatch): EntityGeometry | UnmappedEntity['reason'] {
       dashes: [...l.dashLengths],
     })),
     seedPoints: h.seedPoints.map((x) => planOf(x, pl)),
+    ...(background ? { background } : {}),
     ...(g.enabled
       ? {
           gradient: {

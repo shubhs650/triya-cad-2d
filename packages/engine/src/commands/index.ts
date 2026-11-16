@@ -87,6 +87,7 @@ export * from './sysvars';
 export * from '../selection/loop';
 export * from '../selection/rules';
 export * from '../selection/qselect';
+export * from './modify/find';
 export * from '../selection/similar';
 export * from '../selection/preview';
 export * from '../selection/filter';
@@ -98,7 +99,7 @@ export * from './command-preview';
 export { GRIP_MODES, GRIP_OBJECT_LIMIT, gripCommand, type GripMode } from './modify/grips';
 export { revcloudCommand, revcloudAppId, revcloudXdata, type CloudType } from './draw/revcloud';
 export { setWipeoutFrame, wipeoutCommand, wipeoutFrame } from './draw/wipeout';
-export { hatchCommand } from './draw/hatch';
+export { hatchCommand, hatchCommands } from './draw/hatch';
 export * from './modify/draw-order';
 export {
   ATTRIBUTE_COMMANDS,

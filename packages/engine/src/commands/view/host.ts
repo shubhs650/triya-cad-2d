@@ -13,6 +13,7 @@ import type { SheetCells } from '../../edit/spreadsheet';
 import type { UndoView } from '../undo';
 import type { UnderlayLayersInfo } from '../../edit/underlay-layers';
 import type { EnclosedSpace } from '../inquiry/quick';
+import type { TextFrame } from '../../edit/text-justify';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -117,6 +118,12 @@ export type ViewRequest =
    */
   | { readonly op: 'columnCounts'; readonly texts: readonly MTextGeometry[] }
   /**
+   * The frames MTEXTs are laid out in (M4-09: JUSTIFYTEXT moves an MTEXT's insertion point to
+   * another point of its frame, SCALETEXT scales it about one), null for one no loaded font
+   * draws or that is drawn top to bottom.
+   */
+  | { readonly op: 'textFrames'; readonly texts: readonly MTextGeometry[] }
+  /**
    * Where TEXTs and MTEXTs lie as the renderer draws them (M2-27): an attribute picked by its
    * text (EATTEDIT, a double click), and the baseline start of an attribute given another
    * justification. The reply's `pickbox` says how near a pick must come.
@@ -187,6 +194,8 @@ export type ViewRequest =
       readonly name: string;
       readonly placements: readonly PatternPlacement[];
     }
+  /** The pattern library's patterns, named and described as their files have them (-HATCH ?). */
+  | { readonly op: 'hatchPatternList' }
   /**
    * A system variable the app keeps (SETVAR, M2-42: the drafting aids and the per-user settings
    * of `APP_VARIABLES`): set to `value` when one is given (already checked against the
@@ -401,6 +410,8 @@ export type ViewReply =
       readonly widths?: readonly (number | null)[];
       /** What `columnCounts` counted, one per text. */
       readonly counts?: readonly (number | null)[];
+      /** What `textFrames` laid out, one per text. */
+      readonly frames?: readonly (TextFrame | null)[];
       /** What `textOutlines` found, one per text (null: no loaded font draws it). */
       readonly outlines?: readonly (TextOutline | null)[];
       /** What `textPieces` laid out, one per text (null: no loaded font draws it). */
@@ -443,6 +454,8 @@ export type ViewReply =
       readonly plotSetup?: PlotScriptSetup;
       /** What `hatchPattern` placed (M2-35 part 3). */
       readonly pattern?: PlacedPattern;
+      /** What `hatchPatternList` found (M4-07). */
+      readonly patterns?: readonly { readonly name: string; readonly description: string }[];
       /** What a `sysvar` variable holds (M2-42): a number, or text (DWGNAME, M2-59). */
       readonly value?: number | string;
       /**

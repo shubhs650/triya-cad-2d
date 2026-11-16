@@ -6,6 +6,7 @@ import {
   CadDocument,
   Circle,
   Color,
+  ExtendedDataInteger32,
   GradientColor,
   Hatch,
   HatchBoundaryPath,
@@ -215,6 +216,35 @@ describe('HATCH', () => {
         { value: 1, color: { kind: 'rgb', r: 10, g: 20, b: 30 } },
       ],
     });
+  });
+
+  it('maps a background colour from HATCHBACKGROUNDCOLOR xdata (M4-07 part 3)', () => {
+    // AutoCAD's AcCmEntityColor in one 1071: 0xC2 a true colour, 0xC3 an ACI, 0xC8 none.
+    const withBackground = (value: number | undefined): HatchGeometry => {
+      const doc = new CadDocument(ACadVersion.AC1032);
+      const h = new Hatch();
+      h.pattern = new HatchPattern('ANSI31');
+      doc.entities!.add(h);
+      if (value !== undefined) {
+        h.extendedData.addByName('HATCHBACKGROUNDCOLOR', undefined);
+        h.extendedData
+          .getByName('HATCHBACKGROUNDCOLOR')
+          .records.push(new ExtendedDataInteger32(value));
+      }
+      const g = mapEntities(doc).entities.find((e) => e.handle === H(h))!.geom;
+      if (g.kind !== 'HATCH') throw new Error(g.kind);
+      return g;
+    };
+    expect(withBackground(0xc2c8dcf0 | 0).background).toEqual({
+      kind: 'rgb',
+      r: 200,
+      g: 220,
+      b: 240,
+    });
+    expect(withBackground(0xc3000004 | 0).background).toEqual({ kind: 'aci', index: 4 });
+    // None, as ezdxf's hatch_issues.dxf states it, and no xdata at all: no background.
+    expect(withBackground(-939524096)).not.toHaveProperty('background');
+    expect(withBackground(undefined)).not.toHaveProperty('background');
   });
 
   it('mirrors a −Z hatch exactly: edges keep their points, whichever way they run', () => {

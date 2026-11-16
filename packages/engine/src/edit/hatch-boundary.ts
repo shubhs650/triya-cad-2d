@@ -44,6 +44,11 @@ export interface PickedBoundary {
   /** The outer loop, then the islands kept. */
   readonly loops: readonly HatchLoop[];
   readonly rings: readonly (readonly Vec2[])[];
+  /**
+   * Each loop's curves, as indices into the curves given: what the hatch is drawn behind
+   * (HPDRAWORDER) and what remove Boundaries takes out. A gap's bridge is none of them.
+   */
+  readonly sources: readonly (readonly number[])[];
 }
 
 /** DXF 92 bits. */
@@ -87,15 +92,24 @@ export function boundedCurves(curves: readonly Curve[], box: Box): BoundedCurve[
   return out;
 }
 
-/** The curves as the pieces a boundary is made of: polylines by segment, no empty ones. */
-function piecesOf(curves: readonly Curve[], box?: Box): BoundedCurve[] {
-  const out: BoundedCurve[] = [];
-  const bounded = boundedCurves(curves, box ?? extentsOf(curves.filter(isBounded)));
-  for (const c of bounded) {
-    if (c.kind === 'LWPOLYLINE') out.push(...explodePolyline(c));
-    else out.push(c);
-  }
-  return out.filter((c) => c.kind !== 'LINE' || distance(c.start, c.end) > 0);
+/**
+ * The curves as the pieces a boundary is made of: polylines by segment, no empty ones; each
+ * piece mapped to the index of the curve it is part of.
+ */
+function piecesOf(
+  curves: readonly Curve[],
+  box?: Box,
+): { pieces: BoundedCurve[]; from: Map<BoundedCurve, number> } {
+  const from = new Map<BoundedCurve, number>();
+  const area = box ?? extentsOf(curves.filter(isBounded));
+  curves.forEach((curve, i) => {
+    for (const c of boundedCurves([curve], area)) {
+      for (const p of c.kind === 'LWPOLYLINE' ? explodePolyline(c) : [c]) {
+        if (p.kind !== 'LINE' || distance(p.start, p.end) > 0) from.set(p, i);
+      }
+    }
+  });
+  return { pieces: [...from.keys()], from };
 }
 
 const isBounded = (c: Curve): c is BoundedCurve => c.kind !== 'XLINE' && c.kind !== 'RAY';
@@ -150,7 +164,7 @@ export function boundaryAt(
   o: BoundaryOptions,
   box?: Box,
 ): PickedBoundary | undefined {
-  const pieces = piecesOf(curves, box);
+  const { pieces, from } = piecesOf(curves, box);
   if (pieces.length === 0) return undefined;
   const { tol, merge, dev } = scaleOf(pieces);
   const all = o.gap > 0 ? [...pieces, ...gapBridges(pieces, o.gap, merge, tol)] : pieces;
@@ -169,7 +183,18 @@ export function boundaryAt(
       ...islands.map((i) => ({ flags: i.depth === 0 ? OUTERMOST : 0, edges: faceEdges(i.face) })),
     ],
     rings: [around.ring, ...islands.map((i) => i.ring)],
+    sources: [around.face, ...islands.map((i) => i.face)].map((f) => faceSources(f, from)),
   };
+}
+
+/** The curves (by index) a face is walked along, each once. */
+function faceSources(f: Face, from: ReadonlyMap<BoundedCurve, number>): number[] {
+  const out = new Set<number>();
+  for (const h of f.halves) {
+    const i = from.get(h.edge.curve);
+    if (i !== undefined) out.add(i);
+  }
+  return [...out];
 }
 
 /** Lines closing the gaps up to `gap` wide between ends left in the open. */

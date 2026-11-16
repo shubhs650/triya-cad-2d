@@ -67,7 +67,7 @@ function currentLineweight(v: HeaderValue | undefined): Lineweight {
 }
 
 /** CETRANSPARENCY as a Transparency: alpha from the percentage, as Properties types it. */
-function currentTransparency(v: HeaderValue | undefined): Transparency {
+export function currentTransparency(v: HeaderValue | undefined): Transparency {
   if (typeof v === 'number') return percentTransparency(v);
   if (typeof v !== 'string') return 'ByLayer';
   if (/^bylayer$/i.test(v)) return 'ByLayer';

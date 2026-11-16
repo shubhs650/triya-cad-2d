@@ -1,91 +1,111 @@
-// HATCH and -HATCH (M4-07 part 1) on the command line, with AutoCAD 2024's prompts (AutoCAD 2024
-// Help, "HATCH (Command)", "-HATCH (Command)"):
-//   Pick internal point or [Select objects/Undo]:                                       (HATCH)
-//   Specify internal point or [Properties/Select objects/Advanced/Origin/Undo]:         (-HATCH)
+// HATCH and -HATCH (M4-07) on the command line, with AutoCAD 2024's prompts (AutoCAD 2024
+// Help, "HATCH (Command)", "-HATCH (Command)"; the option prompts are in hatch-options.ts):
+//   Pick internal point or [Select objects/remove Boundaries/Undo]:                     (HATCH)
+//   Specify internal point or [Properties/Select objects/draW boundary/remove Boundaries/
+//     Advanced/DRaw order/Origin/hatch COlor/LAyer/Transparency/Undo]:                  (-HATCH)
 //   Select objects or [picK internal point/Undo]:
-//   Enter a pattern name or [Solid/User defined] <TRIYA_LINES45>:                    (Properties)
-//     Specify a scale for the pattern <1.0000>:  Specify an angle for the pattern <0>:
-//     Specify angle for crosshatch lines <0>:  Specify spacing between the lines <1.0000>:
-//     Double hatch area? [Yes/No] <N>:                                           (User defined)
-//   Enter an option [Island detection/Style/Associativity/Gap tolerance/separate Hatches]:
-//   [Use current origin/Set new origin] <Use current origin>:  Specify origin point:
-//     Store as default origin? [Yes/No] <N>:                                          (Origin)
+//   Select objects or [Add boundaries]:                                      (remove Boundaries)
+//   Retain polyline boundary? [Yes/No] <N>:  Specify start point:
+//     Specify next point or [Arc/Length/Undo]:
+//     Specify start point for new island boundary or <apply hatch>:          (draW boundary)
 // Each pick point adds the area around it (edit/hatch-boundary.ts), each Select objects the
 // closed objects chosen, previewed; Enter makes one hatch of them all, or one per area with
-// separate hatches (HPSEPARATE), as one undo step. The settings are AutoCAD's HP* variables,
-// which a drawing does not save; Triya keeps them while the drawing is open, as MATCHPROP keeps
-// its settings. Not here yet (later parts of M4-07): the Hatch Creation tab and the Hatch and
-// Gradient dialog (seTtings), gradients, draw order (HPDRAWORDER), Retain boundary, Boundary set,
-// draW boundary, remove Boundaries, hatch COlor, LAyer and Transparency.
+// separate hatches (HPSEPARATE), as one undo step. remove Boundaries takes islands back out of
+// the areas found (an area's outer boundary stays, as AutoCAD keeps it). draW boundary hatches
+// a boundary drawn point by point (with PLINE's arcs, as AREA draws them), each further one an
+// island, and makes the hatch at once ("apply hatch").
+// A new hatch goes behind its boundary unless DRaw order (HPDRAWORDER) says otherwise; its
+// boundary is the objects its loops lie along (and the ones it keeps). Retain boundary keeps
+// what pick points found as polylines (edit/hatch-retain.ts) on the current layer, as BOUNDARY
+// makes them; draW boundary keeps its polylines when asked. A gradient (Properties Gradient,
+// or GRADIENT) is a solid fill with its colours (DXF 450–470), and a pattern's background colour
+// (COlor) is kept as AutoCAD keeps it, in HATCHBACKGROUNDCOLOR xdata (edit/hatch-background.ts).
+// Not here yet (later parts of M4-07): the Hatch Creation tab and the Hatch and Gradient dialog
+// (seTtings), and HATCHEDIT.
+//
+// - GRADIENT is HATCH with the last gradient as the fill (GD, as acad.pgp has it). The two share
+//   their settings, as AutoCAD's share HPNAME, so HATCH after GRADIENT fills with the gradient
+//   until Properties picks a pattern again. AutoCAD has no -GRADIENT.
 //
 // - Hatches are made non-associative: associative hatches wait past launch (DEC-015, PRD
 //   non-goal 5), so Associativity Yes is refused.
 // - The boundary set is AutoCAD's default, the current viewport: the objects of the space shown
-//   that lie in the view, on layers that are on and thawed. Lines, arcs, circles, ellipses,
-//   polylines, splines, xlines and rays (cut at the view), what block references draw, regions,
-//   and text by its box, which makes it an island. Hatches, dimensions, leaders, multileaders,
-//   tables and tolerances are left out: AutoCAD's help does not say whether their lines bound a
-//   hatch, and a drafter hatching a part expects its dimensions not to cut the hatch up.
+//   that lie in the view, on layers that are on and thawed; or the objects Advanced's Boundary
+//   set chose (New). Lines, arcs, circles, ellipses, polylines, splines, xlines and rays (cut at
+//   the view), what block references draw, regions, and text by its box, which makes it an
+//   island. Hatches, dimensions, leaders, multileaders, tables and tolerances are left out:
+//   AutoCAD's help does not say whether their lines bound a hatch, and a drafter hatching a
+//   part expects its dimensions not to cut the hatch up.
 // - The first pattern is TRIYA_LINES45 (45° lines 3 mm apart, the bundled stand-in for AutoCAD's
 //   ANSI31 until M4-12), at scale 1, or 1/25.4 in an imperial drawing, as the bundled .pat file
 //   says to use its millimetre patterns in inches.
+// - LAyer names a layer the drawing may not have yet: the hatch makes it, as AutoCAD's HPLAYER
+//   does ("Values that are not already defined in the drawing will create a new layer").
 import type { Box } from '../../geom/bounds';
 import { boxesOverlap, curveBounds } from '../../geom/bounds';
 import type { Curve } from '../../geom/curves';
 import type { Vec2 } from '../../geom/types';
+import { moveInDrawOrder, type DrawOrderMove } from '../../edit/draw-order';
 import {
   boundaryAt,
   boundaryOfObjects,
-  type IslandStyle,
+  type BoundaryOptions,
   type PickedBoundary,
 } from '../../edit/hatch-boundary';
+import { hatchBackgroundAppId, withHatchBackground } from '../../edit/hatch-background';
+import { retainedBoundary } from '../../edit/hatch-retain';
 import {
   edgeTexts,
   objectEdgeCurves,
   type EdgeOptions,
   type EdgeText,
 } from '../../edit/trim-edges';
+import type { ChangeSetBuilder } from '../../model/builder';
 import type { EntityId } from '../../model/entity-ids';
-import type { Entity, HatchGeometry, HatchLoop, HatchPatternLine } from '../../model/types';
-import { currentProps } from '../../properties/current';
-import type { CommandContext, CommandDef } from '../command';
-import type { PatternPlacement, PlacedPattern } from '../view/host';
+import type { Handle } from '../../model/handle';
+import type {
+  Entity,
+  EntityGeometry,
+  HatchGeometry,
+  HatchLoop,
+  HatchPatternLine,
+  PolylineVertex,
+} from '../../model/types';
+import { currentProps, currentTransparency } from '../../properties/current';
+import type { GeneralProps } from '../../properties/sheet';
+import type { CommandContext, CommandDef, CommandGenerator } from '../command';
+import { nextPoints } from '../inquiry/inquiry';
 import { toleranceFor } from '../modify/offset';
-import type { Prompt, PromptAnswer } from '../prompt';
-
-type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
-
-/** The HP* settings HATCH starts from. */
-interface HatchSettings {
-  /** HPNAME: a pattern's name, SOLID, or _USER for user-defined lines. */
-  pattern: string;
-  /** From the user's own .pat files (DXF 76 = 2). */
-  custom: boolean;
-  /** HPSCALE. */
-  scale: number;
-  /** HPANG, radians. */
-  angle: number;
-  /** HPSPACE: user-defined lines' spacing. */
-  spacing: number;
-  /** HPDOUBLE. */
-  double: boolean;
-  /** HPISLANDDETECTION. */
-  style: IslandStyle;
-  /** HPISLANDDETECTIONMODE. */
-  islands: boolean;
-  /** HPGAPTOL. */
-  gap: number;
-  /** HPSEPARATE. */
-  separate: boolean;
-  /** HPORIGIN. */
-  origin: Vec2;
-}
+import {
+  HPTRANSPARENCY,
+  SOLID,
+  STYLES,
+  USER,
+  USE_CURRENT,
+  advanced,
+  drawOrder,
+  hatchColor,
+  hatchLayer,
+  hatchTransparency,
+  gradientNamed,
+  initialGradient,
+  isGradient,
+  keyword,
+  origin,
+  placed,
+  properties,
+  yesNo,
+  type HatchSettings,
+  type Sub,
+} from './hatch-options';
 
 const DEFAULT_PATTERN = 'TRIYA_LINES45';
-const USER = '_USER';
-const SOLID = 'SOLID';
-const STYLES: readonly IslandStyle[] = ['normal', 'outer', 'ignore'];
 const NOT_FOUND = 'Valid hatch boundary not found.';
+
+/** DXF 92 bits. */
+const EXTERNAL = 1;
+const POLYLINE = 2;
+const OUTERMOST = 16;
 
 /** Objects that bound no hatch (see the head comment). */
 const NOT_BOUNDARIES = new Set([
@@ -102,58 +122,107 @@ const NOT_BOUNDARIES = new Set([
 
 const EDGES: EdgeOptions = { extend: false, hatches: false };
 
-const keyword = (a: PromptAnswer): string | undefined =>
-  a.kind === 'keyword' ? a.keyword : undefined;
+/**
+ * One area to hatch: its loops and the objects each lies along; a picked area the point picked
+ * in it, a selected one the objects chosen, a drawn one the polylines it keeps.
+ */
+type Area = { readonly loops: readonly HatchLoop[]; readonly sources: readonly EntityId[][] } & (
+  | { readonly kind: 'pick'; readonly seed: Vec2 }
+  | { readonly kind: 'select'; readonly ids: readonly EntityId[] }
+  | { readonly kind: 'drawn'; readonly keep: readonly EntityGeometry[] }
+);
 
-/** One area to hatch: its loops, and the point picked in it (none for selected objects). */
-interface Area {
-  readonly loops: readonly HatchLoop[];
-  readonly seed?: Vec2;
+/** The boundary set's curves, each with the object it is part of. */
+interface Candidates {
+  readonly curves: Curve[];
+  readonly owners: EntityId[];
+  readonly view: Box | undefined;
 }
 
 export function hatchCommand(): CommandDef {
+  return hatchCommands()[0];
+}
+
+/** HATCH (with -HATCH) and GRADIENT, sharing their settings (see the head comment). */
+export function hatchCommands(): [CommandDef, CommandDef] {
   let settings: HatchSettings | undefined;
-  return {
-    name: 'HATCH',
-    dashVariant: true,
-    async *run(ctx) {
-      settings ??= initialSettings(ctx);
-      const s = settings;
-      const run = new HatchRun(ctx, s);
-      const options = (): string[] =>
-        ctx.dash
-          ? ['Properties', 'Select objects', 'Advanced', 'Origin', 'Undo']
-          : ['Select objects', 'Undo'];
-      let selecting = false;
-      for (;;) {
-        await run.preview();
-        if (selecting) {
-          const a = yield ctx.prompt.selection({
-            message: 'Select objects or',
-            options: ['picK internal point', 'Undo'],
-          });
-          const k = keyword(a);
-          if (k === 'picK internal point') selecting = false;
-          else if (k === 'Undo') run.undo();
-          else if (a.kind === 'selection' && a.ids.length > 0) run.select(a.ids);
-          else return run.finish();
-          continue;
-        }
-        const a = yield ctx.prompt.point({
-          message: ctx.dash ? 'Specify internal point or' : 'Pick internal point or',
-          options: options(),
-        });
-        const k = keyword(a);
-        if (a.kind === 'point') await run.pick(a.point);
-        else if (k === 'Select objects') selecting = true;
-        else if (k === 'Undo') run.undo();
-        else if (k === 'Properties') yield* properties(ctx, s);
-        else if (k === 'Advanced') yield* advanced(ctx, s);
-        else if (k === 'Origin') run.origin = (yield* origin(ctx, s)) ?? run.origin;
-        else return run.finish();
-      }
+  const settingsFor = (ctx: CommandContext) => (settings ??= initialSettings(ctx));
+  return [
+    {
+      name: 'HATCH',
+      dashVariant: true,
+      run: (ctx) => hatchRun(ctx, settingsFor(ctx)),
     },
-  };
+    {
+      name: 'GRADIENT',
+      run(ctx) {
+        const s = settingsFor(ctx);
+        s.pattern = s.gradient.name;
+        s.custom = false;
+        return hatchRun(ctx, s);
+      },
+    },
+  ];
+}
+
+async function* hatchRun(ctx: CommandContext, s: HatchSettings): CommandGenerator {
+  const run = new HatchRun(ctx, s);
+  const options = (): string[] =>
+    ctx.dash
+      ? [
+          'Properties',
+          'Select objects',
+          'draW boundary',
+          'remove Boundaries',
+          'Advanced',
+          'DRaw order',
+          'Origin',
+          'hatch COlor',
+          'LAyer',
+          'Transparency',
+          'Undo',
+        ]
+      : run.empty
+        ? ['Select objects', 'Undo']
+        : ['Select objects', 'remove Boundaries', 'Undo'];
+  let selecting = false;
+  for (;;) {
+    await run.preview();
+    if (selecting) {
+      const a = yield ctx.prompt.selection({
+        message: 'Select objects or',
+        options: ['picK internal point', 'Undo'],
+      });
+      const k = keyword(a);
+      if (k === 'picK internal point') selecting = false;
+      else if (k === 'Undo') run.undo();
+      else if (a.kind === 'selection' && a.ids.length > 0) run.select(a.ids);
+      else return run.finish();
+      continue;
+    }
+    const a = yield ctx.prompt.point({
+      message: ctx.dash ? 'Specify internal point or' : 'Pick internal point or',
+      options: options(),
+    });
+    const k = keyword(a);
+    if (a.kind === 'point') await run.pick(a.point);
+    else if (k === 'Select objects') selecting = true;
+    else if (k === 'Undo') run.undo();
+    else if (k === 'Properties') yield* properties(ctx, s);
+    else if (k === 'Advanced') yield* advanced(ctx, s, run);
+    else if (k === 'Origin') run.origin = (yield* origin(ctx, s)) ?? run.origin;
+    else if (k === 'DRaw order') yield* drawOrder(ctx, s);
+    else if (k === 'hatch COlor') yield* hatchColor(ctx, s);
+    else if (k === 'LAyer') yield* hatchLayer(ctx, s);
+    else if (k === 'Transparency') {
+      const t = yield* hatchTransparency(ctx, run.transparency());
+      // A system variable the drawing keeps, set at once as SETVAR would.
+      if (t !== undefined) ctx.edit((b) => b.setHeader(HPTRANSPARENCY, t));
+    } else if (k === 'remove Boundaries') yield* removeBoundaries(ctx, run);
+    else if (k === 'draW boundary') {
+      if (yield* drawBoundary(ctx, run)) return run.finish();
+    } else return run.finish();
+  }
 }
 
 function initialSettings(ctx: CommandContext): HatchSettings {
@@ -171,6 +240,12 @@ function initialSettings(ctx: CommandContext): HatchSettings {
     gap: 0,
     separate: false,
     origin: { x: 0, y: 0 },
+    drawOrder: 'behind',
+    color: undefined,
+    layer: undefined,
+    retain: false,
+    background: undefined,
+    gradient: initialGradient(),
   };
 }
 
@@ -181,7 +256,8 @@ class HatchRun {
   #lines: readonly HatchPatternLine[] | undefined;
   #placed = '';
   origin: Vec2;
-
+  /** Advanced's Boundary set: the only objects boundaries are found among. */
+  boundarySet: readonly EntityId[] | undefined;
   constructor(
     readonly ctx: CommandContext,
     readonly s: HatchSettings,
@@ -189,8 +265,18 @@ class HatchRun {
     this.origin = s.origin;
   }
 
+  /** HPTRANSPARENCY as the drawing has it. */
+  transparency(): string {
+    const t = this.ctx.model.header.get(HPTRANSPARENCY);
+    return typeof t === 'string' || typeof t === 'number' ? String(t) : USE_CURRENT;
+  }
+
+  get empty(): boolean {
+    return this.#areas.length === 0;
+  }
+
   /** The boundary set's curves: what the view shows of the space (see the head comment). */
-  async #curves(): Promise<{ curves: Curve[]; view: Box | undefined }> {
+  async #candidates(): Promise<Candidates> {
     const { ctx } = this;
     const model = ctx.model;
     const r = await ctx.view.request({ op: 'get' });
@@ -203,27 +289,28 @@ class HatchRun {
             maxY: r.view.center.y + r.view.height / 2,
           }
         : undefined;
-    const objects = model
-      .blockEntities(ctx.space)
+    const objects = (this.boundarySet ?? model.blockEntities(ctx.space))
       .map((id) => model.entity(id))
       .filter(
         (e): e is Entity => e !== undefined && shown(ctx, e) && !NOT_BOUNDARIES.has(e.geom.kind),
       );
     const boxes = await this.#textBoxes(objects);
-    const tol = toleranceFor(model, {
-      kind: 'XLINE',
-      base: { x: 0, y: 0 },
-      direction: { x: 1, y: 0 },
-    });
+    const tol = tolerance(ctx);
     const src = { model, tol, textBox: (key: object) => boxes.get(key) };
     const curves: Curve[] = [];
+    const owners: EntityId[] = [];
+    // A boundary set chosen is taken whole; the view's is what lies in it.
+    const cull = this.boundarySet ? undefined : view;
     for (const e of objects) {
       for (const c of objectEdgeCurves(src, e, EDGES)) {
         const unbounded = c.kind === 'XLINE' || c.kind === 'RAY';
-        if (!view || unbounded || boxesOverlap(curveBounds(c, tol), view, 0)) curves.push(c);
+        if (!cull || unbounded || boxesOverlap(curveBounds(c, tol), cull, 0)) {
+          curves.push(c);
+          owners.push(e.id);
+        }
       }
     }
-    return { curves, view };
+    return { curves, owners, view };
   }
 
   /** The boxes the texts among `objects` are drawn in, as the canvas measures them. */
@@ -243,37 +330,79 @@ class HatchRun {
     return out;
   }
 
-  #options() {
+  #options(): BoundaryOptions {
     const s = this.s;
-    return { style: s.islands ? s.style : ('ignore' as const), gap: s.gap };
+    return { style: s.islands ? s.style : 'ignore', gap: s.gap };
+  }
+
+  /** The area around `seed` among the candidates, leaving out the objects `without` names. */
+  #areaAt(c: Candidates, seed: Vec2, without?: ReadonlySet<EntityId>): Area | undefined {
+    const keep = c.curves.flatMap((_, i) => (without?.has(c.owners[i]!) ? [] : [i]));
+    const found: PickedBoundary | undefined = boundaryAt(
+      keep.map((i) => c.curves[i]!),
+      seed,
+      this.#options(),
+      c.view,
+    );
+    if (!found) return undefined;
+    const sources = found.sources.map((loop) => [...new Set(loop.map((i) => c.owners[keep[i]!]!))]);
+    return { kind: 'pick', seed, loops: found.loops, sources };
   }
 
   async pick(point: Vec2): Promise<void> {
-    const { curves, view } = await this.#curves();
-    const found: PickedBoundary | undefined = boundaryAt(curves, point, this.#options(), view);
-    if (!found) {
-      this.ctx.message(NOT_FOUND);
-      return;
-    }
-    this.#areas.push({ loops: found.loops, seed: point });
+    const area = this.#areaAt(await this.#candidates(), point);
+    if (!area) this.ctx.message(NOT_FOUND);
+    else this.#areas.push(area);
   }
 
-  select(ids: readonly EntityId[]): void {
+  #selected(ids: readonly EntityId[]): Area | undefined {
     const { ctx } = this;
-    const tol = toleranceFor(ctx.model, {
-      kind: 'XLINE',
-      base: { x: 0, y: 0 },
-      direction: { x: 1, y: 0 },
-    });
+    const tol = tolerance(ctx);
     const objects = ids.map((id) =>
       objectEdgeCurves({ model: ctx.model, tol }, ctx.model.entity(id)!, EDGES),
     );
     const loops = boundaryOfObjects(objects, this.#options());
-    if (loops.length === 0) {
-      ctx.message(NOT_FOUND);
-      return;
+    if (loops.length === 0) return undefined;
+    // Only an object of one closed curve makes a loop, so a loop's object is the one whose
+    // curve it outlines; the loops keep the order the objects were given in.
+    const closed = ids.filter((_, i) => objects[i]!.length === 1);
+    return { kind: 'select', ids, loops, sources: [closed] };
+  }
+
+  select(ids: readonly EntityId[]): void {
+    const area = this.#selected(ids);
+    if (!area) this.ctx.message(NOT_FOUND);
+    else this.#areas.push(area);
+  }
+
+  /** A boundary drawn (draW boundary): its loops and the polylines kept. */
+  addDrawn(loops: readonly HatchLoop[], keep: readonly EntityGeometry[]): void {
+    this.#areas.push({ kind: 'drawn', loops, keep, sources: [] });
+  }
+
+  /**
+   * remove Boundaries: each area found again without the objects removed, its outer boundary
+   * kept; a selected area without them, dropped when none of its objects is left.
+   */
+  async remove(ids: readonly EntityId[]): Promise<void> {
+    const removed = new Set(ids);
+    let candidates: Candidates | undefined;
+    for (let i = this.#areas.length - 1; i >= 0; i--) {
+      const area = this.#areas[i]!;
+      if (area.kind === 'select') {
+        const left = area.ids.filter((id) => !removed.has(id));
+        if (left.length === area.ids.length) continue;
+        const again = this.#selected(left);
+        if (again) this.#areas[i] = again;
+        else this.#areas.splice(i, 1);
+      } else if (area.kind === 'pick') {
+        const outer = new Set(area.sources[0]);
+        const without = new Set(ids.filter((id) => !outer.has(id)));
+        if (!area.sources.slice(1).some((loop) => loop.some((id) => without.has(id)))) continue;
+        candidates ??= await this.#candidates();
+        this.#areas[i] = this.#areaAt(candidates, area.seed, without) ?? area;
+      }
     }
-    this.#areas.push({ loops });
   }
 
   undo(): void {
@@ -283,7 +412,7 @@ class HatchRun {
   /** The pattern's lines at the settings' placement, from the app's library; undefined if none. */
   async #patternLines(): Promise<readonly HatchPatternLine[] | undefined> {
     const s = this.s;
-    if (s.pattern === SOLID) return [];
+    if (s.pattern === SOLID || isGradient(s.pattern)) return [];
     if (s.pattern === USER) return userLines(s.angle, s.spacing, s.double, this.origin);
     const key = JSON.stringify([s.pattern, s.scale, s.angle, this.origin]);
     if (this.#placed === key && this.#lines) return this.#lines;
@@ -300,11 +429,14 @@ class HatchRun {
 
   #hatch(areas: readonly Area[], lines: readonly HatchPatternLine[]): HatchGeometry {
     const s = this.s;
-    const solid = s.pattern === SOLID;
+    const gradient = gradientNamed(s.pattern);
+    // A gradient is a solid fill (DXF 70 = 1) named SOLID, as AutoCAD saves one.
+    const solid = s.pattern === SOLID || gradient !== undefined;
     const user = s.pattern === USER;
+    const g = s.gradient;
     return {
       kind: 'HATCH',
-      pattern: s.pattern,
+      pattern: solid ? SOLID : s.pattern,
       solid,
       associative: false,
       style: s.islands ? STYLES.indexOf(s.style) : 2,
@@ -314,7 +446,24 @@ class HatchRun {
       double: user && s.double,
       loops: areas.flatMap((a) => a.loops),
       patternLines: lines,
-      seedPoints: areas.flatMap((a) => (a.seed ? [a.seed] : [])),
+      seedPoints: areas.flatMap((a) => (a.kind === 'pick' ? [a.seed] : [])),
+      ...(!solid && s.background && { background: s.background }),
+      ...(gradient && {
+        gradient: {
+          name: gradient[1],
+          angle: g.angle,
+          // GFSHIFT: 0 centred, 1 shifted up and to the left (DXF 461).
+          shift: g.centered ? 0 : 1,
+          singleColor: g.oneColor,
+          tint: g.tint,
+          // Two colours always, as AutoCAD writes them (DXF 453 = 2); one colour shades the
+          // first to its tint.
+          colors: [
+            { value: 0, color: g.color1 },
+            { value: 1, color: g.color2 },
+          ],
+        },
+      }),
     };
   }
 
@@ -327,20 +476,150 @@ class HatchRun {
     this.ctx.preview(lines ? [this.#hatch(this.#areas, lines)] : []);
   }
 
+  /** The properties a new hatch takes: the current ones, as COlor, LAyer and Transparency say. */
+  #props(b: ChangeSetBuilder): GeneralProps {
+    const { ctx, s } = this;
+    const props = currentProps(ctx.model);
+    const t = this.transparency();
+    return {
+      ...props,
+      ...(s.color && { color: s.color }),
+      ...(s.layer !== undefined && { layer: hatchLayerRecord(b, ctx, s.layer) }),
+      ...(t !== USE_CURRENT && t !== '.' && { transparency: currentTransparency(t) }),
+    };
+  }
+
   async finish(): Promise<void> {
     this.ctx.preview([]);
     if (this.#areas.length === 0) return;
     const lines = await this.#patternLines();
     if (!lines) return;
     const groups = this.s.separate ? this.#areas.map((a) => [a]) : [this.#areas];
-    const { ctx } = this;
+    const { ctx, s } = this;
     ctx.edit((b) => {
+      const props = this.#props(b);
+      const current = currentProps(ctx.model);
+      let background: Handle | undefined;
       for (const g of groups) {
-        b.addEntity({ owner: ctx.space, ...currentProps(ctx.model), geom: this.#hatch(g, lines) });
+        // The boundaries kept go on the current layer, as BOUNDARY puts them.
+        const kept = g
+          .flatMap((a) =>
+            a.kind === 'drawn'
+              ? a.keep
+              : a.kind === 'pick' && s.retain
+                ? a.loops.flatMap(retainedBoundary)
+                : [],
+          )
+          .map((geom) => b.addEntity({ owner: ctx.space, ...current, geom }).id);
+        const geom = this.#hatch(g, lines);
+        // The background colour as AutoCAD keeps it (see edit/hatch-background.ts).
+        background ??= geom.background && hatchBackgroundAppId(b, ctx.model);
+        const xdata = geom.background && withHatchBackground(undefined, background!, s.background);
+        const hatch = b.addEntity({ owner: ctx.space, ...props, ...(xdata && { xdata }), geom });
+        const reference = [...new Set([...g.flatMap((a) => a.sources.flat()), ...kept])];
+        const move = placement(s.drawOrder, reference);
+        if (move) moveInDrawOrder(b, ctx.model, [hatch.id], move);
       }
     });
   }
 }
+
+/** Where HPDRAWORDER puts a new hatch, or undefined where it is drawn anyway (on top). */
+function placement(
+  order: HatchSettings['drawOrder'],
+  reference: readonly EntityId[],
+): DrawOrderMove | undefined {
+  switch (order) {
+    case 'back':
+      return { to: 'back' };
+    case 'behind':
+      return { to: 'under', reference };
+    case 'above':
+      return { to: 'above', reference };
+    default:
+      return undefined;
+  }
+}
+
+/** The layer HPLAYER names, made (as layer 0 is, colour 7) when the drawing has none. */
+function hatchLayerRecord(b: ChangeSetBuilder, ctx: CommandContext, name: string): Handle {
+  const u = name.toUpperCase();
+  let zero: Handle | undefined;
+  for (const l of ctx.model.tables.layers.values()) {
+    if (l.name.toUpperCase() === u) return l.handle;
+    if (l.name === '0') zero = l.handle;
+  }
+  // Every drawing has a layer 0 (`currentLayer` refuses one without).
+  const z = b.tableRecord('layers', zero!)!;
+  return b.addTableRecord('layers', {
+    name,
+    color: { kind: 'aci', index: 7 },
+    linetype: z.linetype,
+    lineweight: 'Default',
+    transparency: z.transparency,
+    plot: true,
+    on: true,
+    frozen: false,
+    locked: false,
+  }).handle;
+}
+
+/** remove Boundaries: the objects picked come out of the areas, until Enter or Add boundaries. */
+async function* removeBoundaries(ctx: CommandContext, run: HatchRun): Sub<void> {
+  for (;;) {
+    const a = yield ctx.prompt.selection({
+      message: 'Select objects or',
+      options: ['Add boundaries'],
+    });
+    if (a.kind !== 'selection' || a.ids.length === 0) return;
+    await run.remove(a.ids);
+    await run.preview();
+  }
+}
+
+/**
+ * draW boundary: a boundary drawn point by point, then islands; true at "apply hatch", false
+ * when no start point is given for the first.
+ */
+async function* drawBoundary(ctx: CommandContext, run: HatchRun): Sub<boolean> {
+  const keep = yield* yesNo(ctx, 'Retain polyline boundary?', false);
+  const loops: HatchLoop[] = [];
+  const kept: EntityGeometry[] = [];
+  for (;;) {
+    const first = loops.length === 0;
+    const a = yield first
+      ? ctx.prompt.point({ message: 'Specify start point' })
+      : ctx.prompt.point({
+          message: 'Specify start point for new island boundary or',
+          defaultLabel: 'apply hatch',
+        });
+    if (a.kind !== 'point') {
+      if (first) return false;
+      run.addDrawn(loops, kept);
+      return true;
+    }
+    // Esc cancels the command; nothing else ends the path without its points.
+    const path = (yield* nextPoints(ctx, a.point, { prefix: '', closed: true, total: false }))!;
+    const vertices: PolylineVertex[] = path.map((v) => ({ x: v.x, y: v.y, bulge: v.bulge }));
+    // A path ending where it began closes there.
+    const last = vertices.at(-1)!;
+    if (vertices.length > 1 && last.x === vertices[0]!.x && last.y === vertices[0]!.y) {
+      vertices.pop();
+    }
+    if (vertices.length < 3 && !vertices.some((v) => v.bulge !== 0)) {
+      ctx.message(NOT_FOUND);
+      continue;
+    }
+    loops.push({
+      flags: POLYLINE | (first ? EXTERNAL : OUTERMOST),
+      polyline: { vertices, closed: true },
+    });
+    if (keep) kept.push({ kind: 'LWPOLYLINE', closed: true, vertices });
+  }
+}
+
+const tolerance = (ctx: CommandContext) =>
+  toleranceFor(ctx.model, { kind: 'XLINE', base: { x: 0, y: 0 }, direction: { x: 1, y: 0 } });
 
 /** On a layer that is on and thawed, and not made invisible. */
 function shown(ctx: CommandContext, e: Entity): boolean {
@@ -366,140 +645,4 @@ function userLines(
     dashes: [],
   });
   return double ? [family(angle), family(angle + Math.PI / 2)] : [family(angle)];
-}
-
-/** -HATCH Properties: the pattern and its scale and angle, or user-defined lines. */
-async function* properties(ctx: CommandContext, s: HatchSettings): Sub<void> {
-  for (;;) {
-    const current = s.pattern === USER ? 'U' : s.pattern;
-    const a = yield ctx.prompt.string({
-      message: 'Enter a pattern name or',
-      options: ['Solid', 'User defined'],
-      defaultLabel: current,
-    });
-    const k = keyword(a);
-    if (k === 'Solid') {
-      s.pattern = SOLID;
-      s.custom = false;
-      return;
-    }
-    if (k === 'User defined') {
-      s.angle = yield* angle(ctx, 'Specify angle for crosshatch lines', s.angle);
-      s.spacing = yield* positive(ctx, 'Specify spacing between the lines', s.spacing);
-      s.double = yield* yesNo(ctx, 'Double hatch area?', s.double);
-      s.pattern = USER;
-      s.custom = false;
-      return;
-    }
-    if (a.kind !== 'string') return; // Enter: the pattern kept
-    // The library says whether it knows the name, and how its file spells it.
-    const p = await placed(ctx, a.value.trim(), { angle: 0, scale: 1, origin: { x: 0, y: 0 } });
-    if (!p) continue;
-    s.pattern = p.name;
-    s.custom = p.custom;
-    s.scale = yield* positive(ctx, 'Specify a scale for the pattern', s.scale);
-    s.angle = yield* angle(ctx, 'Specify an angle for the pattern', s.angle);
-    return;
-  }
-}
-
-/** The pattern `name` placed by the app's library, or undefined (said) when it has none. */
-async function placed(
-  ctx: CommandContext,
-  name: string,
-  at: PatternPlacement,
-): Promise<PlacedPattern | undefined> {
-  const r = await ctx.view.request({ op: 'hatchPattern', name, placements: [at] });
-  if (r.ok && r.pattern) return r.pattern;
-  ctx.message(r.ok ? `Pattern "${name}" is not in the pattern library.` : r.message);
-  return undefined;
-}
-
-/** An angle, or a number, prompt with a default always answers its kind. */
-const valueOf = (a: PromptAnswer): number => (a as { value: number }).value;
-
-async function* angle(ctx: CommandContext, message: string, current: number): Sub<number> {
-  return valueOf(yield ctx.prompt.angle({ message, default: { kind: 'angle', value: current } }));
-}
-
-async function* positive(ctx: CommandContext, message: string, current: number): Sub<number> {
-  for (;;) {
-    const v = valueOf(
-      yield ctx.prompt.real({ message, default: { kind: 'number', value: current } }),
-    );
-    if (v > 0) return v;
-    ctx.message('Value must be positive and nonzero.');
-  }
-}
-
-async function* yesNo(ctx: CommandContext, message: string, current: boolean): Sub<boolean> {
-  const a = yield ctx.prompt.keyword({
-    message,
-    options: ['Yes', 'No'],
-    defaultLabel: current ? 'Y' : 'N',
-  });
-  const k = keyword(a);
-  return k === undefined ? current : k === 'Yes';
-}
-
-/** -HATCH Advanced: island detection and style, associativity, gap tolerance, separate hatches. */
-async function* advanced(ctx: CommandContext, s: HatchSettings): Sub<void> {
-  for (;;) {
-    const a = yield ctx.prompt.keyword({
-      message: 'Enter an option',
-      options: ['Island detection', 'Style', 'Associativity', 'Gap tolerance', 'separate Hatches'],
-    });
-    switch (keyword(a)) {
-      case 'Island detection':
-        s.islands = yield* yesNo(ctx, 'Do you want island detection?', s.islands);
-        break;
-      case 'Style': {
-        const names = ['Ignore', 'Outer', 'Normal'];
-        const b = yield ctx.prompt.keyword({
-          message: 'Enter island detection style',
-          options: names,
-          default: { kind: 'keyword', keyword: names[2 - STYLES.indexOf(s.style)]! },
-        });
-        s.style = STYLES[2 - names.indexOf(keyword(b)!)]!;
-        break;
-      }
-      case 'Associativity':
-        if (yield* yesNo(ctx, 'Do you want associativity?', false)) {
-          ctx.message('Triya makes non-associative hatches.');
-        }
-        break;
-      case 'Gap tolerance': {
-        const gap = valueOf(
-          yield ctx.prompt.real({
-            message: 'Specify a boundary gap tolerance value',
-            default: { kind: 'number', value: s.gap },
-          }),
-        );
-        // HPGAPTOL: "Valid values are from 0 to 5000".
-        if (gap < 0 || gap > 5000) ctx.message('Value must be between 0 and 5000.');
-        else s.gap = gap;
-        break;
-      }
-      case 'separate Hatches':
-        s.separate = yield* yesNo(ctx, 'Create separate hatches?', s.separate);
-        break;
-      default:
-        return;
-    }
-  }
-}
-
-/** -HATCH Origin: this hatch's pattern origin, stored as HPORIGIN when asked. */
-async function* origin(ctx: CommandContext, s: HatchSettings): Sub<Vec2 | undefined> {
-  const a = yield ctx.prompt.keyword({
-    message: '',
-    options: ['Use current origin', 'Set new origin'],
-    default: { kind: 'keyword', keyword: 'Use current origin' },
-  });
-  if (keyword(a) !== 'Set new origin') return undefined;
-  // A point prompt without options or default answers a point.
-  const p = ((yield ctx.prompt.point({ message: 'Specify origin point' })) as { point: Vec2 })
-    .point;
-  if (yield* yesNo(ctx, 'Store as default origin?', false)) s.origin = p;
-  return p;
 }

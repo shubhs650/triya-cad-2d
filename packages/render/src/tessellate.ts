@@ -775,12 +775,15 @@ function exact(
         ];
       }
       if (g.solid) return [fill(paint.color)];
+      // A pattern's background colour (HPBACKGROUNDCOLOR, M4-07 part 3) fills the area behind
+      // its lines; the hatch's opacity applies to both, as one object.
+      const background = g.background ? [fill(colorValue(g.background))] : [];
       // A pattern AutoCAD would not generate (HPMAXLINES) shows as its filled area, which is
       // what so dense a pattern looks like at any zoom that shows the whole of it.
       const pattern = hatchPattern({ ...g, patternLines: hatchLines(g, patterns) });
-      if (pattern.kind === 'too-dense') return [fill(paint.color)];
+      if (pattern.kind === 'too-dense') return [...background, fill(paint.color)];
       // One stroke per family, so each switches to its tint at its own spacing (LOD).
-      return pattern.families.map((f) => {
+      const lines = pattern.families.map((f): RenderPrimitive => {
         const path: number[] = [];
         const s = f.segments;
         for (let i = 0; i < s.length; i += 4)
@@ -800,6 +803,7 @@ function exact(
           },
         };
       });
+      return [...background, ...lines];
     }
     default:
       return [];

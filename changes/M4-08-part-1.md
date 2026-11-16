@@ -1,0 +1,1 @@
+- M4-08 part 1 (#452): CENTERMARK and CENTERLINE: center marks on circles and arcs and centerlines between two lines, saved as block references and associative while the drawing is open (they follow their objects when moved, turned, scaled or erased); saving the association waits on needs-human #451.

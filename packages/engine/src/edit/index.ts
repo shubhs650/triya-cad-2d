@@ -87,6 +87,8 @@ export * from './explode';
 export * from './underlay-layers';
 export * from './array';
 export * from './assoc-array';
+export * from './dimension-records';
+export * from './center-marks';
 export * from './pedit';
 export * from './splinedit';
 export * from './overkill';
@@ -101,3 +103,15 @@ export {
   type IslandStyle,
   type PickedBoundary,
 } from './hatch-boundary';
+export {
+  HATCH_BACKGROUND_APP,
+  backgroundColorOf,
+  backgroundColorValue,
+  hatchBackgroundAppId,
+  withHatchBackground,
+  type BackgroundColor,
+} from './hatch-background';
+export { retainedBoundary } from './hatch-retain';
+export * from './text-justify';
+export * from './text-align';
+export * from './find-text';

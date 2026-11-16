@@ -62,6 +62,10 @@ export interface ViewTarget {
   textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
   /** The TEXT runs and strokes MTEXTs explode into (M3-12 part 7), null for one not drawn. */
   textPieces(texts: readonly MTextGeometry[]): Promise<(readonly TextPiece[] | null)[]>;
+  /** The frames MTEXTs are laid out in (M4-09), null for one no loaded font draws. */
+  textFrames(
+    texts: readonly MTextGeometry[],
+  ): Promise<({ readonly width: number; readonly height: number } | null)[]>;
   /** How many dynamic columns MTEXTs take (M2-26 part 2), null for one no loaded font draws. */
   columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
   /** Where texts lie as drawn (M2-27), null for one no loaded font draws. */
@@ -123,6 +127,8 @@ export interface ViewContext {
   readonly plot?: (r: PlotScriptRequest) => Promise<ViewReply>;
   /** Properties' Pattern name (M2-35 part 3): a pattern from the app's library, placed. */
   readonly hatchPattern?: (name: string, placements: readonly PatternPlacement[]) => ViewReply;
+  /** -HATCH's `?` (M4-07): the library's patterns, described. */
+  readonly hatchPatternList?: () => ViewReply;
   /**
    * SETVAR (M2-42): a system variable the app keeps (the drafting aids, the per-user settings),
    * set to `value` when given, answered with its value.
@@ -180,6 +186,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };
+  }
+  if (r.op === 'hatchPatternList') {
+    return ctx.hatchPatternList ? ctx.hatchPatternList() : { ok: false, message: NO_PATTERNS };
   }
   if (r.op === 'hatchPattern') {
     return ctx.hatchPattern
@@ -315,6 +324,8 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       return t.textWidths(r.texts).then((widths) => ({ ok: true, widths }));
     case 'textPieces':
       return t.textPieces(r.texts).then((pieces) => ({ ok: true, pieces }));
+    case 'textFrames':
+      return t.textFrames(r.texts).then((frames) => ({ ok: true, frames }));
     case 'columnCounts':
       return t.columnCounts(r.texts).then((counts) => ({ ok: true, counts }));
     case 'textOutlines':

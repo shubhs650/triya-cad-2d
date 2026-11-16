@@ -47,6 +47,9 @@ describe('palette search', () => {
       'ATTEDIT',
       'BREAK',
       'BREAKATPOINT',
+      // M4-08: CENTERLINE and CENTERMARK.
+      'CENTERLINE',
+      'CENTERMARK',
       // M3-02 part 3: CHAMFER and FILLET.
       'CHAMFER',
       // M3-02 part 5: CHANGE and CHPROP.
@@ -68,12 +71,15 @@ describe('palette search', () => {
       // M4-02 part 1: DIMARC, DIMJOGGED, DIMJOGLINE and DIMORDINATE.
       'DIMARC',
       'DIMBASELINE',
+      // M4-02 part 4: DIMBREAK and DIMINSPECT.
+      'DIMBREAK',
       'DIMCONTINUE',
       'DIMDIAMETER',
       // M4-02 part 3: DIMDISASSOCIATE and DIMREASSOCIATE.
       'DIMDISASSOCIATE',
       // M4-02 part 2: DIMEDIT, DIMOVERRIDE, DIMSPACE, DIMTEDIT and QDIM.
       'DIMEDIT',
+      'DIMINSPECT',
       'DIMJOGGED',
       'DIMJOGLINE',
       'DIMLINEAR',
@@ -103,6 +109,9 @@ describe('palette search', () => {
       'EXTEND',
       'FILLET',
       'FILTER',
+      'FIND',
+      // M4-07 part 3: GRADIENT (HATCH with a gradient).
+      'GRADIENT',
       // M3-06 part 2: GRID and SNAP.
       'GRID',
       'GROUP',
@@ -112,6 +121,8 @@ describe('palette search', () => {
       'HATCHTOBACK',
       'ID',
       'JOIN',
+      // M4-09 part 1: JUSTIFYTEXT and SCALETEXT.
+      'JUSTIFYTEXT',
       'LENGTHEN',
       'LINE',
       'LIST',
@@ -166,6 +177,7 @@ describe('palette search', () => {
       'SAVE',
       'SAVEAS',
       'SCALE',
+      'SCALETEXT',
       'SELECT',
       'SELECTSIMILAR',
       'SETVAR',
@@ -183,6 +195,8 @@ describe('palette search', () => {
       // M4-05 part 5: the Table Style dialog.
       'TABLESTYLE',
       'TEXT',
+      // M4-09 part 3.
+      'TEXTALIGN',
       'TEXTEDIT',
       'TEXTTOFRONT',
       'TRIM',

@@ -10,7 +10,7 @@
 // DIMORDINATE, DIMJOGGED on the circle, DIMARC's Partial on the arc, and DIMJOGLINE on the
 // first dimension, its jog kept in ACAD_DSTYLE_DIMJAG_POSITION xdata; M4-02 part 2's DIMOVERRIDE,
 // DIMEDIT Oblique, DIMTEDIT Left and QDIM Radius; M4-02 part 3's DIMREASSOCIATE of the first
-// dimension's first origin. The drawing is saved as AC1032 DXF (DEC-047),
+// dimension's first origin; M4-02 part 4's manual DIMBREAK and -DIMINSPECT (DEC-064 records). The drawing is saved as AC1032 DXF (DEC-047),
 // read back by acad-ts and mapped: each dimension comes back where it was made, with its `*D`
 // block, and the health check (stored block against what the engine draws, M2-10) passes on it.
 // With TRIYA_DXF_AUDIT_DIR set the save goes to the ezdxf audit as the file's `dimension` save.
@@ -32,6 +32,8 @@ import {
   type ViewHost,
   type ViewReply,
   currentDimStyle,
+  dimBreakOf,
+  dimInspectOf,
   dstyleOverrides,
   linearJog,
   radialArc,
@@ -286,6 +288,20 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         first: { x: was.first.x - 5, y: was.first.y },
         second: was.second,
       });
+      // M4-02 part 4: a manual DIMBREAK on the second (vertical) dimension's line at x = 150,
+      // and -DIMINSPECT on the aligned one, kept as DEC-064's records.
+      await bus.script(['DIMBREAK']);
+      await bus.pick((added()[1]!.geom as DimensionGeometry).textPosition);
+      await bus.script(['M', '150,10', '150,20']);
+      expect(dimBreakOf(model, model.entity(added()[1]!.id)!)?.manual).toHaveLength(1);
+      await bus.script(['-DIMINSPECT', '']);
+      await bus.pick((model.entity(aligned.id)!.geom as DimensionGeometry).textPosition);
+      await bus.script(['', 'A', 'A1', '']);
+      expect(dimInspectOf(model, model.entity(aligned.id)!)).toMatchObject({
+        shape: 'angular',
+        label: 'A1',
+        rate: '100%',
+      });
 
       const dims = added();
       for (const e of dims) {
@@ -311,6 +327,15 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         );
         expect(rounded(linearJog(r!.xdata, back)), `${f.path} ${e.handle}`).toEqual(
           rounded(linearJog(model.entity(e.id)!.xdata, model)),
+        );
+        const now = model.entity(e.id)!;
+        expect(dimBreakOf(back, r!)?.manual, `${f.path} ${e.handle}`).toEqual(
+          dimBreakOf(model, now)?.manual,
+        );
+        const inspect = (x: ReturnType<typeof dimInspectOf>) =>
+          x && { handle: x.handle, shape: x.shape, label: x.label, rate: x.rate };
+        expect(inspect(dimInspectOf(back, r!)), `${f.path} ${e.handle}`).toEqual(
+          inspect(dimInspectOf(model, now)),
         );
         const health = dimensionHealth(r!, back, again, colors);
         expect(health?.problems ?? ['no health'], `${f.path} ${e.handle}`).toEqual([]);

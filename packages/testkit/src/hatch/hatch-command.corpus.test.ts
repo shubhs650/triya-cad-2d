@@ -2,14 +2,22 @@
 // it and an area closed by a spline and a line are drawn away from the drawing's own objects,
 // then hatched by pick points: the rectangle less the circle with the default pattern (line and
 // arc edges, the circle an island), the spline's area solid (a spline edge), and the circle with
-// user-defined lines. The drawing is saved as AC1032 DXF (DEC-047) and read back by acad-ts:
-// each hatch maps back as it was made, its loops' edges of the same types.
+// user-defined lines. Part 2: the rectangle hatched again on a layer -HATCH makes, in green,
+// 40% transparent, its boundaries kept as polylines. Part 3: the spline's area filled with an
+// inverted spherical gradient, red to a true colour, at 30° and not centred, and the rectangle
+// hatched once more with a pale blue background colour. The drawing is saved as AC1032 DXF
+// (DEC-047) and read back by acad-ts: each hatch maps back as it was made, its loops' edges of
+// the same types, still drawn behind its boundary (HPDRAWORDER, a SORTENTSTABLE entry), the
+// gradient and the background colour (HATCHBACKGROUNDCOLOR xdata) as they were made.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
+  blockDrawOrder,
   builtinCommands,
+  sortTableOf,
   type Entity,
   type HatchGeometry,
   type ViewReply,
@@ -74,6 +82,12 @@ function rounded(v: unknown): unknown {
 const unedited = (bytes: Uint8Array) =>
   withPinnedClock(() => DocumentModel.create(documentInit(readCadDocument(bytes))));
 
+/** The block's objects by handle, in the order they are drawn. */
+function drawn(model: DocumentModel, block: string): string[] {
+  const table = sortTableOf(new ChangeSetBuilder(model), model, block);
+  return blockDrawOrder(model, block, table).map((e) => model.ids.handleOf(e.id)!);
+}
+
 const edgeTypes = (g: HatchGeometry) => g.loops.map((l) => (l.edges ?? []).map((e) => e.type));
 
 describe('HATCH on the public corpus (M4-07)', () => {
@@ -94,6 +108,11 @@ describe('HATCH on the public corpus (M4-07)', () => {
         ...['-HATCH', at(10, 10), ''],
         ...['-HATCH', 'P', 'S', at(150, 20), ''],
         ...['-HATCH', 'P', 'U', '30', '2', 'Y', at(50, 50), ''],
+        ...['-HATCH', 'LA', 'TRIYA-HATCH-M4', 'CO', '3', '', 'T', '40', 'A', 'R', 'Y', ''],
+        ...[at(10, 10), ''],
+        ...['-HATCH', 'A', 'R', 'N', '', 'P', 'G', 'GR_INVSPH', '30', 'N'],
+        ...['CO', '1', 'T', '10,20,30', at(150, 20), ''],
+        ...['-HATCH', 'P', 'TRIYA_LINES45', '', '', 'CO', '.', 'T', '200,220,240', at(10, 10), ''],
       ];
       for (const answer of script) await bus.submit(answer);
       expect(bus.promptText, f.path).toBe('Command:');
@@ -104,16 +123,42 @@ describe('HATCH on the public corpus (M4-07)', () => {
         [['line', 'line', 'line', 'line'], ['arc']],
         [expect.arrayContaining(['line', 'spline'])],
         [['arc']],
+        [['line', 'line', 'line', 'line'], ['arc']],
+        [expect.arrayContaining(['line', 'spline'])],
+        [['line', 'line', 'line', 'line'], ['arc']],
       ]);
       expect(hatches.map((h) => [h.geom.pattern, h.geom.patternType])).toEqual([
         ['TRIYA_LINES45', 1],
         ['SOLID', 1],
         ['_USER', 0],
+        ['_USER', 0],
+        ['SOLID', 1],
+        ['TRIYA_LINES45', 1],
       ]);
+      expect(hatches[4]!.geom.gradient).toMatchObject({ name: 'INVSPHERICAL', shift: 1 });
+      expect(hatches[5]!.geom.background).toEqual({ kind: 'rgb', r: 200, g: 220, b: 240 });
+      const rectangle = [...model.entities()].find(
+        (e) => !before.has(e.id) && e.geom.kind === 'LWPOLYLINE',
+      )!;
+      const kept = [...model.entities()].filter(
+        (e) => !before.has(e.id) && e.geom.kind === 'LWPOLYLINE' && e.id !== rectangle.id,
+      );
+      expect(kept, f.path).toHaveLength(2);
 
       const save = withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), model));
       const back = unedited(save);
+      const order = drawn(back, rectangle.owner);
+      const last = hatches[3]!;
+      const lastBack = back.entityByHandle(last.handle)!;
+      expect(back.tables.layers.get(lastBack.layer)?.name, f.path).toBe('TRIYA-HATCH-M4');
+      expect(lastBack.color, f.path).toEqual({ kind: 'aci', index: 3 });
+      expect(lastBack.transparency, f.path).toEqual({ alpha: 153 });
+      for (const k of kept) expect(back.entityByHandle(k.handle), f.path).toBeDefined();
       for (const h of hatches) {
+        // Behind its boundary: the first and last hatches behind the rectangle.
+        if (h === hatches[0] || h === last || h === hatches[5]) {
+          expect(order.indexOf(h.handle), f.path).toBeLessThan(order.indexOf(rectangle.handle));
+        }
         const reread = back.entityByHandle(h.handle) as Hatch | undefined;
         expect(reread, f.path).toBeDefined();
         expect(edgeTypes(reread!.geom), f.path).toEqual(edgeTypes(h.geom));
@@ -127,6 +172,8 @@ describe('HATCH on the public corpus (M4-07)', () => {
           patternType: h.geom.patternType,
           double: h.geom.double,
         });
+        expect(rounded(reread!.geom.gradient), f.path).toEqual(rounded(h.geom.gradient));
+        expect(reread!.geom.background, f.path).toEqual(h.geom.background);
       }
       hatched++;
     },

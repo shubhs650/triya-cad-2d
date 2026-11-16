@@ -1087,6 +1087,12 @@ export interface HatchGeometry extends PlanarProps {
   readonly loops: readonly HatchLoop[];
   readonly patternLines: readonly HatchPatternLine[];
   readonly seedPoints: readonly Vec2[];
+  /**
+   * A pattern hatch's background colour, AutoCAD's HPBACKGROUNDCOLOR (M4-07 part 3): read from
+   * its `HATCHBACKGROUNDCOLOR` xdata (1071, an AcCmEntityColor), which stays the record a save
+   * writes (edit/hatch-background.ts keeps the two together); absent for none.
+   */
+  readonly background?: Color;
   /** DXF 450–470, when the hatch is a gradient fill. */
   readonly gradient?: {
     readonly name: string;
@@ -1935,6 +1941,82 @@ export type AssocArrayParams =
 
 export const isAssocArray = (o: NonGraphicalObject | undefined): o is AssocArray =>
   o?.type === 'TRIYA_ARRAY';
+
+/**
+ * A dimension's breaks (DIMBREAK, M4-02 part 4, DEC-064): the `TRIYA_DIMBREAK` XRECORD in the
+ * dimension's extension dictionary (`owner`, which the dimension's `extDict` names). The
+ * dimension's `*D` block holds the gaps as drawn; this record says where they come from, so a
+ * regeneration draws them again.
+ */
+export interface DimBreak extends NonGraphicalObject {
+  readonly type: 'TRIYA_DIMBREAK';
+  /** The dimension (the owner of its extension dictionary). */
+  readonly dimension: Handle;
+  /**
+   * DXF 331 each: the objects that break it (picked, or found by Auto); the gaps follow them
+   * when either moves. One that is gone breaks nothing.
+   */
+  readonly objects: readonly Handle[];
+  /** DXF 10 and 11 each: the two points of a manual break, in the dimension's space. */
+  readonly manual: readonly (readonly [Vec2, Vec2])[];
+}
+
+export const isDimBreak = (o: NonGraphicalObject | undefined): o is DimBreak =>
+  o?.type === 'TRIYA_DIMBREAK';
+
+/** An inspection dimension's frame: semicircles, 90° points, or none (AutoCAD's Shape). */
+export type InspectionShape = 'round' | 'angular' | 'none';
+
+/**
+ * A dimension's inspection data (DIMINSPECT, M4-02 part 4, DEC-064): the `TRIYA_DIMINSPECT`
+ * XRECORD in the dimension's extension dictionary. The `*D` block holds the frame as drawn.
+ */
+export interface DimInspect extends NonGraphicalObject {
+  readonly type: 'TRIYA_DIMINSPECT';
+  readonly dimension: Handle;
+  /** DXF 71: 0 round, 1 angular, 2 none. */
+  readonly shape: InspectionShape;
+  /** DXF 1: the label, left of the value; absent when the label is off. */
+  readonly label?: string;
+  /** DXF 3: the inspection rate, right of the value; absent when the rate is off. */
+  readonly rate?: string;
+}
+
+export const isDimInspect = (o: NonGraphicalObject | undefined): o is DimInspect =>
+  o?.type === 'TRIYA_DIMINSPECT';
+
+/**
+ * A center mark or centerline Triya made (CENTERMARK, CENTERLINE; M4-08): what keeps it
+ * associative to the objects it was made on. The mark is an INSERT of an anonymous `*U` block of
+ * lines, which every reader draws; the record (`owner` the INSERT) says how to draw it again when
+ * its objects change. Part 1 keeps the record while the drawing is open: how a save writes it
+ * waits on needs-human #451, so a reopened drawing has the marks as plain block references.
+ */
+export interface CenterMark extends NonGraphicalObject {
+  readonly type: 'TRIYA_CENTERMARK';
+  /** The mark's INSERT. */
+  readonly insert: Handle;
+  /** A center mark on a circle or arc, or a centerline between two lines. */
+  readonly kind: 'mark' | 'line';
+  /** The circle or arc; the centerline's first and second line. */
+  readonly objects: readonly Handle[];
+  /**
+   * A center mark's cross size and gap as CENTERCROSSSIZE and CENTERCROSSGAP state them: a length,
+   * or a factor of the circle's diameter followed by `x` (`0.1x`).
+   */
+  readonly crossSize?: string;
+  readonly crossGap?: string;
+  /**
+   * How far each extension line goes past the object: a center mark's left, right, top and bottom
+   * (in its own axes), a centerline's start and end.
+   */
+  readonly extensions: readonly number[];
+  /** A center mark's extension lines are drawn (CENTERMARKEXE when it was made). */
+  readonly showExtensions?: boolean;
+}
+
+export const isCenterMark = (o: NonGraphicalObject | undefined): o is CenterMark =>
+  o?.type === 'TRIYA_CENTERMARK';
 
 /**
  * One DXF group code of a `CodedObject`, as the save writes it. A handle code's value (DXF 5,

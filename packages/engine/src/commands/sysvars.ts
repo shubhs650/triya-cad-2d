@@ -234,6 +234,11 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'TRIMMODE', store: 'app', kind: 'switch' },
   { name: 'CHAMMODE', store: 'app', kind: 'switch' },
   { name: 'PEDITACCEPT', store: 'app', kind: 'switch' },
+  // M4-09 part 3 (AutoCAD 2024 Help, both "Saved in: Registry"): TEXTALIGN's options.
+  // TEXTALIGNMODE the point it aligns by, 0–8 TL to BR, 9 Left, 10 Center, 11 Right (9), and
+  // TEXTALIGNSPACING 0 Distribute, 1 Set spacing, 2 Current vertical, 3 Current horizontal (2).
+  { name: 'TEXTALIGNMODE', store: 'app', kind: 'integer', min: 0, max: 11 },
+  { name: 'TEXTALIGNSPACING', store: 'app', kind: 'integer', min: 0, max: 3 },
 ];
 
 /**

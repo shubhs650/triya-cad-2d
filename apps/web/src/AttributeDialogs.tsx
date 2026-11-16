@@ -34,6 +34,7 @@ import { engines } from './engine/registry';
 import { SelectColorDialog } from './SelectColorDialog';
 import { MatchPropDialog } from './MatchPropDialog';
 import { PointStyleDialog } from './PointStyleDialog';
+import { InspectionDialog } from './InspectionDialog';
 import { OverkillDialog } from './OverkillDialog';
 import { SelectSimilarDialog } from './SelectSimilarDialog';
 import { ObjectGroupingDialog } from './ObjectGroupingDialog';
@@ -48,6 +49,7 @@ import { InsertTableDialog } from './InsertTableDialog';
 import { TextStyleDialog } from './TextStyleDialog';
 import { TableStyleDialog } from './TableStyleDialog';
 import { MLeaderStyleDialog } from './MLeaderStyleDialog';
+import { FindReplaceDialog } from './FindReplaceDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -85,6 +87,8 @@ export function AttributeDialogs({
       return <MatchPropDialog key={key} doc={doc.id} request={d} />;
     case 'pointstyle':
       return <PointStyleDialog key={key} doc={doc.id} request={d} />;
+    case 'diminspect':
+      return <InspectionDialog key={key} doc={doc.id} request={d} />;
     case 'overkill':
       return <OverkillDialog key={key} doc={doc.id} request={d} />;
     case 'qselect':
@@ -122,6 +126,8 @@ export function AttributeDialogs({
       return <TableStyleDialog key={key} doc={doc.id} request={d} />;
     case 'mleaderstyle':
       return <MLeaderStyleDialog key={key} doc={doc.id} request={d} />;
+    case 'find':
+      return <FindReplaceDialog key={key} doc={doc.id} request={d} />;
   }
 }
 
