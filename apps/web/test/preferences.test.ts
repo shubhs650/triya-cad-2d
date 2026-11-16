@@ -123,6 +123,9 @@ describe('preferences', () => {
         PROJMODE: 1,
         TRIMMODE: 1,
         PEDITACCEPT: 0,
+        // M4-09 part 3: TEXTALIGN's Left and Current vertical.
+        TEXTALIGNMODE: 9,
+        TEXTALIGNSPACING: 2,
       },
     });
     // No named filters (FILTER, M3-04 part 4).
@@ -315,6 +318,8 @@ describe('preferences', () => {
       PROJMODE: 1,
       TRIMMODE: 0,
       PEDITACCEPT: 1,
+      TEXTALIGNMODE: 9,
+      TEXTALIGNSPACING: 2,
     });
     const bad = normalizePreferences({
       drafting: { modifyOptions: { OFFSETGAPTYPE: 3, PROJMODE: 'View', EDGEMODE: 0.5 } },

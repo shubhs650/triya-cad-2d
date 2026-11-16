@@ -17,6 +17,8 @@ const NAMES = [
   'TRIMMODE',
   'CHAMMODE',
   'PEDITACCEPT',
+  'TEXTALIGNMODE',
+  'TEXTALIGNSPACING',
 ];
 
 /** The app's variables with AutoCAD's initial values. */
@@ -32,6 +34,8 @@ const initial = (o: Record<string, number> = {}) =>
       TRIMMODE: 1,
       CHAMMODE: 0,
       PEDITACCEPT: 0,
+      TEXTALIGNMODE: 9,
+      TEXTALIGNSPACING: 2,
       ...o,
     }),
   );
@@ -206,5 +210,20 @@ describe('modify option variables', () => {
     await bus.pick({ x: 5, y: 40 });
     expect(log.at(-1)).toBe('Object selected is not a polyline');
     expect(bus.promptText).toBe('Do you want to turn it into one? [Yes/No] <Y>:');
+  });
+
+  it('TEXTALIGN starts from TEXTALIGNMODE and TEXTALIGNSPACING and sets them (M4-09 part 3)', async () => {
+    const variables = initial({ TEXTALIGNMODE: 10, TEXTALIGNSPACING: 0 });
+    const { bus } = setup([], { variables });
+    await bus.script(['TEXTALIGN', 'I']);
+    expect(bus.promptText).toContain('<Center>:');
+    await bus.submit('TR');
+    expect(variables.get('TEXTALIGNMODE')).toBe(2);
+    await bus.submit('O');
+    expect(bus.promptText).toContain('<Distribute>:');
+    await bus.submit('H');
+    expect(variables.get('TEXTALIGNSPACING')).toBe(3);
+    await bus.answer({ kind: 'enter' });
+    expect(bus.command).toBeUndefined();
   });
 });
