@@ -502,7 +502,7 @@ function hatchLayerRecord(b: ChangeSetBuilder, ctx: CommandContext, name: string
     color: { kind: 'aci', index: 7 },
     linetype: z.linetype,
     lineweight: 'Default',
-    transparency: 'ByLayer',
+    transparency: z.transparency,
     plot: true,
     on: true,
     frozen: false,

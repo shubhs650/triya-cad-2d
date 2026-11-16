@@ -221,31 +221,35 @@ describe('header variables', () => {
     expect(world.get('$UCSXDIR')).toEqual({ x: 1, y: 0, z: 0 });
   });
 
-  it('keeps CETRANSPARENCY for the session unless the drawing has a DICTIONARYVAR for it (M2-35)', () => {
-    // DXF has no HEADER variable for CETRANSPARENCY: a save writes it only into an existing
-    // AcDbVariableDictionary entry, and leaves a drawing without one as it was.
-    const bytes = drawing();
-    const { model } = open(bytes);
-    edit(model, (b) => {
-      b.setHeader('CETRANSPARENCY', '40');
-      b.setHeader('$CECOLOR', 5);
-    });
-    const back = new Map(saved(bytes, model, 'dxf').header);
-    expect(back.has('CETRANSPARENCY')).toBe(false);
-    expect(back.get('$CECOLOR')).toBe(5);
+  it.each(['CETRANSPARENCY', 'HPTRANSPARENCY'])(
+    'keeps %s for the session unless the drawing has a DICTIONARYVAR for it (M2-35, M4-07)',
+    (name) => {
+      // DXF has no HEADER variable for CETRANSPARENCY or HPTRANSPARENCY (the one -HATCH
+      // Transparency sets): a save writes them only into an existing AcDbVariableDictionary
+      // entry, and leaves a drawing without one as it was.
+      const bytes = drawing();
+      const { model } = open(bytes);
+      edit(model, (b) => {
+        b.setHeader(name, '40');
+        b.setHeader('$CECOLOR', 5);
+      });
+      const back = new Map(saved(bytes, model, 'dxf').header);
+      expect(back.has(name)).toBe(false);
+      expect(back.get('$CECOLOR')).toBe(5);
 
-    const doc = readCadDocument(bytes);
-    const vars = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.variableDictionary)!;
-    const v = new DictionaryVariable();
-    v.name = 'CETRANSPARENCY';
-    v.value = 'ByLayer';
-    vars.add(v);
-    const withVar = writeCadDocument(doc, { format: 'dxf' });
-    const second = open(withVar).model;
-    expect(second.header.get('CETRANSPARENCY')).toBe('ByLayer');
-    edit(second, (b) => b.setHeader('CETRANSPARENCY', '40'));
-    expect(new Map(saved(withVar, second, 'dxf').header).get('CETRANSPARENCY')).toBe('40');
-  });
+      const doc = readCadDocument(bytes);
+      const vars = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.variableDictionary)!;
+      const v = new DictionaryVariable();
+      v.name = name;
+      v.value = 'ByLayer';
+      vars.add(v);
+      const withVar = writeCadDocument(doc, { format: 'dxf' });
+      const second = open(withVar).model;
+      expect(second.header.get(name)).toBe('ByLayer');
+      edit(second, (b) => b.setHeader(name, '40'));
+      expect(new Map(saved(withVar, second, 'dxf').header).get(name)).toBe('40');
+    },
+  );
 
   it('never saves REVCLOUDGRIPS, a per-user setting the app keeps in the header (M2-42)', () => {
     const bytes = drawing();
