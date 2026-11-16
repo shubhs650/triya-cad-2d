@@ -8,6 +8,8 @@ export interface ShortcutMenuState {
   /** Client pixels: where the right-click was. */
   readonly at: { readonly x: number; readonly y: number };
   readonly items: readonly ShortcutMenuItem[];
+  /** The menu's accessible name (the prompt's `shortcutMenuTitle`). */
+  readonly title: string;
 }
 
 class ShortcutMenu {
@@ -25,8 +27,9 @@ class ShortcutMenu {
     doc: number,
     at: { readonly x: number; readonly y: number },
     items: readonly ShortcutMenuItem[],
+    title = 'Grip options',
   ): void {
-    this.#set({ doc, at, items });
+    this.#set({ doc, at, items, title });
   }
 
   close(): void {

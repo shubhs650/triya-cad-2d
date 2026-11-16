@@ -1,3 +1,6 @@
+// M4-05 part 3: a click inside a table cell selects it, Shift+click the cells up to another, and
+// the right-click menu (AutoCAD's cell shortcut menu) merges cells, inserts rows and deletes
+// columns.
 // M4-05 part 2: TABLE's Insert Table dialog, the table dragged to its insertion point and the
 // nozzle schedule typed in the cell editor that opens in its title cell, Tab moving from cell
 // to cell.
@@ -8,7 +11,7 @@
 // unit- and corpus-tested in packages/engine and packages/testkit.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, TableGeometry } from '@triya/engine';
-import { activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 import path from 'node:path';
 
@@ -42,6 +45,9 @@ const tables = (page: Page) =>
           columns: g.columnWidths,
           rows: g.rowHeights.map((h) => Math.round(h * 1e4) / 1e4),
           texts: g.cells.map((r) => r.map((c) => c.text)),
+          spans: g.cells.map((r) =>
+            r.map((c) => (c.merged ? '^' : `${c.rowSpan}x${c.columnSpan}`)),
+          ),
           block: inside.map((x) => x.geom.kind).filter((k) => k === 'LINE').length,
         };
       });
@@ -175,4 +181,82 @@ test('TABLE opens Insert Table, drags the table and types its cells', async ({ p
   await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
   await page.waitForTimeout(300);
   await shot('4-schedule-typed.png');
+});
+
+test('a click selects table cells and the right-click menu edits them', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, p(-1, -3), 'Specify opposite corner:');
+  await type(page, p(11, 1), 'Command:');
+  await type(page, '-TABLE', 'Enter number of columns or [Auto] <5>:');
+  await type(page, '4', 'Enter number of rows or [Auto] <1>:');
+  await type(page, '3', 'Specify insertion point or [Style/Width/Height]:');
+  await type(page, p(0, 0), 'Enter text:');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(async () => (await tables(page)).length).toBe(1);
+
+  const view = await viewOf(page);
+  // The centre of cell (row i, column j): 2.5 wide columns, a 0.4533 title, 0.36 rows.
+  const cell = (i: number, j: number) => {
+    const y = i === 0 ? -0.2267 : i === 1 ? -0.6333 : -0.9933 - 0.36 * (i - 2);
+    const s = view.at(O + 1.25 + 2.5 * j, O + y);
+    return { x: box.x + s.x, y: box.y + s.y };
+  };
+  const options =
+    'Enter a table cell option [Text/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  const menu = page.getByRole('menu', { name: 'Table cell options' });
+  const choose = async (item: string) => {
+    await page.mouse.click(cell(3, 2).x, cell(3, 2).y, { button: 'right' });
+    await expect(menu).toBeVisible();
+    await menu.getByRole('menuitem', { name: item }).click();
+    await expect(prompt(page)).toHaveText('Command:');
+  };
+
+  await page.mouse.click(cell(2, 1).x, cell(2, 1).y);
+  await expect(prompt(page)).toHaveText(options);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(cell(3, 2).x, cell(3, 2).y);
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(300);
+  await shot('5-cells-selected.png');
+  await page.mouse.click(cell(3, 2).x, cell(3, 2).y, { button: 'right' });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Unmerge' })).toBeDisabled();
+  await shot('6-table-cell-menu.png');
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await choose('Merge All');
+  await expect
+    .poll(async () => (await tables(page))[0]?.spans.slice(2, 4))
+    .toEqual([
+      ['1x1', '2x2', '^', '1x1'],
+      ['1x1', '^', '^', '1x1'],
+    ]);
+
+  await page.mouse.click(cell(4, 0).x, cell(4, 0).y);
+  await expect(prompt(page)).toHaveText(options);
+  await choose('Insert Rows Below');
+  await expect
+    .poll(async () => (await tables(page))[0]?.rows)
+    .toEqual([0.4533, 0.36, 0.36, 0.36, 0.36, 0.36]);
+
+  await page.mouse.click(cell(5, 3).x, cell(5, 3).y);
+  await expect(prompt(page)).toHaveText(options);
+  await choose('Delete Columns');
+  await expect.poll(async () => (await tables(page))[0]?.columns).toEqual([2.5, 2.5, 2.5]);
+  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
+  await page.waitForTimeout(300);
+  await shot('7-merged-row-inserted-column-deleted.png');
 });

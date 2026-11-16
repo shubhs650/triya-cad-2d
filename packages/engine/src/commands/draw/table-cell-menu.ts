@@ -142,6 +142,7 @@ export function tableCellCommand(start?: {
           // A click picks a cell where it is, not where an object snap would take it.
           osnap: 0,
           shortcutMenu: menu,
+          shortcutMenuTitle: 'Table cell options',
         });
         if (a.kind === 'point') {
           const cell = cellAt(ctx, id, a.point);
