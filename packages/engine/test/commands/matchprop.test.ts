@@ -55,7 +55,7 @@ describe('MATCHPROP', () => {
     expect((bus.prompt as { cursor?: string }).cursor).toBeUndefined();
     await bus.pick({ x: 5, y: 5 });
     expect(log).toContain(
-      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Dim Text Hatch Polyline Viewport Material Multileader',
+      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Dim Text Hatch Polyline Viewport Table Material Multileader',
     );
     expect(bus.promptText).toBe('Select destination object(s) or [Settings]:');
     // The paintbrush beside the pickbox (M3-16), only while destinations are picked.
@@ -279,7 +279,7 @@ describe('matched properties', () => {
 
   it('lists the settings left on', () => {
     expect(activeSettingsLine({ ...ALL_MATCH_SETTINGS, hatch: false, dimension: false })).toBe(
-      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Text Polyline Viewport Material Multileader',
+      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Text Polyline Viewport Table Material Multileader',
     );
   });
 });

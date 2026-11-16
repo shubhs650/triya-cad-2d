@@ -173,6 +173,8 @@ describe('palette search', () => {
       // M4-05 part 3: table cells selected, the Table Cell menu.
       'TABLECELL',
       'TABLEDIT',
+      // M4-05 part 5: the Table Style dialog.
+      'TABLESTYLE',
       'TEXT',
       'TEXTEDIT',
       'TEXTTOFRONT',
