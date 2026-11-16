@@ -483,6 +483,7 @@ describe('mapHeader', () => {
   it('lists the drawing’s annotation scales with their values, those with no ratio left out', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     const scales = doc.rootDictionary!.get(CadDictionary.acadScaleList) as CadDictionary;
+    const handles = new Map<string, string>();
     for (const [key, name, paper, drawing] of [
       ['A0', '1:1', 1, 1],
       ['A1', '1:50', 1, 50],
@@ -492,10 +493,13 @@ describe('mapHeader', () => {
       s.paperUnits = paper;
       s.drawingUnits = drawing;
       scales.addByKey(key, s);
+      handles.set(name, s.handle.toString(16).toUpperCase());
     }
+    // With each SCALE's handle, which annotative objects' representations name (M4-01).
+    const handleOf = (name: string) => handles.get(name)!;
     expect(mapHeader(doc).meta.annotationScales).toEqual([
-      { name: '1:1', value: 1 },
-      { name: '1:50', value: 0.02 },
+      { name: '1:1', value: 1, handle: handleOf('1:1') },
+      { name: '1:50', value: 0.02, handle: handleOf('1:50') },
     ]);
   });
 

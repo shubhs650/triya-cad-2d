@@ -7,3 +7,4 @@ export * from './dimvars';
 export * from './dstyle';
 export * from './radial-extension';
 export * from './table';
+export * from './linear-jog';

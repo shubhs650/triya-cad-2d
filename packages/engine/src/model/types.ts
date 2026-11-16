@@ -2035,4 +2035,6 @@ export interface AnnotationScale {
   readonly name: string;
   /** Paper units per drawing unit (`CANNOSCALEVALUE`). */
   readonly value: number;
+  /** The SCALE object's handle, which an annotative object's representations name (DXF 340). */
+  readonly handle?: Handle;
 }
