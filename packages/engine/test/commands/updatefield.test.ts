@@ -79,6 +79,8 @@ const attrib = (handle: string, tag: string, value: string, f?: DrawingField): I
   flags: 0,
 });
 
+const notes = field('Rev %<\\_FldIdx 0>%', [['\\AcVar Date \\f "yyyy"', '2020']]);
+
 function setup() {
   const base = sampleInit();
   const model = DocumentModel.create({
@@ -118,6 +120,23 @@ function setup() {
         '56',
         text('2026', field('%<\\_FldIdx 0>%', [['\\AcVar Date \\f "yyyy"', '2026']])),
       ),
+      entityInit('5A', {
+        ...text('2020', field('%<\\_FldIdx 0>%', [['\\AcVar Date \\f "yyyy"', '2020']])),
+        kind: 'ATTDEF',
+        tag: 'YEAR',
+        flags: 0,
+        prompt: 'Year',
+      }),
+      entityInit('5C', {
+        kind: 'INSERT',
+        block: MODEL_SPACE,
+        position: { x: 0, y: 0 },
+        scale: { x: 1, y: 1, z: 1 },
+        rotation: 0,
+        attributes: [
+          { ...attrib('5D', 'NOTES', 'Rev 2020', notes), mtext: mtext('Rev 2020', notes) },
+        ],
+      } satisfies InsertGeometry),
     ],
   });
   const view: ViewHost = {
@@ -162,6 +181,18 @@ describe('UPDATEFIELD', () => {
     expect(s.log).toContain('4 field(s) updated.');
     // Text without fields is left as it was.
     expect(s.geom<TextGeometry>('55').value).toBe('No fields here');
+  });
+
+  it('updates an attribute definition and a multiline attribute', async () => {
+    const s = setup();
+    await s.bus.submit('UPDATEFIELD');
+    await s.bus.answer({ kind: 'selection', ids: ['5A', '5C'].map(s.id) });
+    expect(s.geom<TextGeometry>('5A').value).toBe('2026');
+    const a = s.geom<InsertGeometry>('5C').attributes[0]!;
+    // A multiline attribute shows its MTEXT, which takes the new text.
+    expect(a.mtext!.contents).toBe('Rev 2026');
+    expect(a.field!.children[0]!.value).toBe('2026');
+    expect(s.log).toContain('2 field(s) updated.');
   });
 
   it('is undone as one step', async () => {
