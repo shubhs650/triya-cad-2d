@@ -384,7 +384,7 @@ export async function* pickObject(
 }
 
 /** The two ends a line, an arc or the picked polyline segment gives DIMLINEAR/DIMALIGNED. */
-function endsOf(g: EntityGeometry, at: Vec2 | undefined): [Vec2, Vec2] | undefined {
+export function endsOf(g: EntityGeometry, at: Vec2 | undefined): [Vec2, Vec2] | undefined {
   switch (g.kind) {
     case 'LINE':
       return [g.start, g.end];
