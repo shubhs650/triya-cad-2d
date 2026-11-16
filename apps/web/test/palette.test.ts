@@ -122,6 +122,8 @@ describe('palette search', () => {
       'MIRROR',
       'MLEADER',
       'MLEADEREDIT',
+      // M4-04 part 2: the Multileader Style Manager.
+      'MLEADERSTYLE',
       'MOVE',
       'MREDO',
       'MTEXT',
@@ -175,6 +177,8 @@ describe('palette search', () => {
       // M4-05 part 3: table cells selected, the Table Cell menu.
       'TABLECELL',
       'TABLEDIT',
+      // M4-05 part 5: the Table Style dialog.
+      'TABLESTYLE',
       'TEXT',
       'TEXTEDIT',
       'TEXTTOFRONT',

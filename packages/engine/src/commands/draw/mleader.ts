@@ -324,7 +324,7 @@ async function* askContents(
  * when the drawing keeps an entry of that name it does not map (`keptEntryNames`, M2-29) or has
  * a style of that name. Names are compared without regard to case, as AutoCAD's.
  */
-function freeStyleName(model: DocumentModel, base: string): string {
+export function freeStyleName(model: DocumentModel, base: string): string {
   const taken = new Set(
     [
       ...(model.meta.keptEntryNames?.mleaderStyles ?? []),
@@ -344,6 +344,8 @@ export function mleaderCommand(): CommandDef {
   let mode: Mode = 'arrow';
   let settings: MLeaderSettings | undefined;
   let settingsFor: Handle | undefined;
+  /** The style record the settings were taken from: a Modify in MLEADERSTYLE replaces it. */
+  let settingsFrom: MLeaderStyleRecord | undefined;
 
   return {
     name: 'MLEADER',
@@ -367,9 +369,10 @@ export function mleaderCommand(): CommandDef {
         ),
         name: freeStyleName(model, 'Standard'),
       };
-      if (!settings || settingsFor !== style.handle) {
+      if (!settings || settingsFor !== style.handle || settingsFrom !== existing) {
         settings = settingsOf(style);
         settingsFor = style.handle;
+        settingsFrom = existing;
       }
       const scale = style.scale > 0 ? style.scale : 1;
       // Annotative creation is a PRD non-goal (DEC-013, kept by DEC-058): an annotative style's

@@ -3866,6 +3866,26 @@ button {
   margin-top: 0;
 }
 
+/* MLEADERSTYLE's Multileader Style Manager (M4-04 part 2) reuses the DIMSTYLE manager's
+   classes; a check box and the value it turns on share a line. */
+.mleaderstyle-checked {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mleaderstyle-checked > .cad-dialog-check {
+  flex: 0 0 180px;
+  min-width: 0;
+}
+
+.mleaderstyle-checked > select,
+.mleaderstyle-checked > input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
 /* TABLE's Insert Table (M4-05 part 2). */
 .insert-table-dialog {
   width: min(620px, calc(100vw - 32px));
@@ -3923,6 +3943,83 @@ button {
 .insert-table-error {
   margin: 4px 0 0;
   color: var(--chrome-danger, #c42b1c);
+}
+
+/* The Insert Table dialog's table style launcher (M4-05 part 5), beside the style list. */
+.insert-table-group:has(> .insert-table-launcher) {
+  grid-template-columns: 1fr auto;
+}
+
+/* TABLESTYLE's Table Style dialog and its New and Modify Table Style dialog (M4-05 part 5): the
+   manager is laid out as the Dimension Style Manager; the editor's preview and table direction
+   sit beside the cell style tabs, under them when narrow. */
+.cad-dialog.tablestyle-dialog {
+  width: min(600px, calc(100vw - 32px));
+  max-width: min(600px, calc(100vw - 32px));
+}
+
+.tablestyle-preview {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  height: auto;
+  max-height: 180px;
+  border: 1px solid var(--chrome-border);
+  background: var(--canvas-model);
+  color: #fff;
+}
+
+.cad-dialog.tablestyle-editor {
+  width: min(680px, calc(100vw - 32px));
+  max-width: min(680px, calc(100vw - 32px));
+}
+
+.tablestyle-editor-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px 12px;
+  align-items: start;
+}
+
+.tablestyle-editor-body fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 0 8px;
+  border: 1px solid var(--chrome-border);
+}
+
+.tablestyle-editor-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tablestyle-editor-right {
+  min-width: 0;
+}
+
+.tablestyle-tab .cad-dialog-field > span {
+  flex: 0 0 104px;
+  min-width: 0;
+}
+
+.tablestyle-tab .cad-dialog-field select,
+.tablestyle-tab .cad-dialog-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.tablestyle-borders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 4px;
+}
+
+.tablestyle-hint {
+  margin: 4px 0 0;
+  color: var(--chrome-text-muted);
 }
 
 /* The dimension style preview image (M4-03 part 3): the renderer's picture, on its background. */

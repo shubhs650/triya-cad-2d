@@ -34,7 +34,8 @@ import {
 } from '../../edit/table';
 import { currentProps } from '../../properties/current';
 import type { CommandContext, CommandDef } from '../command';
-import type { InsertTableSettings, Prompt, PromptAnswer } from '../prompt';
+import type { InsertTableSettings, Prompt, PromptAnswer, TableStyleEntry } from '../prompt';
+import { tableStyleDialog } from '../tablestyle';
 import { drawingUnits, formatDistance } from '../units';
 import { editTableCells, tableditCommand } from './table-cells';
 import { tableCellCommand } from './table-cell-menu';
@@ -193,6 +194,19 @@ function settingsProblem(s: InsertTableSettings): string | undefined {
   return undefined;
 }
 
+/** The table styles the Insert Table dialog lists: the drawing's, else the Standard it gets. */
+function insertTableStyles(ctx: CommandContext): TableStyleEntry[] {
+  const styles = [...ctx.model.tables.tableStyles.values()];
+  if (styles.length === 0)
+    return [{ name: 'Standard', suppressTitle: false, suppressHeader: false, up: false }];
+  return styles.map((s) => ({
+    name: s.name,
+    suppressTitle: s.suppressTitle,
+    suppressHeader: s.suppressHeader,
+    up: s.flowDirection === 1,
+  }));
+}
+
 /** TABLE, -TABLE and TABLEDIT for one document, TABLE and -TABLE keeping one table's size. */
 export function tableCommands(): CommandDef[] {
   const state: TableSettings = {
@@ -229,22 +243,25 @@ export function tableCommands(): CommandDef[] {
     async *run(ctx) {
       let p = start(ctx);
       if (!p) return;
-      const a = yield ctx.prompt.dialog({
-        message: 'Insert Table',
-        dialog: {
-          type: 'inserttable',
-          settings: dialogSettings(state, p.style?.name ?? 'Standard', widthOf(p)),
-          styles:
-            ctx.model.tables.tableStyles.size > 0
-              ? [...ctx.model.tables.tableStyles.values()].map((s) => ({
-                  name: s.name,
-                  suppressTitle: s.suppressTitle,
-                  suppressHeader: s.suppressHeader,
-                  up: s.flowDirection === 1,
-                }))
-              : [{ name: 'Standard', suppressTitle: false, suppressHeader: false, up: false }],
-        },
-      });
+      let settings = dialogSettings(state, p.style?.name ?? 'Standard', widthOf(p));
+      let a: PromptAnswer;
+      for (;;) {
+        a = yield ctx.prompt.dialog({
+          message: 'Insert Table',
+          dialog: { type: 'inserttable', settings, styles: insertTableStyles(ctx) },
+        });
+        // The table style launcher (AutoCAD 2024 Help, "Insert Table Dialog Box", Table Style):
+        // the Table Style dialog, then Insert Table again on the style made current there, else
+        // on the one chosen before (Standard if it was deleted or renamed meanwhile).
+        if (a.kind !== 'dialog' || a.action !== 'select' || !a.table) break;
+        const before = currentTableStyle(ctx.model)?.handle;
+        yield* tableStyleDialog(ctx, a.table.style);
+        const now = currentTableStyle(ctx.model);
+        const kept = styleNamed(ctx, a.table.style);
+        const chosen =
+          now && now.handle !== before ? now.name : kept ? kept.name : (now?.name ?? 'Standard');
+        settings = { ...a.table, style: chosen };
+      }
       if (a.kind !== 'dialog' || a.action !== 'ok' || !a.table) return;
       const s = a.table;
       const problem = settingsProblem(s);
