@@ -111,10 +111,10 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | DIMANGULAR | DAN | 1 | Quadrant | x (#241: two lines, an arc, a circle and a second point, or three points; Mtext, Text, Angle. #276: Quadrant, the angle measured fixed whatever the location, the text kept at a location outside it with the arc carried on to it) |
 | DIMCONTINUE | DCO | 1 | Select, Undo | x (#241: from the last linear, aligned or three-point angular dimension made, or one selected (its extension line nearest the pick). #276: from an ordinate ("Specify feature location", same origin and axis, leaders ending in line) or a two-line angular dimension (round the lines' meeting point); in the base's style and overrides, as DIMCONTINUEMODE 1. M3-05 part 4 (#412): started from a dimension line grip's Continue Dimension, from the extension line at that end; M3-05 part 7 (#422): from an angular dimension's arc end grip and an ordinate dimension's leader end grip too) |
 | DIMBASELINE | DBA | 1 | Select, Undo | x (#241: as DIMCONTINUE, each one DIMDLI further out; #276: ordinate and two-line angular bases too; M3-05 part 4 (#412): started from a dimension line grip's Baseline Dimension; M3-05 part 7 (#422): from an angular dimension's arc end grip and an ordinate dimension's leader end grip too) |
-| DIMORDINATE | DOR | 2 | X/Y datum | |
-| DIMARC | DAR | 2 | Partial, Leader | |
-| DIMJOGGED | DJO, JOG | 2 | | |
-| DIMJOGLINE | DJL | 2 | | |
+| DIMORDINATE | DOR | 2 | X/Y datum | x (#432: feature location, then the leader endpoint dragged; Xdatum, Ydatum, Mtext, Text, Angle; measured from the current UCS's origin along its axes (DXF 51 the UCS's X axis negated), X when the leader runs further along Y than X, as AutoCAD decides; DIMCONTINUE and DIMBASELINE go on from it) |
+| DIMARC | DAR | 2 | Partial, Leader | x (#432: an arc or the arc segment of a polyline picked; Mtext, Text, Angle; Partial between two points on the arc (a point off it refused), in the arc's direction; Leader and No leader offered only over 90°, the leader radial from the dimension arc's middle to the arc; an `ARC_DIMENSION` with the arc's ends, centre and their angles in DXF 40/41) |
+| DIMJOGGED | DJO, JOG | 2 | | x (#432: arc or circle, center location override, "Dimension text =" said before the dimension line location (Mtext, Text, Angle), then the jog location dragged; a `LARGE_RADIAL_DIMENSION`, its text kept where placed) |
+| DIMJOGLINE | DJL | 2 | | x (#432: a linear or aligned dimension; the jog where picked (onto the dimension line) or, at Enter, halfway from the first extension line to the text, in `ACAD_DSTYLE_DIMJAG_POSITION` xdata (APPID registered once), a jog already there moved; Remove takes it off) |
 | QDIM | — | 2 | | |
 | DIMSPACE / DIMBREAK | — | 2 | | |
 | DIMEDIT / DIMTEDIT | DED / DIMTED | 2 | Home, New, Rotate, Oblique; text position | |

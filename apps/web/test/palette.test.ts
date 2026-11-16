@@ -61,10 +61,15 @@ describe('palette search', () => {
       'DDPTYPE',
       'DIMALIGNED',
       'DIMANGULAR',
+      // M4-02 part 1: DIMARC, DIMJOGGED, DIMJOGLINE and DIMORDINATE.
+      'DIMARC',
       'DIMBASELINE',
       'DIMCONTINUE',
       'DIMDIAMETER',
+      'DIMJOGGED',
+      'DIMJOGLINE',
       'DIMLINEAR',
+      'DIMORDINATE',
       'DIMRADIUS',
       // M4-03: the Dimension Style Manager.
       'DIMSTYLE',
