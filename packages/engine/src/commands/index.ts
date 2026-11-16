@@ -28,6 +28,13 @@ export {
   type UnitsSettings,
 } from './drawing-units';
 export { rayCommand, xlineCommand } from './draw/xline';
+export {
+  dimStyleRequest,
+  dimstyleCommand,
+  type DimStyleAction,
+  type DimStyleRequest,
+  type DimStyleRow,
+} from './dimstyle';
 export * from './view/host';
 export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale } from './view/zoom';
 export { viewCommand, viewNameMatches } from './view/named-view';

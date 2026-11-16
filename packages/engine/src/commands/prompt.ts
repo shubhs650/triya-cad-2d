@@ -18,6 +18,7 @@ import type { MatchSettings } from '../properties/match';
 import type { CommandPreviewSource } from './command-preview';
 import type { DragPreview } from './drag';
 import type { UnitsSettings } from './drawing-units';
+import type { DimStyleAction, DimStyleRequest } from './dimstyle';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -628,6 +629,8 @@ export type DialogRequest =
       readonly settings: UnitsSettings;
       readonly direction?: true;
     }
+  /** DIMSTYLE's Dimension Style Manager (M4-03). */
+  | DimStyleRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -813,6 +816,8 @@ export type PromptAnswer =
        * Drawing Units' settings as OK (or Direction Control's Pick an angle, `select`) closed it.
        */
       readonly units?: UnitsSettings;
+      /** A Dimension Style Manager action (DIMSTYLE, M4-03), sent with `apply`. */
+      readonly dimstyle?: DimStyleAction;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

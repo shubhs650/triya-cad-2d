@@ -12,7 +12,9 @@ import {
   applyToReplica,
   PromptBus,
   builtinCommands,
+  dialogVars,
   dimVars,
+  setField,
   propertySheet,
   regenerateDimensions,
   type BusEvent,
@@ -419,5 +421,33 @@ describe('blocklessDimensionBlocks: a block in the saved file only (M2-30 part 2
   it('leaves out a dimension whose text cannot be measured', async () => {
     const s = setup({ measures: false });
     expect(await s.bus.blocklessDimensionBlocks()).toBeUndefined();
+  });
+});
+
+describe("DIMSTYLE's Modify redraws the style's dimensions at once (M4-03)", () => {
+  it('redraws them while the manager stays open, once, in the command’s one undo step', async () => {
+    const s = setup();
+    await s.bus.submit('DIMSTYLE');
+    const standard = s.model.tables.dimStyles.get(STANDARD)!;
+    await s.bus.answer({
+      kind: 'dialog',
+      action: 'apply',
+      dimstyle: {
+        op: 'modify',
+        name: 'Standard',
+        vars: setField(dialogVars(standard.vars), 'DIMTXT', 0.5),
+      },
+    });
+    expect(s.bus.prompt?.kind).toBe('dialog');
+    expect(s.text(DIM)).toMatchObject({ height: 0.5 });
+    expect(s.text(BLOCKLESS)).toMatchObject({ height: 0.5 });
+    const asked = s.asked.length;
+    await s.bus.answer({ kind: 'dialog', action: 'ok' });
+    // Not drawn a second time as the command ends.
+    expect(s.asked.length).toBe(asked);
+    expect(s.bus.undo.state.undoable).toBe(1);
+    await s.bus.submit('U');
+    // The block as the file had it, which held no text.
+    expect(s.text(DIM)).toBeUndefined();
   });
 });

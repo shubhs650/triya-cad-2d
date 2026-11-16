@@ -31,6 +31,7 @@ import { splineditCommand } from './modify/splinedit';
 import { overkillCommand } from './modify/overkill';
 import { DRAFTING_SETTINGS_COMMANDS } from './drafting-settings';
 import { UNITS_COMMANDS } from './drawing-units';
+import { dimstyleCommand } from './dimstyle';
 import { SNAP_GRID_COMMANDS } from './snap-grid';
 import { UCS_COMMANDS } from './ucs';
 import { changeCommand, chpropCommand } from './modify/chprop';
@@ -119,6 +120,7 @@ export function builtinCommands(): CommandRegistry {
     ...PALETTE_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
     ...UNITS_COMMANDS.map((make) => make()),
+    dimstyleCommand(),
     ...SNAP_GRID_COMMANDS.map((make) => make()),
     ...UCS_COMMANDS.map((make) => make()),
     underlayLayersCommand(),
