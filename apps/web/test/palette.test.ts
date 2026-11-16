@@ -21,6 +21,8 @@ describe('palette search', () => {
     const zoom = commandItems(builtinCommands()).find((i) => i.id === 'ZOOM');
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
+      // M4-05: a table on the command line.
+      '-TABLE',
       // M3-09: the Drawing Units questions at the command line.
       '-UNITS',
       'AIMLEADEREDITADD',

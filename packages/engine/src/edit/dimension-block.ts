@@ -28,7 +28,11 @@ export interface RegeneratedParts {
 }
 
 /** The layer named `name` (any case), as the change being built sees the drawing. */
-function layerNamed(b: ChangeSetBuilder, model: DocumentModel, name: string): Handle | undefined {
+export function layerNamed(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  name: string,
+): Handle | undefined {
   for (const l of model.tables.layers.values()) {
     if (l.name.toUpperCase() === name && b.tableRecord('layers', l.handle)) return l.handle;
   }
@@ -36,7 +40,7 @@ function layerNamed(b: ChangeSetBuilder, model: DocumentModel, name: string): Ha
 }
 
 /** Layer DEFPOINTS, made like layer 0 but not plotted when the drawing has none. */
-function defpointsLayer(b: ChangeSetBuilder, model: DocumentModel, zero: Handle): Handle {
+export function defpointsLayer(b: ChangeSetBuilder, model: DocumentModel, zero: Handle): Handle {
   const found = layerNamed(b, model, 'DEFPOINTS');
   if (found !== undefined) return found;
   const z = b.tableRecord('layers', zero)!;
