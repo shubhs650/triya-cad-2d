@@ -42,6 +42,7 @@ import type {
   TextEditorColumns,
   TextEditorRequest,
 } from '@triya/engine';
+import { FIELD_INSERT } from '@triya/engine';
 import { aciRgb, worldToScreen, type FontSources } from '@triya/render';
 import {
   contentOf,
@@ -396,6 +397,7 @@ function paint(
   height: number,
   first: readonly string[],
   measurement: string | undefined,
+  fields?: Readonly<Record<string, string>>,
 ): void {
   const paragraphs: HTMLElement[] = [paragraphBox(first, false)];
   for (const s of spans) {
@@ -432,9 +434,10 @@ function paint(
       el.dataset['field'] = JSON.stringify(s);
       el.contentEditable = 'false';
       el.className = 'mtext-field';
-      // A dimension's measurement shows as itself (M2-31 part 2); a field as AutoCAD shows one
-      // it has not evaluated.
-      el.textContent = s.code === MEASUREMENT ? (measurement ?? '<>') : '----';
+      // A dimension's measurement shows as itself (M2-31 part 2); a field by its value (M4-10
+      // part 2), or as AutoCAD shows one it has not evaluated.
+      el.textContent =
+        s.code === MEASUREMENT ? (measurement ?? '<>') : (fields?.[s.code] ?? '----');
     }
     box.append(el);
   }
@@ -912,7 +915,7 @@ function MTextBox({
     setSpacingShown(spacingOf(codes));
   };
   const commit = (next: MTextSpan[], a: number, b = a) => {
-    paint(root.current!, next, request.height, first.current, request.measurement);
+    paint(root.current!, next, request.height, first.current, request.measurement, request.fields);
     refit();
     root.current!.focus();
     select(root.current!, a, b);
@@ -984,6 +987,22 @@ function MTextBox({
     if (stacked) commit(stacked.spans, stacked.caret);
     else commit(next, a + len);
   };
+  /**
+   * Insert Field (Ctrl+F, the toolbar's Field button; M4-10 part 2): the editor closes with the
+   * field's place marked in the selection's stead, the Field dialog opens, and the editor opens
+   * again with the field made there.
+   */
+  const insertField = () => {
+    if (!request.fields) return;
+    const [a, b] = selectionIn(root.current!) ?? lastSel.current;
+    const s = spans();
+    const format = a === b ? formatAt(s, a) : formatAt(s, a + 1);
+    const next = insertSpans(removeRange(s, a, b), a, [
+      { type: 'field', code: FIELD_INSERT, format },
+    ]);
+    commit(next, a + 1);
+    finish();
+  };
   /** A paragraph (or column) break that keeps the formatting of the paragraph it is typed in. */
   const breakHere = (end?: 'column') => {
     const [a] = selectionIn(root.current!) ?? lastSel.current;
@@ -1021,7 +1040,14 @@ function MTextBox({
   useEffect(() => {
     const el = root.current!;
     el.dataset['para'] = JSON.stringify(first.current);
-    paint(el, initial.current?.spans ?? [], request.height, first.current, request.measurement);
+    paint(
+      el,
+      initial.current?.spans ?? [],
+      request.height,
+      first.current,
+      request.measurement,
+      request.fields,
+    );
     if (initial.current) {
       el.focus();
       const end = initial.current.spans.reduce(
@@ -1210,6 +1236,10 @@ function MTextBox({
       e.preventDefault();
       done.current = true;
       cancel(doc);
+    } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+      if (!request.fields) return;
+      e.preventDefault();
+      insertField();
     } else if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const t = TOGGLES.find((x) => x.shortcut === e.key.toLowerCase());
       if (t && (ttf || (t.key !== 'bold' && t.key !== 'italic'))) {
@@ -1266,6 +1296,17 @@ function MTextBox({
         >
           a⁄b
         </button>
+        {request.fields && (
+          <button
+            type="button"
+            aria-label="Insert Field"
+            title="Insert Field (Ctrl+F)"
+            className="mtext-tool mtext-tool-field"
+            onClick={insertField}
+          >
+            %&lt;&gt;
+          </button>
+        )}
         <select
           aria-label="Font"
           title="Font"

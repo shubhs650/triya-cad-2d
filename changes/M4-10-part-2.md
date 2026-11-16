@@ -1,0 +1,1 @@
+- M4-10 part 2 (#463): FIELD opens the Field dialog (dates, file name, an object's area or length, plot scale, page setup, system variables, with a live preview) and places the field as multiline text; Insert Field (Ctrl+F) puts a field into the multiline text editor; fields made in Triya save as AutoCAD keeps them.

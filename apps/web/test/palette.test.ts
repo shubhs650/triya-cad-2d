@@ -107,6 +107,8 @@ describe('palette search', () => {
       'EXPORT',
       'EXPORTPDF',
       'EXTEND',
+      // M4-10 part 2: the Field dialog.
+      'FIELD',
       'FILLET',
       'FILTER',
       'FIND',

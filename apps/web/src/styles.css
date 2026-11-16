@@ -4381,6 +4381,61 @@ button {
   }
 }
 
+/* FIELD's Field dialog (M4-10 part 2): Field category and Field names on the left, the field's
+   format beside them, Preview and Field expression below (stacked when narrow). */
+.cad-dialog.field-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.field-dialog-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.field-dialog-names,
+.field-dialog-format {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-dialog-list {
+  display: grid;
+  gap: 2px;
+}
+
+.field-dialog-list select,
+.field-dialog-expression textarea {
+  width: 100%;
+}
+
+.field-dialog-radios {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.field-dialog-expression {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.field-dialog-expression textarea {
+  font-family: var(--mono, monospace);
+  resize: none;
+}
+
+@media (max-width: 520px) {
+  .field-dialog-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* TOLERANCE's Geometric Tolerance (M4-11): six columns of symbol boxes and values, two rows;
    the Symbol and Material Condition pickers a grid of symbol boxes. */
 .cad-dialog.tolerance-dialog {
