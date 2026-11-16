@@ -118,6 +118,8 @@ describe('palette search', () => {
       'GROUPEDIT',
       // M4-07 part 1: HATCH and -HATCH on the command line.
       'HATCH',
+      // M4-07 part 4: HATCHEDIT and -HATCHEDIT.
+      'HATCHEDIT',
       'HATCHTOBACK',
       'ID',
       'JOIN',

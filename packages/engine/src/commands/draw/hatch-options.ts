@@ -147,7 +147,7 @@ export const USE_CURRENT = 'use current';
 const CURRENT_OPTION = '. (use current)';
 const NONE_OPTION = '. (none)';
 
-const DRAW_ORDERS: readonly [HatchDrawOrder, string][] = [
+export const DRAW_ORDERS: readonly [HatchDrawOrder, string][] = [
   ['none', 'do Not assign'],
   ['back', 'send to Back'],
   ['front', 'bring to Front'],
@@ -524,9 +524,13 @@ async function* gradientColors(ctx: CommandContext, s: HatchSettings): Sub<void>
 }
 
 /** -HATCH LAyer (HPLAYER): a layer the drawing has, or one the hatch will make. */
-export async function* hatchLayer(ctx: CommandContext, s: HatchSettings): Sub<void> {
+export async function* hatchLayer(
+  ctx: CommandContext,
+  s: HatchSettings,
+  message = 'Enter layer name for new hatch objects or',
+): Sub<void> {
   const a = yield ctx.prompt.string({
-    message: 'Enter layer name for new hatch objects or',
+    message,
     options: [CURRENT_OPTION],
     defaultLabel: s.layer ?? USE_CURRENT,
     spaces: true,
@@ -545,9 +549,10 @@ export async function* hatchLayer(ctx: CommandContext, s: HatchSettings): Sub<vo
 export async function* hatchTransparency(
   ctx: CommandContext,
   current: string,
+  message = 'Enter transparency value for new hatch objects or',
 ): Sub<string | undefined> {
   const a = yield ctx.prompt.string({
-    message: 'Enter transparency value for new hatch objects or',
+    message,
     options: ['ByLayer', 'ByBlock', CURRENT_OPTION],
     defaultLabel: current,
   });

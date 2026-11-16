@@ -112,6 +112,13 @@ export {
   type BackgroundColor,
 } from './hatch-background';
 export { retainedBoundary } from './hatch-retain';
+export {
+  hatchAreas,
+  loopCurves,
+  loopSamples,
+  passesThrough,
+  type HatchArea,
+} from './hatch-separate';
 export * from './text-justify';
 export * from './text-align';
 export * from './find-text';
