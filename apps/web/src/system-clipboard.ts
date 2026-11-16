@@ -6,8 +6,12 @@
 // clipboard first, so whatever was copied last is what pastes:
 // - Triya's format from another window: those objects (another drawing's: PASTEORIG takes them);
 //   from this window: its own Clipboard, which knows the drawing they came from;
+// - a spreadsheet's cells (M4-06): its HTML table (text/html, which Excel, LibreOffice Calc and
+//   Google Sheets write beside the tab-separated rows, with the merged ranges) or a CSV file's
+//   text (text/csv), read into cells (engine edit/spreadsheet.ts) that PASTECLIP pastes as a
+//   table; HTML without a table is left for its text;
 // - text from another app: PASTECLIP pastes it as multiline text (AutoCAD 2024 Help,
-//   "PASTECLIP");
+//   "PASTECLIP"), or as a table when it is a spreadsheet's tab-separated rows (M4-06);
 // - a picture from another app: AutoCAD pastes it as an OLE object; Triya pastes it as a raster
 //   image (M2-54, DEC-056), whose PNG the app keeps on this device (pasted-pictures.ts). The
 //   browser hands other apps' pictures over as PNG only; anything else is refused with a reason;
@@ -20,6 +24,8 @@
 // web app's paste of what another app copied does. Nothing here touches the network.
 import {
   clipboardData,
+  csvCells,
+  htmlTableCells,
   readClipboardData,
   type Clipboard,
   type ClipboardPicture,
@@ -150,6 +156,14 @@ export class AppClipboard {
         if (!found) return { ok: false, message: OTHER_VERSION };
         if (held && found.source === held.source) return own();
         return { ok: true, clipboard: found.clipboard, sameDrawing: false };
+      }
+      if (item.types.includes('text/html')) {
+        const cells = htmlTableCells(await (await item.get('text/html')).text());
+        if (cells) return { ok: true, cells };
+      }
+      if (item.types.includes('text/csv')) {
+        const cells = csvCells(await (await item.get('text/csv')).text());
+        if (cells) return { ok: true, cells };
       }
       if (item.types.includes('text/plain')) {
         return { ok: true, text: await (await item.get('text/plain')).text() };

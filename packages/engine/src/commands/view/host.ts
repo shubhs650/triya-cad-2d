@@ -9,6 +9,7 @@ import type { EntityId } from '../../model/entity-ids';
 import type { Color, HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 import type { ClipboardPicture } from '../../edit/picture';
+import type { SheetCells } from '../../edit/spreadsheet';
 import type { UndoView } from '../undo';
 import type { UnderlayLayersInfo } from '../../edit/underlay-layers';
 import type { EnclosedSpace } from '../inquiry/quick';
@@ -432,6 +433,12 @@ export type ViewReply =
        * copied, which the app keeps as a file of this name: PASTECLIP pastes it as an image.
        */
       readonly picture?: ClipboardPicture;
+      /**
+       * A spreadsheet's cells another app put on the system clipboard (M4-06), read from its
+       * HTML table or CSV text, newer than any objects copied: PASTECLIP pastes them as a table.
+       * (Tab-separated rows come as `text`, which PASTECLIP reads itself.)
+       */
+      readonly cells?: SheetCells;
       /** What `plotSetup` found (-PLOT, M2-17 part 5). */
       readonly plotSetup?: PlotScriptSetup;
       /** What `hatchPattern` placed (M2-35 part 3). */
