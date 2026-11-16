@@ -274,11 +274,12 @@ export function findCommand(): CommandDef {
         ctx.select(h.space === ctx.space ? [h.target] : []);
       };
       /** The next match from `at`; says so at the end, or when there is none. */
-      const step = async (at: number) => {
+      const step = async (at: number, none = NOT_FOUND) => {
         const all = hits ?? [];
         if (all.length === 0) {
           current = undefined;
-          note = NOT_FOUND;
+          note = none;
+          ctx.select([]);
         } else if (at >= all.length) {
           current = undefined;
           note = FINISHED;
@@ -357,7 +358,8 @@ export function findCommand(): CommandDef {
               const after = h.match.start + settings.replace.length;
               const next = searched();
               while (at < next.length && same(next[at]!) && next[at]!.match.start < after) at++;
-              await step(at);
+              // The last one replaced: the search has finished, not failed.
+              await step(at, FINISHED);
               continue;
             }
             case 'replaceAll': {

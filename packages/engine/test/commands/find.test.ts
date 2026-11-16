@@ -375,6 +375,16 @@ describe('FIND', () => {
     expect(s.dialog()!.results![s.dialog()!.current!]).toMatchObject({ objectType: 'Attribute' });
   });
 
+  it('replacing the last match finishes the search', async () => {
+    const s = setup();
+    await s.bus.submit('FIND');
+    await s.press({ op: 'find' }, { find: 'back door', replace: 'REAR GATE' });
+    await s.press({ op: 'replace' });
+    expect(s.geom<MTextGeometry>('51').contents).toBe('{\\fArial|b1;Door} and door\\PREAR GATE');
+    expect(s.dialog()).toMatchObject({ note: FINISHED });
+    expect(s.selected()).toEqual([]);
+  });
+
   it('Replace with nothing shown finds the first; a locked match is skipped', async () => {
     const s = setup();
     await s.bus.submit('FIND');
