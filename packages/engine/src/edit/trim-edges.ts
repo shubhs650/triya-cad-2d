@@ -298,7 +298,7 @@ export function hatchBoundary(g: HatchGeometry): Curve[] {
  * One edge of a hatch loop. A clockwise arc or ellipse edge stores its angles negated (DXF 73
  * = 0), so it sweeps counter-clockwise from −end to −start, as `hatchBounds` reads it.
  */
-function hatchEdgeCurve(e: HatchEdge): Curve | undefined {
+export function hatchEdgeCurve(e: HatchEdge): Curve | undefined {
   switch (e.type) {
     case 'line':
       return e.start.x === e.end.x && e.start.y === e.end.y
