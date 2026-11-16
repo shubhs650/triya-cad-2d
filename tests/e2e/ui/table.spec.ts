@@ -1,3 +1,6 @@
+// M4-05 part 2: TABLE's Insert Table dialog, the table dragged to its insertion point and the
+// nozzle schedule typed in the cell editor that opens in its title cell, Tab moving from cell
+// to cell.
 // M4-05 part 1: -TABLE in the app, on an empty part of the acadsharp AC1032 sample (its Standard
 // table style, imperial). Four columns and three data rows are inserted at a typed point: the
 // table is drawn from the `*T` block the table engine wrote for it, a title row merged across, a
@@ -38,6 +41,7 @@ const tables = (page: Page) =>
         return {
           columns: g.columnWidths,
           rows: g.rowHeights.map((h) => Math.round(h * 1e4) / 1e4),
+          texts: g.cells.map((r) => r.map((c) => c.text)),
           block: inside.map((x) => x.geom.kind).filter((k) => k === 'LINE').length,
         };
       });
@@ -75,17 +79,100 @@ test('-TABLE inserts a table the table engine draws', async ({ page }) => {
   await type(page, '-TABLE', 'Enter number of columns or [Auto] <5>:');
   await type(page, '4', 'Enter number of rows or [Auto] <1>:');
   await type(page, '3', 'Specify insertion point or [Style/Width/Height]:');
-  await type(page, p(0, 0), 'Command:');
+  await type(page, p(0, 0), 'Enter text:');
+  // The cell editor opens in the title cell; Esc leaves it and keeps the table.
+  await expect(page.getByRole('textbox', { name: 'Multiline text' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
   await expect
     .poll(() => tables(page))
     .toEqual([
-      {
+      expect.objectContaining({
         columns: [2.5, 2.5, 2.5, 2.5],
         rows: [0.4533, 0.36, 0.36, 0.36, 0.36],
         // Six row lines, five column lines and the Defpoints line.
         block: 6 + 5 + 1,
-      },
+      }),
     ]);
   await page.waitForTimeout(300);
   await shot('2-after.png');
+});
+
+test('TABLE opens Insert Table, drags the table and types its cells', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, p(-1, -3), 'Specify opposite corner:');
+  await type(page, p(11, 1), 'Command:');
+
+  await page.keyboard.type('TB');
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Insert Table' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Table style' })).toHaveValue('Standard');
+  await expect(dialog.getByRole('radio', { name: 'Start from empty table' })).toBeChecked();
+  await expect(dialog.getByRole('radio', { name: 'Specify insertion point' })).toBeChecked();
+  await dialog.getByRole('textbox', { name: 'Columns:' }).fill('3');
+  await dialog.getByRole('textbox', { name: 'Data rows:' }).fill('2');
+  // Specify window makes one of each pair Auto.
+  await dialog.getByRole('radio', { name: 'Specify window' }).check();
+  await expect(dialog.getByRole('textbox', { name: 'Column width:' })).toHaveValue('Auto');
+  await expect(dialog.getByRole('textbox', { name: 'Data rows:' })).toHaveValue('Auto');
+  await shot('1-insert-table-dialog.png');
+  await dialog.getByRole('radio', { name: 'Specify insertion point' }).check();
+  await expect(dialog.getByRole('textbox', { name: 'Data rows:' })).toHaveValue('2');
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(prompt(page)).toHaveText('Specify insertion point:');
+
+  // The table follows the cursor until it is placed.
+  const at = { x: box.x + box.width * 0.2, y: box.y + box.height * 0.25 };
+  await page.mouse.move(at.x - 40, at.y - 30);
+  await page.mouse.move(at.x, at.y, { steps: 4 });
+  await page.waitForTimeout(300);
+  await shot('2-dragging-table.png');
+  await page.mouse.click(at.x, at.y);
+  await expect(prompt(page)).toHaveText('Enter text:');
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  const cells = ['NOZZLE SCHEDULE', 'Mark', 'Size', 'Service', 'N1', '2"', 'Inlet', 'N2'];
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  /** Leaves a cell with `key`, then waits for the editor to open in the next. */
+  const leave = async (key: string, typed: string, n: number) => {
+    await page.keyboard.press(key);
+    await expect(log.getByText(`Enter text: ${typed}`, { exact: true })).toHaveCount(n);
+    await expect(prompt(page)).toHaveText('Enter text:');
+    await expect(editor).toBeFocused();
+  };
+  for (const [k, text] of cells.entries()) {
+    await page.keyboard.type(text);
+    if (k === 4) await shot('3-typing-in-cells.png');
+    if (k < cells.length - 1) await leave('Tab', text, 1);
+  }
+  // Right at the end of the text moves on as Tab does.
+  await leave('ArrowRight', 'N2', 1);
+  await page.keyboard.type('3"');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => (await tables(page))[0]?.texts)
+    .toEqual([
+      ['NOZZLE SCHEDULE', '', ''],
+      ['Mark', 'Size', 'Service'],
+      ['N1', '2"', 'Inlet'],
+      ['N2', '3"', ''],
+    ]);
+  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
+  await page.waitForTimeout(300);
+  await shot('4-schedule-typed.png');
 });

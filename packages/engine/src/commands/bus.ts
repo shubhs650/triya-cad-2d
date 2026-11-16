@@ -108,6 +108,8 @@ export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
   DIMENSION: 'TEXTEDIT',
   ARC_DIMENSION: 'TEXTEDIT',
   LARGE_RADIAL_DIMENSION: 'TEXTEDIT',
+  // A table opens the cell double-clicked in the In-Place Text Editor (M4-05 part 2).
+  ACAD_TABLE: 'TABLEDIT',
 };
 
 /**

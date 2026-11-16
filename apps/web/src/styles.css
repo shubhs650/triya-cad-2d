@@ -3815,3 +3815,62 @@ button {
   flex-direction: column;
   gap: 2px;
 }
+
+/* TABLE's Insert Table (M4-05 part 2). */
+.insert-table-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.insert-table-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px 12px;
+}
+
+.insert-table-group {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  border: 1px solid var(--chrome-border);
+  padding: 6px 8px 8px;
+}
+
+.insert-table-group > legend {
+  padding: 0 4px;
+}
+
+.insert-table-pair {
+  display: grid;
+  gap: 6px;
+}
+
+.insert-table-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.insert-table-field > span {
+  min-width: 96px;
+}
+
+.insert-table-field input {
+  width: 7em;
+}
+
+.insert-table-unit {
+  justify-self: end;
+  color: var(--chrome-text-muted);
+}
+
+.insert-table-preview {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  color: var(--chrome-text);
+}
+
+.insert-table-error {
+  margin: 4px 0 0;
+  color: var(--chrome-danger, #c42b1c);
+}

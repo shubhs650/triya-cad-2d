@@ -84,6 +84,8 @@ import {
   paragraphAt,
   paragraphCodes,
   paragraphIndex,
+  cellMoveFor,
+  type CellMove,
   removeRange,
   toggleStack,
   withMeasurements,
@@ -906,7 +908,7 @@ function MTextBox({
     lastSel.current = [a, b];
     refresh();
   };
-  const finish = () => {
+  const finish = (cell?: CellMove) => {
     if (done.current) return;
     done.current = true;
     const now = spans();
@@ -946,6 +948,7 @@ function MTextBox({
         value,
         editor: true,
         ...((answered || request.columns) && { columns: answered }),
+        ...(cell && { cell }),
       },
     });
   };
@@ -1118,7 +1121,15 @@ function MTextBox({
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     e.stopPropagation();
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    // A table cell: Tab, Shift+Tab and the arrows at the edge of the text move to another cell.
+    const move =
+      request.cell && e.target === root.current && !e.ctrlKey && !e.altKey && !e.metaKey
+        ? cellMoveFor(e.key, e.shiftKey, spans(), ...selection())
+        : undefined;
+    if (move) {
+      e.preventDefault();
+      finish(move);
+    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       finish();
     } else if (e.key === 'Enter' && e.altKey) {
@@ -1274,7 +1285,7 @@ function MTextBox({
           type="button"
           className="mtext-ok"
           title="Close Text Editor (Ctrl+Enter)"
-          onClick={finish}
+          onClick={() => finish()}
         >
           OK
         </button>

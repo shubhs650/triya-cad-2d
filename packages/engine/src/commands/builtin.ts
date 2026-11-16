@@ -15,7 +15,7 @@ import { lastDrawn } from './draw/last-drawn';
 import { lineCommand } from './draw/line';
 import { plineCommand } from './draw/pline';
 import { polygonCommand } from './draw/polygon';
-import { tableCommand } from './draw/table';
+import { tableCommands } from './draw/table';
 import { rectangCommand } from './draw/rectang';
 import { splineCommand } from './draw/spline';
 import { divideCommand, measureCommand } from './draw/divide';
@@ -115,7 +115,7 @@ export function builtinCommands(): CommandRegistry {
     changeCommand(),
     matchpropCommand(),
     revcloudCommand(),
-    tableCommand(),
+    ...tableCommands(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
     ...MLEADER_COMMANDS.map((make) => make()),
