@@ -20,6 +20,7 @@ import {
   settingsOf,
   standardMLeaderStyle,
   type BusEvent,
+  type DocumentInit,
   type HeaderValue,
   type MLeaderStyleAction,
   type MLeaderStyleRecord,
@@ -100,12 +101,19 @@ interface Options {
   header?: [string, HeaderValue][];
   /** No multileader styles at all (a drawing from before R2007). */
   noStyles?: boolean;
+  /** No text styles either (an R1 or R2.5 drawing). */
+  noTextStyles?: boolean;
+  /** Entries the drawing keeps and Triya does not map (M2-29). */
+  kept?: string[];
+  /** More multileaders. */
+  more?: NonNullable<DocumentInit['entities']>;
 }
 
 function setup(o: Options = {}) {
   const base = sampleInit();
   const model = DocumentModel.create({
     ...base,
+    ...(o.kept && { meta: { ...base.meta, keptEntryNames: { mleaderStyles: o.kept } } }),
     header: new Map<string, HeaderValue>([
       ...(base.header ?? []),
       ['$TEXTSTYLE', 'Standard'],
@@ -123,7 +131,9 @@ function setup(o: Options = {}) {
         blockRecord(TAG, 'TAG'),
         blockRecord(PLAIN, 'PLAIN'),
       ],
-      textStyles: [textStyle(STANDARD_TEXT, 'Standard'), textStyle(NARROW_TEXT, 'Narrow')],
+      textStyles: o.noTextStyles
+        ? []
+        : [textStyle(STANDARD_TEXT, 'Standard'), textStyle(NARROW_TEXT, 'Narrow')],
       mleaderStyles: o.noStyles ? [] : [standard, notes, spare],
     },
     blocks: [
@@ -147,6 +157,7 @@ function setup(o: Options = {}) {
               },
               { layer: LAYER_0 },
             ),
+            ...(o.more ?? []),
           ]),
     ],
   });
@@ -518,5 +529,161 @@ describe('Modify Multileader Style fields', () => {
       scaleToLayout: true,
       scale: 1,
     });
+  });
+});
+
+describe('MLEADERSTYLE: what the manager refuses or leaves alone', () => {
+  it('ends on any answer but an action, and ignores an action it does not know', async () => {
+    const s = setup();
+    await s.bus.submit('MLEADERSTYLE');
+    await s.act({ op: 'explode' } as never);
+    expect(s.request().note).toBeUndefined();
+    await s.bus.answer({ kind: 'dialog', action: 'apply' });
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it('does nothing for a style it does not have', async () => {
+    const s = setup();
+    await s.bus.submit('MLEADERSTYLE');
+    for (const a of [
+      { op: 'current', name: 'Nope' },
+      { op: 'modify', name: 'Nope', settings: settings() },
+      { op: 'rename', name: 'Nope', to: 'Yes' },
+      { op: 'delete', name: 'Nope' },
+      { op: 'current', name: 7 },
+    ] as MLeaderStyleAction[]) {
+      await s.act(a);
+      expect(s.request().note).toBeUndefined();
+    }
+    expect(s.model.tables.mleaderStyles.size).toBe(3);
+    expect(s.bus.undo.state.undoable).toBe(0);
+  });
+
+  it('refuses settings it cannot take, and records the drawing lacks', async () => {
+    const s = setup();
+    await s.bus.submit('MLEADERSTYLE');
+    await s.act({
+      op: 'modify',
+      name: 'Notes',
+      settings: { ...settings(), frame: 'yes' } as never,
+    });
+    expect(s.request().note).toBe('Frame text: invalid value.');
+    await s.act({ op: 'new', name: 'X', settings: null as never });
+    expect(s.request().note).toBe('Invalid input.');
+    await s.act({ op: 'modify', name: 'Notes', settings: settings({ textStyle: 'FFFF' }) });
+    expect(s.request().note).toBe('Text style: not in the drawing.');
+    await s.act({ op: 'modify', name: 'Notes', settings: settings({ arrowhead: '_NOPE' }) });
+    expect(s.request().note).toBe('Symbol: not an arrowhead.');
+    await s.act({
+      op: 'modify',
+      name: 'Notes',
+      settings: settings({ contentType: '1', block: '_TagStar' }),
+    });
+    expect(s.request().note).toBe('Source block: not a block the drawing has.');
+    await s.act({ op: 'modify', name: 'Notes', settings: settings({ leaderType: '4' }) });
+    expect(s.request().note).toBe('Type: invalid value.');
+    expect(s.bus.undo.state.undoable).toBe(0);
+  });
+
+  it('names a block, an arrowhead and a linetype the drawing has by handle, none as the default', async () => {
+    const s = setup();
+    await s.bus.submit('MLEADERSTYLE');
+    await s.act({
+      op: 'new',
+      name: 'Plain',
+      settings: settings({ contentType: '1', block: PLAIN, arrowhead: PLAIN, linetype: '' }),
+    });
+    expect(s.styleNamed('Plain')).toMatchObject({ block: PLAIN, arrowhead: PLAIN });
+    // No linetype is the one MLEADER gives a new style (ByBlock, else ByLayer, else Continuous).
+    expect(s.styleNamed('Plain')!.linetype).toBeDefined();
+    // An AutoCAD arrowhead the drawing already has is not added again.
+    await s.act({ op: 'new', name: 'Dots', settings: settings({ arrowhead: '_DOT' }) });
+    const dot = s.blockNamed('_DOT')!.handle;
+    await s.act({ op: 'new', name: 'Dots 2', settings: settings({ arrowhead: '_dot' }) });
+    expect(s.styleNamed('Dots 2')!.arrowhead).toBe(dot);
+    expect([...s.model.blocks.values()].filter((b) => b.name === '_DOT')).toHaveLength(1);
+    // Closed filled: no arrowhead block.
+    await s.act({
+      op: 'modify',
+      name: 'Dots',
+      settings: { ...s.request().styles.find((x) => x.name === 'Dots')!.settings, arrowhead: '' },
+    });
+    expect(s.styleNamed('Dots')!.arrowhead).toBeUndefined();
+  });
+
+  it('refuses a name an unmapped entry keeps, and a rename to the same name does nothing', async () => {
+    const s = setup({ kept: ['Legacy'] });
+    await s.bus.submit('MLEADERSTYLE');
+    await s.act({ op: 'new', name: 'legacy', settings: settings() });
+    expect(s.request().note).toBe('A multileader style with this name already exists.');
+    await s.act({ op: 'rename', name: 'Spare', to: 'Spare' });
+    expect(s.request().note).toBeUndefined();
+    await s.act({ op: 'rename', name: 'Spare', to: 'A|B' });
+    expect(s.request().note).toBe('Invalid multileader style name.');
+    // A style that is not current keeps CMLEADERSTYLE as it was.
+    await s.act({ op: 'rename', name: 'Spare', to: 'Extra' });
+    expect(s.model.header.get('CMLEADERSTYLE')).toBe('Notes');
+    expect(s.bus.undo.state.undoable).toBe(0);
+    await s.bus.answer({ kind: 'dialog', action: 'ok' });
+    expect(s.bus.undo.state.undoable).toBe(1);
+  });
+
+  it('makes the current style current again without an edit', async () => {
+    const s = setup();
+    await s.bus.submit('MLEADERSTYLE');
+    await s.act({ op: 'current', name: 'Notes' });
+    const t = setup({ header: [] });
+    await t.bus.submit('MLEADERSTYLE');
+    await t.act({ op: 'current', name: 'Standard' });
+    expect(t.request().note).toBeUndefined();
+    await s.bus.answer({ kind: 'dialog', action: 'ok' });
+    await t.bus.answer({ kind: 'dialog', action: 'ok' });
+    expect(s.bus.undo.state.undoable).toBe(0);
+    expect(t.bus.undo.state.undoable).toBe(0);
+  });
+
+  it('adds the unsaved Standard when it is made current, and neither renames nor deletes it', async () => {
+    const s = setup({ noStyles: true, header: [] });
+    await s.bus.submit('MLEADERSTYLE');
+    await s.act({ op: 'rename', name: 'Standard', to: 'Other' });
+    expect(s.request().note).toBe('Standard cannot be renamed.');
+    await s.act({ op: 'delete', name: 'Standard' });
+    expect(s.request().note).toBe('Standard cannot be deleted.');
+    expect(s.model.tables.mleaderStyles.size).toBe(0);
+    await s.act({ op: 'current', name: 'Standard' });
+    expect([...s.model.tables.mleaderStyles.values()].map((x) => x.name)).toEqual(['Standard']);
+    expect(s.request().styles[0]!.unsaved).toBeUndefined();
+  });
+
+  it('lists nothing in a drawing without text styles, and makes no style there', async () => {
+    const s = setup({ noStyles: true, noTextStyles: true, header: [] });
+    await s.bus.submit('MLEADERSTYLE');
+    expect(s.request().styles).toEqual([]);
+    expect(s.request().current).toBe('');
+    expect(s.request().selected).toBe('');
+    await s.act({ op: 'new', name: 'Tags', settings: settings({ textStyle: '' }) });
+    expect(s.request().note).toBe(
+      'The drawing has no text style, which a multileader style needs.',
+    );
+    expect(s.model.tables.mleaderStyles.size).toBe(0);
+  });
+
+  it('measures text that must move, and says which multileaders keep their look', async () => {
+    // Text on the left of its landing, right-aligned on it: a new height moves its left side.
+    const left = {
+      ...textLeader(),
+      branches: textLeader().branches.map((b) => ({ ...b, direction: { x: -1, y: 0 } })),
+      text: { ...textLeader().text!, attachment: 3, position: { x: 0, y: 12 } },
+    };
+    const s = setup({
+      more: [entityInit('B2', left), entityInit('B3', { ...textLeader(), annotative: true })],
+    });
+    await s.bus.submit('MLEADERSTYLE');
+    await s.act({ op: 'modify', name: 'Notes', settings: settings({ textHeight: 8 }) });
+    expect(s.asked.some((r) => r.op === 'textWidths')).toBe(true);
+    expect(s.leader('B2').text!.height).toBe(8);
+    expect(s.log).toContain(
+      '1 multileader kept its look: annotative, or its text could not be measured.',
+    );
   });
 });

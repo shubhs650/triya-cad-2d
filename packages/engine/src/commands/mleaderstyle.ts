@@ -218,13 +218,10 @@ function nameProblem(model: DocumentModel, name: string, except?: Handle): strin
   return undefined;
 }
 
-/** Whether the bus brought settings the dialog can give (it takes any object). */
-function wellFormed(s: unknown): s is MLeaderStyleSettings {
-  return (
-    typeof s === 'object' &&
-    s !== null &&
-    mleaderStyleProblem(s as MLeaderStyleSettings) === undefined
-  );
+/** Why the bus brought settings the dialog cannot give (it takes any object); else undefined. */
+function settingsProblem(s: unknown): string | undefined {
+  if (typeof s !== 'object' || s === null) return 'Invalid input.';
+  return mleaderStyleProblem(s as MLeaderStyleSettings);
 }
 
 /**
@@ -267,12 +264,10 @@ function resolveRefs(b: ChangeSetBuilder, model: DocumentModel, s: MLeaderStyleS
   if (s.block !== '') {
     if (model.blocks.has(s.block as Handle)) block = s.block as Handle;
     else {
-      const def =
-        textStyle === undefined ? undefined : builtinMLeaderBlock(s.block, s.textHeight, textStyle);
-      if (def) {
-        const zero = [...model.tables.layers.values()].find((l) => l.name === '0');
-        if (zero) block = addBuiltinMLeaderBlock(b, def, zero.handle).block;
-      }
+      // `refsProblem` let only a built-in name through, and a listed style has a text style.
+      const def = builtinMLeaderBlock(s.block, s.textHeight, textStyle!)!;
+      const zero = [...model.tables.layers.values()].find((l) => l.name === '0')!;
+      block = addBuiltinMLeaderBlock(b, def, zero.handle).block;
     }
   }
   return {
@@ -417,9 +412,8 @@ async function act(
     }
     case 'new': {
       const name = typeof a.name === 'string' ? a.name.trim() : '';
-      if (!wellFormed(a.settings))
-        return { note: mleaderStyleProblem(a.settings) ?? 'Invalid input.' };
-      const problem = nameProblem(model, name) ?? refsProblem(model, a.settings);
+      const problem =
+        settingsProblem(a.settings) ?? nameProblem(model, name) ?? refsProblem(model, a.settings);
       if (problem) return { note: problem };
       if (listedStyles(model).length === 0)
         return { note: 'The drawing has no text style, which a multileader style needs.' };
@@ -438,9 +432,7 @@ async function act(
     case 'modify': {
       const s = styleNamed(model, a.name);
       if (!s) return {};
-      if (!wellFormed(a.settings))
-        return { selected: s.name, note: mleaderStyleProblem(a.settings) ?? 'Invalid input.' };
-      const problem = refsProblem(model, a.settings);
+      const problem = settingsProblem(a.settings) ?? refsProblem(model, a.settings);
       if (problem) return { selected: s.name, note: problem };
       if (s.handle === '') {
         ctx.edit((b) => {
@@ -491,8 +483,10 @@ async function act(
       ctx.edit((b) => b.removeTableRecord('mleaderStyles', s.handle));
       return { selected: current?.name ?? '' };
     }
+    default:
+      // The bus takes any object: an action the manager never sends does nothing.
+      return {};
   }
-  return {};
 }
 
 /** MLEADERSTYLE (MLS): the Multileader Style Manager. */
