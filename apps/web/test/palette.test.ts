@@ -66,6 +66,8 @@ describe('palette search', () => {
       'DIMBASELINE',
       'DIMCONTINUE',
       'DIMDIAMETER',
+      // M4-02 part 3: DIMDISASSOCIATE and DIMREASSOCIATE.
+      'DIMDISASSOCIATE',
       // M4-02 part 2: DIMEDIT, DIMOVERRIDE, DIMSPACE, DIMTEDIT and QDIM.
       'DIMEDIT',
       'DIMJOGGED',
@@ -74,6 +76,7 @@ describe('palette search', () => {
       'DIMORDINATE',
       'DIMOVERRIDE',
       'DIMRADIUS',
+      'DIMREASSOCIATE',
       'DIMSPACE',
       // M4-03: the Dimension Style Manager.
       'DIMSTYLE',
