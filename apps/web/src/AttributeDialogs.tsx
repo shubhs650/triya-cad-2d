@@ -53,6 +53,7 @@ import { FindReplaceDialog } from './FindReplaceDialog';
 import { SpellDialog } from './SpellDialog';
 import { HatchDialog } from './HatchDialog';
 import { FieldDialog } from './FieldDialog';
+import { ToleranceDialog } from './ToleranceDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -140,6 +141,8 @@ export function AttributeDialogs({
       return <HatchDialog key={key} doc={doc.id} request={d} patternSources={patternSources} />;
     case 'field':
       return <FieldDialog key={key} doc={doc.id} request={d} />;
+    case 'tolerance':
+      return <ToleranceDialog key={key} doc={doc.id} request={d} />;
   }
 }
 
