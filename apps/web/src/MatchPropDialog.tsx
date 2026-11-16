@@ -1,8 +1,8 @@
 // MATCHPROP's Property Settings dialog (M3-02 part 5), with AutoCAD 2024's structure and labels
 // (AutoCAD Help, "Property Settings Dialog Box"; UI_SPEC.md §7): Basic Properties and Special
 // Properties, a checkbox each, OK, Cancel and the checkboxes all on or off. Plot Style is greyed
-// in a colour-dependent drawing. Viewport, Table and Center object are shown greyed: MATCHPROP
-// does not copy them yet. Cancel (or Esc) goes back to "Select destination object(s)" with the
+// in a colour-dependent drawing. Table and Center object are shown greyed: MATCHPROP does not
+// copy them yet (M4-05's table engine, M4-08's center marks); Viewport is copied (M3-16). Cancel (or Esc) goes back to "Select destination object(s)" with the
 // settings as they were, as AutoCAD's does.
 import type { DialogRequest, MatchSettings, PromptAnswer } from '@triya/engine';
 import { useState } from 'react';
@@ -30,7 +30,7 @@ const SPECIAL: readonly [keyof MatchSettings | undefined, string][] = [
   ['polyline', 'Polyline'],
   ['material', 'Material'],
   ['text', 'Text'],
-  [undefined, 'Viewport'],
+  ['viewport', 'Viewport'],
   ['multileader', 'Multileader'],
   ['hatch', 'Hatch'],
   [undefined, 'Table'],

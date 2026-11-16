@@ -3,7 +3,7 @@
 //
 //   Select objects:
 //   Enter property to change [Color/LAyer/LType/ltScale/LWeight/Thickness/TRansparency/Material/PLotstyle]:
-//   New color [Truecolor] <BYLAYER>:
+//   New color [Truecolor/COlorbook] <BYLAYER>:
 //
 // CHPROP changes the selected objects' properties one at a time until Enter; each goes through
 // the Properties palette's edit (`applyProperty`), so objects on locked layers are left as the
@@ -13,8 +13,11 @@
 // and block references move to it and are asked their rotation. Its Properties option is
 // CHPROP's, with Elev for the objects' elevation.
 //
-// Annotative (CHPROP) and COlorbook are not offered: making objects annotative is a PRD
-// non-goal (DEC-013), and colour books are chosen from the Properties palette.
+// Annotative (CHPROP) is not offered: making objects annotative is a PRD non-goal (DEC-013).
+// COlorbook (M3-16) asks "Enter Color Book name:" and "Enter color name:" (as -COLOR does);
+// Triya ships no colour books (AutoCAD's .acb files are Autodesk's), so the books offered are
+// those of the colours the drawing holds (`colorBooks`), names matched without regard to case.
+// AutoCAD's messages for a book or colour it cannot find are not documented.
 import { transformObjects } from '../../edit/edit';
 import { moveBy, turnAbout } from '../../edit/similarity';
 import { distance, sub } from '../../geom/vec';
@@ -29,6 +32,7 @@ import type {
   TableName,
   Transparency,
 } from '../../model/types';
+import { colorBooks } from '../../properties/color-books';
 import { namedPlotStyles, thicknessOf } from '../../properties/general';
 import { LINEWEIGHTS, transparencyValue } from '../../properties/sheet';
 import type { CommandContext, CommandDef } from '../command';
@@ -36,6 +40,24 @@ import type { Prompt, PromptAnswer } from '../prompt';
 import { applyProperty } from './property-edit';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
+
+/** COlorbook's two prompts: the colour's palette value, or undefined (Enter, or not found). */
+async function* bookColor(ctx: CommandContext): Sub<string | undefined> {
+  const a = yield ctx.prompt.string({ message: 'Enter Color Book name', spaces: true });
+  const name = (a as { value?: string }).value?.trim() ?? '';
+  if (name === '') return undefined;
+  const book = colorBooks(ctx.model).find((b) => b.name.toUpperCase() === name.toUpperCase());
+  if (!book) {
+    ctx.message(`Color book "${name}" not found.`);
+    return undefined;
+  }
+  const b = yield ctx.prompt.string({ message: 'Enter color name', spaces: true });
+  const color = (b as { value?: string }).value?.trim() ?? '';
+  if (color === '') return undefined;
+  const found = book.colors.find((x) => x.name.toUpperCase() === color.toUpperCase());
+  if (!found) ctx.message(`Color "${color}" not found in color book "${book.name}".`);
+  return found?.value;
+}
 
 const COLOR_NAMES = ['red', 'yellow', 'green', 'cyan', 'blue', 'magenta', 'white'];
 
@@ -49,7 +71,7 @@ export function colorText(c: Color): string {
     case 'aci':
       return COLOR_NAMES[c.index - 1] ?? String(c.index);
     case 'rgb':
-      return `${c.r},${c.g},${c.b}`;
+      return c.bookName ? `${c.bookName}$${c.colorName ?? ''}` : `${c.r},${c.g},${c.b}`;
   }
 }
 
@@ -159,10 +181,15 @@ async function* properties(
         const now = shared(es, (e) => e.color);
         const c = yield ctx.prompt.string({
           message: 'New color',
-          options: ['Truecolor'],
+          options: ['Truecolor', 'COlorbook'],
           ...(now && { defaultLabel: colorText(now) }),
         });
         if (c.kind === 'enter') break;
+        if (c.kind === 'keyword' && c.keyword === 'COlorbook') {
+          const v = yield* bookColor(ctx);
+          if (v) await set('color', v);
+          break;
+        }
         if (c.kind === 'keyword') {
           const rgb = yield ctx.prompt.string({ message: 'Red, Green, Blue' });
           if (rgb.kind !== 'string') break;

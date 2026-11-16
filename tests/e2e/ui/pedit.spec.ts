@@ -2,7 +2,7 @@
 // canvas. On an empty part of the plan a zigzag polyline and a line are drawn. PEDIT turns the
 // polyline into a spline-fit one; CHPROP makes the line red; MATCHPROP takes the line as its
 // source, opens Property Settings (Esc goes back to the prompt, OK keeps what was unticked) and
-// gives the spline the line's colour. The prompts and geometry are unit-tested in
+// gives the spline the line's colour, the canvas's cursor carrying the paintbrush meanwhile. The prompts and geometry are unit-tested in
 // packages/engine/test (commands/pedit.test.ts, commands/chprop.test.ts,
 // commands/matchprop.test.ts, edit/pedit.test.ts); this checks that the app's canvas, bus,
 // engine worker and the dialog carry them.
@@ -99,7 +99,7 @@ test('PEDIT Spline, CHPROP and MATCHPROP with Property Settings', async ({ page 
   await type(page, 'CHPROP', 'Select objects:');
   await click(70, 85);
   await type(page, '', /^Enter property to change \[Color\/LAyer/);
-  await type(page, 'C', 'New color [Truecolor] <BYLAYER>:');
+  await type(page, 'C', 'New color [Truecolor/COlorbook] <BYLAYER>:');
   await type(page, 'red', /^Enter property to change/);
   await type(page, '', 'Command:');
 
@@ -107,12 +107,17 @@ test('PEDIT Spline, CHPROP and MATCHPROP with Property Settings', async ({ page 
   await type(page, 'MA', 'Select source object:');
   await click(70, 85);
   await expect(prompt(page)).toHaveText(DESTINATION);
+  // The paintbrush beside the crosshairs while destinations are picked (M3-16).
+  const canvas = page.locator('canvas[data-cursor]').first();
+  await expect(canvas).toHaveAttribute('data-cursor', / paintbrush$/);
   await page.keyboard.type('S');
   await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog', { name: 'Property Settings' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('checkbox', { name: 'Color' })).toBeChecked();
-  await expect(dialog.getByRole('checkbox', { name: 'Viewport' })).toBeDisabled();
+  // Viewport is copied (M3-16); Table and Center object wait for M4-05 and M4-08.
+  await expect(dialog.getByRole('checkbox', { name: 'Viewport' })).toBeChecked();
+  await expect(dialog.getByRole('checkbox', { name: 'Table' })).toBeDisabled();
   // Esc goes back to the prompt with the settings as they were.
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
@@ -126,6 +131,7 @@ test('PEDIT Spline, CHPROP and MATCHPROP with Property Settings', async ({ page 
   // The spline-fit polyline PEDIT made is the last object.
   await type(page, 'L', DESTINATION);
   await type(page, '', 'Command:');
+  await expect(canvas).not.toHaveAttribute('data-cursor', / paintbrush$/);
   await expect
     .poll(async () => (await drawn(page)).find((e) => e.type === 'POLYLINE')?.color)
     .toEqual({ kind: 'aci', index: 1 });

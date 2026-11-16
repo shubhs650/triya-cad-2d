@@ -35,7 +35,7 @@ describe('CHPROP', () => {
     await bus.script(['']);
     expect(bus.promptText).toBe(PROPS);
     await bus.script(['C']);
-    expect(bus.promptText).toBe('New color [Truecolor] <BYLAYER>:');
+    expect(bus.promptText).toBe('New color [Truecolor/COlorbook] <BYLAYER>:');
     await bus.script(['red']);
     expect(byHandle('30')!.color).toEqual({ kind: 'aci', index: 1 });
     await bus.script(['C', 'T']);
@@ -203,7 +203,7 @@ describe('CHPROP defaults and refusals', () => {
       await bus.script(['CHPROP']);
       await bus.pick({ x: 5, y });
       await bus.script(['', 'C']);
-      expect(bus.promptText).toBe(`New color [Truecolor] <${label}>:`);
+      expect(bus.promptText).toBe(`New color [Truecolor/COlorbook] <${label}>:`);
       await bus.script(['', '']);
     }
     await bus.script(['CHPROP']);
@@ -215,6 +215,45 @@ describe('CHPROP defaults and refusals', () => {
     expect(byHandle('40')!.color).toEqual({ kind: 'byBlock' });
     await bus.script(['']);
     expect(colorFromText('x9')).toBeUndefined();
+  });
+
+  // M3-16: COlorbook (AutoCAD Help, "CHPROP (Command)": "Specifies a color from a loaded color
+  // book"). Triya ships no colour books, so the books are those of the colours the drawing
+  // holds (`colorBooks`); names are matched without regard to case.
+  it('sets a colour-book colour the drawing holds', async () => {
+    const ral = {
+      kind: 'rgb' as const,
+      r: 187,
+      g: 30,
+      b: 16,
+      bookName: 'RAL CLASSIC',
+      colorName: 'RAL 3020',
+    };
+    const { bus, log, byHandle } = setup([[lineAt(30), { color: ral }], lineAt(32)]);
+    await bus.script(['CHPROP']);
+    await bus.pick({ x: 5, y: 30 });
+    await bus.script(['', 'C']);
+    // A book colour shows as its book and name.
+    expect(bus.promptText).toBe('New color [Truecolor/COlorbook] <RAL CLASSIC$RAL 3020>:');
+    await bus.script(['', '']);
+    await bus.script(['CHPROP']);
+    await bus.pick({ x: 5, y: 32 });
+    await bus.script(['', 'C', 'CO']);
+    expect(bus.promptText).toBe('Enter Color Book name:');
+    await bus.script(['ral classic']);
+    expect(bus.promptText).toBe('Enter color name:');
+    await bus.script(['ral 3020']);
+    expect(byHandle('41')!.color).toEqual(ral);
+    await bus.script(['C', 'CO', 'PANTONE']);
+    expect(log).toContain('Color book "PANTONE" not found.');
+    await bus.script(['C', 'CO', 'RAL CLASSIC', 'RAL 9999']);
+    expect(log).toContain('Color "RAL 9999" not found in color book "RAL CLASSIC".');
+    // Enter at either prompt changes nothing.
+    await bus.script(['C', 'CO', '', 'C', 'CO', 'RAL CLASSIC', '']);
+    expect(byHandle('41')!.color).toEqual(ral);
+    expect(bus.promptText).toBe(PROPS);
+    await bus.script(['']);
+    expect(bus.command).toBeUndefined();
   });
 
   it('shows no defaults for objects that differ, and refuses unknown names and values', async () => {

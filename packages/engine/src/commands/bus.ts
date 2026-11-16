@@ -1216,6 +1216,7 @@ export class PromptBus {
       ...(prompt.single && { single: true }),
       ...(prompt.ungrouped && { groups: false as const }),
       ...(prompt.defaultLabel !== undefined && { defaultLabel: prompt.defaultLabel }),
+      ...(prompt.cursor && { cursor: prompt.cursor }),
     });
     this.#showSelection();
     this.#showPrompt();

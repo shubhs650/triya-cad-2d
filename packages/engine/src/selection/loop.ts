@@ -133,6 +133,8 @@ export interface SelectionLoopOptions {
   readonly options?: readonly string[];
   /** What Enter does, shown as `<…>` (DIMANGULAR's `<specify vertex>`, M2-11). */
   readonly defaultLabel?: string;
+  /** The prompt's cursor badge (MATCHPROP's paintbrush, M3-16). */
+  readonly cursor?: 'paintbrush';
   /** Objects on locked layers are refused (a command that edits). */
   readonly editable?: boolean;
   /** The pre-selection at `Command:`, which shows no prompt but its window's corner. */
@@ -292,6 +294,7 @@ export class SelectionLoop {
         this.#o.defaultLabel !== undefined && {
           defaultLabel: this.#o.defaultLabel,
         }),
+      ...(this.#o.cursor && { cursor: this.#o.cursor }),
     };
   }
 

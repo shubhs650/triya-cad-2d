@@ -2,8 +2,10 @@
 // the drawing every spline a drafter can select in model space is, in turn, given a moved fit
 // point (or control vertex), a control vertex added, its order raised, closed or opened, or a
 // kink (or a weight); on a second copy every line, arc, circle and lightweight polyline is
-// drawn twice and OVERKILL, with AutoCAD's default settings, takes every copy out again. Both
-// save as AC1032 DXF (DEC-047) and reopen with each object as SPLINEDIT and OVERKILL left it.
+// drawn twice and OVERKILL, with AutoCAD's default settings, takes every copy out again; on a
+// third every lightweight polyline gets a line drawn before it on its first straight segment,
+// and OVERKILL breaks the polyline there (M3-16). All save as AC1032 DXF (DEC-047) and reopen
+// with each object as SPLINEDIT and OVERKILL left it.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -148,9 +150,70 @@ function splineEdit(g: SplineGeometry, i: number, tol: ReturnType<typeof toleran
 
 const DOUBLED = new Set(['LINE', 'ARC', 'CIRCLE', 'LWPOLYLINE']);
 
+/**
+ * Every plain lightweight polyline with a straight first segment, a line drawn before it on
+ * that segment, OVERKILL run on the two: the polyline breaks there, and its pieces save and
+ * reopen as they are (M3-16). `own` are the objects OVERKILL already changes in the drawing.
+ * The number of polylines broken.
+ */
+function breakPolylines(bytes: Uint8Array, own: ReadonlySet<EntityId>): number {
+  const { model, ids } = open(bytes)!;
+  const polylines = ids.filter((id) => {
+    const e = model.entity(id)!;
+    const g = e.geom;
+    if (g.kind !== 'LWPOLYLINE' || own.has(id) || (e.reactors?.length ?? 0) > 0) return false;
+    const [a, b] = g.vertices;
+    return (
+      plainEnough(g) &&
+      a !== undefined &&
+      b !== undefined &&
+      a.bulge === 0 &&
+      !g.constantWidth &&
+      a.startWidth === undefined &&
+      a.endWidth === undefined &&
+      Math.hypot(b.x - a.x, b.y - a.y) > 1e-3
+    );
+  });
+  if (polylines.length === 0) return 0;
+  const b = new ChangeSetBuilder(model);
+  const lines = polylines.map((id) => {
+    const e = model.entity(id)!;
+    const [p, q] = (e.geom as Extract<EntityGeometry, { kind: 'LWPOLYLINE' }>).vertices;
+    return b.addEntity({
+      owner: e.owner,
+      layer: e.layer,
+      color: e.color,
+      linetype: e.linetype,
+      lineweight: e.lineweight,
+      transparency: e.transparency,
+      ltScale: e.ltScale,
+      visible: e.visible,
+      ...(e.plotStyle !== undefined && { plotStyle: e.plotStyle }),
+      ...(e.material !== undefined && { material: e.material }),
+      geom: { kind: 'LINE', start: { x: p!.x, y: p!.y }, end: { x: q!.x, y: q!.y } },
+    }).id;
+  });
+  model.apply(b.build());
+  // The lines first: drawn before, so each polyline's segment is the one that goes.
+  const plan = planOverkill(model, [...lines, ...polylines], DEFAULT_OVERKILL);
+  const b2 = new ChangeSetBuilder(model);
+  const pieces: EntityId[] = [];
+  for (const [id, g] of plan.reshape) reshapeObject(b2, model, id, [g]);
+  for (const [id, gs] of plan.split) pieces.push(...reshapeObject(b2, model, id, gs));
+  eraseObjects(b2, model, plan.erase);
+  model.apply(b2.build());
+  const brokenNow = polylines.filter((id) => plan.split.has(id) || plan.erase.includes(id));
+  expect(
+    wrongAfterSave(bytes, model, [...pieces, ...lines]).slice(0, 10),
+    'broken polylines',
+  ).toEqual([]);
+  return brokenNow.length;
+}
+
 describe('SPLINEDIT and OVERKILL on the public corpus', () => {
   let edited = 0;
   let removed = 0;
+  let broken = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves its splines edited and its doubled objects overkilled',
@@ -178,7 +241,7 @@ describe('SPLINEDIT and OVERKILL on the public corpus', () => {
         const m2 = second.model;
         // Duplicates OVERKILL already finds in the drawing are its business, not this test's.
         const before = planOverkill(m2, second.ids, DEFAULT_OVERKILL);
-        const own = new Set([...before.erase, ...before.reshape.keys()]);
+        const own = new Set([...before.erase, ...before.reshape.keys(), ...before.split.keys()]);
         const doubled = second.ids.filter((id) => {
           const e = m2.entity(id)!;
           // Associative ones (hatch boundaries) are left alone, so their copies would stay.
@@ -189,6 +252,7 @@ describe('SPLINEDIT and OVERKILL on the public corpus', () => {
             (e.reactors?.length ?? 0) === 0
           );
         });
+        broken += breakPolylines(bytes, own);
         if (doubled.length === 0) return;
         const b2 = new ChangeSetBuilder(m2);
         const copies = doubled.map((id) => {
@@ -215,6 +279,7 @@ describe('SPLINEDIT and OVERKILL on the public corpus', () => {
         expect(kept.slice(0, 10), f.path).toEqual([]);
         const b3 = new ChangeSetBuilder(m2);
         for (const [id, g] of plan.reshape) reshapeObject(b3, m2, id, [g]);
+        for (const [id, gs] of plan.split) reshapeObject(b3, m2, id, gs);
         eraseObjects(b3, m2, plan.erase);
         m2.apply(b3.build());
         removed += copies.length;
@@ -235,5 +300,6 @@ describe('SPLINEDIT and OVERKILL on the public corpus', () => {
   it('changed objects', () => {
     expect(edited).toBeGreaterThan(20);
     expect(removed).toBeGreaterThan(1000);
+    expect(broken).toBeGreaterThan(50);
   });
 });

@@ -61,9 +61,10 @@ export function overkillCommand(): CommandDef {
       const chosen = new Set(ids);
       const order = ctx.model.blockEntities(ctx.space).filter((id) => chosen.has(id));
       const plan = planOverkill(ctx.model, order, settings);
-      if (plan.erase.length > 0 || plan.reshape.size > 0) {
+      if (plan.erase.length > 0 || plan.reshape.size > 0 || plan.split.size > 0) {
         ctx.edit((b) => {
           for (const [id, g] of plan.reshape) reshapeObject(b, ctx.model, id, [g]);
+          for (const [id, gs] of plan.split) reshapeObject(b, ctx.model, id, gs);
           eraseObjects(b, ctx.model, plan.erase);
         });
       }

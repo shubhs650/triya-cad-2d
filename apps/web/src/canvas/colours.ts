@@ -60,6 +60,23 @@ export function interfaceColours(c: {
   };
 }
 
+/**
+ * MATCHPROP's paintbrush (M3-16; AutoCAD 2024 Help, "MATCHPROP (Command)": "The cursor changes
+ * to a Match Properties paintbrush"), in the quarter above and right of the crosshairs, upright
+ * whatever their turn: a handle down to the left and bristles at its end, haloed as they are.
+ */
+function paintbrush(color: string, halo: string): string {
+  const handle = 'M30 1L24.5 6.5';
+  const bristles = 'M23 6L26 9L22.5 12.5Q20 14 18.5 12.5Q19 10.5 19.5 9.5Z';
+  return (
+    `<g class="paintbrush">` +
+    `<g stroke="${halo}" stroke-opacity="0.45" stroke-width="4" fill="${halo}" fill-opacity="0.45">` +
+    `<path d="${handle}"/><path d="${bristles}"/></g>` +
+    `<path d="${handle}" stroke="${color}" stroke-width="2" stroke-linecap="round"/>` +
+    `<path d="${bristles}" fill="${color}"/></g>`
+  );
+}
+
 /** Half the cursor image; 31 px keeps within the 32 px every browser takes for a cursor. */
 const HALF = 15;
 
@@ -67,9 +84,10 @@ const HALF = 15;
  * The crosshairs as a CSS cursor in `color`: a cross with a faint halo so it reads on anything.
  * The system crosshair stands in where a browser refuses the image. One image for every prompt:
  * AutoCAD adds a pickbox at `Command:`, but swapping cursor images as prompts change cost Chrome
- * enough main-thread time to delay the next prompt behind typed keys (CI, PR #256).
+ * enough main-thread time to delay the next prompt behind typed keys (CI, PR #256). `badge`
+ * adds MATCHPROP's paintbrush, changed once as its destination prompt comes and goes.
  */
-export function crosshairCursor(color: string, angle = 0): string {
+export function crosshairCursor(color: string, angle = 0, badge?: 'paintbrush'): string {
   const halo = isDarkColor(color) ? '#ffffff' : '#000000';
   const n = 2 * HALF + 1;
   const c = HALF + 0.5;
@@ -81,6 +99,8 @@ export function crosshairCursor(color: string, angle = 0): string {
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}"><g${turn}>` +
     `<g stroke="${halo}" stroke-opacity="0.45" stroke-width="3"><path d="${cross}"/></g>` +
-    `<g stroke="${color}" stroke-width="1"><path d="${cross}"/></g></g></svg>`;
+    `<g stroke="${color}" stroke-width="1"><path d="${cross}"/></g></g>` +
+    (badge === 'paintbrush' ? paintbrush(color, halo) : '') +
+    `</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${HALF} ${HALF}, crosshair`;
 }

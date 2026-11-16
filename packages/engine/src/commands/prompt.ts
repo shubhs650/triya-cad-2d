@@ -437,6 +437,12 @@ export interface SelectionPrompt extends PromptBase {
    * GROUPEDIT's objects name a group by one of its members).
    */
   readonly ungrouped?: boolean;
+  /**
+   * A badge the front-end draws beside the cursor while this prompt waits: MATCHPROP's
+   * paintbrush at "Select destination object(s)" (M3-16; AutoCAD 2024 Help, "MATCHPROP
+   * (Command)": "The cursor changes to a Match Properties paintbrush").
+   */
+  readonly cursor?: 'paintbrush';
 }
 
 /**

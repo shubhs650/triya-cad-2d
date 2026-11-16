@@ -4,12 +4,18 @@
 // styles go through the Properties palette's edit (the text placed again where it must be),
 // the rest is patched here.
 //
-// Not offered yet: Viewport, Table and Center object (their objects keep blocks or settings a
-// style change must regenerate), and the annotative property (DEC-013).
+// Viewport (M3-16) copies what AutoCAD's dialog says: "on/off, display locking, standard or
+// custom scale, shade plot, snap, grid, and UCS icon visibility and location", not clipping, the
+// UCS per viewport or the layers frozen in it. Triya keeps no shade plot (DXF 170) or snap and
+// grid spacing of a viewport's own, so snap and grid copy their on/off bits; the scale keeps
+// the destination's view centre. Not offered yet: Table (its `*T` block needs M4-05's table
+// engine to be drawn again in another style), Center object (center marks and centerlines come
+// with M4-08), and the annotative property (DEC-013).
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityPatch } from '../model/update';
-import type { Entity, EntityGeometry, HatchGeometry } from '../model/types';
+import type { Entity, EntityGeometry, HatchGeometry, ViewportGeometry } from '../model/types';
+import { VIEWPORT_OFF, viewportScale } from '../layout/viewport';
 import { hasThickness, namedPlotStyles, thicknessOf } from './general';
 import { patternOrigin } from './sheet';
 
@@ -27,6 +33,7 @@ export interface MatchSettings {
   readonly text: boolean;
   readonly hatch: boolean;
   readonly polyline: boolean;
+  readonly viewport: boolean;
   readonly material: boolean;
   readonly multileader: boolean;
 }
@@ -44,6 +51,7 @@ export const ALL_MATCH_SETTINGS: MatchSettings = {
   text: true,
   hatch: true,
   polyline: true,
+  viewport: true,
   material: true,
   multileader: true,
 };
@@ -62,6 +70,7 @@ export const MATCH_SETTING_NAMES: readonly [keyof MatchSettings, string][] = [
   ['text', 'Text'],
   ['hatch', 'Hatch'],
   ['polyline', 'Polyline'],
+  ['viewport', 'Viewport'],
   ['material', 'Material'],
   ['multileader', 'Multileader'],
 ];
@@ -140,6 +149,21 @@ function hatchMatch(target: HatchGeometry, source: HatchGeometry): HatchGeometry
   };
 }
 
+/** DXF 90 bits Viewport copies: UCS icon on (32) and at the origin (64), snap (256), grid (512), display locked (16384), off. */
+const VIEWPORT_MATCHED = 32 | 64 | 256 | 512 | 0x4000 | VIEWPORT_OFF;
+
+/** `target` given the source viewport's switches and scale (the paper-space viewport takes none). */
+function viewportMatch(target: ViewportGeometry, source: ViewportGeometry): ViewportGeometry {
+  if (target.id === 1 || source.id === 1) return target;
+  const flags = (target.flags & ~VIEWPORT_MATCHED) | (source.flags & VIEWPORT_MATCHED);
+  const scale = viewportScale(source);
+  return {
+    ...target,
+    flags,
+    ...(scale > 0 && { viewHeight: Math.abs(target.height) / scale }),
+  };
+}
+
 /**
  * What MATCHPROP changes of `target` from `source` directly (all but the styles the palette's
  * edit places: `matchedStyles`), or undefined when nothing changes.
@@ -176,6 +200,9 @@ export function matchedPatch(
     geom = polylineMatch(geom, uniformWidth(sg), (sg as { plinegen?: boolean }).plinegen === true);
   }
   if (s.hatch && sg.kind === 'HATCH' && geom.kind === 'HATCH') geom = hatchMatch(geom, sg);
+  if (s.viewport && sg.kind === 'VIEWPORT' && geom.kind === 'VIEWPORT') {
+    geom = viewportMatch(geom, sg);
+  }
   if (s.dimension && (sg.kind === 'LEADER' || sg.kind === 'TOLERANCE')) {
     // A dimension's style goes through the palette's edit (its block is drawn again).
     if (geom.kind === 'LEADER' || geom.kind === 'TOLERANCE') geom = { ...geom, style: sg.style };

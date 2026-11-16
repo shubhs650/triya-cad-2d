@@ -805,6 +805,8 @@ export class CanvasController {
         prompt.kind === 'angle');
     this.#prompt = picking ? prompt : undefined;
     this.#asked = prompt;
+    // MATCHPROP's paintbrush (M3-16): the cursor image changes only as the badge does.
+    this.#paintCursor();
     // The preview drawn was the last prompt's; this one's is asked for where the cursor rests.
     this.#showCommandPreview(undefined);
     if (prompt?.commandPreview?.hover) {
@@ -1655,10 +1657,12 @@ export class CanvasController {
   #paintCursor(): void {
     const color = this.#ui().crosshair;
     const angle = this.#ucs().angle + (this.#vport()?.snapRotation ?? 0);
-    const key = `${color} ${angle}`;
+    const asked = this.#asked;
+    const badge = asked?.kind === 'selection' ? asked.cursor : undefined;
+    const key = `${color} ${angle}${badge ? ` ${badge}` : ''}`;
     if (this.#canvas.dataset['cursor'] === key) return;
     this.#canvas.dataset['cursor'] = key;
-    this.#canvas.style.setProperty('--crosshair', crosshairCursor(color, angle));
+    this.#canvas.style.setProperty('--crosshair', crosshairCursor(color, angle, badge));
   }
 
   #style(): RenderStyle {
