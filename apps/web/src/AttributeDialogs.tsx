@@ -44,6 +44,7 @@ import { UnitsDialog } from './UnitsDialog';
 import { DimStyleDialog } from './DimStyleDialog';
 import { InsertTableDialog } from './InsertTableDialog';
 import { TextStyleDialog } from './TextStyleDialog';
+import { MLeaderStyleDialog } from './MLeaderStyleDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -98,6 +99,8 @@ export function AttributeDialogs({
       return <InsertTableDialog key={key} doc={doc.id} request={d} />;
     case 'textstyle':
       return <TextStyleDialog key={key} doc={doc.id} request={d} fonts={fonts ?? []} />;
+    case 'mleaderstyle':
+      return <MLeaderStyleDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

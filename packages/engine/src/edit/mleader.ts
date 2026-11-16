@@ -183,7 +183,8 @@ export function settingsOf(style: MLeaderStyleRecord): MLeaderSettings {
           ? MLEADER_MTEXT
           : 0,
     ...(style.block !== undefined && { block: style.block }),
-    maxPoints: Math.max(2, style.maxLeaderPoints || 2),
+    // DXF 90 = 0: no limit (the Multileader Style Manager's Maximum leader points unchecked).
+    maxPoints: style.maxLeaderPoints === 0 ? Infinity : Math.max(2, style.maxLeaderPoints),
     firstAngle: style.firstSegmentAngle,
     secondAngle: style.secondSegmentAngle,
   };

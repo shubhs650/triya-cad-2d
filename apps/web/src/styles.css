@@ -3866,6 +3866,26 @@ button {
   margin-top: 0;
 }
 
+/* MLEADERSTYLE's Multileader Style Manager (M4-04 part 2) reuses the DIMSTYLE manager's
+   classes; a check box and the value it turns on share a line. */
+.mleaderstyle-checked {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mleaderstyle-checked > .cad-dialog-check {
+  flex: 0 0 180px;
+  min-width: 0;
+}
+
+.mleaderstyle-checked > select,
+.mleaderstyle-checked > input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
 /* TABLE's Insert Table (M4-05 part 2). */
 .insert-table-dialog {
   width: min(620px, calc(100vw - 32px));
