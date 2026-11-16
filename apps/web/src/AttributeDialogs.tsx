@@ -46,6 +46,7 @@ import { openDrawingModel } from './dimstyle-import';
 import type { OpenDocument } from './documents';
 import { InsertTableDialog } from './InsertTableDialog';
 import { TextStyleDialog } from './TextStyleDialog';
+import { TableStyleDialog } from './TableStyleDialog';
 import { MLeaderStyleDialog } from './MLeaderStyleDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
@@ -117,6 +118,8 @@ export function AttributeDialogs({
       return <InsertTableDialog key={key} doc={doc.id} request={d} />;
     case 'textstyle':
       return <TextStyleDialog key={key} doc={doc.id} request={d} fonts={fonts ?? []} />;
+    case 'tablestyle':
+      return <TableStyleDialog key={key} doc={doc.id} request={d} />;
     case 'mleaderstyle':
       return <MLeaderStyleDialog key={key} doc={doc.id} request={d} />;
   }

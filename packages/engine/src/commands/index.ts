@@ -50,6 +50,23 @@ export {
   type TextStyleSettings,
 } from './textstyle';
 export {
+  TABLE_CELL_STYLES,
+  restyledTable,
+  tableStylePreview,
+  tableStyleProblem,
+  tableStyleRequest,
+  tableStyleSettings,
+  tablestyleCommand,
+  usedTableStyles,
+  type TableCellStyleName,
+  type TableCellStyleSettings,
+  type TableStyleAction,
+  type TableStylePreview,
+  type TableStyleRequest,
+  type TableStyleRow,
+  type TableStyleSettings,
+} from './tablestyle';
+export {
   mleaderStyleLists,
   mleaderStyleRequest,
   mleaderstyleCommand,

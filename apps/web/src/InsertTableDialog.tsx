@@ -6,8 +6,9 @@
 // Auto), and the same for Data rows and Row height. OK sends the settings; the engine then asks
 // for the insertion point (dragging the table) or the window's corners.
 //
-// Left out or shown greyed, for the reasons given: the table style launcher (TABLESTYLE is a
-// later part of M4-05), From a data link (data links are passthrough only, FILE_FIDELITY.md)
+// The button beside Table style launches the Table Style dialog (TABLESTYLE, M4-05 part 5), the
+// dialog opening again on the style made current there. Left out or shown greyed, for the reasons
+// given: From a data link (data links are passthrough only, FILE_FIDELITY.md)
 // and From object data (Data Extraction is not in Triya), Set cell styles (the rows take their
 // table style's title, header and data cell styles in order; choosing others needs per-row cell
 // styles the model does not keep yet), and Help, as Triya's other dialogs leave it.
@@ -144,6 +145,18 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
     (widthAuto || n.width !== undefined) &&
     (rowsAuto || n.rows !== undefined) &&
     (linesAuto || n.lines !== undefined);
+  const settings = (): InsertTableSettings => ({
+    style: chosen?.name ?? style,
+    window: byWindow,
+    columns: n.columns ?? s0.columns,
+    width: n.width ?? s0.width,
+    dataRows: n.rows ?? s0.dataRows,
+    lines: n.lines ?? s0.lines,
+    autoColumns,
+    autoRows,
+  });
+  // The table style launcher: the Table Style dialog, then this one again (TABLE).
+  const launch = () => void answer(doc, { kind: 'dialog', action: 'select', table: settings() });
   const ok = () => {
     if (!valid) return;
     const table: InsertTableSettings = {
@@ -186,6 +199,15 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              className="insert-table-launcher"
+              aria-label="Launch the Table Style dialog"
+              title="Launch the Table Style dialog"
+              onClick={launch}
+            >
+              …
+            </button>
           </fieldset>
           <fieldset className="insert-table-group">
             <legend>Insert options</legend>

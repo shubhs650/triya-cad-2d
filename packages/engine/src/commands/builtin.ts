@@ -39,6 +39,7 @@ import { DRAFTING_SETTINGS_COMMANDS } from './drafting-settings';
 import { UNITS_COMMANDS } from './drawing-units';
 import { dimstyleCommand } from './dimstyle';
 import { dashStyleCommand, styleCommand } from './textstyle';
+import { tablestyleCommand } from './tablestyle';
 import { mleaderstyleCommand } from './mleaderstyle';
 import { dashDimstyleCommand } from './dimstyle-dash';
 import { SNAP_GRID_COMMANDS } from './snap-grid';
@@ -138,6 +139,7 @@ export function builtinCommands(): CommandRegistry {
     dimstyleCommand(),
     styleCommand(),
     dashStyleCommand(),
+    tablestyleCommand(),
     mleaderstyleCommand(),
     dashDimstyleCommand(),
     ...SNAP_GRID_COMMANDS.map((make) => make()),
