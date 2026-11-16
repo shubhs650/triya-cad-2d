@@ -19,6 +19,7 @@ import type { CommandPreviewSource } from './command-preview';
 import type { DragPreview } from './drag';
 import type { UnitsSettings } from './drawing-units';
 import type { DimStyleAction, DimStyleRequest } from './dimstyle';
+import type { TextStyleAction, TextStyleRequest } from './textstyle';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -683,6 +684,8 @@ export type DialogRequest =
     }
   /** DIMSTYLE's Dimension Style Manager (M4-03). */
   | DimStyleRequest
+  /** STYLE's Text Style dialog (M4-04). */
+  | TextStyleRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -874,6 +877,8 @@ export type PromptAnswer =
       readonly table?: InsertTableSettings;
       /** A Dimension Style Manager action (DIMSTYLE, M4-03), sent with `apply`. */
       readonly dimstyle?: DimStyleAction;
+      /** A Text Style dialog action (STYLE, M4-04), sent with `apply`. */
+      readonly textstyle?: TextStyleAction;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

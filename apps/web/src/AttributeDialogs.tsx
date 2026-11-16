@@ -43,6 +43,7 @@ import { DraftingSettingsDialog } from './DraftingSettingsDialog';
 import { UnitsDialog } from './UnitsDialog';
 import { DimStyleDialog } from './DimStyleDialog';
 import { InsertTableDialog } from './InsertTableDialog';
+import { TextStyleDialog } from './TextStyleDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -53,7 +54,14 @@ const shownValue = (v: string, multiline: boolean) => (multiline ? v.replace(/\\
 const storedValue = (v: string, multiline: boolean) =>
   multiline ? v.replace(/\r?\n/g, '\\P') : v.replace(/\r?\n/g, ' ');
 
-export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
+export function AttributeDialogs({
+  doc,
+  fonts,
+}: {
+  doc: { id: number } | undefined;
+  /** The user's font files (M1-38), for the Text Style dialog's font lists. */
+  fonts?: readonly string[];
+}) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
   if (!doc || prompt?.kind !== 'dialog') return null;
@@ -88,6 +96,8 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
       return <DimStyleDialog key={key} doc={doc.id} request={d} />;
     case 'inserttable':
       return <InsertTableDialog key={key} doc={doc.id} request={d} />;
+    case 'textstyle':
+      return <TextStyleDialog key={key} doc={doc.id} request={d} fonts={fonts ?? []} />;
   }
 }
 
