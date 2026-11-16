@@ -27,6 +27,7 @@ import { mapSortEnts } from './sortents';
 import { mapTables } from './tables';
 import { mapSpatialFilters } from './xclip';
 import { mapTriyaArrays } from './triya-array';
+import { mapTriyaDims } from './triya-dims';
 
 export function documentInit(doc: CadDocument): DocumentInit {
   return mapDocument(doc).init;
@@ -50,6 +51,7 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
       ...mapPageSetups(doc),
       ...mapCodedObjects(doc),
       ...mapTriyaArrays(doc),
+      ...mapTriyaDims(doc),
     ],
     layouts: mapLayouts(doc),
     entities,
