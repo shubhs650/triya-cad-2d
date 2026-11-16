@@ -28,6 +28,7 @@
 //   with radius 0).
 //
 // Everything is to the drawing's tolerance (DEC-036).
+import { alongLine } from './line-heights';
 import { ccwSweep, normalizeAngle, TAU } from '../geom/angle';
 import { curveBounds } from '../geom/bounds';
 import { closestPoint } from '../geom/closest';
@@ -621,7 +622,7 @@ export function cutLeg(
       // A line already ending exactly there is left as it is.
       const end = keepEnd ? g.start : g.end;
       if (end.x === t.x && end.y === t.y) return g;
-      return keepEnd ? { ...g, start: t } : { ...g, end: t };
+      return keepEnd ? alongLine(g, t, g.end) : alongLine(g, g.start, t);
     }
     case 'RAY': {
       if (dot(g.direction, k) > 0) return { ...g, base: t };

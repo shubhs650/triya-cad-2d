@@ -530,15 +530,11 @@ const lineWriter: Writer<LineGeometry> = {
   write(_r, e, before, g) {
     const l = e as Line;
     const d = differ(before, g);
-    // The mapping keeps one elevation; a line whose ends differ in Z keeps its Zs until the
-    // elevation itself is edited.
-    const elevation = d('elevation');
-    if (d('start') || elevation) {
-      l.startPoint = new XYZ(g.start.x, g.start.y, elevation ? (g.elevation ?? 0) : l.startPoint.z);
-    }
-    if (d('end') || elevation) {
-      l.endPoint = new XYZ(g.end.x, g.end.y, elevation ? (g.elevation ?? 0) : l.endPoint.z);
-    }
+    // Each end's height is the model's: a sloped line's `heights`, else the elevation (DEC-063).
+    const z = d('elevation', 'heights');
+    const [z0, z1] = g.heights ?? [g.elevation ?? 0, g.elevation ?? 0];
+    if (d('start') || z) l.startPoint = new XYZ(g.start.x, g.start.y, z0);
+    if (d('end') || z) l.endPoint = new XYZ(g.end.x, g.end.y, z1);
     if (d('thickness')) l.thickness = g.thickness ?? 0;
     if (d('normal')) l.normal = xyz(g.normal);
   },

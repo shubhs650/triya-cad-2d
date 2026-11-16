@@ -24,6 +24,7 @@ import { angleOf, distance, length, sub } from '../../geom/vec';
 import type { DocumentModel } from '../../model/document';
 import type { Color, Entity, EntityGeometry, PolylineVertex } from '../../model/types';
 import { polylineArea, polylineLength } from '../../properties/measure';
+import { lineHeights } from '../../edit/line-heights';
 import type { CommandDef } from '../command';
 import {
   drawingUnits,
@@ -135,12 +136,15 @@ function typeLines(model: DocumentModel, g: EntityGeometry, u: DrawingUnits): st
   const styleName = (h: string) => `"${model.tables.textStyles.get(h)?.name ?? ''}"`;
   switch (g.kind) {
     case 'LINE': {
+      // A sloped line's ends at their own heights; its Length is the 3D one (DEC-063).
+      const [z0, z1] = lineHeights(g);
       const delta = sub(g.end, g.start);
+      const len = Math.hypot(length(delta), z1 - z0);
       return [
-        row('from point,', pt(g.start)),
-        row('to point,', pt(g.end)),
-        row('Length =', `${d(length(delta))},  Angle in XY Plane = ${a(angleOf(delta))}`),
-        row('Delta X =', `${d(delta.x)}, Delta Y = ${d(delta.y)}, Delta Z = ${d(0)}`),
+        row('from point,', at(g.start, u, z0)),
+        row('to point,', at(g.end, u, z1)),
+        row('Length =', `${d(len)},  Angle in XY Plane = ${a(angleOf(delta))}`),
+        row('Delta X =', `${d(delta.x)}, Delta Y = ${d(delta.y)}, Delta Z = ${d(z1 - z0)}`),
       ];
     }
     case 'CIRCLE':

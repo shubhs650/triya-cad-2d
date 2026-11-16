@@ -12,7 +12,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 
 | Type | Read | Render | Edit | Write | Test file |
 |---|---|---|---|---|---|
-| LINE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| LINE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`; a sloped line's end heights carried in the model and written from it, M3-18, DEC-063, `export.test.ts` and `export-break.corpus.test.ts`) | |
 | XLINE | ✓ (drawn clipped to the view, its linetype laid out from the base point both ways so dashes stay put while panning, M1-45; text and shapes in the linetype not drawn) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | RAY | ✓ (drawn clipped to the view, its linetype laid out from the base point onward, M1-45; text and shapes in the linetype not drawn) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | CIRCLE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |

@@ -139,7 +139,13 @@ export interface PlanarProps {
   readonly normal?: Vec3;
 }
 
-export interface LineGeometry extends Line, PlanarProps {}
+export interface LineGeometry extends Line, PlanarProps {
+  /**
+   * A sloped LINE's WCS Z at its start and end (DEC-063), stated only when they differ; a level
+   * line's height is its `elevation`. The plan view stays what is drawn, measured and snapped to.
+   */
+  readonly heights?: readonly [number, number];
+}
 export type XlineGeometry = Xline;
 export type RayGeometry = Ray;
 export interface CircleGeometry extends Circle, PlanarProps {}

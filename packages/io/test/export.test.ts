@@ -635,6 +635,38 @@ describe('triyaToAcad', () => {
     expectGeometry(reopened(twice, three.handle)?.geom, fewer);
   });
 
+  // M3-18 (DEC-063): a line's end heights are written from the model, for a line read sloped,
+  // one made level and one new.
+  it('writes a sloped line’s heights from the model', () => {
+    const { model } = open();
+    const e = byType(model, 'LINE');
+    const sloped = {
+      kind: 'LINE',
+      start: { x: 1, y: 2 },
+      end: { x: 4, y: 6 },
+      heights: [-2, 3],
+    } as EntityGeometry;
+    let added: Entity | undefined;
+    edit(model, (b) => {
+      b.updateEntity(e.id, { geom: sloped });
+      added = b.addEntity({ owner: e.owner, layer: e.layer, geom: sloped });
+    });
+    const once = save(model);
+    expectGeometry(reopened(once, e.handle)?.geom, sloped);
+    expectGeometry(reopened(once, added!.handle)?.geom, sloped);
+    // Made level again, both ends go to its elevation.
+    const again = open(once).model;
+    const level = {
+      kind: 'LINE',
+      start: { x: 1, y: 2 },
+      end: { x: 4, y: 6 },
+      elevation: 1,
+    } as EntityGeometry;
+    edit(again, (b) => b.updateEntity(again.entityByHandle(e.handle)!.id, { geom: level }));
+    const twice = exportDocument(readCadDocument(once), again, { format: 'dxf' });
+    expectGeometry(reopened(twice, e.handle)?.geom, level);
+  });
+
   // POLYLINE 75 is the fit type of a spline-fit polyline (DXF reference, POLYLINE); without
   // it a quadratic or Bezier fit reads back cubic (M1-80, acad-ts patch 0127).
   it.each([

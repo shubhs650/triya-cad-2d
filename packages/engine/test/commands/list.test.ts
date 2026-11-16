@@ -110,6 +110,12 @@ function drawing(header: [string, HeaderValue][] = []): DocumentInit {
         endParam: 2 * Math.PI,
       }),
       entityInit('46', { kind: 'POINT', position: { x: 7, y: 8 } }),
+      entityInit('47', {
+        kind: 'LINE',
+        start: { x: 0, y: 0 },
+        end: { x: 3, y: 4 },
+        heights: [1, 13],
+      }),
     ],
   };
 }
@@ -155,6 +161,17 @@ describe('LIST', () => {
       '                to point, X=10.0000  Y=0.0000  Z=0.0000',
       '                 Length = 10.0000,  Angle in XY Plane = 0',
       '                Delta X = 10.0000, Delta Y = 0.0000, Delta Z = 0.0000',
+    ]);
+  });
+
+  // M3-18 (DEC-063): a sloped line lists each end's height, its 3D length and Delta Z.
+  it('lists a sloped line with its heights', async () => {
+    const s = setup();
+    expect((await s.list('47')).slice(3)).toEqual([
+      '              from point, X=0.0000  Y=0.0000  Z=1.0000',
+      '                to point, X=3.0000  Y=4.0000  Z=13.0000',
+      '                 Length = 13.0000,  Angle in XY Plane = 53',
+      '                Delta X = 3.0000, Delta Y = 4.0000, Delta Z = 12.0000',
     ]);
   });
 

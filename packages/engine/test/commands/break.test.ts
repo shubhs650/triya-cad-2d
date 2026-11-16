@@ -444,6 +444,50 @@ describe('JOIN', () => {
     expect(byHandle('42')).toBeDefined();
   });
 
+  it('joins a sloped line and a curve-free chain onto a source 3D polyline (M3-18)', async () => {
+    const { bus, log, byHandle, kinds } = setup([
+      {
+        kind: 'POLYLINE',
+        is3d: true,
+        closed: false,
+        vertices: [
+          { x: 20, y: 0, bulge: 0 },
+          { x: 30, y: 0, bulge: 0, z: 4 },
+        ],
+      },
+      { kind: 'LINE', start: { x: 30, y: 0 }, end: { x: 30, y: 10 }, heights: [4, 6] },
+      // A sloped line meeting nothing in height stays as it is.
+      { kind: 'LINE', start: { x: 20, y: 0 }, end: { x: 20, y: 10 }, heights: [1, 6] },
+    ]);
+    await bus.script(['JOIN']);
+    await bus.pick({ x: 25, y: 0 });
+    await bus.script(['', 'C', '19,-1', '31,11', '']);
+    expect(log).toContain('1 segment added to polyline');
+    expect(log).toContain('1 object discarded from the operation');
+    const g = byHandle('40')!.geom as unknown as {
+      vertices: { x: number; y: number; z?: number }[];
+    };
+    expect(g.vertices.map((v) => [v.x, v.y, v.z ?? 0])).toEqual([
+      [20, 0, 0],
+      [30, 0, 4],
+      [30, 10, 6],
+    ]);
+    expect(byHandle('41')).toBeUndefined();
+    expect(kinds().filter((k) => k === 'LINE')).toHaveLength(2);
+  });
+
+  it('joins noncoplanar lines at once into a 3D polyline (M3-18)', async () => {
+    const { bus, log, kinds, space } = setup([
+      { kind: 'LINE', start: { x: 20, y: 0 }, end: { x: 30, y: 0 }, heights: [0, 3] },
+      { kind: 'LINE', start: { x: 30, y: 0 }, end: { x: 30, y: 10 }, elevation: 3 },
+    ]);
+    await bus.script(['J', 'C', '19,-1', '31,11', '']);
+    expect(log).toContain('2 objects converted to 1 polyline');
+    const p = space().find((e) => e.geom.kind === 'POLYLINE')!;
+    expect(p).toMatchObject({ layer: LAYER_WALLS, geom: { is3d: true } });
+    expect(kinds().filter((k) => k === 'LINE')).toHaveLength(1);
+  });
+
   it('closes a source arc into a circle', async () => {
     const { bus, log, kinds } = setup([
       { kind: 'ARC', center: { x: 20, y: 0 }, radius: 2, startAngle: 0, endAngle: Math.PI },
@@ -481,6 +525,31 @@ describe('EXPLODE', () => {
         .slice(2)
         .map((e) => e.layer),
     ).toEqual([LAYER_WALLS, LAYER_WALLS]);
+  });
+
+  // M3-18 (DEC-063): a 3D polyline's segments become lines from vertex to vertex in plan and
+  // height, as AutoCAD's do.
+  it('explodes a 3D polyline into lines keeping its heights', async () => {
+    const { bus, space } = setup([
+      {
+        kind: 'POLYLINE',
+        is3d: true,
+        closed: false,
+        vertices: [
+          { x: 20, y: 0, bulge: 0, z: 2 },
+          { x: 30, y: 0, bulge: 0, z: 2 },
+          { x: 30, y: 10, bulge: 0, z: 5 },
+        ],
+      },
+    ]);
+    await bus.script(['X', 'L', '']);
+    const made = space()
+      .slice(2)
+      .map((e) => e.geom);
+    expect(made).toEqual([
+      { kind: 'LINE', start: { x: 20, y: 0 }, end: { x: 30, y: 0 }, elevation: 2 },
+      { kind: 'LINE', start: { x: 30, y: 0 }, end: { x: 30, y: 10 }, heights: [2, 5] },
+    ]);
   });
 
   it('explodes a block reference into its contents, placed as it placed them', async () => {

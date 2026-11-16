@@ -15,15 +15,23 @@
 //   whatever meets them the same way, into a spline.
 // - Open 3D polylines whose ends meet in plan and in height join into one 3D polyline (M3-17),
 //   closed when the chain comes back to its start; AutoCAD's "All the objects must be
-//   contiguous, but can be noncoplanar". The model carries their heights (DEC-062). Nothing
-//   else joins a 3D polyline yet (M3-18): a sloped line's heights are not in the model, and the
-//   spline a curve makes with one would be a 3D spline, which the model does not have. Joined
+//   contiguous, but can be noncoplanar". The model carries their heights (DEC-062). Joined
 //   with each other, flat 3D polylines stay a 3D polyline: AutoCAD's "a polyline object results
 //   from joining coplanar ... 3D polylines" is read as joining them with 2D objects, and a
 //   drafter joining two 3D polylines expects one back.
-// - Closed objects, spline-fit 3D polylines, xlines, rays, helixes and everything else are not
-//   joined ("discarded from the operation"); nor are objects off the plan or at another
-//   elevation from the chain they meet (a spline is at elevation 0).
+// - Lines (level or sloped, whose end heights the model carries, DEC-063) and straight open 2D
+//   polylines meeting a source 3D polyline in plan and height join it as vertices (M3-18); so do
+//   they a 3D polyline or sloped line among several objects joined at once, AutoCAD's "joins
+//   multiple noncoplanar linear objects into a 3D polyline". A spline-fit 3D polyline joins as
+//   the vertices it draws, as a fit 2D one does. Curves meeting a source 3D polyline make one
+//   spline with it ("a single spline if joining curved objects") only when every height is 0:
+//   a spline elsewhere would be a 3D spline, which Triya does not make (PRD non-goal 1, DEC-063).
+//   PEDIT Join asks for linear objects only.
+// - Collinear lines join into one line only when they are on one 3D line: level ones at one
+//   elevation, sloped ones at one slope.
+// - Closed objects, xlines, rays, helixes and everything else are not joined ("discarded from
+//   the operation"); nor are objects off the plan or at another elevation from the chain they
+//   meet (a spline is at elevation 0).
 //
 // The order of work, lines then arcs then elliptical arcs then chains then splines, means
 // collinear lines that also meet other objects end to end are first made one line, which then
@@ -47,6 +55,7 @@ import type {
   SplineGeometry,
 } from '../model/types';
 import { cleanPolyline, segmentWidths } from './offset';
+import { alongLine, heightAt, lineHeights } from './line-heights';
 import { endsOf, joinableSpline, joinCurves, reversedSpline } from './splinedit';
 import { openSpline } from './trim';
 
@@ -74,7 +83,7 @@ const isPlan = (g: { normal?: { x: number; y: number; z: number } }): boolean =>
 
 /**
  * What JOIN can take: lines, arcs, elliptical arcs, open 2D polylines and open splines, in plan,
- * and open 3D polylines that are not spline-fit.
+ * and open 3D polylines.
  */
 export function joinable(g: EntityGeometry): boolean {
   switch (g.kind) {
@@ -87,7 +96,7 @@ export function joinable(g: EntityGeometry): boolean {
     case 'LWPOLYLINE':
       return isPlan(g) && !g.closed && polylineSegmentCount(cleanPolyline(g).curve) > 0;
     case 'POLYLINE':
-      if (g.is3d) return !g.closed && !g.fit && g.vertices.length > 1;
+      if (g.is3d) return !g.closed && g.vertices.length > 1;
       return isPlan(g) && !g.closed && polylineSegmentCount(cleanPolyline(g).curve) > 0;
     case 'SPLINE':
       return isPlan(g) && !g.closed;
@@ -113,6 +122,8 @@ export function joinObjects(
   parts: readonly JoinPart[],
   source: EntityId | undefined,
   tol: Tolerance,
+  /** `curves: false` (PEDIT Join): a 3D polyline takes linear objects only, never a spline. */
+  opts: { curves?: boolean } = {},
 ): JoinResult {
   let items: Item[] = parts
     .filter((p) => joinable(p.geom))
@@ -125,10 +136,11 @@ export function joinObjects(
   }
   const src = source === undefined ? undefined : items[0]!;
   const kind = src?.geom.kind;
-  if (src && is3dPolyline(src.geom)) items = chain3d(items, src, tol);
-  else if (!src) items = chain3d(items, undefined, tol);
-
+  if (src && is3dPolyline(src.geom)) {
+    items = (opts.curves !== false && splineOnto3d(items, src, tol)) || chain3d(items, src, tol);
+  }
   if (!src || kind === 'LINE') items = joinLines(items, src, tol);
+  if (!src) items = chain3d(items, undefined, tol);
   if (!src || kind === 'ARC') items = joinArcs(items, src, tol);
   if (!src || kind === 'ELLIPSE') items = joinEllipses(items, src, tol);
   // A line source takes only collinear lines, an arc source only arcs of its circle.
@@ -144,7 +156,10 @@ export function joinObjects(
 
 // ── Lines ─────────────────────────────────────────────────────────────────────────────────
 
-/** Collinear lines, each group one line over its extremes, the first's direction kept. */
+/**
+ * Collinear lines on one 3D line (one elevation, or one slope), each group one line over its
+ * extremes, the first's direction kept.
+ */
 function joinLines(items: Item[], src: Item | undefined, tol: Tolerance): Item[] {
   const out: Item[] = [];
   const taken = new Set<Item>();
@@ -157,7 +172,7 @@ function joinLines(items: Item[], src: Item | undefined, tol: Tolerance): Item[]
       (o) =>
         !taken.has(o) &&
         o.geom.kind === 'LINE' &&
-        (o === it || (onCarrier(o.geom, l.start, u, tol) && sameElevation(o.geom, l))),
+        (o === it || (onCarrier(o.geom, l.start, u, tol) && sameHeights(o.geom, l, tol))),
     );
     if (group.length < 2) continue;
     let lo = 0;
@@ -171,11 +186,11 @@ function joinLines(items: Item[], src: Item | undefined, tol: Tolerance): Item[]
       }
       taken.add(o);
     }
-    const geom: LineGeometry = {
-      ...l,
-      start: { x: l.start.x + u.x * lo, y: l.start.y + u.y * lo },
-      end: { x: l.start.x + u.x * hi, y: l.start.y + u.y * hi },
-    };
+    const geom = alongLine(
+      l,
+      { x: l.start.x + u.x * lo, y: l.start.y + u.y * lo },
+      { x: l.start.x + u.x * hi, y: l.start.y + u.y * hi },
+    );
     out.push({ keep: it.keep, parts: group.flatMap((o) => o.parts), geom, made: 'line' });
   }
   return [...out, ...items.filter((it) => !taken.has(it))].sort(byFirst(items));
@@ -188,6 +203,16 @@ function onCarrier(g: LineGeometry, p: Vec2, u: Vec2, tol: Tolerance): boolean {
 
 const sameElevation = (a: { elevation?: number }, b: { elevation?: number }): boolean =>
   (a.elevation ?? 0) === (b.elevation ?? 0);
+
+/** Whether `g`'s ends are on the 3D line through `l`: at its elevation, or on its slope. */
+function sameHeights(g: LineGeometry, l: LineGeometry, tol: Tolerance): boolean {
+  if (!g.heights && !l.heights) return (g.elevation ?? 0) === (l.elevation ?? 0);
+  const [z0, z1] = lineHeights(g);
+  return (
+    Math.abs(heightAt(l, g.start) - z0) <= tol.linear &&
+    Math.abs(heightAt(l, g.end) - z1) <= tol.linear
+  );
+}
 
 /** Keeps the original order (the first object of each group where it was). */
 const byFirst =
@@ -403,7 +428,7 @@ const near = (a: V, b: V, tol: Tolerance): boolean => distance(a, b) <= tol.line
 function chain(items: Item[], src: Item | undefined, tol: Tolerance): Item[] {
   const paths = new Map<Item, V[]>();
   for (const it of items) {
-    if (it.geom.kind === 'ELLIPSE' || is3dPolyline(it.geom)) continue;
+    if (it.geom.kind === 'ELLIPSE' || is3dPolyline(it.geom) || isSloped(it.geom)) continue;
     const p = pathOf(it.geom);
     if (p) paths.set(it, p);
   }
@@ -510,26 +535,59 @@ interface P3 {
 const meets3d = (a: P3, b: P3, tol: Tolerance): boolean =>
   distance(a, b) <= tol.linear && Math.abs(a.z - b.z) <= tol.linear;
 
+const isSloped = (g: EntityGeometry): boolean => g.kind === 'LINE' && g.heights !== undefined;
+
 /**
- * Open 3D polylines that meet end to end, in plan and in height, each chain one 3D polyline:
- * the first of the chain in selection order (or the source) keeps itself and its properties.
- * Where two meet, the vertex already in the chain stays.
+ * An object as a 3D path, vertex by vertex: a 3D polyline (a spline-fit one's drawn vertices), a
+ * line at its end heights, a straight open 2D polyline in plan at its elevation; else undefined
+ * (curves, closed objects, 2D polylines with arcs).
+ */
+function path3d(g: EntityGeometry): P3[] | undefined {
+  switch (g.kind) {
+    case 'LINE': {
+      if (!isPlan(g)) return undefined;
+      const [z0, z1] = lineHeights(g);
+      return [
+        { ...g.start, z: z0 },
+        { ...g.end, z: z1 },
+      ];
+    }
+    case 'POLYLINE':
+    case 'LWPOLYLINE': {
+      if (g.kind === 'POLYLINE' && g.is3d) {
+        return g.vertices.map((v) => ({ x: v.x, y: v.y, z: v.z ?? 0 }));
+      }
+      if (g.closed || !isPlan(g)) return undefined;
+      const { curve } = cleanPolyline(g);
+      const n = polylineSegmentCount(curve);
+      if (n === 0 || curve.vertices.slice(0, n).some((v) => v.bulge !== 0)) return undefined;
+      const z = g.elevation ?? 0;
+      return curve.vertices.map((v) => ({ x: v.x, y: v.y, z }));
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Linear objects that meet end to end, in plan and in height, each chain one 3D polyline: with
+ * a source, the chain through it; without one, each chain through a 3D polyline or a sloped line
+ * (a chain of level lines at one elevation is a 2D polyline's, `chain`). The source, else the
+ * first 3D polyline of the chain in selection order keeps itself and its properties, else the
+ * first line (a 2D polyline cannot become a 3D one under its handle). Where two meet, the vertex
+ * already in the chain stays.
  */
 function chain3d(items: Item[], src: Item | undefined, tol: Tolerance): Item[] {
   const paths = new Map<Item, P3[]>();
   for (const it of items) {
-    if (is3dPolyline(it.geom)) {
-      paths.set(
-        it,
-        it.geom.vertices.map((v) => ({ x: v.x, y: v.y, z: v.z ?? 0 })),
-      );
-    }
+    const p = path3d(it.geom);
+    if (p) paths.set(it, p);
   }
   const out: Item[] = [];
   const taken = new Set<Item>();
   for (const it of items) {
     if (taken.has(it) || !paths.has(it)) continue;
-    if (src && it !== src) continue;
+    if (src ? it !== src : !is3dPolyline(it.geom) && !isSloped(it.geom)) continue;
     taken.add(it);
     const group = [it];
     let path = paths.get(it)!;
@@ -561,16 +619,48 @@ function chain3d(items: Item[], src: Item | undefined, tol: Tolerance): Item[] {
     const closed = closes();
     if (closed) path = path.slice(0, -1);
     const order = [...group].sort(byFirst(items));
-    const keeper = src ?? order[0]!;
-    const base = keeper.geom as PolylineGeometry;
-    const geom: PolylineGeometry = {
-      ...base,
-      vertices: path.map((v) => ({ x: v.x, y: v.y, bulge: 0, ...(v.z !== 0 && { z: v.z }) })),
-      closed,
-    };
+    const keeper =
+      src ?? order.find((o) => is3dPolyline(o.geom)) ?? order.find((o) => o.geom.kind === 'LINE')!;
+    const vertices = path.map((v) => ({ x: v.x, y: v.y, bulge: 0, ...(v.z !== 0 && { z: v.z }) }));
+    let geom: PolylineGeometry;
+    if (is3dPolyline(keeper.geom)) {
+      // Joined, a spline-fit one is the vertices it drew.
+      const { fit: _f, frame: _fr, ...base } = keeper.geom;
+      geom = { ...base, vertices, closed };
+    } else geom = { kind: 'POLYLINE', is3d: true, vertices, closed };
     out.push({ keep: keeper.keep, parts: order.flatMap((o) => o.parts), geom, made: 'polyline' });
   }
   return [...out, ...items.filter((it) => !taken.has(it))].sort(byFirst(items));
+}
+
+/**
+ * A source 3D polyline whose every height is 0 with the curves meeting it (and whatever meets
+ * them), as `splineChain` joins a 2D one: undefined unless the spline takes a curve, since a
+ * 3D polyline joined to linear objects stays one. Any other 3D polyline at height 0 joins as its
+ * plan view too.
+ */
+function splineOnto3d(items: Item[], src: Item, tol: Tolerance): Item[] | undefined {
+  const flat = (g: EntityGeometry) => is3dPolyline(g) && g.vertices.every((v) => !v.z);
+  if (!flat(src.geom)) return undefined;
+  const plan = (it: Item): Item => {
+    if (!flat(it.geom)) return it;
+    const vertices = (it.geom as PolylineGeometry).vertices.map((v) => ({
+      x: v.x,
+      y: v.y,
+      bulge: 0,
+    }));
+    return { ...it, geom: { kind: 'LWPOLYLINE', vertices, closed: false } };
+  };
+  const planned = items.map(plan);
+  const out = splineChain(planned, planned[items.indexOf(src)]!, tol);
+  const joined = out.find((it) => it.keep === src.keep && it.made === 'spline');
+  const curved = (g: EntityGeometry) =>
+    g.kind === 'ARC' ||
+    g.kind === 'ELLIPSE' ||
+    g.kind === 'SPLINE' ||
+    ((g.kind === 'LWPOLYLINE' || g.kind === 'POLYLINE') && !path3d(g));
+  const took = (id: EntityId) => curved(items.find((it) => it.parts.includes(id))!.geom);
+  return joined?.parts.some(took) ? out : undefined;
 }
 
 // ── Splines ─────────────────────────────────────────────────────────────────────────────────
@@ -578,6 +668,7 @@ function chain3d(items: Item[], src: Item | undefined, tol: Tolerance): Item[] {
 /** Elevation 0 in plan: what can be part of a spline (which has no elevation). */
 const onSplinePlane = (g: EntityGeometry): boolean =>
   isPlan(g as { normal?: { x: number; y: number; z: number } }) &&
+  !isSloped(g) &&
   ((g as { elevation?: number }).elevation ?? 0) === 0;
 
 /**

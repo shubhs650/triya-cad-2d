@@ -198,6 +198,8 @@ async function* single(ctx: CommandContext, start: EntityId): Sub<void> {
           [{ id, geom: source }, ...more.map((x) => ({ id: x, geom: ctx.model.entity(x)!.geom }))],
           id,
           tol,
+          // PEDIT Join keeps the polyline a polyline: a 3D one takes no curves (M3-18).
+          { curves: false },
         );
         const j = r.joined.find((x) => x.keep === id);
         if (!j || g.closed) {

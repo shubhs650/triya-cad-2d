@@ -296,6 +296,22 @@ describe('heavyweight polylines', () => {
     });
   });
 
+  // M3-18 (DEC-063): a sloped line's end heights ride along; a level one keeps its elevation.
+  it('keeps a sloped line’s end heights, a level line’s elevation', () => {
+    expect(mapOne(new Line(new XYZ(0, 0, 2), new XYZ(3, 4, 7))).geom).toEqual({
+      kind: 'LINE',
+      start: { x: 0, y: 0 },
+      end: { x: 3, y: 4 },
+      heights: [2, 7],
+    });
+    expect(mapOne(new Line(new XYZ(0, 0, 5), new XYZ(1, 0, 5))).geom).toEqual({
+      kind: 'LINE',
+      start: { x: 0, y: 0 },
+      end: { x: 1, y: 0 },
+      elevation: 5,
+    });
+  });
+
   it('gives a 3D polyline its plan view', () => {
     const p = new Polyline3D();
     verticesOf(p).push(new Vertex3D(new XYZ(0, 0, 7)), new Vertex3D(new XYZ(3, 4, 9)));
