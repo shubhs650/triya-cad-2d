@@ -5,7 +5,8 @@
 //   Select objects button, Replace with, List results
 //   the results list (Location, Object Type, Text) with Zoom to highlighted result and
 //   Create selection set (all) / (highlighted), when List results is checked
-//   More Options: Search Options (Match case, Find whole words only, Use wildcards, Search blocks,
+//   More Options: Search Options (Match case, Find whole words only, Use wildcards, Search xrefs
+//   (M4-09 part 4), Search blocks,
 //   Ignore hidden items, Match diacritics, Match half/full width forms) and Text Types (Block
 //   attribute value, Dimension or leader text, Single-line or multiline text, Table text,
 //   Hyperlink description, Hyperlink)
@@ -43,6 +44,7 @@ const SEARCH_OPTIONS: readonly [Flag, string][] = [
   ['matchCase', 'Match case'],
   ['wholeWords', 'Find whole words only'],
   ['wildcards', 'Use wildcards'],
+  ['searchXrefs', 'Search xrefs'],
   ['searchBlocks', 'Search blocks'],
   ['ignoreHidden', 'Ignore hidden items'],
   ['matchDiacritics', 'Match diacritics'],

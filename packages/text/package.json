@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "nspell": "2.1.5",
     "opentype.js": "2.0.0"
   }
 }
