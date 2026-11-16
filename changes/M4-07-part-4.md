@@ -1,0 +1,1 @@
+- M4-07 part 4 (#454): HATCHEDIT (HE) and -HATCHEDIT change an existing hatch: its pattern, scale, angle and origin, island style, colour and background, layer, transparency and draw order; add areas to it or take islands out; recreate its boundary as polylines; let an associative hatch go of its boundary; and split a hatch of several areas into one hatch per area.

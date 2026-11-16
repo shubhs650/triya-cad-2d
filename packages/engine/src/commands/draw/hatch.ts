@@ -108,7 +108,7 @@ const POLYLINE = 2;
 const OUTERMOST = 16;
 
 /** Objects that bound no hatch (see the head comment). */
-const NOT_BOUNDARIES = new Set([
+export const NOT_BOUNDARIES = new Set([
   'HATCH',
   'DIMENSION',
   'ARC_DIMENSION',
@@ -139,14 +139,13 @@ interface Candidates {
   readonly view: Box | undefined;
 }
 
-export function hatchCommand(): CommandDef {
-  return hatchCommands()[0];
-}
-
-/** HATCH (with -HATCH) and GRADIENT, sharing their settings (see the head comment). */
-export function hatchCommands(): [CommandDef, CommandDef] {
-  let settings: HatchSettings | undefined;
-  const settingsFor = (ctx: CommandContext) => (settings ??= initialSettings(ctx));
+/**
+ * HATCH (with -HATCH) and GRADIENT, sharing the settings `settingsFor` keeps (see the head
+ * comment); `hatchCommands` (hatchedit.ts) adds HATCHEDIT to them.
+ */
+export function drawHatchCommands(
+  settingsFor: (ctx: CommandContext) => HatchSettings,
+): [CommandDef, CommandDef] {
   return [
     {
       name: 'HATCH',
@@ -225,7 +224,7 @@ async function* hatchRun(ctx: CommandContext, s: HatchSettings): CommandGenerato
   }
 }
 
-function initialSettings(ctx: CommandContext): HatchSettings {
+export function initialSettings(ctx: CommandContext): HatchSettings {
   const m = ctx.model.header.get('$MEASUREMENT');
   const imperial = typeof m === 'number' ? m === 0 : ctx.model.meta.measurement === 'imperial';
   return {
@@ -250,7 +249,7 @@ function initialSettings(ctx: CommandContext): HatchSettings {
 }
 
 /** One HATCH: the areas found so far and the pattern they are filled with. */
-class HatchRun {
+export class HatchRun {
   readonly #areas: Area[] = [];
   /** The pattern's lines, placed for `#placed`. */
   #lines: readonly HatchPatternLine[] | undefined;
@@ -428,43 +427,27 @@ class HatchRun {
   }
 
   #hatch(areas: readonly Area[], lines: readonly HatchPatternLine[]): HatchGeometry {
-    const s = this.s;
-    const gradient = gradientNamed(s.pattern);
-    // A gradient is a solid fill (DXF 70 = 1) named SOLID, as AutoCAD saves one.
-    const solid = s.pattern === SOLID || gradient !== undefined;
-    const user = s.pattern === USER;
-    const g = s.gradient;
     return {
       kind: 'HATCH',
-      pattern: solid ? SOLID : s.pattern,
-      solid,
       associative: false,
-      style: s.islands ? STYLES.indexOf(s.style) : 2,
-      patternType: user ? 0 : s.custom ? 2 : 1,
-      patternAngle: solid ? 0 : s.angle,
-      patternScale: solid ? 0 : user ? s.spacing : s.scale,
-      double: user && s.double,
       loops: areas.flatMap((a) => a.loops),
-      patternLines: lines,
       seedPoints: areas.flatMap((a) => (a.kind === 'pick' ? [a.seed] : [])),
-      ...(!solid && s.background && { background: s.background }),
-      ...(gradient && {
-        gradient: {
-          name: gradient[1],
-          angle: g.angle,
-          // GFSHIFT: 0 centred, 1 shifted up and to the left (DXF 461).
-          shift: g.centered ? 0 : 1,
-          singleColor: g.oneColor,
-          tint: g.tint,
-          // Two colours always, as AutoCAD writes them (DXF 453 = 2); one colour shades the
-          // first to its tint.
-          colors: [
-            { value: 0, color: g.color1 },
-            { value: 1, color: g.color2 },
-          ],
-        },
-      }),
+      ...hatchFill(this.s, lines),
     };
+  }
+
+  /** The loops and seed points of the areas found (HATCHEDIT's ADd boundaries). */
+  found(): Pick<HatchGeometry, 'loops' | 'seedPoints'> {
+    const areas = this.#areas;
+    return {
+      loops: areas.flatMap((a) => a.loops),
+      seedPoints: areas.flatMap((a) => (a.kind === 'pick' ? [a.seed] : [])),
+    };
+  }
+
+  /** The pattern's lines for the areas found; undefined when the library has no such pattern. */
+  lines(): Promise<readonly HatchPatternLine[] | undefined> {
+    return this.#patternLines();
   }
 
   async preview(): Promise<void> {
@@ -524,8 +507,50 @@ class HatchRun {
   }
 }
 
+/** What a hatch's settings make of its fill: the pattern, solid or gradient, and its lines. */
+export type HatchFill = Omit<
+  HatchGeometry,
+  'kind' | 'associative' | 'loops' | 'seedPoints' | 'normal' | 'elevation'
+>;
+
+/** The fill `s` makes with `lines` (the pattern's lines placed, none for a solid fill). */
+export function hatchFill(s: HatchSettings, lines: readonly HatchPatternLine[]): HatchFill {
+  const gradient = gradientNamed(s.pattern);
+  // A gradient is a solid fill (DXF 70 = 1) named SOLID, as AutoCAD saves one.
+  const solid = s.pattern === SOLID || gradient !== undefined;
+  const user = s.pattern === USER;
+  const g = s.gradient;
+  return {
+    pattern: solid ? SOLID : s.pattern,
+    solid,
+    style: s.islands ? STYLES.indexOf(s.style) : 2,
+    patternType: user ? 0 : s.custom ? 2 : 1,
+    patternAngle: solid ? 0 : s.angle,
+    patternScale: solid ? 0 : user ? s.spacing : s.scale,
+    double: user && s.double,
+    patternLines: lines,
+    ...(!solid && s.background && { background: s.background }),
+    ...(gradient && {
+      gradient: {
+        name: gradient[1],
+        angle: g.angle,
+        // GFSHIFT: 0 centred, 1 shifted up and to the left (DXF 461).
+        shift: g.centered ? 0 : 1,
+        singleColor: g.oneColor,
+        tint: g.tint,
+        // Two colours always, as AutoCAD writes them (DXF 453 = 2); one colour shades the
+        // first to its tint.
+        colors: [
+          { value: 0, color: g.color1 },
+          { value: 1, color: g.color2 },
+        ],
+      },
+    }),
+  };
+}
+
 /** Where HPDRAWORDER puts a new hatch, or undefined where it is drawn anyway (on top). */
-function placement(
+export function placement(
   order: HatchSettings['drawOrder'],
   reference: readonly EntityId[],
 ): DrawOrderMove | undefined {
@@ -542,7 +567,7 @@ function placement(
 }
 
 /** The layer HPLAYER names, made (as layer 0 is, colour 7) when the drawing has none. */
-function hatchLayerRecord(b: ChangeSetBuilder, ctx: CommandContext, name: string): Handle {
+export function hatchLayerRecord(b: ChangeSetBuilder, ctx: CommandContext, name: string): Handle {
   const u = name.toUpperCase();
   let zero: Handle | undefined;
   for (const l of ctx.model.tables.layers.values()) {
@@ -618,11 +643,11 @@ async function* drawBoundary(ctx: CommandContext, run: HatchRun): Sub<boolean> {
   }
 }
 
-const tolerance = (ctx: CommandContext) =>
+export const tolerance = (ctx: CommandContext) =>
   toleranceFor(ctx.model, { kind: 'XLINE', base: { x: 0, y: 0 }, direction: { x: 1, y: 0 } });
 
 /** On a layer that is on and thawed, and not made invisible. */
-function shown(ctx: CommandContext, e: Entity): boolean {
+export function shown(ctx: CommandContext, e: Entity): boolean {
   if (!e.visible) return false;
   const l = ctx.model.tables.layers.get(e.layer);
   return !l || (l.on && !l.frozen);
@@ -632,7 +657,7 @@ function shown(ctx: CommandContext, e: Entity): boolean {
  * User-defined lines (DXF 76 = 0): continuous lines at the angle, `spacing` apart, a second
  * family at 90° when doubled (as the hatch package's `userDefinedLines`).
  */
-function userLines(
+export function userLines(
   angle: number,
   spacing: number,
   double: boolean,

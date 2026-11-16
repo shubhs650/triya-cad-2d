@@ -28,7 +28,7 @@ import { TEXT_TOOL_COMMANDS } from './modify/text-tools';
 import { FIND_COMMANDS } from './modify/find';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
-import { hatchCommands } from './draw/hatch';
+import { hatchCommands } from './draw/hatchedit';
 import { DRAW_ORDER_COMMANDS } from './modify/draw-order';
 import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';

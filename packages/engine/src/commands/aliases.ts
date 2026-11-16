@@ -18,6 +18,7 @@ export const ALIASES: Readonly<Record<string, string>> = {
   H: 'HATCH',
   BH: 'HATCH',
   GD: 'GRADIENT',
+  HE: 'HATCHEDIT',
   BO: 'BOUNDARY',
   REG: 'REGION',
   DIV: 'DIVIDE',
