@@ -1974,6 +1974,39 @@ export const isDimInspect = (o: NonGraphicalObject | undefined): o is DimInspect
   o?.type === 'TRIYA_DIMINSPECT';
 
 /**
+ * A center mark or centerline Triya made (CENTERMARK, CENTERLINE; M4-08): what keeps it
+ * associative to the objects it was made on. The mark is an INSERT of an anonymous `*U` block of
+ * lines, which every reader draws; the record (`owner` the INSERT) says how to draw it again when
+ * its objects change. Part 1 keeps the record while the drawing is open: how a save writes it
+ * waits on needs-human #451, so a reopened drawing has the marks as plain block references.
+ */
+export interface CenterMark extends NonGraphicalObject {
+  readonly type: 'TRIYA_CENTERMARK';
+  /** The mark's INSERT. */
+  readonly insert: Handle;
+  /** A center mark on a circle or arc, or a centerline between two lines. */
+  readonly kind: 'mark' | 'line';
+  /** The circle or arc; the centerline's first and second line. */
+  readonly objects: readonly Handle[];
+  /**
+   * A center mark's cross size and gap as CENTERCROSSSIZE and CENTERCROSSGAP state them: a length,
+   * or a factor of the circle's diameter followed by `x` (`0.1x`).
+   */
+  readonly crossSize?: string;
+  readonly crossGap?: string;
+  /**
+   * How far each extension line goes past the object: a center mark's left, right, top and bottom
+   * (in its own axes), a centerline's start and end.
+   */
+  readonly extensions: readonly number[];
+  /** A center mark's extension lines are drawn (CENTERMARKEXE when it was made). */
+  readonly showExtensions?: boolean;
+}
+
+export const isCenterMark = (o: NonGraphicalObject | undefined): o is CenterMark =>
+  o?.type === 'TRIYA_CENTERMARK';
+
+/**
  * One DXF group code of a `CodedObject`, as the save writes it. A handle code's value (DXF 5,
  * 105, 320–369, 390–399, 480, 481 and 1005: `isHandleCode`) is the handle.
  */

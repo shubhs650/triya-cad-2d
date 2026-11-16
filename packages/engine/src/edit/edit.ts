@@ -38,6 +38,7 @@ import { copyAssocArrays } from './assoc-array';
 import { copyGroups } from './groups';
 import { isAssocArray, isDimBreak, isDimInspect } from '../model/types';
 import { carryDimensionRecords, copyDimensionRecords } from './dimension-records';
+import { copyCenterMarks } from './center-marks';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry, type StretchOptions } from './stretch';
 import { moveGrip } from './grips';
@@ -657,6 +658,8 @@ export function copyObjects(
   copyAssocArrays(b, model, copies, names);
   // A copy of a dimension keeps its breaks and inspection data (M4-02 part 4).
   copyDimensionRecords(b, copies, t);
+  // A copy of a center mark draws from a block of its own (M4-08).
+  copyCenterMarks(b, model, copies, names);
   // A copy of a whole group, left in its space, is a group of its own (M3-13).
   if (into === undefined) copyGroups(b, model, copies);
   const made = [...copies.values()];

@@ -88,6 +88,7 @@ export * from './underlay-layers';
 export * from './array';
 export * from './assoc-array';
 export * from './dimension-records';
+export * from './center-marks';
 export * from './pedit';
 export * from './splinedit';
 export * from './overkill';

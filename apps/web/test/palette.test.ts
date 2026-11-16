@@ -47,6 +47,9 @@ describe('palette search', () => {
       'ATTEDIT',
       'BREAK',
       'BREAKATPOINT',
+      // M4-08: CENTERLINE and CENTERMARK.
+      'CENTERLINE',
+      'CENTERMARK',
       // M3-02 part 3: CHAMFER and FILLET.
       'CHAMFER',
       // M3-02 part 5: CHANGE and CHPROP.
