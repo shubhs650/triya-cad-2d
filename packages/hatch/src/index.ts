@@ -8,6 +8,7 @@ export {
   type GradientRamp,
 } from './gradient';
 export { PatternLibrary, bundledPatterns, explodedHatchLines, hatchLines } from './library';
+export { MATERIAL_MOTIFS, materialPatternNames, motifLines, type Motif } from './materials';
 export {
   parsePat,
   patternLines,
