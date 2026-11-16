@@ -17,6 +17,7 @@ import { joggedParts } from './jogged';
 import { linearParts } from './linear';
 import { ordinateParts } from './ordinate';
 import { radialParts } from './radial';
+import { withBreaks, withInspection, type RecordHolder } from './records';
 import { annotationScaleOf, dimStyle, type DimensionTables } from './style';
 
 /** Whether the engine draws this kind of dimension. */
@@ -32,7 +33,7 @@ export function generates(g: EntityGeometry): boolean {
  * block is about to be rewritten (M2-10 part 3), which places the text afresh.
  */
 export function dimensionParts(
-  e: Pick<Entity, 'geom' | 'xdata' | 'annotative'>,
+  e: Pick<Entity, 'geom' | 'xdata' | 'annotative'> & RecordHolder,
   model: DimensionTables,
   measure: TextMeasure,
   options: { readonly regenerate?: boolean } = {},
@@ -46,24 +47,31 @@ export function dimensionParts(
   // the user moved it; otherwise the engine places it, as AutoCAD does when it regenerates.
   const stored = !options.regenerate && g.block !== undefined && !!model.blocks.get(g.block);
   const keepText = g.textUserPositioned || stored;
-  switch (g.dimType) {
-    case 'linear':
-    case 'aligned': {
-      const at = linearJog(e.xdata, model);
-      const jog = at && { at, height: jogHeightFactor(style, e.xdata, model) * s.textHeight };
-      return linearParts(g, s, model, measure, keepText, jog);
+  const parts = typeParts();
+  // DIMBREAK's gaps and DIMINSPECT's frame (M4-02 part 4), over what the type draws.
+  return parts && withInspection(withBreaks(parts, e, style, model, s), e, model, s, measure);
+
+  function typeParts(): DimPart[] | undefined {
+    if (!('dimType' in g)) return undefined;
+    switch (g.dimType) {
+      case 'linear':
+      case 'aligned': {
+        const at = linearJog(e.xdata, model);
+        const jog = at && { at, height: jogHeightFactor(style, e.xdata, model) * s.textHeight };
+        return linearParts(g, s, model, measure, keepText, jog);
+      }
+      case 'radius':
+      case 'diameter':
+        return radialParts(g, s, model, measure, keepText, radialArc(e.xdata, model));
+      case 'angular':
+      case 'angular3pt':
+        return angularParts(g, s, model, measure, keepText);
+      case 'ordinate':
+        return ordinateParts(g, s, model, measure, keepText);
+      case 'jogged':
+        return joggedParts(g, s, model, measure, keepText);
+      case 'arc':
+        return arcLengthParts(g, s, model, measure, keepText);
     }
-    case 'radius':
-    case 'diameter':
-      return radialParts(g, s, model, measure, keepText, radialArc(e.xdata, model));
-    case 'angular':
-    case 'angular3pt':
-      return angularParts(g, s, model, measure, keepText);
-    case 'ordinate':
-      return ordinateParts(g, s, model, measure, keepText);
-    case 'jogged':
-      return joggedParts(g, s, model, measure, keepText);
-    case 'arc':
-      return arcLengthParts(g, s, model, measure, keepText);
   }
 }

@@ -3110,6 +3110,30 @@ button {
   padding: 0;
 }
 
+/* DIMINSPECT's Inspection Dimension (M4-02 part 4): selection row, Shape, and the two fields. */
+.inspection-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.inspection-select [role='status'] {
+  flex: 1;
+}
+
+.inspection-shape,
+.inspection-fields {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.inspection-fields {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
 /* DSETTINGS' Drafting Settings (M3-06 part 1): tabs of check boxes and grouped options. */
 .cad-dialog.dsettings {
   width: min(520px, calc(100vw - 32px));
