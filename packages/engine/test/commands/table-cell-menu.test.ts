@@ -6,6 +6,7 @@ import {
   DocumentModel,
   PromptBus,
   builtinCommands,
+  dragMotion,
   standardTableStyle,
   type BusEvent,
   type DocumentInit,
@@ -581,6 +582,12 @@ describe('the grips of the cells selected (M4-05 part 6)', () => {
     await s.bus.pick({ x: 127, y: -24.5 });
     expect(s.bus.promptText).toBe('Specify stretch point:');
     expect(s.prompt()?.drag).toMatchObject({ kind: 'table', role: { kind: 'cellColumn', j: 1 } });
+    // The drag: the grip's role and how far the cursor is from it.
+    expect(dragMotion(s.prompt()!.drag!, { x: 130, y: -20 })?.table).toEqual({
+      id: s.table().id,
+      role: { kind: 'cellColumn', j: 1, start: false },
+      d: { x: 3, y: 4.5 },
+    });
     await s.bus.pick({ x: 137, y: -30 });
     expect(s.bus.command).toBeUndefined();
     expect(s.table().geom.columnWidths).toEqual([63.5, 73.5]);
@@ -692,6 +699,10 @@ describe('Ctrl with a table’s column grip (M4-05 part 6)', () => {
     await s.bus.pick({ x: 63.5, y: 0 }, { grip: 1 });
     expect(s.bus.prompt).toMatchObject({ ctrlSizesTable: true });
     expect(s.bus.prompt?.ctrlCopies).toBeUndefined();
+    // Dragged with Ctrl held, the grip says so.
+    const drag = (s.bus.prompt as PointPrompt).drag!;
+    expect(dragMotion(drag, { x: 70, y: 0 }, { ctrl: true })?.grip?.ctrl).toBe(true);
+    expect(dragMotion(drag, { x: 70, y: 0 })?.grip?.ctrl).toBeUndefined();
     await s.bus.pick({ x: 73.5, y: 5 }, { ctrl: true });
     expect(s.table().geom.columnWidths).toEqual([73.5, 63.5]);
     expect([...s.model.entities()].filter((e) => e.geom.kind === 'ACAD_TABLE')).toHaveLength(1);
