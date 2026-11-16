@@ -42,6 +42,7 @@ import { QSelectDialog } from './QSelectDialog';
 import { DraftingSettingsDialog } from './DraftingSettingsDialog';
 import { UnitsDialog } from './UnitsDialog';
 import { DimStyleDialog } from './DimStyleDialog';
+import { InsertTableDialog } from './InsertTableDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -85,6 +86,8 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
       return <UnitsDialog key={key} doc={doc.id} request={d} />;
     case 'dimstyle':
       return <DimStyleDialog key={key} doc={doc.id} request={d} />;
+    case 'inserttable':
+      return <InsertTableDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

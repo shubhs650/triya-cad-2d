@@ -19,7 +19,16 @@ import type {
   TableGeometry,
   TableStyleRecord,
 } from '../model/types';
-import { tableParts, tableRowHeight, tableRowTypes, rowCellStyle } from '../annotation/table';
+import type { Vec2 } from '../geom/types';
+import {
+  tableParts,
+  tableRangeHeads,
+  tableRowHeight,
+  tableRowTypes,
+  rowCellStyle,
+  type TableDrawing,
+} from '../annotation/table';
+import { tableAxes } from '../spatial/entity-bounds';
 import { defpointsLayer, layerNamed } from './dimension-block';
 import { AnonymousNames } from './edit';
 import { blockExtentsOf } from './mleader';
@@ -144,6 +153,132 @@ function standardTextStyle(model: DocumentModel): Handle {
   return (styles.find((s) => s.name.toUpperCase() === 'STANDARD') ?? styles[0])?.handle ?? '';
 }
 
+/** What the table engine draws a table of `model` with besides the table and its style. */
+export function tableDrawingOf(model: DocumentModel): TableDrawing {
+  return {
+    textStyle: standardTextStyle(model),
+    blockExtents: (h) => blockExtentsOf(model, h),
+  };
+}
+
+/** A point of table `g`'s block (its own frame) in plan, as the renderer places the block. */
+export function tableToPlan(g: TableGeometry, p: Vec2): Vec2 {
+  const { x, y } = tableAxes(g);
+  return {
+    x: g.position.x + p.x * x.x + p.y * y.x,
+    y: g.position.y + p.x * x.y + p.y * y.y,
+  };
+}
+
+/** A point in plan in table `g`'s block frame. */
+export function tableFromPlan(g: TableGeometry, p: Vec2): Vec2 {
+  const { x, y } = tableAxes(g);
+  const d = { x: p.x - g.position.x, y: p.y - g.position.y };
+  return { x: d.x * x.x + d.y * x.y, y: d.x * y.x + d.y * y.y };
+}
+
+/** MTEXT's line spacing at factor 1: 5/3 of the text height between baselines. */
+const LINE_SPACING = 5 / 3;
+
+/**
+ * How many lines a cell's text of height `textHeight` was laid out in, from the height of the
+ * box its glyphs fill: one line's glyphs are about the text height, each line more one line
+ * spacing.
+ */
+export function laidOutLines(boxHeight: number, textHeight: number): number {
+  if (!(textHeight > 0)) return 1;
+  return 1 + Math.max(0, Math.round((boxHeight - textHeight) / (LINE_SPACING * textHeight)));
+}
+
+/**
+ * Table `g` with the rows of the range cell (`i`, `j`) heads grown to fit `lines` lines of its
+ * text: AutoCAD keeps a row at least as high as its text and the cell margins above and below
+ * (AutoCAD's Help on table cells: a row grows to hold what is typed in its cells). A row
+ * never shrinks here, as the table stores no minimum height to shrink back to; the last row of
+ * a range spanning several takes what they lack. A turned cell's text runs across its rows and
+ * is not fitted.
+ */
+export function fitTableRow(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  i: number,
+  j: number,
+  lines: number,
+): TableGeometry {
+  const c = g.cells[i]?.[j];
+  if (!c || Math.abs(Math.sin(c.rotation)) > 0.5) return g;
+  const type = tableRowTypes(style, g.rowHeights.length)[i]!;
+  const th = c.format?.textHeight ?? rowCellStyle(style, type)?.textHeight ?? 0.18;
+  const vm = c.format?.margins?.top ?? g.overrides?.margins?.top ?? style?.verticalMargin ?? 0;
+  const need = th * (1 + (lines - 1) * LINE_SPACING) + 2 * vm;
+  const last = Math.min(i + c.rowSpan, g.rowHeights.length) - 1;
+  const have = g.rowHeights.slice(i, last + 1).reduce((a, b) => a + b, 0);
+  if (need <= have * (1 + 1e-9)) return g;
+  const rowHeights = g.rowHeights.map((h, k) => (k === last ? h + need - have : h));
+  return { ...g, rowHeights };
+}
+
+/** Table `g` with cell (`i`, `j`)'s text set to `text`. */
+export function withCellText(g: TableGeometry, i: number, j: number, text: string): TableGeometry {
+  const cells = g.cells.map((row, k) =>
+    k !== i ? row : row.map((c, l) => (l !== j ? c : { ...c, type: 'text' as const, text })),
+  );
+  return { ...g, cells };
+}
+
+/**
+ * Table `g` with a row added at its end as Tab in its last cell adds one (AutoCAD's Help on
+ * entering text in table cells: Tab in the last cell adds a row): as high as the
+ * last row, its cells empty, with the last row's cell formats; the save inserts it as a new row
+ * (`rowOrigins`, DEC-046).
+ */
+export function withRowAdded(g: TableGeometry): TableGeometry {
+  const rows = g.rowHeights.length;
+  const lastRow = g.cells[rows - 1] ?? [];
+  const row = g.columnWidths.map((_, j) => {
+    const format = lastRow[j]?.format;
+    return empty(format ? { format } : {});
+  });
+  return {
+    ...g,
+    rowHeights: [...g.rowHeights, g.rowHeights[rows - 1] ?? 0],
+    cells: [...g.cells, row],
+    rowOrigins: [...(g.rowOrigins ?? g.rowHeights.map((_, k) => k)), null],
+  };
+}
+
+/**
+ * The cell heading the range the editor moves to from the range (`i`, `j`) heads, as
+ * `[row, column]`: Tab the next in reading order and Shift+Tab the previous, the arrows the
+ * one beside as drawn (a table that reads upwards has its first row lowest). Undefined when
+ * there is none that way.
+ */
+export function tableCellMove(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  i: number,
+  j: number,
+  move: 'next' | 'previous' | 'left' | 'right' | 'up' | 'down',
+): [number, number] | undefined {
+  const heads = tableRangeHeads(g);
+  const rows = g.cells.length;
+  const columns = g.columnWidths.length;
+  const c = g.cells[i]![j]!;
+  const at = (r: number, k: number): [number, number] | undefined =>
+    r >= 0 && r < rows && k >= 0 && k < columns ? heads[r]![k] : undefined;
+  if (move === 'next' || move === 'previous') {
+    const order: [number, number][] = [];
+    g.cells.forEach((row, r) => row.forEach((x, k) => !x.merged && order.push([r, k])));
+    const n = order.findIndex(([r, k]) => r === i && k === j);
+    return order[move === 'next' ? n + 1 : n - 1];
+  }
+  const up = style?.flowDirection === 1;
+  const lastRow = i + c.rowSpan - 1;
+  if (move === 'left') return at(i, j - 1);
+  if (move === 'right') return at(i, j + c.columnSpan);
+  return (move === 'up') !== up ? at(i - 1, j) : at(lastRow + 1, j);
+}
+
 /**
  * Rewrites table `id`'s `*T` block with what the table engine draws for it now, as the change
  * being built sees the table and its style. Returns false when the table is gone or the drawing
@@ -184,4 +319,50 @@ export function writeTableBlock(
   }
   if (block !== g.block) b.updateEntity(id, { geom: { ...g, block } });
   return true;
+}
+
+/** A new table's size as the TABLE command asks it. */
+export interface TableSize {
+  readonly columns: number;
+  readonly columnWidth: number;
+  readonly dataRows: number;
+  /** Each row's height in lines (`tableRowHeight`). */
+  readonly rowLines: number;
+}
+
+/**
+ * A new table's size from a window `width` by `height` (the Insert Table dialog's Specify window,
+ * -TABLE's Auto), as AutoCAD 2024's Help puts it: the window sets the number of columns or the
+ * column width, not both, and the number of data rows or the row height. `autoColumns`: the
+ * columns are as many of `size.columnWidth` as fit the window's width (at least one); else
+ * `size.columns` share it. `autoRows`: the data rows are as many of `size.rowLines` lines as
+ * fit below the title and header rows (at least one); else the row height is the most whole
+ * lines (at least one) with which `size.dataRows` and the title and header rows fit.
+ *
+ * Where the documentation is silent (the common drafter expectation): the table never comes
+ * out larger than the window unless one column or row, or one line, is already larger.
+ */
+export function windowTableSize(
+  style: TableStyleRecord,
+  size: TableSize,
+  autoColumns: boolean,
+  autoRows: boolean,
+  width: number,
+  height: number,
+): TableSize {
+  const fits = (n: number) => Math.max(1, Math.floor(n + 1e-9));
+  const columns = autoColumns ? fits(width / size.columnWidth) : size.columns;
+  const columnWidth = autoColumns ? size.columnWidth : width / size.columns;
+  const above = tableRowTypes(style, 2).filter((r) => r !== 'data');
+  const vm = style.verticalMargin;
+  const th = (type: 'title' | 'header' | 'data') => rowCellStyle(style, type)?.textHeight ?? 0.18;
+  if (autoRows) {
+    const taken = above.reduce((h, type) => h + tableRowHeight(size.rowLines, th(type), vm), 0);
+    const dataRows = fits((height - taken) / tableRowHeight(size.rowLines, th('data'), vm));
+    return { columns, columnWidth, dataRows, rowLines: size.rowLines };
+  }
+  const types = [...above, ...Array.from({ length: size.dataRows }, () => 'data' as const)];
+  const perLine = types.reduce((h, type) => h + (th(type) * 4) / 3, 0);
+  const rowLines = fits((height - 2 * vm * types.length) / perLine);
+  return { columns, columnWidth, dataRows: size.dataRows, rowLines };
 }

@@ -46,6 +46,7 @@ import type {
   TableCellStyle,
   TableGeometry,
   TableStyleRecord,
+  MTextGeometry,
 } from '../model/types';
 import type { AnnotationPart } from './multileader';
 
@@ -106,7 +107,7 @@ export function tableRowHeight(lines: number, textHeight: number, verticalMargin
 }
 
 /** The cell heading the merged range that covers each cell, `[row, column]`. */
-function rangeHeads(g: TableGeometry): [number, number][][] {
+export function tableRangeHeads(g: TableGeometry): [number, number][][] {
   const heads = g.cells.map((row, i) => row.map((_, j): [number, number] => [i, j]));
   g.cells.forEach((row, i) =>
     row.forEach((c, j) => {
@@ -150,6 +151,156 @@ function edgeOf(
   };
 }
 
+/** A merged range (or single cell) headed by cell (`i`, `j`), in block coordinates. */
+interface CellRange {
+  readonly i: number;
+  readonly j: number;
+  readonly c: TableCell;
+  readonly x0: number;
+  readonly x1: number;
+  readonly y0: number;
+  readonly y1: number;
+}
+
+/** How a table's rows lie in its block: from the top down, or upwards in a style that flows up. */
+interface RowLayout {
+  readonly rows: number;
+  readonly columns: number;
+  readonly types: TableRowType[];
+  readonly heads: [number, number][][];
+  readonly xs: number[];
+  readonly yTop: (i: number) => number;
+  readonly yBottom: (i: number) => number;
+  readonly visual: number[];
+  readonly hMargin: number;
+  readonly vMargin: number;
+}
+
+function rowLayout(g: TableGeometry, style: TableStyleRecord | undefined): RowLayout {
+  const rows = g.rowHeights.length;
+  const up = style?.flowDirection === 1;
+  // Row i spans [yBottom(i), yTop(i)]: downwards from 0 in a table that flows down; upwards
+  // from 0, its first row lowest, in one that flows up.
+  const sums = edges(g.rowHeights);
+  return {
+    rows,
+    columns: g.columnWidths.length,
+    types: tableRowTypes(style, rows),
+    heads: tableRangeHeads(g),
+    xs: edges(g.columnWidths),
+    yTop: (i) => (up ? sums[i + 1]! : -sums[i]!),
+    yBottom: (i) => (up ? sums[i]! : -sums[i + 1]!),
+    // The rows from the top down, as drawn.
+    visual: up ? [...Array(rows).keys()].reverse() : [...Array(rows).keys()],
+    hMargin: g.overrides?.margins?.left ?? style?.horizontalMargin ?? 0,
+    vMargin: g.overrides?.margins?.top ?? style?.verticalMargin ?? 0,
+  };
+}
+
+/** The range cell (`i`, `j`) heads, which must not be covered by another's. */
+function rangeOf(g: TableGeometry, l: RowLayout, i: number, j: number): CellRange {
+  const c = g.cells[i]![j]!;
+  const i1 = Math.min(i + c.rowSpan, l.rows) - 1;
+  const j1 = Math.min(j + c.columnSpan, l.columns) - 1;
+  return {
+    i,
+    j,
+    c,
+    x0: l.xs[j]!,
+    x1: l.xs[j1 + 1]!,
+    y0: Math.min(l.yBottom(i), l.yBottom(i1)),
+    y1: Math.max(l.yTop(i), l.yTop(i1)),
+  };
+}
+
+/** Where a range's contents go: its alignment's point less the margins, turned by its rotation. */
+function contentFrame(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  l: RowLayout,
+  r: CellRange,
+) {
+  const s = rowCellStyle(style, l.types[r.i]!);
+  const f = r.c.format;
+  const alignment = f?.alignment ?? s?.alignment ?? 1;
+  const ax = ((alignment - 1) % 3) - 1; // -1 left, 0 centre, 1 right
+  const ay = 1 - Math.floor((alignment - 1) / 3); // 1 top, 0 middle, -1 bottom
+  const hm = f?.margins?.left ?? l.hMargin;
+  const vm = f?.margins?.top ?? l.vMargin;
+  const centre = { x: (r.x0 + r.x1) / 2, y: (r.y0 + r.y1) / 2 };
+  // The cell as its contents see it: turned by the cell's rotation.
+  const turned = Math.abs(Math.sin(r.c.rotation)) > 0.5;
+  const w = turned ? r.y1 - r.y0 : r.x1 - r.x0;
+  const h = turned ? r.x1 - r.x0 : r.y1 - r.y0;
+  const local = { x: ax * (w / 2 - hm), y: ay * (h / 2 - vm) };
+  const cos = Math.cos(r.c.rotation);
+  const sin = Math.sin(r.c.rotation);
+  const at = (p: Vec2): Vec2 => ({
+    x: centre.x + p.x * cos - p.y * sin,
+    y: centre.y + p.x * sin + p.y * cos,
+  });
+  const color = f?.contentColor ?? s?.textColor ?? BY_BLOCK;
+  return { s, f, alignment, ax, ay, hm, vm, w, h, local, at, color, turned };
+}
+
+/** The MTEXT a range's text draws as, `text` in place of the cell's own when given. */
+function cellMText(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  drawing: TableDrawing,
+  l: RowLayout,
+  r: CellRange,
+  text = r.c.text,
+): MTextGeometry {
+  const { s, f, alignment, hm, w, local, at } = contentFrame(g, style, l, r);
+  return {
+    kind: 'MTEXT',
+    contents: text,
+    style: f?.textStyle ?? s?.textStyle ?? drawing.textStyle,
+    position: at(local),
+    height: f?.textHeight ?? s?.textHeight ?? 0.18,
+    width: Math.max(w - 2 * hm, 0),
+    rotation: r.c.rotation,
+    attachment: alignment,
+    direction: 5,
+    lineSpacingStyle: 1,
+    lineSpacing: 1,
+  };
+}
+
+/**
+ * The cell heading the merged range at `p` (block coordinates: x along the columns from the
+ * left edge, y from the insertion point), as `[row, column]`; undefined outside the table.
+ */
+export function tableCellAt(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  p: Vec2,
+): [number, number] | undefined {
+  const l = rowLayout(g, style);
+  const j = l.xs.findIndex((x, k) => k < l.columns && p.x >= x && p.x <= l.xs[k + 1]!);
+  const i = [...Array(l.rows).keys()].find((k) => p.y >= l.yBottom(k) && p.y <= l.yTop(k));
+  if (j < 0 || i === undefined) return undefined;
+  return l.heads[i]![j]!;
+}
+
+/**
+ * Where cell (`i`, `j`)'s text is drawn, as an MTEXT in block coordinates, `text` in place of
+ * the cell's own when given: what the cell editor opens on and what a row is fitted to. The
+ * cell is the head of its merged range.
+ */
+export function tableCellText(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  drawing: TableDrawing,
+  i: number,
+  j: number,
+  text?: string,
+): MTextGeometry {
+  const l = rowLayout(g, style);
+  return cellMText(g, style, drawing, l, rangeOf(g, l, i, j), text);
+}
+
 /**
  * The parts of table `g`'s `*T` block, in block coordinates (see the head of this file), drawn
  * with `style`, the table's table style.
@@ -159,48 +310,18 @@ export function tableParts(
   style: TableStyleRecord | undefined,
   drawing: TableDrawing,
 ): TablePart[] {
-  const rows = g.rowHeights.length;
-  const columns = g.columnWidths.length;
+  const l = rowLayout(g, style);
+  const { rows, columns, types, heads, xs, yTop, yBottom, visual } = l;
   if (rows === 0 || columns === 0) return [];
-  const up = style?.flowDirection === 1;
-  const types = tableRowTypes(style, rows);
-  const heads = rangeHeads(g);
-  const xs = edges(g.columnWidths);
-  // Row i spans [yBottom(i), yTop(i)]: downwards from 0 in a table that flows down; upwards
-  // from 0, its first row lowest, in one that flows up.
-  const sums = edges(g.rowHeights);
-  const yTop = (i: number) => (up ? sums[i + 1]! : -sums[i]!);
-  const yBottom = (i: number) => (up ? sums[i]! : -sums[i + 1]!);
-  // The rows from the top down, as drawn.
-  const visual = up ? [...Array(rows).keys()].reverse() : [...Array(rows).keys()];
   // The n-th row boundary from the top: above visual row n, or below the last one.
   const boundaryY = (n: number) => (n < rows ? yTop(visual[n]!) : yBottom(visual[rows - 1]!));
-  const hMargin = g.overrides?.margins?.left ?? style?.horizontalMargin ?? 0;
-  const vMargin = g.overrides?.margins?.top ?? style?.verticalMargin ?? 0;
   const cellStyle = (i: number) => rowCellStyle(style, types[i]!);
 
   const parts: TablePart[] = [];
-  const ranges: {
-    readonly i: number;
-    readonly c: TableCell;
-    readonly x0: number;
-    readonly x1: number;
-    readonly y0: number;
-    readonly y1: number;
-  }[] = [];
+  const ranges: CellRange[] = [];
   g.cells.forEach((row, i) =>
     row.forEach((c, j) => {
-      if (c.merged) return;
-      const i1 = Math.min(i + c.rowSpan, rows) - 1;
-      const j1 = Math.min(j + c.columnSpan, columns) - 1;
-      ranges.push({
-        i,
-        c,
-        x0: xs[j]!,
-        x1: xs[j1 + 1]!,
-        y0: Math.min(yBottom(i), yBottom(i1)),
-        y1: Math.max(yTop(i), yTop(i1)),
-      });
+      if (!c.merged) ranges.push(rangeOf(g, l, i, j));
     }),
   );
 
@@ -230,44 +351,10 @@ export function tableParts(
     ...ranges.filter((x) => x.c.type === 'block'),
   ];
   for (const r of contents) {
-    const s = cellStyle(r.i);
-    const f = r.c.format;
-    const alignment = f?.alignment ?? s?.alignment ?? 1;
-    const ax = ((alignment - 1) % 3) - 1; // -1 left, 0 centre, 1 right
-    const ay = 1 - Math.floor((alignment - 1) / 3); // 1 top, 0 middle, -1 bottom
-    const hm = f?.margins?.left ?? hMargin;
-    const vm = f?.margins?.top ?? vMargin;
-    const centre = { x: (r.x0 + r.x1) / 2, y: (r.y0 + r.y1) / 2 };
-    // The cell as its contents see it: turned by the cell's rotation.
-    const turned = Math.abs(Math.sin(r.c.rotation)) > 0.5;
-    const w = turned ? r.y1 - r.y0 : r.x1 - r.x0;
-    const h = turned ? r.x1 - r.x0 : r.y1 - r.y0;
-    const local = { x: ax * (w / 2 - hm), y: ay * (h / 2 - vm) };
-    const cos = Math.cos(r.c.rotation);
-    const sin = Math.sin(r.c.rotation);
-    const at = (p: Vec2): Vec2 => ({
-      x: centre.x + p.x * cos - p.y * sin,
-      y: centre.y + p.x * sin + p.y * cos,
-    });
-    const color = f?.contentColor ?? s?.textColor ?? BY_BLOCK;
+    const { ax, ay, hm, vm, w, h, local, at, color } = contentFrame(g, style, l, r);
     if (r.c.type === 'text') {
       if (r.c.text === '') continue;
-      parts.push({
-        geom: {
-          kind: 'MTEXT',
-          contents: r.c.text,
-          style: f?.textStyle ?? s?.textStyle ?? drawing.textStyle,
-          position: at(local),
-          height: f?.textHeight ?? s?.textHeight ?? 0.18,
-          width: Math.max(w - 2 * hm, 0),
-          rotation: r.c.rotation,
-          attachment: alignment,
-          direction: 5,
-          lineSpacingStyle: 1,
-          lineSpacing: 1,
-        },
-        color,
-      });
+      parts.push({ geom: cellMText(g, style, drawing, l, r), color });
       continue;
     }
     const box = r.c.block !== undefined ? drawing.blockExtents?.(r.c.block) : undefined;
@@ -289,7 +376,9 @@ export function tableParts(
         position: at({ x: local.x - anchor.x, y: local.y - anchor.y }),
         scale: { x: k, y: k, z: k },
         rotation: r.c.rotation,
-      } as AnnotationPart['geom'],
+        // AutoCAD writes a block cell's INSERT into the table's block without attributes.
+        attributes: [],
+      },
       color,
     });
   }

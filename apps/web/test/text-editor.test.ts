@@ -4,6 +4,7 @@ import { writeMText, type MTextSpan } from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import {
   autoStack,
+  cellMoveFor,
   formatAt,
   paragraphAt,
   formatRange,
@@ -194,5 +195,28 @@ describe("a dimension's measurement in the editor (M2-31 part 2)", () => {
       ),
     ).toBe('2X <> TYP');
     expect(measurementsWritten('%<\\AcVar Date>%')).toBe('%<\\AcVar Date>%');
+  });
+});
+
+describe('table cell moves (M4-05 part 2)', () => {
+  const two = [t('ab'), br, t('cd')];
+  it('moves on Tab and Shift+Tab wherever the caret is', () => {
+    expect(cellMoveFor('Tab', false, two, 1, 1)).toBe('next');
+    expect(cellMoveFor('Tab', true, two, 1, 3)).toBe('previous');
+  });
+
+  it('moves on an arrow only from the edge of the text, with nothing selected', () => {
+    expect(cellMoveFor('ArrowLeft', false, two, 0, 0)).toBe('left');
+    expect(cellMoveFor('ArrowLeft', false, two, 1, 1)).toBeUndefined();
+    expect(cellMoveFor('ArrowRight', false, two, 5, 5)).toBe('right');
+    expect(cellMoveFor('ArrowRight', false, two, 4, 4)).toBeUndefined();
+    expect(cellMoveFor('ArrowUp', false, two, 2, 2)).toBe('up');
+    expect(cellMoveFor('ArrowUp', false, two, 4, 4)).toBeUndefined();
+    expect(cellMoveFor('ArrowDown', false, two, 4, 4)).toBe('down');
+    expect(cellMoveFor('ArrowDown', false, two, 1, 1)).toBeUndefined();
+    expect(cellMoveFor('ArrowLeft', false, two, 0, 2)).toBeUndefined();
+    expect(cellMoveFor('ArrowLeft', true, two, 0, 0)).toBeUndefined();
+    expect(cellMoveFor('ArrowDown', false, [], 0, 0)).toBe('down');
+    expect(cellMoveFor('a', false, two, 0, 0)).toBeUndefined();
   });
 });

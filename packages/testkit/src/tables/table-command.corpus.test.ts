@@ -1,20 +1,18 @@
 // -TABLE on every readable public corpus file (M4-05), as the nozzle-schedule scenario: a table
 // of four columns and three data rows inserted with the drawing's current table style (AutoCAD's
 // Standard where it has none), its cells then filled in as a nozzle schedule (title, header and
-// rows; the in-place cell editor that types them is a later part of M4-05) and its `*T` block
-// drawn again by the table engine. The drawing is saved as AC1032 DXF (DEC-047) and read back by
+// rows) in the cell editor that opens in its first cell, Tab moving on to each next cell, and its
+// `*T` block drawn again by the table engine after each. The drawing is saved as AC1032 DXF (DEC-047) and read back by
 // acad-ts: the table maps back as it was made, and its stored block is what the engine draws for
 // it. With TRIYA_DXF_AUDIT_DIR set the save goes to the ezdxf audit as the file's `table` save.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
   blockExtentsOf,
   builtinCommands,
   tableParts,
-  writeTableBlock,
   type Entity,
   type TableGeometry,
   type TablePart,
@@ -114,25 +112,26 @@ describe('-TABLE on the public corpus (M4-05)', () => {
         view: { request: () => Promise.resolve({ ok: false, message: 'no view' }) },
       });
       for (const answer of ['-TABLE', '4', '3', '0,-500']) await bus.submit(answer);
-      expect(bus.promptText).toBe('Command:');
       const table = [...model.entities()].find(
         (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
       )!;
       expect(table, f.path).toBeDefined();
 
-      // The schedule typed in, then the block drawn again.
-      const b = new ChangeSetBuilder(model);
-      const g = table.geom;
-      b.updateEntity(table.id, {
-        geom: {
-          ...g,
-          cells: g.cells.map((row, i) =>
-            row.map((c, j) => (c.merged ? c : { ...c, text: SCHEDULE[i]![j]! })),
-          ),
-        },
-      });
-      writeTableBlock(b, model, table.id);
-      model.apply(b.build());
+      // The schedule typed in the cell editor that opens in the title cell, Tab to each next
+      // cell (the merged title's covered cells are passed over), the block drawn again each time.
+      const order = table.geom.cells.flatMap((row, i) =>
+        row.flatMap((c, j) => (c.merged ? [] : [SCHEDULE[i]![j]!])),
+      );
+      for (const [k, value] of order.entries()) {
+        expect(bus.promptText, f.path).toBe('Enter text:');
+        await bus.answer({
+          kind: 'string',
+          value,
+          editor: true,
+          ...(k < order.length - 1 && { cell: 'next' as const }),
+        });
+      }
+      expect(bus.promptText).toBe('Command:');
       const made_ = model.entity(table.id) as Table;
       expect(made_.geom.cells[4]![3]!.text).toBe('{\\fArial|b1;Drain}');
 
