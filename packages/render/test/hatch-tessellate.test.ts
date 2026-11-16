@@ -116,6 +116,35 @@ describe('pattern hatches', () => {
   });
 });
 
+describe('hatch background colour (M4-07 part 3)', () => {
+  it('fills the area in the background colour behind the pattern lines', () => {
+    const prims = tessellate(hatch({ background: { kind: 'rgb', r: 200, g: 220, b: 240 } }), {
+      color: '#ff0000',
+    });
+    expect(prims).toHaveLength(2);
+    expect(prims[0]).toMatchObject({ kind: 'fill', color: '#c8dcf0', evenOdd: true });
+    expect(path(prims[0])).toEqual(path(tessellate(hatch({ solid: true }), { color: '#000' })[0]));
+    expect(prims[1]).toMatchObject({ kind: 'stroke', color: '#ff0000' });
+  });
+
+  it('keeps ACI 7 background-dependent, behind a pattern too dense to draw', () => {
+    const dense = hatch({
+      background: { kind: 'aci', index: 7 },
+      patternLines: [{ angle: 0, base: { x: 0, y: 0 }, offset: { x: 0, y: 1e-7 }, dashes: [] }],
+    });
+    const prims = tessellate(dense, { color: '#00ff00' });
+    expect(prims.map((p) => p.kind === 'fill' && p.color)).toEqual(['foreground', '#00ff00']);
+  });
+
+  it('draws no background for a solid fill, which covers it', () => {
+    const prims = tessellate(hatch({ solid: true, background: { kind: 'aci', index: 1 } }), {
+      color: '#00ff00',
+    });
+    expect(prims).toHaveLength(1);
+    expect(prims[0]).toMatchObject({ kind: 'fill', color: '#00ff00' });
+  });
+});
+
 describe('gradient hatches', () => {
   type Gradient = NonNullable<HatchGeometry['gradient']>;
   const blue = { kind: 'rgb', r: 0, g: 0, b: 255 } as const;

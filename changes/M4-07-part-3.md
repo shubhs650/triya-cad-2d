@@ -1,0 +1,1 @@
+- M4-07 part 3 (#453): gradient fills and hatch background colours. -HATCH Properties Gradient (or a GR_ name) and the new GRADIENT command fill areas with any of the nine gradients at an angle, centred or not, in two colours or one shading to a tint; hatch COlor gives a pattern hatch a background colour, drawn behind its lines and saved as AutoCAD keeps it.

@@ -169,7 +169,7 @@ describe('HATCH (M4-07)', () => {
     const s = setup(square(0, 0, 10));
     await s.bus.script(['-HATCH', 'P']);
     expect(s.bus.promptText).toBe(
-      'Enter a pattern name or [?/Solid/User defined] <TRIYA_LINES45>:',
+      'Enter a pattern name or [?/Solid/User defined/Gradient] <TRIYA_LINES45>:',
     );
     await s.bus.script(['triya_grid']);
     expect(s.bus.promptText).toBe('Specify a scale for the pattern <1.0000>:');
@@ -192,7 +192,7 @@ describe('HATCH (M4-07)', () => {
     await s.bus.script(['-HATCH', 'P', 'NOPE']);
     expect(s.log).toContain('Pattern "NOPE" is not in the pattern library.');
     expect(s.bus.promptText).toBe(
-      'Enter a pattern name or [?/Solid/User defined] <TRIYA_LINES45>:',
+      'Enter a pattern name or [?/Solid/User defined/Gradient] <TRIYA_LINES45>:',
     );
   });
 
@@ -303,7 +303,7 @@ describe('HATCH (M4-07)', () => {
   it('shows a user-defined pattern as U, single lines unless doubled', async () => {
     const s = setup(square(0, 0, 10));
     await s.bus.script(['-HATCH', 'P', 'U', '0', '', '', '-HATCH', 'P']);
-    expect(s.bus.promptText).toBe('Enter a pattern name or [?/Solid/User defined] <U>:');
+    expect(s.bus.promptText).toBe('Enter a pattern name or [?/Solid/User defined/Gradient] <U>:');
     await s.bus.script(['', '5,5', '']);
     expect(s.hatches()[0]!.geom.patternLines).toHaveLength(1);
   });

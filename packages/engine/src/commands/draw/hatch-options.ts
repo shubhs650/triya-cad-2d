@@ -1,6 +1,6 @@
 // HATCH's settings and the -HATCH prompts that change them (M4-07), with AutoCAD 2024's prompts
 // (AutoCAD 2024 Help, "-HATCH (Command)"):
-//   Enter a pattern name or [?/Solid/User defined] <TRIYA_LINES45>:                 (Properties)
+//   Enter a pattern name or [?/Solid/User defined/Gradient] <TRIYA_LINES45>:        (Properties)
 //     Pattern(s) to list <*>:                                                               (?)
 //     Specify a scale for the pattern <1.0000>:  Specify an angle for the pattern <0>:
 //     Specify angle for crosshatch lines <0>:  Specify spacing between the lines <1.0000>:
@@ -12,19 +12,35 @@
 //   Enter draw order [do Not assign/send to Back/bring to Front/send beHind boundary/
 //     bring in front of bounDary] <send beHind boundary>:                          (DRaw order)
 //   Enter new color for hatch or [. (use current)/Truecolor/COlorbook] <use current>:  (COlor)
+//     Enter new background color or [. (none)/Truecolor/COlorbook] <none>:
 //   Enter layer name for new hatch objects or [. (use current)] <use current>:          (LAyer)
 //   Enter transparency value for new hatch objects or [ByLayer/ByBlock/. (use current)]
 //     <use current>:                                                              (Transparency)
 // The settings are AutoCAD's HP* variables. HPTRANSPARENCY is the one a drawing keeps (in its
 // variable dictionary, as SETVAR sets it), so it is read from and written to the drawing; the
 // others (HPNAME, HPDRAWORDER, HPCOLOR, HPLAYER, …) Triya keeps while the drawing is open, as
-// MATCHPROP keeps its settings. Left out: the background colour COlor asks next (Triya does
-// not keep a hatch's background colour yet) and ANnotative (DEC-013, DEC-058).
+// MATCHPROP keeps its settings. Left out: ANnotative (DEC-013, DEC-058).
+//
+// Gradients (M4-07 part 3): AutoCAD's -HATCH Properties offers Gradient, and HPNAME takes the
+// nine gradients by their GR_ names (GFNAME 1–9), so a GR_ name typed as the pattern is one too.
+// Its help does not give the gradient prompts' wording, so these are ours, asking for what the
+// Hatch and Gradient dialog's Gradient tab sets (GFANG, GFSHIFT, GFCLR1, GFCLR2, GFCLRSTATE,
+// GFCLRLUM):
+//   Enter a gradient name or [?] <GR_LINEAR>:  Specify an angle for the gradient <0>:
+//     Centered gradient? [Yes/No] <Y>:                                              (Gradient)
+//   Enter first gradient color or [Truecolor/COlorbook] <blue>:
+//     Enter second gradient color or [One color/Truecolor/COlorbook] <yellow>:
+//     Specify tint (0 dark to 1 light) <1.0000>:                         (COlor, a gradient)
+// The first gradient is blue to yellow, as AutoCAD's are in the acadsharp sample drawings
+// (ACI 5 and 2). A gradient and a background colour are true colours or ACIs: the file keeps
+// them as colour values (DXF 421, the 1071 of HATCHBACKGROUNDCOLOR), so a colour book's name is
+// not kept and ByLayer and ByBlock are refused.
 import type { IslandStyle } from '../../edit/hatch-boundary';
 import { validViewName } from '../../edit/named-view';
 import type { Vec2 } from '../../geom/types';
 import type { EntityId } from '../../model/entity-ids';
 import type { Color } from '../../model/types';
+import type { BackgroundColor } from '../../edit/hatch-background';
 import { parseColorValue } from '../../properties/sheet';
 import type { CommandContext } from '../command';
 import { bookColor, colorFromText, colorText } from '../modify/chprop';
@@ -69,7 +85,58 @@ export interface HatchSettings {
   layer: string | undefined;
   /** HPBOUNDRETAIN. */
   retain: boolean;
+  /** HPBACKGROUNDCOLOR: a pattern's background, undefined for none. */
+  background: BackgroundColor | undefined;
+  /** The gradient settings, kept while a pattern is used. */
+  gradient: GradientSettings;
 }
+
+/** GFNAME, GFANG, GFSHIFT, GFCLR1, GFCLR2, GFCLRSTATE and GFCLRLUM. */
+export interface GradientSettings {
+  /** GFNAME as HPNAME spells it: GR_LINEAR, … */
+  name: string;
+  /** GFANG, radians. */
+  angle: number;
+  /** GFSHIFT 0. */
+  centered: boolean;
+  color1: BackgroundColor;
+  color2: BackgroundColor;
+  /** GFCLRSTATE: one colour, shading to the tint. */
+  oneColor: boolean;
+  /** GFCLRLUM: 0 dark (black) to 1 light (white). */
+  tint: number;
+}
+
+/** The nine gradients: HPNAME's name, the file's (DXF 470), the description `?` lists. */
+export const GRADIENTS: readonly (readonly [string, string, string])[] = [
+  ['GR_LINEAR', 'LINEAR', 'Linear'],
+  ['GR_CYLIN', 'CYLINDER', 'Cylindrical'],
+  ['GR_INVCYL', 'INVCYLINDER', 'Inverted cylindrical'],
+  ['GR_SPHER', 'SPHERICAL', 'Spherical'],
+  ['GR_INVSPH', 'INVSPHERICAL', 'Inverted spherical'],
+  ['GR_HEMISP', 'HEMISPHERICAL', 'Hemispherical'],
+  ['GR_INVHEM', 'INVHEMISPHERICAL', 'Inverted hemispherical'],
+  ['GR_CURVED', 'CURVED', 'Curved'],
+  ['GR_INVCUR', 'INVCURVED', 'Inverted curved'],
+];
+
+/** The gradient HPNAME names, or undefined when `name` is none. */
+export const gradientNamed = (name: string) =>
+  GRADIENTS.find(([n]) => n === name.trim().toUpperCase());
+
+/** Whether HPNAME is a gradient. */
+export const isGradient = (pattern: string): boolean => gradientNamed(pattern) !== undefined;
+
+/** The gradient settings HATCH starts from: Linear, centred, blue to yellow. */
+export const initialGradient = (): GradientSettings => ({
+  name: 'GR_LINEAR',
+  angle: 0,
+  centered: true,
+  color1: { kind: 'aci', index: 5 },
+  color2: { kind: 'aci', index: 2 },
+  oneColor: false,
+  tint: 1,
+});
 
 export const USER = '_USER';
 export const SOLID = 'SOLID';
@@ -78,6 +145,7 @@ export const STYLES: readonly IslandStyle[] = ['normal', 'outer', 'ignore'];
 export const HPTRANSPARENCY = 'HPTRANSPARENCY';
 export const USE_CURRENT = 'use current';
 const CURRENT_OPTION = '. (use current)';
+const NONE_OPTION = '. (none)';
 
 const DRAW_ORDERS: readonly [HatchDrawOrder, string][] = [
   ['none', 'do Not assign'],
@@ -123,7 +191,7 @@ export async function* properties(ctx: CommandContext, s: HatchSettings): Sub<vo
     const current = s.pattern === USER ? 'U' : s.pattern;
     const a = yield ctx.prompt.string({
       message: 'Enter a pattern name or',
-      options: ['?', 'Solid', 'User defined'],
+      options: ['?', 'Solid', 'User defined', 'Gradient'],
       defaultLabel: current,
     });
     const k = keyword(a);
@@ -144,7 +212,16 @@ export async function* properties(ctx: CommandContext, s: HatchSettings): Sub<vo
       s.custom = false;
       return;
     }
+    if (k === 'Gradient') {
+      if (yield* gradient(ctx, s)) return;
+      continue;
+    }
     if (a.kind !== 'string') return; // Enter: the pattern kept
+    if (isGradient(a.value)) {
+      s.gradient.name = gradientNamed(a.value)![0];
+      yield* gradientShape(ctx, s);
+      return;
+    }
     // The library says whether it knows the name, and how its file spells it.
     const p = await placed(ctx, a.value.trim(), { angle: 0, scale: 1, origin: { x: 0, y: 0 } });
     if (!p) continue;
@@ -154,6 +231,42 @@ export async function* properties(ctx: CommandContext, s: HatchSettings): Sub<vo
     s.angle = yield* angle(ctx, 'Specify an angle for the pattern', s.angle);
     return;
   }
+}
+
+/**
+ * Properties Gradient: a gradient by name (`?` lists them), then its angle and centring; false
+ * when Enter keeps the gradient there is and none was chosen before.
+ */
+async function* gradient(ctx: CommandContext, s: HatchSettings): Sub<boolean> {
+  for (;;) {
+    const a = yield ctx.prompt.string({
+      message: 'Enter a gradient name or',
+      options: ['?'],
+      defaultLabel: s.gradient.name,
+    });
+    if (keyword(a) === '?') {
+      for (const [name, , description] of GRADIENTS) ctx.message(`${name} - ${description}`);
+      continue;
+    }
+    if (a.kind === 'string' && a.value.trim() !== '') {
+      const g = gradientNamed(a.value);
+      if (!g) {
+        ctx.message(`Gradient "${a.value.trim().toUpperCase()}" is not defined.`);
+        continue;
+      }
+      s.gradient.name = g[0];
+    }
+    yield* gradientShape(ctx, s);
+    return true;
+  }
+}
+
+/** The gradient's angle and centring, the gradient then being the fill. */
+async function* gradientShape(ctx: CommandContext, s: HatchSettings): Sub<void> {
+  s.pattern = s.gradient.name;
+  s.custom = false;
+  s.gradient.angle = yield* angle(ctx, 'Specify an angle for the gradient', s.gradient.angle);
+  s.gradient.centered = yield* yesNo(ctx, 'Centered gradient?', s.gradient.centered);
 }
 
 /** `?`: the library's patterns whose names match, each with its description. */
@@ -302,31 +415,112 @@ export async function* drawOrder(ctx: CommandContext, s: HatchSettings): Sub<voi
   s.drawOrder = DRAW_ORDERS.find(([, name]) => name === k)![0];
 }
 
-/** -HATCH hatch COlor (HPCOLOR): a number, a name, ByLayer or ByBlock, true colour, a book's. */
-export async function* hatchColor(ctx: CommandContext, s: HatchSettings): Sub<void> {
-  const a = yield ctx.prompt.string({
-    message: 'Enter new color for hatch or',
-    options: [CURRENT_OPTION, 'Truecolor', 'COlorbook'],
-    defaultLabel: s.color ? colorText(s.color) : USE_CURRENT,
-  });
+/**
+ * A colour typed at `message`: a number, a name, Truecolor or COlorbook; `current` for the
+ * option answered `.`, `one` for One color, `keep` for Enter, `refused` for a colour it cannot
+ * take (said). `plain` takes only an ACI or a true colour (a colour book's without its name).
+ */
+async function* askColor(
+  ctx: CommandContext,
+  message: string,
+  options: readonly string[],
+  defaultLabel: string,
+  plain: boolean,
+): Sub<Color | 'current' | 'one' | 'keep' | 'refused'> {
+  const a = yield ctx.prompt.string({ message, options: [...options], defaultLabel });
   const k = keyword(a);
   let value: string | undefined;
-  if (k === CURRENT_OPTION) {
-    s.color = undefined;
-    return;
-  } else if (k === 'COlorbook') {
+  if (k === CURRENT_OPTION || k === NONE_OPTION) return 'current';
+  if (k === 'One color') return 'one';
+  if (k === 'COlorbook') {
     value = yield* bookColor(ctx);
-    if (!value) return;
+    if (!value) return 'refused';
   } else if (k === 'Truecolor') {
     const rgb = yield ctx.prompt.string({ message: 'Red, Green, Blue' });
     const m = rgb.kind === 'string' && /^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$/.exec(rgb.value);
     value = m ? `rgb:${m[1]},${m[2]},${m[3]}` : '';
   } else if (a.kind === 'string') {
     value = colorFromText(a.value) ?? '';
-  } else return; // Enter: the colour kept
+  } else return 'keep';
   const color = parseColorValue(value);
-  if (color) s.color = color;
-  else ctx.message('Invalid color.');
+  if (color && (!plain || color.kind === 'aci' || color.kind === 'rgb')) {
+    return plain && color.kind === 'rgb'
+      ? { kind: 'rgb', r: color.r, g: color.g, b: color.b }
+      : color;
+  }
+  ctx.message('Invalid color.');
+  return 'refused';
+}
+
+/**
+ * -HATCH hatch COlor: for a pattern the hatch's colour (HPCOLOR) and its background
+ * (HPBACKGROUNDCOLOR); for a gradient its two colours, or one shading to a tint.
+ */
+export async function* hatchColor(ctx: CommandContext, s: HatchSettings): Sub<void> {
+  if (isGradient(s.pattern)) {
+    yield* gradientColors(ctx, s);
+    return;
+  }
+  const c = yield* askColor(
+    ctx,
+    'Enter new color for hatch or',
+    [CURRENT_OPTION, 'Truecolor', 'COlorbook'],
+    s.color ? colorText(s.color) : USE_CURRENT,
+    false,
+  );
+  if (c === 'refused') return;
+  if (c === 'current') s.color = undefined;
+  else if (typeof c === 'object') s.color = c;
+  const b = yield* askColor(
+    ctx,
+    'Enter new background color or',
+    [NONE_OPTION, 'Truecolor', 'COlorbook'],
+    s.background ? colorText(s.background) : 'none',
+    true,
+  );
+  if (b === 'current') s.background = undefined;
+  else if (typeof b === 'object') s.background = b as BackgroundColor;
+}
+
+/** COlor for a gradient: GFCLR1, then GFCLR2 or one colour with its tint (GFCLRLUM). */
+async function* gradientColors(ctx: CommandContext, s: HatchSettings): Sub<void> {
+  const g = s.gradient;
+  const first = yield* askColor(
+    ctx,
+    'Enter first gradient color or',
+    ['Truecolor', 'COlorbook'],
+    colorText(g.color1),
+    true,
+  );
+  if (first === 'refused') return;
+  if (typeof first === 'object') g.color1 = first as BackgroundColor;
+  const second = yield* askColor(
+    ctx,
+    'Enter second gradient color or',
+    ['One color', 'Truecolor', 'COlorbook'],
+    g.oneColor ? 'one color' : colorText(g.color2),
+    true,
+  );
+  if (second === 'one') {
+    for (;;) {
+      const t = valueOf(
+        yield ctx.prompt.real({
+          message: 'Specify tint (0 dark to 1 light)',
+          default: { kind: 'number', value: g.tint },
+        }),
+      );
+      if (t >= 0 && t <= 1) {
+        g.tint = t;
+        g.oneColor = true;
+        return;
+      }
+      ctx.message('Value must be between 0 and 1.');
+    }
+  }
+  if (typeof second === 'object') {
+    g.color2 = second as BackgroundColor;
+    g.oneColor = false;
+  }
 }
 
 /** -HATCH LAyer (HPLAYER): a layer the drawing has, or one the hatch will make. */
