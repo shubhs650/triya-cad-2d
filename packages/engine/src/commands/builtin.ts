@@ -4,6 +4,7 @@
 import { CommandRegistry } from './command';
 import { dimensionCommands } from './draw/dimension';
 import { moreDimensionCommands } from './draw/dimension-more';
+import { qdimCommand } from './draw/qdim';
 import { dimensionEditCommands } from './modify/dimension-edit';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
@@ -119,6 +120,7 @@ export function builtinCommands(): CommandRegistry {
     ...MLEADER_COMMANDS.map((make) => make()),
     ...dimensionCommands(),
     ...moreDimensionCommands(),
+    qdimCommand(),
     ...dimensionEditCommands(),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
