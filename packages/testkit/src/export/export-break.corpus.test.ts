@@ -8,7 +8,8 @@
 // M3-12 part 7) and then everything in model space is joined at once (splines and elliptical arcs
 // with what meets them into splines). Both save as AC1032 DXF
 // (DEC-047) and reopen with each object where the command put it; what an explode copied out of
-// a block (any kind) reopens under its handle.
+// a block (any kind) reopens under its handle. On a fourth copy every open 3D polyline is joined
+// to a copy of itself set end to end and reopens with its heights (M3-17).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {

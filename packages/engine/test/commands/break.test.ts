@@ -7,6 +7,7 @@ import {
   DocumentModel,
   PromptBus,
   builtinCommands,
+  edgeCurvesOf,
   closestPoint,
   flatten,
   offsetCurveOf,
@@ -42,7 +43,8 @@ function host(model: () => DocumentModel): ViewHost {
         const hits: [number, EntityId][] = [];
         for (const e of model().entities()) {
           if (e.owner !== MODEL_SPACE) continue;
-          const c = offsetCurveOf(e.geom);
+          // A 3D polyline is picked by its plan view (M3-17).
+          const c = offsetCurveOf(e.geom) ?? edgeCurvesOf(e.geom, false)[0];
           const d = c ? closestPoint(c, r.point, toleranceForSize(100)).distance : Infinity;
           if (d < 0.25) hits.push([d, e.id]);
         }
@@ -60,7 +62,7 @@ function host(model: () => DocumentModel): ViewHost {
           .blockEntities(MODEL_SPACE)
           .filter((id) => {
             const g = model().entity(id)!.geom;
-            const c = offsetCurveOf(g);
+            const c = offsetCurveOf(g) ?? edgeCurvesOf(g, false)[0];
             const bounded = c && c.kind !== 'RAY' && c.kind !== 'XLINE' ? c : undefined;
             const pts = bounded
               ? flatten(bounded, 0.01).points
@@ -758,7 +760,8 @@ describe('the less common answers', () => {
     ]);
     await bus.script(['EXPLODE', 'C', '-1,19', '11,31', '']);
     expect(log.some((l) => l.includes('lost width'))).toBe(false);
-    await bus.script(['EXPLODE', 'L', '']);
+    // The polyline exploded into lines, so Last is no longer the MINSERT: pick it by its point.
+    await bus.script(['EXPLODE', 'C', '99,-1', '101,1', '']);
     expect(log).toContain('1 object was not exploded: MINSERT arrays cannot be exploded.');
     await bus.script(['EXPLODE', '']);
     expect(bus.command).toBeUndefined();

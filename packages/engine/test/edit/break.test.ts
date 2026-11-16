@@ -531,7 +531,7 @@ describe('JOIN', () => {
         3,
       );
       expect(r.joined).toHaveLength(1);
-      expect(r.joined[0]).toMatchObject({ keep: 3, parts: [1, 2, 3, 4] });
+      expect(r.joined[0]).toMatchObject({ keep: 3, parts: [3, 1, 2, 4] });
       const g = r.joined[0]!.geom as PolylineGeometry;
       expect(g.closed).toBe(true);
       expect(xyz(g)).toEqual([
