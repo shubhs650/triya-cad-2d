@@ -50,6 +50,7 @@ import { TextStyleDialog } from './TextStyleDialog';
 import { TableStyleDialog } from './TableStyleDialog';
 import { MLeaderStyleDialog } from './MLeaderStyleDialog';
 import { FindReplaceDialog } from './FindReplaceDialog';
+import { HatchDialog } from './HatchDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -64,12 +65,15 @@ export function AttributeDialogs({
   doc,
   docs = [],
   fonts,
+  patternSources = [],
 }: {
   doc: { id: number } | undefined;
   /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
   docs?: readonly OpenDocument[];
   /** The user's font files (M1-38), for the Text Style dialog's font lists. */
   fonts?: readonly string[];
+  /** The user's .pat files (M1-50), for the hatch dialogs' pattern lists (M4-07 part 5). */
+  patternSources?: readonly string[];
 }) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
@@ -128,6 +132,8 @@ export function AttributeDialogs({
       return <MLeaderStyleDialog key={key} doc={doc.id} request={d} />;
     case 'find':
       return <FindReplaceDialog key={key} doc={doc.id} request={d} />;
+    case 'hatch':
+      return <HatchDialog key={key} doc={doc.id} request={d} patternSources={patternSources} />;
   }
 }
 

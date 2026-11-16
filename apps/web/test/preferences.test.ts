@@ -126,6 +126,8 @@ describe('preferences', () => {
         // M4-09 part 3: TEXTALIGN's Left and Current vertical.
         TEXTALIGNMODE: 9,
         TEXTALIGNSPACING: 2,
+        // M4-07 part 5: the hatch dialogs shown while the ribbon is closed.
+        HPDLGMODE: 2,
       },
     });
     // No named filters (FILTER, M3-04 part 4).
@@ -320,6 +322,7 @@ describe('preferences', () => {
       PEDITACCEPT: 1,
       TEXTALIGNMODE: 9,
       TEXTALIGNSPACING: 2,
+      HPDLGMODE: 2,
     });
     const bad = normalizePreferences({
       drafting: { modifyOptions: { OFFSETGAPTYPE: 3, PROJMODE: 'View', EDGEMODE: 0.5 } },

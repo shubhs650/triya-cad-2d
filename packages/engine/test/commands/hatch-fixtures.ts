@@ -57,10 +57,16 @@ export const circle = (x: number, y: number, r: number): EntityGeometry => ({
 export function host(
   requests: ViewRequest[],
   pickAt: (p: Vec2) => EntityId[] = () => [],
+  variables?: Map<string, number>,
 ): ViewHost {
   return {
     request: (r): Promise<ViewReply> => {
       requests.push(r);
+      // The app's per-user variables (HPDLGMODE, M4-07 part 5), when the test gives them.
+      if (r.op === 'sysvar' && variables?.has(r.name)) {
+        if (typeof r.value === 'number') variables.set(r.name, r.value);
+        return Promise.resolve({ ok: true, value: variables.get(r.name)! });
+      }
       // A pick takes the lines and circles within 0.5 of the point (M4-07 part 4).
       if (r.op === 'pick') return Promise.resolve({ ok: true, ids: pickAt(r.point) });
       if (r.op === 'get') {
@@ -134,6 +140,10 @@ export interface SetupOptions {
   readonly noView?: boolean;
   /** Entities by index that are made invisible. */
   readonly invisible?: readonly number[];
+  /** The app's per-user variables (HPDLGMODE). */
+  readonly variables?: Map<string, number>;
+  /** What a pick at a point takes, instead of the lines and circles near it. */
+  readonly pickAt?: (model: DocumentModel, p: Vec2) => EntityId[];
 }
 
 export function setup(geoms: (EntityGeometry | [EntityGeometry, string])[], o: SetupOptions = {}) {
@@ -158,7 +168,9 @@ export function setup(geoms: (EntityGeometry | [EntityGeometry, string])[], o: S
   const bus = new PromptBus({
     model,
     registry: builtinCommands(),
-    ...(!o.noView && { view: host(requests, (p) => near(model, p)) }),
+    ...(!o.noView && {
+      view: host(requests, (p) => (o.pickAt ?? near)(model, p), o.variables),
+    }),
   });
   const log: string[] = [];
   const previews: (readonly EntityGeometry[])[] = [];

@@ -20,8 +20,8 @@
 // makes them; draW boundary keeps its polylines when asked. A gradient (Properties Gradient,
 // or GRADIENT) is a solid fill with its colours (DXF 450–470), and a pattern's background colour
 // (COlor) is kept as AutoCAD keeps it, in HATCHBACKGROUNDCOLOR xdata (edit/hatch-background.ts).
-// Not here yet (later parts of M4-07): the Hatch Creation tab and the Hatch and Gradient dialog
-// (seTtings), and HATCHEDIT.
+// HATCH's seTtings opens the Hatch and Gradient dialog (hatch-dialog.ts), and HATCH and GRADIENT
+// open it at once when HPDLGMODE says so. The Hatch Creation contextual tab is M7-02's.
 //
 // - GRADIENT is HATCH with the last gradient as the fill (GD, as acad.pgp has it). The two share
 //   their settings, as AutoCAD's share HPNAME, so HATCH after GRADIENT fills with the gradient
@@ -54,6 +54,8 @@ import {
 } from '../../edit/hatch-boundary';
 import { hatchBackgroundAppId, withHatchBackground } from '../../edit/hatch-background';
 import { retainedBoundary } from '../../edit/hatch-retain';
+import { loopCurves } from '../../edit/hatch-separate';
+import type { Tolerance } from '../../geom/tolerance';
 import {
   edgeTexts,
   objectEdgeCurves,
@@ -76,6 +78,7 @@ import type { GeneralProps } from '../../properties/sheet';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import { nextPoints } from '../inquiry/inquiry';
 import { toleranceFor } from '../modify/offset';
+import { optionVariable } from '../modify/option-variables';
 import {
   HPTRANSPARENCY,
   SOLID,
@@ -140,17 +143,34 @@ interface Candidates {
 }
 
 /**
+ * The Hatch and Gradient dialog (hatch-dialog.ts), on the tab given; it returns when OK (or
+ * Preview's accept) closes it, the hatch then to be made.
+ */
+export type HatchDialog = (
+  ctx: CommandContext,
+  run: HatchRun,
+  tab: 'hatch' | 'gradient',
+) => Sub<void>;
+
+/** HPDLGMODE: whether HATCH, GRADIENT and HATCHEDIT open their dialogs (see hatch-dialog.ts). */
+export async function dialogMode(ctx: CommandContext): Promise<boolean> {
+  // Where no app keeps the variable (scripts, tests), the command line, as AutoCAD's scripts.
+  return (await optionVariable(ctx, 'HPDLGMODE', 0)) !== 0;
+}
+
+/**
  * HATCH (with -HATCH) and GRADIENT, sharing the settings `settingsFor` keeps (see the head
  * comment); `hatchCommands` (hatchedit.ts) adds HATCHEDIT to them.
  */
 export function drawHatchCommands(
   settingsFor: (ctx: CommandContext) => HatchSettings,
+  dialog: HatchDialog,
 ): [CommandDef, CommandDef] {
   return [
     {
       name: 'HATCH',
       dashVariant: true,
-      run: (ctx) => hatchRun(ctx, settingsFor(ctx)),
+      run: (ctx) => hatchRun(ctx, settingsFor(ctx), dialog, 'hatch'),
     },
     {
       name: 'GRADIENT',
@@ -158,14 +178,23 @@ export function drawHatchCommands(
         const s = settingsFor(ctx);
         s.pattern = s.gradient.name;
         s.custom = false;
-        return hatchRun(ctx, s);
+        return hatchRun(ctx, s, dialog, 'gradient');
       },
     },
   ];
 }
 
-async function* hatchRun(ctx: CommandContext, s: HatchSettings): CommandGenerator {
+async function* hatchRun(
+  ctx: CommandContext,
+  s: HatchSettings,
+  dialog: HatchDialog,
+  tab: 'hatch' | 'gradient',
+): CommandGenerator {
   const run = new HatchRun(ctx, s);
+  if (!ctx.dash && (await dialogMode(ctx))) {
+    yield* dialog(ctx, run, tab);
+    return run.finish();
+  }
   const options = (): string[] =>
     ctx.dash
       ? [
@@ -182,8 +211,8 @@ async function* hatchRun(ctx: CommandContext, s: HatchSettings): CommandGenerato
           'Undo',
         ]
       : run.empty
-        ? ['Select objects', 'Undo']
-        : ['Select objects', 'remove Boundaries', 'Undo'];
+        ? ['Select objects', 'Undo', 'seTtings']
+        : ['Select objects', 'remove Boundaries', 'Undo', 'seTtings'];
   let selecting = false;
   for (;;) {
     await run.preview();
@@ -207,10 +236,15 @@ async function* hatchRun(ctx: CommandContext, s: HatchSettings): CommandGenerato
     if (a.kind === 'point') await run.pick(a.point);
     else if (k === 'Select objects') selecting = true;
     else if (k === 'Undo') run.undo();
-    else if (k === 'Properties') yield* properties(ctx, s);
+    else if (k === 'seTtings') {
+      yield* dialog(ctx, run, isGradient(s.pattern) ? 'gradient' : 'hatch');
+      return run.finish();
+    } else if (k === 'Properties') yield* properties(ctx, s);
     else if (k === 'Advanced') yield* advanced(ctx, s, run);
-    else if (k === 'Origin') run.origin = (yield* origin(ctx, s)) ?? run.origin;
-    else if (k === 'DRaw order') yield* drawOrder(ctx, s);
+    else if (k === 'Origin') {
+      const at = yield* origin(ctx, s);
+      if (at) run.setOrigin(at);
+    } else if (k === 'DRaw order') yield* drawOrder(ctx, s);
     else if (k === 'hatch COlor') yield* hatchColor(ctx, s);
     else if (k === 'LAyer') yield* hatchLayer(ctx, s);
     else if (k === 'Transparency') {
@@ -239,6 +273,7 @@ export function initialSettings(ctx: CommandContext): HatchSettings {
     gap: 0,
     separate: false,
     origin: { x: 0, y: 0 },
+    originMode: 0,
     drawOrder: 'behind',
     color: undefined,
     layer: undefined,
@@ -255,6 +290,8 @@ export class HatchRun {
   #lines: readonly HatchPatternLine[] | undefined;
   #placed = '';
   origin: Vec2;
+  /** HPORIGINMODE for this hatch: 0 `origin`, 1–5 a corner or the centre of its extents. */
+  extents: number;
   /** Advanced's Boundary set: the only objects boundaries are found among. */
   boundarySet: readonly EntityId[] | undefined;
   constructor(
@@ -262,6 +299,29 @@ export class HatchRun {
     readonly s: HatchSettings,
   ) {
     this.origin = s.origin;
+    this.extents = s.originMode;
+  }
+
+  /** A new origin for this hatch (-HATCH Origin, the dialog's Click to set new origin). */
+  setOrigin(p: Vec2): void {
+    this.origin = p;
+    this.extents = 0;
+  }
+
+  /** The pattern's origin: `origin`, or where HPORIGINMODE puts it on the areas' extents. */
+  #origin(): Vec2 {
+    return this.extents === 0
+      ? this.origin
+      : (extentsOrigin(
+          this.#areas.flatMap((a) => a.loops),
+          this.extents,
+          tolerance(this.ctx),
+        ) ?? this.origin);
+  }
+
+  /** How many areas were found. */
+  get areas(): number {
+    return this.#areas.length;
   }
 
   /** HPTRANSPARENCY as the drawing has it. */
@@ -412,14 +472,11 @@ export class HatchRun {
   async #patternLines(): Promise<readonly HatchPatternLine[] | undefined> {
     const s = this.s;
     if (s.pattern === SOLID || isGradient(s.pattern)) return [];
-    if (s.pattern === USER) return userLines(s.angle, s.spacing, s.double, this.origin);
-    const key = JSON.stringify([s.pattern, s.scale, s.angle, this.origin]);
+    const origin = this.#origin();
+    if (s.pattern === USER) return userLines(s.angle, s.spacing, s.double, origin);
+    const key = JSON.stringify([s.pattern, s.scale, s.angle, origin]);
     if (this.#placed === key && this.#lines) return this.#lines;
-    const p = await placed(this.ctx, s.pattern, {
-      angle: s.angle,
-      scale: s.scale,
-      origin: this.origin,
-    });
+    const p = await placed(this.ctx, s.pattern, { angle: s.angle, scale: s.scale, origin });
     if (!p) return undefined;
     this.#placed = key;
     this.#lines = p.lines[0]!;
@@ -450,13 +507,16 @@ export class HatchRun {
     return this.#patternLines();
   }
 
-  async preview(): Promise<void> {
-    if (this.#areas.length === 0) {
-      this.ctx.preview([]);
-      return;
-    }
+  /** The hatch the areas found would make (one, as without separate hatches), if any. */
+  async made(): Promise<HatchGeometry | undefined> {
+    if (this.#areas.length === 0) return undefined;
     const lines = await this.#patternLines();
-    this.ctx.preview(lines ? [this.#hatch(this.#areas, lines)] : []);
+    return lines ? this.#hatch(this.#areas, lines) : undefined;
+  }
+
+  async preview(): Promise<void> {
+    const hatch = await this.made();
+    this.ctx.preview(hatch ? [hatch] : []);
   }
 
   /** The properties a new hatch takes: the current ones, as COlor, LAyer and Transparency say. */
@@ -641,6 +701,25 @@ async function* drawBoundary(ctx: CommandContext, run: HatchRun): Sub<boolean> {
     });
     if (keep) kept.push({ kind: 'LWPOLYLINE', closed: true, vertices });
   }
+}
+
+/**
+ * HPORIGINMODE 1–5 on the extents of `loops`: bottom left, bottom right, top right, top left,
+ * centre; undefined without loops.
+ */
+export function extentsOrigin(
+  loops: readonly HatchLoop[],
+  mode: number,
+  tol: Tolerance,
+): Vec2 | undefined {
+  const boxes = loops.flatMap(loopCurves).map((c) => curveBounds(c, tol));
+  if (boxes.length === 0) return undefined;
+  const minX = Math.min(...boxes.map((b) => b.minX));
+  const minY = Math.min(...boxes.map((b) => b.minY));
+  const maxX = Math.max(...boxes.map((b) => b.maxX));
+  const maxY = Math.max(...boxes.map((b) => b.maxY));
+  if (mode === 5) return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  return { x: mode === 2 || mode === 3 ? maxX : minX, y: mode === 3 || mode === 4 ? maxY : minY };
 }
 
 export const tolerance = (ctx: CommandContext) =>

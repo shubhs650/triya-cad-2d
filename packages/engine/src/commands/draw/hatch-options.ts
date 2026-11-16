@@ -39,9 +39,10 @@ import type { IslandStyle } from '../../edit/hatch-boundary';
 import { validViewName } from '../../edit/named-view';
 import type { Vec2 } from '../../geom/types';
 import type { EntityId } from '../../model/entity-ids';
-import type { Color } from '../../model/types';
+import type { Color, Entity, HatchGeometry, Transparency } from '../../model/types';
+import { patternPlacement } from '../../properties/edit';
 import type { BackgroundColor } from '../../edit/hatch-background';
-import { parseColorValue } from '../../properties/sheet';
+import { parseColorValue, patternOrigin } from '../../properties/sheet';
 import type { CommandContext } from '../command';
 import { bookColor, colorFromText, colorText } from '../modify/chprop';
 import { wcmatch } from '../modify/attributes';
@@ -77,6 +78,11 @@ export interface HatchSettings {
   separate: boolean;
   /** HPORIGIN. */
   origin: Vec2;
+  /**
+   * HPORIGINMODE: 0 HPORIGIN; 1–5 the bottom left, bottom right, top right or top left corner,
+   * or the centre, of the hatch's extents (the dialog's Default to boundary extents).
+   */
+  originMode: number;
   /** HPDRAWORDER: AutoCAD's initial 3, behind the boundary. */
   drawOrder: HatchDrawOrder;
   /** HPCOLOR: undefined for the current colour ("."). */
@@ -565,4 +571,57 @@ export async function* hatchTransparency(
   if (/^\d+$/.test(t) && n <= 90) return String(n);
   ctx.message('Value must be ByLayer, ByBlock or between 0 and 90.');
   return undefined;
+}
+
+/** The settings a hatch was made with, as -HATCH would ask for them. */
+export function settingsOf(
+  ctx: CommandContext,
+  e: Entity & { readonly geom: HatchGeometry },
+  base: HatchSettings,
+): HatchSettings {
+  const g = e.geom;
+  const gradient = g.gradient && GRADIENTS.find(([, file]) => file === g.gradient!.name);
+  const user = !g.solid && g.patternType === 0;
+  const colors = g.gradient?.colors ?? [];
+  const plain = (i: number, fallback: BackgroundColor): BackgroundColor => {
+    const c = colors[i]?.color;
+    return c && (c.kind === 'aci' || c.kind === 'rgb') ? (c as BackgroundColor) : fallback;
+  };
+  return {
+    ...base,
+    pattern: g.gradient
+      ? (gradient?.[0] ?? 'GR_LINEAR')
+      : g.solid
+        ? SOLID
+        : user
+          ? USER
+          : g.pattern,
+    custom: g.patternType === 2,
+    scale: patternPlacement(g).scale,
+    angle: g.solid ? base.angle : g.patternAngle,
+    spacing: user && g.patternScale > 0 ? g.patternScale : base.spacing,
+    double: g.double,
+    style: STYLES[g.style] ?? 'normal',
+    islands: true,
+    origin: patternOrigin(g),
+    color: e.color,
+    layer: ctx.model.tables.layers.get(e.layer)?.name,
+    background: g.background as BackgroundColor | undefined,
+    gradient: g.gradient
+      ? {
+          name: gradient?.[0] ?? 'GR_LINEAR',
+          angle: g.gradient.angle,
+          centered: g.gradient.shift === 0,
+          color1: plain(0, base.gradient.color1),
+          color2: plain(1, base.gradient.color2),
+          oneColor: g.gradient.singleColor,
+          tint: g.gradient.tint,
+        }
+      : { ...base.gradient },
+  };
+}
+
+/** A transparency as -HATCH's prompt shows it: ByLayer, ByBlock or a percentage. */
+export function transparencyText(t: Transparency): string {
+  return typeof t === 'string' ? t : String(Math.round((1 - t.alpha / 255) * 100));
 }
