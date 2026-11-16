@@ -49,6 +49,7 @@ import type { EntityId } from '../../model/entity-ids';
 import type { Entity, HatchGeometry, HatchLoop, HatchPatternLine } from '../../model/types';
 import { currentProps } from '../../properties/current';
 import type { CommandContext, CommandDef } from '../command';
+import type { PatternPlacement, PlacedPattern } from '../view/host';
 import { toleranceFor } from '../modify/offset';
 import type { Prompt, PromptAnswer } from '../prompt';
 
@@ -264,10 +265,9 @@ class HatchRun {
       base: { x: 0, y: 0 },
       direction: { x: 1, y: 0 },
     });
-    const objects = ids.flatMap((id) => {
-      const e = ctx.model.entity(id);
-      return e ? [objectEdgeCurves({ model: ctx.model, tol }, e, EDGES)] : [];
-    });
+    const objects = ids.map((id) =>
+      objectEdgeCurves({ model: ctx.model, tol }, ctx.model.entity(id)!, EDGES),
+    );
     const loops = boundaryOfObjects(objects, this.#options());
     if (loops.length === 0) {
       ctx.message(NOT_FOUND);
@@ -277,8 +277,7 @@ class HatchRun {
   }
 
   undo(): void {
-    if (this.#areas.pop() === undefined)
-      this.ctx.message('All selected objects have been removed.');
+    this.#areas.pop();
   }
 
   /** The pattern's lines at the settings' placement, from the app's library; undefined if none. */
@@ -288,17 +287,14 @@ class HatchRun {
     if (s.pattern === USER) return userLines(s.angle, s.spacing, s.double, this.origin);
     const key = JSON.stringify([s.pattern, s.scale, s.angle, this.origin]);
     if (this.#placed === key && this.#lines) return this.#lines;
-    const r = await this.ctx.view.request({
-      op: 'hatchPattern',
-      name: s.pattern,
-      placements: [{ angle: s.angle, scale: s.scale, origin: this.origin }],
+    const p = await placed(this.ctx, s.pattern, {
+      angle: s.angle,
+      scale: s.scale,
+      origin: this.origin,
     });
-    if (!r.ok || !r.pattern) {
-      this.ctx.message(r.ok ? `Pattern "${s.pattern}" is not in the pattern library.` : r.message);
-      return undefined;
-    }
+    if (!p) return undefined;
     this.#placed = key;
-    this.#lines = r.pattern.lines[0] ?? [];
+    this.#lines = p.lines[0]!;
     return this.#lines;
   }
 
@@ -395,36 +391,43 @@ async function* properties(ctx: CommandContext, s: HatchSettings): Sub<void> {
       s.custom = false;
       return;
     }
-    const name = a.kind === 'string' ? a.value.trim() : s.pattern;
-    if (name === '' || name.toUpperCase() === SOLID || name.toUpperCase() === USER) return;
+    if (a.kind !== 'string') return; // Enter: the pattern kept
     // The library says whether it knows the name, and how its file spells it.
-    const r = await ctx.view.request({
-      op: 'hatchPattern',
-      name,
-      placements: [{ angle: 0, scale: 1, origin: { x: 0, y: 0 } }],
-    });
-    if (!r.ok || !r.pattern) {
-      ctx.message(r.ok ? `Pattern "${name}" is not in the pattern library.` : r.message);
-      continue;
-    }
-    s.pattern = r.pattern.name;
-    s.custom = r.pattern.custom;
+    const p = await placed(ctx, a.value.trim(), { angle: 0, scale: 1, origin: { x: 0, y: 0 } });
+    if (!p) continue;
+    s.pattern = p.name;
+    s.custom = p.custom;
     s.scale = yield* positive(ctx, 'Specify a scale for the pattern', s.scale);
     s.angle = yield* angle(ctx, 'Specify an angle for the pattern', s.angle);
     return;
   }
 }
 
+/** The pattern `name` placed by the app's library, or undefined (said) when it has none. */
+async function placed(
+  ctx: CommandContext,
+  name: string,
+  at: PatternPlacement,
+): Promise<PlacedPattern | undefined> {
+  const r = await ctx.view.request({ op: 'hatchPattern', name, placements: [at] });
+  if (r.ok && r.pattern) return r.pattern;
+  ctx.message(r.ok ? `Pattern "${name}" is not in the pattern library.` : r.message);
+  return undefined;
+}
+
+/** An angle, or a number, prompt with a default always answers its kind. */
+const valueOf = (a: PromptAnswer): number => (a as { value: number }).value;
+
 async function* angle(ctx: CommandContext, message: string, current: number): Sub<number> {
-  const a = yield ctx.prompt.angle({ message, default: { kind: 'angle', value: current } });
-  return a.kind === 'angle' ? a.value : current;
+  return valueOf(yield ctx.prompt.angle({ message, default: { kind: 'angle', value: current } }));
 }
 
 async function* positive(ctx: CommandContext, message: string, current: number): Sub<number> {
   for (;;) {
-    const a = yield ctx.prompt.real({ message, default: { kind: 'number', value: current } });
-    if (a.kind !== 'number') return current;
-    if (a.value > 0) return a.value;
+    const v = valueOf(
+      yield ctx.prompt.real({ message, default: { kind: 'number', value: current } }),
+    );
+    if (v > 0) return v;
     ctx.message('Value must be positive and nonzero.');
   }
 }
@@ -457,8 +460,7 @@ async function* advanced(ctx: CommandContext, s: HatchSettings): Sub<void> {
           options: names,
           default: { kind: 'keyword', keyword: names[2 - STYLES.indexOf(s.style)]! },
         });
-        const k = keyword(b);
-        if (k) s.style = STYLES[2 - names.indexOf(k)]!;
+        s.style = STYLES[2 - names.indexOf(keyword(b)!)]!;
         break;
       }
       case 'Associativity':
@@ -467,15 +469,15 @@ async function* advanced(ctx: CommandContext, s: HatchSettings): Sub<void> {
         }
         break;
       case 'Gap tolerance': {
-        const b = yield ctx.prompt.real({
-          message: 'Specify a boundary gap tolerance value',
-          default: { kind: 'number', value: s.gap },
-        });
-        if (b.kind === 'number') {
-          // HPGAPTOL: "Valid values are from 0 to 5000".
-          if (b.value < 0 || b.value > 5000) ctx.message('Value must be between 0 and 5000.');
-          else s.gap = b.value;
-        }
+        const gap = valueOf(
+          yield ctx.prompt.real({
+            message: 'Specify a boundary gap tolerance value',
+            default: { kind: 'number', value: s.gap },
+          }),
+        );
+        // HPGAPTOL: "Valid values are from 0 to 5000".
+        if (gap < 0 || gap > 5000) ctx.message('Value must be between 0 and 5000.');
+        else s.gap = gap;
         break;
       }
       case 'separate Hatches':
@@ -495,8 +497,9 @@ async function* origin(ctx: CommandContext, s: HatchSettings): Sub<Vec2 | undefi
     default: { kind: 'keyword', keyword: 'Use current origin' },
   });
   if (keyword(a) !== 'Set new origin') return undefined;
-  const p = yield ctx.prompt.point({ message: 'Specify origin point' });
-  if (p.kind !== 'point') return undefined;
-  if (yield* yesNo(ctx, 'Store as default origin?', false)) s.origin = p.point;
-  return p.point;
+  // A point prompt without options or default answers a point.
+  const p = ((yield ctx.prompt.point({ message: 'Specify origin point' })) as { point: Vec2 })
+    .point;
+  if (yield* yesNo(ctx, 'Store as default origin?', false)) s.origin = p;
+  return p;
 }

@@ -13,6 +13,7 @@ import {
   type Entity,
   type EntityGeometry,
   type HatchGeometry,
+  type HeaderValue,
   type PatternPlacement,
   type ViewHost,
   type ViewReply,
@@ -31,6 +32,20 @@ const square = (x: number, y: number, s: number): EntityGeometry[] => [
   line(x + s, y + s, x, y + s),
   line(x, y + s, x, y),
 ];
+const text = (x: number, y: number): EntityGeometry => ({
+  kind: 'TEXT',
+  value: 'T',
+  style: 'STANDARD',
+  position: { x, y },
+  height: 2,
+  rotation: 0,
+  widthFactor: 1,
+  oblique: 0,
+  halign: 0,
+  valign: 0,
+  backward: false,
+  upsideDown: false,
+});
 const circle = (x: number, y: number, r: number): EntityGeometry => ({
   kind: 'CIRCLE',
   center: { x, y },
@@ -49,6 +64,7 @@ function host(requests: ViewRequest[]): ViewHost {
         });
       }
       if (r.op === 'hatchPattern') {
+        if (r.name.toUpperCase() === 'EMPTY') return Promise.resolve({ ok: true });
         if (r.name.toUpperCase() === 'NOPE') {
           return Promise.resolve({
             ok: false,
@@ -65,7 +81,11 @@ function host(requests: ViewRequest[]): ViewHost {
         ];
         return Promise.resolve({
           ok: true,
-          pattern: { name: r.name.toUpperCase(), custom: false, lines: r.placements.map(lines) },
+          pattern: {
+            name: r.name.toUpperCase(),
+            custom: r.name.toUpperCase() === 'MINE',
+            lines: r.placements.map(lines),
+          },
         });
       }
       if (r.op === 'textOutlines') {
@@ -92,26 +112,38 @@ function host(requests: ViewRequest[]): ViewHost {
   };
 }
 
-function setup(geoms: (EntityGeometry | [EntityGeometry, string])[]) {
+interface SetupOptions {
+  readonly header?: readonly [string, HeaderValue][];
+  /** No canvas or pattern library (scripts). */
+  readonly noView?: boolean;
+  /** Entities by index that are made invisible. */
+  readonly invisible?: readonly number[];
+}
+
+function setup(geoms: (EntityGeometry | [EntityGeometry, string])[], o: SetupOptions = {}) {
   const base = sampleInit();
   const init: DocumentInit = {
     ...base,
+    header: new Map([...(base.header ?? []), ...(o.header ?? [])]),
     tables: {
       ...base.tables,
       layers: [...(base.tables?.layers ?? []), { ...layer('12', 'OFF'), on: false }],
     },
     entities: geoms.map((g, i) => {
       const [geom, onLayer] = Array.isArray(g) ? g : [g, undefined];
-      return entityInit(
-        (0x100 + i).toString(16).toUpperCase(),
-        geom,
-        onLayer ? { layer: onLayer } : {},
-      );
+      return entityInit((0x100 + i).toString(16).toUpperCase(), geom, {
+        ...(onLayer && { layer: onLayer }),
+        ...(o.invisible?.includes(i) && { visible: false }),
+      });
     }),
   };
   const model = DocumentModel.create(init);
   const requests: ViewRequest[] = [];
-  const bus = new PromptBus({ model, registry: builtinCommands(), view: host(requests) });
+  const bus = new PromptBus({
+    model,
+    registry: builtinCommands(),
+    ...(!o.noView && { view: host(requests) }),
+  });
   const log: string[] = [];
   const previews: (readonly EntityGeometry[])[] = [];
   bus.on((e: BusEvent) => {
@@ -370,5 +402,71 @@ describe('HATCH (M4-07)', () => {
     expect(s.log).toContain('Valid hatch boundary not found.');
     await s.bus.script(['K']);
     expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo]:');
+  });
+
+  it('starts an imperial drawing at a pattern scale of 1/25.4 (the bundled patterns are in mm)', async () => {
+    const s = setup(square(0, 0, 10), { header: [['$MEASUREMENT', 0]] });
+    await s.bus.script(['HATCH', '5,5', '']);
+    expect(s.hatches()[0]!.geom.patternScale).toBeCloseTo(1 / 25.4, 12);
+  });
+
+  it('works without a canvas: every object bounds, and only solid and user-defined fills', async () => {
+    const s = setup([...square(0, 0, 10), text(4, 4)], { noView: true });
+    await s.bus.script(['HATCH', '5,5']);
+    // No library places the pattern: nothing previewed, nothing made.
+    expect(s.previews.at(-1)).toEqual([]);
+    await s.bus.submit('');
+    expect(s.hatches()).toHaveLength(0);
+    await s.bus.script(['-HATCH', 'P', 'S', '5,5', '']);
+    // The text is not measured: no island.
+    expect(s.hatches()[0]!.geom.loops).toHaveLength(1);
+  });
+
+  it('leaves out invisible objects; Undo with nothing picked does nothing', async () => {
+    const s = setup(square(0, 0, 10), { invisible: [0] });
+    await s.bus.script(['HATCH', 'U', '5,5']);
+    expect(s.log).toContain('Valid hatch boundary not found.');
+  });
+
+  it("takes a custom pattern from the user's files, and refuses an empty answer", async () => {
+    const s = setup(square(0, 0, 10));
+    await s.bus.script(['-HATCH', 'P', 'EMPTY']);
+    expect(s.log).toContain('Pattern "EMPTY" is not in the pattern library.');
+    await s.bus.script(['MINE', '0']);
+    expect(s.log).toContain('Value must be positive and nonzero.');
+    await s.bus.script(['3', '', '5,5', '']);
+    expect(s.hatches()[0]!.geom).toMatchObject({
+      pattern: 'MINE',
+      patternType: 2,
+      patternScale: 3,
+    });
+    // Enter keeps the pattern.
+    await s.bus.script(['-HATCH', 'P', '', '5,5', '']);
+    expect(s.hatches()[1]!.geom.pattern).toBe('MINE');
+  });
+
+  it('shows a user-defined pattern as U, single lines unless doubled', async () => {
+    const s = setup(square(0, 0, 10));
+    await s.bus.script(['-HATCH', 'P', 'U', '0', '', '', '-HATCH', 'P']);
+    expect(s.bus.promptText).toBe('Enter a pattern name or [Solid/User defined] <U>:');
+    await s.bus.script(['', '5,5', '']);
+    expect(s.hatches()[0]!.geom.patternLines).toHaveLength(1);
+  });
+
+  it('keeps or stores the origin, takes No for associativity, refuses a gap out of range', async () => {
+    const s = setup(square(0, 0, 10));
+    await s.bus.script(['-HATCH', 'O', '', 'A', 'A', 'N', 'G', '-1']);
+    expect(s.log).toContain('Value must be between 0 and 5000.');
+    expect(s.log).not.toContain('Triya makes non-associative hatches.');
+    await s.bus.script(['', 'O', 'S', '2,2', 'Y', '5,5', '']);
+    expect(placements(s.requests).at(-1)!.placements[0]!.origin).toEqual({ x: 2, y: 2 });
+    await s.bus.script(['-HATCH', '5,5', '']);
+    expect(placements(s.requests).at(-1)!.placements[0]!.origin).toEqual({ x: 2, y: 2 });
+  });
+
+  it('goes back to pick points from Select objects', async () => {
+    const s = setup(square(0, 0, 10));
+    await s.bus.script(['HATCH', 'S', 'K', '5,5', '']);
+    expect(s.hatches()).toHaveLength(1);
   });
 });
