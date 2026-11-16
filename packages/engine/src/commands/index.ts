@@ -102,6 +102,7 @@ export { revcloudCommand, revcloudAppId, revcloudXdata, type CloudType } from '.
 export { setWipeoutFrame, wipeoutCommand, wipeoutFrame } from './draw/wipeout';
 export { hatchCommand, hatchCommands } from './draw/hatchedit';
 export { fieldCommand, type FieldDialogRequest } from './draw/field';
+export { toleranceCommand, type ToleranceRequest } from './draw/tolerance';
 export type {
   HatchDialogAnswer,
   HatchDialogButton,
