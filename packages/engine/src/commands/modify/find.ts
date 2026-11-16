@@ -43,7 +43,7 @@ import { tableCellText } from '../../annotation/table';
 import { typeLabel } from '../../properties/sheet';
 import type { CommandContext, CommandDef } from '../command';
 import type { PromptAnswer } from '../prompt';
-import { linesOf } from '../draw/table-cells';
+import { linesOf, tableOf } from '../draw/table-cells';
 import { regenerateDimensions } from './dimensions';
 
 /** Find where. */
@@ -156,18 +156,15 @@ function search(ctx: CommandContext, s: FindSettings, selection: readonly Entity
     if (seenBlocks.has(def.handle) || !model.hasBlock(def.handle)) return;
     seenBlocks.add(def.handle);
     for (const id of [...model.blockEntities(def.handle)]) {
-      const inner = model.entity(id);
-      if (inner) visit(inner, space, target, location, def.name);
+      visit(model.entity(id)!, space, target, location, def.name);
     }
   };
   if (s.find === '') return hits;
-  for (const space of spaces) {
-    if (!model.hasBlock(space)) continue;
+  for (const space of spaces.filter((h) => model.hasBlock(h))) {
     const location = spaceName(ctx, space);
     for (const id of [...model.blockEntities(space)]) {
       if (only && !only.has(id)) continue;
-      const e = model.entity(id);
-      if (e) visit(e, space, id, location);
+      visit(model.entity(id)!, space, id, location);
     }
   }
   return hits;
@@ -175,7 +172,7 @@ function search(ctx: CommandContext, s: FindSettings, selection: readonly Entity
 
 function row(ctx: CommandContext, h: Hit): FindResultRow {
   const e = ctx.model.entity(h.id)!;
-  const raw = slotText(ctx.model, e, h.slot) ?? '';
+  const raw = slotText(ctx.model, e, h.slot)!;
   const shown = displayText(raw, slotSyntax(e, h.slot), h.match);
   const kind = h.slot.kind === 'attribute' ? 'Attribute' : typeLabel(e.geom.kind);
   return {
@@ -215,16 +212,15 @@ async function replaceHits(
   const dimensions: EntityId[] = [];
   const drawing = tableDrawingOf(ctx.model);
   for (const g of groups) {
-    const e = changes.get(g.id) ?? ctx.model.entity(g.id);
-    if (!e) continue;
-    const raw = slotText(ctx.model, e, g.slot);
-    if (raw === undefined) continue;
+    // Each object's text was found in it just now, so it holds the slot.
+    const e = changes.get(g.id) ?? ctx.model.entity(g.id)!;
+    const raw = slotText(ctx.model, e, g.slot)!;
     const next = replaceInText(raw, slotSyntax(e, g.slot), g.matches, replacement);
     let changed: Entity = { ...e, ...withSlotText(ctx.model, e, g.slot, next) };
     if (changed.geom.kind === 'ACAD_TABLE' && g.slot.kind === 'cell') {
       const { row: i, column: j } = g.slot;
       const t = changed.geom;
-      const style = t.style !== undefined ? ctx.model.tables.tableStyles.get(t.style) : undefined;
+      const { style } = tableOf(ctx, g.id)!;
       const lines = await linesOf(ctx, tableCellText(t, style, drawing, i, j));
       if (lines !== undefined) changed = { ...changed, geom: fitTableRow(t, style, i, j, lines) };
       tables.add(g.id);
@@ -275,7 +271,7 @@ export function findCommand(): CommandDef {
       };
       /** The next match from `at`; says so at the end, or when there is none. */
       const step = async (at: number, none = NOT_FOUND) => {
-        const all = hits ?? [];
+        const all = hits!;
         if (all.length === 0) {
           current = undefined;
           note = none;
@@ -382,9 +378,8 @@ export function findCommand(): CommandDef {
             }
             case 'selectionSet': {
               if (stale) searched();
-              const chosen = act.indexes
-                ? act.indexes.flatMap((i) => (hits![i] ? [hits![i]!] : []))
-                : hits!;
+              const picked = act.indexes;
+              const chosen = picked ? hits!.filter((_, i) => picked.includes(i)) : hits!;
               const ids = [
                 ...new Set(chosen.filter((h) => h.space === ctx.space).map((h) => h.target)),
               ];

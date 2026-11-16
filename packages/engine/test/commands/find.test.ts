@@ -41,6 +41,16 @@ const DOORTAG = '32';
 const FROZEN = '33';
 const LOCKED = '34';
 const PE_URL = '35';
+const ANON = '36';
+
+const insert = (block: string): InsertGeometry => ({
+  kind: 'INSERT',
+  block,
+  position: { x: 200, y: 0 },
+  scale: { x: 1, y: 1, z: 1 },
+  rotation: 0,
+  attributes: [],
+});
 
 const style: TextStyleRecord = {
   handle: STANDARD,
@@ -136,7 +146,7 @@ const dimension = {
   lineSpacing: 1,
 } as DimensionGeometry;
 
-function setup() {
+function setup(o: { measure?: boolean } = {}) {
   const base = sampleInit();
   const model = DocumentModel.create({
     ...base,
@@ -150,9 +160,17 @@ function setup() {
       ],
       textStyles: [style],
       appIds: [{ handle: PE_URL, name: 'PE_URL', flags: 0 }],
-      blockRecords: [...base.tables!.blockRecords!, blockRecord(DOORTAG, 'DOORTAG')],
+      blockRecords: [
+        ...base.tables!.blockRecords!,
+        blockRecord(DOORTAG, 'DOORTAG'),
+        blockRecord(ANON, '*U9'),
+      ],
     },
-    blocks: [...base.blocks!, { handle: DOORTAG, name: 'DOORTAG', basePoint: { x: 0, y: 0 } }],
+    blocks: [
+      ...base.blocks!,
+      { handle: DOORTAG, name: 'DOORTAG', basePoint: { x: 0, y: 0 } },
+      { handle: ANON, name: '*U9', basePoint: { x: 0, y: 0 } },
+    ],
     entities: [
       ...base.entities!,
       entityInit('50', text('DOOR', { x: 0, y: 0 })),
@@ -184,6 +202,10 @@ function setup() {
       entityInit('59', text('DOOR LOCKED', { x: 0, y: 80 }), { layer: LOCKED }),
       entityInit('5A', text('SHEET DOOR', { x: 0, y: 0 }), { owner: PAPER_SPACE }),
       entityInit('5B', text('DOOR IN BLOCK', { x: 0, y: 0 }), { owner: DOORTAG }),
+      // A second reference to DOORTAG, whose text is listed once, and an anonymous block.
+      entityInit('5C', { ...insert(DOORTAG), position: { x: 300, y: 0 } }),
+      entityInit('5D', text('DOOR ANONYMOUS', { x: 0, y: 0 }), { owner: ANON }),
+      entityInit('5E', insert(ANON)),
     ],
   });
   const asked: ViewRequest[] = [];
@@ -191,7 +213,7 @@ function setup() {
     request: (r): Promise<ViewReply> => {
       asked.push(r);
       // A table cell's text is one line high.
-      if (r.op === 'textBox') {
+      if (r.op === 'textBox' && o.measure !== false) {
         return Promise.resolve({
           ok: true,
           box: { minX: 0, minY: 0, maxX: 1, maxY: r.text.height },
@@ -439,5 +461,59 @@ describe('FIND', () => {
     await s.press('done');
     // Done leaves nothing highlighted.
     expect(s.selected()).toEqual([]);
+  });
+
+  it('answers what the dialog asks at its edges', async () => {
+    const s = setup();
+    await s.bus.submit('FIND');
+    // Nothing to find.
+    await s.press({ op: 'find' });
+    expect(s.dialog()).toMatchObject({ note: NOT_FOUND });
+    // Selected objects with none selected.
+    await s.press({ op: 'find' }, { find: 'door', where: 'selection' });
+    expect(s.dialog()).toMatchObject({ note: 'Select objects to search first.' });
+    // Select objects ended with nothing selected leaves Find where as it was.
+    await s.press({ op: 'select' });
+    await s.bus.answer({ kind: 'enter' });
+    expect(s.dialog()).toMatchObject({ selected: 0, settings: { where: 'selection' } });
+    // Zoom to a result searches first; one not listed changes nothing.
+    await s.press({ op: 'zoom', index: 3 }, { where: 'space' });
+    expect(s.dialog()!.current).toBe(3);
+    await s.press({ op: 'zoom', index: 99 });
+    expect(s.dialog()!.current).toBe(3);
+    // After the last match, Find and Replace start again from the first.
+    await s.press({ op: 'find' }, { find: 'back' });
+    await s.press({ op: 'find' });
+    expect(s.dialog()).toMatchObject({ note: FINISHED });
+    await s.press({ op: 'find' });
+    expect(s.dialog()!.current).toBe(0);
+    await s.press({ op: 'find' });
+    await s.press({ op: 'replace' });
+    expect(s.dialog()!.current).toBe(0);
+    // Replace All with nothing to replace, then with nothing locked.
+    await s.press({ op: 'replaceAll' }, { find: 'window' });
+    expect(s.dialog()).toMatchObject({ note: NOT_FOUND });
+    await s.press({ op: 'replaceAll' }, { find: 'back', replace: 'REAR' });
+    expect(s.dialog()).toMatchObject({ note: '1 match was replaced.' });
+    // Create selection set (all) searches first.
+    await s.press({ op: 'selectionSet' }, { find: 'rear' });
+    expect(s.selected()).toEqual(['51']);
+  });
+
+  it("Done without the dialog's fields keeps the settings", async () => {
+    const s = setup();
+    await s.bus.submit('FIND');
+    await s.bus.answer({ kind: 'dialog', action: 'ok' });
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it("a table's text replaced where it cannot be measured keeps its rows", async () => {
+    const s = setup({ measure: false });
+    await s.bus.submit('FIND');
+    const options = { ...DEFAULT_FIND_SETTINGS.options, types: ['table' as const] };
+    await s.press({ op: 'replaceAll' }, { find: 'schedule', replace: 'LIST', options });
+    const t = s.geom<TableGeometry>('56');
+    expect(t.cells[0]![0]!.text).toBe('DOOR LIST');
+    expect(t.rowHeights).toEqual(table.rowHeights);
   });
 });
