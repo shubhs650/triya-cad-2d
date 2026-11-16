@@ -12,12 +12,15 @@ import {
   justifiedInPlace,
   mtextAttachmentPoint,
   mtextJustifiedInPlace,
+  textAlignJustification,
+  textAlignTargets,
   textJustificationPoint,
   type BusEvent,
   type EntityId,
   type InsertAttribute,
   type InsertGeometry,
   type MTextGeometry,
+  type MultiLeaderGeometry,
   type TextGeometry,
   type TextOutline,
   type TextStyleRecord,
@@ -86,6 +89,55 @@ const attrib = (h: string, tag: string, value: string, at: Vec2): InsertAttribut
   ...text(value, at),
   tag,
   flags: 0,
+});
+
+/** A multileader of text, its landing at (110, 10) and its text on the right of it. */
+const leader = (content: string, textStyle = STANDARD): MultiLeaderGeometry => ({
+  kind: 'MULTILEADER',
+  overrideFlags: 0,
+  pathType: 1,
+  lineColor: { kind: 'byBlock' },
+  lineweight: 'ByBlock',
+  landing: true,
+  dogleg: true,
+  doglegLength: 2.5,
+  arrowheadSize: 3,
+  contentType: 2,
+  scale: 1,
+  annotative: false,
+  textLeftAttachment: 1,
+  textRightAttachment: 1,
+  textTopAttachment: 9,
+  textBottomAttachment: 9,
+  textAttachmentDirection: 0,
+  textAngleType: 1,
+  textAlignment: 0,
+  textFrame: false,
+  contentBase: { x: 112.5, y: 10 },
+  landingGap: 0.5,
+  text: {
+    content,
+    style: textStyle,
+    position: { x: 113, y: 11.25 },
+    rotation: 0,
+    height: 2.5,
+    width: 0,
+    boundaryHeight: 0,
+    lineSpacing: 1,
+    lineSpacingStyle: 1,
+    attachment: 1,
+    flow: 1,
+    color: { kind: 'byBlock' },
+  },
+  branches: [
+    {
+      index: 0,
+      connection: { x: 110, y: 10 },
+      direction: { x: 1, y: 0 },
+      doglegLength: 2.5,
+      lines: [{ index: 0, vertices: [{ x: 100, y: 0 }] }],
+    },
+  ],
 });
 
 const rot = (p: Vec2, a: number): Vec2 => ({
@@ -221,6 +273,8 @@ function setup(o: { cannoscale?: number } = {}) {
       }),
       entityInit('59', mtext('GONE', { x: 0, y: 100 }, { style: NOFONT })),
       entityInit('5A', text('ALSO', { x: 0, y: 120 }, { style: NOFONT })),
+      entityInit('5C', leader('NOTE')),
+      entityInit('5D', leader('LOST', NOFONT)),
       entityInit(
         '58',
         mtext('TURNED', { x: 80, y: 80 }, { rotation: Math.PI / 2, width: 20, attachment: 5 }),
@@ -425,6 +479,44 @@ describe('JUSTIFYTEXT', () => {
   });
 });
 
+describe('JUSTIFYTEXT on multileaders', () => {
+  it("moves a multileader's text in its frame, overriding the style's alignment", async () => {
+    const s = setup();
+    await s.bus.script(['JUSTIFYTEXT']);
+    await s.bus.answer({ kind: 'selection', ids: [s.id('5C'), s.id('50')] });
+    await s.bus.submit('MC');
+    const g = s.geom<MultiLeaderGeometry>('5C');
+    // NOTE at 2.5 is 6 wide and 2.5 high: its centre is 3 along and 1.25 down from its top left.
+    expect([g.text!.attachment, pt(g.text!.position)]).toEqual([5, [116, 10]]);
+    expect(g.textAlignment).toBe(1);
+    expect(g.overrideFlags & (1 << 14)).toBe(1 << 14);
+    expect(g.branches).toEqual(leader('NOTE').branches);
+    expect(s.geom<TextGeometry>('50').halign).toBe(1);
+    // One undo step for both.
+    await s.bus.submit('U');
+    expect(s.geom<MultiLeaderGeometry>('5C').text!.attachment).toBe(1);
+    expect(s.geom<TextGeometry>('50').halign).toBe(0);
+  });
+
+  it('leaves a multileader justified so already, or one no font draws', async () => {
+    const s = setup();
+    await s.bus.script(['JUSTIFYTEXT']);
+    await s.bus.answer({ kind: 'selection', ids: [s.id('5C'), s.id('5D')] });
+    await s.bus.submit('TL');
+    expect(s.log).toContain('1 text cannot be measured: no loaded font draws it.');
+    expect(s.geom<MultiLeaderGeometry>('5C')).toEqual(leader('NOTE'));
+    expect(s.geom<MultiLeaderGeometry>('5D').text!.attachment).toBe(1);
+  });
+
+  it('is not text to SCALETEXT', async () => {
+    const s = setup();
+    await s.bus.script(['SCALETEXT']);
+    await s.bus.answer({ kind: 'selection', ids: [s.id('5C')] });
+    expect(s.log).toContain('1 object was not text.');
+    expect(s.bus.command).toBeUndefined();
+  });
+});
+
 describe('SCALETEXT', () => {
   it('sets a new height about each object’s existing insertion point', async () => {
     const s = setup();
@@ -611,5 +703,239 @@ describe('SCALETEXT', () => {
     await s.bus.script(['SCALETEXT']);
     await s.bus.answer({ kind: 'enter' });
     expect(s.bus.command).toBeUndefined();
+  });
+});
+
+describe('TEXTALIGN placing', () => {
+  const at = (x: number, y: number) => ({ at: { x, y }, corners: [{ x, y }] });
+  const line = { from: { x: 0, y: 0 }, to: { x: 10, y: 0 } };
+
+  it('keeps X on a level line for Current vertical, and Y on an upright one for Current horizontal', () => {
+    const texts = [at(3, 7), at(-2, 4)];
+    expect(textAlignTargets(texts, line, { mode: 2, gap: 0 })!.map(pt)).toEqual([
+      [3, 0],
+      [-2, 0],
+    ]);
+    const upright = { from: { x: 0, y: 0 }, to: { x: 0, y: -5 } };
+    expect(textAlignTargets(texts, upright, { mode: 3, gap: 0 })!.map(pt)).toEqual([
+      [0, 7],
+      [0, 4],
+    ]);
+    // On a slope, Current horizontal keeps X and finds Y on the line.
+    const slope = { from: { x: 0, y: 0 }, to: { x: 1, y: 1 } };
+    expect(textAlignTargets(texts, slope, { mode: 3, gap: 0 })!.map(pt)).toEqual([
+      [3, 3],
+      [-2, -2],
+    ]);
+  });
+
+  it('places nothing when the two points of the line are one', () => {
+    expect(textAlignTargets([at(1, 1)], { ...line, to: line.from }, { mode: 0, gap: 0 })).toBe(
+      undefined,
+    );
+  });
+
+  it('distributes one text given by Points onto the first point', () => {
+    expect(textAlignTargets([at(4, 4)], line, { mode: 0, gap: 0 })!.map(pt)).toEqual([[0, 0]]);
+  });
+
+  it('starts Set spacing at the first point without a text to align to', () => {
+    const texts = [at(8, 1), at(2, 1)];
+    expect(textAlignTargets(texts, line, { mode: 1, gap: 3 })!.map(pt)).toEqual([
+      [3, 0],
+      [0, 0],
+    ]);
+  });
+
+  it('names Left for a TEXTALIGNMODE out of range', () => {
+    expect(textAlignJustification(12)).toEqual({ halign: 0, valign: 0 });
+    expect(textAlignJustification(4)).toEqual({ halign: 1, valign: 2 });
+  });
+});
+
+describe('TEXTALIGN', () => {
+  it('lines texts up under the text aligned to, each keeping its height on the page', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTALIGN');
+    expect(s.bus.promptText).toBe('Select text objects to align [alIgnment/Options]:');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50'), s.id('52'), s.id('55')] });
+    expect(s.bus.promptText).toBe('Select text object to align to or [Points]:');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50')] });
+    expect(s.bus.promptText).toBe('Pick second point or [Options]:');
+    await s.bus.answer({ kind: 'point', point: { x: 0, y: 100 } });
+    expect(s.bus.command).toBeUndefined();
+    // Left: the baseline start of a TEXT, the top left of an MTEXT's frame.
+    expect(pt(s.geom<TextGeometry>('50').position)).toEqual([0, 0]);
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([0, 10]);
+    expect(pt(s.geom<TextGeometry>('55').position)).toEqual([0, 80]);
+    // Their justification is kept, and one undo puts them back.
+    expect(s.geom<MTextGeometry>('52').attachment).toBe(1);
+    await s.bus.submit('U');
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([50, 10]);
+  });
+
+  it('aligns by the point alIgnment names, remembered for the next time', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.submit('I');
+    expect(s.bus.promptText).toBe(
+      'Enter an option [Left/Center/Right/TL/TC/TR/ML/MC/MR/BL/BC/BR] <Left>:',
+    );
+    await s.bus.submit('R');
+    expect(s.bus.promptText).toBe('Select text objects to align [alIgnment/Options]:');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50'), s.id('52')] });
+    await s.bus.answer({ kind: 'selection', ids: [s.id('52')] });
+    // Right of the MTEXT (its top right, 7.2 wide), straight down.
+    await s.bus.answer({ kind: 'point', point: { x: 57.2, y: 0 } });
+    // NOTE (4.8 long) ends there, its baseline where it was.
+    expect(pt(s.geom<TextGeometry>('50').position)).toEqual([52.4, 0]);
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([50, 10]);
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.submit('I');
+    expect(s.bus.promptText).toContain('<Right>:');
+  });
+
+  it('distributes texts evenly between two points, in the order they lie', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.submit('O');
+    expect(s.bus.promptText).toBe(
+      'Enter an option [Distribute/Set spacing/Current vertical/current Horizontal] <Current vertical>:',
+    );
+    await s.bus.submit('D');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50'), s.id('52'), s.id('55')] });
+    await s.bus.submit('P');
+    expect(s.bus.promptText).toBe('Specify first point:');
+    await s.bus.answer({ kind: 'point', point: { x: 0, y: 0 } });
+    await s.bus.answer({ kind: 'point', point: { x: 0, y: -20 } });
+    // Along the line downwards: PART (y 80) first, then the MTEXT (10), then NOTE (0).
+    expect(pt(s.geom<TextGeometry>('55').position)).toEqual([0, 0]);
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([0, -10]);
+    expect(pt(s.geom<TextGeometry>('50').position)).toEqual([0, -20]);
+  });
+
+  it('sets a gap between the texts’ extents after the text aligned to', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50'), s.id('52'), s.id('55')] });
+    await s.bus.answer({ kind: 'selection', ids: [s.id('55')] });
+    await s.bus.submit('O');
+    await s.bus.submit('S');
+    expect(s.bus.promptText).toBe('Specify spacing:');
+    await s.bus.submit('-1');
+    expect(s.log).toContain('Value must be positive or zero.');
+    await s.bus.submit('1');
+    expect(s.bus.promptText).toBe('Pick second point or [Options]:');
+    await s.bus.answer({ kind: 'point', point: { x: 0, y: 70 } });
+    // PART's box ends 0.4 below its baseline; the MTEXT's frame (5 1/3 high) starts 1 below
+    // that; NOTE's box (2 above its baseline) 1 below the frame.
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([0, 78.6]);
+    expect(pt(s.geom<TextGeometry>('50').position)).toEqual([0, r6(80 - 1.4 - 16 / 3 - 1 - 2)]);
+    // The gap given is the next default.
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50')] });
+    await s.bus.answer({ kind: 'selection', ids: [s.id('55')] });
+    await s.bus.submit('O');
+    expect(s.bus.promptText).toContain('<Set spacing>:');
+    await s.bus.submit('S');
+    expect(s.bus.promptText).toBe('Specify spacing <1.0000>:');
+  });
+
+  it('keeps each X along a level line (current Horizontal)', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.submit('O');
+    await s.bus.submit('H');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50'), s.id('52')] });
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50')] });
+    await s.bus.answer({ kind: 'point', point: { x: 10, y: 0 } });
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([50, 0]);
+  });
+
+  it('previews the texts placed for the point at the cursor', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50'), s.id('52')] });
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50')] });
+    const preview = await s.bus.commandPreview({ cursor: { x: 0, y: 10 }, hits: [] });
+    expect(preview?.faded).toEqual([s.id('52')]);
+    expect(pt((preview!.shapes[0]!.geom as MTextGeometry).position)).toEqual([0, 10]);
+    // None at the base point itself, where no line runs.
+    expect(await s.bus.commandPreview({ cursor: { x: 0, y: 0 }, hits: [] })).toBeUndefined();
+    await s.bus.answer({ kind: 'point', point: { x: 0, y: 0 } });
+    expect(s.log).toContain('The second point must differ from the first.');
+    expect(s.bus.promptText).toBe('Pick second point or [Options]:');
+    // Options there, then the point.
+    await s.bus.submit('O');
+    await s.bus.submit('H');
+    await s.bus.answer({ kind: 'point', point: { x: 10, y: 0 } });
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([50, 0]);
+  });
+
+  it('takes texts selected before it starts, and leaves those already in line', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    await s.bus.submit('TEXTALIGN');
+    expect(s.bus.promptText).toBe('Select text object to align to or [Points]:');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50')] });
+    await s.bus.answer({ kind: 'point', point: { x: 0, y: 10 } });
+    expect(s.bus.command).toBeUndefined();
+    expect(pt(s.geom<TextGeometry>('55').position)).toEqual([0, 80]);
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([0, 10]);
+  });
+
+  it('skips what is not text or cannot be measured', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('20'), s.id('50'), s.id('54')] });
+    expect(s.log).toContain('1 object was not text.');
+    // A base that is not text, or that no font draws, is asked for again.
+    await s.bus.answer({ kind: 'selection', ids: [s.id('20')] });
+    expect(s.bus.promptText).toBe('Select text object to align to or [Points]:');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('5A')] });
+    expect(s.log).toContain('1 text cannot be measured: no loaded font draws it.');
+    expect(s.bus.promptText).toBe('Select text object to align to or [Points]:');
+    await s.bus.submit('P');
+    await s.bus.answer({ kind: 'point', point: { x: 30, y: 0 } });
+    await s.bus.answer({ kind: 'point', point: { x: 30, y: 10 } });
+    expect(pt(s.geom<TextGeometry>('50').position)).toEqual([30, 0]);
+    expect(pt(s.geom<TextGeometry>('54').position)).toEqual([0, 60]);
+  });
+
+  it('ends at an empty answer anywhere', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.answer({ kind: 'enter' });
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('20')] });
+    expect(s.bus.command).toBeUndefined();
+    for (const steps of [1, 2, 3]) {
+      await s.bus.submit('TEXTALIGN');
+      expect([steps, s.bus.promptText]).toEqual([
+        steps,
+        'Select text objects to align [alIgnment/Options]:',
+      ]);
+      await s.bus.answer({ kind: 'selection', ids: [s.id('50'), s.id('52')] });
+      if (steps > 1) await s.bus.submit('P');
+      if (steps > 2) await s.bus.answer({ kind: 'point', point: { x: 0, y: 0 } });
+      await s.bus.answer({ kind: 'enter' });
+      expect([steps, s.bus.command]).toEqual([steps, undefined]);
+    }
+    // An empty answer at Set spacing's first gap ends it, with the spacing as it was.
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.submit('O');
+    await s.bus.submit('S');
+    await s.bus.answer({ kind: 'enter' });
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.submit('TEXTALIGN');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50'), s.id('52')] });
+    await s.bus.answer({ kind: 'selection', ids: [s.id('50')] });
+    await s.bus.submit('O');
+    expect(s.bus.promptText).toContain('<Current vertical>:');
+    await s.bus.submit('S');
+    await s.bus.answer({ kind: 'enter' });
+    expect(s.bus.command).toBeUndefined();
+    expect(pt(s.geom<MTextGeometry>('52').position)).toEqual([50, 10]);
   });
 });

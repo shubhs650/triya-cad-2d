@@ -31,12 +31,23 @@ import type {
   InsertAttribute,
   InsertGeometry,
   MTextGeometry,
+  MultiLeaderGeometry,
   TextFields,
   TextGeometry,
 } from '../../model/types';
 import { transformObjects } from '../../edit/edit';
-import { scaleAbout } from '../../edit/similarity';
-import { transformAttribute } from '../../edit/transform';
+import { moveBy, scaleAbout } from '../../edit/similarity';
+import { transformAttribute, transformGeometry } from '../../edit/transform';
+import {
+  TEXTALIGN_MODES,
+  TEXTALIGN_SET_SPACING,
+  textAlignJustification,
+  textAlignTargets,
+  type AlignedText,
+  type TextAlignLine,
+} from '../../edit/text-align';
+import { reshapePreview } from '../command-preview';
+import { optionVariable, setOptionVariable } from './option-variables';
 import {
   TEXT_JUSTIFICATIONS,
   attachmentFor,
@@ -48,6 +59,8 @@ import {
   type TextFrame,
 } from '../../edit/text-justify';
 import { insertionPoint } from './attributes';
+import { MLEADER_MTEXT, multiLeaderMText } from '../../edit/mleader';
+import { MLEADER_TEXT_OVERRIDES, columnOf } from '../../properties/multileader';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { textSize } from '../draw/text';
@@ -65,6 +78,12 @@ type Target =
   | { readonly kind: 'mtext'; readonly id: EntityId; readonly geom: MTextGeometry }
   | { readonly kind: 'attribute'; readonly id: EntityId; readonly attr: InsertAttribute };
 
+/** A multileader of text, whose text JUSTIFYTEXT justifies (M4-09 part 3). */
+interface LeaderTarget {
+  readonly id: EntityId;
+  readonly geom: MultiLeaderGeometry & { readonly text: NonNullable<MultiLeaderGeometry['text']> };
+}
+
 /** What the canvas draws for a target: an attribute definition shows its tag. */
 function drawn(t: Target): TextGeometry | MTextGeometry {
   if (t.kind === 'mtext') return t.geom;
@@ -72,14 +91,23 @@ function drawn(t: Target): TextGeometry | MTextGeometry {
   return t.geom.kind === 'ATTDEF' ? { ...t.geom, kind: 'TEXT', value: t.geom.tag } : t.geom;
 }
 
-/** The texts among the objects selected, and how many objects were not text. */
-function targetsOf(ctx: CommandContext, ids: readonly EntityId[]): Target[] {
+/**
+ * The texts among the objects selected, and how many objects were not text; with `leaders`,
+ * the multileaders of text go there.
+ */
+function targetsOf(
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+  leaders?: LeaderTarget[],
+): Target[] {
   const out: Target[] = [];
   let other = 0;
   for (const id of ids) {
     const g = ctx.model.entity(id)?.geom;
     if (g?.kind === 'TEXT' || g?.kind === 'ATTDEF') out.push({ kind: 'text', id, geom: g });
-    else if (g?.kind === 'MTEXT') out.push({ kind: 'mtext', id, geom: g });
+    else if (leaders && g?.kind === 'MULTILEADER' && g.contentType === MLEADER_MTEXT && g.text) {
+      leaders.push({ id, geom: { ...g, text: g.text } });
+    } else if (g?.kind === 'MTEXT') out.push({ kind: 'mtext', id, geom: g });
     else if (g?.kind === 'INSERT' && g.attributes.length > 0) {
       for (const attr of g.attributes) out.push({ kind: 'attribute', id, attr });
     } else other++;
@@ -88,10 +116,10 @@ function targetsOf(ctx: CommandContext, ids: readonly EntityId[]): Target[] {
   return out;
 }
 
-async function* selectTexts(ctx: CommandContext): Sub<Target[]> {
+async function* selectTexts(ctx: CommandContext, leaders?: LeaderTarget[]): Sub<Target[]> {
   const a = yield ctx.prompt.selection({ message: 'Select objects', editable: true });
   const ids = (a as { readonly ids?: readonly EntityId[] }).ids ?? [];
-  return targetsOf(ctx, ids);
+  return targetsOf(ctx, ids, leaders);
 }
 
 /**
@@ -155,8 +183,9 @@ export function justifyTextCommand(): CommandDef {
     name: 'JUSTIFYTEXT',
     usesSelection: 'during',
     async *run(ctx): CommandGenerator {
-      const targets: Target[] = yield* selectTexts(ctx);
-      if (targets.length === 0) return;
+      const leaders: LeaderTarget[] = [];
+      const targets: Target[] = yield* selectTexts(ctx, leaders);
+      if (targets.length === 0 && leaders.length === 0) return;
       const k = yield ctx.prompt.keyword({
         message: 'Enter a justification option',
         options: JUSTIFY_NAMES,
@@ -165,7 +194,12 @@ export function justifyTextCommand(): CommandDef {
       last = keywordOf(k);
       const j = TEXT_JUSTIFICATIONS[last]!;
       const measured = await measure(ctx, targets);
-      unmeasured(ctx, measured.filter((m) => !m).length);
+      const r = await ctx.view.request({
+        op: 'textFrames',
+        texts: leaders.map((l) => multiLeaderMText(l.geom.text)),
+      });
+      const frames = leaders.map((_, i) => (r.ok && r.frames?.[i]) || null);
+      unmeasured(ctx, [...measured, ...frames].filter((m) => !m).length);
       const attrs = new Map<EntityId, Map<Handle, InsertAttribute>>();
       const entities = new Map<EntityId, TextGeometry | AttdefGeometry | MTextGeometry>();
       targets.forEach((t, i) => {
@@ -186,12 +220,38 @@ export function justifyTextCommand(): CommandDef {
           );
         }
       });
-      if (entities.size === 0 && attrs.size === 0) return;
+      const leadersMoved = new Map<EntityId, MultiLeaderGeometry>();
+      leaders.forEach((l, i) => {
+        const f = frames[i];
+        if (!f) return;
+        const moved = justifiedLeader(l.geom, attachmentFor(j), f);
+        if (moved !== l.geom) leadersMoved.set(l.id, moved);
+      });
+      if (entities.size === 0 && attrs.size === 0 && leadersMoved.size === 0) return;
       ctx.edit((b) => {
         for (const [id, geom] of entities) b.updateEntity(id, { geom });
+        for (const [id, geom] of leadersMoved) b.updateEntity(id, { geom });
         replaceAttributes(b, attrs);
       });
     },
+  };
+}
+
+/**
+ * A multileader's text given attachment `a` where it lies in its frame `f` (JUSTIFYTEXT on
+ * "leader text objects", AutoCAD 2024 Help): its text moves in its frame as an MTEXT's does,
+ * so it stays on its landing, and its alignment (DXF 175) follows the attachment's column as
+ * the Properties palette's Justify sets it, overriding the style's.
+ */
+function justifiedLeader(g: LeaderTarget['geom'], a: number, f: TextFrame): MultiLeaderGeometry {
+  const t = g.text;
+  if (t.attachment === a) return g;
+  const { position } = mtextJustifiedInPlace(multiLeaderMText(t), a, f);
+  return {
+    ...g,
+    overrideFlags: g.overrideFlags | MLEADER_TEXT_OVERRIDES.textAlignment,
+    textAlignment: columnOf(a),
+    text: { ...t, attachment: a, position },
   };
 }
 
@@ -345,7 +405,230 @@ export function scaleTextCommand(): CommandDef {
   }
 }
 
+// ── TEXTALIGN ───────────────────────────────────────────────────────────────────────────────
+
+/** TEXTALIGNSPACING's options, by its value. */
+const SPACING_NAMES = ['Distribute', 'Set spacing', 'Current vertical', 'current Horizontal'];
+const TEXTALIGNMODE = 'TEXTALIGNMODE';
+const TEXTALIGNSPACING = 'TEXTALIGNSPACING';
+
+/** The corners of an MTEXT's frame `f`, as drawn. */
+const frameCorners = (g: MTextGeometry, f: TextFrame): Vec2[] =>
+  [7, 9, 3, 1].map((a) => mtextAttachmentPoint(g, f, a));
+
+const minus = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x - b.x, y: a.y - b.y });
+
+/** A text TEXTALIGN moves, measured: where its alignment point and its box lie. */
+interface Measured extends AlignedText {
+  readonly id: EntityId;
+}
+
+/**
+ * TEXTALIGN (M4-09 part 3), with AutoCAD 2024's prompts ("TEXTALIGN (Command)"):
+ *   Select text objects to align [alIgnment/Options]:
+ *   Select text object to align to [Points]:
+ *   Pick second point or [Options]:
+ * alIgnment sets TEXTALIGNMODE and Options TEXTALIGNSPACING (both the app's, kept per user as
+ * AutoCAD keeps them in the registry); the texts are placed along the line by
+ * `edit/text-align.ts`, previewed at the cursor (COMMANDPREVIEW), as one undo step. It takes
+ * single-line text, MTEXT and attribute definitions, which it moves whole.
+ */
+export function textAlignCommand(): CommandDef {
+  // Where no app keeps the variables (scripts, tests), the command keeps them for the drawing.
+  let mode = 9;
+  let spacing = 2;
+  let gap: number | undefined;
+  return {
+    name: 'TEXTALIGN',
+    usesSelection: 'before',
+    async *run(ctx): CommandGenerator {
+      mode = await optionVariable(ctx, TEXTALIGNMODE, mode);
+      spacing = await optionVariable(ctx, TEXTALIGNSPACING, spacing);
+      let ids: readonly EntityId[] = ctx.preselected;
+      while (ids.length === 0) {
+        const a = yield ctx.prompt.selection({
+          message: 'Select text objects to align',
+          options: ['alIgnment', 'Options'],
+          editable: true,
+        });
+        if (a.kind === 'keyword' && a.keyword === 'alIgnment') {
+          const k = yield ctx.prompt.keyword({
+            message: 'Enter an option',
+            options: ALIGN_OPTIONS,
+            default: { kind: 'keyword', keyword: TEXTALIGN_MODES[mode] ?? 'Left' },
+          });
+          mode = TEXTALIGN_MODES.indexOf(keywordOf(k));
+          await setOptionVariable(ctx, TEXTALIGNMODE, mode);
+          continue;
+        }
+        if (a.kind === 'keyword') {
+          if (!(yield* askSpacing(ctx))) return;
+          continue;
+        }
+        if (a.kind !== 'selection' || a.ids.length === 0) return;
+        ids = a.ids;
+      }
+      const texts = alignable(ctx, ids);
+      if (texts.length === 0) return;
+
+      let line: TextAlignLine | undefined;
+      let baseId: EntityId | undefined;
+      while (!line) {
+        const b = yield ctx.prompt.selection({
+          message: 'Select text object to align to or',
+          options: ['Points'],
+          single: true,
+        });
+        if (b.kind === 'keyword') {
+          const p = yield ctx.prompt.point({ message: 'Specify first point' });
+          if (p.kind !== 'point') return;
+          line = { from: p.point, to: p.point };
+          continue;
+        }
+        if (b.kind !== 'selection' || b.ids.length === 0) return;
+        const base = alignable(ctx, b.ids.slice(0, 1))[0];
+        if (!base) continue;
+        const m = (await measureAligned(ctx, [base], mode))[0];
+        if (!m) {
+          unmeasured(ctx, 1);
+          continue;
+        }
+        baseId = base.id;
+        line = { from: m.at, to: m.at, base: m.corners };
+      }
+      const moving = texts.filter((t) => t.id !== baseId);
+      // Measured once: only the spacing can change while the second point is asked for.
+      const measured = await measureAligned(ctx, moving, mode);
+      unmeasured(ctx, measured.filter((m) => !m).length);
+      const from = line.from;
+      const base = line.base;
+      for (;;) {
+        const placed = measured.flatMap((m) => (m ? [m] : []));
+        const moves = (to: Vec2) => {
+          const targets = textAlignTargets(
+            placed,
+            { from, to, ...(base && { base }) },
+            {
+              mode: spacing,
+              gap: gap ?? 0,
+            },
+          );
+          return targets?.map((p, i) => ({ id: placed[i]!.id, by: minus(p, placed[i]!.at) }));
+        };
+        const p = yield ctx.prompt.point({
+          message: 'Pick second point or',
+          options: ['Options'],
+          rubberBand: { from },
+          commandPreview: {
+            at: (q) => {
+              const m = moves(q.cursor);
+              if (!m) return undefined;
+              return reshapePreview(
+                ctx.model,
+                m.map(({ id, by }) => [
+                  id,
+                  [transformGeometry(ctx.model.entity(id)!.geom, moveBy(by))],
+                ]),
+              );
+            },
+          },
+        });
+        if (p.kind === 'keyword') {
+          if (!(yield* askSpacing(ctx))) return;
+          continue;
+        }
+        if (p.kind !== 'point') return;
+        const m = moves(p.point);
+        if (!m) {
+          ctx.message('The second point must differ from the first.');
+          continue;
+        }
+        const changed = m.filter(({ by }) => by.x !== 0 || by.y !== 0);
+        if (changed.length === 0) return;
+        ctx.edit((b) => {
+          for (const { id, by } of changed) transformObjects(b, ctx.model, [id], moveBy(by));
+        });
+        return;
+      }
+    },
+  };
+
+  /** Options: TEXTALIGNSPACING, and Set spacing's gap. False when the command ends there. */
+  async function* askSpacing(ctx: CommandContext): Sub<boolean> {
+    const k = yield ctx.prompt.keyword({
+      message: 'Enter an option',
+      options: SPACING_NAMES,
+      default: { kind: 'keyword', keyword: SPACING_NAMES[spacing] ?? 'Current vertical' },
+    });
+    const next = SPACING_NAMES.indexOf(keywordOf(k));
+    if (next === TEXTALIGN_SET_SPACING) {
+      for (;;) {
+        const d = yield ctx.prompt.distance({
+          message: 'Specify spacing',
+          ...(gap !== undefined && { default: { kind: 'distance' as const, value: gap } }),
+        });
+        if (d.kind !== 'distance') return false;
+        if (d.value < 0 || !Number.isFinite(d.value)) {
+          ctx.message('Value must be positive or zero.');
+          continue;
+        }
+        gap = d.value;
+        break;
+      }
+    }
+    spacing = next;
+    await setOptionVariable(ctx, TEXTALIGNSPACING, spacing);
+    return true;
+  }
+}
+
+/** The keywords of TEXTALIGN's alIgnment option, as AutoCAD lists them. */
+const ALIGN_OPTIONS = [...TEXTALIGN_MODES.slice(9), ...TEXTALIGN_MODES.slice(0, 9)];
+
+/** The texts TEXTALIGN moves among `ids`: single-line text, MTEXT and attribute definitions. */
+function alignable(ctx: CommandContext, ids: readonly EntityId[]): Target[] {
+  const out: Target[] = [];
+  let other = 0;
+  for (const id of ids) {
+    const g = ctx.model.entity(id)?.geom;
+    if (g?.kind === 'TEXT' || g?.kind === 'ATTDEF') out.push({ kind: 'text', id, geom: g });
+    else if (g?.kind === 'MTEXT') out.push({ kind: 'mtext', id, geom: g });
+    else other++;
+  }
+  if (other > 0) ctx.message(`${other} ${other === 1 ? 'object was' : 'objects were'} not text.`);
+  return out;
+}
+
+/** Each text's alignment point (TEXTALIGNMODE `mode`) and box as drawn; null unmeasured. */
+async function measureAligned(
+  ctx: CommandContext,
+  targets: readonly Target[],
+  mode: number,
+): Promise<(Measured | null)[]> {
+  const j = textAlignJustification(mode);
+  const measured = await measure(ctx, targets);
+  return targets.map((t, i) => {
+    const m = measured[i];
+    if (!m) return null;
+    if (t.kind === 'mtext') {
+      const f = m as TextFrame;
+      return {
+        id: t.id,
+        at: mtextAttachmentPoint(t.geom, f, attachmentFor(j)),
+        corners: frameCorners(t.geom, f),
+      };
+    }
+    const o = m as TextOutline;
+    return {
+      id: t.id,
+      at: textJustificationPoint(drawn(t) as TextFields, o, j),
+      corners: o.corners,
+    };
+  });
+}
+
 export const TEXT_TOOL_COMMANDS: readonly (() => CommandDef)[] = [
   justifyTextCommand,
   scaleTextCommand,
+  textAlignCommand,
 ];

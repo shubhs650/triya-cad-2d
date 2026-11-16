@@ -195,6 +195,8 @@ describe('palette search', () => {
       // M4-05 part 5: the Table Style dialog.
       'TABLESTYLE',
       'TEXT',
+      // M4-09 part 3.
+      'TEXTALIGN',
       'TEXTEDIT',
       'TEXTTOFRONT',
       'TRIM',
