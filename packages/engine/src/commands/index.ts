@@ -98,7 +98,7 @@ export * from './command-preview';
 export { GRIP_MODES, GRIP_OBJECT_LIMIT, gripCommand, type GripMode } from './modify/grips';
 export { revcloudCommand, revcloudAppId, revcloudXdata, type CloudType } from './draw/revcloud';
 export { setWipeoutFrame, wipeoutCommand, wipeoutFrame } from './draw/wipeout';
-export { hatchCommand, hatchCommands } from './draw/hatch';
+export { hatchCommand, hatchCommands } from './draw/hatchedit';
 export * from './modify/draw-order';
 export {
   ATTRIBUTE_COMMANDS,

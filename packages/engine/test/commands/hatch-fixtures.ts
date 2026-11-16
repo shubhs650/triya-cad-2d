@@ -10,6 +10,7 @@ import {
   type BusEvent,
   type DocumentInit,
   type Entity,
+  type EntityId,
   type EntityGeometry,
   type HatchGeometry,
   type HeaderValue,
@@ -17,6 +18,7 @@ import {
   type ViewHost,
   type ViewReply,
   type ViewRequest,
+  type Vec2,
 } from '../../src/index';
 import { MODEL_SPACE, entityInit, layer, sampleInit } from '../model/fixtures';
 
@@ -52,10 +54,15 @@ export const circle = (x: number, y: number, r: number): EntityGeometry => ({
 });
 
 /** The app's side: a view of (−50,−50)–(150,150), a library that knows every name but NOPE. */
-export function host(requests: ViewRequest[]): ViewHost {
+export function host(
+  requests: ViewRequest[],
+  pickAt: (p: Vec2) => EntityId[] = () => [],
+): ViewHost {
   return {
     request: (r): Promise<ViewReply> => {
       requests.push(r);
+      // A pick takes the lines and circles within 0.5 of the point (M4-07 part 4).
+      if (r.op === 'pick') return Promise.resolve({ ok: true, ids: pickAt(r.point) });
       if (r.op === 'get') {
         return Promise.resolve({
           ok: true,
@@ -151,7 +158,7 @@ export function setup(geoms: (EntityGeometry | [EntityGeometry, string])[], o: S
   const bus = new PromptBus({
     model,
     registry: builtinCommands(),
-    ...(!o.noView && { view: host(requests) }),
+    ...(!o.noView && { view: host(requests, (p) => near(model, p)) }),
   });
   const log: string[] = [];
   const previews: (readonly EntityGeometry[])[] = [];
@@ -177,3 +184,23 @@ export function setup(geoms: (EntityGeometry | [EntityGeometry, string])[], o: S
 
 export const placements = (requests: ViewRequest[]) =>
   requests.flatMap((r) => (r.op === 'hatchPattern' ? [r] : []));
+
+/** The lines and circles of model space within 0.5 of `p`. */
+function near(model: DocumentModel, p: Vec2): EntityId[] {
+  return [...model.entities()].flatMap((e) => {
+    const g = e.geom;
+    let d = Infinity;
+    if (g.kind === 'LINE') {
+      const dx = g.end.x - g.start.x;
+      const dy = g.end.y - g.start.y;
+      const f = Math.max(
+        0,
+        Math.min(1, ((p.x - g.start.x) * dx + (p.y - g.start.y) * dy) / (dx * dx + dy * dy)),
+      );
+      d = Math.hypot(p.x - g.start.x - f * dx, p.y - g.start.y - f * dy);
+    } else if (g.kind === 'CIRCLE') {
+      d = Math.abs(Math.hypot(p.x - g.center.x, p.y - g.center.y) - g.radius);
+    }
+    return d <= 0.5 ? [e.id] : [];
+  });
+}
