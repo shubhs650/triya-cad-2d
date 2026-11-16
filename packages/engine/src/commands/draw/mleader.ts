@@ -497,10 +497,7 @@ async function* options(
         for (;;) {
           const n = yield ctx.prompt.integer({
             message: 'Enter the maximum points for leader line',
-            // A style without a limit (DXF 90 = 0) offers no default.
-            ...(Number.isFinite(o.maxPoints) && {
-              default: { kind: 'number', value: o.maxPoints },
-            }),
+            default: { kind: 'number', value: o.maxPoints },
           });
           const v = (n as { readonly value: number }).value;
           if (v >= 2) {

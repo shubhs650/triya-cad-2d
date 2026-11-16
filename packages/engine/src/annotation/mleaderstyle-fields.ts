@@ -4,8 +4,8 @@
 // (the DXF reference's MLEADERSTYLE object).
 //
 // What the dialog shows and the record has no field for, our reading (noted in the PR):
-// - "Maximum leader points" unchecked is DXF 90 = 0, no limit (ObjectARX's
-//   maxLeaderSegmentsPoints: 0 means none); checked, 2 or more.
+// - "Maximum leader points" is DXF 90, 2 or more: the save keeps it in AutoCAD's range, so the
+//   check box that turns the limit off is not offered (ROADMAP M4-04).
 // - "First segment angle" and "Second segment angle" unchecked are DXF 40/41 = 0, no constraint,
 //   the angle kept in radians as MLEADER reads it (`constrainSegment`).
 // - "Automatically include landing" sets both DXF 290 (landing) and 291 (dogleg), as MLEADER's
@@ -57,7 +57,6 @@ export interface MLeaderStyleSettings {
   readonly arrowheadSize: number;
   readonly breakSize: number;
   // Leader Structure: Constraints, Landing settings, Scale.
-  readonly maxPointsOn: boolean;
   readonly maxPoints: number;
   readonly firstAngleOn: boolean;
   readonly firstAngle: number;
@@ -249,20 +248,11 @@ export const MLEADERSTYLE_FIELDS: readonly MLeaderStyleField[] = [
   },
   // Leader Structure.
   {
-    key: 'maxPointsOn',
-    tab: 'structure',
-    group: 'Constraints',
-    label: 'Maximum leader points',
-    kind: 'check',
-  },
-  {
     key: 'maxPoints',
     tab: 'structure',
     group: 'Constraints',
     label: 'Maximum leader points',
     kind: 'number',
-    checkedBy: 'maxPointsOn',
-    enabled: (s) => s.maxPointsOn,
     takes: (n) => Number.isInteger(n) && n >= 2,
   },
   {
@@ -574,7 +564,6 @@ export function mleaderStyleSettings(s: MLeaderStyleRecord): MLeaderStyleSetting
     arrowhead: s.arrowhead ?? '',
     arrowheadSize: s.arrowheadSize,
     breakSize: s.breakGap,
-    maxPointsOn: s.maxLeaderPoints > 0,
     maxPoints: s.maxLeaderPoints >= 2 ? s.maxLeaderPoints : 2,
     firstAngleOn: s.firstSegmentAngle !== 0,
     firstAngle: s.firstSegmentAngle !== 0 ? deg(s.firstSegmentAngle) : 15,
@@ -622,7 +611,7 @@ export function mleaderStyleProblem(s: MLeaderStyleSettings): string | undefined
   if (!parseLineweightValue(s.lineweight)) return 'Lineweight: invalid value.';
   if (s.arrowheadSize < 0) return 'Arrowhead size must be 0 or more.';
   if (s.breakSize < 0) return 'Break size must be 0 or more.';
-  if (s.maxPointsOn && !(Number.isInteger(s.maxPoints) && s.maxPoints >= 2))
+  if (!(Number.isInteger(s.maxPoints) && s.maxPoints >= 2))
     return 'Maximum leader points must be a whole number, 2 or more.';
   for (const a of [s.firstAngle, s.secondAngle])
     if (!(a > 0 && a <= 90)) return 'A segment angle must be between 0 and 90.';
@@ -656,7 +645,7 @@ export const MLEADERSTYLE_RECORD_KEYS: Readonly<Record<string, readonly MLeaderS
   arrowhead: ['arrowhead'],
   arrowheadSize: ['arrowheadSize'],
   breakGap: ['breakSize'],
-  maxLeaderPoints: ['maxPointsOn', 'maxPoints'],
+  maxLeaderPoints: ['maxPoints'],
   firstSegmentAngle: ['firstAngleOn', 'firstAngle'],
   secondSegmentAngle: ['secondAngleOn', 'secondAngle'],
   landing: ['landing'],
@@ -730,7 +719,7 @@ export function mleaderStyleFields(
     arrowhead: refs.arrowhead,
     arrowheadSize: s.arrowheadSize,
     breakGap: s.breakSize,
-    maxLeaderPoints: s.maxPointsOn ? s.maxPoints : 0,
+    maxLeaderPoints: s.maxPoints,
     firstSegmentAngle: s.firstAngleOn ? s.firstAngle * DEG : 0,
     secondSegmentAngle: s.secondAngleOn ? s.secondAngle * DEG : 0,
     landing: s.landing,

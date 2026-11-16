@@ -713,10 +713,9 @@ describe('MLEADER', () => {
       landing: { connection: { x: 5, y: 5 }, direction: { x: 1, y: 0 }, end: { x: 5.36, y: 5 } },
     });
     expect(g.overrideFlags).toBe(MLEADER_OVERRIDES.scale);
-    // DXF 90 = 0 is no limit (the style manager's Maximum leader points unchecked, M4-04).
     expect(settingsOf({ ...standard, contentType: 3, maxLeaderPoints: 0 })).toMatchObject({
       contentType: 0,
-      maxPoints: Infinity,
+      maxPoints: 2,
     });
   });
 });

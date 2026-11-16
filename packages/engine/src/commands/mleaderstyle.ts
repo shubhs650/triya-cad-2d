@@ -316,7 +316,9 @@ function addStyle(
     handle: '' as Handle,
     ...standardMLeaderStyle(metric, undefined, undefined),
   };
-  const { handle: _h, xdata: _x, ...rest } = template;
+  // What ties the template to the drawing (its reactors, extension dictionary, the file's copy)
+  // is its own, not the new style's.
+  const { handle: _h, xdata: _x, reactors: _r, extDict: _e, raw: _w, ...rest } = template;
   const fields = mleaderStyleFields(s, resolveRefs(b, model, s));
   const record: Record<string, unknown> = { ...rest, ...fields, name, annotative: false };
   // A style holds no undefined reference: absent means none.

@@ -208,7 +208,6 @@ describe('MLEADERSTYLE: the Multileader Style Manager', () => {
       arrowhead: '',
       arrowheadSize: 4,
       breakSize: 3.75,
-      maxPointsOn: true,
       maxPoints: 2,
       firstAngleOn: false,
       landing: true,
@@ -256,7 +255,7 @@ describe('MLEADERSTYLE: the Multileader Style Manager', () => {
       arrowhead: '_DOT',
       arrowheadSize: 2.5,
       breakSize: 1.5,
-      maxPointsOn: false,
+      maxPoints: 3,
       firstAngleOn: true,
       firstAngle: 45,
       secondAngleOn: true,
@@ -300,7 +299,7 @@ describe('MLEADERSTYLE: the Multileader Style Manager', () => {
       arrowhead: dot.handle,
       arrowheadSize: 2.5,
       breakGap: 1.5,
-      maxLeaderPoints: 0,
+      maxLeaderPoints: 3,
       landing: false,
       dogleg: false,
       doglegLength: 5,
@@ -484,11 +483,6 @@ describe('MLEADERSTYLE: the Multileader Style Manager', () => {
       'Standard',
       'Tags',
     ]);
-  });
-
-  it('takes a style without a leader point limit as no limit in MLEADER', () => {
-    expect(settingsOf({ ...standard, maxLeaderPoints: 0 }).maxPoints).toBe(Infinity);
-    expect(settingsOf({ ...standard, maxLeaderPoints: 3 }).maxPoints).toBe(3);
   });
 });
 
