@@ -201,6 +201,8 @@ describe('palette search', () => {
       'TEXTALIGN',
       'TEXTEDIT',
       'TEXTTOFRONT',
+      // M4-11: the Geometric Tolerance dialog.
+      'TOLERANCE',
       'TRIM',
       // M2-23: the undo commands run in every drawing.
       'U',

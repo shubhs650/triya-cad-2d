@@ -8,6 +8,7 @@
 // next TEXT line starts 5/3 of the height below the last (MTEXT's single line spacing), and an
 // MTEXT box may be dragged from any corner: its insertion point is the box's point that the
 // justification names.
+import { editTolerance } from './tolerance';
 import type { Vec2 } from '../../geom/types';
 import type { DocumentModel } from '../../model/document';
 import type { Handle } from '../../model/handle';
@@ -789,11 +790,13 @@ export function textEditCommand(): CommandDef {
         const edited =
           entity.geom.kind === 'ATTDEF'
             ? yield* editAttdef(ctx, entity)
-            : entity.geom.kind === 'MULTILEADER'
-              ? yield* editMultiLeader(ctx, entity)
-              : 'dimType' in entity.geom
-                ? yield* editDimension(ctx, entity)
-                : yield* editText(ctx, entity);
+            : entity.geom.kind === 'TOLERANCE'
+              ? yield* toleranceEdit(ctx, entity)
+              : entity.geom.kind === 'MULTILEADER'
+                ? yield* editMultiLeader(ctx, entity)
+                : 'dimType' in entity.geom
+                  ? yield* editDimension(ctx, entity)
+                  : yield* editText(ctx, entity);
         if (edited === undefined) return;
         if (edited) done.push(edited);
         if (!multiple) return;
@@ -813,6 +816,8 @@ const TEXTEDIT_KINDS = new Set([
   'DIMENSION',
   'ARC_DIMENSION',
   'LARGE_RADIAL_DIMENSION',
+  // A feature control frame: the Geometric Tolerance dialog (M4-11).
+  'TOLERANCE',
 ]);
 
 /**
@@ -968,6 +973,15 @@ async function* editDimension(
  * AutoCAD's ATTDEF takes it; one it refuses shows the dialog again. A multiline definition's
  * default is its MTEXT's contents, also edited in the MTEXT editor from the dialog's `...`.
  */
+/** TEXTEDIT on a feature control frame (M4-11): the Geometric Tolerance dialog. */
+async function* toleranceEdit(
+  ctx: CommandContext,
+  entity: Entity,
+): AsyncGenerator<Prompt, TextEdit | false | undefined, PromptAnswer> {
+  const before = yield* editTolerance(ctx, entity);
+  return before ? { id: entity.id, before, erased: false } : before;
+}
+
 async function* editAttdef(
   ctx: CommandContext,
   entity: Entity,

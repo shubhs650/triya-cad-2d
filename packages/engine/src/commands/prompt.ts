@@ -24,6 +24,8 @@ import type { TableStyleAction, TableStyleRequest } from './tablestyle';
 import type { MLeaderStyleAction, MLeaderStyleRequest } from './mleaderstyle';
 import type { FindAction, FindRequest, FindSettings } from './modify/find';
 import type { HatchDialogAnswer, HatchDialogRequest } from './draw/hatch-dialog';
+import type { ToleranceRequest } from './draw/tolerance';
+import type { GdtFrame } from '../edit/tolerance-frame';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -726,6 +728,8 @@ export type DialogRequest =
   | FindRequest
   /** HATCH's Hatch and Gradient, HATCHEDIT's Hatch Edit (M4-07 part 5). */
   | HatchDialogRequest
+  /** TOLERANCE's Geometric Tolerance (M4-11), also TEXTEDIT's on a feature control frame. */
+  | ToleranceRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -945,6 +949,8 @@ export type PromptAnswer =
        * with the button that closed it to pick (`apply`), or none for OK.
        */
       readonly hatch?: HatchDialogAnswer;
+      /** The Geometric Tolerance dialog's fields as OK closed it (TOLERANCE, M4-11). */
+      readonly tolerance?: GdtFrame;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

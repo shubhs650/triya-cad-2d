@@ -51,6 +51,7 @@ import { TableStyleDialog } from './TableStyleDialog';
 import { MLeaderStyleDialog } from './MLeaderStyleDialog';
 import { FindReplaceDialog } from './FindReplaceDialog';
 import { HatchDialog } from './HatchDialog';
+import { ToleranceDialog } from './ToleranceDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -134,6 +135,8 @@ export function AttributeDialogs({
       return <FindReplaceDialog key={key} doc={doc.id} request={d} />;
     case 'hatch':
       return <HatchDialog key={key} doc={doc.id} request={d} patternSources={patternSources} />;
+    case 'tolerance':
+      return <ToleranceDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

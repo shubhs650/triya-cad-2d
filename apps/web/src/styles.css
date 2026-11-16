@@ -4322,3 +4322,103 @@ button {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* TOLERANCE's Geometric Tolerance (M4-11): six columns of symbol boxes and values, two rows;
+   the Symbol and Material Condition pickers a grid of symbol boxes. */
+.cad-dialog.tolerance-dialog {
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+.gdt-grid {
+  display: grid;
+  grid-template-columns: auto repeat(2, minmax(120px, 1fr)) repeat(3, minmax(80px, 1fr));
+  gap: 4px 8px;
+  align-items: center;
+  overflow-x: auto;
+}
+
+.gdt-row {
+  display: contents;
+}
+
+.gdt-head {
+  color: var(--chrome-text-muted);
+  font-size: 12px;
+}
+
+.gdt-cell {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.gdt-cell input,
+.gdt-zone input,
+.gdt-identifier input {
+  min-width: 0;
+  width: 100%;
+}
+
+.gdt-box {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 2px;
+  background: var(--chrome-bg-raised);
+  color: var(--chrome-text);
+}
+
+.gdt-box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.gdt-symbol {
+  width: 22px;
+  height: 22px;
+}
+
+.gdt-zone {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.gdt-zone label,
+.gdt-identifier {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gdt-identifier {
+  margin: 8px 0;
+  max-width: 50%;
+}
+
+.cad-dialog.gdt-picker {
+  min-width: 0;
+}
+
+.gdt-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(5, auto);
+  gap: 6px;
+}
+
+.gdt-picker-grid .gdt-box {
+  width: 40px;
+  height: 40px;
+}
+
+.gdt-picker-grid .gdt-symbol {
+  width: 30px;
+  height: 30px;
+}

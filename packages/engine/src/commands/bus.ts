@@ -114,6 +114,9 @@ export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
   // A hatch opens HATCHEDIT's Hatch Edit dialog (M4-07 part 5), as AutoCAD's does without the
   // ribbon.
   HATCH: 'HATCHEDIT',
+  // A feature control frame opens the Geometric Tolerance dialog (M4-11; AutoCAD 2024 Help,
+  // "TEXTEDIT (Command)").
+  TOLERANCE: 'TEXTEDIT',
 };
 
 /**
