@@ -69,6 +69,25 @@ class Target implements ViewTarget {
     this.calls.push(`widths ${texts.map((t) => t.contents).join(',')}`),
     Promise.resolve(texts.map((t) => (this.textKnown ? t.contents.length : null)))
   );
+  textPieces = (texts: readonly MTextGeometry[]) => (
+    this.calls.push(`pieces ${texts.map((t) => t.contents).join(',')}`),
+    Promise.resolve(
+      texts.map((t) =>
+        this.textKnown
+          ? [
+              {
+                kind: 'text' as const,
+                value: t.contents,
+                position: t.position,
+                height: t.height,
+                widthFactor: 1,
+                oblique: 0,
+              },
+            ]
+          : null,
+      ),
+    )
+  );
   columnCounts = (texts: readonly MTextGeometry[]) => (
     this.calls.push(`counts ${texts.map((t) => t.contents).join(',')}`),
     Promise.resolve(texts.map((t) => (this.textKnown ? t.contents.length : null)))
@@ -388,6 +407,45 @@ describe('answerView', () => {
       widths: [null, null],
     });
     expect(t.calls).toEqual(['widths 12.5,R4', 'widths 12.5,R4']);
+  });
+
+  it('lays texts out as the pieces EXPLODE makes TEXTs of (M3-12 part 7)', async () => {
+    const t = new Target(true);
+    const ctx = context(t).ctx;
+    const text: MTextGeometry = {
+      kind: 'MTEXT',
+      contents: 'one',
+      style: '11',
+      position: { x: 1, y: 2 },
+      height: 1,
+      width: 0,
+      rotation: 0,
+      attachment: 1,
+      direction: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    };
+    expect(await answerView({ op: 'textPieces', texts: [text] }, ctx)).toEqual({
+      ok: true,
+      pieces: [
+        [
+          {
+            kind: 'text',
+            value: 'one',
+            position: { x: 1, y: 2 },
+            height: 1,
+            widthFactor: 1,
+            oblique: 0,
+          },
+        ],
+      ],
+    });
+    t.textKnown = false;
+    expect(await answerView({ op: 'textPieces', texts: [text] }, ctx)).toEqual({
+      ok: true,
+      pieces: [null],
+    });
+    expect(t.calls).toEqual(['pieces one', 'pieces one']);
   });
 
   it('counts the dynamic columns of texts for column grips (M2-26 part 2)', async () => {

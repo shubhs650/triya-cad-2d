@@ -17,6 +17,7 @@ import type {
   PatternPlacement,
   TextGeometry,
   TextOutline,
+  TextPiece,
   UndoView,
   Vec2,
   ViewReply,
@@ -59,6 +60,8 @@ export interface ViewTarget {
   textBox(text: MTextGeometry): Promise<Box | undefined>;
   /** The widths MTEXTs are laid out at (M2-10 part 3), null for one no loaded font draws. */
   textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
+  /** The TEXT runs and strokes MTEXTs explode into (M3-12 part 7), null for one not drawn. */
+  textPieces(texts: readonly MTextGeometry[]): Promise<(readonly TextPiece[] | null)[]>;
   /** How many dynamic columns MTEXTs take (M2-26 part 2), null for one no loaded font draws. */
   columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
   /** Where texts lie as drawn (M2-27), null for one no loaded font draws. */
@@ -310,6 +313,8 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
         );
     case 'textWidths':
       return t.textWidths(r.texts).then((widths) => ({ ok: true, widths }));
+    case 'textPieces':
+      return t.textPieces(r.texts).then((pieces) => ({ ok: true, pieces }));
     case 'columnCounts':
       return t.columnCounts(r.texts).then((counts) => ({ ok: true, counts }));
     case 'textOutlines':

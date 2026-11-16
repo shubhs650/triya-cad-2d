@@ -3335,3 +3335,23 @@ A layer whose colour comes from a colour book carries the colour's name in group
 `Ellipse.radiusRatio` refuses a ratio above 1, so a DXF ELLIPSE whose group 40 is larger (written by tools that do not normalise their axes) was read with the default ratio 1 under the failsafe configuration, and lost the length of its minor axis. Such an ellipse is the same curve with the axes swapped: the major axis becomes normal × major × ratio, the ratio becomes 1 / ratio, and a parameter t becomes t − π/2. The reader now keeps a ratio above 1 aside and applies that once the entity's other groups are read. A test reads ellipses with ratio 1.5 under both normals and checks the curve's points.
 
 </details>
+
+### 0183 — DXF TEXT and attribute values keep their caret codes encoded
+
+- **File:** `third_party/acad-ts-patches/0183-dxf-text-value-carets.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:**
+  - `_readTextEntity` let a TEXT's value (1), and an ATTRIB's or ATTDEF's through the same AcDbText subclass, go through the generic class map, which keeps the raw value, while MTEXT reads its text with `valueAsString`.
+  - The writer escapes every caret and control character, so each save added a space after every caret (`a^b` came back `a^ b`) and a control character came back as its caret code (`^A`).
+  - Found by M3-12 part 7's corpus sweep, which explodes every MTEXT into TEXTs and saves them: ezdxf's `caret_encoding.dxf` holds MTEXTs with every caret code.
+- **Fix:** read a TEXT entity's 1 with `valueAsString`, which decodes the caret codes, as MTEXT and TOLERANCE (0039) do.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0183 DXF TEXT, ATTRIB and ATTDEF values decode their caret codes" (a TEXT `a^b`, a control character and a lone caret, and an ATTDEF `^c`, written and read back as they were).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Decode caret codes in DXF TEXT and attribute values
+
+`_readTextEntity` assigns group 1 of a TEXT, ATTRIB or ATTDEF through the class map, so caret codes stay encoded, unlike MTEXT, whose text is read with `valueAsString`. The writer escapes carets and control characters, so every save adds a space after each caret and turns control characters into their caret codes. This reads the value with `valueAsString`. A test writes a TEXT holding a caret, a control character and a trailing caret, and an ATTDEF value starting with a caret, and reads them back unchanged.
+
+</details>

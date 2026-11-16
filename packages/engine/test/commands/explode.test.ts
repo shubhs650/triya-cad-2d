@@ -131,4 +131,61 @@ describe('EXPLODE with the hatch engine and the canvas', () => {
       '1 object was not exploded: the hatch has no pattern lines to explode.',
     );
   });
+
+  it('explodes an MTEXT into the TEXTs the canvas lays it out as, asking once', async () => {
+    const { model } = setup([
+      {
+        kind: 'MTEXT',
+        contents: 'A\\PB',
+        style: '16',
+        position: { x: 0, y: 50 },
+        height: 2,
+        width: 0,
+        rotation: 0,
+        attachment: 1,
+        direction: 1,
+        lineSpacingStyle: 1,
+        lineSpacing: 1,
+      },
+    ]);
+    const asked: string[] = [];
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r): Promise<ViewReply> => {
+          if (r.op !== 'textPieces') return Promise.resolve({ ok: false, message: 'no' });
+          asked.push(...r.texts.map((t) => t.contents));
+          return Promise.resolve({
+            ok: true,
+            pieces: r.texts.map(() => [
+              {
+                kind: 'text' as const,
+                value: 'A',
+                position: { x: 0, y: 48 },
+                height: 2,
+                widthFactor: 1,
+                oblique: 0,
+              },
+              {
+                kind: 'text' as const,
+                value: 'B',
+                position: { x: 0, y: 44.7 },
+                height: 2,
+                widthFactor: 1,
+                oblique: 0,
+              },
+            ]),
+          });
+        },
+      },
+    });
+    await bus.script(['EXPLODE', 'L', '']);
+    expect(asked).toEqual(['A\\PB']);
+    const made = model.blockEntities(MODEL_SPACE).map((id) => model.entity(id)!.geom);
+    expect(made.slice(-2)).toMatchObject([
+      { kind: 'TEXT', value: 'A', position: { x: 0, y: 48 } },
+      { kind: 'TEXT', value: 'B', position: { x: 0, y: 44.7 } },
+    ]);
+  });
 });

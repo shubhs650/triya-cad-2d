@@ -5,7 +5,8 @@
 // over the second line, OFFSET shows the copy on the cursor's side, and COMMANDPREVIEW 0 shows
 // none. A press on nothing dragged across a line trims it there. What each command previews is
 // unit-tested in packages/engine (commands/command-preview.test.ts), and the renderer's fading in
-// packages/render (drag.test.ts).
+// packages/render (drag.test.ts). M3-12 part 7: Quick mode's fence and Standard mode's crossing
+// window preview what they would trim as the cursor gives their last point (opposite corner).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { DXF, activeCanvas, expectDrawn, expectShown, openWithPicker, viewOf } from '../app/page';
@@ -124,6 +125,58 @@ test('TRIM fades what a pick would trim, and a freehand fence trims what it cros
   expect(await bright(page, at(60, 35))).toBeGreaterThan(DRAWN);
   await expect(prompt(page)).toHaveText(/^Select object to trim/);
   await shot(page, '3-freehand-trimmed');
+  await type(page, '', 'Command:');
+});
+
+test("TRIM's fence and crossing window preview what they would trim (M3-12 part 7)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { at, off } = await setup(page, [
+    [40, 50, 120, 50],
+    [60, 20, 60, 80],
+    [100, 20, 100, 80],
+  ]);
+  await page.mouse.move(off.x, off.y);
+  const full = await bright(page, at(80, 50));
+  expect(full).toBeGreaterThan(DRAWN);
+
+  // Quick mode: a click on nothing starts a fence; the cursor across the line between the
+  // verticals fades that part before the second click.
+  await type(page, 'TR', /^Select object to trim/);
+  const a = at(80, 40);
+  await page.mouse.click(a.x, a.y);
+  await expect(prompt(page)).toHaveText(/^Specify next fence point/);
+  const b = at(84, 60);
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  await expect.poll(() => bright(page, at(70, 50))).toBeLessThan(full * 0.6);
+  expect(await bright(page, at(50, 50))).toBeGreaterThan(DRAWN);
+  await shot(page, '6-fence-preview');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.mouse.move(off.x, off.y, { steps: 2 });
+  await expect.poll(() => bright(page, at(70, 50))).toBeGreaterThan(DRAWN);
+
+  // Standard mode: a click on nothing starts a crossing window; the window over the line right
+  // of x = 100 fades that end, and the click trims it.
+  await type(page, 'TR', /^Select object to trim/);
+  await type(page, 'O', /^Enter a trim mode option/);
+  await type(page, 'S', /^Select objects or/);
+  await type(page, '', /^Select object to trim/);
+  const c = at(105, 45);
+  await page.mouse.click(c.x, c.y);
+  await expect(prompt(page)).toHaveText(/^Specify opposite corner/);
+  const d = at(115, 55);
+  await page.mouse.move(d.x, d.y, { steps: 4 });
+  await expect.poll(() => bright(page, at(110, 50))).toBeLessThan(full * 0.6);
+  expect(await bright(page, at(90, 50))).toBeGreaterThan(DRAWN);
+  await shot(page, '7-window-preview');
+  await page.mouse.click(d.x, d.y);
+  await expect(prompt(page)).toHaveText(/^Select object to trim/);
+  await page.mouse.move(off.x, off.y, { steps: 2 });
+  await expect.poll(() => bright(page, at(110, 50))).toBeLessThan(DARK);
+  expect(await bright(page, at(90, 50))).toBeGreaterThan(DRAWN);
+  await shot(page, '8-window-trimmed');
   await type(page, '', 'Command:');
 });
 
