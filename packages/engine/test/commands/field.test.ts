@@ -157,6 +157,42 @@ describe('FIELD', () => {
     expect(s.model.header.get('$TEXTSIZE')).toBe(5);
   });
 
+  it('needs a text style, and ends at the start point with Esc', async () => {
+    const s = setup();
+    await s.bus.submit('FIELD');
+    await s.bus.answer({ kind: 'dialog', action: 'ok', field: { name: 'Date' } });
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    expect(s.added()).toEqual([]);
+    const init = sampleInit();
+    const bare = new PromptBus({
+      model: DocumentModel.create({ ...init, tables: { ...init.tables, textStyles: [] } }),
+      registry: builtinCommands(),
+      view: { request: () => Promise.resolve({ ok: false, message: 'none' }) },
+    });
+    const log: string[] = [];
+    bare.on((e) => {
+      if (e.type === 'log') log.push(e.line);
+    });
+    await bare.submit('FIELD');
+    expect(log).toContain('The drawing has no text style.');
+    expect(bare.command).toBeUndefined();
+  });
+
+  it('ends on a height that is not positive, or Esc at the justification', async () => {
+    const s = setup();
+    await s.bus.submit('FIELD');
+    await s.bus.answer({ kind: 'dialog', action: 'ok', field: { name: 'Date' } });
+    await s.bus.script(['H', '0']);
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.submit('FIELD');
+    await s.bus.answer({ kind: 'dialog', action: 'ok', field: { name: 'Date' } });
+    await s.bus.script(['J']);
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    expect(s.added()).toEqual([]);
+  });
+
   it('ends with nothing placed when the dialog is cancelled or makes no field', async () => {
     const s = setup();
     await s.bus.submit('FIELD');
