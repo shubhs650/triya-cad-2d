@@ -11,6 +11,7 @@ import type { Handle } from '../model/handle';
 import type { EntityGeometry, Xdata } from '../model/types';
 import { placeDimension, type DimPlacement } from '../edit/dimension';
 import type { GripFunction } from '../edit/grip-functions';
+import type { ArrayGripRole } from '../edit/array-grips';
 import type { CommandPreview } from './command-preview';
 import { sketchGeometry, type Sketch } from './draw/sketch';
 
@@ -64,6 +65,16 @@ export type DragPreview =
       readonly fn?: GripFunction;
     }
   /**
+   * An associative array's grip being dragged (M3-05 part 7): the array the function `fn` of
+   * its grip `role` makes with the cursor (`arrayGripPreview`), drawn as the click would make it.
+   */
+  | {
+      readonly kind: 'array';
+      readonly id: EntityId;
+      readonly role: ArrayGripRole;
+      readonly fn: string;
+    }
+  /**
    * A dimension being placed (DIMLINEAR and the others, M2-11): drawn, on `layer`, as
    * `placeDimension` makes it with its dimension line at the cursor, with the `DSTYLE`
    * overrides `xdata` it will be made with (M2-31).
@@ -97,6 +108,13 @@ export interface DragMotion {
     readonly from: Vec2;
     readonly to: Vec2;
     readonly fn?: GripFunction;
+  };
+  /** The array `id` its grip `role` would make with the function `fn` at `to` (M3-05 part 7). */
+  readonly array?: {
+    readonly id: EntityId;
+    readonly role: ArrayGripRole;
+    readonly fn: string;
+    readonly to: Vec2;
   };
   /** An object not in the drawing yet, drawn as it would be on `layer` (a dimension placed). */
   readonly adding?: {
@@ -178,5 +196,11 @@ export function dragMotion(
       const geom = sketchGeometry(drag.sketch, cursor, o.ctrl);
       return geom && { ids: [], m: IDENTITY, adding: { layer: drag.layer, geom } };
     }
+    case 'array':
+      return {
+        ids: [],
+        m: IDENTITY,
+        array: { id: drag.id, role: drag.role, fn: drag.fn, to: cursor },
+      };
   }
 }

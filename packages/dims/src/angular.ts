@@ -129,6 +129,8 @@ function frame(
  * A dimension arc from `a0` counter-clockwise by `sweep` with its arrowheads: inside (backs a
  * DIMASZ chord in, the arc trimmed to them unless drawn about the tip) or outside (a chord out,
  * a DIMASZ tail of arc beyond); DIMSOXD drops outside arrows. The arc stays out of `box`.
+ * `flips`: the start's and the end's arrowhead flipped (DXF 74/75, AutoCAD's Flip Arrow grip
+ * function, M3-05 part 7), each turned the other way at its tip as on a linear dimension.
  */
 export function arcLine(
   c: Vec2,
@@ -140,6 +142,7 @@ export function arcLine(
   [blkStart, blkEnd]: readonly [Handle | undefined, Handle | undefined],
   s: DimStyle,
   model: AnnotationTables,
+  [flipStart, flipEnd]: readonly [boolean, boolean] = [false, false],
 ): DimPart[] {
   const out: DimPart[] = [];
   const showArrows = inside || !s.soxd;
@@ -147,20 +150,22 @@ export function arcLine(
   const step = s.asz < 2 * r ? 2 * Math.asin(s.asz / (2 * r)) : Math.PI;
   const tipStart = atTip(blkStart, s, model);
   const tipEnd = atTip(blkEnd, s, model);
-  const k = inside ? 1 : -1;
-  const baseStart = a0 + k * step;
-  const baseEnd = a0 + sweep - k * step;
+  const inStart = inside !== flipStart;
+  const inEnd = inside !== flipEnd;
+  const baseStart = a0 + (inStart ? step : -step);
+  const baseEnd = a0 + sweep - (inEnd ? step : -step);
   let from = a0;
   let to = a0 + sweep;
-  if (inside && showArrows && s.asz > 0) {
-    if (!tipStart) from = baseStart;
-    if (!tipEnd) to = baseEnd;
+  if (showArrows && s.asz > 0) {
+    if (inStart && !tipStart) from = baseStart;
+    if (inEnd && !tipEnd) to = baseEnd;
   }
   const arcs: [number, number][] = [];
   if (to > from) arcs.push([from, to]);
-  if (!inside && showArrows) {
-    if (!tipStart) arcs.push([baseStart - step, baseStart]);
-    if (!tipEnd) arcs.push([baseEnd, baseEnd + step]);
+  if (showArrows) {
+    // Tails beyond outside arrows' backs.
+    if (!inStart && !tipStart) arcs.push([baseStart - step, baseStart]);
+    if (!inEnd && !tipEnd) arcs.push([baseEnd, baseEnd + step]);
   }
   for (const [a, b] of arcs) {
     for (const [p, q] of clipArc(c, r, a, b, box)) out.push(arcPart(c, r, p, q, s.dimLine));
@@ -260,7 +265,11 @@ export function angularParts(
 
   // Arrowheads and the arc.
   const [blkStart, blkEnd] = f.ends[0].first ? [s.blk1, s.blk2] : [s.blk2, s.blk1];
-  out.push(...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [blkStart, blkEnd], s, model));
+  const [flip1, flip2] = g.flipArrows ?? [false, false];
+  const flips = f.ends[0].first ? ([flip1, flip2] as const) : ([flip2, flip1] as const);
+  out.push(
+    ...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [blkStart, blkEnd], s, model, flips),
+  );
   if (outside !== undefined) {
     // On from the end counter-clockwise, or back from the start, whichever is nearer.
     const [from, to] =

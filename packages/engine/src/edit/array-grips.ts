@@ -16,11 +16,19 @@
 // the first and offers the others as options. Everything is computed in the array block's
 // coordinates (a path array's along its path in the drawing), so a turned or scaled array's
 // grips size it along its own axes.
-import { applyPoint, applyVector, invert, type Matrix2D } from '../geom/transform';
+import {
+  applyPoint,
+  applyVector,
+  compose,
+  invert,
+  translation,
+  type Matrix2D,
+} from '../geom/transform';
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, dot, normalize, perp, scale, sub } from '../geom/vec';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
+import type { Handle } from '../model/handle';
 import type { Entity, AssocArray, AssocArrayParams, InsertGeometry } from '../model/types';
 import {
   arrayPath,
@@ -33,7 +41,15 @@ import {
   polarAngleBetween,
   type ArrayPath,
 } from './array';
-import { assocArrayOf, insertMatrix, remakeAssocArray } from './assoc-array';
+import {
+  assocArrayOf,
+  assocItems,
+  insertMatrix,
+  itemBlock,
+  itemKey,
+  itemMatrix,
+  remakeAssocArray,
+} from './assoc-array';
 import { transformObjects } from './edit';
 import type { Grip } from './grips';
 import { revcloudOf, type CloudInfo } from './revcloud';
@@ -472,4 +488,137 @@ export function applyArrayGripEdit(
       transformObjects(b, model, b.blockEntities(block), moveBy(edit.shift));
   }
   return remakeAssocArray(b, model, insert, record, edit.params);
+}
+
+/** The most items the drag preview draws: a bigger array is drawn when the click makes it. */
+export const ARRAY_PREVIEW_LIMIT = 10000;
+
+/** One item of the array a grip's drag would make: the block it shows and where it goes. */
+export interface ArrayPreviewItem {
+  readonly block: Handle;
+  /** From the block's own coordinates (its base point's) to the drawing's. */
+  readonly m: Matrix2D;
+}
+
+/**
+ * The array the function `fn` of the grip `role` would make with the cursor at `point`, as it
+ * is drawn (M3-05 part 7: AutoCAD redraws the array as a triangle is dragged): each item's
+ * block and transform, the item blocks' objects shifted as a polar Stretch radius shifts them.
+ * Undefined where the point makes no array, or one of more than ARRAY_PREVIEW_LIMIT items.
+ */
+export function arrayGripPreview(
+  model: DocumentModel,
+  insert: Entity,
+  record: AssocArray,
+  role: ArrayGripRole,
+  fn: string,
+  point: Vec2,
+): ArrayPreviewItem[] | undefined {
+  const edit = arrayGripEdit(model, insert, record, role, fn, { point });
+  if (typeof edit === 'string') return undefined;
+  const items = assocItems(model, insert, edit.params);
+  if (typeof items === 'string' || items.length > ARRAY_PREVIEW_LIMIT) return undefined;
+  const shift = edit.shift ? translation(edit.shift.x, edit.shift.y) : undefined;
+  return items.map((t, k) => {
+    const block = itemBlock(record, itemKey(edit.params, k));
+    const base = model.blocks.get(block)?.basePoint ?? { x: 0, y: 0 };
+    // The item INSERT's own transform (from its block's base point), then the array's.
+    const m = compose(translation(-base.x, -base.y), itemMatrix(model, insert, t));
+    return { block, m: shift ? compose(shift, m) : m };
+  });
+}
+
+/**
+ * What Dynamic Input's count field at a count grip counts (M3-05 part 7), as plain data the app
+ * reads the count at the cursor from (`arrayCountAt`): the steps of `spacing` along `axis` from
+ * `origin`, the steps of the angle `step` round `center` from `baseDir` the way the array
+ * turns, or the steps of `spacing` along a path; `toLocal` takes the cursor into the array
+ * block's coordinates, where `arrayGripEdit` measures.
+ */
+export type ArrayCountField =
+  | {
+      readonly kind: 'along';
+      readonly toLocal: Matrix2D;
+      readonly origin: Vec2;
+      readonly axis: Vec2;
+      readonly spacing: number;
+    }
+  | {
+      readonly kind: 'around';
+      readonly toLocal: Matrix2D;
+      readonly center: Vec2;
+      readonly baseDir: number;
+      readonly step: number;
+      readonly turn: number;
+    }
+  | { readonly kind: 'path'; readonly path: ArrayPath; readonly spacing: number };
+
+/** The count field of the function `fn` of the grip `role`; none for one that counts nothing. */
+export function arrayCountField(
+  model: DocumentModel,
+  insert: Entity,
+  record: AssocArray,
+  role: ArrayGripRole,
+  fn: string,
+): ArrayCountField | undefined {
+  // The corner counts rows and columns at once: one field cannot show both.
+  if (functionValue(role, fn) !== 'count') return undefined;
+  const p = record.params;
+  let toLocal: Matrix2D;
+  try {
+    toLocal = p.kind === 'path' ? translation(0, 0) : invert(arrayMatrix(model, insert));
+  } catch {
+    return undefined;
+  }
+  const rows = role === 'rowCount';
+  if (p.kind === 'rectangular') {
+    return {
+      kind: 'along',
+      toLocal,
+      origin: { x: 0, y: 0 },
+      axis: rows ? { x: 0, y: 1 } : { x: 1, y: 0 },
+      spacing: rows ? p.rowSpacing : p.columnSpacing,
+    };
+  }
+  if (p.kind === 'polar') {
+    const f = polarFrame(p);
+    if (rows) {
+      return { kind: 'along', toLocal, origin: f.at(0, 0), axis: f.unit(0), spacing: p.rowSpacing };
+    }
+    return {
+      kind: 'around',
+      toLocal,
+      center: p.center,
+      baseDir: f.baseDir,
+      step: f.step,
+      turn: sign(p.fillAngle),
+    };
+  }
+  const path = pathOf(model, p);
+  if (!path) return undefined;
+  if (rows) {
+    const start = pathFrame(path, 0);
+    return {
+      kind: 'along',
+      toLocal,
+      origin: start.point,
+      axis: perp(start.direction),
+      spacing: p.rowSpacing,
+    };
+  }
+  return { kind: 'path', path, spacing: p.spacing };
+}
+
+/** The count a click at `cursor` gives the count field `f`: what `arrayGripEdit` measures. */
+export function arrayCountAt(f: ArrayCountField, cursor: Vec2): number {
+  let steps: number;
+  if (f.kind === 'path') steps = nearestStation(f.path, cursor) / f.spacing;
+  else {
+    const q = applyPoint(f.toLocal, cursor);
+    steps =
+      f.kind === 'along'
+        ? dot(sub(q, f.origin), f.axis) / f.spacing
+        : sweep(f.baseDir, angleOf(sub(q, f.center)), f.turn) / f.step;
+  }
+  return Math.max(1, Math.round(steps) + 1);
 }

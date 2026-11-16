@@ -92,9 +92,15 @@ export function joggedParts(
     text = { ...probe, position, rotation: viewed(rotation, s) };
     dxf11 = at;
   }
-  const base = add(p, v, inside ? -s.asz : s.asz);
-  if (inside || !text) lines.push([onRadius, base]);
+  // A flipped arrowhead (DXF 74; Flip Arrow, M3-05 part 7) turns round at its tip: the line
+  // runs on to the tip, with a DIMASZ tail behind the arrow's back outside the arc (inside it,
+  // the line to the text is there already).
+  const flip = g.flipArrows?.[0] ?? false;
+  const arrowIn = inside !== flip;
+  const base = add(p, v, arrowIn ? -s.asz : s.asz);
+  if (inside || !text) lines.push([onRadius, flip ? p : base]);
   else lines.push([onRadius, add(c, v, dot(sub(text.position, c), v) + width / 2)]);
+  if (flip && !arrowIn) lines.push([base, add(base, v, s.asz)]);
   const box = text && centred ? textBox(text, width, s) : undefined;
   for (const [a, b] of lines) {
     for (const [q, w] of clipSegment(a, b, box)) out.push(linePart(q, w, s.dimLine));

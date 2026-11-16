@@ -8,6 +8,7 @@
 import type { Vec2 } from '../../geom/types';
 import {
   applyArrayGripEdit,
+  arrayCountField,
   arrayGripEdit,
   ARRAY_GRIP_FUNCTIONS,
   arrayGripsOf,
@@ -107,11 +108,16 @@ export async function* editArrayByGrip(
     }
     ctx.message(`** ${fn.toUpperCase()} **`);
     const options = [...functions.filter((f) => f !== fn), 'eXit'];
+    const count = arrayCountField(ctx.model, insert, record, role, fn);
     const a = yield ctx.prompt.point({
       message: `${fn === 'Total spacing' ? TOTAL[role]! : ASKS[fn]!} or`,
       options,
       rubberBand: { from: hot },
       arbitrary: true,
+      // The array drawn remade as the cursor drags the grip (M3-05 part 7).
+      drag: { kind: 'array', id, role, fn },
+      // Dynamic Input's count field (M3-05 part 7).
+      ...(count && { arrayCount: count }),
       ...(functions.length > 1 && { ctrlCycles: true as const }),
     });
     if (a.kind === 'keyword') {

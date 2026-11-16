@@ -20,7 +20,11 @@
 // Part 8 added the rest of the tab: when pointer input shows (DYNPIVIS), the dimension fields
 // of grip stretching (DYNDIVIS, DYNDIGRIP: a line's or polyline's resulting length and angle and
 // their changes, a circle's radius) and the tips for Ctrl (DYNINFOTIPS).
+// An associative array's count grip (M3-05 part 7) shows one field named for its function
+// (Column count, Row count, Count) holding the count a click at the cursor gives, which the
+// engine's `arrayCountAt` reads from the prompt's `arrayCount`; a count typed in it is sent.
 import {
+  arrayCountAt,
   DECIMAL_UNITS,
   DEFAULT_ANGLES,
   formatAngle,
@@ -180,6 +184,11 @@ export function dynFor(prompt: Prompt, o: DynSettings = DYN_SETTINGS): DynState 
   if (prompt.kind === 'point' && prompt.gripDimensions && o.dimension) {
     const g = gripFields(prompt.gripDimensions, o);
     if (g.fields.length > 0) return { ...base, relative: false, kind: 'grip', ...g };
+  }
+  // An array's count grip (M3-05 part 7): one field, the count, named for the function.
+  if (prompt.kind === 'point' && prompt.arrayCount && o.dimension) {
+    const label = prompt.drag?.kind === 'array' ? prompt.drag.fn : 'Count';
+    return { ...base, relative: false, kind: 'single', fields: [field(label)] };
   }
   if (prompt.kind === 'point' && prompt.rubberBand && !prompt.rubberBand.box) {
     if (o.dimension || (o.pointer && !o.cartesian))
@@ -538,6 +547,9 @@ export function dynLive(
 ): readonly string[] {
   if (!cursor) return s.fields.map(() => '');
   const length = (v: number) => formatDistance(v, u.units);
+  if (s.kind === 'single' && prompt.kind === 'point' && prompt.arrayCount) {
+    return [String(arrayCountAt(prompt.arrayCount, cursor))];
+  }
   if (s.kind === 'grip' && prompt.kind === 'point' && prompt.gripDimensions) {
     const d = prompt.gripDimensions;
     return s.fields.map((f) => gripValue(f.measure!, d, cursor, u));

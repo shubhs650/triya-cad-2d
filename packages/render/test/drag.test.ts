@@ -1,7 +1,21 @@
 // M2-06 part 2: the objects a command drags with the cursor, drawn on the transient layer over
 // their originals: cached primitives through the drag's motion (a move, turn, scale or
 // mirror), and stretched objects tessellated from their stretched geometry.
-import { rotation, translation, type EntityId, type MTextGeometry } from '@triya/engine';
+import {
+  PromptBus,
+  SpatialIndex,
+  applyPoint,
+  arrayGripPreview,
+  assocArrayOf,
+  builtinCommands,
+  rotation,
+  toleranceForSize,
+  translation,
+  type EntityId,
+  type MTextGeometry,
+  type ViewHost,
+  type ViewReply,
+} from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer, COMMAND_PREVIEW_FADE, gripHalfSize } from '../src/index';
 import { aciRgb, rgbHex } from '../src/style/aci';
@@ -146,6 +160,101 @@ describe('Canvas2DRenderer.setDrag', () => {
     const { r, id, transient } = setup();
     r.setDrag({ ids: [id('20')], m: translation(5, 5) });
     r.frame();
+    transient().clear();
+    r.setDrag(undefined);
+    r.frame();
+    expect(devicePoints(transient().calls)).toEqual([]);
+  });
+});
+
+describe('an associative array redrawn as its grip is dragged (M3-05 part 7)', () => {
+  /** A 4 × 3 rectangular array of the line (0,0)–(1,0), made by ARRAYRECT, drawn. */
+  async function withArray() {
+    const d = drawing([entity('20', line(0, 0, 1, 0))]);
+    const view: ViewHost = {
+      request: (q): Promise<ViewReply> =>
+        Promise.resolve(
+          q.op === 'pick'
+            ? { ok: true, ids: [d.model.ids.idOf('20')!] }
+            : q.op === 'sysvar' && q.name === 'ARRAYASSOCIATIVITY'
+              ? { ok: true, value: 1 }
+              : { ok: false, message: 'no' },
+        ),
+    };
+    const bus = new PromptBus({ model: d.model, registry: builtinCommands(), view });
+    await bus.script(['ARRAYRECT', '0,0', '', '']);
+    const array = [...d.model.entities()].find((e) => e.geom.kind === 'INSERT')!;
+    const record = assocArrayOf(d.model.objects.values(), array)!;
+    const layers: ReturnType<typeof surface>[] = [];
+    const r = new Canvas2DRenderer({
+      model: d.model,
+      index: SpatialIndex.build(d.model, { tol: toleranceForSize(1000) }),
+      block: MODEL,
+      surface: surface('visible'),
+      createLayer: () => {
+        const s = surface(layers.length === 0 ? 'scene' : 'transient');
+        layers.push(s);
+        return s;
+      },
+      style: { background: '#000000', foreground: '#ffffff', showLineweights: false },
+      requestIdle: () => {},
+    });
+    // 2 px per unit about (10, 10): world (x, y) is device (100 + 2(x − 10), 50 − 2(y − 10)).
+    r.resize(200, 100, 1);
+    r.setView({ center: { x: 10, y: 10 }, scale: 2 });
+    r.frame();
+    return { d, r, array, record, transient: () => layers[1]!.ctx };
+  }
+
+  it('draws the items the click would make, each through its own transform', async () => {
+    const { d, r, array, record, transient } = await withArray();
+    const p = record.params as { columnSpacing: number; rowSpacing: number };
+    const to = { x: 5.4 * p.columnSpacing, y: 1 };
+    transient().clear();
+    r.setDrag({
+      ids: [],
+      m: translation(0, 0),
+      array: { id: array.id, role: 'columnCount', fn: 'Column count', to },
+    });
+    r.frame();
+    const items = arrayGripPreview(d.model, array, record, 'columnCount', 'Column count', to)!;
+    expect(items).toHaveLength(18);
+    // Each item's line, from its own block's.
+    const want = items
+      .flatMap(({ block, m }) =>
+        d.model.blockEntities(block).flatMap((id) => {
+          const g = d.model.entity(id)!.geom as {
+            start: { x: number; y: number };
+            end: typeof g.start;
+          };
+          return [applyPoint(m, g.start), applyPoint(m, g.end)];
+        }),
+      )
+      .map((q) => [Math.round(100 + 2 * (q.x - 10)), Math.round(50 - 2 * (q.y - 10))]);
+    const got = devicePoints(transient().calls).map(([x, y]) => [Math.round(x!), Math.round(y!)]);
+    expect(got.sort()).toEqual(want.sort());
+    // The last column stands at 5 spacings.
+    expect(got).toContainEqual([Math.round(100 + 2 * (5 * p.columnSpacing - 10)), 70]);
+  });
+
+  it('draws nothing for an array too big to preview, and stops with the drag', async () => {
+    const { r, array, transient } = await withArray();
+    transient().clear();
+    r.setDrag({
+      ids: [],
+      m: translation(0, 0),
+      // Far more columns than the preview draws.
+      array: { id: array.id, role: 'columnCount', fn: 'Column count', to: { x: 1e7, y: 0 } },
+    });
+    r.frame();
+    expect(devicePoints(transient().calls)).toEqual([]);
+    r.setDrag({
+      ids: [],
+      m: translation(0, 0),
+      array: { id: array.id, role: 'columnCount', fn: 'Column count', to: { x: 3, y: 0 } },
+    });
+    r.frame();
+    expect(devicePoints(transient().calls).length).toBeGreaterThan(0);
     transient().clear();
     r.setDrag(undefined);
     r.frame();

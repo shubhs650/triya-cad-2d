@@ -7,6 +7,8 @@
 // where the cursor clicks, hung on a leader (DIMTMOVE 1 for this dimension). Continue Dimension
 // from the second end's menu goes on as DIMCONTINUE from that extension line. The rules are
 // unit-tested in packages/engine (dimension-grips.test.ts) and packages/dims (parts.test.ts).
+// M3-05 part 7: a radius dimension's arrowhead grip lists Stretch and Flip Arrow, a three-point
+// angle's arc end the linear dimension's four, and Flip Arrow turns each arrowhead round.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, DimensionGeometry, Entity } from '@triya/engine';
 import { activeCanvas, expectShown, openWithPicker } from '../app/page';
@@ -50,13 +52,14 @@ const dimensions = (page: Page) =>
     const r = (v: number) => Math.round(v * 1e3) / 1e3 + 0;
     const pt = (p: { x: number; y: number }) => [r(p.x - o), r(p.y - o)];
     return [...dims.values()].map(({ g, dstyle }) => {
-      if (g.dimType !== 'linear') return { type: g.dimType };
+      if (g.dimType !== 'linear')
+        return { type: g.dimType, flip: [...(g.flipArrows ?? [false, false])] };
       return {
         first: pt(g.first),
         second: pt(g.second),
         text: pt(g.textPosition),
         userText: g.textUserPositioned,
-        flip: g.flipArrows ?? [false, false],
+        flip: [...(g.flipArrows ?? [false, false])],
         dstyle,
       };
     });
@@ -194,4 +197,99 @@ test('a dimension’s grip menus: Flip Arrow, Move with Leader, Continue Dimensi
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
   await shot('6-continued.png');
+});
+
+test('grip menus of a radius and an angular dimension: Flip Arrow turns their arrowheads', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const off = () => page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await off();
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, p(-1, -2), 'Specify opposite corner:');
+  await type(page, p(14, 6), 'Command:');
+  const k = Math.min(box.width / 15, box.height / 8);
+  const at = (x: number, y: number) => ({
+    x: box.x + box.width / 2 + (x - 6.5) * k,
+    y: box.y + box.height / 2 - (y - 2) * k,
+  });
+  const move = async (x: number, y: number) => {
+    const q = at(x, y);
+    await page.mouse.move(q.x, q.y, { steps: 4 });
+  };
+  const click = async (x: number, y: number) => {
+    const q = at(x, y);
+    await page.mouse.click(q.x, q.y);
+  };
+  const menu = page.getByTestId('grip-menu');
+  await page.keyboard.press('F3');
+
+  // A circle of radius 2 about (2, 2), its radius dimensioned to the right, text at (5.5, 2).
+  await type(page, 'CIRCLE', /^Specify center point for circle/);
+  await type(page, p(2, 2), /^Specify radius of circle/);
+  await type(page, '2', 'Command:');
+  await type(page, 'DIMRADIUS', 'Select arc or circle:');
+  await click(4, 2);
+  await expect(prompt(page)).toHaveText(LOCATION);
+  await off();
+  await type(page, p(5.5, 2), 'Command:');
+  // A three-point angle at (9, 0) from (13, 0) to (9, 4), its arc at radius 2.
+  await type(page, 'DIMANGULAR', /^Select arc, circle, line, or/);
+  await type(page, '', 'Specify angle vertex:');
+  await type(page, p(9, 0), 'Specify first angle endpoint:');
+  await type(page, p(13, 0), 'Specify second angle endpoint:');
+  await type(page, p(9, 4), /^Specify dimension arc line location/);
+  await type(page, p(9 + Math.SQRT2, Math.SQRT2), 'Command:');
+  await expect
+    .poll(async () => (await dimensions(page)).map((d) => (d as { type?: string }).type))
+    .toEqual(['radius', 'angular3pt']);
+  await move(7, 5);
+  await page.waitForTimeout(300);
+  await shot('7-radius-and-angle.png');
+
+  // The radius dimension picked; the cursor resting on its arrowhead at (4, 2).
+  await click(4.6, 2);
+  await move(3.6, 2.4);
+  await move(4, 2);
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText(['Stretch', 'Flip Arrow']);
+  await shot('8-radius-arrow-grip-menu.png');
+  await menu.getByRole('menuitem', { name: 'Flip Arrow' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => ((await dimensions(page))[0] as { flip: boolean[] }).flip)
+    .toEqual([true, false]);
+  await page.keyboard.press('Escape');
+
+  // The angle picked on its arc; its arc's first end at (11, 0) lists the four.
+  await click(9 + 2 * Math.cos(0.3), 2 * Math.sin(0.3));
+  await move(10.6, 0.5);
+  await move(11, 0);
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Stretch',
+    'Continue Dimension',
+    'Baseline Dimension',
+    'Flip Arrow',
+  ]);
+  await shot('9-angle-arc-end-grip-menu.png');
+  await menu.getByRole('menuitem', { name: 'Flip Arrow' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => ((await dimensions(page))[1] as { flip: boolean[] }).flip)
+    .toEqual([true, false]);
+  await page.keyboard.press('Escape');
+  await move(7, 5);
+  await page.waitForTimeout(300);
+  await shot('10-arrows-flipped.png');
 });
