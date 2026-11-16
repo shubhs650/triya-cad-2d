@@ -185,6 +185,24 @@ describe('DIMBREAK', () => {
   });
 });
 
+describe('DIMBREAK and DIMINSPECT ending early', () => {
+  it('change nothing when cancelled or given nothing', async () => {
+    const s = await drawing();
+    await s.bus.submit('DIMBREAK');
+    await s.bus.pick({ x: 10, y: 35 });
+    await s.bus.submit('M');
+    await s.bus.submit('2,35');
+    await s.bus.cancel();
+    await s.bus.script(['DIMBREAK', 'M', '']);
+    await s.bus.script(['DIMBREAK', '']);
+    await s.bus.script(['-DIMINSPECT', '', '']);
+    await s.bus.submit('DIMINSPECT');
+    await s.bus.answer({ kind: 'dialog', action: 'ok', inspection: { shape: 'none' } });
+    expect(s.bus.command).toBeUndefined();
+    expect([...s.model.objects.values()].some((o) => isDimBreak(o) || isDimInspect(o))).toBe(false);
+  });
+});
+
 describe('DIMINSPECT', () => {
   it("-DIMINSPECT asks AutoCAD 2024's prompts and makes an inspection dimension", async () => {
     const s = await drawing();

@@ -15,7 +15,7 @@
 // Breaks and inspection data are saved as DEC-064's `TRIYA_DIMBREAK` and `TRIYA_DIMINSPECT`
 // records (edit/dimension-records.ts); the dimension engine draws them. Each command is one undo
 // step, the records and the regenerated graphics together. DIMBREAK on multileaders and leaders,
-// which AutoCAD also breaks, is left to the multileader work (roadmap M4-14).
+// which AutoCAD also breaks, is roadmap M4-15.
 import type { Curve } from '../../geom/curves';
 import { closestPoint } from '../../geom/closest';
 import { toleranceForSize } from '../../geom/tolerance';
