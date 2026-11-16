@@ -32,6 +32,7 @@ import { SPELL_COMMANDS } from './modify/spell';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
 import { hatchCommands } from './draw/hatchedit';
+import { toleranceCommand } from './draw/tolerance';
 import { DRAW_ORDER_COMMANDS } from './modify/draw-order';
 import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
@@ -131,6 +132,7 @@ export function builtinCommands(): CommandRegistry {
     ...tableCommands(),
     wipeoutCommand(),
     ...hatchCommands(),
+    toleranceCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
     ...MLEADER_COMMANDS.map((make) => make()),
     ...MLEADER_ALIGN_COMMANDS.map((make) => make()),
