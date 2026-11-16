@@ -4186,9 +4186,11 @@ button {
 }
 
 .hatch-dialog fieldset {
+  min-width: 0;
   margin: 0 0 6px;
   border: 1px solid var(--chrome-border);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 
