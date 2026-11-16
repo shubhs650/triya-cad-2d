@@ -3639,3 +3639,148 @@ button {
   opacity: 0.45;
   cursor: default;
 }
+
+/* DIMSTYLE's Dimension Style Manager (M4-03): the styles list beside the description and the
+   buttons; the New/Modify/Override dialog's tabs lay their groups out in two columns (one when
+   narrow). */
+.cad-dialog.dimstyle-manager {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.dimstyle-current {
+  margin: 0 0 8px;
+}
+
+.dimstyle-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dimstyle-left {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dimstyle-right {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dimstyle-list {
+  height: 180px;
+  margin: 0;
+  padding: 2px;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  list-style: none;
+}
+
+.dimstyle-list [role='option'] {
+  padding: 2px 4px;
+  cursor: default;
+}
+
+.dimstyle-list [role='option'][aria-selected='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.dimstyle-list .dimstyle-overrides {
+  padding-left: 16px;
+}
+
+.dimstyle-description {
+  min-height: 3em;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--chrome-border);
+  overflow-wrap: anywhere;
+}
+
+.dimstyle-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+}
+
+.dimstyle-note {
+  margin: 8px 0 0;
+}
+
+.dimstyle-menu {
+  position: fixed;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 2px;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg-raised);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+}
+
+.dimstyle-menu [role='menuitem'] {
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.dimstyle-menu [role='menuitem']:hover,
+.dimstyle-menu [role='menuitem']:focus-visible {
+  background: var(--chrome-bg);
+}
+
+.cad-dialog.dimstyle-editor {
+  width: min(720px, calc(100vw - 32px));
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+.dimstyle-editor .cad-dialog-tabs {
+  flex-wrap: wrap;
+}
+
+.dimstyle-tab {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 8px;
+  align-items: start;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+/* A fieldset is as wide as its widest list by default; here it takes its column's width. */
+.dimstyle-tab fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--chrome-border);
+}
+
+.dimstyle-tab .cad-dialog-field > span {
+  flex: 0 0 132px;
+  min-width: 0;
+}
+
+.dimstyle-tab .cad-dialog-field select,
+.dimstyle-tab .cad-dialog-field input {
+  width: 100%;
+}
+
+.dimstyle-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
