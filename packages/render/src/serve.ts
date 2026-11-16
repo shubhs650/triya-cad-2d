@@ -181,6 +181,22 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'extents':
         port.postMessage({ type: 'extents', id: m.id, box: session.extents() ?? null });
         break;
+      case 'dimStylePreview': {
+        const id = m.id;
+        session.dimStylePreview(m.preview, m.size, o.createBitmap).then(
+          (bitmap) =>
+            bitmap
+              ? port.postMessage({ type: 'thumbnail', id, bitmap }, [bitmap])
+              : port.postMessage({ type: 'thumbnail', id, bitmap: null }),
+          (e: unknown) =>
+            port.postMessage({
+              type: 'error',
+              id,
+              message: e instanceof Error ? e.message : String(e),
+            }),
+        );
+        break;
+      }
       case 'thumbnail': {
         // The copy is taken now, in message order; only the answer waits for the bitmap.
         const id = m.id;

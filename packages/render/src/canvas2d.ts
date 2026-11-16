@@ -758,6 +758,11 @@ export class Canvas2DRenderer implements Renderer {
     this.#sceneDirty = this.#transientDirty = true;
   }
 
+  /** The display style drawn with now. */
+  get style(): RenderStyle {
+    return this.#style;
+  }
+
   setStyle(style: RenderStyle): void {
     this.#style = style;
     this.#sceneDirty = this.#contentDirty = this.#transientDirty = true;

@@ -3944,3 +3944,45 @@ button {
   margin: 4px 0 0;
   color: var(--chrome-danger, #c42b1c);
 }
+
+/* The dimension style preview image (M4-03 part 3): the renderer's picture, on its background. */
+.dimstyle-preview {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--chrome-border);
+  background: var(--canvas-model);
+}
+
+.dimstyle-editor-preview {
+  display: flex;
+  justify-content: center;
+}
+
+/* Import Dimension Styles (M4-03 part 3). */
+.cad-dialog.dimstyle-import {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.dimstyle-import .cad-dialog-field select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dimstyle-import-list {
+  height: 200px;
+  margin: 4px 0 0;
+  padding: 2px 4px;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  list-style: none;
+}
+
+.dimstyle-import-list .dimstyle-substyle {
+  padding-left: 24px;
+  color: var(--chrome-text-muted, inherit);
+}
+
+.dimstyle-import-note {
+  opacity: 0.7;
+}

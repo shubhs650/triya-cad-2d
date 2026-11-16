@@ -8,6 +8,7 @@
 
 import type { DrawingDimensionHealth } from '@triya/dims';
 import type {
+  DimStylePreview,
   Box,
   ChangeSet,
   DragMotion,
@@ -29,6 +30,7 @@ import type { Surface } from './canvas2d';
 import type { ChangeLink, Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession, type FontSources, type PlotRequest, type RenderDocument } from './session';
 import type { PlotPart } from './plot/job';
+import type { PreviewSize } from './dim-style-preview';
 import { offscreenLayer, surfaceOf } from './surface';
 import type { BitmapFactory, ThumbnailSize } from './thumbnail';
 import type {
@@ -432,6 +434,18 @@ export class RendererHost {
   thumbnail(max: ThumbnailSize): Promise<ImageBitmap | undefined> {
     if (this.#session) return this.#session.thumbnail(max, this.#createBitmap);
     return this.#request((id) => ({ type: 'thumbnail', id, ...max })).then((m) =>
+      m.type === 'thumbnail' && m.bitmap ? m.bitmap : undefined,
+    );
+  }
+
+  /**
+   * A dimension style's preview image (M4-03 part 3) of `size` CSS pixels at its device pixel
+   * ratio, in the drawing's styles as they stand after everything sent so far; undefined when
+   * the drawing has nothing to show it with.
+   */
+  dimStylePreview(preview: DimStylePreview, size: PreviewSize): Promise<ImageBitmap | undefined> {
+    if (this.#session) return this.#session.dimStylePreview(preview, size, this.#createBitmap);
+    return this.#request((id) => ({ type: 'dimStylePreview', id, preview, size })).then((m) =>
       m.type === 'thumbnail' && m.bitmap ? m.bitmap : undefined,
     );
   }

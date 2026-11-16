@@ -1,0 +1,1 @@
+- M4-03 part 3 (#440): the Dimension Style Manager shows a preview image of the selected style, and the New, Modify and Override dialogs a sample that follows every change; Import... brings dimension styles in from another open drawing or a drawing file, with the text styles, linetypes and arrowheads they use.

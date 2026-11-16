@@ -110,3 +110,9 @@ export type { ChangeLink, ChangeMessage, Endpoint, HostMessage, WorkerMessage } 
 export * from './style/index';
 export * from './plot';
 export * from './underlay-snap';
+export {
+  dimStylePreviewImage,
+  drawDimStylePreview,
+  type PreviewContext,
+  type PreviewSize,
+} from './dim-style-preview';

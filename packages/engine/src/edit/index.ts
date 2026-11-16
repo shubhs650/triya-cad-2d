@@ -52,6 +52,8 @@ export {
   type RegeneratedParts,
 } from './dimension-block';
 export * from './dimension';
+export * from './dimstyle-preview';
+export * from './dimstyle-import';
 export * from './table';
 export * from './table-grid';
 export * from './named-view';

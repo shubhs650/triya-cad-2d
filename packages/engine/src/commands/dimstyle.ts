@@ -47,6 +47,8 @@ import {
   type DimStyleVars,
 } from '../annotation/dimstyle-fields';
 import { addArrowheadBlock, arrowheadBlockName } from '../edit/arrowhead-blocks';
+import type { Clipboard } from '../edit/clipboard';
+import { importDimStyles, type DimStyleImport } from '../edit/dimstyle-import';
 import { currentDimStyle, headerDimvarOverrides } from '../edit/dimension';
 import { validViewName } from '../edit/named-view';
 import { arrowheadOptions } from '../properties/dimension';
@@ -101,7 +103,12 @@ export type DimStyleAction =
   /** The overrides' shortcut menu: Save to current style. */
   | { readonly op: 'save-overrides' }
   | { readonly op: 'rename'; readonly name: string; readonly to: string }
-  | { readonly op: 'delete'; readonly name: string };
+  | { readonly op: 'delete'; readonly name: string }
+  /**
+   * Import... (part 3): another drawing's styles as `copyDimStyles` carries them; the ones this
+   * drawing has a style of that name for are ignored.
+   */
+  | { readonly op: 'import'; readonly styles: Clipboard };
 
 type Vars = Record<string, DimVarValue>;
 
@@ -567,7 +574,36 @@ export function dimStyleAct(
       });
       return { selected: selectedAfter ?? '', ...(parentOf && { restyled }) };
     }
+    case 'import': {
+      const clip = a.styles as Partial<Clipboard> | undefined;
+      if (!isStyleClipboard(clip)) return {};
+      let result: DimStyleImport = { added: [], ignored: [] };
+      ctx.edit((b) => {
+        result = importDimStyles(b, model, clip);
+      });
+      const first = result.added.find((n) => childStyleUse(n) === undefined) ?? result.added[0];
+      // DesignCenter's message for a duplicate, which it ignores.
+      const note =
+        result.ignored.length > 0
+          ? `Dimension style${result.ignored.length > 1 ? 's' : ''} already in the drawing: ${result.ignored.join(', ')}. Duplicate definitions were ignored.`
+          : undefined;
+      return { ...(first !== undefined && { selected: first }), ...(note && { note }) };
+    }
   }
+}
+
+/** Whether the UI sent styles shaped as `copyDimStyles` makes them. */
+function isStyleClipboard(c: Partial<Clipboard> | undefined): c is Clipboard {
+  return (
+    typeof c === 'object' &&
+    c !== null &&
+    typeof c.tables === 'object' &&
+    c.tables !== null &&
+    Array.isArray(c.tables.dimStyles) &&
+    Array.isArray(c.blocks) &&
+    Array.isArray(c.blockEntities) &&
+    typeof c.base === 'object'
+  );
 }
 
 /** DIMSTYLE (D, DST, DIMSTY): the Dimension Style Manager. */
