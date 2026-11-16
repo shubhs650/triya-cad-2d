@@ -21,6 +21,8 @@ describe('palette search', () => {
     const zoom = commandItems(builtinCommands()).find((i) => i.id === 'ZOOM');
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
+      // M4-03 part 2: dimension styles at the command line.
+      '-DIMSTYLE',
       // M4-04: a text style made at the command line.
       '-STYLE',
       // M4-05: a table on the command line.

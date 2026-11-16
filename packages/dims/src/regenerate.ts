@@ -6,6 +6,7 @@
 // engine placed the text (unless the user placed it, DXF 70 bit 128, when it stays).
 
 import type { AnnotationTables, DimensionGeometry, Entity, TextMeasure } from '@triya/engine';
+import { drawnDimStyle } from '@triya/engine';
 import { angularSweep } from './angular';
 import { dimensionText, formatAngle, formatLinear } from './format';
 import {
@@ -86,7 +87,7 @@ export function measuredText(
   if (g.kind !== 'DIMENSION' || g.dimType === 'ordinate') return undefined;
   const m = measuredValue(e);
   if (m === undefined) return undefined;
-  const vars = dimStyle(g.style, e.xdata, model).vars;
+  const vars = dimStyle(drawnDimStyle(model, g), e.xdata, model).vars;
   if (g.dimType === 'angular' || g.dimType === 'angular3pt') {
     return dimensionText('', formatAngle(m, vars), vars)?.replace(/%%d/gi, '°');
   }

@@ -9,3 +9,6 @@ export * from './dimstyle-fields';
 export * from './radial-extension';
 export * from './table';
 export * from './linear-jog';
+export * from './dimstyle-xdata';
+export * from './dimstyle-family';
+export * from './dimstyle-compare';

@@ -31,6 +31,14 @@
 // - DIMALT appends the alternate measurement in brackets: the measurement × DIMLFAC × DIMALTF
 //   by DIMALTU, DIMALTD, DIMALTZ and DIMALTRND, DIMAPOST around it, its deviations by DIMALTTD
 //   and DIMALTTZ. In an override `[]` stands for it; otherwise `<>` stands for both.
+// - Sub-units (M4-03 part 2; AutoCAD Help, "Primary Units Tab": "Sub-units factor ... used to
+//   calculate the dimension distance in a sub-unit when the distance is less than one unit"):
+//   with leading zeros suppressed (DIMZIN 4) a decimal distance under one unit is shown times
+//   DIMMZF with the DIMMZS suffix in place of DIMPOST's suffix, at DIMDEC less log10(DIMMZF)
+//   places; DIMALTMZF and DIMALTMZS likewise for the alternate units. AutoCAD offers the two
+//   fields whenever Leading is checked, factor 100 by default; Triya shows sub-units only once a
+//   style names a suffix (the common drafter's expectation: a ".5" style stays ".5" until a
+//   sub-unit is set up), as no corpus style uses them.
 
 import type { DimVarValue } from '@triya/engine';
 import { num, on, str } from './style';
@@ -125,11 +133,30 @@ function feetInches(value: number, vars: Vars, architectural: boolean): string {
   return (negative ? '-' : '') + parts.join('-');
 }
 
-/** A linear measurement (drawing units) as text, before prefixes, DIMPOST and overrides. */
-export function formatLinear(measurement: number, vars: Vars): string {
+/** A measurement scaled by DIMLFAC and rounded by DIMRND. */
+function scaledLength(measurement: number, vars: Vars): number {
   let v = measurement * Math.abs(num(vars.DIMLFAC, 1) || 1);
   const rnd = num(vars.DIMRND);
   if (rnd > 0) v = Math.round(v / rnd) * rnd;
+  return v;
+}
+
+/** Whether `value` (scaled) is shown in sub-units: decimal, leading zeros dropped, under one unit. */
+function inSubUnits(value: number, vars: Vars): boolean {
+  const lunit = num(vars.DIMLUNIT, 2);
+  return (
+    (lunit === 2 || lunit === 6) &&
+    (num(vars.DIMZIN) & 4) !== 0 &&
+    str(vars.DIMMZS) !== '' &&
+    num(vars.DIMMZF, 100) > 0 &&
+    value !== 0 &&
+    Math.abs(value) < 1
+  );
+}
+
+/** A linear measurement (drawing units) as text, before prefixes, DIMPOST and overrides. */
+export function formatLinear(measurement: number, vars: Vars): string {
+  const v = scaledLength(measurement, vars);
   const zin = num(vars.DIMZIN);
   const places = num(vars.DIMDEC, 4);
   const sep = separator(vars.DIMDSEP);
@@ -151,10 +178,22 @@ export function formatLinear(measurement: number, vars: Vars): string {
       const space = num(vars.DIMFRAC) === 2 ? ' ' : '';
       return whole === 0 && (zin & 4) !== 0 ? `${sign}${frac}` : `${sign}${whole}${space}${frac}`;
     }
-    default:
+    default: {
+      if (inSubUnits(v, vars)) {
+        const f = num(vars.DIMMZF, 100);
+        const p = Math.max(0, places - Math.round(Math.log10(f)));
+        return decimal(v * f, p, true, (zin & 8) !== 0).replace('.', sep) + str(vars.DIMMZS);
+      }
       return decimal(v, places, (zin & 4) !== 0, (zin & 8) !== 0).replace('.', sep);
+    }
   }
 }
+
+/** DIMPOST's prefix alone (`<>` and what follows dropped): sub-units bring their own suffix. */
+const prefixOf = (post: string): string => {
+  const at = post.indexOf('<>');
+  return at < 0 ? '' : post.slice(0, at + 2);
+};
 
 /** An angle (radians) as text, by DIMAUNIT, DIMADEC and DIMAZIN. */
 export function formatAngle(radians: number, vars: Vars): string {
@@ -258,7 +297,8 @@ function unitsText(
     const lower = formatLinear(scaled - tm, tolVars);
     return applyPost(prefix + stack(upper, lower, vars), post);
   }
-  const text = applyPost(prefix + formatLinear(value, vars), post);
+  const shown = inSubUnits(scaledLength(value, vars), vars) ? prefixOf(post) : post;
+  const text = applyPost(prefix + formatLinear(value, vars), shown);
   if (!on(vars.DIMTOL)) return text;
   if (tp === tm) return `${text}%%p${formatLinear(Math.abs(tp), tolVars)}`;
   return text + stack(deviation(tp, tolVars), deviation(-tm, tolVars), vars);
@@ -292,6 +332,8 @@ export function linearText(
       DIMDEC: num(vars.DIMALTD, 2),
       DIMZIN: num(vars.DIMALTZ),
       DIMRND: num(vars.DIMALTRND),
+      DIMMZF: num(vars.DIMALTMZF, 100),
+      DIMMZS: str(vars.DIMALTMZS),
       DIMLFAC: (num(vars.DIMLFAC, 1) || 1) * factor,
     };
     alternate = unitsText(
