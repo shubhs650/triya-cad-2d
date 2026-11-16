@@ -171,7 +171,7 @@ describe('PEDIT and MATCHPROP on the public corpus', () => {
           if (isPolyline(g)) {
             if (g.vertices.length < 2) return;
             if (g.kind === 'POLYLINE' && g.is3d) out = splineFit(g, 6, 4);
-            else if (i % 4 === 0) out = fitPolyline(g, [], tol);
+            else if (i % 4 === 0) out = fitPolyline(g, tol);
             else if (i % 4 === 1) out = splineFit(g, i % 8 === 1 ? 5 : 6, 4);
             else if (i % 4 === 2) out = decurvePolyline(splineFit(g, 6, 4));
             else out = widthPolyline(g, 0.25);

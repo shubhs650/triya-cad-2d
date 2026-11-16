@@ -52,6 +52,9 @@ function wide(v: PolylineVertex, sw: number, ew: number): PolylineVertex {
   return { ...rest, ...(sw !== 0 && { startWidth: sw }), ...(ew !== 0 && { endWidth: ew }) };
 }
 
+/** A 3D vertex's height as a vertex field: none for 0 or none at all (DEC-062). */
+const height = (z: number | undefined): { z?: number } => (z !== undefined && z !== 0 ? { z } : {});
+
 /** The vertices with every width their own (the constant width or POLYLINE defaults applied). */
 export function explicitVertices(g: EditablePolyline): PolylineVertex[] {
   const dsw = g.kind === 'LWPOLYLINE' ? (g.constantWidth ?? 0) : (g.startWidth ?? 0);
@@ -155,19 +158,15 @@ function splineToPolyline(g: SplineGeometry, precision: number): LwPolylineGeome
 const turn = (a: Vec2, b: Vec2): number => Math.atan2(cross(a, b), dot(a, b));
 
 /**
- * The tangent direction the curve fit takes at each vertex: the one given (radians), else the
- * tangent of the circle through the vertex and its neighbours (the ends of an open polyline use
- * the circle through the first or last three), else the chord's direction.
+ * The tangent direction the curve fit takes at each vertex: the vertex's own (Edit vertex
+ * Tangent, radians), else the tangent of the circle through the vertex and its neighbours (the
+ * ends of an open polyline use the circle through the first or last three), else the chord's
+ * direction.
  */
-function fitTangents(
-  ps: readonly Vec2[],
-  closed: boolean,
-  given: readonly (number | undefined)[],
-  tol: Tolerance,
-): Vec2[] {
+function fitTangents(ps: readonly PolylineVertex[], closed: boolean, tol: Tolerance): Vec2[] {
   const n = ps.length;
   return ps.map((p, i) => {
-    const t = given[i];
+    const t = p.tangent;
     if (t !== undefined) return { x: Math.cos(t), y: Math.sin(t) };
     let a: Vec2, b: Vec2, c: Vec2;
     if (closed) [a, b, c] = [ps[(i - 1 + n) % n]!, p, ps[(i + 1) % n]!];
@@ -209,17 +208,17 @@ function biarc(p: Vec2, t0: Vec2, q: Vec2, t1: Vec2): { joint: Vec2; b0: number;
 
 /**
  * PEDIT Fit: the curve-fit vertices of `vertices` (their bulges ignored), each span a biarc with
- * an extra vertex at its joint; a span's widths taper across its two arcs.
+ * an extra vertex at its joint; a span's widths taper across its two arcs. A vertex keeps the
+ * tangent it was given; the extra vertices have none.
  */
 export function curveFit(
   vertices: readonly PolylineVertex[],
   closed: boolean,
-  tangents: readonly (number | undefined)[],
   tol: Tolerance,
 ): PolylineVertex[] {
   const n = vertices.length;
   if (n < 2) return [...vertices];
-  const t = fitTangents(vertices, closed, tangents, tol);
+  const t = fitTangents(vertices, closed, tol);
   const out: PolylineVertex[] = [];
   const spans = closed ? n : n - 1;
   for (let i = 0; i < spans; i++) {
@@ -283,7 +282,7 @@ export function editVertices(g: EditablePolyline): PolylineVertex[] {
   if (isSplineFit(g) && g.kind === 'POLYLINE') {
     const w = g.startWidth ?? 0;
     const e = g.endWidth ?? 0;
-    return g.frame!.map((p) => wide({ x: p.x, y: p.y, bulge: 0 }, w, e));
+    return g.frame!.map((p) => wide({ x: p.x, y: p.y, bulge: 0, ...height(p.z) }, w, e));
   }
   return explicitVertices(g);
 }
@@ -302,7 +301,17 @@ export function splineFit(
   closed = g.closed,
 ): PolylineGeometry {
   const base = heavyweight(g);
-  const points = splineFitPoints(frame, closed, type === 5 ? 2 : 3, segs);
+  const degree = type === 5 ? 2 : 3;
+  const points = splineFitPoints(frame, closed, degree, segs);
+  // A 3D frame's heights fitted by the same spline (it is linear in its control points).
+  const heights = frame.some((v) => v.z !== undefined)
+    ? splineFitPoints(
+        frame.map((v) => ({ x: v.z ?? 0, y: 0 })),
+        closed,
+        degree,
+        segs,
+      ).map((q) => q.x)
+    : undefined;
   const spans = closed ? frame.length : frame.length - 1;
   const widths = frame.slice(0, spans).map((v) => [v.startWidth ?? 0, v.endWidth ?? 0] as const);
   const w0 = widths[0]?.[0] ?? 0;
@@ -310,7 +319,7 @@ export function splineFit(
   const wEnd = widths.at(-1)?.[1] ?? 0;
   const m = closed ? points.length : points.length - 1;
   const vertices = points.map((p, j): PolylineVertex => {
-    const v = { x: p.x, y: p.y, bulge: 0 };
+    const v = { x: p.x, y: p.y, bulge: 0, ...height(heights?.[j]) };
     if ((g.kind === 'POLYLINE' && g.is3d) || j >= m) return v;
     // A uniform width is every vertex's own too: a file's VERTEX states its widths (DXF 40/41
     // are written for each), so a vertex without them would save as 0 wide.
@@ -323,22 +332,18 @@ export function splineFit(
     vertices,
     closed,
     fit: type === 5 ? 'quadratic' : 'cubic',
-    frame: frame.map((v) => ({ x: v.x, y: v.y })),
+    frame: frame.map((v) => ({ x: v.x, y: v.y, ...height(v.z) })),
     ...(uniform && w0 !== 0 && !base.is3d && { startWidth: w0, endWidth: w0 }),
   };
 }
 
 /**
  * PEDIT Fit: `g` curve-fit through its vertices (the frame of a spline-fit one, the original
- * vertices of a curve-fit one), with the tangents given by vertex.
+ * vertices of a curve-fit one), with the tangents the vertices were given.
  */
-export function fitPolyline(
-  g: EditablePolyline,
-  tangents: readonly (number | undefined)[],
-  tol: Tolerance,
-): PolylineGeometry {
+export function fitPolyline(g: EditablePolyline, tol: Tolerance): PolylineGeometry {
   const plain = decurvePolyline(g);
-  const vertices = curveFit(explicitVertices(plain), plain.closed, tangents, tol);
+  const vertices = curveFit(explicitVertices(plain), plain.closed, tol);
   const { startWidth: _s, endWidth: _e, fit: _f, frame: _fr, ...rest } = heavyweight(plain);
   return { ...rest, vertices, fit: 'curve' };
 }
@@ -351,7 +356,10 @@ export function fitPolyline(
 export function decurvePolyline(g: EditablePolyline): EditablePolyline {
   if (isSplineFit(g) && g.kind === 'POLYLINE') {
     const { fit: _f, frame, ...rest } = g;
-    return { ...rest, vertices: frame!.map((p) => ({ x: p.x, y: p.y, bulge: 0 })) };
+    return {
+      ...rest,
+      vertices: frame!.map((p) => ({ x: p.x, y: p.y, bulge: 0, ...height(p.z) })),
+    };
   }
   const vs = explicitVertices(g);
   if (isCurveFit(g)) {
@@ -410,7 +418,7 @@ export function closePolyline(
   }
   if (isCurveFit(g)) {
     const plain = decurvePolyline(g);
-    return fitPolyline({ ...plain, closed } as EditablePolyline, [], tol);
+    return fitPolyline({ ...plain, closed } as EditablePolyline, tol);
   }
   return { ...g, closed };
 }
@@ -434,18 +442,57 @@ export function withEditVertices(
   return isCurveFit(g) ? { ...(out as PolylineGeometry), fit: 'curve' } : out;
 }
 
-/** Edit vertex Insert: a new vertex after `i`, the segment from `i` now two straight ones. */
-export function insertVertex(vs: readonly PolylineVertex[], i: number, p: Vec2): PolylineVertex[] {
+/**
+ * Edit vertex Insert: a new vertex after `i`, the segment from `i` now two straight ones. On a
+ * 3D polyline the new vertex takes the height of the segment where `p` falls square to it
+ * (DEC-062: a point picked in plan has none of its own).
+ */
+export function insertVertex(
+  vs: readonly PolylineVertex[],
+  i: number,
+  p: Vec2,
+  closed = false,
+): PolylineVertex[] {
   const v = vs[i]!;
   const sw = v.startWidth ?? 0;
   const ew = v.endWidth ?? 0;
   const mid = (sw + ew) / 2;
+  const next = vs[i + 1] ?? (closed ? vs[0] : undefined);
   return [
     ...vs.slice(0, i),
     wide({ ...v, bulge: 0 }, sw, mid),
-    wide({ x: p.x, y: p.y, bulge: 0 }, mid, ew),
+    wide({ x: p.x, y: p.y, bulge: 0, ...heightAlong(v, next ?? v, p) }, mid, ew),
     ...vs.slice(i + 1),
   ];
+}
+
+/** The height of the straight 3D segment from `a` to `b` where `p` falls square to it. */
+function heightAlong(a: PolylineVertex, b: PolylineVertex, p: Vec2): { z?: number } {
+  if (a.z === undefined && b.z === undefined) return {};
+  const za = a.z ?? 0;
+  const zb = b.z ?? 0;
+  const d = sub(b, a);
+  const dd = dot(d, d);
+  const s = dd > 0 ? Math.max(0, Math.min(1, dot(sub(p, a), d) / dd)) : 0;
+  return height(za + (zb - za) * s);
+}
+
+/**
+ * Edit vertex Tangent: vertex `i` of `vs` (the polyline's editing vertices) given the tangent
+ * direction `t` (radians) that Fit takes there. Only a heavyweight 2D POLYLINE saves one (VERTEX
+ * flag 2, DXF 50), so a lightweight polyline becomes one, as Fit makes it.
+ */
+export function vertexTangent(
+  g: EditablePolyline,
+  vs: readonly PolylineVertex[],
+  i: number,
+  t: number,
+): EditablePolyline {
+  const out = withVertices(
+    heavyweight(g),
+    vs.map((v, k) => (k === i ? { ...v, tangent: t } : v)),
+  );
+  return isCurveFit(g) ? { ...(out as PolylineGeometry), fit: 'curve' } : out;
 }
 
 /** Edit vertex Move: vertex `i` at `p`, its segments' bulges kept. */

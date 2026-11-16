@@ -22,6 +22,7 @@ import type {
   HatchGeometry,
   InsertGeometry,
   MTextGeometry,
+  PolylineGeometry,
   TextGeometry,
 } from '../../src/model/index';
 import { rotation, translation } from '../../src/geom/transform';
@@ -124,6 +125,32 @@ describe.each(CASES)('%s', (_name, t) => {
     expect(out).toMatchObject({
       vertices: [{}, { startWidth: t.scale, endWidth: 2 * t.scale }, {}],
     });
+  });
+});
+
+describe('polyline vertex tangents (M3-16)', () => {
+  // A curve-fit tangent is a direction: it turns and mirrors as the polyline does.
+  it('turns and mirrors a vertex tangent, and leaves a 3D height alone', () => {
+    const g: EntityGeometry = {
+      kind: 'POLYLINE',
+      is3d: false,
+      closed: false,
+      vertices: [
+        { x: 0, y: 0, bulge: 0, tangent: 0.5 },
+        { x: 10, y: 0, bulge: 0 },
+      ],
+    };
+    const turned = transformGeometry(g, turnAbout({ x: 0, y: 0 }, 1)) as PolylineGeometry;
+    expect(turned.vertices[0]!.tangent).toBeCloseTo(1.5, 12);
+    expect(turned.vertices[1]!.tangent).toBeUndefined();
+    const m = mirrorIn({ x: 0, y: 0 }, { x: 1, y: 1 });
+    const mirrored = transformGeometry(g, m) as PolylineGeometry;
+    expect(mirrored.vertices[0]!.tangent).toBeCloseTo(angle(m, 0.5), 12);
+    const three = transformGeometry(
+      { ...g, is3d: true, vertices: [{ x: 0, y: 0, bulge: 0, z: 3 }, g.vertices[1]!] },
+      moveBy({ x: 1, y: 2 }),
+    ) as PolylineGeometry;
+    expect(three.vertices[0]).toEqual({ x: 1, y: 2, bulge: 0, z: 3 });
   });
 });
 

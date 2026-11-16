@@ -374,11 +374,15 @@ function reversePolyline(g: LwPolylineGeometry | PolylineGeometry): EntityGeomet
     const s = g.vertices[j]!;
     const sw = last ? 0 : (s.endWidth ?? dew);
     const ew = last ? 0 : (s.startWidth ?? dsw);
-    const { startWidth: _sw, endWidth: _ew, bulge: _b, ...rest } = v;
+    const { startWidth: _sw, endWidth: _ew, bulge: _b, tangent, ...rest } = v;
     const bulge = last || s.bulge === 0 ? 0 : -s.bulge;
     // A zero width is no width, as the file maps it (and as TRIM writes it).
     vertices.push({
       ...rest,
+      // A curve-fit tangent (M3-16) turns round with the travel, kept in (−π, π].
+      ...(tangent !== undefined && {
+        tangent: tangent > 0 ? tangent - Math.PI : tangent + Math.PI,
+      }),
       bulge,
       ...((sw !== 0 || ew !== 0) && { startWidth: sw, endWidth: ew }),
     });

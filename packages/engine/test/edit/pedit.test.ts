@@ -88,7 +88,7 @@ describe('turning objects into polylines', () => {
 describe('Fit', () => {
   it('passes a pair of arcs through every vertex, tangent where they meet', () => {
     const vs = [v(0, 0), v(10, 10), v(20, 0), v(30, 10)];
-    const out = curveFit(vs, false, [], tol);
+    const out = curveFit(vs, false, tol);
     // Each of 3 spans gains an extra vertex: 4 + 3.
     expect(out).toHaveLength(7);
     expect([0, 2, 4, 6].map((i) => pt(out[i]!))).toEqual([
@@ -110,16 +110,19 @@ describe('Fit', () => {
   });
 
   it('uses a tangent given at a vertex and leaves straight runs straight', () => {
-    const out = curveFit([v(0, 0), v(10, 0), v(20, 0)], false, [], tol);
+    const out = curveFit([v(0, 0), v(10, 0), v(20, 0)], false, tol);
     expect(out.every((x) => x.bulge === 0)).toBe(true);
-    const turned = curveFit([v(0, 0), v(10, 0)], false, [Math.PI / 2, undefined], tol);
+    // The tangent is the vertex's own (Edit vertex Tangent, saved as VERTEX 50, M3-16).
+    const turned = curveFit([{ ...v(0, 0), tangent: Math.PI / 2 }, v(10, 0)], false, tol);
+    // The original vertex keeps its tangent; the extra one Fit adds has none.
+    expect(turned.map((x) => x.tangent)).toEqual([Math.PI / 2, undefined, undefined]);
     // Leaving straight up: the first arc turns right towards (10, 0).
     expect(turned[0]!.bulge).toBeLessThan(0);
   });
 
   it('makes a heavyweight curve-fit polyline that Decurve takes back to its vertices', () => {
     const g = lw([v(0, 0), v(10, 10), v(20, 0)], false, { constantWidth: 0.5, elevation: 3 });
-    const fit = fitPolyline(g, [], tol);
+    const fit = fitPolyline(g, tol);
     expect(fit.kind).toBe('POLYLINE');
     expect(fit.fit).toBe('curve');
     expect(fit.elevation).toBe(3);
@@ -136,7 +139,7 @@ describe('Fit', () => {
     expect(back.vertices.every((x) => x.bulge === 0)).toBe(true);
     expect(back.vertices[0]).toMatchObject({ startWidth: 0.5, endWidth: 0.5 });
     // A closed one gains an extra vertex on its closing span too.
-    const closed = fitPolyline(lw([v(0, 0), v(10, 0), v(5, 8)], true), [], tol);
+    const closed = fitPolyline(lw([v(0, 0), v(10, 0), v(5, 8)], true), tol);
     expect(closed.vertices).toHaveLength(6);
     expect(decurvePolyline(closed).vertices).toHaveLength(3);
   });
