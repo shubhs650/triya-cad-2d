@@ -2849,4 +2849,31 @@ describe('acad-ts local patches', () => {
     expect((back.getCadObject(text.handle) as TextEntity).value).toBe('a^b \u0001 ^');
     expect((back.getCadObject(attdef.handle) as AttributeDefinition).value).toBe('^c');
   });
+  it('0184 a DXF VERTEX writes its curve-fit tangent (50) in degrees, as it is read', () => {
+    // DXF reference, VERTEX: 50 is the curve fit tangent direction, an angle, so in degrees as
+    // every DXF angle; the reader converts it to radians (IsAngle), but `_writeVertex` wrote
+    // the radians as they were, so each save turned a 45 degree tangent into 0.785 degrees.
+    const doc = new CadDocument();
+    const p = new Polyline2D();
+    // Added first, so the vertices take handles as they join it.
+    doc.entities!.add(p);
+    for (const [x, y, t] of [
+      [0, 0, Math.PI / 4],
+      [10, 0, 0],
+      [20, 5, -Math.PI / 2],
+    ] as const) {
+      const v = new Vertex2D();
+      v.location = new XYZ(x, y, 0);
+      v.curveTangent = t;
+      v.flags = t !== 0 ? 2 : 0;
+      p.vertices.push(v);
+    }
+    const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
+    expect(text).toMatch(/\n *50\r?\n45(\.0+)?\r?\n/);
+    const read = DxfReader.readFromStream(Uint8Array.from(text, (c) => c.charCodeAt(0)));
+    const back = [
+      ...([...read.entities!].find((e) => e instanceof Polyline2D) as Polyline).vertices,
+    ] as Vertex2D[];
+    expect(back.map((v) => v.curveTangent)).toEqual([Math.PI / 4, 0, -Math.PI / 2]);
+  });
 });

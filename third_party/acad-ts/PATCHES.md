@@ -3355,3 +3355,20 @@ A layer whose colour comes from a colour book carries the colour's name in group
 `_readTextEntity` assigns group 1 of a TEXT, ATTRIB or ATTDEF through the class map, so caret codes stay encoded, unlike MTEXT, whose text is read with `valueAsString`. The writer escapes carets and control characters, so every save adds a space after each caret and turns control characters into their caret codes. This reads the value with `valueAsString`. A test writes a TEXT holding a caret, a control character and a trailing caret, and an ATTDEF value starting with a caret, and reads them back unchanged.
 
 </details>
+
+### 0184 — a DXF VERTEX writes its curve-fit tangent in radians
+
+- **File:** `third_party/acad-ts-patches/0184-dxf-vertex-tangent-degrees.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** VERTEX 50, the curve-fit tangent direction (with VERTEX flag 2), is an angle, so degrees in DXF. The reader converts it to radians (the class map marks it `IsAngle`), but `_writeVertex` wrote `curveTangent` without the map, as the radians it holds, so each save turned a 45° tangent into 0.785°. No public corpus file has a tangent; found by M3-16 part 2, which saves the tangents PEDIT's Edit vertex Tangent gives.
+- **Fix:** write `MathHelper.radToDegRoundTrip(vertex.curveTangent)`.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0184 a DXF VERTEX writes its curve-fit tangent (50) in degrees, as it is read" (tangents of 45°, 0 and −90° written and read back as they were).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write a DXF VERTEX's curve-fit tangent (50) in degrees
+
+The DXF reader converts VERTEX group 50 from degrees to radians (the property is mapped `IsAngle`), but `_writeVertex` writes `curveTangent` directly, so a tangent saved to DXF comes back 180/π times smaller. This writes it with `MathHelper.radToDegRoundTrip`, as the other angles written outside the class map are. A test writes a 2D polyline whose vertices have tangents of 45°, 0 and −90° and reads them back unchanged.
+
+</details>

@@ -13,8 +13,10 @@
 // the polyline (the frame of a spline-fit one). The geometry is `edit/pedit.ts`'s.
 //
 // PEDITACCEPT (M3-12; a variable the app keeps, as AutoCAD keeps it per user) 1 turns a line, arc
-// or spline picked into a polyline without asking (initially 0, asking). Tangents given with Edit vertex Tangent
-// are used by Fit while PEDIT runs; they are not saved (VERTEX DXF 50).
+// or spline picked into a polyline without asking (initially 0, asking). Edit vertex Tangent
+// gives the vertex its tangent, saved as VERTEX flag 2 and DXF 50 (M3-16), which Fit uses now
+// and in any later PEDIT. A 3D polyline's Edit vertex has its own options (AutoCAD Help, "3D
+// Polyline Selection (PEDIT)"): no Tangent or Width; its heights stay (DEC-062).
 import { reverseGeometry } from '../../edit/break';
 import { eraseObjects, reshapeObject, revertChanges } from '../../edit/edit';
 import { joinObjects } from '../../edit/join';
@@ -34,6 +36,7 @@ import {
   polylineFrom,
   segmentWidth,
   splineFit,
+  vertexTangent,
   straightenVertices,
   widthPolyline,
   withEditVertices,
@@ -152,8 +155,6 @@ export function peditCommand(): CommandDef {
 async function* single(ctx: CommandContext, start: EntityId): Sub<void> {
   let id = start;
   const steps: Step[] = [];
-  // Edit vertex Tangent's directions, by editing vertex, for Fit.
-  let tangents: (number | undefined)[] = [];
   const geom = () => ctx.model.entity(id)?.geom as EditablePolyline | undefined;
   const change = (shapes: readonly EntityGeometry[]): void => {
     const before = id;
@@ -224,19 +225,17 @@ async function* single(ctx: CommandContext, start: EntityId): Sub<void> {
         break;
       }
       case 'Edit vertex': {
-        const r = yield* editVertex(
+        const cancelled = yield* editVertex(
           ctx,
           () => id,
           (x) => (id = x),
           steps,
-          tangents,
         );
-        tangents = r.tangents;
-        if (r.cancelled) return;
+        if (cancelled) return;
         break;
       }
       case 'Fit':
-        change([fitPolyline(g, tangents, tol)]);
+        change([fitPolyline(g, tol)]);
         break;
       case 'Spline':
       case 'Spline curve': {
@@ -264,10 +263,7 @@ async function* single(ctx: CommandContext, start: EntityId): Sub<void> {
       }
       case 'Reverse': {
         const r = reverseGeometry(g);
-        if (r) {
-          change([r]);
-          tangents = [...tangents].reverse();
-        }
+        if (r) change([r]);
         break;
       }
       case 'Undo': {
@@ -312,9 +308,7 @@ async function* editVertex(
   current: () => EntityId,
   setCurrent: (id: EntityId) => void,
   steps: Step[],
-  given: (number | undefined)[],
-): Sub<{ cancelled: boolean; tangents: (number | undefined)[] }> {
-  let tangents = [...given];
+): Sub<boolean> {
   let i = 0;
   const geom = () => ctx.model.entity(current())!.geom as EditablePolyline;
   const segs = () => splineSettings(ctx).segs;
@@ -327,7 +321,7 @@ async function* editVertex(
   };
   const done = (cancelled: boolean) => {
     ctx.preview([]);
-    return { cancelled, tangents };
+    return cancelled;
   };
   for (;;) {
     const g = geom();
@@ -336,7 +330,7 @@ async function* editVertex(
     i = Math.min(i, vs.length - 1);
     ctx.preview(marker(vs, vs[i]!));
     const options = three
-      ? ['Next', 'Previous', 'Break', 'Insert', 'Move', 'Regen', 'eXit']
+      ? ['Next', 'Previous', 'Break', 'Insert', 'Move', 'Regen', 'Straighten', 'eXit']
       : [
           'Next',
           'Previous',
@@ -397,7 +391,6 @@ async function* editVertex(
         }
         // Breaking discards the curve fitting (AutoCAD: "The Break option discards the spline").
         change(r.map((p) => withVertices(g, p, false)));
-        tangents = [];
         i = 0;
         break;
       }
@@ -407,8 +400,7 @@ async function* editVertex(
           rubberBand: { from: vs[i]! },
         });
         if (p.kind !== 'point') return done(true);
-        change([withEditVertices(g, insertVertex(vs, i, p.point), segs())]);
-        tangents.splice(i + 1, 0, undefined);
+        change([withEditVertices(g, insertVertex(vs, i, p.point, g.closed), segs())]);
         break;
       }
       case 'Move': {
@@ -429,10 +421,7 @@ async function* editVertex(
         });
         if (t.kind !== 'angle') return done(true);
         // A spline-fit polyline ignores tangents (AutoCAD: "The Tangent option has no effect").
-        if (!isSplineFit(g)) {
-          tangents = [...tangents];
-          tangents[i] = t.value;
-        }
+        if (!isSplineFit(g)) change([vertexTangent(g, vs, i, t.value)]);
         break;
       }
       case 'Width': {
@@ -585,7 +574,7 @@ async function* multiple(ctx: CommandContext): Sub<void> {
         break;
       }
       case 'Fit':
-        flat((g, tol) => fitPolyline(g, [], tol));
+        flat((g, tol) => fitPolyline(g, tol));
         break;
       case 'Spline': {
         const s = splineSettings(ctx);

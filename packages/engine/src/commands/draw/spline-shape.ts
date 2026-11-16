@@ -65,6 +65,7 @@ export function splineOf(s: SplineSpec): SplineGeometry | undefined {
     endTangent,
     closed: s.closed,
     parameterization: s.knots,
+    tolerance: s.tolerance,
   });
   if (!c) return undefined;
   return {

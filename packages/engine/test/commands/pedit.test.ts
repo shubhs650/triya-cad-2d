@@ -251,6 +251,135 @@ describe('PEDIT Edit vertex', () => {
     const g = a.space().find((e) => e.geom.kind === 'POLYLINE')!.geom as PolylineGeometry;
     expect(g.vertices[0]!.bulge).toBeLessThan(0);
   });
+
+  // M3-16 part 2: the tangent is the vertex's own (VERTEX flag 2, DXF 50), so it is saved and
+  // a later PEDIT's Fit uses it too. An LWPOLYLINE has nowhere to keep one, so the polyline
+  // becomes a heavyweight 2D one, as Fit makes it.
+  it('stores a vertex tangent on the polyline, for Fit now and later, and Undo takes it back', async () => {
+    const { bus, space, byHandle, log } = setup([
+      lw([
+        [0, 10],
+        [10, 10],
+        [20, 10],
+      ]),
+    ]);
+    const poly = () => space().find((e) => e.geom.kind.endsWith('POLYLINE'))!;
+    await bus.script(['PEDIT']);
+    await bus.pick({ x: 5, y: 10 });
+    await bus.script(['E', 'N', 'T', '45']);
+    const g = poly().geom as PolylineGeometry;
+    expect(g).toMatchObject({ kind: 'POLYLINE', is3d: false });
+    expect(g.vertices.map((v) => v.tangent)).toEqual([undefined, Math.PI / 4, undefined]);
+    expect(g.fit).toBeUndefined();
+    // Moving along keeps the tangent; Width keeps it too.
+    await bus.script(['P', 'N', 'W', '1', '1', 'X']);
+    expect((poly().geom as PolylineGeometry).vertices[1]!.tangent).toBe(Math.PI / 4);
+    await bus.script(['F']);
+    const fit = poly().geom as PolylineGeometry;
+    expect(fit.fit).toBe('curve');
+    // The original vertex keeps its tangent beside the extra vertices Fit adds.
+    expect(fit.vertices[2]).toMatchObject({ x: 10, y: 10, tangent: Math.PI / 4 });
+    // Decurve and Fit again in another PEDIT: the tangent is still there.
+    await bus.script(['D', '']);
+    expect((poly().geom as PolylineGeometry).vertices[1]!.tangent).toBe(Math.PI / 4);
+    await bus.script(['PEDIT']);
+    await bus.pick({ x: 5, y: 10 });
+    await bus.script(['F']);
+    expect(poly().geom).toEqual(fit);
+    // Reverse turns it round with the polyline.
+    await bus.script(['R']);
+    const back = (poly().geom as PolylineGeometry).vertices.find((v) => v.tangent !== undefined)!;
+    expect(back.tangent).toBeCloseTo((-3 * Math.PI) / 4, 12);
+    // Undo takes back this PEDIT's Reverse and Fit, then has nothing left.
+    await bus.script(['U', 'U', 'U']);
+    expect(log).toContain('All PEDIT operations have been undone.');
+    expect(byHandle('40')).toBeUndefined();
+    expect((poly().geom as PolylineGeometry).fit).toBeUndefined();
+    await bus.script(['']);
+    expect(bus.command).toBeUndefined();
+  });
+
+  it('undoes a tangent given in Edit vertex step by step, back to the lightweight polyline', async () => {
+    const { bus, space } = setup([
+      lw([
+        [0, 10],
+        [10, 10],
+      ]),
+    ]);
+    await bus.script(['PEDIT']);
+    await bus.pick({ x: 5, y: 10 });
+    await bus.script(['E', 'T', '90', 'T', '0', 'X']);
+    const g = space().find((e) => e.geom.kind === 'POLYLINE')!.geom as PolylineGeometry;
+    expect(g.vertices[0]!.tangent).toBe(0);
+    await bus.script(['U']);
+    expect(
+      (space().find((e) => e.geom.kind === 'POLYLINE')!.geom as PolylineGeometry).vertices[0]!
+        .tangent,
+    ).toBe(Math.PI / 2);
+    await bus.script(['U', '']);
+    expect(space().map((e) => e.geom.kind)).toEqual(['LINE', 'CIRCLE', 'LWPOLYLINE']);
+  });
+});
+
+// AutoCAD 2024 Help, "3D Polyline Selection (PEDIT)": Edit Vertex offers Next, Previous, Break,
+// Insert, Move, Regen, Straighten and eXit. A point picked in Triya's plan view has no height
+// (AutoCAD would take the current elevation; DEC-062 never edits a height): Move keeps the
+// vertex's, and Insert gives the new vertex the height of the 3D segment under it.
+describe('PEDIT Edit vertex on a 3D polyline', () => {
+  const p3z: PolylineGeometry = {
+    kind: 'POLYLINE',
+    is3d: true,
+    closed: false,
+    vertices: [
+      { x: 0, y: 30, bulge: 0, z: 2 },
+      { x: 10, y: 30, bulge: 0, z: 6 },
+      { x: 20, y: 30, bulge: 0 },
+      { x: 30, y: 40, bulge: 0, z: -4 },
+    ],
+  };
+
+  it('inserts at the segment’s height, moves keeping the height, straightens and breaks', async () => {
+    const { bus, byHandle, space } = setup([p3z]);
+    const g = () => byHandle('40')!.geom as PolylineGeometry;
+    await bus.script(['PEDIT', 'L']);
+    await bus.script(['E', 'I', '2.5,31']);
+    expect(g().vertices[1]).toEqual({ x: 2.5, y: 31, bulge: 0, z: 3 });
+    await bus.script(['N', 'M', '11,35']);
+    expect(g().vertices[1]).toEqual({ x: 11, y: 35, bulge: 0, z: 3 });
+    // Straighten from the moved vertex to the last: the two between go, heights stay.
+    await bus.script(['S', 'N', 'N', 'N', 'G']);
+    expect(g().vertices).toEqual([
+      { x: 0, y: 30, bulge: 0, z: 2 },
+      { x: 11, y: 35, bulge: 0, z: 3 },
+      { x: 30, y: 40, bulge: 0, z: -4 },
+    ]);
+    await bus.script(['B', 'G']);
+    const pieces = space().filter((e) => e.geom.kind === 'POLYLINE');
+    expect(pieces.map((p) => (p.geom as PolylineGeometry).vertices.map((v) => v.z))).toEqual([
+      [2, 3],
+      [3, -4],
+    ]);
+    expect(pieces.every((p) => (p.geom as PolylineGeometry).is3d)).toBe(true);
+    await bus.script(['X', 'U', 'U', 'U', 'U', '']);
+    expect(byHandle('40')!.geom).toEqual(p3z);
+  });
+
+  it('fits a spline through the heights and takes them back with Decurve', async () => {
+    const { bus, byHandle } = setup([p3z]);
+    const g = () => byHandle('40')!.geom as PolylineGeometry;
+    await bus.script(['PEDIT', 'L']);
+    await bus.script(['S']);
+    expect(g().frame).toEqual(p3z.vertices.map(({ bulge: _b, ...p }) => p));
+    // A clamped spline starts and ends at its frame's ends, heights too.
+    expect(g().vertices[0]!.z).toBe(2);
+    expect(g().vertices.at(-1)!.z).toBe(-4);
+    // Edit vertex walks the frame; a frame point inserted takes its segment's height.
+    await bus.script(['E', 'I', '5,30', 'X']);
+    expect(g().frame![1]).toEqual({ x: 5, y: 30, z: 4 });
+    await bus.script(['D']);
+    expect(g().vertices.map((v) => v.z)).toEqual([2, 4, 6, undefined, -4]);
+    await bus.script(['']);
+  });
 });
 
 describe('PEDIT Multiple', () => {
@@ -355,7 +484,7 @@ describe('PEDIT edge cases', () => {
     );
     await bus.script(['E']);
     expect(bus.promptText).toBe(
-      'Enter a vertex editing option [Next/Previous/Break/Insert/Move/Regen/eXit] <N>:',
+      'Enter a vertex editing option [Next/Previous/Break/Insert/Move/Regen/Straighten/eXit] <N>:',
     );
     await bus.script(['R', 'X', 'O', '']);
     expect(byHandle('40')!.geom).toMatchObject({ closed: false, is3d: true });

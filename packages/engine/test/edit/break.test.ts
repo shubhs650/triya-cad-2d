@@ -22,6 +22,7 @@ import {
   type EntityGeometry,
   type EntityId,
   type Vec2,
+  type PolylineGeometry,
 } from '../../src/index';
 
 const tol = toleranceForSize(100);
@@ -272,6 +273,35 @@ describe('REVERSE', () => {
     ]);
     // Reversed twice it is itself again.
     expect(reverseGeometry(reverseGeometry(p)!)).toEqual(p);
+  });
+
+  // M3-16: a vertex's curve-fit tangent turns round with it; a 3D vertex keeps its height.
+  it('turns vertex tangents round and keeps 3D heights', () => {
+    const p: EntityGeometry = {
+      kind: 'POLYLINE',
+      is3d: false,
+      closed: false,
+      vertices: [
+        { x: 0, y: 0, bulge: 0, tangent: 0.25 },
+        { x: 10, y: 0, bulge: 0 },
+        { x: 20, y: 0, bulge: 0, tangent: -3 },
+      ],
+    };
+    const r = reverseGeometry(p) as PolylineGeometry;
+    expect(r.vertices.map((v) => v.tangent)).toEqual([-3 + Math.PI, undefined, 0.25 - Math.PI]);
+    const three: EntityGeometry = {
+      kind: 'POLYLINE',
+      is3d: true,
+      closed: false,
+      vertices: [
+        { x: 0, y: 0, bulge: 0, z: 1 },
+        { x: 10, y: 0, bulge: 0 },
+      ],
+    };
+    expect((reverseGeometry(three) as PolylineGeometry).vertices).toEqual([
+      { x: 10, y: 0, bulge: 0 },
+      { x: 0, y: 0, bulge: 0, z: 1 },
+    ]);
   });
 
   it('keeps the closing segment of a closed polyline with its bulge', () => {

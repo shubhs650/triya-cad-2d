@@ -28,7 +28,7 @@ import {
   XYZ,
   type Entity,
 } from '@node-projects/acad-ts';
-import type { EntityInit, Vec2 } from '@triya/engine';
+import type { EntityInit, PolylineGeometry, Vec2 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { mapEntities } from '../src/index';
 
@@ -308,6 +308,42 @@ describe('heavyweight polylines', () => {
         { x: 3, y: 4 },
       ],
     });
+  });
+
+  // M3-16 part 2 (DEC-062): a 3D vertex's height rides along in `z`, 0 left out.
+  it('keeps a 3D polyline vertex’s and frame point’s height', () => {
+    const p = new Polyline3D();
+    const frame = new Vertex3D(new XYZ(1, 2, -3));
+    frame.flags = (32 | 16) as never;
+    verticesOf(p).push(new Vertex3D(new XYZ(0, 0, 7)), new Vertex3D(new XYZ(3, 4, 0)), frame);
+    const { geom } = mapOne(p);
+    expect(geom).toMatchObject({ frame: [{ x: 1, y: 2, z: -3 }] });
+    const vs = (geom as PolylineGeometry).vertices;
+    expect(vs[0]).toEqual({ x: 0, y: 0, bulge: 0, z: 7 });
+    expect(vs[1]).toEqual({ x: 3, y: 4, bulge: 0 });
+  });
+
+  // DXF reference, VERTEX: flag 2 "Curve-fit tangent defined for this vertex", 50 its direction
+  // (radians once read). An OCS angle: under a −Z extrusion the plan's X is mirrored.
+  it('reads a 2D vertex’s curve-fit tangent only when flag 2 defines it', () => {
+    const tangents = (normal: XYZ) => {
+      const p = new Polyline2D();
+      p.normal = normal;
+      const a = new Vertex2D(new XYZ(0, 0, 0));
+      a.flags = 2 as never;
+      a.curveTangent = 0.5;
+      const b = new Vertex2D(new XYZ(5, 0, 0));
+      b.curveTangent = 1; // no flag 2: not defined
+      const c = new Vertex2D(new XYZ(9, 0, 0));
+      c.flags = 2 as never;
+      verticesOf(p).push(a, b, c);
+      return (mapOne(p).geom as PolylineGeometry).vertices.map((v) => v.tangent);
+    };
+    expect(tangents(new XYZ(0, 0, 1))).toEqual([0.5, undefined, 0]);
+    const down = tangents(new XYZ(0, 0, -1));
+    expect(down[0]).toBeCloseTo(Math.PI - 0.5, 12);
+    expect(down[1]).toBeUndefined();
+    expect(down[2]).toBeCloseTo(Math.PI, 12);
   });
 
   it('reports meshes as not mapped yet', () => {

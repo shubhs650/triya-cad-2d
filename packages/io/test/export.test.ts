@@ -36,6 +36,7 @@ import {
   DocumentModel,
   type Entity,
   type EntityGeometry,
+  type PolylineGeometry,
   type EntityInit,
 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
@@ -500,8 +501,8 @@ describe('triyaToAcad', () => {
         kind: 'POLYLINE',
         vertices: [
           { x: 1, y: 1, bulge: -0.5, startWidth: 0.25, endWidth: 0.75 },
-          { x: 5, y: 1, bulge: 0 },
-          { x: 5, y: 4, bulge: 0.2 },
+          { x: 5, y: 1, bulge: 0, tangent: 0.3 },
+          { x: 5, y: 4, bulge: 0.2, tangent: -2 },
           { x: 2, y: 6, bulge: 0 },
         ],
         closed: true,
@@ -519,8 +520,9 @@ describe('triyaToAcad', () => {
       {
         kind: 'POLYLINE',
         vertices: [
-          { x: 0, y: 1, bulge: 0 },
+          { x: 0, y: 1, bulge: 0, z: 2.5 },
           { x: 3, y: 1, bulge: 0 },
+          { x: 3, y: 4, bulge: 0, z: -1 },
         ],
         closed: true,
         is3d: true,
@@ -580,6 +582,59 @@ describe('triyaToAcad', () => {
     expectGeometry(reopened(save(model), e.handle)?.geom, next);
   });
 
+  // M3-16 part 2: a vertex keeps its VERTEX entity by index, so the tangent (flag 2, 50) and a
+  // 3D vertex's height are written from the model, not left as the index's old vertex had them.
+  it('writes vertex tangents and 3D heights from the model when vertices come and go', () => {
+    const { model } = open();
+    const two = byType(model, 'POLYLINE', false);
+    const three = byType(model, 'POLYLINE', true);
+    const tangents = {
+      kind: 'POLYLINE',
+      vertices: [
+        { x: 0, y: 0, bulge: 0, tangent: 1 },
+        { x: 4, y: 0, bulge: 0 },
+        { x: 8, y: 2, bulge: 0, tangent: 2 },
+      ],
+      closed: false,
+      is3d: false,
+    } as EntityGeometry;
+    const untangented = {
+      ...tangents,
+      vertices: [{ x: 0, y: 0, bulge: 0 }, ...(tangents as PolylineGeometry).vertices],
+    } as EntityGeometry;
+    const heights = {
+      kind: 'POLYLINE',
+      vertices: [
+        { x: 0, y: 0, bulge: 0, z: 4 },
+        { x: 1, y: 0, bulge: 0 },
+        { x: 2, y: 0, bulge: 0, z: 6 },
+        { x: 3, y: 0, bulge: 0, z: 7 },
+      ],
+      closed: false,
+      is3d: true,
+    } as EntityGeometry;
+    edit(model, (b) => {
+      b.updateEntity(two.id, { geom: tangents });
+      b.updateEntity(three.id, { geom: heights });
+    });
+    const once = save(model);
+    expectGeometry(reopened(once, two.handle)?.geom, tangents);
+    expectGeometry(reopened(once, three.handle)?.geom, heights);
+    // A vertex inserted at the start: each VERTEX keeps its index, the tangents move on.
+    const again = open(once).model;
+    const fewer = {
+      ...heights,
+      vertices: (heights as PolylineGeometry).vertices.slice(1),
+    } as EntityGeometry;
+    edit(again, (b) => {
+      b.updateEntity(again.entityByHandle(two.handle)!.id, { geom: untangented });
+      b.updateEntity(again.entityByHandle(three.handle)!.id, { geom: fewer });
+    });
+    const twice = exportDocument(readCadDocument(once), again, { format: 'dxf' });
+    expectGeometry(reopened(twice, two.handle)?.geom, untangented);
+    expectGeometry(reopened(twice, three.handle)?.geom, fewer);
+  });
+
   // POLYLINE 75 is the fit type of a spline-fit polyline (DXF reference, POLYLINE); without
   // it a quadratic or Bezier fit reads back cubic (M1-80, acad-ts patch 0127).
   it.each([
@@ -590,17 +645,19 @@ describe('triyaToAcad', () => {
   ] as const)('keeps a %s spline fit through a DXF save (3D: %s)', (fit, is3d) => {
     const { model } = open();
     const e = byType(model, 'POLYLINE', is3d);
+    // A 3D one's heights ride along (DEC-062).
+    const z = (h: number) => (is3d && h !== 0 ? { z: h } : {});
     const frame = [
-      { x: 0, y: 0 },
+      { x: 0, y: 0, ...z(1) },
       { x: 1, y: 2 },
-      { x: 2, y: 0 },
+      { x: 2, y: 0, ...z(3) },
     ];
     const edited = {
       kind: 'POLYLINE',
       vertices: [
-        { x: 0, y: 0, bulge: 0 },
-        { x: 1, y: 1, bulge: 0 },
-        { x: 2, y: 0, bulge: 0 },
+        { x: 0, y: 0, bulge: 0, ...z(1) },
+        { x: 1, y: 1, bulge: 0, ...z(2) },
+        { x: 2, y: 0, bulge: 0, ...z(3) },
       ],
       closed: false,
       is3d,

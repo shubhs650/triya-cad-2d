@@ -82,6 +82,8 @@ function vertex<V extends PolylineVertex>(t: Similarity, v: V): V {
     bulge: bulge(t, v.bulge),
     ...(v.startWidth !== undefined ? { startWidth: len(t, v.startWidth) } : {}),
     ...(v.endWidth !== undefined ? { endWidth: len(t, v.endWidth) } : {}),
+    // A curve-fit tangent (M3-16) is a direction, turned and mirrored with the polyline.
+    ...(v.tangent !== undefined ? { tangent: angle(t, v.tangent) } : {}),
   };
 }
 

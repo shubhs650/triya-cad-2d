@@ -962,7 +962,7 @@ const polylineWriter: Writer<PolylineGeometry> = {
 /**
  * Writes the drawn vertices and the spline frame (VERTEX flag 16) onto the polyline's own
  * VERTEX entities, the i-th of each kind in place, so a vertex keeps its handle and all Triya
- * does not model (its flags, tangent, id). Vertices a polyline gains are new VERTEX entities
+ * does not model (its other flags, id); its tangent and a 3D vertex's height come from the model. Vertices a polyline gains are new VERTEX entities
  * under fresh handles (`Resolver.allocate`); a polyline that loses some just drops them.
  */
 function writeVertices(
@@ -978,15 +978,10 @@ function writeVertices(
   const oldDrawn = old.filter((v) => !isFrame(v));
   const oldFrame = old.filter(isFrame);
   const base = g.is3d ? VertexFlags.PolylineVertex3D : 0;
-  const lastZ = old.length > 0 ? old[old.length - 1]!.location.z : 0;
-  // A 2D vertex's Z is the OCS elevation (AutoCAD writes it there too); a 3D one keeps its WCS
-  // Z, and one added takes the last vertex's.
-  const z = (v: Vertex | undefined): number =>
-    g.is3d
-      ? (v?.location.z ?? lastZ)
-      : elevationChanged || !v
-        ? ocsZ(g.elevation, pl)
-        : v.location.z;
+  // A 2D vertex's Z is the OCS elevation (AutoCAD writes it there too); a 3D one's is its own
+  // height, which the model carries (DEC-062).
+  const z = (v: Vertex | undefined, own: { z?: number }): number =>
+    g.is3d ? (own.z ?? 0) : elevationChanged || !v ? ocsZ(g.elevation, pl) : v.location.z;
   const vertex = (v: Vertex | undefined, flags: number): Vertex => {
     if (v) return v;
     const out = g.is3d ? new Vertex3D() : new Vertex2D();
@@ -999,15 +994,24 @@ function writeVertices(
     base | (g.fit && g.fit !== 'curve' ? VertexFlags.SplineVertexFromSplineFitting : 0);
   const drawn = g.vertices.map((src, i) => {
     const v = vertex(oldDrawn[i], drawnFlags);
-    v.location = new XYZ(g.is3d ? src.x : ocsX(src.x, pl), src.y, z(oldDrawn[i]));
+    v.location = new XYZ(g.is3d ? src.x : ocsX(src.x, pl), src.y, z(oldDrawn[i], src));
     v.bulge = g.is3d || pl !== 'down' ? src.bulge : -src.bulge + 0;
     v.startWidth = src.startWidth ?? 0;
     v.endWidth = src.endWidth ?? 0;
+    // VERTEX flag 2 and 50: the curve-fit tangent, an OCS angle (−Z mirrors the plan's X).
+    const flags = v.flags as number;
+    if (src.tangent !== undefined && !g.is3d) {
+      v.flags = (flags | VertexFlags.CurveFitTangent) as VertexFlags;
+      v.curveTangent = pl === 'down' ? Math.PI - src.tangent : src.tangent;
+    } else if ((flags & VertexFlags.CurveFitTangent) !== 0) {
+      v.flags = (flags & ~VertexFlags.CurveFitTangent) as VertexFlags;
+      v.curveTangent = 0;
+    }
     return v;
   });
   const frame = (g.frame ?? []).map((src, i) => {
     const v = vertex(oldFrame[i], base | VertexFlags.SplineFrameControlPoint);
-    v.location = new XYZ(g.is3d ? src.x : ocsX(src.x, pl), src.y, z(oldFrame[i]));
+    v.location = new XYZ(g.is3d ? src.x : ocsX(src.x, pl), src.y, z(oldFrame[i], src));
     return v;
   });
   const sameCounts = drawn.length === oldDrawn.length && frame.length === oldFrame.length;

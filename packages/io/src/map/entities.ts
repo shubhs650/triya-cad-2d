@@ -245,21 +245,34 @@ function polyline(p: Polyline): EntityGeometry | UnmappedEntity['reason'] {
         ? ('curve' as const)
         : undefined;
   const sign = pl === 'down' ? -1 : 1;
+  // A 3D vertex's height rides along when it is not 0 (DEC-062).
+  const height = (v: Vertex) => (is3d && v.location.z !== 0 ? { z: v.location.z } : {});
+  // VERTEX flag 2 defines the curve-fit tangent (50), an OCS angle: −Z mirrors the plan's X.
+  const tangent = (v: Vertex) =>
+    !is3d && (vflags(v) & 2) !== 0
+      ? { tangent: pl === 'down' ? Math.PI - v.curveTangent : v.curveTangent }
+      : {};
   return {
     kind: 'POLYLINE',
-    vertices: drawn.map((v) =>
-      vertex(
+    vertices: drawn.map((v) => ({
+      ...vertex(
         is3d ? xy(v.location) : planOf(v.location, pl),
         is3d ? 0 : sign * v.bulge,
         v.startWidth,
         v.endWidth,
       ),
-    ),
+      ...tangent(v),
+      ...height(v),
+    })),
     closed: (flags & 1) !== 0,
     is3d,
     ...(fit ? { fit } : {}),
     ...(frame.length > 0
-      ? { frame: frame.map((v) => (is3d ? xy(v.location) : planOf(v.location, pl))) }
+      ? {
+          frame: frame.map((v) =>
+            is3d ? { ...xy(v.location), ...height(v) } : planOf(v.location, pl),
+          ),
+        }
       : {}),
     ...(p.startWidth !== 0 ? { startWidth: p.startWidth } : {}),
     ...(p.endWidth !== 0 ? { endWidth: p.endWidth } : {}),

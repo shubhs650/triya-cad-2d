@@ -9,10 +9,20 @@
 // not documented and no corpus file shows it; we take its direction only and give the curve a
 // derivative of (total chord length / total parameter), one unit per unit of chord with chord
 // knots, which is also what ezdxf (MIT) found to match CAD output. A closed spline is closed
-// C2 through its first point (periodic end conditions), with its knots clamped at the seam.
-// A fit tolerance above zero makes AutoCAD approximate rather than interpolate; that
-// algorithm is not documented either, so the curve interpolates (M1-65 tracks the sample).
+// C2 through its first point (periodic end conditions), with its knots clamped at the seam; a
+// tangent given at that point (AutoCAD asks a closed spline for one) makes it C1 there along the
+// tangent instead (M3-16).
+//
+// A fit tolerance above zero makes AutoCAD approximate rather than interpolate. That algorithm
+// is not documented either (M1-65 waited on a sample; RULE 0 moved it here, M3-16), so ours is
+// the least-squares cubic of Piegl and Tiller, "The NURBS Book" §9.4.1: knots by averaging
+// (eq. 9.69), the ends kept, and the end derivatives the interpolation has when tangents are
+// given or the spline is closed (so it stays closed and smooth), with the fewest control points
+// (fewer than the points) that keep every fit point within the tolerance at its own parameter
+// and the curve within twice the tolerance of the interpolation between them. When none do, it
+// interpolates.
 
+import { basisFunctions, findSpan } from './nurbs';
 import type { Spline } from './curves';
 import type { Vec2 } from './types';
 
@@ -25,6 +35,8 @@ export interface FitData {
   readonly closed?: boolean | undefined;
   /** Default 'chord' (AutoCAD's initial SPLINE knot parameterization). */
   readonly parameterization?: KnotParameterization | undefined;
+  /** DXF 44: how far the curve may pass from the fit points; 0 (default) interpolates. */
+  readonly tolerance?: number | undefined;
 }
 
 /** The cubic through the fit points, or undefined with fewer than two distinct points. */
@@ -59,10 +71,233 @@ export function fitSpline(d: FitData): Spline | undefined {
     y: pts[k + 1]!.y - pts[k]!.y,
   });
   const scale = chord / t[S]!;
-  const D = closed
-    ? periodicDerivatives(S, h, delta)
-    : openDerivatives(S, h, delta, tangent(d.startTangent, scale), tangent(d.endTangent, scale));
-  return bspline(pts, t, D);
+  const start = tangent(d.startTangent, scale);
+  const D = !closed
+    ? openDerivatives(S, h, delta, start, tangent(d.endTangent, scale))
+    : start
+      ? // The rows between the seam's two visits are the periodic ones; the seam is given.
+        openDerivatives(S, h, delta, start, start)
+      : periodicDerivatives(S, h, delta);
+  const interpolated = bspline(pts, t, D);
+  const tol = d.tolerance ?? 0;
+  if (!(tol > 0)) return interpolated;
+  const fixStart = closed || start !== undefined;
+  const fixEnd = closed || d.endTangent !== undefined;
+  return (
+    approximate(
+      pts,
+      t,
+      fixStart ? D[0] : undefined,
+      fixEnd ? D[S] : undefined,
+      tol,
+      interpolated,
+    ) ?? interpolated
+  );
+}
+
+// ── Approximation within a fit tolerance (M3-16) ───────────────────────────────────────────
+
+/**
+ * The cubic with the fewest control points that passes within `tol` of each point at its
+ * parameter, its ends at the first and last point and, when given, its end derivatives; or
+ * undefined when only the interpolation (n + 2 control points for n + 1 points) does.
+ */
+function approximate(
+  pts: readonly Vec2[],
+  t: readonly number[],
+  d0: Vec2 | undefined,
+  d1: Vec2 | undefined,
+  tol: number,
+  interpolated: Spline,
+): Spline | undefined {
+  const m = pts.length - 1;
+  // Fewer control points than points (Piegl and Tiller's m > n), so that the averaged knots
+  // leave points in every span and the least squares cannot swing between them.
+  const most = m + 1;
+  const least = 4;
+  if (most <= least) return undefined;
+  const within = (n: number): Spline | undefined => {
+    const s = leastSquares(pts, t, n, d0, d1);
+    return s && furthest(s, pts, t) <= tol && hugs(s, interpolated, t, tol) ? s : undefined;
+  };
+  // Few points: every count in turn, as fits are not monotonic in the count. Many: doubling,
+  // then halving the gap, so a fit within the tolerance is kept (a few dense solves only).
+  if (m <= 60) {
+    for (let n = least; n < most; n++) {
+      const s = within(n);
+      if (s) return s;
+    }
+    return undefined;
+  }
+  let failed = least - 1;
+  let found: { n: number; s: Spline } | undefined;
+  for (let n = least; n < most; n = Math.min(most - 1, 2 * n - 2)) {
+    const s = within(n);
+    if (s) {
+      found = { n, s };
+      break;
+    }
+    failed = n;
+    if (n === most - 1) break;
+  }
+  if (!found) return undefined;
+  while (found.n - failed > 1) {
+    const n = Math.floor((failed + found.n) / 2);
+    const s = within(n);
+    if (s) found = { n, s };
+    else failed = n;
+  }
+  return found.s;
+}
+
+/**
+ * Whether the approximation keeps near the interpolation between the points as well: within
+ * twice the tolerance at the quarter points of each span (a guard against a fit that passes
+ * near the points but swings away between them; the factor is ours).
+ */
+function hugs(s: Spline, interpolated: Spline, t: readonly number[], tol: number): boolean {
+  for (let k = 0; k + 1 < t.length; k++) {
+    for (const f of [0.25, 0.5, 0.75]) {
+      const u = t[k]! + (t[k + 1]! - t[k]!) * f;
+      const a = point(s, u);
+      const b = point(interpolated, u);
+      if (Math.hypot(a.x - b.x, a.y - b.y) > 2 * tol) return false;
+    }
+  }
+  return true;
+}
+
+/** How far the curve passes from the points at their parameters. */
+function furthest(s: Spline, pts: readonly Vec2[], t: readonly number[]): number {
+  let out = 0;
+  pts.forEach((q, k) => {
+    const c = point(s, t[k]!);
+    out = Math.max(out, Math.hypot(c.x - q.x, c.y - q.y));
+  });
+  return out;
+}
+
+/** A point of the clamped cubic (de Boor through the basis, no weights). */
+function point(s: Spline, u: number): Vec2 {
+  const n = s.controlPoints.length - 1;
+  const span = findSpan(n, s.degree, u, s.knots);
+  const N = basisFunctions(span, u, s.degree, s.knots, 0)[0]!;
+  let x = 0;
+  let y = 0;
+  N.forEach((b, j) => {
+    const P = s.controlPoints[span - s.degree + j]!;
+    x += b * P.x;
+    y += b * P.y;
+  });
+  return { x, y };
+}
+
+/**
+ * The least-squares cubic with `count` control points through the first and last point (and
+ * with the derivatives `d0`, `d1` there when given), its knots averaged over the parameters
+ * (Piegl and Tiller eq. 9.69); undefined when the normal equations are singular.
+ */
+function leastSquares(
+  pts: readonly Vec2[],
+  t: readonly number[],
+  count: number,
+  d0: Vec2 | undefined,
+  d1: Vec2 | undefined,
+): Spline | undefined {
+  const p = 3;
+  const m = pts.length - 1;
+  const n = count - 1;
+  const a = t[0]!;
+  const b = t[m]!;
+  const knots: number[] = [a, a, a, a];
+  const d = (m + 1) / (n - p + 1);
+  for (let j = 1; j <= n - p; j++) {
+    const i = Math.floor(j * d);
+    const alpha = j * d - i;
+    knots.push((1 - alpha) * t[i - 1]! + alpha * t[i]!);
+  }
+  knots.push(b, b, b, b);
+  const P: (Vec2 | undefined)[] = new Array(count).fill(undefined);
+  P[0] = pts[0]!;
+  P[n] = pts[m]!;
+  // C'(a) = p / (U[p+1] − U[1]) · (P1 − P0), and at the end likewise.
+  if (d0) {
+    const k = (knots[p + 1]! - knots[1]!) / p;
+    P[1] = { x: P[0].x + d0.x * k, y: P[0].y + d0.y * k };
+  }
+  if (d1) {
+    const k = (knots[n + p]! - knots[n]!) / p;
+    P[n - 1] = { x: P[n].x - d1.x * k, y: P[n].y - d1.y * k };
+  }
+  const unknown: number[] = [];
+  for (let j = 0; j <= n; j++) if (!P[j]) unknown.push(j);
+  const column = new Map(unknown.map((j, c) => [j, c]));
+  const u = unknown.length;
+  if (u > 0) {
+    // Normal equations NᵀN x = NᵀR over the inner points, the fixed points moved right.
+    const A = Array.from({ length: u }, () => new Float64Array(u));
+    const rx = new Float64Array(u);
+    const ry = new Float64Array(u);
+    for (let k = 1; k < m; k++) {
+      const span = findSpan(n, p, t[k]!, knots);
+      const N = basisFunctions(span, t[k]!, p, knots, 0)[0]!;
+      let qx = pts[k]!.x;
+      let qy = pts[k]!.y;
+      const row: [number, number][] = [];
+      N.forEach((v, jj) => {
+        const j = span - p + jj;
+        const c = column.get(j);
+        if (c === undefined) {
+          qx -= v * P[j]!.x;
+          qy -= v * P[j]!.y;
+        } else row.push([c, v]);
+      });
+      for (const [c1, v1] of row) {
+        rx[c1] = rx[c1]! + v1 * qx;
+        ry[c1] = ry[c1]! + v1 * qy;
+        for (const [c2, v2] of row) A[c1]![c2] = A[c1]![c2]! + v1 * v2;
+      }
+    }
+    const x = solveDense(A, rx, ry);
+    if (!x) return undefined;
+    unknown.forEach((j, c) => (P[j] = x[c]!));
+  }
+  return { kind: 'SPLINE', degree: p, knots, controlPoints: P as Vec2[] };
+}
+
+/** Gaussian elimination with partial pivoting for two right-hand sides; undefined if singular. */
+function solveDense(A: Float64Array[], bx: Float64Array, by: Float64Array): Vec2[] | undefined {
+  const n = A.length;
+  const M = A.map((r) => Float64Array.from(r));
+  const x = Float64Array.from(bx);
+  const y = Float64Array.from(by);
+  const size = Math.max(...M.map((r) => Math.max(...r.map(Math.abs))));
+  for (let c = 0; c < n; c++) {
+    let pivot = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r]![c]!) > Math.abs(M[pivot]![c]!)) pivot = r;
+    if (!(Math.abs(M[pivot]![c]!) > 1e-14 * size)) return undefined;
+    [M[c], M[pivot]] = [M[pivot]!, M[c]!];
+    [x[c], x[pivot]] = [x[pivot]!, x[c]!];
+    [y[c], y[pivot]] = [y[pivot]!, y[c]!];
+    for (let r = c + 1; r < n; r++) {
+      const f = M[r]![c]! / M[c]![c]!;
+      if (f === 0) continue;
+      for (let k = c; k < n; k++) M[r]![k] = M[r]![k]! - f * M[c]![k]!;
+      x[r] = x[r]! - f * x[c]!;
+      y[r] = y[r]! - f * y[c]!;
+    }
+  }
+  const out: Vec2[] = new Array(n);
+  for (let r = n - 1; r >= 0; r--) {
+    let sx = x[r]!;
+    let sy = y[r]!;
+    for (let k = r + 1; k < n; k++) {
+      sx -= M[r]![k]! * out[k]!.x;
+      sy -= M[r]![k]! * out[k]!.y;
+    }
+    out[r] = { x: sx / M[r]![r]!, y: sy / M[r]![r]! };
+  }
+  return out;
 }
 
 function stepOf(p: KnotParameterization): (chord: number) => number {
