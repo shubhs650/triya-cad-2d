@@ -1,0 +1,1 @@
+- M4-04 part 3 (#446): MLEADERALIGN (MLA) lines multileaders up from one of them in a direction you pick, keeping their spacing, at a set spacing, with parallel leaders or spread evenly between two points; MLEADERCOLLECT (MLC) gathers block multileaders such as tag balloons into a row, a column or wrapped rows under a single leader. Both save to DXF and read back unchanged.
