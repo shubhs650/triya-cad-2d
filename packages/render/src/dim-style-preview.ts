@@ -1,4 +1,5 @@
-// The Dimension Style Manager's preview image (M4-03 part 3). The engine makes the preview
+// The Dimension Style Manager's preview image (M4-03 part 3), and the Text Style and Multileader
+// Style dialogs' (M4-14), drawn the same way from the engine's sample drawings. The engine makes the preview
 // drawing (`dimStylePreviewModel`: a plate dimensioned in the style); it is drawn here as any
 // drawing is, by a Canvas2DRenderer of its own on a layer the size of the dialog's picture, in
 // the fonts and display style of the drawing's canvas, fitted to what it draws with a margin, on
@@ -7,7 +8,9 @@
 import {
   SpatialIndex,
   dimStylePreviewModel,
+  stylePreviewModel,
   type DimStylePreview,
+  type StylePreview,
   type DocumentModel,
   type Tolerance,
 } from '@triya/engine';
@@ -60,7 +63,41 @@ export function drawDimStylePreview(
 ): Surface | undefined {
   if (!(size.width > 0 && size.height > 0 && size.dpr > 0)) return undefined;
   const model = dimStylePreviewModel(c.model, preview);
-  if (!model) return undefined;
+  return model && drawPreviewDrawing(c, model, size);
+}
+
+/**
+ * The Text Style and Multileader Style dialogs' preview (M4-14): the engine's sample drawing for
+ * `preview` (`stylePreviewModel`) as a bitmap of `size`, as the Dimension Style Manager's is.
+ */
+export function stylePreviewImage(
+  c: PreviewContext,
+  preview: StylePreview,
+  size: PreviewSize,
+  createBitmap: BitmapFactory | undefined = globalThis.createImageBitmap?.bind(globalThis),
+): Promise<ImageBitmap | undefined> {
+  const drawn = drawStylePreview(c, preview, size);
+  if (!drawn || !createBitmap) return Promise.resolve(undefined);
+  return createBitmap(drawn.image, {});
+}
+
+/** The style preview drawn on a new layer of `size` (device pixels), or undefined. */
+export function drawStylePreview(
+  c: PreviewContext,
+  preview: StylePreview,
+  size: PreviewSize,
+): Surface | undefined {
+  if (!(size.width > 0 && size.height > 0 && size.dpr > 0)) return undefined;
+  const model = stylePreviewModel(c.model, preview);
+  return model && drawPreviewDrawing(c, model, size);
+}
+
+/** A preview drawing's model space fitted to `size` with a margin, on the canvas background. */
+function drawPreviewDrawing(
+  c: PreviewContext,
+  model: DocumentModel,
+  size: PreviewSize,
+): Surface | undefined {
   const space = [...model.tables.blockRecords.values()].find(
     (r) => r.name.toUpperCase() === '*MODEL_SPACE',
   )!.handle;

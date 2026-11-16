@@ -93,26 +93,7 @@ export function dimStylePreviewModel(
   };
   for (const s of model.tables.dimStyles.values()) arrowsOf(s.vars);
   arrowsOf(preview.vars);
-  const blocks: BlockDefinition[] = [{ ...spaceDef }];
-  const entities: EntityInit[] = [];
-  for (const h of arrows) {
-    if (h === modelSpace.handle) continue;
-    blocks.push(model.blocks.get(h)!);
-    for (const id of model.blockEntities(h)) {
-      const { id: _id, ...e } = model.entity(id)!;
-      entities.push(e);
-    }
-  }
-  const tables: Record<string, unknown[]> = {};
-  for (const [name, table] of Object.entries(model.tables)) tables[name] = [...table.values()];
-  const pm = DocumentModel.create({
-    meta: model.meta,
-    handSeed: model.handSeed,
-    header: model.header,
-    tables: tables as NonNullable<DocumentInit['tables']>,
-    blocks,
-    entities,
-  });
+  const pm = previewDrawing(model, arrows)!;
 
   const b = new ChangeSetBuilder(pm);
   const zero = plainLayerZero(b, pm);
@@ -126,8 +107,45 @@ export function dimStylePreviewModel(
   return pm;
 }
 
+/**
+ * A drawing of its own for a style dialog's preview: `model`'s tables and header, an empty model
+ * space, and the blocks `keep` names with what they hold (a style's arrowheads and content
+ * blocks). Undefined when `model` has no model space.
+ */
+export function previewDrawing(
+  model: DocumentModel,
+  keep: ReadonlySet<Handle>,
+): DocumentModel | undefined {
+  const modelSpace = [...model.tables.blockRecords.values()].find(
+    (r) => upper(r.name) === '*MODEL_SPACE',
+  );
+  const spaceDef = modelSpace && model.blocks.get(modelSpace.handle);
+  if (!modelSpace || !spaceDef) return undefined;
+  const blocks: BlockDefinition[] = [{ ...spaceDef }];
+  const entities: EntityInit[] = [];
+  for (const h of keep) {
+    const def = model.blocks.get(h);
+    if (h === modelSpace.handle || !def) continue;
+    blocks.push(def);
+    for (const id of model.blockEntities(h)) {
+      const { id: _id, ...e } = model.entity(id)!;
+      entities.push(e);
+    }
+  }
+  const tables: Record<string, unknown[]> = {};
+  for (const [name, table] of Object.entries(model.tables)) tables[name] = [...table.values()];
+  return DocumentModel.create({
+    meta: model.meta,
+    handSeed: model.handSeed,
+    header: model.header,
+    tables: tables as NonNullable<DocumentInit['tables']>,
+    blocks,
+    entities,
+  });
+}
+
 /** Layer 0 as the preview draws on it: shown, continuous, in the foreground colour. */
-function plainLayerZero(b: ChangeSetBuilder, pm: DocumentModel): Handle | undefined {
+export function plainLayerZero(b: ChangeSetBuilder, pm: DocumentModel): Handle | undefined {
   const zero = [...pm.tables.layers.values()].find((l) => l.name === '0');
   if (!zero) return undefined;
   const continuous = [...pm.tables.linetypes.values()].find((l) => upper(l.name) === 'CONTINUOUS');

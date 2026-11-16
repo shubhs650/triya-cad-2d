@@ -5,11 +5,14 @@
 // Format) and 7 high framed text (Content), which the multileader takes at once. New... makes
 // Tags from ML_5 with AutoCAD's built-in Circle block (Content, Block options), Set Current
 // makes it current, and the next MLEADER draws a _TagCircle. Delete refuses Standard.
+// M4-14: the manager's Preview of and the Modify dialog's sample image are drawn by the canvas's
+// renderer and follow the settings (a red leader); Maximum leader points unchecked and Extend
+// leader to text save with the style.
 // What each action writes is unit-tested in packages/engine/test/commands/mleaderstyle.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, MultiLeaderGeometry } from '@triya/engine';
 import path from 'node:path';
-import { enterCommand, expectShown, openWithPicker } from '../app/page';
+import { enterCommand, expectShown, inkOf, openWithPicker } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -86,6 +89,13 @@ test('the Multileader Style Manager modifies, makes and sets multileader styles'
   await manager.getByLabel('List:').selectOption('Styles in use');
   await expect(list.getByRole('option')).toHaveText([/ML_5/]);
   await manager.getByLabel('List:').selectOption('All styles');
+  // M4-14: Preview of the selected style, drawn by the renderer.
+  await expect(manager.getByText('Preview of: ML_5')).toBeVisible();
+  const managerPreview = manager.getByTestId('mleaderstyle-preview');
+  await expect(managerPreview).toHaveAttribute('data-drawn', /"from":"ML_5"/, {
+    timeout: 15_000,
+  });
+  expect(await inkOf(page, managerPreview)).toBeGreaterThan(100);
   await shot(page, '2-manager');
 
   // Modify...: a red leader with the Dot arrowhead, 7 high framed text.
@@ -100,17 +110,30 @@ test('the Multileader Style Manager modifies, makes and sets multileader styles'
     'Leader Structure',
     'Content',
   ]);
+  const sample = modify.getByTestId('mleaderstyle-editor-preview');
+  await expect(sample).toHaveAttribute('data-drawn', /"from":"ML_5"/, {
+    timeout: 15_000,
+  });
   await modify.getByLabel('Color:').selectOption({ label: 'Red' });
   await modify.getByLabel('Symbol:').selectOption({ label: 'Dot' });
+  // The sample follows the leader's colour.
+  await expect(sample).toHaveAttribute('data-drawn', /"lineColor":"aci:1"/);
+  expect(await inkOf(page, sample)).toBeGreaterThan(100);
   await shot(page, '3-leader-format');
   await modify.getByRole('tab', { name: 'Leader Structure' }).click();
-  await expect(modify.getByLabel('Maximum leader points:')).toHaveValue('2');
+  const points = modify.getByRole('textbox', { name: 'Maximum leader points' });
+  await expect(points).toHaveValue('2');
+  // M4-14: unchecked, no limit; the number greys out.
+  await modify.getByRole('checkbox', { name: 'Maximum leader points' }).uncheck();
+  await expect(points).toBeDisabled();
+  await expect(sample).toHaveAttribute('data-drawn', /"maxPointsOn":false/);
   await expect(modify.getByRole('checkbox', { name: 'Annotative' })).toBeDisabled();
   await modify.getByRole('tab', { name: 'Content' }).click();
   await expect(modify.getByLabel('Multileader type:')).toHaveValue('2');
   await modify.getByLabel('Text height:').fill('7');
   await modify.getByRole('checkbox', { name: 'Frame text' }).check();
   await expect(modify.getByLabel('Left attachment:')).toBeVisible();
+  await modify.getByRole('checkbox', { name: 'Extend leader to text' }).check();
   await shot(page, '4-content');
   await modify.getByRole('button', { name: 'OK' }).click();
   await expect(modify).toBeHidden();
@@ -119,6 +142,7 @@ test('the Multileader Style Manager modifies, makes and sets multileader styles'
   expect(restyled.lineColor).toEqual({ kind: 'aci', index: 1 });
   expect(restyled.textFrame).toBe(true);
   expect(restyled.arrowhead).toBeDefined();
+  expect(restyled.extendLeaderToText).toBe(true);
 
   // New...: Tags from ML_5, content AutoCAD's built-in Circle block.
   await manager.getByRole('button', { name: 'New...' }).click();
@@ -151,9 +175,11 @@ test('the Multileader Style Manager modifies, makes and sets multileader styles'
   await expect(prompt(page)).toHaveText('Command:');
 
   // The next multileader takes Tags: a _TagCircle with its number.
+  // Tags came from ML_5 without a point limit (M4-14): points until Enter, the last the landing.
   await type(page, 'MLD', /^Specify leader arrowhead location/);
-  await type(page, '80,-10', 'Specify leader landing location:');
-  await type(page, '110,20', /tag number/i);
+  await type(page, '80,-10', 'Specify next point:');
+  await type(page, '110,20', 'Specify next point:');
+  await type(page, '', /tag number/i);
   await type(page, '12', 'Command:');
   await expect.poll(async () => (await leaders(page)).length).toBe(2);
   const tag = (await leaders(page))[1]!;
