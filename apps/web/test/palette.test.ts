@@ -66,13 +66,18 @@ describe('palette search', () => {
       'DIMBASELINE',
       'DIMCONTINUE',
       'DIMDIAMETER',
+      // M4-02 part 2: DIMEDIT, DIMOVERRIDE, DIMSPACE, DIMTEDIT and QDIM.
+      'DIMEDIT',
       'DIMJOGGED',
       'DIMJOGLINE',
       'DIMLINEAR',
       'DIMORDINATE',
+      'DIMOVERRIDE',
       'DIMRADIUS',
+      'DIMSPACE',
       // M4-03: the Dimension Style Manager.
       'DIMSTYLE',
+      'DIMTEDIT',
       'DIST',
       // M3-01 part 5: DIVIDE, MEASURE and SPLINE.
       'DIVIDE',
@@ -132,6 +137,7 @@ describe('palette search', () => {
       'PROPERTIES',
       'PROPERTIESCLOSE',
       'PUBLISH',
+      'QDIM',
       'QSAVE',
       'QSELECT',
       'QUICKPROPERTIES',
