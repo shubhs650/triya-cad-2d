@@ -844,6 +844,16 @@ export interface ViewportGeometry {
   readonly renderMode: number;
   /** DXF 348. */
   readonly visualStyle?: Handle;
+  /**
+   * DXF 71 (UCSVP, M3-15): the viewport keeps its own UCS, `ucs`, rather than showing model
+   * space's current one. Absent is 0.
+   */
+  readonly ucsPerViewport?: boolean;
+  /**
+   * DXF 110/111/112, 146 and 79: the UCS the viewport keeps, in WCS. Absent is the WCS. Triya
+   * draws in plan, so one whose XY plane is not the world's reads as the WCS (`viewportUcs`).
+   */
+  readonly ucs?: UcsFrame;
 }
 
 /** One cell of an ACAD_TABLE, in row-major order. */

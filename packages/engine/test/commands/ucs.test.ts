@@ -17,7 +17,10 @@ import {
   type HeaderValue,
   type ViewHost,
   type ViewReply,
+  type ViewportGeometry,
   type VportRecord,
+  WORLD_UCS,
+  viewportUcs,
 } from '../../src/index';
 import { MODEL_SPACE, PAPER_SPACE, entityInit, sampleInit } from '../model/fixtures';
 
@@ -532,5 +535,140 @@ describe('the UCS, part 8', () => {
     } as unknown as EntityGeometry;
     expect(objectUcs(edges, { x: 1, y: 7 })).toEqual({ origin: { x: 0, y: 8 }, angle: deg(270) });
     expect(objectUcs({ ...hatch, loops: [] } as EntityGeometry, pick)).toBeUndefined();
+  });
+});
+
+describe('a layout viewport’s own UCS (M3-15, UCSVP)', () => {
+  const frame = (handle: string, x: number, extra: Partial<ViewportGeometry> = {}) =>
+    entityInit(
+      handle,
+      {
+        kind: 'VIEWPORT',
+        center: { x, y: 50 },
+        width: 40,
+        height: 20,
+        id: 2,
+        status: 1,
+        flags: 32,
+        viewCenter: { x: 10, y: 10 },
+        viewHeight: 10,
+        viewDirection: { x: 0, y: 0, z: 1 },
+        viewTarget: { x: 0, y: 0, z: 0 },
+        twist: 0,
+        lensLength: 50,
+        frontClip: 0,
+        backClip: 0,
+        frozenLayers: [],
+        plotStyleSheet: '',
+        renderMode: 0,
+        ...extra,
+      },
+      { owner: PAPER_SPACE },
+    );
+
+  function layout(header: [string, HeaderValue][] = []) {
+    const init = drawing(header);
+    const model = DocumentModel.create({
+      ...init,
+      entities: [
+        ...(init.entities ?? []),
+        // Paper space's own viewport covers the sheet; two floating ones side by side.
+        frame('50', 100, { id: 1, width: 400, height: 300, flags: 0 }),
+        frame('51', 100),
+        frame('52', 200, { ucsPerViewport: true }),
+      ],
+    });
+    const view: ViewHost = { request: () => Promise.resolve({ ok: false, message: 'no' }) };
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view,
+      space: () => PAPER_SPACE,
+    });
+    const geom = (h: string) => model.entityByHandle(h)!.geom as ViewportGeometry;
+    return { model, bus, geom };
+  }
+
+  const turned30: [string, HeaderValue][] = [
+    ['$UCSORG', { x: 5, y: 6, z: 0 }],
+    ['$UCSXDIR', { x: Math.cos(deg(30)), y: Math.sin(deg(30)), z: 0 }],
+    ['$UCSYDIR', { x: -Math.sin(deg(30)), y: Math.cos(deg(30)), z: 0 }],
+  ];
+
+  it('shows the viewport’s own UCS with UCSVP 1, model space’s current one with 0', () => {
+    const current = { origin: { x: 5, y: 6 }, angle: deg(30) };
+    const vp = (extra: Partial<ViewportGeometry>) =>
+      ({ ...frame('60', 0).geom, ...extra }) as ViewportGeometry;
+    expect(viewportUcs(vp({}), current)).toBe(current);
+    expect(viewportUcs(vp({ ucsPerViewport: false }), current)).toBe(current);
+    // UCSVP 1 without a stated UCS: the WCS.
+    expect(viewportUcs(vp({ ucsPerViewport: true }), current)).toEqual(WORLD_UCS);
+    const own = {
+      origin: { x: 1, y: 2, z: 0 },
+      xAxis: { x: 0, y: 1, z: 0 },
+      yAxis: { x: -1, y: 0, z: 0 },
+      elevation: 0,
+      orthographic: 0,
+    };
+    expect(viewportUcs(vp({ ucsPerViewport: true, ucs: own }), current)).toEqual({
+      origin: { x: 1, y: 2 },
+      angle: Math.PI / 2,
+    });
+    // Kept but not followed while UCSVP is 0.
+    expect(viewportUcs(vp({ ucs: own }), current)).toBe(current);
+    // A UCS out of plan reads as the WCS.
+    const tilted = { ...own, yAxis: { x: 0, y: 0, z: 1 } };
+    expect(viewportUcs(vp({ ucsPerViewport: true, ucs: tilted }), current)).toEqual(WORLD_UCS);
+  });
+
+  it('offers Apply in a layout, which keeps model space’s current UCS in the viewport picked', async () => {
+    const s = layout(turned30);
+    await s.bus.submit('UCS');
+    expect(s.bus.promptText).toBe(
+      'Specify origin of UCS or [NAmed/OBject/Previous/View/World/Z/Apply] <World>:',
+    );
+    await s.bus.submit('A');
+    expect(s.bus.promptText).toBe('Pick viewport to apply current UCS or [All] <current>:');
+    // Outside every floating viewport: asked again.
+    await s.bus.submit('300,250');
+    expect(s.bus.history.at(-1)).toBe('No viewport found at that point.');
+    expect(s.bus.promptText).toBe('Pick viewport to apply current UCS or [All] <current>:');
+    await s.bus.submit('#105,52');
+    expect(s.bus.command).toBeUndefined();
+    const g = s.geom('51');
+    expect(g.ucsPerViewport).toBe(true);
+    expect(g.ucs?.origin).toEqual({ x: 5, y: 6, z: 0 });
+    expect(g.ucs?.xAxis.x).toBeCloseTo(Math.cos(deg(30)), 12);
+    expect(g.ucs?.xAxis.y).toBeCloseTo(Math.sin(deg(30)), 12);
+    expect(viewportUcs(g, WORLD_UCS).angle).toBeCloseTo(deg(30), 12);
+    // The other viewport and paper space's own UCS are as they were.
+    expect(s.geom('52').ucs).toBeUndefined();
+    expect(ucsOf(s.model.header, true)).toEqual(WORLD_UCS);
+    // One undo step.
+    await s.bus.submit('U');
+    expect(s.geom('51').ucsPerViewport).toBeUndefined();
+    expect(s.geom('51').ucs).toBeUndefined();
+  });
+
+  it('applies to every floating viewport with All, and Enter leaves them', async () => {
+    const s = layout(turned30);
+    await s.bus.script(['UCS', 'A', '']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.geom('51').ucs).toBeUndefined();
+    await s.bus.script(['UCS', 'A', 'A']);
+    for (const h of ['51', '52']) {
+      expect(s.geom(h).ucsPerViewport).toBe(true);
+      expect(viewportUcs(s.geom(h), WORLD_UCS).angle).toBeCloseTo(deg(30), 12);
+    }
+    // Paper space's own viewport keeps no model space UCS.
+    expect(s.geom('50').ucs).toBeUndefined();
+  });
+
+  it('does not offer Apply on the Model tab', async () => {
+    const s = setup();
+    await s.bus.submit('UCS');
+    expect(s.bus.promptText).toBe(
+      'Specify origin of UCS or [NAmed/OBject/Previous/View/World/Z] <World>:',
+    );
   });
 });

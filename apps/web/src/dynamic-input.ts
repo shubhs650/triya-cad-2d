@@ -155,7 +155,7 @@ function gripFields(d: GripDimensions, o: DynSettings): { fields: DynField[]; wi
   const all = o.dimensionVisibility === 2;
   const fields = GRIP_MEASURES.filter(
     (m) =>
-      (m.measure === 'radius' ? d.center !== undefined : d.anchor !== undefined) &&
+      (m.measure === 'radius' ? radiusFrom(d) !== undefined : d.anchor !== undefined) &&
       (!all || ((o.gripFields ?? 31) & m.bit) !== 0),
   ).map((m) => ({ ...field(m.label), measure: m.measure }));
   return all || fields.length <= 1 ? { fields } : { fields, window: o.dimensionVisibility! + 1 };
@@ -393,6 +393,56 @@ function typedAngle(from: Vec2, to: Vec2, u: DynUnits, turn = false): string {
   return formatAngle(typed, u.units);
 }
 
+/**
+ * What a grip's Arc Radius measures (M3-15): a circle's quadrant from its centre, an arc's end by
+ * the chord from its other end with the chord height kept, an arc's middle by the arc through
+ * its ends; undefined where the grip measures no radius.
+ */
+function radiusFrom(d: GripDimensions): ((p: Vec2) => number) | undefined {
+  const { center, anchor, height, ends } = d;
+  if (center) return (p) => Math.hypot(p.x - center.x, p.y - center.y);
+  if (anchor && height !== undefined && height > 0) {
+    return (p) => {
+      const half = Math.hypot(p.x - anchor.x, p.y - anchor.y) / 2;
+      return (half * half + height * height) / (2 * height);
+    };
+  }
+  if (ends) {
+    // The circumradius: the sides' product over four times the area.
+    const [a, c] = ends;
+    return (p) => {
+      const area2 = Math.abs((p.x - a.x) * (c.y - a.y) - (p.y - a.y) * (c.x - a.x));
+      const sides =
+        Math.hypot(p.x - a.x, p.y - a.y) *
+        Math.hypot(c.x - p.x, c.y - p.y) *
+        Math.hypot(c.x - a.x, c.y - a.y);
+      return area2 > 0 ? sides / (2 * area2) : Number.POSITIVE_INFINITY;
+    };
+  }
+  return undefined;
+}
+
+/**
+ * The middle of the arc of radius `r` through `ends` on the cursor's side of their chord, the
+ * short or the long way round, whichever middle is nearer the cursor (M3-15); undefined when `r`
+ * is under half the chord.
+ */
+function arcMiddle(ends: readonly [Vec2, Vec2], r: number, cursor: Vec2, was: Vec2) {
+  const [a, c] = ends;
+  const chord = Math.hypot(c.x - a.x, c.y - a.y);
+  const half = chord / 2;
+  if (!(chord > 0) || !(r >= half)) return undefined;
+  // The chord's left normal, and how far along it the cursor (else the grip) is.
+  const n = { x: -(c.y - a.y) / chord, y: (c.x - a.x) / chord };
+  const m = { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 };
+  const off = (p: Vec2) => (p.x - m.x) * n.x + (p.y - m.y) * n.y;
+  const side = Math.sign(off(cursor)) || Math.sign(off(was)) || 1;
+  const reach = Math.abs(off(cursor));
+  const root = Math.sqrt(r * r - half * half);
+  const h = Math.abs(r - root - reach) <= Math.abs(r + root - reach) ? r - root : r + root;
+  return { x: m.x + n.x * side * h, y: m.y + n.y * side * h };
+}
+
 /** A grip field's value with the cursor at `cursor` (M3-06 part 8). */
 function gripValue(m: GripMeasure, d: GripDimensions, cursor: Vec2, u: DynUnits): string {
   const length = (v: number) => formatDistance(v, u.units);
@@ -415,8 +465,8 @@ function gripValue(m: GripMeasure, d: GripDimensions, cursor: Vec2, u: DynUnits)
       });
     }
     case 'radius': {
-      const c = d.center ?? d.grip;
-      return length(Math.hypot(cursor.x - c.x, cursor.y - c.y));
+      const r = radiusFrom(d)?.(cursor);
+      return r === undefined || !Number.isFinite(r) ? '' : length(r);
     }
   }
 }
@@ -430,7 +480,20 @@ function gripPoint(s: DynState, d: GripDimensions, cursor: Vec2, u: DynUnits): V
   const typed = new Map(s.fields.filter((f) => f.text !== '').map((f) => [f.measure!, f.text]));
   const distanceOf = (t: string) => parseDistance(t, u.units.lunits);
   const radius = typed.get('radius');
-  if (radius !== undefined) {
+  if (radius !== undefined && d.ends) {
+    const r = distanceOf(radius);
+    return r === undefined ? undefined : arcMiddle(d.ends, r, cursor, d.grip);
+  }
+  // An arc's end: the radius gives the chord its kept height makes, the angle as typed or the
+  // cursor's (M3-15).
+  let chord: number | undefined;
+  if (radius !== undefined && d.height !== undefined && !d.center) {
+    const r = distanceOf(radius);
+    const h = d.height;
+    if (r === undefined || !(h > 0) || !(2 * r > h)) return undefined;
+    chord = 2 * Math.sqrt(h * (2 * r - h));
+  }
+  if (radius !== undefined && chord === undefined) {
     const c = d.center ?? d.grip;
     const r = distanceOf(radius);
     if (r === undefined) return undefined;
@@ -441,10 +504,10 @@ function gripPoint(s: DynState, d: GripDimensions, cursor: Vec2, u: DynUnits): V
   const a = d.anchor ?? d.grip;
   const was = Math.hypot(d.grip.x - a.x, d.grip.y - a.y);
   const wasAngle = Math.atan2(d.grip.y - a.y, d.grip.x - a.x);
-  let length = Math.hypot(cursor.x - a.x, cursor.y - a.y);
+  let length = chord ?? Math.hypot(cursor.x - a.x, cursor.y - a.y);
   let angle = Math.atan2(cursor.y - a.y, cursor.x - a.x);
   const l = typed.get('length') ?? typed.get('lengthChange');
-  if (l !== undefined) {
+  if (l !== undefined && chord === undefined) {
     const v = distanceOf(l);
     if (v === undefined) return undefined;
     length = typed.has('length') ? v : was + v;

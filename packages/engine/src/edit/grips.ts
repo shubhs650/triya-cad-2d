@@ -262,13 +262,21 @@ export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
 /**
  * What Dynamic Input's dimension fields measure while a grip is stretched (M3-06 part 8; AutoCAD
  * 2024 Help, "DYNDIGRIP"): `grip` where the grip was; `anchor` the point a resulting length and
- * angle count from (a line's other end, a polyline's vertex before the grip, else after it);
- * `center` the centre an arc radius counts from (a circle's quadrant grips).
+ * angle count from (a line's or an arc's other end, a polyline's vertex before the grip, else
+ * after it); `center` the centre an arc radius counts from (a circle's quadrant grips).
+ *
+ * An arc's (M3-15): its end grip stretches its chord from `anchor` keeping its chord height
+ * `height` (the sagitta, as STRETCH keeps it), so its Arc Radius is the radius that chord and
+ * height make; its middle grip draws it through its two `ends` and the stretch point, whose
+ * radius the field shows. AutoCAD's help names the fields without saying what an arc's grips
+ * show in them: these are the common drafter expectation, the chord measured as a line's is.
  */
 export interface GripDimensions {
   readonly grip: Vec2;
   readonly anchor?: Vec2;
   readonly center?: Vec2;
+  readonly height?: number;
+  readonly ends?: readonly [Vec2, Vec2];
 }
 
 /** What stretching the grip at `grip` of `geom` measures; undefined where nothing is (a move grip). */
@@ -291,6 +299,17 @@ export function gripDimensionsOf(geom: EntityGeometry, grip: Vec2): GripDimensio
     }
     case 'CIRCLE':
       return sameGrip(geom.center, grip) ? undefined : { grip: at, center: geom.center };
+    case 'ARC': {
+      const sweep = ccwSweep(geom.startAngle, geom.endAngle);
+      const s = add(geom.center, fromAngle(geom.startAngle, geom.radius));
+      const e = add(geom.center, fromAngle(geom.endAngle, geom.radius));
+      const m = add(geom.center, fromAngle(geom.startAngle + sweep / 2, geom.radius));
+      // The sagitta: the bulge (tan of a quarter of the sweep) times half the chord.
+      const height = (Math.tan(sweep / 4) * distance(s, e)) / 2;
+      if (sameGrip(s, grip)) return { grip: at, anchor: e, height };
+      if (sameGrip(e, grip)) return { grip: at, anchor: s, height };
+      return sameGrip(m, grip) ? { grip: at, ends: [s, e] } : undefined;
+    }
     default:
       return undefined;
   }

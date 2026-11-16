@@ -652,4 +652,37 @@ describe('viewport UCS icons (M3-06 part 8)', () => {
       expect(s.ctx.calls.filter((c) => c[0] === 'clip')).toHaveLength(0);
     }
   });
+
+  it('shows a viewport’s own UCS while its UCSVP is on, model space’s with it off (M3-15)', () => {
+    // Model space's current UCS is turned 90°; viewport 31 keeps the WCS, 32 a UCS turned 180°.
+    const header: [string, HeaderValue][] = [
+      ['$UCSORG', { x: 0, y: 0, z: 0 }],
+      ['$UCSXDIR', { x: 0, y: 1, z: 0 }],
+      ['$UCSYDIR', { x: -1, y: 0, z: 0 }],
+    ];
+    const ucs = (x: number, y: number) => ({
+      origin: { x: 0, y: 0, z: 0 },
+      xAxis: { x, y, z: 0 },
+      yAxis: { x: -y, y: x, z: 0 },
+      elevation: 0,
+      orthographic: 0,
+    });
+    const tips = (extra: Partial<ViewportGeometry>) => {
+      const { r, scene } = setup([onPaper('30', viewport({ flags: 32, ...extra }))], {
+        style: ICONS,
+        extra: { header },
+      });
+      r.frame();
+      const path = iconPath(scene.ctx.calls);
+      // The X arm's tip from the corner, on the device.
+      const n = (i: number, j: number) => path[i]![j] as number;
+      return [n(1, 1) - n(0, 1), n(1, 2) - n(0, 2)].map((v) => Math.round(v) + 0);
+    };
+    // UCSVP off: model space's UCS, X up the device.
+    expect(tips({})).toEqual([0, -24]);
+    expect(tips({ ucs: ucs(-1, 0) })).toEqual([0, -24]);
+    // UCSVP on: the viewport's own, the WCS (X along +x) or turned 180° (X along −x).
+    expect(tips({ ucsPerViewport: true })).toEqual([24, 0]);
+    expect(tips({ ucsPerViewport: true, ucs: ucs(-1, 0) })).toEqual([-24, 0]);
+  });
 });

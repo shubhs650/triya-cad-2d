@@ -269,6 +269,13 @@ function formatProblems(
     if (style && version !== undefined && version < ACadVersion.AC1021) {
       out.push(`${e.type} ${e.handle}: ${name} cannot store a viewport's visual style`);
     }
+    // A viewport's own UCS (DXF 71, 110–112) came with R2000 (M3-15).
+    const ucs = b
+      ? !same(b.ucsPerViewport, g.ucsPerViewport) || !same(b.ucs, g.ucs)
+      : g.ucsPerViewport === true || g.ucs !== undefined;
+    if (ucs && version !== undefined && version < ACadVersion.AC1015) {
+      out.push(`${e.type} ${e.handle}: ${name} cannot store a viewport's UCS`);
+    }
     return out;
   }
   return [];
