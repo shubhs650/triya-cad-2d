@@ -17,9 +17,15 @@
 // A new hatch goes behind its boundary unless DRaw order (HPDRAWORDER) says otherwise; its
 // boundary is the objects its loops lie along (and the ones it keeps). Retain boundary keeps
 // what pick points found as polylines (edit/hatch-retain.ts) on the current layer, as BOUNDARY
-// makes them; draW boundary keeps its polylines when asked. Not here yet (later parts of
-// M4-07): the Hatch Creation tab and the Hatch and Gradient dialog (seTtings), gradients,
-// HATCHEDIT, and a hatch's background colour.
+// makes them; draW boundary keeps its polylines when asked. A gradient (Properties Gradient,
+// or GRADIENT) is a solid fill with its colours (DXF 450–470), and a pattern's background colour
+// (COlor) is kept as AutoCAD keeps it, in HATCHBACKGROUNDCOLOR xdata (edit/hatch-background.ts).
+// Not here yet (later parts of M4-07): the Hatch Creation tab and the Hatch and Gradient dialog
+// (seTtings), and HATCHEDIT.
+//
+// - GRADIENT is HATCH with the last gradient as the fill (GD, as acad.pgp has it). The two share
+//   their settings, as AutoCAD's share HPNAME, so HATCH after GRADIENT fills with the gradient
+//   until Properties picks a pattern again. AutoCAD has no -GRADIENT.
 //
 // - Hatches are made non-associative: associative hatches wait past launch (DEC-015, PRD
 //   non-goal 5), so Associativity Yes is refused.
@@ -46,6 +52,7 @@ import {
   type BoundaryOptions,
   type PickedBoundary,
 } from '../../edit/hatch-boundary';
+import { hatchBackgroundAppId, withHatchBackground } from '../../edit/hatch-background';
 import { retainedBoundary } from '../../edit/hatch-retain';
 import {
   edgeTexts,
@@ -66,7 +73,7 @@ import type {
 } from '../../model/types';
 import { currentProps, currentTransparency } from '../../properties/current';
 import type { GeneralProps } from '../../properties/sheet';
-import type { CommandContext, CommandDef } from '../command';
+import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import { nextPoints } from '../inquiry/inquiry';
 import { toleranceFor } from '../modify/offset';
 import {
@@ -80,6 +87,9 @@ import {
   hatchColor,
   hatchLayer,
   hatchTransparency,
+  gradientNamed,
+  initialGradient,
+  isGradient,
   keyword,
   origin,
   placed,
@@ -130,72 +140,89 @@ interface Candidates {
 }
 
 export function hatchCommand(): CommandDef {
+  return hatchCommands()[0];
+}
+
+/** HATCH (with -HATCH) and GRADIENT, sharing their settings (see the head comment). */
+export function hatchCommands(): [CommandDef, CommandDef] {
   let settings: HatchSettings | undefined;
-  return {
-    name: 'HATCH',
-    dashVariant: true,
-    async *run(ctx) {
-      settings ??= initialSettings(ctx);
-      const s = settings;
-      const run = new HatchRun(ctx, s);
-      const options = (): string[] =>
-        ctx.dash
-          ? [
-              'Properties',
-              'Select objects',
-              'draW boundary',
-              'remove Boundaries',
-              'Advanced',
-              'DRaw order',
-              'Origin',
-              'hatch COlor',
-              'LAyer',
-              'Transparency',
-              'Undo',
-            ]
-          : run.empty
-            ? ['Select objects', 'Undo']
-            : ['Select objects', 'remove Boundaries', 'Undo'];
-      let selecting = false;
-      for (;;) {
-        await run.preview();
-        if (selecting) {
-          const a = yield ctx.prompt.selection({
-            message: 'Select objects or',
-            options: ['picK internal point', 'Undo'],
-          });
-          const k = keyword(a);
-          if (k === 'picK internal point') selecting = false;
-          else if (k === 'Undo') run.undo();
-          else if (a.kind === 'selection' && a.ids.length > 0) run.select(a.ids);
-          else return run.finish();
-          continue;
-        }
-        const a = yield ctx.prompt.point({
-          message: ctx.dash ? 'Specify internal point or' : 'Pick internal point or',
-          options: options(),
-        });
-        const k = keyword(a);
-        if (a.kind === 'point') await run.pick(a.point);
-        else if (k === 'Select objects') selecting = true;
-        else if (k === 'Undo') run.undo();
-        else if (k === 'Properties') yield* properties(ctx, s);
-        else if (k === 'Advanced') yield* advanced(ctx, s, run);
-        else if (k === 'Origin') run.origin = (yield* origin(ctx, s)) ?? run.origin;
-        else if (k === 'DRaw order') yield* drawOrder(ctx, s);
-        else if (k === 'hatch COlor') yield* hatchColor(ctx, s);
-        else if (k === 'LAyer') yield* hatchLayer(ctx, s);
-        else if (k === 'Transparency') {
-          const t = yield* hatchTransparency(ctx, run.transparency());
-          // A system variable the drawing keeps, set at once as SETVAR would.
-          if (t !== undefined) ctx.edit((b) => b.setHeader(HPTRANSPARENCY, t));
-        } else if (k === 'remove Boundaries') yield* removeBoundaries(ctx, run);
-        else if (k === 'draW boundary') {
-          if (yield* drawBoundary(ctx, run)) return run.finish();
-        } else return run.finish();
-      }
+  const settingsFor = (ctx: CommandContext) => (settings ??= initialSettings(ctx));
+  return [
+    {
+      name: 'HATCH',
+      dashVariant: true,
+      run: (ctx) => hatchRun(ctx, settingsFor(ctx)),
     },
-  };
+    {
+      name: 'GRADIENT',
+      run(ctx) {
+        const s = settingsFor(ctx);
+        s.pattern = s.gradient.name;
+        s.custom = false;
+        return hatchRun(ctx, s);
+      },
+    },
+  ];
+}
+
+async function* hatchRun(ctx: CommandContext, s: HatchSettings): CommandGenerator {
+  const run = new HatchRun(ctx, s);
+  const options = (): string[] =>
+    ctx.dash
+      ? [
+          'Properties',
+          'Select objects',
+          'draW boundary',
+          'remove Boundaries',
+          'Advanced',
+          'DRaw order',
+          'Origin',
+          'hatch COlor',
+          'LAyer',
+          'Transparency',
+          'Undo',
+        ]
+      : run.empty
+        ? ['Select objects', 'Undo']
+        : ['Select objects', 'remove Boundaries', 'Undo'];
+  let selecting = false;
+  for (;;) {
+    await run.preview();
+    if (selecting) {
+      const a = yield ctx.prompt.selection({
+        message: 'Select objects or',
+        options: ['picK internal point', 'Undo'],
+      });
+      const k = keyword(a);
+      if (k === 'picK internal point') selecting = false;
+      else if (k === 'Undo') run.undo();
+      else if (a.kind === 'selection' && a.ids.length > 0) run.select(a.ids);
+      else return run.finish();
+      continue;
+    }
+    const a = yield ctx.prompt.point({
+      message: ctx.dash ? 'Specify internal point or' : 'Pick internal point or',
+      options: options(),
+    });
+    const k = keyword(a);
+    if (a.kind === 'point') await run.pick(a.point);
+    else if (k === 'Select objects') selecting = true;
+    else if (k === 'Undo') run.undo();
+    else if (k === 'Properties') yield* properties(ctx, s);
+    else if (k === 'Advanced') yield* advanced(ctx, s, run);
+    else if (k === 'Origin') run.origin = (yield* origin(ctx, s)) ?? run.origin;
+    else if (k === 'DRaw order') yield* drawOrder(ctx, s);
+    else if (k === 'hatch COlor') yield* hatchColor(ctx, s);
+    else if (k === 'LAyer') yield* hatchLayer(ctx, s);
+    else if (k === 'Transparency') {
+      const t = yield* hatchTransparency(ctx, run.transparency());
+      // A system variable the drawing keeps, set at once as SETVAR would.
+      if (t !== undefined) ctx.edit((b) => b.setHeader(HPTRANSPARENCY, t));
+    } else if (k === 'remove Boundaries') yield* removeBoundaries(ctx, run);
+    else if (k === 'draW boundary') {
+      if (yield* drawBoundary(ctx, run)) return run.finish();
+    } else return run.finish();
+  }
 }
 
 function initialSettings(ctx: CommandContext): HatchSettings {
@@ -217,6 +244,8 @@ function initialSettings(ctx: CommandContext): HatchSettings {
     color: undefined,
     layer: undefined,
     retain: false,
+    background: undefined,
+    gradient: initialGradient(),
   };
 }
 
@@ -383,7 +412,7 @@ class HatchRun {
   /** The pattern's lines at the settings' placement, from the app's library; undefined if none. */
   async #patternLines(): Promise<readonly HatchPatternLine[] | undefined> {
     const s = this.s;
-    if (s.pattern === SOLID) return [];
+    if (s.pattern === SOLID || isGradient(s.pattern)) return [];
     if (s.pattern === USER) return userLines(s.angle, s.spacing, s.double, this.origin);
     const key = JSON.stringify([s.pattern, s.scale, s.angle, this.origin]);
     if (this.#placed === key && this.#lines) return this.#lines;
@@ -400,11 +429,14 @@ class HatchRun {
 
   #hatch(areas: readonly Area[], lines: readonly HatchPatternLine[]): HatchGeometry {
     const s = this.s;
-    const solid = s.pattern === SOLID;
+    const gradient = gradientNamed(s.pattern);
+    // A gradient is a solid fill (DXF 70 = 1) named SOLID, as AutoCAD saves one.
+    const solid = s.pattern === SOLID || gradient !== undefined;
     const user = s.pattern === USER;
+    const g = s.gradient;
     return {
       kind: 'HATCH',
-      pattern: s.pattern,
+      pattern: solid ? SOLID : s.pattern,
       solid,
       associative: false,
       style: s.islands ? STYLES.indexOf(s.style) : 2,
@@ -415,6 +447,23 @@ class HatchRun {
       loops: areas.flatMap((a) => a.loops),
       patternLines: lines,
       seedPoints: areas.flatMap((a) => (a.kind === 'pick' ? [a.seed] : [])),
+      ...(!solid && s.background && { background: s.background }),
+      ...(gradient && {
+        gradient: {
+          name: gradient[1],
+          angle: g.angle,
+          // GFSHIFT: 0 centred, 1 shifted up and to the left (DXF 461).
+          shift: g.centered ? 0 : 1,
+          singleColor: g.oneColor,
+          tint: g.tint,
+          // Two colours always, as AutoCAD writes them (DXF 453 = 2); one colour shades the
+          // first to its tint.
+          colors: [
+            { value: 0, color: g.color1 },
+            { value: 1, color: g.color2 },
+          ],
+        },
+      }),
     };
   }
 
@@ -450,6 +499,7 @@ class HatchRun {
     ctx.edit((b) => {
       const props = this.#props(b);
       const current = currentProps(ctx.model);
+      let background: Handle | undefined;
       for (const g of groups) {
         // The boundaries kept go on the current layer, as BOUNDARY puts them.
         const kept = g
@@ -461,7 +511,11 @@ class HatchRun {
                 : [],
           )
           .map((geom) => b.addEntity({ owner: ctx.space, ...current, geom }).id);
-        const hatch = b.addEntity({ owner: ctx.space, ...props, geom: this.#hatch(g, lines) });
+        const geom = this.#hatch(g, lines);
+        // The background colour as AutoCAD keeps it (see edit/hatch-background.ts).
+        background ??= geom.background && hatchBackgroundAppId(b, ctx.model);
+        const xdata = geom.background && withHatchBackground(undefined, background!, s.background);
+        const hatch = b.addEntity({ owner: ctx.space, ...props, ...(xdata && { xdata }), geom });
         const reference = [...new Set([...g.flatMap((a) => a.sources.flat()), ...kept])];
         const move = placement(s.drawOrder, reference);
         if (move) moveInDrawOrder(b, ctx.model, [hatch.id], move);

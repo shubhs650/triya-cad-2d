@@ -86,7 +86,7 @@ describe('HATCH colour, layer and transparency (M4-07 part 2)', () => {
     expect(s.bus.promptText).toBe(
       'Enter new color for hatch or [. (use current)/Truecolor/COlorbook] <use current>:',
     );
-    await s.bus.script(['1', '5,5', '']);
+    await s.bus.script(['1', '', '5,5', '']);
     expect(s.hatches()[0]!.color).toEqual({ kind: 'aci', index: 1 });
     await s.bus.script(['-HATCH', 'CO']);
     expect(s.bus.promptText).toBe(
@@ -94,11 +94,11 @@ describe('HATCH colour, layer and transparency (M4-07 part 2)', () => {
     );
     await s.bus.script(['T']);
     expect(s.bus.promptText).toBe('Red, Green, Blue:');
-    await s.bus.script(['10,20,30', '5,5', '']);
+    await s.bus.script(['10,20,30', '', '5,5', '']);
     expect(s.hatches()[1]!.color).toEqual({ kind: 'rgb', r: 10, g: 20, b: 30 });
-    await s.bus.script(['-HATCH', 'CO', 'blue', '5,5', '']);
+    await s.bus.script(['-HATCH', 'CO', 'blue', '', '5,5', '']);
     expect(s.hatches()[2]!.color).toEqual({ kind: 'aci', index: 5 });
-    await s.bus.script(['-HATCH', 'CO', '.', '5,5', '']);
+    await s.bus.script(['-HATCH', 'CO', '.', '', '5,5', '']);
     expect(s.hatches()[3]!.color).toEqual({ kind: 'byLayer' });
   });
 
@@ -111,7 +111,7 @@ describe('HATCH colour, layer and transparency (M4-07 part 2)', () => {
     expect(s.log.filter((l) => l === 'Invalid color.')).toHaveLength(3);
     await s.bus.script(['CO', 'CO', 'NOBOOK']);
     expect(s.log).toContain('Color book "NOBOOK" not found.');
-    await s.bus.script(['CO', '', '5,5', '']);
+    await s.bus.script(['CO', '', '', '5,5', '']);
     expect(s.hatches()[0]!.color).toEqual({ kind: 'byLayer' });
   });
 
@@ -352,7 +352,7 @@ describe('HATCH pattern list (M4-07 part 2)', () => {
     const s = setup(square(0, 0, 10));
     await s.bus.script(['-HATCH', 'P']);
     expect(s.bus.promptText).toBe(
-      'Enter a pattern name or [?/Solid/User defined] <TRIYA_LINES45>:',
+      'Enter a pattern name or [?/Solid/User defined/Gradient] <TRIYA_LINES45>:',
     );
     await s.bus.script(['?']);
     expect(s.bus.promptText).toBe('Pattern(s) to list <*>:');
@@ -361,7 +361,7 @@ describe('HATCH pattern list (M4-07 part 2)', () => {
     expect(s.log).toContain('TRIYA_GRID');
     expect(s.log).toContain('MINE - My own');
     expect(s.bus.promptText).toBe(
-      'Enter a pattern name or [?/Solid/User defined] <TRIYA_LINES45>:',
+      'Enter a pattern name or [?/Solid/User defined/Gradient] <TRIYA_LINES45>:',
     );
     const before = s.log.length;
     await s.bus.script(['?', 'triya*']);
@@ -374,7 +374,7 @@ describe('HATCH pattern list (M4-07 part 2)', () => {
     await s.bus.script(['-HATCH', 'P', '?', '']);
     expect(s.log).toContain('There is no view to change.');
     expect(s.bus.promptText).toBe(
-      'Enter a pattern name or [?/Solid/User defined] <TRIYA_LINES45>:',
+      'Enter a pattern name or [?/Solid/User defined/Gradient] <TRIYA_LINES45>:',
     );
   });
 });
