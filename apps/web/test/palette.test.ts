@@ -68,12 +68,15 @@ describe('palette search', () => {
       // M4-02 part 1: DIMARC, DIMJOGGED, DIMJOGLINE and DIMORDINATE.
       'DIMARC',
       'DIMBASELINE',
+      // M4-02 part 4: DIMBREAK and DIMINSPECT.
+      'DIMBREAK',
       'DIMCONTINUE',
       'DIMDIAMETER',
       // M4-02 part 3: DIMDISASSOCIATE and DIMREASSOCIATE.
       'DIMDISASSOCIATE',
       // M4-02 part 2: DIMEDIT, DIMOVERRIDE, DIMSPACE, DIMTEDIT and QDIM.
       'DIMEDIT',
+      'DIMINSPECT',
       'DIMJOGGED',
       'DIMJOGLINE',
       'DIMLINEAR',

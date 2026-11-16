@@ -22,6 +22,7 @@ export { aciOfTrueColor } from './map/common';
 export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/entities';
 export { mapSortEnts } from './map/sortents';
 export { mapTriyaArrays, TRIYA_ARRAY } from './map/triya-array';
+export { mapTriyaDims, TRIYA_DIMBREAK, TRIYA_DIMINSPECT } from './map/triya-dims';
 export { mapLayouts, mapPageSetups } from './map/layouts';
 export { mapImageObjects, type ImageObject } from './map/images';
 export {

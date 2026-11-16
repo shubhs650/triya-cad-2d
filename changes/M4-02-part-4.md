@@ -1,0 +1,1 @@
+- M4-02 part 4 (#449): DIMBREAK (Auto, picked objects, Manual, Remove, Multiple) and DIMINSPECT (Inspection Dimension dialog, -DIMINSPECT): break gaps that follow their objects and inspection frames, saved as `TRIYA_DIMBREAK` and `TRIYA_DIMINSPECT` records (DEC-064).

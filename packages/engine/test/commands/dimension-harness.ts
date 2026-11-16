@@ -133,6 +133,8 @@ export function setup(
   o: {
     styles?: DimStyleRecord[];
     dimensions?: boolean;
+    /** Another stand-in dimension engine (one that draws lines, for DIMBREAK). */
+    regenerate?: DimensionRegenerator;
     header?: [string, HeaderValue][];
     entities?: EntityInit[];
     textStyles?: TextStyleRecord[];
@@ -219,7 +221,7 @@ export function setup(
     model,
     registry,
     view: { request: (r) => Promise.resolve(answer(r)) },
-    ...(o.dimensions !== false && { dimensions: regenerate }),
+    ...(o.dimensions !== false && { dimensions: o.regenerate ?? regenerate }),
   });
   const prompts: string[] = [];
   bus.on((e: BusEvent) => {
