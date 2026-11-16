@@ -2,8 +2,9 @@
 // ARC_DIMENSION).
 
 import {
+  jogHeightFactor,
+  linearJog,
   radialArc,
-  type AnnotationTables,
   type Entity,
   type EntityGeometry,
   type TextMeasure,
@@ -15,7 +16,7 @@ import { joggedParts } from './jogged';
 import { linearParts } from './linear';
 import { ordinateParts } from './ordinate';
 import { radialParts } from './radial';
-import { dimStyle } from './style';
+import { annotationScaleOf, dimStyle, type DimensionTables } from './style';
 
 /** Whether the engine draws this kind of dimension. */
 export function generates(g: EntityGeometry): boolean {
@@ -30,22 +31,25 @@ export function generates(g: EntityGeometry): boolean {
  * block is about to be rewritten (M2-10 part 3), which places the text afresh.
  */
 export function dimensionParts(
-  e: Pick<Entity, 'geom' | 'xdata'>,
-  model: AnnotationTables,
+  e: Pick<Entity, 'geom' | 'xdata' | 'annotative'>,
+  model: DimensionTables,
   measure: TextMeasure,
   options: { readonly regenerate?: boolean } = {},
 ): DimPart[] | undefined {
   const g = e.geom;
   if (!('dimType' in g) || !generates(g)) return undefined;
-  const s = dimStyle(g.style, e.xdata, model);
+  const s = dimStyle(g.style, e.xdata, model, annotationScaleOf(e, model));
   // The text stays where the writer put it while the dimension keeps its stored graphics or
   // the user moved it; otherwise the engine places it, as AutoCAD does when it regenerates.
   const stored = !options.regenerate && g.block !== undefined && !!model.blocks.get(g.block);
   const keepText = g.textUserPositioned || stored;
   switch (g.dimType) {
     case 'linear':
-    case 'aligned':
-      return linearParts(g, s, model, measure, keepText);
+    case 'aligned': {
+      const at = linearJog(e.xdata, model);
+      const jog = at && { at, height: jogHeightFactor(g.style, e.xdata, model) * s.textHeight };
+      return linearParts(g, s, model, measure, keepText, jog);
+    }
     case 'radius':
     case 'diameter':
       return radialParts(g, s, model, measure, keepText, radialArc(e.xdata, model));

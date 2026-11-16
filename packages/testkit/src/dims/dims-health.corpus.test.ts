@@ -1,8 +1,8 @@
 // The dimension engine's health check over the public corpus (M2-10, DEC-011, DEC-050): every
 // dimension with a stored `*D` block (linear, aligned, radius, diameter, angular, and since
 // part 2 ordinate, jogged radius and arc length) is
-// regenerated and compared with that block (`dimensionHealth`). The roadmap asks for ≥ 95 %
-// within tolerance. Three legacy sample files cannot state their dimensions as their blocks were drawn
+// regenerated and compared with that block (`dimensionHealth`). M2-10 asked for ≥ 95 %
+// within tolerance, M4-01 (the dimension engine complete) for ≥ 99 %. Three legacy sample files cannot state their dimensions as their blocks were drawn
 // (below); their dimensions are counted apart (DEC-050) and may not get worse.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -44,7 +44,7 @@ const LEGACY: Readonly<Record<string, string>> = {
 const LEGACY_MISMATCHES = 31;
 
 describe('dimension health over the public corpus (M2-10)', () => {
-  it('regenerates ≥ 95 % of stored dimensions within tolerance', () => {
+  it('regenerates ≥ 99 % of stored dimensions within tolerance', () => {
     const fonts = bundledFontBook();
     const results: { key: string; ok: boolean; problems: readonly string[] }[] = [];
     for (const f of readable) {
@@ -75,7 +75,7 @@ describe('dimension health over the public corpus (M2-10)', () => {
     expect(results.length).toBe(261);
     expect(counted.length).toBe(228);
     expect((counted.length - mismatched.length) / counted.length, report).toBeGreaterThanOrEqual(
-      0.95,
+      0.99,
     );
     // Today every counted dimension matches: keep it that way.
     expect(mismatched.map((r) => `${r.key}: ${r.problems.join('; ')}`)).toEqual([]);

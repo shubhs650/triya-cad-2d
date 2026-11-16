@@ -10,6 +10,7 @@ import {
   dimTrueColors,
   dimVars,
   linetypeRef,
+  type AnnotationScale,
   type AnnotationTables,
   type Color,
   type DimVarValue,
@@ -156,11 +157,21 @@ function legacyVars(style: Handle, model: AnnotationTables): Record<string, DimV
   return out;
 }
 
-/** The dimension's resolved style. */
-export function dimStyle(style: Handle, xdata: Entity['xdata'], model: AnnotationTables): DimStyle {
+/**
+ * The dimension's resolved style. `annotationScale` (drawing units per paper unit) replaces
+ * DIMSCALE for an annotative dimension (`annotationScaleOf`): AutoCAD's DIMSCALE help says an
+ * annotative style's DIMSCALE is set to 0, the annotation scale (CANNOSCALE) sizing its
+ * dimensions instead.
+ */
+export function dimStyle(
+  style: Handle,
+  xdata: Entity['xdata'],
+  model: AnnotationTables,
+  annotationScale?: number,
+): DimStyle {
   const vars = { ...DEFAULTS, ...legacyVars(style, model), ...dimVars(style, xdata, model) };
   const trueColors = dimTrueColors(style, xdata, model);
-  const scale = num(vars.DIMSCALE, 1) || 1;
+  const scale = annotationScale ?? (num(vars.DIMSCALE, 1) || 1);
   const len = (name: string): number => num(vars[name]) * scale;
   const textStyle = ref(vars.DIMTXSTY);
   const fixed = textStyle === undefined ? 0 : (model.tables.textStyles.get(textStyle)?.height ?? 0);
@@ -212,4 +223,27 @@ export function dimStyle(style: Handle, xdata: Entity['xdata'], model: Annotatio
     text: props(colorOf('DIMCLRT'), undefined, undefined),
     fill: fillMode === 2 && fillColor ? { mode: 2, color: fillColor } : { mode: fillMode },
   };
+}
+
+/** What `dimensionParts` reads of the drawing beyond its tables: its annotation scales. */
+export type DimensionTables = AnnotationTables & {
+  readonly meta?: { readonly annotationScales?: readonly AnnotationScale[] };
+};
+
+/**
+ * The scale an annotative dimension draws at (M4-01): drawing units per paper unit of its
+ * default representation's annotation scale (the first representation when none is marked
+ * default), undefined for a plain dimension or a scale the drawing's list does not hold.
+ * Triya makes no annotative dimensions (DEC-013, DEC-058): this sizes the ones a file holds
+ * when the engine draws them, as their stored block was drawn.
+ */
+export function annotationScaleOf(
+  e: Pick<Entity, 'annotative'>,
+  model: DimensionTables,
+): number | undefined {
+  const reps = e.annotative?.representations ?? [];
+  const rep = reps.find((r) => r.isDefault) ?? reps[0];
+  if (rep?.scale === undefined) return undefined;
+  const value = model.meta?.annotationScales?.find((s) => s.handle === rep.scale)?.value;
+  return value !== undefined && value > 0 ? 1 / value : undefined;
 }
