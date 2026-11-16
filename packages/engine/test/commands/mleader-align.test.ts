@@ -226,6 +226,34 @@ describe('MLEADERALIGN', () => {
     await s.bus.submit('');
     expect(s.bus.command).toBeUndefined();
   });
+
+  it('refuses a negative spacing and leaves Distribute through its Options', async () => {
+    const s = setup();
+    const a = await s.text('0,0', '10,5');
+    await s.bus.script(['MLA']);
+    await s.bus.answer({ kind: 'selection', ids: [a] });
+    await s.bus.script(['O', 'S', '-1']);
+    expect(s.log).toContain('Requires a distance of 0 or more.');
+    expect(s.log.at(-1)).toBe('Current mode: Use current spacing');
+    await s.bus.script(['O', 'D']);
+    await s.bus.script(['O']);
+    expect(s.bus.promptText).toContain('<Distribute>:');
+    await s.bus.script(['U']);
+    expect(s.bus.promptText).toBe('Select multileader to align to or [Options]:');
+    // Enter, or no point, ends it with nothing moved.
+    await s.bus.answer({ kind: 'selection', ids: [a] });
+    await s.bus.submit('');
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.script(['MLA']);
+    await s.bus.answer({ kind: 'selection', ids: [a] });
+    await s.bus.script(['O', 'D', '']);
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.script(['MLA']);
+    await s.bus.answer({ kind: 'selection', ids: [a] });
+    await s.bus.script(['1,1', '']);
+    expect(s.bus.command).toBeUndefined();
+    expect(pt(s.geom(a).contentBase)).toEqual([10.36, 5]);
+  });
 });
 
 describe('MLEADERCOLLECT', () => {
@@ -294,6 +322,42 @@ describe('MLEADERCOLLECT', () => {
       [1, -3.09],
       [1, -5.18],
     ]);
+  });
+
+  it('asks again for a wrap width or count of no size, and ends on Enter', async () => {
+    const s = setup();
+    const ms = [await s.tag('0,0', '10,5'), await s.tag('0,10', '20,12')];
+    const at = () => ms.map((id) => pt(s.geom(id).block!.position));
+    const was = at();
+    await s.bus.script(['MLC']);
+    await s.bus.answer({ kind: 'selection', ids: ms });
+    await s.bus.script(['W', '0']);
+    expect(s.log).toContain('Requires a width greater than 0.');
+    await s.bus.script(['W', 'N', '0']);
+    expect(s.log).toContain('Requires an integer of 1 or more.');
+    await s.bus.script(['W', 'N', '']);
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.script(['MLC']);
+    await s.bus.answer({ kind: 'selection', ids: ms });
+    await s.bus.script(['W', '']);
+    expect(s.bus.command).toBeUndefined();
+    expect(at()).toEqual(was);
+    // Enter at the location takes the default layout, which places nothing.
+    await s.bus.script(['MLC']);
+    await s.bus.answer({ kind: 'selection', ids: ms });
+    await s.bus.script(['W', 'N', '2']);
+    expect(s.bus.promptText).toContain('<Wrap>:');
+    await s.bus.script(['W', 'N']);
+    expect(s.bus.promptText).toBe('Enter the maximum number of blocks per row <2>:');
+    await s.bus.script(['2', '0,0']);
+    expect(at()).toEqual([
+      [1, -1],
+      [3.09, -1],
+    ]);
+    // Nothing selected ends it.
+    await s.bus.submit('MLC');
+    await s.bus.answer({ kind: 'selection', ids: [] });
+    expect(s.bus.command).toBeUndefined();
   });
 
   it('needs two multileaders with blocks', async () => {

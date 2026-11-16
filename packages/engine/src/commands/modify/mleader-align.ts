@@ -122,8 +122,7 @@ export function mleaderAlignCommand(): CommandDef {
             options: ['Options'],
           });
           if (keywordOf(a) === 'Options') {
-            const next: MLeaderAlignMode | undefined = yield* options(ctx);
-            if (!next) return;
+            yield* options(ctx);
             continue;
           }
           if (a.kind !== 'point') return;
@@ -143,8 +142,7 @@ export function mleaderAlignCommand(): CommandDef {
           single: true,
         });
         if (keywordOf(a) === 'Options') {
-          const next: MLeaderAlignMode | undefined = yield* options(ctx);
-          if (!next) return;
+          yield* options(ctx);
           continue;
         }
         const picked = (a as { readonly ids?: readonly EntityId[] }).ids ?? [];
@@ -166,8 +164,8 @@ export function mleaderAlignCommand(): CommandDef {
         return;
       }
 
-      /** The Options prompt: the next mode, or undefined when cancelled. */
-      async function* options(c: CommandContext): Sub<MLeaderAlignMode | undefined> {
+      /** The Options prompt: sets the mode. */
+      async function* options(c: CommandContext): Sub<void> {
         const o = yield c.prompt.keyword({
           message: 'Enter an option',
           options: [
@@ -178,25 +176,29 @@ export function mleaderAlignCommand(): CommandDef {
           ],
           default: { kind: 'keyword', keyword: MODE_NAMES[mode.kind] },
         });
-        const k = keywordOf(o);
-        if (k === undefined) return undefined;
-        if (k === MODE_NAMES.spacing) {
-          const s = yield c.prompt.distance({
-            message: 'Specify spacing',
-            default: { kind: 'distance', value: spacing },
-          });
-          if (s.kind !== 'distance' || !(s.value >= 0)) return undefined;
-          spacing = s.value;
-          mode = { kind: 'spacing', spacing };
-          return mode;
+        // A default: Enter answers the current mode, so the answer is a keyword.
+        const k = (o as { readonly keyword: string }).keyword;
+        if (k !== MODE_NAMES.spacing) {
+          mode =
+            k === MODE_NAMES.distribute
+              ? { kind: 'distribute' }
+              : k === MODE_NAMES.parallel
+                ? { kind: 'parallel' }
+                : { kind: 'current' };
+          return;
         }
-        mode =
-          k === MODE_NAMES.distribute
-            ? { kind: 'distribute' }
-            : k === MODE_NAMES.parallel
-              ? { kind: 'parallel' }
-              : { kind: 'current' };
-        return mode;
+        // A default again: the answer is a distance.
+        const d = yield c.prompt.distance({
+          message: 'Specify spacing',
+          default: { kind: 'distance', value: spacing },
+        });
+        const value = (d as { readonly value: number }).value;
+        if (value < 0) {
+          c.message('Requires a distance of 0 or more.');
+          return;
+        }
+        spacing = value;
+        mode = { kind: 'spacing', spacing };
       }
     },
   };

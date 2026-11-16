@@ -119,6 +119,9 @@ describe('palette search', () => {
       'MEASUREGEOM',
       'MIRROR',
       'MLEADER',
+      // M4-04 part 3: MLEADERALIGN and MLEADERCOLLECT.
+      'MLEADERALIGN',
+      'MLEADERCOLLECT',
       'MLEADEREDIT',
       // M4-04 part 2: the Multileader Style Manager.
       'MLEADERSTYLE',
