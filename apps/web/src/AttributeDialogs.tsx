@@ -34,6 +34,7 @@ import { engines } from './engine/registry';
 import { SelectColorDialog } from './SelectColorDialog';
 import { MatchPropDialog } from './MatchPropDialog';
 import { PointStyleDialog } from './PointStyleDialog';
+import { InspectionDialog } from './InspectionDialog';
 import { OverkillDialog } from './OverkillDialog';
 import { SelectSimilarDialog } from './SelectSimilarDialog';
 import { ObjectGroupingDialog } from './ObjectGroupingDialog';
@@ -85,6 +86,8 @@ export function AttributeDialogs({
       return <MatchPropDialog key={key} doc={doc.id} request={d} />;
     case 'pointstyle':
       return <PointStyleDialog key={key} doc={doc.id} request={d} />;
+    case 'diminspect':
+      return <InspectionDialog key={key} doc={doc.id} request={d} />;
     case 'overkill':
       return <OverkillDialog key={key} doc={doc.id} request={d} />;
     case 'qselect':

@@ -1931,6 +1931,49 @@ export const isAssocArray = (o: NonGraphicalObject | undefined): o is AssocArray
   o?.type === 'TRIYA_ARRAY';
 
 /**
+ * A dimension's breaks (DIMBREAK, M4-02 part 4, DEC-064): the `TRIYA_DIMBREAK` XRECORD in the
+ * dimension's extension dictionary (`owner`, which the dimension's `extDict` names). The
+ * dimension's `*D` block holds the gaps as drawn; this record says where they come from, so a
+ * regeneration draws them again.
+ */
+export interface DimBreak extends NonGraphicalObject {
+  readonly type: 'TRIYA_DIMBREAK';
+  /** The dimension (the owner of its extension dictionary). */
+  readonly dimension: Handle;
+  /**
+   * DXF 331 each: the objects that break it (picked, or found by Auto); the gaps follow them
+   * when either moves. One that is gone breaks nothing.
+   */
+  readonly objects: readonly Handle[];
+  /** DXF 10 and 11 each: the two points of a manual break, in the dimension's space. */
+  readonly manual: readonly (readonly [Vec2, Vec2])[];
+}
+
+export const isDimBreak = (o: NonGraphicalObject | undefined): o is DimBreak =>
+  o?.type === 'TRIYA_DIMBREAK';
+
+/** An inspection dimension's frame: semicircles, 90° points, or none (AutoCAD's Shape). */
+export type InspectionShape = 'round' | 'angular' | 'none';
+
+/**
+ * A dimension's inspection data (DIMINSPECT, M4-02 part 4, DEC-064): the `TRIYA_DIMINSPECT`
+ * XRECORD in the dimension's extension dictionary. The `*D` block holds the frame as drawn.
+ */
+export interface DimInspect extends NonGraphicalObject {
+  readonly type: 'TRIYA_DIMINSPECT';
+  readonly dimension: Handle;
+  /** DXF 71: 0 round, 1 angular, 2 none. */
+  readonly shape: InspectionShape;
+  /** DXF 1: the label, left of the value; absent when the label is off. */
+  readonly label?: string;
+  /** DXF 3: the inspection rate, right of the value; absent when the rate is off. */
+  readonly rate?: string;
+}
+
+export const isDimInspect = (o: NonGraphicalObject | undefined): o is DimInspect =>
+  o?.type === 'TRIYA_DIMINSPECT';
+
+/**
  * One DXF group code of a `CodedObject`, as the save writes it. A handle code's value (DXF 5,
  * 105, 320–369, 390–399, 480, 481 and 1005: `isHandleCode`) is the handle.
  */
