@@ -220,6 +220,7 @@ test('Use for makes a sub-style, and Compare lists how two styles differ', async
   await sub.getByRole('tab', { name: 'Symbols and Arrows' }).click();
   await expect(sub.getByLabel('Break size:')).toHaveValue('0.125');
   await expect(sub.getByLabel('Jog height factor:')).toHaveValue('1.5');
+  await shot(page, '6-symbols-tab-break-and-jog');
   await sub.getByRole('tab', { name: 'Text', exact: true }).click();
   await sub.getByLabel('Text height:').fill('0.4');
   await sub.getByRole('button', { name: 'OK' }).click();
@@ -230,7 +231,7 @@ test('Use for makes a sub-style, and Compare lists how two styles differ', async
   await expect(manager.getByTestId('dimstyle-description')).toHaveText(`${CURRENT}: Linear`);
   await expect(manager.getByRole('button', { name: 'Set Current' })).toBeDisabled();
   await expect.poll(() => textHeight(page)).toBe(0.4);
-  await shot(page, '6-substyle-in-list');
+  await shot(page, '7-substyle-in-list');
 
   await manager.getByRole('button', { name: 'Compare...' }).click();
   const compare = page.getByRole('dialog', { name: 'Compare Dimension Styles' });
@@ -243,7 +244,7 @@ test('Use for makes a sub-style, and Compare lists how two styles differ', async
   await expect(compare.getByRole('row', { name: /DIMTXT/ })).toHaveText(
     /Text height\s*DIMTXT\s*0\.4000\s*0\.1800/,
   );
-  await shot(page, '7-compare');
+  await shot(page, '8-compare');
   await compare.getByRole('button', { name: 'Close' }).click();
   await expect(compare).toBeHidden();
 

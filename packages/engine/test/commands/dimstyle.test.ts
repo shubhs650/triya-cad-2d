@@ -779,6 +779,45 @@ describe('-DIMSTYLE (M4-03 part 2)', () => {
     ]);
   });
 
+  it('says what it cannot do, and lists ? wherever a name is asked', async () => {
+    const s = setup();
+    const run = async (...inputs: string[]) => {
+      await s.bus.submit('-DIMSTYLE');
+      for (const i of inputs) await s.bus.submit(i);
+    };
+    await run('R', 'ISO-25$2');
+    expect(s.bus.history.at(-1)).toBe('Invalid dimension style name.');
+    await run('V', '~Spare');
+    expect(s.bus.history.at(-1)).toBe('No differences.');
+    await run('?', 'Q*');
+    expect(s.bus.history.at(-1)).toBe('No matching dimension styles found.');
+    await run('S', '?', '');
+    expect(s.bus.history).toContain('  ISO-25$2');
+    expect(s.bus.prompt).toMatchObject({ message: 'Enter name for new dimension style' });
+    await s.bus.submit('');
+    expect(s.bus.command).toBeUndefined();
+    await run('R', '?', '');
+    expect(s.bus.prompt).toMatchObject({ message: 'Enter a dimension style name' });
+    await s.bus.cancel();
+    // Nothing selected: not a dimension, and the command ends.
+    await run('R', '');
+    await s.bus.answer({ kind: 'selection', ids: [] });
+    expect(s.bus.history.at(-1)).toBe('That object is not a dimension.');
+    expect(s.bus.command).toBeUndefined();
+    await run('A');
+    await s.bus.answer({ kind: 'selection', ids: [] });
+    expect(s.bus.command).toBeUndefined();
+    expect(s.bus.undo.state.undoable).toBe(0);
+
+    const none = new PromptBus({
+      model: DocumentModel.create(sampleInit()),
+      registry: builtinCommands(),
+    });
+    await none.submit('-DIMSTYLE');
+    expect(none.history.at(-1)).toBe('The drawing has no dimension style.');
+    expect(none.command).toBeUndefined();
+  });
+
   it('? lists the styles matching a pattern', async () => {
     const s = setup();
     await s.bus.submit('-DIMSTYLE');
