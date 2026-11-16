@@ -5,7 +5,10 @@
 // AC1032 DXF (DEC-047), read back by acad-ts and mapped: the new style comes back with every
 // DIMVAR the model holds (references by the record they name), the modified one with its
 // change, and the header with the override. With TRIYA_DXF_AUDIT_DIR set the save goes to the
-// ezdxf audit as the file's `dimension` save's sibling, `edited` being taken.
+// ezdxf audit as the file's `dimension` save's sibling, `edited` being taken. Part 2 adds the
+// settings AutoCAD keeps in the record's `ACAD_DSTYLE_*` xdata (break size, jog height factor,
+// sub-units, tolerance alignment), which come back from the new style's xdata and, edited by
+// Modify, from the current one's.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -16,6 +19,7 @@ import {
   builtinCommands,
   currentDimStyle,
   dialogVars,
+  dimStyleXdataVars,
   setField,
   type DimStyleFieldValue,
   type DimStyleRecord,
@@ -58,6 +62,8 @@ const FIELD_VALUES: readonly (readonly [string, DimStyleFieldValue])[] = [
   ['DIMCEN.size', 0.15],
   ['DIMARCSYM', '1'],
   ['DIMJOGANG', 30],
+  ['DIMBREAK', 0.25],
+  ['DIMJAG', 2],
   ['DIMCLRT', '3'],
   ['DIMTFILL', '4'],
   ['DIMTXT', 0.25],
@@ -83,6 +89,8 @@ const FIELD_VALUES: readonly (readonly [string, DimStyleFieldValue])[] = [
   ['DIMLFAC', 2],
   ['DIMLFAC.layout', true],
   ['DIMZIN.leading', true],
+  ['DIMMZF', 10],
+  ['DIMMZS', 'cm'],
   ['DIMZIN.trailing', true],
   ['DIMZIN.feet', false],
   ['DIMAUNIT', '1'],
@@ -97,9 +105,12 @@ const FIELD_VALUES: readonly (readonly [string, DimStyleFieldValue])[] = [
   ['DIMAPOST.prefix', 'A'],
   ['DIMAPOST.suffix', ' in'],
   ['DIMALTZ.leading', true],
+  ['DIMALTMZF', 1000],
+  ['DIMALTMZS', 'um'],
   ['DIMALTZ.trailing', true],
   ['DIMAPOST.placement', 'below'],
   ['DIMTOL.method', 'deviation'],
+  ['DIMTALN', '1'],
   ['DIMTDEC', '3'],
   ['DIMTP', 0.02],
   ['DIMTM', 0.01],
@@ -192,7 +203,15 @@ describe('Dimension Style Manager on the public corpus (M4-03)', () => {
       await answer({
         op: 'modify',
         name: current.name,
-        vars: setField(dialogVars(current.vars), 'DIMEXE', 0.3125),
+        vars: setField(
+          setField(
+            dialogVars({ ...current.vars, ...dimStyleXdataVars(model, current.xdata) }),
+            'DIMEXE',
+            0.3125,
+          ),
+          'DIMJAG',
+          2.75,
+        ),
       });
       await answer({
         op: 'override',
@@ -212,7 +231,17 @@ describe('Dimension Style Manager on the public corpus (M4-03)', () => {
           JSON.stringify(comparable(back, n, again!.vars[n])),
       ).map((n) => `${n}: ${made!.vars[n]} → ${again!.vars[n]}`);
       expect(wrong, f.path).toEqual([]);
+      expect(dimStyleXdataVars(back, again!.xdata), f.path).toEqual({
+        DIMBREAK: 0.25,
+        DIMJAG: 2,
+        DIMTALN: 1,
+        DIMMZF: 10,
+        DIMMZS: 'cm',
+        DIMALTMZF: 1000,
+        DIMALTMZS: 'um',
+      });
       expect(Number(named(back, current.name)!.vars.DIMEXE), f.path).toBe(0.3125);
+      expect(dimStyleXdataVars(back, named(back, current.name)!.xdata).DIMJAG, f.path).toBe(2.75);
       expect(back.header.get('$DIMSCALE'), f.path).toBe(3);
     },
     30_000,

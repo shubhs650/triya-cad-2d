@@ -21,6 +21,7 @@
 import type { Vec2 } from '../geom/types';
 import type { Entity, MTextGeometry, ToleranceGeometry } from '../model/types';
 import { dimColor, dimLineweight, dimNum, dimTrueColors, dimVars } from './leader';
+import { drawnDimStyle } from './dimstyle-family';
 import type { AnnotationPart, AnnotationTables } from './multileader';
 
 /**
@@ -45,7 +46,9 @@ export function toleranceParts(
   model: AnnotationTables,
   measure: TextMeasure,
 ): AnnotationPart[] | undefined {
-  const vars = dimVars(g.style, xdata, model);
+  // Its style's Leaders and Tolerances sub-style when there is one (M4-03 part 2).
+  const dimstyle = drawnDimStyle(model, g);
+  const vars = dimVars(dimstyle, xdata, model);
   const scale = dimNum(vars.DIMSCALE, 1) || 1;
   const h = dimNum(vars.DIMTXT, 0.18) * scale;
   if (!(h > 0)) return [];
@@ -53,7 +56,7 @@ export function toleranceParts(
   const gap = Math.abs(dimNum(vars.DIMGAP, 0.09)) * scale;
   const rowHeight = h + 2 * gap;
   const style = typeof vars.DIMTXSTY === 'string' ? vars.DIMTXSTY : '';
-  const trueColors = dimTrueColors(g.style, xdata, model);
+  const trueColors = dimTrueColors(dimstyle, xdata, model);
   const frameColor = trueColors.DIMCLRD ?? dimColor(vars.DIMCLRD);
   const textColor = trueColors.DIMCLRT ?? dimColor(vars.DIMCLRT);
   const lineweight = dimLineweight(vars.DIMLWD);

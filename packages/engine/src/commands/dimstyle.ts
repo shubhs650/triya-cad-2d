@@ -12,8 +12,12 @@
 // the current style moves the header's along with it, overrides kept. Dimensions of a style
 // Modify changed are drawn again once the command ends (M2-30 part 2).
 //
-// A style named `PARENT$n` is one of AutoCAD's child styles (a style for one kind of dimension);
-// the list shows its parent only, and Delete takes the children with the parent.
+// A style named `PARENT$n` is one of AutoCAD's sub-styles (Use for, part 2: a style for one kind
+// of dimension, dimstyle-family.ts): the list shows it under its parent, New with a Use for makes
+// one (or edits the one there is), Modify and Delete act on it alone, and Delete of the parent
+// takes them with it. The settings AutoCAD keeps in the record's `ACAD_DSTYLE_*` xdata (part 2,
+// dimstyle-xdata.ts) are DIMVARs to the dialog, written to the xdata here; Override leaves them,
+// as the header has no variable for them.
 import type { CommandContext, CommandDef } from './command';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
@@ -23,6 +27,18 @@ import type { PromptAnswer } from './prompt';
 import type { ChangeSet } from '../model/changeset';
 import { regenerateRestyled } from './modify/dimensions';
 import { DIMVAR_BY_CODE } from '../annotation/dimvars';
+import {
+  childStyleName,
+  childStyleUse,
+  DIMSTYLE_USE_SUFFIX,
+  type DimStyleUse,
+} from '../annotation/dimstyle-family';
+import {
+  DIMSTYLE_XDATA_VARS,
+  dimStyleXdataVars,
+  isDimStyleXdataVar,
+  withDimStyleXdata,
+} from '../annotation/dimstyle-xdata';
 import {
   DIMSTYLE_REFERENCES,
   dialogVars,
@@ -38,10 +54,16 @@ import { arrowheadOptions } from '../properties/dimension';
 /** One style in the manager's list. */
 export interface DimStyleRow {
   readonly name: string;
-  /** The style's DIMVARs as its record holds them. */
+  /**
+   * The style's DIMVARs as its record holds them, with the settings its `ACAD_DSTYLE_*` xdata
+   * states (DIMBREAK, DIMJAG, DIMTALN, DIMMZF, …).
+   */
   readonly vars: DimStyleVars;
   /** A dimension, leader or tolerance uses it (the list's "Styles in use"). */
   readonly used: boolean;
+  /** A sub-style: its parent and what it is used for; listed after the parent. */
+  readonly parent?: string;
+  readonly use?: Exclude<DimStyleUse, 'all'>;
 }
 
 /** The Dimension Style Manager as DIMSTYLE opens it. */
@@ -64,11 +86,14 @@ export type DimStyleAction =
   | { readonly op: 'current'; readonly name: string }
   | {
       readonly op: 'new';
+      /** Ignored for a sub-style, which is named after its parent. */
       readonly name: string;
       /** The Start With style. */
       readonly from: string;
       /** The New Dimension Style dialog's DIMVARs as OK closed it. */
       readonly vars: DimStyleVars;
+      /** Use for: absent or `all` a style of its own, else Start With's sub-style for that use. */
+      readonly use?: DimStyleUse;
     }
   | { readonly op: 'modify'; readonly name: string; readonly vars: DimStyleVars }
   /** Override...: the current style's DIMVARs as the Override dialog's OK left them. */
@@ -84,19 +109,20 @@ type Vars = Record<string, DimVarValue>;
 const OBSOLETE = new Set(['DIMFIT', 'DIMUNIT']);
 const ALL_DIMVARS = new Set(Object.values(DIMVAR_BY_CODE));
 const DIMVAR_NAMES = [...ALL_DIMVARS].filter((n) => !OBSOLETE.has(n));
+const XDATA_NAMES = DIMSTYLE_XDATA_VARS.map((v) => v.name);
 const BLOCK_VARS = new Set(['DIMBLK', 'DIMBLK1', 'DIMBLK2', 'DIMLDRBLK']);
 const LINETYPE_VARS = new Set(['DIMLTYPE', 'DIMLTEX1', 'DIMLTEX2']);
 
 const upper = (s: string) => s.toUpperCase();
 const isChild = (s: DimStyleRecord) => s.name.includes('$');
 
-function styleNamed(model: DocumentModel, name: string): DimStyleRecord | undefined {
+export function styleNamed(model: DocumentModel, name: string): DimStyleRecord | undefined {
   for (const s of model.tables.dimStyles.values()) if (upper(s.name) === upper(name)) return s;
   return undefined;
 }
 
 /** The dimension styles the drawing's dimensions, leaders and tolerances use. */
-function usedStyles(model: DocumentModel): Set<Handle> {
+export function usedStyles(model: DocumentModel): Set<Handle> {
   const out = new Set<Handle>();
   for (const e of model.entities()) {
     const g = e.geom;
@@ -112,8 +138,14 @@ function usedStyles(model: DocumentModel): Set<Handle> {
   return out;
 }
 
+/** A style's DIMVARs with the settings its xdata states, as the dialog edits them. */
+export function styleVars(model: DocumentModel, s: DimStyleRecord): DimStyleVars {
+  const own = dimStyleXdataVars(model, s.xdata);
+  return Object.keys(own).length > 0 ? { ...s.vars, ...own } : s.vars;
+}
+
 /** A DSTYLE-form value as the dialog shows it: DIMDSEP as its character. */
-const dialogValue = (name: string, v: DimVarValue): DimVarValue =>
+export const dialogValue = (name: string, v: DimVarValue): DimVarValue =>
   name === 'DIMDSEP' && typeof v === 'number' ? String.fromCharCode(v) : v;
 
 /** The lists the dialog's reference fields choose from. */
@@ -151,7 +183,16 @@ export function dimStyleRequest(
   const all = [...model.tables.dimStyles.values()];
   const used = usedStyles(model);
   const current = currentDimStyle(model);
-  const listed = all.filter((s) => !isChild(s)).sort((a, b) => a.name.localeCompare(b.name));
+  const parents = all.filter((s) => !isChild(s)).sort((a, b) => a.name.localeCompare(b.name));
+  // Each parent, then its sub-styles in Use for's order.
+  const listed = parents.flatMap((p) => [
+    p,
+    ...all
+      .map((c) => ({ c, u: childStyleUse(c.name) }))
+      .filter(({ u }) => u !== undefined && upper(u.parent) === upper(p.name))
+      .sort((a, b) => DIMSTYLE_USE_SUFFIX[a.u!.use] - DIMSTYLE_USE_SUFFIX[b.u!.use])
+      .map(({ c }) => c),
+  ]);
   const overrides: Vars = {};
   if (current) {
     for (const [name, v] of Object.entries(headerDimvarOverrides(model, current)))
@@ -160,13 +201,18 @@ export function dimStyleRequest(
   const shown = listed.find((s) => selected && upper(s.name) === upper(selected));
   return {
     type: 'dimstyle',
-    styles: listed.map((s) => ({
-      name: s.name,
-      vars: s.vars,
-      used:
-        used.has(s.handle) ||
-        all.some((c) => isChild(c) && used.has(c.handle) && c.name.startsWith(`${s.name}$`)),
-    })),
+    styles: listed.map((s) => {
+      const child = childStyleUse(s.name);
+      return {
+        name: s.name,
+        vars: styleVars(model, s),
+        used:
+          used.has(s.handle) ||
+          all.some((c) => isChild(c) && used.has(c.handle) && c.name.startsWith(`${s.name}$`)),
+        ...(child && { parent: listed.find((p) => upper(p.name) === upper(child.parent))!.name }),
+        ...(child && { use: child.use }),
+      };
+    }),
     current: current?.name ?? '',
     overrides,
     selected: shown?.name ?? current?.name ?? listed[0]?.name ?? '',
@@ -186,6 +232,11 @@ function validValue(model: DocumentModel, name: string, v: unknown): v is DimVar
   }
   if (name === 'DIMDSEP') return typeof v === 'string' && [...v].length === 1;
   if (name === 'DIMPOST' || name === 'DIMAPOST') return typeof v === 'string';
+  if (name === 'DIMMZS' || name === 'DIMALTMZS') return typeof v === 'string' && v.length <= 255;
+  if (name === 'DIMTALN') return v === 0 || v === 1;
+  if (name === 'DIMMZF' || name === 'DIMALTMZF' || name === 'DIMJAG')
+    return typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if (name === 'DIMBREAK') return typeof v === 'number' && Number.isFinite(v) && v >= 0;
   return typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v));
 }
 
@@ -203,7 +254,7 @@ function changedVars(
   const e = edited as Record<string, unknown>;
   const shown = dialogVars(record);
   const out = new Map<string, DimVarValue | undefined>();
-  for (const name of DIMVAR_NAMES) {
+  for (const name of [...DIMVAR_NAMES, ...XDATA_NAMES]) {
     const now = e[name];
     if (now === undefined) {
       // A reference the dialog left at its default (closed filled, ByBlock); a style always
@@ -225,7 +276,8 @@ function changedVars(
     } else if (value !== shown[name]) out.set(name, value);
   }
   // The obsolete DIMFIT and DIMUNIT come back as the style held them, and are left so.
-  for (const key of Object.keys(e)) if (!ALL_DIMVARS.has(key)) return undefined;
+  for (const key of Object.keys(e))
+    if (!ALL_DIMVARS.has(key) && !isDimStyleXdataVar(key)) return undefined;
   return out;
 }
 
@@ -254,6 +306,29 @@ function withChanges(
     out[name] = v;
   }
   return out;
+}
+
+/** `changes` split into the record's DIMVARs and the settings its xdata keeps. */
+function split(changes: ReadonlyMap<string, DimVarValue | undefined>): {
+  vars: Map<string, DimVarValue | undefined>;
+  xdata: Map<string, DimVarValue>;
+} {
+  const vars = new Map<string, DimVarValue | undefined>();
+  const xdata = new Map<string, DimVarValue>();
+  for (const [name, v] of changes) {
+    if (!isDimStyleXdataVar(name)) vars.set(name, v);
+    else if (v !== undefined) xdata.set(name, v);
+  }
+  return { vars, xdata };
+}
+
+/** The xdata of `record` an edit keeps or a new style copies: its `ACAD_DSTYLE_*` settings. */
+function settingsXdata(model: DocumentModel, record: DimStyleRecord): DimStyleRecord['xdata'] {
+  const apps = new Set(DIMSTYLE_XDATA_VARS.map((v) => v.app));
+  const kept = (record.xdata ?? []).filter((a) =>
+    apps.has(model.tables.appIds.get(a.appId)?.name.toUpperCase() ?? ''),
+  );
+  return kept.length > 0 ? kept : undefined;
 }
 
 /**
@@ -325,11 +400,15 @@ function setHeaderVars(
   }
 }
 
-const NAME_IN_USE = 'A dimension style with this name already exists.';
+export const NAME_IN_USE = 'A dimension style with this name already exists.';
 const NAME_INVALID = 'Invalid dimension style name.';
 
 /** Why `name` cannot name a new or renamed style (`except`: the style being renamed). */
-function nameProblem(model: DocumentModel, name: string, except?: Handle): string | undefined {
+export function nameProblem(
+  model: DocumentModel,
+  name: string,
+  except?: Handle,
+): string | undefined {
   // `$` names AutoCAD's child styles; the manager does not let a user make one.
   if (!validViewName(name) || name.includes('$')) return NAME_INVALID;
   const other = styleNamed(model, name);
@@ -340,7 +419,7 @@ function nameProblem(model: DocumentModel, name: string, except?: Handle): strin
  * Makes `a`; what to show next (the style left selected, a refusal) and the change that restyled
  * dimensions, which are drawn again at once.
  */
-function act(
+export function dimStyleAct(
   ctx: CommandContext,
   a: DimStyleAction,
 ): { selected?: string; note?: string; restyled?: ChangeSet } {
@@ -358,33 +437,55 @@ function act(
     }
     case 'new': {
       const from = styleNamed(model, a.from);
-      const name = typeof a.name === 'string' ? a.name.trim() : '';
-      const problem = nameProblem(model, name);
+      const use = a.use === undefined || a.use === 'all' ? undefined : a.use;
+      if (use !== undefined && !Object.hasOwn(DIMSTYLE_USE_SUFFIX, use)) return {};
+      // A sub-style is named after its Start With style; one there already is edited.
+      if (use !== undefined && from && !isChild(from)) {
+        const child = styleNamed(model, childStyleName(from.name, use));
+        if (child) return dimStyleAct(ctx, { op: 'modify', name: child.name, vars: a.vars });
+      } else if (use !== undefined) return {};
+      const name = use
+        ? childStyleName(from!.name, use)
+        : typeof a.name === 'string'
+          ? a.name.trim()
+          : '';
+      const problem = use ? undefined : nameProblem(model, name);
       if (problem) return { note: problem };
-      const changes = from && changedVars(model, from.vars, a.vars);
+      const changes = from && changedVars(model, styleVars(model, from), a.vars);
       if (!from || !changes) return {};
-      const colors = keptTrueColors(from, changes);
+      const { vars: varChanges, xdata: settings } = split(changes);
+      const colors = keptTrueColors(from, varChanges);
       const trueColors = 'trueColors' in colors ? colors.trueColors : from.trueColors;
-      ctx.edit((b) => {
+      const restyled = ctx.edit((b) => {
+        const kept = settingsXdata(model, from);
+        const xdata =
+          settings.size > 0 ? withDimStyleXdata(b, model, { xdata: kept }, settings) : kept;
         b.addTableRecord('dimStyles', {
           name,
           flags: 0,
-          vars: withObsoleteOfStandard(model, withChanges(b, model, from.vars, changes)),
+          vars: withObsoleteOfStandard(model, withChanges(b, model, from.vars, varChanges)),
           ...(trueColors && { trueColors }),
+          ...(xdata && { xdata }),
         });
       });
-      return { selected: name };
+      // A new sub-style redraws its parent's dimensions of its kind.
+      return { selected: name, ...(use && { restyled }) };
     }
     case 'modify': {
       const s = styleNamed(model, a.name);
-      const changes = s && changedVars(model, s.vars, a.vars);
+      const changes = s && changedVars(model, styleVars(model, s), a.vars);
       if (!s || !changes) return {};
       if (changes.size === 0) return { selected: s.name };
       const isCurrent = s.handle === current?.handle;
       const overridden = isCurrent ? headerDimvarOverrides(model, s) : {};
+      const { vars: varChanges, xdata: settings } = split(changes);
       const restyled = ctx.edit((b) => {
-        const vars = withChanges(b, model, s.vars, changes);
-        b.updateTableRecord('dimStyles', s.handle, { vars, ...keptTrueColors(s, changes) });
+        const vars = withChanges(b, model, s.vars, varChanges);
+        b.updateTableRecord('dimStyles', s.handle, {
+          vars,
+          ...keptTrueColors(s, varChanges),
+          ...(settings.size > 0 && { xdata: withDimStyleXdata(b, model, s, settings) }),
+        });
         // The header follows the current style, its own overrides kept.
         if (isCurrent) {
           setHeaderVars(b, model, vars, (n, inHeader) => inHeader && !Object.hasOwn(overridden, n));
@@ -394,8 +495,10 @@ function act(
     }
     case 'override': {
       if (!current) return {};
-      const changes = changedVars(model, current.vars, a.vars);
-      if (!changes) return {};
+      const all = changedVars(model, styleVars(model, current), a.vars);
+      if (!all) return {};
+      const changes = split(all).vars;
+      if (changes.size === 0) return { selected: current.name };
       ctx.edit((b) => {
         const vars = withChanges(b, model, current.vars, changes);
         setHeaderVars(b, model, vars, (n, inHeader) => inHeader || changes.has(n));
@@ -443,10 +546,15 @@ function act(
     }
     case 'delete': {
       const s = styleNamed(model, a.name);
-      if (!s || isChild(s)) return {};
-      const family = [...model.tables.dimStyles.values()].filter(
-        (c) => c === s || c.name.startsWith(`${s.name}$`),
-      );
+      if (!s) return {};
+      // A sub-style goes alone; a parent takes its sub-styles with it.
+      const family = isChild(s)
+        ? [s]
+        : [...model.tables.dimStyles.values()].filter(
+            (c) => c === s || c.name.startsWith(`${s.name}$`),
+          );
+      const parentOf = childStyleUse(s.name)?.parent;
+      const selectedAfter = parentOf ? styleNamed(model, parentOf)?.name : current?.name;
       const used = usedStyles(model);
       if (upper(s.name) === 'STANDARD')
         return { selected: s.name, note: 'Standard cannot be deleted.' };
@@ -454,10 +562,10 @@ function act(
         return { selected: s.name, note: 'The current style cannot be deleted.' };
       if (family.some((c) => used.has(c.handle)))
         return { selected: s.name, note: 'Style in use, can’t be deleted.' };
-      ctx.edit((b) => {
+      const restyled = ctx.edit((b) => {
         for (const c of family) b.removeTableRecord('dimStyles', c.handle);
       });
-      return { selected: current?.name ?? '' };
+      return { selected: selectedAfter ?? '', ...(parentOf && { restyled }) };
     }
   }
 }
@@ -477,7 +585,7 @@ export function dimstyleCommand(): CommandDef {
           dialog: dimStyleRequest(ctx.model, selected, note),
         });
         if (a.kind !== 'dialog' || a.action !== 'apply' || !a.dimstyle) return;
-        const shown = act(ctx, a.dimstyle);
+        const shown = dimStyleAct(ctx, a.dimstyle);
         // AutoCAD redraws a style's dimensions as Modify's OK closes.
         if (shown.restyled) await regenerateRestyled(ctx, [shown.restyled]);
         selected = shown.selected ?? selected;

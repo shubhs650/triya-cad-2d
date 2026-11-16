@@ -319,6 +319,34 @@ describe('dimension styles', () => {
     expect(back.tables?.dimStyles?.find((s) => s.handle === added!.handle)?.name).toBe('NEW');
   });
 
+  it('writes the settings a style keeps in ACAD_DSTYLE xdata, new or edited (M4-03 part 2)', () => {
+    const bytes = drawing();
+    const model = open(bytes);
+    const arch = dimStyleNamed(model, 'ARCH');
+    let jag = '';
+    let added: DimStyleRecord | undefined;
+    const entry = (code: number, group: number, value: number | string) => [
+      { code: 1070, value: code },
+      { code: group, value },
+    ];
+    edit(model, (b) => {
+      jag = b.addTableRecord('appIds', { name: 'ACAD_DSTYLE_DIMJAG', flags: 0 }).handle;
+      b.updateTableRecord('dimStyles', arch.handle, {
+        xdata: [{ appId: jag, values: entry(388, 1040, 2.5) }],
+      });
+      added = b.addTableRecord('dimStyles', {
+        ...like(dimStyleNamed(model, 'Standard')),
+        name: 'JAGGED',
+        xdata: [{ appId: jag, values: entry(388, 1040, 3) }],
+      });
+    });
+    const back = saved(bytes, model, 'dxf');
+    const style = (h: string) => back.tables!.dimStyles!.find((s) => s.handle === h)!;
+    expect(style(arch.handle).xdata).toEqual([{ appId: jag, values: entry(388, 1040, 2.5) }]);
+    expect(style(added!.handle).xdata).toEqual([{ appId: jag, values: entry(388, 1040, 3) }]);
+    expect(style(arch.handle).vars).toEqual(arch.vars);
+  });
+
   it('writes an R12 style’s DIMVARs and arrow blocks', () => {
     const bytes = drawing(ACadVersion.AC1009);
     const model = open(bytes);
@@ -463,9 +491,14 @@ describe('dimension styles', () => {
         /xref-dependent/,
       ],
       [
+        // Xdata edits are written (M4-03 part 2), as an entity's are: never to an unregistered
+        // application.
         'xdata',
-        (b, m) => b.updateTableRecord('dimStyles', dimStyleNamed(m, 'ARCH').handle, { xdata: [] }),
-        /xdata changes/,
+        (b, m) =>
+          b.updateTableRecord('dimStyles', dimStyleNamed(m, 'ARCH').handle, {
+            xdata: [{ appId: 'FFFF', values: [{ code: 1070, value: 1 }] }],
+          }),
+        /application FFFF is not a registered application/,
       ],
     ];
     for (const [what, f, message] of records) {

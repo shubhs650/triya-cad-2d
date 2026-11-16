@@ -24,6 +24,7 @@ import type {
   TextMeasure,
   Vec2,
 } from '@triya/engine';
+import { drawnDimStyle } from '@triya/engine';
 import { add, dist, dot, fromAngle, normAngle, sub, type DimPart } from './geometry';
 import { dimensionParts } from './parts';
 import { annotationScaleOf, dimStyle } from './style';
@@ -319,6 +320,11 @@ export function dimensionHealth(
   if (!('dimType' in g) || g.block === undefined || !model.blocks.get(g.block)) return undefined;
   const generated = dimensionParts(e, model, measure);
   if (!generated) return undefined;
-  const h = dimStyle(g.style, e.xdata, model, annotationScaleOf(e, model)).textHeight;
+  const h = dimStyle(
+    drawnDimStyle(model, g),
+    e.xdata,
+    model,
+    annotationScaleOf(e, model),
+  ).textHeight;
   return compareParts(generated, storedParts(g.block, model), h, colors);
 }

@@ -64,7 +64,11 @@ const dimension = (styleHandle: string): DimensionGeometry =>
     rotation: 0,
   }) as DimensionGeometry;
 
-function setup(header: [string, HeaderValue][] = [], styles: DimStyleRecord[] = []) {
+function setup(
+  header: [string, HeaderValue][] = [],
+  styles: DimStyleRecord[] = [],
+  apps: ReturnType<typeof record>[] = [],
+) {
   const base = sampleInit();
   const model = DocumentModel.create({
     ...base,
@@ -81,7 +85,7 @@ function setup(header: [string, HeaderValue][] = [], styles: DimStyleRecord[] = 
     ]),
     tables: {
       ...base.tables,
-      appIds: [record('12', 'ACAD')],
+      appIds: [record('12', 'ACAD'), ...apps],
       textStyles: [{ ...record(TEXT_STANDARD, 'Standard'), height: 0, widthFactor: 1 } as never],
       linetypes: [
         ...(base.tables?.linetypes ?? []),
@@ -119,15 +123,16 @@ function edited(vars: DimStyleRecord['vars'], fields: [string, string | number |
 }
 
 describe('DIMSTYLE (M4-03)', () => {
-  it('opens the manager on the current style, child styles left out of the list', async () => {
+  it('opens the manager on the current style, sub-styles listed under their parent', async () => {
     const s = setup();
     await s.bus.submit('D');
     expect(s.bus.prompt).toMatchObject({ kind: 'dialog', message: 'Dimension Style Manager' });
     const r = s.request();
-    expect(r.styles.map((x) => [x.name, x.used])).toEqual([
-      ['ISO-25', true],
-      ['Spare', false],
-      ['Standard', false],
+    expect(r.styles.map((x) => [x.name, x.used, x.parent, x.use])).toEqual([
+      ['ISO-25', true, undefined, undefined],
+      ['ISO-25$2', false, 'ISO-25', 'angular'],
+      ['Spare', false, undefined, undefined],
+      ['Standard', false, undefined, undefined],
     ]);
     expect(r).toMatchObject({ current: 'Standard', selected: 'Standard', overrides: {} });
     expect(r.note).toBeUndefined();
@@ -417,9 +422,13 @@ describe('DIMSTYLE (M4-03)', () => {
     expect(s.styleNamed('Spare$0')).toBeUndefined();
     expect(s.request()).toMatchObject({ selected: 'Standard' });
     expect(s.request().note).toBeUndefined();
-    await s.act({ op: 'delete', name: 'ISO-25$2' });
     await s.act({ op: 'delete', name: 'Gone' });
     expect(s.styleNamed('ISO-25$2')).toBeDefined();
+    // A sub-style goes alone (part 2), the list back on its parent.
+    await s.act({ op: 'delete', name: 'ISO-25$2' });
+    expect(s.styleNamed('ISO-25$2')).toBeUndefined();
+    expect(s.styleNamed('ISO-25')).toBeDefined();
+    expect(s.request().selected).toBe('ISO-25');
   });
 
   it('is one undo step for everything it did, and Close (or Esc) ends it', async () => {
@@ -462,5 +471,360 @@ describe('DIMSTYLE (M4-03)', () => {
     await bus.answer({ kind: 'dialog', action: 'apply', dimstyle: { op: 'override', vars: {} } });
     await bus.answer({ kind: 'dialog', action: 'apply', dimstyle: { op: 'save-overrides' } });
     expect(model.version).toBe(0);
+  });
+});
+
+const JAG_APP = '35';
+const TALN_APP = '36';
+const ANNO_APP = '37';
+const jagged = (factor: number) => ({
+  appId: JAG_APP,
+  values: [
+    { code: 1070, value: 388 },
+    { code: 1040, value: factor },
+  ],
+});
+
+describe('DIMSTYLE part 2 (M4-03): xdata settings and sub-styles', () => {
+  const apps = [
+    record(JAG_APP, 'ACAD_DSTYLE_DIMJAG'),
+    record(TALN_APP, 'ACAD_DSTYLE_DIMTALN'),
+    record(ANNO_APP, 'AcadAnnotative'),
+  ];
+  const settings = style('2C', 'Settings', STANDARD_VARS, {
+    xdata: [
+      { appId: ANNO_APP, values: [{ code: 1000, value: 'AnnotativeData' }] },
+      jagged(2),
+      {
+        appId: TALN_APP,
+        values: [
+          { code: 1070, value: 392 },
+          { code: 1070, value: 1 },
+        ],
+      },
+    ],
+  });
+
+  it('shows the settings a style keeps in ACAD_DSTYLE xdata as its DIMVARs', async () => {
+    const s = setup([], [settings], apps);
+    await s.bus.submit('DIMSTYLE');
+    const row = s.request().styles.find((x) => x.name === 'Settings')!;
+    expect(row.vars).toMatchObject({ DIMJAG: 2, DIMTALN: 1 });
+    expect(row.vars.DIMBREAK).toBeUndefined();
+    // The dialog shows AutoCAD's defaults for the ones a style does not state.
+    expect(dialogVars(STANDARD_VARS)).toMatchObject({
+      DIMBREAK: 0.125,
+      DIMJAG: 1.5,
+      DIMTALN: 0,
+      DIMMZF: 100,
+      DIMMZS: '',
+    });
+  });
+
+  it('Modify writes them into the record’s xdata, registering the applications it lacks', async () => {
+    const s = setup([], [settings], apps);
+    await s.bus.submit('DIMSTYLE');
+    const vars = edited(s.request().styles.find((x) => x.name === 'Settings')!.vars, [
+      ['DIMJAG', 3],
+      ['DIMBREAK', 0.25],
+      ['DIMZIN.leading', true],
+      ['DIMMZS', 'cm'],
+    ]);
+    await s.act({ op: 'modify', name: 'Settings', vars });
+    const st = s.styleNamed('Settings')!;
+    // Only DIMVARs in `vars`; the settings in the xdata, the other applications kept in place.
+    expect(
+      Object.keys(st.vars).filter((n) => /^DIM(BREAK|JAG|MZF|MZS|ALTMZF|ALTMZS|TALN)$/.test(n)),
+    ).toEqual([]);
+    expect(st.vars.DIMZIN).toBe(4);
+    const appNamed = (name: string) =>
+      [...s.model.tables.appIds.values()].find((a) => a.name === name)!.handle;
+    expect(st.xdata).toEqual([
+      { appId: ANNO_APP, values: [{ code: 1000, value: 'AnnotativeData' }] },
+      jagged(3),
+      {
+        appId: TALN_APP,
+        values: [
+          { code: 1070, value: 392 },
+          { code: 1070, value: 1 },
+        ],
+      },
+      {
+        appId: appNamed('ACAD_DSTYLE_DIMBREAK'),
+        values: [
+          { code: 1070, value: 391 },
+          { code: 1040, value: 0.25 },
+        ],
+      },
+      {
+        appId: appNamed('ACAD_DSTYLE_DIMMZS'),
+        values: [
+          { code: 1070, value: 394 },
+          { code: 1000, value: 'cm' },
+        ],
+      },
+    ]);
+    // Values the dialog cannot give are refused.
+    const version = s.model.version;
+    for (const bad of [
+      { DIMJAG: 0 },
+      { DIMTALN: 2 },
+      { DIMBREAK: -1 },
+      { DIMMZS: 5 },
+      { DIMMZF: 'x' },
+    ]) {
+      await s.act({ op: 'modify', name: 'Settings', vars: { ...vars, ...bad } });
+    }
+    expect(s.model.version).toBe(version);
+  });
+
+  it('New copies the Start With style’s settings but not its annotative xdata; Override leaves them', async () => {
+    const s = setup([['$DIMSTYLE', 'Settings']], [settings], apps);
+    await s.bus.submit('DIMSTYLE');
+    const from = s.request().styles.find((x) => x.name === 'Settings')!.vars;
+    await s.act({ op: 'new', name: 'Copy', from: 'Settings', vars: dialogVars(from) });
+    expect(s.styleNamed('Copy')!.xdata).toEqual([
+      jagged(2),
+      {
+        appId: TALN_APP,
+        values: [
+          { code: 1070, value: 392 },
+          { code: 1070, value: 1 },
+        ],
+      },
+    ]);
+    const version = s.model.version;
+    await s.act({ op: 'override', vars: edited(from, [['DIMJAG', 5]]) });
+    expect(s.model.version).toBe(version);
+    expect(s.styleNamed('Settings')!.xdata).toEqual(settings.xdata);
+  });
+
+  it('New with Use for makes the Start With style’s sub-style, or edits the one there is', async () => {
+    const s = setup();
+    await s.bus.submit('DIMSTYLE');
+    const iso = s.styleNamed('ISO-25')!;
+    const vars = edited(iso.vars, [['DIMTXT', 3.5]]);
+    await s.act({ op: 'new', name: 'ignored', from: 'ISO-25', vars, use: 'linear' });
+    const child = s.styleNamed('ISO-25$0')!;
+    expect(child.vars).toMatchObject({ DIMTXT: 3.5, DIMASZ: 2.5 });
+    expect(s.styleNamed('ignored')).toBeUndefined();
+    expect(s.request().selected).toBe('ISO-25$0');
+    expect(s.request().styles.map((x) => x.name)).toEqual([
+      'ISO-25',
+      'ISO-25$0',
+      'ISO-25$2',
+      'Spare',
+      'Standard',
+    ]);
+    // Again: the existing sub-style is modified, not doubled.
+    await s.act({
+      op: 'new',
+      name: '',
+      from: 'ISO-25',
+      vars: edited(iso.vars, [['DIMTXT', 5]]),
+      use: 'linear',
+    });
+    expect(s.styleNamed('ISO-25$0')!.handle).toBe(child.handle);
+    expect(s.styleNamed('ISO-25$0')!.vars.DIMTXT).toBe(5);
+    // A sub-style of a sub-style, or an unknown use, is refused; All dimensions is a plain New.
+    const size = s.model.tables.dimStyles.size;
+    await s.act({ op: 'new', name: '', from: 'ISO-25$2', vars, use: 'radius' });
+    await s.act({ op: 'new', name: '', from: 'ISO-25', vars, use: 'bogus' as never });
+    expect(s.model.tables.dimStyles.size).toBe(size);
+    await s.act({ op: 'new', name: 'Plain', from: 'ISO-25', vars, use: 'all' });
+    expect(s.styleNamed('Plain')).toBeDefined();
+  });
+});
+
+describe('-DIMSTYLE (M4-03 part 2)', () => {
+  /** What the command printed since `from`. */
+  const printed = (s: ReturnType<typeof setup>, from: number) => s.bus.history.slice(from);
+  const dimId = (s: ReturnType<typeof setup>) => s.model.entityByHandle(DIM)!.id;
+
+  it('asks for an option, Restore by default, and Restore makes a style current', async () => {
+    const s = setup([['$DIMASZ', 0.25]]);
+    await s.bus.submit('-DIMSTYLE');
+    expect(s.bus.history).toContain('Current dimension style: Standard');
+    expect(s.bus.prompt).toMatchObject({
+      kind: 'keyword',
+      message: 'Enter a dimension style option',
+      options: ['Save', 'Restore', 'STatus', 'Variables', 'Apply', '?'],
+      default: { kind: 'keyword', keyword: 'Restore' },
+    });
+    await s.bus.submit('');
+    expect(s.bus.prompt).toMatchObject({ kind: 'string', defaultLabel: 'select dimension' });
+    await s.bus.submit('nope');
+    expect(s.bus.history.at(-1)).toBe('Dimension style nope not found.');
+    await s.bus.submit('iso-25');
+    expect(s.bus.command).toBeUndefined();
+    expect(s.model.header.get('$DIMSTYLE')).toBe('ISO-25');
+    // Its DIMVARs replace the header's, overrides and all.
+    expect(s.model.header.get('$DIMASZ')).toBe(2.5);
+  });
+
+  it('Restore by selecting a dimension, and ~name lists the differences', async () => {
+    const s = setup();
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('R');
+    await s.bus.submit('');
+    expect(s.bus.prompt).toMatchObject({ kind: 'selection', message: 'Select dimension' });
+    await s.bus.answer({ kind: 'selection', ids: [dimId(s)] });
+    expect(s.model.header.get('$DIMSTYLE')).toBe('ISO-25');
+
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('R');
+    const from = s.bus.history.length;
+    await s.bus.submit('~Standard');
+    const out = printed(s, from);
+    expect(out).toContain('Differences between Standard and current settings:');
+    expect(out.some((l) => /^DIMASZ\s+0\.1800\s+2\.5000$/.test(l))).toBe(true);
+    expect(out.some((l) => l.startsWith('DIMSCALE'))).toBe(false);
+    // Nothing was made current.
+    expect(s.model.header.get('$DIMSTYLE')).toBe('ISO-25');
+  });
+
+  it('STatus lists the current settings with their descriptions; Variables a style’s', async () => {
+    const s = setup([['$DIMASZ', 0.25]]);
+    await s.bus.submit('-DIMSTYLE');
+    let from = s.bus.history.length;
+    await s.bus.submit('ST');
+    let out = printed(s, from);
+    expect(out.find((l) => l.startsWith('DIMASZ'))).toMatch(/^DIMASZ\s+0\.2500\s+Arrow size$/);
+    expect(out.find((l) => l.startsWith('DIMTOL '))).toMatch(/Off\s+Tolerance dimensioning$/);
+    expect(out.find((l) => l.startsWith('DIMTXSTY'))).toMatch(/Standard\s+Text style$/);
+    expect(out.find((l) => l.startsWith('DIMBLK '))).toMatch(/ClosedFilled/);
+    expect(out.find((l) => l.startsWith('DIMLTYPE'))).toMatch(/BYBLOCK/);
+    expect(out.find((l) => l.startsWith('DIMJAG'))).toMatch(/1\.5000\s+Linear jog height factor$/);
+    expect(out.find((l) => l.startsWith('DIMDSEP'))).toMatch(/^DIMDSEP\s+\.\s+Decimal separator$/);
+    expect(s.bus.command).toBeUndefined();
+
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('V');
+    from = s.bus.history.length;
+    await s.bus.submit('ISO-25');
+    out = printed(s, from);
+    expect(out.find((l) => l.startsWith('DIMASZ'))).toMatch(/^DIMASZ\s+2\.5000/);
+    // By a dimension: its style with its own overrides.
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('V');
+    await s.bus.submit('');
+    from = s.bus.history.length;
+    await s.bus.answer({ kind: 'selection', ids: [dimId(s)] });
+    out = printed(s, from);
+    expect(out.find((l) => l.startsWith('DIMTXT'))).toMatch(/^DIMTXT\s+2\.5000/);
+    expect(s.model.header.get('$DIMSTYLE')).toBe('Standard');
+  });
+
+  it('Save makes a new style of the current settings and makes it current', async () => {
+    const s = setup([['$DIMASZ', 0.25]]);
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('S');
+    expect(s.bus.prompt).toMatchObject({ message: 'Enter name for new dimension style' });
+    await s.bus.submit('a|b');
+    expect(s.bus.history.at(-1)).toBe('Invalid dimension style name.');
+    await s.bus.submit('Saved');
+    expect(s.bus.command).toBeUndefined();
+    const saved = s.styleNamed('Saved')!;
+    expect(saved.vars).toMatchObject({ DIMASZ: 0.25, DIMTXT: 0.18, DIMTOL: false });
+    expect(s.model.header.get('$DIMSTYLE')).toBe('Saved');
+    expect(s.model.header.get('$DIMASZ')).toBe(0.25);
+    expect(s.bus.undo.state.undoable).toBe(1);
+  });
+
+  it('Save onto an existing name redefines it once the drafter says Yes', async () => {
+    const s = setup([['$DIMASZ', 0.5]]);
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('S');
+    await s.bus.submit('spare');
+    expect(s.bus.prompt).toMatchObject({
+      kind: 'keyword',
+      message: 'That name is already in use, redefine it?',
+      default: { kind: 'keyword', keyword: 'No' },
+    });
+    await s.bus.submit('');
+    expect(s.styleNamed('Spare')!.vars.DIMASZ).toBe(0.18);
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('S');
+    await s.bus.submit('Spare');
+    await s.bus.submit('Y');
+    expect(s.styleNamed('Spare')!.vars.DIMASZ).toBe(0.5);
+    expect(s.model.header.get('$DIMSTYLE')).toBe('Spare');
+    // A sub-style's name is not a style to save to.
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('S');
+    await s.bus.submit('ISO-25$2');
+    expect(s.bus.history.at(-1)).toBe('Invalid dimension style name.');
+  });
+
+  it('Apply gives the selected dimensions the current style and settings', async () => {
+    const s = setup([['$DIMASZ', 0.3]]);
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('A');
+    expect(s.bus.prompt).toMatchObject({ kind: 'selection', message: 'Select objects' });
+    await s.bus.answer({ kind: 'selection', ids: [dimId(s)] });
+    const e = s.model.entityByHandle(DIM)!;
+    expect((e.geom as DimensionGeometry).style).toBe(STANDARD);
+    // The header's override filed as its DSTYLE override (41 DIMASZ).
+    expect(e.xdata).toEqual([
+      {
+        appId: '12',
+        values: [
+          { code: 1000, value: 'DSTYLE' },
+          { code: 1002, value: '{' },
+          { code: 1070, value: 41 },
+          { code: 1040, value: 0.3 },
+          { code: 1002, value: '}' },
+        ],
+      },
+    ]);
+  });
+
+  it('says what it cannot do, and lists ? wherever a name is asked', async () => {
+    const s = setup();
+    const run = async (...inputs: string[]) => {
+      await s.bus.submit('-DIMSTYLE');
+      for (const i of inputs) await s.bus.submit(i);
+    };
+    await run('R', 'ISO-25$2');
+    expect(s.bus.history.at(-1)).toBe('Invalid dimension style name.');
+    await run('V', '~Spare');
+    expect(s.bus.history.at(-1)).toBe('No differences.');
+    await run('?', 'Q*');
+    expect(s.bus.history.at(-1)).toBe('No matching dimension styles found.');
+    await run('S', '?', '');
+    expect(s.bus.history).toContain('  ISO-25$2');
+    expect(s.bus.prompt).toMatchObject({ message: 'Enter name for new dimension style' });
+    await s.bus.submit('');
+    expect(s.bus.command).toBeUndefined();
+    await run('R', '?', '');
+    expect(s.bus.prompt).toMatchObject({ message: 'Enter a dimension style name' });
+    await s.bus.cancel();
+    // Nothing selected: not a dimension, and the command ends.
+    await run('R', '');
+    await s.bus.answer({ kind: 'selection', ids: [] });
+    expect(s.bus.history.at(-1)).toBe('That object is not a dimension.');
+    expect(s.bus.command).toBeUndefined();
+    await run('A');
+    await s.bus.answer({ kind: 'selection', ids: [] });
+    expect(s.bus.command).toBeUndefined();
+    expect(s.bus.undo.state.undoable).toBe(0);
+
+    const none = new PromptBus({
+      model: DocumentModel.create(sampleInit()),
+      registry: builtinCommands(),
+    });
+    await none.submit('-DIMSTYLE');
+    expect(none.history.at(-1)).toBe('The drawing has no dimension style.');
+    expect(none.command).toBeUndefined();
+  });
+
+  it('? lists the styles matching a pattern', async () => {
+    const s = setup();
+    await s.bus.submit('-DIMSTYLE');
+    await s.bus.submit('?');
+    expect(s.bus.prompt).toMatchObject({ message: 'Enter dimension style(s) to list' });
+    const from = s.bus.history.length;
+    await s.bus.submit('S*');
+    expect(printed(s, from).slice(1)).toEqual(['Named dimension styles:', '  Spare', '  Standard']);
   });
 });

@@ -8,6 +8,10 @@
 // A DIMVAR the drawing's version has no group for is refused when it changes, as AutoCAD's own
 // save to that version drops it (the DIMSTYLE layouts of the ODA's Open Design Specification for
 // .dwg, §20.4.53, and the DXF reference's DIMSTYLE groups).
+//
+// A record's xdata edits are written too (M4-03 part 2): the dialog's Break size, Jog height
+// factor, Tolerance alignment and sub-units are `ACAD_DSTYLE_*` xdata on the record, which the
+// DIMSTYLE manager rewrites (engine dimstyle-xdata.ts); its other applications keep their records.
 
 import {
   ACadVersion,
@@ -32,6 +36,7 @@ import { DIMVARS, dimStyle, type DimVarKind, type DimVarProperty } from '../map/
 import type { CadFormat } from '../read';
 import { resolve, same, type Resolver } from './entities';
 import { planRecords, XREF_BITS, type RecordPlan } from './records';
+import { writeXdata } from './xdata';
 
 export type DimStylePlan = RecordPlan<DimensionStyle, DimStyleRecord>;
 
@@ -162,6 +167,8 @@ export function planDimStyles(
   return planRecords(doc, base.tables?.dimStyles ?? [], model.tables.dimStyles, r, {
     what: 'dimension style',
     removable: true,
+    // The dialog's settings AutoCAD files in `ACAD_DSTYLE_*` xdata (M4-03 part 2).
+    xdataEdits: true,
     type: DimensionStyle,
     make: (a) => new DimensionStyle(a.name),
     // acad-ts's table cannot rename its default entry, which DIMSTYLE commands fall back to.
@@ -299,6 +306,8 @@ function writeDimStyle(
 ): void {
   if (b && b.name !== a.name) s.name = a.name;
   if (!b || b.flags !== a.flags) s.flags = (a.flags ?? 0) as never;
+  // A new record's xdata was written as it was planned (records.ts).
+  if (b && !same(b.xdata, a.xdata)) writeXdata(r, s, b.xdata, a.xdata);
   for (const [name] of DIMVARS) {
     const colorChanged = !same(b?.trueColors?.[name], a.trueColors?.[name]);
     if (!b || !same(b.vars[name], a.vars[name]) || colorChanged) writeVar(r, s, name, a);
