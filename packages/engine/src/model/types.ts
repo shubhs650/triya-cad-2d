@@ -156,6 +156,19 @@ export interface PointGeometry extends PlanarProps {
 export interface PolylineVertex extends CurveVertex {
   readonly startWidth?: number;
   readonly endWidth?: number;
+  /**
+   * A heavyweight 2D POLYLINE vertex's curve-fit tangent (VERTEX flag 2, DXF 50), radians in the
+   * plan: the direction PEDIT's Edit vertex Tangent gave it, which Fit uses (M3-16). An
+   * LWPOLYLINE has nowhere to save one, so on its vertices it lasts only until the drawing closes.
+   */
+  readonly tangent?: number;
+  /** A 3D POLYLINE vertex's WCS Z when it is not 0 (DEC-062); never on other polylines. */
+  readonly z?: number;
+}
+
+/** A spline-fit POLYLINE's frame point (VERTEX flag 16), with a 3D polyline's Z (DEC-062). */
+export interface PolylineFramePoint extends Vec2 {
+  readonly z?: number;
 }
 
 export interface LwPolylineGeometry extends Polyline, PlanarProps {
@@ -187,7 +200,8 @@ export interface SplineGeometry extends Spline {
  * A heavyweight POLYLINE (2D or 3D) with its VERTEX and SEQEND entities folded in; those keep
  * their handles in the retained original. `vertices` are the ones AutoCAD draws: for a
  * spline-fit polyline that is the fitted vertices (VERTEX flag 8), with the frame (flag 16)
- * in `frame`. A 3D polyline is its plan view, with no bulges.
+ * in `frame`. A 3D polyline is its plan view, with no bulges; its vertices' heights ride along
+ * in `z` (DEC-062).
  */
 export interface PolylineGeometry extends PlanarProps {
   readonly kind: 'POLYLINE';
@@ -196,7 +210,7 @@ export interface PolylineGeometry extends PlanarProps {
   readonly is3d: boolean;
   /** DXF 70 bit 2 (curve fit) or bit 4 with 75 = 5/6/8 (quadratic, cubic, Bezier spline fit). */
   readonly fit?: 'curve' | 'quadratic' | 'cubic' | 'bezier';
-  readonly frame?: readonly Vec2[];
+  readonly frame?: readonly PolylineFramePoint[];
   /** DXF 40/41 defaults for vertices that state no width. */
   readonly startWidth?: number;
   readonly endWidth?: number;
