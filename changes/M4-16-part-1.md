@@ -1,0 +1,1 @@
+- M4-16 part 1 (#467): TINSERT and the table cell menu's Insert Block... put a block in a table cell through the Insert a Block in a Table Cell dialog (Name, Scale, AutoFit, Rotation angle, Overall cell alignment); a block cell's AutoFit and scale are kept through saves.

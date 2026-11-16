@@ -205,6 +205,11 @@ describe('TINSERT', () => {
     await s.bus.pick(at(2, 0));
     await s.bus.answer(ok({ block: TAG, scale: 1, autoFit: false, rotation: 0, alignment: 2 }));
     expect(s.table().geom.rowHeights[2]).toBe(9);
+    // At 5 the Tag stands 10 high: the row takes it and its margins.
+    await s.bus.script(['TINSERT']);
+    await s.bus.pick(at(2, 0));
+    await s.bus.answer(ok({ block: TAG, scale: 5, autoFit: false, rotation: 0, alignment: 2 }));
+    expect(s.table().geom.rowHeights[2]).toBeCloseTo(13);
   });
 
   it('opens on what a block cell holds, and the cell takes text typed in it', async () => {
@@ -258,6 +263,17 @@ describe('TINSERT', () => {
     await s.bus.answer(ok({ block: TAG, scale: 0, autoFit: false, rotation: 0, alignment: 1 }));
     expect(s.messages).toContain('The scale must be greater than 0.');
     expect(s.table().geom.cells[2]![1]!.type).toBe('text');
+  });
+
+  it('takes a click inside a cell, and asks again away from any table', async () => {
+    const s = setup();
+    await table(s);
+    await s.bus.script(['TINSERT']);
+    await s.bus.pick({ x: 500, y: 500 });
+    expect(s.messages).toContain('The object selected is not a table cell.');
+    expect(s.bus.promptText).toBe('Pick a table cell:');
+    await s.bus.submit('');
+    expect(s.bus.promptText).toBe('Command:');
   });
 
   it('says when the drawing has no block to insert', async () => {

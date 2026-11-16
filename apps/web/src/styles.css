@@ -4538,7 +4538,7 @@ button {
 
 /* TINSERT's Insert a Block in a Table Cell dialog (M4-16). */
 .cad-dialog.cell-block-dialog {
-  width: min(360px, calc(100vw - 32px));
+  width: min(400px, calc(100vw - 32px));
 }
 
 .cell-block-dialog > .cad-dialog-field > span,
@@ -4566,6 +4566,16 @@ button {
 
 .cell-block-row > .cad-dialog-field {
   flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cell-block-dialog input[type='text'] {
+  flex: 0 1 6em;
+  width: 6em;
+}
+
+.cell-block-dialog select {
+  min-width: 0;
 }
 
 .cell-block-error {

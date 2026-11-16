@@ -26,6 +26,7 @@ import type { MTextGeometry, TableGeometry, TableStyleRecord } from '../../model
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { mtextEditorRequest } from './text';
+import { tableCellUnder } from './table-cell-menu';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -115,6 +116,9 @@ export async function* editTableCells(
 export async function* pickTableCell(
   ctx: CommandContext,
 ): Sub<{ id: EntityId; cell: [number, number] } | undefined> {
+  // A click inside a cell, where nothing is drawn, picks the cell (M4-16): typed at `Command:`
+  // with nothing selected, the prompt takes a point, as AutoCAD's does.
+  if (ctx.preselected.length === 0) return yield* pointedTableCell(ctx);
   for (;;) {
     const a = yield ctx.prompt.selection({
       message: 'Pick a table cell',
@@ -127,6 +131,19 @@ export async function* pickTableCell(
     const t = id !== undefined ? tableOf(ctx, id) : undefined;
     const cell = t && a.pick ? tableCellAt(t.g, t.style, tableFromPlan(t.g, a.pick)) : undefined;
     if (id !== undefined && cell) return { id, cell };
+    ctx.message('The object selected is not a table cell.');
+  }
+}
+
+/** "Pick a table cell:" as a point, the cell of the table under it (the last drawn first). */
+async function* pointedTableCell(
+  ctx: CommandContext,
+): Sub<{ id: EntityId; cell: [number, number] } | undefined> {
+  for (;;) {
+    const a = yield ctx.prompt.point({ message: 'Pick a table cell', osnap: 0 });
+    if (a.kind !== 'point') return undefined;
+    const picked = tableCellUnder(ctx.model, ctx.space, a.point, 0);
+    if (picked) return picked;
     ctx.message('The object selected is not a table cell.');
   }
 }

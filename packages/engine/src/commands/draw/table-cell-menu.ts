@@ -13,7 +13,8 @@
 // Paste (Ctrl+V while cells are selected, M4-13) pastes a spreadsheet's cells into the cells
 // from the first one selected (`withCellsPasted`), or another app's text into that cell.
 // Match Cell gives the cells clicked the first cell's format; Remove All Property Overrides
-// leaves the cells selected their cell style's (M4-05 part 7).
+// leaves the cells selected their cell style's (M4-05 part 7). Insert Block... opens TINSERT's
+// dialog on the first cell selected (M4-16).
 import { tableCellAt, tableCellBox, tableCellText, tableRangeHeads } from '../../annotation/table';
 import {
   fitTableRow,
