@@ -10,13 +10,23 @@
 import type { HatchPatternLine } from '@triya/engine';
 import { hatchPattern, type PatPattern, patternLines, userDefinedLines } from '@triya/hatch';
 
-/** The swatch square's side in drawing units for `lines`, a few repeats of the pattern. */
+/**
+ * The swatch square's side in drawing units for `lines`, a few repeats of the pattern: five
+ * spacings of a continuous family; two dash periods of a dashed one, but no more than three
+ * sides of the cell it repeats in (spacing × period). A motif pattern (M4-12: a stroke per
+ * family, each repeating once per tile) has short spacings and long periods whose cells are
+ * all its tile, so it shows about three tiles.
+ */
 function swatchSize(lines: readonly HatchPatternLine[]): number {
   let size = 0;
   for (const l of lines) {
     const spacing = Math.abs(-Math.sin(l.angle) * l.offset.x + Math.cos(l.angle) * l.offset.y);
     const period = l.dashes.reduce((s, d) => s + Math.abs(d), 0);
-    size = Math.max(size, 5 * spacing, 2 * period);
+    const repeat =
+      period > 0
+        ? Math.min(Math.max(5 * spacing, 2 * period), 3 * Math.sqrt(spacing * period))
+        : 5 * spacing;
+    size = Math.max(size, repeat);
   }
   return size > 0 ? size : 1;
 }
@@ -42,7 +52,7 @@ export function linesSwatch(lines: readonly HatchPatternLine[]): string {
       patternLines: lines,
       style: 0,
     },
-    { maxLines: 400 },
+    { maxLines: 2000 },
   );
   if (out.kind !== 'lines') return '';
   const n = (v: number) => Math.round(v * k * 10) / 10;

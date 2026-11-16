@@ -126,3 +126,52 @@ test('the Hatch and Gradient dialog makes a hatch; Hatch Edit changes it', async
     .poll(() => hatches(page))
     .toEqual([{ pattern: 'TRIYA_CROSS45', scale: 2, loops: 1 }]);
 });
+
+test('the Hatch Pattern Palette offers the material patterns (M4-12)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await page.mouse.move(20, 400);
+  await type(page, 'RECTANG', /Specify first corner point/);
+  await type(page, '1000020,1000020', /Specify other corner point/);
+  await type(page, '#1000140,1000080', 'Command:');
+
+  await type(page, 'HATCH', 'Hatch and Gradient:');
+  const dialog = page.getByRole('dialog', { name: 'Hatch and Gradient' });
+  await dialog.getByRole('button', { name: 'Hatch Pattern Palette' }).click();
+  const palette = page.getByRole('dialog', { name: 'Hatch Pattern Palette' });
+  // The materials have a tab of their own, as AutoCAD's Other Predefined.
+  await expect(palette.getByRole('option', { name: /TRIYA_CONCRETE/ })).toBeHidden();
+  await palette.getByRole('tab', { name: 'Other Predefined' }).click();
+  for (const name of ['TRIYA_CONCRETE', 'TRIYA_EARTH', 'TRIYA_INSULATION', 'TRIYA_STEEL'])
+    await expect(palette.getByRole('option', { name: new RegExp(`${name}$`) })).toBeVisible();
+  await expect(palette.getByRole('option', { name: /TRIYA_LINES45/ })).toBeHidden();
+  await page.screenshot({ path: test.info().outputPath('1-other-predefined.png') });
+  await palette.getByRole('option', { name: /TRIYA_CONCRETE/ }).click();
+  await palette.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog.getByLabel('Pattern:')).toHaveValue('TRIYA_CONCRETE');
+
+  // Opened again on a material pattern, the palette shows its tab.
+  await dialog.getByRole('button', { name: 'Hatch Pattern Palette' }).click();
+  await expect(palette.getByRole('tab', { name: 'Other Predefined' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await palette.getByRole('button', { name: 'Cancel' }).click();
+
+  await dialog.getByRole('button', { name: 'Add: Pick points' }).click();
+  await expect(dialog).toBeHidden();
+  await type(page, '#1000080,1000050', /Pick internal point/);
+  await type(page, '', 'Hatch and Gradient:');
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(() => hatches(page))
+    .toEqual([{ pattern: 'TRIYA_CONCRETE', scale: 1, loops: 1 }]);
+  await expectDrawn(page, { timeout: 15_000 });
+  await page.screenshot({ path: test.info().outputPath('2-concrete-hatch.png') });
+});
