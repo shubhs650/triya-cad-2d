@@ -54,6 +54,8 @@ export {
 export * from './dimension';
 export * from './table';
 export * from './table-grid';
+export * from './table-format';
+export * from './table-grips';
 export * from './named-view';
 export { offsetCurveOf, offsetGeometry, offsetSide } from './offset';
 export {

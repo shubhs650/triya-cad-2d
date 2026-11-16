@@ -101,7 +101,7 @@ const at = (i: number, j: number) => ({
 });
 
 const OPTIONS =
-  'Enter a table cell option [Text/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  'Enter a table cell option [Text/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
 describe('a table cell selected at Command:', () => {
   it('is a click inside it, shown by its outline, with the Table Cell options', async () => {
@@ -126,6 +126,10 @@ describe('a table cell selected at Command:', () => {
     const menu = s.prompt()!.shortcutMenu!;
     expect(menu.map((m) => `${m.label}${m.disabled ? ' (off)' : ''}`)).toEqual([
       'Edit Text',
+      'Background Fill',
+      'Alignment',
+      'Borders',
+      'Text Height',
       'Insert Rows Above',
       'Insert Rows Below',
       'Delete Rows',
@@ -302,5 +306,233 @@ describe('a table cell selected at Command:', () => {
     await s.bus.submit('TABLECELL');
     await s.bus.pick({ x: 500, y: 500 });
     expect(s.messages).toContain('The object selected is not a table cell.');
+  });
+});
+
+/** Table cell (`i`, `j`)'s format. */
+const formatOf = (s: ReturnType<typeof setup>, i: number, j: number) =>
+  s.table().geom.cells[i]![j]!.format;
+
+/** The lines of the table's block, as `x0,y0 x1,y1 colour lineweight`. */
+const blockLines = (s: ReturnType<typeof setup>) =>
+  s.model
+    .blockEntities(s.table().geom.block!)
+    .map((id) => s.model.entity(id)!)
+    .filter((e) => e.geom.kind === 'LINE' && e.lineweight !== 0)
+    .map((e) => {
+      const g = e.geom as { start: { x: number; y: number }; end: { x: number; y: number } };
+      const c = e.color.kind === 'aci' ? e.color.index : e.color.kind;
+      return `${g.start.x},${g.start.y} ${g.end.x},${g.end.y} ${c} ${e.lineweight}`;
+    });
+
+describe('the Table Cell menu’s formatting (M4-05 part 4)', () => {
+  it('aligns the cells selected, each a format of its own, in one undo step', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.pick(at(3, 1), { shift: true });
+    await s.bus.submit('AL');
+    // The first cell's alignment is the default: data rows are top centre in the style.
+    expect(s.bus.promptText).toBe('Enter cell alignment [TL/TC/TR/ML/MC/MR/BL/BC/BR] <TC>:');
+    expect(s.prompt()!.shortcutMenu!.map((m) => m.label)).toEqual([
+      'Top Left',
+      'Top Center',
+      'Top Right',
+      'Middle Left',
+      'Middle Center',
+      'Middle Right',
+      'Bottom Left',
+      'Bottom Center',
+      'Bottom Right',
+    ]);
+    await s.bus.submit('MR');
+    expect(s.bus.promptText).toBe('Command:');
+    for (const [i, j] of [
+      [2, 0],
+      [2, 1],
+      [3, 0],
+      [3, 1],
+    ] as const) {
+      expect(formatOf(s, i, j)).toEqual({ alignment: 6 });
+    }
+    expect(formatOf(s, 4, 0)).toBeUndefined();
+    // The block is drawn again: N1 at the middle right of its cell, less the margin.
+    const n1 = s.model
+      .blockEntities(s.table().geom.block!)
+      .map((id) => s.model.entity(id)!.geom)
+      .find((g) => g.kind === 'MTEXT' && g.contents === 'N1');
+    expect(n1).toMatchObject({ attachment: 6, position: { x: 62, y: -24.5 } });
+    await s.bus.submit('U');
+    expect(formatOf(s, 2, 0)).toBeUndefined();
+  });
+
+  it('fills the cells’ background, or takes the fill off', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(1, 0));
+    await s.bus.submit('BA');
+    expect(s.bus.promptText).toBe('Enter background fill color [None] <None>:');
+    await s.bus.submit('nonsense');
+    expect(s.messages).toContain('Invalid color.');
+    await s.bus.submit('yellow');
+    expect(formatOf(s, 1, 0)).toEqual({ background: { kind: 'aci', index: 2 } });
+    const solids = () =>
+      s.model
+        .blockEntities(s.table().geom.block!)
+        .map((id) => s.model.entity(id)!)
+        .filter((e) => e.geom.kind === 'SOLID');
+    expect(solids().map((e) => e.color)).toEqual([{ kind: 'aci', index: 2 }]);
+    await s.bus.pick(at(1, 0));
+    await s.bus.submit('BA');
+    await s.bus.submit('120,30,200');
+    expect(formatOf(s, 1, 0)!.background).toEqual({ kind: 'rgb', r: 120, g: 30, b: 200 });
+    await s.bus.pick(at(1, 0));
+    await s.bus.submit('BA');
+    await s.bus.submit('');
+    expect(formatOf(s, 1, 0)).toEqual({ background: null });
+    expect(solids()).toEqual([]);
+  });
+
+  it('gives the outside borders of the cells selected a colour and lineweight', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.pick(at(3, 1), { shift: true });
+    await s.bus.submit('BO');
+    expect(s.bus.promptText).toBe(
+      'Apply the border properties to [All/Outside/Inside/Top/Bottom/Left/Right] <All>:',
+    );
+    await s.bus.submit('O');
+    expect(s.bus.promptText).toBe('Enter border color <BYBLOCK>:');
+    await s.bus.submit('1');
+    expect(s.bus.promptText).toBe('Enter border lineweight <ByBlock>:');
+    await s.bus.submit('0.45');
+    expect(s.messages).toContain('Invalid lineweight.');
+    await s.bus.submit('0.5');
+    expect(s.bus.promptText).toBe('Command:');
+    const red = { color: { kind: 'aci', index: 1 }, lineweight: 50 };
+    expect(formatOf(s, 2, 0)!.borders).toEqual({ top: red, left: red });
+    expect(formatOf(s, 3, 1)!.borders).toEqual({ right: red, bottom: red });
+    // Drawn red: the range's outline, the line between its rows as the style draws it.
+    expect(blockLines(s)).toEqual(
+      expect.arrayContaining([
+        '0,-20 127,-20 1 50',
+        '0,-38 127,-38 1 50',
+        '0,-29 127,-29 byBlock ByBlock',
+        '0,-20 0,-38 1 50',
+        '127,-20 127,-38 1 50',
+      ]),
+    );
+  });
+
+  it('gives inside and one-side borders, Enter taking ByBlock', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.pick(at(3, 1), { shift: true });
+    await s.bus.script(['BO', 'I', 'blue', '']);
+    expect(formatOf(s, 2, 0)!.borders).toEqual({
+      right: { color: { kind: 'aci', index: 5 }, lineweight: 'ByBlock' },
+      bottom: { color: { kind: 'aci', index: 5 }, lineweight: 'ByBlock' },
+    });
+    await s.bus.pick(at(4, 1));
+    await s.bus.script(['BO', 'B', '', '0.3']);
+    expect(formatOf(s, 4, 1)!.borders).toEqual({
+      bottom: { color: { kind: 'byBlock' }, lineweight: 30 },
+    });
+  });
+
+  it('sets the text height, its rows growing to fit', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('H');
+    expect(s.bus.promptText).toBe('Specify text height <4.5000>:');
+    await s.bus.submit('0');
+    expect(s.messages).toContain('Requires a value greater than 0.');
+    await s.bus.submit('7');
+    expect(formatOf(s, 2, 1)).toEqual({ textHeight: 7 });
+    // One line of 7 high text and its 1.5 margins: the row grows from 9 to 10.
+    expect(s.table().geom.rowHeights).toEqual([11, 9, 10, 9, 9]);
+    // Smaller text leaves the row as high as it is.
+    await s.bus.pick({ x: 95.25, y: -25 });
+    await s.bus.script(['H', '2']);
+    expect(s.table().geom.rowHeights).toEqual([11, 9, 10, 9, 9]);
+  });
+
+  it('selects the cells a press is dragged across', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0), { grip: 1 });
+    expect(s.prompt()!.releaseExtends).toBe(true);
+    await s.bus.pick(at(4, 1), { release: true });
+    expect(s.preview()[0]).toMatchObject({
+      vertices: [
+        { x: 0, y: -47 },
+        { x: 127, y: -47 },
+        { x: 127, y: -20 },
+        { x: 0, y: -20 },
+      ],
+    });
+    // Let go outside the table, the cells stay selected.
+    await s.bus.pick({ x: 500, y: 500 }, { release: true });
+    expect(s.bus.command).toBe('TABLECELL');
+    await s.bus.submit('MA');
+    expect(s.table().geom.cells[2]![0]).toMatchObject({ rowSpan: 3, columnSpan: 2 });
+  });
+});
+
+describe('a table’s grips and SCALE (M4-05 part 4)', () => {
+  /** The nozzle schedule, selected by a pick on its lines. */
+  async function selected() {
+    let ids: EntityId[] = [];
+    const s = setup(() => ids);
+    await nozzles(s);
+    ids = [s.table().id];
+    await s.bus.pick({ x: 63.8, y: -24.5 }, { grip: 1 });
+    ids = [];
+    expect(s.selected()).toEqual([s.table().id]);
+    return s;
+  }
+
+  it('moves the line between two columns by its grip, the block drawn again', async () => {
+    const s = await selected();
+    await s.bus.pick({ x: 63.5, y: 0 }, { grip: 1 });
+    expect(s.bus.command).toBe('GRIP');
+    await s.bus.pick({ x: 73.5, y: 5 });
+    expect(s.table().geom.columnWidths).toEqual([73.5, 53.5]);
+    expect(blockLines(s)).toContain('73.5,-11 73.5,-47 byBlock ByBlock');
+    await s.bus.submit('U');
+    expect(s.table().geom.columnWidths).toEqual([63.5, 63.5]);
+  });
+
+  it('sizes the whole table by its corner grip', async () => {
+    const s = await selected();
+    await s.bus.pick({ x: 127, y: -47 }, { grip: 1 });
+    await s.bus.pick({ x: 254, y: -94 });
+    expect(s.table().geom.columnWidths).toEqual([127, 127]);
+    expect(s.table().geom.rowHeights).toEqual([22, 18, 18, 18, 18]);
+    // Its text keeps its height.
+    expect(s.table().geom.cells[2]![0]!.format).toBeUndefined();
+  });
+
+  it('is scaled whole by SCALE, its text and margins with it', async () => {
+    const s = await selected();
+    await s.bus.script(['SCALE', '0,0', '2']);
+    const g = s.table().geom;
+    expect(g.columnWidths).toEqual([127, 127]);
+    expect(g.rowHeights).toEqual([22, 18, 18, 18, 18]);
+    expect(g.cells[0]![0]!.format).toEqual({ textHeight: 12 });
+    expect(g.cells[2]![1]!.format).toEqual({ textHeight: 9 });
+    expect(g.overrides).toEqual({ margins: { left: 3, top: 3, right: 3, bottom: 3 } });
+    // Drawn again later, the table is as SCALE left it.
+    await s.bus.pick({ x: 63.5 * 3, y: -60 });
+    await s.bus.submit('AL');
+    await s.bus.submit('TL');
+    const n1 = s.model
+      .blockEntities(s.table().geom.block!)
+      .map((id) => s.model.entity(id)!.geom)
+      .find((x) => x.kind === 'MTEXT' && x.contents === 'DN80');
+    expect(n1).toMatchObject({ height: 9, position: { x: 130, y: -61 } });
   });
 });

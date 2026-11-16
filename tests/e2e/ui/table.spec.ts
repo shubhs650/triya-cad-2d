@@ -1,3 +1,5 @@
+// M4-05 part 4: cells selected by dragging across them, filled, aligned and given borders from
+// the right-click menu, and a column grip dragged.
 // M4-05 part 3: a click inside a table cell selects it, Shift+click the cells up to another, and
 // the right-click menu (AutoCAD's cell shortcut menu) merges cells, inserts rows and deletes
 // columns.
@@ -49,6 +51,7 @@ const tables = (page: Page) =>
             r.map((c) => (c.merged ? '^' : `${c.rowSpan}x${c.columnSpan}`)),
           ),
           block: inside.map((x) => x.geom.kind).filter((k) => k === 'LINE').length,
+          formats: g.cells.map((r) => r.map((c) => c.format)),
         };
       });
   });
@@ -218,7 +221,7 @@ test('a click selects table cells and the right-click menu edits them', async ({
     return { x: box.x + s.x, y: box.y + s.y };
   };
   const options =
-    'Enter a table cell option [Text/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+    'Enter a table cell option [Text/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
   const menu = page.getByRole('menu', { name: 'Table cell options' });
   const choose = async (item: string) => {
     await page.mouse.click(cell(3, 2).x, cell(3, 2).y, { button: 'right' });
@@ -262,4 +265,123 @@ test('a click selects table cells and the right-click menu edits them', async ({
   await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
   await page.waitForTimeout(300);
   await shot('7-merged-row-inserted-column-deleted.png');
+});
+
+test('cells dragged across are formatted from the menu, and a column grip resizes', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, p(-1, -3), 'Specify opposite corner:');
+  await type(page, p(11, 1), 'Command:');
+  await type(page, '-TABLE', 'Enter number of columns or [Auto] <5>:');
+  await type(page, '4', 'Enter number of rows or [Auto] <1>:');
+  await type(page, '3', 'Specify insertion point or [Style/Width/Height]:');
+  await type(page, p(0, 0), 'Enter text:');
+  await page.keyboard.type('NOZZLES');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(async () => (await tables(page)).length).toBe(1);
+
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => {
+    const s = view.at(O + x, O + y);
+    return { x: box.x + s.x, y: box.y + s.y };
+  };
+  // The centre of cell (row i, column j): 2.5 wide columns, a 0.4533 title, 0.36 rows.
+  const cell = (i: number, j: number) =>
+    at(1.25 + 2.5 * j, i === 0 ? -0.2267 : i === 1 ? -0.6333 : -0.9933 - 0.36 * (i - 2));
+  const options =
+    'Enter a table cell option [Text/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+
+  // A press in cell (2, 1) dragged to cell (4, 2) selects the six cells.
+  await page.mouse.move(cell(2, 1).x, cell(2, 1).y);
+  await page.mouse.down();
+  await page.mouse.move(cell(3, 2).x, cell(3, 2).y, { steps: 5 });
+  await page.mouse.move(cell(4, 2).x, cell(4, 2).y, { steps: 5 });
+  await page.mouse.up();
+  await expect(prompt(page)).toHaveText(options);
+  await page.waitForTimeout(300);
+  await shot('8-cells-dragged-across.png');
+
+  const menu = page.getByRole('menu', { name: 'Table cell options' });
+  await page.mouse.click(cell(3, 2).x, cell(3, 2).y, { button: 'right' });
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Background Fill' }).click();
+  await expect(prompt(page)).toHaveText('Enter background fill color [None] <None>:');
+  await type(page, '51', 'Command:');
+  const formats = async () =>
+    (await tables(page))[0]?.formats.slice(2, 5).map((r) => r.slice(1, 3));
+  await expect
+    .poll(async () => (await formats())?.flat().map((f) => f?.background))
+    .toEqual(Array.from({ length: 6 }, () => ({ kind: 'aci', index: 51 })));
+
+  // Alignment: its own right-click menu.
+  await page.mouse.move(cell(2, 1).x, cell(2, 1).y);
+  await page.mouse.down();
+  await page.mouse.move(cell(4, 2).x, cell(4, 2).y, { steps: 5 });
+  await page.mouse.up();
+  await expect(prompt(page)).toHaveText(options);
+  await type(page, 'AL', 'Enter cell alignment [TL/TC/TR/ML/MC/MR/BL/BC/BR] <TC>:');
+  await page.mouse.click(cell(3, 2).x, cell(3, 2).y, { button: 'right' });
+  await page.getByRole('menuitem', { name: 'Middle Center' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => (await formats())?.flat().map((f) => f?.alignment))
+    .toEqual([5, 5, 5, 5, 5, 5]);
+
+  // Borders: the outside ones red and 0.50 mm.
+  await page.mouse.move(cell(2, 1).x, cell(2, 1).y);
+  await page.mouse.down();
+  await page.mouse.move(cell(4, 2).x, cell(4, 2).y, { steps: 5 });
+  await page.mouse.up();
+  await expect(prompt(page)).toHaveText(options);
+  await type(
+    page,
+    'BO',
+    'Apply the border properties to [All/Outside/Inside/Top/Bottom/Left/Right] <All>:',
+  );
+  await type(page, 'O', 'Enter border color <BYBLOCK>:');
+  await type(page, 'red', 'Enter border lineweight <ByBlock>:');
+  await type(page, '0.5', 'Command:');
+  await expect
+    .poll(async () => (await formats())?.[0]?.[0]?.borders?.top)
+    .toEqual({ color: { kind: 'aci', index: 1 }, lineweight: 50 });
+  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
+  await page.waitForTimeout(300);
+  await shot('9-cells-filled-aligned-bordered.png');
+
+  // The table picked on its left edge shows its grips; the grip atop the first column line
+  // moves that line, the table keeping its width.
+  await page.mouse.click(at(0, -1.5).x, at(0, -1.5).y);
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.waitForTimeout(300);
+  await shot('10-table-grips.png');
+  await page.mouse.move(at(2.5, 0).x, at(2.5, 0).y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(prompt(page)).toHaveText(/^\*\* STRETCH \*\*|Specify stretch point/);
+  await page.mouse.move(at(3.5, 0.3).x, at(3.5, 0.3).y, { steps: 5 });
+  await page.waitForTimeout(300);
+  await shot('11-column-grip-dragged.png');
+  await page.mouse.click(at(3.5, 0.3).x, at(3.5, 0.3).y);
+  // The click lands on the nearest pixel to (3.5, 0.3).
+  await expect
+    .poll(async () => (await tables(page))[0]?.columns.map((w) => Math.round(w * 100) / 100))
+    .toEqual([3.5, 1.5, 2.5, 2.5]);
+  await page.keyboard.press('Escape');
+  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
+  await page.waitForTimeout(300);
+  await shot('12-column-resized.png');
 });

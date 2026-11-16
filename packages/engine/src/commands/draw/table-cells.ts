@@ -40,7 +40,10 @@ export function tableOf(
 }
 
 /** How many lines the renderer lays `text` out in; undefined when it cannot (no fonts). */
-async function linesOf(ctx: CommandContext, text: MTextGeometry): Promise<number | undefined> {
+export async function linesOf(
+  ctx: CommandContext,
+  text: MTextGeometry,
+): Promise<number | undefined> {
   if (text.contents === '') return 1;
   const r = await ctx.view.request({ op: 'textBox', text });
   if (!r.ok || !r.box) return undefined;

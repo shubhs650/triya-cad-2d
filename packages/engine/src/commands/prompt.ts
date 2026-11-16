@@ -229,6 +229,11 @@ export interface PointPrompt extends PromptBase {
    */
   readonly arbitrary?: boolean;
   /**
+   * A press dragged across the canvas answers its release too, as a Shift+click there: table
+   * cells selected by dragging across them (TABLECELL, M4-05 part 4).
+   */
+  readonly releaseExtends?: true;
+  /**
    * A one-shot object snap override typed at the prompt before (M2-04: `END`, `MID,END`,
    * `NONe`): the OSMODE bits the front-end snaps this point with instead of the running ones;
    * 0 snaps to nothing. A click the override finds nothing at is refused (`PromptBus.pick`

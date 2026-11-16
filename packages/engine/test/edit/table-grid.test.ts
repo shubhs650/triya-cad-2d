@@ -186,10 +186,13 @@ describe('merging', () => {
 
 describe('what the Table Cell menu offers', () => {
   it('inserts and deletes rows only among the data rows', () => {
+    // The cells' formatting (M4-05 part 4) applies to any cells.
+    const FORMATS = ['BAckground', 'ALignment', 'BOrders', 'Height'];
     const at = (r0: number, r1: number, c0 = 0, c1 = 0) =>
       tableCellOptions(table(), STYLE, { r0, c0, r1, c1 });
     expect(at(2, 3)).toEqual([
       'Text',
+      ...FORMATS,
       'Above',
       'Below',
       'DeleteRows',
@@ -200,9 +203,9 @@ describe('what the Table Cell menu offers', () => {
       'MergeColumns',
     ]);
     // The header row: Below makes the new row the first data row; Above and Delete are refused.
-    expect(at(1, 1)).toEqual(['Text', 'Below', 'Left', 'Right', 'DeleteColumns']);
+    expect(at(1, 1)).toEqual(['Text', ...FORMATS, 'Below', 'Left', 'Right', 'DeleteColumns']);
     // The title across every column: no column can go, and it unmerges.
-    expect(at(0, 0, 0, 2)).toEqual(['Text', 'Left', 'Right', 'Unmerge']);
+    expect(at(0, 0, 0, 2)).toEqual(['Text', ...FORMATS, 'Left', 'Right', 'Unmerge']);
     // The last column cannot go; nor can every data row in a style without title and header.
     const one = table({
       rowHeights: [1],
@@ -212,6 +215,7 @@ describe('what the Table Cell menu offers', () => {
     const plain = { ...STYLE, suppressTitle: true, suppressHeader: true };
     expect(tableCellOptions(one, plain, { r0: 0, c0: 0, r1: 0, c1: 0 })).toEqual([
       'Text',
+      ...FORMATS,
       'Above',
       'Below',
       'Left',
