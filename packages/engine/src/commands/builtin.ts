@@ -8,6 +8,7 @@ import { qdimCommand } from './draw/qdim';
 import { dimensionEditCommands } from './modify/dimension-edit';
 import { dimensionAssociateCommands } from './modify/dimension-associate';
 import { dimensionBreakCommands } from './modify/dimension-break';
+import { centerMarkCommands } from './draw/centermark';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
 import { ellipseCommand } from './draw/ellipse';
@@ -134,6 +135,7 @@ export function builtinCommands(): CommandRegistry {
     ...dimensionEditCommands(),
     ...dimensionAssociateCommands(),
     ...dimensionBreakCommands(),
+    ...centerMarkCommands(),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
