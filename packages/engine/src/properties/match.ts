@@ -8,9 +8,11 @@
 // custom scale, shade plot, snap, grid, and UCS icon visibility and location", not clipping, the
 // UCS per viewport or the layers frozen in it. Triya keeps no shade plot (DXF 170) or snap and
 // grid spacing of a viewport's own, so snap and grid copy their on/off bits; the scale keeps
-// the destination's view centre. Not offered yet: Table (its `*T` block needs M4-05's table
-// engine to be drawn again in another style), Center object (center marks and centerlines come
-// with M4-08), and the annotative property (DEC-013).
+// the destination's view centre. Table (M4-05 part 5) gives the destination table the source's
+// table style, as AutoCAD's dialog says ("Changes the table style of the destination object to be
+// the same as the source object"); MATCHPROP then draws its `*T` block again in it, its rows grown
+// to hold their text. Not offered yet: Center object (center marks and centerlines come with
+// M4-08), and the annotative property (DEC-013).
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityPatch } from '../model/update';
@@ -34,6 +36,7 @@ export interface MatchSettings {
   readonly hatch: boolean;
   readonly polyline: boolean;
   readonly viewport: boolean;
+  readonly table: boolean;
   readonly material: boolean;
   readonly multileader: boolean;
 }
@@ -52,6 +55,7 @@ export const ALL_MATCH_SETTINGS: MatchSettings = {
   hatch: true,
   polyline: true,
   viewport: true,
+  table: true,
   material: true,
   multileader: true,
 };
@@ -71,6 +75,7 @@ export const MATCH_SETTING_NAMES: readonly [keyof MatchSettings, string][] = [
   ['hatch', 'Hatch'],
   ['polyline', 'Polyline'],
   ['viewport', 'Viewport'],
+  ['table', 'Table'],
   ['material', 'Material'],
   ['multileader', 'Multileader'],
 ];
@@ -202,6 +207,9 @@ export function matchedPatch(
   if (s.hatch && sg.kind === 'HATCH' && geom.kind === 'HATCH') geom = hatchMatch(geom, sg);
   if (s.viewport && sg.kind === 'VIEWPORT' && geom.kind === 'VIEWPORT') {
     geom = viewportMatch(geom, sg);
+  }
+  if (s.table && sg.kind === 'ACAD_TABLE' && geom.kind === 'ACAD_TABLE' && sg.style !== undefined) {
+    geom = { ...geom, style: sg.style };
   }
   if (s.dimension && (sg.kind === 'LEADER' || sg.kind === 'TOLERANCE')) {
     // A dimension's style goes through the palette's edit (its block is drawn again).

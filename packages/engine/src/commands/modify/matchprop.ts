@@ -11,6 +11,9 @@
 // layers are left alone. The properties are `properties/match.ts`'s.
 import { refusalMessages } from '../../edit/edit';
 import type { EntityId } from '../../model/entity-ids';
+import type { EntityPatch } from '../../model/update';
+import { writeTableBlock } from '../../edit/table';
+import { restyledTable } from '../tablestyle';
 import { namedPlotStyles } from '../../properties/general';
 import {
   ALL_MATCH_SETTINGS,
@@ -77,11 +80,27 @@ export function matchpropCommand(): CommandDef {
         for (const s of matchedStyles(source, targets, settings)) {
           await applyProperty(ctx, s.ids, { key: s.key, value: s.value }, undefined);
         }
+        const patches = new Map<EntityId, EntityPatch>();
+        for (const t of targets) {
+          const now = ctx.model.entity(t.id);
+          let patch = now && matchedPatch(ctx.model, source, now, settings);
+          // A table given another style is drawn again in it, its rows fitted (M4-05 part 5).
+          const g = patch?.geom;
+          if (
+            g?.kind === 'ACAD_TABLE' &&
+            now?.geom.kind === 'ACAD_TABLE' &&
+            g.style !== now.geom.style
+          ) {
+            const style =
+              g.style !== undefined ? ctx.model.tables.tableStyles.get(g.style) : undefined;
+            patch = { ...patch, geom: await restyledTable(ctx, g, style) };
+          }
+          if (patch) patches.set(t.id, patch);
+        }
         ctx.edit((b) => {
-          for (const t of targets) {
-            const now = ctx.model.entity(t.id);
-            const patch = now && matchedPatch(ctx.model, source, now, settings);
-            if (patch) b.updateEntity(t.id, patch);
+          for (const [id, patch] of patches) {
+            b.updateEntity(id, patch);
+            if (patch.geom?.kind === 'ACAD_TABLE') writeTableBlock(b, ctx.model, id);
           }
         });
       }

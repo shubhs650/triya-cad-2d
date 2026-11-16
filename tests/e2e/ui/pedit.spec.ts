@@ -115,9 +115,10 @@ test('PEDIT Spline, CHPROP and MATCHPROP with Property Settings', async ({ page 
   const dialog = page.getByRole('dialog', { name: 'Property Settings' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('checkbox', { name: 'Color' })).toBeChecked();
-  // Viewport is copied (M3-16); Table and Center object wait for M4-05 and M4-08.
+  // Viewport is copied (M3-16), Table too (M4-05 part 5); Center object waits for M4-08.
   await expect(dialog.getByRole('checkbox', { name: 'Viewport' })).toBeChecked();
-  await expect(dialog.getByRole('checkbox', { name: 'Table' })).toBeDisabled();
+  await expect(dialog.getByRole('checkbox', { name: 'Table' })).toBeChecked();
+  await expect(dialog.getByRole('checkbox', { name: 'Center object' })).toBeDisabled();
   // Esc goes back to the prompt with the settings as they were.
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();

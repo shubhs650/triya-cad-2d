@@ -20,6 +20,7 @@ import type { DragPreview } from './drag';
 import type { UnitsSettings } from './drawing-units';
 import type { DimStyleAction, DimStyleRequest } from './dimstyle';
 import type { TextStyleAction, TextStyleRequest } from './textstyle';
+import type { TableStyleAction, TableStyleRequest } from './tablestyle';
 import type { MLeaderStyleAction, MLeaderStyleRequest } from './mleaderstyle';
 import {
   DECIMAL_UNITS,
@@ -687,6 +688,8 @@ export type DialogRequest =
   | DimStyleRequest
   /** STYLE's Text Style dialog (M4-04). */
   | TextStyleRequest
+  /** TABLESTYLE's Table Style dialog (M4-05 part 5). */
+  | TableStyleRequest
   /** MLEADERSTYLE's Multileader Style Manager (M4-04 part 2). */
   | MLeaderStyleRequest
   | ObjectGroupingRequest;
@@ -876,12 +879,17 @@ export type PromptAnswer =
        * Drawing Units' settings as OK (or Direction Control's Pick an angle, `select`) closed it.
        */
       readonly units?: UnitsSettings;
-      /** Insert Table's settings as OK closed it (TABLE, M4-05 part 2). */
+      /**
+       * Insert Table's settings as OK closed it (TABLE, M4-05 part 2), or as its table style
+       * launcher left it (`select`, part 5).
+       */
       readonly table?: InsertTableSettings;
       /** A Dimension Style Manager action (DIMSTYLE, M4-03), sent with `apply`. */
       readonly dimstyle?: DimStyleAction;
       /** A Text Style dialog action (STYLE, M4-04), sent with `apply`. */
       readonly textstyle?: TextStyleAction;
+      /** A Table Style dialog action (TABLESTYLE, M4-05 part 5), sent with `apply`. */
+      readonly tablestyle?: TableStyleAction;
       /** A Multileader Style Manager action (MLEADERSTYLE, M4-04 part 2), sent with `apply`. */
       readonly mleaderstyle?: MLeaderStyleAction;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
