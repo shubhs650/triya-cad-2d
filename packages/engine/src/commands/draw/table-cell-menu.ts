@@ -7,8 +7,14 @@
 // and ends it, the click elsewhere or Esc too. A click at `Command:` inside a cell, farther from
 // its lines than the pickbox reaches, starts it (a click on a line still selects the table);
 // typed, it asks "Pick a table cell:" first. A double click gives way to TABLEDIT.
-import { tableCellAt, tableCellBox } from '../../annotation/table';
-import { tableFromPlan, tableToPlan, writeTableBlock } from '../../edit/table';
+import { tableCellAt, tableCellBox, tableCellText, tableRangeHeads } from '../../annotation/table';
+import {
+  fitTableRow,
+  tableDrawingOf,
+  tableFromPlan,
+  tableToPlan,
+  writeTableBlock,
+} from '../../edit/table';
 import {
   tableCellOptions,
   tableCellRange,
@@ -26,16 +32,22 @@ import type { Vec2 } from '../../geom/types';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
-import type { TableGeometry } from '../../model/types';
+import type { TableGeometry, TableStyleRecord } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
 import type { ShortcutMenuItem } from '../prompt';
-import { editTableCells, pickTableCell, tableOf } from './table-cells';
+import { editTableCells, linesOf, pickTableCell, tableOf } from './table-cells';
+import { formattedTable, type TableCellFormatOption } from './table-cell-format';
 
 type Cell = [number, number];
 
 /** The cell shortcut menu's labels (AutoCAD's, its Rows, Columns and Merge items flattened). */
 const LABELS: Readonly<Record<TableCellOption, string>> = {
   Text: 'Edit Text',
+  BAckground: 'Background Fill',
+  ALignment: 'Alignment',
+  BOrders: 'Borders',
+  // Not on AutoCAD's cell menu (Properties sets it): here as Triya has no Properties for cells.
+  Height: 'Text Height',
   Above: 'Insert Rows Above',
   Below: 'Insert Rows Below',
   DeleteRows: 'Delete Rows',
@@ -48,7 +60,9 @@ const LABELS: Readonly<Record<TableCellOption, string>> = {
   Unmerge: 'Unmerge',
 };
 
-const SEPARATED = new Set<TableCellOption>(['Above', 'Left', 'MergeAll']);
+const SEPARATED = new Set<TableCellOption>(['BAckground', 'Above', 'Left', 'MergeAll']);
+
+const FORMATS = new Set<TableCellOption>(['BAckground', 'ALignment', 'BOrders', 'Height']);
 
 /** Why an option is refused for the cells selected. */
 function refusal(o: TableCellOption, g: TableGeometry, r: TableCellRange): string {
@@ -88,6 +102,31 @@ function edited(g: TableGeometry, r: TableCellRange, o: TableCellOption): TableG
     default:
       return withCellsUnmerged(g, r);
   }
+}
+
+/**
+ * Table `g` with the rows of range `r` grown to fit their cells' text at its new height, as the
+ * renderer lays it out (`linesOf`; a row keeps its height where it cannot).
+ */
+async function fittedRows(
+  ctx: CommandContext,
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  r: TableCellRange,
+): Promise<TableGeometry> {
+  const drawing = tableDrawingOf(ctx.model);
+  const heads = new Set<string>();
+  const all = tableRangeHeads(g);
+  for (let i = r.r0; i <= r.r1; i++) {
+    for (let j = r.c0; j <= r.c1; j++) heads.add(String(all[i]![j]));
+  }
+  let out = g;
+  for (const h of heads) {
+    const [i, j] = h.split(',').map(Number) as [number, number];
+    const lines = await linesOf(ctx, tableCellText(out, style, drawing, i, j));
+    out = fitTableRow(out, style, i, j, lines ?? 1);
+  }
+  return out;
 }
 
 /** The cell (head of its range) of table `g` that a point in plan lies in, or undefined. */
@@ -143,9 +182,13 @@ export function tableCellCommand(start?: {
           osnap: 0,
           shortcutMenu: menu,
           shortcutMenuTitle: 'Table cell options',
+          // A press dragged across cells selects them all (M4-05 part 4).
+          releaseExtends: true,
         });
         if (a.kind === 'point') {
           const cell = cellAt(ctx, id, a.point);
+          // A Shift+click, or a drag's end, outside the table keeps the cells selected.
+          if (!cell && a.shift) continue;
           if (!cell) return;
           corner = cell;
           if (!a.shift) anchor = cell;
@@ -158,10 +201,16 @@ export function tableCellCommand(start?: {
           continue;
         }
         if (o === 'Text') return yield* editTableCells(ctx, id, r.r0, r.c0);
-        const g = edited(t.g, r, o);
+        let g: TableGeometry | undefined;
+        if (FORMATS.has(o)) {
+          g = yield* formattedTable(ctx, t.g, t.style, r, o as TableCellFormatOption);
+          if (!g) return;
+          if (o === 'Height') g = await fittedRows(ctx, g, t.style, r);
+        } else g = edited(t.g, r, o);
+        const changed = g;
         ctx.preview([]);
         ctx.edit((b) => {
-          b.updateEntity(id, { geom: g });
+          b.updateEntity(id, { geom: changed });
           writeTableBlock(b, ctx.model, id);
         });
         return;

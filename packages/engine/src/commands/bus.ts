@@ -628,8 +628,12 @@ export class PromptBus {
       }
       if (frame) {
         if (o.release) {
-          // TRIM's freehand fence (M3-12 part 6): the path, at a prompt that takes one.
           const p = this.prompt;
+          // A drag across table cells ends where it is let go (TABLECELL, M4-05 part 4).
+          if (p?.kind === 'point' && p.releaseExtends) {
+            return this.#direct({ kind: 'point', point, shift: true });
+          }
+          // TRIM's freehand fence (M3-12 part 6): the path, at a prompt that takes one.
           if (!o.freehand || p?.kind !== 'point' || !p.rubberBand?.freehand) return undefined;
           return this.#direct({ kind: 'point', point, freehand: o.freehand });
         }

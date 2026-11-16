@@ -35,6 +35,7 @@ import { add, angleOf, distance, fromAngle, midpoint, sub } from '../geom/vec';
 import type { DimensionGeometry, EntityGeometry, LwPolylineGeometry } from '../model/types';
 import { dimensionArcOf, dimensionLineEnds, isArcDimension, withArcRadius } from './dimension';
 import { columnGrips, moveColumnGrip } from './mtext-grips';
+import { movedTableGrip, tableGrips, type TableGripRole } from './table-grips';
 import type { ArrayGripRole, GripInfo } from './array-grips';
 import { cloudCorners, isCloudShaped, moveCloudCorner, type CloudInfo } from './revcloud';
 import {
@@ -95,7 +96,9 @@ export type GripKind =
   /** A multileader's landing end or content: the landings and the content move together. */
   | 'landing'
   /** A non-associative hatch's boundary vertex: the boundary stretches. */
-  | 'boundary';
+  | 'boundary'
+  /** A table's corner or column grip (M4-05 part 4): `table` says what it sizes. */
+  | 'table';
 
 export interface Grip {
   readonly point: Vec2;
@@ -107,6 +110,8 @@ export interface Grip {
   readonly towards?: Vec2;
   /** An `array` grip's role (M3-11 part 3). */
   readonly array?: ArrayGripRole;
+  /** A `table` grip's role (M4-05 part 4). */
+  readonly table?: TableGripRole;
 }
 
 const g = (point: Vec2, kind: GripKind): Grip => ({ point, kind });
@@ -147,6 +152,10 @@ function dimensionGrips(dim: DimensionGeometry): Grip[] {
 /** `info` as a cloud's (`revcloudOf`), not an array's. */
 const cloudOf = (info: GripInfo | undefined): CloudInfo | undefined =>
   info && 'arc' in info ? info : undefined;
+
+/** A table's style from `info` (`gripInfoOf`); undefined when not given or the table has none. */
+const tableStyleOf = (info: GripInfo | undefined) =>
+  info && 'tableStyle' in info ? info.tableStyle : undefined;
 
 /**
  * The grips an object shows, none for kinds without standard grips yet. `info` (`gripInfoOf`):
@@ -251,9 +260,17 @@ export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
       ];
     case 'MTEXT':
       return [g(geom.position, 'move'), ...columnGrips(geom)];
+    case 'ACAD_TABLE':
+      return [
+        g(geom.position, 'move'),
+        ...tableGrips(geom, tableStyleOf(info)).map(({ point, role }): Grip => ({
+          point,
+          kind: 'table',
+          table: role,
+        })),
+      ];
     case 'INSERT':
     case 'TOLERANCE':
-    case 'ACAD_TABLE':
     case 'IMAGE':
     case 'WIPEOUT':
     case 'PDFUNDERLAY':
@@ -453,6 +470,11 @@ export function moveGrip(
       const g = geom as LwPolylineGeometry;
       const i = g.vertices.findIndex((v) => sameGrip(v, grip));
       return { kind: 'shape', geom: moveCloudCorner(g, i, to, cloud!.arc) };
+    }
+    case 'table': {
+      if (geom.kind !== 'ACAD_TABLE' || !found.table) return { kind: 'none' };
+      const shaped = movedTableGrip(geom, tableStyleOf(info), found.table, d);
+      return shaped ? { kind: 'shape', geom: shaped } : { kind: 'none' };
     }
     case 'columnWidth':
     case 'columnGutter':

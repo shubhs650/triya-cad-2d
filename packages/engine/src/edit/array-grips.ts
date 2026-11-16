@@ -29,7 +29,13 @@ import { add, angleOf, distance, dot, normalize, perp, scale, sub } from '../geo
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
-import type { Entity, AssocArray, AssocArrayParams, InsertGeometry } from '../model/types';
+import type {
+  Entity,
+  AssocArray,
+  AssocArrayParams,
+  InsertGeometry,
+  TableStyleRecord,
+} from '../model/types';
 import {
   arrayPath,
   measureMaxItems,
@@ -88,8 +94,16 @@ export interface ArrayGrips {
   readonly grips: readonly Grip[];
 }
 
-/** What `gripsOf` needs besides an object's geometry: a cloud's arc, or an array's grips. */
-export type GripInfo = CloudInfo | ArrayGrips;
+/** A table's table style, which places its grips and limits its sizes (M4-05 part 4). */
+export interface TableGripInfo {
+  readonly tableStyle: TableStyleRecord | undefined;
+}
+
+/**
+ * What `gripsOf` needs besides an object's geometry: a cloud's arc, an array's grips, or a
+ * table's style.
+ */
+export type GripInfo = CloudInfo | ArrayGrips | TableGripInfo;
 
 export const isArrayGrips = (i: GripInfo | undefined): i is ArrayGrips =>
   i !== undefined && 'grips' in i;
@@ -209,6 +223,10 @@ export function arrayGripsOf(model: DocumentModel, e: Entity): ArrayGrips | unde
 
 /** What an object's grips depend on besides its geometry (`gripsOf`'s second argument). */
 export function gripInfoOf(model: DocumentModel, e: Entity): GripInfo | undefined {
+  if (e.geom.kind === 'ACAD_TABLE') {
+    const s = e.geom.style;
+    return { tableStyle: s !== undefined ? model.tables.tableStyles.get(s) : undefined };
+  }
   return arrayGripsOf(model, e) ?? revcloudOf(model, e);
 }
 
