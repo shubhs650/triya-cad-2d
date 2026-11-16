@@ -10,8 +10,10 @@
 //   Preview, OK, Cancel
 //
 // The Pattern list's "..." opens the Hatch Pattern Palette: the library's patterns as
-// swatches, Predefined (the bundled set, SOLID first) and Custom (the user's .pat files, M1-50).
-// Triya's patterns are its own (TRIYA_*), so the palette has no ANSI or ISO tabs. Custom
+// swatches, Predefined (the bundled triya-iso.pat set, SOLID first), Other Predefined (the
+// bundled material and architectural symbols, M4-12, the tab where AutoCAD keeps its material
+// patterns) and Custom (the user's .pat files, M1-50). Triya's patterns are its own (TRIYA_*),
+// so the palette has no ANSI or ISO tabs. Custom
 // patterns are listed in Pattern when the Type is Custom (AutoCAD's separate Custom pattern
 // list holds the same names). Annotative (DEC-013, DEC-058) and Associative (DEC-015) are shown
 // unchecked and unavailable; so are Relative to paper space, ISO pen width (no ISO patterns)
@@ -32,7 +34,7 @@ import {
   type HatchSettings,
   type PromptAnswer,
 } from '@triya/engine';
-import { PatternLibrary } from '@triya/hatch';
+import { PatternLibrary, materialPatternNames } from '@triya/hatch';
 import { patternLibrary } from '@triya/render';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Modal } from './AttributeDialogs';
@@ -51,6 +53,7 @@ const answer = (doc: number, a: PromptAnswer) =>
 const SELECT_COLOR = '\u0000select';
 const CURRENT = 'use current';
 const DEFAULT_PATTERN = 'TRIYA_LINES45';
+const MATERIALS = materialPatternNames();
 const DEG = Math.PI / 180;
 const ANGLES = Array.from({ length: 24 }, (_, i) => String(i * 15));
 const SCALES = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '1.75', '2'];
@@ -620,7 +623,8 @@ export function HatchDialog({
       )}
       {palette && (
         <PatternPalette
-          predefined={predefined}
+          predefined={predefined.filter((n) => !MATERIALS.includes(n))}
+          other={predefined.filter((n) => MATERIALS.includes(n))}
           custom={own}
           current={pattern}
           swatch={(n) => (n === HATCH_SOLID ? undefined : patternSwatch(library.get(n)!, 0))}
@@ -874,6 +878,7 @@ function Transparency({ value, onChange }: { value: string; onChange: (v: string
 /** The Hatch Pattern Palette: the library's patterns as swatches, by tab. */
 function PatternPalette({
   predefined,
+  other,
   custom,
   current,
   swatch,
@@ -881,15 +886,19 @@ function PatternPalette({
   onCancel,
 }: {
   predefined: readonly string[];
+  /** Other Predefined: the bundled material and architectural patterns. */
+  other: readonly string[];
   custom: readonly string[];
   current: string;
   swatch: (name: string) => string | undefined;
   onOk: (name: string) => void;
   onCancel: () => void;
 }) {
-  const [tab, setTab] = useState(custom.includes(current) ? 'custom' : 'predefined');
+  const [tab, setTab] = useState(
+    custom.includes(current) ? 'custom' : other.includes(current) ? 'other' : 'predefined',
+  );
   const [chosen, setChosen] = useState(current);
-  const names = tab === 'custom' ? custom : predefined;
+  const names = tab === 'custom' ? custom : tab === 'other' ? other : predefined;
   return (
     <Modal
       label="Hatch Pattern Palette"
@@ -900,6 +909,7 @@ function PatternPalette({
       <div role="tablist" className="cad-dialog-tabs">
         {[
           ['predefined', 'Predefined'],
+          ['other', 'Other Predefined'],
           ['custom', 'Custom'],
         ].map(([t, label]) => (
           <button
@@ -907,7 +917,7 @@ function PatternPalette({
             type="button"
             role="tab"
             aria-selected={tab === t}
-            disabled={t === 'custom' && custom.length === 0}
+            disabled={(t === 'custom' ? custom : t === 'other' ? other : predefined).length === 0}
             onClick={() => setTab(t!)}
           >
             {label}

@@ -8,6 +8,7 @@
 
 import type { HatchGeometry, HatchLinesOf, HatchPatternLine } from '@triya/engine';
 import { TRIYA_ISO_PAT } from './bundled';
+import { TRIYA_MATERIALS_PAT } from './materials';
 import { hatchPattern, type HatchPatternOptions } from './pattern';
 import { parsePat, patternLines, userDefinedLines, type PatFile, type PatPattern } from './pat';
 
@@ -41,8 +42,12 @@ export class PatternLibrary {
   }
 }
 
-/** The bundled patterns (`assets/patterns/triya-iso.pat`). */
-export const bundledPatterns = (): PatternLibrary => new PatternLibrary(TRIYA_ISO_PAT);
+/**
+ * The bundled patterns: `assets/patterns/triya-iso.pat`, then the material and architectural
+ * patterns of `triya-materials.pat` (M4-12).
+ */
+export const bundledPatterns = (): PatternLibrary =>
+  new PatternLibrary(TRIYA_ISO_PAT, TRIYA_MATERIALS_PAT);
 
 /**
  * The pattern lines a pattern hatch draws: the ones it stores, or else its user-defined

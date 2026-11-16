@@ -1,6 +1,6 @@
 // M4-07 part 5: the hatch dialogs' swatches, drawn as SVG paths and CSS gradients.
 import { describe, expect, it } from 'vitest';
-import { bundledPatterns } from '@triya/hatch';
+import { MATERIAL_MOTIFS, bundledPatterns } from '@triya/hatch';
 import { gradientSwatch, linesSwatch, patternSwatch, userSwatch } from '../src/hatch-swatch';
 
 /** The segments of a path made of `Mx yLx y` pieces. */
@@ -21,6 +21,17 @@ describe('hatch swatches', () => {
     }
     // Turned by the dialog's angle: vertical.
     for (const [x1, , x2] of segments(patternSwatch(p, Math.PI / 2))) expect(x1).toBe(x2);
+  });
+
+  it('draws every material pattern (M4-12), a few tiles of it', () => {
+    // Their families have short spacings and long dash periods; sized by those, the swatch
+    // spanned dozens of tiles, past the line limit, and showed nothing.
+    const lib = bundledPatterns();
+    for (const m of MATERIAL_MOTIFS) {
+      const d = patternSwatch(lib.get(m.name)!, 0);
+      expect(d, m.name).not.toBe('');
+      expect(segments(d).length, m.name).toBeLessThan(600);
+    }
   });
 
   it('draws dots as round-capped points and crosses doubled user lines', () => {
