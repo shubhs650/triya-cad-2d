@@ -1692,9 +1692,15 @@ export class PromptBus {
       const { deferred: _, ...plain } = given;
       given = plain;
     }
-    // Ctrl reaches only a prompt that switches an arc's direction with it (M3-01 part 6) or
-    // makes a copy with it (M3-05 part 2).
-    if ('ctrl' in given && given.ctrl && !prompt.switchDirection && !prompt.ctrlCopies) {
+    // Ctrl reaches only a prompt that switches an arc's direction with it (M3-01 part 6), makes
+    // a copy with it (M3-05 part 2) or sizes a table with it (M4-05 part 6).
+    if (
+      'ctrl' in given &&
+      given.ctrl &&
+      !prompt.switchDirection &&
+      !prompt.ctrlCopies &&
+      !prompt.ctrlSizesTable
+    ) {
       const { ctrl: _, ...plain } = given;
       given = plain;
     }

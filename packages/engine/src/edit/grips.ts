@@ -473,7 +473,8 @@ export function moveGrip(
     }
     case 'table': {
       if (geom.kind !== 'ACAD_TABLE' || !found.table) return { kind: 'none' };
-      const shaped = movedTableGrip(geom, tableStyleOf(info), found.table, d);
+      const ctrl = info !== undefined && 'tableStyle' in info && info.ctrl === true;
+      const shaped = movedTableGrip(geom, tableStyleOf(info), found.table, d, ctrl);
       return shaped ? { kind: 'shape', geom: shaped } : { kind: 'none' };
     }
     case 'columnWidth':

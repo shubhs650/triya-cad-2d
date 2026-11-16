@@ -1,5 +1,6 @@
 // The cell editor's added row saved (M4-05 part 2), rows and columns inserted and deleted and
-// cells merged (part 3), cells formatted, grips dragged and the table scaled (part 4): Tab in a table's last cell adds a row, which
+// cells merged (part 3), cells formatted, grips dragged and the table scaled (part 4), cell grips
+// dragged, Ctrl with a column grip and a spreadsheet's cells pasted into cells (part 6, M4-13): Tab in a table's last cell adds a row, which
 // the save writes as an inserted row (`rowOrigins`, DEC-046), for a table made in the drawing
 // (-TABLE) and for one the drawing came with (acadsharp's AC1032 sample table A35). The drawing
 // is saved as AC1032 DXF (DEC-047) and read back: the table is as edited.
@@ -10,6 +11,7 @@ import {
   PromptBus,
   builtinCommands,
   tableCellBox,
+  tableCellGrips,
   tableCellText,
   tableDrawingOf,
   tableToPlan,
@@ -296,6 +298,132 @@ describe('cells formatted, grips dragged and the table scaled (M4-05 part 4)', (
     const was = table.geom;
     const g = await edit(model, () => table.id);
     expect(g.columnWidths[0]).toBeCloseTo(was.columnWidths[0]! * 1.25 * 1.5);
+    const back = saved(bytes, model, table.handle);
+    expect(kept(back)).toEqual(kept(g));
+  });
+});
+
+describe('cell grips, Ctrl with a column grip and cells pasted (M4-05 part 6, M4-13)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+  const sheet = (rows: string[][]) =>
+    rows.map((r) => r.map((text) => ({ text, rowSpan: 1, columnSpan: 1, merged: false })));
+
+  /**
+   * Drags the last cell's right and bottom grips, pastes three rows of three cells into the last
+   * row's first cell (adding rows and a column), and widens the first column with Ctrl.
+   */
+  async function edit(model: DocumentModel, id: () => EntityId) {
+    let picked: EntityId[] = [];
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) =>
+          Promise.resolve(
+            r.op === 'pick'
+              ? { ok: true, ids: picked }
+              : r.op === 'clipboard'
+                ? {
+                    ok: true,
+                    cells: sheet([
+                      ['P1', 'Q1', 'R1'],
+                      ['P2', 'Q2', 'R2'],
+                      ['P3', 'Q3', 'R3'],
+                    ]),
+                  }
+                : { ok: false, message: 'no view' },
+          ),
+      },
+    });
+    const g = () => (model.entity(id()) as Table).geom;
+    const style = () => model.tables.tableStyles.get(g().style!);
+    const one = (i: number, j: number) => ({ r0: i, c0: j, r1: i, c1: j });
+    const centre = (i: number, j: number) => {
+      const b = tableCellBox(g(), style(), one(i, j));
+      return tableToPlan(g(), { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    const last = g().rowHeights.length - 1;
+    const columns = g().columnWidths.length;
+    // The right grip half a column further, the bottom one a row lower.
+    const w = g().columnWidths[columns - 1]!;
+    const h = g().rowHeights[last]!;
+    for (const [k, d] of [
+      [1, { x: w / 2, y: 0 }],
+      [2, { x: 0, y: -h }],
+    ] as const) {
+      await bus.pick(centre(last, columns - 1), { grip: 1e-6 });
+      const grip = tableCellGrips(g(), style(), one(last, columns - 1))[k]!.point;
+      await bus.pick(grip);
+      await bus.pick({ x: grip.x + d.x, y: grip.y + d.y });
+      expect(bus.promptText).toBe('Command:');
+    }
+    await bus.pick(centre(last, 0), { grip: 1e-6 });
+    await bus.submit('P');
+    expect(bus.promptText).toBe('Command:');
+    // Ctrl with the first column grip: the column a quarter wider, the table with it.
+    picked = [id()];
+    await bus.pick(
+      tableToPlan(g(), {
+        x: 0,
+        y:
+          (tableCellBox(g(), style(), one(last, 0)).minY +
+            tableCellBox(g(), style(), one(last, 0)).maxY) /
+          2,
+      }),
+      {
+        grip: 1e-6,
+      },
+    );
+    picked = [];
+    const grip = tableToPlan(g(), { x: g().columnWidths[0]!, y: 0 });
+    await bus.pick(grip, { grip: 1e-6 });
+    await bus.pick({ x: grip.x + g().columnWidths[0]! / 4, y: grip.y }, { ctrl: true });
+    expect(bus.promptText).toBe('Command:');
+    return g();
+  }
+
+  /** What a save keeps of a table's edits. */
+  const kept = (t: TableGeometry) => ({
+    position: { x: +t.position.x.toFixed(6), y: +t.position.y.toFixed(6) },
+    columnWidths: t.columnWidths.map((w) => +w.toFixed(6)),
+    rowHeights: t.rowHeights.map((h) => +h.toFixed(6)),
+    texts: t.cells.map((r) => r.map((c) => (c.merged ? '^' : c.text))),
+  });
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '1', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', '1', '2']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const was = made.geom;
+    const g = await edit(model, () => made.id);
+    expect(g.columnWidths).toEqual([
+      was.columnWidths[0]! * 1.25,
+      was.columnWidths[1]! * 1.5,
+      was.columnWidths[1]! * 1.5,
+    ]);
+    expect(g.rowHeights).toHaveLength(5);
+    expect(kept(g).texts.slice(2)).toEqual([
+      ['P1', 'Q1', 'R1'],
+      ['P2', 'Q2', 'R2'],
+      ['P3', 'Q3', 'R3'],
+    ]);
+    const back = saved(bytes, model, made.handle);
+    expect(kept(back)).toEqual(kept(g));
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    const was = table.geom;
+    const g = await edit(model, () => table.id);
+    expect(g.rowHeights.length).toBe(was.rowHeights.length + 2);
     const back = saved(bytes, model, table.handle);
     expect(kept(back)).toEqual(kept(g));
   });

@@ -192,6 +192,7 @@ describe('what the Table Cell menu offers', () => {
       tableCellOptions(table(), STYLE, { r0, c0, r1, c1 });
     expect(at(2, 3)).toEqual([
       'Text',
+      'Paste',
       ...FORMATS,
       'Above',
       'Below',
@@ -203,9 +204,17 @@ describe('what the Table Cell menu offers', () => {
       'MergeColumns',
     ]);
     // The header row: Below makes the new row the first data row; Above and Delete are refused.
-    expect(at(1, 1)).toEqual(['Text', ...FORMATS, 'Below', 'Left', 'Right', 'DeleteColumns']);
+    expect(at(1, 1)).toEqual([
+      'Text',
+      'Paste',
+      ...FORMATS,
+      'Below',
+      'Left',
+      'Right',
+      'DeleteColumns',
+    ]);
     // The title across every column: no column can go, and it unmerges.
-    expect(at(0, 0, 0, 2)).toEqual(['Text', ...FORMATS, 'Left', 'Right', 'Unmerge']);
+    expect(at(0, 0, 0, 2)).toEqual(['Text', 'Paste', ...FORMATS, 'Left', 'Right', 'Unmerge']);
     // The last column cannot go; nor can every data row in a style without title and header.
     const one = table({
       rowHeights: [1],
@@ -215,6 +224,7 @@ describe('what the Table Cell menu offers', () => {
     const plain = { ...STYLE, suppressTitle: true, suppressHeader: true };
     expect(tableCellOptions(one, plain, { r0: 0, c0: 0, r1: 0, c1: 0 })).toEqual([
       'Text',
+      'Paste',
       ...FORMATS,
       'Above',
       'Below',

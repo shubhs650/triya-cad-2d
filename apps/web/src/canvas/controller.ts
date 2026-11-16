@@ -94,6 +94,8 @@ import {
   tessellate,
   transformPrimitive,
   worldToScreen,
+  aciRgb,
+  rgbHex,
   type ChangeLink,
   type DrawnEntity,
   type FontSources,
@@ -1927,7 +1929,7 @@ export class CanvasController {
     // 6); one by the object under the pickbox follows the pointer instead.
     if (!this.#asked?.commandPreview?.hover) this.#commandPreview(cursor);
     // The objects the prompt drags follow the cursor as the drafting aids place it (M2-06).
-    const ctrl = this.#ctrl && p?.switchDirection === true;
+    const ctrl = this.#ctrl && (p?.switchDirection === true || p?.ctrlSizesTable === true);
     const motion =
       p?.drag && cursor && this.#mode === 'none' ? dragMotion(p.drag, cursor, { ctrl }) : undefined;
     if (motion || this.#dragging) {
@@ -2028,8 +2030,63 @@ export class CanvasController {
       ...this.#overlay,
       ...this.#quickOverlay,
       ...this.#vertexMarker(),
+      ...this.#promptGrips(at),
     ]);
     this.#requestFrame();
+  }
+
+  /**
+   * The grips a point prompt shows that are no object's (TABLECELL's cell grips, M4-05 part 6),
+   * drawn as object grips are: GRIPSIZE squares in GRIPCOLOR with a GRIPCONTOUR edge, the one
+   * the cursor is on in GRIPHOVER.
+   */
+  #promptGrips(cursor: Point | undefined): RenderPrimitive[] {
+    const p = this.#asked;
+    if (p?.kind !== 'point' || !p.grips || !this.#view) return [];
+    const px = this.#px();
+    const half = gripHalfSize(this.#drafting.gripSize) * px;
+    const colours = this.#drafting.gripColors;
+    const hex = (aci: number) => rgbHex(aciRgb(aci));
+    const hover = cursor && this.#promptGripAt(cursor);
+    const square = (q: Vec2, h: number): number[] => [
+      PATH_M,
+      q.x - h,
+      q.y - h,
+      PATH_L,
+      q.x + h,
+      q.y - h,
+      PATH_L,
+      q.x + h,
+      q.y + h,
+      PATH_L,
+      q.x - h,
+      q.y + h,
+      PATH_Z,
+    ];
+    return p.grips.flatMap((q): RenderPrimitive[] => [
+      { kind: 'fill', path: square(q, half + px), color: hex(colours.contour) },
+      {
+        kind: 'fill',
+        path: square(q, half),
+        color: hex(hover === q ? colours.hover : colours.unselected),
+      },
+    ]);
+  }
+
+  /** The grip of the point prompt's own (`#promptGrips`) a click at `world` is on, if any. */
+  #promptGripAt(world: Vec2): Vec2 | undefined {
+    const p = this.#asked;
+    if (p?.kind !== 'point' || !p.grips) return undefined;
+    let best: Vec2 | undefined;
+    let reach = this.gripReach();
+    for (const q of p.grips) {
+      const d = Math.hypot(q.x - world.x, q.y - world.y);
+      if (d <= reach) {
+        best = q;
+        reach = d;
+      }
+    }
+    return best;
   }
 
   /**
@@ -2138,7 +2195,8 @@ export class CanvasController {
       if (this.#ctrl === e.ctrlKey) return;
       this.#ctrl = e.ctrlKey;
       // The dragged arc switches (M3-01 part 6), or the copy snaps to the offset (M3-05 part 6).
-      const redrag = this.#prompt?.switchDirection || this.#prompt?.offsetSnap;
+      const redrag =
+        this.#prompt?.switchDirection || this.#prompt?.offsetSnap || this.#prompt?.ctrlSizesTable;
       if (redrag && this.#pointer && this.#mode === 'none') this.#track();
     };
     // A button pressed while Ctrl is down makes it no tap.
@@ -2661,6 +2719,9 @@ export class CanvasController {
    * else the constrained cursor; missed when the prompt's override found nothing there.
    */
   async #pointAt(world: Vec2): Promise<PickedPoint> {
+    // A click on one of the prompt's own grips is that grip (TABLECELL's, M4-05 part 6).
+    const grip = this.#promptGripAt(world);
+    if (grip) return { point: grip };
     // The aids as they are at the click: an override key let go while the snaps are worked out
     // still counts (M3-06 part 5), as the modes asked for already do.
     const constrained = this.#constrain(world).point;
