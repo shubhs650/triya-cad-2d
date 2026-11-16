@@ -14,16 +14,22 @@
 // measures text (the cell editor fits rows as text is typed).
 import type { Vec2 } from '../geom/types';
 import type { EntityGeometry, TableGeometry, TableStyleRecord } from '../model/types';
-import { rowCellStyle, tableParts, tableRowTypes } from '../annotation/table';
+import { rowCellStyle, tableCellBox, tableParts, tableRowTypes } from '../annotation/table';
 import { tableAxes } from '../spatial/entity-bounds';
 import { tableToPlan } from './table';
 
-/** What a table grip sizes: its width, height, both, or the columns either side of line `k`. */
+/**
+ * What a table grip sizes: its width, height, both, or the columns either side of line `k`; or,
+ * a grip of the cells selected (M4-05 part 6), column `j` or row `i` by its edge that `start`s
+ * it (the left, or the one towards the first row) or the one that ends it.
+ */
 export type TableGripRole =
   | { readonly kind: 'width' }
   | { readonly kind: 'height' }
   | { readonly kind: 'size' }
-  | { readonly kind: 'column'; readonly k: number };
+  | { readonly kind: 'column'; readonly k: number }
+  | { readonly kind: 'cellColumn'; readonly j: number; readonly start: boolean }
+  | { readonly kind: 'cellRow'; readonly i: number; readonly start: boolean };
 
 /** What a table's grips need of its table style: which way it flows and its sizes. */
 export type TableGripStyle = TableStyleRecord | undefined;
@@ -53,6 +59,37 @@ export function tableGrips(
     out.push({ point: tableToPlan(g, { x, y: top }), role: { kind: 'column', k } });
   }
   return out;
+}
+
+/**
+ * The grips of table `g`'s cells in range `r` (TABLECELL, M4-05 part 6), in plan: the middles of
+ * the selection's top, right, bottom and left edges.
+ */
+export function tableCellGrips(
+  g: TableGeometry,
+  style: TableGripStyle,
+  r: { readonly r0: number; readonly c0: number; readonly r1: number; readonly c1: number },
+): { point: Vec2; role: TableGripRole }[] {
+  const b = tableCellBox(g, style, r);
+  const up = style?.flowDirection === 1;
+  const x = (b.minX + b.maxX) / 2;
+  const y = (b.minY + b.maxY) / 2;
+  // The top edge starts the selection's rows in a table flowing down, ends them flowing up.
+  const top: TableGripRole = up
+    ? { kind: 'cellRow', i: r.r1, start: false }
+    : { kind: 'cellRow', i: r.r0, start: true };
+  const bottom: TableGripRole = up
+    ? { kind: 'cellRow', i: r.r0, start: true }
+    : { kind: 'cellRow', i: r.r1, start: false };
+  return [
+    { point: tableToPlan(g, { x, y: b.maxY }), role: top },
+    {
+      point: tableToPlan(g, { x: b.maxX, y }),
+      role: { kind: 'cellColumn', j: r.c1, start: false },
+    },
+    { point: tableToPlan(g, { x, y: b.minY }), role: bottom },
+    { point: tableToPlan(g, { x: b.minX, y }), role: { kind: 'cellColumn', j: r.c0, start: true } },
+  ];
 }
 
 /** The lowest each row may be: one line of its tallest text and its margins. */
@@ -96,13 +133,14 @@ function scaledTo(sizes: readonly number[], total: number, min: readonly number[
 
 /**
  * Table `g` with its grip `role` dragged by `d` (plan), or undefined when the drag changes
- * nothing.
+ * nothing. `ctrl`: Ctrl is held, with which a column grip sizes the table (M4-05 part 6).
  */
 export function movedTableGrip(
   g: TableGeometry,
   style: TableGripStyle,
   role: TableGripRole,
   d: Vec2,
+  ctrl = false,
 ): TableGeometry | undefined {
   const { x, y } = tableAxes(g);
   const dx = d.x * x.x + d.y * x.y;
@@ -124,7 +162,10 @@ export function movedTableGrip(
     const min = rowMinimums(g, style);
     rowHeights = scaledTo(heights, Math.max(sum(heights) + (up ? dy : -dy), sum(min)), min);
   }
-  if (role.kind === 'column') {
+  let position = g.position;
+  if (role.kind === 'column' && ctrl) {
+    columnWidths = widths.map((w, i) => (i === role.k - 1 ? Math.max(w + dx, cmin) : w));
+  } else if (role.kind === 'column') {
     const a = widths[role.k - 1]!;
     const b = widths[role.k]!;
     // As far as the drag goes while both columns keep their minimum.
@@ -134,9 +175,24 @@ export function movedTableGrip(
       i === role.k - 1 ? a + move : i === role.k ? b - move : w,
     );
   }
+  if (role.kind === 'cellColumn') {
+    const w = widths[role.j]!;
+    const grown = Math.max(w + (role.start ? -dx : dx), cmin) - w;
+    columnWidths = widths.map((v, i) => (i === role.j ? w + grown : v));
+    if (role.start) position = tableToPlan(g, { x: -grown, y: 0 });
+  }
+  if (role.kind === 'cellRow') {
+    // Rows follow one another down the table's y axis, up it in a table flowing up.
+    const along = up ? 1 : -1;
+    const h = heights[role.i]!;
+    const e = (role.start ? -dy : dy) * along;
+    const grown = Math.max(h + e, rowMinimums(g, style)[role.i]!) - h;
+    rowHeights = heights.map((v, i) => (i === role.i ? h + grown : v));
+    if (role.start) position = tableToPlan(g, { x: 0, y: -grown * along });
+  }
   const same = (p: readonly number[], q: readonly number[]) => p.every((v, i) => v === q[i]);
   if (same(columnWidths, widths) && same(rowHeights, heights)) return undefined;
-  return { ...g, columnWidths, rowHeights };
+  return { ...g, position, columnWidths, rowHeights };
 }
 
 /**

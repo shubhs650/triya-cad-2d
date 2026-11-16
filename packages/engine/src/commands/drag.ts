@@ -12,6 +12,7 @@ import type { EntityGeometry, Xdata } from '../model/types';
 import { placeDimension, type DimPlacement } from '../edit/dimension';
 import type { GripFunction } from '../edit/grip-functions';
 import type { ArrayGripRole } from '../edit/array-grips';
+import type { TableGripRole } from '../edit/table-grips';
 import type { CommandPreview } from './command-preview';
 import { sketchGeometry, type Sketch } from './draw/sketch';
 
@@ -75,6 +76,17 @@ export type DragPreview =
       readonly fn: string;
     }
   /**
+   * A grip of table `id` that is no object grip being dragged: one of the cells selected
+   * (TABLECELL, M4-05 part 6), sizing its column or row as `role` says (`movedTableGrip`) by the
+   * cursor less `from`. The table's grid is drawn as it would be.
+   */
+  | {
+      readonly kind: 'table';
+      readonly id: EntityId;
+      readonly role: TableGripRole;
+      readonly from: Vec2;
+    }
+  /**
    * A dimension being placed (DIMLINEAR and the others, M2-11): drawn, on `layer`, as
    * `placeDimension` makes it with its dimension line at the cursor, with the `DSTYLE`
    * overrides `xdata` it will be made with (M2-31).
@@ -108,6 +120,14 @@ export interface DragMotion {
     readonly from: Vec2;
     readonly to: Vec2;
     readonly fn?: GripFunction;
+    /** Ctrl is held at a table's column grip: the table is sized with the column (M4-05 part 6). */
+    readonly ctrl?: true;
+  };
+  /** Table `id` with its grip `role` dragged by `d` (TABLECELL's cell grips, M4-05 part 6). */
+  readonly table?: {
+    readonly id: EntityId;
+    readonly role: TableGripRole;
+    readonly d: Vec2;
   };
   /** The array `id` its grip `role` would make with the function `fn` at `to` (M3-05 part 7). */
   readonly array?: {
@@ -131,7 +151,8 @@ export interface DragMotion {
 
 /**
  * The motion a drag makes with the cursor at `cursor`; undefined where it makes none. `ctrl`:
- * Ctrl is held at a prompt that switches an arc's direction with it (M3-01 part 6).
+ * Ctrl is held at a prompt that switches an arc's direction with it (M3-01 part 6) or sizes a
+ * table with its column grip (M4-05 part 6).
  */
 export function dragMotion(
   drag: DragPreview,
@@ -179,9 +200,21 @@ export function dragMotion(
       return {
         ids: [],
         m: IDENTITY,
-        grip: { ids: drag.ids, from: drag.grip, to, ...(drag.fn && { fn: drag.fn }) },
+        grip: {
+          ids: drag.ids,
+          from: drag.grip,
+          to,
+          ...(drag.fn && { fn: drag.fn }),
+          ...(o.ctrl && { ctrl: true as const }),
+        },
       };
     }
+    case 'table':
+      return {
+        ids: [],
+        m: IDENTITY,
+        table: { id: drag.id, role: drag.role, d: sub(cursor, drag.from) },
+      };
     case 'dimension': {
       const geom = placeDimension(drag.place, cursor);
       return (

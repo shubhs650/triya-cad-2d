@@ -282,6 +282,12 @@ export function CommandLine({
         return true;
       },
       'command:': (id) => {
+        // Ctrl+V while table cells are selected pastes into them (TABLECELL's Paste, M4-13).
+        const p = promptRef.current;
+        if (commandOf(id) === 'PASTECLIP' && p?.kind === 'point' && p.pasteKeyword) {
+          sendRef.current(p.pasteKeyword);
+          return true;
+        }
         invokeRef.current(commandOf(id)!);
         return true;
       },
