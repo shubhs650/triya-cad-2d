@@ -607,6 +607,8 @@ function multiLeaderGeometry(
     textAngleType: m.textAngle as number,
     textAlignment: m.textAlignment as number,
     textFrame: m.textFrame,
+    // DXF 295 (R2013, M4-14), stated only when on.
+    ...(m.extendedToText && { extendLeaderToText: true }),
     contentBase: xy(c.contentBasePoint),
     landingGap: c.landingGap,
     // DXF 176 (M2-35 part 25): 0 by the block's extents, 1 by its insertion point.

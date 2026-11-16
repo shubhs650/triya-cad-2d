@@ -184,9 +184,14 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'extents':
         port.postMessage({ type: 'extents', id: m.id, box: session.extents() ?? null });
         break;
-      case 'dimStylePreview': {
+      case 'dimStylePreview':
+      case 'stylePreview': {
         const id = m.id;
-        session.dimStylePreview(m.preview, m.size, o.createBitmap).then(
+        const drawn =
+          m.type === 'dimStylePreview'
+            ? session.dimStylePreview(m.preview, m.size, o.createBitmap)
+            : session.stylePreview(m.preview, m.size, o.createBitmap);
+        drawn.then(
           (bitmap) =>
             bitmap
               ? port.postMessage({ type: 'thumbnail', id, bitmap }, [bitmap])

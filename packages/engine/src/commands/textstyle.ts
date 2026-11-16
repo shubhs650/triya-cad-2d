@@ -155,7 +155,7 @@ function wellFormed(s: unknown): s is TextStyleSettings {
  * dropped (bold and italic need TrueType; a big font and vertical text need SHX), and an oblique
  * angle the dialog showed unchanged keeps the record's radians.
  */
-function recordFields(
+export function recordFields(
   s: TextStyleSettings,
   was: TextStyleRecord | undefined,
 ): Pick<

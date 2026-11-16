@@ -59,6 +59,7 @@ import {
   type Box,
   type ChangeSet,
   type DimStylePreview,
+  type StylePreview,
   type EntityId,
   PREVIEW_AT_COMMAND,
   PREVIEW_SELECTING,
@@ -629,6 +630,14 @@ export class CanvasController {
     size: { width: number; height: number },
   ): Promise<ImageBitmap | undefined> {
     return this.#host.dimStylePreview(preview, { ...size, dpr: devicePixelRatio });
+  }
+
+  /** A text or multileader style dialog's preview image (M4-14), as `dimStylePreview`'s. */
+  stylePreview(
+    preview: StylePreview,
+    size: { width: number; height: number },
+  ): Promise<ImageBitmap | undefined> {
+    return this.#host.stylePreview(preview, { ...size, dpr: devicePixelRatio });
   }
 
   /** The entities drawn in a rectangle of the canvas, CSS pixels (M1-106 fidelity triage). */

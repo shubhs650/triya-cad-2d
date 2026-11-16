@@ -60,6 +60,8 @@ export function mleaderStyle(s: MultiLeaderStyle): MLeaderStyleRecord {
     textHeight: s.textHeight,
     textFrame: s.textFrame,
     textAlignAlwaysLeft: s.textAlignAlwaysLeft,
+    // DXF 298, Extend leader to text (M4-14): acad-ts's unknownFlag298.
+    extendLeaderToText: s.unknownFlag298,
     alignSpace: s.alignSpace,
     ...opt('block', s.blockContent),
     blockColor: mapEntityColor(s.blockContentColor),

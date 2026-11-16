@@ -133,6 +133,8 @@ function restyle(
   if (!own(O.lineweight)) n = { ...n, lineweight: style.lineweight };
   if (!own(O.landing)) n = { ...n, landing: style.landing };
   if (!own(O.dogleg)) n = { ...n, dogleg: style.dogleg };
+  if (!own(O.extendLeaderToText))
+    n = withOptional(n, 'extendLeaderToText', style.extendLeaderToText ? true : undefined);
   if (!own(O.arrowhead)) n = withOptional(n, 'arrowhead', style.arrowhead);
   if (!own(O.arrowheadSize)) {
     n = {

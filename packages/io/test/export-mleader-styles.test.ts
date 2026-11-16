@@ -98,6 +98,10 @@ const FIELD_EDITS: Record<string, (m: DocumentModel) => Partial<MLeaderStyleReco
   mleaderDrawOrder: () => ({ mleaderDrawOrder: 1 }),
   leaderDrawOrder: () => ({ leaderDrawOrder: 1 }),
   maxLeaderPoints: () => ({ maxLeaderPoints: 5 }),
+  // M4-14: Maximum leader points unchecked, no limit.
+  'maxLeaderPoints none': () => ({ maxLeaderPoints: 0 }),
+  // M4-14: Extend leader to text (DXF 298, R2013).
+  extendLeaderToText: () => ({ extendLeaderToText: true }),
   firstSegmentAngle: () => ({ firstSegmentAngle: Math.PI / 4 }),
   secondSegmentAngle: () => ({ secondSegmentAngle: Math.PI / 2 }),
   pathType: () => ({ pathType: 2 }),
@@ -151,11 +155,15 @@ const SAVES: readonly [ACadVersion, CadFormat][] = [
   [ACadVersion.AC1032, 'dwg'],
 ];
 
-/** A DWG MLEADERSTYLE stores the text attachment direction and vertical attachments from R2010. */
+/**
+ * A DWG MLEADERSTYLE stores the text attachment direction and vertical attachments from R2010,
+ * and Extend leader to text from R2013.
+ */
 const refused = (version: ACadVersion, format: CadFormat, field: string): boolean =>
   format === 'dwg' &&
-  version < ACadVersion.AC1024 &&
-  ['textAttachmentDirection', 'textTopAttachment', 'textBottomAttachment'].includes(field);
+  ((version < ACadVersion.AC1024 &&
+    ['textAttachmentDirection', 'textTopAttachment', 'textBottomAttachment'].includes(field)) ||
+    (version < ACadVersion.AC1027 && field === 'extendLeaderToText'));
 
 const formats: readonly CadFormat[] = ['dxf', 'dwg'];
 
@@ -360,7 +368,12 @@ describe('MLEADERSTYLE objects', () => {
       [add({ name: 'A<B' }), /is not a valid multileader style name/],
       [update('CALLOUT', { flags: 16 }), /has no flags/],
       [update('CALLOUT', { contentType: 4 }), /contentType: 4 is not a whole number from 0 to 3/],
-      [update('CALLOUT', { maxLeaderPoints: 1 }), /maxLeaderPoints/],
+      [update('CALLOUT', { maxLeaderPoints: 1 }), /maxLeaderPoints: 1 is not 0 \(no limit\) or/],
+      [update('CALLOUT', { maxLeaderPoints: -2 }), /maxLeaderPoints/],
+      [
+        update('CALLOUT', { extendLeaderToText: 1 as never }),
+        /extendLeaderToText: 1 is not true or false/,
+      ],
       [update('CALLOUT', { pathType: 1.5 }), /pathType/],
       [update('CALLOUT', { textHeight: 0 }), /textHeight: 0 is not more than 0/],
       [update('CALLOUT', { arrowheadSize: -1 }), /arrowheadSize: -1 is negative/],
@@ -466,6 +479,7 @@ describe('MLEADERSTYLE objects', () => {
         textHeight: 0.18,
         textFrame: false,
         textAlignAlwaysLeft: false,
+        extendLeaderToText: false,
         alignSpace: 4,
         blockColor: { kind: 'byBlock' },
         blockScale: { x: 1, y: 1, z: 1 },

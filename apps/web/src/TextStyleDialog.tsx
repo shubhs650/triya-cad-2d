@@ -20,7 +20,7 @@
 // without asking, so those come as the user adds them (Settings, Fonts). Font Style is a
 // TrueType font's (Regular, Italic, Bold, Bold Italic); an SHX font has Use Big Font instead,
 // which turns it into the Big Font list, and Vertical. Annotative is shown and never set
-// (DEC-013, DEC-058). The preview waits for a later part.
+// (DEC-013, DEC-058). The Preview below the list (M4-14) is drawn by the drawing's renderer.
 import {
   isTrueTypeFont,
   textStyleProblem,
@@ -31,6 +31,7 @@ import {
 } from '@triya/engine';
 import { SHX_EQUIVALENTS } from '@triya/text';
 import { useId, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { StylePreview } from './StylePreview';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
 
@@ -75,6 +76,9 @@ function nextStyleName(names: readonly string[]): string {
  * opens again on the style applied.
  */
 type Pending = { readonly then: () => void; readonly follows: boolean };
+
+/** The Preview picture's size in CSS pixels. */
+const TEXT_PREVIEW = { width: 200, height: 70 };
 
 export function TextStyleDialog({
   doc,
@@ -219,6 +223,13 @@ export function TextStyleDialog({
               <option value="used">Styles in use</option>
             </select>
           </label>
+          {/* AutoCAD's Preview: sample text following the font and effects as they change. */}
+          <StylePreview
+            doc={doc}
+            preview={shown && { kind: 'textstyle', settings: shown }}
+            size={TEXT_PREVIEW}
+            testId="textstyle-preview"
+          />
         </div>
         {shown && style ? (
           <div className="textstyle-groups">

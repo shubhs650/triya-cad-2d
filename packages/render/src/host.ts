@@ -9,6 +9,7 @@
 import type { DrawingDimensionHealth } from '@triya/dims';
 import type {
   DimStylePreview,
+  StylePreview,
   Box,
   ChangeSet,
   DragMotion,
@@ -456,6 +457,14 @@ export class RendererHost {
   dimStylePreview(preview: DimStylePreview, size: PreviewSize): Promise<ImageBitmap | undefined> {
     if (this.#session) return this.#session.dimStylePreview(preview, size, this.#createBitmap);
     return this.#request((id) => ({ type: 'dimStylePreview', id, preview, size })).then((m) =>
+      m.type === 'thumbnail' && m.bitmap ? m.bitmap : undefined,
+    );
+  }
+
+  /** A text or multileader style dialog's preview image (M4-14), as `dimStylePreview`'s. */
+  stylePreview(preview: StylePreview, size: PreviewSize): Promise<ImageBitmap | undefined> {
+    if (this.#session) return this.#session.stylePreview(preview, size, this.#createBitmap);
+    return this.#request((id) => ({ type: 'stylePreview', id, preview, size })).then((m) =>
       m.type === 'thumbnail' && m.bitmap ? m.bitmap : undefined,
     );
   }
