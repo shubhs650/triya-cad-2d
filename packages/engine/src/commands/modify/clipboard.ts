@@ -15,7 +15,9 @@
 // The app also puts the objects on the system clipboard, with a picture of them for other apps,
 // and a paste reads it (M2-32 part 5): another Triya window's objects come as a Clipboard, and
 // another app's text as `text`, which PASTECLIP pastes as multiline text, and another app's
-// picture as `picture`, which PASTECLIP pastes as a raster image (M2-54, edit/picture.ts).
+// picture as `picture`, which PASTECLIP pastes as a raster image (M2-54, edit/picture.ts), and a
+// spreadsheet's cells (its HTML table or CSV as `cells`, its tab-separated rows as `text`), which
+// PASTECLIP pastes as a table (M4-06, paste-table.ts).
 //
 // Objects from another drawing are scaled by the ratio of the two drawings' INSUNITS (M2-32).
 // Where one of the two is unitless, AutoCAD scales nothing; Triya asks first what units the
@@ -37,6 +39,8 @@ import { eraseObjects, refusalMessages } from '../../edit/edit';
 import type { EntityId } from '../../model/entity-ids';
 import type { EntityGeometry, MTextGeometry } from '../../model/types';
 import { mtextLiteral } from '../../edit/clipboard-data';
+import { tabSeparatedCells, type SheetCells } from '../../edit/spreadsheet';
+import { pasteTable } from './paste-table';
 import { hasPixels, pastePicture, pictureFrame, type ClipboardPicture } from '../../edit/picture';
 import { currentTextStyle, textSize } from '../draw/text';
 import type { CommandContext, CommandDef } from '../command';
@@ -90,7 +94,8 @@ async function toClipboard(
 type Found =
   | { readonly kind: 'objects'; readonly clipboard: Clipboard; readonly sameDrawing: boolean }
   | { readonly kind: 'text'; readonly contents: string }
-  | { readonly kind: 'picture'; readonly picture: ClipboardPicture };
+  | { readonly kind: 'picture'; readonly picture: ClipboardPicture }
+  | { readonly kind: 'cells'; readonly cells: SheetCells };
 
 const NOTHING = 'The Clipboard holds no objects to paste.';
 
@@ -104,7 +109,11 @@ async function readClipboard(ctx: CommandContext): Promise<Found | undefined> {
     ctx.message(reply.message);
     return undefined;
   }
-  if (reply.text !== undefined) {
+  if (reply.cells && reply.cells.length > 0) {
+    return { kind: 'cells', cells: reply.cells };
+  } else if (reply.text !== undefined) {
+    const cells = tabSeparatedCells(reply.text);
+    if (cells) return { kind: 'cells', cells };
     const contents = mtextLiteral(reply.text);
     if (contents.trim() !== '') return { kind: 'text', contents };
   } else if (reply.picture) {
@@ -132,6 +141,10 @@ async function fromClipboard(
     ctx.message('The Clipboard holds a picture, which PASTECLIP pastes as an image.');
     return undefined;
   }
+  if (found?.kind === 'cells') {
+    ctx.message("The Clipboard holds a spreadsheet's cells, which PASTECLIP pastes as a table.");
+    return undefined;
+  }
   return found;
 }
 
@@ -139,8 +152,8 @@ async function fromClipboard(
  * Another app's text pasted (AutoCAD 2024 Help, "PASTECLIP": text "is inserted as a multiline
  * text (mtext) object using the MTEXT defaults"): the current text style and TEXTSIZE (or the
  * style's own height), attached at its top left to the point given, unwrapped, on the current
- * layer with the current properties. AutoCAD pastes a spreadsheet's cells as a table; tables are
- * M4-05/M4-06, so a spreadsheet's rows paste as lines with tabs.
+ * layer with the current properties. A spreadsheet's rows paste as a table (M4-06,
+ * paste-table.ts).
  */
 async function* pasteText(ctx: CommandContext, contents: string): Sub<void> {
   const style = currentTextStyle(ctx.model);
@@ -340,6 +353,10 @@ export function pasteClipCommand(): CommandDef {
       }
       if (found.kind === 'picture') {
         yield* pasteImage(ctx, found.picture);
+        return;
+      }
+      if (found.kind === 'cells') {
+        yield* pasteTable(ctx, found.cells);
         return;
       }
       const paste = yield* pasteUnits(ctx, found.clipboard, found.sameDrawing);

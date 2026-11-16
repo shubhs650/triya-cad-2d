@@ -101,6 +101,46 @@ describe('AppClipboard', () => {
     expect(await app.paste(1)).toEqual({ ok: true, text: 'Hello\nworld' });
   });
 
+  it('pastes a spreadsheet’s HTML table as its cells, before its text (M4-06)', async () => {
+    const env = fakeEnv();
+    const app = new AppClipboard(env, 'window-a');
+    env.item = new Map([
+      ['text/plain', new Blob(['Schedule\t\nA\tB\r\n'])],
+      [
+        'text/html',
+        new Blob([
+          '<meta charset="utf-8"><table><tr><td colspan=2>Schedule</td></tr><tr><td>A</td><td>B</td></tr></table>',
+        ]),
+      ],
+      ['image/png', new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })],
+    ]);
+    const reply = await app.paste(1);
+    expect(reply).toMatchObject({ ok: true });
+    const cells = (reply as { cells?: { text: string; columnSpan: number; merged: boolean }[][] })
+      .cells;
+    expect(cells?.map((row) => row.map((c) => (c.merged ? null : c.text)))).toEqual([
+      ['Schedule', null],
+      ['A', 'B'],
+    ]);
+    expect(cells?.[0]?.[0]?.columnSpan).toBe(2);
+  });
+
+  it('pastes HTML without a table as its text, and CSV as cells (M4-06)', async () => {
+    const env = fakeEnv();
+    const app = new AppClipboard(env, 'window-a');
+    env.item = new Map([
+      ['text/html', new Blob(['<p>Hello <b>world</b></p>'])],
+      ['text/plain', new Blob(['Hello world'])],
+    ]);
+    expect(await app.paste(1)).toEqual({ ok: true, text: 'Hello world' });
+    env.item = new Map([['text/csv', new Blob(['a,"b,c"\r\n1,2\r\n'])]]);
+    const reply = (await app.paste(1)) as { cells?: { text: string }[][] };
+    expect(reply.cells?.map((row) => row.map((c) => c.text))).toEqual([
+      ['a', 'b,c'],
+      ['1', '2'],
+    ]);
+  });
+
   it('hands another app’s picture to be kept, and pastes it (M2-54)', async () => {
     const env = fakeEnv();
     const kept: Uint8Array[] = [];
