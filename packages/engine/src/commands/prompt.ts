@@ -25,6 +25,9 @@ import type { MLeaderStyleAction, MLeaderStyleRequest } from './mleaderstyle';
 import type { FindAction, FindRequest, FindSettings } from './modify/find';
 import type { SpellAction, SpellRequest, SpellSettings } from './modify/spell';
 import type { HatchDialogAnswer, HatchDialogRequest } from './draw/hatch-dialog';
+import type { FieldDialogRequest } from './draw/field';
+import type { FieldSpec } from '../edit/field-codes';
+import { FIELD_INSERT } from '../edit/fields';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -422,6 +425,12 @@ export interface TextEditorRequest {
    * edge of the text close the editor with the move to the next cell (`TableCellMove`).
    */
   readonly cell?: true;
+  /**
+   * Fields may be typed (M4-10 part 2): the editor offers Insert Field (Ctrl+F, the toolbar's
+   * Field button) and shows each field in `value` by its value here, by its code (`----`
+   * when absent), as AutoCAD's In-Place Text Editor shows a field.
+   */
+  readonly fields?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -729,6 +738,8 @@ export type DialogRequest =
   | SpellRequest
   /** HATCH's Hatch and Gradient, HATCHEDIT's Hatch Edit (M4-07 part 5). */
   | HatchDialogRequest
+  /** FIELD's Field dialog, the MTEXT editor's Insert Field (M4-10 part 2). */
+  | FieldDialogRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -957,6 +968,8 @@ export type PromptAnswer =
        * with the button that closed it to pick (`apply`), or none for OK.
        */
       readonly hatch?: HatchDialogAnswer;
+      /** The Field dialog's state as OK (or Select object, `select`) closed it (M4-10 part 2). */
+      readonly field?: FieldSpec;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;
@@ -1047,7 +1060,8 @@ export function formatAnswer(answer: PromptAnswer, units: DrawingUnits = DECIMAL
     case 'keyword':
       return answer.keyword;
     case 'string':
-      return answer.value;
+      // Insert Field's place in the MTEXT editor's text is not echoed (M4-10 part 2).
+      return answer.value.split(`%<${FIELD_INSERT}>%`).join('');
     case 'selection':
       return `${answer.ids.length} found`;
     case 'dialog':
