@@ -47,6 +47,9 @@ describe('palette search', () => {
       'ATTEDIT',
       'BREAK',
       'BREAKATPOINT',
+      // M4-08: CENTERLINE and CENTERMARK.
+      'CENTERLINE',
+      'CENTERMARK',
       // M3-02 part 3: CHAMFER and FILLET.
       'CHAMFER',
       // M3-02 part 5: CHANGE and CHPROP.
@@ -106,6 +109,7 @@ describe('palette search', () => {
       'EXTEND',
       'FILLET',
       'FILTER',
+      'FIND',
       // M4-07 part 3: GRADIENT (HATCH with a gradient).
       'GRADIENT',
       // M3-06 part 2: GRID and SNAP.
@@ -119,6 +123,8 @@ describe('palette search', () => {
       'HATCHTOBACK',
       'ID',
       'JOIN',
+      // M4-09 part 1: JUSTIFYTEXT and SCALETEXT.
+      'JUSTIFYTEXT',
       'LENGTHEN',
       'LINE',
       'LIST',
@@ -173,6 +179,7 @@ describe('palette search', () => {
       'SAVE',
       'SAVEAS',
       'SCALE',
+      'SCALETEXT',
       'SELECT',
       'SELECTSIMILAR',
       'SETVAR',
@@ -190,6 +197,8 @@ describe('palette search', () => {
       // M4-05 part 5: the Table Style dialog.
       'TABLESTYLE',
       'TEXT',
+      // M4-09 part 3.
+      'TEXTALIGN',
       'TEXTEDIT',
       'TEXTTOFRONT',
       'TRIM',

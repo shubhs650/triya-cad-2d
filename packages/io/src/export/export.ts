@@ -186,7 +186,9 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   // Draw order tables, the image objects, groups, DIMASSOCs, XCLIP filters and coded objects have
   // writers (draw-order.ts, image-objects.ts, groups.ts, dim-assocs.ts, xclips.ts,
   // coded-objects.ts) and so do associative arrays' records (triya-arrays.ts) and dimensions'
-  // breaks and inspection data (triya-dims.ts).
+  // breaks and inspection data (triya-dims.ts). A center mark's record (M4-08) is kept only while
+  // the drawing is open: how a save writes it waits on needs-human #451, so the save writes the
+  // mark's block reference alone and leaves the record out.
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'GROUP' &&
@@ -196,6 +198,7 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
     o.type !== 'TRIYA_ARRAY' &&
     o.type !== 'TRIYA_DIMBREAK' &&
     o.type !== 'TRIYA_DIMINSPECT' &&
+    o.type !== 'TRIYA_CENTERMARK' &&
     !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(

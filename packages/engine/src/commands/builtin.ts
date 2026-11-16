@@ -8,6 +8,7 @@ import { qdimCommand } from './draw/qdim';
 import { dimensionEditCommands } from './modify/dimension-edit';
 import { dimensionAssociateCommands } from './modify/dimension-associate';
 import { dimensionBreakCommands } from './modify/dimension-break';
+import { centerMarkCommands } from './draw/centermark';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
 import { ellipseCommand } from './draw/ellipse';
@@ -23,6 +24,8 @@ import { splineCommand } from './draw/spline';
 import { divideCommand, measureCommand } from './draw/divide';
 import { MLEADER_COMMANDS } from './draw/mleader';
 import { MLEADER_ALIGN_COMMANDS } from './modify/mleader-align';
+import { TEXT_TOOL_COMMANDS } from './modify/text-tools';
+import { FIND_COMMANDS } from './modify/find';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
 import { hatchCommands } from './draw/hatchedit';
@@ -128,12 +131,15 @@ export function builtinCommands(): CommandRegistry {
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
     ...MLEADER_COMMANDS.map((make) => make()),
     ...MLEADER_ALIGN_COMMANDS.map((make) => make()),
+    ...TEXT_TOOL_COMMANDS.map((make) => make()),
+    ...FIND_COMMANDS.map((make) => make()),
     ...dimensionCommands(),
     ...moreDimensionCommands(),
     qdimCommand(),
     ...dimensionEditCommands(),
     ...dimensionAssociateCommands(),
     ...dimensionBreakCommands(),
+    ...centerMarkCommands(),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),

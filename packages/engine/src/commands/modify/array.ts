@@ -20,6 +20,7 @@
 // Here the column, row and path item spacings start at 1.5 × the selection's width and height
 // (the larger of the two for rows round a circle or along a path), which leaves a half-size gap
 // between items, as AutoCAD's defaults look on screen.
+import { followCenterMarks } from '../../edit/center-marks';
 import { removeCopies } from '../../edit/groups';
 import type { Box } from '../../geom/bounds';
 import type { Vec2 } from '../../geom/types';
@@ -1048,6 +1049,8 @@ function arrayCloseCommand(): CommandDef {
  * Undo and redo do not come here: they put back these follow-ups with the rest.
  */
 export function followAssociations(ctx: CommandContext, changes: readonly ChangeSet[]): void {
+  // Center marks and centerlines follow their objects (M4-08).
+  followCenterMarks(ctx.model, (build) => ctx.edit(build), changes);
   const updated = new Set<Handle>();
   const touched = new Set<Handle>();
   const added: Entity[] = [];

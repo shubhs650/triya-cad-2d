@@ -180,7 +180,8 @@ describe('completions', () => {
     // An acad.pgp alias of a command not built yet (BO, BOUNDARY's) completes nothing; SPL,
     // SPLINE's since M3-01 part 5, completes SPLINE (then SPLINEDIT, M3-02 part 6); REC,
     // RECTANG's since M3-01 part 3, completes RECTANG; C, CIRCLE's since M3-01, completes CIRCLE
-    // first, then CHAMFER, CHANGE, CHPROP, CLASSICGROUP, CLOSE, COPY and the Clipboard commands.
+    // first, then CENTERLINE, CENTERMARK, CHAMFER, CHANGE, CHPROP, CLASSICGROUP, CLOSE, COPY and
+    // the Clipboard commands.
     expect(completions(registry, 'BO')).toEqual([]);
     expect(completions(registry, 'SPL')).toEqual([
       { name: 'SPLINE', alias: 'SPL' },
@@ -189,6 +190,9 @@ describe('completions', () => {
     expect(completions(registry, 'REC')[0]).toEqual({ name: 'RECTANG', alias: 'REC' });
     expect(completions(registry, 'C')).toEqual([
       { name: 'CIRCLE', alias: 'C' },
+      // CENTERMARK and CENTERLINE (M4-08).
+      { name: 'CENTERLINE' },
+      { name: 'CENTERMARK' },
       { name: 'CHAMFER' },
       { name: 'CHANGE' },
       { name: 'CHPROP' },
@@ -232,6 +236,8 @@ describe('completions of system variables', () => {
     const first = c.findIndex((s) => s.variable);
     expect(c.slice(0, first).map((s) => s.name)).toEqual([
       'CIRCLE',
+      'CENTERLINE',
+      'CENTERMARK',
       'CHAMFER',
       'CHANGE',
       'CHPROP',

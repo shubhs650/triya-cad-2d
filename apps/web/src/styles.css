@@ -3412,6 +3412,82 @@ button {
   margin: 0 0 8px;
 }
 
+/* FIND's Find and Replace (M4-09 part 2): the fields, the results list, More Options. */
+.cad-dialog.find-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.find-fields {
+  display: grid;
+  gap: 6px;
+}
+
+.find-fields .cad-dialog-field > label {
+  min-width: 84px;
+}
+
+.find-list tbody {
+  display: block;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.find-list thead,
+.find-list tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.find-list mark {
+  background: var(--accent);
+  color: #fff;
+}
+
+.find-list tr[aria-selected='true'] mark {
+  background: #fff;
+  color: var(--accent);
+}
+
+.find-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.find-note {
+  margin: 8px 0 0;
+}
+
+.find-more {
+  margin-top: 8px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.find-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.find-options fieldset {
+  margin: 0;
+  border: 1px solid var(--chrome-border);
+  display: grid;
+  gap: 2px;
+}
+
+@media (max-width: 520px) {
+  .find-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* FILTER's Object Selection Filters (M3-04 part 4): the list on top, Select Filter and Named
    Filters side by side below it (stacked when narrow). */
 .filter-list {

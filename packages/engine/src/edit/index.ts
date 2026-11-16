@@ -88,6 +88,7 @@ export * from './underlay-layers';
 export * from './array';
 export * from './assoc-array';
 export * from './dimension-records';
+export * from './center-marks';
 export * from './pedit';
 export * from './splinedit';
 export * from './overkill';
@@ -118,3 +119,6 @@ export {
   passesThrough,
   type HatchArea,
 } from './hatch-separate';
+export * from './text-justify';
+export * from './text-align';
+export * from './find-text';
