@@ -16,8 +16,13 @@
 //
 // Where AutoCAD's documentation is silent: a match inside a block definition (Search blocks) is
 // shown and zoomed to through the first reference to it that was searched; replacing it changes
-// the definition, so every reference shows it. Anonymous blocks (dimensions', tables', dynamic
-// block states) and xrefs are not searched.
+// the definition, so every reference shows it. A dynamic block's state (the anonymous `*U` block
+// a reference with changed parameters draws, M4-09 part 4) is searched as a block, listed by the
+// dynamic block's name; replacing changes that state, which is what shows (Triya does not
+// evaluate dynamic blocks, PRD non-goal 2). Other anonymous blocks (dimensions', tables') hold
+// text their objects already give. Search xrefs searches a loaded xref's text (and, with Search
+// blocks, its blocks'); it is found, never replaced: the xref's drawing is another file, and
+// what Triya loads of it is not saved (M1-21).
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
 import type { Entity } from '../../model/types';
@@ -41,6 +46,8 @@ import {
 import { fitTableRow, tableDrawingOf, writeTableBlock } from '../../edit/table';
 import { tableCellText } from '../../annotation/table';
 import { typeLabel } from '../../properties/sheet';
+import { dynamicBlockOf } from '../../model/dynamic-block';
+import { XREF_FLAG } from '../../model/xref';
 import type { CommandContext, CommandDef } from '../command';
 import type { PromptAnswer } from '../prompt';
 import { linesOf, tableOf } from '../draw/table-cells';
@@ -113,28 +120,34 @@ interface Hit {
   readonly space: Handle;
   readonly target: EntityId;
   readonly location: string;
-  /** The block it is defined in, under Search blocks. */
-  readonly block?: string;
+  /** The block or xref it is defined in, as the results list says it ("block DOORTAG"). */
+  readonly within?: string;
+  /** In an xref: found, never replaced. */
+  readonly xref?: true;
 }
-
-const XREF = 4;
 
 function spaceName(ctx: CommandContext, space: Handle): string {
   return ctx.model.layouts.find((l) => l.blockRecord === space)?.name ?? 'Model';
+}
+
+/** The block or xref a match is defined in. */
+interface Within {
+  readonly label: string;
+  readonly xref: boolean;
 }
 
 /** Every match of the settings' text, in the order the dialog steps through them. */
 function search(ctx: CommandContext, s: FindSettings, selection: readonly EntityId[]): Hit[] {
   const { model } = ctx;
   const o = s.options;
+  // A drawing with no layouts listed (as some writers leave it) is its current space.
+  const layouts = [...model.layouts].sort((a, b) => a.tabOrder - b.tabOrder);
   const spaces =
-    s.where === 'drawing'
-      ? [...model.layouts].sort((a, b) => a.tabOrder - b.tabOrder).map((l) => l.blockRecord)
-      : [ctx.space];
+    s.where === 'drawing' && layouts.length > 0 ? layouts.map((l) => l.blockRecord) : [ctx.space];
   const only = s.where === 'selection' ? new Set(selection) : undefined;
   const hits: Hit[] = [];
   const seenBlocks = new Set<Handle>();
-  const visit = (e: Entity, space: Handle, target: EntityId, location: string, block?: string) => {
+  const visit = (e: Entity, space: Handle, target: EntityId, location: string, within?: Within) => {
     if (o.ignoreHidden && hiddenEntity(model, e)) return;
     for (const p of textPiecesOf(model, e, o)) {
       for (const match of findInText(p.raw, p.syntax, s.find, o)) {
@@ -146,17 +159,26 @@ function search(ctx: CommandContext, s: FindSettings, selection: readonly Entity
           space,
           target,
           location,
-          ...(block !== undefined && { block }),
+          ...(within && { within: within.label }),
+          ...(within?.xref && { xref: true }),
         });
       }
     }
-    if (!o.searchBlocks || e.geom.kind !== 'INSERT') return;
+    if (e.geom.kind !== 'INSERT') return;
     const def = model.blocks.get(e.geom.block);
-    if (!def || def.name.startsWith('*') || ((def.flags ?? 0) & XREF) !== 0) return;
-    if (seenBlocks.has(def.handle) || !model.hasBlock(def.handle)) return;
+    if (!def || seenBlocks.has(def.handle) || !model.hasBlock(def.handle)) return;
+    const xref = ((def.flags ?? 0) & XREF_FLAG) !== 0;
+    // A dynamic block's state is the one anonymous block searched.
+    const dynamic = dynamicBlockOf(model.blocks, def.handle);
+    if (xref ? !o.searchXrefs : !o.searchBlocks || (def.name.startsWith('*') && !dynamic)) return;
     seenBlocks.add(def.handle);
+    // Inside an xref, everything is the xref's.
+    const inner: Within =
+      within?.xref && !xref
+        ? within
+        : { label: `${xref ? 'xref' : 'block'} ${dynamic?.name ?? def.name}`, xref };
     for (const id of [...model.blockEntities(def.handle)]) {
-      visit(model.entity(id)!, space, target, location, def.name);
+      visit(model.entity(id)!, space, target, location, inner);
     }
   };
   if (s.find === '') return hits;
@@ -176,13 +198,16 @@ function row(ctx: CommandContext, h: Hit): FindResultRow {
   const shown = displayText(raw, slotSyntax(e, h.slot), h.match);
   const kind = h.slot.kind === 'attribute' ? 'Attribute' : typeLabel(e.geom.kind);
   return {
-    location: h.block !== undefined ? `${h.location} (block ${h.block})` : h.location,
+    location: h.within !== undefined ? `${h.location} (${h.within})` : h.location,
     objectType: kind,
     ...shown,
   };
 }
 
-/** Whether a match may be replaced: neither its object nor the one it shows through is locked. */
+/**
+ * Whether a match may not be replaced: its object or the one it shows through is locked (in an
+ * xref is `xref`'s to say).
+ */
 function lockedHit(ctx: CommandContext, h: Hit): boolean {
   const e = ctx.model.entity(h.id);
   const t = ctx.model.entity(h.target);
@@ -192,21 +217,22 @@ function lockedHit(ctx: CommandContext, h: Hit): boolean {
   );
 }
 
+/** Matches in one piece of text of an object, as found in the drawing as it is now. */
+export interface SlotMatches {
+  readonly id: EntityId;
+  readonly slot: TextSlot;
+  readonly matches: readonly TextMatch[];
+}
+
 /**
- * Replaces `hits` (matches as found in the drawing as it is now) by `replacement`, as one edit;
- * returns how many were replaced. Tables are fitted and drawn again, dimensions regenerated.
+ * Replaces each group's matches by `replacement`, as one edit (FIND, and SPELL's Change, M4-09
+ * part 4). Tables are fitted and drawn again, dimensions regenerated.
  */
-async function replaceHits(
+export async function replaceInSlots(
   ctx: CommandContext,
-  hits: readonly Hit[],
+  groups: readonly SlotMatches[],
   replacement: string,
-): Promise<number> {
-  const groups: { id: EntityId; slot: TextSlot; matches: TextMatch[] }[] = [];
-  for (const h of hits) {
-    const g = groups.find((x) => x.id === h.id && sameSlot(x.slot, h.slot));
-    if (g) g.matches.push(h.match);
-    else groups.push({ id: h.id, slot: h.slot, matches: [h.match] });
-  }
+): Promise<void> {
   const changes = new Map<EntityId, Entity>();
   const tables = new Set<EntityId>();
   const dimensions: EntityId[] = [];
@@ -228,12 +254,37 @@ async function replaceHits(
     if (g.slot.kind === 'dimension') dimensions.push(g.id);
     changes.set(g.id, changed);
   }
-  if (changes.size === 0) return 0;
+  await writeEntities(ctx, changes, tables, dimensions);
+}
+
+/** Writes `changes` as one edit, tables drawn again and dimensions regenerated. */
+export async function writeEntities(
+  ctx: CommandContext,
+  changes: ReadonlyMap<EntityId, Entity>,
+  tables: ReadonlySet<EntityId>,
+  dimensions: readonly EntityId[],
+): Promise<void> {
+  if (changes.size === 0) return;
   ctx.edit((b) => {
     for (const [id, e] of changes) b.updateEntity(id, { geom: e.geom, xdata: e.xdata });
     for (const id of tables) writeTableBlock(b, ctx.model, id);
   });
   await regenerateDimensions(ctx, dimensions);
+}
+
+/** Replaces `hits` by `replacement`, as one edit; returns how many were replaced. */
+async function replaceHits(
+  ctx: CommandContext,
+  hits: readonly Hit[],
+  replacement: string,
+): Promise<number> {
+  const groups: { id: EntityId; slot: TextSlot; matches: TextMatch[] }[] = [];
+  for (const h of hits) {
+    const g = groups.find((x) => x.id === h.id && sameSlot(x.slot, h.slot));
+    if (g) g.matches.push(h.match);
+    else groups.push({ id: h.id, slot: h.slot, matches: [h.match] });
+  }
+  await replaceInSlots(ctx, groups, replacement);
   return hits.length;
 }
 
@@ -341,6 +392,11 @@ export function findCommand(): CommandDef {
                 continue;
               }
               const h = hits![current]!;
+              if (h.xref) {
+                await step(current + 1);
+                note = 'The text is in an xref and cannot be replaced.';
+                continue;
+              }
               if (lockedHit(ctx, h)) {
                 await step(current + 1);
                 note = 'The object is on a locked layer.';
@@ -360,15 +416,19 @@ export function findCommand(): CommandDef {
             }
             case 'replaceAll': {
               const all = searched();
-              const free = all.filter((h) => !lockedHit(ctx, h));
+              const free = all.filter((h) => !h.xref && !lockedHit(ctx, h));
               const n = await replaceHits(ctx, free, settings.replace);
-              const locked = all.length - free.length;
+              const xrefs = all.filter((h) => h.xref).length;
+              const locked = all.length - free.length - xrefs;
               note =
                 all.length === 0
                   ? NOT_FOUND
                   : `${plural(n, 'match was', 'matches were')} replaced.` +
                     (locked > 0
                       ? ` ${plural(locked, 'match on a locked layer was', 'matches on locked layers were')} not.`
+                      : '') +
+                    (xrefs > 0
+                      ? ` ${plural(xrefs, 'match in an xref was', 'matches in xrefs were')} not.`
                       : '');
               ctx.message(note);
               searched();

@@ -40,7 +40,15 @@ export interface FindOptions {
   readonly matchCase: boolean;
   readonly wholeWords: boolean;
   readonly wildcards: boolean;
-  /** Search blocks: the text of the blocks the objects searched reference. */
+  /**
+   * Search xrefs: the text of the loaded external references the objects searched are (M4-09
+   * part 4); found, never replaced, as the xref's drawing is not this one.
+   */
+  readonly searchXrefs: boolean;
+  /**
+   * Search blocks: the text of the blocks the objects searched reference, a dynamic block's
+   * state (its anonymous `*U` block) among them.
+   */
   readonly searchBlocks: boolean;
   /** Ignore hidden items: text on layers off or frozen, invisible objects and attributes. */
   readonly ignoreHidden: boolean;
@@ -50,11 +58,16 @@ export interface FindOptions {
   readonly types: readonly FindTextType[];
 }
 
-/** AutoCAD 2024's defaults: Search blocks and Ignore hidden items on, every text type. */
+/**
+ * AutoCAD 2024's defaults: Search blocks and Ignore hidden items on, every text type. Search
+ * xrefs starts off (its help gives no default; text the drafter cannot replace stays out until
+ * asked for).
+ */
 export const DEFAULT_FIND_OPTIONS: FindOptions = {
   matchCase: false,
   wholeWords: false,
   wildcards: false,
+  searchXrefs: false,
   searchBlocks: true,
   ignoreHidden: true,
   matchDiacritics: false,
