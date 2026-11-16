@@ -1,0 +1,1 @@
+- M4-02 part 2 (#436): DIMEDIT, DIMTEDIT, DIMOVERRIDE, DIMSPACE and QDIM: dimension text sent home, replaced, rotated or dragged and justified, extension lines slanted, DIMVARs overridden on chosen dimensions or cleared, dimensions spaced evenly from a base, and quick series of continuous, staggered, baseline, ordinate, radius and diameter dimensions from selected geometry.

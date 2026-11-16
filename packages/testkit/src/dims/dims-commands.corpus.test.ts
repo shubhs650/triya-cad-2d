@@ -8,7 +8,8 @@
 // overrides, kept by the save; M2-31 part 2's DIMRADIUS on an arc placed past its end, its arc
 // kept in ACAD_DSTYLE_DIMRADIAL_EXTENSION xdata and its arc extension line drawn; M4-02's
 // DIMORDINATE, DIMJOGGED on the circle, DIMARC's Partial on the arc, and DIMJOGLINE on the
-// first dimension, its jog kept in ACAD_DSTYLE_DIMJAG_POSITION xdata. The drawing is saved as
+// first dimension, its jog kept in ACAD_DSTYLE_DIMJAG_POSITION xdata; M4-02 part 2's DIMOVERRIDE,
+// DIMEDIT Oblique, DIMTEDIT Left and QDIM Radius. The drawing is saved as
 // AC1032 DXF (DEC-047),
 // read back by acad-ts and mapped: each dimension comes back where it was made, with its `*D`
 // block, and the health check (stored block against what the engine draws, M2-10) passes on it.
@@ -250,6 +251,31 @@ describe('dimension commands on the public corpus (M2-11)', () => {
       await bus.pick(moved.textPosition);
       await bus.submit('');
       expect(linearJog(model.entity(first.id)!.xdata, model)).toBeDefined();
+      // M4-02 part 2: DIMOVERRIDE and DIMEDIT's Oblique on the aligned dimension, DIMTEDIT's
+      // Left on the second, and QDIM's Radius on the circle.
+      const aligned = added()[2]!;
+      // (DIMSCALE 3.7: no corpus style has it, so it is an override on every file.)
+      await bus.script(['DIMOVERRIDE', 'DIMTAD', '1', 'DIMSCALE', '3.7', '']);
+      await bus.pick((aligned.geom as DimensionGeometry).textPosition);
+      await bus.submit('');
+      expect(dstyleOverrides(model.entity(aligned.id)!.xdata, model)).toMatchObject({
+        DIMSCALE: 3.7,
+      });
+      await bus.script(['DIMEDIT', 'O']);
+      await bus.pick((model.entity(aligned.id)!.geom as DimensionGeometry).textPosition);
+      await bus.script(['', '75']);
+      const slanted = model.entity(aligned.id)!.geom as DimensionGeometry & { oblique?: number };
+      // (75° in the drawing's own angle units, ANGBASE and ANGDIR.)
+      expect(slanted.oblique).toBeDefined();
+      await bus.script(['DIMTEDIT']);
+      await bus.pick((added()[1]!.geom as DimensionGeometry).textPosition);
+      await bus.script(['L']);
+      expect(dstyleOverrides(added()[1]!.xdata, model)).toMatchObject({ DIMJUST: 1 });
+      await bus.script(['QDIM']);
+      await bus.pick({ x: 520, y: 0 });
+      await bus.script(['', 'R', '560,40']);
+      expect(bus.command).toBeUndefined();
+      expect((added().at(-1)!.geom as DimensionGeometry).dimType).toBe('radius');
 
       const dims = added();
       for (const e of dims) {
@@ -288,7 +314,7 @@ describe('dimension commands on the public corpus (M2-11)', () => {
   it('made dimensions on every readable file with a dimension style', () => {
     expect(saved + styleless.length).toBe(readable.length);
     expect(saved).toBeGreaterThan(readable.length / 2);
-    expect(made).toBe(saved * 17);
+    expect(made).toBe(saved * 18);
     // Drawings whose header DIMVARs differ from their current style (ezdxf's minimal one).
     expect(overridden.size).toBeGreaterThan(0);
   });
