@@ -19,7 +19,8 @@ export type AuditSaveKind =
   | 'properties'
   | 'views'
   | 'hatch'
-  | 'categories';
+  | 'categories'
+  | 'table';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version

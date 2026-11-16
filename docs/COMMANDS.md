@@ -129,7 +129,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | MLEADERSTYLE | MLS | 2 | | |
 | LEADER / QLEADER | LEAD / LE | 2 | legacy; read/edit; create Should | |
 | CENTERMARK / CENTERLINE | — | 2 | sysvars CENTEREXE, CENTERMARKEXE, CENTERLTYPE… | |
-| TABLE | TB | 2 | | |
+| TABLE | TB | 2 | Insert Table dialog + -TABLE | ~ (#431, M4-05 part 1: -TABLE asks the columns, the data rows and the insertion point, with Style (`?` lists), Width and Height (in lines), kept for the drawing's next table; the table gets a title row merged across, a header row and the data rows, each 4/3 of its text height a line plus the vertical margins, in the current table style (CTABLESTYLE) or AutoCAD's Standard made for a drawing without one; its `*T` block is drawn by the table engine. Auto, the Insert Table dialog, the drag preview and opening the cell editor on the title wait for the next parts) |
 | TABLESTYLE | TS | 2 | | |
 | TABLEDIT / TINSERT (cell edit) | — | 2 | | |
 | TOLERANCE | TOL | 2 | | |

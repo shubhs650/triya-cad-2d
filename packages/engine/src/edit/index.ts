@@ -52,6 +52,7 @@ export {
   type RegeneratedParts,
 } from './dimension-block';
 export * from './dimension';
+export * from './table';
 export * from './named-view';
 export { offsetCurveOf, offsetGeometry, offsetSide } from './offset';
 export {
