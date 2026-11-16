@@ -383,55 +383,102 @@ const dateValue = (d: Date, format: string): Value => ({
   time: d.getTime(),
 });
 
-function headerDate(model: DocumentModel, name: string): Date | undefined {
-  const v = model.header.get(name);
+/** A property of an object a field may show: a number and how it is written, or text. */
+export type FieldProperty =
+  { readonly n: number; readonly kind: FieldNumberKind } | { readonly s: string };
+
+/** What a layout gives its fields: its name and page setup. */
+export interface FieldLayout {
+  readonly name: string;
+  readonly plot?: {
+    readonly scale?: { readonly numerator: number; readonly denominator: number };
+    readonly pageSetupName?: string;
+  };
+}
+
+/**
+ * What the Field dialog is given of the drawing to preview a field (M4-10 part 2): the dialog
+ * runs beside the engine, not in it, so the values a field may show come with it. A field
+ * previewed against it takes the value it would take in the drawing (`previewField`).
+ */
+export interface FieldSnapshot {
+  /** The time Date fields show (ms since the epoch). */
+  readonly now: number;
+  readonly fileName?: string;
+  readonly folder: string;
+  readonly units: DrawingUnits;
+  /** The header variables a field may show, by name without `$`, in upper case. */
+  readonly variables: Readonly<Record<string, number | string>>;
+  /** The layout the text goes on. */
+  readonly layout?: FieldLayout;
+  /** The objects a field may name, with their properties (`objectFieldProperties`). */
+  readonly objects: Readonly<Record<Handle, Readonly<Record<string, FieldProperty>>>>;
+}
+
+/** What fields evaluate against: the drawing, or a snapshot of it. */
+interface FieldSource {
+  readonly now: Date;
+  readonly fileName?: string;
+  readonly folder: string;
+  readonly plotDate?: Date;
+  readonly units: DrawingUnits;
+  /** A header variable by its name without `$`, in upper case. */
+  variable(name: string): number | string | undefined;
+  /** The layout the text is on. */
+  readonly layout?: FieldLayout;
+  /** An object's properties by AutoCAD's names (Area, Layer), undefined when it is gone. */
+  properties(handle: Handle): Readonly<Record<string, FieldProperty>> | undefined;
+}
+
+function headerDate(src: FieldSource, name: string): Date | undefined {
+  const v = src.variable(name);
   return typeof v === 'number' && v > 0 ? julianToDate(v) : undefined;
 }
 
 /** The file name parts %fn names: 1 the folder, 2 the name, 4 the extension. */
-function fileNameValue(fileName: string, ctx: FieldContext, format: string): string {
+function fileNameValue(fileName: string, folder: string, format: string): string {
   const m = /%fn(\d+)/i.exec(format);
   const bits = m ? Number(m[1]) : 7;
   const dot = fileName.lastIndexOf('.');
   const name = dot > 0 ? fileName.slice(0, dot) : fileName;
   const extension = dot > 0 ? fileName.slice(dot) : '';
   return (
-    ((bits & 1) !== 0 ? ctx.folder : '') +
+    ((bits & 1) !== 0 ? folder : '') +
     ((bits & 2) !== 0 ? name : '') +
     ((bits & 4) !== 0 ? extension : '')
   );
 }
 
-function layoutOf(ctx: FieldContext) {
-  return ctx.model.layouts.find((l) => l.blockRecord === ctx.space);
-}
-
 /** An `\AcVar` field: undefined when Triya cannot evaluate it. */
-function variable(name: string, format: string, ctx: FieldContext): Value | undefined {
-  const units = drawingUnits(ctx.model.header);
+function variable(name: string, format: string, src: FieldSource): Value | undefined {
   switch (name.toUpperCase()) {
     case 'DATE':
-      return dateValue(ctx.now, format);
+      return dateValue(src.now, format);
     case 'CREATEDATE': {
-      const d = headerDate(ctx.model, '$TDCREATE');
+      const d = headerDate(src, 'TDCREATE');
       return d && dateValue(d, format);
     }
     case 'SAVEDATE': {
-      const d = headerDate(ctx.model, '$TDUPDATE');
+      const d = headerDate(src, 'TDUPDATE');
       return d && dateValue(d, format);
     }
     case 'PLOTDATE':
-      return ctx.plotDate && dateValue(ctx.plotDate, format);
+      return src.plotDate && dateValue(src.plotDate, format);
     case 'FILENAME':
-      return ctx.fileName === undefined
+      return src.fileName === undefined
         ? undefined
-        : { text: formatFieldString(fileNameValue(ctx.fileName, ctx, format), format) };
-    case 'CTAB': {
-      const layout = layoutOf(ctx);
-      return layout && { text: formatFieldString(layout.name, format) };
-    }
+        : { text: formatFieldString(fileNameValue(src.fileName, src.folder, format), format) };
+    // DWGNAME and DWGPREFIX are the app's, not the header's (M4-10 part 2).
+    case 'DWGNAME':
+      return src.fileName === undefined
+        ? undefined
+        : { text: formatFieldString(src.fileName, format) };
+    case 'DWGPREFIX':
+      return { text: formatFieldString(src.folder, format) };
+    case 'CTAB':
+      return src.layout && { text: formatFieldString(src.layout.name, format) };
     case 'PLOTSCALE': {
-      const scale = layoutOf(ctx)?.plot?.scale;
+      const scale = src.layout?.plot?.scale;
       if (!scale || scale.numerator <= 0 || scale.denominator <= 0) return undefined;
       const plain = (n: number) => String(Number(n.toFixed(6)));
       if (takeTextCase(format).rest === '') {
@@ -440,16 +487,16 @@ function variable(name: string, format: string, ctx: FieldContext): Value | unde
         };
       }
       return {
-        text: formatFieldNumber(scale.denominator / scale.numerator, format, units, 'plain'),
+        text: formatFieldNumber(scale.denominator / scale.numerator, format, src.units, 'plain'),
       };
     }
     case 'PAGESETUPNAME': {
-      const plot = layoutOf(ctx)?.plot;
+      const plot = src.layout?.plot;
       return plot && { text: formatFieldString(plot.pageSetupName ?? '', format) };
     }
     default: {
-      const v = ctx.model.header.get(`$${name.toUpperCase()}`);
-      if (typeof v === 'number') return { text: formatFieldNumber(v, format, units, 'plain') };
+      const v = src.variable(name.toUpperCase());
+      if (typeof v === 'number') return { text: formatFieldNumber(v, format, src.units, 'plain') };
       if (typeof v === 'string') return { text: formatFieldString(v, format) };
       return undefined;
     }
@@ -467,72 +514,64 @@ function lengthOf(g: EntityGeometry): number | undefined {
   return measureObject(g)?.perimeter;
 }
 
-/** A property of an object: a number and how it is written, or text. */
-function property(
-  ctx: FieldContext,
+/**
+ * The properties of an object a field can show, by AutoCAD's names (the Field dialog's Property
+ * list for an Object field): Area, Length (Circumference for a circle), Radius, Diameter and
+ * Layer, those the object has; undefined when it is not in the drawing.
+ */
+export function objectFieldProperties(
+  model: DocumentModel,
   handle: Handle,
-  name: string,
-): { n: number; kind: FieldNumberKind } | { s: string } | 'gone' | undefined {
-  const e = ctx.model.entityByHandle(handle);
-  if (!e) return 'gone';
+): Readonly<Record<string, FieldProperty>> | undefined {
+  const e = model.entityByHandle(handle);
+  if (!e) return undefined;
   const g = e.geom;
-  switch (name.toLowerCase()) {
-    case 'area': {
-      const m = measureObject(g);
-      return m && { n: m.area, kind: 'area' };
-    }
-    case 'length': {
-      const n = g.kind === 'CIRCLE' ? undefined : lengthOf(g);
-      return n === undefined ? undefined : { n, kind: 'linear' };
-    }
-    case 'circumference':
-      return g.kind === 'CIRCLE' ? { n: 2 * Math.PI * g.radius, kind: 'linear' } : undefined;
-    case 'radius':
-      return g.kind === 'CIRCLE' || g.kind === 'ARC' ? { n: g.radius, kind: 'linear' } : undefined;
-    case 'diameter':
-      return g.kind === 'CIRCLE' || g.kind === 'ARC'
-        ? { n: 2 * g.radius, kind: 'linear' }
-        : undefined;
-    case 'layer': {
-      const layer = ctx.model.tables.layers.get(e.layer);
-      return layer && { s: layer.name };
-    }
-    default:
-      return undefined;
+  const out: Record<string, FieldProperty> = {};
+  const area = measureObject(g)?.area;
+  if (area !== undefined) out['Area'] = { n: area, kind: 'area' };
+  if (g.kind === 'CIRCLE') out['Circumference'] = { n: 2 * Math.PI * g.radius, kind: 'linear' };
+  else {
+    const length = lengthOf(g);
+    if (length !== undefined) out['Length'] = { n: length, kind: 'linear' };
   }
+  if (g.kind === 'CIRCLE' || g.kind === 'ARC') {
+    out['Radius'] = { n: g.radius, kind: 'linear' };
+    out['Diameter'] = { n: 2 * g.radius, kind: 'linear' };
+  }
+  const layer = model.tables.layers.get(e.layer);
+  if (layer) out['Layer'] = { s: layer.name };
+  return out;
 }
 
 const OBJECT_PROPERTY = /^\\AcObjProp(?:\.[\d.]+)?\s+Object\(%<\\_ObjIdx\s+(\d+)>%\)\.(\w+)/;
 
 /** An `\AcObjProp` field: undefined when Triya cannot evaluate it. */
-function objectProperty(f: DrawingField, ctx: FieldContext): Value | undefined {
+function objectProperty(f: DrawingField, src: FieldSource): Value | undefined {
   const m = OBJECT_PROPERTY.exec(f.code);
   if (!m) return undefined;
   const handle = f.objects[Number(m[1])];
-  const p = handle === undefined ? 'gone' : property(ctx, handle, m[2]!);
-  if (p === 'gone') return { text: INVALID_FIELD };
+  const props = handle === undefined ? undefined : src.properties(handle);
+  if (!props) return { text: INVALID_FIELD };
+  const name = m[2]!.toLowerCase();
+  const p = Object.entries(props).find(([k]) => k.toLowerCase() === name)?.[1];
   if (!p) return undefined;
   const format = fieldFormat(f.code);
   if ('s' in p) return { text: formatFieldString(p.s, format) };
-  return { text: formatFieldNumber(p.n, format, drawingUnits(ctx.model.header), p.kind) };
+  return { text: formatFieldNumber(p.n, format, src.units, p.kind) };
 }
 
 /** One child field's new value, or undefined to keep the one it has. */
-function evaluateOne(f: DrawingField, ctx: FieldContext): Value | undefined {
+function evaluateOne(f: DrawingField, src: FieldSource): Value | undefined {
   const v = /^\\AcVar(?:\.[\d.]+)?\s+([^\s\\]+)/.exec(f.code);
-  if (v) return variable(v[1]!, fieldFormat(f.code), ctx);
-  if (f.code.startsWith('\\AcObjProp')) return objectProperty(f, ctx);
+  if (v) return variable(v[1]!, fieldFormat(f.code), src);
+  if (f.code.startsWith('\\AcObjProp')) return objectProperty(f, src);
   return undefined;
 }
 
-/**
- * Evaluates the fields of one text (its root `_text` field): each child Triya can evaluate takes
- * its new value, the others keep theirs, and the text is rebuilt around them.
- */
-export function evaluateFields(root: DrawingField, ctx: FieldContext): EvaluatedFields {
+function evaluateWith(root: DrawingField, src: FieldSource): EvaluatedFields {
   let evaluated = 0;
   const children = root.children.map((c): DrawingField => {
-    const v = evaluateOne(c, ctx);
+    const v = evaluateOne(c, src);
     if (!v) return c;
     evaluated++;
     const { time: _old, ...rest } = c;
@@ -546,4 +585,168 @@ export function evaluateFields(root: DrawingField, ctx: FieldContext): Evaluated
     found: root.children.length,
     evaluated,
   };
+}
+
+/** The source of the fields of a text in the drawing. */
+function modelSource(ctx: FieldContext): FieldSource {
+  const header = ctx.model.header;
+  const layout = ctx.model.layouts.find((l) => l.blockRecord === ctx.space);
+  return {
+    now: ctx.now,
+    ...(ctx.fileName === undefined ? {} : { fileName: ctx.fileName }),
+    folder: ctx.folder,
+    ...(ctx.plotDate === undefined ? {} : { plotDate: ctx.plotDate }),
+    units: drawingUnits(header),
+    variable: (name) => {
+      const v = header.get(`$${name}`);
+      return typeof v === 'number' || typeof v === 'string' ? v : undefined;
+    },
+    ...(layout ? { layout } : {}),
+    properties: (h) => objectFieldProperties(ctx.model, h),
+  };
+}
+
+/**
+ * Evaluates the fields of one text (its root `_text` field): each child Triya can evaluate takes
+ * its new value, the others keep theirs, and the text is rebuilt around them.
+ */
+export function evaluateFields(root: DrawingField, ctx: FieldContext): EvaluatedFields {
+  return evaluateWith(root, modelSource(ctx));
+}
+
+// ── Fields typed into text (M4-10 part 2) ────────────────────────────────────────────────────
+//
+// The MTEXT editor and the Field dialog hold a field as its code in place, `%<\AcVar Date>%`,
+// as AutoCAD's In-Place Text Editor and the dialog's Field expression show it. An object is
+// named in the code by its handle, `%<\_ObjId 2A>%`, where the FIELD object holds an index into
+// its objects (`%<\_ObjIdx 0>%`, DXF 331). AutoCAD's own expression shows the object's id,
+// which no file holds; the handle is what Triya has.
+
+/** The code of the field the MTEXT editor's Insert Field leaves where the field goes. */
+export const FIELD_INSERT = '\u0000FIELD';
+
+const OBJECT_INDEX = /%<\\_ObjIdx\s+(\d+)>%/g;
+
+/** One field's code with its children's codes and its objects' handles in place. */
+export function editableFieldCode(f: DrawingField): string {
+  return fieldCodeOf(f).replace(OBJECT_INDEX, (m, n: string) => {
+    const h = f.objects[Number(n)];
+    return h === undefined ? m : `%<\\_ObjId ${h}>%`;
+  });
+}
+
+function fieldCodeOf(f: DrawingField): string {
+  return f.code.replace(PLACE, (m, n: string) => {
+    const c = f.children[Number(n)];
+    return c ? `%<${editableFieldCode(c)}>%` : m;
+  });
+}
+
+/** The text of a root `_text` field with each field's code in place: what the editor opens on. */
+export const editableFieldText = (root: DrawingField): string => fieldCodeOf(root);
+
+/** Each field of a text as the editor shows it, by its code (`editableFieldCode`). */
+export function fieldValues(root: DrawingField): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const c of root.children) out[editableFieldCode(c)] = c.value ?? UNEVALUATED_FIELD;
+  return out;
+}
+
+/** The end of the field opened at `start` (`%<`), allowing nested fields; -1 if unclosed. */
+function fieldEnd(s: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < s.length - 1; i++) {
+    if (s[i] === '%' && s[i + 1] === '<') {
+      depth++;
+      i++;
+    } else if (s[i] === '>' && s[i + 1] === '%') {
+      depth--;
+      i++;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
+}
+
+/** `s` with each outermost `%<…>%` replaced by what `f` gives for its code. */
+function replaceFields(s: string, f: (code: string) => string): string {
+  let out = '';
+  let i = 0;
+  for (;;) {
+    const at = s.indexOf('%<', i);
+    const end = at < 0 ? -1 : fieldEnd(s, at);
+    if (end < 0) return out + s.slice(i);
+    out += s.slice(i, at) + f(s.slice(at + 2, end - 2));
+    i = end;
+  }
+}
+
+/** The evaluator a code names (`\AcVar Date` → AcVar). */
+const evaluatorOf = (code: string): string => /^\\([A-Za-z_]\w*)/.exec(code)?.[1] ?? '';
+
+/** The FIELD of one code: nested fields its children, `\_ObjId` handles its objects. */
+function fieldOfCode(code: string): DrawingField {
+  const children: DrawingField[] = [];
+  const objects: Handle[] = [];
+  const own = replaceFields(code, (inner) => {
+    const id = /^\\_ObjId\s+([0-9A-Fa-f]+)$/.exec(inner.trim());
+    if (id) {
+      objects.push(id[1]!.toUpperCase());
+      return `%<\\_ObjIdx ${objects.length - 1}>%`;
+    }
+    children.push(fieldOfCode(inner));
+    return `%<\\_FldIdx ${children.length - 1}>%`;
+  });
+  return { evaluator: evaluatorOf(own), code: own, children, objects };
+}
+
+/**
+ * The root `_text` FIELD of a text holding field codes (`%<\AcVar Date>%`), undefined when it
+ * holds none: its code is the text with `%<\_FldIdx n>%` where field n goes.
+ */
+export function fieldOfText(text: string): DrawingField | undefined {
+  const children: DrawingField[] = [];
+  const code = replaceFields(text, (inner) => {
+    children.push(fieldOfCode(inner));
+    return `%<\\_FldIdx ${children.length - 1}>%`;
+  });
+  return children.length === 0 ? undefined : { evaluator: '_text', code, children, objects: [] };
+}
+
+/**
+ * A text typed with field codes as it is kept (M4-10 part 2): the text it shows, each field's
+ * value in place, and its root FIELD (none when it holds no field). A field that was in `old`
+ * keeps its value until it is evaluated, so one Triya cannot evaluate keeps what it showed; a
+ * new one Triya cannot evaluate shows `----`, as AutoCAD shows a field it has not evaluated.
+ */
+export function textWithFields(
+  text: string,
+  ctx: FieldContext,
+  old?: DrawingField,
+): { readonly text: string; readonly field?: DrawingField } {
+  const root = fieldOfText(text);
+  if (!root) return { text };
+  const kept = new Map((old?.children ?? []).map((c) => [editableFieldCode(c), c]));
+  const children = root.children.map((c) => kept.get(editableFieldCode(c)) ?? c);
+  const r = evaluateFields({ ...root, children, value: '' }, ctx);
+  return { text: r.text, field: r.field };
+}
+
+/**
+ * The value a field code (`\AcVar Date \f "M/d/yyyy"`, without `%<` `>%`) takes against what
+ * the Field dialog was given (its Preview): `----` when Triya cannot evaluate it, `####` when
+ * its object is not in the drawing.
+ */
+export function previewField(code: string, s: FieldSnapshot): string {
+  const root = fieldOfText(`%<${code}>%`)!;
+  const src: FieldSource = {
+    now: new Date(s.now),
+    ...(s.fileName === undefined ? {} : { fileName: s.fileName }),
+    folder: s.folder,
+    units: s.units,
+    variable: (name) => s.variables[name],
+    ...(s.layout ? { layout: s.layout } : {}),
+    properties: (h) => s.objects[h.toUpperCase()],
+  };
+  return evaluateWith(root, src).text;
 }

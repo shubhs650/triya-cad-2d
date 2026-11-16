@@ -14,7 +14,8 @@ import { evaluateFields, type FieldContext } from '../../edit/fields';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
 import type { EntityGeometry, InsertAttribute, MTextGeometry, TextFields } from '../../model/types';
-import type { CommandContext, CommandDef, CommandGenerator } from '../command';
+import type { CommandDef, CommandGenerator } from '../command';
+import { fieldContextOf } from '../draw/field';
 
 /** A text's fields evaluated again: the text with its new value and fields, and the counts. */
 interface Updated<T> {
@@ -66,12 +67,6 @@ function updated(
   return undefined;
 }
 
-/** The text of an app variable (DWGNAME, DWGPREFIX), undefined when the app gives none. */
-async function appText(ctx: CommandContext, name: string): Promise<string | undefined> {
-  const r = await ctx.view.request({ op: 'sysvar', name });
-  return r.ok && typeof r.value === 'string' ? r.value : undefined;
-}
-
 export function updateFieldCommand(): CommandDef {
   return {
     name: 'UPDATEFIELD',
@@ -80,14 +75,7 @@ export function updateFieldCommand(): CommandDef {
       const a = yield ctx.prompt.selection({ message: 'Select objects', editable: true });
       const ids = (a as { readonly ids?: readonly EntityId[] }).ids ?? [];
       if (ids.length === 0) return;
-      const fileName = await appText(ctx, 'DWGNAME');
-      const folder = (await appText(ctx, 'DWGPREFIX')) ?? '';
-      const base: Omit<FieldContext, 'space'> = {
-        model: ctx.model,
-        now: ctx.clock.now(),
-        ...(fileName === undefined ? {} : { fileName }),
-        folder,
-      };
+      const base = await fieldContextOf(ctx);
       let found = 0;
       let evaluated = 0;
       const changes: [EntityId, EntityGeometry][] = [];
