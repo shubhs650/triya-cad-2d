@@ -158,6 +158,9 @@ test('TABLE opens Insert Table, drags the table and types its cells', async ({ p
     await page.keyboard.press(key);
     await expect(log.getByText(`Enter text: ${typed}`, { exact: true })).toHaveCount(n);
     await expect(prompt(page)).toHaveText('Enter text:');
+    // The editor of the cell left stays up, its typing ended, until the next cell's opens in
+    // its place: every cell moved to here is empty, the one left is not.
+    await expect(editor).toHaveText('');
     await expect(editor).toBeFocused();
   };
   for (const [k, text] of cells.entries()) {
