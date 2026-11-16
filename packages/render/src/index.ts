@@ -114,6 +114,8 @@ export * from './underlay-snap';
 export {
   dimStylePreviewImage,
   drawDimStylePreview,
+  drawStylePreview,
+  stylePreviewImage,
   type PreviewContext,
   type PreviewSize,
 } from './dim-style-preview';

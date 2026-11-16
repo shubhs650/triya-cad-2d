@@ -225,6 +225,15 @@ describe('MULTILEADER', () => {
     expect(mapOne(doc, m).blockConnection).toBe(1);
   });
 
+  // M4-14: Extend leader to text (DXF 295, R2013), mapped only when on.
+  it('maps Extend leader to text', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const m = textLeader(doc);
+    expect(mapOne(doc, m).extendLeaderToText).toBeUndefined();
+    m.extendedToText = true;
+    expect(mapOne(doc, m).extendLeaderToText).toBe(true);
+  });
+
   it('maps block content attribute values (M1-111)', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     const block = new BlockRecord('TAG');

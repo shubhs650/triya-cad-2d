@@ -657,6 +657,7 @@ function styleRecord(arrowhead: string) {
     textHeight: 2.5,
     textFrame: false,
     textAlignAlwaysLeft: false,
+    extendLeaderToText: false,
     alignSpace: 4,
     blockColor: { kind: 'byBlock' as const },
     blockScale: { x: 1, y: 1, z: 1 },

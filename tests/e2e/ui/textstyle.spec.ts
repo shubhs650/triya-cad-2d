@@ -6,10 +6,12 @@
 // current and F2 renames it; Standard's font is changed to italicc.shx and Close asks to save the change, Yes
 // applying it before the dialog closes, which redraws the TEXT. -STYLE's `?` lists what was
 // written, the shortcut menu's Delete refuses Standard, and U takes everything back as one step.
+// M4-14: the Preview below the list draws the selected style's sample and follows the font and
+// effects as they are changed, before Apply.
 // What each action writes is unit-tested in packages/engine/test/commands/textstyle.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
-import { activeCanvas, enterCommand, expectShown, openWithPicker } from '../app/page';
+import { activeCanvas, enterCommand, expectShown, inkOf, openWithPicker } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -86,6 +88,9 @@ test('the Text Style dialog applies, makes, renames and deletes text styles', as
   await expect(dialog.getByLabel('Vertical')).toBeDisabled();
   await expect(dialog.getByRole('checkbox', { name: 'Annotative' })).toBeDisabled();
   await expect(dialog.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  // M4-14: the Preview draws the selected style's sample with the drawing's renderer.
+  const preview = dialog.getByTestId('textstyle-preview');
+  await expect(preview).toHaveAttribute('data-drawn', /arial\.ttf/, { timeout: 15_000 });
   await shot(page, '2-dialog');
 
   // MyTextStyle made Bold, 0.8 wide: Apply.
@@ -112,6 +117,13 @@ test('the Text Style dialog applies, makes, renames and deletes text styles', as
   );
   await expect(dialog.getByLabel('Font Style:')).toHaveValue('Bold');
   await font.selectOption('romans.shx');
+  // The Preview follows the font and effects before Apply.
+  await expect(preview).toHaveAttribute('data-drawn', /romans\.shx/);
+  await dialog.getByRole('checkbox', { name: 'Backwards' }).check();
+  await expect(preview).toHaveAttribute('data-drawn', /"backwards":true/);
+  expect(await inkOf(page, preview)).toBeGreaterThan(50);
+  await shot(page, '2b-preview-romans-backwards');
+  await dialog.getByRole('checkbox', { name: 'Backwards' }).uncheck();
   await expect(dialog.getByLabel('Font Style:')).toBeDisabled();
   await expect(dialog.getByLabel('Use Big Font')).toBeEnabled();
   await expect(dialog.getByLabel('Vertical')).toBeEnabled();

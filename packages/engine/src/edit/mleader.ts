@@ -65,6 +65,9 @@ export const MLEADER_OVERRIDES = {
   blockRotation: 1 << 22,
   blockConnection: 1 << 23,
   scale: 1 << 24,
+  // ObjectARX's AcDbMLeader::PropertyOverrideType kExtendLeaderToText, after the text's bits 25
+  // to 29 (M4-14).
+  extendLeaderToText: 1 << 30,
 } as const;
 
 /** DXF 170/172 content types. */
@@ -126,6 +129,7 @@ export function standardMLeaderStyle(
     textHeight: 4 * k,
     textFrame: false,
     textAlignAlwaysLeft: false,
+    extendLeaderToText: false,
     alignSpace: 4 * k,
     blockColor: BY_BLOCK,
     blockScale: { x: 1, y: 1, z: 1 },
@@ -165,7 +169,10 @@ export interface MLeaderSettings {
    * is authored with the multileader that first shows it, and takes the place of `block`.
    */
   readonly builtinBlock?: string;
-  /** The most points a leader line takes, the arrowhead and the landing location included. */
+  /**
+   * The most points a leader line takes, the arrowhead and the landing location included; 0 for
+   * no limit (the style's Maximum leader points unchecked).
+   */
   readonly maxPoints: number;
   /** Radians; 0 leaves the segment free. */
   readonly firstAngle: number;
@@ -183,7 +190,7 @@ export function settingsOf(style: MLeaderStyleRecord): MLeaderSettings {
           ? MLEADER_MTEXT
           : 0,
     ...(style.block !== undefined && { block: style.block }),
-    maxPoints: Math.max(2, style.maxLeaderPoints || 2),
+    maxPoints: style.maxLeaderPoints === 0 ? 0 : Math.max(2, style.maxLeaderPoints || 2),
     firstAngle: style.firstSegmentAngle,
     secondAngle: style.secondSegmentAngle,
   };
@@ -475,6 +482,7 @@ export function newMultiLeader(n: NewMultiLeader): MultiLeaderGeometry {
     textAngleType: style.textAngleType,
     textAlignment: style.textAlignment,
     textFrame: style.textFrame,
+    ...(style.extendLeaderToText && { extendLeaderToText: true }),
     contentBase: n.landing.end,
     landingGap: s.gap,
     blockConnection: style.blockConnection,

@@ -497,7 +497,8 @@ async function* options(
         for (;;) {
           const n = yield ctx.prompt.integer({
             message: 'Enter the maximum points for leader line',
-            default: { kind: 'number', value: o.maxPoints },
+            // No limit (the style's Maximum leader points unchecked) offers no default.
+            ...(o.maxPoints > 0 && { default: { kind: 'number' as const, value: o.maxPoints } }),
           });
           const v = (n as { readonly value: number }).value;
           if (v >= 2) {
@@ -549,7 +550,7 @@ async function* leaderFirst(
     points = [start];
     let landing: Vec2 | undefined;
     // Further points while the leader has room for them: Enter makes the last the landing.
-    while (!landing && points.length < o.maxPoints - 1) {
+    while (!landing && (o.maxPoints === 0 || points.length < o.maxPoints - 1)) {
       const a = yield ctx.prompt.point({
         message: 'Specify next point',
         rubberBand: { from: points.at(-1)! },

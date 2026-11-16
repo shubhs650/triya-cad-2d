@@ -251,7 +251,7 @@ function refsProblem(model: DocumentModel, s: MLeaderStyleSettings): string | un
  * The handles `s` names, adding to the drawing what it lacks: AutoCAD's arrowhead blocks and
  * built-in content blocks (sized from the style's text height, in its text style).
  */
-function resolveRefs(b: ChangeSetBuilder, model: DocumentModel, s: MLeaderStyleSettings) {
+export function resolveRefs(b: ChangeSetBuilder, model: DocumentModel, s: MLeaderStyleSettings) {
   const textStyle = s.textStyle !== '' ? (s.textStyle as Handle) : currentTextStyle(model)?.handle;
   let arrowhead: Handle | undefined;
   if (s.arrowhead !== '') {
@@ -299,7 +299,7 @@ function changedFields(
 }
 
 /** Adds a style named `name` with `s`, as the manager's New... makes one. */
-function addStyle(
+export function addStyle(
   b: ChangeSetBuilder,
   model: DocumentModel,
   name: string,

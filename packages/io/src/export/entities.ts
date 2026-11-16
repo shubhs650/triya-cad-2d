@@ -1834,6 +1834,13 @@ function multiLeaderProblems(
   const out = planeProblems(g);
   const d = differ(before, g);
   if (g.thickness !== undefined) out.push('a thickness, which a MULTILEADER does not have');
+  // DXF 295 is written from R2013 (AC1027), in DXF and DWG alike (M4-14).
+  if (d('extendLeaderToText') && g.extendLeaderToText && r.version !== undefined) {
+    if (r.version !== ACadVersion.Unknown && r.version < ACadVersion.AC1027)
+      out.push(
+        `Extend leader to text, which ${ACadVersion[r.version]} does not store (R2013 added it)`,
+      );
+  }
   if (d('style')) {
     if (g.style === undefined) out.push('a MULTILEADER without its MLEADERSTYLE');
     else if (!resolve(r, g.style, MultiLeaderStyle)) {
@@ -1959,6 +1966,7 @@ const multiLeaderWriter: Writer<MultiLeaderGeometry> = {
       c.textAlignment = g.textAlignment;
     }
     if (d('textFrame')) m.textFrame = g.textFrame;
+    if (d('extendLeaderToText')) m.extendedToText = g.extendLeaderToText === true;
     if (d('contentBase') || elevation) c.contentBasePoint = at(g.contentBase, c.contentBasePoint);
     if (d('landingGap')) c.landingGap = g.landingGap;
     // DXF 176, the entity's: absent in the model only for a multileader the engine made before
