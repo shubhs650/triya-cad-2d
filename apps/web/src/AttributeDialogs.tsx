@@ -49,6 +49,7 @@ import { InsertTableDialog } from './InsertTableDialog';
 import { TextStyleDialog } from './TextStyleDialog';
 import { TableStyleDialog } from './TableStyleDialog';
 import { MLeaderStyleDialog } from './MLeaderStyleDialog';
+import { FindReplaceDialog } from './FindReplaceDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -125,6 +126,8 @@ export function AttributeDialogs({
       return <TableStyleDialog key={key} doc={doc.id} request={d} />;
     case 'mleaderstyle':
       return <MLeaderStyleDialog key={key} doc={doc.id} request={d} />;
+    case 'find':
+      return <FindReplaceDialog key={key} doc={doc.id} request={d} />;
   }
 }
 
