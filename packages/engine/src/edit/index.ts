@@ -113,3 +113,4 @@ export {
 } from './hatch-background';
 export { retainedBoundary } from './hatch-retain';
 export * from './text-justify';
+export * from './find-text';
