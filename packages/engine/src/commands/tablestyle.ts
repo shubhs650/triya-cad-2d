@@ -126,6 +126,7 @@ export type TableStyleAction =
 const upper = (s: string) => s.toUpperCase();
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' });
 const BY_BLOCK: Color = { kind: 'byBlock' };
+const UNFILLED: Color = { kind: 'aci', index: 7 };
 const EDGES = 6;
 
 /** The text style a cell style names, else the drawing's Standard (what the table engine draws). */
@@ -331,6 +332,7 @@ function cellStyleOf(
   model: DocumentModel,
   c: TableCellStyle | undefined,
   s: TableCellStyleSettings,
+  fresh: boolean,
 ): TableCellStyle {
   const textStyle = textStyleHandle(model, s.textStyle, c?.textStyle);
   const fillOn = s.fill !== null;
@@ -339,8 +341,9 @@ function cellStyleOf(
     textHeight: s.textHeight,
     alignment: s.alignment,
     textColor: s.textColor,
-    // An unfilled style keeps the colour it holds, as the file does with its fill off.
-    fillColor: s.fill ?? c?.fillColor ?? BY_BLOCK,
+    // A style left unfilled keeps the colour it holds; one turned off, or a new one, holds ACI 7,
+    // as AutoCAD's Standard does (and an R2010+ cell style reads back as, io table-styles.ts).
+    fillColor: s.fill ?? (c && !c.fillOn && !fresh ? c.fillColor : UNFILLED),
     fillOn,
     dataType: c?.dataType ?? 0,
     unitType: c?.unitType ?? 0,
@@ -357,6 +360,7 @@ function recordFields(
   model: DocumentModel,
   was: Omit<TableStyleRecord, 'handle' | 'name'>,
   s: TableStyleSettings,
+  fresh = false,
 ): Pick<
   TableStyleRecord,
   'description' | 'flowDirection' | 'horizontalMargin' | 'verticalMargin' | 'cellStyles'
@@ -364,7 +368,7 @@ function recordFields(
   const cellStyles = [...was.cellStyles];
   for (const n of TABLE_CELL_STYLES) {
     const k = STYLE_INDEX[n];
-    cellStyles[k] = cellStyleOf(model, was.cellStyles[k], s[n]);
+    cellStyles[k] = cellStyleOf(model, was.cellStyles[k], s[n], fresh);
   }
   return {
     description: s.description,
@@ -403,7 +407,7 @@ function newStyle(
       }
     : {};
   const was = { ...base, ...fields };
-  return { ...was, name, ...recordFields(model, was, s) };
+  return { ...was, name, ...recordFields(model, was, s, true) };
 }
 
 /** The tables drawn in style `handle`. */
