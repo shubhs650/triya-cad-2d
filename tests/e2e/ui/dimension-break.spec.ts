@@ -142,3 +142,71 @@ test('DIMBREAK and DIMINSPECT', async ({ page }) => {
   await page.waitForTimeout(300);
   await shot('4-inspection.png');
 });
+
+// M4-15: DIMBREAK on a multileader. A line is drawn and a multileader across it; DIMBREAK picks
+// the multileader's leader line and Enter (Auto) breaks it where the line crosses, the record in
+// the multileader's own extension dictionary (DEC-065). The gap is drawn by the renderer
+// (packages/render/test/canvas2d-leaders.test.ts) and the command is unit-tested in
+// packages/engine/test/commands/leader-break.test.ts.
+test('DIMBREAK on a multileader', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const off = () => page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await off();
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-1, -5), 'Specify opposite corner:');
+  await type(page, p(9, 3), 'Command:');
+  const k = Math.min(box.width / 10, box.height / 8);
+  const at = (x: number, y: number) => ({
+    x: box.x + box.width / 2 + (x - 4) * k,
+    y: box.y + box.height / 2 - (y + 1) * k,
+  });
+  await page.keyboard.press('F3');
+  await type(page, 'LINE', /^Specify first point/);
+  await type(page, p(3, -4.5), /^Specify next point/);
+  await type(page, p(3, 2), /^Specify next point/);
+  await type(page, '', 'Command:');
+  await type(
+    page,
+    'MLEADER',
+    'Specify leader arrowhead location or [leader Landing first/Content first/Options] <Options>:',
+  );
+  await type(page, p(0, -3), 'Specify leader landing location:');
+  await type(page, p(5, 0), 'Enter text:');
+  await page.keyboard.type('BREAK HERE');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.waitForTimeout(300);
+  await shot('5-multileader-before.png');
+
+  await type(page, 'DIMBREAK', 'Select dimension to add/remove break or [Multiple]:');
+  // On the leader line, which runs from (0,-3) towards the landing at (5,0).
+  const q = at(4, -0.6);
+  await page.mouse.click(q.x, q.y);
+  await off();
+  await expect(prompt(page)).toHaveText(
+    'Select object to break dimension or [Auto/Manual/Remove] <Auto>:',
+  );
+  await type(page, '', 'Command:');
+  const holder = () =>
+    page.evaluate(() => {
+      const objects = new Map<string, { type: string; dimension?: string }>();
+      const kinds = new Map<string, string>();
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const o of cs.objects?.added ?? []) objects.set(o.handle, o as never);
+        for (const o of cs.objects?.removed ?? []) objects.delete(o.handle);
+        for (const a of cs.entities?.added ?? []) kinds.set(a.entity.handle, a.entity.geom.kind);
+      }
+      return [...objects.values()]
+        .filter((o) => o.type === 'TRIYA_DIMBREAK')
+        .map((o) => kinds.get(o.dimension!));
+    });
+  await expect.poll(holder).toEqual(['MULTILEADER']);
+  await page.waitForTimeout(300);
+  await shot('6-multileader-broken.png');
+});
