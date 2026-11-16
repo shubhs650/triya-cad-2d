@@ -47,6 +47,7 @@ import type { OpenDocument } from './documents';
 import { InsertTableDialog } from './InsertTableDialog';
 import { TextStyleDialog } from './TextStyleDialog';
 import { TableStyleDialog } from './TableStyleDialog';
+import { MLeaderStyleDialog } from './MLeaderStyleDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -119,6 +120,8 @@ export function AttributeDialogs({
       return <TextStyleDialog key={key} doc={doc.id} request={d} fonts={fonts ?? []} />;
     case 'tablestyle':
       return <TableStyleDialog key={key} doc={doc.id} request={d} />;
+    case 'mleaderstyle':
+      return <MLeaderStyleDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

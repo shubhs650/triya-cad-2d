@@ -120,6 +120,8 @@ describe('palette search', () => {
       'MIRROR',
       'MLEADER',
       'MLEADEREDIT',
+      // M4-04 part 2: the Multileader Style Manager.
+      'MLEADERSTYLE',
       'MOVE',
       'MREDO',
       'MTEXT',

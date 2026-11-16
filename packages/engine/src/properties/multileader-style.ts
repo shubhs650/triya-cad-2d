@@ -107,12 +107,14 @@ function restyle(
   e: Entity,
   key: string,
   v: PropertyValue,
+  again = false,
 ): Restyled | Refusal | undefined {
   if (key !== STYLE_KEY || e.geom.kind !== 'MULTILEADER') return undefined;
   const g = e.geom;
   const style = typeof v === 'string' ? model.tables.mleaderStyles.get(v) : undefined;
   if (!style) return 'invalid';
-  if (style.handle === g.style) return { skip: true };
+  // `again`: the style's own values, changed by the Multileader Style Manager's Modify.
+  if (style.handle === g.style && !again) return { skip: true };
   if (e.annotative || g.annotative) return { refuse: ANNOTATIVE };
   const own = (bit: number) => (g.overrideFlags & bit) !== 0;
   const O = MLEADER_OVERRIDES;
@@ -294,8 +296,9 @@ export function multiLeaderStyleChange(
   key: string,
   v: PropertyValue,
   widths: MultiLeaderWidths | undefined,
+  again = false,
 ): MultiLeaderGeometry | Refusal | undefined {
-  const r = restyle(model, e, key, v);
+  const r = restyle(model, e, key, v, again);
   if (r === undefined || r === 'invalid' || 'refuse' in r || 'skip' in r) return r;
   if (!r.text) return r.geom;
   const position = placedText(r.scaled, r.geom, r.text.before, r.text.next, widths?.get(e.id));
@@ -308,10 +311,11 @@ export function multiLeaderStylesToMeasure(
   model: DocumentModel,
   entities: readonly Entity[],
   v: PropertyValue,
+  again = false,
 ): { readonly id: EntityId; readonly before?: MTextGeometry; readonly after?: MTextGeometry }[] {
   const out: { id: EntityId; before?: MTextGeometry; after?: MTextGeometry }[] = [];
   for (const e of entities) {
-    const r = restyle(model, e, STYLE_KEY, v);
+    const r = restyle(model, e, STYLE_KEY, v, again);
     if (r === undefined || r === 'invalid' || 'refuse' in r || 'skip' in r || !r.text) continue;
     const texts = textsToMeasureFor(r.scaled, r.text.before, r.text.next);
     if (texts) out.push({ id: e.id, ...texts });

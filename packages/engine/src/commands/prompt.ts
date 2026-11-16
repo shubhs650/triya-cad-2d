@@ -21,6 +21,7 @@ import type { UnitsSettings } from './drawing-units';
 import type { DimStyleAction, DimStyleRequest } from './dimstyle';
 import type { TextStyleAction, TextStyleRequest } from './textstyle';
 import type { TableStyleAction, TableStyleRequest } from './tablestyle';
+import type { MLeaderStyleAction, MLeaderStyleRequest } from './mleaderstyle';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -689,6 +690,8 @@ export type DialogRequest =
   | TextStyleRequest
   /** TABLESTYLE's Table Style dialog (M4-05 part 5). */
   | TableStyleRequest
+  /** MLEADERSTYLE's Multileader Style Manager (M4-04 part 2). */
+  | MLeaderStyleRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -887,6 +890,8 @@ export type PromptAnswer =
       readonly textstyle?: TextStyleAction;
       /** A Table Style dialog action (TABLESTYLE, M4-05 part 5), sent with `apply`. */
       readonly tablestyle?: TableStyleAction;
+      /** A Multileader Style Manager action (MLEADERSTYLE, M4-04 part 2), sent with `apply`. */
+      readonly mleaderstyle?: MLeaderStyleAction;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;
