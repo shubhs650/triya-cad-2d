@@ -7,6 +7,11 @@
 // and ends it, the click elsewhere or Esc too. A click at `Command:` inside a cell, farther from
 // its lines than the pickbox reaches, starts it (a click on a line still selects the table);
 // typed, it asks "Pick a table cell:" first. A double click gives way to TABLEDIT.
+//
+// The cells selected show a grip in the middle of each edge of the selection (M4-05 part 6,
+// `tableCellGrips`): a click on one asks for the point it goes to, its column or row sized so.
+// Paste (Ctrl+V while cells are selected, M4-13) pastes a spreadsheet's cells into the cells
+// from the first one selected (`withCellsPasted`), or another app's text into that cell.
 import { tableCellAt, tableCellBox, tableCellText, tableRangeHeads } from '../../annotation/table';
 import {
   fitTableRow,
@@ -15,9 +20,13 @@ import {
   tableToPlan,
   writeTableBlock,
 } from '../../edit/table';
+import { tableCellGrips, type TableGripRole } from '../../edit/table-grips';
+import { tabSeparatedCells, type SheetCells } from '../../edit/spreadsheet';
+import { sameGrip } from '../../edit/grips';
 import {
   tableCellOptions,
   tableCellRange,
+  withCellsPasted,
   withCellsMerged,
   withCellsUnmerged,
   withColumnsDeleted,
@@ -34,7 +43,9 @@ import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
 import type { TableGeometry, TableStyleRecord } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
-import type { ShortcutMenuItem } from '../prompt';
+import type { Prompt, PromptAnswer, ShortcutMenuItem } from '../prompt';
+import { sub } from '../../geom/vec';
+import { movedTableGrip } from '../../edit/table-grips';
 import { editTableCells, linesOf, pickTableCell, tableOf } from './table-cells';
 import { formattedTable, type TableCellFormatOption } from './table-cell-format';
 
@@ -43,6 +54,8 @@ type Cell = [number, number];
 /** The cell shortcut menu's labels (AutoCAD's, its Rows, Columns and Merge items flattened). */
 const LABELS: Readonly<Record<TableCellOption, string>> = {
   Text: 'Edit Text',
+  // AutoCAD's cell menu has Cut, Copy and Paste; Triya pastes another app's cells (M4-13).
+  Paste: 'Paste',
   BAckground: 'Background Fill',
   ALignment: 'Alignment',
   BOrders: 'Borders',
@@ -129,6 +142,45 @@ async function fittedRows(
   return out;
 }
 
+/**
+ * What the Clipboard holds to paste into table cells (M4-13): a spreadsheet's cells, or another
+ * app's text as one cell; undefined (said why) for anything else.
+ */
+async function clipboardCells(ctx: CommandContext): Promise<SheetCells | undefined> {
+  const reply = await ctx.view.request({ op: 'clipboard' });
+  if (!reply.ok) {
+    ctx.message(reply.message);
+    return undefined;
+  }
+  if (reply.cells && reply.cells.length > 0) return reply.cells;
+  const text = reply.text?.replace(/\r\n?/g, '\n') ?? '';
+  const cells = tabSeparatedCells(text);
+  if (cells) return cells;
+  if (text.trim() !== '') return [[{ text, rowSpan: 1, columnSpan: 1, merged: false }]];
+  ctx.message('The Clipboard holds no cells or text to paste into the table.');
+  return undefined;
+}
+
+/**
+ * A grip of the cells selected (M4-05 part 6) dragged: table `id` with its column or row sized as
+ * `role` says to the point given, or undefined when none is given or it changes nothing.
+ */
+async function* draggedCellGrip(
+  ctx: CommandContext,
+  id: EntityId,
+  grip: Vec2,
+  role: TableGripRole,
+): AsyncGenerator<Prompt, TableGeometry | undefined, PromptAnswer> {
+  const a = yield ctx.prompt.point({
+    message: 'Specify stretch point',
+    rubberBand: { from: grip },
+    drag: { kind: 'table', id, role, from: grip },
+  });
+  const t = tableOf(ctx, id);
+  if (a.kind !== 'point' || !t) return undefined;
+  return movedTableGrip(t.g, t.style, role, sub(a.point, grip));
+}
+
 /** The cell (head of its range) of table `g` that a point in plan lies in, or undefined. */
 function cellAt(ctx: CommandContext, id: EntityId, p: Vec2): Cell | undefined {
   const t = tableOf(ctx, id);
@@ -168,6 +220,7 @@ export function tableCellCommand(start?: {
             vertices: corners.map((p) => ({ ...tableToPlan(t.g, p), bulge: 0 })),
           },
         ]);
+        const grips = tableCellGrips(t.g, t.style, r);
         const on = tableCellOptions(t.g, t.style, r);
         const menu: ShortcutMenuItem[] = TABLE_CELL_OPTIONS.map((o) => ({
           label: LABELS[o],
@@ -184,7 +237,21 @@ export function tableCellCommand(start?: {
           shortcutMenuTitle: 'Table cell options',
           // A press dragged across cells selects them all (M4-05 part 4).
           releaseExtends: true,
+          grips: grips.map((g) => g.point),
+          pasteKeyword: 'Paste',
         });
+        const grip =
+          a.kind === 'point' && !a.shift && grips.find((g) => sameGrip(g.point, a.point));
+        if (grip) {
+          ctx.preview([]);
+          const g = yield* draggedCellGrip(ctx, id, grip.point, grip.role);
+          if (!g) return;
+          ctx.edit((b) => {
+            b.updateEntity(id, { geom: g });
+            writeTableBlock(b, ctx.model, id);
+          });
+          return;
+        }
         if (a.kind === 'point') {
           const cell = cellAt(ctx, id, a.point);
           // A Shift+click, or a drag's end, outside the table keeps the cells selected.
@@ -202,7 +269,12 @@ export function tableCellCommand(start?: {
         }
         if (o === 'Text') return yield* editTableCells(ctx, id, r.r0, r.c0);
         let g: TableGeometry | undefined;
-        if (FORMATS.has(o)) {
+        if (o === 'Paste') {
+          const cells = await clipboardCells(ctx);
+          if (!cells) continue;
+          const pasted = withCellsPasted(t.g, [r.r0, r.c0], cells);
+          g = await fittedRows(ctx, pasted.geom, t.style, pasted.range);
+        } else if (FORMATS.has(o)) {
           g = yield* formattedTable(ctx, t.g, t.style, r, o as TableCellFormatOption);
           if (!g) return;
           if (o === 'Height') g = await fittedRows(ctx, g, t.style, r);

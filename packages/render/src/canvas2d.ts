@@ -33,6 +33,7 @@
 import {
   applyPoint,
   arrayGripPreview,
+  movedTableGrip,
   tableGridLines,
   assocArrayOf,
   stretchInside,
@@ -841,7 +842,9 @@ export class Canvas2DRenderer implements Renderer {
       for (const id of g.ids) {
         const e = this.#model.entity(id);
         if (!e || !this.#cache[id]) continue;
-        const info = gripInfoOf(this.#model, e);
+        const own = gripInfoOf(this.#model, e);
+        // Ctrl held with a table's column grip sizes the table (M4-05 part 6).
+        const info = g.ctrl && own && 'tableStyle' in own ? { ...own, ctrl: true as const } : own;
         const r = moveGripBy(e.geom, g.from, g.to, info, g.fn);
         if (r.kind === 'move') gripMoved.push(this.#cache[id]);
         if (r.kind !== 'shape') continue;
@@ -859,6 +862,19 @@ export class Canvas2DRenderer implements Renderer {
         // A column grip's dynamic columns take what the text needs, as they will (M2-26 part 2).
         const geom = recounted(unblocked(r.geom), this.#tessellate.text);
         const entry = this.#entryOf({ ...e, geom }, id, this.#model, this.#blockSource);
+        if (entry) stretched.push(entry);
+      }
+    }
+    // A grip of the table cells selected (TABLECELL, M4-05 part 6): the table's grid as it would
+    // be, its block drawn again once the grip is placed.
+    const t = motion.table;
+    const te = t && this.#model.entity(t.id);
+    if (t && te?.geom.kind === 'ACAD_TABLE' && this.#cache[t.id]) {
+      const info = gripInfoOf(this.#model, te);
+      const style = info && 'tableStyle' in info ? info.tableStyle : undefined;
+      const moved = movedTableGrip(te.geom, style, t.role, t.d);
+      for (const line of moved ? tableGridLines(moved, style) : []) {
+        const entry = this.#entryOf({ ...te, geom: line }, t.id, this.#model, this.#blockSource);
         if (entry) stretched.push(entry);
       }
     }

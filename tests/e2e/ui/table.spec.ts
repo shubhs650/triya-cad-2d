@@ -221,7 +221,7 @@ test('a click selects table cells and the right-click menu edits them', async ({
     return { x: box.x + s.x, y: box.y + s.y };
   };
   const options =
-    'Enter a table cell option [Text/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
   const menu = page.getByRole('menu', { name: 'Table cell options' });
   const choose = async (item: string) => {
     await page.mouse.click(cell(3, 2).x, cell(3, 2).y, { button: 'right' });
@@ -303,7 +303,7 @@ test('cells dragged across are formatted from the menu, and a column grip resize
   const cell = (i: number, j: number) =>
     at(1.25 + 2.5 * j, i === 0 ? -0.2267 : i === 1 ? -0.6333 : -0.9933 - 0.36 * (i - 2));
   const options =
-    'Enter a table cell option [Text/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+    'Enter a table cell option [Text/Paste/BAckground/ALignment/BOrders/Height/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
   // A press in cell (2, 1) dragged to cell (4, 2) selects the six cells.
   await page.mouse.move(cell(2, 1).x, cell(2, 1).y);

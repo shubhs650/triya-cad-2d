@@ -165,34 +165,59 @@ describe('the grips of table cells selected (M4-05 part 6)', () => {
   });
 
   it('size the selection’s last column or row, the table with it', () => {
-    const right = movedTableGrip(table(), STYLE, { kind: 'cellColumn', j: 1, start: false }, {
-      x: 1.5,
-      y: 4,
-    });
+    const right = movedTableGrip(
+      table(),
+      STYLE,
+      { kind: 'cellColumn', j: 1, start: false },
+      {
+        x: 1.5,
+        y: 4,
+      },
+    );
     expect(right).toMatchObject({ columnWidths: [1, 3.5, 3], position: { x: 10, y: 20 } });
-    const bottom = movedTableGrip(table(), STYLE, { kind: 'cellRow', i: 1, start: false }, {
-      x: 3,
-      y: -0.5,
-    });
+    const bottom = movedTableGrip(
+      table(),
+      STYLE,
+      { kind: 'cellRow', i: 1, start: false },
+      {
+        x: 3,
+        y: -0.5,
+      },
+    );
     expect(bottom).toMatchObject({ rowHeights: [0.5, 1.5], position: { x: 10, y: 20 } });
   });
 
   it('size the first column or row by its other edge, what lies before it moving along', () => {
-    const left = movedTableGrip(table(), STYLE, { kind: 'cellColumn', j: 1, start: true }, {
-      x: -0.5,
-      y: 0,
-    });
+    const left = movedTableGrip(
+      table(),
+      STYLE,
+      { kind: 'cellColumn', j: 1, start: true },
+      {
+        x: -0.5,
+        y: 0,
+      },
+    );
     expect(left).toMatchObject({ columnWidths: [1, 2.5, 3], position: { x: 9.5, y: 20 } });
-    const top = movedTableGrip(table(), STYLE, { kind: 'cellRow', i: 1, start: true }, {
-      x: 0,
-      y: 0.25,
-    });
+    const top = movedTableGrip(
+      table(),
+      STYLE,
+      { kind: 'cellRow', i: 1, start: true },
+      {
+        x: 0,
+        y: 0.25,
+      },
+    );
     expect(top).toMatchObject({ rowHeights: [0.5, 1.25], position: { x: 10, y: 20.25 } });
     // Flowing up, row 0's start is its bottom edge: dragged down, the table moves down.
-    const up = movedTableGrip(table(), UP, { kind: 'cellRow', i: 0, start: true }, {
-      x: 0,
-      y: -1,
-    });
+    const up = movedTableGrip(
+      table(),
+      UP,
+      { kind: 'cellRow', i: 0, start: true },
+      {
+        x: 0,
+        y: -1,
+      },
+    );
     expect(up).toMatchObject({ rowHeights: [1.5, 1], position: { x: 10, y: 19 } });
     // Along a table turned a quarter: its x axis is the world's y.
     const turned = movedTableGrip(
@@ -205,15 +230,25 @@ describe('the grips of table cells selected (M4-05 part 6)', () => {
   });
 
   it('keep a row one line of text high and a column its margins wide', () => {
-    const low = movedTableGrip(table(), STYLE, { kind: 'cellRow', i: 0, start: false }, {
-      x: 0,
-      y: 5,
-    })!;
+    const low = movedTableGrip(
+      table(),
+      STYLE,
+      { kind: 'cellRow', i: 0, start: false },
+      {
+        x: 0,
+        y: 5,
+      },
+    )!;
     expect(+low.rowHeights[0]!.toFixed(9)).toBe(0.37);
-    const narrow = movedTableGrip(table(), STYLE, { kind: 'cellColumn', j: 0, start: true }, {
-      x: 5,
-      y: 0,
-    })!;
+    const narrow = movedTableGrip(
+      table(),
+      STYLE,
+      { kind: 'cellColumn', j: 0, start: true },
+      {
+        x: 5,
+        y: 0,
+      },
+    )!;
     expect(+narrow.columnWidths[0]!.toFixed(9)).toBe(0.12);
     expect(+narrow.position.x.toFixed(9)).toBe(10.88);
     expect(

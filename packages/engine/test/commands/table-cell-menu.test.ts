@@ -131,6 +131,7 @@ describe('a table cell selected at Command:', () => {
     const menu = s.prompt()!.shortcutMenu!;
     expect(menu.map((m) => `${m.label}${m.disabled ? ' (off)' : ''}`)).toEqual([
       'Edit Text',
+      'Paste',
       'Background Fill',
       'Alignment',
       'Borders',
@@ -583,7 +584,7 @@ describe('the grips of the cells selected (M4-05 part 6)', () => {
     await s.bus.pick({ x: 137, y: -30 });
     expect(s.bus.command).toBeUndefined();
     expect(s.table().geom.columnWidths).toEqual([63.5, 73.5]);
-    expect(blockLines(s)).toContain('137,-11 137,-47 byBlock ByBlock');
+    expect(blockLines(s)).toContain('137,0 137,-47 byBlock ByBlock');
     await s.bus.submit('U');
     expect(s.table().geom.columnWidths).toEqual([63.5, 63.5]);
   });
