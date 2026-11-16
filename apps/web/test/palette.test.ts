@@ -107,6 +107,8 @@ describe('palette search', () => {
       'GRID',
       'GROUP',
       'GROUPEDIT',
+      // M4-07 part 1: HATCH and -HATCH on the command line.
+      'HATCH',
       'HATCHTOBACK',
       'ID',
       'JOIN',
@@ -119,6 +121,9 @@ describe('palette search', () => {
       'MEASUREGEOM',
       'MIRROR',
       'MLEADER',
+      // M4-04 part 3: MLEADERALIGN and MLEADERCOLLECT.
+      'MLEADERALIGN',
+      'MLEADERCOLLECT',
       'MLEADEREDIT',
       // M4-04 part 2: the Multileader Style Manager.
       'MLEADERSTYLE',

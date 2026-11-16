@@ -1014,7 +1014,10 @@ export function formatAnswer(answer: PromptAnswer, units: DrawingUnits = DECIMAL
 /** The prompt line: `Specify next point or [Undo/Close] <10.0000>:` (AutoCAD's layout). */
 export function formatPrompt(prompt: Prompt, units: DrawingUnits = DECIMAL_UNITS): string {
   let text = prompt.message;
-  if (prompt.options && prompt.options.length > 0) text += ` [${prompt.options.join('/')}]`;
+  // An option-only prompt (-HATCH Origin's "[Use current origin/Set new origin]") starts with them.
+  if (prompt.options && prompt.options.length > 0) {
+    text += `${text ? ' ' : ''}[${prompt.options.join('/')}]`;
+  }
   if (prompt.default) {
     const d = prompt.default;
     let value: string;
