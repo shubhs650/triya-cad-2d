@@ -151,12 +151,13 @@ export function annotationScaleValue(doc: CadDocument, scale: HeaderValue): numb
  * with the CANNOSCALEVALUE each gives.
  */
 function annotationScales(doc: CadDocument): Pick<DocumentMeta, 'annotationScales'> {
-  const out: { name: string; value: number }[] = [];
+  const out: { name: string; value: number; handle?: string }[] = [];
   for (const s of namedDictionary(doc, CadDictionary.acadScaleList) ?? []) {
     if (!(s instanceof Scale) || !s.name) continue;
     const value = annotationScaleValue(doc, s.name);
+    // The SCALE's handle: what an annotative object's representations name (M4-01).
     if (value !== undefined && !out.some((o) => o.name === s.name))
-      out.push({ name: s.name, value });
+      out.push({ name: s.name, value, ...(s.handle ? { handle: hex(s.handle) } : {}) });
   }
   return out.length > 0 ? { annotationScales: out } : {};
 }

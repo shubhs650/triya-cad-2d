@@ -44,7 +44,7 @@ import { gripInfoOf } from './array-grips';
 import { sub } from '../geom/vec';
 import {
   annotativeData,
-  carriedRadialArc,
+  carriedDimensionXdata,
   transformGeometry,
   transformProblem,
   type TransformOptions,
@@ -306,7 +306,7 @@ export function transformObjects(
   const blocksDone = new Set<Handle>();
   for (const e of moving) {
     const cur = b.entity(e.id)!;
-    b.updateEntity(e.id, { ...carried(cur, t, o), ...carriedRadialArc(cur, t, model) });
+    b.updateEntity(e.id, { ...carried(cur, t, o), ...carriedDimensionXdata(cur, t, model) });
     carryBlock(b, cur.geom, t, blocksDone);
   }
   for (const a of keptAssocs) {
@@ -593,7 +593,7 @@ export function copyObjects(
     }
     if (e.annotative) unannotated++;
     const copy = copyEntity(b, e, into ?? e.owner, t, o, names);
-    const radial = carriedRadialArc(
+    const radial = carriedDimensionXdata(
       { geom: e.geom, ...(copy.xdata && { xdata: copy.xdata }) },
       t,
       model,
