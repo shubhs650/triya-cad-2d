@@ -212,8 +212,8 @@ export interface DraftingState {
   readonly scTitleBar: boolean;
   /**
    * The modify commands' options AutoCAD keeps per user (M3-12, `MODIFY_OPTIONS`): OFFSETERASE,
-   * OFFSETGAPTYPE, TRIMEXTENDMODE, EDGEMODE, PROJMODE, TRIMMODE, PEDITACCEPT, TEXTALIGNMODE and
-   * TEXTALIGNSPACING, by name.
+   * OFFSETGAPTYPE, TRIMEXTENDMODE, EDGEMODE, PROJMODE, TRIMMODE, PEDITACCEPT, TEXTALIGNMODE,
+   * TEXTALIGNSPACING and HPDLGMODE, by name.
    */
   readonly modifyOptions: Readonly<Record<string, number>>;
   /** OFFSETDIST and CHAMMODE, AutoCAD's unsaved variables: kept while the app runs, never stored. */
@@ -236,6 +236,8 @@ export const MODIFY_OPTIONS: Readonly<Record<string, { initial: number; max: num
   // M4-09 part 3: TEXTALIGN's alignment point (Left) and spacing (Current vertical).
   TEXTALIGNMODE: { initial: 9, max: 11 },
   TEXTALIGNSPACING: { initial: 2, max: 3 },
+  // M4-07 part 5: HPDLGMODE, the hatch dialogs shown when the ribbon is closed (Triya's always is).
+  HPDLGMODE: { initial: 2, max: 2 },
 };
 
 /** The initial values of `MODIFY_OPTIONS`. */

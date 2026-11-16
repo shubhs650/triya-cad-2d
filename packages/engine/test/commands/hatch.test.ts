@@ -12,13 +12,13 @@ describe('HATCH (M4-07)', () => {
   it('hatches the area around a picked point with the current pattern, once Enter is pressed', async () => {
     const s = setup(square(0, 0, 10));
     await s.bus.script(['HATCH']);
-    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo]:');
+    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo/seTtings]:');
     await s.bus.submit('5,5');
     // Previewed until Enter, the prompt asked again.
     expect(s.previews.at(-1)?.[0]).toMatchObject({ kind: 'HATCH', pattern: 'TRIYA_LINES45' });
     expect(s.hatches()).toHaveLength(0);
     expect(s.bus.promptText).toBe(
-      'Pick internal point or [Select objects/remove Boundaries/Undo]:',
+      'Pick internal point or [Select objects/remove Boundaries/Undo/seTtings]:',
     );
     await s.bus.submit('');
     const [h] = s.hatches();
@@ -52,7 +52,7 @@ describe('HATCH (M4-07)', () => {
     const s = setup(square(0, 0, 10));
     await s.bus.script(['H', '20,20']);
     expect(s.log).toContain('Valid hatch boundary not found.');
-    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo]:');
+    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo/seTtings]:');
     await s.bus.submit('');
     expect(s.hatches()).toHaveLength(0);
   });
@@ -256,7 +256,7 @@ describe('HATCH (M4-07)', () => {
     await s.bus.answer({ kind: 'selection', ids: [s.idOf('100')] });
     expect(s.log).toContain('Valid hatch boundary not found.');
     await s.bus.script(['K']);
-    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo]:');
+    expect(s.bus.promptText).toBe('Pick internal point or [Select objects/Undo/seTtings]:');
   });
 
   it('starts an imperial drawing at a pattern scale of 1/25.4 (the bundled patterns are in mm)', async () => {

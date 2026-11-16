@@ -23,6 +23,7 @@ import type { TextStyleAction, TextStyleRequest } from './textstyle';
 import type { TableStyleAction, TableStyleRequest } from './tablestyle';
 import type { MLeaderStyleAction, MLeaderStyleRequest } from './mleaderstyle';
 import type { FindAction, FindRequest, FindSettings } from './modify/find';
+import type { HatchDialogAnswer, HatchDialogRequest } from './draw/hatch-dialog';
 import {
   DECIMAL_UNITS,
   formatAngle,
@@ -723,6 +724,8 @@ export type DialogRequest =
   | MLeaderStyleRequest
   /** FIND's Find and Replace (M4-09 part 2). */
   | FindRequest
+  /** HATCH's Hatch and Gradient, HATCHEDIT's Hatch Edit (M4-07 part 5). */
+  | HatchDialogRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -937,6 +940,11 @@ export type PromptAnswer =
       readonly mleaderstyle?: MLeaderStyleAction;
       /** A Find and Replace button (FIND, M4-09 part 2) with the dialog's settings, sent with `apply`. */
       readonly find?: { readonly settings: FindSettings; readonly action?: FindAction };
+      /**
+       * The Hatch and Gradient or Hatch Edit dialog's state (HATCH, HATCHEDIT, M4-07 part 5),
+       * with the button that closed it to pick (`apply`), or none for OK.
+       */
+      readonly hatch?: HatchDialogAnswer;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

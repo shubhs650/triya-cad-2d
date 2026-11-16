@@ -4163,3 +4163,162 @@ button {
 .dimstyle-import-note {
   opacity: 0.7;
 }
+
+/* HATCH's Hatch and Gradient and HATCHEDIT's Hatch Edit (M4-07 part 5): the tabs on the left,
+   Boundaries and Options beside them, More options a third column (stacked when narrow). */
+.cad-dialog.hatch-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-width: min(980px, calc(100vw - 32px));
+}
+
+.cad-dialog.hatch-dialog:has(.hatch-more-open) {
+  width: min(980px, calc(100vw - 32px));
+}
+
+.hatch-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.hatch-body.hatch-more-open {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.hatch-dialog fieldset {
+  min-width: 0;
+  margin: 0 0 6px;
+  border: 1px solid var(--chrome-border);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.hatch-panel {
+  min-height: 0;
+}
+
+.hatch-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+}
+
+.hatch-side > button,
+.hatch-side fieldset > button {
+  text-align: left;
+}
+
+.hatch-indent {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+  justify-items: start;
+}
+
+.hatch-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hatch-swatch-row > span {
+  min-width: 84px;
+}
+
+.hatch-swatch {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
+}
+
+.hatch-gradient-colors {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.hatch-color-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hatch-color-chip {
+  flex: 1 1 auto;
+  height: 20px;
+  border: 1px solid var(--chrome-border);
+}
+
+.hatch-tint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hatch-tint input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hatch-gradients {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.hatch-gradients [role='radio'] {
+  height: 40px;
+  border: 2px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.hatch-gradients [role='radio'][aria-checked='true'] {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.hatch-more {
+  align-self: flex-start;
+}
+
+.cad-dialog.hatch-palette {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.hatch-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.hatch-palette-grid [role='option'] {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.hatch-palette-grid [role='option'][aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--chrome-bg);
+}
+
+@media (max-width: 720px) {
+  .hatch-body,
+  .hatch-body.hatch-more-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
