@@ -217,6 +217,8 @@ describe('palette search', () => {
       'UNGROUP',
       // M3-09: the Drawing Units dialog.
       'UNITS',
+      // M4-10 part 1.
+      'UPDATEFIELD',
       'VIEW',
       'WIPEOUT',
       'XLINE',

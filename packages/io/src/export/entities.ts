@@ -15,6 +15,7 @@ import type {
   HatchBoundaryPathEdge,
   Vertex,
 } from '@node-projects/acad-ts';
+import { writeFieldValues } from './fields';
 import {
   ACadVersion,
   EntityPlotStyleType,
@@ -716,6 +717,7 @@ function writeTextFields(
   }
   if (d('thickness')) t.thickness = g.thickness ?? 0;
   if (d('normal')) t.normal = xyz(g.normal);
+  if (d('field')) writeFieldValues(t, g.field);
 }
 
 const mtextWriter: Writer<MTextGeometry> = {
@@ -732,6 +734,7 @@ const mtextWriter: Writer<MTextGeometry> = {
     const m = e as MText;
     const d = differ(before, g);
     if (d('contents')) m.value = g.contents;
+    if (d('field')) writeFieldValues(m, g.field);
     if (d('style')) m.style = resolve(r, g.style, TextStyle)!;
     if (d('position', 'elevation')) {
       m.insertPoint = new XYZ(g.position.x, g.position.y, g.elevation ?? 0);
