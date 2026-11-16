@@ -41,6 +41,8 @@ import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry, type StretchOptions } from './stretch';
 import { moveGrip } from './grips';
 import { gripInfoOf } from './array-grips';
+import { writeTableBlock } from './table';
+import { tableTextScaled } from './table-format';
 import { sub } from '../geom/vec';
 import {
   annotativeData,
@@ -306,7 +308,12 @@ export function transformObjects(
   const blocksDone = new Set<Handle>();
   for (const e of moving) {
     const cur = b.entity(e.id)!;
-    b.updateEntity(e.id, { ...carried(cur, t, o), ...carriedDimensionXdata(cur, t, model) });
+    const c = carried(cur, t, o);
+    b.updateEntity(e.id, {
+      ...c,
+      geom: tableTextCarried(b, c.geom, t),
+      ...carriedDimensionXdata(cur, t, model),
+    });
     carryBlock(b, cur.geom, t, blocksDone);
   }
   for (const a of keptAssocs) {
@@ -337,6 +344,13 @@ function carried(
     return { geom, annotative: annotativeData(t, e.annotative, g, o) };
   }
   return { geom };
+}
+
+/** A table scaled by `t` with its text and margins scaled too (`tableTextScaled`). */
+function tableTextCarried(b: ChangeSetBuilder, g: EntityGeometry, t: Similarity): EntityGeometry {
+  if (g.kind !== 'ACAD_TABLE' || t.scale === 1) return g;
+  const style = g.style !== undefined ? b.tableRecord('tableStyles', g.style) : undefined;
+  return tableTextScaled(g, style, Math.abs(t.scale));
 }
 
 /** A dimension's `*D` block carried with it; a table's `*T` block scaled about its base. */
@@ -544,6 +558,8 @@ function applyStretch(
       if (assocGeometry(a).includes(e.handle) || a.dimension === e.handle) links.disassociate(a);
     }
     b.updateEntity(id, { geom });
+    // A table's grip sizes its rows and columns: its block is drawn again (M4-05 part 4).
+    if (geom.kind === 'ACAD_TABLE') writeTableBlock(b, model, id);
     reshaped.push(id);
   }
   const moved = transformObjects(b, model, plan.move, moveBy(d));
@@ -700,7 +716,7 @@ function copyEntity(
   o: TransformOptions,
   names: AnonymousNames,
 ): Entity {
-  let geom = transformGeometry(e.geom, t, o);
+  let geom = tableTextCarried(b, transformGeometry(e.geom, t, o), t);
   switch (geom.kind) {
     case 'INSERT':
       geom = {
