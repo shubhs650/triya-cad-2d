@@ -39,6 +39,8 @@ export interface MatchSettings {
   readonly table: boolean;
   readonly material: boolean;
   readonly multileader: boolean;
+  /** Center object (M4-08 part 3): a center mark's or centerline's own settings. */
+  readonly centerObject: boolean;
 }
 
 export const ALL_MATCH_SETTINGS: MatchSettings = {
@@ -58,6 +60,7 @@ export const ALL_MATCH_SETTINGS: MatchSettings = {
   table: true,
   material: true,
   multileader: true,
+  centerObject: true,
 };
 
 /** AutoCAD's names for the settings, in the order "Current active settings" lists them. */
@@ -78,6 +81,7 @@ export const MATCH_SETTING_NAMES: readonly [keyof MatchSettings, string][] = [
   ['table', 'Table'],
   ['material', 'Material'],
   ['multileader', 'Multileader'],
+  ['centerObject', 'Center object'],
 ];
 
 /** "Current active settings:  Color Layer …". */

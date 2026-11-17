@@ -13,6 +13,8 @@ import { refusalMessages } from '../../edit/edit';
 import type { EntityId } from '../../model/entity-ids';
 import type { EntityPatch } from '../../model/update';
 import { writeTableBlock } from '../../edit/table';
+import { centerMarkOf, matchedCenterMark, redrawCenterMark } from '../../edit/center-marks';
+import type { CenterMark } from '../../model/types';
 import { restyledTable } from '../tablestyle';
 import { namedPlotStyles } from '../../properties/general';
 import {
@@ -97,10 +99,24 @@ export function matchpropCommand(): CommandDef {
           }
           if (patch) patches.set(t.id, patch);
         }
+        // Center object (M4-08 part 3): a center mark or centerline takes the source's settings
+        // and is drawn again with them.
+        const sourceMark = centerMarkOf(ctx.model, source);
+        const marks = new Map<EntityId, { before: CenterMark; after: CenterMark }>();
+        for (const t of targets) {
+          const before = sourceMark && centerMarkOf(ctx.model, ctx.model.entity(t.id));
+          const after = before && matchedCenterMark(sourceMark, before, settings.centerObject);
+          if (before && after) marks.set(t.id, { before, after });
+        }
+        if (patches.size === 0 && marks.size === 0) return;
         ctx.edit((b) => {
           for (const [id, patch] of patches) {
             b.updateEntity(id, patch);
             if (patch.geom?.kind === 'ACAD_TABLE') writeTableBlock(b, ctx.model, id);
+          }
+          for (const [id, { before, after }] of marks) {
+            const insert = b.entity(id);
+            if (insert) redrawCenterMark(b, ctx.model, insert, before, after);
           }
         });
       }

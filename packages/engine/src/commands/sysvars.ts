@@ -34,6 +34,7 @@ import type { HeaderValue } from '../model/types';
 import { OSNAP_OFF } from '../input/osnap';
 import { CETRANSPARENCY } from '../properties/current';
 import { FIELDEVAL, FIELDEVAL_INITIAL } from '../edit/field-eval';
+import { CENTER_VARIABLES, isCenterLength } from '../edit/center-settings';
 
 export type VariableKind =
   /** A whole number, `min`–`max` when bounded. */
@@ -102,6 +103,10 @@ export interface SystemVariable {
   readonly text?: true;
   /** A point in pixels, not drawing units (SCREENSIZE): shown as plain numbers. */
   readonly pixels?: true;
+  /** Text that is a length or a factor followed by `x` (CENTERCROSSSIZE's "0.1x"). */
+  readonly relative?: true;
+  /** Text for which "." is a value of its own (CENTERLAYER: the current layer). */
+  readonly dot?: true;
   /**
    * What a DICTIONARYVAR the drawing does not have holds (FIELDEVAL's "31"): AutoCAD's initial
    * value, which SETVAR shows and sets for the session (M4-10 part 3).
@@ -422,7 +427,13 @@ const NAME_VARIABLES: Readonly<Record<string, { table: NameTable; empty?: true }
  * not keep, so they stay read only.
  */
 const DICTIONARY_VARIABLES: Readonly<
-  Record<string, Pick<SystemVariable, 'kind' | 'table' | 'min' | 'max' | 'nonNegative'>>
+  Record<
+    string,
+    Pick<
+      SystemVariable,
+      'kind' | 'table' | 'min' | 'max' | 'nonNegative' | 'positive' | 'relative' | 'dot'
+    >
+  >
 > = {
   CMLEADERSTYLE: { kind: 'name', table: 'mleaderStyles' },
   CTABLESTYLE: { kind: 'name', table: 'tableStyles' },
@@ -438,7 +449,16 @@ const DICTIONARY_VARIABLES: Readonly<
   XCLIPFRAME: { kind: 'integer', min: 0, max: 2 },
   INDEXCTL: { kind: 'integer', min: 0, max: 3 },
   SORTENTS: { kind: 'integer', min: 0, max: 127 },
+  // M4-08 part 3 (AutoCAD 2024 Help, "CENTERCROSSSIZE", "CENTERCROSSGAP", "CENTEREXE",
+  // "CENTERMARKEXE", "CENTERLTYPE", "CENTERLTSCALE", "CENTERLAYER"; each "Saved in: Drawing"):
+  // what new center marks and centerlines take (edit/center-marks.ts `centerSettings`).
+  CENTERCROSSSIZE: { kind: 'text', relative: true },
+  CENTERCROSSGAP: { kind: 'text', relative: true },
   CENTEREXE: { kind: 'distance', nonNegative: true },
+  CENTERMARKEXE: { kind: 'switch' },
+  CENTERLTYPE: { kind: 'text', dot: true },
+  CENTERLTSCALE: { kind: 'real', positive: true },
+  CENTERLAYER: { kind: 'text', dot: true },
   // M4-10 part 3 (AutoCAD 2024 Help, "FIELDEVAL"): when fields update, bits 1 open, 2 save,
   // 4 plot, 8 eTransmit, 16 regeneration; "Saved in: Drawing", initially 31 (edit/field-eval.ts).
   [FIELDEVAL]: { kind: 'integer', min: 0, max: 31 },
@@ -448,8 +468,9 @@ const DICTIONARY_VARIABLES: Readonly<
  * DICTIONARYVARs SETVAR knows in a drawing without them, with AutoCAD's initial value, which a
  * save writes only into a DICTIONARYVAR the drawing has (io's session-only variables).
  */
-const DICTIONARY_INITIAL: Readonly<Record<string, string>> = {
+const DICTIONARY_INITIAL: Readonly<Record<string, string | ((m: VariableSource) => string)>> = {
   [FIELDEVAL]: String(FIELDEVAL_INITIAL),
+  ...CENTER_VARIABLES,
 };
 
 /** Bounds AutoCAD 2024's system variable reference gives (those a wrong value would break). */
@@ -595,6 +616,8 @@ export function dictionaryTwin(
  */
 export interface VariableSource {
   readonly header: ReadonlyMap<string, HeaderValue>;
+  /** How the drawing was opened (CENTEREXE starts at 3.5 in a metric one). */
+  readonly meta?: { readonly measurement?: 'imperial' | 'metric' };
 }
 
 /** The header entry a variable's name is kept under, if the drawing has one. */
@@ -622,7 +645,8 @@ export function systemVariable(model: VariableSource, name: string): SystemVaria
   if (drawing) return drawing;
   const key = headerKey(model, n);
   if (key === undefined && n in DICTIONARY_INITIAL) {
-    const initial = DICTIONARY_INITIAL[n]!;
+    const start = DICTIONARY_INITIAL[n]!;
+    const initial = typeof start === 'string' ? start : start(model);
     return { ...headerVariable(n, initial), initial };
   }
   return key === undefined ? undefined : headerVariable(key, model.header.get(key)!);
@@ -756,6 +780,10 @@ export function parseValue(model: DocumentModel, v: SystemVariable, text: string
   const t = text.trim();
   switch (v.kind) {
     case 'text':
+      if (v.relative && !isCenterLength(t)) {
+        return { problem: 'Requires a length, or a factor of the diameter followed by x.' };
+      }
+      if (v.relative || v.dot) return { value: t };
       // "." sets text to nothing, as AutoCAD takes it (DIMPOST, DIMAPOST).
       return { value: t === '.' ? '' : text };
     case 'name': {

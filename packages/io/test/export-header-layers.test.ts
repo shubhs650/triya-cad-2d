@@ -221,8 +221,19 @@ describe('header variables', () => {
     expect(world.get('$UCSXDIR')).toEqual({ x: 1, y: 0, z: 0 });
   });
 
-  it.each(['CETRANSPARENCY', 'HPTRANSPARENCY'])(
-    'keeps %s for the session unless the drawing has a DICTIONARYVAR for it (M2-35, M4-07)',
+  it.each([
+    'CETRANSPARENCY',
+    'HPTRANSPARENCY',
+    // What new center marks take (M4-08 part 3).
+    'CENTERCROSSSIZE',
+    'CENTERCROSSGAP',
+    'CENTEREXE',
+    'CENTERMARKEXE',
+    'CENTERLTYPE',
+    'CENTERLTSCALE',
+    'CENTERLAYER',
+  ])(
+    'keeps %s for the session unless the drawing has a DICTIONARYVAR for it (M2-35, M4-07, M4-08)',
     (name) => {
       // DXF has no HEADER variable for CETRANSPARENCY or HPTRANSPARENCY (the one -HATCH
       // Transparency sets): a save writes them only into an existing AcDbVariableDictionary
