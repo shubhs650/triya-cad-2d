@@ -9,6 +9,7 @@ export * from './dimstyle-fields';
 export * from './mleaderstyle-fields';
 export * from './radial-extension';
 export * from './table';
+export * from './table-breaks';
 export * from './linear-jog';
 export * from './dimstyle-xdata';
 export * from './dimstyle-family';

@@ -211,7 +211,26 @@ export function tableTextScaled(
     right: (m?.right ?? h) * k,
     bottom: (m?.bottom ?? v) * k,
   };
-  return { ...g, cells, overrides: { ...g.overrides, margins } };
+  // The break height, spacing and the parts' own places and heights scale with it (M4-16 part 10).
+  const b = g.breaks;
+  const breaks = b && {
+    breaks: {
+      ...b,
+      height: b.height * k,
+      spacing: b.spacing * k,
+      ...(b.parts && {
+        parts: b.parts.map((p) =>
+          p
+            ? {
+                ...(p.offset && { offset: { x: p.offset.x * k, y: p.offset.y * k } }),
+                ...(p.height !== undefined && { height: p.height * k }),
+              }
+            : null,
+        ),
+      }),
+    },
+  };
+  return { ...g, cells, overrides: { ...g.overrides, margins }, ...breaks };
 }
 
 /** Cell `c` with `format` as its format, none when it is undefined or empty. */
