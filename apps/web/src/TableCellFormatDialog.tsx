@@ -2,13 +2,18 @@
 // (AutoCAD Help, "Table Cell Format Dialog Box"; UI_SPEC.md §7). Data type on the left; Preview,
 // then what the type offers: Format (Angle, Decimal Number, Point, Text), Precision (Angle,
 // Currency, Decimal Number, Percentage, Point), Symbol and Append symbol (Currency), the date
-// format with its Examples (Date). OK sends the data format; the engine gives it to the cells.
-// Left out: Additional Format..., Negative numbers, List separator and the X/Y/Z filters, which
-// need format codes no corpus table holds (M4-16's roadmap line), and Help, as Triya's other
-// dialogs leave it.
+// format with its Examples (Date), the X, Y and Z boxes (Point) and Additional Format... (Angle,
+// Currency, Decimal Number, Percentage, Point; part 3), which opens AutoCAD's Additional Format
+// dialog over it: Current value, Conversion factor, Additional text, Number separators and Zero
+// suppression. OK sends the data format; the engine gives it to the cells. Left out: Negative
+// numbers, List separator and the 0 feet and 0 inches boxes (shown greyed), whose format codes
+// nothing published gives (`table-data.ts`), and Help, as Triya's other dialogs leave it.
 import {
   DATE_EXAMPLES,
   NUMBER_FORMATS,
+  TABLE_ADDITIONAL_TYPES,
+  TABLE_DECIMAL_SEPARATORS,
+  TABLE_THOUSANDS_SEPARATORS,
   TABLE_ANGLE_FORMATS,
   TABLE_CURRENCY_SYMBOLS,
   TABLE_DATA_TYPES,
@@ -17,10 +22,11 @@ import {
   tableDataPreview,
   type DialogRequest,
   type PromptAnswer,
+  type TableAdditionalFormat,
   type TableDataFormat,
   type TableDataType,
 } from '@triya/engine';
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
 
@@ -83,8 +89,206 @@ function List({
   );
 }
 
+/** A separator as the Additional Format dialog lists it. */
+const SEPARATOR_NAMES: Readonly<Record<string, string>> = {
+  '': 'None',
+  '.': '. (period)',
+  ',': ', (comma)',
+  ' ': '  (space)',
+};
+
+/** The Additional Format dialog's fields as it edits them, a cleared one undefined. */
+type Draft = { [K in keyof TableAdditionalFormat]?: TableAdditionalFormat[K] | undefined };
+
+/** `a` without its empty fields; undefined when nothing is left. */
+function tidy(a: Draft): TableAdditionalFormat | undefined {
+  const out = Object.fromEntries(
+    Object.entries(a).filter(([, v]) => v !== undefined && v !== ''),
+  ) as TableAdditionalFormat;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** `f` with Additional Format `a` (none when `a` states nothing). */
+function withAdditional(f: TableDataFormat, a: Draft): TableDataFormat {
+  const { additional: _was, ...rest } = f;
+  const t = tidy(a);
+  return t ? { ...rest, additional: t } : rest;
+}
+
+function Check({
+  label,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  checked: boolean;
+  onChange?: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="matchprop-check">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange?.(e.currentTarget.checked)}
+      />
+      {label}
+    </label>
+  );
+}
+
+function Group({ legend, children }: { legend: string; children: ReactNode }) {
+  return (
+    <fieldset className="additional-format-group">
+      <legend>{legend}</legend>
+      {children}
+    </fieldset>
+  );
+}
+
+/**
+ * AutoCAD's Additional Format dialog over the Table Cell Format dialog: what `f`'s Additional
+ * Format is, the Current value showing the first cell (or a sample) as OK would leave it.
+ */
+function AdditionalFormatDialog({
+  f,
+  request,
+  now,
+  onOk,
+  onCancel,
+}: {
+  f: TableDataFormat;
+  request: Request;
+  now: number;
+  onOk: (a: Draft) => void;
+  onCancel: () => void;
+}) {
+  const [a, setA] = useState<Draft>(f.additional ?? {});
+  const [factor, setFactor] = useState(String(f.additional?.factor ?? 1));
+  const ids = { factor: useId(), prefix: useId(), suffix: useId(), dec: useId(), th: useId() };
+  const n = Number(factor);
+  const factorValid = factor.trim() !== '' && Number.isFinite(n) && n !== 0;
+  const next: Draft = { ...a, ...(factorValid && { factor: n }) };
+  const current = tableDataPreview(request.cell, withAdditional(f, next), request.units, now);
+  const symbol = f.type === 'currency' || f.type === 'percentage';
+  const set = (patch: Draft) => setA((was) => ({ ...was, ...patch }));
+  const ok = () => {
+    if (factorValid) onOk(next);
+  };
+  return (
+    <Modal
+      label="Additional Format"
+      className="field-dialog additional-format-dialog"
+      onOk={ok}
+      onCancel={onCancel}
+    >
+      <div className="cad-dialog-field">
+        <span>Current value:</span>
+        <output className="table-cell-format-preview" aria-label="Current value">
+          {current}
+        </output>
+      </div>
+      <label className="cad-dialog-field" htmlFor={ids.factor}>
+        <span>Conversion factor:</span>
+        <input
+          id={ids.factor}
+          type="text"
+          inputMode="decimal"
+          value={factor}
+          aria-invalid={!factorValid}
+          onChange={(e) => setFactor(e.currentTarget.value)}
+        />
+      </label>
+      <Group legend="Additional text">
+        <label className="cad-dialog-field" htmlFor={ids.prefix}>
+          <span>Prefix:</span>
+          <input
+            id={ids.prefix}
+            type="text"
+            disabled={symbol}
+            value={a.prefix ?? ''}
+            onChange={(e) => set({ prefix: e.currentTarget.value })}
+          />
+        </label>
+        <label className="cad-dialog-field" htmlFor={ids.suffix}>
+          <span>Suffix:</span>
+          <input
+            id={ids.suffix}
+            type="text"
+            disabled={symbol}
+            value={a.suffix ?? ''}
+            onChange={(e) => set({ suffix: e.currentTarget.value })}
+          />
+        </label>
+      </Group>
+      <Group legend="Number separators">
+        <label className="cad-dialog-field" htmlFor={ids.dec}>
+          <span>Decimal:</span>
+          <select
+            id={ids.dec}
+            value={a.decimal ?? '.'}
+            onChange={(e) => set({ decimal: e.currentTarget.value })}
+          >
+            {TABLE_DECIMAL_SEPARATORS.map((s) => (
+              <option key={s} value={s}>
+                {SEPARATOR_NAMES[s]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="cad-dialog-field" htmlFor={ids.th}>
+          <span>Thousands:</span>
+          <select
+            id={ids.th}
+            value={a.thousands ?? ''}
+            onChange={(e) => set({ thousands: e.currentTarget.value })}
+          >
+            {TABLE_THOUSANDS_SEPARATORS.map((s) => (
+              <option key={s} value={s}>
+                {SEPARATOR_NAMES[s]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </Group>
+      <Group legend="Zero suppression">
+        <Check
+          label="Leading"
+          checked={a.leading === true}
+          onChange={(c) => set({ leading: c ? true : undefined })}
+        />
+        <Check
+          label="Trailing"
+          checked={a.trailing === true}
+          onChange={(c) => set({ trailing: c ? true : undefined })}
+        />
+        <Check label="0 Feet" checked={false} disabled />
+        <Check label="0 Inches" checked={false} disabled />
+      </Group>
+      {!factorValid && (
+        <p role="alert" className="cell-block-error">
+          Enter a conversion factor other than 0.
+        </p>
+      )}
+      <div className="cad-dialog-buttons">
+        <button type="button" onClick={ok} disabled={!factorValid}>
+          OK
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const AXES = ['X', 'Y', 'Z'] as const;
+
 export function TableCellFormatDialog({ doc, request }: { doc: number; request: Request }) {
   const [f, setF] = useState<TableDataFormat>(request.settings);
+  const [additional, setAdditional] = useState(false);
   const now = useMemo(() => Date.now(), []);
   const ids = { precision: useId(), symbol: useId(), date: useId() };
   const set = (patch: Partial<TableDataFormat>) => setF((was) => ({ ...was, ...patch }));
@@ -172,6 +376,28 @@ export function TableCellFormatDialog({ doc, request }: { doc: number; request: 
               </select>
             </label>
           )}
+          {f.type === 'point' && (
+            <div className="table-cell-format-axes" role="group" aria-label="Coordinates">
+              {AXES.map((axis, k) => {
+                const shown = f.coordinates ?? 7;
+                const on = (shown & (1 << k)) !== 0;
+                return (
+                  <Check
+                    key={axis}
+                    label={axis}
+                    checked={on}
+                    // One coordinate at least stays shown.
+                    disabled={on && (shown & ~(1 << k)) === 0}
+                    onChange={(c) => {
+                      const bits = c ? shown | (1 << k) : shown & ~(1 << k);
+                      const { coordinates: _was, ...rest } = f;
+                      setF(bits === 7 ? rest : { ...rest, coordinates: bits });
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
           {f.type === 'currency' && (
             <>
               <label className="cad-dialog-field" htmlFor={ids.symbol}>
@@ -203,6 +429,27 @@ export function TableCellFormatDialog({ doc, request }: { doc: number; request: 
           )}
         </div>
       </div>
+      {TABLE_ADDITIONAL_TYPES.has(f.type) && (
+        <button
+          type="button"
+          className="additional-format-open"
+          onClick={() => setAdditional(true)}
+        >
+          Additional Format...
+        </button>
+      )}
+      {additional && (
+        <AdditionalFormatDialog
+          f={f}
+          request={request}
+          now={now}
+          onOk={(a) => {
+            setF((was) => withAdditional(was, a));
+            setAdditional(false);
+          }}
+          onCancel={() => setAdditional(false)}
+        />
+      )}
       {!dateValid && (
         <p role="alert" className="cell-block-error">
           Enter a date format, or pick one of the examples.

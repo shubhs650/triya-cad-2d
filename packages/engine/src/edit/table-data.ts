@@ -18,6 +18,21 @@
 //   empty Whole Number or a case-less Text cell from a General one, which they read back as.
 // - Percentage stores the number shown (35 for 35 %), as the sample does.
 // - A date typed as numbers reads day and month in the order the picture puts them.
+//
+// Part 3 adds Additional Format... and a point's X, Y and Z boxes, written in the field format
+// codes the Field dialog writes (`fields.ts`): `%ct8[f]` the conversion factor, `%ps[p,s]` the
+// prefix and suffix, `%zs` 4 leading and 8 trailing zeros, `%ds` / `%th` the decimal and
+// thousands separators by character code, `%pt` the coordinates shown (1 X, 2 Y, 4 Z, as
+// `%pt2` the Y and `%pt4` the Z coordinate in drafters' published examples). Readings chosen
+// where nothing is published (noted in the PR):
+// - The conversion factor changes what is shown, not the value: 254 in a cell converting by
+//   1/25.4 is still 254, shown 10.0, and a number typed there is the value, as in a field.
+// - Currency and Percentage keep `%ps` for their symbol, so their Additional text is not offered.
+// - A point's prefix and suffix go round the point, not each coordinate; with a comma for the
+//   decimal separator its coordinates are listed with semicolons.
+// - Typed text is read with the format's prefix, suffix and separators taken off.
+// The dialog's 0 feet and 0 inches boxes, Negative numbers and List separator are left out:
+// no published example gives their codes.
 import type { TableCell, TableCellValue, TableGeometry } from '../model/types';
 import { formatFieldDate, formatFieldNumber } from './fields';
 import { tableCellShown } from '../annotation/table';
@@ -80,7 +95,39 @@ export interface TableDataFormat {
   /** Currency: its symbol, and whether it follows the number (Append symbol). */
   readonly symbol?: string;
   readonly appendSymbol?: boolean;
+  /** Additional Format... (Angle, Currency, Decimal Number, Percentage, Point). */
+  readonly additional?: TableAdditionalFormat;
+  /** Point: the coordinates shown, X 1, Y 2, Z 4 (`%pt`); absent, all three. */
+  readonly coordinates?: number;
 }
+
+/** The Additional Format dialog's fields; each absent is its default. */
+export interface TableAdditionalFormat {
+  /** Conversion factor (`%ct8[f]`); 1 when absent. */
+  readonly factor?: number;
+  /** Additional text (`%ps`), not offered for Currency and Percentage. */
+  readonly prefix?: string;
+  readonly suffix?: string;
+  /** Number separators (`%ds`, `%th`): the decimal one a period, no thousands one by default. */
+  readonly decimal?: string;
+  readonly thousands?: string;
+  /** Zero suppression (`%zs` 4 and 8). */
+  readonly leading?: true;
+  readonly trailing?: true;
+}
+
+/** The Additional Format dialog's Decimal separator and Thousands separator lists. */
+export const TABLE_DECIMAL_SEPARATORS: readonly string[] = ['.', ',', ' '];
+export const TABLE_THOUSANDS_SEPARATORS: readonly string[] = ['', ',', '.', ' '];
+
+/** Which data types offer Additional Format... */
+export const TABLE_ADDITIONAL_TYPES: ReadonlySet<TableDataType> = new Set([
+  'angle',
+  'currency',
+  'decimal',
+  'percentage',
+  'point',
+]);
 
 const DEFAULT_DATE = 'M/d/yyyy';
 const ANGLE = 2;
@@ -90,8 +137,39 @@ const PERCENTAGE = 0x20;
 const precisionCode = (p: number | undefined) => (p === undefined ? '' : `%pr${p}`);
 const unitsCode = (u: number | undefined) => (u !== undefined && u > 0 ? `%lu${u}` : '');
 
+const ALL_COORDINATES = 7;
+
+/** The `%ps`, `%ct8`, `%zs`, `%ds`, `%th` codes `f`'s Additional Format states. */
+function additionalCodes(f: TableDataFormat): string {
+  const a = f.additional;
+  if (!a || !TABLE_ADDITIONAL_TYPES.has(f.type)) return '';
+  const symbol = f.type === 'currency' || f.type === 'percentage';
+  let out = '';
+  if (!symbol && ((a.prefix ?? '') !== '' || (a.suffix ?? '') !== '')) {
+    out += `%ps[${a.prefix ?? ''},${a.suffix ?? ''}]`;
+  }
+  if (a.factor !== undefined && a.factor !== 1 && Number.isFinite(a.factor) && a.factor !== 0) {
+    out += `%ct8[${a.factor}]`;
+  }
+  const zeros = (a.leading ? 4 : 0) + (a.trailing ? 8 : 0);
+  if (zeros) out += `%zs${zeros}`;
+  if (a.decimal !== undefined && a.decimal !== '.' && a.decimal !== '') {
+    out += `%ds${a.decimal.charCodeAt(0)}`;
+  }
+  if (a.thousands !== undefined && a.thousands !== '') out += `%th${a.thousands.charCodeAt(0)}`;
+  return out;
+}
+
 /** The format string (DXF 300) data format `f` states. */
 export function tableFormatString(f: TableDataFormat): string {
+  const coordinates =
+    f.type === 'point' && f.coordinates !== undefined && f.coordinates !== ALL_COORDINATES
+      ? `%pt${f.coordinates}`
+      : '';
+  return baseFormatString(f) + additionalCodes(f) + coordinates;
+}
+
+function baseFormatString(f: TableDataFormat): string {
   switch (f.type) {
     case 'angle':
       return `%au${f.format ?? 0}${precisionCode(f.precision)}`;
@@ -119,6 +197,32 @@ const codeNumber = (f: string, code: string): number | undefined => {
   return m ? Number(m[1]) : undefined;
 };
 
+const PS = /%ps\[([^,\]]*),?([^\]]*)\]/;
+
+/** The Additional Format format string `f` states, `withText` its `%ps` too; absent when none. */
+function additionalOf(f: string, withText: boolean): TableAdditionalFormat | undefined {
+  const ps = withText ? PS.exec(f) : null;
+  const ct = /%ct8\[([^\]]*)\]/.exec(f);
+  const factor = ct ? Number(ct[1]) : undefined;
+  const zs = codeNumber(f, 'zs') ?? 0;
+  const ds = codeNumber(f, 'ds');
+  const th = codeNumber(f, 'th');
+  const a: TableAdditionalFormat = {
+    ...(ps?.[1] && { prefix: ps[1] }),
+    ...(ps?.[2] && { suffix: ps[2] }),
+    ...(factor !== undefined && Number.isFinite(factor) && factor !== 1 && { factor }),
+    ...(ds !== undefined && ds !== 46 && { decimal: String.fromCharCode(ds) }),
+    ...(th !== undefined && { thousands: String.fromCharCode(th) }),
+    ...((zs & 4) !== 0 && { leading: true as const }),
+    ...((zs & 8) !== 0 && { trailing: true as const }),
+  };
+  return Object.keys(a).length > 0 ? a : undefined;
+}
+
+/** `f` with `additional` when there is one. */
+const withAdditional = <T extends object>(f: T, a: TableAdditionalFormat | undefined) =>
+  a ? { ...f, additional: a } : f;
+
 /** The data type cell `c` has, from its value and its format string. */
 export function tableDataFormatOf(c: TableCell): TableDataFormat {
   const f = c.valueFormat ?? '';
@@ -131,27 +235,47 @@ export function tableDataFormatOf(c: TableCell): TableDataFormat {
   }
   const lu = codeNumber(f, 'lu');
   const numberFormat = { ...(lu !== undefined && { format: lu }), ...withPrecision };
-  if (v?.kind === 'point') return { type: 'point', ...numberFormat };
-  const units = v?.kind === 'double' ? v.units : 0;
-  if (units === ANGLE || /%au\d/.test(f)) {
-    return { type: 'angle', format: codeNumber(f, 'au') ?? 0, ...withPrecision };
+  const additional = additionalOf(f, true);
+  const pt = codeNumber(f, 'pt');
+  const coordinates = pt !== undefined && pt !== ALL_COORDINATES ? { coordinates: pt } : {};
+  if (v?.kind === 'point' || pt !== undefined) {
+    return withAdditional({ type: 'point', ...numberFormat, ...coordinates }, additional);
   }
-  const ps = /%ps\[([^,\]]*),?([^\]]*)\]/.exec(f);
-  if (units === PERCENTAGE || ps?.[2] === '%') return { type: 'percentage', ...withPrecision };
-  if (units === CURRENCY || ps) {
-    const before = ps?.[1] ?? '';
-    const after = ps?.[2] ?? '';
-    return {
-      type: 'currency',
-      symbol: before || after || '$',
-      ...(before === '' && after !== '' && { appendSymbol: true }),
-      ...withPrecision,
-    };
+  const units = v?.kind === 'double' ? v.units : undefined;
+  if (units === ANGLE || /%au\d/.test(f)) {
+    return withAdditional(
+      { type: 'angle', format: codeNumber(f, 'au') ?? 0, ...withPrecision },
+      additional,
+    );
+  }
+  const ps = PS.exec(f);
+  const before = ps?.[1] ?? '';
+  const after = ps?.[2] ?? '';
+  // A number stating no unit type is a Decimal Number whatever its prefix or suffix; without a
+  // value, a lone currency symbol or a percent sign names the type.
+  const plain = units === 0;
+  const symbolAlone = (a: string, b: string) => a === '' && TABLE_CURRENCY_SYMBOLS.includes(b);
+  if (units === PERCENTAGE || (!plain && before === '' && after === '%')) {
+    return withAdditional({ type: 'percentage', ...withPrecision }, additionalOf(f, false));
+  }
+  if (
+    units === CURRENCY ||
+    (!plain && ps && (symbolAlone(before, after) || symbolAlone(after, before)))
+  ) {
+    return withAdditional(
+      {
+        type: 'currency',
+        symbol: before || after || '$',
+        ...(before === '' && after !== '' && { appendSymbol: true }),
+        ...withPrecision,
+      },
+      additionalOf(f, false),
+    );
   }
   const tc = codeNumber(f, 'tc');
   if (tc !== undefined) return { type: 'text', format: tc };
-  if (v?.kind === 'double' || lu !== undefined || precision !== undefined) {
-    return { type: 'decimal', ...numberFormat };
+  if (v?.kind === 'double' || lu !== undefined || precision !== undefined || additional) {
+    return withAdditional({ type: 'decimal', ...numberFormat }, additional);
   }
   return { type: 'general' };
 }
@@ -166,20 +290,51 @@ export function tableValueText(v: TableCellValue, format: string, units: Drawing
       return formatFieldNumber(v.n, format, units, format === '' ? 'plain' : 'linear');
     case 'date':
       return formatFieldDate(new Date(v.time), format === '' ? DEFAULT_DATE : format);
-    case 'point':
-      return v.point
+    case 'point': {
+      // The prefix and suffix go round the point; each coordinate takes the rest.
+      const ps = PS.exec(format);
+      const each = format.replace(PS, '').replace(/%pt\d*/g, '');
+      const shown = codeNumber(format, 'pt') ?? ALL_COORDINATES;
+      const ds = codeNumber(format, 'ds');
+      const list = ds === 44 ? '; ' : ', ';
+      const coords = v.point
         .slice(0, v.dimensions)
-        .map((x) => formatFieldNumber(x, format, units, format === '' ? 'plain' : 'linear'))
-        .join(', ');
+        .filter((_, k) => (shown & (1 << k)) !== 0)
+        .map((x) => formatFieldNumber(x, each, units, each === '' ? 'plain' : 'linear'))
+        .join(list);
+      return (ps?.[1] ?? '') + coords + (ps?.[2] ?? '');
+    }
   }
 }
 
+/** `text` without `affix` at its start (`end` false) or end, if it is there. */
+function without(text: string, affix: string | undefined, end: boolean): string {
+  if (!affix) return text;
+  if (end) return text.endsWith(affix) ? text.slice(0, text.length - affix.length) : text;
+  return text.startsWith(affix) ? text.slice(affix.length) : text;
+}
+
+/**
+ * Text typed in a cell of data format `f` as AutoCAD reads a number: the Additional Format's
+ * prefix and suffix taken off, its thousands separator left out and its decimal one a period.
+ */
+function plainTyped(text: string, f: TableDataFormat): string {
+  const a = f.additional;
+  let t = text.trim();
+  if (!a) return t;
+  t = without(without(t, a.prefix, false), a.suffix, true).trim();
+  if (a.thousands) {
+    const sep = a.thousands.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp(`(\\d)${sep}(?=\\d{3}(?!\\d))`, 'g'), '$1');
+  }
+  if (a.decimal && a.decimal !== '.') t = t.split(a.decimal).join('.');
+  return t;
+}
+
 /** A number typed in a cell: its currency or percent sign and thousands separators left out. */
-function typedNumber(text: string, lunits: number): number | undefined {
-  const t = text
-    .trim()
-    .replace(/^[$€£¥]\s*|\s*[$€£¥%]$/g, '')
-    .replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
+function typedNumber(text: string, lunits: number, commas = true): number | undefined {
+  let t = text.trim().replace(/^[$€£¥]\s*|\s*[$€£¥%]$/g, '');
+  if (commas) t = t.replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
   if (t === '') return undefined;
   return parseDistance(t, lunits) ?? parseNumber(t);
 }
@@ -229,6 +384,9 @@ export function tableTypedValue(
   units: DrawingUnits,
 ): TableCellValue | undefined {
   const lunits = f.format !== undefined && f.format > 0 ? f.format : units.lunits;
+  // A comma separates nothing but decimals where it is the decimal separator.
+  const commas = f.additional?.decimal !== ',';
+  if (f.type !== 'point' && f.type !== 'date' && f.additional) text = plainTyped(text, f);
   switch (f.type) {
     case 'angle': {
       const n = typedAngle(text, f.format ?? 0);
@@ -237,13 +395,13 @@ export function tableTypedValue(
     case 'currency':
     case 'percentage':
     case 'decimal': {
-      const n = typedNumber(text, f.type === 'decimal' ? lunits : 2);
+      const n = typedNumber(text, f.type === 'decimal' ? lunits : 2, commas);
       if (n === undefined) return undefined;
       const u = f.type === 'currency' ? CURRENCY : f.type === 'percentage' ? PERCENTAGE : 0;
       return { kind: 'double', n, units: u };
     }
     case 'whole': {
-      const n = typedNumber(text, 2);
+      const n = typedNumber(text, 2, commas);
       return n === undefined ? undefined : { kind: 'long', n: Math.round(n) };
     }
     case 'date': {
@@ -251,7 +409,10 @@ export function tableTypedValue(
       return time === undefined ? undefined : { kind: 'date', time };
     }
     case 'point': {
-      const xs = text.split(/[,;:]/).map((s) => typedNumber(s, lunits));
+      const a = f.additional;
+      const t = without(without(text.trim(), a?.prefix, false), a?.suffix, true);
+      const parts = commas ? t.split(/[,;:]/) : t.split(/[;:]/);
+      const xs = parts.map((s) => typedNumber(plainTyped(s, f), lunits, false));
       if (xs.length < 2 || xs.length > 3 || xs.some((x) => x === undefined)) return undefined;
       const [x, y, z = 0] = xs as number[];
       return { kind: 'point', point: [x!, y!, z], dimensions: xs.length === 2 ? 2 : 3 };
