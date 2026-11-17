@@ -37,6 +37,7 @@ import {
   tableContentCodes,
 } from '../map/table-content';
 import { editedTableContent, newTableContent, same, type Resolver } from './entities';
+import { statesBorderExtras } from './table-borders';
 
 export { ROUNDTRIP_DICTIONARY_KEY, ROUNDTRIP_TABLE };
 
@@ -105,10 +106,14 @@ export function writeEditedTableContents(
     if (CONTENT_FIELDS.every((k) => same(b[k], a[k]))) continue;
     // A table that came without AutoCAD 2008 data (a DXF from another program) gets it as a new
     // table does when it now states what only that data holds: rows or cells on cell styles
-    // other than their place gives them (M4-16 part 5), or locked cells (part 6), which the legacy
-    // codes cannot state.
+    // other than their place gives them (M4-16 part 5), locked cells (part 6), or border
+    // linetypes, double lines and hidden edges (part 7), which the legacy codes cannot state.
     if (!acad.xDictionary?.getEntry(ROUNDTRIP_DICTIONARY_KEY)) {
-      if (statesCellStyles(a) || a.cells.some((row) => row.some((c) => c.locked))) {
+      if (
+        statesCellStyles(a) ||
+        a.cells.some((row) => row.some((c) => c.locked)) ||
+        statesBorderExtras(a)
+      ) {
         writeTableContent(doc, r, acad, a);
       }
       continue;
