@@ -1271,6 +1271,23 @@ button {
   font-weight: 600;
 }
 
+/* M5-04: an unloaded xref, and what Reload, Unload and Detach did. */
+.references-table tr[data-status='unloaded'] .status {
+  color: var(--chrome-text-muted);
+  font-style: italic;
+}
+
+.references-table tbody tr {
+  cursor: default;
+}
+
+.references-said {
+  margin: 0 8px 6px;
+  padding: 0;
+  list-style: none;
+  color: var(--chrome-text-muted);
+}
+
 .references-table .path {
   color: var(--chrome-text-muted);
 }

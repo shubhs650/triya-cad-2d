@@ -11,6 +11,7 @@ import type {
   Clipboard,
   EntityId,
   FileAction,
+  Handle,
   MTextGeometry,
   NamedViewInfo,
   PaletteName,
@@ -144,6 +145,8 @@ export interface ViewContext {
    * tab shown last.
    */
   readonly tab?: (name: string | undefined) => ViewReply;
+  /** -XREF Unload and Reload (M5-04): the app unloads or reloads the xrefs, as the palette does. */
+  readonly xref?: (action: 'unload' | 'reload', blocks: readonly Handle[]) => Promise<ViewReply>;
   /** ULAYERS (M2-56 part 1): the Underlay Layers dialog, answered when it closes. */
   readonly underlayLayers?: (
     r: Extract<ViewRequest, { op: 'underlayLayers' }>,
@@ -183,6 +186,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'plotSetup' || r.op === 'plotScript' || r.op === 'exportScript') {
     return ctx.plot ? ctx.plot(r) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'xref') {
+    return ctx.xref ? ctx.xref(r.action, r.blocks) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };

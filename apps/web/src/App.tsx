@@ -509,6 +509,11 @@ function viewContext(id: number): ViewContext {
         underlays: r.underlays,
         ...(r.current !== undefined && { current: r.current }),
       }),
+    // -XREF Unload and Reload (M5-04), as the References palette's buttons.
+    xref: async (action, blocks) => ({
+      ok: true,
+      messages: await (action === 'unload' ? unloadXrefs(id, blocks) : reloadXrefs(id, blocks)),
+    }),
     // PROPERTIES and PROPERTIESCLOSE (M2-21); QUICKPROPERTIES (M2-35 part 21) shows Quick
     // Properties for the objects it left selected, whatever QPMODE says.
     palette: (name, open) => {
@@ -1154,7 +1159,10 @@ async function supplyNow(sources: readonly Supplied[], mode: 'drop' | 'reference
     if (!parsed.has(file)) parsed.set(file, file.getFile().then(openDrawing));
     await loadXrefs(doc, xrefs, file.name, parsed.get(file)!);
   });
-  for (const f of used) if (f.handle) keep.push(f.handle);
+  for (const f of used) {
+    if (f.handle) keep.push(f.handle);
+    xrefSources.set(fileKey(f.name), f);
+  }
 
   const named = mode === 'references' ? referencedFileKeys() : undefined;
   let added = false;
@@ -1181,6 +1189,82 @@ async function supplyNow(sources: readonly Supplied[], mode: 'drop' | 'reference
   }
 }
 
+/**
+ * The drawing files that answered xrefs this session, by name: XREF Reload reads them again (a
+ * kept file handle reads the file as saved now). Kept folders are read again as well.
+ */
+const xrefSources = new Map<string, Supplied>();
+
+/** The name of xref `block` of drawing `doc`, for messages. */
+function xrefName(doc: number, block: string): string {
+  const d = store.getSnapshot().docs.find((x) => x.id === doc);
+  const row = d && referencesOf(d.opened.init, engines.changesOf(doc), suppliedFiles);
+  return row?.find((r) => r.handle === block)?.name ?? block;
+}
+
+/**
+ * XREF Unload (M5-04): each xref's content taken out until it is reloaded. Like a load, it
+ * changes what the drawing shows, not the drawing: nothing new to save. One line each.
+ */
+async function unloadXrefs(doc: number, blocks: readonly string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const block of blocks) {
+    const name = xrefName(doc, block);
+    const r = await engines.edit(doc, { kind: 'xref-unload', block });
+    out.push(r.ok ? `Xref "${name}" has been unloaded.` : r.message);
+  }
+  await Promise.all(controllersOf(doc).map((c) => c.flush()));
+  store.edited(doc, false);
+  return out;
+}
+
+/**
+ * XREF Reload (M5-04): each xref emptied, then loaded from the file of its name this session
+ * found (dropped, picked, or in a kept folder), read again. One line each: reloaded, or not
+ * found (its file is matched by name again when dropped).
+ */
+async function reloadXrefs(doc: number, blocks: readonly string[]): Promise<string[]> {
+  const out: string[] = [];
+  const names = new Map<string, string>();
+  for (const block of blocks) {
+    const name = xrefName(doc, block);
+    const r = await engines.edit(doc, { kind: 'xref-unload', block, reload: true });
+    if (r.ok) names.set(block, name);
+    else out.push(r.message);
+  }
+  await Promise.all(controllersOf(doc).map((c) => c.flush()));
+  store.edited(doc, false);
+  const waiting = waitingXrefs().find((w) => w.doc === doc)?.xrefs ?? [];
+  const sources = new Set<Supplied>();
+  for (const x of waiting) {
+    const s = xrefSources.get(fileKey(fileNameOf(x.path)));
+    if (s) sources.add(s);
+  }
+  supply([...sources], 'references');
+  await referenceQueue;
+  await resolveKept();
+  await referenceQueue;
+  const still = new Set(
+    (waitingXrefs().find((w) => w.doc === doc)?.xrefs ?? []).map((x) => x.block),
+  );
+  for (const [block, name] of names) {
+    out.push(
+      still.has(block)
+        ? `Xref "${name}" not found: drop its file, or the folder that holds it, on the window.`
+        : `Xref "${name}" has been reloaded.`,
+    );
+  }
+  return out;
+}
+
+/** XREF Detach (M5-04) from the References palette: one XREF undo step. */
+async function detachXrefs(doc: number, blocks: readonly string[]): Promise<string | undefined> {
+  const r = await engines.edit(doc, { kind: 'xref-detach', blocks });
+  if (!r.ok) return r.message;
+  store.edited(doc);
+  return undefined;
+}
+
 /** The xrefs every open drawing is waiting for. */
 function waitingXrefs(): { doc: number; xrefs: PendingXref[] }[] {
   return store
@@ -1201,7 +1285,8 @@ function referencedFileKeys(): Set<string> {
 
 /**
  * Loads a drawing into xrefs of open drawing `doc` that name it (M1-21), as AutoCAD resolves
- * an xref found by name. An xref that is loaded already keeps its content (RELOAD is M5-04).
+ * an xref found by name. An xref that is loaded already keeps its content (XREF Reload empties
+ * it first, M5-04).
  */
 async function loadXrefs(
   doc: number,
@@ -1850,6 +1935,24 @@ export function App() {
             waiting={waitingHandles}
             onFiles={(files) => supply(files.map(fromFile), 'references')}
             onReconnect={() => void resolveKept(true)}
+            onUnload={(rows) =>
+              unloadXrefs(
+                active.id,
+                rows.map((r) => r.handle),
+              )
+            }
+            onReload={(rows) =>
+              reloadXrefs(
+                active.id,
+                rows.map((r) => r.handle),
+              )
+            }
+            onDetach={(rows) =>
+              detachXrefs(
+                active.id,
+                rows.map((r) => r.handle),
+              )
+            }
             onClose={() => setPalette(undefined)}
           />
         )}

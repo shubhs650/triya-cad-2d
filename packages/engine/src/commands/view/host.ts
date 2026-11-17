@@ -6,6 +6,7 @@
 import type { Vec2 } from '../../geom/types';
 import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
+import type { Handle } from '../../model/handle';
 import type { Color, HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 import type { ClipboardPicture } from '../../edit/picture';
@@ -165,6 +166,16 @@ export type ViewRequest =
   | { readonly op: 'clipboard'; readonly content?: Clipboard }
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes a palette. */
   | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean }
+  /**
+   * -XREF Unload and Reload (M5-04): the app unloads the xrefs `blocks`, or reloads them from
+   * the files it finds by name (a load reads a file, which only the app can). Answers with what
+   * it did, one line each, in `messages`.
+   */
+  | {
+      readonly op: 'xref';
+      readonly action: 'unload' | 'reload';
+      readonly blocks: readonly Handle[];
+    }
   /**
    * ULAYERS (M2-56 part 1): the Underlay Layers dialog over the drawing's underlay references,
    * opened on `current` (the one selected first) or the first. The app reads each PDF's layers;
@@ -369,7 +380,7 @@ export interface PlotScript {
  * The palettes a command opens or closes (M2-21): the Properties palette, and Quick Properties
  * (QUICKPROPERTIES, M2-35 part 21), shown for the objects selected whatever QPMODE says.
  */
-export type PaletteName = 'properties' | 'quick';
+export type PaletteName = 'properties' | 'quick' | 'references';
 
 /**
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows
@@ -406,6 +417,8 @@ export type ViewReply =
       readonly enclosed?: EnclosedSpace;
       /** What a `pick` or `select` took. */
       readonly ids?: readonly EntityId[];
+      /** What an `xref` request did, one line each (M5-04). */
+      readonly messages?: readonly string[];
       /** What `textBox` measured. */
       readonly box?: Box;
       /** What `textWidths` measured, one per text. */

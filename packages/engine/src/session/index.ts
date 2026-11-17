@@ -31,7 +31,13 @@ import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
 import { applyToReplica } from '../model/replica';
 import type { Layout, LayoutPlot } from '../model/types';
-import { xrefLoadChange, xrefLoadProblem } from '../model/xref';
+import {
+  xrefLoadChange,
+  xrefLoadProblem,
+  xrefUnloadChange,
+  xrefUnloadProblem,
+} from '../model/xref';
+import { xrefDetachChange, xrefDetachProblem } from '../edit/xrefs';
 import type { EntityId } from '../model/entity-ids';
 import type { EntityType, TableCellLock } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
@@ -131,6 +137,24 @@ export interface XrefLoadEdit {
 }
 
 /**
+ * The References palette's Unload and Reload (M5-04, `xrefUnloadChange`): the xref's loaded
+ * content taken out, the xref left Unloaded, or with `reload` waiting for its file again (the
+ * app then loads the file it finds). Like a load, not an undo step: it changes what the drawing
+ * shows, not the drawing.
+ */
+export interface XrefUnloadEdit {
+  readonly kind: 'xref-unload';
+  readonly block: Handle;
+  readonly reload?: boolean;
+}
+
+/** The References palette's Detach (M5-04, `xrefDetachChange`): one XREF undo step. */
+export interface XrefDetachEdit {
+  readonly kind: 'xref-detach';
+  readonly blocks: readonly Handle[];
+}
+
+/**
  * The navigation bar's Save view (M2-29): the view shown kept in the drawing as `name`, as VIEW
  * Save keeps it (`saveNamedView`), one VIEW undo step.
  */
@@ -204,6 +228,8 @@ export type EngineEdit =
   | NamedLayerStateEdit
   | LayoutEdit
   | XrefLoadEdit
+  | XrefUnloadEdit
+  | XrefDetachEdit
   | NamedViewEdit
   | ViewTableEdit
   | SessionVariableEdit
@@ -643,6 +669,8 @@ export class EngineSession {
   /** Applies an edit to the document; a refused edit changes nothing. */
   edit(e: EngineEdit): EditResult {
     if (e.kind === 'xref-load') return this.#xrefLoad(e);
+    if (e.kind === 'xref-unload') return this.#xrefUnload(e);
+    if (e.kind === 'xref-detach') return this.#xrefDetach(e);
     if (e.kind === 'view') return this.#viewEdit(e);
     if (e.kind === 'view-delete' || e.kind === 'view-rename' || e.kind === 'view-category')
       return this.#viewTableEdit(e);
@@ -762,6 +790,26 @@ export class EngineSession {
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }
+    return { ok: true, change };
+  }
+
+  #xrefUnload(e: XrefUnloadEdit): EditResult {
+    const problem = xrefUnloadProblem(this.model, e.block, e.reload);
+    if (problem) return { ok: false, message: problem };
+    const change = xrefUnloadChange(this.model, e.block, e.reload);
+    if (Object.keys(change).length) this.model.apply(change);
+    return { ok: true, change };
+  }
+
+  #xrefDetach(e: XrefDetachEdit): EditResult {
+    for (const h of e.blocks) {
+      const problem = xrefDetachProblem(this.model, h);
+      if (problem) return { ok: false, message: problem };
+    }
+    const change = xrefDetachChange(this.model, e.blocks);
+    if (Object.keys(change).length === 0) return { ok: true, change };
+    this.model.apply(change);
+    this.#step('XREF', change);
     return { ok: true, change };
   }
 
