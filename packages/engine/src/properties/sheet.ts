@@ -366,6 +366,39 @@ export function patternOrigin(g: HatchGeometry): Vec2 {
   return (isPatterned(g) && g.patternLines[0]?.base) || { x: 0, y: 0 };
 }
 
+/**
+ * A pattern hatch's Background color (M4-18), the last of AutoCAD 2024's Pattern rows: None, or
+ * the index or true colour HPBACKGROUNDCOLOR gave it (M4-07 part 3, `HatchGeometry.background`).
+ * Like a gradient's colours it takes no ByLayer, ByBlock or colour-book colour, which the
+ * HATCHBACKGROUNDCOLOR xdata cannot state. A solid fill or a gradient has no lines to put one
+ * behind, so it has no row.
+ */
+function backgroundRows(es: readonly Entity[]): PropertyRow[] {
+  if (es.length === 0) return [];
+  const bg = (e: Entity) => geomOf<'HATCH'>(e).background;
+  const options = new Map<string, string>([['none', 'None']]);
+  for (const c of STANDARD_COLORS) if (c.kind === 'aci') options.set(colorValue(c), colorLabel(c));
+  for (const e of es) {
+    const c = bg(e);
+    if (c && !options.has(colorValue(c))) options.set(colorValue(c), colorLabel(c));
+  }
+  return [
+    {
+      ...row(es, {
+        key: 'hatchBackground',
+        label: 'Background color',
+        kind: 'choice',
+        options: [...options].map(([value, label]) => ({ value, label })),
+        get: (e) => {
+          const c = bg(e);
+          return c ? colorValue(c) : 'none';
+        },
+      }),
+      colorDialog: 'true',
+    },
+  ];
+}
+
 /** DXF 470's names, as the Hatch and Gradient dialog lays its nine swatches out. */
 export const GRADIENT_NAMES: readonly string[] = [
   'LINEAR',
@@ -1193,6 +1226,7 @@ function typeSections(
           options: ISLAND_STYLES,
           get: (e) => String(g(e).style),
         }),
+        ...backgroundRows(patterned),
       ]);
       break;
     }

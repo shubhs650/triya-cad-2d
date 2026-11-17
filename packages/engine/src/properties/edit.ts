@@ -11,6 +11,12 @@ import { moveBy, turnAbout } from '../edit/similarity';
 import { dissociateHatch, transformObjects } from '../edit/edit';
 import { rescaledReference } from '../edit/transform';
 import { relaidLines } from '../edit/hatch-lines';
+import {
+  HATCH_BACKGROUND_APP,
+  hatchBackgroundAppId,
+  withHatchBackground,
+  type BackgroundColor,
+} from '../edit/hatch-background';
 import { arrowheadBlockName } from '../edit/arrowhead-blocks';
 import { JUSTIFICATIONS, rejustified } from '../commands/modify/attributes';
 import type { PatternPlacement, PlacedPattern, TextOutline } from '../commands/view/host';
@@ -469,6 +475,45 @@ function gradientChange(
 }
 
 /**
+ * A pattern hatch's Background color (M4-18): None, or an index or true colour (no ByLayer,
+ * ByBlock or colour-book colour, which the 1071 cannot state), set as -HATCHEDIT's COlor sets
+ * it (M4-07 part 3): `HatchGeometry.background` and the HATCHBACKGROUNDCOLOR xdata together, the
+ * APPID registered when the drawing first needs it. A solid fill or a gradient keeps none.
+ */
+function hatchBackgroundEdit(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  entities: readonly Entity[],
+  value: PropertyValue,
+): { readonly changed: number; readonly invalid?: string } {
+  let color: BackgroundColor | undefined;
+  if (value !== 'none') {
+    const c = typeof value === 'string' ? parseColorValue(value) : undefined;
+    if (!c || c.kind === 'byLayer' || c.kind === 'byBlock') return { changed: 0, invalid: INVALID };
+    if (c.kind === 'rgb' && c.bookName !== undefined) return { changed: 0, invalid: INVALID };
+    color = c;
+  }
+  const hatches = entities.filter(
+    (e): e is Entity & { geom: HatchGeometry } =>
+      e.geom.kind === 'HATCH' && isPatterned(e.geom) && !same(e.geom.background, color),
+  );
+  if (hatches.length === 0) return { changed: 0 };
+  const app = color
+    ? hatchBackgroundAppId(b, model)
+    : [...model.tables.appIds.values()].find((r) => r.name.toUpperCase() === HATCH_BACKGROUND_APP)
+        ?.handle;
+  for (const e of hatches) {
+    const { background: _old, ...rest } = e.geom;
+    const patch: { -readonly [K in keyof EntityPatch]: EntityPatch[K] } = {
+      geom: color ? { ...rest, background: color } : rest,
+    };
+    if (app) patch.xdata = withHatchBackground(e.xdata, app, color);
+    b.updateEntity(e.id, patch);
+  }
+  return { changed: hatches.length };
+}
+
+/**
  * The hatches a Pattern name edit gives a pattern the app's library must place first (not SOLID,
  * not a gradient, not one already of that name), each with where it places it.
  */
@@ -763,6 +808,9 @@ export function applyPropertyEdit(
     if (typeof edit.value !== 'string') return { changed: 0, refused, invalid: INVALID };
     const changed = setHyperlink(b, model, editable, edit.value);
     return changed === 'invalid' ? { changed: 0, refused, invalid: INVALID } : { changed, refused };
+  }
+  if (edit.key === 'hatchBackground') {
+    return { ...hatchBackgroundEdit(b, model, editable, edit.value), refused };
   }
   const attribute = /^attribute:(.+)$/.exec(edit.key);
   if (attribute) return { ...attributeEdit(b, editable, attribute[1]!, edit.value), refused };
