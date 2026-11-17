@@ -546,9 +546,15 @@ function SpellMenu({
       live = false;
     };
   }, [target.word]);
-  // The first item takes the focus once the suggestions are in.
+  // The menu holds the focus from the moment it opens, before the spelling worker's
+  // suggestions are in, so arrow keys typed straight after Shift+F10 reach it, not the text.
+  useLayoutEffect(() => {
+    box.current?.focus();
+  }, []);
+  // The first item takes the focus once the suggestions are in, unless a key already moved it.
   useEffect(() => {
-    if (suggestions) box.current?.querySelector<HTMLButtonElement>('button:enabled')?.focus();
+    if (suggestions && document.activeElement === box.current)
+      box.current?.querySelector<HTMLButtonElement>('button:enabled')?.focus();
   }, [suggestions]);
   return (
     <div
@@ -556,6 +562,7 @@ function SpellMenu({
       className="mtext-menu spell-menu"
       role="menu"
       aria-label={`Spelling: ${target.word}`}
+      tabIndex={-1}
       style={{ left: target.left, top: target.top }}
       // The editor keeps its selection; the menu's buttons take clicks.
       onMouseDown={(e) => e.preventDefault()}
@@ -570,9 +577,11 @@ function SpellMenu({
         if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
         e.preventDefault();
         const items = [...box.current!.querySelectorAll<HTMLButtonElement>('button:enabled')];
+        // From the menu itself (no item yet), Down goes to the first item and Up to the last.
         const i = items.indexOf(document.activeElement as HTMLButtonElement);
         const n = items.length;
-        items[(i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]?.focus();
+        const from = i < 0 ? (e.key === 'ArrowDown' ? n - 1 : 0) : i;
+        items[(from + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]?.focus();
       }}
     >
       {suggestions === undefined ? (
