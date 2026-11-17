@@ -45,11 +45,14 @@ import {
   DictionaryVariable,
   DimensionStyle,
   ExtendedDataReference,
+  Insert,
   Layer,
   LineType,
   Material,
   MLineStyle,
   MultiLeaderStyle,
+  Polyline,
+  Seqend,
   Table,
   TableStyle,
   TextStyle,
@@ -505,6 +508,17 @@ export function planPurge(
       if (!t || t.referrers.has(h) || t.acad.owner === o) return;
       // A reference Triya maps that the save changes away.
       if (after.has(h) && refersBefore(h, t) && !refersAfter(h, t)) return;
+      // A polyline's VERTEX and SEQEND and an INSERT's SEQEND go to their owner's new layer
+      // when the save moves it (writeProps): LAYMRG or a merge in the Layer Properties Manager
+      // moving a block reference with attributes off a layer it purges (M5-06 part 2).
+      const parent = o.owner;
+      if (
+        t.table === 'layers' &&
+        (parent instanceof Polyline || (parent instanceof Insert && o instanceof Seqend))
+      ) {
+        const p = hex(parent.handle);
+        if (after.has(p) && refersBefore(p, t) && !refersAfter(p, t)) return;
+      }
       t.referrers.set(h, `${o.objectName} ${h} refers to it`);
     });
   }

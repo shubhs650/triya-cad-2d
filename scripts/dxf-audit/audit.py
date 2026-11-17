@@ -53,6 +53,10 @@ FIXTURE_SAVES = (
     ("fixtures/xref/xref-parent.dxf", "bind-objects"),
     # XCLIP New boundary, OFF, Delete and generate Polyline on ezdxf's xclip.dxf (M5-04 part 3).
     ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip"),
+    # LAYDEL and LAYMRG of every layer they can take on ACadSharp's AC1032 sample (M5-06 part 2,
+    # packages/testkit/src/layers/layer-cleanup.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laymrg"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

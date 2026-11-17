@@ -141,6 +141,8 @@ export interface UnmappedEntity {
   readonly handle: string;
   /** DXF type name. */
   readonly type: string;
+  /** Its LAYER's handle: the layer cannot go while the object stays (M5-06 part 2). */
+  readonly layer?: string;
   readonly reason:
     | 'not mapped yet'
     | 'tilted plane'
@@ -409,7 +411,12 @@ function insertGeometry(e: Insert, ctx: Ctx): EntityGeometry | UnmappedEntity['r
   for (const a of e.attributes as unknown as AttributeEntity[]) {
     const apl = plane(a.normal);
     if (apl === 'tilted')
-      ctx.report({ handle: hex(a.handle), type: a.objectName, reason: 'tilted plane' });
+      ctx.report({
+        handle: hex(a.handle),
+        type: a.objectName,
+        layer: hex(a.layer.handle),
+        reason: 'tilted plane',
+      });
     else attributes.push({ ...entityProps(a), ...attributeFields(a, apl, ctx) });
   }
   const multiple = e.columnCount > 1 || e.rowCount > 1;
@@ -1980,7 +1987,8 @@ function entityProps(e: Entity): EntityProps & ObjectCommon {
 
 function entity(e: Entity, owner: BlockRecord, ctx: Ctx): EntityInit | UnmappedEntity {
   const geom = geometry(e, ctx);
-  if (typeof geom === 'string') return { handle: hex(e.handle), type: e.objectName, reason: geom };
+  if (typeof geom === 'string')
+    return { handle: hex(e.handle), type: e.objectName, layer: hex(e.layer.handle), reason: geom };
   return { ...entityProps(e), type: geom.kind, owner: hex(owner.handle), geom };
 }
 

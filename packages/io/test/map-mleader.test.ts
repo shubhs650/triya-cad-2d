@@ -331,7 +331,7 @@ describe('MULTILEADER', () => {
     m.contextData.baseVertical = new XYZ(0, 0, 1);
 
     expect(mapEntities(doc).unmapped).toEqual([
-      { handle: H(m), type: 'MULTILEADER', reason: 'tilted plane' },
+      { handle: H(m), type: 'MULTILEADER', layer: H(m.layer), reason: 'tilted plane' },
     ]);
   });
 });
