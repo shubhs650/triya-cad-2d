@@ -575,7 +575,7 @@ function TableStyleEditor(props: {
               </button>
               <button
                 type="button"
-                aria-label="Manage Cell Styles dialog"
+                aria-label="Manage cell style list"
                 title="Manage Cell Styles dialog"
                 onClick={() => setManaging(true)}
               >
