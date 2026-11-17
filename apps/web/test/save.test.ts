@@ -198,6 +198,17 @@ describe('saveDrawing', () => {
     await saveDrawing('a.dwg', { bytes: BYTES, inPlace: false }, changes, 'saveas', e);
     expect(order).toEqual(['pick', 'changes']);
     expect(e.write).toHaveBeenCalledWith(BYTES, CHANGES);
+    // Given the name it is saved as, which a Filename field shows (FIELDEVAL, M4-10 part 3).
+    expect(changes).toHaveBeenCalledWith('b.dxf');
+    const download = vi.fn(() => Promise.resolve(CHANGES));
+    await saveDrawing(
+      'plant.dwg',
+      { bytes: BYTES, inPlace: false },
+      download,
+      'qsave',
+      env('none'),
+    );
+    expect(download).toHaveBeenCalledWith('plant.dxf');
     // Cancelled: nothing asked of the engine.
     const none = vi.fn(() => Promise.resolve(CHANGES));
     await saveDrawing('a.dwg', { bytes: BYTES, inPlace: false }, none, 'saveas', env(undefined));

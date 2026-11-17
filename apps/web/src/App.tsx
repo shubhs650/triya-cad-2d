@@ -27,6 +27,7 @@ import {
   PICKSTYLE,
   REVCLOUDGRIPS,
   lassoPrompt,
+  type FieldEvent,
 } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -583,6 +584,26 @@ async function savedChanges(doc: OpenDocument): Promise<readonly ChangeSet[]> {
   return changes;
 }
 
+/** DWGNAME of a drawing named `name`: an unsaved one is Drawing1.dxf. */
+const dwgName = (name: string): string => (name === '' ? 'Drawing1.dxf' : name);
+
+/**
+ * The drawing's fields evaluated for an event (M4-10 part 3; AutoCAD 2024 Help, "FIELDEVAL"): on
+ * open, under its file's name; on save, under the name it is saved as; on plot, where PlotDate
+ * takes the plot's time. Not an undo step; the canvases show the new values before a plot reads
+ * them, and a plot that changed a field leaves the drawing with unsaved changes.
+ */
+async function fieldEvent(id: number, event: FieldEvent, fileName?: string): Promise<void> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  if (!doc) return;
+  const r = await engines
+    .edit(id, { kind: 'fields', event, now: Date.now(), fileName: fileName ?? dwgName(doc.name) })
+    .catch(() => undefined);
+  if (!r?.ok || Object.keys(r.change).length === 0) return;
+  await Promise.all(controllersOf(id).map((c) => c.flush()));
+  if (event === 'plot') store.edited(id);
+}
+
 /** The navigation bar's Save view (M2-29): the view kept in the drawing, a VIEW undo step. */
 async function saveView(id: number, name: string, view: ViewState): Promise<void> {
   const r = await engines.edit(id, { kind: 'view', name, view });
@@ -602,7 +623,14 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
     // Edits made while the save runs are not in it.
     const edits = doc.edits;
     saveEnv ??= browserSave();
-    const r = await saveDrawing(doc.name, doc.file, () => savedChanges(doc), mode, saveEnv);
+    const r = await saveDrawing(
+      doc.name,
+      doc.file,
+      // The fields update for the save first (FIELDEVAL), under the name it is saved as.
+      (saved) => fieldEvent(id, 'save', saved).then(() => savedChanges(doc)),
+      mode,
+      saveEnv,
+    );
     if (r.ok) {
       store.saved(id, r.name, r.file, edits);
       const handle = r.file.handle;
@@ -815,6 +843,7 @@ async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> 
       settings = { ...defaultPlotSettings(space), device: settings.device };
     }
     if (!r.script.plot) return { ok: true };
+    await fieldEvent(id, 'plot');
     const page = plotPage(settings, space);
     const parts = await active.plot({ block: target.block, ...plotRequest(settings, space) });
     const title = `${doc.name} - ${space.name}`;
@@ -1231,6 +1260,7 @@ async function open(
     engines.start(id, opened.init, recovered?.changes);
     tellSessionVariables(id);
     tellAliases(id);
+    void fieldEvent(id, 'open', dwgName(file.name));
     // The Properties palette, docked, showed the drawing before its engine started (M2-21).
     if (dockedPalette.get() === 'properties' && store.getSnapshot().active === id)
       engines.command(id, { kind: 'properties', open: true });
@@ -1853,6 +1883,7 @@ export function App() {
         underlayPage={underlayPage}
         userTables={userPlotStyleTables}
         edited={(id) => store.edited(id)}
+        beforePlot={(id) => fieldEvent(id, 'plot')}
       />
       <PublishDialog
         doc={active}

@@ -33,6 +33,7 @@ import type { DocumentModel } from '../model/document';
 import type { HeaderValue } from '../model/types';
 import { OSNAP_OFF } from '../input/osnap';
 import { CETRANSPARENCY } from '../properties/current';
+import { FIELDEVAL, FIELDEVAL_INITIAL } from '../edit/field-eval';
 
 export type VariableKind =
   /** A whole number, `min`–`max` when bounded. */
@@ -101,6 +102,11 @@ export interface SystemVariable {
   readonly text?: true;
   /** A point in pixels, not drawing units (SCREENSIZE): shown as plain numbers. */
   readonly pixels?: true;
+  /**
+   * What a DICTIONARYVAR the drawing does not have holds (FIELDEVAL's "31"): AutoCAD's initial
+   * value, which SETVAR shows and sets for the session (M4-10 part 3).
+   */
+  readonly initial?: HeaderValue;
 }
 
 /**
@@ -153,6 +159,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // ARRAYASSOCIATIVITY (M3-11; AutoCAD 2024 Help): new arrays are associative (1, initially) or
   // separate objects (0); ARRAY's ASsociative option sets it.
   { name: 'ARRAYASSOCIATIVITY', store: 'app', kind: 'switch' },
+  // FIELDDISPLAY (M4-10 part 3; AutoCAD 2024 Help, "Saved in: Registry"): fields shown on a grey
+  // background (1, initially), which is not plotted; 0 shows them as the rest of their text.
+  { name: 'FIELDDISPLAY', store: 'app', kind: 'switch' },
   // M3-06 part 1 (AutoCAD 2024 Help): POLARMODE's bits are 1 polar angles relative to the last
   // segment, 2 object snap tracking along the polar angles, 4 the additional angles, 8 Shift to
   // acquire tracking points (initially 0); POLARADDANG up to 10 additional angles separated by
@@ -430,6 +439,17 @@ const DICTIONARY_VARIABLES: Readonly<
   INDEXCTL: { kind: 'integer', min: 0, max: 3 },
   SORTENTS: { kind: 'integer', min: 0, max: 127 },
   CENTEREXE: { kind: 'distance', nonNegative: true },
+  // M4-10 part 3 (AutoCAD 2024 Help, "FIELDEVAL"): when fields update, bits 1 open, 2 save,
+  // 4 plot, 8 eTransmit, 16 regeneration; "Saved in: Drawing", initially 31 (edit/field-eval.ts).
+  [FIELDEVAL]: { kind: 'integer', min: 0, max: 31 },
+};
+
+/**
+ * DICTIONARYVARs SETVAR knows in a drawing without them, with AutoCAD's initial value, which a
+ * save writes only into a DICTIONARYVAR the drawing has (io's session-only variables).
+ */
+const DICTIONARY_INITIAL: Readonly<Record<string, string>> = {
+  [FIELDEVAL]: String(FIELDEVAL_INITIAL),
 };
 
 /** Bounds AutoCAD 2024's system variable reference gives (those a wrong value would break). */
@@ -601,6 +621,10 @@ export function systemVariable(model: VariableSource, name: string): SystemVaria
   const drawing = DRAWING_VARIABLES.find((v) => v.name === n);
   if (drawing) return drawing;
   const key = headerKey(model, n);
+  if (key === undefined && n in DICTIONARY_INITIAL) {
+    const initial = DICTIONARY_INITIAL[n]!;
+    return { ...headerVariable(n, initial), initial };
+  }
   return key === undefined ? undefined : headerVariable(key, model.header.get(key)!);
 }
 
@@ -612,6 +636,10 @@ export function systemVariables(model: VariableSource): SystemVariable[] {
     if (v) out.set(v.name, v);
   }
   out.set(WIPEOUTFRAME.name, WIPEOUTFRAME);
+  for (const name of Object.keys(DICTIONARY_INITIAL)) {
+    const v = systemVariable(model, name);
+    if (v) out.set(v.name, v);
+  }
   for (const v of [
     ...APP_VARIABLES,
     ...VPORT_VARIABLES,

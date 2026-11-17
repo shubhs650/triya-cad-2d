@@ -267,6 +267,12 @@ export interface DrawingField {
   readonly value?: string;
   /** A date value's time (ms since the epoch), kept with `value` for the FIELD's date data. */
   readonly time?: number;
+  /**
+   * DXF 91, when AutoCAD may evaluate it (AcFdEval options): 1 on open, 2 on save, 4 on plot,
+   * 8 on eTransmit, 16 on regeneration, 32 on demand (UPDATEFIELD); absent is 63, all of them.
+   * FIELDEVAL decides which of these the drawing allows (M4-10 part 3, edit/field-eval.ts).
+   */
+  readonly options?: number;
 }
 
 export interface TextFields extends PlanarProps {

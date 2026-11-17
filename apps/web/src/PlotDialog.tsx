@@ -156,6 +156,7 @@ export function PlotDialog({
   underlayPage,
   userTables,
   edited,
+  beforePlot,
 }: {
   doc: { readonly id: number; readonly block: string; readonly name: string } | undefined;
   /** The note naming the drawing's PDF underlays whose file is not found (M2-56 part 2). */
@@ -168,6 +169,8 @@ export function PlotDialog({
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
   /** Apply to Layout changed the drawing (part 4): it has unsaved changes. */
   edited?: (doc: number) => void;
+  /** The drawing's fields updated for the plot (FIELDEVAL, M4-10 part 3), before it plots. */
+  beforePlot?: (doc: number) => Promise<void>;
 }) {
   const open = useSyncExternalStore(plotDialog.subscribe, plotDialog.get);
   if (!doc || open !== doc.id) return null;
@@ -185,6 +188,7 @@ export function PlotDialog({
       {...(underlayPage && { underlayPage })}
       {...(userTables && { userTables })}
       {...(edited && { edited })}
+      {...(beforePlot && { beforePlot })}
     />
   );
 }
@@ -199,6 +203,7 @@ function PlotBody({
   underlayPage,
   userTables,
   edited,
+  beforePlot,
 }: {
   doc: number;
   block: string;
@@ -209,6 +214,7 @@ function PlotBody({
   underlayPage?: UnderlayPageSource;
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
   edited?: (doc: number) => void;
+  beforePlot?: (doc: number) => Promise<void>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [applied, setApplied] = useState<string>();
@@ -331,6 +337,7 @@ function PlotBody({
     }
     setBusy(true);
     try {
+      await beforePlot?.(doc);
       const parts = await controller.plot(plotRequest(s, space));
       const file = await plotFile(
         parts,

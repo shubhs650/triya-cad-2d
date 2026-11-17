@@ -77,6 +77,7 @@ export type DraftingPreferences = Pick<
   | 'gripColors'
   | 'rolloverTips'
   | 'arrayAssociativity'
+  | 'fieldDisplay'
   | 'polarMode'
   | 'polarAddAngles'
   | 'snapType'
@@ -172,6 +173,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     gripColors: GRIP_COLORS_DEFAULT,
     rolloverTips: true,
     arrayAssociativity: true,
+    fieldDisplay: true,
     polarMode: 0,
     polarAddAngles: '',
     snapType: 0,
@@ -319,6 +321,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       pickfirst: bool(k['pickfirst'], d.drafting.pickfirst),
       rolloverTips: bool(k['rolloverTips'], d.drafting.rolloverTips),
       arrayAssociativity: bool(k['arrayAssociativity'], d.drafting.arrayAssociativity),
+      fieldDisplay: bool(k['fieldDisplay'], d.drafting.fieldDisplay),
       polarMode: within(k['polarMode'], { min: 0, max: 15 }, d.drafting.polarMode),
       selectSimilarMode: within(
         k['selectSimilarMode'],
@@ -459,6 +462,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     gripColors: s.gripColors,
     rolloverTips: s.rolloverTips,
     arrayAssociativity: s.arrayAssociativity,
+    fieldDisplay: s.fieldDisplay,
     polarMode: s.polarMode,
     polarAddAngles: s.polarAddAngles,
     snapType: s.snapType,

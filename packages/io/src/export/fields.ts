@@ -27,7 +27,7 @@ import {
   FieldStateFlags,
 } from '@node-projects/acad-ts';
 import type { EvaluationOptionFlags } from '@node-projects/acad-ts';
-import { fieldFormat, type DrawingField } from '@triya/engine';
+import { FIELD_OPTIONS_ALL, fieldFormat, type DrawingField } from '@triya/engine';
 import { ACAD_FIELD, FIELD_TEXT, rootField } from '../map/fields';
 import { resolve, type Resolver } from './entities';
 
@@ -83,8 +83,9 @@ function newField(r: Resolver, d: DrawingField, owner: CadObject | null): Field 
   f.owner = owner;
   f.evaluatorId = d.evaluator;
   f.fieldCode = d.code;
-  // Evaluated on open, save, plot, eTransmit, regeneration and on demand: FIELDEVAL decides.
-  f.evaluationOptionFlags = 63 as EvaluationOptionFlags;
+  // When it may be evaluated (M4-10 part 3): all events (63) unless the field says otherwise (a
+  // Date field, on demand only); FIELDEVAL decides which the drawing allows.
+  f.evaluationOptionFlags = (d.options ?? FIELD_OPTIONS_ALL) as EvaluationOptionFlags;
   f.fieldStateFlags =
     d.value === undefined
       ? FieldStateFlags.Initialized
