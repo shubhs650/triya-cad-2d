@@ -21,6 +21,9 @@
 // M5-07 part 2: Layer States Manager (Alt+S) opens LAYERSTATE's dialog, and the palette names
 // the layer state restored last while the layers are as it has them ("Unsaved Layer State"
 // otherwise), as AutoCAD's manager does.
+// M5-05 part 4: a right-click on a layer (Shift+F10 on a row) shows the layer list menu
+// (LayerListMenu.tsx), whose Merge Selected Layer(s) to... opens Merge to Layer; the manager's
+// changes one after another are one LAYER undo step while UNDO Control Layer is on (the engine).
 import {
   Fragment,
   memo,
@@ -38,6 +41,12 @@ import { controllerOf } from './canvas/registry';
 import type { DocumentStore, OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { CustomizeLayerColumnsDialog, LayerColumnsMenu } from './LayerColumns';
+import {
+  LayerListMenu,
+  MergeToLayerDialog,
+  mergeTargets,
+  type LayerListAction,
+} from './LayerListMenu';
 import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from './LayerDialogs';
 import {
   sortAfterClick,
@@ -304,6 +313,8 @@ export function LayersPalette({
   const [search, setSearch] = useState('');
   const [columnsMenu, setColumnsMenu] = useState<{ x: number; y: number } | undefined>();
   const [customizing, setCustomizing] = useState(false);
+  const [listMenu, setListMenu] = useState<{ x: number; y: number } | undefined>();
+  const [merging, setMerging] = useState<readonly LayerRow[] | undefined>();
   const paletteRef = useRef<HTMLElement>(null);
   /** When the search last changed, until its rows are on screen. */
   const searchedAt = useRef<number | undefined>(undefined);
@@ -408,6 +419,39 @@ export function LayersPalette({
       select(new Set());
   };
 
+  const mergeLayers = async (target: Handle) => {
+    const from = merging;
+    setMerging(undefined);
+    if (!from) return;
+    if (await apply({ kind: 'layer-merge', layers: from.map((r) => r.handle), target })) {
+      select(new Set([target]), target);
+      focusRow(target);
+    }
+  };
+
+  /** The layer list menu's items (AutoCAD's shortcut menu on the layers). */
+  const onListAction = (a: LayerListAction) => {
+    const one = selectedRows.length === 1 ? selectedRows[0] : undefined;
+    if (a === 'current') void setCurrent();
+    else if (a === 'new') void newLayer();
+    else if (a === 'rename' && one) startEditing({ handle: one.handle, field: 'name' });
+    else if (a === 'delete') void deleteLayers();
+    else if (a === 'description' && one) startEditing({ handle: one.handle, field: 'description' });
+    else if (a === 'merge') setMerging(selectedRows);
+    else if (a === 'all') select(new Set(shown.map((r) => r.handle)));
+    else if (a === 'clear') select(new Set());
+    else if (a === 'allButCurrent')
+      select(new Set(shown.filter((r) => !r.current).map((r) => r.handle)));
+    else if (a === 'invert')
+      select(new Set(shown.filter((r) => !selected.has(r.handle)).map((r) => r.handle)));
+  };
+
+  /** The menu on a layer: the layer is selected first unless it is already. */
+  const openListMenu = (row: LayerRow, at: { x: number; y: number }) => {
+    if (!selected.has(row.handle)) select(new Set([row.handle]), row.handle);
+    setListMenu(at);
+  };
+
   const setCurrent = async (row?: LayerRow) => {
     const r = row ?? (selectedRows.length === 1 ? selectedRows[0] : undefined);
     if (r) await apply({ kind: 'layer-current', layer: r.handle });
@@ -470,6 +514,10 @@ export function LayersPalette({
     } else if (e.key === 'Delete') {
       e.preventDefault();
       void deleteLayers();
+    } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+      e.preventDefault();
+      const box = e.currentTarget.getBoundingClientRect();
+      openListMenu(row, { x: box.left + 24, y: box.bottom });
     }
   };
 
@@ -699,7 +747,15 @@ export function LayersPalette({
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody
+            onContextMenu={(e) => {
+              const tr = (e.target as HTMLElement).closest<HTMLElement>('tr[data-handle]');
+              const row = tr && shown.find((r) => r.handle === tr.dataset.handle);
+              if (!row) return;
+              e.preventDefault();
+              openListMenu(row, { x: e.clientX, y: e.clientY });
+            }}
+          >
             {sorted.map((r) => (
               <LayerRowView
                 key={r.handle}
@@ -729,6 +785,26 @@ export function LayersPalette({
             setCustomizing(true);
           }}
           onClose={() => setColumnsMenu(undefined)}
+        />
+      )}
+      {listMenu && (
+        <LayerListMenu
+          at={listMenu}
+          selected={selectedRows.length}
+          onAction={onListAction}
+          onClose={() => setListMenu(undefined)}
+        />
+      )}
+      {merging && (
+        <MergeToLayerDialog
+          layers={merging.map((r) => r.name)}
+          targets={mergeTargets(sorted, new Set(merging.map((r) => r.handle)))}
+          onMerge={(target) => void mergeLayers(target)}
+          onCancel={() => {
+            setMerging(undefined);
+            const first = merging[0];
+            if (first) focusRow(first.handle);
+          }}
         />
       )}
       {customizing && (

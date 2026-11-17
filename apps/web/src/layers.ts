@@ -47,6 +47,8 @@ export interface LayerRow {
     readonly lineweight: Lineweight;
     readonly transparency: Transparency;
   };
+  /** An xref-dependent layer (DXF 70 bit 16), which no object of the drawing can go on. */
+  readonly xref?: true;
   /** In a layout: of its viewports (not its own paper-space view), how many freeze the layer. */
   readonly vpFrozen?: { readonly frozen: number; readonly of: number };
 }
@@ -199,6 +201,7 @@ export function layerRows(
         lineweight: l.lineweight,
         transparency: l.transparency,
       },
+      ...(((l.flags ?? 0) & 16) !== 0 && { xref: true as const }),
       ...(viewports && {
         vpFrozen: {
           frozen: viewports.filter((f) => f.includes(l.handle)).length,

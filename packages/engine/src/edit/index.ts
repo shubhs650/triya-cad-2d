@@ -137,6 +137,7 @@ export { detachXrefs, xrefDetachChange, xrefDetachProblem } from './xrefs';
 export {
   currentLayerChange,
   deleteLayersChange,
+  mergeLayersChange,
   layerPropsChange,
   layersInUse,
   newLayerChange,
