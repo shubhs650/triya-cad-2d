@@ -55,6 +55,7 @@ import { HatchDialog } from './HatchDialog';
 import { FieldDialog } from './FieldDialog';
 import { ToleranceDialog } from './ToleranceDialog';
 import { InsertCellBlockDialog } from './InsertCellBlockDialog';
+import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
@@ -149,6 +150,8 @@ export function AttributeDialogs({
       return <InsertCellBlockDialog key={key} doc={doc.id} request={d} />;
     case 'tablecellformat':
       return <TableCellFormatDialog key={key} doc={doc.id} request={d} />;
+    case 'block':
+      return <BlockDefinitionDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

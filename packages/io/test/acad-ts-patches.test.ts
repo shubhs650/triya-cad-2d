@@ -2923,4 +2923,15 @@ describe('acad-ts local patches', () => {
     expect(k.field!.fieldCode).toBe('Rev 2026');
     expect(k.cadValue.value).toBe('Rev 2026');
   });
+
+  it('0187 a block record scales any way (281 = 0) unless its file says it scales uniformly', () => {
+    // BLOCK_RECORD 281 is 1 for a block that scales uniformly (AutoCAD writes 0 for ordinary
+    // blocks; ezdxf's scale_uniformly). A file from before R2007 has no 281: its blocks must not
+    // read as scaling uniformly, nor may a block made in memory.
+    expect(new BlockRecord('B').canScale).toBe(false);
+    const doc = new CadDocument(ACadVersion.AC1018);
+    doc.blockRecords!.add(new BlockRecord('OLD'));
+    const back = readCadDocument(writeCadDocument(doc, { format: 'dwg' }));
+    expect(back.blockRecords!.tryGetValue('OLD')!.canScale).toBe(false);
+  });
 });

@@ -233,7 +233,8 @@ function blockRecord(b: BlockRecord): BlockTableRecord {
     ...(layout ? { layout } : {}),
     units: b.units as number,
     explodable: b.isExplodable,
-    scalable: b.canScale,
+    // BLOCK_RECORD 281 is 1 for a block that scales uniformly (acad-ts's `canScale`, 0187).
+    scalable: !b.canScale,
   };
 }
 

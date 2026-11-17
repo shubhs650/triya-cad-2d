@@ -1728,6 +1728,8 @@ export type Tables = { readonly [K in TableName]: ReadonlyMap<Handle, TableRecor
 export interface BlockDefinition extends ObjectCommon {
   readonly name: string;
   readonly basePoint: Vec2;
+  /** The Block Definition dialog's Description: the BLOCK entity's DXF 4 (M5-01 part 2). */
+  readonly description?: string;
   /** Handles of the BLOCK and ENDBLK entities that bracket the definition in the file. */
   readonly beginHandle?: Handle;
   readonly endHandle?: Handle;

@@ -4772,6 +4772,72 @@ button {
   color: var(--chrome-danger, #c42b1c);
 }
 
+/* BLOCK's Block Definition dialog (M5-01 part 2): Name, then the Base point, Objects and
+   Behavior groups side by side, then Settings and Description. */
+.cad-dialog.block-definition-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.block-definition-name > input {
+  flex: 1 1 auto;
+}
+
+.block-definition-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.block-definition-group {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  margin: 0;
+  border: 1px solid var(--chrome-border);
+  padding: 6px 8px 8px;
+  min-width: 0;
+}
+
+.block-definition-group > legend {
+  padding: 0 4px;
+}
+
+.block-definition-group > button {
+  justify-self: start;
+}
+
+.block-definition-group .cad-dialog-field > span {
+  min-width: 2em;
+}
+
+.block-definition-group input[type='text'] {
+  width: 8em;
+  min-width: 0;
+}
+
+.block-definition-group select {
+  min-width: 0;
+}
+
+.block-definition-choices {
+  display: grid;
+  gap: 2px;
+}
+
+.block-definition-count {
+  margin: 0;
+}
+
+.block-definition-description textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.cad-dialog.block-definition-ask {
+  width: min(420px, calc(100vw - 32px));
+}
+
 /* M4-17: spell checking as you type. MTEXT's misspelled words are a CSS highlight over its DOM;
    TEXT's line lays a copy of its text, transparent but for the underlines, under the input. */
 ::highlight(triya-spelling),

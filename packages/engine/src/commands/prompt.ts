@@ -31,6 +31,7 @@ import type { FieldSpec } from '../edit/field-codes';
 import { FIELD_EDIT, FIELD_INSERT, FIELD_UPDATE } from '../edit/fields';
 import type { ToleranceRequest } from './draw/tolerance';
 import type { TableBlockRequest, TableBlockSettings } from './draw/table-block';
+import type { BlockDefinitionAnswer, BlockDefinitionRequest } from './blocks';
 import type { TableCellFormatRequest } from './draw/table-data-format';
 import type { TableDataFormat } from '../edit/table-data';
 import type { GdtFrame } from '../edit/tolerance-frame';
@@ -762,6 +763,8 @@ export type DialogRequest =
   | ToleranceRequest
   /** TINSERT's Insert a Block in a Table Cell (M4-16). */
   | TableBlockRequest
+  /** BLOCK's Block Definition (M5-01 part 2). */
+  | BlockDefinitionRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
   | TableCellFormatRequest
   | ObjectGroupingRequest;
@@ -998,6 +1001,11 @@ export type PromptAnswer =
       readonly tolerance?: GdtFrame;
       /** Insert a Block in a Table Cell's fields as OK closed it (TINSERT, M4-16). */
       readonly tableBlock?: TableBlockSettings;
+      /**
+       * The Block Definition dialog's fields as OK (or Pick point or Select objects, `select`)
+       * closed it (BLOCK, M5-01 part 2).
+       */
+      readonly block?: BlockDefinitionAnswer;
       /** The Table Cell Format dialog's data format as OK closed it (M4-16). */
       readonly tableDataFormat?: TableDataFormat;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */

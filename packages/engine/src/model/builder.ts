@@ -66,6 +66,7 @@ export interface NewBlock {
   readonly units?: number;
   readonly explodable?: boolean;
   readonly scalable?: boolean;
+  readonly description?: string;
 }
 
 /** LAYOUT New: the tab; the builder makes the `*Paper_Space` block that holds its sheet. */
@@ -679,6 +680,7 @@ export class ChangeSetBuilder {
       handle,
       name: init.name,
       basePoint: init.basePoint,
+      ...(init.description ? { description: init.description } : {}),
     });
     this.#blocks.add(def);
     return def;
