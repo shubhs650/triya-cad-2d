@@ -146,3 +146,76 @@ test('shows each layer’s description (M1-104)', async ({ page }) => {
   });
   await expect(row.locator('td.description')).toHaveText("This layer has it's own description");
 });
+
+test('manages layers: new, rename, a toggle on the rows selected, describe, current, delete (M5-05)', async ({
+  page,
+}) => {
+  const palette = await openLayers(page, DXF);
+  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const row = (name: string) =>
+    table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
+
+  // New Layer names LayerN and selects its name to type over; Enter keeps the name typed.
+  await palette.getByRole('button', { name: 'New Layer' }).click();
+  const name = palette.getByRole('textbox', { name: 'Name of Layer1' });
+  await expect(name).toBeFocused();
+  await page.keyboard.type('Notes');
+  await page.keyboard.press('Enter');
+  await expect(row('Notes')).toHaveAttribute('aria-selected', 'true');
+
+  // Alt+N, the manager's shortcut, from the row; Esc keeps LayerN.
+  await row('Notes').focus();
+  await page.keyboard.press('Alt+N');
+  await expect(palette.getByRole('textbox', { name: 'Name of Layer1' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(row('Layer1')).toHaveAttribute('aria-selected', 'true');
+
+  // Ctrl+click adds Notes; Lock clicked in a selected row locks both, Plot turns both off.
+  await row('Notes')
+    .getByRole('rowheader')
+    .click({ modifiers: ['Control'] });
+  await expect(table.locator('tbody tr[aria-selected="true"]')).toHaveCount(2);
+  await palette.getByRole('button', { name: 'Lock Notes' }).click();
+  for (const n of ['Notes', 'Layer1']) {
+    await expect(palette.getByRole('button', { name: `Lock ${n}` })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  }
+  await palette.getByRole('button', { name: 'Plot Layer1' }).click();
+  for (const n of ['Notes', 'Layer1'])
+    await expect(palette.getByRole('button', { name: `Plot ${n}` })).toHaveText('No plot');
+  await expect(table.locator('tbody tr[aria-selected="true"]')).toHaveCount(2);
+
+  // A double-click on a description edits it in place.
+  await row('Notes').locator('td.description').dblclick();
+  await page.keyboard.type('Callouts');
+  await page.keyboard.press('Enter');
+  await expect(row('Notes').locator('td.description')).toHaveText('Callouts');
+
+  // F2 renames the row focused.
+  await row('Layer1').getByRole('rowheader').click();
+  await page.keyboard.press('F2');
+  await page.keyboard.type('Spare');
+  await page.keyboard.press('Enter');
+  await expect(row('Spare')).toBeVisible();
+
+  // Set Current, then Delete Layer refuses the current layer and one with objects.
+  await row('Notes').getByRole('rowheader').click();
+  await palette.getByRole('button', { name: 'Set Current' }).click();
+  await expect(row('Notes')).toHaveAttribute('data-current', 'true');
+  await palette.getByRole('button', { name: 'Delete Layer' }).click();
+  await expect(palette.getByRole('alert')).toHaveText(
+    'Layer "Notes" was not deleted: it is the current layer.',
+  );
+  await row('HATCH').getByRole('rowheader').click();
+  await page.keyboard.press('Delete');
+  await expect(palette.getByRole('alert')).toHaveText(
+    'Layer "HATCH" was not deleted: it has objects (including objects in block definitions).',
+  );
+  // An empty layer goes, from the Delete key.
+  await row('Spare').getByRole('rowheader').click();
+  await page.keyboard.press('Delete');
+  await expect(row('Spare')).toHaveCount(0);
+  await expect(palette.getByRole('alert')).toHaveCount(0);
+});

@@ -39,15 +39,32 @@ import { propertySheet, type DimensionMeasure, type PropertySheet } from '../pro
 import { quickPropertySheet, rolloverSheet } from '../properties/quick';
 import { REVCLOUDGRIPS } from '../edit/revcloud';
 import { fieldEventChange, type FieldEvent } from '../edit/field-eval';
+import {
+  currentLayerChange,
+  deleteLayersChange,
+  layerPropsChange,
+  newLayerChange,
+  type LayerProps,
+} from '../edit/layer-manager';
 
-/** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
-export interface LayerStateEdit {
+/**
+ * A layer's on, frozen and locked states (LAYER palette toggles, M1-23) and, from the Layer
+ * Properties Manager (M5-05), every property a row edits, on one layer or on all the layers
+ * selected (a rename takes one).
+ */
+export interface LayerStateEdit extends LayerProps {
   readonly kind: 'layer';
-  readonly layer: Handle;
-  readonly on?: boolean;
-  readonly frozen?: boolean;
-  readonly locked?: boolean;
+  readonly layer: Handle | readonly Handle[];
 }
+
+/**
+ * The Layer Properties Manager's New Layer (named LayerN unless `name` is given, with `like`'s
+ * properties, layer 0's without), Delete Layer and Set Current (M5-05): one LAYER step each.
+ */
+export type LayerTableEdit =
+  | { readonly kind: 'layer-new'; readonly like?: Handle; readonly name?: string }
+  | { readonly kind: 'layer-delete'; readonly layers: readonly Handle[] }
+  | { readonly kind: 'layer-current'; readonly layer: Handle };
 
 /**
  * A layout renamed, moved among the layout tabs or given a new page setup (M1-97): what LAYOUT
@@ -143,6 +160,7 @@ export interface FieldEventEdit {
 export type EngineEdit =
   | FieldEventEdit
   | LayerStateEdit
+  | LayerTableEdit
   | LayoutEdit
   | XrefLoadEdit
   | NamedViewEdit
@@ -589,6 +607,8 @@ export class EngineSession {
       return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     if (e.kind === 'fields') return this.#fieldEvent(e);
+    if (e.kind === 'layer-new' || e.kind === 'layer-delete' || e.kind === 'layer-current')
+      return this.#layerTableEdit(e);
     if (e.kind === 'aliases') {
       this.#registry.setUserAliases(e.aliases);
       return { ok: true, change: {} };
@@ -697,26 +717,26 @@ export class EngineSession {
   }
 
   #layerEdit(e: LayerStateEdit): EditResult {
-    const layer = this.model.tables.layers.get(e.layer);
-    if (!layer) return { ok: false, message: `No layer ${e.layer}.` };
-    // AutoCAD refuses to freeze the current layer ("Cannot freeze the current layer.") but
-    // lets it be turned off, with a warning only.
-    const current = this.model.header.get('$CLAYER');
-    if (
-      e.frozen === true &&
-      !layer.frozen &&
-      typeof current === 'string' &&
-      current.toUpperCase() === layer.name.toUpperCase()
-    )
-      return { ok: false, message: 'Cannot freeze the current layer.' };
-    const patch: { on?: boolean; frozen?: boolean; locked?: boolean } = {};
-    if (e.on !== undefined && e.on !== layer.on) patch.on = e.on;
-    if (e.frozen !== undefined && e.frozen !== layer.frozen) patch.frozen = e.frozen;
-    if (e.locked !== undefined && e.locked !== layer.locked) patch.locked = e.locked;
-    if (Object.keys(patch).length === 0) return { ok: true, change: {} };
-    const b = new ChangeSetBuilder(this.model);
-    b.updateTableRecord('layers', layer.handle, patch);
-    const change = b.build();
+    const { kind: _kind, layer, ...props } = e;
+    return this.#layerStep(
+      layerPropsChange(this.model, typeof layer === 'string' ? [layer] : layer, props),
+    );
+  }
+
+  #layerTableEdit(e: LayerTableEdit): EditResult {
+    return this.#layerStep(
+      e.kind === 'layer-new'
+        ? newLayerChange(this.model, e.like, e.name)
+        : e.kind === 'layer-delete'
+          ? deleteLayersChange(this.model, e.layers)
+          : currentLayerChange(this.model, e.layer),
+    );
+  }
+
+  /** A layer change applied as one LAYER step, as AutoCAD names the manager's; or refused. */
+  #layerStep(change: ChangeSet | string): EditResult {
+    if (typeof change === 'string') return { ok: false, message: change };
+    if (Object.keys(change).length === 0) return { ok: true, change };
     this.model.apply(change);
     this.#step('LAYER', change);
     return { ok: true, change };
