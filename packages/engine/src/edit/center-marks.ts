@@ -1,7 +1,7 @@
 // Center marks and centerlines Triya makes (CENTERMARK, CENTERLINE; M4-08). Each is one INSERT
 // of an anonymous `*U` block of lines, as AutoCAD saves the visible part of one, so every reader
-// draws it; a `CenterMark` record owned by the INSERT keeps it associative to
-// the circle, arc or lines it was made on. As a command ends (the bus's `followAssociations`) a
+// draws it; a `CenterMark` record in the INSERT's extension dictionary (a `TRIYA_CENTERMARK`
+// XRECORD in the file, DEC-066) keeps it associative to the circle, arc or lines it was made on. As a command ends (the bus's `followAssociations`) a
 // mark whose objects changed is drawn again from them, a mark whose object is gone goes with it,
 // and a mark moved on its own lets go of its objects.
 //
@@ -35,11 +35,12 @@ export type CenterMarkSource = { readonly objects: ReadonlyMap<Handle, NonGraphi
 /** The record of the center mark or centerline whose INSERT is `insert`, if Triya made it. */
 export function centerMarkOf(
   model: CenterMarkSource,
-  insert: Pick<Entity, 'handle'> | undefined,
+  insert: Pick<Entity, 'handle' | 'extDict'> | undefined,
 ): CenterMark | undefined {
-  if (!insert) return undefined;
+  // Only a mark has an extension dictionary holding one: most block references have none.
+  if (!insert || insert.extDict === undefined) return undefined;
   for (const o of model.objects.values()) {
-    if (isCenterMark(o) && o.insert === insert.handle) return o;
+    if (isCenterMark(o) && o.insert === insert.handle && o.owner === insert.extDict) return o;
   }
   return undefined;
 }
@@ -271,9 +272,11 @@ export function makeCenterMark(
   const p = placement(shape, fields, 0);
   const block = b.addBlock({ name: names.take('U'), basePoint: { x: 0, y: 0 }, flags: 1 }).handle;
   fillBlock(b, model, block, p.segments);
+  const dictionary = b.allocateHandle();
   const insert = b.addEntity({
     owner: m.space,
     ...m.props,
+    extDict: dictionary,
     geom: {
       kind: 'INSERT',
       block,
@@ -286,7 +289,7 @@ export function makeCenterMark(
   b.addObject({
     ...fields,
     type: 'TRIYA_CENTERMARK',
-    owner: insert.handle,
+    owner: dictionary,
     insert: insert.handle,
   } as Omit<CenterMark, 'handle'>);
   return insert;
@@ -322,7 +325,10 @@ export function remakeCenterMark(
   return true;
 }
 
-/** Takes the record off a mark: it stays as drawn, a plain block reference. */
+/**
+ * Takes the record off a mark: it stays as drawn, a plain block reference. Its extension
+ * dictionary stays, empty, as AutoCAD leaves an object's dictionary when its last entry goes.
+ */
 export function disassociateCenterMark(b: ChangeSetBuilder, r: CenterMark): void {
   b.removeObject(r.handle);
 }
@@ -412,11 +418,13 @@ export function copyCenterMarks(
     fillBlock(b, model, block.handle, segments);
     b.updateEntity(copy.id, { geom: { ...copy.geom, block: block.handle } });
     if (!r.objects.every((h) => copies.has(h))) continue;
+    const dictionary = b.allocateHandle();
+    b.updateEntity(copy.id, { extDict: dictionary });
     const { handle: _h, owner: _o, insert: _i, ...fields } = r;
     b.addObject({
       ...fields,
       objects: r.objects.map((h) => copies.get(h)!.handle),
-      owner: copy.handle,
+      owner: dictionary,
       insert: copy.handle,
     } as Omit<CenterMark, 'handle'>);
   }
