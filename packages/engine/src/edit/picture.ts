@@ -79,7 +79,15 @@ const baseName = (fileName: string): string =>
  * images' definitions are, else a new dictionary the save creates under a new handle. A new
  * one's name is the file's without its extension, numbered when the drawing has it already.
  */
-function pictureDefinition(b: ChangeSetBuilder, model: DocumentModel, p: ClipboardPicture): Handle {
+function pictureDefinition(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  p: ClipboardPicture,
+  resolution: { readonly pixelSize: Vec2; readonly units: number } = {
+    pixelSize: { x: 1 / ppiOf(p).x, y: 1 / ppiOf(p).y },
+    units: RESOLUTION_INCHES,
+  },
+): Handle {
   const file = p.fileName.toLowerCase();
   const names = new Set<string>();
   let owner: Handle | undefined = model.meta.imageDictionary;
@@ -94,7 +102,6 @@ function pictureDefinition(b: ChangeSetBuilder, model: DocumentModel, p: Clipboa
   let name = base;
   for (let n = 1; names.has(name.toUpperCase()); n++) name = `${base}-${n}`;
   owner ??= b.allocateHandle();
-  const ppi = ppiOf(p);
   const def: ImageDefinition = {
     type: 'IMAGEDEF',
     handle: b.allocateHandle(),
@@ -102,9 +109,9 @@ function pictureDefinition(b: ChangeSetBuilder, model: DocumentModel, p: Clipboa
     name,
     fileName: p.fileName,
     size: { x: p.width, y: p.height },
-    pixelSize: { x: 1 / ppi.x, y: 1 / ppi.y },
+    pixelSize: resolution.pixelSize,
     loaded: true,
-    units: RESOLUTION_INCHES,
+    units: resolution.units,
   };
   b.adoptObject(def);
   return def.handle;
@@ -139,6 +146,107 @@ export function pastePicture(
     contrast: 50,
     fade: 0,
     // The whole picture, in pixel coordinates centred on pixels (image-render-facts).
+    clip: {
+      type: 'rectangle',
+      vertices: [
+        { x: -0.5, y: -0.5 },
+        { x: p.width - 0.5, y: p.height - 0.5 },
+      ],
+      inverted: false,
+    },
+  };
+  return b.addEntity({ owner, ...props, geom });
+}
+
+// ── IMAGEATTACH (M5-04 part 5) ──────────────────────────────────────────────────────────────
+//
+// An attached image's size follows AutoCAD's Attach Image dialog (AutoCAD 2024 Help, "Attach
+// Image Dialog Box", Scale): "If the INSUNITS value is set to 'unitless' or if the image does not
+// contain resolution information, the scale factor becomes the image width in AutoCAD units. If
+// INSUNITS has a value such as millimeters, centimeters, inches, or feet, and the image has
+// resolution information, the scale factor is applied after the true width of the image in
+// AutoCAD units is determined." Its height keeps the pixels' shape (their resolution's aspect, else
+// square). Unlike a pasted picture, a file that states no resolution is not taken at 96 to the inch.
+
+/** An image file IMAGEATTACH attaches, as the app read it: what its file states of itself. */
+export type AttachedImageFile = ClipboardPicture;
+
+/** IMAGEDEF DXF 281's resolution units: 0 none, 2 centimetres, 5 inches. */
+const RESOLUTION_CENTIMETRES = 2;
+
+/**
+ * An image definition's resolution as pixels per inch (DXF 11, one pixel's size, in its DXF 281
+ * units), undefined when it states none: what the Attach Image dialog shows of an image the
+ * drawing has already.
+ */
+export function definitionPpi(d: ImageDefinition): Vec2 | undefined {
+  const perInch = d.units === RESOLUTION_INCHES ? 1 : d.units === RESOLUTION_CENTIMETRES ? 2.54 : 0;
+  const { x, y } = d.pixelSize;
+  if (perInch === 0 || !(x > 0) || !(y > 0) || !Number.isFinite(x) || !Number.isFinite(y))
+    return undefined;
+  return { x: perInch / x, y: perInch / y };
+}
+
+const hasResolution = (p: ClipboardPicture): boolean => {
+  const ok = (v: number | undefined) => v !== undefined && Number.isFinite(v) && v > 0;
+  return ok(p.ppi?.x) && ok(p.ppi?.y);
+};
+
+/**
+ * The image's width and height in drawing units at `scale` (the Attach Image dialog's Scale,
+ * AutoCAD's rule above), in a drawing of INSUNITS `insUnits`.
+ */
+export function attachedImageSize(insUnits: number, p: ClipboardPicture, scale: number): Vec2 {
+  const metres = metresPerUnit(insUnits);
+  if (insUnits === 0 || metres === undefined || !hasResolution(p)) {
+    // The scale is the width; the height keeps the pixels' aspect.
+    const aspect = hasResolution(p) ? p.ppi!.x / p.ppi!.y : 1;
+    return { x: scale, y: (scale * p.height * aspect) / p.width };
+  }
+  const k = INCH / metres;
+  return { x: (scale * k * p.width) / p.ppi!.x, y: (scale * k * p.height) / p.ppi!.y };
+}
+
+/**
+ * IMAGEATTACH: an IMAGE of the file in `owner`, its lower-left corner at `at`, `scale` as the
+ * Attach Image dialog takes it, turned `rotation` radians from the world X axis, showing the
+ * drawing's IMAGEDEF for the file (its name, case aside) or a new one: the file's resolution in
+ * inches (DXF 281 5), else none (DXF 281 0, a pixel 1 by 1) as AutoCAD records a file without
+ * one. Returns the image.
+ */
+export function attachImage(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  p: AttachedImageFile,
+  owner: Handle,
+  at: Vec2,
+  scale: number,
+  rotation: number,
+  props: GeneralProps,
+): Entity {
+  const ppi = hasResolution(p) ? p.ppi! : undefined;
+  const definition = pictureDefinition(b, model, p, {
+    pixelSize: ppi ? { x: 1 / ppi.x, y: 1 / ppi.y } : { x: 1, y: 1 },
+    units: ppi ? RESOLUTION_INCHES : 0,
+  });
+  const size = attachedImageSize(insUnitsOf(model), p, scale);
+  const pu = size.x / p.width;
+  const pv = size.y / p.height;
+  const c = Math.cos(rotation);
+  const s = Math.sin(rotation);
+  const geom: ImageGeometry = {
+    kind: 'IMAGE',
+    definition,
+    position: at,
+    u: { x: pu * c, y: pu * s },
+    v: { x: -pv * s, y: pv * c },
+    size: { x: p.width, y: p.height },
+    // Show, show unaligned, use clip boundary: AutoCAD's 7 for an attached image, unclipped.
+    displayFlags: 7,
+    clipping: false,
+    brightness: 50,
+    contrast: 50,
+    fade: 0,
     clip: {
       type: 'rectangle',
       vertices: [

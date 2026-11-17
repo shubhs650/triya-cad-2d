@@ -9,7 +9,8 @@
 // selected (a click selects a row, Ctrl or Shift adds one). As AutoCAD's, only the xrefs the
 // drawing attaches itself can be unloaded or detached; a nested one is reloaded with its file.
 // M5-04 part 2: Bind…, on loaded xrefs the drawing attaches itself, opens the Bind Xrefs dialog
-// (Bind or Insert). Attach and Path come with later parts.
+// (Bind or Insert). M5-04 part 5: Attach Image... runs IMAGEATTACH. Attaching xrefs and Path
+// come with later parts.
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { BindXrefsDialog } from './BindXrefsDialog';
 import type { ReferenceKind, ReferenceRow, ReferenceStatus } from './xrefs';
@@ -38,8 +39,11 @@ export function ReferencesPalette({
   onReload,
   onDetach,
   onBind,
+  onAttachImage,
   onClose,
 }: {
+  /** Attach Image... (IMAGEATTACH, M5-04 part 5), as the palette's Attach menu offers it. */
+  onAttachImage?: () => void;
   /** XREF Bind, as Insert when `insert`: why not, or undefined. */
   onBind?: (rows: readonly ReferenceRow[], insert: boolean) => Promise<string | undefined>;
   /** XREF Unload: what it did, one line each. */
@@ -120,6 +124,11 @@ export function ReferencesPalette({
         <button type="button" onClick={() => folder.current?.click()}>
           Choose folder…
         </button>
+        {onAttachImage && (
+          <button type="button" onClick={onAttachImage}>
+            Attach Image...
+          </button>
+        )}
         {waiting > 0 && (
           <button type="button" onClick={onReconnect}>
             Reconnect {waiting === 1 ? 'kept folder' : `${waiting} kept folders`}

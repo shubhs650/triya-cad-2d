@@ -58,6 +58,7 @@ import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { InsertDialog } from './InsertDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
+import { ImageAttachDialog } from './ImageAttachDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -73,6 +74,7 @@ export function AttributeDialogs({
   docs = [],
   fonts,
   patternSources = [],
+  onImageFile,
 }: {
   doc: { id: number } | undefined;
   /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
@@ -81,6 +83,8 @@ export function AttributeDialogs({
   fonts?: readonly string[];
   /** The user's .pat files (M1-50), for the hatch dialogs' pattern lists (M4-07 part 5). */
   patternSources?: readonly string[];
+  /** An image file IMAGEATTACH attached (M5-04 part 5): the app's images serve it. */
+  onImageFile?: (fileName: string, bytes: Uint8Array) => void;
 }) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
@@ -155,6 +159,8 @@ export function AttributeDialogs({
       return <BlockDefinitionDialog key={key} doc={doc.id} request={d} />;
     case 'insert':
       return <InsertDialog key={key} doc={doc.id} request={d} />;
+    case 'imageattach':
+      return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
   }
 }
 

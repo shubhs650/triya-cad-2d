@@ -1965,6 +1965,9 @@ export function App() {
                 rows.map((r) => r.handle),
               )
             }
+            onAttachImage={() =>
+              engines.command(active.id, { kind: 'invoke', name: 'IMAGEATTACH' })
+            }
             onBind={(rows, insert) =>
               bindXrefs(
                 active.id,
@@ -2020,6 +2023,10 @@ export function App() {
         docs={state.docs}
         fonts={fontState.files.map((f) => f.name)}
         patternSources={patterns.sources()}
+        onImageFile={(name, bytes) => {
+          images.add(name, bytes);
+          supplied.changed();
+        }}
       />
       <PlotDialog
         doc={active}
