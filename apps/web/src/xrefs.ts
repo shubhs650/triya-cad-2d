@@ -40,7 +40,8 @@ export function pendingXrefs(init: DocumentInit, changes: readonly ChangeSet[]):
   const out: PendingXref[] = [];
   for (const r of records.values()) {
     const def = defs.get(r.handle);
-    if (!isXrefRecord(r) || !def || def.xrefLoaded || def.xrefPath === undefined) continue;
+    if (!isXrefRecord(r) || !def || def.xrefLoaded || def.xrefUnloaded) continue;
+    if (def.xrefPath === undefined) continue;
     out.push({ block: r.handle, name: r.name, path: def.xrefPath });
   }
   return out;
@@ -58,7 +59,7 @@ export function xrefsAnsweredBy(pending: readonly PendingXref[], fileName: strin
 // ── The References palette (UI_SPEC §6) ─────────────────────────────────────────────────────
 
 export type ReferenceKind = 'attach' | 'overlay' | 'image' | 'pdf';
-/** AutoCAD's statuses in the External References palette that Triya has (M5-04 adds Unload). */
+/** AutoCAD's statuses in the External References palette that Triya has. */
 export type ReferenceStatus = 'loaded' | 'not-found' | 'unloaded';
 
 export interface ReferenceRow {
@@ -163,7 +164,7 @@ export function referencesOf(
         kind: (r.flags ?? 0) & 8 ? 'overlay' : 'attach',
         name: r.name,
         path: def.xrefPath ?? '',
-        status: def.xrefLoaded ? 'loaded' : 'not-found',
+        status: def.xrefLoaded ? 'loaded' : def.xrefUnloaded ? 'unloaded' : 'not-found',
         depth,
       };
     }

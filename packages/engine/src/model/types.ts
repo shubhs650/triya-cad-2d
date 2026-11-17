@@ -1758,6 +1758,13 @@ export interface BlockDefinition extends ObjectCommon {
    * contents in its own file, and the save leaves them out (`withoutXrefContent`).
    */
   readonly xrefLoaded?: readonly Handle[];
+  /**
+   * Set on an xref the user unloaded (XREF Unload, M5-04): its file is not loaded again until
+   * the xref is reloaded, and the References palette lists it as Unloaded. Session state: the
+   * DXF has no group for it (the BLOCK's 70 bit 32 "resolved" is ignored on input), so a save
+   * leaves it out and the drawing opens with the xref waiting for its file again.
+   */
+  readonly xrefUnloaded?: true;
 }
 
 export interface Layout extends ObjectCommon {

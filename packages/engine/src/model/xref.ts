@@ -25,6 +25,7 @@
 //   as an xref"). The host file stores the point of the last load, so an INSBASE moved since
 //   moves the references, and the save writes the new point back, as AutoCAD's does.
 
+import { ChangeSetBuilder } from './builder';
 import type { ChangeSet, KeyedChanges, PositionedEntity } from './changeset';
 import { DocumentModel, type DocumentInit } from './document';
 import { isHandle, compareHandles, type Handle } from './handle';
@@ -347,15 +348,15 @@ export function loadedXrefHandles(model: DocumentModel): Set<Handle> {
  */
 export function withoutXrefContent(model: DocumentModel): DocumentModel {
   const loaded = loadedXrefHandles(model);
-  if (loaded.size === 0) return model;
+  if (loaded.size === 0 && ![...model.blocks.values()].some((b) => b.xrefUnloaded)) return model;
   const keep = <T extends ObjectCommon>(m: ReadonlyMap<Handle, T>): T[] =>
     [...m.values()].filter((r) => !loaded.has(r.handle));
   const tables = Object.fromEntries(
     Object.entries(model.tables).map(([k, m]) => [k, keep(m as ReadonlyMap<Handle, ObjectCommon>)]),
   ) as NonNullable<DocumentInit['tables']>;
   const blocks = keep(model.blocks).map((b) => {
-    if (!b.xrefLoaded) return b;
-    const { xrefLoaded: _l, ...rest } = b;
+    if (!b.xrefLoaded && !b.xrefUnloaded) return b;
+    const { xrefLoaded: _l, xrefUnloaded: _u, ...rest } = b;
     return rest;
   });
   const entities: EntityInit[] = [];
@@ -378,11 +379,172 @@ export function withoutXrefContent(model: DocumentModel): DocumentModel {
   });
 }
 
-/** The xref block records of a model that point at a file but hold nothing yet. */
+/**
+ * The xref block records of a model that point at a file but hold nothing yet, those the user
+ * unloaded (XREF Unload) left out: they wait for no file.
+ */
 export function unloadedXrefs(model: DocumentModel): BlockTableRecord[] {
   const out: BlockTableRecord[] = [];
   for (const r of model.tables.blockRecords.values()) {
-    if (isXrefRecord(r) && !model.blocks.get(r.handle)?.xrefLoaded) out.push(r);
+    const def = model.blocks.get(r.handle);
+    if (isXrefRecord(r) && !def?.xrefLoaded && !def?.xrefUnloaded) out.push(r);
   }
   return out;
+}
+
+// ── XREF Unload and Reload (M5-04) ──────────────────────────────────────────────────────────
+//
+// AutoCAD 2024 help, "To Unload an Xref" and "XREF (Command)": Unload "unloads the selected
+// drawing references": the reference stays in the drawing, with its path, and draws nothing until
+// it is reloaded; Reload "reloads the selected drawing references", reading the file again so
+// the drawing shows its latest saved state. Neither changes the drawing (AutoCAD's UNDO does not
+// reload an unloaded xref), so in Triya neither is an undo step, as a load is not.
+//
+// Only an xref the drawing itself attaches is unloaded: one that a loaded xref brings in goes and
+// comes back with that xref. The xrefs nested in an unloaded one go with it, with their content.
+
+/** The xref whose loaded content holds `block` (a nested xref), or undefined. */
+export function xrefBringing(model: DocumentModel, block: Handle): BlockTableRecord | undefined {
+  for (const d of model.blocks.values()) {
+    if (d.xrefLoaded?.includes(block)) return model.tables.blockRecords.get(d.handle);
+  }
+  return undefined;
+}
+
+/** Why xref `block` cannot be unloaded (`reload`: unloaded to be loaded again), or undefined. */
+export function xrefUnloadProblem(
+  model: DocumentModel,
+  block: Handle,
+  reload = false,
+): string | undefined {
+  const record = model.tables.blockRecords.get(block);
+  if (!record || !model.blocks.has(block)) return `No block ${block}.`;
+  if (!isXrefRecord(record)) return `${record.name} is not an external reference.`;
+  const parent = xrefBringing(model, block);
+  if (parent && !reload)
+    return `${record.name} is nested in ${parent.name}: unload ${parent.name} instead.`;
+  return undefined;
+}
+
+/**
+ * Takes every handle the loads of the xrefs `blocks` added out of `b`, and those of the xrefs it brought in
+ * that were loaded since, and leaves the blocks empty, waiting for their files. The blocks' own
+ * records, definitions and references stay.
+ *
+ * What another loaded xref uses stays: a load maps a symbol or nested xref that an earlier load
+ * brought in (the grandchild that both the attached and the overlaid child name) onto that one,
+ * so the record belongs to the first load only. It is handed to the xref that still uses it,
+ * which then leaves it out of the saved file in turn. A viewport of the drawing that froze a
+ * layer that goes lets go of it.
+ */
+export function removeXrefContent(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  blocks: readonly Handle[],
+): void {
+  const gone = new Set<Handle>();
+  const collect = (h: Handle) => {
+    for (const x of model.blocks.get(h)?.xrefLoaded ?? []) {
+      if (gone.has(x)) continue;
+      gone.add(x);
+      if (model.blocks.get(x)?.xrefLoaded) collect(x);
+    }
+  };
+  const leaving = new Set(blocks);
+  for (const block of leaving) collect(block);
+  if (gone.size === 0) return;
+
+  // Which loaded xref each handle of the other loads belongs to.
+  const belongs = new Map<Handle, Handle>();
+  for (const d of model.blocks.values()) {
+    if (leaving.has(d.handle) || gone.has(d.handle)) continue;
+    for (const h of d.xrefLoaded ?? []) belongs.set(h, d.handle);
+  }
+  const adopted = new Map<Handle, Handle[]>();
+  /** Keeps `h` (and, for a block, what it holds and loaded) for xref `to`. */
+  const keep = (h: Handle, to: Handle) => {
+    if (!gone.delete(h)) return;
+    adopted.set(to, [...(adopted.get(to) ?? []), h]);
+    if (!model.blocks.has(h)) return;
+    // A nested xref kept keeps its own load, which stays its own.
+    const own = (x: Handle) => {
+      for (const y of model.blocks.get(x)?.xrefLoaded ?? []) if (gone.delete(y)) own(y);
+    };
+    own(h);
+    for (const id of model.blockEntities(h)) keep(model.entity(id)!.handle, to);
+  };
+  // What stays may name what was going: repeat until nothing more is kept.
+  for (let size = -1; size !== gone.size;) {
+    size = gone.size;
+    const visit = (value: unknown, from: Handle) => {
+      const to = belongs.get(from);
+      if (to === undefined) return;
+      refersTo(value, gone, (h) => keep(h, to));
+    };
+    for (const e of model.entities()) if (!gone.has(e.handle)) visit(e, e.handle);
+    for (const t of COPIED_TABLES)
+      for (const r of model.tables[t].values()) if (!gone.has(r.handle)) visit(r, r.handle);
+    for (const o of model.objects.values()) if (!gone.has(o.handle)) visit(o, o.handle);
+  }
+
+  for (const h of gone) {
+    const e = model.entityByHandle(h);
+    if (e && b.entity(e.id)) b.removeEntity(e.id);
+  }
+  for (const h of gone) if (b.object(h)) b.removeObject(h);
+  for (const h of gone) {
+    if (model.blocks.has(h)) {
+      // A nested xref's or block's entities went above; its record goes with it.
+      b.removeBlock(h);
+      continue;
+    }
+    for (const table of COPIED_TABLES) {
+      if (model.tables[table].has(h) && b.tableRecord(table, h)) b.removeTableRecord(table, h);
+    }
+  }
+  for (const [to, handles] of adopted) {
+    const d = b.block(to)!;
+    b.updateBlock(to, { xrefLoaded: [...(d.xrefLoaded ?? []), ...handles] });
+  }
+  for (const e of model.entities()) {
+    const cur = b.entity(e.id);
+    if (cur?.geom.kind !== 'VIEWPORT') continue;
+    const kept = cur.geom.frozenLayers.filter((h) => !gone.has(h));
+    if (kept.length !== cur.geom.frozenLayers.length)
+      b.updateEntity(e.id, { geom: { ...cur.geom, frozenLayers: kept } });
+  }
+}
+
+/** Calls `found` with each of `handles` that `value` names under a handle key (not its own). */
+function refersTo(value: unknown, handles: ReadonlySet<Handle>, found: (h: Handle) => void): void {
+  const walk = (v: unknown, key: string | undefined): void => {
+    if (typeof v === 'string') {
+      if (key !== undefined && HANDLE_KEYS.has(key) && handles.has(v)) found(v);
+    } else if (Array.isArray(v)) {
+      for (const item of v) walk(item, key);
+    } else if (typeof v === 'object' && v !== null && !ArrayBuffer.isView(v)) {
+      for (const [k, item] of Object.entries(v)) {
+        if (k === 'handle' || k === 'owner' || k === 'raw' || k === 'xdata') continue;
+        walk(item, k);
+      }
+    }
+  };
+  walk(value, undefined);
+}
+
+/**
+ * The ChangeSet that unloads xref `block` (XREF Unload), or with `reload` empties it so that its
+ * file is loaded again (XREF Reload): the xref then waits for its file as a drawing just opened
+ * does. Throws when `xrefUnloadProblem` names a reason.
+ */
+export function xrefUnloadChange(model: DocumentModel, block: Handle, reload = false): ChangeSet {
+  const problem = xrefUnloadProblem(model, block, reload);
+  if (problem) throw new Error(problem);
+  const b = new ChangeSetBuilder(model);
+  removeXrefContent(b, model, [block]);
+  const def = model.blocks.get(block)!;
+  const unloaded = reload ? undefined : true;
+  if (def.xrefLoaded || def.xrefUnloaded !== unloaded)
+    b.updateBlock(block, { xrefLoaded: undefined, xrefUnloaded: unloaded });
+  return b.build();
 }
