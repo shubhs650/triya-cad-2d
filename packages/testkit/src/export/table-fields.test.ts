@@ -22,6 +22,7 @@ import {
   editableFieldText,
   textWithFields,
   withCellText,
+  withRowsInserted,
   type Entity,
   type TableGeometry,
 } from '@triya/engine';
@@ -206,5 +207,22 @@ describe("fields in a drawing's own table save as DXF and read back", () => {
     });
     const list = listed(cleared);
     if (list) for (const h of firstTree) expect(list.has(h)).toBe(false);
+  });
+
+  it('keeps a cell field through rows inserted above it (it names no cells)', () => {
+    const model = modelOf(bytesOf(SAMPLE));
+    const { t, i, j } = own(model);
+    typeInto(model, `Rev %<${YEAR}>%`);
+    const want = cellOf(model, t.handle, i, j);
+    const g = (model.entity(t.id) as Table).geom;
+    const b = new ChangeSetBuilder(model);
+    b.updateEntity(t.id, { geom: withRowsInserted(g, i, 1, i - 1) });
+    model.apply(b.build());
+    const doc = readCadDocument(save(SAMPLE, model));
+    expect(cellOf(DocumentModel.create(documentInit(doc)), t.handle, i + 1, j)).toEqual(want);
+    expect(roots(doc, t.handle, i + 1, j).legacy).toBeInstanceOf(Field);
+    const edited = (model.entity(t.id) as Table).geom;
+    const { rowOrigins: _r, ...geom } = edited;
+    expect(contentMismatches(doc, t.handle, geom as TableGeometry)).toEqual([]);
   });
 });
