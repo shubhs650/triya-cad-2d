@@ -27,6 +27,10 @@
 // name, a 3D solid's face materials, the header's $CMATERIAL and interference visual styles), so
 // those fields are read as references too.
 //
+// XREF Detach (M5-04 part 1) removes an xref's block record: its BLOCK and ENDBLK go as any
+// block's do, and the `xref|symbol` records the host kept of it (VISRETAIN) go with it; an
+// xref-dependent record of an xref that stays is still refused.
+//
 // Not purged here: shapes kept as nameless STYLE records.
 
 import type { CadDocument, Entity as AcadEntity } from '@node-projects/acad-ts';

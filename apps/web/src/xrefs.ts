@@ -117,6 +117,10 @@ export function referencesOf(
     for (const x of cs.objects?.removed ?? []) objects.delete(x.handle);
     for (const u of cs.objects?.updated ?? []) objects.set(u.after.handle, u.after);
     for (const x of cs.objects?.added ?? []) objects.set(x.handle, x);
+    // An xref unloaded or reloaded (M5-04): nothing is listed under it until it loads again.
+    for (const u of cs.blocks?.updated ?? []) {
+      if (u.before.xrefLoaded && !u.after.xrefLoaded) under.delete(u.after.handle);
+    }
     // An xref load: what it brought in is listed under the xref.
     const load = cs.blocks?.updated?.find((u) => u.after.xrefLoaded && !u.before.xrefLoaded);
     if (!load) {
