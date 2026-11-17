@@ -18,6 +18,20 @@ test.afterAll(async () => {
 
 type Dev = { triyaDev: { changes(): readonly ChangeSet[] } };
 
+/** The TEXT values as they stand now, after edits (TEXTEDIT). */
+const values = (page: Page) =>
+  page.evaluate(() => {
+    const out = new Map<string, string>();
+    for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+      for (const a of cs.entities?.added ?? [])
+        if (a.entity.geom.kind === 'TEXT')
+          out.set(a.entity.handle, (a.entity.geom as TextGeometry).value);
+      for (const u of cs.entities?.updated ?? [])
+        if (out.has(u.after.handle)) out.set(u.after.handle, (u.after.geom as TextGeometry).value);
+    }
+    return [...out.values()];
+  });
+
 /** The TEXT and MTEXT entities added in this test, as [type, value or contents]. */
 const texts = (page: Page) =>
   page.evaluate(() => {
@@ -201,6 +215,102 @@ test('TEXT takes the keys typed before its line editor opens', async ({ page }) 
       ['TEXT', 'Fast one'],
       ['TEXT', 'Two'],
     ]);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+});
+
+// M4-26: AutoCAD keeps what is typed while MTEXT's editor opens. Typed before the editor was
+// shown, keys were held by the command line and replayed there: the contents typed after the
+// opposite corner reached `Enter text:` at the command line, not the editor.
+test('MTEXT takes the keys typed before its editor opens', async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  await type(page, 'MT', 'Specify first corner:');
+  await type(
+    page,
+    '1000020,1000080',
+    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
+  );
+  await page.keyboard.type('1000140,1000020');
+  // The corner's Enter, then two paragraphs, a typo taken back and a tab, before the editor is
+  // shown.
+  await typeAhead(page, [
+    'Enter',
+    ...'Firts',
+    'Backspace',
+    'Backspace',
+    ...'st',
+    'Enter',
+    'A',
+    'Tab',
+    'B',
+  ]);
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('C');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(page.getByRole('textbox', { name: 'Command' })).toHaveValue('');
+  await expect.poll(() => texts(page)).toEqual([['MTEXT', 'First\\PA^IBC']]);
+
+  // Esc typed ahead cancels the editor; what follows it was typed ahead of `Command:`.
+  await type(page, 'MT', 'Specify first corner:');
+  await type(
+    page,
+    '1000020,1000080',
+    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
+  );
+  await page.keyboard.type('1000140,1000020');
+  await typeAhead(page, ['Enter', ...'dropped', 'Escape', ...'LINE', 'Enter']);
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await expect(editor).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  expect(await texts(page)).toEqual([['MTEXT', 'First\\PA^IBC']]);
+});
+
+// M4-26: TEXTEDIT's line editor opens on the picked TEXT with its value selected; what is typed
+// before it is shown replaces the value, as typed into it would. Held by the command line, the
+// keys were replayed there instead and the editor kept the old value.
+test('TEXTEDIT takes the keys typed before its line editor opens', async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '1000020,1000060', 'Specify height <2.5000>:');
+  await type(page, '5', 'Specify rotation angle of text <0.00>:');
+  await type(page, '', 'Enter text:');
+  await page.keyboard.type('Old');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  const SELECT = 'Select an annotation object or [Undo/Mode]:';
+  await type(page, 'TEXTEDIT', SELECT);
+  // Last picks the TEXT; its new value and the Enter that keeps it are typed before the editor is
+  // shown.
+  await page.keyboard.type('L');
+  await typeAhead(page, ['Enter', ...'Nwe', 'Backspace', 'Backspace', ...'ew', 'Enter']);
+  await expect(prompt(page)).toHaveText(SELECT);
+  await expect(page.getByRole('textbox', { name: 'Text' })).toHaveCount(0);
+  await expect.poll(() => values(page)).toEqual(['New']);
+
+  // Picked again, the keys go on from what is typed into the editor once it shows.
+  await page.keyboard.type('L');
+  await typeAhead(page, ['Enter', ...'Ne']);
+  const line = page.getByRole('textbox', { name: 'Text' });
+  await expect(line).toBeFocused();
+  await page.keyboard.type('xt');
+  await expect(line).toHaveValue('Next');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText(SELECT);
+  await expect.poll(() => values(page)).toEqual(['Next']);
+
+  // Esc typed ahead cancels the edit; the keys after it reach the prompt that follows.
+  await page.keyboard.type('L');
+  await typeAhead(page, ['Enter', ...'Gone', 'Escape', ...'LINE', 'Enter']);
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await expect(page.getByRole('textbox', { name: 'Text' })).toHaveCount(0);
+  await expect.poll(() => values(page)).toEqual(['Next']);
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
 });
