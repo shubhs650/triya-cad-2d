@@ -18,7 +18,7 @@ const EOF = 'EOF';
 
 /** The code/value pairs of `text`. */
 function groups(text: string): Group[] {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/);
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   const out: Group[] = [];
   for (let i = 0; i + 1 < lines.length; i += 2) {
     const code = Number(lines[i]!.trim());

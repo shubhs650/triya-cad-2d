@@ -148,7 +148,7 @@ describe('.las files', () => {
     expect(text.endsWith('  0\r\nEOF\r\n')).toBe(true);
     expect(parseLas(text)).toEqual([s]);
     // Several states in one file all come in.
-    const two = text.replace(/  0\r\nEOF\r\n$/, '') + text.split('LAYERSTATEDICTIONARY\r\n')[1]!;
+    const two = text.replace(/ {2}0\r\nEOF\r\n$/, '') + text.split('LAYERSTATEDICTIONARY\r\n')[1]!;
     expect(parseLas(two.replace('Site plan', 'First')).map((x) => x.name)).toEqual([
       'First',
       'Site plan',
@@ -194,7 +194,7 @@ describe('saving layer states', () => {
       try {
         exportDocument(readCadDocument(bytes), model, { format: 'dxf' });
       } catch (e) {
-        if (e instanceof UnsupportedChangeError) return e.problems;
+        if (e instanceof UnsupportedChangeError) return [...e.problems];
         throw e;
       }
       return [];
