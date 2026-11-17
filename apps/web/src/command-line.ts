@@ -200,6 +200,22 @@ export function takesTypeAhead(prompt: Prompt | undefined): boolean {
   return prompt?.kind === 'string' && prompt.editor !== undefined && !prompt.editor.cell;
 }
 
+/**
+ * The key a keydown types ahead of the prompt an in-place editor's answer leads to, once the
+ * editor has answered (M4-31): what the command line would hold (`holdsKey`), a character,
+ * Enter, Backspace, Tab or Esc, with no Ctrl, Alt or Cmd. Undefined for any other key, which the
+ * editor drops: it is closing and the key is not its own any more.
+ */
+export function typedAfter(e: {
+  readonly key: string;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
+}): string | undefined {
+  if (e.ctrlKey || e.altKey || e.metaKey) return undefined;
+  return types(e.key) || e.key === 'Tab' || e.key === 'Escape' ? e.key : undefined;
+}
+
 /** The keys a command line holds (`holdsKey`), for an in-place editor to take (M4-20). */
 export interface HeldKeys {
   /** The keys held, which the command line then no longer holds. */
@@ -256,6 +272,21 @@ export class CommandLines {
     return () => {
       if (this.#editors.get(doc) === editor) this.#editors.delete(doc);
     };
+  }
+
+  /**
+   * Keys typed into an in-place editor on `doc` after it answered the engine, numbered as typed
+   * input is (`send`, M4-31): typed ahead of the prompt the answer leads to, they join the keys
+   * `doc`'s command line holds and are replayed there once the engine has read the answer, as
+   * the keys typed at the command line are (M2-47 part 3). AutoCAD's editor hands them on the
+   * same way: TEXTEDIT's Enter Enter keeps the line and then ends TEXTEDIT.
+   */
+  typeAfter(doc: number, keys: readonly string[]): void {
+    if (keys.length === 0) return;
+    this.#held.get(doc)?.give(keys);
+    // The command line replays held keys when it renders: after the engine has read the answer,
+    // nothing else may move it.
+    this.#changed();
   }
 
   /** Hands `keys`, held by `doc`'s command line, to its open editor; false when none took them. */

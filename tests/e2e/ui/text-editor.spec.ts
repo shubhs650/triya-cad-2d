@@ -314,3 +314,81 @@ test('TEXTEDIT takes the keys typed before its line editor opens', async ({ page
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
 });
+
+/** Ctrl+Enter as typed into the page, then `keys` with nothing in between (`typeAhead`). */
+const ctrlEnterAhead = (page: Page, keys: readonly string[]) =>
+  page.evaluate((keys) => {
+    const at = () => document.activeElement ?? document.body;
+    at().dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    for (const key of keys) {
+      at().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    }
+  }, keys);
+
+// M4-31: keys typed into an in-place editor after it has answered, and before the next prompt
+// shows, are typed ahead of that prompt, as at the command line (M2-47 part 3). The editors
+// answered the engine unnumbered and kept those keys: TEXTEDIT's second Enter, which ends it at
+// `Select an annotation object or [Undo/Mode]:`, was lost, and the command after it with it.
+test('keys typed after an in-place editor answers reach the prompts that follow', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await open(page);
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '1000020,1000060', 'Specify height <2.5000>:');
+  await type(page, '5', 'Specify rotation angle of text <0.00>:');
+  await type(page, '', 'Enter text:');
+  const line = page.getByRole('textbox', { name: 'Text' });
+  await expect(line).toBeFocused();
+  // TEXT: the Enter that ends it on an empty line, and a command typed after it.
+  await page.keyboard.type('Old');
+  await page.keyboard.press('Enter');
+  await expect(line).toHaveValue('');
+  await typeAhead(page, ['Enter', ...'TEXTEDIT', 'Enter']);
+  const SELECT = 'Select an annotation object or [Undo/Mode]:';
+  await expect(prompt(page)).toHaveText(SELECT);
+  await expect(line).toHaveCount(0);
+  await expect.poll(() => texts(page)).toEqual([['TEXT', 'Old']]);
+
+  // TEXTEDIT: Enter keeps the line, the second Enter ends TEXTEDIT, and a command follows.
+  await page.keyboard.type('L');
+  await page.keyboard.press('Enter');
+  await expect(line).toBeFocused();
+  await page.keyboard.type('New');
+  await typeAhead(page, ['Enter', 'Enter', ...'LINE', 'Enter']);
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await expect(line).toHaveCount(0);
+  await expect.poll(() => values(page)).toEqual(['New']);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // MTEXT: Ctrl+Enter closes the editor; the command typed after it is not typed into it.
+  await type(page, 'MT', 'Specify first corner:');
+  await type(
+    page,
+    '1000020,1000040',
+    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
+  );
+  await type(page, '1000140,1000010', /.*/);
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('Note');
+  await ctrlEnterAhead(page, [...'LINE', 'Enter']);
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await expect(editor).toHaveCount(0);
+  await expect
+    .poll(() => texts(page))
+    .toEqual([
+      ['TEXT', 'Old'],
+      ['MTEXT', 'Note'],
+    ]);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+});

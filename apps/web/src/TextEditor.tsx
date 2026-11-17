@@ -43,6 +43,7 @@
 // DOM never takes a shape the spans cannot hold.
 import type {
   Color,
+  PromptAnswer,
   SpellWord,
   StringPrompt,
   TextEditorBackground,
@@ -84,7 +85,7 @@ import {
 } from 'react';
 import { controllerOf } from './canvas/registry';
 import type { CanvasController } from './canvas/controller';
-import { commandLines } from './command-line';
+import { commandLines, typedAfter } from './command-line';
 import { editorSpelling, lineSpellText, wordsToCheck } from './spell-check';
 import { engines } from './engine/registry';
 import { appFonts } from './fonts';
@@ -239,7 +240,24 @@ function boxStyle(p: Placement, request: TextEditorRequest): CSSProperties {
   };
 }
 
-const cancel = (doc: number) => engines.command(doc, { kind: 'cancel' });
+/**
+ * An editor's answer and its Esc, numbered as typed input is (M4-31): the command line holds the
+ * keys typed after them until the engine has read them and shown the prompt they lead to.
+ */
+const answer = (doc: number, a: PromptAnswer) =>
+  engines.command(doc, { kind: 'answer', answer: a, seq: commandLines.send(doc) });
+const cancel = (doc: number) =>
+  engines.command(doc, { kind: 'cancel', seq: commandLines.send(doc) });
+
+/**
+ * A key typed into an editor after it answered or cancelled, while it is still up (M4-31): not
+ * the editor's any more, it is typed ahead of the prompt that follows, at the command line.
+ */
+function typeOn(doc: number, e: React.KeyboardEvent): void {
+  e.preventDefault();
+  const key = typedAfter(e);
+  if (key !== undefined) commandLines.typeAfter(doc, [key]);
+}
 
 /**
  * Keys typed after a table cell's editor moved on (Tab, an arrow at the edge) and before the next
@@ -310,7 +328,7 @@ function TextLine({
   const answerMarked = (line: string) => {
     if (done.current) return;
     done.current = true;
-    engines.command(doc, { kind: 'answer', answer: { kind: 'string', value: line, editor: true } });
+    answer(doc, { kind: 'string', value: line, editor: true });
   };
   /** TEXTEDIT: the whole line, once. */
   const keep = () => answerMarked(lineValue(typed.current));
@@ -383,12 +401,12 @@ function TextLine({
         if (op.kind === 'line') {
           // The line typed so far keeps its fields.
           const value = first ? lineValue(lineEdited(before, op.value, op.value.length)) : op.value;
-          engines.command(doc, { kind: 'answer', answer: { kind: 'string', value } });
+          answer(doc, { kind: 'string', value });
           first = false;
         } else {
           closed.current = true;
           if (op.kind === 'end') {
-            engines.command(doc, { kind: 'answer', answer: { kind: 'enter' } });
+            answer(doc, { kind: 'enter' });
           } else cancel(doc);
         }
       }
@@ -414,10 +432,7 @@ function TextLine({
       // Placing TEXT: the line typed so far is placed before the click reaches the engine,
       // which starts the next line at the click.
       if (e.button === 0 && e.target.closest('.drawing-canvas') && typed.current.length > 0) {
-        engines.command(doc, {
-          kind: 'answer',
-          answer: { kind: 'string', value: lineValue(typed.current) },
-        });
+        answer(doc, { kind: 'string', value: lineValue(typed.current) });
         typed.current = [];
         setParts([]);
       }
@@ -468,6 +483,8 @@ function TextLine({
           }}
           onKeyDown={(e) => {
             e.stopPropagation();
+            // Answered (TEXTEDIT's Enter, TEXT's last Enter, Esc): the keys after go on (M4-31).
+            if (done.current || closed.current) return typeOn(doc, e);
             if (isMenuKey(e)) {
               const at = e.currentTarget.selectionStart ?? 0;
               const i = flagged.findIndex((w) => w.start <= at && at <= w.end);
@@ -480,13 +497,12 @@ function TextLine({
               e.preventDefault();
               if (editing) return keep();
               if (parts.length === 0) closed.current = true;
-              engines.command(doc, {
-                kind: 'answer',
-                answer:
-                  parts.length === 0
-                    ? { kind: 'enter' }
-                    : { kind: 'string', value: lineValue(parts) },
-              });
+              answer(
+                doc,
+                parts.length === 0
+                  ? { kind: 'enter' }
+                  : { kind: 'string', value: lineValue(parts) },
+              );
               setParts([]);
             } else if (e.key === 'Escape') {
               e.preventDefault();
@@ -1376,15 +1392,12 @@ function MTextBox({
             ),
           }
         : c;
-    engines.command(doc, {
-      kind: 'answer',
-      answer: {
-        kind: 'string',
-        value,
-        editor: true,
-        ...((answered || request.columns) && { columns: answered }),
-        ...(cell && { cell }),
-      },
+    answer(doc, {
+      kind: 'string',
+      value,
+      editor: true,
+      ...((answered || request.columns) && { columns: answered }),
+      ...(cell && { cell }),
     });
   };
   /** The selection replaced by `inserted`, typed in the format at the caret. */
@@ -1753,6 +1766,8 @@ function MTextBox({
       }
       return;
     }
+    // Closed (Ctrl+Enter, Esc) and not moving to another cell: the keys after go on (M4-31).
+    if (done.current) return typeOn(doc, e);
     // A table cell: Tab, Shift+Tab and the arrows at the edge of the text move to another cell.
     const move =
       request.cell && e.target === root.current && !e.ctrlKey && !e.altKey && !e.metaKey

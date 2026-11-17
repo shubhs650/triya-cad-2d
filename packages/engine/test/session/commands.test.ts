@@ -64,6 +64,24 @@ describe('EngineSession commands', () => {
     expect(out.some((o) => o.type === 'read')).toBe(false);
   });
 
+  it('says it has read a numbered answer, as an in-place editor sends it (M4-31)', async () => {
+    const { s, out } = setup();
+    await s.command({ kind: 'submit', text: 'L' });
+    await s.command({ kind: 'answer', answer: { kind: 'point', point: { x: 0, y: 0 } }, seq: 3 });
+    expect(out.slice(-2).map((o) => o.type)).toEqual(['prompt', 'read']);
+    expect(out.at(-1)).toEqual({ type: 'read', seq: 3 });
+    await s.command({ kind: 'answer', answer: { kind: 'point', point: { x: 10, y: 0 } } });
+    // Enter ends LINE: read once `Command:` is out.
+    await s.command({ kind: 'answer', answer: { kind: 'enter' }, seq: 4 });
+    expect(out.slice(-2).map((o) => o.type)).toEqual(['idle', 'read']);
+    expect(out.at(-1)).toEqual({ type: 'read', seq: 4 });
+    // Unnumbered, as a dialog answers, it is not reported.
+    out.length = 0;
+    await s.command({ kind: 'submit', text: 'L' });
+    await s.command({ kind: 'answer', answer: { kind: 'point', point: { x: 0, y: 0 } } });
+    expect(out.some((o) => o.type === 'read')).toBe(false);
+  });
+
   it('sends a prompt that cloning can carry, and answers command previews (M3-12 part 6)', async () => {
     const { s, out } = setup();
     await s.command({ kind: 'submit', text: 'L' });
