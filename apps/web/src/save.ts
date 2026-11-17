@@ -75,10 +75,16 @@ export function dxfName(name: string): string {
 
 export type SaveMode = 'qsave' | 'saveas';
 
+/** The changes a save writes, or a promise of them while the engine still works them out. */
+export type SaveChanges = readonly ChangeSet[] | Promise<readonly ChangeSet[]>;
+
 /** What a save needs of the browser and the I/O worker; the app's is `browserSave` (save-browser.ts). */
 export interface SaveEnv {
-  /** Writes the AC1032 DXF (the I/O worker). */
-  write(bytes: Uint8Array, changes: readonly ChangeSet[]): Promise<Uint8Array>;
+  /**
+   * Writes the AC1032 DXF (the I/O worker). Given the changes still being worked out, it starts
+   * the writer meanwhile (M4-22) and rejects with their error if they cannot be.
+   */
+  write(bytes: Uint8Array, changes: SaveChanges): Promise<Uint8Array>;
   /**
    * The save picker, undefined when cancelled; absent without File System Access, when saves
    * download.
@@ -125,8 +131,8 @@ export async function saveDrawing(
   }
   let out: Uint8Array;
   try {
-    const all =
-      typeof changes === 'function' ? await changes(target?.name ?? dxfName(name)) : changes;
+    // Handed over before they are worked out, so the I/O worker starts meanwhile (M4-22).
+    const all = typeof changes === 'function' ? changes(target?.name ?? dxfName(name)) : changes;
     out = await env.write(file.bytes, all);
   } catch (e) {
     return { ok: false, message: `${name} was not saved: ${reason(e)}` };

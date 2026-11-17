@@ -103,7 +103,7 @@ import {
   tabBlock,
   type OpenDocument,
 } from './documents';
-import { engines } from './engine/registry';
+import { engines, nextEngineWorker } from './engine/registry';
 import { shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
@@ -660,7 +660,7 @@ async function exportDxf(id: number): Promise<Uint8Array> {
   const doc = store.getSnapshot().docs.find((d) => d.id === id);
   if (!doc?.file) throw new Error('There is nothing to export.');
   saveEnv ??= browserSave();
-  return saveEnv.write(doc.file.bytes, await savedChanges(doc));
+  return saveEnv.write(doc.file.bytes, savedChanges(doc));
 }
 
 /**
@@ -1253,6 +1253,8 @@ async function open(
   recovered?: Recovered,
 ): Promise<void> {
   store.startOpening(file.name);
+  // Its engine worker loads while the file is read (M4-22).
+  nextEngineWorker.start();
   try {
     const bytes = new Uint8Array(await (await file.getFile()).arrayBuffer());
     // The I/O worker takes its own copy: the app keeps the bytes, which every save starts from.
@@ -1277,6 +1279,7 @@ async function open(
     void deviceFonts.need(trueTypeFontsOf(opened.init));
     void resolveKept();
   } catch (e) {
+    nextEngineWorker.discard();
     store.failed(file.name, openError(file.name, e));
   }
 }

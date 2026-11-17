@@ -12,6 +12,7 @@ import {
   saveDrawing,
   type DrawingFile,
   type SaveEnv,
+  type SaveChanges,
   type SaveHandle,
 } from '../src/save';
 
@@ -197,7 +198,8 @@ describe('saveDrawing', () => {
     });
     await saveDrawing('a.dwg', { bytes: BYTES, inPlace: false }, changes, 'saveas', e);
     expect(order).toEqual(['pick', 'changes']);
-    expect(e.write).toHaveBeenCalledWith(BYTES, CHANGES);
+    expect(e.write).toHaveBeenCalledWith(BYTES, expect.any(Promise));
+    expect(await vi.mocked(e.write).mock.calls[0]![1]).toBe(CHANGES);
     // Given the name it is saved as, which a Filename field shows (FIELDEVAL, M4-10 part 3).
     expect(changes).toHaveBeenCalledWith('b.dxf');
     const download = vi.fn(() => Promise.resolve(CHANGES));
@@ -213,6 +215,35 @@ describe('saveDrawing', () => {
     const none = vi.fn(() => Promise.resolve(CHANGES));
     await saveDrawing('a.dwg', { bytes: BYTES, inPlace: false }, none, 'saveas', env(undefined));
     expect(none).not.toHaveBeenCalled();
+  });
+
+  // M4-22: the writer (the I/O worker, whose start took longer than the write) starts while the
+  // engine works out the changes, not after.
+  it('hands the writer the changes while they are still being worked out', async () => {
+    const order: string[] = [];
+    const e = env(handle('b.dxf').h);
+    e.write = vi.fn(async (_bytes: Uint8Array, changes: SaveChanges) => {
+      order.push('write');
+      expect(await changes).toBe(CHANGES);
+      order.push('written');
+      return OUT;
+    });
+    const changes = vi.fn(async () => {
+      order.push('changes');
+      await Promise.resolve();
+      order.push('worked out');
+      return CHANGES;
+    });
+    const r = await saveDrawing('a.dwg', { bytes: BYTES, inPlace: false }, changes, 'saveas', e);
+    expect(r.ok).toBe(true);
+    expect(order).toEqual(['changes', 'write', 'worked out', 'written']);
+    // Changes that cannot be worked out fail the save as a refused write does.
+    const failing = vi.fn(() => Promise.reject(new Error('the engine stopped')));
+    const f = env(handle('b.dxf').h);
+    f.write = (_bytes, changes) => Promise.resolve(changes).then(() => OUT);
+    expect(
+      await saveDrawing('a.dwg', { bytes: BYTES, inPlace: false }, failing, 'saveas', f),
+    ).toEqual({ ok: false, message: 'a.dwg was not saved: the engine stopped' });
   });
 
   it('downloads the .dxf without File System Access', async () => {
