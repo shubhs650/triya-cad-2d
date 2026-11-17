@@ -5,7 +5,7 @@
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
-import { DXF, expectShown, ink, openWithPicker } from '../app/page';
+import { DXF, expectDrawn, expectShown, ink, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -43,8 +43,12 @@ const toast = (page: Page) => page.getByTestId('undo-toast');
 /**
  * The canvas's ink once two looks half a second apart agree: a drawing's first frame can come
  * before its solid hatch (as M2-28 found), and an ink measured on it never drops on a freeze.
+ * The looks start once the render worker's first frame is on the canvas: before it, 1-4 s after
+ * the tab shows, the blank canvas agrees with itself too, and a freeze never halves its ink
+ * (M4-25: CI shard 3 measured 26136, the empty canvas, and 6 of 16 runs failed locally).
  */
 async function settledInk(page: Page): Promise<number> {
+  await expectDrawn(page, { timeout: 15_000 });
   let last = -1;
   await expect
     .poll(
