@@ -323,27 +323,39 @@ function TextLine({
     answerMarked(lineValue(marked));
     return true;
   };
-  // The keys typed while the editor opened, which the command line held for it (M4-20): typed
-  // in order before any key typed into the editor itself, as AutoCAD's editor keeps them. Each
-  // Enter places a line; the keys after the Enter that ends TEXT, or after Esc, go back to the
-  // command line for `Command:`.
+  /** TEXT ended or cancelled from the editor: keys held after that are for `Command:`. */
+  const closed = useRef(false);
+  // The keys the command line held for the editor (M4-20): those typed while it opened, typed in
+  // order before any key typed into it, as AutoCAD's editor keeps them, and any typed outside it
+  // while the engine read an input. Each Enter places a line; the keys after the Enter that ends
+  // TEXT, or after Esc, go back to the command line for `Command:`.
   useLayoutEffect(() => {
     if (editing) return;
-    const keys = commandLines.takeHeld(doc);
-    if (keys.length === 0) return;
-    const { ops, text, rest } = lineAhead(keys);
-    for (const op of ops) {
-      if (op.kind === 'line') {
-        engines.command(doc, { kind: 'answer', answer: { kind: 'string', value: op.value } });
-      } else if (op.kind === 'end') {
-        engines.command(doc, { kind: 'answer', answer: { kind: 'enter' } });
-      } else cancel(doc);
-    }
-    commandLines.giveHeld(doc, rest);
-    const typedAhead = lineEdited([], text, text.length);
-    typed.current = typedAhead;
-    caret.current = text.length;
-    setParts(typedAhead);
+    return commandLines.typeHeldInto(doc, (keys) => {
+      if (closed.current) return false;
+      const before = typed.current;
+      const { ops, text, rest } = lineAhead(keys, lineShown(before));
+      let first = true;
+      for (const op of ops) {
+        if (op.kind === 'line') {
+          // The line typed so far keeps its fields.
+          const value = first ? lineValue(lineEdited(before, op.value, op.value.length)) : op.value;
+          engines.command(doc, { kind: 'answer', answer: { kind: 'string', value } });
+          first = false;
+        } else {
+          closed.current = true;
+          if (op.kind === 'end') {
+            engines.command(doc, { kind: 'answer', answer: { kind: 'enter' } });
+          } else cancel(doc);
+        }
+      }
+      commandLines.giveHeld(doc, rest);
+      const left = lineEdited(first ? before : [], text, text.length);
+      typed.current = left;
+      caret.current = text.length;
+      setParts(left);
+      return true;
+    });
   }, []);
   useEffect(() => {
     if (editing) input.current?.select();
@@ -422,6 +434,7 @@ function TextLine({
             } else if (e.key === 'Enter') {
               e.preventDefault();
               if (editing) return keep();
+              if (parts.length === 0) closed.current = true;
               engines.command(doc, {
                 kind: 'answer',
                 answer:
@@ -432,6 +445,7 @@ function TextLine({
               setParts([]);
             } else if (e.key === 'Escape') {
               e.preventDefault();
+              closed.current = true;
               cancel(doc);
             } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
               if (!request.fields) return;

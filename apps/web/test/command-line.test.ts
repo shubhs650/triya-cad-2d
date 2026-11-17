@@ -205,6 +205,43 @@ describe("type-ahead into TEXT's line editor (M4-20)", () => {
     stop();
     expect(lines.takeHeld(1)).toEqual([]);
   });
+
+  it('types the held keys into an open editor until it has ended the command', () => {
+    const lines = new CommandLines();
+    let held: readonly string[] = ['a'];
+    lines.holdKeys(1, {
+      take: () => {
+        const keys = held;
+        held = [];
+        return keys;
+      },
+      give: (keys) => {
+        held = [...held, ...keys];
+      },
+    });
+    expect(lines.typeHeld(1, ['x'])).toBe(false);
+    const typed: string[] = [];
+    let open = true;
+    const close = lines.typeHeldInto(1, (keys) => {
+      if (!open) return false;
+      typed.push(...keys);
+      return true;
+    });
+    // The keys held while it opened, at once.
+    expect(typed).toEqual(['a']);
+    expect(held).toEqual([]);
+    expect(lines.typeHeld(1, ['b', 'Enter'])).toBe(true);
+    expect(lines.typeHeld(2, ['c'])).toBe(false);
+    expect(typed).toEqual(['a', 'b', 'Enter']);
+    open = false;
+    expect(lines.typeHeld(1, ['L'])).toBe(false);
+    // An editor that ended the command before it opened gives them back.
+    close();
+    expect(lines.typeHeld(1, ['L'])).toBe(false);
+    held = ['Q'];
+    lines.typeHeldInto(1, () => false);
+    expect(held).toEqual(['Q']);
+  });
 });
 
 describe('completions', () => {

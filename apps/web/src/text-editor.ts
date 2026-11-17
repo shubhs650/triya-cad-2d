@@ -428,15 +428,19 @@ export type LineAheadOp =
  * prompt not shown yet: AutoCAD's in-place editor keeps them, so they are typed into it in order.
  * Enter places the line typed (`line`), or on an empty line ends TEXT (`end`); Esc cancels. The
  * keys after an end or a cancel (`rest`) were typed ahead of `Command:`; `text` is the line left
- * typed. A space is typed (TEXT takes spaces); Tab types nothing.
+ * typed. A space is typed (TEXT takes spaces); Tab types nothing. `typed`: what the editor's line
+ * holds already, which the keys go on from.
  */
-export function lineAhead(keys: readonly string[]): {
+export function lineAhead(
+  keys: readonly string[],
+  typed = '',
+): {
   ops: LineAheadOp[];
   text: string;
   rest: readonly string[];
 } {
   const ops: LineAheadOp[] = [];
-  let text = '';
+  let text = typed;
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]!;
     if (key === 'Escape') {

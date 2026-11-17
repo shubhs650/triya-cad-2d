@@ -229,8 +229,15 @@ export function CommandLine({
   useEffect(() => {
     if (doc === undefined || held.current.length === 0) return;
     const now = lines.get(doc);
-    // TEXT's line editor takes the keys typed while it opened (M4-20).
-    if (reading(now) || takesTypeAhead(now.prompt)) return;
+    if (reading(now)) return;
+    // TEXT's line editor types the keys held for its prompt (M4-20); until it is open, or once
+    // it has ended TEXT, they wait.
+    if (takesTypeAhead(now.prompt)) {
+      const keys = held.current;
+      held.current = [];
+      if (!lines.typeHeld(doc, keys)) held.current = [...keys, ...held.current];
+      return;
+    }
     let rest = dynAhead.current?.(held.current);
     if (rest === undefined) {
       const r = replayAhead(textRef.current, held.current, now.prompt);

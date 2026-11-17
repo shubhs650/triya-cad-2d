@@ -213,6 +213,7 @@ export class CommandLines {
   readonly #states = new Map<number, CommandLineState>();
   readonly #listeners = new Set<() => void>();
   readonly #held = new Map<number, HeldKeys>();
+  readonly #editors = new Map<number, (keys: readonly string[]) => boolean>();
   #version = 0;
 
   subscribe = (listener: () => void): (() => void) => {
@@ -239,6 +240,27 @@ export class CommandLines {
   /** Keys held again by `doc`'s command line, for the prompt after the editor's. */
   giveHeld(doc: number, keys: readonly string[]): void {
     if (keys.length > 0) this.#held.get(doc)?.give(keys);
+  }
+
+  /**
+   * An in-place editor open on `doc`'s prompt (`takesTypeAhead`) types the keys held for it
+   * (M4-20): those held while it opened at once, and those the command line holds later (keys
+   * typed outside it while the engine read an input) as `typeHeld` hands them over. The editor
+   * answers whether it took them: once it has ended or cancelled the command it takes no more,
+   * and they wait for `Command:`. Returns the release.
+   */
+  typeHeldInto(doc: number, editor: (keys: readonly string[]) => boolean): () => void {
+    this.#editors.set(doc, editor);
+    const keys = this.takeHeld(doc);
+    if (keys.length > 0 && !editor(keys)) this.giveHeld(doc, keys);
+    return () => {
+      if (this.#editors.get(doc) === editor) this.#editors.delete(doc);
+    };
+  }
+
+  /** Hands `keys`, held by `doc`'s command line, to its open editor; false when none took them. */
+  typeHeld(doc: number, keys: readonly string[]): boolean {
+    return this.#editors.get(doc)?.(keys) ?? false;
   }
 
   get(doc: number): CommandLineState {

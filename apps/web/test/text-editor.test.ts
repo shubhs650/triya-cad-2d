@@ -357,6 +357,12 @@ describe("keys typed before TEXT's line editor opens (M4-20)", () => {
       rest: [],
     });
     expect(lineAhead(['Backspace', 'Tab', 'a'])).toEqual({ ops: [], text: 'a', rest: [] });
+    // Going on from the line the editor holds.
+    expect(lineAhead(['Backspace', 'x', 'Enter', 'y'], 'Ab')).toEqual({
+      ops: [{ kind: 'line', value: 'Ax' }],
+      text: 'y',
+      rest: [],
+    });
   });
 
   it('ends TEXT at an Enter on an empty line, leaving the keys after it for Command:', () => {
