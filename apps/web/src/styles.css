@@ -4443,6 +4443,17 @@ button {
   }
 }
 
+/* The Table Cell menu's Table Cell Format (M4-16 part 2): Data type on the left, Preview and the
+   type's format beside it, as FIELD's Field dialog lays them out. */
+.table-cell-format-preview {
+  display: block;
+  min-height: 2.2em;
+  padding: 6px 8px;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg-raised);
+  overflow-wrap: anywhere;
+}
+
 /* TOLERANCE's Geometric Tolerance (M4-11): six columns of symbol boxes and values, two rows;
    the Symbol and Material Condition pickers a grid of symbol boxes. */
 .cad-dialog.tolerance-dialog {

@@ -27,6 +27,7 @@ import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { mtextEditorRequest } from './text';
 import { tableCellUnder } from './table-cell-menu';
+import { drawingUnits } from '../units';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -86,7 +87,7 @@ export async function* editTableCells(
     if (a.kind !== 'string') return;
     let g = t.g;
     if (a.value !== cell.text) {
-      g = withCellText(g, r, c, a.value);
+      g = withCellText(g, r, c, a.value, drawingUnits(ctx.model.header));
       const lines = await linesOf(ctx, tableCellText(g, t.style, drawing, r, c));
       if (lines !== undefined) g = fitTableRow(g, t.style, r, c, lines);
     }

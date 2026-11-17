@@ -108,6 +108,7 @@ export {
   type TableBlockRequest,
   type TableBlockSettings,
 } from './draw/table-block';
+export type { TableCellFormatRequest } from './draw/table-data-format';
 export type {
   HatchDialogAnswer,
   HatchDialogButton,

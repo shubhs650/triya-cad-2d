@@ -26,6 +26,7 @@ import {
   AttributeEntity,
   BlockRecord,
   CadValueType,
+  CadValueUnitType,
   CellContent,
   CellType,
   Circle,
@@ -2326,12 +2327,10 @@ const tableWriter: Writer<TableGeometry> = {
       const cell = t.rows[i]!.cells[j]!;
       // A text cell given a block, or a block cell typed in (TINSERT, TABLEDIT; M4-16).
       if (b && b.type !== a.type) writeCellType(cell, a.type);
-      // A new cell nothing was typed into holds no value, as AutoCAD leaves one.
-      if (a.type === 'text' && (b ? b.text !== a.text : a.text !== '')) {
-        writeCellText(cell, a.text);
-        // A new cell (a copied table's, M4-05 part 7) states its value's format string (DXF 300);
-        // an existing cell keeps the one it has.
-        if (!b && a.valueFormat) cell.contents[0]!.cadValue.format = a.valueFormat;
+      // A new cell nothing was typed into, nor given a data format, holds no value, as AutoCAD
+      // leaves one.
+      if (a.type === 'text' && (b ? valueChanged(b, a) : a.text !== '' || a.valueFormat)) {
+        writeCellValue(cell, b, a);
       }
       if (a.type === 'block' && (!b || b.block !== a.block || b.type !== a.type)) {
         const block = insertable(r, a.block!)!;
@@ -2431,13 +2430,25 @@ function writeCellType(cell: TableEntityCell, type: TableCell['type']): void {
   }
 }
 
+/** Whether a text cell's value, its data format or the text it shows changed. */
+const valueChanged = (b: TableCell, a: TableCell): boolean =>
+  b.text !== a.text || !same(b.value, a.value) || (b.valueFormat ?? '') !== (a.valueFormat ?? '');
+
+/** The AcValue flag AutoCAD sets on a value with no format string (corpus: 6 unformatted, 4 formatted). */
+const UNFORMATTED = 2;
+
 /**
- * A cell's text, as the cell editor leaves it: a string value, whatever the value was (a number
- * or date cell typed over keeps what was typed; AutoCAD would parse it by the cell's data format,
- * which Triya does not map, so the drafter's text is what is kept). AutoCAD 2007 and later state
- * a value's formatted text beside it; a value that had one gets the new text as its own.
+ * A text cell's value as the model states it (M4-16): a number, whole number, date or point with
+ * its unit type (DXF 94), else a string, the text the cell editor left (an empty cell an empty
+ * value); its format string (DXF 300); and the text it shows (302), which AutoCAD states for every
+ * typed value (a string that had one gets the new text as its own, one that had none keeps none,
+ * as before). A format string set or taken off moves the value's unformatted flag with it.
  */
-function writeCellText(cell: TableEntity['rows'][number]['cells'][number], text: string): void {
+function writeCellValue(
+  cell: TableEntity['rows'][number]['cells'][number],
+  b: TableCell | undefined,
+  a: TableCell,
+): void {
   let content = cell.contents[0];
   if (!content) {
     // A DWG R2010+ cell that was never typed in has no content at all.
@@ -2446,10 +2457,28 @@ function writeCellText(cell: TableEntity['rows'][number]['cells'][number], text:
     cell.contents.push(content);
   }
   const v = content.cadValue;
-  const formatted = v.formattedValue !== '';
-  v.setValue(text, CadValueType.String);
-  v.isEmpty = false;
-  v.formattedValue = formatted ? text : '';
+  const hadFormatted = v.formattedValue !== '';
+  const x = a.value;
+  if (!x) {
+    v.setValue(a.text, CadValueType.String);
+    v.units = CadValueUnitType.NoUnits;
+    v.formattedValue = hadFormatted ? a.text : '';
+  } else {
+    if (x.kind === 'long') v.setValue(x.n, CadValueType.Long);
+    else if (x.kind === 'double') v.setValue(x.n, CadValueType.Double);
+    else if (x.kind === 'date') v.setValue(new Date(x.time), CadValueType.Date);
+    else if (x.dimensions === 2) v.setValue(new XY(x.point[0], x.point[1]), CadValueType.Point2D);
+    else v.setValue(new XYZ(...x.point), CadValueType.Point3D);
+    v.units = (x.kind === 'double' ? x.units : 0) as CadValueUnitType;
+    v.formattedValue = a.text;
+  }
+  // An empty cell given a data format holds an empty value, as AutoCAD states an empty cell.
+  v.isEmpty = !x && a.text === '' && (b === undefined || b.text === '');
+  const format = a.valueFormat ?? '';
+  if (format !== v.format) {
+    v.format = format;
+    v.flags = format !== '' ? v.flags & ~UNFORMATTED : v.flags | UNFORMATTED;
+  }
 }
 
 /**
@@ -2508,7 +2537,7 @@ export function tableCellProblems(
     if (!b) continue;
     const cell = acad.rows[after.rowOrigins?.[i] ?? i]?.cells[after.columnOrigins?.[j] ?? j];
     if (!cell) continue;
-    if (b.text !== a.text || b.block !== a.block) {
+    if (valueChanged(b, a) || b.block !== a.block) {
       const k = cell.contents[0];
       if (cell.contents.length > 1) out.push(`${at} holds more than one content`);
       if (k && (k.field || k.contentType & TableCellContentType.Field)) {

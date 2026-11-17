@@ -33,6 +33,8 @@ import { tableAxes } from '../spatial/entity-bounds';
 import { defpointsLayer, layerNamed } from './dimension-block';
 import { AnonymousNames } from './edit';
 import { blockExtentsOf } from './mleader';
+import { cellWithTypedText } from './table-data';
+import { DECIMAL_UNITS, type DrawingUnits } from '../commands/units';
 
 /**
  * The style new tables take: the one CTABLESTYLE names, else Standard, else the first;
@@ -219,10 +221,20 @@ export function fitTableRow(
   return { ...g, rowHeights };
 }
 
-/** Table `g` with cell (`i`, `j`)'s text set to `text`: a block cell typed in holds the text. */
-export function withCellText(g: TableGeometry, i: number, j: number, text: string): TableGeometry {
+/**
+ * Table `g` with cell (`i`, `j`)'s text set to `text`: a block cell typed in holds the text, and
+ * a cell with a data format holds the value the text reads as (`cellWithTypedText`, M4-16), in
+ * the drawing's `units`.
+ */
+export function withCellText(
+  g: TableGeometry,
+  i: number,
+  j: number,
+  text: string,
+  units: DrawingUnits = DECIMAL_UNITS,
+): TableGeometry {
   const cells = g.cells.map((row, k) =>
-    k !== i ? row : row.map((c, l) => (l !== j ? c : { ...textOnly(c), text })),
+    k !== i ? row : row.map((c, l) => (l !== j ? c : cellWithTypedText(textOnly(c), text, units))),
   );
   return { ...g, cells };
 }
@@ -268,7 +280,7 @@ export function withCellBlock(
   const { alignment: _alignment, ...kept } = c.format ?? {};
   const alignment = b.alignment ?? c.format?.alignment;
   const format = alignment !== undefined && alignment !== styled ? { ...kept, alignment } : kept;
-  const { valueFormat: _valueFormat, format: _format, ...rest } = c;
+  const { valueFormat: _valueFormat, value: _value, format: _format, ...rest } = c;
   const cell: TableCell = {
     ...rest,
     type: 'block',
