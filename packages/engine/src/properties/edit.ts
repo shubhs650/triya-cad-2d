@@ -47,7 +47,14 @@ import { multiLeaderBlockChange } from './multileader-block';
 import { multiLeaderMiscChange } from './multileader-misc';
 import { STYLE_KEY, multiLeaderStyleChange, multiLeaderStylesToMeasure } from './multileader-style';
 import type { GeneralProps } from './sheet';
-import { DIMVAR_DEFAULTS, DIMVAR_ROWS, dimensionUnits, rowVars } from './dimension';
+import {
+  DIMVAR_DEFAULTS,
+  DIMVAR_ROWS,
+  TOLERANCE_DIMVAR_ROWS,
+  dimensionUnits,
+  rowVars,
+} from './dimension';
+import { drawnDimStyle } from '../annotation/dimstyle-family';
 import {
   GRADIENT_NAMES,
   MAX_TRANSPARENCY,
@@ -609,6 +616,19 @@ function geometryChange(
         return { move: delta(g.center[axis], n, axis) };
       }
       return undefined;
+    case 'TOLERANCE':
+      // M4-21: Position X/Y move the frame and Direction turns it about its insertion point,
+      // so a leader attached to it follows as it does for MOVE and ROTATE.
+      if (key === 'positionX' || key === 'positionY') {
+        if (n === undefined) return 'invalid';
+        const axis = key === 'positionX' ? 'x' : 'y';
+        return { move: delta(g.position[axis], n, axis) };
+      }
+      if (key === 'rotation') {
+        if (n === undefined) return 'invalid';
+        return { turn: { about: g.position, by: n - g.rotation } };
+      }
+      return undefined;
     case 'POINT':
     case 'MTEXT':
     case 'INSERT':
@@ -814,6 +834,10 @@ export function applyPropertyEdit(
   }
   const attribute = /^attribute:(.+)$/.exec(edit.key);
   if (attribute) return { ...attributeEdit(b, editable, attribute[1]!, edit.value), refused };
+  // A frame's rows share a dimension's keys; the sheet shows them for frames alone.
+  if (TOLERANCE_KEYS.test(edit.key) && editable.some((e) => e.geom.kind === 'TOLERANCE')) {
+    return { ...toleranceEdit(b, model, editable, edit), refused };
+  }
   if (DIMENSION_KEYS.test(edit.key)) {
     return { ...dimensionEdit(b, model, editable, edit), refused };
   }
@@ -988,6 +1012,70 @@ function dimensionEdit(
   }
   const patches: [Entity, EntityPatch][] = [];
   for (const e of dims) {
+    const patch = patchOf(e);
+    if (patch === 'invalid') return { changed: 0, invalid: INVALID };
+    patches.push([e, patch]);
+  }
+  let changed = 0;
+  for (const [e, patch] of patches) {
+    const differs = Object.entries(patch).some(([k, x]) => !same(e[k as keyof Entity], x));
+    if (!differs) continue;
+    b.updateEntity(e.id, patch);
+    changed++;
+  }
+  return { changed };
+}
+
+const TOLERANCE_KEYS = /^(dimStyle|textOverride|dimvar:.+)$/;
+
+/**
+ * A feature control frame's Dim style or DIMVAR row (M4-21), written as a dimension's are: the
+ * style handle (DXF 3), or `DSTYLE` overrides in its ACAD xdata measured against the style it is
+ * drawn with (its Leaders and Tolerances sub-style when the drawing has one). A frame draws from
+ * its style and overrides (`toleranceParts`), so it needs no regenerating. A row a frame does not
+ * have (Text override, a dimension's other DIMVARs) is refused.
+ */
+function toleranceEdit(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  entities: readonly Entity[],
+  edit: PropertyEdit,
+): Omit<PropertyEditReport, 'refused'> {
+  const frames = entities.filter((e) => e.geom.kind === 'TOLERANCE');
+  const v = edit.value;
+  type Frame = Extract<EntityGeometry, { kind: 'TOLERANCE' }>;
+  const geom = (e: Entity) => e.geom as Frame;
+  let patchOf: (e: Entity) => EntityPatch | 'invalid';
+  if (edit.key === 'dimStyle') {
+    if (typeof v !== 'string' || !model.tables.dimStyles.has(v)) {
+      return { changed: 0, invalid: INVALID };
+    }
+    patchOf = (e) => ({ geom: { ...geom(e), style: v } });
+  } else {
+    const d = TOLERANCE_DIMVAR_ROWS.find((r) => `dimvar:${r.name}` === edit.key);
+    if (!d) return { changed: 0, invalid: INVALID };
+    patchOf = (e) => {
+      const style = drawnDimStyle(model, geom(e));
+      const set = d.set(v, rowVars(style, e.xdata, model), model);
+      if (set === undefined) return 'invalid';
+      let xdata: Entity['xdata'] = e.xdata;
+      for (const [name, value] of Object.entries(set)) {
+        const next = withDimvarOverride(
+          xdata ? { xdata } : {},
+          style,
+          model,
+          name,
+          value,
+          DIMVAR_DEFAULTS[name],
+        );
+        if (next === 'no-acad') return 'invalid';
+        xdata = next;
+      }
+      return { xdata } as EntityPatch;
+    };
+  }
+  const patches: [Entity, EntityPatch][] = [];
+  for (const e of frames) {
     const patch = patchOf(e);
     if (patch === 'invalid') return { changed: 0, invalid: INVALID };
     patches.push([e, patch]);
