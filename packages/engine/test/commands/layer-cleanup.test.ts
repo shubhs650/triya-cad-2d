@@ -8,8 +8,10 @@ import {
   DocumentModel,
   PromptBus,
   builtinCommands,
+  mergeLayersChange,
   type BusEvent,
   type EntityGeometry,
+  type Group,
 } from '../../src/index';
 import {
   PAPER_SPACE,
@@ -43,7 +45,7 @@ const NAMES: Record<string, string> = {
  * (100, 100) on 0 with attributes on DOORS (36) and 0 (37); a layout viewport freezing DOORS; an
  * xref-dependent layer Site|Walls.
  */
-function setup() {
+function setup(o: { passthroughLayers?: string[]; groups?: Group[] } = {}) {
   const init = sampleInit();
   const attributes = [
     { handle: '36', layer: DOORS, tag: 'A', value: '1' },
@@ -60,6 +62,8 @@ function setup() {
       blockRecords: [...init.tables!.blockRecords!, blockRecord(BLOCK, 'DOOR')],
     },
     blocks: [...init.blocks!, { handle: BLOCK, name: 'DOOR', basePoint: { x: 0, y: 0 } }],
+    objects: [...init.objects!, ...(o.groups ?? [])],
+    ...(o.passthroughLayers && { passthroughLayers: o.passthroughLayers }),
     entities: [
       ...LAYERS.map((h, i) =>
         entityInit((0x30 + i).toString(16).toUpperCase(), lineGeom(0, i * 10, 10, i * 10), {
@@ -313,5 +317,45 @@ describe('the layers LAYDEL and LAYMRG gather', () => {
     );
     expect(t.model.tables.layers.has(NOTES)).toBe(true);
     expect(t.bus.undo.state.undoable).toBe(0);
+  });
+});
+
+describe('what LAYDEL and LAYMRG cannot take or leave', () => {
+  const group = (handle: string, name: string, entities: string[]): Group => ({
+    handle,
+    type: 'GROUP',
+    owner: 'C',
+    name,
+    description: '',
+    selectable: true,
+    entities,
+  });
+
+  it('refuses a layer holding objects Triya keeps without mapping', async () => {
+    const t = setup({ passthroughLayers: [NOTES] });
+    await t.bus.script(['LAYDEL']);
+    await t.bus.pick(t.on(NOTES));
+    expect(t.log).toContain(
+      'Layer "NOTES" has objects Triya cannot edit yet and cannot be deleted.',
+    );
+    await t.bus.script(['', 'LAYMRG']);
+    await t.bus.pick(t.on(NOTES));
+    expect(t.log).toContain(
+      'Layer "NOTES" has objects Triya cannot edit yet and cannot be merged.',
+    );
+    expect(mergeLayersChange(t.model, [NOTES], L0)).toBe(
+      'Layer "NOTES" was not merged: it has objects Triya cannot edit yet.',
+    );
+  });
+
+  it('removes a group LAYDEL leaves empty, and keeps one that keeps an object', async () => {
+    const t = setup({
+      groups: [group('3C', '*A1', ['32', '34']), group('3D', 'MIXED', ['32', '33'])],
+    });
+    await t.bus.script(['LAYDEL']);
+    await t.bus.pick(t.on(DOORS));
+    await t.bus.script(['', 'Y']);
+    expect(t.model.objects.has('3C')).toBe(false);
+    expect((t.model.objects.get('3D') as Group).entities).toEqual(['33']);
   });
 });

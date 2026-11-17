@@ -12,6 +12,7 @@ import { LINEWEIGHT_VALUES } from '../commands/sysvars';
 import { ChangeSetBuilder } from '../model/builder';
 import { dropLayersFromStates } from './layer-states';
 import { eraseObjects } from './edit';
+import { explodeGroup, groupsOf } from './groups';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -202,6 +203,8 @@ export function newLayerChange(
 export function layersInUse(model: DocumentModel): Set<Handle> {
   const used = new Set<Handle>();
   for (const e of model.entities()) used.add(e.layer);
+  // And the objects kept without mapping (M5-06 part 2), which no edit can take off a layer.
+  for (const h of model.passthroughLayers) used.add(h);
   return used;
 }
 
@@ -300,7 +303,9 @@ export function mergeLayers(
             ? 'it is the current layer'
             : isXref(l)
               ? 'it is xref-dependent'
-              : undefined;
+              : model.passthroughLayers.has(l.handle)
+                ? 'it has objects Triya cannot edit yet'
+                : undefined;
     if (why) return `Layer "${l.name}" was not merged: ${why}.`;
   }
   const gone = new Set(layers.map((l) => l.handle));
@@ -339,6 +344,9 @@ export function layerRemovalProblem(
   if (isFixed(l)) return `Layer "${l.name}" cannot be ${verb}.`;
   if (isCurrent(model, l)) return `Layer "${l.name}" is the current layer and cannot be ${verb}.`;
   if (isXref(l)) return `Layer "${l.name}" is xref-dependent and cannot be ${verb}.`;
+  // An object Triya keeps without mapping can be neither erased nor moved.
+  if (model.passthroughLayers.has(l.handle))
+    return `Layer "${l.name}" has objects Triya cannot edit yet and cannot be ${verb}.`;
   return undefined;
 }
 
@@ -384,6 +392,12 @@ export function deleteLayersWithObjects(
     model,
     on.map((e) => e.id),
   );
+  // A group LAYDEL leaves with no objects goes too: it would select nothing, and a reader's
+  // audit (ezdxf: "Removed empty group") drops an empty GROUP anyway. Ambiguity: AutoCAD's help
+  // says nothing; its REMOVE from a group keeps a group however few it keeps (removeFromGroup).
+  const counts = new Map(groupsOf(model).map((g) => [g.handle, g.entities.length]));
+  for (const g of groupsOf(b))
+    if (g.entities.length === 0 && (counts.get(g.handle) ?? 0) > 0) explodeGroup(b, model, g);
   for (const e of model.entities()) {
     // As ERASE left it: an erased object is gone, a kept one may have let go of one erased.
     const g = b.entity(e.id)?.geom;

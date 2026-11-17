@@ -50,6 +50,10 @@ FIXTURE_SAVES = (
     ("fixtures/xref/xref-parent.dxf", "bind"),
     ("fixtures/xref/xref-parent.dxf", "bind-insert"),
     ("fixtures/xref/xref-parent.dxf", "bind-objects"),
+    # LAYDEL and LAYMRG of every layer they can take on ACadSharp's AC1032 sample (M5-06 part 2,
+    # packages/testkit/src/layers/layer-cleanup.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laymrg"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

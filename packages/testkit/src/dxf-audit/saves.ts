@@ -27,7 +27,10 @@ export type AuditSaveKind =
   // of the xref set's parent, both bind types (M5-04 part 2).
   | 'bind'
   | 'bind-insert'
-  | 'bind-objects';
+  | 'bind-objects'
+  // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
+  | 'laydel'
+  | 'laymrg';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version

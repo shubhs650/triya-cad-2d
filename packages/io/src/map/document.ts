@@ -60,7 +60,12 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
     layouts: mapLayouts(doc),
     entities,
   };
-  return { init: { ...init, passthrough: PassthroughStore.of(doc, init).handles }, unmapped };
+  // The layers the unmapped objects are on, which no layer edit may take away (M5-06 part 2).
+  const passthroughLayers = [...new Set(unmapped.flatMap((u) => (u.layer ? [u.layer] : [])))];
+  return {
+    init: { ...init, passthrough: PassthroughStore.of(doc, init).handles, passthroughLayers },
+    unmapped,
+  };
 }
 
 /** What opening a drawing hands the app, besides the document itself. */
