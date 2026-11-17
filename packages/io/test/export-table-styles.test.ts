@@ -678,3 +678,141 @@ describe('table style border linetypes and double lines (M4-16 part 8)', () => {
     }
   });
 });
+
+describe('table style cell styles of the drafter’s own (M4-16 part 9)', () => {
+  const DXF = SAVES.filter(([v, f]) => f === 'dxf' && v >= ACadVersion.AC1018);
+  /** `s`'s Data cell style as one of the drafter's own, `change` over it. */
+  const own = (
+    s: TableStyleRecord,
+    id: number,
+    name: string,
+    change: Partial<TableCellStyle> = {},
+  ) => ({
+    ...s.cellStyles[0]!,
+    // Unfilled, as a named cell style reads back (map/styles.ts).
+    fillColor: { kind: 'aci' as const, index: 7 },
+    id,
+    name,
+    ...change,
+  });
+
+  it.each(DXF)('writes, renames, edits and removes them in the CELLSTYLEMAP (%s %s)', (v) => {
+    const bytes = drawing(v, 'dxf');
+    const model = open(bytes);
+    const grid = style(model, 'GRID');
+    let added = '';
+    edit(model, (b) => {
+      b.updateTableRecord('tableStyles', grid.handle, {
+        userCellStyles: [
+          own(grid, 101, 'Notes', { textHeight: 0.3, alignment: 5 }),
+          own(grid, 102, 'Totals', {
+            fillOn: true,
+            fillColor: { kind: 'aci', index: 2 },
+            borders: grid.cellStyles[0]!.borders.map((e) => ({ ...e, double: true, spacing: 0.1 })),
+          }),
+        ],
+      });
+      const { handle: _h, raw: _raw, ...rest } = grid;
+      added = b.addTableRecord('tableStyles', {
+        ...rest,
+        name: 'Door Schedule',
+        userCellStyles: [own(grid, 101, 'Remarks')],
+      }).handle;
+    });
+    let back = saved(bytes, model, 'dxf');
+    const get = (init: typeof back, h: string) =>
+      init.tables!.tableStyles!.find((s) => s.handle === h)!;
+    for (const h of [grid.handle, added]) {
+      const { extDict: _x, ...b } = comparable(get(back, h))!;
+      const { extDict: _y, ...a } = comparable(model.tables.tableStyles.get(h))!;
+      expect(b).toEqual(a);
+    }
+    // In the CELLSTYLEMAP after the three, as AutoCAD lists them, data cell styles.
+    const saving = exportDocument(readCadDocument(bytes), model, { format: 'dxf' });
+    const doc = readCadDocument(saving);
+    const map = cellStyleMapOf(doc.getCadObject(Number.parseInt(grid.handle, 16)) as TableStyle)!;
+    expect(map.cellStyles.map((c) => [c.id, c.name, c.styleClass as number])).toEqual([
+      [1, '_TITLE', 1],
+      [2, '_HEADER', 1],
+      [3, '_DATA', 2],
+      [101, 'Notes', 2],
+      [102, 'Totals', 2],
+    ]);
+
+    // Opened again: Notes renamed and edited, Totals removed, Grand added.
+    const model2 = open(saving);
+    const grid2 = style(model2, 'GRID');
+    edit(model2, (b) =>
+      b.updateTableRecord('tableStyles', grid2.handle, {
+        userCellStyles: [
+          { ...grid2.userCellStyles![0]!, name: 'Remarks', textHeight: 0.4 },
+          own(grid2, 103, 'Grand'),
+        ],
+      }),
+    );
+    back = saved(saving, model2, 'dxf');
+    expect(get(back, grid.handle).userCellStyles!.map((c) => [c.id, c.name, c.textHeight])).toEqual(
+      [
+        [101, 'Remarks', 0.4],
+        [103, 'Grand', grid.cellStyles[0]!.textHeight],
+      ],
+    );
+    // All removed: the map keeps the three.
+    const saving2 = exportDocument(readCadDocument(saving), model2, { format: 'dxf' });
+    const model3 = open(saving2);
+    const grid3 = style(model3, 'GRID');
+    edit(model3, (b) =>
+      b.updateTableRecord('tableStyles', grid3.handle, { userCellStyles: undefined as never }),
+    );
+    const doc3 = readCadDocument(
+      exportDocument(readCadDocument(saving2), model3, { format: 'dxf' }),
+    );
+    const map3 = cellStyleMapOf(doc3.getCadObject(Number.parseInt(grid.handle, 16)) as TableStyle)!;
+    expect(map3.cellStyles.map((c) => c.name)).toEqual(['_TITLE', '_HEADER', '_DATA']);
+  });
+
+  it('refuses them in a DWG save and values the dialog does not take', () => {
+    const cases: [CadFormat, (s: TableStyleRecord) => Partial<TableStyleRecord>, RegExp][] = [
+      [
+        'dwg',
+        (s) => ({ userCellStyles: [own(s, 101, 'Notes')] }),
+        /DWG save does not write cell styles/,
+      ],
+      [
+        'dxf',
+        (s) => ({ userCellStyles: [own(s, 3, 'Notes')] }),
+        /cell style "Notes": id 3 is not 5 or more/,
+      ],
+      [
+        'dxf',
+        (s) => ({ userCellStyles: [own(s, 101, 'Notes'), own(s, 101, 'Other')] }),
+        /cell style "Other": id 101 is taken/,
+      ],
+      [
+        'dxf',
+        (s) => ({ userCellStyles: [own(s, 101, 'Notes'), own(s, 102, 'NOTES')] }),
+        /cell style "NOTES": the name is taken/,
+      ],
+      [
+        'dxf',
+        (s) => ({ userCellStyles: [own(s, 101, '_DATA')] }),
+        /cell style "_DATA": the name is taken/,
+      ],
+      ['dxf', (s) => ({ userCellStyles: [own(s, 101, '')] }), /cell style "": not a name/],
+      [
+        'dxf',
+        (s) => ({ userCellStyles: [own(s, 101, 'Notes', { textHeight: 0 })] }),
+        /cell style "Notes" textHeight: 0 is not more than 0/,
+      ],
+    ];
+    for (const [format, change, message] of cases) {
+      const bytes = drawing(ACadVersion.AC1032, format);
+      const model = open(bytes);
+      const s = style(model, 'GRID');
+      edit(model, (b) => b.updateTableRecord('tableStyles', s.handle, change(s)));
+      expect(refusal(() => triyaToAcad(readCadDocument(bytes), model, format)).join('\n')).toMatch(
+        message,
+      );
+    }
+  });
+});

@@ -558,7 +558,14 @@ function userCellStylesOf(
     const c = u.id !== undefined && !ids.has(u.id) ? kept.get(u.id) : undefined;
     const id = c ? u.id! : fresh && u.id !== undefined && !ids.has(u.id) ? u.id : next++;
     ids.add(id);
-    return { id, name: u.name, ...cellStyleOf(model, c, u.settings, !c) };
+    const made = cellStyleOf(model, c, u.settings, !c);
+    // A new one names its text style, as a written cell style must (one read without keeps none).
+    const textStyle =
+      made.textStyle ??
+      (c
+        ? undefined
+        : (textStyleHandle(model, u.settings.textStyle, undefined) ?? standardText(model)));
+    return { id, name: u.name, ...made, ...(textStyle !== undefined && { textStyle }) };
   });
 }
 
