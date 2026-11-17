@@ -391,11 +391,13 @@ test('cells dragged across are formatted from the menu, and a column grip resize
   await type(
     page,
     'BO',
-    'Apply the border properties to [All/Outside/Inside/Top/Bottom/Left/Right] <All>:',
+    'Apply the border properties to [All/Outside/Inside/None/Top/Horizontal/Bottom/Left/Vertical/Right] <All>:',
   );
   await type(page, 'O', 'Enter border color <BYBLOCK>:');
   await type(page, 'red', 'Enter border lineweight <ByBlock>:');
-  await type(page, '0.5', 'Command:');
+  await type(page, '0.5', 'Enter border linetype <ByBlock>:');
+  await type(page, '', 'Double line? [Yes/No] <No>:');
+  await type(page, '', 'Command:');
   await expect
     .poll(async () => (await formats())?.[0]?.[0]?.borders?.top)
     .toEqual({ color: { kind: 'aci', index: 1 }, lineweight: 50 });

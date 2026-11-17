@@ -1836,8 +1836,12 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   if (e instanceof MText) return mtextGeometry(e, ctx);
   // TableEntity extends Insert in acad-ts, so it is tested first.
   // A DXF table's rows' and cells' cell styles are in its TABLECONTENT only (M4-16 part 5).
-  if (e instanceof TableEntity)
-    return tableGeometry(e, roundTripTableContent(e)?.content ?? undefined);
+  // Its border linetypes (M4-16 part 7) name LTYPE records, resolved to tell ByBlock apart.
+  if (e instanceof TableEntity) {
+    const doc = e.document;
+    const resolve = (h: number) => doc?.getCadObject(h) ?? null;
+    return tableGeometry(e, roundTripTableContent(e, resolve)?.content ?? undefined);
+  }
   if (e instanceof Insert) return insertGeometry(e, ctx);
   if (
     e instanceof DimensionAligned ||

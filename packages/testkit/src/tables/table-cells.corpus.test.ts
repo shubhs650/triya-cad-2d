@@ -246,7 +246,7 @@ describe('cells formatted, grips dragged and the table scaled (M4-05 part 4)', (
     const last = rows - 1;
     await run([last - 1, 0], [last, 1], 'AL', 'MR');
     await run([last, 0], [last, 0], 'BA', '3');
-    await run([last - 1, 0], [last, 1], 'BO', 'O', '1', '0.5');
+    await run([last - 1, 0], [last, 1], 'BO', 'O', '1', '0.5', '', '');
     await run([last, 1], [last, 1], 'H', String(box(last, 1).maxY - box(last, 1).minY));
     // The table picked on its left edge, its first column grip dragged, then SCALE.
     picked = [id()];
