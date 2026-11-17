@@ -34,7 +34,9 @@ export type AuditSaveKind =
   | 'laydel'
   | 'laymrg'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
-  | 'images';
+  | 'images'
+  // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).
+  | 'imageattach';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version
