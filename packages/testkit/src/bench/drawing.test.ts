@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BENCH_100K,
   BENCH_GA,
+  BENCH_LAYERS,
   BENCH_WINDOW,
   benchCounts,
   benchDocument,
@@ -70,4 +71,11 @@ describe('generated benchmark drawings (M1-42, DEC-045)', () => {
 
   it('bench-ga: 25k entities, 30 blocks, 2 layouts', check(BENCH_GA));
   it('bench-100k: 100k entities, 50 blocks, 5 layouts', check(BENCH_100K), 120_000);
+  it('bench-layers: 200 layers for the Layer Properties Manager (M5-05)', () => {
+    check(BENCH_LAYERS)();
+    const doc = readCadDocument(benchDwg(BENCH_LAYERS));
+    const layers = [...(doc.layers ?? [])].filter((l) => l.name.startsWith('BENCH-'));
+    expect(layers).toHaveLength(200);
+    expect(layers.find((l) => l.name === 'BENCH-199')?.color.index).toBe(1 + (199 % 7));
+  });
 });

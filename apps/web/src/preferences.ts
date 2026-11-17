@@ -20,6 +20,11 @@ import {
 } from './drafting';
 import type { DynMode } from './dynamic-input';
 import { normalizeKeyOverrides, type KeyOverrides } from './keymap';
+import {
+  DEFAULT_LAYER_COLUMNS,
+  normalizeLayerColumns,
+  type LayerColumnSettings,
+} from './layer-columns';
 import { closeOnDelete } from './local-data';
 import { normalizeWords } from './custom-dictionary';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
@@ -133,6 +138,8 @@ export interface Preferences {
   readonly customDictionary: readonly string[];
   /** As-you-type spell checking in the text editors (M4-17, spell-check.ts); on by default. */
   readonly spellCheck: boolean;
+  /** The Layer Properties Manager's columns and sort (M5-05 part 3, layer-columns.ts). */
+  readonly layerColumns: LayerColumnSettings;
 }
 
 /** POLARANG's choices in AutoCAD's Drafting Settings, degrees. */
@@ -219,6 +226,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   keys: {},
   customDictionary: [],
   spellCheck: true,
+  layerColumns: DEFAULT_LAYER_COLUMNS,
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -300,6 +308,7 @@ export function normalizePreferences(raw: unknown): Preferences {
     keys: normalizeKeyOverrides(raw['keys']),
     customDictionary: normalizeWords(raw['customDictionary']),
     spellCheck: bool(raw['spellCheck'], d.spellCheck),
+    layerColumns: normalizeLayerColumns(raw['layerColumns']),
     drafting: {
       // OSMODE's 14 mode bits and OSNAP_OFF.
       osmode:
