@@ -920,14 +920,15 @@ export interface ViewportGeometry {
   readonly ucs?: UcsFrame;
 }
 
-/** One cell of an ACAD_TABLE, in row-major order. */
 /**
- * One of the cell styles every table style holds (AutoCAD 2024 Help, "Table Style Dialog Box":
- * Title, Header and Data "are always contained within any table style"), which a table's rows
- * and cells are drawn with.
+ * The cell style a table's rows and cells are drawn with: one of the three every table style
+ * holds (AutoCAD 2024 Help, "Table Style Dialog Box": Title, Header and Data "are always contained
+ * within any table style"), or a cell style of the drafter's own by its id in the table style
+ * (`TableUserCellStyle.id`, 101 and up; M4-16 part 9), as the file names it.
  */
-export type TableCellStyleName = 'title' | 'header' | 'data';
+export type TableCellStyleName = 'title' | 'header' | 'data' | number;
 
+/** One cell of an ACAD_TABLE, in row-major order. */
 export interface TableCell {
   /** DXF 171: 1 text, 2 block. */
   readonly type: 'text' | 'block';
@@ -1566,6 +1567,17 @@ export interface TableCellStyle {
   readonly borders: readonly TableCellBorder[];
 }
 
+/**
+ * A cell style of the drafter's own in a table style (M4-16 part 9: Create a New Cell Style,
+ * Manage Cell Styles): kept, as AutoCAD keeps it, among the named cell styles of a DXF's
+ * CELLSTYLEMAP or a DWG's from R2010, where its id (101 and up) is what a table's rows and cells
+ * name it by.
+ */
+export interface TableUserCellStyle extends TableCellStyle {
+  readonly id: number;
+  readonly name: string;
+}
+
 /** A TABLESTYLE object (AutoCAD DXF reference, TABLESTYLE). */
 export interface TableStyleRecord extends SymbolTableRecord {
   readonly description: string;
@@ -1579,6 +1591,8 @@ export interface TableStyleRecord extends SymbolTableRecord {
   readonly suppressHeader: boolean;
   /** In file order. */
   readonly cellStyles: readonly TableCellStyle[];
+  /** The cell styles of the drafter's own, in file order (M4-16 part 9); absent when none. */
+  readonly userCellStyles?: readonly TableUserCellStyle[];
 }
 
 /** One line of a multiline style (DXF 49, 62 and 6, repeated per element). */

@@ -219,7 +219,9 @@ const CELL_STYLE_NAMES: Readonly<
 /**
  * Cell Style (AutoCAD's Table Cell tab, Cell Styles; M4-16 part 5): table `g` with the cells of
  * range `r` on the cell style asked for (`withCellsStyled`), or undefined when ended at the prompt.
- * The default is the first cell's: its own, else By Row.
+ * The default is the first cell's: its own, else By Row. The table style's cell styles of the
+ * drafter's own (M4-16 part 9) are taken by name, typed whole or picked from the right-click
+ * menu, which lists them after the three as the ribbon's Cell Styles list does.
  */
 async function* cellStyledTable(
   ctx: CommandContext,
@@ -228,18 +230,27 @@ async function* cellStyledTable(
   r: TableCellRange,
 ): AsyncGenerator<Prompt, TableGeometry | undefined, PromptAnswer> {
   const own = g.cells[r.r0]![r.c0]!.cellStyle;
-  const now = CELL_STYLES.find((k) => CELL_STYLE_NAMES[k] === own) ?? 'ByRow';
+  const users = style?.userCellStyles ?? [];
+  const user = users.find((c) => c.id === own);
+  const now = user?.name ?? CELL_STYLES.find((k) => CELL_STYLE_NAMES[k] === own) ?? 'ByRow';
   const a = yield ctx.prompt.keyword({
-    message: 'Enter cell style',
+    message: users.length > 0 ? 'Enter cell style name or' : 'Enter cell style',
     options: CELL_STYLES,
+    ...(users.length > 0 && { hiddenOptions: users.map((c) => c.name) }),
     default: { kind: 'keyword', keyword: now },
-    shortcutMenu: CELL_STYLES.map((k) => ({
-      label: k === 'ByRow' ? 'By Row' : k,
-      keyword: k,
-    })),
+    shortcutMenu: [
+      ...CELL_STYLES.map((k) => ({ label: k === 'ByRow' ? 'By Row' : k, keyword: k })),
+      ...users.map((c, k) => ({
+        label: c.name,
+        keyword: c.name,
+        ...(k === 0 && { separatorBefore: true as const }),
+      })),
+    ],
   });
   if (a.kind !== 'keyword') return undefined;
-  return withCellsStyled(g, style, r, CELL_STYLE_NAMES[a.keyword as (typeof CELL_STYLES)[number]]);
+  const named = users.find((c) => c.name.toUpperCase() === a.keyword.toUpperCase());
+  const name = named ? named.id : CELL_STYLE_NAMES[a.keyword as (typeof CELL_STYLES)[number]];
+  return withCellsStyled(g, style, r, name);
 }
 
 /** Locking's choices, typed and as AutoCAD's Cell Locking list names them. */

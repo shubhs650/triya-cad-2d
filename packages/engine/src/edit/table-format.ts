@@ -26,6 +26,7 @@ import type {
   TableStyleRecord,
 } from '../model/types';
 import {
+  isRowType,
   rowCellStyle,
   tableCellStyleNames,
   tableRowStyles,
@@ -236,7 +237,10 @@ export function withCellOverridesRemoved(
       ? [...row]
       : row.map((c, j) => {
           if (j < r.c0 || j > r.c1) return c;
-          const table = g.overrides?.[types[i]!];
+          // A row on a cell style of the drafter's own has no table-wide overrides (the legacy
+          // codes state them for the three row types only).
+          const type = types[i]!;
+          const table = isRowType(type) ? g.overrides?.[type] : undefined;
           return withFormat(c, table && { ...table });
         }),
   );

@@ -476,6 +476,8 @@ export interface TableStyleEntry {
   readonly suppressHeader: boolean;
   /** The table reads from the bottom up (DXF 70 = 1). */
   readonly up: boolean;
+  /** Its cell styles of the drafter's own, for Set cell styles (M4-16 part 9); absent when none. */
+  readonly userCellStyles?: readonly { readonly id: number; readonly name: string }[];
 }
 
 /** What `TextEditorRequest.background` shows. */

@@ -233,6 +233,24 @@ export function cellStyleMapRows(s: TableStyle): CellStyle[] | undefined {
 export const mappedCellStyleMap = (s: TableStyle): TableCellStyle[] | undefined =>
   cellStyleMapRows(s)?.map((c) => cellStyle(c, true));
 
+/**
+ * The names of the named cell styles every table style holds: `_TITLE`, `_HEADER`, `_DATA`, and
+ * the "Table" cell style a DWG from R2010 keeps the table-wide settings in.
+ */
+const STYLE_CELL_STYLES = new Set(['_TITLE', '_HEADER', '_DATA', 'TABLE']);
+
+/**
+ * A table style's cell styles of the drafter's own (M4-16 part 9): the named cell styles besides
+ * `_TITLE`, `_HEADER`, `_DATA` and "Table", in file order, a DWG's from R2010 in the style and a
+ * DXF's (or a DWG's before R2010) in its CELLSTYLEMAP. AutoCAD numbers them from 101.
+ */
+export function userCellStylesOf(s: TableStyle): CellStyle[] {
+  const listed = isNamedCellStyle(s.tableCellStyle)
+    ? s.cellStyles
+    : (cellStyleMapOf(s)?.cellStyles ?? []);
+  return listed.filter((c) => c.name !== '' && !STYLE_CELL_STYLES.has(c.name.toUpperCase()));
+}
+
 /** DWG "merge flags" bit of the Table cell style for a table that grows up (ODA spec). */
 export const FLOW_BOTTOM_TO_TOP = 0x10000;
 
@@ -254,6 +272,7 @@ export function tableStyle(s: TableStyle): TableStyleRecord {
   // only hold 0x8000 merge all and 0x10000 flow bottom to top). It has no suppress flags (the
   // AutoCAD 2008 table style dialog dropped them), and AutoCAD's DXF save states 0 for both.
   const table = isNamedCellStyle(s.tableCellStyle) ? s.tableCellStyle : null;
+  const own = userCellStylesOf(s).map((c) => ({ id: c.id, name: c.name, ...cellStyle(c, true) }));
   return {
     // Not `base`: a TABLESTYLE has no DXF 70 standard flags; its 70 is the flow direction
     // and its flags are 71.
@@ -278,5 +297,6 @@ export function tableStyle(s: TableStyle): TableStyleRecord {
           rowStyles(s).map((c) => cellStyle(c)),
           rowStyles(s).length > 0 ? mappedCellStyleMap(s) : undefined,
         ),
+    ...(own.length > 0 && { userCellStyles: own }),
   };
 }

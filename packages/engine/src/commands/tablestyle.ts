@@ -22,8 +22,15 @@
 // it holds no text angle, cell format other than the data and unit types, or "merge cells on
 // row/column creation" setting of its own; a border's linetype and double line are kept in the
 // named cell styles beside it (io export/table-styles.ts). A DXF table style
-// holds index colours only, so true colours are refused. Cell styles of the drafter's own
-// (Create a new cell style, Manage Cell Styles) wait for M1-99.
+// holds index colours only, so true colours are refused.
+//
+// Cell styles of the drafter's own (M4-16 part 9): the Cell styles list has, after Data, Header
+// and Title, those the style holds, with Create a new cell style (a name and the cell style to
+// start with) and Manage Cell Styles (New, Rename, Delete) beside it, as AutoCAD's. They are made,
+// renamed and deleted in the dialog and sent with its settings (`userCellStyles`); OK gives a new
+// one the next free id (101 and up, as AutoCAD numbers them), which a table's rows and cells name
+// it by, so a rename leaves the tables as they are. One a table of the style is on cannot be
+// deleted. Each has the General, Text and Borders settings of the three, the margins the style's.
 //
 // Select table to start from (M4-16 part 4) hides the dialogs and asks "Select a table:"; the
 // New or Modify Table Style dialog then opens again on the table's formatting (`tableStartSettings`),
@@ -48,7 +55,7 @@ import type {
   TableCellStyle,
   TableGeometry,
   TableStyleRecord,
-  TableCellStyleName,
+  TableUserCellStyle,
 } from '../model/types';
 import type { Prompt, PromptAnswer } from './prompt';
 import {
@@ -73,15 +80,15 @@ import { linesOf } from './draw/table-cells';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
-/** The cell styles a table style has: the rows of the file's record. */
-export const TABLE_CELL_STYLES = [
-  'data',
-  'header',
-  'title',
-] as const satisfies readonly TableCellStyleName[];
+/** The cell styles every table style has: the rows of the file's record. */
+export const TABLE_CELL_STYLES = ['data', 'header', 'title'] as const;
 
 /** Where each cell style sits in the record's `cellStyles` (the file's order data, title, header). */
-const STYLE_INDEX: Readonly<Record<TableCellStyleName, number>> = { data: 0, title: 1, header: 2 };
+const STYLE_INDEX: Readonly<Record<(typeof TABLE_CELL_STYLES)[number], number>> = {
+  data: 0,
+  title: 1,
+  header: 2,
+};
 
 /** One cell style as the New and Modify Table Style dialog shows it. */
 export interface TableCellStyleSettings {
@@ -97,6 +104,14 @@ export interface TableCellStyleSettings {
   readonly borders: readonly TableCellBorder[];
 }
 
+/** A cell style of the drafter's own as the New and Modify Table Style dialog shows it. */
+export interface TableUserCellStyleSettings {
+  /** Its id in the style; absent for one made in the dialog, which OK gives the next free id. */
+  readonly id?: number;
+  readonly name: string;
+  readonly settings: TableCellStyleSettings;
+}
+
 /** What the New and Modify Table Style dialog shows of a style. */
 export interface TableStyleSettings {
   readonly description: string;
@@ -108,6 +123,8 @@ export interface TableStyleSettings {
   readonly data: TableCellStyleSettings;
   readonly header: TableCellStyleSettings;
   readonly title: TableCellStyleSettings;
+  /** The cell styles of the drafter's own, in the style's order (M4-16 part 9). */
+  readonly userCellStyles?: readonly TableUserCellStyleSettings[];
 }
 
 /** One style in the dialog's list. */
@@ -118,6 +135,8 @@ export interface TableStyleRow {
   readonly used: boolean;
   /** AutoCAD's Standard, listed for a drawing without table styles until an action adds it. */
   readonly unsaved?: true;
+  /** The ids of its cell styles of the drafter's own that a table's rows or cells are on. */
+  readonly usedCellStyles?: readonly number[];
 }
 
 /** The Table Style dialog as TABLESTYLE opens it. */
@@ -192,7 +211,9 @@ export function tableStyleSettings(
   model: DocumentModel,
   s: Omit<TableStyleRecord, 'handle'>,
 ): TableStyleSettings {
-  const cell = (n: TableCellStyleName) => cellSettings(model, s.cellStyles[STYLE_INDEX[n]]);
+  const cell = (n: (typeof TABLE_CELL_STYLES)[number]) =>
+    cellSettings(model, s.cellStyles[STYLE_INDEX[n]]);
+  const own = s.userCellStyles ?? [];
   return {
     description: s.description,
     up: s.flowDirection === 1,
@@ -201,6 +222,13 @@ export function tableStyleSettings(
     data: cell('data'),
     header: cell('header'),
     title: cell('title'),
+    ...(own.length > 0 && {
+      userCellStyles: own.map((c) => ({
+        id: c.id,
+        name: c.name,
+        settings: cellSettings(model, c),
+      })),
+    }),
   };
 }
 
@@ -244,16 +272,27 @@ function wellFormed(s: unknown): s is TableStyleSettings {
       )
     );
   };
+  const own = (u: unknown): boolean => {
+    if (typeof u !== 'object' || u === null) return false;
+    const x = u as Record<string, unknown>;
+    return (
+      (x.id === undefined || (typeof x.id === 'number' && Number.isInteger(x.id))) &&
+      typeof x.name === 'string' &&
+      cell(x.settings)
+    );
+  };
   return (
     typeof v.description === 'string' &&
     typeof v.up === 'boolean' &&
     typeof v.horizontalMargin === 'number' &&
     typeof v.verticalMargin === 'number' &&
-    TABLE_CELL_STYLES.every((n) => cell(v[n]))
+    TABLE_CELL_STYLES.every((n) => cell(v[n])) &&
+    (v.userCellStyles === undefined ||
+      (Array.isArray(v.userCellStyles) && v.userCellStyles.every(own)))
   );
 }
 
-const CELL_LABEL: Readonly<Record<TableCellStyleName, string>> = {
+const CELL_LABEL: Readonly<Record<(typeof TABLE_CELL_STYLES)[number], string>> = {
   data: 'Data',
   header: 'Header',
   title: 'Title',
@@ -270,9 +309,8 @@ export function tableStyleProblem(
     if (!(Number.isFinite(s[k]) && s[k] >= 0)) return 'A cell margin must be 0 or more.';
   }
   const names = new Set(textStyles.map(upper));
-  for (const n of TABLE_CELL_STYLES) {
-    const c = s[n];
-    const where = `${CELL_LABEL[n]} cell style: `;
+  const cellProblem = (c: TableCellStyleSettings, label: string): string | undefined => {
+    const where = `${label} cell style: `;
     if (!(Number.isFinite(c.textHeight) && c.textHeight > 0))
       return `${where}the text height must be greater than 0.`;
     if (!Number.isInteger(c.alignment) || c.alignment < 1 || c.alignment > 9)
@@ -289,7 +327,41 @@ export function tableStyleProblem(
       return `${where}choose a linetype of the drawing.`;
     if (c.borders.some((b) => b.double && !(Number.isFinite(b.spacing) && b.spacing! > 0)))
       return `${where}the double line spacing must be greater than 0.`;
+    return undefined;
+  };
+  for (const n of TABLE_CELL_STYLES) {
+    const p = cellProblem(s[n], CELL_LABEL[n]);
+    if (p) return p;
   }
+  const own = s.userCellStyles ?? [];
+  for (const [k, u] of own.entries()) {
+    const p =
+      cellStyleNameProblem(
+        u.name,
+        own.filter((_, m) => m !== k).map((o) => o.name),
+      ) ?? cellProblem(u.settings, `The “${u.name}”`);
+    if (p) return p;
+  }
+  return undefined;
+}
+
+/**
+ * The names a cell style of the drafter's own cannot take: the three every style holds, by their
+ * dialog names and the names a file gives them (`_TITLE`, `_HEADER`, `_DATA`), and the "Table"
+ * cell style a DWG from R2010 keeps the table-wide settings in.
+ */
+const RESERVED_CELL_STYLES = ['TITLE', 'HEADER', 'DATA', '_TITLE', '_HEADER', '_DATA', 'TABLE'];
+
+/**
+ * Why `name` cannot name a cell style of the drafter's own beside `others` (the style's other
+ * ones), or undefined (AutoCAD's Create New Cell Style and Manage Cell Styles; M4-16 part 9).
+ */
+export function cellStyleNameProblem(name: string, others: readonly string[]): string | undefined {
+  const n = name.trim();
+  if (n === '' || n !== name || !validViewName(n) || n.includes('|'))
+    return 'Invalid cell style name.';
+  if (RESERVED_CELL_STYLES.includes(upper(n)) || others.some((o) => upper(o) === upper(n)))
+    return 'A cell style with this name already exists.';
   return undefined;
 }
 
@@ -340,12 +412,16 @@ export function tableStyleRequest(
   const shown = selected === undefined ? undefined : styleNamed(model, selected);
   return {
     type: 'tablestyle',
-    styles: listed.map((s) => ({
-      name: s.name,
-      settings: tableStyleSettings(model, s),
-      used: used.has(s.handle),
-      ...(s.handle === '' && { unsaved: true as const }),
-    })),
+    styles: listed.map((s) => {
+      const inUse = s.handle === '' ? [] : [...cellStylesInUse(model, s.handle)];
+      return {
+        name: s.name,
+        settings: tableStyleSettings(model, s),
+        used: used.has(s.handle),
+        ...(s.handle === '' && { unsaved: true as const }),
+        ...(inUse.length > 0 && { usedCellStyles: inUse.sort((a, b) => a - b) }),
+      };
+    }),
     current: current?.name ?? '',
     selected: shown?.name ?? current?.name ?? listed[0]?.name ?? '',
     textStyles: [...model.tables.textStyles.values()]
@@ -428,28 +504,62 @@ function styleBorder(b: TableCellBorder): TableCellBorder {
   };
 }
 
+/** The record fields the settings set; `userCellStyles` undefined when the style has none. */
+type RecordFields = Pick<
+  TableStyleRecord,
+  'description' | 'flowDirection' | 'horizontalMargin' | 'verticalMargin' | 'cellStyles'
+> & { readonly userCellStyles: readonly TableUserCellStyle[] | undefined };
+
 /** The record fields `s` sets on `was`. */
 function recordFields(
   model: DocumentModel,
   was: Omit<TableStyleRecord, 'handle' | 'name'>,
   s: TableStyleSettings,
   fresh = false,
-): Pick<
-  TableStyleRecord,
-  'description' | 'flowDirection' | 'horizontalMargin' | 'verticalMargin' | 'cellStyles'
-> {
+): RecordFields {
   const cellStyles = [...was.cellStyles];
   for (const n of TABLE_CELL_STYLES) {
     const k = STYLE_INDEX[n];
     cellStyles[k] = cellStyleOf(model, was.cellStyles[k], s[n], fresh);
   }
+  const userCellStyles = userCellStylesOf(model, was.userCellStyles ?? [], s, fresh);
   return {
     description: s.description,
     flowDirection: s.up ? 1 : 0,
     horizontalMargin: s.horizontalMargin,
     verticalMargin: s.verticalMargin,
     cellStyles,
+    userCellStyles,
   };
+}
+
+/** The first id AutoCAD gives a cell style of the drafter's own (the three are 1 to 3). */
+const FIRST_USER_ID = 101;
+
+/**
+ * The cell styles of the drafter's own the settings give, over `was` (the style's): one keeping
+ * its id keeps what the file holds and the dialog does not; a new one takes the next id after
+ * every one the style holds or held (`fresh`: a new style, whose ids are its own).
+ */
+function userCellStylesOf(
+  model: DocumentModel,
+  was: readonly TableUserCellStyle[],
+  s: TableStyleSettings,
+  fresh: boolean,
+): TableUserCellStyle[] | undefined {
+  const own = s.userCellStyles ?? [];
+  if (own.length === 0) return undefined;
+  const kept = new Map(fresh ? [] : was.map((c) => [c.id, c]));
+  let next =
+    Math.max(FIRST_USER_ID - 1, ...[...kept.keys()], ...own.map((u) => (fresh ? 0 : (u.id ?? 0)))) +
+    1;
+  const ids = new Set<number>();
+  return own.map((u) => {
+    const c = u.id !== undefined && !ids.has(u.id) ? kept.get(u.id) : undefined;
+    const id = c ? u.id! : fresh && u.id !== undefined && !ids.has(u.id) ? u.id : next++;
+    ids.add(id);
+    return { id, name: u.name, ...cellStyleOf(model, c, u.settings, !c) };
+  });
 }
 
 /** The record patch that sets `s` on `style`; undefined when it changes nothing. */
@@ -480,7 +590,21 @@ function newStyle(
       }
     : {};
   const was = { ...base, ...fields };
-  return { ...was, name, ...recordFields(model, was, s, true) };
+  const { userCellStyles, ...set } = recordFields(model, was, s, true);
+  return { ...was, name, ...set, ...(userCellStyles && { userCellStyles }) };
+}
+
+/** The ids of the cell styles of the drafter's own the rows and cells of style `handle`'s tables are on. */
+export function cellStylesInUse(model: DocumentModel, handle: Handle): Set<number> {
+  const out = new Set<number>();
+  for (const e of model.entities()) {
+    const g = e.geom;
+    if (g.kind !== 'ACAD_TABLE' || g.style !== handle) continue;
+    for (const t of g.rowStyles ?? []) if (typeof t === 'number') out.add(t);
+    for (const row of g.cells)
+      for (const c of row) if (typeof c.cellStyle === 'number') out.add(c.cellStyle);
+  }
+  return out;
 }
 
 /** The tables drawn in style `handle`. */
@@ -597,6 +721,16 @@ async function act(
       if (problem) return { selected: s.name, note: problem };
       const patch = changedFields(model, s, a.settings);
       if (!patch) return { selected: s.name };
+      // A cell style of the drafter's own a table is on stays (Manage Cell Styles' Delete).
+      const inUse = 'userCellStyles' in patch ? cellStylesInUse(model, s.handle) : new Set();
+      const gone = (s.userCellStyles ?? []).find(
+        (c) => inUse.has(c.id) && !patch.userCellStyles?.some((u) => u.id === c.id),
+      );
+      if (gone)
+        return {
+          selected: s.name,
+          note: `The cell style “${gone.name}” is in use by a table and cannot be deleted.`,
+        };
       if (s.handle === '') {
         ctx.edit((b) => {
           const made = addStandard(b, model)!;
@@ -604,7 +738,9 @@ async function act(
         });
         return { selected: s.name };
       }
-      const tables = await redrawTables(ctx, s.handle, { ...s, ...patch });
+      const { userCellStyles, ...rest } = { ...s, ...patch };
+      const after = { ...rest, ...(userCellStyles && { userCellStyles }) };
+      const tables = await redrawTables(ctx, s.handle, after);
       ctx.edit((b) => {
         b.updateTableRecord('tableStyles', s.handle, patch);
         writeTables(b, model, tables);
@@ -749,7 +885,7 @@ export function tableStartSettings(
   const types = tableRowStyles(g, style);
   const heads = tableRangeHeads(g);
   const margins = g.overrides?.margins;
-  const cell = (n: TableCellStyleName): TableCellStyleSettings => {
+  const cell = (n: (typeof TABLE_CELL_STYLES)[number]): TableCellStyleSettings => {
     const i = types.indexOf(n);
     if (i < 0) return was[n];
     const [hi, hj] = heads[i]![0]!;
@@ -783,6 +919,7 @@ export function tableStartSettings(
     data: cell('data'),
     header: cell('header'),
     title: cell('title'),
+    ...(was.userCellStyles && { userCellStyles: was.userCellStyles }),
   };
 }
 

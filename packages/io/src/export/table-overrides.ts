@@ -358,8 +358,12 @@ function rowTypesAfter(
 ): (RowType | undefined)[] | undefined {
   const style = acad ? acad.style : g.style === undefined ? null : resolve(r, g.style, TableStyle);
   const typeOf = rowTypeOf(style ?? null);
-  // A new table's rows are on the cell styles it states (M4-16 part 5).
-  if (!acad) return tableRowStyles(g, tableStyleRows(style ?? null));
+  // A new table's rows are on the cell styles it states (M4-16 part 5); one on a cell style of
+  // the drafter's own (part 9) takes no row type's overrides.
+  if (!acad)
+    return tableRowStyles(g, tableStyleRows(style ?? null)).map((t) =>
+      typeof t === 'number' ? undefined : t,
+    );
   const fresh = newRows(style ?? null, g.cells.length);
   if (!Array.isArray(g.cells)) return undefined;
   return rowsAt(acad, g).map((row, i) => typeOf((row ?? fresh[i])?.styleId ?? 0));

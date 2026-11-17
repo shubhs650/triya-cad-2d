@@ -51,6 +51,8 @@ export {
 } from './textstyle';
 export {
   TABLE_CELL_STYLES,
+  cellStyleNameProblem,
+  cellStylesInUse,
   restyledTable,
   tableStylePreview,
   tableStyleProblem,
@@ -66,6 +68,7 @@ export {
   type TableStyleRequest,
   type TableStyleRow,
   type TableStyleSettings,
+  type TableUserCellStyleSettings,
 } from './tablestyle';
 export {
   mleaderStyleLists,
