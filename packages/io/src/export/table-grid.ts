@@ -30,7 +30,8 @@ import { newCell, newColumn, newRows } from './table-new';
 type Origins = readonly (number | null)[];
 
 /** Where each row of `g` came from: as stated, else each its own place. */
-const rowOrigins = (g: TableGeometry): Origins => g.rowOrigins ?? g.rowHeights.map((_, i) => i);
+export const rowOrigins = (g: TableGeometry): Origins =>
+  g.rowOrigins ?? g.rowHeights.map((_, i) => i);
 
 /** Where each column of `g` came from: as stated, else each its own place. */
 const columnOrigins = (g: TableGeometry): Origins =>
@@ -108,7 +109,7 @@ export function alignedBefore(before: TableGeometry, g: TableGeometry): TableGeo
 }
 
 /** The row (column) of the table as read a new row (column) at `i` takes its style from. */
-function neighbour(origins: Origins, i: number): number | undefined {
+export function neighbour(origins: Origins, i: number): number | undefined {
   for (let k = i - 1; k >= 0; k--) if (origins[k] !== null) return origins[k]!;
   for (let k = i + 1; k < origins.length; k++) if (origins[k] !== null) return origins[k]!;
   return undefined;

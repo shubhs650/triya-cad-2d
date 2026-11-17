@@ -3,7 +3,12 @@
 // plan view (DEC-039). Types not mapped yet, and entities whose plane is tilted, are reported
 // in `unmapped` and stay with the retained original only.
 
-import type { LeaderLine, MultiLeaderBlockAttribute, TableContent } from '@node-projects/acad-ts';
+import type {
+  LeaderLine,
+  MultiLeaderBlockAttribute,
+  TableContent,
+  TableEntityRow,
+} from '@node-projects/acad-ts';
 import {
   CadValueType,
   AnnotScaleObjectContextData,
@@ -98,6 +103,7 @@ import type {
   ObjectCommon,
   TableBorderFormat,
   TableCell,
+  TableCellStyleName,
   TableCellFormat,
   TableCellValue,
   TableGeometry,
@@ -117,7 +123,9 @@ import type {
   Transparency,
   Vec2,
 } from '@triya/engine';
-import { HATCH_BACKGROUND_APP, backgroundColorOf } from '@triya/engine';
+import { HATCH_BACKGROUND_APP, backgroundColorOf, tableRowTypes } from '@triya/engine';
+import { cellStyleMapOf, tableStyleRows } from './styles';
+import { roundTripTableContent } from './table-content';
 import { regionBoundary } from '../acis/region';
 import { readSab, readSat } from '../acis/records';
 import { textField } from './fields';
@@ -1011,12 +1019,19 @@ function statedOverrides(o: TableStyleOverrides): TableOverrides {
 
 /**
  * The row type a DWG R2010+ row's style id names: the TABLESTYLE cell style `_TITLE`, `_HEADER`
- * or `_DATA` (ids 1 to 3 when the style lists none), or none.
+ * or `_DATA` (ids 1 to 3 when the style lists none), or none. A DXF's style lists them in its
+ * CELLSTYLEMAP (M4-28), a DWG's in the style.
  */
 export function rowTypeOf(
   style: TableStyle | null,
 ): (id: number) => (typeof ROW_TYPES)[number] | undefined {
-  const names = new Map((style?.cellStyles ?? []).map((c) => [c.id, c.name.toUpperCase()]));
+  const listed = [
+    ...((style && cellStyleMapOf(style)?.cellStyles) ?? []),
+    ...(style?.cellStyles ?? []),
+  ];
+  const names = new Map(
+    listed.filter((c) => c.name !== '').map((c) => [c.id, c.name.toUpperCase()]),
+  );
   return (id) => {
     const name = names.get(id);
     const k = name ? ['_TITLE', '_HEADER', '_DATA'].indexOf(name) : id - 1;
@@ -1062,7 +1077,10 @@ function contentOverrides(t: TableEntity): TableOverrides {
  * DXF states merges per cell (175/176 spans, 173 merged); DWG states the merged ranges, so the
  * spans are derived from those when there are any.
  */
-function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason'] {
+function tableGeometry(
+  t: TableEntity,
+  styledBy?: TableContent,
+): TableGeometry | UnmappedEntity['reason'] {
   const pl = plane(t.normal);
   if (pl === 'tilted') return 'tilted plane';
   const head = new Map<string, { rows: number; columns: number }>();
@@ -1112,6 +1130,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
   const style = ref(t.style);
   const block = ref(t.block);
   const overrides = t.tableOverrides ? statedOverrides(t.tableOverrides) : contentOverrides(t);
+  const styled = cellStyleNames(t, styledBy?.rows ?? t.rows, cells);
   return {
     kind: 'ACAD_TABLE',
     ...(style ? { style } : {}),
@@ -1120,9 +1139,41 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
     direction: xy(t.horizontalDirection),
     rowHeights: t.rows.map((r) => r.height),
     columnWidths: t.columns.map((c) => c.width),
-    cells,
+    cells: styled.cells,
     ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+    ...(styled.rowStyles ? { rowStyles: styled.rowStyles } : {}),
     ...planar(pl, t.normal, t.insertPoint.z, 0),
+  };
+}
+
+/**
+ * Each row's and cell's cell style (M4-16 part 5), from `rows` (the table's own in a DWG from
+ * R2010, a DXF table's TABLECONTENT's): a row's style id naming `_TITLE`, `_HEADER` or `_DATA`,
+ * else the row type its place gives (as rows on a cell style of the drafter's own are drawn,
+ * M1-99); a cell's own when it names one other than its row's (0 is By Row). The rows are stated
+ * only when they are not by their place; rows that do not match the table's grid say nothing.
+ */
+function cellStyleNames(
+  t: TableEntity,
+  rows: readonly TableEntityRow[],
+  cells: TableCell[][],
+): { cells: TableCell[][]; rowStyles?: TableCellStyleName[] } {
+  const grid =
+    rows.length === cells.length && rows.every((r, i) => r.cells.length === cells[i]!.length);
+  if (!grid) return { cells };
+  const typeOf = rowTypeOf(t.style);
+  const placed = tableRowTypes(tableStyleRows(t.style), rows.length);
+  const types = rows.map((r, i) => typeOf(r.styleId) ?? placed[i]!);
+  const out = cells.map((row, i) =>
+    row.map((c, j) => {
+      const id = rows[i]!.cells[j]!.styleId;
+      const own = id === 0 ? undefined : typeOf(id);
+      return own && own !== types[i] ? { ...c, cellStyle: own } : c;
+    }),
+  );
+  return {
+    cells: out,
+    ...(types.some((type, i) => type !== placed[i]) ? { rowStyles: types } : {}),
   };
 }
 
@@ -1669,7 +1720,9 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   }
   if (e instanceof MText) return mtextGeometry(e, ctx);
   // TableEntity extends Insert in acad-ts, so it is tested first.
-  if (e instanceof TableEntity) return tableGeometry(e);
+  // A DXF table's rows' and cells' cell styles are in its TABLECONTENT only (M4-16 part 5).
+  if (e instanceof TableEntity)
+    return tableGeometry(e, roundTripTableContent(e)?.content ?? undefined);
   if (e instanceof Insert) return insertGeometry(e, ctx);
   if (
     e instanceof DimensionAligned ||

@@ -329,3 +329,59 @@ function rowInsertedAbove(g: TableGeometry): TableGeometry {
     rowOrigins: [0, null, 1, 2],
   };
 }
+
+// M4-16 part 5: each row's and cell's cell style. The test drawing's table is title, header,
+// data; it comes without AutoCAD 2008 data, which a DXF save then gives it.
+describe('ACAD_TABLE rows and cells on cell styles of their own', () => {
+  /** The table's header row made a title row, its last data cell on Header of its own. */
+  const restyled = (g: TableGeometry): TableGeometry => ({
+    ...g,
+    rowStyles: ['title', 'title', 'data'],
+    cells: g.cells.map((row, i) =>
+      i === 2 ? row.map((c, j) => (j === 1 ? { ...c, cellStyle: 'header' as const } : c)) : row,
+    ),
+  });
+
+  it.each([
+    ['R2018 DXF', ACadVersion.AC1032, 'dxf'],
+    ['R2007 DXF', ACadVersion.AC1021, 'dxf'],
+    ['R2018 DWG', ACadVersion.AC1032, 'dwg'],
+    ['R2010 DWG', ACadVersion.AC1024, 'dwg'],
+  ] as const)('saves them to %s', (_w, version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    expect(table(model).geom.rowStyles).toBeUndefined();
+    edit(model, restyled(table(model).geom));
+    const back = mapped(save(bytes, model, format));
+    expect(back.rowStyles).toEqual(['title', 'title', 'data']);
+    expect(back.cells.map((r) => r.map((c) => c.cellStyle))).toEqual([
+      [undefined, undefined],
+      [undefined, undefined],
+      [undefined, 'header'],
+    ]);
+    // Opened from that save and put back by their place: nothing stated again.
+    const saved = exportDocument(readCadDocument(bytes), model, { format });
+    const reopened = open(saved);
+    const g = table(reopened).geom;
+    expect(g.rowStyles).toEqual(['title', 'title', 'data']);
+    const { rowStyles: _, ...placed } = g;
+    edit(reopened, {
+      ...placed,
+      cells: g.cells.map((r) => r.map(({ cellStyle: _own, ...c }) => c)),
+    });
+    const plain = mapped(save(saved, reopened, format));
+    expect(plain.rowStyles).toBeUndefined();
+    expect(plain.cells.flat().some((c) => c.cellStyle)).toBe(false);
+  });
+
+  it.each([
+    ['R2004 DXF', ACadVersion.AC1018, 'dxf'],
+    ['R2007 DWG', ACadVersion.AC1021, 'dwg'],
+  ] as const)('refuses them in %s, which cannot state them', (_w, version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    edit(model, restyled(table(model).geom));
+    const problems = refusal(() => exportDocument(readCadDocument(bytes), model, { format }));
+    expect(problems.join('\n')).toMatch(/cell style other than their place gives them/);
+  });
+});

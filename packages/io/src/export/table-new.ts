@@ -51,7 +51,7 @@ function rowTypes(style: TableStyle | null, rows: number): RowType[] {
  * The table style's cell style id of each row type, as a DWG from R2010 lists its cell styles or
  * a DXF's CELLSTYLEMAP does (M4-28); 1 to 3, as AutoCAD numbers them, when it lists none.
  */
-function rowStyleIds(style: TableStyle | null): Record<RowType, number> {
+export function rowStyleIds(style: TableStyle | null): Record<RowType, number> {
   // The style's own list wins (a later entry replaces an earlier one).
   const listed = [
     ...((style && cellStyleMapOf(style)?.cellStyles) ?? []),
