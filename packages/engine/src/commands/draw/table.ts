@@ -38,6 +38,7 @@ import type { InsertTableSettings, Prompt, PromptAnswer, TableStyleEntry } from 
 import { tableStyleDialog } from '../tablestyle';
 import { drawingUnits, formatDistance } from '../units';
 import { editTableCells, tableditCommand } from './table-cells';
+import { tinsertCommand } from './table-block';
 import { tableCellCommand } from './table-cell-menu';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -393,5 +394,5 @@ export function tableCommands(): CommandDef[] {
     },
   };
 
-  return [table, dashTable, tableditCommand(), tableCellCommand()];
+  return [table, dashTable, tableditCommand(), tableCellCommand(), tinsertCommand()];
 }

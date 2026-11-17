@@ -29,6 +29,7 @@ import type { FieldDialogRequest } from './draw/field';
 import type { FieldSpec } from '../edit/field-codes';
 import { FIELD_INSERT } from '../edit/fields';
 import type { ToleranceRequest } from './draw/tolerance';
+import type { TableBlockRequest, TableBlockSettings } from './draw/table-block';
 import type { GdtFrame } from '../edit/tolerance-frame';
 import {
   DECIMAL_UNITS,
@@ -744,6 +745,8 @@ export type DialogRequest =
   | FieldDialogRequest
   /** TOLERANCE's Geometric Tolerance (M4-11), also TEXTEDIT's on a feature control frame. */
   | ToleranceRequest
+  /** TINSERT's Insert a Block in a Table Cell (M4-16). */
+  | TableBlockRequest
   | ObjectGroupingRequest;
 
 /** One row of the Object Grouping dialog's Group Name list (M3-08). */
@@ -976,6 +979,8 @@ export type PromptAnswer =
       readonly field?: FieldSpec;
       /** The Geometric Tolerance dialog's fields as OK closed it (TOLERANCE, M4-11). */
       readonly tolerance?: GdtFrame;
+      /** Insert a Block in a Table Cell's fields as OK closed it (TINSERT, M4-16). */
+      readonly tableBlock?: TableBlockSettings;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;

@@ -42,6 +42,7 @@ export type TableMerge = 'all' | 'rows' | 'columns';
 export const TABLE_CELL_OPTIONS = [
   'Text',
   'Paste',
+  'BLock',
   'BAckground',
   'ALignment',
   'BOrders',
@@ -311,6 +312,7 @@ export function tableCellOptions(
   const on: Record<TableCellOption, boolean> = {
     Text: true,
     Paste: true,
+    BLock: true,
     BAckground: true,
     ALignment: true,
     BOrders: true,
