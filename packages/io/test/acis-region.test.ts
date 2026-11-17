@@ -121,7 +121,7 @@ describe('mapEntities REGION', () => {
     r.binaryData = new Uint8Array([1, 2, 3]);
     doc.entities?.add(r);
     expect(mapEntities(doc).unmapped).toEqual([
-      { handle: H(r), type: 'REGION', reason: 'unsupported boundary' },
+      { handle: H(r), type: 'REGION', layer: H(r.layer), reason: 'unsupported boundary' },
     ]);
   });
 });
