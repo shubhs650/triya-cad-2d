@@ -798,3 +798,16 @@ export const DIMVAR_ROWS: readonly DimvarRow[] = [
     ...suppressRows('DIMALTTZ', 'Alt tolerance', 'Tolerances'),
   ].map(linearOnly),
 ];
+
+/**
+ * A feature control frame's DIMVAR rows (M4-21): AutoCAD 2024's Properties palette shows a
+ * TOLERANCE's Dim line color in Lines & Arrows and its Text color, Text height and Text style in
+ * Text (ActiveX AcadTolerance's DimensionLineColor, TextColor, TextHeight and TextStyle), the
+ * DIMVARs a frame draws with (`toleranceParts`), each edited as a dimension's are.
+ */
+export const TOLERANCE_DIMVAR_ROWS: readonly DimvarRow[] = [
+  'DIMCLRD',
+  'DIMCLRT',
+  'DIMTXT',
+  'DIMTXSTY',
+].map((name) => DIMVAR_ROWS.find((r) => r.name === name)!);

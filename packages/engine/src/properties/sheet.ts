@@ -27,6 +27,7 @@ import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
 import {
   DIMVAR_ROWS,
+  TOLERANCE_DIMVAR_ROWS,
   arrowheadOptions,
   dimensionUnits,
   rowVars,
@@ -35,6 +36,7 @@ import {
   type DimvarSection,
 } from './dimension';
 import { JUSTIFICATIONS } from '../commands/modify/attributes';
+import { drawnDimStyle } from '../annotation/dimstyle-family';
 import { colorBooks, colorValue, type ColorBook } from './color-books';
 import { DIRECTION_OPTIONS, directionValue, multiLeaderTextRows } from './multileader';
 import {
@@ -203,6 +205,13 @@ const TYPE_LABELS: Partial<Record<EntityType, string>> = {
   ACAD_PROXY_ENTITY: 'Proxy Entity',
   HATCH: 'Hatch',
 };
+
+/** The Dim style row's choices (a dimension's, a feature control frame's): by name. */
+function dimStyleOptions(model: DocumentModel): PropertyOption[] {
+  return [...model.tables.dimStyles.values()]
+    .map((r) => ({ value: r.handle as string, label: r.name }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
 
 export const typeLabel = (t: EntityType): string => TYPE_LABELS[t] ?? t;
 
@@ -1042,9 +1051,7 @@ function typeSections(
     case 'ARC_DIMENSION':
     case 'LARGE_RADIAL_DIMENSION': {
       const g = (e: Entity) => geomOf<'DIMENSION'>(e);
-      const styles = [...model.tables.dimStyles.values()]
-        .map((r) => ({ value: r.handle as string, label: r.name }))
-        .sort((a, b) => a.label.localeCompare(b.label));
+      const styles = dimStyleOptions(model);
       // A DIMVAR row shows what the dimension is drawn with: its style's value, or its override.
       const vars = es.map((e) => rowVars(g(e).style, e.xdata, model));
       // An angular dimension's units are angular ones (M2-35 part 10); a selection of both
@@ -1126,6 +1133,56 @@ function typeSections(
       add('Primary Units', group('Primary Units'));
       add('Alternate Units', group('Alternate Units'));
       add('Tolerances', group('Tolerances'));
+      break;
+    }
+    case 'TOLERANCE': {
+      // M4-21: AutoCAD 2024's rows for a feature control frame (ActiveX AcadTolerance's
+      // StyleName, DimensionLineColor, TextColor, TextHeight, TextStyle, InsertionPoint and
+      // DirectionVector). The DIMVAR rows show what the frame is drawn with: its style's Leaders
+      // and Tolerances sub-style when the drawing has one, and its `DSTYLE` overrides.
+      const g = (e: Entity) => geomOf<'TOLERANCE'>(e);
+      const vars = es.map((e) => rowVars(drawnDimStyle(model, g(e)), e.xdata, model));
+      const dimvar = (section: DimvarSection) =>
+        TOLERANCE_DIMVAR_ROWS.filter((d) => d.section === section).map((d): PropertyRow => {
+          const options = typeof d.options === 'function' ? d.options(model, vars[0]!) : d.options;
+          return {
+            ...row(vars, {
+              key: `dimvar:${d.name}`,
+              label: d.label,
+              kind: d.kind,
+              ...(options && { options }),
+              get: (v) => d.get(v, model),
+            }),
+            ...(d.color && { colorDialog: 'index' as const }),
+          };
+        });
+      add('Misc', [
+        row(es, {
+          key: 'dimStyle',
+          label: 'Dim style',
+          kind: 'choice',
+          options: dimStyleOptions(model),
+          get: (e) => g(e).style,
+        }),
+      ]);
+      add('Lines & Arrows', dimvar('Lines & Arrows'));
+      add('Text', dimvar('Text'));
+      add('Geometry', [
+        row(es, {
+          key: 'positionX',
+          label: 'Position X',
+          kind: 'distance',
+          get: (e) => g(e).position.x,
+        }),
+        row(es, {
+          key: 'positionY',
+          label: 'Position Y',
+          kind: 'distance',
+          get: (e) => g(e).position.y,
+        }),
+        // DXF 11, the frame's X direction, as the angle it makes with the X axis.
+        row(es, { key: 'rotation', label: 'Direction', kind: 'angle', get: (e) => g(e).rotation }),
+      ]);
       break;
     }
     case 'HATCH': {

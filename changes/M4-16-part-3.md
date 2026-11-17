@@ -1,0 +1,1 @@
+- M4-16 part 3 (#477): the Table Cell Format dialog's Additional Format... sets a cell's conversion factor, prefix and suffix, decimal and thousands separators and leading or trailing zero suppression, and its X, Y and Z boxes choose which coordinates a point cell shows; both are kept through saves.
