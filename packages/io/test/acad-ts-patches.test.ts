@@ -109,6 +109,7 @@ import {
   VPort,
   XY,
   XYZ,
+  RasterVariables,
   WipeoutVariables,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
@@ -2933,5 +2934,22 @@ describe('acad-ts local patches', () => {
     doc.blockRecords!.add(new BlockRecord('OLD'));
     const back = readCadDocument(writeCadDocument(doc, { format: 'dwg' }));
     expect(back.blockRecords!.tryGetValue('OLD')!.canScale).toBe(false);
+  });
+
+  it('0188 IMAGEFRAME keeps "Displayed but not plotted" (2) through DXF and DWG', () => {
+    // RASTERVARIABLES 70 holds IMAGEFRAME (AutoCAD 2024 Help, "IMAGEFRAME (System Variable)": 0
+    // off, 1 displayed and plotted, 2 displayed but not plotted). Unpatched, acad-ts read it as
+    // on/off, so a drawing whose image frames show but do not plot was saved with 1.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const vars = new RasterVariables();
+    vars.isDisplayFrameShown = 2;
+    doc.rootDictionary!.addByKey('ACAD_IMAGE_VARS', vars);
+    for (const format of ['dxf', 'dwg'] as const) {
+      for (const binary of format === 'dxf' ? [false, true] : [false]) {
+        const back = readCadDocument(writeCadDocument(doc, { format, binary }));
+        const read = back.getCadObject(vars.handle) as RasterVariables;
+        expect(read.isDisplayFrameShown, `${format} binary ${binary}`).toBe(2);
+      }
+    }
   });
 });

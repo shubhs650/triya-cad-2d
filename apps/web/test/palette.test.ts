@@ -23,6 +23,8 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       // M4-03 part 2: dimension styles at the command line.
       '-DIMSTYLE',
+      // M5-04 part 4: the image commands.
+      '-IMAGEADJUST',
       // M4-04: a text style made at the command line.
       '-STYLE',
       // M4-05: a table on the command line.
@@ -133,6 +135,9 @@ describe('palette search', () => {
       'HATCHEDIT',
       'HATCHTOBACK',
       'ID',
+      'IMAGEADJUST',
+      'IMAGECLIP',
+      'IMAGEQUALITY',
       'INSERT',
       'JOIN',
       // M4-09 part 1: JUSTIFYTEXT and SCALETEXT.

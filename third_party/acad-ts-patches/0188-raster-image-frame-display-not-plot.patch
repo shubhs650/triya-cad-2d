@@ -1,0 +1,53 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index efe6192..2efbc42 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -2841,7 +2841,7 @@ export class DwgObjectReader extends DwgSectionIO {
+     const template = new CadNonGraphicalObjectTemplate(vars);
+     this._readCommonNonEntityData(template);
+     vars.classVersion = this._mergedReaders.readBitLong();
+-    vars.isDisplayFrameShown = this._mergedReaders.readBitShort() !== 0;
++    vars.isDisplayFrameShown = this._mergedReaders.readBitShort();
+     vars.displayQuality = this._mergedReaders.readBitShort() as ImageDisplayQuality;
+     vars.units = this._mergedReaders.readBitShort() as ImageUnits;
+     return template;
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 8c153df..f416193 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -4953,7 +4953,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 
+ 	private _writeRasterVariables(vars: RasterVariables): void {
+ 		this._writer.writeBitLong(vars.classVersion);
+-		this._writer.writeBitShort(vars.isDisplayFrameShown ? 1 : 0);
++		this._writer.writeBitShort(vars.isDisplayFrameShown);
+ 		this._writer.writeBitShort(vars.displayQuality);
+ 		this._writer.writeBitShort(vars.units);
+ 	}
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 295b0d2..ffbdaac 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -661,7 +661,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+     this._writer.write(100, DxfSubclassMarker.rasterVariables);
+ 
+     this._writer.write(90, variables.classVersion, map);
+-    this._writer.write(70, variables.isDisplayFrameShown ? 1 : 0, map);
++    this._writer.write(70, variables.isDisplayFrameShown, map);
+     this._writer.write(71, variables.displayQuality, map);
+     this._writer.write(72, variables.units, map);
+   }
+diff --git a/src/Objects/RasterVariables.ts b/src/Objects/RasterVariables.ts
+index 9a3ff80..aad07ae 100644
+--- a/src/Objects/RasterVariables.ts
++++ b/src/Objects/RasterVariables.ts
+@@ -6,7 +6,8 @@ import { ImageDisplayQuality } from './ImageDisplayQuality.js';
+ export class RasterVariables extends NonGraphicalObject {
+ 	classVersion: number = 0;
+ 	displayQuality: ImageDisplayQuality = ImageDisplayQuality.High;
+-	isDisplayFrameShown: boolean = false;
++	/** DXF 70, IMAGEFRAME: 0 frames off, 1 shown and plotted, 2 shown but not plotted. */
++	isDisplayFrameShown: number = 0;
+ 
+ 	override get objectName(): string {
+ 		return DxfFileToken.objectRasterVariables;

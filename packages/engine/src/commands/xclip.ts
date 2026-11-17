@@ -82,7 +82,7 @@ function rectangle(a: Vec2, b: Vec2, angle: number): Vec2[] {
   ].map(toWorld);
 }
 
-async function* rectangular(ctx: CommandContext): Sub<Vec2[] | undefined> {
+export async function* rectangular(ctx: CommandContext): Sub<Vec2[] | undefined> {
   for (;;) {
     const a = yield ctx.prompt.point({ message: 'Specify first corner' });
     if (a.kind !== 'point') return undefined;
@@ -102,7 +102,7 @@ async function* rectangular(ctx: CommandContext): Sub<Vec2[] | undefined> {
   }
 }
 
-async function* polygonal(ctx: CommandContext): Sub<Vec2[] | undefined> {
+export async function* polygonal(ctx: CommandContext): Sub<Vec2[] | undefined> {
   const first = yield ctx.prompt.point({ message: 'Specify first point' });
   if (first.kind !== 'point') return undefined;
   const points: Vec2[] = [first.point];
@@ -129,7 +129,7 @@ async function* polygonal(ctx: CommandContext): Sub<Vec2[] | undefined> {
   }
 }
 
-async function* fromPolyline(ctx: CommandContext): Sub<Vec2[] | undefined> {
+export async function* fromPolyline(ctx: CommandContext): Sub<Vec2[] | undefined> {
   for (;;) {
     const a = yield ctx.prompt.selection({ message: 'Select polyline', single: true });
     if (a.kind !== 'selection' || a.ids.length === 0) return undefined;

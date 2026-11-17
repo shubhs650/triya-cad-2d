@@ -53,6 +53,8 @@ FIXTURE_SAVES = (
     ("fixtures/xref/xref-parent.dxf", "bind-objects"),
     # XCLIP New boundary, OFF, Delete and generate Polyline on ezdxf's xclip.dxf (M5-04 part 3).
     ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip"),
+    # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
+    ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

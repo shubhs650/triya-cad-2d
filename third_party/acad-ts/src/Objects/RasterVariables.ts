@@ -6,7 +6,8 @@ import { ImageDisplayQuality } from './ImageDisplayQuality.js';
 export class RasterVariables extends NonGraphicalObject {
 	classVersion: number = 0;
 	displayQuality: ImageDisplayQuality = ImageDisplayQuality.High;
-	isDisplayFrameShown: boolean = false;
+	/** DXF 70, IMAGEFRAME: 0 frames off, 1 shown and plotted, 2 shown but not plotted. */
+	isDisplayFrameShown: number = 0;
 
 	override get objectName(): string {
 		return DxfFileToken.objectRasterVariables;

@@ -5,6 +5,7 @@
 import type {
   EntityGeometry,
   ImageDefinition,
+  ImageFrame,
   ImageGeometry,
   NonGraphicalObject,
   RasterVariables,
@@ -49,7 +50,7 @@ const grey = (w = 8, h = 4): RasterPixels => ({
   data: new Uint8ClampedArray(w * h * 4).map((_, i) => (i % 4 === 3 ? 255 : 128)),
 });
 
-const rasterVars = (frame: boolean): RasterVariables => ({
+const rasterVars = (frame: ImageFrame): RasterVariables => ({
   handle: '82',
   type: 'RASTERVARIABLES',
   owner: '0C',
@@ -154,7 +155,7 @@ describe('images', () => {
 
   it('outlines an image the app has no bitmap for, and asks again next frame', () => {
     const { redraw, asked } = setup([{ handle: '20', geom: image() }], {
-      extra: { objects: [rasterVars(false)] },
+      extra: { objects: [rasterVars(0)] },
     });
     const c = redraw();
     expect(c.named('drawImage')).toEqual([]);
@@ -167,10 +168,10 @@ describe('images', () => {
     const pixels = { '7F': grey() };
     const off = setup([{ handle: '20', geom: image() }], {
       pixels,
-      extra: { objects: [rasterVars(false)] },
+      extra: { objects: [rasterVars(0)] },
     });
     expect(off.redraw().named('stroke')).toEqual([]);
-    off.r.apply(change(off.d, (b) => b.updateObject('82', { frame: true } as never)));
+    off.r.apply(change(off.d, (b) => b.updateObject('82', { frame: 2 } as never)));
     expect(off.redraw().named('stroke')).toHaveLength(1);
     // Without a RASTERVARIABLES object the frame shows (AutoCAD's initial IMAGEFRAME 1).
     expect(
@@ -182,7 +183,7 @@ describe('images', () => {
 
   it('smooths scaled bitmaps at IMAGEQUALITY high and shows their pixels at draft', () => {
     const smoothing = (quality: 'draft' | 'high') => {
-      const vars: RasterVariables = { ...rasterVars(true), quality };
+      const vars: RasterVariables = { ...rasterVars(1), quality };
       const c = setup([{ handle: '20', geom: image() }], {
         pixels: { '7F': grey() },
         extra: { objects: [vars] },

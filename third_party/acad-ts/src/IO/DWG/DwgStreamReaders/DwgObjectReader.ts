@@ -2841,7 +2841,7 @@ export class DwgObjectReader extends DwgSectionIO {
     const template = new CadNonGraphicalObjectTemplate(vars);
     this._readCommonNonEntityData(template);
     vars.classVersion = this._mergedReaders.readBitLong();
-    vars.isDisplayFrameShown = this._mergedReaders.readBitShort() !== 0;
+    vars.isDisplayFrameShown = this._mergedReaders.readBitShort();
     vars.displayQuality = this._mergedReaders.readBitShort() as ImageDisplayQuality;
     vars.units = this._mergedReaders.readBitShort() as ImageUnits;
     return template;

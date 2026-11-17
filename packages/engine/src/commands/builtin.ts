@@ -75,6 +75,12 @@ import { layerStateCommand } from './layer-states';
 import { layerToolCommands } from './layer-tools';
 import { XREF_COMMANDS } from './xref';
 import { xclipCommand } from './xclip';
+import {
+  imageadjustCommand,
+  imageadjustDashCommand,
+  imageclipCommand,
+  imagequalityCommand,
+} from './image';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 import { ARRAY_COMMANDS } from './modify/array';
 
@@ -173,6 +179,10 @@ export function builtinCommands(): CommandRegistry {
     layerStateCommand(),
     ...XREF_COMMANDS.map((make) => make()),
     xclipCommand(),
+    imageclipCommand(),
+    imageadjustCommand(),
+    imageadjustDashCommand(),
+    imagequalityCommand(),
     ...INQUIRY_COMMANDS.map((make) => make()),
     ...ARRAY_COMMANDS.map((make) => make()),
     ...GROUP_COMMANDS.map((make) => make()),

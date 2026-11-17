@@ -39,6 +39,7 @@ export * from './grip-functions';
 export { hasDynamicColumns, withColumnCount } from './mtext-grips';
 export { hatchGripPoint, viewportCorners } from './shape-grips';
 export * from './revcloud';
+export * from './image-clip';
 export * from './clipboard';
 export * from './clipboard-data';
 export * from './picture';

@@ -29,16 +29,17 @@ export function attributeMode(model: DocumentModel): number | undefined {
 
 /**
  * IMAGEFRAME and WIPEOUTFRAME from the drawing's objects; on when the drawing has none. A plot
- * leaves out wipeout frames that are "displayed but not plotted" (WIPEOUTFRAME 2, M2-24 part 2),
- * which the screen draws.
+ * leaves out frames that are "displayed but not plotted" (WIPEOUTFRAME 2, M2-24 part 2;
+ * IMAGEFRAME 2, M5-04 part 4), which the screen draws.
  */
 export function imageFrames(model: DocumentModel, use: 'screen' | 'plot' = 'screen'): ImageFrames {
   let image = true;
   let wipeout = true;
   for (const o of model.objects.values()) {
     if (!isFrameSetting(o)) continue;
-    if (o.type === 'RASTERVARIABLES') image = o.frame;
-    else wipeout = use === 'plot' ? o.frame === 1 : o.frame !== 0;
+    const shown = use === 'plot' ? o.frame === 1 : o.frame !== 0;
+    if (o.type === 'RASTERVARIABLES') image = shown;
+    else wipeout = shown;
   }
   return { image, wipeout };
 }
