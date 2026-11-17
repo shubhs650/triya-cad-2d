@@ -80,7 +80,9 @@ function drawing(files: Record<string, Clipboard> = {}, extra: EntityGeometry[] 
             (k) => k.toUpperCase() === fileBlockName(r.file).toUpperCase(),
           );
           return Promise.resolve(
-            key ? { ok: true, drawing: { name: `${key}.dxf`, content: files[key]! } } : { ok: true },
+            key
+              ? { ok: true, drawing: { name: `${key}.dxf`, content: files[key]! } }
+              : { ok: true },
           );
         }
         if (r.op === 'writeBlock') return Promise.resolve({ ok: true, file: r.file });
@@ -206,7 +208,16 @@ describe('-INSERT of a drawing file', () => {
 
   it('refuses a file that holds a block of the name, an invalid name and an xref', async () => {
     // A drawing holding block B, inserted as B, would hold itself.
-    const o = setup([{ kind: 'INSERT', block: '50', position: { x: 0, y: 0 }, scale: { x: 1, y: 1, z: 1 }, rotation: 0, attributes: [] } as EntityGeometry]);
+    const o = setup([
+      {
+        kind: 'INSERT',
+        block: '50',
+        position: { x: 0, y: 0 },
+        scale: { x: 1, y: 1, z: 1 },
+        rotation: 0,
+        attributes: [],
+      } as EntityGeometry,
+    ]);
     const t = drawing({ holder: drawingContent(o.model).clipboard });
     await t.bus.script(['-INSERT', 'B=holder', 'Y']);
     expect(t.log.at(-1)).toBe('Block "B" references itself.');

@@ -57,6 +57,7 @@ import { ToleranceDialog } from './ToleranceDialog';
 import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { InsertDialog } from './InsertDialog';
+import { WriteBlockDialog } from './WriteBlockDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
@@ -155,6 +156,8 @@ export function AttributeDialogs({
       return <BlockDefinitionDialog key={key} doc={doc.id} request={d} />;
     case 'insert':
       return <InsertDialog key={key} doc={doc.id} request={d} />;
+    case 'wblock':
+      return <WriteBlockDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

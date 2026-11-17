@@ -246,6 +246,8 @@ describe('palette search', () => {
       // M4-10 part 1.
       'UPDATEFIELD',
       'VIEW',
+      // M5-01 part 4: the Write Block dialog.
+      'WBLOCK',
       'WIPEOUT',
       'XLINE',
       'XREF',

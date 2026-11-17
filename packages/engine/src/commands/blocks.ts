@@ -602,7 +602,8 @@ function drawingRefusal(ctx: CommandContext, name: string, content: Clipboard): 
   const problem = blockNameProblem(name);
   if (problem) return problem;
   const existing = blockNamed(ctx.model, name);
-  if (existing && isXrefRecord(existing)) return `Block "${existing.name}" is an external reference.`;
+  if (existing && isXrefRecord(existing))
+    return `Block "${existing.name}" is an external reference.`;
   if (clipboardHoldsBlock(content, name)) return `Block "${name}" references itself.`;
   return undefined;
 }
@@ -967,7 +968,8 @@ async function* insertDialog(ctx: CommandContext): Sub<void> {
     }
     settings = a.insert.settings;
     const drawing = a.insert.drawing;
-    const content = drawing?.content ?? (drawing?.file === picked?.file ? picked?.content : undefined);
+    const content =
+      drawing?.content ?? (drawing?.file === picked?.file ? picked?.content : undefined);
     picked = drawing && content ? { file: drawing.file, content } : undefined;
     note = picked ? drawingRefusal(ctx, settings.name.trim(), picked.content) : undefined;
     if (!note && picked && (drawing!.redefine || !insertableBlock(ctx, settings.name.trim()))) {

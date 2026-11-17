@@ -104,7 +104,10 @@ const CARRIED_HEADER = [
 
 /** The file name WBLOCK writes: DXF whatever was typed, "new block.dxf" when nothing was. */
 export function wblockFileName(typed: string): string {
-  const name = typed.trim().replace(/\.(dxf|dwg)$/i, '').trim();
+  const name = typed
+    .trim()
+    .replace(/\.(dxf|dwg)$/i, '')
+    .trim();
   return `${name === '' ? 'new block' : name}.dxf`;
 }
 
