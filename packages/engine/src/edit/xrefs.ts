@@ -19,7 +19,13 @@ import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { BlockTableRecord, SymbolTableRecord, TableName } from '../model/types';
-import { HANDLE_KEYS, isXrefRecord, removeXrefContent, xrefBringing } from '../model/xref';
+import {
+  HANDLE_KEYS,
+  dropLayersFromLayerStates,
+  isXrefRecord,
+  removeXrefContent,
+  xrefBringing,
+} from '../model/xref';
 import { eraseObjects } from './edit';
 
 /** DXF 70 bit 16: a record that belongs to an xref. */
@@ -110,6 +116,13 @@ export function detachXrefs(
         b.updateEntity(e.id, { geom: { ...cur.geom, frozenLayers: kept } });
     }
   }
+  // The layer states let go of the xrefs' layers: those the load brought in, named only now,
+  // and the records that went.
+  dropLayersFromLayerStates(
+    b,
+    new Set([...candidates.keys()].filter((h) => !b.tableRecord(candidates.get(h)!, h))),
+    prefixes,
+  );
 }
 
 /**
@@ -151,7 +164,8 @@ function usedOf(
     const cur = b.block(d.handle);
     if (cur) walk(cur, undefined);
   }
-  for (const o of b.objects()) walk(o, undefined);
+  // A layer state lets go of the layers that go (below), as it does of those LAYDEL deletes.
+  for (const o of b.objects()) if (o.type !== 'LAYER_STATE') walk(o, undefined);
   for (const l of model.layouts) walk(b.layout(l.handle), undefined);
   // A candidate that stays keeps what it names (a kept layer its linetype).
   for (let size = -1; size !== used.size;) {

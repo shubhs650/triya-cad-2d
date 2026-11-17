@@ -11,6 +11,7 @@ import {
   type BusEvent,
   type DocumentInit,
   type DocumentModel,
+  type LayerState,
   type ViewRequest,
 } from '@triya/engine';
 import { openDocument, readCadDocument, triyaToAcad } from '@triya/io';
@@ -216,6 +217,27 @@ describe('XREF Detach (M5-04)', () => {
     expect(recordNamed(model, 'xref-grandchild')).toBeUndefined();
     expect(layerNames(model).some((n) => n.includes('|'))).toBe(false);
     expect(shape(model)).toEqual(shape(resavedModel(model)));
+  });
+
+  it('takes the layers that go out of the layer states, and unloading keeps them by name', () => {
+    const states = (model: DocumentModel) =>
+      [...model.objects.values()].filter((o): o is LayerState => o.type === 'LAYER_STATE');
+    const entry = (model: DocumentModel, name: string) =>
+      states(model)[0]!.layers.find((e) => e.name === name);
+    const unloaded = loadedParent();
+    expect(unloaded.edit({ kind: 'layer-state-save', name: 'ALL' })).toMatchObject({ ok: true });
+    const tb = handleOf(unloaded.model, 'xref-child-tb');
+    expect(entry(unloaded.model, 'xref-child-tb|TB-FRAME')?.layer).toBeDefined();
+    unloaded.edit({ kind: 'xref-unload', block: tb });
+    expect(entry(unloaded.model, 'xref-child-tb|TB-FRAME')).toBeDefined();
+    expect(entry(unloaded.model, 'xref-child-tb|TB-FRAME')?.layer).toBeUndefined();
+
+    const detached = loadedParent();
+    detached.edit({ kind: 'layer-state-save', name: 'ALL' });
+    detached.edit({ kind: 'xref-detach', blocks: [handleOf(detached.model, 'xref-child-tb')] });
+    expect(entry(detached.model, VISRETAIN_LAYER)).toBeUndefined();
+    expect(entry(detached.model, 'xref-child-tb|TB-FRAME')).toBeUndefined();
+    expect(entry(detached.model, 'xref-child-ovl|TB-FRAME')?.layer).toBeDefined();
   });
 
   it('refuses a nested xref', () => {

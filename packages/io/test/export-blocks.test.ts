@@ -242,6 +242,79 @@ describe('block definitions', () => {
     },
   );
 
+  it('reads and writes Scale uniformly as AutoCAD keeps it: 281 is 1 for a block that scales uniformly', () => {
+    // M5-01 part 2 (the Block Definition dialog's Scale uniformly): AutoCAD writes BLOCK_RECORD
+    // 281 = 0 for a block that scales any way (every *Model_Space, every ordinary block) and 1
+    // for one that scales uniformly; ezdxf's BlockLayout.scale_uniformly reads it so. A file
+    // from before R2007 has no 281, and its blocks scale any way.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const uniform = new BlockRecord('UNIFORM');
+    uniform.canScale = true;
+    doc.blockRecords!.add(uniform);
+    const any = new BlockRecord('ANY');
+    any.canScale = false;
+    doc.blockRecords!.add(any);
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const model = open(bytes);
+    expect(model.tables.blockRecords.get(blockNamed(model, 'UNIFORM').handle)?.scalable).toBe(
+      false,
+    );
+    expect(model.tables.blockRecords.get(blockNamed(model, 'ANY').handle)?.scalable).toBe(true);
+    const old = open(drawing(ACadVersion.AC1018, 'dwg'));
+    expect(old.tables.blockRecords.get(blockNamed(old, 'WINDOW').handle)?.scalable).toBe(true);
+    // A new block: Scale uniformly writes 1, the default 0; a change to an existing one too.
+    let made = '';
+    let plain = '';
+    edit(model, (b) => {
+      made = b.addBlock({ name: 'NEW', basePoint: { x: 0, y: 0 }, scalable: false }).handle;
+      plain = b.addBlock({ name: 'PLAIN', basePoint: { x: 0, y: 0 } }).handle;
+      b.updateTableRecord('blockRecords', blockNamed(model, 'ANY').handle, { scalable: false });
+    });
+    const back = saved(bytes, model, 'dxf');
+    expect(back.blockRecords!.tryGetValue('NEW')!.canScale).toBe(true);
+    expect(back.blockRecords!.tryGetValue('PLAIN')!.canScale).toBe(false);
+    expect(back.blockRecords!.tryGetValue('ANY')!.canScale).toBe(true);
+    expect(back.blockRecords!.tryGetValue('UNIFORM')!.canScale).toBe(true);
+    const read = DocumentModel.create(documentInit(back));
+    expect(read.tables.blockRecords.get(made)?.scalable).toBe(false);
+    expect(read.tables.blockRecords.get(plain)?.scalable).toBe(true);
+  });
+
+  it("reads and writes a block's description (BLOCK 4)", () => {
+    // M5-01 part 2: the Block Definition dialog's Description is the BLOCK entity's group 4.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const door = new BlockRecord('DOOR');
+    door.blockEntity.comments = 'Single door, 900 wide';
+    doc.blockRecords!.add(door);
+    doc.blockRecords!.add(new BlockRecord('BARE'));
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const model = open(bytes);
+    expect(blockNamed(model, 'DOOR').description).toBe('Single door, 900 wide');
+    expect(blockNamed(model, 'BARE').description).toBeUndefined();
+    let made = '';
+    edit(model, (b) => {
+      made = b.addBlock({
+        name: 'WINDOW2',
+        basePoint: { x: 0, y: 0 },
+        description: 'Casement',
+      }).handle;
+      b.updateBlock(blockNamed(model, 'DOOR').handle, { description: 'Double door' });
+      b.updateBlock(blockNamed(model, 'BARE').handle, { description: 'Spare' });
+    });
+    const back = saved(bytes, model, 'dxf');
+    expect(back.blockRecords!.tryGetValue('WINDOW2')!.blockEntity.comments).toBe('Casement');
+    expect(back.blockRecords!.tryGetValue('DOOR')!.blockEntity.comments).toBe('Double door');
+    expect(back.blockRecords!.tryGetValue('BARE')!.blockEntity.comments).toBe('Spare');
+    const read = DocumentModel.create(documentInit(back));
+    expect(read.blocks.get(made)?.description).toBe('Casement');
+    // Clearing it leaves no description.
+    edit(read, (b) => b.updateBlock(made, { description: undefined }));
+    const cleared = DocumentModel.create(
+      documentInit(readCadDocument(exportDocument(back, read, { format: 'dxf' }))),
+    );
+    expect(cleared.blocks.get(made)?.description).toBeUndefined();
+  });
+
   it('refuses what a save cannot keep', () => {
     const ms = (m: DocumentModel) => modelSpace(m);
     const named = (m: DocumentModel, n: string) => blockNamed(m, n).handle;

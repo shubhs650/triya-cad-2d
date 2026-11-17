@@ -52,6 +52,14 @@ import {
   newLayerChange,
   type LayerProps,
 } from '../edit/layer-manager';
+import {
+  deleteLayerStateChange,
+  editLayerStateChange,
+  importLayerStateChange,
+  restoreLayerStateChange,
+  saveLayerStateChange,
+  type LayerStateInit,
+} from '../edit/layer-states';
 
 /**
  * A layer's on, frozen and locked states (LAYER palette toggles, M1-23) and, from the Layer
@@ -71,6 +79,33 @@ export type LayerTableEdit =
   | { readonly kind: 'layer-new'; readonly like?: Handle; readonly name?: string }
   | { readonly kind: 'layer-delete'; readonly layers: readonly Handle[] }
   | { readonly kind: 'layer-current'; readonly layer: Handle };
+
+/**
+ * The Layer States Manager's New (or an overwrite of the state so named), Restore, Delete, Edit
+ * and Rename, and Import of a `.las` file's state (M5-07): one LAYERSTATE undo step each.
+ */
+export type NamedLayerStateEdit =
+  | {
+      readonly kind: 'layer-state-save';
+      readonly name: string;
+      readonly description?: string;
+      readonly mask?: number;
+    }
+  | {
+      readonly kind: 'layer-state-restore';
+      readonly state: Handle;
+      /** "Turn off layers not found in layer state". */
+      readonly turnOffMissing?: boolean;
+    }
+  | { readonly kind: 'layer-state-delete'; readonly state: Handle }
+  | {
+      readonly kind: 'layer-state-edit';
+      readonly state: Handle;
+      readonly name?: string;
+      readonly description?: string;
+      readonly mask?: number;
+    }
+  | { readonly kind: 'layer-state-import'; readonly state: LayerStateInit };
 
 /**
  * A layout renamed, moved among the layout tabs or given a new page setup (M1-97): what LAYOUT
@@ -185,6 +220,7 @@ export type EngineEdit =
   | FieldEventEdit
   | LayerStateEdit
   | LayerTableEdit
+  | NamedLayerStateEdit
   | LayoutEdit
   | XrefLoadEdit
   | XrefUnloadEdit
@@ -637,6 +673,14 @@ export class EngineSession {
     if (e.kind === 'fields') return this.#fieldEvent(e);
     if (e.kind === 'layer-new' || e.kind === 'layer-delete' || e.kind === 'layer-current')
       return this.#layerTableEdit(e);
+    if (
+      e.kind === 'layer-state-save' ||
+      e.kind === 'layer-state-restore' ||
+      e.kind === 'layer-state-delete' ||
+      e.kind === 'layer-state-edit' ||
+      e.kind === 'layer-state-import'
+    )
+      return this.#layerStatesEdit(e);
     if (e.kind === 'aliases') {
       this.#registry.setUserAliases(e.aliases);
       return { ok: true, change: {} };
@@ -781,12 +825,31 @@ export class EngineSession {
     );
   }
 
+  #layerStatesEdit(e: NamedLayerStateEdit): EditResult {
+    const m = this.model;
+    const change =
+      e.kind === 'layer-state-save'
+        ? saveLayerStateChange(m, e.name, e)
+        : e.kind === 'layer-state-restore'
+          ? restoreLayerStateChange(m, e.state, e)
+          : e.kind === 'layer-state-delete'
+            ? deleteLayerStateChange(m, e.state)
+            : e.kind === 'layer-state-edit'
+              ? editLayerStateChange(m, e.state, {
+                  name: e.name,
+                  description: e.description,
+                  mask: e.mask,
+                })
+              : importLayerStateChange(m, e.state);
+    return this.#layerStep(change, 'LAYERSTATE');
+  }
+
   /** A layer change applied as one LAYER step, as AutoCAD names the manager's; or refused. */
-  #layerStep(change: ChangeSet | string): EditResult {
+  #layerStep(change: ChangeSet | string, label = 'LAYER'): EditResult {
     if (typeof change === 'string') return { ok: false, message: change };
     if (Object.keys(change).length === 0) return { ok: true, change };
     this.model.apply(change);
-    this.#step('LAYER', change);
+    this.#step(label, change);
     return { ok: true, change };
   }
 

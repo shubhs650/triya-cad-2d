@@ -396,13 +396,13 @@ describe('-INSERT', () => {
     expect(t.space()).toHaveLength(n);
   });
 
-  it('runs as INSERT and BLOCK too until their dialogs come', async () => {
+  it('runs as INSERT too until its dialog comes (BLOCK opens its dialog, M5-01 part 2)', async () => {
     const t = drawing();
     await t.bus.submit('I');
     expect(t.bus.promptText).toBe('Enter block name or [?]:');
     await t.bus.cancel();
     await t.bus.submit('B');
-    expect(t.bus.promptText).toBe('Enter block name or [?]:');
+    expect(t.bus.prompt?.kind).toBe('dialog');
   });
 });
 

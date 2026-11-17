@@ -38,6 +38,8 @@ export function mapBlock(b: BlockRecord): BlockDefinition {
     handle: hex(b.handle),
     name: b.name,
     basePoint: { x: p?.x ?? 0, y: p?.y ?? 0 },
+    // The Block Definition dialog's Description (M5-01 part 2).
+    ...(b.blockEntity?.comments ? { description: b.blockEntity.comments } : {}),
     ...(name !== undefined ? { dynamic: { name } } : {}),
     ...(of !== undefined ? { dynamicOf: of } : {}),
     // An xref's file (M1-21): DXF 1 of its BLOCK.

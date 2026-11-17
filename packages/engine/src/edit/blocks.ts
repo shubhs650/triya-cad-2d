@@ -117,6 +117,23 @@ export interface BlockDefinitionInit {
   readonly ucs?: BlockFrame;
   /** Remove the objects once copied into the block (-BLOCK, and the dialog's Delete). */
   readonly erase?: boolean;
+  /**
+   * The Block Definition dialog's settings (M5-01 part 2), given to a new block and to the one
+   * redefined; where absent a new block takes the drawing's units and AutoCAD's defaults, and a
+   * redefined one keeps its own.
+   */
+  readonly settings?: BlockSettings;
+}
+
+/** A block's Behavior and Settings, and its Description, as the Block Definition dialog sets them. */
+export interface BlockSettings {
+  /** An `$INSUNITS` code. */
+  readonly units: number;
+  readonly explodable: boolean;
+  /** False: references scale uniformly (BLOCK_RECORD 281 = 1). */
+  readonly scalable: boolean;
+  /** Empty for none. */
+  readonly description: string;
 }
 
 export interface BlockDefinitionReport extends EditReport {
@@ -140,17 +157,28 @@ export function defineBlock(
   const basePoint = transformGeometry({ kind: 'POINT', position: init.base }, t);
   const base = (basePoint as { position: Vec2 }).position;
   const existing = blockNamed(model, init.name);
+  const s = init.settings;
+  const description = s && s.description !== '' ? s.description : undefined;
   let block: Handle;
   if (existing && model.hasBlock(existing.handle)) {
     block = existing.handle;
     eraseObjects(b, model, b.blockEntities(block));
-    b.updateBlock(block, { basePoint: base });
+    b.updateBlock(block, { basePoint: base, ...(s && { description }) });
+    if (s) {
+      const { units, explodable, scalable } = s;
+      const was = model.tables.blockRecords.get(block)!;
+      if (was.units !== units || was.explodable !== explodable || was.scalable !== scalable)
+        b.updateTableRecord('blockRecords', block, { units, explodable, scalable });
+    }
   } else {
-    const units = insUnitsOf(model);
+    const units = s?.units ?? insUnitsOf(model);
     block = b.addBlock({
       name: init.name.trim(),
       basePoint: base,
       ...(units !== 0 ? { units } : {}),
+      ...(s && !s.explodable && { explodable: false }),
+      ...(s && !s.scalable && { scalable: false }),
+      ...(description !== undefined && { description }),
     }).handle;
   }
   // A layout's viewports stay out of blocks, as AutoCAD keeps them out; what cannot be copied
@@ -179,6 +207,28 @@ export function attributeDefinitions(model: DocumentModel, block: Handle): Entit
     );
 }
 
+/**
+ * The attribute a reference carries for attribute definition `e`, placed as `e` is, holding
+ * `value` (the definition's default when absent). It has no handle yet (`placeReference`).
+ */
+export function definitionAttribute(e: Entity, value?: string): InsertAttribute {
+  const { kind: _kind, prompt: _prompt, ...fields } = e.geom as AttdefGeometry;
+  const v = value ?? fields.value;
+  return {
+    handle: '0',
+    layer: e.layer,
+    ...(e.color !== undefined && { color: e.color }),
+    ...(e.linetype !== undefined && { linetype: e.linetype }),
+    ...(e.lineweight !== undefined && { lineweight: e.lineweight }),
+    ...(e.transparency !== undefined && { transparency: e.transparency }),
+    ...(e.ltScale !== undefined && { ltScale: e.ltScale }),
+    ...(e.visible !== undefined && { visible: e.visible }),
+    ...fields,
+    value: v,
+    ...(fields.mtext && { mtext: { ...fields.mtext, contents: v } }),
+  } as InsertAttribute;
+}
+
 /** Where a reference puts its block: insertion point, X/Y/Z scale and rotation (world). */
 export interface BlockPlacement {
   readonly position: Vec2;
@@ -202,23 +252,7 @@ export function referenceGeometry(
   // The attributes as the definitions stand in the block, the reference at the block's own base
   // point unscaled; then moved, scaled uniformly, turned and finally stretched to the X/Y/Z
   // scale, as a reference whose scale is changed carries them (`rescaledReference`).
-  const attributes: InsertAttribute[] = definitions.map((e, i) => {
-    const { kind: _kind, prompt: _prompt, ...fields } = e.geom as AttdefGeometry;
-    const value = values[i] ?? fields.value;
-    return {
-      handle: '0',
-      layer: e.layer,
-      ...(e.color !== undefined && { color: e.color }),
-      ...(e.linetype !== undefined && { linetype: e.linetype }),
-      ...(e.lineweight !== undefined && { lineweight: e.lineweight }),
-      ...(e.transparency !== undefined && { transparency: e.transparency }),
-      ...(e.ltScale !== undefined && { ltScale: e.ltScale }),
-      ...(e.visible !== undefined && { visible: e.visible }),
-      ...fields,
-      value,
-      ...(fields.mtext && { mtext: { ...fields.mtext, contents: value } }),
-    } as InsertAttribute;
-  });
+  const attributes = definitions.map((e, i) => definitionAttribute(e, values[i]));
   const at: InsertGeometry = {
     kind: 'INSERT',
     block,

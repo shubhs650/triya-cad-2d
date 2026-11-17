@@ -1,0 +1,1 @@
+- M5-07 part 1 (#503): named layer states. A drawing's layer states are read and saved where AutoCAD keeps them (the LAYER table's ACAD_LAYERSTATES), and the engine saves, restores, edits, renames, deletes and imports them, with `.las` files read and written; the Layer States Manager dialog follows in part 2.

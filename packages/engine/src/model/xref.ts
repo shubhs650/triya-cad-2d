@@ -34,6 +34,7 @@ import type {
   BlockTableRecord,
   Entity,
   EntityInit,
+  LayerState,
   NonGraphicalObject,
   ObjectCommon,
   TableName,
@@ -512,6 +513,47 @@ export function removeXrefContent(
     const kept = cur.geom.frozenLayers.filter((h) => !gone.has(h));
     if (kept.length !== cur.geom.frozenLayers.length)
       b.updateEntity(e.id, { geom: { ...cur.geom, frozenLayers: kept } });
+  }
+  // A layer state keeps its settings of the xref's layers by name, as it holds those of a layer
+  // the drawing does not have (M5-07): the drawing opened without the xref reads them so.
+  for (const o of [...b.objects()]) {
+    if (o.type !== 'LAYER_STATE') continue;
+    const s = o as LayerState;
+    const goes = (h: Handle | undefined) => h !== undefined && gone.has(h);
+    if (!s.layers.some((e) => goes(e.layer) || goes(e.linetype))) continue;
+    const layers = s.layers.map((e) => {
+      if (!goes(e.layer) && !goes(e.linetype)) return e;
+      const { layer, linetype, ...rest } = e;
+      return {
+        ...rest,
+        ...(layer !== undefined && !goes(layer) ? { layer } : {}),
+        ...(linetype !== undefined && !goes(linetype) ? { linetype } : {}),
+      };
+    });
+    b.updateObject(o.handle, { layers } as Partial<LayerState>);
+  }
+}
+
+/**
+ * The layer states (M5-07) let go of the layers in `gone`, as LAYDEL's do
+ * (`dropLayersFromStates`), and of the layers they name that the drawing does not have whose
+ * names start with one of `prefixes` (upper case): XREF Detach's `xref|layer`s.
+ */
+export function dropLayersFromLayerStates(
+  b: ChangeSetBuilder,
+  gone: ReadonlySet<Handle>,
+  prefixes: readonly string[] = [],
+): void {
+  const goes = (e: LayerState['layers'][number]) =>
+    e.layer === undefined
+      ? prefixes.some((p) => e.name.toUpperCase().startsWith(p))
+      : gone.has(e.layer);
+  for (const o of [...b.objects()]) {
+    if (o.type !== 'LAYER_STATE') continue;
+    const s = o as LayerState;
+    const kept = s.layers.filter((e) => !goes(e));
+    if (kept.length !== s.layers.length)
+      b.updateObject(o.handle, { layers: kept } as Partial<LayerState>);
   }
 }
 
