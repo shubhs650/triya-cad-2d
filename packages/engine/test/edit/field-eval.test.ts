@@ -2,12 +2,15 @@
 // "FIELDEVAL (System Variable)": 1 on open, 2 on save, 4 on plot, 8 eTransmit, 16 regeneration;
 // initially 31). A field is evaluated on an event only when FIELDEVAL and its own options (the
 // FIELD's DXF 91) both have the event's bit; a Date field is AutoCAD's on demand only (32).
+// M4-10 part 4: REGEN and REGENALL update them too (16).
 import { describe, expect, it } from 'vitest';
 import {
   ChangeSetBuilder,
   DocumentModel,
   EngineSession,
   FIELDEVAL,
+  PromptBus,
+  builtinCommands,
   fieldEval,
   fieldEventChange,
   fieldOfText,
@@ -16,6 +19,8 @@ import {
   type InsertGeometry,
   type MTextGeometry,
   type TextGeometry,
+  type ViewReply,
+  type ViewRequest,
 } from '../../src/index';
 import { LAYER_0, MODEL_SPACE, PAPER_SPACE, entityInit, sampleInit } from '../model/fixtures';
 
@@ -207,5 +212,63 @@ describe('FIELDEVAL', () => {
       fileName: 'Plan.dxf',
     });
     expect(again).toEqual({ ok: true, change: {} });
+  });
+});
+
+describe('fields on regeneration', () => {
+  function bus(model: DocumentModel) {
+    const regens: boolean[] = [];
+    const view = {
+      request: (r: ViewRequest): Promise<ViewReply> => {
+        if (r.op === 'sysvar' && r.name === 'DWGNAME')
+          return Promise.resolve({ ok: true, value: 'Plan.dxf' });
+        if (r.op === 'sysvar' && r.name === 'DWGPREFIX')
+          return Promise.resolve({ ok: true, value: '' });
+        if (r.op === 'regen') {
+          regens.push(r.all);
+          return Promise.resolve({ ok: true });
+        }
+        return Promise.resolve({ ok: false, message: 'not drawn' });
+      },
+    };
+    const b = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view,
+      clock: { now: () => NOW },
+    });
+    return { bus: b, regens };
+  }
+
+  it('is FIELDEVAL 16, which REGEN and REGENALL update, as one undo step', async () => {
+    const model = drawing();
+    model.apply(fieldEventChange(base(model), 'regen')!);
+    expect(geomOf<MTextGeometry>(model, '60').contents).toBe('FILE: Plan.dxf\\PDATE: 1/1/2020');
+
+    for (const name of ['REGEN', 'REGENALL']) {
+      const m = drawing();
+      const s = bus(m);
+      await s.bus.submit(name);
+      expect(s.regens).toEqual([name === 'REGENALL']);
+      expect(geomOf<TextGeometry>(m, '62').value).toBe('SAVED 2020');
+      expect(geomOf<InsertGeometry>(m, '63').attributes[0]!.value).toBe('Plan');
+      expect(geomOf<MTextGeometry>(m, '60').contents).toBe('FILE: Plan.dxf\\PDATE: 1/1/2020');
+      // AutoCAD records REGEN on the undo list; U puts back the values it showed before.
+      expect(s.bus.undo.state.undoable).toBe(1);
+    }
+  });
+
+  it('updates nothing when FIELDEVAL leaves regeneration out, or nothing is out of date', async () => {
+    const m = drawing([[FIELDEVAL, '15']]);
+    const s = bus(m);
+    await s.bus.submit('REGEN');
+    expect(s.regens).toEqual([false]);
+    expect(geomOf<MTextGeometry>(m, '60').contents).toBe('FILE: Old.dxf\\PDATE: 1/1/2020');
+    expect(s.bus.undo.state.undoable).toBe(0);
+    const up = drawing();
+    up.apply(fieldEventChange(base(up), 'regen')!);
+    const t = bus(up);
+    await t.bus.submit('REGEN');
+    expect(t.bus.undo.state.undoable).toBe(0);
   });
 });

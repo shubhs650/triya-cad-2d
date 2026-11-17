@@ -12,14 +12,22 @@
 // The same dialog is the MTEXT editor's Insert Field (Ctrl+F, the toolbar's Field button): the
 // editor answers with its text, `%<FIELD_INSERT>%` where the field goes, and opens again with
 // the field there (`askEditorText`). Cancel leaves the text as it was.
+//
+// Edit Field (M4-10 part 4; AutoCAD 2024 Help, "To Edit a Field": "In the In-Place Text Editor,
+// double-click the field to display the Field dialog box"): the editor answers with the field's
+// code marked, `%<FIELD_EDIT code>%`; the dialog opens on the field's choices (`fieldSpecOf`;
+// one it does not make opens as Insert Field does) and the editor opens again with the field as
+// the dialog left it. TEXT's line editor does both too.
 import {
+  FIELD_EDIT,
   FIELD_INSERT,
+  markedField,
   objectFieldProperties,
   textWithFields,
   type FieldContext,
   type FieldSnapshot,
 } from '../../edit/fields';
-import { fieldCode, type FieldSpec } from '../../edit/field-codes';
+import { fieldCode, fieldSpecOf, type FieldSpec } from '../../edit/field-codes';
 import { drawingUnits } from '../units';
 import type { Handle } from '../../model/handle';
 import type { MTextGeometry } from '../../model/types';
@@ -90,19 +98,28 @@ function snapshotOf(fc: FieldContext, object: Handle | undefined): FieldSnapshot
   };
 }
 
+/** The type of the object a field names, as the dialog's Object type shows it. */
+function objectTypeOf(ctx: CommandContext, spec: FieldSpec | undefined): string | undefined {
+  const e = spec?.object === undefined ? undefined : ctx.model.entityByHandle(spec.object);
+  return e && typeLabel(e.geom.kind);
+}
+
 /**
  * The Field dialog, until OK or Cancel: the code of the field made (without `%<` `>%`), or
- * undefined when it was cancelled or made none.
+ * undefined when it was cancelled (Esc goes back to the editor, not out of the command) or made
+ * none. `initial` is the field Edit Field opens it on.
  */
 export async function* askFieldCode(
   ctx: CommandContext,
   fc: FieldContext,
+  initial?: FieldSpec,
 ): AsyncGenerator<Prompt, string | undefined, PromptAnswer> {
-  let spec: FieldSpec | undefined;
-  let objectType: string | undefined;
+  let spec: FieldSpec | undefined = initial;
+  let objectType: string | undefined = objectTypeOf(ctx, initial);
   for (;;) {
     const d = yield ctx.prompt.dialog({
       message: 'Field',
+      escape: true,
       dialog: {
         type: 'field',
         snapshot: snapshotOf(fc, spec?.object),
@@ -143,20 +160,32 @@ export async function* askEditorText(
   const marker = `%<${FIELD_INSERT}>%`;
   for (;;) {
     const a = yield ctx.prompt.string(p);
-    if (a.kind !== 'string' || !a.editor || !p.editor || !a.value.includes(marker)) return a;
+    if (a.kind !== 'string' || !a.editor || !p.editor) return a;
+    const edited = markedField(a.value, FIELD_EDIT);
+    if (!a.value.includes(marker) && !edited) return a;
     const fc: FieldContext = { ...(await fieldContextOf(ctx)), space };
-    const code: string | undefined = yield* askFieldCode(ctx, fc);
-    const inserted = code === undefined ? '' : `%<${code}>%`;
+    const was = edited?.code;
+    const code: string | undefined = yield* askFieldCode(
+      ctx,
+      fc,
+      was === undefined ? undefined : fieldSpecOf(was),
+    );
+    // Cancel: an edited field stays as it was, an inserted one is not made.
+    const made = code ?? was;
+    const inserted = made === undefined ? '' : `%<${made}>%`;
     const fields = { ...p.editor.fields };
-    if (code !== undefined) fields[code] = textWithFields(inserted, fc).text;
+    if (made !== undefined && !(made in fields)) fields[made] = textWithFields(inserted, fc).text;
     const { columns: _was, ...editor } = p.editor;
     // The editor's columns as it closed (null: none), else as it opened.
     const columns = a.columns === undefined ? p.editor.columns : (a.columns ?? undefined);
+    const value = edited
+      ? a.value.slice(0, edited.start) + inserted + a.value.slice(edited.end)
+      : a.value.replace(marker, inserted);
     p = {
       ...p,
       editor: {
         ...editor,
-        value: a.value.replace(marker, inserted),
+        value,
         fields,
         ...(columns && { columns }),
       },

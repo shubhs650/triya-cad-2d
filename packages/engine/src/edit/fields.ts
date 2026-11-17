@@ -639,6 +639,23 @@ export function evaluateFields(
 /** The code of the field the MTEXT editor's Insert Field leaves where the field goes. */
 export const FIELD_INSERT = '\u0000FIELD';
 
+/**
+ * The prefix the editors' Edit Field puts before the code of the field to edit (M4-10 part 4):
+ * `%<FIELD_EDIT\AcVar Date>%`.
+ */
+export const FIELD_EDIT = '\u0000EDIT';
+
+/** Where in `text` the field marked by `prefix` is (`%<` to `>%`) and its code; none if none. */
+export function markedField(
+  text: string,
+  prefix: string,
+): { readonly start: number; readonly end: number; readonly code: string } | undefined {
+  const start = text.indexOf(`%<${prefix}`);
+  const end = start < 0 ? -1 : fieldEnd(text, start);
+  if (end < 0) return undefined;
+  return { start, end, code: text.slice(start + 2 + prefix.length, end - 2) };
+}
+
 const OBJECT_INDEX = /%<\\_ObjIdx\s+(\d+)>%/g;
 
 /** One field's code with its children's codes and its objects' handles in place. */

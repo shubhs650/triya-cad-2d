@@ -42,7 +42,7 @@ import type {
   TextEditorColumns,
   TextEditorRequest,
 } from '@triya/engine';
-import { FIELD_INSERT } from '@triya/engine';
+import { FIELD_EDIT, FIELD_INSERT } from '@triya/engine';
 import { aciRgb, worldToScreen, type FontSources } from '@triya/render';
 import {
   contentOf,
@@ -75,7 +75,16 @@ import { engines } from './engine/registry';
 import { appFonts } from './fonts';
 import {
   autoStack,
+  fieldAsText,
   formatAt,
+  lineEdited,
+  lineFieldAt,
+  lineParts,
+  lineShown,
+  lineSplit,
+  lineValue,
+  markField,
+  type LinePart,
   formatRange,
   hasFormat,
   insertSpans,
@@ -213,7 +222,12 @@ const carried = new Map<number, { readonly keys: CarriedKey[]; readonly until: n
 const CARRY_MS = 5000;
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock']);
 
-/** TEXT's in-place line: Enter places it and moves below for the next; Enter on none ends. */
+/**
+ * TEXT's in-place line: Enter places it and moves below for the next; Enter on none ends. With
+ * `fields` (M4-10 part 4) it holds fields, each shown by its value and edited as one atom:
+ * Ctrl+F inserts one (the Field dialog opens and the line comes back with it), a double click on
+ * one edits it (Edit Field).
+ */
 function TextLine({
   doc,
   request,
@@ -225,19 +239,50 @@ function TextLine({
 }) {
   const placement = usePlacement(controller, request);
   const editing = request.value !== undefined;
-  const [value, setValue] = useState(request.value ?? '');
+  const [parts, setParts] = useState<LinePart[]>(() =>
+    lineParts(request.value ?? '', request.fields),
+  );
+  const value = lineShown(parts);
   const input = useRef<HTMLInputElement>(null);
-  const typed = useRef(value);
-  typed.current = value;
+  const typed = useRef(parts);
+  typed.current = parts;
+  /** Where the caret goes once React has shown an edit that moved it. */
+  const caret = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const at = caret.current;
+    if (at === undefined || !input.current) return;
+    caret.current = undefined;
+    input.current.setSelectionRange(at, at);
+  }, [parts]);
   const done = useRef(false);
-  /** TEXTEDIT: the whole line, once. */
-  const keep = () => {
+  /** The line with a field marked for the engine (Insert Field, Edit Field), once. */
+  const answerMarked = (line: string) => {
     if (done.current) return;
     done.current = true;
-    engines.command(doc, {
-      kind: 'answer',
-      answer: { kind: 'string', value: typed.current, editor: true },
-    });
+    engines.command(doc, { kind: 'answer', answer: { kind: 'string', value: line, editor: true } });
+  };
+  /** TEXTEDIT: the whole line, once. */
+  const keep = () => answerMarked(lineValue(typed.current));
+  const insertField = () => {
+    const el = input.current;
+    if (!request.fields || !el) return;
+    const a = el.selectionStart ?? value.length;
+    const b = el.selectionEnd ?? a;
+    // The selection goes (a field it reaches into whole), the field's place marked there.
+    const cut = lineEdited(parts, value.slice(0, a) + value.slice(b), a);
+    const [head, tail] = lineSplit(cut, a);
+    answerMarked(`${lineValue(head)}%<${FIELD_INSERT}>%${lineValue(tail)}`);
+  };
+  const editField = () => {
+    const el = input.current;
+    if (!request.fields || !el) return false;
+    const at = lineFieldAt(parts, el.selectionStart ?? 0);
+    if (!at) return false;
+    const marked = parts.map((p, i) =>
+      i === at.index && 'code' in p ? { ...p, code: FIELD_EDIT + p.code } : p,
+    );
+    answerMarked(lineValue(marked));
+    return true;
   };
   useEffect(() => {
     if (editing) input.current?.select();
@@ -249,13 +294,13 @@ function TextLine({
       }
       // Placing TEXT: the line typed so far is placed before the click reaches the engine,
       // which starts the next line at the click.
-      if (e.button === 0 && e.target.closest('.drawing-canvas') && typed.current !== '') {
+      if (e.button === 0 && e.target.closest('.drawing-canvas') && typed.current.length > 0) {
         engines.command(doc, {
           kind: 'answer',
-          answer: { kind: 'string', value: typed.current },
+          answer: { kind: 'string', value: lineValue(typed.current) },
         });
-        typed.current = '';
-        setValue('');
+        typed.current = [];
+        setParts([]);
       }
     };
     document.addEventListener('pointerdown', onDown, true);
@@ -269,7 +314,17 @@ function TextLine({
         autoFocus
         value={value}
         size={Math.max(4, value.length + 1)}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          const at = e.target.selectionStart ?? e.target.value.length;
+          const next = lineEdited(parts, e.target.value, at);
+          // A field deleted whole moves the caret to where it was.
+          if (lineShown(next) !== e.target.value)
+            caret.current = Math.min(at, lineShown(next).length);
+          setParts(next);
+        }}
+        onDoubleClick={(e) => {
+          if (editField()) e.preventDefault();
+        }}
         onKeyDown={(e) => {
           e.stopPropagation();
           if (e.key === 'Enter') {
@@ -277,12 +332,19 @@ function TextLine({
             if (editing) return keep();
             engines.command(doc, {
               kind: 'answer',
-              answer: value === '' ? { kind: 'enter' } : { kind: 'string', value },
+              answer:
+                parts.length === 0
+                  ? { kind: 'enter' }
+                  : { kind: 'string', value: lineValue(parts) },
             });
-            setValue('');
+            setParts([]);
           } else if (e.key === 'Escape') {
             e.preventDefault();
             cancel(doc);
+          } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+            if (!request.fields) return;
+            e.preventDefault();
+            insertField();
           }
         }}
       />
@@ -1003,6 +1065,34 @@ function MTextBox({
     commit(next, a + 1);
     finish();
   };
+  /** The field shown by `target`, unless it is a dimension's measurement. */
+  const fieldElement = (target: EventTarget): HTMLElement | undefined => {
+    const el = target instanceof Element ? target.closest<HTMLElement>('.mtext-field') : null;
+    if (!el || !root.current!.contains(el) || !request.fields) return undefined;
+    const span = JSON.parse(el.dataset['field']!) as { code: string };
+    return span.code === MEASUREMENT ? undefined : el;
+  };
+  const unitOf = (el: HTMLElement): number =>
+    offsetOf(root.current!, el.parentNode!, [...el.parentNode!.childNodes].indexOf(el));
+  /**
+   * Edit Field (M4-10 part 4; a double click on a field, or its menu): the editor closes with
+   * the field marked, the Field dialog opens on it, and the editor opens again with the field as
+   * the dialog left it.
+   */
+  const editField = (el: HTMLElement) => {
+    const at = unitOf(el);
+    commit(markField(spans(), at, FIELD_EDIT), at + 1);
+    finish();
+  };
+  /** Convert Field to Text: the field's value stays, as text. */
+  const convertField = (el: HTMLElement) => {
+    const at = unitOf(el);
+    const text = el.textContent ?? '';
+    commit(fieldAsText(spans(), at, text), at + text.length);
+  };
+  const [fieldMenu, setFieldMenu] = useState<
+    { readonly left: number; readonly top: number; readonly el: HTMLElement } | undefined
+  >(undefined);
   /** A paragraph (or column) break that keeps the formatting of the paragraph it is typed in. */
   const breakHere = (end?: 'column') => {
     const [a] = selectionIn(root.current!) ?? lastSel.current;
@@ -1228,9 +1318,10 @@ function MTextBox({
       if (e.target !== root.current) return;
       e.preventDefault();
       insert([{ type: 'text', text: '\t', format: {} }]);
-    } else if (e.key === 'Escape' && menu) {
+    } else if (e.key === 'Escape' && (menu || fieldMenu)) {
       e.preventDefault();
       setMenu(undefined);
+      setFieldMenu(undefined);
       root.current!.focus();
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -1403,6 +1494,36 @@ function MTextBox({
           />
         )}
       </div>
+      {fieldMenu && (
+        <div
+          className="mtext-menu mtext-field-menu"
+          role="menu"
+          aria-label="Field"
+          style={{ left: fieldMenu.left, top: fieldMenu.top }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            autoFocus
+            onClick={() => {
+              setFieldMenu(undefined);
+              editField(fieldMenu.el);
+            }}
+          >
+            Edit Field…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setFieldMenu(undefined);
+              convertField(fieldMenu.el);
+            }}
+          >
+            Convert Field to Text
+          </button>
+        </div>
+      )}
       {menu === 'settings' && (
         <ColumnSettings
           columns={columns ?? columnsFor('dynamic', null, request, root)!}
@@ -1458,6 +1579,20 @@ function MTextBox({
           suppressContentEditableWarning
           spellCheck={false}
           style={columnStyle(request, columns, placement.scale)}
+          onDoubleClick={(e) => {
+            const el = fieldElement(e.target);
+            if (!el) return;
+            e.preventDefault();
+            editField(el);
+          }}
+          onContextMenu={(e) => {
+            const el = fieldElement(e.target);
+            if (!el) return;
+            e.preventDefault();
+            const at = frame.current!.getBoundingClientRect();
+            setFieldMenu({ left: e.clientX - at.left, top: e.clientY - at.top, el });
+          }}
+          onMouseDown={() => setFieldMenu(undefined)}
         />
         {request.background && (
           <TextBackground

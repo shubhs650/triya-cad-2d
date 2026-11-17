@@ -358,3 +358,175 @@ export function cellAhead(keys: readonly CarriedKey[]): {
   }
   return { ops, rest: [] };
 }
+
+// ── Fields (M4-10 part 4) ─────────────────────────────────────────────────────────────────────
+
+/** The field span at unit `at` and its index, if there is one. */
+function fieldAt(spans: Spans, at: number): number | undefined {
+  let n = 0;
+  for (let i = 0; i < spans.length; i++) {
+    const s = spans[i]!;
+    if (n === at && s.type === 'field') return i;
+    n += unitLength(s);
+    if (n > at) return undefined;
+  }
+  return undefined;
+}
+
+/** Edit Field: the field at `at` with `prefix` before its code, for the engine to find. */
+export function markField(spans: Spans, at: number, prefix: string): MTextSpan[] {
+  const i = fieldAt(spans, at);
+  return spans.map((s, j) => (j === i && s.type === 'field' ? { ...s, code: prefix + s.code } : s));
+}
+
+/** Convert Field to Text: the field at `at` as its value, in its format. */
+export function fieldAsText(spans: Spans, at: number, value: string): MTextSpan[] {
+  const i = fieldAt(spans, at);
+  return spans.map((s, j) =>
+    j === i && s.type === 'field' ? { type: 'text', text: value, format: s.format } : s,
+  );
+}
+
+/**
+ * TEXT's line editor's contents: text, and fields, each one atom shown by its value (`----` when
+ * it has none, as AutoCAD shows a field not evaluated).
+ */
+export type LinePart =
+  { readonly text: string } | { readonly code: string; readonly value: string };
+
+/** The end of the field opened at `start` (`%<`), allowing nested ones; -1 if unclosed. */
+function fieldEnd(s: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < s.length - 1; i++) {
+    if (s[i] === '%' && s[i + 1] === '<') {
+      depth++;
+      i++;
+    } else if (s[i] === '>' && s[i + 1] === '%') {
+      depth--;
+      i++;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
+}
+
+const pushText = (out: LinePart[], text: string): void => {
+  if (text === '') return;
+  const last = out.at(-1);
+  if (last && 'text' in last) out[out.length - 1] = { text: last.text + text };
+  else out.push({ text });
+};
+
+/** A line (`Rev %<\AcVar Date>%`) as its parts; with no `fields` (no Insert Field), its text. */
+export function lineParts(
+  value: string,
+  fields: Readonly<Record<string, string>> | undefined,
+): LinePart[] {
+  const out: LinePart[] = [];
+  if (!fields) {
+    pushText(out, value);
+    return out;
+  }
+  let i = 0;
+  for (;;) {
+    const at = value.indexOf('%<', i);
+    const end = at < 0 ? -1 : fieldEnd(value, at);
+    if (end < 0) {
+      pushText(out, value.slice(i));
+      return out;
+    }
+    pushText(out, value.slice(i, at));
+    const code = value.slice(at + 2, end - 2);
+    out.push({ code, value: fields[code] ?? '----' });
+    i = end;
+  }
+}
+
+const shownOf = (p: LinePart): string => ('text' in p ? p.text : p.value);
+
+/** What the line editor shows. */
+export const lineShown = (parts: readonly LinePart[]): string => parts.map(shownOf).join('');
+
+/** The line as the engine takes it, each field as its code. */
+export const lineValue = (parts: readonly LinePart[]): string =>
+  parts.map((p) => ('text' in p ? p.text : `%<${p.code}>%`)).join('');
+
+/**
+ * The parts after the line editor's input changed to `shown`, the caret at `caret`: what was
+ * typed replaces what it replaced, and a field the change reaches into goes whole, as an atom in
+ * AutoCAD's editor does. The characters after the caret are the ones left as they were.
+ */
+export function lineEdited(parts: readonly LinePart[], shown: string, caret: number): LinePart[] {
+  const old = lineShown(parts);
+  let prefix = 0;
+  while (prefix < old.length && prefix < shown.length && old[prefix] === shown[prefix]) prefix++;
+  let suffix = 0;
+  while (
+    suffix < old.length &&
+    suffix < shown.length &&
+    old[old.length - 1 - suffix] === shown[shown.length - 1 - suffix]
+  )
+    suffix++;
+  const q = Math.max(0, Math.min(suffix, shown.length - caret));
+  const p = Math.max(0, Math.min(prefix, caret, old.length - q));
+  const end = old.length - q;
+  const typed = shown.slice(p, shown.length - q);
+  const out: LinePart[] = [];
+  const after: LinePart[] = [];
+  let at = 0;
+  for (const part of parts) {
+    const s = shownOf(part);
+    const a = at;
+    const b = at + s.length;
+    at = b;
+    if ('text' in part) {
+      pushText(out, s.slice(0, Math.max(0, Math.min(s.length, p - a))));
+      const tail = s.slice(Math.max(0, Math.min(s.length, end - a)));
+      if (b > end) pushText(after, tail);
+      continue;
+    }
+    // A field the change touches (removes from, or types inside) goes whole.
+    const touched = a < end && b > p ? true : a < p && p < b;
+    if (touched) continue;
+    if (b <= p) out.push(part);
+    else after.push(part);
+  }
+  pushText(out, typed);
+  for (const part of after) {
+    if ('text' in part) pushText(out, part.text);
+    else out.push(part);
+  }
+  return out;
+}
+
+/** The field shown across `at` (from its start up to its end), with where it is shown. */
+export function lineFieldAt(
+  parts: readonly LinePart[],
+  at: number,
+): { readonly index: number; readonly start: number; readonly end: number } | undefined {
+  let n = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!;
+    const len = shownOf(part).length;
+    if (!('text' in part) && at >= n && at < n + len) return { index: i, start: n, end: n + len };
+    n += len;
+  }
+  return undefined;
+}
+
+/** The parts before and after the shown place `at`; a field across it goes before. */
+export function lineSplit(parts: readonly LinePart[], at: number): [LinePart[], LinePart[]] {
+  const head: LinePart[] = [];
+  const tail: LinePart[] = [];
+  let n = 0;
+  for (const part of parts) {
+    const s = shownOf(part);
+    if ('text' in part && n < at && at < n + s.length) {
+      head.push({ text: s.slice(0, at - n) });
+      tail.push({ text: s.slice(at - n) });
+    } else if (n < at) head.push(part);
+    else tail.push(part);
+    n += s.length;
+  }
+  return [head, tail];
+}
