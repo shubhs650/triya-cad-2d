@@ -19,6 +19,7 @@ import {
   replayAhead,
   takesTypeAhead,
   typed,
+  typedAfter,
   variableNames,
 } from '../src/command-line';
 
@@ -389,5 +390,58 @@ describe('promptParts', () => {
       after: '',
     });
     expect(promptParts('Odd:', ['X'])).toEqual({ before: 'Odd:', options: [], after: '' });
+  });
+});
+
+// M4-31: an in-place editor that has answered hands the keys typed into it on to the command
+// line, which holds them for the prompt its numbered answer leads to.
+describe('keys typed after an in-place editor answered (M4-31)', () => {
+  const key = (k: string, mods: { ctrl?: boolean; alt?: boolean; meta?: boolean } = {}) => ({
+    key: k,
+    ctrlKey: mods.ctrl ?? false,
+    altKey: mods.alt ?? false,
+    metaKey: mods.meta ?? false,
+  });
+
+  it('passes on the keys the command line would hold, and drops the rest', () => {
+    for (const k of ['a', ' ', 'Enter', 'Backspace', 'Tab', 'Escape'])
+      expect(typedAfter(key(k))).toBe(k);
+    expect(typedAfter(key('ArrowLeft'))).toBeUndefined();
+    expect(typedAfter(key('Shift'))).toBeUndefined();
+    expect(typedAfter(key('Enter', { ctrl: true }))).toBeUndefined();
+    expect(typedAfter(key('a', { alt: true }))).toBeUndefined();
+    expect(typedAfter(key('a', { meta: true }))).toBeUndefined();
+  });
+
+  it('holds them after the keys held already, and tells the command line to replay', () => {
+    const lines = new CommandLines();
+    let held: readonly string[] = ['x'];
+    lines.holdKeys(1, {
+      take: () => held,
+      give: (keys) => {
+        held = [...held, ...keys];
+      },
+    });
+    let renders = 0;
+    lines.subscribe(() => renders++);
+    const before = lines.version();
+    lines.typeAfter(1, []);
+    expect(renders).toBe(0);
+    lines.typeAfter(1, ['Enter']);
+    lines.typeAfter(1, ['L']);
+    expect(held).toEqual(['x', 'Enter', 'L']);
+    expect(renders).toBe(2);
+    expect(lines.version()).toBeGreaterThan(before);
+    // A drawing whose command line is not shown keeps nothing.
+    lines.typeAfter(2, ['y']);
+    expect(held).toEqual(['x', 'Enter', 'L']);
+  });
+
+  it('is reading while a numbered answer is unread', () => {
+    const lines = new CommandLines();
+    const seq = lines.send(1);
+    expect(holdsKey(lines.get(1), [], 'Enter')).toBe(true);
+    lines.follow(1, { type: 'read', seq });
+    expect(holdsKey(lines.get(1), [], 'Enter')).toBe(false);
   });
 });
