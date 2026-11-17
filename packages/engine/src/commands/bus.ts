@@ -35,7 +35,7 @@ import {
   type StepResult,
 } from '../selection/loop';
 import { onLockedLayers } from '../selection/rules';
-import type { Entity, EntityGeometry } from '../model/types';
+import type { Entity, EntityGeometry, TableCellLock } from '../model/types';
 import { hasEditableAttributes } from './modify/attributes';
 import { editContents, textEdited } from './draw/text';
 import {
@@ -78,7 +78,7 @@ import { drawingUnits, type DrawingUnits } from './units';
 import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
 import { gripMenuAt } from './modify/grip-functions';
 import { gripsOf } from '../edit/grips';
-import { tableCellCommand, tableCellUnder } from './draw/table-cell-menu';
+import { tableCellCommand, tableCellLockUnder, tableCellUnder } from './draw/table-cell-menu';
 import { variableCommand } from './setvar';
 import { systemVariable } from './sysvars';
 import { gripInfoOf } from '../edit/array-grips';
@@ -709,6 +709,18 @@ export class PromptBus {
       this.#log(`Command: ${found.def.name}`);
       await this.#start(found.def, false, false);
     });
+  }
+
+  /**
+   * The lock the canvas shows by the cursor at `point` (M4-16 part 11), as AutoCAD shows a lock
+   * icon while the cursor hovers over a locked table cell: the lock of the table cell under it, at `Command:` and at a prompt that asks for it
+   * (`PointPrompt.cellLocks`, TABLECELL's options), where a click there selects the cell. Read
+   * at once, not queued behind input: it edits nothing.
+   */
+  cellLock(point: Vec2): TableCellLock | undefined {
+    const p = this.prompt;
+    const shown = this.#stack.length === 0 || (p?.kind === 'point' && p.cellLocks === true);
+    return shown ? tableCellLockUnder(this.#model, this.#space(), point) : undefined;
   }
 
   /** Ctrl+A: everything ALL takes, at `Command:` (replacing the pre-selection) or "Select objects". */

@@ -257,6 +257,11 @@ export interface PointPrompt extends PromptBase {
    */
   readonly releaseExtends?: true;
   /**
+   * The canvas shows a lock by the cursor over a locked table cell while this prompt waits, as
+   * at `Command:` (M4-16 part 11, `PromptBus.cellLock`): TABLECELL's options, cells selected.
+   */
+  readonly cellLocks?: true;
+  /**
    * Points shown as grips while the prompt waits, no object's: the middles of the edges of the
    * table cells selected (TABLECELL, M4-05 part 6). A click within the grip size of one answers
    * that grip's point, as a click on an object's grip picks the grip.

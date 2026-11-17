@@ -33,7 +33,7 @@ import { applyToReplica } from '../model/replica';
 import type { Layout, LayoutPlot } from '../model/types';
 import { xrefLoadChange, xrefLoadProblem } from '../model/xref';
 import type { EntityId } from '../model/entity-ids';
-import type { EntityType } from '../model/types';
+import type { EntityType, TableCellLock } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
 import { propertySheet, type DimensionMeasure, type PropertySheet } from '../properties/sheet';
 import { quickPropertySheet, rolloverSheet } from '../properties/quick';
@@ -270,7 +270,13 @@ export type CommandInput =
    * The cursor rests at `point` (M3-05 part 2): the engine answers with the grip of the selection
    * at `Command:` within `within` drawing units and its hover menu (`PromptBus.gripMenu`).
    */
-  | { readonly kind: 'grip-menu'; readonly point: Vec2; readonly within: number };
+  | { readonly kind: 'grip-menu'; readonly point: Vec2; readonly within: number }
+  /**
+   * The cursor moved to `point` (M4-16 part 11): the engine answers with the lock of the table
+   * cell under it, which the canvas shows by the cursor (`PromptBus.cellLock`); `seq` numbers
+   * the question so a late answer is known.
+   */
+  | { readonly kind: 'cell-lock'; readonly seq: number; readonly point: Vec2 };
 
 /**
  * What the command engine tells the front-ends: the bus's events, with every edit a command
@@ -300,6 +306,8 @@ export type CommandOutput =
   | { readonly type: 'command-preview'; readonly seq: number; readonly preview?: CommandPreview }
   /** The rollover tooltip of object `id` (M2-35 part 21); no sheet when the object is gone. */
   | { readonly type: 'rollover'; readonly id: EntityId; readonly sheet?: PropertySheet }
+  /** The lock of the table cell under the cursor asked with `seq` (M4-16 part 11); none if unlocked. */
+  | { readonly type: 'cell-lock'; readonly seq: number; readonly lock?: TableCellLock }
   /**
    * The grip under a resting cursor at `point` and its hover menu's functions (M3-05 part 2):
    * no grip when there is none there, no items when it has one function.
@@ -522,6 +530,11 @@ export class EngineSession {
       case 'rollover': {
         const sheet = rolloverSheet(this.model, input.id);
         this.#emit({ type: 'rollover', id: input.id, ...(sheet && { sheet }) });
+        return Promise.resolve();
+      }
+      case 'cell-lock': {
+        const lock = this.#bus.cellLock(input.point);
+        this.#emit({ type: 'cell-lock', seq: input.seq, ...(lock && { lock }) });
         return Promise.resolve();
       }
       case 'grip-menu': {

@@ -83,6 +83,7 @@ import {
   type Vec2,
   type VportRecord,
   type CommandPreview,
+  type TableCellLock,
 } from '@triya/engine';
 import {
   PATH_L,
@@ -187,6 +188,8 @@ const SELECTION_FILL_OPACITY = 0.18;
 const DASH_PX = 6;
 /** Command preview requests (M3-12 part 6), numbered across every canvas of every drawing. */
 let previewSeq = 0;
+/** Questions for the lock of the table cell under the cursor (M4-16 part 11), numbered likewise. */
+let cellLockSeq = 0;
 /**
  * A click this near a grip (CSS pixels) is on it: the grip's half size at GRIPSIZE and a pixel
  * (M2-06; M2-59 part 3 sizes it).
@@ -289,6 +292,11 @@ export interface CanvasHooks {
    * pixels, rests over overlapping objects it could select; undefined when it no longer does.
    */
   readonly onOverlap?: (at: { readonly x: number; readonly y: number } | undefined) => void;
+  /**
+   * The cursor is at `point` at `Command:` or a prompt showing table cell locks (M4-16 part 11):
+   * the engine is asked for the lock of the cell there, answered with `cellLocked(seq, lock)`.
+   */
+  readonly onCellLock?: (q: { readonly seq: number; readonly point: Point }) => void;
   /**
    * The drawing waits at `Command:` with no command running, where SELECTIONPREVIEW's bit 1
    * previews the object under the pickbox (M3-04 part 5).
@@ -462,6 +470,12 @@ export class CanvasController {
    */
   #overlapStep:
     { readonly at: { readonly x: number; readonly y: number }; step: number } | undefined;
+  /** The lock question awaiting its answer (M4-16 part 11): one at a time, the latest next. */
+  #lockAsked: number | undefined;
+  /** Where the cursor is, waiting to be asked about once the question out is answered. */
+  #lockWanted: Point | undefined;
+  /** The cursor carries the lock of the cell under it. */
+  #lockShown = false;
   /** The badge's latest hit test, so an older answer arriving late is dropped. */
   #badgeAsked = 0;
   /** The badge shows. */
@@ -830,6 +844,9 @@ export class CanvasController {
     this.#asked = prompt;
     // MATCHPROP's paintbrush (M3-16): the cursor image changes only as the badge does.
     this.#paintCursor();
+    // A cell locked or unlocked at the last prompt shows as such where the cursor rests.
+    const at = this.#pointer;
+    this.#hoverLock(at && !this.#press && this.#mode === 'none' ? this.#world(at) : undefined);
     // The preview drawn was the last prompt's; this one's is asked for where the cursor rests.
     this.#showCommandPreview(undefined);
     if (prompt?.commandPreview?.hover) {
@@ -1231,6 +1248,52 @@ export class CanvasController {
     this.#previewShown = preview !== undefined;
     this.#host.setDrag(preview && { ids: [], m: IDENTITY, preview });
     this.#requestFrame();
+  }
+
+  /**
+   * The lock by the cursor over a locked table cell (M4-16 part 11), as AutoCAD shows one while
+   * the cursor hovers over a locked cell: at `Command:` and at a prompt that asks for it
+   * (TABLECELL's options), the engine asked about `world`; undefined takes the lock away.
+   */
+  #hoverLock(world: Point | undefined): void {
+    const asked = this.#asked;
+    const on =
+      world &&
+      this.#hooks.onCellLock &&
+      ((this.#hooks.atCommand?.() ?? false) || (asked?.kind === 'point' && asked.cellLocks));
+    if (!on) {
+      this.#lockWanted = undefined;
+      // An answer still to come is for a cursor gone: it is dropped.
+      this.#lockAsked = undefined;
+      this.#showLock(false);
+      return;
+    }
+    this.#lockWanted = world;
+    this.#askLock();
+  }
+
+  #askLock(): void {
+    const point = this.#lockWanted;
+    if (!point || this.#lockAsked !== undefined) return;
+    this.#lockWanted = undefined;
+    const seq = ++cellLockSeq;
+    this.#lockAsked = seq;
+    this.#hooks.onCellLock?.({ seq, point });
+  }
+
+  /** The engine's answer to lock question `seq` (M4-16 part 11); another canvas's is passed over. */
+  cellLocked(seq: number, lock: TableCellLock | undefined): void {
+    if (this.#lockAsked !== seq) return;
+    this.#lockAsked = undefined;
+    // A cursor moved on meanwhile is asked about next, the answer for the old place shown till then.
+    this.#showLock(lock !== undefined);
+    this.#askLock();
+  }
+
+  #showLock(on: boolean): void {
+    if (on === this.#lockShown) return;
+    this.#lockShown = on;
+    this.#paintCursor();
   }
 
   /**
@@ -1689,7 +1752,9 @@ export class CanvasController {
     const color = this.#ui().crosshair;
     const angle = this.#ucs().angle + (this.#vport()?.snapRotation ?? 0);
     const asked = this.#asked;
-    const badge = asked?.kind === 'selection' ? asked.cursor : undefined;
+    const badge =
+      (asked?.kind === 'selection' ? asked.cursor : undefined) ??
+      (this.#lockShown ? 'lock' : undefined);
     const key = `${color} ${angle}${badge ? ` ${badge}` : ''}`;
     if (this.#canvas.dataset['cursor'] === key) return;
     this.#canvas.dataset['cursor'] = key;
@@ -2358,6 +2423,7 @@ export class CanvasController {
         const resting = e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none';
         this.#hoverGrip(resting ? world : undefined);
         this.#hoverPreview(resting ? { x: e.offsetX, y: e.offsetY } : undefined);
+        this.#hoverLock(resting ? world : undefined);
         // A preview by the object under the pickbox follows the cursor itself (M3-12 part 6).
         if (this.#asked?.commandPreview?.hover) this.#commandPreview(resting ? world : undefined);
         if (press?.pointer === e.pointerId) {
@@ -2439,6 +2505,7 @@ export class CanvasController {
         this.#hoverGrip(undefined);
         this.#hoverPreview(undefined);
         this.#commandPreview(undefined);
+        this.#hoverLock(undefined);
         this.#pointer = undefined;
         this.#hit = undefined;
         this.#hits = [];
