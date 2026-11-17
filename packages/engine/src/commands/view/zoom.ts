@@ -9,7 +9,7 @@
 import type { Vec2 } from '../../geom/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { ViewReply, ViewRequest } from './host';
-import { fieldEventMayUpdate, fieldEventUpdates } from '../../edit/field-eval';
+import { fieldEventMayUpdate, fieldEventUpdates, writeFieldUpdate } from '../../edit/field-eval';
 import { fieldContextOf } from '../draw/field';
 
 const ZOOM_OPTIONS = [
@@ -213,7 +213,7 @@ export function regenCommand(all: boolean): CommandDef {
         : [];
       if (updates.length > 0) {
         ctx.edit((b) => {
-          for (const u of updates) b.updateEntity(u.id, { geom: u.geom });
+          for (const u of updates) writeFieldUpdate(b, ctx.model, u.id, u.geom);
         });
       }
       const r = await viewRequest(ctx, { op: 'regen', all });

@@ -3389,3 +3389,20 @@ The DXF reader converts VERTEX group 50 from degrees to radians (the property is
 `Objects/TableContent.ts` is not exported from the package index, and its name collides with the table entity's `TableContent` content class, which is. This exports it as `TableContentObject`, so callers can create the object a DXF table's round-trip XRECORD owns.
 
 </details>
+
+### 0186 — a DXF table cell names its FIELD (344)
+
+- **File:** `third_party/acad-ts-patches/0186-dxf-table-cell-field.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/Templates/CadTableEntityTemplate.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfWriter.ts`
+- **Symptom:** the DXF Reference gives an ACAD_TABLE text cell a 344, "Hard-pointer ID of the FIELD object", naming the root FIELD of the fields in its text. `_readTableEntity` had no case for it (the cell's field was lost), `_writeTableEntityCell` never wrote it, and nothing wrote the FIELD tree, which the table owns and no dictionary lists (only a FIELDLIST, when the drawing has one). The DWG reader and writer already state a cell content's field. Found by M4-23 part 2 (fields in table cells); no public corpus file has a cell field.
+- **Fix:** read 344 into the cell template and give the field to the cell's first content when the cell is built (a content is made when the cell has none); write 344 after the rotation (145) for a text cell whose content has a field, queueing the FIELD for the OBJECTS section; `_prepareFields` walks tables' cell fields too, so a tree the table owns is registered and its owner set to the table.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0186 a DXF table cell names its FIELD (344), read onto its content and written" (a cell with a value and a field written to DXF and read back with the same FIELD on its content).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write a DXF table cell's FIELD (group 344)
+
+An ACAD_TABLE text cell names the FIELD holding its fields with group 344 (DXF Reference, ACAD_TABLE). The DXF reader ignored it and the writer never wrote it, so a table cell's fields were lost on a DXF round trip, and a FIELD only a table cell owned was not written at all. This reads 344 onto the cell's content (`CellContent.field`, where the DWG reader puts it), writes it back after group 145 for a text cell, and queues the FIELD (and, through the existing child handling, its children) for the OBJECTS section, registering it with the table as its owner. A test writes a table whose cell has a value and a field, and reads the same FIELD back on the cell's content.
+
+</details>

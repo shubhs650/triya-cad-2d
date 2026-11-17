@@ -960,6 +960,12 @@ export interface TableCell {
    * for a text value. `text` holds it as shown (DXF 302), formatted by `valueFormat`.
    */
   readonly value?: TableCellValue;
+  /**
+   * A text cell's fields (M4-23), as an MTEXT's (`MTextGeometry.field`): the root `_text` FIELD
+   * the cell's content names (DXF 344 in its ACAD_TABLE codes, its TABLECONTENT field content),
+   * `text` holding the values shown. Absent when the cell holds no field.
+   */
+  readonly field?: DrawingField;
   /** What the cell overrides of its table style, its row's and column's folded in; absent when nothing. */
   readonly format?: TableCellFormat;
 }
