@@ -29,6 +29,7 @@ import {
   type TableEntity,
 } from '@node-projects/acad-ts';
 import type { Handle, TableCell, TableGeometry } from '@triya/engine';
+import { cellStyleMapOf } from '../map/styles';
 import { resolve, type Resolver } from './entities';
 import { cellStyleProblems, dwgFrom2010, formatFileProblems } from './table-cells';
 import { overrideFileProblems, overrideValueProblems, stylesAfter } from './table-overrides';
@@ -46,9 +47,17 @@ function rowTypes(style: TableStyle | null, rows: number): RowType[] {
   return Array.from({ length: rows }, (_, i) => first[i] ?? 'data');
 }
 
-/** The table style's cell style id of each row type (DWG R2010+), 1 to 3 when it lists none. */
+/**
+ * The table style's cell style id of each row type, as a DWG from R2010 lists its cell styles or
+ * a DXF's CELLSTYLEMAP does (M4-28); 1 to 3, as AutoCAD numbers them, when it lists none.
+ */
 function rowStyleIds(style: TableStyle | null): Record<RowType, number> {
-  const ids = new Map((style?.cellStyles ?? []).map((c) => [c.name.toUpperCase(), c.id]));
+  // The style's own list wins (a later entry replaces an earlier one).
+  const listed = [
+    ...((style && cellStyleMapOf(style)?.cellStyles) ?? []),
+    ...(style?.cellStyles ?? []),
+  ];
+  const ids = new Map(listed.filter((c) => c.name !== '').map((c) => [c.name.toUpperCase(), c.id]));
   return {
     title: ids.get('_TITLE') ?? 1,
     header: ids.get('_HEADER') ?? 2,

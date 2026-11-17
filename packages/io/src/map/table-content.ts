@@ -19,15 +19,13 @@
 // Values are framed as R2007 and later frame them (93 flags, 90 type, data, 94 units, 300
 // format, 302 formatted value, 304 ACVALUE_END); a value as a DXF before R2007 wrote it (90 and
 // its data only) is read too and written framed, as acad-ts's raw writer frames it (0070).
+import type { CadValue, CellBorder, CellStyle } from '@node-projects/acad-ts';
 import {
-  CadValue,
   CadValueType,
-  CellBorder,
   CellContent,
   CellContentGeometry,
   CellEdgeFlags,
   CellRange,
-  CellStyle,
   Color,
   CustomDataEntry,
   MathHelper,
@@ -60,9 +58,14 @@ const trueColors = new WeakMap<Color, RawCode[]>();
 const DATA_END = new Set([94, 304]);
 
 const unescape = (s: string): string =>
-  s.replace(/\^(.)/g, (_, c: string) => (c === ' ' ? '^' : String.fromCharCode(c.charCodeAt(0) - 64)));
+  s.replace(/\^(.)/g, (_, c: string) =>
+    c === ' ' ? '^' : String.fromCharCode(c.charCodeAt(0) - 64),
+  );
 const escape = (s: string): string =>
-  s.replace(/\^/g, '^ ').replace(/[\x00-\x1f]/g, (c) => '^' + String.fromCharCode(c.charCodeAt(0) + 64));
+  s
+    .replace(/\^/g, '^ ')
+    // eslint-disable-next-line no-control-regex -- caret notation, as acad-ts writes strings
+    .replace(/[\x00-\x1f]/g, (c) => '^' + String.fromCharCode(c.charCodeAt(0) + 64));
 
 class Cursor {
   i = 0;
@@ -82,7 +85,9 @@ class Cursor {
   next(code: number): unknown {
     const c = this.codes[this.i];
     if (c?.code !== code) {
-      throw new Error(`TABLECONTENT: ${code} expected at ${this.i}, found ${c?.code} ${String(c?.value)}`);
+      throw new Error(
+        `TABLECONTENT: ${code} expected at ${this.i}, found ${c?.code} ${String(c?.value)}`,
+      );
     }
     this.i++;
     return c.value;
@@ -114,7 +119,13 @@ class Cursor {
   color(code: number): Color {
     const index = this.int(code);
     let color =
-      index === 0 ? Color.byBlock : index === 256 ? Color.byLayer : index === 257 ? Color.byEntity : new Color(index);
+      index === 0
+        ? Color.byBlock
+        : index === 256
+          ? Color.byLayer
+          : index === 257
+            ? Color.byEntity
+            : new Color(index);
     if (this.is(420)) {
       const extra: RawCode[] = [];
       color = Color.fromTrueColor(Number(this.peek!.value) & 0xffffff);
