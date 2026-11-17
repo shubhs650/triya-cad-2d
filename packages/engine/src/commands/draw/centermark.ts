@@ -17,12 +17,20 @@
 //   CENTERRESET         Select center marks or centerlines to reset:
 // The help gives the commands' purpose but not each prompt's wording or their closing messages
 // ("1 center mark or centerline disassociated."), which are Triya's, following CENTERMARK's.
+//
+// M4-29: CENTERLINE (and CENTERREASSOCIATE on a centerline) also takes a polyline's straight
+// segment, the one nearest the pick ("Creates a centerline associated with selected lines and
+// linear polyline segments", AutoCAD 2024 Help, "CENTERLINE (Command)"), and two segments of one
+// polyline. The help gives no message for a curved segment; Triya's is "Polyline segment
+// selected is not straight."
 import {
+  centerlinePick,
   centerMarkOf,
   disassociateCenterMark,
   isAssociated,
   makeCenterMark,
   redrawCenterMark,
+  segmentsField,
 } from '../../edit/center-marks';
 import { centerSettings, type CenterSettings } from '../../edit/center-settings';
 import { AnonymousNames } from '../../edit/edit';
@@ -32,6 +40,7 @@ import type { EntityId } from '../../model/entity-ids';
 import type { CenterMark, Entity } from '../../model/types';
 import type { GeneralProps } from '../../properties/sheet';
 import { currentProps } from '../../properties/current';
+import type { Vec2 } from '../../geom/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { hatchLayerRecord } from './hatch';
@@ -76,11 +85,20 @@ function markProps(
 
 const missingMessage = (name: string) => `Linetype ${name} is not in the drawing: ByLayer is used.`;
 
-/** One object picked at `message`, or undefined at Enter or Esc. */
-async function* pickOne(ctx: CommandContext, message: string): Sub<Entity | undefined | null> {
+/** One object picked at `message`, with where, or undefined at Enter or Esc. */
+async function* pickAt(
+  ctx: CommandContext,
+  message: string,
+): Sub<{ entity: Entity | null; at?: Vec2 } | undefined> {
   const a = yield ctx.prompt.selection({ message, single: true });
   if (a.kind !== 'selection' || a.ids.length === 0) return undefined;
-  return ctx.model.entity(a.ids[0]!) ?? null;
+  return { entity: ctx.model.entity(a.ids[0]!) ?? null, ...(a.pick && { at: a.pick }) };
+}
+
+/** One object picked at `message`, or undefined at Enter or Esc. */
+async function* pickOne(ctx: CommandContext, message: string): Sub<Entity | undefined | null> {
+  const p = yield* pickAt(ctx, message);
+  return p && p.entity;
 }
 
 function centermarkCommand(): CommandDef {
@@ -126,16 +144,33 @@ async function* pickCircle(ctx: CommandContext, message: string): Sub<Entity | u
   }
 }
 
-/** "Select first line:", "Select second line:"; undefined at Enter or Esc. */
-async function* pickLines(ctx: CommandContext): Sub<Entity[] | undefined> {
-  const lines: Entity[] = [];
+/** A centerline's line: a LINE (segment -1) or a polyline's straight segment. */
+interface PickedLine {
+  readonly entity: Entity;
+  readonly segment: number;
+}
+
+/**
+ * "Select first line:", "Select second line:", each a line or a polyline's straight segment;
+ * undefined at Enter or Esc.
+ */
+async function* pickLines(ctx: CommandContext): Sub<PickedLine[] | undefined> {
+  const lines: PickedLine[] = [];
   while (lines.length < 2) {
     const message = lines.length === 0 ? 'Select first line' : 'Select second line';
-    const e = yield* pickOne(ctx, message);
-    if (e === undefined) return undefined;
-    if (!e || e.geom.kind !== 'LINE') ctx.message('Object selected is not a line.');
-    else if (lines[0]?.id === e.id) ctx.message('Select a different line.');
-    else lines.push(e);
+    const p = yield* pickAt(ctx, message);
+    if (p === undefined) return undefined;
+    const e = p.entity;
+    const pick = e ? centerlinePick(e, p.at) : undefined;
+    if (!e || !pick || 'refused' in pick) {
+      ctx.message(
+        pick && 'refused' in pick && pick.refused === 'curved'
+          ? 'Polyline segment selected is not straight.'
+          : 'Object selected is not a line.',
+      );
+    } else if (lines[0]?.entity.id === e.id && lines[0].segment === pick.segment) {
+      ctx.message('Select a different line.');
+    } else lines.push({ entity: e, segment: pick.segment });
   }
   return lines;
 }
@@ -155,10 +190,11 @@ function centerlineCommand(): CommandDef {
           b,
           ctx.model,
           {
-            space: lines[0]!.owner,
+            space: lines[0]!.entity.owner,
             props: markProps(b, ctx, settings, linetype),
             kind: 'line',
-            objects: lines,
+            objects: lines.map((l) => l.entity),
+            segments: lines.map((l) => l.segment),
             settings,
           },
           new AnonymousNames(ctx.model),
@@ -251,15 +287,20 @@ function centerReassociateCommand(): CommandDef {
         if (!mark) ctx.message('Object selected is not a center mark or centerline.');
       }
       const { insert, r } = mark;
-      let picked: Entity[] | undefined;
+      let picked: PickedLine[] | undefined;
       if (r.kind === 'mark') {
         const e = yield* pickCircle(ctx, 'Select circle or arc');
-        picked = e && [e];
+        picked = e && [{ entity: e, segment: -1 }];
       } else picked = yield* pickLines(ctx);
       if (!picked) return;
       let drawn = false;
       ctx.edit((b) => {
-        const after = { ...r, objects: picked.map((e) => e.handle) };
+        const { segments: _old, ...rest } = r;
+        const after: CenterMark = {
+          ...rest,
+          objects: picked.map((p) => p.entity.handle),
+          ...segmentsField(picked.map((p) => p.segment)),
+        };
         drawn = redrawCenterMark(b, ctx.model, insert, r, after);
       });
       if (!drawn) ctx.message(END_TO_END);
