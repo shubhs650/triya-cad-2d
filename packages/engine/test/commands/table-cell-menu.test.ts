@@ -107,7 +107,7 @@ const at = (i: number, j: number) => ({
 });
 
 const OPTIONS =
-  'Enter a table cell option [Text/Paste/BLock/BAckground/ALignment/BOrders/Height/DataFormat/Match/RemoveOverrides/CellStyle/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  'Enter a table cell option [Text/Paste/BLock/BAckground/ALignment/BOrders/Height/LOcking/DataFormat/Match/RemoveOverrides/CellStyle/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
 describe('a table cell selected at Command:', () => {
   it('is a click inside it, shown by its outline, with the Table Cell options', async () => {
@@ -138,6 +138,7 @@ describe('a table cell selected at Command:', () => {
       'Alignment',
       'Borders',
       'Text Height',
+      'Locking',
       'Data Format...',
       'Match Cell',
       'Remove All Property Overrides (off)',
@@ -897,5 +898,158 @@ describe('Data Format... (M4-16 part 2)', () => {
     await s.bus.answer({ kind: 'dialog', action: 'ok' });
     expect(s.bus.promptText).toBe('Command:');
     expect(s.table().geom.cells[2]![1]).toMatchObject({ text: 'DN50', valueFormat: '%tc2' });
+  });
+});
+
+describe('Locking (M4-16 part 6)', () => {
+  const locks = (s: ReturnType<typeof setup>) =>
+    s.table().geom.cells.map((r) => r.map((c) => c.locked ?? '-'));
+  const off = (s: ReturnType<typeof setup>) =>
+    s
+      .prompt()!
+      .shortcutMenu!.filter((m) => m.disabled)
+      .map((m) => m.keyword);
+
+  it('locks the cells selected as asked, its default the first cell’s, in one undo step', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.pick(at(2, 1), { shift: true });
+    await s.bus.submit('LO');
+    expect(s.bus.promptText).toBe('Enter cell locking [Unlocked/Content/Format/Both] <Unlocked>:');
+    expect(s.prompt()!.shortcutMenu!.map((m) => m.label)).toEqual([
+      'Unlocked',
+      'Content Locked',
+      'Format Locked',
+      'Content and Format Locked',
+    ]);
+    await s.bus.submit('C');
+    expect(s.bus.promptText).toBe('Command:');
+    expect(locks(s)[2]).toEqual(['content', 'content']);
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('LO');
+    expect(s.bus.promptText).toBe('Enter cell locking [Unlocked/Content/Format/Both] <Content>:');
+    await s.bus.submit('B');
+    expect(locks(s)[2]).toEqual(['content', 'both']);
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('LO');
+    await s.bus.submit('U');
+    expect(locks(s)[2]).toEqual(['content', '-']);
+    // Esc at the prompt changes nothing; U takes each lock back.
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('LO');
+    await s.bus.cancel();
+    expect(s.bus.promptText).toBe('Command:');
+    await s.bus.submit('U');
+    expect(locks(s)[2]).toEqual(['content', 'both']);
+    await s.bus.submit('U');
+    await s.bus.submit('U');
+    expect(locks(s)[2]).toEqual(['-', '-']);
+  });
+
+  it('a content lock refuses editing, pasting, a block, merging and deleting its rows and columns', async () => {
+    const s = setup(
+      () => [],
+      () => ({ ok: true, text: 'X' }),
+    );
+    await nozzles(s);
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('LO');
+    await s.bus.submit('C');
+    await s.bus.pick(at(3, 0));
+    await s.bus.pick(at(3, 1), { shift: true });
+    expect(off(s)).toEqual([
+      'Text',
+      'Paste',
+      'BLock',
+      'RemoveOverrides',
+      'DeleteRows',
+      'DeleteColumns',
+      'MergeAll',
+      'MergeRows',
+      'MergeColumns',
+      'Unmerge',
+    ]);
+    for (const k of ['T', 'P', 'BL', 'DR', 'DC', 'MA']) {
+      await s.bus.submit(k);
+      expect(s.messages.at(-1)).toBe('A cell selected has its content locked.');
+      expect(s.bus.promptText).toBe(OPTIONS);
+    }
+    // Formatting it is free; rows are inserted beside it, unlocked.
+    await s.bus.submit('BA');
+    await s.bus.submit('yellow');
+    expect(formatOf(s, 3, 1)).toEqual({ background: { kind: 'aci', index: 2 } });
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('B');
+    expect(locks(s).map((r) => r[1])).toEqual(['-', '-', '-', 'content', '-', '-']);
+    expect(s.texts()[3]).toEqual(['N2', 'DN80']);
+    // A double click on it says so and edits nothing.
+    await s.bus.pick(at(3, 1));
+    await s.bus.pick(at(3, 1));
+    await s.bus.doubleClick(at(3, 1));
+    expect(s.messages.at(-1)).toBe('The cell’s content is locked.');
+    expect(s.bus.promptText).toBe('Command:');
+  });
+
+  it('Tab and the arrows in the cell editor pass over a cell whose content is locked', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('LO');
+    await s.bus.submit('B');
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('T');
+    await s.bus.answer({ kind: 'string', value: 'N1A', editor: true, cell: 'next' });
+    // Past (2, 1), locked, to (3, 0).
+    expect((s.bus.prompt as StringPrompt).editor).toMatchObject({ value: 'N2' });
+    await s.bus.answer({ kind: 'string', value: 'N2', editor: true, cell: 'up' });
+    expect((s.bus.prompt as StringPrompt).editor).toMatchObject({ value: 'N1A' });
+    await s.bus.answer({ kind: 'string', value: 'N1A', editor: true, cell: 'right' });
+    // Right of (2, 0) only the locked cell: the editor stays where it is.
+    expect((s.bus.prompt as StringPrompt).editor).toMatchObject({ value: 'N1A' });
+    await s.bus.answer({ kind: 'string', value: 'N1A', editor: true });
+    expect(s.texts()[2]).toEqual(['N1A', 'DN50']);
+  });
+
+  it('a format lock refuses formatting, Data Format, Cell Style and being matched', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('LO');
+    await s.bus.submit('F');
+    await s.bus.pick(at(3, 1));
+    expect(off(s)).toEqual([
+      'BAckground',
+      'ALignment',
+      'BOrders',
+      'Height',
+      'DataFormat',
+      'RemoveOverrides',
+      'CellStyle',
+      'MergeAll',
+      'MergeRows',
+      'MergeColumns',
+      'Unmerge',
+    ]);
+    for (const k of ['BA', 'AL', 'BO', 'H', 'DF', 'CS']) {
+      await s.bus.submit(k);
+      expect(s.messages.at(-1)).toBe('A cell selected has its format locked.');
+    }
+    // Its text is free.
+    await s.bus.submit('T');
+    await s.bus.answer({ kind: 'string', value: 'DN100', editor: true });
+    expect(s.texts()[3]).toEqual(['N2', 'DN100']);
+    // Matched from another cell: refused for it, taken by the next one clicked.
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('BA');
+    await s.bus.submit('yellow');
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('M');
+    await s.bus.pick(at(3, 1));
+    expect(s.messages.at(-1)).toBe('The cell’s format is locked.');
+    await s.bus.pick(at(3, 0));
+    await s.bus.submit('');
+    expect(formatOf(s, 3, 1)).toBeUndefined();
+    expect(formatOf(s, 3, 0)).toEqual({ background: { kind: 'aci', index: 2 } });
   });
 });

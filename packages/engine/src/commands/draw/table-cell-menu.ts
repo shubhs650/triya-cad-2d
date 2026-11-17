@@ -17,7 +17,8 @@
 // dialog on the first cell selected (M4-16). Data Format... opens the Table Cell Format dialog
 // (M4-16 part 2, `dataFormattedTable`). Cell Style puts the cells selected on the Title, Header or
 // Data cell style, or their row's (By Row); rows are inserted and deleted anywhere, each keeping
-// its cell style (M4-16 part 5).
+// its cell style (M4-16 part 5). Locking locks the content, the format or both of the cells
+// selected (M4-16 part 6, table-locks.ts): what a lock protects is greyed and refused.
 import { tableCellAt, tableCellBox, tableCellText, tableRangeHeads } from '../../annotation/table';
 import {
   fitTableRow,
@@ -52,7 +53,13 @@ import type { Vec2 } from '../../geom/types';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
-import type { TableCellStyleName, TableGeometry, TableStyleRecord } from '../../model/types';
+import type {
+  TableCellLock,
+  TableCellStyleName,
+  TableGeometry,
+  TableStyleRecord,
+} from '../../model/types';
+import { rangeLocks, withCellsLocked } from '../../edit/table-locks';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer, ShortcutMenuItem } from '../prompt';
 import { sub } from '../../geom/vec';
@@ -76,6 +83,8 @@ const LABELS: Readonly<Record<TableCellOption, string>> = {
   BOrders: 'Borders',
   // Not on AutoCAD's cell menu (Properties sets it): here as Triya has no Properties for cells.
   Height: 'Text Height',
+  // AutoCAD's cell menu: Locking (a submenu; here the prompt's own menu, as Alignment's).
+  LOcking: 'Locking',
   // AutoCAD's cell menu: Data Format... (the Table Cell Format dialog, M4-16).
   DataFormat: 'Data Format...',
   Match: 'Match Cell',
@@ -98,8 +107,41 @@ const SEPARATED = new Set<TableCellOption>(['BAckground', 'Above', 'Left', 'Merg
 
 const FORMATS = new Set<TableCellOption>(['BAckground', 'ALignment', 'BOrders', 'Height']);
 
+/** Options a cell whose content is locked refuses, and one whose format is locked. */
+const CONTENT_OPTIONS = new Set<TableCellOption>([
+  'Text',
+  'Paste',
+  'BLock',
+  'DeleteRows',
+  'DeleteColumns',
+  'MergeAll',
+  'MergeRows',
+  'MergeColumns',
+]);
+const FORMAT_OPTIONS = new Set<TableCellOption>([
+  'BAckground',
+  'ALignment',
+  'BOrders',
+  'Height',
+  'DataFormat',
+  'RemoveOverrides',
+  'CellStyle',
+]);
+
 /** Why an option is refused for the cells selected. */
 function refusal(o: TableCellOption, g: TableGeometry, r: TableCellRange): string {
+  const last = { rows: g.cells.length - 1, columns: g.columnWidths.length - 1 };
+  const taken =
+    o === 'DeleteRows'
+      ? { ...r, c0: 0, c1: last.columns }
+      : o === 'DeleteColumns'
+        ? { ...r, r0: 0, r1: last.rows }
+        : r;
+  const lock = rangeLocks(g, taken);
+  if (CONTENT_OPTIONS.has(o) && lock.content) return 'A cell selected has its content locked.';
+  if (FORMAT_OPTIONS.has(o) && rangeLocks(g, r).format) {
+    return 'A cell selected has its format locked.';
+  }
   if (o === 'DeleteColumns') return 'The last column cannot be deleted.';
   if (o === 'DeleteRows' && r.r1 - r.r0 + 1 >= g.cells.length) {
     return 'The last row cannot be deleted.';
@@ -200,6 +242,45 @@ async function* cellStyledTable(
   return withCellsStyled(g, style, r, CELL_STYLE_NAMES[a.keyword as (typeof CELL_STYLES)[number]]);
 }
 
+/** Locking's choices, typed and as AutoCAD's Cell Locking list names them. */
+const LOCKS = ['Unlocked', 'Content', 'Format', 'Both'] as const;
+
+const LOCK_OF: Readonly<Record<(typeof LOCKS)[number], TableCellLock | undefined>> = {
+  Unlocked: undefined,
+  Content: 'content',
+  Format: 'format',
+  Both: 'both',
+};
+
+const LOCK_LABELS: Readonly<Record<(typeof LOCKS)[number], string>> = {
+  Unlocked: 'Unlocked',
+  Content: 'Content Locked',
+  Format: 'Format Locked',
+  Both: 'Content and Format Locked',
+};
+
+/**
+ * Locking (AutoCAD's Table Cell tab, Cell Locking; M4-16 part 6): table `g` with the cells of
+ * range `r` locked as asked (`withCellsLocked`), or undefined when ended at the prompt. The
+ * default is the first cell's lock.
+ */
+async function* lockedTable(
+  ctx: CommandContext,
+  g: TableGeometry,
+  r: TableCellRange,
+): AsyncGenerator<Prompt, TableGeometry | undefined, PromptAnswer> {
+  const own = g.cells[r.r0]![r.c0]!.locked;
+  const now = LOCKS.find((k) => LOCK_OF[k] === own) ?? 'Unlocked';
+  const a = yield ctx.prompt.keyword({
+    message: 'Enter cell locking',
+    options: LOCKS,
+    default: { kind: 'keyword', keyword: now },
+    shortcutMenu: LOCKS.map((k) => ({ label: LOCK_LABELS[k], keyword: k })),
+  });
+  if (a.kind !== 'keyword') return undefined;
+  return withCellsLocked(g, r, LOCK_OF[a.keyword as (typeof LOCKS)[number]]);
+}
+
 /**
  * What the Clipboard holds to paste into table cells (M4-13): a spreadsheet's cells, or another
  * app's text as one cell; undefined (said why) for anything else.
@@ -263,6 +344,10 @@ async function* matchCells(
     const [i, j] = cell;
     const c = t.g.cells[i]![j]!;
     const range = { r0: i, c0: j, r1: i + c.rowSpan - 1, c1: j + c.columnSpan - 1 };
+    if (rangeLocks(t.g, range).format) {
+      ctx.message('The cell’s format is locked.');
+      continue;
+    }
     const g = await fittedRows(ctx, withCellMatched(t.g, from, range), t.style, range);
     ctx.edit((b) => {
       b.updateEntity(id, { geom: g });
@@ -372,9 +457,17 @@ export function tableCellCommand(start?: {
           const cells = await clipboardCells(ctx);
           if (!cells) continue;
           const pasted = withCellsPasted(t.g, [r.r0, r.c0], cells, t.style);
+          // The cells pasted into reach past those selected: none may have its content locked.
+          if (rangeLocks(t.g, pasted.range).content) {
+            ctx.message('A cell pasted into has its content locked.');
+            continue;
+          }
           g = await fittedRows(ctx, pasted.geom, t.style, pasted.range);
         } else if (o === 'RemoveOverrides') {
           g = withCellOverridesRemoved(t.g, t.style, r);
+        } else if (o === 'LOcking') {
+          g = yield* lockedTable(ctx, t.g, r);
+          if (!g) return;
         } else if (o === 'CellStyle') {
           g = yield* cellStyledTable(ctx, t.g, t.style, r);
           if (!g) return;

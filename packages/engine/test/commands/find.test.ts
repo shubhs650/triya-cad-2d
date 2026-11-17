@@ -149,7 +149,9 @@ const dimension = {
   lineSpacing: 1,
 } as DimensionGeometry;
 
-function setup(o: { measure?: boolean; references?: boolean; noLayouts?: boolean } = {}) {
+function setup(
+  o: { measure?: boolean; references?: boolean; noLayouts?: boolean; lockedCell?: boolean } = {},
+) {
   const base = sampleInit();
   const model = DocumentModel.create({
     ...base,
@@ -215,7 +217,18 @@ function setup(o: { measure?: boolean; references?: boolean; noLayouts?: boolean
         attributes: [attrib('53', 'TYPE', 'DOOR-A'), attrib('54', 'HIDDEN', 'DOOR', 1)],
       } satisfies InsertGeometry),
       entityInit('55', dimension),
-      entityInit('56', table),
+      entityInit(
+        '56',
+        o.lockedCell
+          ? {
+              ...table,
+              cells: [
+                [{ ...table.cells[0]![0]!, locked: 'content' as const }, table.cells[0]![1]!],
+                table.cells[1]!,
+              ],
+            }
+          : table,
+      ),
       entityInit('57', text('LINK', { x: 0, y: 40 }), {
         xdata: [
           {
@@ -544,6 +557,22 @@ describe('FIND', () => {
     await s.bus.submit('FIND');
     await s.bus.answer({ kind: 'dialog', action: 'ok' });
     expect(s.bus.command).toBeUndefined();
+  });
+
+  it('finds the text of a table cell whose content is locked and leaves it (M4-16 part 6)', async () => {
+    const s = setup({ lockedCell: true });
+    await s.bus.submit('FIND');
+    const options = { ...DEFAULT_FIND_SETTINGS.options, types: ['table' as const] };
+    await s.press({ op: 'replace' }, { find: 'door', replace: 'GATE', options });
+    await s.press({ op: 'replace' });
+    expect(s.dialog()).toMatchObject({ note: 'The table cell is locked.' });
+    await s.press({ op: 'replaceAll' });
+    expect(s.dialog()!.note).toBe('1 match was replaced. 1 match in a locked table cell was not.');
+    const t = s.geom<TableGeometry>('56');
+    expect(t.cells.map((r) => r.map((c) => c.text))).toEqual([
+      ['DOOR SCHEDULE', ''],
+      ['D1', '{\\C1;GATE} 900'],
+    ]);
   });
 
   it("a table's text replaced where it cannot be measured keeps its rows", async () => {

@@ -17,6 +17,7 @@
 //   any one character, matched anywhere in the text (as a word processor's wildcard search
 //   does); `#`, `@`, `.`, `[...]`, `[~...]` and `` ` `` as AutoCAD's WCMATCH reads them.
 // - Whole words: a match with no letter, digit or underscore directly before or after it.
+import { contentLocked } from './table-locks';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { DocumentModel } from '../model/document';
@@ -422,6 +423,18 @@ function hyperlinkStrings(model: DocumentModel, xdata: Xdata | undefined) {
 export function hiddenEntity(model: DocumentModel, e: Pick<Entity, 'layer' | 'visible'>): boolean {
   const layer = model.tables.layers.get(e.layer);
   return !e.visible || (layer !== undefined && (!layer.on || layer.frozen));
+}
+
+/**
+ * Whether `slot` of `e` is a table cell whose content is locked (M4-16 part 6): FIND and SPELL
+ * find its text but leave it as it is, as on a locked layer.
+ */
+export function lockedSlot(e: Pick<Entity, 'geom'>, slot: TextSlot): boolean {
+  return (
+    slot.kind === 'cell' &&
+    e.geom.kind === 'ACAD_TABLE' &&
+    contentLocked(e.geom.cells[slot.row]?.[slot.column])
+  );
 }
 
 /** Whether an object is on a locked layer (FIND finds its text but leaves it as it is). */

@@ -156,7 +156,9 @@ const checker: SpellChecker = {
   suggest: (w) => SUGGESTIONS[w.toLowerCase()] ?? [],
 };
 
-function setup(o: { spelling?: boolean; long?: string; noLayouts?: boolean } = {}) {
+function setup(
+  o: { spelling?: boolean; long?: string; noLayouts?: boolean; lockedCell?: boolean } = {},
+) {
   const base = sampleInit();
   const model = DocumentModel.create({
     ...base,
@@ -190,7 +192,12 @@ function setup(o: { spelling?: boolean; long?: string; noLayouts?: boolean } = {
       entityInit('51', mtext('{\\fArial|b1;dore} frmae\\Psee dore', { x: 0, y: 20 })),
       entityInit('52', insert(TAG, { x: 100, y: 0 }, [attrib('53', 'steel dore')])),
       entityInit('55', dimension),
-      entityInit('56', table),
+      entityInit(
+        '56',
+        o.lockedCell
+          ? { ...table, cells: [[{ ...table.cells[0]![0]!, locked: 'both' as const }]] }
+          : table,
+      ),
       entityInit('59', text('locked dore', { x: 0, y: 80 }), { layer: LOCKED }),
       entityInit('5A', text('sheet nott', { x: 0, y: 0 }), { owner: PAPER_SPACE }),
       entityInit('5B', text('blok text', { x: 0, y: 0 }), { owner: TAG }),
@@ -414,6 +421,17 @@ describe('SPELL', () => {
     await s.press({ op: 'changeAll', to: 'xref' });
     expect(s.geom<TextGeometry>('70').value).toBe('plan xreff');
     expect(s.dialog()).toMatchObject({ note: 'The text is in an xref and cannot be changed.' });
+  });
+
+  it('a word in a table cell whose content is locked is not changed (M4-16 part 6)', async () => {
+    const s = setup({ lockedCell: true });
+    await s.bus.submit('SPELL');
+    await s.press({ op: 'start' }, { where: 'space', dimensions: false, attributes: false });
+    while (s.word() !== 'scedule') await s.press({ op: 'ignore' });
+    expect(s.dialog()!.word!.readOnly).toBe(true);
+    await s.press({ op: 'change', to: 'schedule' });
+    expect(s.geom<TableGeometry>('56').cells[0]![0]!.text).toBe('dore scedule');
+    expect(s.dialog()).toMatchObject({ note: 'The table cell is locked.' });
   });
 
   it('Ignore All and Add to Dictionary pass the word from then on', async () => {

@@ -7,6 +7,7 @@
 // the first block and AutoFit; a drawing without a block to insert says so and ends (the
 // dialog's Browse..., which inserts another drawing as a block, waits for INSERT, M5); without
 // AutoFit only the cell's row grows to hold the block (`fitTableBlockRow`).
+import { contentLocked } from '../../edit/table-locks';
 import { isContentBlock } from '../../properties/multileader-block';
 import { tableCellStyle } from '../../annotation/table';
 import {
@@ -79,6 +80,11 @@ export async function* insertCellBlock(
   i: number,
   j: number,
 ): Sub<void> {
+  // A cell whose content is locked takes no block (M4-16 part 6).
+  if (contentLocked(tableOf(ctx, id)?.g.cells[i]?.[j])) {
+    ctx.message('The cell’s content is locked.');
+    return;
+  }
   const blocks = insertableBlocks(ctx);
   if (blocks.length === 0) {
     ctx.message('The drawing has no blocks to insert in a table cell.');
