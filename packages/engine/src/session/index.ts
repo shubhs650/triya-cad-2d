@@ -49,6 +49,7 @@ import { fieldEventChange, type FieldEvent } from '../edit/field-eval';
 import {
   currentLayerChange,
   deleteLayersChange,
+  mergeLayersChange,
   layerPropsChange,
   newLayerChange,
   type LayerProps,
@@ -79,6 +80,8 @@ export interface LayerStateEdit extends LayerProps {
 export type LayerTableEdit =
   | { readonly kind: 'layer-new'; readonly like?: Handle; readonly name?: string }
   | { readonly kind: 'layer-delete'; readonly layers: readonly Handle[] }
+  /** Merge Selected Layer(s) to (M5-05 part 4): their objects move to `target`, they go. */
+  | { readonly kind: 'layer-merge'; readonly layers: readonly Handle[]; readonly target: Handle }
   | { readonly kind: 'layer-current'; readonly layer: Handle };
 
 /**
@@ -689,7 +692,12 @@ export class EngineSession {
       return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     if (e.kind === 'fields') return this.#fieldEvent(e);
-    if (e.kind === 'layer-new' || e.kind === 'layer-delete' || e.kind === 'layer-current')
+    if (
+      e.kind === 'layer-new' ||
+      e.kind === 'layer-delete' ||
+      e.kind === 'layer-merge' ||
+      e.kind === 'layer-current'
+    )
       return this.#layerTableEdit(e);
     if (
       e.kind === 'layer-state-save' ||
@@ -850,7 +858,9 @@ export class EngineSession {
         ? newLayerChange(this.model, e.like, e.name)
         : e.kind === 'layer-delete'
           ? deleteLayersChange(this.model, e.layers)
-          : currentLayerChange(this.model, e.layer),
+          : e.kind === 'layer-merge'
+            ? mergeLayersChange(this.model, e.layers, e.target)
+            : currentLayerChange(this.model, e.layer),
     );
   }
 
@@ -889,7 +899,8 @@ export class EngineSession {
    * empty change is no step (DEC-049).
    */
   #step(label: string, change: ChangeSet): void {
-    this.#bus.undo.push({ command: label, changes: [change] });
+    // The manager's LAYER steps join the LAYER step just before them under UNDO Control Layer.
+    this.#bus.undo.push({ command: label, changes: [change] }, { layer: label === 'LAYER' });
   }
 
   /** PICKFIRST as the app last set it (M2-59): picks at `Command:` select. */

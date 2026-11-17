@@ -252,3 +252,62 @@ export function currentLayerChange(model: DocumentModel, handle: Handle): Change
   b.setHeader('$CLAYER', l.name);
   return b.build();
 }
+
+/**
+ * `handles` merged into `target`, as the manager's Merge Selected Layer(s) to does: every object
+ * on them (in model space, the layouts, every block definition and a block reference's
+ * attributes) moves to `target`, then the layers go as Delete Layer takes them (out of the
+ * viewports that freeze them and the layer states that name them). All or nothing.
+ *
+ * AutoCAD's help does not say what it does with layer 0, Defpoints, the current layer or an
+ * xref-dependent layer as a source; merging deletes the layer, so these are refused as Delete
+ * Layer refuses them (the drafter makes another layer current first). The target may not be one
+ * of the sources nor xref-dependent, as no object of the drawing can go on an xref's layer.
+ */
+export function mergeLayersChange(
+  model: DocumentModel,
+  handles: readonly Handle[],
+  target: Handle,
+): ChangeSet | string {
+  const layers = layersOf(model, handles);
+  if (typeof layers === 'string') return layers;
+  if (layers.length === 0) return 'Select the layers to merge.';
+  const into = model.tables.layers.get(target);
+  if (!into) return `No layer ${target}.`;
+  if (isXref(into)) return 'Cannot merge into an xref-dependent layer.';
+  for (const l of layers) {
+    const why =
+      l.handle === target
+        ? 'it is the target layer'
+        : isFixed(l)
+          ? 'layer 0 and Defpoints cannot be merged'
+          : isCurrent(model, l)
+            ? 'it is the current layer'
+            : isXref(l)
+              ? 'it is xref-dependent'
+              : undefined;
+    if (why) return `Layer "${l.name}" was not merged: ${why}.`;
+  }
+  const gone = new Set(layers.map((l) => l.handle));
+  const b = new ChangeSetBuilder(model);
+  for (const e of model.entities()) {
+    const g = e.geom;
+    const attributes =
+      g.kind === 'INSERT' && g.attributes.some((a) => gone.has(a.layer))
+        ? g.attributes.map((a) => (gone.has(a.layer) ? { ...a, layer: target } : a))
+        : undefined;
+    const frozen =
+      g.kind === 'VIEWPORT' && g.frozenLayers.some((h) => gone.has(h))
+        ? g.frozenLayers.filter((h) => !gone.has(h))
+        : undefined;
+    const patch = {
+      ...(gone.has(e.layer) && { layer: target }),
+      ...(attributes && g.kind === 'INSERT' && { geom: { ...g, attributes } }),
+      ...(frozen && g.kind === 'VIEWPORT' && { geom: { ...g, frozenLayers: frozen } }),
+    };
+    if (Object.keys(patch).length > 0) b.updateEntity(e.id, patch);
+  }
+  for (const h of gone) b.removeTableRecord('layers', h);
+  dropLayersFromStates(b, gone);
+  return b.build();
+}

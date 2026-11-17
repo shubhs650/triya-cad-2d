@@ -138,6 +138,7 @@ export { bindXrefs, xrefBindChange, xrefBindProblem } from './xref-bind';
 export {
   currentLayerChange,
   deleteLayersChange,
+  mergeLayersChange,
   layerPropsChange,
   layersInUse,
   newLayerChange,
