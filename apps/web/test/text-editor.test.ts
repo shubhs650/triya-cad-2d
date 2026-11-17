@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   autoStack,
   cellAhead,
+  lineAhead,
   cellMoveFor,
   fieldAsText,
   formatAt,
@@ -345,5 +346,38 @@ describe('fields in the editors', () => {
     expect(lineFieldAt(parts, 4)).toEqual({ index: 1, start: 4, end: 8 });
     expect(lineFieldAt(parts, 7)).toEqual({ index: 1, start: 4, end: 8 });
     expect(lineFieldAt(parts, 8)).toBeUndefined();
+  });
+});
+
+describe("keys typed before TEXT's line editor opens (M4-20)", () => {
+  it('types the line, Backspace and spaces, an Enter placing each line typed', () => {
+    expect(lineAhead([...'Tw', 'x', 'Backspace', 'o', ' ', '2', 'Enter', ...'Next'])).toEqual({
+      ops: [{ kind: 'line', value: 'Tw' + 'o 2' }],
+      text: 'Next',
+      rest: [],
+    });
+    expect(lineAhead(['Backspace', 'Tab', 'a'])).toEqual({ ops: [], text: 'a', rest: [] });
+    // Going on from the line the editor holds.
+    expect(lineAhead(['Backspace', 'x', 'Enter', 'y'], 'Ab')).toEqual({
+      ops: [{ kind: 'line', value: 'Ax' }],
+      text: 'y',
+      rest: [],
+    });
+  });
+
+  it('ends TEXT at an Enter on an empty line, leaving the keys after it for Command:', () => {
+    expect(lineAhead([...'One', 'Enter', 'Enter', ...'LINE', 'Enter'])).toEqual({
+      ops: [{ kind: 'line', value: 'One' }, { kind: 'end' }],
+      text: '',
+      rest: [...'LINE', 'Enter'],
+    });
+  });
+
+  it('cancels at Esc, the line typed before it dropped and the keys after it left', () => {
+    expect(lineAhead([...'Ab', 'Escape', 'L'])).toEqual({
+      ops: [{ kind: 'cancel' }],
+      text: '',
+      rest: ['L'],
+    });
   });
 });
