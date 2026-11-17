@@ -4,8 +4,11 @@
 // TOLERANCE its frame in DIMCLRD and its text in DIMCLRT. A DIMENSION with no stored block
 // draws what the dimension engine generates (M2-10).
 import {
+  redrawLeader,
+  setDimensionRecord,
   SpatialIndex,
   toleranceForSize,
+  type DimBreak,
   type DimensionGeometry,
   type EntityInit,
   type InsertGeometry,
@@ -17,7 +20,7 @@ import {
 import { dimensionParts } from '@triya/dims';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer, textBounds, textMeasure, type RenderStyle } from '../src/index';
-import { drawing, entity, MODEL, surface } from './fixtures';
+import { change, drawing, entity, MODEL, surface } from './fixtures';
 import { fontBook } from './text-fonts';
 
 const DARK: RenderStyle = { background: '#000000', foreground: '#ffffff', showLineweights: false };
@@ -340,5 +343,36 @@ describe('multileaders in the renderer', () => {
         expect.arrayContaining(['#00ff00', '#ff0000']),
       );
     }
+  });
+});
+
+describe('leader breaks in the renderer (M4-15)', () => {
+  /** The pieces the multileader's lines are stroked in: one moveTo each. */
+  const pieces = (c: ReturnType<ReturnType<typeof setup>['redraw']>) =>
+    c.calls.filter((k) => k[0] === 'moveTo').length;
+
+  it("cuts DIMBREAK's gap out of the leader line where the object crosses it, and puts it back", () => {
+    const across = { kind: 'LINE', start: { x: 5, y: -2 }, end: { x: 5, y: 2 } } as const;
+    const s = setup([entity('20', mleader), entity('21', across)]);
+    const whole = pieces(s.redraw());
+    const id = s.d.model.ids.idOf('20')!;
+    s.r.apply(
+      change(s.d, (b) => {
+        setDimensionRecord<DimBreak>(b, b.entity(id)!, 'TRIYA_DIMBREAK', {
+          objects: ['21'],
+          manual: [],
+        });
+        redrawLeader(b, { id });
+      }),
+    );
+    // The leader line from the arrowhead's back to (10, 0) is two pieces now.
+    expect(pieces(s.redraw())).toBe(whole + 1);
+    s.r.apply(
+      change(s.d, (b) => {
+        setDimensionRecord<DimBreak>(b, b.entity(id)!, 'TRIYA_DIMBREAK', undefined);
+        redrawLeader(b, { id });
+      }),
+    );
+    expect(pieces(s.redraw())).toBe(whole);
   });
 });

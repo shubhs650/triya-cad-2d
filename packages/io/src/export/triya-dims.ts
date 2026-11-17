@@ -5,7 +5,8 @@
 // dictionary); one read with a dictionary (a DIMASSOC's) gets the record added to it. DIMBREAK
 // and DIMINSPECT rewrite a record's groups; Remove takes it out of the dictionary, which stays;
 // an erased dimension takes its dictionary, and so its records, with it. A breaking object that
-// is gone is left out of the record, so no group names a handle the file does not hold.
+// is gone is left out of the record, so no group names a handle the file does not hold. A
+// leader's and a multileader's breaks (M4-15, DEC-065) are written the same way, in theirs.
 //
 // Refused, before anything changes: a record whose dimension is not a dimension of the drawing or
 // does not name its dictionary, one that moves to another dimension or dictionary, a new record
@@ -44,6 +45,8 @@ const isRecord = (o: { type: string } | undefined): o is DimRecord =>
   isDimBreak(o as DimRecord) || isDimInspect(o as DimRecord);
 
 const DIMENSION_KINDS = new Set(['DIMENSION', 'LARGE_RADIAL_DIMENSION', 'ARC_DIMENSION']);
+/** What else DIMBREAK breaks (M4-15): inspection data is a dimension's only. */
+const LEADER_KINDS = new Set(['LEADER', 'MULTILEADER']);
 
 export interface TriyaDimsPlan {
   readonly updated: { readonly acad: XRecord; readonly after: DimRecord }[];
@@ -91,7 +94,10 @@ export function planTriyaDims(
     if (b && same(b, a)) continue;
     const out: string[] = [];
     const dim = model.entityByHandle(a.dimension);
-    if (!dim || !DIMENSION_KINDS.has(dim.geom.kind)) {
+    const holder =
+      dim &&
+      (DIMENSION_KINDS.has(dim.geom.kind) || (isDimBreak(a) && LEADER_KINDS.has(dim.geom.kind)));
+    if (!holder) {
       out.push(`dimension ${a.dimension} is not in the drawing`);
     } else if (dim.extDict !== a.owner) {
       out.push(`dimension ${a.dimension}'s extension dictionary is not ${a.owner}`);

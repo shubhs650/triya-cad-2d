@@ -150,6 +150,7 @@ export function leaderParts(
   }
   out.push({
     ...props,
+    ...(!g.spline && { breakable: true as const }),
     geom: g.spline
       ? {
           kind: 'SPLINE',

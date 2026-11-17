@@ -8,13 +8,18 @@
 //                     label, absent when the label is off; 3 the inspection rate, absent when
 //                     the rate is off.
 //
-// A record of another version, a shape Triya does not know, or one not in a dimension's
-// extension dictionary is not mapped: it stays as read, and the dimension draws its stored
-// block. A breaking object that is not in the drawing is left out.
+// A leader's and a multileader's breaks (M4-15, DEC-065) are the same `TRIYA_DIMBREAK` record in
+// the leader's extension dictionary; inspection data is a dimension's only.
+//
+// A record of another version, a shape Triya does not know, or one not in a dimension's (or for
+// breaks, a leader's) extension dictionary is not mapped: it stays as read, and the dimension
+// draws its stored block. A breaking object that is not in the drawing is left out.
 import {
   CadDictionary,
   CadObject,
   Dimension,
+  Leader,
+  MultiLeader,
   XRecord,
   type CadDocument,
 } from '@node-projects/acad-ts';
@@ -80,10 +85,11 @@ export function mapTriyaDims(doc: CadDocument): (DimBreak | DimInspect)[] {
     if (!(o instanceof XRecord)) continue;
     const dict = o.owner;
     const dim = dict instanceof CadDictionary ? dict.owner : undefined;
-    if (!(dict instanceof CadDictionary) || !(dim instanceof Dimension)) continue;
+    const leader = dim instanceof Leader || dim instanceof MultiLeader;
+    if (!(dict instanceof CadDictionary) || !(dim instanceof Dimension || leader)) continue;
     if (dim.xDictionary !== dict) continue;
     const key = dict.entryNames.find((k) => dict.getEntry(k) === o)?.toUpperCase();
-    if (key !== TRIYA_DIMBREAK && key !== TRIYA_DIMINSPECT) continue;
+    if (key !== TRIYA_DIMBREAK && (key !== TRIYA_DIMINSPECT || leader)) continue;
     const entries = o.entries as Entries;
     if (number(entries.find((e) => e.code === 70)?.value) !== TRIYA_DIMS_VERSION) continue;
     const base = { ...common(o), owner: hex(dict.handle), dimension: hex(dim.handle) };

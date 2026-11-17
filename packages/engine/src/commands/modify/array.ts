@@ -21,6 +21,7 @@
 // (the larger of the two for rows round a circle or along a path), which leaves a half-size gap
 // between items, as AutoCAD's defaults look on screen.
 import { followCenterMarks } from '../../edit/center-marks';
+import { followLeaderBreaks } from '../../edit/leader-breaks';
 import { removeCopies } from '../../edit/groups';
 import type { Box } from '../../geom/bounds';
 import type { Vec2 } from '../../geom/types';
@@ -1051,6 +1052,8 @@ function arrayCloseCommand(): CommandDef {
 export function followAssociations(ctx: CommandContext, changes: readonly ChangeSet[]): void {
   // Center marks and centerlines follow their objects (M4-08).
   followCenterMarks(ctx.model, (build) => ctx.edit(build), changes);
+  // Leaders and multileaders broken by what the command changed are drawn again (M4-15).
+  followLeaderBreaks(ctx.model, (build) => ctx.edit(build), changes);
   const updated = new Set<Handle>();
   const touched = new Set<Handle>();
   const added: Entity[] = [];
