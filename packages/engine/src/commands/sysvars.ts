@@ -167,6 +167,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // FIELDDISPLAY (M4-10 part 3; AutoCAD 2024 Help, "Saved in: Registry"): fields shown on a grey
   // background (1, initially), which is not plotted; 0 shows them as the rest of their text.
   { name: 'FIELDDISPLAY', store: 'app', kind: 'switch' },
+  // LAYLOCKFADECTL (M5-06; AutoCAD 2024 Help, "Saved in: Registry"): objects on locked layers
+  // drawn faded by this percentage, −90 to 90, initially 50; a negative value turns fading off
+  // keeping the amount. LAYISO's Lock and fade sets it.
+  { name: 'LAYLOCKFADECTL', store: 'app', kind: 'integer', min: -90, max: 90 },
   // M3-06 part 1 (AutoCAD 2024 Help): POLARMODE's bits are 1 polar angles relative to the last
   // segment, 2 object snap tracking along the polar angles, 4 the additional angles, 8 Shift to
   // acquire tracking points (initially 0); POLARADDANG up to 10 additional angles separated by

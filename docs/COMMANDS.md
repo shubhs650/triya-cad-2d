@@ -162,9 +162,10 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
 | LAYER | LA | 1 | palette; -LAYER dash with full option set. Palette list, search, On/Freeze/Lock and VP Freeze display done in M1-23; command, -LAYER and other columns open | ~ |
-| LAYISO / LAYUNISO | — | 2 | settings: lock+fade or off | |
-| LAYOFF / LAYON / LAYFRZ / LAYTHW / LAYLCK / LAYULK | — | 2 | | |
-| LAYMCUR / LAYMCH / LAYCUR / LAYWALK / LAYERP / LAYDEL / LAYMRG | — | 2 | | |
+| LAYISO / LAYUNISO | — | 2 | settings: lock+fade or off | x (#501, M5-06 part 1: LAYISO keeps the layers of the objects selected and locks every other one, faded by LAYLOCKFADECTL (Settings: Lock and fade with the fade value 0 to 90, which sets LAYLOCKFADECTL, or Off with the paper space viewport choice), unlocking the isolated layers and making the first one current when the current layer is not among them; LAYUNISO puts back what the last LAYISO changed, keeping changes made since. The restore point lasts while the drawing is open. Vpfreeze acts once a layout viewport can be made current, MSPACE, M6-02) |
+| LAYOFF / LAYON / LAYFRZ / LAYTHW / LAYLCK / LAYULK | — | 2 | | ~ (#501, M5-06 part 1: LAYOFF and LAYFRZ take the layer of each object picked until Enter, with Undo and Settings' paper space viewport choice; the current layer is turned off after a Yes and never frozen; LAYON and LAYTHW turn on and thaw every layer; LAYLCK and LAYULK lock and unlock the layer of one object picked. Each is one undo step. Picks of objects nested in blocks and xrefs (Settings' Block selection) wait for part 2) |
+| LAYMCUR / LAYMCH / LAYCUR | — | 2 | | ~ (#501, M5-06 part 1: LAYMCUR makes the layer of the object picked current; LAYCUR moves the objects selected to the current layer, LAYMCH to the layer of an object picked or, with Name, of a layer typed (the Change to Layer dialog waits for part 2); objects on locked layers are left alone) |
+| LAYWALK / LAYERP / LAYDEL / LAYMRG | — | 2 | | |
 | LAYERSTATE | LAS | 2 | | |
 | LAYVPI / VPLAYER | — | 2 | | |
 | LINETYPE | LT | 2 | dialog + -LINETYPE | |

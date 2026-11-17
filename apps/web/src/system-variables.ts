@@ -129,6 +129,8 @@ const VALUES: Readonly<
   },
   // M4-10 part 3: fields on a grey background, the canvas's (`RenderStyle.showFields`).
   FIELDDISPLAY: { get: (s) => bit(s.fieldDisplay), set: (v) => ({ fieldDisplay: v === 1 }) },
+  // M5-06: locked layers' fading, the canvas's (`RenderStyle.layLockFade`); LAYISO sets it.
+  LAYLOCKFADECTL: { get: (s) => s.layLockFade, set: (layLockFade) => ({ layLockFade }) },
 };
 
 /**

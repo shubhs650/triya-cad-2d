@@ -256,9 +256,21 @@ describe("type-ahead into TEXT's line editor (M4-20)", () => {
 describe('completions', () => {
   const registry = builtinCommands();
   it('offers the command an alias names, then names that begin with the text', () => {
-    // LENGTHEN (M3-02 part 4) and LIST (M3-07 part 2) begin with L too; LI is LIST's alias.
+    // LENGTHEN (M3-02 part 4), LIST (M3-07 part 2) and the layer tool row (M5-06 part 1) begin
+    // with L too; LI is LIST's alias.
     expect(completions(registry, 'l')).toEqual([
       { name: 'LINE', alias: 'L' },
+      { name: 'LAYCUR' },
+      { name: 'LAYFRZ' },
+      { name: 'LAYISO' },
+      { name: 'LAYLCK' },
+      { name: 'LAYMCH' },
+      { name: 'LAYMCUR' },
+      { name: 'LAYOFF' },
+      { name: 'LAYON' },
+      { name: 'LAYTHW' },
+      { name: 'LAYULK' },
+      { name: 'LAYUNISO' },
       { name: 'LENGTHEN' },
       { name: 'LIST' },
     ]);
