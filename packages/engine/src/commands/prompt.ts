@@ -27,7 +27,7 @@ import type { SpellAction, SpellRequest, SpellSettings } from './modify/spell';
 import type { HatchDialogAnswer, HatchDialogRequest } from './draw/hatch-dialog';
 import type { FieldDialogRequest } from './draw/field';
 import type { FieldSpec } from '../edit/field-codes';
-import { FIELD_INSERT } from '../edit/fields';
+import { FIELD_EDIT, FIELD_INSERT } from '../edit/fields';
 import type { ToleranceRequest } from './draw/tolerance';
 import type { GdtFrame } from '../edit/tolerance-frame';
 import {
@@ -1066,8 +1066,9 @@ export function formatAnswer(answer: PromptAnswer, units: DrawingUnits = DECIMAL
     case 'keyword':
       return answer.keyword;
     case 'string':
-      // Insert Field's place in the MTEXT editor's text is not echoed (M4-10 part 2).
-      return answer.value.split(`%<${FIELD_INSERT}>%`).join('');
+      // Insert Field's place in the editors' text is not echoed (M4-10 part 2), nor Edit
+      // Field's mark (part 4).
+      return answer.value.split(`%<${FIELD_INSERT}>%`).join('').split(FIELD_EDIT).join('');
     case 'selection':
       return `${answer.ids.length} found`;
     case 'dialog':

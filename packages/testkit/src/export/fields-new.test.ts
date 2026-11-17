@@ -4,6 +4,7 @@
 // save is AC1032 DXF; reopened, every text has the fields it was saved with (codes, objects,
 // values), each in its own FIELD objects under its extension dictionary's ACAD_FIELD, listed in
 // the drawing's FIELDLIST when it has one, and a text whose fields are gone has none left.
+// M4-10 part 4: a TEXT line placed with a field saves its FIELD tree too.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -136,6 +137,28 @@ describe('fields made in Triya save as DXF and read back', () => {
     // Above every handle the engine handed out, under $HANDSEED.
     const seed = doc.header!.handleSeed;
     for (const h of handles) expect(h).toBeLessThan(seed);
+  });
+
+  it.each([UNCOMMON, CIRCLES])('a TEXT placed with a field in %s gets its tree', async (path) => {
+    const model = modelOf(bytesOf(path));
+    const bus = session(model);
+    await bus.script(['TEXT', '500,420', '2.5', '0']);
+    await bus.answer({ kind: 'string', value: 'FILE %<\\AcVar Filename \\f "%tc1%fn2">%' });
+    await bus.answer({ kind: 'enter' });
+    expect(bus.command).toBeUndefined();
+    const text = [...model.entities()].at(-1)!;
+    expect(text.geom.kind).toBe('TEXT');
+    const before = fields(model);
+    expect(before[text.handle]).toEqual({
+      text: 'FILE PLAN',
+      code: 'FILE %<\\AcVar Filename \\f "%tc1%fn2">%',
+      values: ['PLAN'],
+    });
+    const doc = readCadDocument(save(path, model));
+    expect(fields(DocumentModel.create(documentInit(doc)))).toEqual(before);
+    const root = rootOf(doc, text.handle)!;
+    expect(root.evaluatorId).toBe('_text');
+    expect(tree(root)).toHaveLength(2);
   });
 
   it('gives a copy of a text with fields fields of its own', async () => {

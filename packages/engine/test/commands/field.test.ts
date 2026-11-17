@@ -299,6 +299,13 @@ describe('Insert Field in the MTEXT editor', () => {
     await s.bus.script(['MTEXT', '0,0', '60,-20']);
     await s.bus.answer({ kind: 'string', value: `A %<${FIELD_INSERT}>%`, editor: true });
     expect(log.at(-1)).toBe('Enter text: A');
+    await s.bus.cancel();
+    await s.bus.answer({
+      kind: 'string',
+      value: `A %<${FIELD_EDIT}\\AcVar Date>%`,
+      editor: true,
+    });
+    expect(log.at(-1)).toBe('Enter text: A %<\\AcVar Date>%');
   });
 
   it('leaves the text as it was when the dialog is cancelled', async () => {
