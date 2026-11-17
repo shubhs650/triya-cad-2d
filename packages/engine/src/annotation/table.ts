@@ -44,6 +44,7 @@ import type {
   TableCell,
   TableCellBorder,
   TableCellStyle,
+  TableCellStyleName,
   TableGeometry,
   TableStyleRecord,
   MTextGeometry,
@@ -109,8 +110,8 @@ export function tableCellShown(c: TableCell): string {
   });
 }
 
-/** The kind of row a table row is, by its table style. */
-export type TableRowType = 'title' | 'header' | 'data';
+/** The cell style a table row or cell is drawn with: one of every table style's three. */
+export type TableRowType = TableCellStyleName;
 
 /** A part of a table's block; `defpoint` marks the zero-length line on layer Defpoints. */
 export type TablePart = AnnotationPart & { readonly defpoint?: true };
@@ -145,6 +146,64 @@ export function tableRowTypes(
   if (!style?.suppressTitle) first.push('title');
   if (!style?.suppressHeader) first.push('header');
   return Array.from({ length: rows }, (_, i) => first[i] ?? 'data');
+}
+
+/**
+ * Each row's cell style (M4-16 part 5): the table's own (`rowStyles`), else by its place in the
+ * table style (`tableRowTypes`).
+ */
+export function tableRowStyles(
+  g: Pick<TableGeometry, 'rowHeights' | 'rowStyles'>,
+  style: Pick<TableStyleRecord, 'suppressTitle' | 'suppressHeader'> | undefined,
+): TableRowType[] {
+  const rows = g.rowHeights.length;
+  return g.rowStyles?.length === rows ? [...g.rowStyles] : tableRowTypes(style, rows);
+}
+
+/** The cell style each cell is drawn with: its own (`TableCell.cellStyle`), else its row's. */
+export function tableCellStyleNames(
+  g: Pick<TableGeometry, 'rowHeights' | 'rowStyles' | 'cells'>,
+  style: Pick<TableStyleRecord, 'suppressTitle' | 'suppressHeader'> | undefined,
+): TableRowType[][] {
+  const rows = tableRowStyles(g, style);
+  return g.cells.map((row, i) => row.map((c) => c.cellStyle ?? rows[i] ?? 'data'));
+}
+
+/** The cell style cell (`i`, `j`) is drawn with in `style`. */
+export function tableCellStyle(
+  g: Pick<TableGeometry, 'rowHeights' | 'rowStyles' | 'cells'>,
+  style: TableStyleRecord | undefined,
+  i: number,
+  j: number,
+): TableCellStyle | undefined {
+  const own = g.cells[i]?.[j]?.cellStyle;
+  return rowCellStyle(style, own ?? tableRowStyles(g, style)[i] ?? 'data');
+}
+
+/**
+ * `g` with its rows on cell styles `types`: stated as `rowStyles` unless they are the rows the
+ * table style gives by their place, and each cell's own cell style dropped where it is its row's.
+ */
+export function withRowStyles(
+  g: TableGeometry,
+  style: Pick<TableStyleRecord, 'suppressTitle' | 'suppressHeader'> | undefined,
+  types: readonly TableRowType[],
+): TableGeometry {
+  const { rowStyles: _, ...rest } = g;
+  const placed = tableRowTypes(style, types.length);
+  const cells = g.cells.map((row, i) =>
+    row.map((c) => {
+      if (c.cellStyle === undefined || c.cellStyle !== types[i]) return c;
+      const { cellStyle: _own, ...kept } = c;
+      return kept;
+    }),
+  );
+  const changed = cells.some((row, i) => row.some((c, j) => c !== g.cells[i]![j]));
+  return {
+    ...rest,
+    ...(changed ? { cells } : {}),
+    ...(types.every((t, i) => t === placed[i]) ? {} : { rowStyles: [...types] }),
+  };
 }
 
 /** The cell style rows of `type` take in `style`. */
@@ -225,7 +284,8 @@ interface CellRange {
 interface RowLayout {
   readonly rows: number;
   readonly columns: number;
-  readonly types: TableRowType[];
+  /** The cell style each cell is drawn with (`tableCellStyleNames`). */
+  readonly types: TableRowType[][];
   readonly heads: [number, number][][];
   readonly xs: number[];
   readonly yTop: (i: number) => number;
@@ -244,7 +304,7 @@ function rowLayout(g: TableGeometry, style: TableStyleRecord | undefined): RowLa
   return {
     rows,
     columns: g.columnWidths.length,
-    types: tableRowTypes(style, rows),
+    types: tableCellStyleNames(g, style),
     heads: tableRangeHeads(g),
     xs: edges(g.columnWidths),
     yTop: (i) => (up ? sums[i + 1]! : -sums[i]!),
@@ -279,7 +339,7 @@ function contentFrame(
   l: RowLayout,
   r: CellRange,
 ) {
-  const s = rowCellStyle(style, l.types[r.i]!);
+  const s = rowCellStyle(style, l.types[r.i]![r.j]!);
   const f = r.c.format;
   const alignment = f?.alignment ?? s?.alignment ?? 1;
   const ax = ((alignment - 1) % 3) - 1; // -1 left, 0 centre, 1 right
@@ -423,7 +483,7 @@ export function tableParts(
   if (rows === 0 || columns === 0) return [];
   // The n-th row boundary from the top: above visual row n, or below the last one.
   const boundaryY = (n: number) => (n < rows ? yTop(visual[n]!) : yBottom(visual[rows - 1]!));
-  const cellStyle = (i: number) => rowCellStyle(style, types[i]!);
+  const cellStyle = (i: number, j: number) => rowCellStyle(style, types[i]![j]!);
 
   const parts: TablePart[] = [];
   const ranges: CellRange[] = [];
@@ -435,7 +495,7 @@ export function tableParts(
 
   // Fills.
   for (const r of ranges) {
-    const s = cellStyle(r.i);
+    const s = cellStyle(r.i, r.j);
     const fill =
       r.c.format?.background !== undefined ? r.c.format.background : s?.fillOn ? s.fillColor : null;
     if (!fill) continue;
@@ -487,9 +547,15 @@ export function tableParts(
     });
   }
 
-  // The grid.
-  const groupFirst = (i: number) => i === 0 || types[i - 1] !== types[i];
-  const groupLast = (i: number) => i === rows - 1 || types[i + 1] !== types[i];
+  // The grid. A cell's edge is its cell style's outside border where the cell beside it across
+  // that edge is on another cell style (or there is none): the first and last rows of a run of
+  // rows of one style, as AutoCAD draws a title or header row. A cell of a style of its own is
+  // taken the same way across columns; AutoCAD's Help does not say, and a drafter giving cells a
+  // style expects them framed by it.
+  const differs = (i: number, j: number, k: number, l: number) =>
+    types[k]?.[l] === undefined || types[k]![l] !== types[i]![j];
+  const groupFirst = (i: number, j: number) => differs(i, j, i - 1, j);
+  const groupLast = (i: number, j: number) => differs(i, j, i + 1, j);
   type Side = 'top' | 'bottom' | 'left' | 'right';
   /**
    * The edge `side` of cell (i, j). A cell covered by a merged range keeps its own borders, which
@@ -499,21 +565,21 @@ export function tableParts(
     const o = g.cells[i]![j]!.format?.borders?.[side];
     const index =
       side === 'top'
-        ? groupFirst(i)
+        ? groupFirst(i, j)
           ? TOP
           : INSIDE_H
         : side === 'bottom'
-          ? groupLast(i)
+          ? groupLast(i, j)
             ? BOTTOM
             : INSIDE_H
           : side === 'left'
-            ? j === 0
+            ? differs(i, j, i, j - 1)
               ? LEFT
               : INSIDE_V
-            : j === columns - 1
+            : differs(i, j, i, j + 1)
               ? RIGHT
               : INSIDE_V;
-    const edge = edgeOf(cellStyle(i)?.borders[index], o);
+    const edge = edgeOf(cellStyle(i, j)?.borders[index], o);
     return { ...(edge && { edge }), overridden: o !== undefined };
   };
   /** The edge between `a` (above or left, if any) and `b` (below or right, if any). */

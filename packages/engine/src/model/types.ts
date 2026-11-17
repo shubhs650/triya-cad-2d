@@ -921,6 +921,13 @@ export interface ViewportGeometry {
 }
 
 /** One cell of an ACAD_TABLE, in row-major order. */
+/**
+ * One of the cell styles every table style holds (AutoCAD 2024 Help, "Table Style Dialog Box":
+ * Title, Header and Data "are always contained within any table style"), which a table's rows
+ * and cells are drawn with.
+ */
+export type TableCellStyleName = 'title' | 'header' | 'data';
+
 export interface TableCell {
   /** DXF 171: 1 text, 2 block. */
   readonly type: 'text' | 'block';
@@ -962,6 +969,12 @@ export interface TableCell {
   readonly value?: TableCellValue;
   /** What the cell overrides of its table style, its row's and column's folded in; absent when nothing. */
   readonly format?: TableCellFormat;
+  /**
+   * The cell style of the cell's own (M4-16 part 5: the Table Cell menu's Cell Style), when it
+   * is not its row's (`TableGeometry.rowStyles`). DXF states it only in the table's AutoCAD 2008
+   * data (TABLECONTENT, a cell's 90), DWG from R2010 in the table.
+   */
+  readonly cellStyle?: TableCellStyleName;
 }
 
 /**
@@ -1075,6 +1088,14 @@ export interface TableGeometry extends PlanarProps {
   readonly cells: readonly (readonly TableCell[])[];
   /** Table-wide overrides of the table style; absent when none. */
   readonly overrides?: TableOverrides;
+  /**
+   * Each row's cell style (M4-16 part 5), when the rows are not the title and header rows the
+   * table style gives by their place, then data rows (`tableRowTypes`): a title or header row
+   * inserted, deleted or set another style, or Insert Table's First and Second row cell style.
+   * DXF states it only in the table's AutoCAD 2008 data (TABLECONTENT, a row's 90), DWG from
+   * R2010 in the table. Absent when the rows are by their place.
+   */
+  readonly rowStyles?: readonly TableCellStyleName[];
   /**
    * Where each row came from once rows are inserted or deleted (the table engine's Insert Rows
    * and Delete Rows, M4-05): the index of the row in the table as the file states it, or null

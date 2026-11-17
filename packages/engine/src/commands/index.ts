@@ -59,7 +59,6 @@ export {
   tableStyleSettings,
   tablestyleCommand,
   usedTableStyles,
-  type TableCellStyleName,
   type TableCellStyleSettings,
   type TableStyleAction,
   type TableStyleEditing,

@@ -14,7 +14,7 @@
 // measures text (the cell editor fits rows as text is typed).
 import type { Vec2 } from '../geom/types';
 import type { EntityGeometry, TableGeometry, TableStyleRecord } from '../model/types';
-import { rowCellStyle, tableCellBox, tableParts, tableRowTypes } from '../annotation/table';
+import { rowCellStyle, tableCellBox, tableCellStyleNames, tableParts } from '../annotation/table';
 import { tableAxes } from '../spatial/entity-bounds';
 import { tableToPlan } from './table';
 
@@ -94,13 +94,13 @@ export function tableCellGrips(
 
 /** The lowest each row may be: one line of its tallest text and its margins. */
 function rowMinimums(g: TableGeometry, style: TableGripStyle): number[] {
-  const types = tableRowTypes(style, g.cells.length);
+  const types = tableCellStyleNames(g, style);
   const vm = g.overrides?.margins?.top ?? style?.verticalMargin ?? 0;
   return g.cells.map((row, i) => {
     let need = 0;
-    for (const c of row) {
+    for (const [j, c] of row.entries()) {
       if (c.merged || c.rowSpan > 1) continue;
-      const th = c.format?.textHeight ?? rowCellStyle(style, types[i]!)?.textHeight ?? 0.18;
+      const th = c.format?.textHeight ?? rowCellStyle(style, types[i]![j]!)?.textHeight ?? 0.18;
       need = Math.max(need, th + 2 * (c.format?.margins?.top ?? vm));
     }
     return need;

@@ -107,7 +107,7 @@ const at = (i: number, j: number) => ({
 });
 
 const OPTIONS =
-  'Enter a table cell option [Text/Paste/BLock/BAckground/ALignment/BOrders/Height/DataFormat/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  'Enter a table cell option [Text/Paste/BLock/BAckground/ALignment/BOrders/Height/DataFormat/Match/RemoveOverrides/CellStyle/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
 describe('a table cell selected at Command:', () => {
   it('is a click inside it, shown by its outline, with the Table Cell options', async () => {
@@ -141,6 +141,7 @@ describe('a table cell selected at Command:', () => {
       'Data Format...',
       'Match Cell',
       'Remove All Property Overrides (off)',
+      'Cell Style',
       'Insert Rows Above',
       'Insert Rows Below',
       'Delete Rows',
@@ -237,11 +238,6 @@ describe('a table cell selected at Command:', () => {
     const s = setup();
     await nozzles(s);
     await s.bus.pick(at(1, 0));
-    await s.bus.submit('A');
-    expect(s.messages).toContain(
-      'Rows can be inserted above and deleted only among the data rows.',
-    );
-    expect(s.bus.promptText).toBe(OPTIONS);
     await s.bus.submit('MA');
     expect(s.messages).toContain('Select more than one cell to merge.');
     await s.bus.submit('U');
@@ -335,6 +331,65 @@ const blockLines = (s: ReturnType<typeof setup>) =>
       const c = e.color.kind === 'aci' ? e.color.index : e.color.kind;
       return `${g.start.x},${g.start.y} ${g.end.x},${g.end.y} ${c} ${e.lineweight}`;
     });
+
+describe('title and header rows, and Cell Style (M4-16 part 5)', () => {
+  it('inserts a row above the title row as a title row, and deletes the header row', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(0, 0));
+    await s.bus.submit('A');
+    expect(s.bus.promptText).toBe('Command:');
+    expect(s.texts().map((r) => r[0])).toEqual(['', 'NOZZLES', 'Mark', 'N1', 'N2', 'N3']);
+    expect(s.table().geom.rowStyles).toEqual(['title', 'title', 'header', 'data', 'data', 'data']);
+    // The new title row is as high as the title row and merged across, like it.
+    expect(s.table().geom.rowHeights.slice(0, 2)).toEqual([11, 11]);
+    await s.bus.submit('U');
+    expect(s.table().geom.rowStyles).toBeUndefined();
+    // The header row (now row 1 again) deleted: the data rows stay data rows.
+    await s.bus.pick(at(1, 0));
+    await s.bus.submit('DR');
+    expect(s.texts().map((r) => r[0])).toEqual(['NOZZLES', 'N1', 'N2', 'N3']);
+    expect(s.table().geom.rowStyles).toEqual(['title', 'data', 'data', 'data']);
+  });
+
+  it('puts a data row on the Title cell style, a cell on Header of its own, and back By Row', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.pick(at(2, 1), { shift: true });
+    await s.bus.submit('CS');
+    expect(s.bus.promptText).toBe('Enter cell style [Title/Header/Data/ByRow] <ByRow>:');
+    expect(s.prompt()!.shortcutMenu!.map((m) => m.label)).toEqual([
+      'Title',
+      'Header',
+      'Data',
+      'By Row',
+    ]);
+    await s.bus.submit('T');
+    expect(s.bus.promptText).toBe('Command:');
+    expect(s.table().geom.rowStyles).toEqual(['title', 'header', 'title', 'data', 'data']);
+    // One cell on Header of its own, then back to its row's.
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('CS');
+    await s.bus.submit('H');
+    expect(s.table().geom.cells[3]![1]!.cellStyle).toBe('header');
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('CS');
+    expect(s.bus.promptText).toBe('Enter cell style [Title/Header/Data/ByRow] <Header>:');
+    await s.bus.submit('');
+    expect(s.table().geom.cells[3]![1]!.cellStyle).toBe('header');
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('CS');
+    await s.bus.submit('BR');
+    expect(s.table().geom.cells[3]![1]!.cellStyle).toBeUndefined();
+    // Esc at the prompt changes nothing.
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('CS');
+    await s.bus.cancel();
+    expect(s.bus.promptText).toBe('Command:');
+    expect(s.table().geom.cells[3]![1]!.cellStyle).toBeUndefined();
+  });
+});
 
 describe('the Table Cell menu’s formatting (M4-05 part 4)', () => {
   it('aligns the cells selected, each a format of its own, in one undo step', async () => {

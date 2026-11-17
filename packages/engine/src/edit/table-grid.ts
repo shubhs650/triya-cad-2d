@@ -8,8 +8,9 @@
 // needs to move what each row and cell holds beyond what Triya maps (DEC-046). Columns are done
 // as rows of the table turned on its side (`turned`), so both follow the same rules:
 // - as many are inserted as the selection holds, each as high (wide) as the row (column) the
-//   selection starts or ends with, its cells taking that row's cell formats (AutoCAD's Help:
-//   the new row takes the formatting of the row it is inserted next to);
+//   selection starts or ends with, its cells taking that row's cell formats and the row and its
+//   cells their cell styles (AutoCAD's Help: the new row takes the formatting of the row it is
+//   inserted next to), so a row inserted beside a title or header row is one too (M4-16 part 5);
 // - a merged cell an insertion falls inside grows across the new rows; one spanning the whole
 //   table (the title across every column) grows even when the insertion is at its edge, as a
 //   drafter expects a title to stay across the table (AutoCAD's Help does not say);
@@ -17,8 +18,14 @@
 // Merging keeps the text of the range's first cell, the covered cells holding nothing: AutoCAD's
 // Help does not say what becomes of the others' contents; the common expectation (as in a
 // spreadsheet) is that the top-left one stays.
-import type { TableCell, TableCellFormat, TableGeometry, TableStyleRecord } from '../model/types';
-import { tableRangeHeads, tableRowTypes } from '../annotation/table';
+import type {
+  TableCell,
+  TableCellFormat,
+  TableCellStyleName,
+  TableGeometry,
+  TableStyleRecord,
+} from '../model/types';
+import { tableRangeHeads, tableRowStyles, withRowStyles } from '../annotation/table';
 import { withCellOverridesRemoved } from './table-format';
 import { mtextLiteral } from './clipboard-data';
 import type { SheetCells } from './spreadsheet';
@@ -50,6 +57,7 @@ export const TABLE_CELL_OPTIONS = [
   'DataFormat',
   'Match',
   'RemoveOverrides',
+  'CellStyle',
   'Above',
   'Below',
   'DeleteRows',
@@ -78,20 +86,28 @@ const sameFormat = (a: TableCellFormat | undefined, b: TableCellFormat | undefin
   canonical(a ?? {}) === canonical(b ?? {});
 type Origins = readonly (number | null)[] | undefined;
 
-const empty = (format: TableCell['format']): TableCell => ({
+/** An empty cell with `c`'s format and cell style. */
+const empty = (c: Pick<TableCell, 'format' | 'cellStyle'>): TableCell => ({
   type: 'text',
   text: '',
   rowSpan: 1,
   columnSpan: 1,
   merged: false,
   rotation: 0,
-  ...(format && { format }),
+  ...(c.format && { format: c.format }),
+  ...(c.cellStyle && { cellStyle: c.cellStyle }),
 });
 
-/** Cell `c` covered by a merged cell: its format kept, its contents gone. */
+/** Cell `c` covered by a merged cell: its format and cell style kept, its contents gone. */
 function cover(c: TableCell): TableCell {
-  return { ...empty(c.format), rotation: c.rotation, merged: true };
+  return { ...empty(c), rotation: c.rotation, merged: true };
 }
+
+/**
+ * What the rows' cell styles are worked out from: the table style's suppressed rows; null for a
+ * table turned on its side (a column edit), whose rows' cell styles are left alone.
+ */
+type RowStyleSource = Pick<TableStyleRecord, 'suppressTitle' | 'suppressHeader'> | undefined | null;
 
 /** `g` with its rows, columns and their origins as given, origins left out when undefined. */
 function regrid(
@@ -113,7 +129,10 @@ function regrid(
   };
 }
 
-/** Table `g` turned on its side: its columns as rows, each cell's spans swapped. */
+/**
+ * Table `g` turned on its side: its columns as rows, each cell's spans swapped. The rows' cell
+ * styles are left out, as they would be the columns'; `withColumns` puts them back.
+ */
 function turned(g: TableGeometry): TableGeometry {
   const cells = g.columnWidths.map((_, j) =>
     g.cells.map((row) => {
@@ -173,16 +192,26 @@ export function tableCellRange(
   return r;
 }
 
-/** `count` rows inserted before row `at`, as high as row `like` and with its cell formats. */
+/**
+ * `count` rows inserted before row `at`, as high as row `like` and with its cell formats and
+ * cell styles (`style`, the table style, places the rows that state none).
+ */
 export function withRowsInserted(
   g: TableGeometry,
   at: number,
   count: number,
   like: number,
+  style?: RowStyleSource,
 ): TableGeometry {
   const n = g.cells.length;
   const likeRow = g.cells[like]!;
-  const fresh = () => likeRow.map((c) => empty(c.format));
+  const fresh = () => likeRow.map(empty);
+  const types = tableRowStyles(g, style ?? undefined);
+  const rowStyles = [
+    ...types.slice(0, at),
+    ...Array.from({ length: count }, () => types[like]!),
+    ...types.slice(at),
+  ];
   const cells: Cells = [
     ...g.cells.slice(0, at).map((r) => [...r]),
     ...Array.from({ length: count }, fresh),
@@ -201,18 +230,37 @@ export function withRowsInserted(
   }
   const h = g.rowHeights;
   const o = origins(g.rowOrigins, n);
-  return regrid(
-    g,
-    cells,
-    [...h.slice(0, at), ...Array.from({ length: count }, () => h[like]!), ...h.slice(at)],
-    g.columnWidths,
-    [...o.slice(0, at), ...Array.from({ length: count }, () => null), ...o.slice(at)],
-    g.columnOrigins,
+  return restyled(
+    regrid(
+      g,
+      cells,
+      [...h.slice(0, at), ...Array.from({ length: count }, () => h[like]!), ...h.slice(at)],
+      g.columnWidths,
+      [...o.slice(0, at), ...Array.from({ length: count }, () => null), ...o.slice(at)],
+      g.columnOrigins,
+    ),
+    style,
+    rowStyles,
   );
 }
 
-/** Rows `from`–`to` deleted. */
-export function withRowsDeleted(g: TableGeometry, from: number, to: number): TableGeometry {
+/** `g` on row cell styles `types`, unless it is turned on its side (`style` null). */
+function restyled(
+  g: TableGeometry,
+  style: RowStyleSource,
+  types: readonly TableCellStyleName[],
+): TableGeometry {
+  return style === null ? g : withRowStyles(g, style, types);
+}
+
+/** Rows `from`–`to` deleted, the others keeping their cell styles (`style` as for insertion). */
+export function withRowsDeleted(
+  g: TableGeometry,
+  from: number,
+  to: number,
+  style?: RowStyleSource,
+): TableGeometry {
+  const types = tableRowStyles(g, style ?? undefined);
   const cells: Cells = g.cells.map((r) => [...r]);
   for (const { i, j, c } of mergedHeads(g)) {
     const last = i + c.rowSpan - 1;
@@ -221,14 +269,25 @@ export function withRowsDeleted(g: TableGeometry, from: number, to: number): Tab
     cells[i < from ? i : to + 1]![j] = { ...c, rowSpan: c.rowSpan - gone };
   }
   const keep = (_: unknown, k: number) => k < from || k > to;
-  return regrid(
-    g,
-    cells.filter(keep),
-    g.rowHeights.filter(keep),
-    g.columnWidths,
-    origins(g.rowOrigins, g.cells.length).filter(keep),
-    g.columnOrigins,
+  return restyled(
+    regrid(
+      g,
+      cells.filter(keep),
+      g.rowHeights.filter(keep),
+      g.columnWidths,
+      origins(g.rowOrigins, g.cells.length).filter(keep),
+      g.columnOrigins,
+    ),
+    style,
+    types.filter(keep),
   );
+}
+
+/** `edit` done on `g` turned on its side, the rows' cell styles kept. */
+function withColumns(g: TableGeometry, edit: (t: TableGeometry) => TableGeometry): TableGeometry {
+  const { rowStyles, ...rest } = g;
+  const { rowStyles: _, ...out } = turned(edit(turned(rest)));
+  return rowStyles ? { ...out, rowStyles } : out;
 }
 
 /** `count` columns inserted before column `at`, as wide as column `like`, with its formats. */
@@ -238,12 +297,12 @@ export function withColumnsInserted(
   count: number,
   like: number,
 ): TableGeometry {
-  return turned(withRowsInserted(turned(g), at, count, like));
+  return withColumns(g, (t) => withRowsInserted(t, at, count, like, null));
 }
 
 /** Columns `from`–`to` deleted. */
 export function withColumnsDeleted(g: TableGeometry, from: number, to: number): TableGeometry {
-  return turned(withRowsDeleted(turned(g), from, to));
+  return withColumns(g, (t) => withRowsDeleted(t, from, to, null));
 }
 
 /** Every merged cell heading in range `r` made single cells again, their cells empty. */
@@ -288,10 +347,9 @@ export function withCellsMerged(
 
 /**
  * The Table Cell menu's options that apply to range `r`, in its order. Rows are inserted and
- * deleted among the data rows only: Triya draws a table's first rows as its title and header
- * by their place (`tableRowTypes`), so a row inserted above them, or one of them deleted, would
- * change which rows are drawn as what. The last row or column is not deleted. Merging needs more
- * than one cell; Unmerge, a merged cell.
+ * deleted anywhere, title and header rows too, as each row keeps its cell style (M4-16 part 5;
+ * until then only among the data rows). The last row or column is not deleted. Merging needs
+ * more than one cell; Unmerge, a merged cell.
  */
 export function tableCellOptions(
   g: TableGeometry,
@@ -300,7 +358,6 @@ export function tableCellOptions(
 ): TableCellOption[] {
   const rows = g.cells.length;
   const columns = g.columnWidths.length;
-  const first = tableRowTypes(style, rows).filter((t) => t !== 'data').length;
   const heads = new Set<string>();
   const all = tableRangeHeads(g);
   for (let i = r.r0; i <= r.r1; i++) {
@@ -323,9 +380,10 @@ export function tableCellOptions(
     RemoveOverrides: withCellOverridesRemoved(g, style, r).cells.some((row, i) =>
       row.some((c, j) => c !== g.cells[i]![j] && !sameFormat(c.format, g.cells[i]![j]!.format)),
     ),
-    Above: r.r0 >= first,
-    Below: r.r1 + 1 >= first,
-    DeleteRows: r.r0 >= first && r.r1 - r.r0 + 1 < rows,
+    CellStyle: true,
+    Above: true,
+    Below: true,
+    DeleteRows: r.r1 - r.r0 + 1 < rows,
     Left: true,
     Right: true,
     DeleteColumns: r.c1 - r.c0 + 1 < columns,
@@ -350,13 +408,14 @@ export function withCellsPasted(
   g: TableGeometry,
   at: readonly [number, number],
   cells: SheetCells,
+  style?: TableStyleRecord,
 ): { geom: TableGeometry; range: TableCellRange } {
   const [r0, c0] = at;
   const r1 = r0 + cells.length - 1;
   const c1 = c0 + Math.max(...cells.map((r) => r.length)) - 1;
   let geom = g;
   const rows = geom.cells.length;
-  if (r1 >= rows) geom = withRowsInserted(geom, rows, r1 - rows + 1, rows - 1);
+  if (r1 >= rows) geom = withRowsInserted(geom, rows, r1 - rows + 1, rows - 1, style);
   const columns = geom.columnWidths.length;
   if (c1 >= columns) geom = withColumnsInserted(geom, columns, c1 - columns + 1, columns - 1);
   const out: Cells = geom.cells.map((row) => [...row]);

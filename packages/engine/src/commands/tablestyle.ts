@@ -46,13 +46,14 @@ import type {
   TableCellStyle,
   TableGeometry,
   TableStyleRecord,
+  TableCellStyleName,
 } from '../model/types';
 import type { Prompt, PromptAnswer } from './prompt';
 import {
   tableCellText,
   tableParts,
   tableRangeHeads,
-  tableRowTypes,
+  tableRowStyles,
   type TablePart,
 } from '../annotation/table';
 import {
@@ -71,8 +72,11 @@ import { linesOf } from './draw/table-cells';
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
 /** The cell styles a table style has: the rows of the file's record. */
-export const TABLE_CELL_STYLES = ['data', 'header', 'title'] as const;
-export type TableCellStyleName = (typeof TABLE_CELL_STYLES)[number];
+export const TABLE_CELL_STYLES = [
+  'data',
+  'header',
+  'title',
+] as const satisfies readonly TableCellStyleName[];
 
 /** Where each cell style sits in the record's `cellStyles` (the file's order data, title, header). */
 const STYLE_INDEX: Readonly<Record<TableCellStyleName, number>> = { data: 0, title: 1, header: 2 };
@@ -693,7 +697,7 @@ export function tableStartSettings(
 ): TableStyleSettings {
   const style = tableStyleOf(model, g);
   const base = style ? tableStyleSettings(model, style) : was;
-  const types = tableRowTypes(style, g.cells.length);
+  const types = tableRowStyles(g, style);
   const heads = tableRangeHeads(g);
   const margins = g.overrides?.margins;
   const cell = (n: TableCellStyleName): TableCellStyleSettings => {
