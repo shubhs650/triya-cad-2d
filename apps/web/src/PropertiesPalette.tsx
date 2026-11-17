@@ -138,7 +138,9 @@ export function PropertySections({
           books={picking.colorDialog ? [] : (sheet.colorBooks ?? [])}
           trueColors={!sheet.current && picking.colorDialog !== 'index'}
           {...(picking.colorDialog === 'index' && {
-            indexOnly: 'A dimension’s colors take an index color only.',
+            indexOnly: sheet.types.every((t) => t.type === 'TOLERANCE')
+              ? 'A feature control frame’s colors take an index color only.'
+              : 'A dimension’s colors take an index color only.',
           })}
           onOk={(c) => {
             setPicking(undefined);

@@ -149,4 +149,34 @@ describe('saveInWorker', () => {
     expect(stages).toEqual(['write', 'done']);
     expect(w.terminate).toHaveBeenCalledTimes(1);
   });
+
+  // M4-22: the worker's start (loading the writer) took longer than the write; a save starts it
+  // while the engine still works out the saved file's own changes.
+  it('starts the worker while the changes are still being worked out', async () => {
+    const bytes = sampleDwg(ACadVersion.AC1032);
+    const { changes } = await session(bytes, ['LINE', '0,0', '10,10', '']);
+    let workedOut!: (c: readonly ChangeSet[]) => void;
+    const w = fakeWorker();
+    const createWorker = vi.fn(() => w);
+    const saving = saveInWorker(bytes, {
+      createWorker,
+      changes: new Promise<readonly ChangeSet[]>((r) => (workedOut = r)),
+    });
+    expect(createWorker).toHaveBeenCalledTimes(1);
+    workedOut(changes);
+    const saved = await saving;
+    expect(isDxf(saved)).toBe(true);
+    expect(w.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('terminates the worker when the changes cannot be worked out', async () => {
+    const w = fakeWorker();
+    await expect(
+      saveInWorker(sampleDwg(ACadVersion.AC1032), {
+        createWorker: () => w,
+        changes: Promise.reject(new Error('the engine stopped')),
+      }),
+    ).rejects.toThrow('the engine stopped');
+    expect(w.terminate).toHaveBeenCalledTimes(1);
+  });
 });
