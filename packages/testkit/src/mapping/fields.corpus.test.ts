@@ -60,7 +60,13 @@ describe('FIELD mapping on the public corpus', () => {
       ['5FC', 'ATTRIB', '21/04/2020', '%<\\AcVar Date \\f "dd/MM/yyyy">%'],
     ]);
     const date = found[0]!.field.children[0]!;
-    expect(date).toMatchObject({ evaluator: 'AcVar', value: '21/04/2020', objects: [] });
+    // On demand only (DXF 91 = 32): FIELDEVAL leaves it for UPDATEFIELD (M4-10 part 3).
+    expect(date).toMatchObject({
+      evaluator: 'AcVar',
+      value: '21/04/2020',
+      objects: [],
+      options: 32,
+    });
     // The date's own value: 21 April 2020, 16:45:39 local time as the FIELD's SYSTEMTIME.
     const t = new Date(date.time!);
     expect([t.getFullYear(), t.getMonth() + 1, t.getDate(), t.getHours()]).toEqual([
@@ -68,6 +74,8 @@ describe('FIELD mapping on the public corpus', () => {
     ]);
     expect(found[0]!.field).toMatchObject({ evaluator: '_text', code: '%<\\_FldIdx 0>%' });
     expect(found[0]!.field.value).toBeUndefined();
+    // The root may be evaluated on every event (63): no options kept.
+    expect(found[0]!.field.options).toBeUndefined();
   });
 
   it("maps the Filename fields of mtext_complex_inline_codes.dxf's MTEXTs", () => {

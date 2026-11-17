@@ -69,6 +69,11 @@ export interface AnnotationPart {
   readonly color?: Color;
   readonly linetype?: LinetypeRef;
   readonly lineweight?: Lineweight;
+  /**
+   * A straight leader line or landing, which DIMBREAK can break (M4-15; AutoCAD 2024 Help,
+   * "About Dimension Breaks": "multileaders (straight leaders only) and leaders (straight only)").
+   */
+  readonly breakable?: true;
 }
 
 /** What drawing an annotation's parts reads from the drawing. */
@@ -409,6 +414,7 @@ export function multiLeaderParts(
         } else {
           out.push({
             ...own.props,
+            breakable: true,
             geom: {
               kind: 'LWPOLYLINE',
               vertices: pts.map((p) => ({ x: p.x, y: p.y, bulge: 0 })),
@@ -420,6 +426,7 @@ export function multiLeaderParts(
       if (dogleg && branch.lines.length > 0) {
         out.push({
           ...line,
+          breakable: true,
           geom: {
             kind: 'LWPOLYLINE',
             vertices: [

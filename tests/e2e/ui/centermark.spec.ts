@@ -1,7 +1,8 @@
-// M4-08 part 1: CENTERMARK and CENTERLINE in the app as a drafter uses them, on an empty part of
-// an ezdxf sample that has the CENTER2 linetype. A circle gets a center mark, two parallel lines a
-// centerline, and the mark follows the circle when it is moved. The commands are unit-tested in
-// packages/engine and the save in testkit (center-marks.test.ts).
+// M4-08: CENTERMARK and CENTERLINE in the app as a drafter uses them, on an empty part of an
+// ezdxf sample that has the CENTER2 linetype. A circle gets a center mark, two parallel lines a
+// centerline, and the mark follows the circle when it is moved; saved and opened again, it still
+// does (part 2, DEC-066). The commands are unit-tested in packages/engine and the save in testkit
+// (center-marks.test.ts).
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import { activeCanvas, expectShown, openWithPicker } from '../app/page';
@@ -123,4 +124,41 @@ test('CENTERMARK and CENTERLINE', async ({ page }) => {
     ]);
   await page.waitForTimeout(300);
   await shot('3-circle-moved.png');
+
+  // Saved (downloaded, as without File System Access) and opened again: the mark's record came
+  // back with it, so moving the circle back takes the mark along.
+  await page.evaluate(() => {
+    delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+  const download = page.waitForEvent('download');
+  await page.keyboard.press('Control+s');
+  const saved = test.info().outputPath('centermarks-saved.dxf');
+  await (await download).saveAs(saved);
+  await openWithPicker(page, saved);
+  await expectShown(page, path.basename(saved));
+  expect(await state(page)).toEqual([]);
+  await off();
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-20, -20), 'Specify opposite corner:');
+  await type(page, p(50, 20), 'Command:');
+  await page.waitForTimeout(300);
+  await shot('4-reopened.png');
+  await type(page, 'MOVE', 'Select objects:');
+  await click(10 * Math.SQRT1_2, 10 * Math.SQRT1_2 - 6);
+  await type(page, '', /^Specify base point/);
+  await type(page, p(0, 0), /^Specify second point/);
+  await type(page, p(0, 6), 'Command:');
+  const followed = () =>
+    page.evaluate(() =>
+      (window as unknown as Dev).triyaDev
+        .changes()
+        .flatMap((cs) => cs.entities?.updated ?? [])
+        .filter((u) => u.after.geom.kind === 'INSERT')
+        .map((u) => (u.after.geom as { position: { x: number; y: number } }).position),
+    );
+  await expect
+    .poll(async () => (await followed()).map(({ x, y }) => [x - O, y - O]))
+    .toEqual([[0, 0]]);
+  await page.waitForTimeout(300);
+  await shot('5-reopened-circle-moved.png');
 });

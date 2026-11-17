@@ -80,6 +80,8 @@ export function primitivesBox(prims: readonly RenderPrimitive[]): Box | undefine
       continue;
     }
     if (p.kind === 'infinite') return undefined;
+    // A field's grey background (FIELDDISPLAY) is no part of the text's extents.
+    if (p.kind === 'fill' && p.fieldShade) continue;
     grow(b, p.path);
     if (p.text) grow(b, p.text.greek);
   }

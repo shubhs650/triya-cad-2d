@@ -1,7 +1,7 @@
 // M4-08 part 1: CENTERMARK and CENTERLINE (AutoCAD 2024 Help, "CENTERMARK (Command)",
 // "CENTERLINE (Command)", "CENTEREXE"), associative to the objects they are made on: a mark is an
-// INSERT of an anonymous block of lines with a TRIYA_CENTERMARK record, drawn again when its
-// objects move.
+// INSERT of an anonymous block of lines with a TRIYA_CENTERMARK record in its extension
+// dictionary (part 2, DEC-066), drawn again when its objects move.
 //
 // The drawing adds to the sample (metric, current layer WALLS): 30 a circle r 10 at (50,50),
 // 31 an arc r 5 at (100,50), 32 and 33 parallel lines (0,100)-(20,100) and (20,110)-(0,110)
@@ -37,6 +37,7 @@ import {
   LAYER_0,
   LAYER_WALLS,
   MODEL_SPACE,
+  blockRecord,
   entityInit,
   lineGeom,
   linetype,
@@ -245,8 +246,8 @@ describe('CENTERMARK', () => {
       extensions: [3.5, 3.5, 3.5, 3.5],
       showExtensions: true,
     });
-    expect(r.owner).toBe(mark!.handle);
-    expect(mark!.extDict).toBeUndefined();
+    expect(r.owner).toBe(mark!.extDict);
+    expect(mark!.extDict).toBeDefined();
   });
 
   it('marks arcs and circles until Enter, refusing other objects, in the CENTER2 linetype', async () => {
@@ -364,6 +365,96 @@ describe('CENTERMARK', () => {
     expect(t.record(alone)).toBeUndefined();
     await t.bus.script(['SCALE', '60,50', '', '50,50', '2']);
     expect(t.lines(alone)).toEqual(markLines(50, -50, 10, 3.5));
+  });
+
+  it("keeps its record in the mark's own extension dictionary, a copy in the copy's (M4-08 part 2, DEC-066)", async () => {
+    const s = setup();
+    await s.bus.script(['CENTERMARK', '60,50', '']);
+    const [mark] = s.marks();
+    const r = s.record(mark!)!;
+    expect(mark!.extDict).toBeDefined();
+    expect(r.owner).toBe(mark!.extDict);
+    expect(r.insert).toBe(mark!.handle);
+    await s.bus.script(['COPY', '60,50', '50,50', '', '0,0', '100,0', '']);
+    const copy = s.marks().find((m) => m.handle !== mark!.handle)!;
+    expect(copy.extDict).toBeDefined();
+    expect(copy.extDict).not.toBe(mark!.extDict);
+    expect(s.record(copy)!.owner).toBe(copy.extDict);
+    // Copied alone, a plain block reference: no dictionary.
+    await s.bus.script(['COPY', '50,50', '', '0,0', '0,-100', '']);
+    const alone = s
+      .marks()
+      .find((m) => (m.geom as { position: { y: number } }).position.y === -50)!;
+    expect(alone.extDict).toBeUndefined();
+    // Moved on its own it lets go: the record leaves the dictionary, which stays.
+    await s.bus.script(['MOVE', '50,50', '', '0,0', '0,30']);
+    const moved = s.model.entityByHandle(mark!.handle)!;
+    expect(s.record(moved)).toBeUndefined();
+    expect(moved.extDict).toBe(mark!.extDict);
+  });
+
+  it('follows its circle when the drawing was opened with its record (a reopened save)', async () => {
+    const base = drawing();
+    const model = DocumentModel.create({
+      ...base,
+      tables: {
+        ...base.tables,
+        blockRecords: [...(base.tables?.blockRecords ?? []), blockRecord('50', '*U1')],
+      },
+      blocks: [
+        ...(base.blocks ?? []),
+        { handle: '50', name: '*U1', basePoint: { x: 0, y: 0 }, flags: 1 },
+      ],
+      entities: [
+        ...(base.entities ?? []),
+        entityInit('51', lineGeom(-2, 0, 2, 0), { owner: '50', layer: LAYER_0 }),
+        {
+          ...entityInit('52', {
+            kind: 'INSERT',
+            block: '50',
+            position: { x: 50, y: 50 },
+            scale: { x: 1, y: 1, z: 1 },
+            rotation: 0,
+            attributes: [],
+          }),
+          extDict: '53',
+        },
+      ],
+      objects: [
+        ...(base.objects ?? []),
+        {
+          handle: '54',
+          owner: '53',
+          type: 'TRIYA_CENTERMARK',
+          insert: '52',
+          kind: 'mark',
+          objects: ['30'],
+          crossSize: '0.1x',
+          crossGap: '0.05x',
+          extensions: [3.5, 3.5, 3.5, 3.5],
+          showExtensions: true,
+        } as CenterMark,
+      ],
+    });
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r): Promise<ViewReply> =>
+          Promise.resolve(
+            r.op === 'pick'
+              ? { ok: true, ids: [model.entityByHandle('30')!.id] }
+              : { ok: false, message: 'no' },
+          ),
+      },
+    });
+    expect(centerMarkOf(model, model.entityByHandle('52'))?.handle).toBe('54');
+    await bus.script(['MOVE', '60,50', '', '0,0', '5,0']);
+    const mark = model.entityByHandle('52')!;
+    expect(mark.geom).toMatchObject({ position: { x: 55, y: 50 } });
+    expect(mark.extDict).toBe('53');
+    const g = mark.geom as { block: string };
+    expect(model.blockEntities(g.block)).toHaveLength(6);
   });
 
   it('ends at Esc and Enter without a mark', async () => {

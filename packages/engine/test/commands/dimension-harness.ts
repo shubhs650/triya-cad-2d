@@ -195,6 +195,17 @@ export function setup(
           const r = Math.hypot(p.x - a.center.x, p.y - a.center.y);
           return k <= Math.abs(a.sweep) && Math.abs(r - a.radius) <= 0.5;
         });
+      case 'LEADER':
+        // Near its path (M4-15's DIMBREAK on leaders).
+        return g.vertices.some((v, i) => i > 0 && toSegment(p, g.vertices[i - 1]!, v) <= 0.5);
+      case 'MULTILEADER':
+        // Near a leader line, which runs on to its branch's connection point.
+        return g.branches.some((b) =>
+          b.lines.some((l) => {
+            const pts = [...l.vertices, b.connection];
+            return pts.some((v, i) => i > 0 && toSegment(p, pts[i - 1]!, v) <= 0.5);
+          }),
+        );
       case 'DIMENSION':
       case 'ARC_DIMENSION':
       case 'LARGE_RADIAL_DIMENSION':

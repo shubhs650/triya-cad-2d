@@ -14,14 +14,24 @@
 //                Enter inspection rate or [None] <100%>:
 // Breaks and inspection data are saved as DEC-064's `TRIYA_DIMBREAK` and `TRIYA_DIMINSPECT`
 // records (edit/dimension-records.ts); the dimension engine draws them. Each command is one undo
-// step, the records and the regenerated graphics together. DIMBREAK on multileaders and leaders,
-// which AutoCAD also breaks, is roadmap M4-15.
+// step, the records and the regenerated graphics together. DIMBREAK also breaks a multileader's
+// and a leader's straight leader lines (M4-15, edit/leader-breaks.ts), as AutoCAD 2024 does
+// ("Dimension breaks can be added to ... multileaders (straight leaders only) and leaders
+// (straight only)"): the same record, in the leader's extension dictionary, the gaps cut out as
+// the leader is drawn.
 import type { Curve } from '../../geom/curves';
 import { closestPoint } from '../../geom/closest';
 import { toleranceForSize } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
 import { add, dot, length, normalize, scale, sub } from '../../geom/vec';
 import type { DimBreak, DimInspect, DimensionGeometry, Entity } from '../../model/types';
+import {
+  isBreakableLeader,
+  leaderCrossingObjects,
+  leaderManualBreak,
+  redrawLeader,
+  type BreakableLeader,
+} from '../../edit/leader-breaks';
 import {
   crossingObjects,
   dimBreakOf,
@@ -36,6 +46,8 @@ import { regenerateDimensions } from './dimensions';
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 type Dimension = Entity & { geom: DimensionGeometry };
 type BreakFields = Pick<DimBreak, 'objects' | 'manual'>;
+/** What DIMBREAK breaks: a dimension, a leader or a multileader (M4-15). */
+type Breakable = Dimension | BreakableLeader;
 
 const isDimension = (e: Entity | undefined): e is Dimension =>
   e !== undefined &&
@@ -54,10 +66,16 @@ function tolOf(e: Dimension) {
 const modified = (ctx: CommandContext, n: number): void =>
   ctx.message(`${n} object${n === 1 ? '' : 's'} modified`);
 
-/** Writes the dimensions' break records (`undefined` takes one off) and draws them again. */
+const isBreakable = (e: Entity | undefined): e is Breakable =>
+  isDimension(e) || isBreakableLeader(e);
+
+/**
+ * Writes the break records (`undefined` takes one off) and draws what they are on again: a
+ * dimension regenerated, a leader touched in the same change.
+ */
 async function setBreaks(
   ctx: CommandContext,
-  changes: readonly [Dimension, BreakFields | undefined][],
+  changes: readonly [Breakable, BreakFields | undefined][],
 ): Promise<void> {
   ctx.edit((b) => {
     for (const [e, fields] of changes) {
@@ -65,16 +83,15 @@ async function setBreaks(
       if (!now) continue;
       const empty = fields && fields.objects.length === 0 && fields.manual.length === 0;
       setDimensionRecord<DimBreak>(b, now, 'TRIYA_DIMBREAK', empty ? undefined : fields);
+      if (isBreakableLeader(now)) redrawLeader(b, now);
     }
   });
-  await regenerateDimensions(
-    ctx,
-    changes.map(([e]) => e.id),
-  );
+  const dims = changes.flatMap(([e]) => (isDimension(e) ? [e.id] : []));
+  if (dims.length > 0) await regenerateDimensions(ctx, dims);
 }
 
-/** The dimension's breaks so far, as fields to add to. */
-function breaksOf(ctx: CommandContext, e: Dimension): BreakFields {
+/** The breaks so far, as fields to add to. */
+function breaksOf(ctx: CommandContext, e: Breakable): BreakFields {
   const r = dimBreakOf(ctx.model, ctx.model.entity(e.id) ?? e);
   return { objects: r?.objects ?? [], manual: r?.manual ?? [] };
 }
@@ -84,9 +101,12 @@ const withObjects = (f: BreakFields, add: readonly string[]): BreakFields => ({
   objects: [...f.objects, ...add.filter((h) => !f.objects.includes(h))],
 });
 
-/** Auto: the objects crossing the dimension now, added to its breaks. */
-function autoBreaks(ctx: CommandContext, e: Dimension): BreakFields {
-  return withObjects(breaksOf(ctx, e), crossingObjects(ctx.model, e, tolOf(e)));
+/** Auto: the objects crossing the dimension or leader now, added to its breaks. */
+function autoBreaks(ctx: CommandContext, e: Breakable): BreakFields {
+  const crossing = isDimension(e)
+    ? crossingObjects(ctx.model, e, tolOf(e))
+    : leaderCrossingObjects(ctx.model, e);
+  return withObjects(breaksOf(ctx, e), crossing);
 }
 
 /** `p` put on the line through `c` (or on its circle), which a manual break's points lie on. */
@@ -109,12 +129,13 @@ function onCurve(c: Curve, p: Vec2): Vec2 {
  */
 async function* manualBreak(
   ctx: CommandContext,
-  e: Dimension,
+  e: Breakable,
 ): Sub<readonly [Vec2, Vec2] | undefined> {
   const a = yield ctx.prompt.point({ message: 'Specify first break point' });
   if (a.kind !== 'point') return undefined;
   const b = yield ctx.prompt.point({ message: 'Specify second break point', lastPoint: a.point });
   if (b.kind !== 'point') return undefined;
+  if (isBreakableLeader(e)) return leaderManualBreak(ctx.model, e, a.point, b.point);
   const tol = tolOf(e);
   let best: { c: Curve; d: number } | undefined;
   for (const c of objectEdgeCurves({ model: ctx.model, tol }, e, {
@@ -136,12 +157,19 @@ async function* selectDimensions(ctx: CommandContext): Sub<Dimension[] | undefin
   return a.ids.map((id) => ctx.model.entity(id)).filter(isDimension);
 }
 
+/** DIMBREAK's Multiple: the dimensions, leaders and multileaders among the objects selected. */
+async function* selectBreakable(ctx: CommandContext): Sub<Breakable[] | undefined> {
+  const a = yield ctx.prompt.selection({ message: 'Select dimensions', editable: true });
+  if (a.kind !== 'selection') return undefined;
+  return a.ids.map((id) => ctx.model.entity(id)).filter(isBreakable);
+}
+
 function dimbreakCommand(): CommandDef {
   return {
     name: 'DIMBREAK',
     usesSelection: 'none',
     async *run(ctx): CommandGenerator {
-      let dim: Dimension | undefined;
+      let dim: Breakable | undefined;
       while (!dim) {
         const a = yield ctx.prompt.selection({
           message: 'Select dimension to add/remove break or',
@@ -149,7 +177,7 @@ function dimbreakCommand(): CommandDef {
           options: ['Multiple'],
         });
         if (a.kind === 'keyword' && a.keyword === 'Multiple') {
-          const dims = yield* selectDimensions(ctx);
+          const dims = yield* selectBreakable(ctx);
           if (!dims || dims.length === 0) return;
           const o = yield ctx.prompt.keyword({
             message: 'Enter an option',
@@ -166,7 +194,7 @@ function dimbreakCommand(): CommandDef {
         }
         if (a.kind !== 'selection' || a.ids.length === 0) return;
         const e = ctx.model.entity(a.ids[0]!);
-        if (isDimension(e)) dim = e;
+        if (isBreakable(e)) dim = e;
         else ctx.message('Object selected is not a dimension.');
       }
       const b = yield ctx.prompt.selection({

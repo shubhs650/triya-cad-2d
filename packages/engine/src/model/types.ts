@@ -267,6 +267,12 @@ export interface DrawingField {
   readonly value?: string;
   /** A date value's time (ms since the epoch), kept with `value` for the FIELD's date data. */
   readonly time?: number;
+  /**
+   * DXF 91, when AutoCAD may evaluate it (AcFdEval options): 1 on open, 2 on save, 4 on plot,
+   * 8 on eTransmit, 16 on regeneration, 32 on demand (UPDATEFIELD); absent is 63, all of them.
+   * FIELDEVAL decides which of these the drawing allows (M4-10 part 3, edit/field-eval.ts).
+   */
+  readonly options?: number;
 }
 
 export interface TextFields extends PlanarProps {
@@ -2002,7 +2008,10 @@ export const isAssocArray = (o: NonGraphicalObject | undefined): o is AssocArray
  */
 export interface DimBreak extends NonGraphicalObject {
   readonly type: 'TRIYA_DIMBREAK';
-  /** The dimension (the owner of its extension dictionary). */
+  /**
+   * The dimension (the owner of its extension dictionary), or the LEADER or MULTILEADER whose
+   * breaks these are (M4-15, DEC-065).
+   */
   readonly dimension: Handle;
   /**
    * DXF 331 each: the objects that break it (picked, or found by Auto); the gaps follow them
@@ -2040,9 +2049,9 @@ export const isDimInspect = (o: NonGraphicalObject | undefined): o is DimInspect
 /**
  * A center mark or centerline Triya made (CENTERMARK, CENTERLINE; M4-08): what keeps it
  * associative to the objects it was made on. The mark is an INSERT of an anonymous `*U` block of
- * lines, which every reader draws; the record (`owner` the INSERT) says how to draw it again when
- * its objects change. Part 1 keeps the record while the drawing is open: how a save writes it
- * waits on needs-human #451, so a reopened drawing has the marks as plain block references.
+ * lines, which every reader draws; the record (`owner` the INSERT's extension dictionary) says
+ * how to draw it again when its objects change. A save writes it as a `TRIYA_CENTERMARK` XRECORD
+ * in that dictionary (part 2, DEC-066), so a reopened mark is associative still.
  */
 export interface CenterMark extends NonGraphicalObject {
   readonly type: 'TRIYA_CENTERMARK';

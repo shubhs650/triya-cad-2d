@@ -38,6 +38,7 @@ import type { PropertyEdit } from '../properties/edit';
 import { propertySheet, type DimensionMeasure, type PropertySheet } from '../properties/sheet';
 import { quickPropertySheet, rolloverSheet } from '../properties/quick';
 import { REVCLOUDGRIPS } from '../edit/revcloud';
+import { fieldEventChange, type FieldEvent } from '../edit/field-eval';
 
 /** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
 export interface LayerStateEdit {
@@ -125,7 +126,22 @@ export interface AliasEdit {
   readonly aliases: Readonly<Record<string, string>>;
 }
 
+/**
+ * The drawing opened, saved or plotted (M4-10 part 3): its fields evaluated as FIELDEVAL and each
+ * field's options allow (`fieldEventChange`), against the app's clock and the drawing's file name.
+ * Not an undo step: AutoCAD's own evaluation is none.
+ */
+export interface FieldEventEdit {
+  readonly kind: 'fields';
+  readonly event: FieldEvent;
+  /** The event's time, ms since the epoch: Date fields, and SaveDate or PlotDate. */
+  readonly now: number;
+  /** DWGNAME: the file opened, or the one the save writes. */
+  readonly fileName?: string;
+}
+
 export type EngineEdit =
+  | FieldEventEdit
   | LayerStateEdit
   | LayoutEdit
   | XrefLoadEdit
@@ -551,6 +567,7 @@ export class EngineSession {
     if (e.kind === 'view-delete' || e.kind === 'view-rename' || e.kind === 'view-category')
       return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
+    if (e.kind === 'fields') return this.#fieldEvent(e);
     if (e.kind === 'aliases') {
       this.#registry.setUserAliases(e.aliases);
       return { ok: true, change: {} };
@@ -597,6 +614,22 @@ export class EngineSession {
     const change = b.build();
     this.model.apply(change);
     this.#step('VIEW', change);
+    return { ok: true, change };
+  }
+
+  #fieldEvent(e: FieldEventEdit): EditResult {
+    const change = fieldEventChange(
+      {
+        model: this.model,
+        now: new Date(e.now),
+        ...(e.fileName === undefined ? {} : { fileName: e.fileName }),
+        // A browser never reveals a file's folder (DWGPREFIX).
+        folder: '',
+      },
+      e.event,
+    );
+    if (!change) return { ok: true, change: {} };
+    this.model.apply(change);
     return { ok: true, change };
   }
 

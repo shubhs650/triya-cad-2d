@@ -1,0 +1,1 @@
+- M4-10 part 3 (#466): fields update by themselves when a drawing is opened, saved or plotted, as FIELDEVAL and each field allow (a file name field shows the name the drawing was opened or saved under, a plot date the time it plotted), and fields are drawn on a grey background on screen (FIELDDISPLAY, never plotted).

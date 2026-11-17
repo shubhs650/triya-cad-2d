@@ -267,8 +267,11 @@ function geometryPrimitives(
     return ctx.text ? textPrimitives(g, paint, ctx.text) : [];
   // An attribute definition outside a block shows its tag, on one line even when multiline
   // (M1-14 part 2); inside a reference `expandInsert` decides what it shows.
-  if (g.kind === 'ATTDEF')
-    return ctx.text ? textPrimitives({ ...g, kind: 'TEXT', value: g.tag }, paint, ctx.text) : [];
+  if (g.kind === 'ATTDEF') {
+    // The tag shows, not the default's fields.
+    const { field: _default, ...tag } = g;
+    return ctx.text ? textPrimitives({ ...tag, kind: 'TEXT', value: g.tag }, paint, ctx.text) : [];
+  }
   // Image frames are drawn continuous: a frame is a display aid, not linework (ours).
   if (g.kind === 'IMAGE' || g.kind === 'WIPEOUT') {
     const name = g.kind === 'IMAGE' && g.definition ? ctx.imageName?.(g.definition) : undefined;
