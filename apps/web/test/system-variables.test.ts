@@ -100,6 +100,14 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'ROLLOVERTIPS')).toEqual({ ok: true, value: 0 });
   });
 
+  it('keep FIELDDISPLAY, on at first (M4-10 part 3)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'FIELDDISPLAY')).toEqual({ ok: true, value: 1 });
+    systemVariableReply(d, 'FIELDDISPLAY', 0);
+    expect(d.get().fieldDisplay).toBe(false);
+    expect(systemVariableReply(d, 'FIELDDISPLAY')).toEqual({ ok: true, value: 0 });
+  });
+
   it('keep AUTOSNAP’s bits, POLAR and OTRACK being the status bar’s buttons (M2-59)', () => {
     // AutoCAD 2024 Help, "AUTOSNAP": 1 marker, 2 SnapTip, 4 magnet, 8 polar tracking, 16
     // object snap tracking, 32 tooltips for polar and object snap tracking; initially 63.

@@ -42,7 +42,7 @@ async function read(
 ): Promise<{ value: VariableValue } | { problem: string }> {
   switch (v.store) {
     case 'header':
-      return { value: headerValue(v, ctx.model.header.get(v.key!)!) };
+      return { value: headerValue(v, ctx.model.header.get(v.key!) ?? v.initial!) };
     case 'wipeout':
       return { value: wipeoutFrame(ctx.model) };
     case 'app': {
@@ -194,7 +194,7 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
   switch (v.store) {
     case 'header': {
       const key = v.key!;
-      const was = ctx.model.header.get(key);
+      const was = ctx.model.header.get(key) ?? v.initial;
       const next = headerEntry(v, value, was);
       const entries: [string, HeaderValue][] = [];
       if (JSON.stringify(next) !== JSON.stringify(was)) entries.push([key, next]);

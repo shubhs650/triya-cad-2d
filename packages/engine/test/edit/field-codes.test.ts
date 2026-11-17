@@ -106,7 +106,14 @@ describe('fieldOfText', () => {
       evaluator: '_text',
       code: '{\\C1;Date:} %<\\_FldIdx 0>%\\PFile %<\\_FldIdx 1>%',
       children: [
-        { evaluator: 'AcVar', code: '\\AcVar Date \\f "yyyy"', children: [], objects: [] },
+        // A Date field is evaluated on demand only (DXF 91 = 32), as AutoCAD makes it (part 3).
+        {
+          evaluator: 'AcVar',
+          code: '\\AcVar Date \\f "yyyy"',
+          children: [],
+          objects: [],
+          options: 32,
+        },
         { evaluator: 'AcVar', code: '\\AcVar Filename', children: [], objects: [] },
       ],
       objects: [],

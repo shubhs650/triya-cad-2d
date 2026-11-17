@@ -4,6 +4,7 @@
 //
 //   1  evaluator id (`_text` for the root)       2, 3  field code
 //   90 child count, 360 each child               97 object count, 331 each object
+//   91 when it may be evaluated (63 all of: open, save, plot, eTransmit, regeneration, on demand)
 //   7  ACFD_FIELD_VALUE, the value (a date's 310 SYSTEMTIME among its groups)
 //   301, 9  the value as shown
 //
@@ -11,7 +12,7 @@
 // (export/fields.ts). A tree whose children or objects cannot be followed is mapped without
 // what is missing, which `fieldText` then shows as an unevaluated field.
 import { CadDictionary, Field, type CadObject } from '@node-projects/acad-ts';
-import type { DrawingField } from '@triya/engine';
+import { FIELD_OPTIONS_ALL, type DrawingField } from '@triya/engine';
 import { hex } from './common';
 
 export const ACAD_FIELD = 'ACAD_FIELD';
@@ -36,6 +37,10 @@ function mapField(f: Field, depth: number): DrawingField {
     objects: f.cadObjects.filter((o) => o && o.handle !== 0).map((o) => hex(o.handle)),
     ...(f.formatString !== '' ? { value: f.formatString } : {}),
     ...(time === undefined ? {} : { time }),
+    // M4-10 part 3: FIELDEVAL updates only the fields whose options allow the event.
+    ...(Number(f.evaluationOptionFlags) === FIELD_OPTIONS_ALL
+      ? {}
+      : { options: Number(f.evaluationOptionFlags) }),
   };
 }
 

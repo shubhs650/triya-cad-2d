@@ -212,3 +212,37 @@ describe('text in the renderer', () => {
     expect(c.calls.filter((k) => k[0] === 'fill').map((k) => k[1])).toEqual(['#000000']);
   });
 });
+
+// M4-10 part 3: FIELDDISPLAY, a field's grey background, drawn half opaque under its glyphs on
+// screen, left out when the variable is 0.
+describe('fields in the renderer (FIELDDISPLAY)', () => {
+  const field = {
+    evaluator: '_text',
+    code: 'A%<\\_FldIdx 0>%',
+    children: [
+      { evaluator: 'AcVar', code: '\\AcVar Filename', children: [], objects: [], value: 'B' },
+    ],
+    objects: [],
+  };
+  const fills = (c: ReturnType<ReturnType<typeof setup>['redraw']>) =>
+    c.calls.filter((k) => k[0] === 'fill').length;
+
+  it('shades a field, and stops when FIELDDISPLAY is 0', () => {
+    const s = setup([entity('20', { ...text('AB'), field })]);
+    const on = s.redraw();
+    expect(fills(on)).toBe(1);
+    expect(on.calls.some((k) => k[0] === 'globalAlpha' && k[1] === 0.5)).toBe(true);
+    s.r.setStyle({ ...DARK, showFields: false });
+    expect(fills(s.redraw())).toBe(0);
+    // Text without fields has no shading.
+    expect(fills(setup([entity('20', text('AB'))]).redraw())).toBe(0);
+  });
+
+  it('keeps its shading at half opacity when TRANSPARENCYDISPLAY is 0', () => {
+    const s = setup([entity('20', { ...text('AB'), field })]);
+    s.r.setStyle({ ...DARK, showTransparency: false });
+    const c = s.redraw();
+    expect(fills(c)).toBe(1);
+    expect(c.calls.some((k) => k[0] === 'globalAlpha' && k[1] === 0.5)).toBe(true);
+  });
+});
