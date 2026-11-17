@@ -45,6 +45,9 @@ describe('palette search', () => {
       'ARRAYPOLAR',
       'ARRAYRECT',
       'ATTEDIT',
+      // M5-01 part 1: blocks made and inserted at the command line, and BASE.
+      'BASE',
+      'BLOCK',
       'BREAK',
       'BREAKATPOINT',
       // M4-08: CENTERLINE and CENTERMARK; part 3 the commands that edit them.
@@ -127,6 +130,7 @@ describe('palette search', () => {
       'HATCHEDIT',
       'HATCHTOBACK',
       'ID',
+      'INSERT',
       'JOIN',
       // M4-09 part 1: JUSTIFYTEXT and SCALETEXT.
       'JUSTIFYTEXT',

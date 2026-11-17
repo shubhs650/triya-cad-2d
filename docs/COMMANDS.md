@@ -141,8 +141,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| INSERT | I | 1 | dialog + -INSERT | |
-| BLOCK | B | 2 | dialog + -BLOCK | |
+| INSERT | I | 1 | dialog + -INSERT | ~ (M5-01 part 1: -INSERT, and INSERT until its dialog comes: "Enter block name or [?] <last>" (`*NAME` inserts it exploded), the block's units and conversion to the drawing's INSUNITS, "Specify insertion point or [Basepoint/Scale/X/Y/Z/Rotate]" dragging the block, X scale, opposite corner, Corner or XYZ, Y scale, rotation (a uniformly scaled block asks one scale), then each attribute's value (ATTREQ 1; preset values taken, verify values asked again, constants none) or their defaults (ATTREQ 0); one undo step. Left: the Insert dialog (ATTDIA's Edit Attributes with it), a drawing file as the block) |
+| BLOCK | B | 2 | dialog + -BLOCK | ~ (M5-01 part 1: -BLOCK, and BLOCK until its dialog comes: "Enter block name or [?]", "Block \"NAME\" already exists. Redefine it? [Yes/No] <No>", "Specify insertion base point", "Select objects"; the objects copied into the block in the current UCS's coordinates and erased (OOPS restores them), a redefined block drawn anew by every reference, a selection holding the block itself, at any depth, refused; no Annotative option (DEC-058). Left: the Block Definition dialog (Retain, Convert to block, units, Scale uniformly, Allow exploding, description)) |
 | WBLOCK | W | 2 | | |
 | BEDIT / BCLOSE / BSAVE | BE | 2 | block editor | |
 | REFEDIT / REFCLOSE / REFSET | — | 2 | | |
@@ -155,7 +155,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | ULAYERS | — | 2 | Underlay Layers dialog | ~ (#333, M2-56 part 1): opens the Underlay Layers dialog on the PDF underlay selected first, or the drawing's first: Reference Name (each underlay of model space and the layouts, a definition attached twice numbered `[n]`), Search for layer (part of the name, or `*` and `?`), and each of the PDF's layers on or off for that underlay; a layer the PDF hides by default shows off and cannot be turned on, and without the PDF only the layers turned off are listed. OK writes the layers off as the underlay's `AdeskUnderlayLayerOverrideData` xdata (one ULAYERS undo step, saved with the drawing); Properties shows Layer display override Applied or None. DWF and DGN underlays wait (no reader) |
 | EXTERNALREFERENCES | ER | 2 | palette | |
 | ADCENTER | ADC, Ctrl+2 | 3 | Design-Center-lite | |
-| BASE | — | 2 | | |
+| BASE | — | 2 | | x (M5-01 part 1: "Enter base point <current>" sets INSBASE, or PINSBASE in a layout, in UCS coordinates; transparent) |
 
 ## Layers and properties
 

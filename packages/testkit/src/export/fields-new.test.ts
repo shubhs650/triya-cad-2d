@@ -180,6 +180,26 @@ describe('fields made in Triya save as DXF and read back', () => {
     expect(a!.filter((h) => b!.includes(h))).toEqual([]);
   });
 
+  it("drops an erased text's fields from the FIELDLIST (found by M5-01: BLOCK erases them)", async () => {
+    const model = modelOf(bytesOf(COMPLEX));
+    const bus = session(model);
+    const texts = [...model.entities()].filter((e) => fieldOf(e.geom) !== undefined);
+    expect(texts.length).toBeGreaterThan(0);
+    const source = readCadDocument(bytesOf(COMPLEX));
+    const gone = new Set(
+      texts.flatMap((e) => tree(rootOf(source, e.handle)!).map((f) => f.handle)),
+    );
+    await bus.script(['ERASE']);
+    await bus.answer({ kind: 'selection', ids: texts.map((e) => e.id) });
+    const doc = readCadDocument(save(COMPLEX, model));
+    expect([...listed(doc)].filter((h) => gone.has(h))).toEqual([]);
+    // Nothing in the save is a FIELD without an owner.
+    const orphans = [...doc.getCadObjects()].filter(
+      (o) => o instanceof Field && (o.owner === null || o.owner === undefined),
+    );
+    expect(orphans).toEqual([]);
+  });
+
   it("rebuilds an MTEXT's tree when its fields change, and drops it when they are gone", async () => {
     const model = modelOf(bytesOf(COMPLEX));
     const bus = session(model);
