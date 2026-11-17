@@ -136,6 +136,15 @@ export * from './tolerance-frame';
 export { detachXrefs, xrefDetachChange, xrefDetachProblem } from './xrefs';
 export { bindXrefs, xrefBindChange, xrefBindProblem } from './xref-bind';
 export {
+  clipOf,
+  clipOutline,
+  inverseInsertMatrix,
+  selfIntersecting,
+  setClip,
+  setClipEnabled,
+  xclipProblem,
+} from './xclip';
+export {
   currentLayerChange,
   deleteLayersChange,
   mergeLayersChange,

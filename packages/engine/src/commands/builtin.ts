@@ -76,6 +76,7 @@ import { layerToolCommands } from './layer-tools';
 import { laydelCommand, laymrgCommand } from './layer-cleanup';
 import { layerpCommand, layerpmodeCommand } from './layer-previous';
 import { XREF_COMMANDS } from './xref';
+import { xclipCommand } from './xclip';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 import { ARRAY_COMMANDS } from './modify/array';
 
@@ -177,6 +178,7 @@ export function builtinCommands(): CommandRegistry {
     layerpmodeCommand(),
     layerStateCommand(),
     ...XREF_COMMANDS.map((make) => make()),
+    xclipCommand(),
     ...INQUIRY_COMMANDS.map((make) => make()),
     ...ARRAY_COMMANDS.map((make) => make()),
     ...GROUP_COMMANDS.map((make) => make()),

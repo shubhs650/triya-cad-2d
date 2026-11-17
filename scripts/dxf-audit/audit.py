@@ -43,13 +43,16 @@ KINDS = (
     "tablestyle",
     "block",
 )
-# Saves of the thread-authored test drawings that are not corpus files (Rule 0), as
+# Saves of the thread-authored test drawings that are not corpus files (Rule 0), and of corpus
+# files edited by a testkit suite rather than the corpus suites, as
 # (fixture path, kind): each must be there and pass the audit with no exception. M5-04 part 2:
 # XREF Bind of the xref set's parent, both bind types (packages/testkit/src/xref/xref-bind.test.ts).
 FIXTURE_SAVES = (
     ("fixtures/xref/xref-parent.dxf", "bind"),
     ("fixtures/xref/xref-parent.dxf", "bind-insert"),
     ("fixtures/xref/xref-parent.dxf", "bind-objects"),
+    # XCLIP New boundary, OFF, Delete and generate Polyline on ezdxf's xclip.dxf (M5-04 part 3).
+    ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip"),
     # LAYDEL and LAYMRG of every layer they can take on ACadSharp's AC1032 sample (M5-06 part 2,
     # packages/testkit/src/layers/layer-cleanup.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),
