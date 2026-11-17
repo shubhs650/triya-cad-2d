@@ -161,7 +161,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| LAYER | LA | 1 | palette; -LAYER dash with full option set. Palette list, search, On/Freeze/Lock and VP Freeze display done in M1-23; command, -LAYER and other columns open | ~ |
+| LAYER | LA | 1 | palette; -LAYER dash with full option set. Palette list, search, On/Freeze/Lock and VP Freeze display done in M1-23; M5-05 part 1 (#500): multi-select, New Layer, Delete Layer, Set Current, rename and description in place, Plot toggle, a toggle on every selected layer (one LAYER undo step each); Color/Linetype/Lineweight/Transparency cells, VP overrides, columns, merge, command and -LAYER open | ~ |
 | LAYISO / LAYUNISO | — | 2 | settings: lock+fade or off | |
 | LAYOFF / LAYON / LAYFRZ / LAYTHW / LAYLCK / LAYULK | — | 2 | | |
 | LAYMCUR / LAYMCH / LAYCUR / LAYWALK / LAYERP / LAYDEL / LAYMRG | — | 2 | | |
