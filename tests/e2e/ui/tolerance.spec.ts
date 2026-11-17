@@ -3,11 +3,22 @@
 // the frame dragged to its location and drawn, and a double click on it opening the dialog on its
 // fields. The frame text and the command's prompts are unit-tested in packages/engine/test
 // (commands/tolerance, edit/tolerance-frame); this checks that the canvas, the bus, the engine
-// worker and the dialog carry them.
+// worker and the dialog carry them. M4-21: the frame's Properties rows (Dim style, Dim line
+// color, Text color, Text height, Text style, Position, Direction) edit it from the palette as
+// DSTYLE overrides; the rows and the xdata they write are unit-tested in
+// packages/engine/test/properties/tolerance-rows.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity } from '@triya/engine';
 import path from 'node:path';
-import { DXF, expectShown, lightPixels, openWithPicker, worldAt } from '../app/page';
+import {
+  DXF,
+  activeCanvas,
+  expectDrawn,
+  expectShown,
+  lightPixels,
+  openWithPicker,
+  worldAt,
+} from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -31,7 +42,7 @@ const added = (page: Page) =>
       }
       for (const r of cs.entities?.removed ?? []) out.delete(r.entity.handle);
     }
-    return [...out.values()].map((e) => ({ type: e.type, geom: e.geom }));
+    return [...out.values()].map((e) => ({ type: e.type, geom: e.geom, xdata: e.xdata }));
   });
 
 const prompt = (page: Page) => page.getByTestId('command-prompt');
@@ -167,4 +178,88 @@ test('TOLERANCE: the Geometric Tolerance dialog places a frame; a double click e
   await expect(prompt(page)).toHaveText('Command:');
   await page.mouse.move(box.x + 20, box.y + 20);
   await page.screenshot({ path: test.info().outputPath('5-edited.png') });
+});
+
+test('a feature control frame’s Properties rows restyle, turn and move it (M4-21)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0},${Y0}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 60},${Y0 + 40}`, 'Command:');
+
+  // A frame: position, diameter 0.1, datum A.
+  await type(page, 'TOLERANCE', 'Geometric Tolerance:');
+  const dialog = page.getByRole('dialog', { name: 'Geometric Tolerance' });
+  await dialog.getByRole('button', { name: 'Sym, row 1' }).click();
+  await page
+    .getByRole('dialog', { name: 'Symbol' })
+    .getByRole('button', { name: 'Position' })
+    .click();
+  await dialog.getByLabel('Tolerance 1 value, row 1').fill('0.1');
+  await dialog.getByLabel('Datum 1 value, row 1').fill('A');
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(prompt(page)).toHaveText('Enter tolerance location:');
+  await type(page, `#${X0 + 20},${Y0 + 20}`, 'Command:');
+  await expect.poll(async () => (await added(page)).map((e) => e.type)).toEqual(['TOLERANCE']);
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(box.width);
+  await expectDrawn(page, { timeout: 15_000 });
+  const docked = (await canvas.boundingBox())!;
+  // Click the frame's left edge, at its insertion point, worked out on the docked canvas.
+  const w1 = await worldAt(page, 100, 100);
+  const w2 = await worldAt(page, 300, 100);
+  const s = (w2.x - w1.x) / 200;
+  const edge = { x: 100 + (X0 + 20 - w1.x) / s, y: 100 - (Y0 + 20 - w1.y) / s };
+  await page.mouse.click(docked.x + edge.x, docked.y + edge.y);
+  await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toHaveText(
+    'Tolerance (1)',
+  );
+  for (const group of ['Misc', 'Lines & Arrows', 'Text', 'Geometry']) {
+    await expect(palette.getByRole('table', { name: group })).toBeVisible();
+  }
+  await expect(palette.getByRole('combobox', { name: 'Dim style' })).toBeVisible();
+  await shot('6-frame-rows.png');
+
+  const xdataValues = async () => {
+    const e = (await added(page))[0]!;
+    return JSON.stringify(e.xdata ?? []);
+  };
+  // Dim line color red, Text color blue: DIMCLRD (176) and DIMCLRT (178) overrides.
+  await palette.getByRole('combobox', { name: 'Dim line color' }).selectOption({ label: 'Red' });
+  await expect.poll(xdataValues).toContain('"value":176');
+  await palette.getByRole('combobox', { name: 'Text color' }).selectOption({ label: 'Blue' });
+  await expect.poll(xdataValues).toContain('"value":178');
+  // Text height 5: DIMTXT (140) override.
+  const height = palette.getByRole('textbox', { name: 'Text height' });
+  await height.fill('5');
+  await height.press('Enter');
+  await expect.poll(xdataValues).toContain('"value":140');
+  await expect(height).toHaveValue(/^5/);
+  await shot('7-frame-restyled.png');
+
+  // Direction 90: the frame turns about its insertion point; Position X moves it.
+  const direction = palette.getByRole('textbox', { name: 'Direction' });
+  await direction.fill('90');
+  await direction.press('Enter');
+  await expect
+    .poll(async () => ((await added(page))[0]!.geom as { rotation: number }).rotation)
+    .toBeCloseTo(Math.PI / 2, 9);
+  const positionX = palette.getByRole('textbox', { name: 'Position X' });
+  await positionX.fill(String(X0 + 30));
+  await positionX.press('Enter');
+  await expect
+    .poll(async () => ((await added(page))[0]!.geom as { position: { x: number } }).position.x)
+    .toBeCloseTo(X0 + 30, 6);
+  await page.mouse.move(docked.x + 20, docked.y + 20);
+  await shot('8-frame-turned-moved.png');
 });
