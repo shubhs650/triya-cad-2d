@@ -926,13 +926,17 @@ button {
 }
 
 .layer-table {
-  width: 100%;
+  /* M5-05 part 5: the columns have widths (the table's width is theirs), contents cut. */
+  table-layout: fixed;
   border-collapse: collapse;
   white-space: nowrap;
+  --layer-row-bg: transparent;
 }
 
 .layer-table th,
 .layer-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 2px 6px;
   border-bottom: 1px solid var(--chrome-border);
   text-align: left;
@@ -942,8 +946,42 @@ button {
 .layer-table thead th {
   position: sticky;
   top: 0;
+  z-index: 2;
   background: var(--chrome-bg);
   color: var(--chrome-text-muted);
+}
+
+/* A frozen column's cells hide the cells scrolling under them, in the row's own colour. */
+.layer-table tbody tr {
+  --layer-frozen-bg: linear-gradient(var(--layer-row-bg), var(--layer-row-bg)), var(--chrome-bg);
+}
+
+/* M5-05 part 5: the grip on a header's right edge sizes the column. */
+.layer-table .layer-col-grip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.layer-table .layer-col-grip:hover {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* A header dragged to move its column, and where it would go. */
+.layer-table thead th[data-dragging='true'] {
+  opacity: 0.6;
+}
+
+.layer-table thead th[data-drop='before'] {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.layer-table thead th[data-drop='after'] {
+  box-shadow: inset -2px 0 var(--accent);
 }
 
 .layer-table tr[data-current='true'] .name {
@@ -952,7 +990,8 @@ button {
 
 /* M5-05: the rows selected, as the manager's list highlights them. */
 .layer-table tbody tr[aria-selected='true'] {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  --layer-row-bg: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--layer-row-bg);
 }
 
 .layer-table tbody tr:focus-visible {
@@ -4944,6 +4983,11 @@ button {
 
 /* M5-05 part 3: a column header is a button sorting by it, the sort shown by an arrow. */
 .layer-table .layer-sort {
+  width: 100%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  touch-action: none;
   padding: 0;
   border: 0;
   background: none;

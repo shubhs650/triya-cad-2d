@@ -6,6 +6,8 @@
 //   kept across a reload; Restore All Columns to Defaults brings every column back.
 // - Customize Layer Columns orders and hides columns, from the keyboard.
 // - Acceptance: the search filters the 200 layers in under 100 ms.
+// M5-05 part 5: the header menu's Maximize/Optimize items and Freeze Column, a header dragged to
+// move its column, its edge dragged to size it.
 import { writeFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { BENCH_LAYERS, benchDwg } from '../../../packages/testkit/src/bench/drawing';
@@ -94,13 +96,13 @@ test('Customize Layer Columns orders and hides columns from the keyboard (M5-05)
   const titles = () => table(palette).getByRole('columnheader').allTextContents();
   await expect.poll(titles).toContain('Linetype');
 
-  // Shift+F10 on a header opens its menu; Customize... is the item before the last.
+  // Shift+F10 on a header opens its menu; Customize... is the seventh item from the last (the
+  // four Maximize/Optimize items, Freeze Column and Restore All Columns to Defaults follow it).
   await header(palette, 'Name').getByRole('button').focus();
   await page.keyboard.press('Shift+F10');
   const menu = page.getByRole('menu', { name: 'Layer columns' });
   await expect(menu.getByRole('menuitemcheckbox').first()).toBeFocused();
-  await page.keyboard.press('ArrowUp');
-  await page.keyboard.press('ArrowUp');
+  for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowUp');
   await expect(menu.getByRole('menuitem', { name: 'Customize...' })).toBeFocused();
   await page.keyboard.press('Enter');
 
@@ -157,11 +159,27 @@ test('filters 200 layers in under 100 ms (M5-05 acceptance)', async ({ page }) =
   const search = palette.getByRole('searchbox', { name: 'Search for layer' });
   const times: number[] = [];
   const filtered = async (type: () => Promise<void>, count: number) => {
-    await palette.evaluate((p) => p.removeAttribute('data-last-filter-ms'));
+    // The palette's own measurement is awaited without querying the page meanwhile: a locator's
+    // role query runs on the page's thread, and polling one right after typing put the test's
+    // own work between the typing and the frame measured (M5-05 part 5: 104–122 ms on CI with
+    // the app's own filter at 30–60 ms).
+    await palette.evaluate((p) => {
+      p.removeAttribute('data-last-filter-ms');
+      (window as { filtered?: Promise<string> }).filtered = new Promise((resolve) => {
+        const seen = new MutationObserver(() => {
+          const ms = p.getAttribute('data-last-filter-ms');
+          if (!ms) return;
+          seen.disconnect();
+          resolve(ms);
+        });
+        seen.observe(p, { attributes: true, attributeFilter: ['data-last-filter-ms'] });
+      });
+    });
     await type();
+    times.push(
+      Number(await page.evaluate(() => (window as { filtered?: Promise<string> }).filtered)),
+    );
     await expect(rows).toHaveCount(count);
-    await expect(palette).toHaveAttribute('data-last-filter-ms', /\d/);
-    times.push(Number(await palette.getAttribute('data-last-filter-ms')));
   };
   // BENCH-10 to 19 and BENCH-100 to 199 (the first ten are BENCH-00 to 09).
   await filtered(() => search.fill('bench-1'), 110);
@@ -172,4 +190,140 @@ test('filters 200 layers in under 100 ms (M5-05 acceptance)', async ({ page }) =
   test.info().annotations.push({ type: 'filter ms', description: times.join(', ') });
   console.log(`M5-05 filter on 200 layers: ${times.join(', ')} ms`);
   for (const t of times) expect(t).toBeLessThan(FILTER_MS);
+});
+
+/** A header's left edge and width on the page. */
+const box = async (palette: Locator, name: string) => {
+  const b = await header(palette, name).boundingBox();
+  if (!b) throw new Error(`no ${name} header`);
+  return b;
+};
+
+test('sizes, freezes and moves columns from their headers (M5-05 part 5)', async ({ page }) => {
+  const palette = await openLayers(page);
+  const wrap = palette.locator('.layer-table-wrap');
+  const menuItem = async (column: string, item: string) => {
+    await header(palette, column).click({ button: 'right' });
+    await page
+      .getByRole('menu', { name: 'Layer columns' })
+      .getByRole('menuitem', { name: item })
+      .click();
+  };
+  // Every name shows whole in the column (nothing cut with an ellipsis).
+  const namesWhole = () =>
+    table(palette)
+      .getByRole('rowheader')
+      .evaluateAll((cells) => cells.every((c) => c.scrollWidth <= c.clientWidth));
+
+  // Optimize Column fits Name to BENCH-199, narrower than its default.
+  const before = await box(palette, 'Name');
+  await menuItem('Name', 'Optimize Column');
+  await expect.poll(async () => (await box(palette, 'Name')).width).toBeLessThan(before.width - 40);
+  expect(await namesWhole()).toBe(true);
+
+  // A drag on Color's right edge widens it by 40 px; a reload keeps the width.
+  const color = await box(palette, 'Color');
+  const grip = header(palette, 'Color').locator('.layer-col-grip');
+  await grip.scrollIntoViewIfNeeded();
+  const g = await grip.boundingBox();
+  await page.mouse.move(g!.x + g!.width / 2, g!.y + g!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g!.x + g!.width / 2 + 20, g!.y + 5, { steps: 3 });
+  await page.mouse.move(g!.x + g!.width / 2 + 40, g!.y + 5, { steps: 3 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => Math.round((await box(palette, 'Color')).width))
+    .toBe(Math.round(color.width + 40));
+  // Sizing is not sorting.
+  await expect(header(palette, 'Name')).toHaveAttribute('aria-sort', 'ascending');
+
+  // Dragging the Lock header onto On's moves Lock before On, without sorting by Lock.
+  await wrap.evaluate((w) => (w.scrollLeft = 0));
+  const lock = await box(palette, 'Lock');
+  const on = await box(palette, 'On');
+  await page.mouse.move(lock.x + lock.width / 2, lock.y + lock.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(lock.x + lock.width / 2 - 20, lock.y + lock.height / 2, { steps: 4 });
+  await page.mouse.move(on.x + 8, on.y + on.height / 2, { steps: 8 });
+  await expect(header(palette, 'On')).toHaveAttribute('data-drop', 'before');
+  await page.screenshot({ path: test.info().outputPath('1-dragging-lock.png') });
+  await page.mouse.up();
+  const titles = (p: Locator) => table(p).getByRole('columnheader').allTextContents();
+  const moved = [
+    'Status',
+    'Name▲',
+    'Lock',
+    'On',
+    'Freeze',
+    'Plot',
+    'Color',
+    'Linetype',
+    'Lineweight',
+    'Transparency',
+    'Description',
+  ];
+  await expect.poll(() => titles(palette)).toEqual(moved);
+  await expect(header(palette, 'Lock')).not.toHaveAttribute('aria-sort');
+  await expect(header(palette, 'On')).not.toHaveAttribute('data-drop');
+
+  // Freeze Column on Name: Status and Name stay put while the list scrolls sideways.
+  await menuItem('Name', 'Freeze Column');
+  await wrap.evaluate((w) => (w.scrollLeft = 0));
+  const name0 = await box(palette, 'Name');
+  const freeze0 = await box(palette, 'Freeze');
+  await wrap.evaluate((w) => (w.scrollLeft = 150));
+  await expect.poll(async () => (await box(palette, 'Freeze')).x).toBeLessThan(freeze0.x - 100);
+  expect((await box(palette, 'Name')).x).toBeCloseTo(name0.x, 0);
+  expect((await box(palette, 'Status')).x).toBeCloseTo(
+    name0.x - (await box(palette, 'Status')).width,
+    0,
+  );
+  await page.screenshot({ path: test.info().outputPath('2-frozen-name.png') });
+
+  // The widths, the order and the frozen column are the user's: a reload keeps them.
+  await page.reload();
+  const again = await openLayers(page, false);
+  const wrapAgain = again.locator('.layer-table-wrap');
+  await expect
+    .poll(async () => Math.round((await box(again, 'Color')).width))
+    .toBe(Math.round(color.width + 40));
+  await expect.poll(() => titles(again)).toEqual(moved);
+  const nameAgain = await box(again, 'Name');
+  await wrapAgain.evaluate((w) => (w.scrollLeft = 150));
+  await expect.poll(async () => (await box(again, 'Name')).x).toBeCloseTo(nameAgain.x, 0);
+
+  // Unfreeze Column: Name scrolls with the rest.
+  await wrapAgain.evaluate((w) => (w.scrollLeft = 0));
+  await header(again, 'Color').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Unfreeze Column' }).click();
+  await wrapAgain.evaluate((w) => (w.scrollLeft = 150));
+  await expect.poll(async () => (await box(again, 'Name')).x).toBeLessThan(nameAgain.x - 100);
+  await wrapAgain.evaluate((w) => (w.scrollLeft = 0));
+
+  // Maximize Column with Name the only column shown: Name fills the list's width.
+  await header(again, 'Name').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Customize...' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Customize Layer Columns' });
+  await dialog.getByRole('button', { name: 'Clear All' }).click();
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(table(again).getByRole('columnheader')).toHaveCount(1);
+  await header(again, 'Name').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Maximize Column' }).click();
+  const room = await wrapAgain.evaluate((w) => w.clientWidth);
+  await expect.poll(async () => Math.round((await box(again, 'Name')).width)).toBe(room);
+
+  // Optimize All Columns, back with every column: each fits its contents and header.
+  await header(again, 'Name').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Restore All Columns to Defaults' }).click();
+  await expect(table(again).getByRole('columnheader')).toHaveCount(11);
+  await header(again, 'Name').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Optimize All Columns' }).click();
+  await expect
+    .poll(() =>
+      table(again).evaluate((t) =>
+        [...t.querySelectorAll<HTMLElement>('th, td')].every((c) => c.scrollWidth <= c.clientWidth),
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({ path: test.info().outputPath('3-optimized.png') });
 });

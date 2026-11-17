@@ -6,7 +6,13 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LAYER_COLUMNS,
   LAYER_COLUMNS,
+  MAX_COLUMN_WIDTH,
+  MIN_COLUMN_WIDTH,
+  frozenLayerColumns,
+  layerColumnWidth,
+  maximizedWidths,
   moveLayerColumn,
+  moveLayerColumnBefore,
   normalizeLayerColumns,
   sortAfterClick,
   sortLayerRows,
@@ -211,5 +217,77 @@ describe('sorting the manager’s rows (M5-05 part 3)', () => {
     const rows = [row('B'), row('A')];
     sortLayerRows(rows, { key: 'name', descending: false });
     expect(names(rows)).toEqual(['B', 'A']);
+  });
+});
+
+// M5-05 part 5: the header menu's Maximize/Optimize/Freeze Column, and dragging a header (or its
+// edge) to move (or size) a column. The widths and the frozen column are the user's too.
+describe('column widths, moving and freezing (M5-05 part 5)', () => {
+  it('gives every column a default width, the user’s width when set', () => {
+    for (const c of LAYER_COLUMNS) expect(c.width).toBeGreaterThanOrEqual(MIN_COLUMN_WIDTH);
+    expect(layerColumnWidth(DEFAULT_LAYER_COLUMNS, 'name')).toBe(
+      LAYER_COLUMNS.find((c) => c.key === 'name')!.width,
+    );
+    expect(layerColumnWidth({ ...DEFAULT_LAYER_COLUMNS, widths: { name: 321 } }, 'name')).toBe(321);
+  });
+
+  it('keeps stored widths within bounds and the frozen column when it is a column', () => {
+    const s = normalizeLayerColumns({
+      order: ['name'],
+      widths: { name: 250.6, color: 2, linetype: 99999, plot: 'wide', nope: 40 },
+      frozen: 'name',
+    });
+    expect(s.widths).toEqual({ name: 251, color: MIN_COLUMN_WIDTH, linetype: MAX_COLUMN_WIDTH });
+    expect(s.frozen).toBe('name');
+    expect(normalizeLayerColumns({ frozen: 'nope' }).frozen).toBeUndefined();
+    expect(normalizeLayerColumns({ widths: [1, 2] }).widths).toEqual({});
+    // Older preferences have neither.
+    expect(normalizeLayerColumns({ order: ['name'] })).toMatchObject({ widths: {} });
+  });
+
+  it('moves a dragged column before the column it is dropped on, or last', () => {
+    const order = DEFAULT_LAYER_COLUMNS.order;
+    const moved = moveLayerColumnBefore(order, 'description', 'on');
+    expect(moved.slice(0, 4)).toEqual(['status', 'name', 'description', 'on']);
+    expect(moved).toHaveLength(order.length);
+    expect(moveLayerColumnBefore(order, 'status', undefined).at(-1)).toBe('status');
+    // Dropped on itself: nothing moves.
+    expect(moveLayerColumnBefore(order, 'color', 'color')).toEqual(order);
+  });
+
+  it('shares the list’s free width among the columns maximized', () => {
+    const fitted = { name: 100, on: 50, color: 60 };
+    // 300 wide: 90 left over, all three get 30.
+    expect(maximizedWidths(fitted, ['name', 'on', 'color'], 300)).toEqual({
+      name: 130,
+      on: 80,
+      color: 90,
+    });
+    // Only Name maximized: it takes all 90; a pixel left by the division goes to the last.
+    expect(maximizedWidths(fitted, ['name'], 300)).toEqual({ name: 190, on: 50, color: 60 });
+    expect(maximizedWidths(fitted, ['name', 'on'], 211)).toEqual({ name: 100, on: 51, color: 60 });
+    // No room left: the fitted widths as they are.
+    expect(maximizedWidths(fitted, ['name'], 150)).toEqual(fitted);
+  });
+
+  it('freezes the columns up to and including the frozen one, each after the ones before it', () => {
+    const s = {
+      ...DEFAULT_LAYER_COLUMNS,
+      widths: { status: 40, name: 150 },
+      frozen: 'name' as const,
+    };
+    const visible = visibleLayerColumns(s, false);
+    expect([...frozenLayerColumns(s, visible)]).toEqual([
+      ['status', 0],
+      ['name', 40],
+    ]);
+    // Status hidden: Name is frozen at the left edge.
+    const hidden = { ...s, hidden: ['status' as const] };
+    expect([...frozenLayerColumns(hidden, visibleLayerColumns(hidden, false))]).toEqual([
+      ['name', 0],
+    ]);
+    // The frozen column hidden, or none frozen: nothing is.
+    expect(frozenLayerColumns({ ...s, frozen: 'vpFreeze' }, visible).size).toBe(0);
+    expect(frozenLayerColumns(DEFAULT_LAYER_COLUMNS, visible).size).toBe(0);
   });
 });
