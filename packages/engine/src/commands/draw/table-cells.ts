@@ -8,6 +8,11 @@
 // A row grows to fit the text typed in it: the renderer, which has the fonts, lays the text out
 // (`textBox`) and the row takes the lines it fills (`fitTableRow`). Without the fonts (no canvas,
 // a font not loaded) the row keeps its height.
+//
+// Fields (M4-23): the editor offers Insert Field (Ctrl+F), Edit Field and Update Field as the
+// MTEXT editor does (`askEditorText`), and a field code typed or inserted makes the cell's fields
+// (`TableCell.field`), the cell showing their values; a cell with fields opens on their codes.
+// A field's value is the cell's text as it is, not read by the cell's data format.
 import { tableCellAt, tableCellText } from '../../annotation/table';
 import {
   fitTableRow,
@@ -22,10 +27,19 @@ import {
 } from '../../edit/table';
 import type { EntityId } from '../../model/entity-ids';
 import { tableAxes } from '../../spatial/entity-bounds';
-import type { MTextGeometry, TableGeometry, TableStyleRecord } from '../../model/types';
+import type {
+  DrawingField,
+  MTextGeometry,
+  TableCell,
+  TableGeometry,
+  TableStyleRecord,
+} from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { mtextEditorRequest } from './text';
+import { editableFieldText, fieldValues, textWithFields } from '../../edit/fields';
+import type { DrawingUnits } from '../units';
+import { askEditorText, fieldContextOf } from './field';
 import { tableCellUnder } from './table-cell-menu';
 import { drawingUnits } from '../units';
 
@@ -79,15 +93,37 @@ export async function* editTableCells(
       position: tableToPlan(t.g, local.position),
       rotation: local.rotation + turn,
     };
-    const a = yield ctx.prompt.string({
-      message: 'Enter text',
-      spaces: true,
-      editor: { ...mtextEditorRequest(ctx.model, plan), cell: true },
-    });
+    // Fields open as their codes, each shown by its value (M4-23).
+    const old = cell.field ? editableFieldText(cell.field) : cell.text;
+    let updated = false;
+    const a: PromptAnswer = yield* askEditorText(
+      ctx,
+      {
+        message: 'Enter text',
+        spaces: true,
+        editor: {
+          ...mtextEditorRequest(ctx.model, plan),
+          cell: true,
+          value: old,
+          fields: cell.field ? fieldValues(cell.field) : {},
+        },
+      },
+      ctx.model.entity(id)?.owner ?? ctx.space,
+      () => (updated = true),
+    );
     if (a.kind !== 'string') return;
     let g = t.g;
-    if (a.value !== cell.text) {
-      g = withCellText(g, r, c, a.value, drawingUnits(ctx.model.header));
+    if (a.value !== old || updated) {
+      const units = drawingUnits(ctx.model.header);
+      const typed =
+        a.value.includes('%<') || cell.field
+          ? textWithFields(
+              a.value,
+              { ...(await fieldContextOf(ctx)), space: ctx.model.entity(id)?.owner ?? ctx.space },
+              cell.field,
+            )
+          : { text: a.value };
+      g = withCellTyped(g, r, c, typed, units);
       const lines = await linesOf(ctx, tableCellText(g, t.style, drawing, r, c));
       if (lines !== undefined) g = fitTableRow(g, t.style, r, c, lines);
     }
@@ -107,6 +143,33 @@ export async function* editTableCells(
     // An arrow at the table's edge, or Shift+Tab in the first cell, stays in the cell.
     at = next ?? at;
   }
+}
+
+/**
+ * Table `g` with the text typed into cell (`i`, `j`): its fields, when it has any, with the text
+ * they show, which is the cell's text as it is (no value read from it by the data format); else
+ * the text, read by the cell's data format (`withCellText`).
+ */
+function withCellTyped(
+  g: TableGeometry,
+  i: number,
+  j: number,
+  typed: { readonly text: string; readonly field?: DrawingField },
+  units: DrawingUnits,
+): TableGeometry {
+  const withText = withCellText(g, i, j, typed.text, units);
+  const cells = withText.cells.map((row, k) =>
+    k !== i
+      ? row
+      : row.map((c, l): TableCell => {
+          if (l !== j) return c;
+          const { field: _field, ...plain } = c;
+          if (!typed.field) return plain;
+          const { value: _value, ...rest } = plain;
+          return { ...rest, text: typed.text, field: typed.field };
+        }),
+  );
+  return { ...withText, cells };
 }
 
 /**

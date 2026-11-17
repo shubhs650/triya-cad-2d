@@ -22,8 +22,15 @@ import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { EntityGeometry, InsertAttribute, MTextGeometry, TextFields } from '../model/types';
+import type {
+  EntityGeometry,
+  InsertAttribute,
+  MTextGeometry,
+  TableCell,
+  TextFields,
+} from '../model/types';
 import { evaluateFields, type FieldContext } from './fields';
+import { writeTableBlock } from './table';
 
 /** FIELDEVAL's name, the drawing's DICTIONARYVAR. */
 export const FIELDEVAL = 'FIELDEVAL';
@@ -66,8 +73,8 @@ function updateText<T extends TextFields>(
 
 /**
  * The geometry with its fields (and its attributes' fields) evaluated again, undefined if it has
- * none: the TEXT, MTEXT and attribute definitions, the multileaders' text (M4-23), and the block
- * references' attributes. `when`
+ * none: the TEXT, MTEXT and attribute definitions, the multileaders' text (M4-23), the tables'
+ * cells (M4-23 part 2), and the block references' attributes. `when`
  * evaluates only the fields whose options include that bit (`evaluateFields`).
  */
 export function updateEntityFields(
@@ -94,6 +101,21 @@ export function updateEntityFields(
       found: r.found,
       evaluated: r.evaluated,
     };
+  }
+  if (g.kind === 'ACAD_TABLE' && g.cells.some((row) => row.some((c) => c.field))) {
+    // A table's cells (M4-23 part 2), each as an MTEXT's text: the cell shows the values.
+    let found = 0;
+    let evaluated = 0;
+    const cells = g.cells.map((row) =>
+      row.map((c): TableCell => {
+        if (!c.field) return c;
+        const r = evaluateFields(c.field, ctx, when);
+        found += r.found;
+        evaluated += r.evaluated;
+        return { ...c, text: r.text, field: r.field };
+      }),
+    );
+    return { geom: { ...g, cells }, found, evaluated };
   }
   if (g.kind === 'INSERT' && g.attributes.some((a) => a.field)) {
     let found = 0;
@@ -149,6 +171,7 @@ export function fieldEventMayUpdate(model: DocumentModel, event: FieldEvent): bo
     if ('field' in g && g.field) return true;
     if (g.kind === 'INSERT' && g.attributes.some((a) => a.field)) return true;
     if (g.kind === 'MULTILEADER' && g.text?.field) return true;
+    if (g.kind === 'ACAD_TABLE' && g.cells.some((row) => row.some((c) => c.field))) return true;
   }
   return false;
 }
@@ -161,6 +184,20 @@ export function fieldEventChange(
   const updates = fieldEventUpdates(base, event);
   if (updates.length === 0) return undefined;
   const b = new ChangeSetBuilder(base.model);
-  for (const u of updates) b.updateEntity(u.id, { geom: u.geom });
+  for (const u of updates) writeFieldUpdate(b, base.model, u.id, u.geom);
   return b.build();
+}
+
+/**
+ * Gives entity `id` its geometry with fields evaluated again; a table's `*T` block, which AutoCAD
+ * draws the table from, is drawn again with the cells' new values (M4-23 part 2).
+ */
+export function writeFieldUpdate(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  id: EntityId,
+  geom: EntityGeometry,
+): void {
+  b.updateEntity(id, { geom });
+  if (geom.kind === 'ACAD_TABLE') writeTableBlock(b, model, id);
 }

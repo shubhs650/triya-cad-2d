@@ -17,6 +17,8 @@ import {
   CadDictionary,
   CadDocument,
   CellContent,
+  CadValueType,
+  Field,
   type CellStyle,
   CellStyleMap,
   Color,
@@ -2883,5 +2885,42 @@ describe('acad-ts local patches', () => {
     const object = new TableContentObject();
     expect(object.objectName).toBe('TABLECONTENT');
     expect(object.rawDxfCodes).toBeNull();
+  });
+
+  it('0186 a DXF table cell names its FIELD (344), read onto its content and written', () => {
+    // M4-23 part 2: a cell's fields are a FIELD tree the table owns; only 344 names its root.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('*T1');
+    doc.blockRecords!.add(block);
+    const table = new TableEntity();
+    table.block = block;
+    table.horizontalDirection = new XYZ(1, 0, 0);
+    const column = new TableEntityColumn();
+    column.width = 10;
+    table.columns.push(column);
+    const row = new TableEntityRow();
+    row.height = 5;
+    const cell = new TableEntityCell();
+    const content = new CellContent();
+    content.cadValue.setValue('Rev 2026', CadValueType.String);
+    const field = new Field();
+    field.evaluatorId = '_text';
+    field.fieldCode = 'Rev 2026';
+    field.formatString = 'Rev 2026';
+    content.field = field;
+    cell.contents.push(content);
+    row.cells.push(cell);
+    table.rows.push(row);
+    doc.entities!.add(table);
+
+    const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
+    expect(text).toMatch(/\n *344\r?\n[0-9A-F]+\r?\n/);
+    const read = DxfReader.readFromStream(Uint8Array.from(text, (c) => c.charCodeAt(0)));
+    const back = [...read.entities!].find((e): e is TableEntity => e instanceof TableEntity)!;
+    const k = back.rows[0]!.cells[0]!.contents[0]!;
+    expect(k.field).toBeInstanceOf(Field);
+    expect(k.field!.handle).toBe(field.handle);
+    expect(k.field!.fieldCode).toBe('Rev 2026');
+    expect(k.cadValue.value).toBe('Rev 2026');
   });
 });

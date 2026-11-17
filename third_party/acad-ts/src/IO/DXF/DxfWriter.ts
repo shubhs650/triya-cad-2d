@@ -26,6 +26,7 @@ import { CadObject } from '../../CadObject.js';
 import { CadDictionary } from '../../Objects/CadDictionary.js';
 import { Field } from '../../Objects/Field.js';
 import { FieldList } from '../../Objects/FieldList.js';
+import { TableEntity } from '../../Entities/TableEntity.js';
 
 type DxfTextOutput = {
   write(value: string): void;
@@ -196,6 +197,18 @@ export class DxfWriter extends CadWriterBase<DxfWriterConfiguration, DxfWriteTar
       if (item.xDictionary) objects.push(item.xDictionary);
       if (item instanceof CadDictionary) {
         for (const entry of item) objects.push(entry);
+      }
+      if (item instanceof TableEntity) {
+        // A table cell's FIELD (344) is owned by the table.
+        for (const row of item.rows) {
+          for (const cell of row.cells) {
+            for (const content of cell.contents) {
+              if (!content.field) continue;
+              content.field.owner ??= item;
+              objects.push(content.field);
+            }
+          }
+        }
       }
       if (item instanceof FieldList) {
         lists.push(item);

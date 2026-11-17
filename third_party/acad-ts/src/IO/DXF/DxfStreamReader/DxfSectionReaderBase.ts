@@ -692,6 +692,12 @@ export abstract class DxfSectionReaderBase {
       return true;
     }
 
+    if (tmp.currentCellTemplate != null && code === 344) {
+      // A text cell's FIELD (DXF Reference, ACAD_TABLE: "Hard-pointer ID of the FIELD object").
+      tmp.currentCellTemplate.fieldHandle = this._reader.valueAsHandle;
+      return true;
+    }
+
     if (tmp.currentCellTemplate != null && code === 7) {
       // A cell's text style override names the style; it is resolved when the cell is built.
       tmp.currentCellTemplate.textStyleOverrideName = this._reader.valueAsString;

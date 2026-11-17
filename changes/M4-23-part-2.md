@@ -1,0 +1,1 @@
+- M4-23 part 2 (#491): table cells hold fields: Insert Field, Edit Field and Update Field in the cell editor, evaluated by UPDATEFIELD, FIELDEVAL and REGEN with the table drawn again, saved in DXF as a FIELD tree the table owns (344 and the TABLECONTENT's field content; acad-ts 0186, DEC-070).

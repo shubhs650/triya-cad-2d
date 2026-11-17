@@ -15,7 +15,7 @@ import type {
   HatchBoundaryPathEdge,
   Vertex,
 } from '@node-projects/acad-ts';
-import { writeFields } from './fields';
+import { writeCellField, writeFields } from './fields';
 import {
   ACadVersion,
   EntityPlotStyleType,
@@ -95,6 +95,7 @@ import {
   TableCellStateFlags,
   TableEntity,
   TableEntityCell,
+  Field,
   CellStyleType,
   TableCellStylePropertyFlags,
   TableStyle,
@@ -115,6 +116,7 @@ import {
   type Dimension,
 } from '@node-projects/acad-ts';
 import type {
+  DrawingField,
   ArcGeometry,
   AttdefGeometry,
   AttributeFields,
@@ -2330,6 +2332,8 @@ const tableWriter: Writer<TableGeometry> = {
     // Cells by their own before, not `differ`'s: a plane change must not rewrite every value.
     for (const [i, j, b, a] of cells(was, g)) {
       const cell = t.rows[i]!.cells[j]!;
+      // The FIELD the cell's content names (M4-23 part 2), before a change of type drops it.
+      const root = cell.contents[0]?.field ?? null;
       // A text cell given a block, or a block cell typed in (TINSERT, TABLEDIT; M4-16).
       if (b && b.type !== a.type) writeCellType(cell, a.type);
       // A new cell nothing was typed into, nor given a data format, holds no value, as AutoCAD
@@ -2337,6 +2341,8 @@ const tableWriter: Writer<TableGeometry> = {
       if (a.type === 'text' && (b ? valueChanged(b, a) : a.text !== '' || a.valueFormat)) {
         writeCellValue(cell, b, a);
       }
+      const field = a.type === 'text' ? a.field : undefined;
+      if (!same(b?.field, field)) writeCellFieldOf(r, t, cell, root, b?.field, field);
       if (a.type === 'block' && (!b || b.block !== a.block || b.type !== a.type)) {
         const block = insertable(r, a.block!)!;
         if (cell.type === CellType.Block || cell.value instanceof BlockRecord) cell.value = block;
@@ -2372,8 +2378,26 @@ const tableWriter: Writer<TableGeometry> = {
  */
 export function newTableContent(r: Resolver, g: TableGeometry): TableEntity['content'] {
   const t = new TableEntity();
-  tableWriter.write({ ...r, format: 'dwg', version: ACadVersion.AC1032 }, t, undefined, g);
+  const plain = withoutFields(g);
+  tableWriter.write({ ...r, format: 'dwg', version: ACadVersion.AC1032 }, t, undefined, plain);
   return t.content;
+}
+
+/**
+ * Table `g` without its cells' fields: the scratch tables a TABLECONTENT is written from make no
+ * FIELDs of their own (they would take handles no object keeps); table-content.ts names the
+ * fields the table's cells were given (M4-23 part 2).
+ */
+function withoutFields(g: TableGeometry): TableGeometry {
+  if (!g.cells.some((row) => row.some((c) => c.field))) return g;
+  const cells = g.cells.map((row) =>
+    row.map((c) => {
+      if (!c.field) return c;
+      const { field: _field, ...rest } = c;
+      return rest;
+    }),
+  );
+  return { ...g, cells };
 }
 
 /** The custom data AutoCAD keeps a checksum of each cell under; how it is worked out is not published. */
@@ -2404,7 +2428,7 @@ export function editedTableContent(
   const r2010: Resolver = { ...r, format: 'dwg', version: ACadVersion.AC1032 };
   if (tableCellProblems(r2010, t, before, after).length > 0) return undefined;
   const was = alignedBefore(before, after);
-  tableWriter.write(r2010, t, before, after);
+  tableWriter.write(r2010, t, withoutFields(before), withoutFields(after));
   for (const [i, j, b, a] of cells(was, after)) {
     if (b && same(b, a)) continue;
     const data = t.rows[i]!.cells[j]!.customDataCollection;
@@ -2485,6 +2509,33 @@ function writeCellType(cell: TableEntityCell, type: TableCell['type']): void {
   }
 }
 
+/**
+ * A text cell's fields (M4-23 part 2): the content names the root FIELD (`writeCellField`), as a
+ * field content, which a DWG from R2010 writes in place of the value (the legacy codes keep the
+ * value as shown beside it, DXF 344); a cell whose fields are gone holds its value again. The
+ * scratch tables a DXF save's TABLECONTENT is written from carry no fields (table-content.ts
+ * names the table's own).
+ */
+function writeCellFieldOf(
+  r: Resolver,
+  t: TableEntity,
+  cell: TableEntityCell,
+  root: Field | null,
+  before: DrawingField | undefined,
+  after: DrawingField | undefined,
+): void {
+  const made = writeCellField(r, t, root, before, after);
+  if (cell.type === CellType.Block) return;
+  let content = cell.contents[0];
+  if (!content) {
+    if (!made) return;
+    content = new CellContent();
+    cell.contents.push(content);
+  }
+  content.field = made;
+  content.contentType = made ? TableCellContentType.Field : TableCellContentType.Value;
+}
+
 /** Whether a text cell's value, its data format or the text it shows changed. */
 const valueChanged = (b: TableCell, a: TableCell): boolean =>
   b.text !== a.text || !same(b.value, a.value) || (b.valueFormat ?? '') !== (a.valueFormat ?? '');
@@ -2538,8 +2589,9 @@ function writeCellValue(
 
 /**
  * What an edited table's original holds that its writer cannot change, by the cell: a cell with
- * a field (FIELD, M4-10), several contents, locked content or a data link is not typed over (the
- * cell editor refuses a locked one; the link and the field would put their own value back), a
+ * several contents, a field Triya cannot follow, locked content or a data link is not typed over
+ * (the cell editor refuses a locked one; the link and the field would put their own value back;
+ * a field Triya maps is the model's, M4-23), a
  * block with attribute values keeps them. What the table-wide overrides cannot state in the file
  * is checked here too (table-overrides.ts); in a DWG from R2010 a cell format is checked against
  * what the cell's row gives it once changed overrides are in the rows.
@@ -2595,7 +2647,9 @@ export function tableCellProblems(
     if (valueChanged(b, a) || b.block !== a.block) {
       const k = cell.contents[0];
       if (cell.contents.length > 1) out.push(`${at} holds more than one content`);
-      if (k && (k.field || k.contentType & TableCellContentType.Field)) {
+      // A field content Triya cannot follow would put its own value back (M4-10); one it maps is
+      // the model's own (M4-23).
+      if (k && k.contentType & TableCellContentType.Field && !(k.field instanceof Field)) {
         out.push(`${at} holds a field (M4-10)`);
       }
       if (cell.stateFlags & TableCellStateFlags.ContentLocked)

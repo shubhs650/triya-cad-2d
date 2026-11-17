@@ -21,6 +21,7 @@ import {
   BreakOptionFlags,
   type TableEntity,
   type TableEntityCell,
+  Field,
   type TableEntityColumn,
 } from '@node-projects/acad-ts';
 import type { TableCell, TableCellFormat, TableGeometry } from '@triya/engine';
@@ -182,18 +183,33 @@ export function formatsBefore(
   );
 }
 
+/** Whether a FIELD tree may name table cells: a formula (`AcExpr`), which names them by place. */
+function namesCells(f: Field, depth = 0): boolean {
+  if (f.evaluatorId === 'AcExpr' || f.fieldCode.includes('\\AcExpr')) return true;
+  return depth < 32 && f.children.some((c) => namesCells(c, depth + 1));
+}
+
 /**
- * Why `acad`'s rows or columns cannot be inserted or deleted as `g` states: a field or formula
- * names cells by their row and column, which AutoCAD moves with them (FIELD, M4-10); cells
+ * Why `acad`'s rows or columns cannot be inserted or deleted as `g` states: a formula names cells
+ * by their row and column, which AutoCAD moves with them (FIELD, M4-10); cells
  * linked to external data are refreshed from it by place; and a table broken into parts (table
  * breaks) lists its parts by row.
  */
 export function regridProblems(acad: TableEntity, g: TableGeometry): string[] {
   const out: string[] = [];
   const cells = acad.rows.flatMap((r) => r.cells);
+  // A cell's own fields (a date, the file name, an object's property; M4-23) name no cells and
+  // move with it; a formula, or a field Triya cannot follow, may name cells.
   const field = (c: TableEntityCell) =>
-    c.contents.some((k) => k.field || k.contentType & TableCellContentType.Field);
-  if (acad.content.fieldReferences.length > 0 || cells.some(field)) {
+    c.contents.some(
+      (k) =>
+        (k.contentType & TableCellContentType.Field && !(k.field instanceof Field)) ||
+        (k.field instanceof Field && namesCells(k.field)),
+    );
+  const referenced = acad.content.fieldReferences.some(
+    (f) => !(f instanceof Field) || namesCells(f),
+  );
+  if (referenced || cells.some(field)) {
     out.push(
       'rows or columns inserted or deleted in a table that holds a field or formula, whose cell references AutoCAD moves with them (M4-10)',
     );

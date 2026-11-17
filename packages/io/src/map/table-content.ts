@@ -790,8 +790,15 @@ export function roundTripTableContent(
   const object = second.value as RoundTripTableContent['object'] | null;
   const codes = object?.rawDxfCodes;
   if (!object || object.objectName !== 'TABLECONTENT' || !codes) return undefined;
+  // A cell's FIELD (M4-23) is owned by the table and in no dictionary, so the drawing may not list
+  // it: the table's cells name it (DXF 344), and the content's 340 and 360 resolve to the same one.
+  const fields = new Map<number, CadObject>();
+  for (const row of t.rows)
+    for (const cell of row.cells)
+      for (const k of cell.contents) if (k.field) fields.set(k.field.handle, k.field);
+  const own: Resolve = (h) => resolve(h) ?? fields.get(h) ?? null;
   try {
-    const { content, head } = readTableContent(codes, resolve);
+    const { content, head } = readTableContent(codes, own);
     return { record, object, content, head };
   } catch {
     return { record, object, content: null, head: codes.slice(0, 0) };

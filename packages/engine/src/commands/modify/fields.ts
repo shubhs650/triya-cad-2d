@@ -5,12 +5,12 @@
 //   2 field(s) found.
 //   2 field(s) updated.
 //
-// The fields of the TEXT, MTEXT and attribute definitions selected, and of the attributes of
-// the block references selected, are evaluated again (edit/fields.ts) and each text shows the
+// The fields of the TEXT, MTEXT and attribute definitions, multileaders and tables (their cells,
+// M4-23) selected, and of the attributes of the block references selected, are evaluated again (edit/fields.ts) and each text shows the
 // new values, as one undo step. A field Triya cannot evaluate keeps its value and is not
 // counted as updated; one already up to date is (AutoCAD counts the fields it evaluated). The
 // file name comes from the app (DWGNAME, DWGPREFIX); the date from the command's clock.
-import { updateEntityFields } from '../../edit/field-eval';
+import { updateEntityFields, writeFieldUpdate } from '../../edit/field-eval';
 import type { EntityId } from '../../model/entity-ids';
 import type { EntityGeometry } from '../../model/types';
 import type { CommandDef, CommandGenerator } from '../command';
@@ -41,7 +41,7 @@ export function updateFieldCommand(): CommandDef {
       ctx.message(`${evaluated} field(s) updated.`);
       if (changes.length > 0) {
         ctx.edit((b) => {
-          for (const [id, geom] of changes) b.updateEntity(id, { geom });
+          for (const [id, geom] of changes) writeFieldUpdate(b, ctx.model, id, geom);
         });
       }
     },
