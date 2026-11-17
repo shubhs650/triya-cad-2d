@@ -25,6 +25,7 @@ export { mapTriyaArrays, TRIYA_ARRAY } from './map/triya-array';
 export { mapTriyaDims, TRIYA_DIMBREAK, TRIYA_DIMINSPECT } from './map/triya-dims';
 export { mapTriyaCenterMarks, TRIYA_CENTERMARK } from './map/triya-centermarks';
 export { mapLayouts, mapPageSetups } from './map/layouts';
+export { readTableContent, tableContentCodes, type RawCode } from './map/table-content';
 export { mapImageObjects, type ImageObject } from './map/images';
 export {
   exportDocument,
