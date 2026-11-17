@@ -360,3 +360,161 @@ describe('the dialog’s Preview', () => {
     expect(tableDataPreview(cell(''), { type: 'general' }, U, now)).toBe('');
   });
 });
+
+// M4-16 part 3: the Table Cell Format dialog's Additional Format... (conversion factor, prefix and
+// suffix, decimal and thousands separators, leading and trailing zeros) and a point's X, Y and Z
+// boxes, in the field format codes (`%ct8[f]`, `%ps[p,s]`, `%ds<c>`, `%th<c>`, `%zs<bits>`,
+// `%pt<bits>`) the Field dialog writes.
+describe('Additional Format and a point’s coordinates', () => {
+  const metres: TableDataFormat = {
+    type: 'decimal',
+    format: 2,
+    precision: 2,
+    additional: { prefix: 'L=', suffix: ' m', decimal: ',', thousands: '.' },
+  };
+
+  it('are stated in the format string', () => {
+    expect(
+      tableFormatString({ type: 'decimal', format: 2, precision: 2, additional: { factor: 25.4 } }),
+    ).toBe('%lu2%pr2%ct8[25.4]');
+    expect(tableFormatString(metres)).toBe('%lu2%pr2%ps[L=, m]%ds44%th46');
+    expect(
+      tableFormatString({
+        type: 'decimal',
+        precision: 3,
+        additional: { leading: true, trailing: true },
+      }),
+    ).toBe('%pr3%zs12');
+    expect(
+      tableFormatString({ type: 'angle', format: 0, precision: 2, additional: { trailing: true } }),
+    ).toBe('%au0%pr2%zs8');
+    expect(tableFormatString({ type: 'point', format: 2, precision: 1, coordinates: 3 })).toBe(
+      '%lu2%pr1%pt3',
+    );
+    // All three coordinates are the default and state nothing.
+    expect(tableFormatString({ type: 'point', precision: 1, coordinates: 7 })).toBe('%pr1');
+    // Currency and Percentage keep %ps for their symbol: the Additional text is theirs.
+    expect(
+      tableFormatString({
+        type: 'currency',
+        symbol: '$',
+        precision: 2,
+        additional: { prefix: 'x', thousands: ',' },
+      }),
+    ).toBe('%lu2%pr2%ps[$,]%th44');
+    expect(
+      tableFormatString({ type: 'percentage', precision: 1, additional: { decimal: ',' } }),
+    ).toBe('%lu2%pr1%ps[,%]%ds44');
+    // A factor of 1, a period and no thousands separator are the defaults and state nothing.
+    expect(
+      tableFormatString({
+        type: 'decimal',
+        precision: 2,
+        additional: { factor: 1, decimal: '.', prefix: '', suffix: '' },
+      }),
+    ).toBe('%pr2');
+  });
+
+  it('read back from the format string', () => {
+    const formats: TableDataFormat[] = [
+      metres,
+      { type: 'decimal', format: 2, precision: 2, additional: { factor: 25.4, trailing: true } },
+      { type: 'decimal', precision: 3, additional: { leading: true, thousands: ' ' } },
+      { type: 'angle', format: 0, precision: 2, additional: { factor: 2, trailing: true } },
+      { type: 'point', format: 2, precision: 1, coordinates: 3, additional: { suffix: ' m' } },
+      {
+        type: 'currency',
+        symbol: '€',
+        appendSymbol: true,
+        precision: 2,
+        additional: { decimal: ',' },
+      },
+      { type: 'percentage', precision: 1, additional: { thousands: ',' } },
+    ];
+    for (const f of formats) {
+      expect(tableDataFormatOf(cell('', { valueFormat: tableFormatString(f) }))).toEqual(f);
+    }
+    // A number with a prefix or suffix is not a currency: its value says so.
+    expect(
+      tableDataFormatOf(
+        cell('$12.00', {
+          value: { kind: 'double', n: 12, units: 0 },
+          valueFormat: '%lu2%pr2%ps[$,]',
+        }),
+      ),
+    ).toEqual({ type: 'decimal', format: 2, precision: 2, additional: { prefix: '$' } });
+  });
+
+  it('show a value', () => {
+    const d = (n: number) => ({ kind: 'double', n, units: 0 }) as const;
+    expect(tableValueText(d(1234567.5), tableFormatString(metres), U)).toBe('L=1.234.567,50 m');
+    expect(tableValueText(d(10), '%lu2%pr2%ct8[25.4]', U)).toBe('254.00');
+    expect(tableValueText(d(10), '%lu2%pr2%ct8[25.4]%zs8', U)).toBe('254');
+    expect(tableValueText(d(0.5), '%lu2%pr2%zs4', U)).toBe('.50');
+    expect(tableValueText(d(1234.5), '%lu2%pr2%th32', U)).toBe('1 234.50');
+    const p = { kind: 'point', point: [1, 2, 3], dimensions: 3 } as const;
+    expect(tableValueText(p, '%lu2%pr1%pt3', U)).toBe('1.0, 2.0');
+    expect(tableValueText(p, '%lu2%pr1%pt4', U)).toBe('3.0');
+    expect(tableValueText(p, '%lu2%pr1%pt5', U)).toBe('1.0, 3.0');
+    // The prefix and suffix go round the point, not each coordinate.
+    expect(tableValueText(p, '%lu2%pr1%ps[(,)]%pt3', U)).toBe('(1.0, 2.0)');
+    expect(tableValueText(p, '%lu2%pr1%ds44', U)).toBe('1,0; 2,0; 3,0');
+  });
+
+  it('read typed text back', () => {
+    expect(tableTypedValue('L=1.234,5 m', metres, U)).toEqual({
+      kind: 'double',
+      n: 1234.5,
+      units: 0,
+    });
+    expect(tableTypedValue('1234,5', metres, U)).toEqual({ kind: 'double', n: 1234.5, units: 0 });
+    expect(tableTypedValue('L=x', metres, U)).toBeUndefined();
+    const spaced: TableDataFormat = { type: 'decimal', additional: { thousands: ' ' } };
+    expect(tableTypedValue('1 234.5', spaced, U)).toEqual({ kind: 'double', n: 1234.5, units: 0 });
+    const comma: TableDataFormat = { type: 'point', precision: 1, additional: { decimal: ',' } };
+    expect(tableTypedValue('1,5; 2,5', comma, U)).toEqual({
+      kind: 'point',
+      point: [1.5, 2.5, 0],
+      dimensions: 2,
+    });
+    const currency: TableDataFormat = {
+      type: 'currency',
+      symbol: '€',
+      appendSymbol: true,
+      precision: 2,
+      additional: { decimal: ',', thousands: '.' },
+    };
+    expect(tableTypedValue('1.200,50€', currency, U)).toEqual({
+      kind: 'double',
+      n: 1200.5,
+      units: 16,
+    });
+  });
+
+  it('format a cell, the typed number kept and the factor applied as it is shown', () => {
+    const inches: TableDataFormat = {
+      type: 'decimal',
+      format: 2,
+      precision: 1,
+      additional: { factor: 1 / 25.4, suffix: '"' },
+    };
+    const c = cellWithDataFormat(cell('254'), inches, U);
+    expect(c.value).toEqual({ kind: 'double', n: 254, units: 0 });
+    expect(c.text).toBe('10.0"');
+    expect(cellWithTypedText(c, '508', U).text).toBe('20.0"');
+    const pt = cellWithDataFormat(
+      cell('1,2,3'),
+      { type: 'point', precision: 0, coordinates: 3 },
+      U,
+    );
+    expect(pt.value).toEqual({ kind: 'point', point: [1, 2, 3], dimensions: 3 });
+    expect(pt.text).toBe('1, 2');
+  });
+
+  it('show in the Preview', () => {
+    expect(tableDataPreview(cell(''), metres, U, 0)).toBe('L=1.234,50 m');
+    expect(tableDataPreview(cell(''), { type: 'point', precision: 1, coordinates: 6 }, U, 0)).toBe(
+      '100.0, 0.0',
+    );
+  });
+});
