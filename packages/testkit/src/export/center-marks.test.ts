@@ -11,7 +11,10 @@ import {
   Circle,
   Insert,
   Line,
+  LwPolyline,
+  LwPolylineVertex,
   XRecord,
+  XY,
   XYZ,
 } from '@node-projects/acad-ts';
 import {
@@ -48,6 +51,28 @@ function authored(): { bytes: Uint8Array; circle: string; lines: [string, string
 }
 
 const source = authored();
+
+/**
+ * M4-29: a polyline (0,300)-(20,300), an arc out to (25,305) back to (20,310), then to (0,310),
+ * and the line (0,100)-(20,100).
+ */
+function authoredPolyline(): { bytes: Uint8Array; polyline: string; line: string } {
+  const doc = new CadDocument(ACadVersion.AC1032);
+  const vertex = (x: number, y: number, bulge = 0) => {
+    const v = new LwPolylineVertex(new XY(x, y));
+    v.bulge = bulge;
+    return v;
+  };
+  const pl = new LwPolyline([vertex(0, 300), vertex(20, 300, 1), vertex(20, 310), vertex(0, 310)]);
+  const line = new Line(new XYZ(0, 100, 0), new XYZ(20, 100, 0));
+  for (const e of [pl, line]) doc.entities!.add(e);
+  const hex = (h: number) => h.toString(16).toUpperCase();
+  return {
+    bytes: writeCadDocument(doc, { format: 'dxf' }),
+    polyline: hex(pl.handle),
+    line: hex(line.handle),
+  };
+}
 
 function open(bytes: Uint8Array) {
   const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
@@ -260,12 +285,73 @@ describe('center marks and centerlines', () => {
     expect(handleOf(groups.find((g) => g.code === 331)!.value)).toBe(source.circle);
   });
 
+  it('a centerline on polyline segments saves version 2, a 90 segment index after each 331, and follows the segment after a reopen (M4-29, DEC-068)', async () => {
+    const src = authoredPolyline();
+    const a = open(src.bytes);
+    a.pick(src.polyline, src.polyline);
+    await a.bus.script(['CENTERLINE', '10,300', '10,310']);
+    a.pick(src.line, src.polyline);
+    await a.bus.script(['CENTERLINE', '10,100', '10,310']);
+    expect(a.bus.command).toBeUndefined();
+    const saved = a.save();
+    const inserts = savedInserts(saved);
+    expect(inserts.map((i) => [i.insertPoint.x, i.insertPoint.y]).sort()).toEqual([
+      [10, 205],
+      [10, 305],
+    ]);
+    const groups = inserts.map((i) => recordGroups(i)!);
+    for (const g of groups) {
+      expect(g.map((x) => x.code)).toEqual([70, 71, 331, 90, 331, 90, 40, 41]);
+      expect(g[0]!.value).toBe(2);
+    }
+    const two = groups.find((g) => g[5]!.value === 2 && g[3]!.value === 0)!;
+    expect([handleOf(two[2]!.value), handleOf(two[4]!.value)]).toEqual([
+      src.polyline,
+      src.polyline,
+    ]);
+    const mixed = groups.find((g) => g[3]!.value === -1)!;
+    expect([handleOf(mixed[2]!.value), handleOf(mixed[4]!.value), mixed[5]!.value]).toEqual([
+      src.line,
+      src.polyline,
+      2,
+    ]);
+    expect(roundTrip(saved).status).toBe('clean');
+
+    // Reopened, they still follow their segments: the polyline moved up 10 takes the centerline
+    // on two of its segments up 10, the one between it and the line up 5.
+    const b = open(saved);
+    const records = [...b.model.objects.values()].filter(isCenterMark);
+    expect(records.map((r) => r.segments).sort()).toEqual([
+      [-1, 2],
+      [0, 2],
+    ]);
+    b.pick(src.polyline);
+    await b.bus.script(['MOVE', '10,300', '', '0,0', '0,10']);
+    const moved = savedInserts(b.save());
+    expect(moved.map((i) => [i.insertPoint.x, i.insertPoint.y]).sort()).toEqual([
+      [10, 210],
+      [10, 315],
+    ]);
+  });
+
+  it('a version 2 record without a segment index for each object stays as read', async () => {
+    const doc = readCadDocument((await marked()).save());
+    for (const o of [...doc.getCadObjects()]) {
+      if (!(o instanceof XRecord)) continue;
+      o.entries.find((e) => e.code === 70)!.value = 2;
+    }
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const b = open(bytes);
+    expect([...b.model.objects.values()].filter(isCenterMark)).toEqual([]);
+    expect(roundTrip(bytes).status).toBe('clean');
+  });
+
   it('a record of another version stays as read, and its mark is a plain block reference', async () => {
     const doc = readCadDocument((await marked()).save());
     for (const o of [...doc.getCadObjects()]) {
       if (!(o instanceof XRecord)) continue;
       const v = o.entries.find((e) => e.code === 70)!;
-      v.value = 2;
+      v.value = 3;
     }
     const bytes = writeCadDocument(doc, { format: 'dxf' });
     const b = open(bytes);

@@ -7,7 +7,9 @@
 // (moved on its own, CENTERDISASSOCIATE: its record in the model names no objects, part 3) loses
 // the record and keeps the dictionary, empty (DEC-066 item 3); an erased mark takes its
 // dictionary, and so its record, with it. A new mark let go of in the same session, or copied
-// without its objects, is saved with its dictionary empty.
+// without its objects, is saved with its dictionary empty. A centerline on a polyline's segment
+// is saved as version 2, a 90 segment index after each 331 (M4-29, DEC-068); every other record
+// as version 1.
 //
 // Refused, before anything changes: a record whose INSERT is not an entity of the drawing or does
 // not name its dictionary, one that moves to another INSERT or dictionary, a new record on an
@@ -33,6 +35,7 @@ import {
 import {
   CENTER_MARK_KINDS,
   TRIYA_CENTERMARK,
+  TRIYA_CENTERMARK_SEGMENTS_VERSION,
   TRIYA_CENTERMARK_VERSION,
 } from '../map/triya-centermarks';
 import { resolve, same, type Resolver } from './entities';
@@ -101,6 +104,12 @@ export function planTriyaCenterMarks(
     if (a.objects.length !== (a.kind === 'mark' ? 1 : 2)) {
       out.push(`${a.objects.length} objects for a ${a.kind}`);
     }
+    if (a.segments) {
+      const fit = a.kind === 'line' && a.segments.length === a.objects.length;
+      if (!fit || a.segments.some((n) => !Number.isInteger(n) || n < -1)) {
+        out.push(`segments ${a.segments.join(', ')} for ${a.objects.length} objects`);
+      }
+    }
     if (old) out.push(`${ACadVersion[version!]} is older than R2000`);
     if (b) {
       for (const k of ['owner', 'insert'] as const) {
@@ -131,12 +140,15 @@ export function planTriyaCenterMarks(
 /** The record's groups, as map/triya-centermarks.ts reads them. */
 function fill(x: XRecord, a: CenterMark, doc: CadDocument): void {
   x.clear();
-  x.createEntry(70, TRIYA_CENTERMARK_VERSION);
+  const segments = a.segments?.some((n) => n >= 0) ? a.segments : undefined;
+  x.createEntry(70, segments ? TRIYA_CENTERMARK_SEGMENTS_VERSION : TRIYA_CENTERMARK_VERSION);
   x.createEntry(71, CENTER_MARK_KINDS.indexOf(a.kind));
-  for (const h of a.objects) {
+  a.objects.forEach((h, i) => {
     // The engine erases a mark with its objects, so each is in the drawing.
-    if (doc.getCadObject(handle(h))) x.createEntry(331, handle(h));
-  }
+    if (!doc.getCadObject(handle(h))) return;
+    x.createEntry(331, handle(h));
+    if (segments) x.createEntry(90, segments[i] ?? -1);
+  });
   if (a.kind === 'mark') {
     x.createEntry(1, a.crossSize ?? '0.1x');
     x.createEntry(3, a.crossGap ?? '0.05x');

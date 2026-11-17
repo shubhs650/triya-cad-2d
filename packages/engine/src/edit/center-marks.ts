@@ -17,6 +17,14 @@
 // the diameter long), the most common reading of AutoCAD's own marks. A centerline runs along
 // the bisector of two lines (midway between parallel ones), from the middle of their start
 // points to the middle of their end points, CENTEREXE past each.
+//
+// CENTERLINE also takes a polyline's straight segments (M4-29; AutoCAD 2024 Help, "CENTERLINE
+// (Command)": "Creates a centerline associated with selected lines and linear polyline
+// segments"): the record names the polyline and the vertex the segment starts at (`segments`,
+// DEC-068), and the centerline follows that segment. A polyline edited so that the segment is
+// gone or no longer straight makes no centerline, and the centerline goes, as a mark whose
+// object makes none does.
+import { bulgeArc } from '../geom/eval';
 import type { Vec2 } from '../geom/types';
 import { add, cross, dot, length, midpoint, normalize, scale, sub } from '../geom/vec';
 import { centerLength, type CenterSettings } from './center-settings';
@@ -130,9 +138,89 @@ export function centerlineOf(
   return [add(origin, scale(u, s)), add(origin, scale(u, e))];
 }
 
-/** A line segment of `e` (a LINE), or undefined. */
-function segmentOf(e: Entity | undefined): Segment | undefined {
-  return e?.geom.kind === 'LINE' ? [e.geom.start, e.geom.end] : undefined;
+/** Whether `g` is a polyline whose segments a centerline may run along: a plan one, not fit. */
+function isLinearPolyline(
+  g: EntityGeometry,
+): g is Extract<EntityGeometry, { kind: 'LWPOLYLINE' | 'POLYLINE' }> {
+  if (g.kind === 'LWPOLYLINE') return true;
+  return g.kind === 'POLYLINE' && !g.is3d && g.fit === undefined;
+}
+
+/** The segment of polyline `g` from vertex `i`, with its bulge; undefined past its last. */
+function polylineSegment(
+  g: Extract<EntityGeometry, { kind: 'LWPOLYLINE' | 'POLYLINE' }>,
+  i: number,
+): { segment: Segment; bulge: number } | undefined {
+  const v = g.vertices;
+  const n = g.closed ? v.length : v.length - 1;
+  if (!Number.isInteger(i) || i < 0 || i >= n) return undefined;
+  const p = v[i]!;
+  const q = v[(i + 1) % v.length]!;
+  return { segment: [p, q], bulge: p.bulge ?? 0 };
+}
+
+/**
+ * A line segment of `e`: a LINE's, or a polyline's straight segment from vertex `index`;
+ * undefined for anything else (a curved or zero-length segment, one past the polyline's last).
+ */
+function segmentOf(e: Entity | undefined, index = -1): Segment | undefined {
+  if (!e) return undefined;
+  if (e.geom.kind === 'LINE') return index < 0 ? [e.geom.start, e.geom.end] : undefined;
+  if (index < 0 || !isLinearPolyline(e.geom)) return undefined;
+  const s = polylineSegment(e.geom, index);
+  if (!s || s.bulge !== 0 || length(sub(s.segment[1], s.segment[0])) === 0) return undefined;
+  return s.segment;
+}
+
+/** What a pick on `e` gives CENTERLINE: a line (segment -1), a polyline's segment, or nothing. */
+export type CenterlinePick =
+  { readonly segment: number } | { readonly refused: 'not-line' | 'curved' };
+
+/**
+ * The segment of `e` a pick at `at` takes for a centerline: a LINE whole, a polyline's segment
+ * nearest the pick (without one, its first straight segment), refused when that segment is an
+ * arc or `e` is no line or plan polyline.
+ */
+export function centerlinePick(e: Entity, at: Vec2 | undefined): CenterlinePick {
+  if (e.geom.kind === 'LINE') return { segment: -1 };
+  if (!isLinearPolyline(e.geom)) return { refused: 'not-line' };
+  const g = e.geom;
+  const n = g.closed ? g.vertices.length : g.vertices.length - 1;
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < n; i++) {
+    const s = polylineSegment(g, i)!;
+    if (!at) {
+      if (segmentOf(e, i)) return { segment: i };
+      continue;
+    }
+    const d = s.bulge === 0 ? toSegment(at, s.segment) : toBulge(at, s.segment, s.bulge);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  if (best < 0 || !segmentOf(e, best)) return { refused: 'curved' };
+  return { segment: best };
+}
+
+/** How far `p` is from the segment. */
+function toSegment(p: Vec2, [a, b]: Segment): number {
+  const ab = sub(b, a);
+  const l2 = dot(ab, ab);
+  const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, dot(sub(p, a), ab) / l2));
+  return length(sub(p, add(a, scale(ab, t))));
+}
+
+/** How far `p` is from the arc a segment with `bulge` draws. */
+function toBulge(p: Vec2, [a, b]: Segment, bulge: number): number {
+  const arc = bulgeArc(a, b, bulge);
+  const t = Math.atan2(p.y - arc.center.y, p.x - arc.center.x) - arc.startAngle;
+  const sweep = arc.sweep;
+  // Where `p` lies round from the arc's start, the way it turns, in [0, 2π).
+  const round = (((sweep >= 0 ? t : -t) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  if (round <= Math.abs(sweep)) return Math.abs(length(sub(p, arc.center)) - arc.radius);
+  return Math.min(length(sub(p, a)), length(sub(p, b)));
 }
 
 /** What a mark is drawn from: the centre and radius, or the centerline itself. */
@@ -142,7 +230,7 @@ type Shape =
 
 /** The mark's shape from its objects as `entityOf` gives them, or undefined when one is unfit. */
 function shapeOf(
-  r: Pick<CenterMark, 'kind' | 'objects' | 'extensions'>,
+  r: Pick<CenterMark, 'kind' | 'objects' | 'extensions' | 'segments'>,
   entityOf: (h: Handle) => Entity | undefined,
 ): Shape | undefined {
   if (!isAssociated(r)) return undefined;
@@ -151,8 +239,8 @@ function shapeOf(
     if (g?.kind !== 'CIRCLE' && g?.kind !== 'ARC') return undefined;
     return { kind: 'mark', center: g.center, radius: g.radius };
   }
-  const a = segmentOf(entityOf(r.objects[0]!));
-  const b = segmentOf(entityOf(r.objects[1]!));
+  const a = segmentOf(entityOf(r.objects[0]!), r.segments?.[0]);
+  const b = segmentOf(entityOf(r.objects[1]!), r.segments?.[1]);
   const line = a && b && centerlineOf(a, b, r.extensions);
   return line && { kind: 'line', line };
 }
@@ -202,8 +290,10 @@ export interface NewCenterMark {
   readonly space: Handle;
   readonly props: GeneralProps;
   readonly kind: CenterMark['kind'];
-  /** The circle or arc; the two lines. */
+  /** The circle or arc; the two lines (LINEs or polylines). */
   readonly objects: readonly Entity[];
+  /** A centerline's segment of each object: a polyline's vertex index, -1 for a LINE. */
+  readonly segments?: readonly number[];
   readonly settings: CenterSettings;
 }
 
@@ -227,7 +317,10 @@ export function makeCenterMark(
           extensions: [1, 2, 3, 4].map(() => m.settings.extension),
           showExtensions: m.settings.showExtensions,
         }
-      : { extensions: [m.settings.extension, m.settings.extension] }),
+      : {
+          extensions: [m.settings.extension, m.settings.extension],
+          ...segmentsField(m.segments),
+        }),
   };
   const byHandle = new Map(m.objects.map((e) => [e.handle, e]));
   const shape = shapeOf(fields, (h) => byHandle.get(h));
@@ -288,15 +381,27 @@ export function remakeCenterMark(
   return true;
 }
 
-const patchOf = (fields: Partial<CenterMark>): RecordPatch<NonGraphicalObject> =>
-  fields as RecordPatch<NonGraphicalObject>;
+/**
+ * The record's `segments` for a centerline's objects' segments: absent when every object is a
+ * LINE, so a centerline between lines keeps the record DEC-066 set out (version 1).
+ */
+export function segmentsField(segments: readonly number[] | undefined): {
+  segments?: readonly number[];
+} {
+  return segments?.some((i) => i >= 0) ? { segments: [...segments] } : {};
+}
+
+/** A record patch; a field set to undefined leaves the record. */
+const patchOf = (fields: {
+  readonly [K in keyof CenterMark]?: CenterMark[K] | undefined;
+}): RecordPatch<NonGraphicalObject> => fields as RecordPatch<NonGraphicalObject>;
 
 /**
  * Lets a mark go of its objects (CENTERDISASSOCIATE, or the mark moved on its own): it stays as
  * drawn, a center mark associated to nothing.
  */
 export function disassociateCenterMark(b: ChangeSetBuilder, r: CenterMark): void {
-  b.updateObject(r.handle, patchOf({ objects: [] }));
+  b.updateObject(r.handle, patchOf({ objects: [], segments: undefined }));
 }
 
 /** The lines of `block` as the change being built has them. */
@@ -407,7 +512,8 @@ export function redrawCenterMark(
     : redrawFree(b, model, insert, before, after);
   if (!drawn) return false;
   const { handle: _h, ...fields } = after;
-  b.updateObject(after.handle, patchOf(fields));
+  // Segments the record no longer has (a centerline moved onto lines) leave it.
+  b.updateObject(after.handle, patchOf({ segments: undefined, ...fields }));
   return true;
 }
 
@@ -539,10 +645,11 @@ export function copyCenterMarks(
     b.updateEntity(copy.id, { geom: { ...copy.geom, block: block.handle } });
     const dictionary = b.allocateHandle();
     b.updateEntity(copy.id, { extDict: dictionary });
-    const { handle: _h, owner: _o, insert: _i, ...fields } = r;
+    const { handle: _h, owner: _o, insert: _i, segments: picked, ...fields } = r;
     const all = isAssociated(r) && r.objects.every((h) => copies.has(h));
     b.addObject({
       ...fields,
+      ...(all && segmentsField(picked)),
       objects: all ? r.objects.map((h) => copies.get(h)!.handle) : [],
       owner: dictionary,
       insert: copy.handle,

@@ -340,3 +340,76 @@ test('a center mark’s grips and Properties rows (M4-24)', async ({ page }) => 
   await page.waitForTimeout(300);
   await shot('9-mark-edited.png');
 });
+
+// M4-29: CENTERLINE on a polyline's straight segments (DEC-068). A U-shaped polyline's bottom
+// and top segments get a centerline, which follows the top segment when its end vertex is
+// dragged up by its grip.
+test('CENTERLINE on polyline segments follows the segment (M4-29)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const off = () => page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await off();
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-20, -20), 'Specify opposite corner:');
+  await type(page, p(50, 20), 'Command:');
+  const k = Math.min(box.width / 70, box.height / 40);
+  const at = (x: number, y: number) => ({
+    x: box.x + box.width / 2 + (x - 15) * k,
+    y: box.y + box.height / 2 - y * k,
+  });
+  const click = async (x: number, y: number) => {
+    const q = at(x, y);
+    await page.mouse.click(q.x, q.y);
+    await off();
+  };
+  await page.keyboard.press('F3');
+  await type(page, 'PLINE', /^Specify start point/);
+  await type(page, p(0, -10), /^Specify next point/);
+  for (const [x, y] of [
+    [30, -10],
+    [30, 10],
+    [0, 10],
+  ] as const) {
+    await type(page, p(x, y), /^Specify next point/);
+  }
+  await type(page, '', 'Command:');
+  await page.waitForTimeout(300);
+  await shot('1-polyline.png');
+
+  await type(page, 'CENTERLINE', 'Select first line:');
+  await click(15, -10);
+  await expect(prompt(page)).toHaveText('Select second line:');
+  await click(15, 10);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => (await state(page)).map(({ kind, x, y }) => [kind, x - O, y - O]))
+    .toEqual([['line', 15, 0]]);
+  await page.waitForTimeout(300);
+  await shot('2-centerline-on-segments.png');
+
+  // The polyline picked on its bottom segment, its top-left vertex's grip dragged up to y 16:
+  // the centerline turns to the bisector of the bottom and the sloped top segment.
+  await click(15, -10);
+  const grip = at(0, 10);
+  await page.mouse.click(grip.x, grip.y);
+  await expect(prompt(page)).toHaveText(/^Specify stretch point/);
+  await type(page, `#${p(0, 16)}`, 'Command:');
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(async () => (await state(page)).map(({ x, y }) => [r1(x - O), r1(y - O)]))
+    .not.toEqual([[15, 0]]);
+  const { x, y } = (await state(page))[0]!;
+  // The middle of the ends' middles (0, 3) and (30, 0), moved onto the bisector: above y 0.
+  expect(y - O).toBeGreaterThan(0);
+  expect(x - O).toBeGreaterThan(10);
+  await off();
+  await page.waitForTimeout(300);
+  await shot('3-vertex-moved.png');
+});
+
+const r1 = (v: number) => Math.round(v * 10) / 10;
