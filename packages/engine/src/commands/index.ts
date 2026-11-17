@@ -120,9 +120,18 @@ export type {
   BlockDefinitionSettings,
   InsertBlockEntry,
   InsertDialogAnswer,
+  InsertDialogFile,
   InsertDialogRequest,
   InsertDialogSettings,
 } from './blocks';
+export { fileBlockName } from './blocks';
+export type {
+  WriteBlockAnswer,
+  WriteBlockRequest,
+  WriteBlockSettings,
+  WriteBlockSource,
+} from './wblock';
+export { wblockCopy, wblockFileName } from './wblock';
 export type {
   HatchDialogAnswer,
   HatchDialogButton,

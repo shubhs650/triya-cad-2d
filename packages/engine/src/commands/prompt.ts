@@ -37,6 +37,7 @@ import type {
   InsertDialogAnswer,
   InsertDialogRequest,
 } from './blocks';
+import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
 import type { TableCellFormatRequest } from './draw/table-data-format';
 import type { TableDataFormat } from '../edit/table-data';
 import type { GdtFrame } from '../edit/tolerance-frame';
@@ -772,6 +773,8 @@ export type DialogRequest =
   | BlockDefinitionRequest
   /** INSERT's Insert (M5-01 part 3). */
   | InsertDialogRequest
+  /** WBLOCK's Write Block (M5-01 part 4). */
+  | WriteBlockRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
   | TableCellFormatRequest
   | ObjectGroupingRequest;
@@ -1015,6 +1018,8 @@ export type PromptAnswer =
       readonly block?: BlockDefinitionAnswer;
       /** The Insert dialog's fields as OK closed it (INSERT, M5-01 part 3). */
       readonly insert?: InsertDialogAnswer;
+      /** The Write Block dialog's fields as OK (or a pick) closed it (WBLOCK, M5-01 part 4). */
+      readonly wblock?: WriteBlockAnswer;
       /** The Table Cell Format dialog's data format as OK closed it (M4-16). */
       readonly tableDataFormat?: TableDataFormat;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */

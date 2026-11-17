@@ -13,8 +13,12 @@ import { BlockTypeFlags, type BlockRecord, type CadObject } from '@node-projects
 import type { BlockDefinition, Handle } from '@triya/engine';
 import { hex } from './common';
 
+/** The xdata of application `app`; application names are symbol names, so any case. */
 function xdataRecords(o: CadObject, app: string) {
-  for (const [id, data] of o.extendedData) if (id.name === app) return data.records;
+  const upper = app.toUpperCase();
+  for (const [id, data] of o.extendedData) {
+    if (id.name.toUpperCase() === upper) return data.records;
+  }
   return undefined;
 }
 
