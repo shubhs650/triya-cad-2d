@@ -4894,7 +4894,6 @@ button {
   max-width: 100%;
 }
 
-
 /* M4-17: spell checking as you type. MTEXT's misspelled words are a CSS highlight over its DOM;
    TEXT's line lays a copy of its text, transparent but for the underlines, under the input. */
 ::highlight(triya-spelling),
