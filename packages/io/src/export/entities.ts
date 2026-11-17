@@ -2341,10 +2341,11 @@ const tableWriter: Writer<TableGeometry> = {
         }
       }
       if (a.type === 'block') {
-        if (a.blockScale !== undefined && (!b || b.blockScale !== a.blockScale)) {
-          cell.blockScale = a.blockScale;
-        }
-        if (a.autoFit !== undefined && (!b || b.autoFit !== a.autoFit)) cell.autoFit = a.autoFit;
+        const scaled = a.blockScale !== undefined && (!b || b.blockScale !== a.blockScale);
+        const fitted = a.autoFit !== undefined && (!b || b.autoFit !== a.autoFit);
+        if (scaled) cell.blockScale = a.blockScale!;
+        if (fitted) cell.autoFit = a.autoFit!;
+        if (styles && (scaled || fitted)) writeBlockFit(cell, a);
       }
       if (!b || b.rotation !== a.rotation) {
         if (styles) writeCellRotation(t, i, j, a.rotation);
@@ -2389,6 +2390,22 @@ function writeCellRotation(t: TableEntity, i: number, j: number, rotation: numbe
 }
 
 /**
+ * A DWG R2010+ block cell's scale and AutoFit, which it states in its block content's format
+ * (map/entities.ts `blockFit`), as acadsharp's AC1024+ samples do: BlockScale and AutoScale
+ * overridden, AutoScale's value among the property flags.
+ */
+function writeBlockFit(cell: TableEntityCell, a: TableCell): void {
+  const f = cell.contents[0]?.format;
+  if (!f) return;
+  const scale = TableCellStylePropertyFlags.BlockScale;
+  const auto = TableCellStylePropertyFlags.AutoScale;
+  f.hasData = true;
+  f.scale = a.blockScale ?? 1;
+  f.propertyOverrideFlags |= scale | auto;
+  f.propertyFlags = a.autoFit === false ? f.propertyFlags & ~auto : f.propertyFlags | auto;
+}
+
+/**
  * Cell `cell` turned into a text or a block cell, as AutoCAD states each (a new table's cells,
  * table-new.ts `newCell`): a block cell's type 2 with one block content holding an empty string
  * value, its block and scale set after; a text cell's type 1 holding no value until text is
@@ -2399,6 +2416,7 @@ function writeCellType(cell: TableEntityCell, type: TableCell['type']): void {
   if (type === 'block') {
     cell.type = CellType.Block;
     cell.blockScale = 1;
+    cell.autoFit = true;
     const content = new CellContent();
     content.contentType = TableCellContentType.Block;
     content.cadValue.valueType = CadValueType.String;

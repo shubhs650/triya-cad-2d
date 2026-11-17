@@ -89,7 +89,9 @@ export function newCell(c: TableCell): TableEntityCell {
   cell.styleOverride.hasData = true;
   if (c.type === 'block') {
     cell.type = CellType.Block;
+    // A cell stating neither fits its block (`blockCellScale`); the write after sets what it states.
     cell.blockScale = 1;
+    cell.autoFit = true;
     const content = new CellContent();
     content.contentType = TableCellContentType.Block;
     // AutoCAD states a block cell's value as an empty string (R2007+ DWG).

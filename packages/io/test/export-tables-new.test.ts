@@ -108,7 +108,13 @@ function authored(model: DocumentModel, block: string, formats: boolean): TableG
               }
             : {},
         ),
-        { ...text(''), type: 'block', block: blockNamed(model, 'MARK') },
+        {
+          ...text(''),
+          type: 'block',
+          block: blockNamed(model, 'MARK'),
+          blockScale: 1,
+          autoFit: true,
+        },
       ],
     ],
     ...(formats
