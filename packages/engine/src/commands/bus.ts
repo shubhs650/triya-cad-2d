@@ -536,10 +536,17 @@ export class PromptBus {
    */
   cancel(): Promise<void> {
     return this.#enqueue(() => {
-      const prompt = this.#stack.at(-1)?.prompt;
+      const frame = this.#stack.at(-1);
+      const prompt = frame?.prompt;
       if (!prompt?.escape) return this.#cancel();
       this.#log(`${this.promptText} *Cancel*`);
       this.#collectors = [];
+      // A selection prompt that takes Esc (TABLESTYLE's "Select a table", M4-16) drops what
+      // was being selected.
+      if (frame!.select) {
+        frame!.select = undefined;
+        this.#showSelection();
+      }
       return this.#deliver({ kind: 'escape' }, '', false);
     });
   }

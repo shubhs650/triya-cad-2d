@@ -1,0 +1,1 @@
+- M4-16 part 4 (#479): New and Modify Table Style's Select table to start from picks a table in the drawing and gives the style its direction, margins and each cell style's fill, alignment, text and borders.

@@ -15,8 +15,12 @@
 // Delete; F2 renames and Delete deletes, as in a Windows list. Close (and Esc) closes it,
 // everything done being one undo step.
 //
-// Shown greyed, for the reasons the engine gives (commands/tablestyle.ts): Select table to start
-// from, Create and Manage Cell Styles (M1-99), Format, Type, Merge cells on row/column creation,
+// Select table to start from (M4-16 part 4) sends the settings being edited; the engine asks
+// "Select a table:" with the dialogs hidden and opens this dialog again with the New or Modify
+// Table Style dialog on the table's formatting (`request.editing`).
+//
+// Shown greyed, for the reasons the engine gives (commands/tablestyle.ts): Remove Table (no
+// table is kept in the style), Create and Manage Cell Styles (M1-99), Format, Type, Merge cells on row/column creation,
 // Text angle, the border Linetype, Double line and Spacing (the file's table style has no place
 // for them), and Help, as Triya's other dialogs leave it. The margins are the style's, the same
 // on each cell style. Colours are index colours, which a DXF table style holds.
@@ -33,10 +37,11 @@ import {
   type TableCellStyleName,
   type TableCellStyleSettings,
   type TableStyleAction,
+  type TableStyleEditing,
   type TableStyleSettings,
 } from '@triya/engine';
 import { aciRgb } from '@triya/render';
-import { useId, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useId, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
 
@@ -107,7 +112,12 @@ export function TableStyleDialog({ doc, request }: { doc: number; request: Reque
   const [renaming, setRenaming] = useState<string>();
   const [menu, setMenu] = useState<{ x: number; y: number }>();
   const [naming, setNaming] = useState(false);
-  const [editing, setEditing] = useState<{ name: string; from: string; isNew: boolean }>();
+  const [editing, setEditing] = useState<TableStyleEditing>();
+  // Opened after this dialog, so that New or Modify Table Style shows above it (each modal
+  // opens on top of those before it).
+  useEffect(() => {
+    if (request.editing) setEditing(request.editing);
+  }, [request.editing]);
   const id = useId();
 
   const send = (tablestyle: TableStyleAction) =>
@@ -143,8 +153,6 @@ export function TableStyleDialog({ doc, request }: { doc: number; request: Reque
     setSelected(name);
     setMenu({ x: e.clientX, y: e.clientY });
   };
-
-  const editorFrom = editing && request.styles.find((s) => s.name === editing.from);
 
   return (
     <Modal label="Table Style" className="tablestyle-dialog" onOk={close} onCancel={close}>
@@ -227,7 +235,7 @@ export function TableStyleDialog({ doc, request }: { doc: number; request: Reque
             type="button"
             disabled={!style}
             onClick={() =>
-              style && setEditing({ name: style.name, from: style.name, isNew: false })
+              style && setEditing({ name: style.name, isNew: false, settings: style.settings })
             }
           >
             Modify...
@@ -297,17 +305,22 @@ export function TableStyleDialog({ doc, request }: { doc: number; request: Reque
           startWith={style.name}
           onCancel={() => setNaming(false)}
           onContinue={(name, from) => {
+            const settings = request.styles.find((s) => s.name === from)?.settings;
             setNaming(false);
-            setEditing({ name, from, isNew: true });
+            if (settings) setEditing({ name, isNew: true, settings });
           }}
         />
       )}
-      {editing && editorFrom && (
+      {editing && (
         <TableStyleEditor
           title={`${editing.isNew ? 'New' : 'Modify'} Table Style: ${editing.name}`}
-          settings={editorFrom.settings}
+          settings={editing.settings}
           textStyles={request.textStyles}
           onCancel={() => setEditing(undefined)}
+          onStart={(settings) => {
+            setEditing(undefined);
+            void send({ op: 'start', ...editing, settings });
+          }}
           onOk={(settings) => {
             setEditing(undefined);
             void send(
@@ -391,6 +404,8 @@ function TableStyleEditor(props: {
   textStyles: readonly string[];
   onOk: (s: TableStyleSettings) => void;
   onCancel: () => void;
+  /** Select table to start from, with the settings as they stand. */
+  onStart: (s: TableStyleSettings) => void;
 }) {
   const [s, setS] = useState(props.settings);
   const [cellStyle, setCellStyle] = useState<TableCellStyleName>('data');
@@ -421,8 +436,11 @@ function TableStyleEditor(props: {
         <div className="tablestyle-editor-left">
           <fieldset>
             <legend>Starting table</legend>
-            <button type="button" disabled title="Not available yet">
+            <button type="button" onClick={() => props.onStart(s)}>
               Select table to start from
+            </button>
+            <button type="button" disabled title="No table is kept in the style">
+              Remove Table
             </button>
           </fieldset>
           <fieldset>
