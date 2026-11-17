@@ -95,7 +95,10 @@ test('TEXT underlines a misspelled word and a right-click corrects it', async ({
   await page.keyboard.press('End');
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('Shift+F10');
-  await expect(page.getByRole('menu', { name: 'Spelling: NOTTE' })).toBeVisible();
+  const notte = page.getByRole('menu', { name: 'Spelling: NOTTE' });
+  await expect(notte).toBeVisible();
+  // The menu takes the keys once it has focused its first item: an ArrowUp before then is lost.
+  await expect(notte.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(page.getByRole('menuitem', { name: 'Ignore All' })).toBeFocused();
   await page.keyboard.press('Enter');
