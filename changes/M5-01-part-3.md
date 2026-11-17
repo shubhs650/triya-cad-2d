@@ -1,0 +1,1 @@
+- M5-01 part 3 (#508): INSERT opens the Insert dialog (block list with a preview, insertion point, scale and rotation typed or picked on screen, block units and factor, Explode, Repeat Placement), remembering its settings for the next insert. With ATTDIA set to 1, a new block reference's attribute values are asked in the Edit Attributes dialog.
