@@ -949,9 +949,32 @@ export interface TableCell {
    * formatted text already; a string value is drawn through its text case (`tableCellShown`).
    */
   readonly valueFormat?: string;
+  /**
+   * The cell's value when it is not text (DXF 90 in its CELL_VALUE: 1 a whole number, 2 a
+   * number, 8 a date, 0x10 / 0x20 a point), as AutoCAD's Data Format makes it (M4-16); absent
+   * for a text value. `text` holds it as shown (DXF 302), formatted by `valueFormat`.
+   */
+  readonly value?: TableCellValue;
   /** What the cell overrides of its table style, its row's and column's folded in; absent when nothing. */
   readonly format?: TableCellFormat;
 }
+
+/**
+ * A table cell's value other than text (`TableCell.value`). A number states its unit type
+ * (DXF 94: 2 an angle, in radians; 16 a currency; 32 a percentage, 35 for 35 %; 0 none), as
+ * AutoCAD's Angle, Currency, Percentage and Decimal Number data types store it; a date is its
+ * local time in milliseconds (DXF 310, a SYSTEMTIME).
+ */
+export type TableCellValue =
+  | { readonly kind: 'long'; readonly n: number }
+  | { readonly kind: 'double'; readonly n: number; readonly units: number }
+  | { readonly kind: 'date'; readonly time: number }
+  | {
+      readonly kind: 'point';
+      readonly point: readonly [number, number, number];
+      /** DXF 90 0x10 a 2D point, 0x20 a 3D one. */
+      readonly dimensions: 2 | 3;
+    };
 
 /**
  * One edge of a table cell as a cell, row or column override states it. Only overridden
