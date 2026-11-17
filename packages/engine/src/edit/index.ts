@@ -134,6 +134,7 @@ export * from './field-eval';
 export * from './spelling';
 export * from './tolerance-frame';
 export { detachXrefs, xrefDetachChange, xrefDetachProblem } from './xrefs';
+export { bindXrefs, xrefBindChange, xrefBindProblem } from './xref-bind';
 export {
   currentLayerChange,
   deleteLayersChange,

@@ -19,7 +19,7 @@ import {
 } from '@node-projects/acad-ts';
 import type { DocumentInit, DocumentModel, Handle, TextStyleRecord } from '@triya/engine';
 import type { Resolver } from './entities';
-import { changes, planRecords, XREF_BITS, type RecordPlan } from './records';
+import { changes, planRecords, xrefBitsProblem, type RecordPlan } from './records';
 
 /** DXF 70: the record is a shape file's (AutoCAD names those with an empty string). */
 export const SHAPE_FILE = 1;
@@ -76,7 +76,8 @@ function textStyleProblems(
   if (a.name === '' && !isShapeFile(a)) out.push('only a shape file’s style has no name');
   const flags = (b?.flags ?? 0) ^ (a.flags ?? 0);
   if (b && (flags & SHAPE_FILE) !== 0) out.push('a style cannot become or stop being a shape file');
-  if ((flags & XREF_BITS) !== 0) out.push('the xref-dependent flags belong to the xref');
+  const bits = xrefBitsProblem(b, a);
+  if (bits) out.push(bits);
   if (changed('font') && a.font.trim() === '') out.push('a style needs a font file');
   if (changed('height') && !(Number.isFinite(a.height) && a.height >= 0))
     out.push(`height ${a.height} is not 0 or more`);

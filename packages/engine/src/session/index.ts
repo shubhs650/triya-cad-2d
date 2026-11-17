@@ -38,6 +38,7 @@ import {
   xrefUnloadProblem,
 } from '../model/xref';
 import { xrefDetachChange, xrefDetachProblem } from '../edit/xrefs';
+import { xrefBindChange, xrefBindProblem } from '../edit/xref-bind';
 import type { EntityId } from '../model/entity-ids';
 import type { EntityType, TableCellLock } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
@@ -158,6 +159,16 @@ export interface XrefDetachEdit {
 }
 
 /**
+ * The References palette's Bind (M5-04 part 2, `xrefBindChange`): the xrefs made blocks of the
+ * drawing, as the Bind Xrefs dialog's Insert says when `insert`. One XREF undo step.
+ */
+export interface XrefBindEdit {
+  readonly kind: 'xref-bind';
+  readonly blocks: readonly Handle[];
+  readonly insert?: boolean;
+}
+
+/**
  * The navigation bar's Save view (M2-29): the view shown kept in the drawing as `name`, as VIEW
  * Save keeps it (`saveNamedView`), one VIEW undo step.
  */
@@ -233,6 +244,7 @@ export type EngineEdit =
   | XrefLoadEdit
   | XrefUnloadEdit
   | XrefDetachEdit
+  | XrefBindEdit
   | NamedViewEdit
   | ViewTableEdit
   | SessionVariableEdit
@@ -674,6 +686,7 @@ export class EngineSession {
     if (e.kind === 'xref-load') return this.#xrefLoad(e);
     if (e.kind === 'xref-unload') return this.#xrefUnload(e);
     if (e.kind === 'xref-detach') return this.#xrefDetach(e);
+    if (e.kind === 'xref-bind') return this.#xrefBind(e);
     if (e.kind === 'view') return this.#viewEdit(e);
     if (e.kind === 'view-delete' || e.kind === 'view-rename' || e.kind === 'view-category')
       return this.#viewTableEdit(e);
@@ -816,6 +829,17 @@ export class EngineSession {
     }
     const change = xrefDetachChange(this.model, e.blocks);
     if (Object.keys(change).length === 0) return { ok: true, change };
+    this.model.apply(change);
+    this.#step('XREF', change);
+    return { ok: true, change };
+  }
+
+  #xrefBind(e: XrefBindEdit): EditResult {
+    for (const h of e.blocks) {
+      const problem = xrefBindProblem(this.model, h);
+      if (problem) return { ok: false, message: problem };
+    }
+    const change = xrefBindChange(this.model, e.blocks, e.insert);
     this.model.apply(change);
     this.#step('XREF', change);
     return { ok: true, change };
