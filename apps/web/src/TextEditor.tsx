@@ -30,6 +30,12 @@
 // editor puts before the first line past its height (`fitColumns`, a `data-fit` element the
 // spans never hold). A drawing's columns set right to left (DXF 74) show right to left.
 //
+// Spell checking as you type (M4-17, spell-check.ts): the words in neither dictionary are
+// underlined (MTEXT's through the CSS Custom Highlight API over its DOM, TEXT's line by a copy of
+// its text laid under the input) and a right-click on one, or Shift+F10 with the caret in it,
+// opens the spelling menu: the suggestions, Add to Dictionary, Ignore All. The toolbar's Spell
+// Check button turns it on and off for both editors.
+//
 // The editor's DOM is the record of what was typed: one <div> per paragraph, plain runs as
 // <span data-fmt>, paragraph breaks as <br> ending their paragraph, stacks, fields and
 // double-byte characters as uneditable atoms. Typing, pasting, Enter and the
@@ -37,6 +43,7 @@
 // DOM never takes a shape the spans cannot hold.
 import type {
   Color,
+  SpellWord,
   StringPrompt,
   TextEditorBackground,
   TextEditorColumns,
@@ -71,6 +78,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties }
 import { controllerOf } from './canvas/registry';
 import type { CanvasController } from './canvas/controller';
 import { commandLines } from './command-line';
+import { editorSpelling, lineSpellText, wordsToCheck } from './spell-check';
 import { engines } from './engine/registry';
 import { appFonts } from './fonts';
 import {
@@ -244,6 +252,29 @@ function TextLine({
   );
   const value = lineShown(parts);
   const input = useRef<HTMLInputElement>(null);
+  const mirror = useRef<HTMLDivElement>(null);
+  /** Where the caret is after the last edit, while it stays there: the word being typed. */
+  const [typingAt, setTypingAt] = useState<number | undefined>(undefined);
+  const flagged = useLineSpelling(parts, typingAt);
+  const [spellTarget, setSpellTarget] = useState<SpellTarget | undefined>(undefined);
+  const flaggedAt = (x: number, y: number): SpellWord | undefined => {
+    const els = mirror.current?.querySelectorAll<HTMLElement>('.spell-error') ?? [];
+    const i = [...els].findIndex((el) => inside(el.getBoundingClientRect(), x, y));
+    return i < 0 ? undefined : flagged[i];
+  };
+  /** A suggestion picked: the word replaced, the caret after it. */
+  const respell = (w: SpellWord, text: string) => {
+    setSpellTarget(undefined);
+    input.current?.focus();
+    if (value.slice(w.start, w.end) !== w.word) return;
+    const at = w.start + text.length;
+    caret.current = at;
+    setParts(lineEdited(parts, value.slice(0, w.start) + text + value.slice(w.end), at));
+  };
+  // The copy under the input scrolls with it.
+  useEffect(() => {
+    if (mirror.current && input.current) mirror.current.scrollLeft = input.current.scrollLeft;
+  });
   const typed = useRef(parts);
   typed.current = parts;
   /** Where the caret goes once React has shown an edit that moved it. */
@@ -288,6 +319,8 @@ function TextLine({
     if (editing) input.current?.select();
     const onDown = (e: PointerEvent) => {
       if (!(e.target instanceof Element) || input.current?.contains(e.target)) return;
+      if (e.target.closest('.spell-menu')) return;
+      setSpellTarget(undefined);
       if (editing) {
         keep();
         return;
@@ -307,49 +340,275 @@ function TextLine({
     return () => document.removeEventListener('pointerdown', onDown, true);
   }, []);
   return (
-    <div className="text-editor text-line" style={boxStyle(placement, request)}>
-      <input
-        ref={input}
-        aria-label="Text"
-        autoFocus
-        value={value}
-        size={Math.max(4, value.length + 1)}
-        onChange={(e) => {
-          const at = e.target.selectionStart ?? e.target.value.length;
-          const next = lineEdited(parts, e.target.value, at);
-          // A field deleted whole moves the caret to where it was.
-          if (lineShown(next) !== e.target.value)
-            caret.current = Math.min(at, lineShown(next).length);
-          setParts(next);
-        }}
-        onDoubleClick={(e) => {
-          if (editField()) e.preventDefault();
-        }}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Enter') {
+    <>
+      <div className="text-editor text-line" style={boxStyle(placement, request)}>
+        <div ref={mirror} className="text-line-spelling" aria-hidden="true">
+          {spelledLine(value, flagged)}
+        </div>
+        <input
+          ref={input}
+          aria-label="Text"
+          autoFocus
+          value={value}
+          size={Math.max(4, value.length + 1)}
+          onChange={(e) => {
+            const at = e.target.selectionStart ?? e.target.value.length;
+            const next = lineEdited(parts, e.target.value, at);
+            // A field deleted whole moves the caret to where it was.
+            if (lineShown(next) !== e.target.value)
+              caret.current = Math.min(at, lineShown(next).length);
+            setTypingAt(caret.current ?? at);
+            setParts(next);
+          }}
+          onSelect={(e) => {
+            const el = e.currentTarget;
+            if (mirror.current) mirror.current.scrollLeft = el.scrollLeft;
+            if (el.selectionStart !== typingAt || el.selectionEnd !== typingAt)
+              setTypingAt(undefined);
+          }}
+          onScroll={(e) => {
+            if (mirror.current) mirror.current.scrollLeft = e.currentTarget.scrollLeft;
+          }}
+          onMouseDown={() => setSpellTarget(undefined)}
+          onContextMenu={(e) => {
+            const w = flaggedAt(e.clientX, e.clientY);
+            if (!w) return;
             e.preventDefault();
-            if (editing) return keep();
-            engines.command(doc, {
-              kind: 'answer',
-              answer:
-                parts.length === 0
-                  ? { kind: 'enter' }
-                  : { kind: 'string', value: lineValue(parts) },
-            });
-            setParts([]);
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            cancel(doc);
-          } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
-            if (!request.fields) return;
-            e.preventDefault();
-            insertField();
-          }
+            setSpellTarget({ ...w, left: e.clientX, top: e.clientY });
+          }}
+          onDoubleClick={(e) => {
+            if (editField()) e.preventDefault();
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (isMenuKey(e)) {
+              const at = e.currentTarget.selectionStart ?? 0;
+              const i = flagged.findIndex((w) => w.start <= at && at <= w.end);
+              const el = mirror.current?.querySelectorAll<HTMLElement>('.spell-error')[i];
+              if (!el) return;
+              e.preventDefault();
+              const r = el.getBoundingClientRect();
+              setSpellTarget({ ...flagged[i]!, left: r.left, top: r.bottom });
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              if (editing) return keep();
+              engines.command(doc, {
+                kind: 'answer',
+                answer:
+                  parts.length === 0
+                    ? { kind: 'enter' }
+                    : { kind: 'string', value: lineValue(parts) },
+              });
+              setParts([]);
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              cancel(doc);
+            } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+              if (!request.fields) return;
+              e.preventDefault();
+              insertField();
+            }
+          }}
+        />
+      </div>
+      {spellTarget && (
+        // Outside the line's box, which turns with the text: the menu stays upright.
+        <div className="text-editor" style={{ left: 0, top: 0 }}>
+          <SpellMenu
+            target={spellTarget}
+            onPick={(text) => respell(spellTarget, text)}
+            onClose={() => {
+              setSpellTarget(undefined);
+              input.current?.focus();
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---- Spell checking as you type (M4-17) ----
+
+/** A misspelled word right-clicked, and where its menu opens (the frame's coordinates). */
+interface SpellTarget extends SpellWord {
+  readonly left: number;
+  readonly top: number;
+}
+
+const inside = (b: DOMRect, x: number, y: number): boolean =>
+  x >= b.left && x <= b.right && y >= b.top && y <= b.bottom;
+
+/** The keys that open a shortcut menu from the keyboard. */
+const isMenuKey = (e: React.KeyboardEvent): boolean =>
+  e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey && !e.ctrlKey && !e.altKey);
+
+/** TEXT's line's misspelled words, `typingAt` the caret of the word being typed. */
+function useLineSpelling(parts: readonly LinePart[], typingAt: number | undefined): SpellWord[] {
+  const version = useSyncExternalStore(editorSpelling.subscribe, editorSpelling.version);
+  const [flagged, setFlagged] = useState<SpellWord[]>([]);
+  useEffect(() => {
+    let live = true;
+    void editorSpelling.misspelled(wordsToCheck(lineSpellText(parts), typingAt)).then((w) => {
+      if (live) setFlagged(w);
+    });
+    return () => {
+      live = false;
+    };
+  }, [parts, typingAt, version]);
+  return flagged;
+}
+
+/** The line's text with its misspelled words in spans, for the copy laid under the input. */
+function spelledLine(value: string, flagged: readonly SpellWord[]): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  let at = 0;
+  for (const w of flagged) {
+    if (w.end > value.length || w.start < at) continue;
+    out.push(value.slice(at, w.start));
+    out.push(
+      <span key={w.start} className="spell-error">
+        {value.slice(w.start, w.end)}
+      </span>,
+    );
+    at = w.end;
+  }
+  out.push(value.slice(at));
+  return out;
+}
+
+/**
+ * The spelling menu (AutoCAD's In-Place Text Editor shortcut menu on a misspelled word): the
+ * main dictionary's suggestions, Add to Dictionary and Ignore All. Arrow keys move through it,
+ * Esc closes it.
+ */
+function SpellMenu({
+  target,
+  onPick,
+  onClose,
+}: {
+  target: SpellTarget;
+  onPick: (text: string) => void;
+  onClose: () => void;
+}) {
+  const [suggestions, setSuggestions] = useState<readonly string[] | undefined>(undefined);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let live = true;
+    void editorSpelling.suggestions(target.word).then((s) => {
+      if (live) setSuggestions(s);
+    });
+    return () => {
+      live = false;
+    };
+  }, [target.word]);
+  // The first item takes the focus once the suggestions are in.
+  useEffect(() => {
+    if (suggestions) box.current?.querySelector<HTMLButtonElement>('button:enabled')?.focus();
+  }, [suggestions]);
+  return (
+    <div
+      ref={box}
+      className="mtext-menu spell-menu"
+      role="menu"
+      aria-label={`Spelling: ${target.word}`}
+      style={{ left: target.left, top: target.top }}
+      // The editor keeps its selection; the menu's buttons take clicks.
+      onMouseDown={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+          return;
+        }
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        e.preventDefault();
+        const items = [...box.current!.querySelectorAll<HTMLButtonElement>('button:enabled')];
+        const i = items.indexOf(document.activeElement as HTMLButtonElement);
+        const n = items.length;
+        items[(i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]?.focus();
+      }}
+    >
+      {suggestions === undefined ? (
+        <span className="spell-menu-note">Looking for suggestions…</span>
+      ) : suggestions.length === 0 ? (
+        <span className="spell-menu-note">No spelling suggestions</span>
+      ) : (
+        suggestions.map((s) => (
+          <button
+            key={s}
+            type="button"
+            role="menuitem"
+            className="spell-suggestion"
+            onClick={() => onPick(s)}
+          >
+            {s}
+          </button>
+        ))
+      )}
+      <hr className="spell-menu-separator" />
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          editorSpelling.addToDictionary(target.word);
+          onClose();
         }}
-      />
+      >
+        Add to Dictionary
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          editorSpelling.ignoreAll(target.word);
+          onClose();
+        }}
+      >
+        Ignore All
+      </button>
     </div>
   );
+}
+
+/** The CSS highlight MTEXT's misspelled words are underlined by (styles.css). */
+export const SPELLING_HIGHLIGHT = 'triya-spelling';
+
+/** The editor's units as text: a stack, field or line break each one character that ends words. */
+function unitText(root: HTMLElement): string {
+  let out = '';
+  const visit = (node: Node): void => {
+    for (const k of node.childNodes) {
+      if (k instanceof Text) out += k.data;
+      else if (isFiller(k) || isFit(k)) continue;
+      else if (isAtom(k) || (k instanceof HTMLElement && k.tagName === 'BR')) out += '\n';
+      else visit(k);
+    }
+  };
+  visit(root);
+  return out;
+}
+
+/** A word of the editor as a DOM range. */
+function rangeOf(root: HTMLElement, w: SpellWord): Range {
+  const r = document.createRange();
+  const [n1, o1] = pointOf(root, w.start);
+  const [n2, o2] = pointOf(root, w.end);
+  r.setStart(n1, o1);
+  r.setEnd(n2, o2);
+  return r;
+}
+
+/** Underlines the words (none clears them), where the browser has the Highlight API. */
+function showSpelling(root: HTMLElement | undefined, words: readonly SpellWord[]): void {
+  if (typeof Highlight === 'undefined' || !('highlights' in CSS)) return;
+  if (!root || words.length === 0) {
+    CSS.highlights.delete(SPELLING_HIGHLIGHT);
+    return;
+  }
+  CSS.highlights.set(SPELLING_HIGHLIGHT, new Highlight(...words.map((w) => rangeOf(root, w))));
 }
 
 // ---- MTEXT ----
@@ -1048,6 +1307,7 @@ function MTextBox({
         : undefined;
     if (stacked) commit(stacked.spans, stacked.caret);
     else commit(next, a + len);
+    typingAt.current = stacked ? stacked.caret : a + len;
   };
   /**
    * Insert Field (Ctrl+F, the toolbar's Field button; M4-10 part 2): the editor closes with the
@@ -1093,6 +1353,34 @@ function MTextBox({
   const [fieldMenu, setFieldMenu] = useState<
     { readonly left: number; readonly top: number; readonly el: HTMLElement } | undefined
   >(undefined);
+  /** The misspelled words underlined, as last checked (M4-17). */
+  const flagged = useRef<SpellWord[]>([]);
+  /** Where the caret is after the last edit, while it stays there: the word being typed. */
+  const typingAt = useRef<number | undefined>(undefined);
+  const [spellTarget, setSpellTarget] = useState<SpellTarget | undefined>(undefined);
+  const spellOn = useSyncExternalStore(editorSpelling.subscribe, () => editorSpelling.enabled);
+  /** The menu for the misspelled word at a point, or with `caret` the one the caret is in. */
+  const openSpelling = (find: (w: SpellWord) => DOMRect | undefined): boolean => {
+    for (const w of flagged.current) {
+      const at = find(w);
+      if (!at) continue;
+      const f = frame.current!.getBoundingClientRect();
+      setSpellTarget({ ...w, left: at.left - f.left, top: at.top - f.top });
+      return true;
+    }
+    return false;
+  };
+  /** A suggestion picked: the word replaced, in the format of its first letter. */
+  const respell = (w: SpellWord, text: string) => {
+    setSpellTarget(undefined);
+    if (unitText(root.current!).slice(w.start, w.end) !== w.word) return root.current!.focus();
+    const s = spans();
+    const format = formatAt(s, w.start + 1);
+    commit(
+      insertSpans(removeRange(s, w.start, w.end), w.start, [{ type: 'text', text, format }]),
+      w.start + text.length,
+    );
+  };
   /** A paragraph (or column) break that keeps the formatting of the paragraph it is typed in. */
   const breakHere = (end?: 'column') => {
     const [a] = selectionIn(root.current!) ?? lastSel.current;
@@ -1155,6 +1443,7 @@ function MTextBox({
       const moved = s[0] !== lastSel.current[0] || s[1] !== lastSel.current[1];
       lastSel.current = s;
       if (moved) pending.current = undefined;
+      if (moved) typingAt.current = undefined;
       refresh();
     };
     const replace = insert;
@@ -1195,6 +1484,7 @@ function MTextBox({
             else b = b + 1;
           }
           commit(removeRange(s, a, b), a);
+          typingAt.current = a;
           return;
         }
         default:
@@ -1259,6 +1549,43 @@ function MTextBox({
   // New columns or a new zoom lay the text out again.
   useEffect(refit, [columns, placement.scale]);
 
+  // Spell checking as you type (M4-17): the words checked again whenever the text, the caret or
+  // the dictionaries change, a task later so a burst of changes is checked once.
+  useEffect(() => {
+    const el = root.current!;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let seq = 0;
+    const run = () => {
+      timer = undefined;
+      const mine = ++seq;
+      const shown = unitText(el);
+      const sel = selectionIn(el);
+      const typing = sel && sel[0] === sel[1] && sel[0] === typingAt.current ? sel[0] : undefined;
+      void editorSpelling.misspelled(wordsToCheck(shown, typing)).then((words) => {
+        // A later check is on its way when the text changed meanwhile.
+        if (mine !== seq || unitText(el) !== shown) return;
+        flagged.current = words;
+        showSpelling(el, words);
+      });
+    };
+    const schedule = () => {
+      timer ??= setTimeout(run, 0);
+    };
+    const observer = new MutationObserver(schedule);
+    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    document.addEventListener('selectionchange', schedule);
+    const stop = editorSpelling.subscribe(schedule);
+    schedule();
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('selectionchange', schedule);
+      stop();
+      if (timer !== undefined) clearTimeout(timer);
+      seq++;
+      showSpelling(undefined, []);
+    };
+  }, []);
+
   const change = (patch: FormatPatch) => {
     const [a, b] = selection();
     const s = spans();
@@ -1306,6 +1633,12 @@ function MTextBox({
     if (move) {
       e.preventDefault();
       finish(move);
+    } else if (isMenuKey(e) && e.target === root.current) {
+      const [a] = selection();
+      const opened = openSpelling((w) =>
+        w.start <= a && a <= w.end ? rangeOf(root.current!, w).getBoundingClientRect() : undefined,
+      );
+      if (opened) e.preventDefault();
     } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       finish();
@@ -1398,6 +1731,16 @@ function MTextBox({
             %&lt;&gt;
           </button>
         )}
+        <button
+          type="button"
+          aria-label="Spell Check"
+          title="Spell Check: underline words not in the dictionaries"
+          aria-pressed={spellOn}
+          className="mtext-tool mtext-tool-spell"
+          onClick={() => editorSpelling.setEnabled(!spellOn)}
+        >
+          abc
+        </button>
         <select
           aria-label="Font"
           title="Font"
@@ -1524,6 +1867,16 @@ function MTextBox({
           </button>
         </div>
       )}
+      {spellTarget && (
+        <SpellMenu
+          target={spellTarget}
+          onPick={(text) => respell(spellTarget, text)}
+          onClose={() => {
+            setSpellTarget(undefined);
+            root.current!.focus();
+          }}
+        />
+      )}
       {menu === 'settings' && (
         <ColumnSettings
           columns={columns ?? columnsFor('dynamic', null, request, root)!}
@@ -1587,12 +1940,25 @@ function MTextBox({
           }}
           onContextMenu={(e) => {
             const el = fieldElement(e.target);
-            if (!el) return;
+            if (!el) {
+              const { clientX: x, clientY: y } = e;
+              const hit = (w: SpellWord) => {
+                const b = [...rangeOf(root.current!, w).getClientRects()].find((r) =>
+                  inside(r, x, y),
+                );
+                return b && new DOMRect(x, y, 0, 0);
+              };
+              if (openSpelling(hit)) e.preventDefault();
+              return;
+            }
             e.preventDefault();
             const at = frame.current!.getBoundingClientRect();
             setFieldMenu({ left: e.clientX - at.left, top: e.clientY - at.top, el });
           }}
-          onMouseDown={() => setFieldMenu(undefined)}
+          onMouseDown={() => {
+            setFieldMenu(undefined);
+            setSpellTarget(undefined);
+          }}
         />
         {request.background && (
           <TextBackground
