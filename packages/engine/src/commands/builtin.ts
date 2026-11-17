@@ -73,6 +73,8 @@ import { UNDO_COMMANDS } from './undo-commands';
 import { underlayLayersCommand } from './underlay-layers';
 import { layerStateCommand } from './layer-states';
 import { layerToolCommands } from './layer-tools';
+import { laydelCommand, laymrgCommand } from './layer-cleanup';
+import { layerpCommand, layerpmodeCommand } from './layer-previous';
 import { XREF_COMMANDS } from './xref';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 import { ARRAY_COMMANDS } from './modify/array';
@@ -169,6 +171,10 @@ export function builtinCommands(): CommandRegistry {
     ...UCS_COMMANDS.map((make) => make()),
     underlayLayersCommand(),
     ...layerToolCommands(),
+    laydelCommand(),
+    laymrgCommand(),
+    layerpCommand(),
+    layerpmodeCommand(),
     layerStateCommand(),
     ...XREF_COMMANDS.map((make) => make()),
     ...INQUIRY_COMMANDS.map((make) => make()),

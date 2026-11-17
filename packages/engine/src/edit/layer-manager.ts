@@ -11,6 +11,7 @@
 import { LINEWEIGHT_VALUES } from '../commands/sysvars';
 import { ChangeSetBuilder } from '../model/builder';
 import { dropLayersFromStates } from './layer-states';
+import { eraseObjects } from './edit';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -269,6 +270,20 @@ export function mergeLayersChange(
   handles: readonly Handle[],
   target: Handle,
 ): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  return mergeLayers(b, model, handles, target) ?? b.build();
+}
+
+/**
+ * {@link mergeLayersChange} into `b` (LAYMRG builds in its command's edit): undefined when
+ * merged, otherwise why not, with nothing built.
+ */
+export function mergeLayers(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  handles: readonly Handle[],
+  target: Handle,
+): string | undefined {
   const layers = layersOf(model, handles);
   if (typeof layers === 'string') return layers;
   if (layers.length === 0) return 'Select the layers to merge.';
@@ -289,7 +304,6 @@ export function mergeLayersChange(
     if (why) return `Layer "${l.name}" was not merged: ${why}.`;
   }
   const gone = new Set(layers.map((l) => l.handle));
-  const b = new ChangeSetBuilder(model);
   for (const e of model.entities()) {
     const g = e.geom;
     const attributes =
@@ -309,5 +323,81 @@ export function mergeLayersChange(
   }
   for (const h of gone) b.removeTableRecord('layers', h);
   dropLayersFromStates(b, gone);
-  return b.build();
+  return undefined;
+}
+
+/**
+ * Why LAYDEL or LAYMRG cannot take `l` from the drawing, or undefined. AutoCAD's help names no
+ * layer they refuse; both purge the layer, so they refuse what the manager's Delete Layer does
+ * (layer 0, Defpoints, the current layer and an xref's layers), as Merge Selected Layer(s) to.
+ */
+export function layerRemovalProblem(
+  model: DocumentModel,
+  l: LayerRecord,
+  verb: 'deleted' | 'merged',
+): string | undefined {
+  if (isFixed(l)) return `Layer "${l.name}" cannot be ${verb}.`;
+  if (isCurrent(model, l)) return `Layer "${l.name}" is the current layer and cannot be ${verb}.`;
+  if (isXref(l)) return `Layer "${l.name}" is xref-dependent and cannot be ${verb}.`;
+  return undefined;
+}
+
+/**
+ * LAYDEL (AutoCAD Help, "LAYDEL (Command)": "Deletes all objects on a layer and purges the
+ * layer. This command also changes block definitions that use the layer to be deleted."): every
+ * object on `handles`, in model space, the layouts and every block definition, erased as ERASE
+ * erases it (whatever refers to it lets go), a block reference's attributes on them dropped, the
+ * layers out of the viewports and layer states and purged. All or nothing: undefined when done,
+ * otherwise why not, with nothing built.
+ */
+export function deleteLayersWithObjects(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  handles: readonly Handle[],
+): string | undefined {
+  const layers = layersOf(model, handles);
+  if (typeof layers === 'string') return layers;
+  if (layers.length === 0) return 'Select the layers to delete.';
+  for (const l of layers) {
+    const why = layerRemovalProblem(model, l, 'deleted');
+    if (why) return why;
+  }
+  const gone = new Set(layers.map((l) => l.handle));
+  const on = [...model.entities()].filter((e) => gone.has(e.layer));
+  // A layout's own paper-space view (VIEWPORT id 1) is not an object the drafter can erase.
+  const sheet = on.find((e) => e.geom.kind === 'VIEWPORT' && e.geom.id === 1);
+  if (sheet) {
+    const l = model.tables.layers.get(sheet.layer)!;
+    return `Layer "${l.name}" holds a layout's paper-space view and cannot be deleted.`;
+  }
+  // A layer's viewport overrides name their viewport, which cannot be erased yet (M1-62).
+  const overridden = new Set<Handle>();
+  for (const l of model.tables.layers.values())
+    for (const o of l.viewportOverrides ?? []) overridden.add(o.viewport);
+  const kept = on.find((e) => overridden.has(e.handle));
+  if (kept) {
+    const l = model.tables.layers.get(kept.layer)!;
+    return `Layer "${l.name}" holds a viewport with layer overrides, which cannot be erased yet.`;
+  }
+  eraseObjects(
+    b,
+    model,
+    on.map((e) => e.id),
+  );
+  for (const e of model.entities()) {
+    // As ERASE left it: an erased object is gone, a kept one may have let go of one erased.
+    const g = b.entity(e.id)?.geom;
+    if (!g) continue;
+    if (g.kind === 'INSERT' && g.attributes.some((a) => gone.has(a.layer)))
+      b.updateEntity(e.id, {
+        geom: { ...g, attributes: g.attributes.filter((a) => !gone.has(a.layer)) },
+      });
+    if (g.kind === 'VIEWPORT' && g.frozenLayers.some((h) => gone.has(h)))
+      b.updateEntity(e.id, {
+        geom: { ...g, frozenLayers: g.frozenLayers.filter((h) => !gone.has(h)) },
+      });
+  }
+  for (const h of gone) b.removeTableRecord('layers', h);
+  dropLayersFromStates(b, gone);
+  return undefined;
 }

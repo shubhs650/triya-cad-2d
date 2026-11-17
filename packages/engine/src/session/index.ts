@@ -62,6 +62,7 @@ import {
   saveLayerStateChange,
   type LayerStateInit,
 } from '../edit/layer-states';
+import { layerPreviousOf } from '../commands/layer-previous';
 
 /**
  * A layer's on, frozen and locked states (LAYER palette toggles, M1-23) and, from the Layer
@@ -899,6 +900,7 @@ export class EngineSession {
    * empty change is no step (DEC-049).
    */
   #step(label: string, change: ChangeSet): void {
+    layerPreviousOf(this.model).record(this.model, [change]);
     // The manager's LAYER steps join the LAYER step just before them under UNDO Control Layer.
     this.#bus.undo.push({ command: label, changes: [change] }, { layer: label === 'LAYER' });
   }

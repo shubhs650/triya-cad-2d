@@ -139,12 +139,17 @@ describe('palette search', () => {
       'JUSTIFYTEXT',
       // M5-06 part 1: the layer tool row.
       'LAYCUR',
+      // M5-06 part 2: LAYDEL, LAYERP, LAYERPMODE and LAYMRG.
+      'LAYDEL',
+      'LAYERP',
+      'LAYERPMODE',
       'LAYERSTATE',
       'LAYFRZ',
       'LAYISO',
       'LAYLCK',
       'LAYMCH',
       'LAYMCUR',
+      'LAYMRG',
       'LAYOFF',
       'LAYON',
       'LAYTHW',

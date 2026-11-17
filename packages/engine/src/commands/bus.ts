@@ -94,6 +94,7 @@ import type { PropertyEdit } from '../properties/edit';
 import { filtered } from '../properties/sheet';
 import { textOf } from '../properties/multileader';
 import type { EntityType } from '../model/types';
+import { LAYERP, layerPreviousOf } from './layer-previous';
 
 /**
  * What a double click on an object of each type runs (AutoCAD's DBLCLKEDIT; its CUI's
@@ -1466,6 +1467,8 @@ export class PromptBus {
     const def = this.#current!;
     const record: CommandRecord = { command: def.name, changes: this.#changes };
     this.#changes = [];
+    // LAYERP's set is each step's layer changes, never its own (M5-06 part 2).
+    if (def.name !== LAYERP) layerPreviousOf(this.#model).record(this.#model, record.changes);
     this.#undo.push(record, { erases: def.erases === true });
     this.#emit({ type: 'commit', record });
   }
