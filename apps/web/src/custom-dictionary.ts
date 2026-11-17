@@ -2,7 +2,7 @@
 // user in a .cus file (DCTCUST) and Triya in the user's settings (preferences.ts
 // `customDictionary`). The Check Spelling dialog sends it to SPELL with each button and keeps
 // what SPELL sends back (Add to Dictionary, Undo); its Dictionaries dialog adds, deletes and
-// imports words.
+// imports words. The editors' as-you-type check (M4-17, spell-check.ts) listens for its changes.
 import { CUSTOM_WORD_MAX } from '@triya/engine';
 
 /** A dictionary bigger than this is cut, so the settings record stays small. */
@@ -37,15 +37,23 @@ export const wordsOfFile = (text: string): string[] =>
 class CustomDictionary {
   #words: readonly string[] = [];
   #persist: (words: readonly string[]) => void = () => undefined;
+  readonly #listeners = new Set<() => void>();
 
   get words(): readonly string[] {
     return this.#words;
   }
 
+  subscribe(l: () => void): () => void {
+    this.#listeners.add(l);
+    return () => this.#listeners.delete(l);
+  }
+
   /** The stored words (as they load or change) and where a change is saved. */
   bind(words: readonly string[], persist: (words: readonly string[]) => void): void {
+    const changed = JSON.stringify(words) !== JSON.stringify(this.#words);
     this.#words = words;
     this.#persist = persist;
+    if (changed) this.#tell();
   }
 
   set(words: readonly string[]): void {
@@ -53,6 +61,11 @@ class CustomDictionary {
     if (JSON.stringify(next) === JSON.stringify(this.#words)) return;
     this.#words = next;
     this.#persist(next);
+    this.#tell();
+  }
+
+  #tell(): void {
+    for (const l of this.#listeners) l();
   }
 }
 

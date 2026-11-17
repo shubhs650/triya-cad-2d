@@ -149,6 +149,7 @@ import { SaveChanges } from './SaveChanges';
 import { Settings } from './Settings';
 import { PreferencesStore, bindPreferences, indexedDbPreferences, type Theme } from './preferences';
 import { customDictionary } from './custom-dictionary';
+import { editorSpelling } from './spell-check';
 import { browserLocalData, clearLocalData, type ClearReport } from './local-data';
 import { coordinateText, editedHeader } from './coordinates';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
@@ -408,11 +409,15 @@ preferences.subscribe(() => {
   customDictionary.bind(p.customDictionary, (words) =>
     preferences.update({ customDictionary: words }),
   );
+  editorSpelling.bind(p.spellCheck, (spellCheck) => preferences.update({ spellCheck }));
   if (applyAliasFile(p.aliasFile)) for (const d of store.getSnapshot().docs) tellAliases(d.id);
   applyKeyOverrides(p.keys);
 });
 applyAliasFile(preferences.get().aliasFile);
 applyKeyOverrides(preferences.get().keys);
+editorSpelling.bind(preferences.get().spellCheck, (spellCheck) =>
+  preferences.update({ spellCheck }),
+);
 
 /** The user alias file's aliases (M3-10), which a drawing's command line runs over the defaults. */
 function tellAliases(doc: number): void {

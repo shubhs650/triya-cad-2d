@@ -130,6 +130,8 @@ export interface Preferences {
   readonly keys: KeyOverrides;
   /** SPELL's custom dictionary (M4-09 part 4, custom-dictionary.ts), AutoCAD's .cus file. */
   readonly customDictionary: readonly string[];
+  /** As-you-type spell checking in the text editors (M4-17, spell-check.ts); on by default. */
+  readonly spellCheck: boolean;
 }
 
 /** POLARANG's choices in AutoCAD's Drafting Settings, degrees. */
@@ -214,6 +216,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   aliasFile: '',
   keys: {},
   customDictionary: [],
+  spellCheck: true,
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -294,6 +297,7 @@ export function normalizePreferences(raw: unknown): Preferences {
         : d.aliasFile,
     keys: normalizeKeyOverrides(raw['keys']),
     customDictionary: normalizeWords(raw['customDictionary']),
+    spellCheck: bool(raw['spellCheck'], d.spellCheck),
     drafting: {
       // OSMODE's 14 mode bits and OSNAP_OFF.
       osmode:
