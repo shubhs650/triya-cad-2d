@@ -9,17 +9,18 @@ import { fileURLToPath } from 'node:url';
 import {
   ACadVersion,
   AttributeDefinition,
-  AttributeEntity,
   CadDocument,
   Insert,
   Line,
   XYZ,
 } from '@node-projects/acad-ts';
+import type { AttributeEntity } from '@node-projects/acad-ts';
 import {
   DocumentModel,
   PromptBus,
   builtinCommands,
   type Entity,
+  type Group,
   type InsertGeometry,
 } from '@triya/engine';
 import { documentInit, readCadDocument, writeCadDocument } from '@triya/io';
@@ -68,7 +69,7 @@ describe('-BLOCK and -INSERT on the public corpus (M5-01)', () => {
       // (PURGE's Groups category removes it, M5-09) and ezdxf's audit deletes.
       const grouped = new Set(
         [...model.objects.values()].flatMap((o) =>
-          o.type === 'GROUP' ? (o as { entities: readonly string[] }).entities : [],
+          o.type === 'GROUP' ? (o as Group).entities : [],
         ),
       );
       const curves =
@@ -171,7 +172,7 @@ describe('-INSERT of a block with attribute definitions saves its attributes (M5
     const save = withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), model));
     const doc = readCadDocument(save);
     const insert = [...doc.getCadObjects()].find((o): o is Insert => o instanceof Insert)!;
-    expect(insert.block.name).toBe('TITLE');
+    expect(insert.block?.name).toBe('TITLE');
     const attributes = [...insert.attributes] as AttributeEntity[];
     expect(attributes.map((a) => [a.tag, a.value])).toEqual([
       ['NO', 'M-101'],
@@ -179,7 +180,7 @@ describe('-INSERT of a block with attribute definitions saves its attributes (M5
     ]);
     expect([attributes[0]!.insertPoint.x, attributes[0]!.insertPoint.y]).toEqual([104, 54]);
     expect(attributes[0]!.height).toBe(5);
-    const defs = [...insert.block.entities].filter((e) => e instanceof AttributeDefinition);
+    const defs = [...insert.block!.entities].filter((e) => e instanceof AttributeDefinition);
     expect(defs).toHaveLength(2);
 
     const back = open(save);

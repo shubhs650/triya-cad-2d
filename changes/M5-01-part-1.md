@@ -1,0 +1,1 @@
+- M5-01 part 1 (#499): -BLOCK and -INSERT (also run by BLOCK and INSERT until their dialogs come) make blocks from selected objects, redefine them, and insert references with scale, rotation, unit conversion, presets, exploded inserts and attribute values; BASE sets the insertion base point. An erased text's fields no longer stay in the drawing's FIELDLIST.
