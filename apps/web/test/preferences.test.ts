@@ -512,3 +512,22 @@ describe('preferences', () => {
     expect(m.saved.at(-1)?.drafting.rolloverTips).toBe(false);
   });
 });
+
+describe('the Layer Properties Manager’s columns (M5-05 part 3)', () => {
+  it('are kept with the preferences, normalised as they load', () => {
+    const p = normalizePreferences({
+      layerColumns: {
+        order: ['name', 'status'],
+        hidden: ['plot', 'name'],
+        sort: { key: 'color', descending: true },
+      },
+    });
+    expect(p.layerColumns.order.filter((k) => k === 'name' || k === 'status')).toEqual([
+      'name',
+      'status',
+    ]);
+    expect(p.layerColumns.hidden).toEqual(['plot']);
+    expect(p.layerColumns.sort).toEqual({ key: 'color', descending: true });
+    expect(normalizePreferences({}).layerColumns.hidden).toEqual([]);
+  });
+});

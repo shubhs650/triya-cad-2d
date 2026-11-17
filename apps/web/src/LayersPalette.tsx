@@ -14,12 +14,36 @@
 // AutoCAD's dialogs for them (Select Color without ByLayer and ByBlock, Select Linetype,
 // Lineweight, Layer Transparency); OK sets the value on the row clicked, or on every selected
 // layer when the row is one of them, as one LAYER undo step.
-import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+// M5-05 part 3: the columns are the user's (layer-columns.ts): a right-click on a header shows
+// or hides them and opens Customize Layer Columns to order them; a click on a header sorts the
+// layers by it, a second click reversing it. The search's time from typing to the rows filtered
+// on screen is kept on the palette (acceptance: under 100 ms on 200 layers).
+import {
+  Fragment,
+  memo,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { transparencyOf, type EngineEdit, type Handle, type LayerProps } from '@triya/engine';
 import { controllerOf } from './canvas/registry';
 import type { DocumentStore, OpenDocument } from './documents';
 import { engines } from './engine/registry';
+import { CustomizeLayerColumnsDialog, LayerColumnsMenu } from './LayerColumns';
 import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from './LayerDialogs';
+import {
+  sortAfterClick,
+  sortLayerRows,
+  visibleLayerColumns,
+  type LayerColumn,
+  type LayerColumnKey,
+  type LayerColumnSettings,
+} from './layer-columns';
 import { layerColorBooks, layerLinetypes, layerRows, type LayerRow } from './layers';
 import { SelectColorDialog } from './SelectColorDialog';
 
@@ -31,16 +55,11 @@ interface ToggleColumn {
   readonly label: (r: LayerRow) => string;
 }
 
-const TOGGLES: readonly ToggleColumn[] = [
-  { key: 'on', title: 'On', label: (r) => (r.on ? 'On' : 'Off') },
-  { key: 'frozen', title: 'Freeze', label: (r) => (r.frozen ? 'Frozen' : 'Thawed') },
-  { key: 'locked', title: 'Lock', label: (r) => (r.locked ? 'Locked' : 'Unlocked') },
-];
-
-const PLOT: ToggleColumn = {
-  key: 'plot',
-  title: 'Plot',
-  label: (r) => (r.plot ? 'Plot' : 'No plot'),
+const TOGGLES: Record<Toggle, ToggleColumn> = {
+  on: { key: 'on', title: 'On', label: (r) => (r.on ? 'On' : 'Off') },
+  frozen: { key: 'frozen', title: 'Freeze', label: (r) => (r.frozen ? 'Frozen' : 'Thawed') },
+  locked: { key: 'locked', title: 'Lock', label: (r) => (r.locked ? 'Locked' : 'Unlocked') },
+  plot: { key: 'plot', title: 'Plot', label: (r) => (r.plot ? 'Plot' : 'No plot') },
 };
 
 /** A property cell whose dialog is open, and the row clicked. */
@@ -77,16 +96,213 @@ function selectionAfter(
   return new Set([click]);
 }
 
+/** What a row's cells do, read when they act, so that they see the palette as it is then. */
+interface RowActions {
+  rowClick(e: MouseEvent, row: LayerRow): void;
+  rowKey(e: KeyboardEvent, row: LayerRow): void;
+  toggle(row: LayerRow, key: Toggle): void;
+  pick(cell: Picking['cell'], row: LayerRow): void;
+  setCurrent(row: LayerRow): void;
+  edit(e: Editing): void;
+  commit(row: LayerRow, field: Editing['field'], value: string): void;
+  cancelEdit(row: LayerRow): void;
+}
+
+/** A name or a description typed in place: Enter or leaving the field keeps it, Esc does not. */
+function InPlace({
+  row,
+  field,
+  label,
+  act,
+}: {
+  row: LayerRow;
+  field: Editing['field'];
+  label: string;
+  act: RefObject<RowActions>;
+}) {
+  return (
+    <input
+      className="layer-in-place"
+      aria-label={label}
+      defaultValue={field === 'name' ? row.name : row.description}
+      autoFocus
+      onFocus={(e) => e.currentTarget.select()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') act.current.commit(row, field, e.currentTarget.value);
+        else if (e.key === 'Escape') act.current.cancelEdit(row);
+      }}
+      onBlur={(e) => act.current.commit(row, field, e.currentTarget.value)}
+    />
+  );
+}
+
+/** Row `r`'s cell in column `key`. */
+function cellOf(
+  r: LayerRow,
+  key: LayerColumnKey,
+  editing: Editing['field'] | undefined,
+  act: RefObject<RowActions>,
+): ReactNode {
+  const toggleCell = (t: ToggleColumn) => (
+    <td>
+      <button
+        type="button"
+        className={`toggle ${t.key}`}
+        aria-pressed={r[t.key]}
+        aria-label={`${t.title} ${r.name}`}
+        title={t.label(r)}
+        onClick={() => act.current.toggle(r, t.key)}
+      >
+        {t.label(r)}
+      </button>
+    </td>
+  );
+  const propertyCell = (cell: Picking['cell'], title: string, text: string) => (
+    <td className={cell}>
+      <button
+        type="button"
+        className="layer-cell"
+        aria-label={`${title} ${r.name}`}
+        aria-haspopup="dialog"
+        title={text}
+        onClick={() => act.current.pick(cell, r)}
+      >
+        {cell === 'color' && (
+          <span className="swatch" style={{ background: r.color.css }} aria-hidden />
+        )}
+        {text}
+      </button>
+    </td>
+  );
+  switch (key) {
+    case 'status':
+      return (
+        <td className="status" onDoubleClick={() => act.current.setCurrent(r)}>
+          {r.current ? <span aria-label="Current layer">✓</span> : null}
+        </td>
+      );
+    case 'name':
+      return (
+        <th
+          scope="row"
+          className="name"
+          onDoubleClick={() => act.current.edit({ handle: r.handle, field: 'name' })}
+        >
+          {editing === 'name' ? (
+            <InPlace row={r} field="name" label={`Name of ${r.name}`} act={act} />
+          ) : (
+            r.name
+          )}
+        </th>
+      );
+    case 'on':
+    case 'frozen':
+    case 'locked':
+    case 'plot':
+      return toggleCell(TOGGLES[key]);
+    case 'vpFreeze':
+      return (
+        <td className="vp-freeze">
+          {r.vpFrozen && r.vpFrozen.of > 0 ? `${r.vpFrozen.frozen} of ${r.vpFrozen.of}` : '—'}
+        </td>
+      );
+    case 'color':
+      return propertyCell('color', 'Color', r.color.label);
+    case 'linetype':
+      return propertyCell('linetype', 'Linetype', r.linetype);
+    case 'lineweight':
+      return propertyCell('lineweight', 'Lineweight', r.lineweight);
+    case 'transparency':
+      return propertyCell('transparency', 'Transparency', r.transparency);
+    case 'description':
+      return (
+        <td
+          className="description"
+          onDoubleClick={() => act.current.edit({ handle: r.handle, field: 'description' })}
+        >
+          {editing === 'description' ? (
+            <InPlace row={r} field="description" label={`Description of ${r.name}`} act={act} />
+          ) : (
+            r.description
+          )}
+        </td>
+      );
+  }
+}
+
+/**
+ * One layer's row. Memoised: it renders again only when its layer, its columns or its selected,
+ * hidden or editing state changes. A row the search leaves out is hidden, not removed, so that
+ * typing in the search does not build rows again.
+ */
+const LayerRowView = memo(function LayerRowView({
+  row,
+  columns,
+  hidden,
+  selected,
+  tabbable,
+  editing,
+  act,
+}: {
+  row: LayerRow;
+  columns: readonly LayerColumn[];
+  hidden: boolean;
+  selected: boolean;
+  tabbable: boolean;
+  editing: Editing['field'] | undefined;
+  act: RefObject<RowActions>;
+}) {
+  return (
+    <tr
+      hidden={hidden}
+      data-handle={row.handle}
+      data-current={row.current}
+      aria-selected={selected}
+      tabIndex={tabbable ? 0 : -1}
+      onClick={(e) => act.current.rowClick(e, row)}
+      onKeyDown={(e) => act.current.rowKey(e, row)}
+    >
+      <RowCells row={row} columns={columns} editing={editing} act={act} />
+    </tr>
+  );
+});
+
+/** A row's cells, apart from its row so that hiding or selecting a row leaves them be. */
+const RowCells = memo(function RowCells({
+  row,
+  columns,
+  editing,
+  act,
+}: {
+  row: LayerRow;
+  columns: readonly LayerColumn[];
+  editing: Editing['field'] | undefined;
+  act: RefObject<RowActions>;
+}) {
+  return columns.map((c) => <Fragment key={c.key}>{cellOf(row, c.key, editing, act)}</Fragment>);
+});
+
 export function LayersPalette({
   doc,
   store,
+  columns,
+  onColumns,
   onClose,
 }: {
   doc: OpenDocument;
   store: DocumentStore;
+  /** The user's columns and sort (kept with the preferences). */
+  columns: LayerColumnSettings;
+  onColumns: (s: LayerColumnSettings) => void;
   onClose: () => void;
 }) {
   const [search, setSearch] = useState('');
+  const [columnsMenu, setColumnsMenu] = useState<{ x: number; y: number } | undefined>();
+  const [customizing, setCustomizing] = useState(false);
+  const paletteRef = useRef<HTMLElement>(null);
+  /** When the search last changed, until its rows are on screen. */
+  const searchedAt = useRef<number | undefined>(undefined);
   const [message, setMessage] = useState<string | undefined>();
   const [last, setLast] = useState<
     { click: number; frame: number; drawn: number | undefined } | undefined
@@ -97,8 +313,33 @@ export function LayersPalette({
     // `revision` changes when the engine applied an edit, which is what the rows read.
     [doc.opened, doc.id, doc.block, doc.revision, inLayout],
   );
+  const sorted = useMemo(() => sortLayerRows(rows, columns.sort), [rows, columns.sort]);
   const needle = search.trim().toLowerCase();
-  const shown = needle ? rows.filter((r) => r.name.toLowerCase().includes(needle)) : rows;
+  const shown = useMemo(
+    () => (needle ? sorted.filter((r) => r.name.toLowerCase().includes(needle)) : sorted),
+    [sorted, needle],
+  );
+  const listed = useMemo(() => new Set(shown.map((r) => r.handle)), [shown]);
+  const visible = useMemo(() => visibleLayerColumns(columns, inLayout), [columns, inLayout]);
+  // Typing → rows filtered on screen: until the frame showing them has been drawn (a task posted
+  // from that frame's animation callback runs once its style, layout and paint are done).
+  // Written on the element itself, so measuring it renders nothing more.
+  useLayoutEffect(() => {
+    const start = searchedAt.current;
+    if (start === undefined) return;
+    searchedAt.current = undefined;
+    requestAnimationFrame(() => {
+      const drawn = new MessageChannel();
+      drawn.port1.onmessage = () => {
+        drawn.port1.close();
+        paletteRef.current?.setAttribute(
+          'data-last-filter-ms',
+          (performance.now() - start).toFixed(1),
+        );
+      };
+      drawn.port2.postMessage(undefined);
+    });
+  }, [search]);
   const [picked, setPicked] = useState<ReadonlySet<Handle>>(new Set());
   const [anchor, setAnchor] = useState<Handle | undefined>();
   const [editing, setEditing] = useState<Editing | undefined>();
@@ -190,8 +431,9 @@ export function LayersPalette({
     );
   };
 
-  const onRowKey = (e: KeyboardEvent, row: LayerRow, i: number) => {
+  const onRowKey = (e: KeyboardEvent, row: LayerRow) => {
     if (e.target !== e.currentTarget) return;
+    const i = shown.findIndex((r) => r.handle === row.handle);
     const go = (to: number) => {
       const r = shown[to];
       if (!r) return;
@@ -297,62 +539,29 @@ export function LayersPalette({
     store.edited(doc.id);
   };
 
-  const toggleCell = (r: LayerRow, t: ToggleColumn) => (
-    <td key={t.key}>
-      <button
-        type="button"
-        className={`toggle ${t.key}`}
-        aria-pressed={r[t.key]}
-        aria-label={`${t.title} ${r.name}`}
-        title={t.label(r)}
-        onClick={() => void toggle(r, t.key)}
-      >
-        {t.label(r)}
-      </button>
-    </td>
-  );
-
-  const propertyCell = (r: LayerRow, cell: Picking['cell'], title: string, text: string) => (
-    <td className={cell}>
-      <button
-        type="button"
-        className="layer-cell"
-        aria-label={`${title} ${r.name}`}
-        aria-haspopup="dialog"
-        title={text}
-        onClick={() => setPicking({ cell, row: r })}
-      >
-        {cell === 'color' && (
-          <span className="swatch" style={{ background: r.color.css }} aria-hidden />
-        )}
-        {text}
-      </button>
-    </td>
-  );
-
-  const inPlace = (r: LayerRow, field: Editing['field'], label: string) => (
-    <input
-      className="layer-in-place"
-      aria-label={label}
-      defaultValue={field === 'name' ? r.name : r.description}
-      autoFocus
-      onFocus={(e) => e.currentTarget.select()}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter') void commit(r, field, e.currentTarget.value);
-        else if (e.key === 'Escape') {
-          ended.current = true;
-          setEditing(undefined);
-          focusRow(r.handle);
-        }
-      }}
-      onBlur={(e) => void commit(r, field, e.currentTarget.value)}
-    />
-  );
+  // The rows' cells act through this, so a row re-renders only when what it shows changes:
+  // typing in the search hides and shows rows without rendering the others again (M5-05 part
+  // 3: under 100 ms on 200 layers).
+  const act = useRef<RowActions>(undefined as unknown as RowActions);
+  act.current = {
+    rowClick: onRowClick,
+    rowKey: onRowKey,
+    toggle: (row, key) => void toggle(row, key),
+    pick: (cell, row) => setPicking({ cell, row }),
+    setCurrent: (row) => void setCurrent(row),
+    edit: startEditing,
+    commit: (row, field, value) => void commit(row, field, value),
+    cancelEdit: (row) => {
+      ended.current = true;
+      setEditing(undefined);
+      focusRow(row.handle);
+    },
+  };
 
   const one = selectedRows.length === 1;
   return (
     <aside
+      ref={paletteRef}
       className="palette layers-palette"
       aria-labelledby="layers-title"
       data-last-toggle-ms={last?.click.toFixed(1)}
@@ -400,7 +609,10 @@ export function LayersPalette({
         placeholder="Search for layer"
         aria-label="Search for layer"
         value={search}
-        onChange={(e) => setSearch(e.currentTarget.value)}
+        onChange={(e) => {
+          searchedAt.current = performance.now();
+          setSearch(e.currentTarget.value);
+        }}
       />
       {message && (
         <p className="message error" role="alert">
@@ -415,73 +627,91 @@ export function LayersPalette({
           aria-multiselectable="true"
         >
           <thead>
-            <tr>
-              <th scope="col">Status</th>
-              <th scope="col">Name</th>
-              {TOGGLES.map((t) => (
-                <th key={t.key} scope="col">
-                  {t.title}
-                </th>
-              ))}
-              {inLayout && <th scope="col">VP Freeze</th>}
-              <th scope="col">Plot</th>
-              <th scope="col">Color</th>
-              <th scope="col">Linetype</th>
-              <th scope="col">Lineweight</th>
-              <th scope="col">Transparency</th>
-              <th scope="col">Description</th>
+            <tr
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setColumnsMenu({ x: e.clientX, y: e.clientY });
+              }}
+            >
+              {visible.map((c) => {
+                const sorting = columns.sort.key === c.key;
+                return (
+                  <th
+                    key={c.key}
+                    scope="col"
+                    aria-sort={
+                      sorting ? (columns.sort.descending ? 'descending' : 'ascending') : undefined
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="layer-sort"
+                      title={`Sort by ${c.title}`}
+                      onClick={() =>
+                        onColumns({ ...columns, sort: sortAfterClick(columns.sort, c.key) })
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+                          e.preventDefault();
+                          const box = e.currentTarget.getBoundingClientRect();
+                          setColumnsMenu({ x: box.left, y: box.bottom });
+                        }
+                      }}
+                    >
+                      {c.title}
+                      {sorting && (
+                        <span className="layer-sort-arrow" aria-hidden>
+                          {columns.sort.descending ? '▼' : '▲'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {shown.map((r, i) => (
-              <tr
+            {sorted.map((r) => (
+              <LayerRowView
                 key={r.handle}
-                data-handle={r.handle}
-                data-current={r.current}
-                aria-selected={selected.has(r.handle)}
-                tabIndex={selected.has(r.handle) || (selected.size === 0 && i === 0) ? 0 : -1}
-                onClick={(e) => onRowClick(e, r)}
-                onKeyDown={(e) => onRowKey(e, r, i)}
-              >
-                <td className="status" onDoubleClick={() => void setCurrent(r)}>
-                  {r.current ? <span aria-label="Current layer">✓</span> : null}
-                </td>
-                <th
-                  scope="row"
-                  className="name"
-                  onDoubleClick={() => startEditing({ handle: r.handle, field: 'name' })}
-                >
-                  {editing?.handle === r.handle && editing.field === 'name'
-                    ? inPlace(r, 'name', `Name of ${r.name}`)
-                    : r.name}
-                </th>
-                {TOGGLES.map((t) => toggleCell(r, t))}
-                {inLayout && (
-                  <td className="vp-freeze">
-                    {r.vpFrozen && r.vpFrozen.of > 0
-                      ? `${r.vpFrozen.frozen} of ${r.vpFrozen.of}`
-                      : '—'}
-                  </td>
-                )}
-                {toggleCell(r, PLOT)}
-                {propertyCell(r, 'color', 'Color', r.color.label)}
-                {propertyCell(r, 'linetype', 'Linetype', r.linetype)}
-                {propertyCell(r, 'lineweight', 'Lineweight', r.lineweight)}
-                {propertyCell(r, 'transparency', 'Transparency', r.transparency)}
-                <td
-                  className="description"
-                  onDoubleClick={() => startEditing({ handle: r.handle, field: 'description' })}
-                >
-                  {editing?.handle === r.handle && editing.field === 'description'
-                    ? inPlace(r, 'description', `Description of ${r.name}`)
-                    : r.description}
-                </td>
-              </tr>
+                row={r}
+                columns={visible}
+                hidden={!listed.has(r.handle)}
+                selected={selected.has(r.handle)}
+                tabbable={
+                  selected.has(r.handle) || (selected.size === 0 && shown[0]?.handle === r.handle)
+                }
+                editing={editing?.handle === r.handle ? editing.field : undefined}
+                act={act}
+              />
             ))}
           </tbody>
         </table>
         {shown.length === 0 && <p className="empty">No layer matches “{search}”.</p>}
       </div>
+      {columnsMenu && (
+        <LayerColumnsMenu
+          at={columnsMenu}
+          settings={columns}
+          inLayout={inLayout}
+          onChange={onColumns}
+          onCustomize={() => {
+            setColumnsMenu(undefined);
+            setCustomizing(true);
+          }}
+          onClose={() => setColumnsMenu(undefined)}
+        />
+      )}
+      {customizing && (
+        <CustomizeLayerColumnsDialog
+          settings={columns}
+          onOk={(s) => {
+            setCustomizing(false);
+            onColumns(s);
+          }}
+          onCancel={() => setCustomizing(false)}
+        />
+      )}
       {picking?.cell === 'color' && (
         <SelectColorDialog
           initial={picking.row.value.color}

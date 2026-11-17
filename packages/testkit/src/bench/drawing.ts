@@ -63,6 +63,19 @@ export const BENCH_GA: BenchSpec = {
   seed: 25_000,
 };
 
+/**
+ * M5-05: the Layer Properties Manager's 200-layer drawing (BENCH-00 to BENCH-199, coloured 1–7
+ * in turn), on which the manager's search must filter in under 100 ms. A few entities on each.
+ */
+export const BENCH_LAYERS: BenchSpec = {
+  name: 'bench-layers',
+  entities: 2_000,
+  blocks: 2,
+  layouts: 1,
+  layers: 200,
+  seed: 200,
+};
+
 /** Model-space entity mix, in percent; each kind takes a contiguous share of the indices. */
 export const BENCH_MIX = [
   ['LINE', 40],

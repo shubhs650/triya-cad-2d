@@ -1431,6 +1431,7 @@ function SupportBanners() {
 export function App() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const recentFiles = useSyncExternalStore(recent.subscribe, recent.getSnapshot);
+  const layerColumns = useSyncExternalStore(preferences.subscribe, preferences.get).layerColumns;
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
   // Properties' Pattern name offers the library the canvases draw with (M2-35 part 3).
   const patternNames = useMemo(() => hatchPatternNames(patterns.sources()), [patternState]);
@@ -1811,7 +1812,13 @@ export function App() {
           />
         )}
         {active && palette === 'layers' && (
-          <LayersPalette doc={active} store={store} onClose={() => setPalette(undefined)} />
+          <LayersPalette
+            doc={active}
+            store={store}
+            columns={layerColumns}
+            onColumns={(c) => preferences.update({ layerColumns: c })}
+            onClose={() => setPalette(undefined)}
+          />
         )}
         {active && palette === 'health' && (
           <HealthPalette
