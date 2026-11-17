@@ -35,9 +35,11 @@ import {
   TableEntityCell,
   TableEntityColumn,
   TableEntityRow,
+  XRecord,
   XYZ,
   type CadObject,
   type ContentFormat,
+  type TableEntity,
 } from '@node-projects/acad-ts';
 
 /** One group code as acad-ts keeps raw codes: strings caret-escaped, handles as numbers. */
@@ -748,4 +750,46 @@ export function tableContentCodes(content: TableContent, head: readonly RawCode[
   o.put(100, 'AcDbTableContent');
   o.handle(340, content.style);
   return o.codes;
+}
+
+/** The key of a table's round-trip XRECORD in its extension dictionary. */
+export const ROUNDTRIP_DICTIONARY_KEY = 'ACAD_XREC_ROUNDTRIP';
+/** The XRECORD's first string: the table's AutoCAD 2008 data follows (360 the TABLECONTENT). */
+export const ROUNDTRIP_TABLE = 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY';
+
+/** A table's round-trip XRECORD and the TABLECONTENT it names, read. */
+export interface RoundTripTableContent {
+  readonly record: XRecord;
+  readonly object: CadObject & { rawDxfCodes: RawCode[] | null };
+  /** The content, or null when its codes do not read (an unknown layout). */
+  readonly content: TableContent | null;
+  /** The object's handle, owner and reactor codes, as read. */
+  readonly head: readonly RawCode[];
+}
+
+/**
+ * The AutoCAD 2008 data of a DXF table (M4-30): the TABLECONTENT its `ACAD_XREC_ROUNDTRIP`
+ * XRECORD names after `ACAD_ROUNDTRIP_2008_TABLE_ENTITY`, read into acad-ts's table content (the
+ * classes an R2010+ DWG's table fills). Undefined when the table has no such record or the
+ * record names no TABLECONTENT kept raw (a DWG, or a table a save has not given one yet).
+ */
+export function roundTripTableContent(
+  t: TableEntity,
+  resolve: Resolve = () => null,
+): RoundTripTableContent | undefined {
+  const record = t.xDictionary?.getEntry(ROUNDTRIP_DICTIONARY_KEY);
+  if (!(record instanceof XRecord)) return undefined;
+  const [first, second] = record.entries;
+  if (first?.code !== 102 || first.value !== ROUNDTRIP_TABLE || second?.code !== 360) {
+    return undefined;
+  }
+  const object = second.value as RoundTripTableContent['object'] | null;
+  const codes = object?.rawDxfCodes;
+  if (!object || object.objectName !== 'TABLECONTENT' || !codes) return undefined;
+  try {
+    const { content, head } = readTableContent(codes, resolve);
+    return { record, object, content, head };
+  } catch {
+    return { record, object, content: null, head: codes.slice(0, 0) };
+  }
 }

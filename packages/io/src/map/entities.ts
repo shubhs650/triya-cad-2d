@@ -3,7 +3,7 @@
 // plan view (DEC-039). Types not mapped yet, and entities whose plane is tilted, are reported
 // in `unmapped` and stay with the retained original only.
 
-import type { LeaderLine, MultiLeaderBlockAttribute } from '@node-projects/acad-ts';
+import type { LeaderLine, MultiLeaderBlockAttribute, TableContent } from '@node-projects/acad-ts';
 import {
   CadValueType,
   AnnotScaleObjectContextData,
@@ -1122,6 +1122,26 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
     ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
     ...planar(pl, t.normal, t.insertPoint.z, 0),
   };
+}
+
+/**
+ * What table `t` maps as, from its ACAD_TABLE codes or, given `content`, from that content in
+ * their place, as an R2010+ DWG's table maps from its own (M4-30: a DXF table's TABLECONTENT,
+ * map/table-content.ts `roundTripTableContent`). The table-wide overrides then come from the
+ * content's rows, as a DWG from R2010 states them.
+ */
+export function tableEntityGeometry(
+  t: TableEntity,
+  content?: TableContent,
+): TableGeometry | UnmappedEntity['reason'] {
+  if (!content) return tableGeometry(t);
+  const s = new TableEntity();
+  s.normal = t.normal;
+  s.insertPoint = t.insertPoint;
+  s.horizontalDirection = t.horizontalDirection;
+  s.block = t.block;
+  Object.assign(s.content, content);
+  return tableGeometry(s);
 }
 
 /** IMAGE and WIPEOUT points and vectors are WCS; the image plane is u × v. */
