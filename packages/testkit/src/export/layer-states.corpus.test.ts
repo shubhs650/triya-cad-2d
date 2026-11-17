@@ -181,10 +181,15 @@ describe('a new layer state saves and reads back on every corpus file', () => {
           },
         } as ChangeSet);
         apply(model, saveLayerStateChange(model, NEW_STATE, { description: 'Saved by Triya' }));
-        // A restore of the state just saved changes nothing.
-        expect(restoreLayerStateChange(model, layerStateNamed(model, NEW_STATE)!.handle)).toEqual(
-          {},
-        );
+        // A restore of the state just saved changes no layer: it only marks the state restored
+        // last (M5-07 part 2).
+        const saved = layerStateNamed(model, NEW_STATE)!;
+        const restored = restoreLayerStateChange(model, saved.handle) as ChangeSet;
+        expect(restored.tables, f.path).toBeUndefined();
+        expect(restored.header, f.path).toBeUndefined();
+        expect(restored.objects?.updated?.map((u) => u.after.handle), f.path).toEqual([
+          saved.handle,
+        ]);
         const back = reopen(bytes, model);
         const want = layerStateNamed(model, NEW_STATE)!;
         const got = layerStateNamed(back.model, NEW_STATE);
