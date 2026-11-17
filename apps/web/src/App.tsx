@@ -80,6 +80,8 @@ import { plotSpaceOf } from './plot-spaces';
 import { ExportDialog, exportDialog } from './ExportDialog';
 import { ViewManager } from './ViewManager';
 import { viewManager } from './view-manager';
+import { layerStatesManager } from './layer-states';
+import { LayerStatesManager } from './LayerStatesManager';
 import { underlayLayersDialog } from './underlay-layers';
 import { UnderlayLayers } from './UnderlayLayers';
 import { exportFile } from './export-file';
@@ -777,6 +779,11 @@ async function fileCommand(
     return pick
       ? { ok: true, pickWindow: true, ...(pick.boundary && { boundary: pick.boundary }) }
       : { ok: true };
+  }
+  if (action === 'layerstates') {
+    // LAYERSTATE (M5-07 part 2): the Layer States Manager, waited for until it closes.
+    await layerStatesManager.show(id);
+    return { ok: true };
   }
   if (action === 'publish') {
     // PUBLISH (M2-17 part 2): the Publish dialog lists the drawing's sheets.
@@ -2024,6 +2031,7 @@ export function App() {
         changes={active ? engines.changesOf(active.id) : []}
         edited={(id) => store.edited(id)}
       />
+      <LayerStatesManager doc={active} edited={(id) => store.edited(id)} />
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
