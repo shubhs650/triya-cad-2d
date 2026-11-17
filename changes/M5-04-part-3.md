@@ -1,0 +1,1 @@
+- M5-04 part 3 (#512): XCLIP (XC) clips block references and xrefs: New boundary (Rectangular, Polygonal or Select polyline, replacing a clip after "Delete old boundary(s)?"), ON, OFF, Delete and generate Polyline. The clips are saved in the DXF as AutoCAD keeps them, and the whole command is one undo step.
