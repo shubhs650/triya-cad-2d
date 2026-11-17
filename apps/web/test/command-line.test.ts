@@ -175,10 +175,18 @@ describe("type-ahead into TEXT's line editor (M4-20)", () => {
   } as const;
   const placing: Prompt = { kind: 'string', message: 'Enter text', spaces: true, editor };
 
-  it('leaves held keys to the editor that places TEXT lines, not to TEXTEDIT or MTEXT', () => {
+  // M4-20 took them for TEXT's lines; M4-26 for TEXTEDIT and MTEXT. A table cell's editor keeps
+  // the keys carried from the cell before (M4-05 part 7), not the command line's.
+  it('leaves held keys to the in-place editors of TEXT, TEXTEDIT and MTEXT, not a cell', () => {
     expect(takesTypeAhead(placing)).toBe(true);
-    expect(takesTypeAhead({ ...placing, editor: { ...editor, value: 'Old' } })).toBe(false);
-    expect(takesTypeAhead({ ...placing, editor: { ...editor, kind: 'mtext' } })).toBe(false);
+    expect(takesTypeAhead({ ...placing, editor: { ...editor, value: 'Old' } })).toBe(true);
+    expect(takesTypeAhead({ ...placing, editor: { ...editor, kind: 'mtext' } })).toBe(true);
+    expect(takesTypeAhead({ ...placing, editor: { ...editor, kind: 'mtext', value: 'Old' } })).toBe(
+      true,
+    );
+    expect(
+      takesTypeAhead({ ...placing, editor: { ...editor, kind: 'mtext', value: '', cell: true } }),
+    ).toBe(false);
     expect(takesTypeAhead({ kind: 'string', message: 'Enter text', spaces: true })).toBe(false);
     expect(takesTypeAhead(undefined)).toBe(false);
   });
