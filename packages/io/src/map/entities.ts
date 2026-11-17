@@ -620,6 +620,8 @@ function multiLeaderGeometry(
       ? {
           text: {
             content: c.textLabel,
+            // Its fields (M4-23): the multileader's ACAD_FIELD tree, as an MTEXT's.
+            ...textField(m),
             style: c.textStyle ? ctx.style(c.textStyle) : '0',
             position: xy(c.textLocation),
             rotation: norm(Math.atan2(dir.y, dir.x)),

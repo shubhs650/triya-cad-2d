@@ -645,6 +645,12 @@ export const FIELD_INSERT = '\u0000FIELD';
  */
 export const FIELD_EDIT = '\u0000EDIT';
 
+/**
+ * The prefix the MTEXT editor's Update Field puts before the code of the field to evaluate now
+ * (M4-23): `%<FIELD_UPDATE\AcVar Date>%`.
+ */
+export const FIELD_UPDATE = '\u0000UPDATE';
+
 /** Where in `text` the field marked by `prefix` is (`%<` to `>%`) and its code; none if none. */
 export function markedField(
   text: string,

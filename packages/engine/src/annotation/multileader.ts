@@ -182,6 +182,8 @@ function textPart(g: MultiLeaderGeometry): AnnotationPart | undefined {
   const geom: MTextGeometry = {
     kind: 'MTEXT',
     contents: t.content,
+    // Its fields (M4-23): shaded as an MTEXT's (FIELDDISPLAY), and kept by EXPLODE.
+    ...(t.field && { field: t.field }),
     style: t.style,
     position: t.position,
     height: t.height,

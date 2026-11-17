@@ -1978,6 +1978,11 @@ const multiLeaderWriter: Writer<MultiLeaderGeometry> = {
     // A new entity, or one moved to another plane, writes all of its content.
     const was = d('normal') ? undefined : before;
     if (d('text') || elevation) writeMultiLeaderText(r, m, was?.text, g, elevation);
+    // The text's fields (M4-23) in the multileader's ACAD_FIELD tree, as an MTEXT's; a
+    // multileader whose text is gone loses them.
+    if (!same(before?.text?.field, g.text?.field)) {
+      writeFields(r, m, before?.text?.field, g.text?.field);
+    }
     if (d('block') || elevation) writeMultiLeaderBlock(r, m, was?.block, g, elevation);
     if (d('branches') || elevation) {
       const roots = c.leaderRoots;

@@ -31,6 +31,7 @@ import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type {
+  DrawingField,
   Color,
   MLeaderStyleRecord,
   MTextGeometry,
@@ -382,6 +383,8 @@ export interface NewMultiLeader {
   readonly scale: number;
   readonly text?: {
     readonly content: string;
+    /** The text's fields (M4-23). */
+    readonly field?: DrawingField;
     readonly style: Handle;
     readonly position: Vec2;
     readonly attachment: number;
@@ -428,6 +431,7 @@ export function newMultiLeader(n: NewMultiLeader): MultiLeaderGeometry {
   if (n.text) {
     text = {
       content: n.text.content,
+      ...(n.text.field && { field: n.text.field }),
       style: n.text.style,
       position: n.text.position,
       rotation: 0,

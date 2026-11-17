@@ -66,7 +66,8 @@ function updateText<T extends TextFields>(
 
 /**
  * The geometry with its fields (and its attributes' fields) evaluated again, undefined if it has
- * none: the TEXT, MTEXT and attribute definitions, and the block references' attributes. `when`
+ * none: the TEXT, MTEXT and attribute definitions, the multileaders' text (M4-23), and the block
+ * references' attributes. `when`
  * evaluates only the fields whose options include that bit (`evaluateFields`).
  */
 export function updateEntityFields(
@@ -81,6 +82,15 @@ export function updateEntityFields(
     const r = evaluateFields(g.field, ctx, when);
     return {
       geom: { ...g, contents: r.text, field: r.field },
+      found: r.found,
+      evaluated: r.evaluated,
+    };
+  }
+  if (g.kind === 'MULTILEADER' && g.text?.field) {
+    // A multileader's text (M4-23), as an MTEXT's.
+    const r = evaluateFields(g.text.field, ctx, when);
+    return {
+      geom: { ...g, text: { ...g.text, content: r.text, field: r.field } },
       found: r.found,
       evaluated: r.evaluated,
     };
@@ -138,6 +148,7 @@ export function fieldEventMayUpdate(model: DocumentModel, event: FieldEvent): bo
     const g = e.geom;
     if ('field' in g && g.field) return true;
     if (g.kind === 'INSERT' && g.attributes.some((a) => a.field)) return true;
+    if (g.kind === 'MULTILEADER' && g.text?.field) return true;
   }
   return false;
 }

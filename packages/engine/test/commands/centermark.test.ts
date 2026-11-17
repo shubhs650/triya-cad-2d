@@ -5,7 +5,8 @@
 //
 // The drawing adds to the sample (metric, current layer WALLS): 30 a circle r 10 at (50,50),
 // 31 an arc r 5 at (100,50), 32 and 33 parallel lines (0,100)-(20,100) and (20,110)-(0,110)
-// (drawn the other way), 34 a line (0,200)-(20,200) and 35 a line (0,204)-(20,212).
+// (drawn the other way), 34 a line (0,200)-(20,200) and 35 a line (0,204)-(20,212); M4-29 adds
+// 36 a polyline (0,300)-(20,300), an arc out to (25,305) back to (20,310), then to (0,310).
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
@@ -16,6 +17,7 @@ import {
   centerMarkLines,
   centerMarkOf,
   centerlineOf,
+  centerlinePick,
   closestPoint,
   compose,
   insertMatrix,
@@ -76,6 +78,16 @@ function drawing(o: { center2?: boolean; header?: [string, HeaderValue][] } = {}
       entityInit('33', lineGeom(20, 110, 0, 110)),
       entityInit('34', lineGeom(0, 200, 20, 200)),
       entityInit('35', lineGeom(0, 204, 20, 212)),
+      entityInit('36', {
+        kind: 'LWPOLYLINE',
+        closed: false,
+        vertices: [
+          { x: 0, y: 300, bulge: 0 },
+          { x: 20, y: 300, bulge: 1 },
+          { x: 20, y: 310, bulge: 0 },
+          { x: 0, y: 310, bulge: 0 },
+        ],
+      }),
     ],
   };
 }
@@ -517,6 +529,115 @@ describe('CENTERLINE', () => {
     await s.bus.script(['CENTERLINE', '10,200', '25,200']);
     expect(s.log).toContain('The lines meet end to end: there is no centerline between them.');
     expect(s.marks()).toEqual([]);
+  });
+});
+
+describe('CENTERLINE on polyline segments (M4-29, DEC-068)', () => {
+  it('runs between two straight segments of one polyline, refusing its arc and the same segment twice', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERLINE', '10,300', '25,305', '10,300', '10,310']);
+    expect(s.log).toContain('Polyline segment selected is not straight.');
+    expect(s.log).toContain('Select a different line.');
+    const [line] = s.marks();
+    expect(s.lines(line!)).toEqual([[-3.5, 305, 23.5, 305]]);
+    expect(s.record(line!)).toMatchObject({
+      kind: 'line',
+      objects: ['36', '36'],
+      segments: [0, 2],
+      extensions: [3.5, 3.5],
+    });
+  });
+
+  it('runs between a line and a polyline segment; between lines the record has no segments', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERLINE', '10,100', '10,310']);
+    const [line] = s.marks();
+    expect(s.lines(line!)).toEqual([[-3.5, 205, 23.5, 205]]);
+    expect(s.record(line!)).toMatchObject({ objects: ['32', '36'], segments: [-1, 2] });
+    await s.bus.script(['CENTERLINE', '10,100', '10,110']);
+    const plain = s.records().find((r) => r.objects[1] === '33');
+    expect(plain && 'segments' in plain).toBe(false);
+  });
+
+  it('follows its segment when a vertex of the polyline moves, in the same undo step', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERLINE', '10,300', '10,310']);
+    await s.bus.pick({ x: 10, y: 300 });
+    await s.bus.pick({ x: 0, y: 310 }, { grip: 0.01 });
+    await s.bus.submit('#0,320');
+    await s.bus.clearSelection();
+    const want = centerlineOf(
+      [
+        { x: 0, y: 300 },
+        { x: 20, y: 300 },
+      ],
+      [
+        { x: 20, y: 310 },
+        { x: 0, y: 320 },
+      ],
+      [3.5, 3.5],
+    )!;
+    expect(s.lines(s.marks()[0]!)).toEqual([
+      ordered([want[0].x, want[0].y, want[1].x, want[1].y].map(r4)),
+    ]);
+    await s.bus.script(['U']);
+    expect(s.lines(s.marks()[0]!)).toEqual([[-3.5, 305, 23.5, 305]]);
+  });
+
+  it('goes when its polyline is erased, record and all', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERLINE', '10,300', '10,310']);
+    await s.bus.script(['ERASE', '10,300', '']);
+    expect(s.marks()).toEqual([]);
+    expect(s.records()).toEqual([]);
+  });
+
+  it('CENTERREASSOCIATE moves a centerline onto polyline segments and back onto lines', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERLINE', '10,100', '10,110']);
+    await s.bus.script(['CENTERREASSOCIATE', '10,105', '10,310', '10,300']);
+    const [line] = s.marks();
+    expect(s.record(line!)).toMatchObject({ objects: ['36', '36'], segments: [2, 0] });
+    expect(s.lines(line!)).toEqual([[-3.5, 305, 23.5, 305]]);
+    await s.bus.script(['CENTERREASSOCIATE', '10,305', '10,100', '10,110']);
+    const r = s.record(s.marks()[0]!)!;
+    expect(r.objects).toEqual(['32', '33']);
+    expect('segments' in r).toBe(false);
+  });
+
+  it('copied with its polyline, is a centerline on the same segments of the copy', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERLINE', '10,300', '10,310']);
+    await s.bus.script(['COPY', '10,300', '10,305', '', '0,0', '100,0']);
+    const copy = s.records().find((r) => r.objects[0] !== '36');
+    expect(copy).toMatchObject({ kind: 'line', segments: [0, 2] });
+    expect(copy!.objects[0]).toBe(copy!.objects[1]);
+    const insert = s.marks().find((m) => m.handle === copy!.insert)!;
+    expect(s.lines(insert)).toEqual([[96.5, 305, 123.5, 305]]);
+  });
+
+  it('takes the first straight segment without a pick, and refuses fit and 3D polylines', () => {
+    const pl = (geom: Entity['geom']) =>
+      ({ ...entityInit('99', geom), id: 1 }) as unknown as Entity;
+    const vertices = [
+      { x: 0, y: 0, bulge: 1 },
+      { x: 10, y: 0, bulge: 0 },
+      { x: 10, y: 10, bulge: 0 },
+    ];
+    expect(centerlinePick(pl({ kind: 'LWPOLYLINE', closed: false, vertices }), undefined)).toEqual({
+      segment: 1,
+    });
+    const heavy = { kind: 'POLYLINE', closed: false, is3d: false, vertices } as const;
+    expect(centerlinePick(pl(heavy), { x: 10, y: 5 })).toEqual({ segment: 1 });
+    expect(centerlinePick(pl({ ...heavy, fit: 'curve' }), { x: 10, y: 5 })).toEqual({
+      refused: 'not-line',
+    });
+    expect(centerlinePick(pl({ ...heavy, is3d: true }), { x: 10, y: 5 })).toEqual({
+      refused: 'not-line',
+    });
+    expect(centerlinePick(pl({ ...heavy, closed: true }), { x: 0, y: 5 })).toEqual({
+      segment: 2,
+    });
   });
 });
 
