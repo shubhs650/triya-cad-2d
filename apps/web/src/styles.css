@@ -4600,3 +4600,58 @@ button {
   margin: 4px 0 0;
   color: var(--chrome-danger, #c42b1c);
 }
+
+/* M4-17: spell checking as you type. MTEXT's misspelled words are a CSS highlight over its DOM;
+   TEXT's line lays a copy of its text, transparent but for the underlines, under the input. */
+::highlight(triya-spelling),
+.text-line-spelling .spell-error {
+  text-decoration: underline wavy #e5484d;
+  text-decoration-skip-ink: none;
+}
+
+.text-line-spelling {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.4;
+  white-space: pre;
+  color: transparent;
+  pointer-events: none;
+}
+
+/* The line's input sits over its copy, whose underlines show through the input's tint. */
+.text-line input {
+  position: relative;
+}
+
+.spell-menu {
+  right: auto;
+  top: auto;
+  z-index: 2;
+  white-space: nowrap;
+}
+
+.spell-menu > .spell-suggestion {
+  font-weight: 600;
+}
+
+.spell-menu-note {
+  padding: 4px 10px;
+  color: var(--chrome-text-muted, inherit);
+  font-style: italic;
+}
+
+.spell-menu-separator {
+  width: 100%;
+  margin: 4px 0;
+  border: none;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.mtext-tool-spell {
+  text-decoration: underline wavy #e5484d;
+  text-decoration-skip-ink: none;
+}
