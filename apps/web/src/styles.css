@@ -4962,9 +4962,25 @@ button {
   font-size: 0.7em;
 }
 
-.layer-columns-menu {
+.layer-columns-menu,
+.layer-list-menu {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
+}
+
+/* Merge to Layer (M5-05 part 4): the Target Layer list, then AutoCAD's question. */
+.cad-dialog.merge-to-layer {
+  width: min(320px, calc(100vw - 32px));
+}
+
+.merge-to-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.merge-to-layer-list select {
+  font: inherit;
 }
 
 /* Customize Layer Columns: the columns with their check boxes, the buttons beside them. */

@@ -3,7 +3,12 @@
 // with the properties of the layer selected), deleting layers AutoCAD lets go and making a layer
 // current; each one undo step named LAYER.
 import { describe, expect, it } from 'vitest';
-import { EngineSession, type DocumentInit, type LayerRecord } from '../../src/index';
+import {
+  EngineSession,
+  type DocumentInit,
+  type EntityGeometry,
+  type LayerRecord,
+} from '../../src/index';
 import {
   LAYER_0,
   LAYER_WALLS,
@@ -314,5 +319,169 @@ describe('Layer Properties Manager edits (M5-05)', () => {
       ok: false,
       message: 'The drawing has no layers.',
     });
+  });
+});
+
+// M5-05 part 4: Merge Selected Layer(s) to, and UNDO Control Layer making the manager's changes
+// one after another a single LAYER step.
+const LAYER_OLD = '17';
+const LAYER_OLDER = '18';
+const INSERT = '40';
+
+/** The manager's drawing with OLD and OLDER: objects in model space, the block, an attribute. */
+function mergeInit(): DocumentInit {
+  const init = managerInit();
+  return {
+    ...init,
+    tables: {
+      ...init.tables,
+      layers: [...init.tables!.layers!, layer(LAYER_OLD, 'Old'), layer(LAYER_OLDER, 'Older')],
+    },
+    entities: [
+      ...init.entities!.map((e) =>
+        e.handle === VIEWPORT && e.geom.kind === 'VIEWPORT'
+          ? { ...e, geom: { ...e.geom, frozenLayers: [LAYER_EMPTY, LAYER_OLD] } }
+          : e,
+      ),
+      entityInit('32', lineGeom(0, 0, 0, 1), { layer: LAYER_OLD }),
+      entityInit('33', lineGeom(0, 0, 2, 2), { owner: BLOCK, layer: LAYER_OLDER }),
+      entityInit(
+        INSERT,
+        {
+          kind: 'INSERT',
+          block: BLOCK,
+          position: { x: 0, y: 0 },
+          scale: { x: 1, y: 1, z: 1 },
+          rotation: 0,
+          attributes: [
+            { handle: '41', layer: LAYER_OLD, tag: 'A', value: '1' },
+            { handle: '42', layer: LAYER_0, tag: 'B', value: '2' },
+          ] as unknown as Extract<EntityGeometry, { kind: 'INSERT' }>['attributes'],
+        },
+        { layer: LAYER_EMPTY },
+      ),
+    ],
+  };
+}
+
+const byHandle = (s: EngineSession, h: string) =>
+  [...s.model.entities()].find((e) => e.handle === h)!;
+
+describe('Merge Selected Layer(s) to (M5-05 part 4)', () => {
+  it('moves every object on the layers to the target and purges them, as one LAYER step', async () => {
+    const s = new EngineSession(mergeInit());
+    const before = s.model.tables.layers.size;
+    const r = s.edit({
+      kind: 'layer-merge',
+      layers: [LAYER_OLD, LAYER_OLDER],
+      target: LAYER_EMPTY,
+    });
+    expect(r.ok).toBe(true);
+    expect(s.model.tables.layers.has(LAYER_OLD)).toBe(false);
+    expect(s.model.tables.layers.has(LAYER_OLDER)).toBe(false);
+    expect(s.model.tables.layers.size).toBe(before - 2);
+    // Model space, a block definition and a block reference's attribute.
+    expect(byHandle(s, '32').layer).toBe(LAYER_EMPTY);
+    expect(byHandle(s, '33').layer).toBe(LAYER_EMPTY);
+    const g = byHandle(s, INSERT).geom;
+    expect(g.kind === 'INSERT' && g.attributes.map((a) => a.layer)).toEqual([LAYER_EMPTY, LAYER_0]);
+    // Objects on other layers stay; the viewport no longer names the layer merged.
+    expect(byHandle(s, '31').layer).toBe(LAYER_WALLS);
+    const vp = byHandle(s, VIEWPORT).geom;
+    expect(vp.kind === 'VIEWPORT' && vp.frozenLayers).toEqual([LAYER_EMPTY]);
+    expect(s.undoState.nextUndo).toBe('LAYER');
+    for (const text of ['U']) await s.command({ kind: 'submit', text });
+    expect(layerOf(s, LAYER_OLD).name).toBe('Old');
+    expect(byHandle(s, '33').layer).toBe(LAYER_OLDER);
+    const back = byHandle(s, INSERT).geom;
+    expect(back.kind === 'INSERT' && back.attributes[0]!.layer).toBe(LAYER_OLD);
+  });
+
+  it('refuses what AutoCAD keeps, all or nothing', () => {
+    const s = new EngineSession(mergeInit());
+    const merge = (layers: string[], target = LAYER_EMPTY) =>
+      s.edit({ kind: 'layer-merge', layers, target });
+    expect(merge([LAYER_OLD, LAYER_0])).toEqual({
+      ok: false,
+      message: 'Layer "0" was not merged: layer 0 and Defpoints cannot be merged.',
+    });
+    expect(merge([LAYER_DEFPOINTS])).toEqual({
+      ok: false,
+      message: 'Layer "Defpoints" was not merged: layer 0 and Defpoints cannot be merged.',
+    });
+    expect(merge([LAYER_WALLS])).toEqual({
+      ok: false,
+      message: 'Layer "WALLS" was not merged: it is the current layer.',
+    });
+    expect(merge([LAYER_XREF])).toEqual({
+      ok: false,
+      message: 'Layer "Site|Walls" was not merged: it is xref-dependent.',
+    });
+    expect(merge([LAYER_OLD, LAYER_EMPTY])).toEqual({
+      ok: false,
+      message: 'Layer "Empty" was not merged: it is the target layer.',
+    });
+    expect(merge([LAYER_OLD], LAYER_XREF)).toEqual({
+      ok: false,
+      message: 'Cannot merge into an xref-dependent layer.',
+    });
+    expect(merge([LAYER_OLD], 'FFF')).toEqual({ ok: false, message: 'No layer FFF.' });
+    expect(merge(['FFF'])).toEqual({ ok: false, message: 'No layer FFF.' });
+    expect(merge([])).toEqual({ ok: false, message: 'Select the layers to merge.' });
+    expect(s.model.tables.layers.has(LAYER_OLD)).toBe(true);
+    expect(byHandle(s, '32').layer).toBe(LAYER_OLD);
+  });
+});
+
+describe('UNDO Control Layer (M5-05 part 4)', () => {
+  it("makes the manager's changes one after another one LAYER step", async () => {
+    const s = new EngineSession(mergeInit());
+    s.edit({ kind: 'layer', layer: LAYER_OLD, on: false });
+    s.edit({ kind: 'layer-new' });
+    s.edit({ kind: 'layer', layer: LAYER_EMPTY, name: 'B' });
+    s.edit({ kind: 'layer-merge', layers: [LAYER_OLDER], target: LAYER_OLD });
+    expect(s.undoState.undoList).toEqual(['LAYER']);
+    await s.command({ kind: 'submit', text: 'U' });
+    expect(layerOf(s, LAYER_OLD).on).toBe(true);
+    expect(layerOf(s, LAYER_EMPTY).name).toBe('Empty');
+    expect(s.model.tables.layers.has(LAYER_OLDER)).toBe(true);
+    expect([...s.model.tables.layers.values()].some((l) => l.name === 'Layer1')).toBe(false);
+    // REDO puts them all back, as one step again.
+    await s.command({ kind: 'submit', text: 'REDO' });
+    expect(layerOf(s, LAYER_EMPTY).name).toBe('B');
+    expect(s.model.tables.layers.has(LAYER_OLDER)).toBe(false);
+    expect(s.undoState.undoList).toEqual(['LAYER']);
+  });
+
+  it('starts a new step after anything else: a command, a layer state, a redo, U', async () => {
+    const s = new EngineSession(mergeInit());
+    s.edit({ kind: 'layer', layer: LAYER_OLD, on: false });
+    await s.command({ kind: 'submit', text: 'LINE' });
+    for (const text of ['0,0', '5,5', '']) await s.command({ kind: 'submit', text });
+    s.edit({ kind: 'layer', layer: LAYER_OLD, locked: true });
+    s.edit({ kind: 'layer-state-save', name: 'S' });
+    s.edit({ kind: 'layer', layer: LAYER_OLD, frozen: true });
+    expect(s.undoState.undoList).toEqual(['LAYER', 'LAYERSTATE', 'LAYER', 'LINE', 'LAYER']);
+    // A redone step is a run of its own.
+    await s.command({ kind: 'submit', text: 'U' });
+    await s.command({ kind: 'submit', text: 'REDO' });
+    s.edit({ kind: 'layer', layer: LAYER_OLD, color: { kind: 'aci', index: 2 } });
+    expect(s.undoState.undoList.slice(0, 3)).toEqual(['LAYER', 'LAYER', 'LAYERSTATE']);
+    // So is the step a command was pushed over, once U takes the command away.
+    const t = new EngineSession(mergeInit());
+    t.edit({ kind: 'layer', layer: LAYER_OLD, on: false });
+    await t.command({ kind: 'submit', text: 'LINE' });
+    for (const text of ['0,0', '5,5', '', 'U']) await t.command({ kind: 'submit', text });
+    t.edit({ kind: 'layer', layer: LAYER_OLD, locked: true });
+    expect(t.undoState.undoList).toEqual(['LAYER', 'LAYER']);
+  });
+
+  it('keeps each change its own step under UNDO Control Layer No', async () => {
+    const s = new EngineSession(mergeInit());
+    for (const text of ['UNDO', 'Control', 'Layer', 'No'])
+      await s.command({ kind: 'submit', text });
+    s.edit({ kind: 'layer', layer: LAYER_OLD, on: false });
+    s.edit({ kind: 'layer', layer: LAYER_OLD, locked: true });
+    expect(s.undoState.undoList).toEqual(['LAYER', 'LAYER']);
   });
 });

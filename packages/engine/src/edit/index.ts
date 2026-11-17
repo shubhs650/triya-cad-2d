@@ -147,6 +147,7 @@ export {
 export {
   currentLayerChange,
   deleteLayersChange,
+  mergeLayersChange,
   layerPropsChange,
   layersInUse,
   newLayerChange,
