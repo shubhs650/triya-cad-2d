@@ -30,6 +30,9 @@ export type AuditSaveKind =
   | 'bind-objects'
   // XCLIP's options on ezdxf's xclip.dxf, a corpus file saved by a testkit suite (M5-04 part 3).
   | 'xclip'
+  // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
+  | 'laydel'
+  | 'laymrg'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images';
 

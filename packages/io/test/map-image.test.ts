@@ -122,7 +122,7 @@ describe('IMAGE and WIPEOUT', () => {
     const d2 = new CadDocument(ACadVersion.AC1032);
     d2.entities?.add(tilted);
     expect(mapEntities(d2).unmapped).toEqual([
-      { handle: H(tilted), type: 'IMAGE', reason: 'tilted plane' },
+      { handle: H(tilted), type: 'IMAGE', layer: H(tilted.layer), reason: 'tilted plane' },
     ]);
   });
 });

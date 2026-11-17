@@ -96,3 +96,69 @@ test('LAYISO, LAYUNISO, LAYOFF and LAYON change the layers of the objects picked
   await type(page, 'LAYON', 'Command:');
   await expect(on('HATCH')).toHaveAttribute('aria-pressed', 'true');
 });
+
+// M5-06 part 2: LAYMRG merges the layer of a line picked into one named, after AutoCAD's
+// warning, and the Layers palette loses the merged layer; LAYERP puts back a LAYLCK.
+test('LAYMRG merges a layer picked into one named, and LAYERP puts back a lock', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Layers' })
+    .click();
+  const palette = page.getByRole('complementary', { name: 'Layers' });
+  await expect(palette).toBeVisible();
+  await expectDrawn(page, { timeout: 15_000 });
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const click = async (x: number, y: number) =>
+    page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+  const row = (layer: string) => palette.getByRole('rowheader', { name: layer, exact: true });
+  const lock = (layer: string) =>
+    palette.getByRole('button', { name: `Lock ${layer}`, exact: true });
+
+  // An empty part of the plan, running object snaps off: a line on HATCH, then 0 current.
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await page.keyboard.press('F3');
+  await type(page, 'CLAYER', /^Enter new value for CLAYER/);
+  await type(page, 'HATCH', 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await click(0.2, 0.5);
+  await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
+  await click(0.7, 0.5);
+  await type(page, '', 'Command:');
+  await type(page, 'CLAYER', /^Enter new value for CLAYER/);
+  await type(page, '0', 'Command:');
+  await expect(row('HATCH')).toBeVisible();
+
+  // LAYMRG: the line's layer, then the target by Name.
+  await type(page, 'LAYMRG', 'Select object on layer to merge or [Name]:');
+  await click(0.45, 0.5);
+  await expect(prompt(page)).toHaveText('Select object on layer to merge or [Name/Undo]:');
+  await type(page, '', 'Select object on target layer or [Name]:');
+  await type(page, 'N', 'Enter layer name or [?]:');
+  await type(page, '0', 'Do you wish to continue? [Yes/No] <No>:');
+  await shot('4-laymrg-warning.png');
+  await type(page, 'Y', 'Command:');
+  await expect(row('HATCH')).toHaveCount(0);
+  await shot('5-laymrg-merged.png');
+
+  // LAYLCK on the line (now on 0), then LAYERP unlocks 0 again.
+  await type(page, 'LAYLCK', 'Select an object on the layer to be locked:');
+  await click(0.45, 0.5);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(lock('0')).toHaveAttribute('aria-pressed', 'true');
+  await type(page, 'LAYERP', 'Command:');
+  await expect(lock('0')).toHaveAttribute('aria-pressed', 'false');
+});

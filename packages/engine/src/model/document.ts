@@ -40,6 +40,11 @@ export interface DocumentInit {
    * never looks inside them, but must never hand their handles out again.
    */
   readonly passthrough?: readonly Handle[];
+  /**
+   * The layers objects Triya keeps without mapping are on (M5-06 part 2): those objects cannot
+   * be erased or moved, so a layer holding one is in use (Delete Layer, LAYDEL, LAYMRG).
+   */
+  readonly passthroughLayers?: readonly Handle[];
   readonly entities?: readonly EntityInit[];
 }
 
@@ -65,6 +70,8 @@ export class DocumentModel {
   readonly ids = new EntityIdMap();
   readonly handles: HandleAllocator;
   readonly passthrough: ReadonlySet<Handle>;
+  /** The layers of the objects kept without mapping (`DocumentInit.passthroughLayers`). */
+  readonly passthroughLayers: ReadonlySet<Handle>;
 
   readonly #header = new Map<string, HeaderValue>();
   readonly #tables = Object.fromEntries(TABLE_NAMES.map((t) => [t, new Map()])) as MutableTables;
@@ -115,6 +122,7 @@ export class DocumentModel {
     }
     for (const h of init.passthrough ?? []) claim(h, 'passthrough handle');
     this.passthrough = new Set(init.passthrough ?? []);
+    this.passthroughLayers = new Set(init.passthroughLayers ?? []);
     for (const e of init.entities ?? []) {
       const list = this.#blockEntities.get(e.owner);
       if (!list) throw new Error(`entity ${e.handle}: owner block ${e.owner} does not exist`);

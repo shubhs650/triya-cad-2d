@@ -1,0 +1,1 @@
+- M5-06 part 2 (#513): LAYDEL (delete layers and every object on them, in blocks too) and LAYMRG (merge layers into a target layer), with Name and Undo; LAYERP (put back the last set of layer changes) and LAYERPMODE. Delete Layer and Merge no longer take a layer that holds objects Triya keeps without mapping, and a merged block reference with attributes saves.
