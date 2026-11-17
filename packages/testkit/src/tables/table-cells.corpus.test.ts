@@ -13,10 +13,13 @@ import {
   tableCellBox,
   tableCellGrips,
   tableCellText,
+  tableDataFormatOf,
   tableDrawingOf,
   tableToPlan,
   type Entity,
   type EntityId,
+  type TableCell,
+  type TableDataFormat,
   type TableGeometry,
 } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
@@ -591,5 +594,156 @@ describe('a block put in a cell, a block cell typed in (M4-16 part 1, TINSERT)',
     const back = saved(bytes, model, table.handle);
     expect(held(back)).toEqual(held(g));
     expect(back.cells[last]![0]!.format?.alignment).toBe(5);
+  });
+});
+
+describe('cell data formats (M4-16 part 2, Data Format...)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+
+  /** Every cell's text, value and format string, by position. */
+  const data = (t: TableGeometry) =>
+    t.cells.map((r) =>
+      r.map((c) => ({
+        text: c.text,
+        ...(c.value && { value: c.value }),
+        ...(c.valueFormat && { format: c.valueFormat }),
+      })),
+    );
+
+  /** The bus on table `id` and TABLECELL steps: Data Format on a cell, text typed into one. */
+  function steps(model: DocumentModel, id: EntityId) {
+    const g = () => (model.entity(id) as Table).geom;
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) =>
+          Promise.resolve(r.op === 'pick' ? { ok: true, ids: [] } : { ok: false, message: 'no' }),
+      },
+    });
+    const centre = (i: number, j: number) => {
+      const style = model.tables.tableStyles.get(g().style!);
+      const b = tableCellBox(g(), style, { r0: i, c0: j, r1: i, c1: j });
+      return tableToPlan(g(), { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    const select = async (i: number, j: number) => {
+      await bus.pick(centre(i, j), { grip: 1e-6 });
+      expect(bus.command).toBe('TABLECELL');
+    };
+    return {
+      g,
+      async format(i: number, j: number, f: TableDataFormat) {
+        await select(i, j);
+        await bus.submit('DF');
+        expect(bus.prompt?.kind).toBe('dialog');
+        await bus.answer({ kind: 'dialog', action: 'ok', tableDataFormat: f });
+        expect(bus.promptText).toBe('Command:');
+      },
+      async type(i: number, j: number, text: string) {
+        await select(i, j);
+        await bus.submit('T');
+        await bus.answer({ kind: 'string', value: text, editor: true });
+        expect(bus.promptText).toBe('Command:');
+      },
+    };
+  }
+
+  it('reads the typed values the drawing’s table holds', () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    const typed = table.geom.cells.flat().filter((c) => c.value);
+    expect(typed.map((c) => [c.text, c.value!.kind, c.valueFormat ?? ''])).toEqual(
+      expect.arrayContaining([
+        ['0.500000', 'double', ''],
+        ['60', 'double', '%au0'],
+        ['0.000000, 0.000000, 0.000000', 'point', ''],
+        ['11/15/2024', 'date', ''],
+        ['5', 'long', ''],
+        ['35.00%', 'double', '%lu2%pr2%ps[,%]'],
+        ['$100.00', 'double', '%lu2%pr2%ps[$,]'],
+      ]),
+    );
+    const of = (format: string) => typed.find((c) => c.valueFormat === format)!;
+    expect(of('%au0').value).toEqual({
+      kind: 'double',
+      n: expect.closeTo(Math.PI / 3, 9),
+      units: 2,
+    });
+    expect(of('%lu2%pr2%ps[$,]').value).toEqual({ kind: 'double', n: 100, units: 16 });
+    const date = typed.find((c) => c.value!.kind === 'date')!.value!;
+    expect(date.kind === 'date' && new Date(date.time).toDateString()).toBe(
+      new Date(2024, 10, 15).toDateString(),
+    );
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    const at = (pick: (c: TableCell) => boolean): [number, number] => {
+      const i = table.geom.cells.findIndex((r) => r.some(pick));
+      return [i, table.geom.cells[i]!.findIndex(pick)];
+    };
+    const money = at((c) => c.valueFormat === '%lu2%pr2%ps[$,]');
+    const angle = at((c) => c.valueFormat === '%au0');
+    const day = at((c) => c.value?.kind === 'date');
+    const whole = at((c) => c.value?.kind === 'long');
+    const text = at((c) => c.text === 'A2 cell');
+    const s = steps(model, table.id);
+    await s.format(...money, { type: 'percentage', precision: 1 });
+    await s.type(...angle, '90');
+    await s.format(...day, { type: 'date', date: 'yyyy-MM-dd' });
+    await s.type(...whole, '12.4');
+    await s.type(...text, '2.5');
+    await s.format(...text, { type: 'currency', symbol: '€', appendSymbol: true, precision: 1 });
+    const g = s.g();
+    const cellOf = ([i, j]: [number, number]) => g.cells[i]![j]!;
+    expect(cellOf(money)).toMatchObject({ text: '100.0%', value: { units: 32 } });
+    expect(cellOf(angle)).toMatchObject({ text: '90', value: { n: Math.PI / 2, units: 2 } });
+    expect(cellOf(day)).toMatchObject({ text: '2024-11-15', valueFormat: 'yyyy-MM-dd' });
+    expect(cellOf(whole)).toMatchObject({ text: '12', value: { kind: 'long', n: 12 } });
+    expect(cellOf(text)).toMatchObject({ text: '2.5€', value: { n: 2.5, units: 16 } });
+    expect(data(saved(bytes, model, table.handle))).toEqual(data(g));
+  });
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '2', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['PUMPS', 'Duty', 'Since', '1.5', '3/1/2025', '20', '']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const s = steps(model, made.id);
+    await s.format(2, 0, { type: 'decimal', precision: 2 });
+    await s.format(3, 0, { type: 'whole' });
+    await s.format(2, 1, { type: 'date', date: 'MMMM d, yyyy' });
+    // An empty cell keeps its format: what is typed there after the save is read by it.
+    await s.format(3, 1, { type: 'angle', format: 1 });
+    await s.format(1, 0, { type: 'text', format: 1 });
+    const g = s.g();
+    expect(data(g)).toEqual([
+      [{ text: 'PUMPS' }, { text: '' }],
+      [{ text: 'Duty', format: '%tc1' }, { text: 'Since' }],
+      [
+        { text: '1.50', value: { kind: 'double', n: 1.5, units: 0 }, format: '%pr2' },
+        {
+          text: 'March 1, 2025',
+          value: { kind: 'date', time: new Date(2025, 2, 1).getTime() },
+          format: 'MMMM d, yyyy',
+        },
+      ],
+      [
+        { text: '20', value: { kind: 'long', n: 20 } },
+        { text: '', format: '%au1' },
+      ],
+    ]);
+    const back = saved(bytes, model, made.handle);
+    expect(data(back)).toEqual(data(g));
+    expect(tableDataFormatOf(back.cells[3]![1]!)).toEqual({ type: 'angle', format: 1 });
   });
 });

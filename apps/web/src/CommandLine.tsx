@@ -14,6 +14,7 @@ import {
   promptParts,
   reading,
   replayAhead,
+  takesTypeAhead,
   type CommandLines,
 } from './command-line';
 import { DynamicInput } from './DynamicInput';
@@ -229,6 +230,14 @@ export function CommandLine({
     if (doc === undefined || held.current.length === 0) return;
     const now = lines.get(doc);
     if (reading(now)) return;
+    // TEXT's line editor types the keys held for its prompt (M4-20); until it is open, or once
+    // it has ended TEXT, they wait.
+    if (takesTypeAhead(now.prompt)) {
+      const keys = held.current;
+      held.current = [];
+      if (!lines.typeHeld(doc, keys)) held.current = [...keys, ...held.current];
+      return;
+    }
     let rest = dynAhead.current?.(held.current);
     if (rest === undefined) {
       const r = replayAhead(textRef.current, held.current, now.prompt);
@@ -248,9 +257,21 @@ export function CommandLine({
     // wait for the prompt the cancel leads to.
     if (!reading(lines.get(doc)) && held.current[0] === 'Escape') cancel(held.current.slice(1));
   });
-  // Another drawing shown starts with nothing held.
+  // Another drawing shown starts with nothing held. The held keys are the drawing's in-place
+  // editor's to take where its prompt opens one (M4-20).
   useEffect(() => {
     held.current = [];
+    if (doc === undefined) return;
+    return lines.holdKeys(doc, {
+      take: () => {
+        const keys = held.current;
+        held.current = [];
+        return keys;
+      },
+      give: (keys) => {
+        held.current = [...held.current, ...keys];
+      },
+    });
   }, [doc]);
 
   // The command line's shortcut actions (M3-10 part 2, keymap.ts): F2 history, F12 Dynamic

@@ -107,7 +107,7 @@ const at = (i: number, j: number) => ({
 });
 
 const OPTIONS =
-  'Enter a table cell option [Text/Paste/BLock/BAckground/ALignment/BOrders/Height/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
+  'Enter a table cell option [Text/Paste/BLock/BAckground/ALignment/BOrders/Height/DataFormat/Match/RemoveOverrides/Above/Below/DeleteRows/Left/Right/DeleteColumns/MergeAll/MergeRows/MergeColumns/Unmerge]:';
 
 describe('a table cell selected at Command:', () => {
   it('is a click inside it, shown by its outline, with the Table Cell options', async () => {
@@ -138,6 +138,7 @@ describe('a table cell selected at Command:', () => {
       'Alignment',
       'Borders',
       'Text Height',
+      'Data Format...',
       'Match Cell',
       'Remove All Property Overrides (off)',
       'Insert Rows Above',
@@ -764,5 +765,82 @@ describe('Ctrl with a table’s column grip (M4-05 part 6)', () => {
     expect(s.bus.command).toBeUndefined();
     // Another grip of the table copies with Ctrl as any grip does.
     await s.bus.pick({ x: 63.8, y: -24.5 }, { grip: 1 });
+  });
+});
+
+describe('Data Format... (M4-16 part 2)', () => {
+  it('opens the Table Cell Format dialog on the first cell, and formats every cell selected', async () => {
+    const s = setup();
+    await nozzles(s);
+    // Two cells of the second column hold numbers: DN50 and DN80 become 50 and 80.
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('T');
+    await s.bus.answer({ kind: 'string', value: '50', editor: true });
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('T');
+    await s.bus.answer({ kind: 'string', value: '80.5', editor: true });
+    await s.bus.pick(at(2, 1));
+    await s.bus.pick(at(4, 1), { shift: true });
+    const menu = s.prompt()!.shortcutMenu!.find((m) => m.keyword === 'DataFormat');
+    expect(menu).toMatchObject({ label: 'Data Format...' });
+    await s.bus.submit('DF');
+    expect(s.bus.prompt).toMatchObject({
+      kind: 'dialog',
+      dialog: {
+        type: 'tablecellformat',
+        settings: { type: 'general' },
+        cell: { text: '50' },
+        units: { lunits: 2 },
+      },
+    });
+    await s.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      tableDataFormat: { type: 'currency', symbol: '$', precision: 2 },
+    });
+    expect(s.bus.promptText).toBe('Command:');
+    expect(s.texts().map((r) => r[1])).toEqual(['^', 'Size', '$50.00', '$80.50', '']);
+    expect(s.table().geom.cells[3]![1]).toMatchObject({
+      value: { kind: 'double', n: 80.5, units: 16 },
+      valueFormat: '%lu2%pr2%ps[$,]',
+    });
+    // The empty cell keeps the format: what is typed there later is read as a currency.
+    expect(s.table().geom.cells[4]![1]!.valueFormat).toBe('%lu2%pr2%ps[$,]');
+    await s.bus.pick(at(4, 1));
+    await s.bus.submit('T');
+    await s.bus.answer({ kind: 'string', value: '1,200', editor: true });
+    expect(s.texts()[4]![1]).toBe('$1200.00');
+    // The format, then the typing, each one undo step.
+    await s.bus.submit('U');
+    expect(s.texts()[4]![1]).toBe('');
+    await s.bus.submit('U');
+    expect(s.texts().map((r) => r[1])).toEqual(['^', 'Size', '50', '80.5', '']);
+  });
+
+  it('opens on the first cell’s data type, and Cancel changes nothing', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('DF');
+    await s.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      tableDataFormat: { type: 'text', format: 2 },
+    });
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('DF');
+    expect(s.bus.prompt).toMatchObject({ dialog: { settings: { type: 'text', format: 2 } } });
+    await s.bus.cancel();
+    expect(s.bus.promptText).toBe('Command:');
+    // A dialog closed other than by OK, or OK without a data format, leaves the cells as they are.
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('DF');
+    await s.bus.answer({ kind: 'dialog', action: 'apply' });
+    expect(s.bus.promptText).toBe('Command:');
+    await s.bus.pick(at(2, 1));
+    await s.bus.submit('DF');
+    await s.bus.answer({ kind: 'dialog', action: 'ok' });
+    expect(s.bus.promptText).toBe('Command:');
+    expect(s.table().geom.cells[2]![1]).toMatchObject({ text: 'DN50', valueFormat: '%tc2' });
   });
 });

@@ -14,7 +14,8 @@
 // from the first one selected (`withCellsPasted`), or another app's text into that cell.
 // Match Cell gives the cells clicked the first cell's format; Remove All Property Overrides
 // leaves the cells selected their cell style's (M4-05 part 7). Insert Block... opens TINSERT's
-// dialog on the first cell selected (M4-16).
+// dialog on the first cell selected (M4-16). Data Format... opens the Table Cell Format dialog
+// (M4-16 part 2, `dataFormattedTable`).
 import { tableCellAt, tableCellBox, tableCellText, tableRangeHeads } from '../../annotation/table';
 import {
   fitTableRow,
@@ -53,6 +54,7 @@ import { movedTableGrip } from '../../edit/table-grips';
 import { editTableCells, linesOf, pickTableCell, tableOf } from './table-cells';
 import { formattedTable, type TableCellFormatOption } from './table-cell-format';
 import { insertCellBlock } from './table-block';
+import { dataFormattedTable } from './table-data-format';
 
 type Cell = [number, number];
 
@@ -68,6 +70,8 @@ const LABELS: Readonly<Record<TableCellOption, string>> = {
   BOrders: 'Borders',
   // Not on AutoCAD's cell menu (Properties sets it): here as Triya has no Properties for cells.
   Height: 'Text Height',
+  // AutoCAD's cell menu: Data Format... (the Table Cell Format dialog, M4-16).
+  DataFormat: 'Data Format...',
   Match: 'Match Cell',
   RemoveOverrides: 'Remove All Property Overrides',
   Above: 'Insert Rows Above',
@@ -327,6 +331,11 @@ export function tableCellCommand(start?: {
           g = await fittedRows(ctx, pasted.geom, t.style, pasted.range);
         } else if (o === 'RemoveOverrides') {
           g = withCellOverridesRemoved(t.g, t.style, r);
+        } else if (o === 'DataFormat') {
+          ctx.preview([]);
+          g = yield* dataFormattedTable(ctx, t.g, r);
+          if (!g) return;
+          g = await fittedRows(ctx, g, t.style, r);
         } else if (FORMATS.has(o)) {
           g = yield* formattedTable(ctx, t.g, t.style, r, o as TableCellFormatOption);
           if (!g) return;

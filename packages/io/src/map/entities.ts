@@ -5,6 +5,7 @@
 
 import type { LeaderLine, MultiLeaderBlockAttribute } from '@node-projects/acad-ts';
 import {
+  CadValueType,
   AnnotScaleObjectContextData,
   CadDictionary,
   EntityPlotStyleType,
@@ -98,6 +99,7 @@ import type {
   TableBorderFormat,
   TableCell,
   TableCellFormat,
+  TableCellValue,
   TableGeometry,
   TableOverrides,
   TableRowFormat,
@@ -719,6 +721,37 @@ function cellText(c: TableEntityCell): string {
   return v.formattedValue || (v.value == null ? '' : String(v.value));
 }
 
+/**
+ * A cell's value other than text (M4-16): a whole number (DXF 90 = 1, 91), a number (2, 140,
+ * its unit type 94), a date (8, 310) or a point (0x10 / 0x20, 11/21/31); undefined for a string,
+ * an empty value or one Triya does not map (a handle, a buffer), which keep their text.
+ */
+function cellValue(c: TableEntityCell): TableCellValue | undefined {
+  const v = c.content?.cadValue;
+  if (!v || v.isEmpty || v.value == null) return undefined;
+  const x = v.value;
+  switch (v.valueType) {
+    case CadValueType.Long:
+      return typeof x === 'number' ? { kind: 'long', n: x } : undefined;
+    case CadValueType.Double:
+      return typeof x === 'number' ? { kind: 'double', n: x, units: v.units as number } : undefined;
+    case CadValueType.Date:
+      return x instanceof Date && !Number.isNaN(x.getTime())
+        ? { kind: 'date', time: x.getTime() }
+        : undefined;
+    case CadValueType.Point2D:
+    case CadValueType.Point3D: {
+      const p = x as { x?: number; y?: number; z?: number; [k: number]: number };
+      const [px, py, pz] = [p.x ?? p[0], p.y ?? p[1], p.z ?? p[2] ?? 0];
+      if (typeof px !== 'number' || typeof py !== 'number') return undefined;
+      const dimensions = v.valueType === CadValueType.Point2D ? 2 : 3;
+      return { kind: 'point', point: [px, py, pz], dimensions };
+    }
+    default:
+      return undefined;
+  }
+}
+
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 type Edge = 'top' | 'right' | 'bottom' | 'left';
 type FormatDraft = Omit<Mutable<TableCellFormat>, 'borders' | 'margins'> & {
@@ -1054,6 +1087,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
       const format = cellFormat(t, i, j, c);
       // DXF 300 in the cell's CELL_VALUE; DWG R2010+ repeats it in the content format.
       const valueFormat = isBlock ? '' : (k?.cadValue.format ?? '');
+      const value = isBlock ? undefined : cellValue(c);
       return {
         type: isBlock ? 'block' : 'text',
         text: isBlock ? '' : cellText(c),
@@ -1068,6 +1102,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
           c,
         ),
         ...(valueFormat ? { valueFormat } : {}),
+        ...(value ? { value } : {}),
         ...(format ? { format } : {}),
       };
     }),
