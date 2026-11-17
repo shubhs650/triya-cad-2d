@@ -1048,6 +1048,12 @@ export abstract class DxfSectionWriterBase {
     }
     this._writer.write(178, cell.virtualEdgeFlag);
     this._writer.write(145, cell.rotation);
+    // A text cell's FIELD (344, DXF Reference ACAD_TABLE), which the cell owns: nothing else
+    // writes it.
+    if (cell.type !== CellType.Block && content?.field) {
+      this._writer.writeHandle(344, content.field);
+      this.holder.objects.push(content.field);
+    }
 
     if (cell.type === CellType.Block) {
       this._writer.writeHandle(340, cell.value ?? content?.blockRecord ?? null);

@@ -281,7 +281,8 @@ export function withCellText(
 
 /** Cell `c` as a text cell: a block cell's block and its scale gone. */
 function textOnly(c: TableCell): TableCell {
-  const { block: _block, blockScale: _scale, autoFit: _fit, ...rest } = c;
+  // Text typed over a cell's fields replaces them (M4-23); the cell editor keeps the fields typed.
+  const { block: _block, blockScale: _scale, autoFit: _fit, field: _field, ...rest } = c;
   return { ...rest, type: 'text' };
 }
 
@@ -319,7 +320,7 @@ export function withCellBlock(
   const { alignment: _alignment, ...kept } = c.format ?? {};
   const alignment = b.alignment ?? c.format?.alignment;
   const format = alignment !== undefined && alignment !== styled ? { ...kept, alignment } : kept;
-  const { valueFormat: _valueFormat, value: _value, format: _format, ...rest } = c;
+  const { valueFormat: _valueFormat, value: _value, format: _format, field: _field, ...rest } = c;
   const cell: TableCell = {
     ...rest,
     type: 'block',

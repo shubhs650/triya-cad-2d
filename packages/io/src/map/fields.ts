@@ -9,6 +9,9 @@
 //   7  ACFD_FIELD_VALUE, the value (a date's 310 SYSTEMTIME among its groups)
 //   301, 9  the value as shown
 //
+// A table cell's FIELD tree is not in a dictionary: the cell's content names its root (DXF 344 in
+// the ACAD_TABLE codes, acad-ts 0186), and `fieldTree` maps it onto the cell (M4-23 part 2).
+//
 // The FIELD objects stay in the passthrough store as read; a save writes new values onto them
 // (export/fields.ts). A tree whose children or objects cannot be followed is mapped without
 // what is missing, which `fieldText` then shows as an unevaluated field.
@@ -43,6 +46,11 @@ function mapField(f: Field, depth: number): DrawingField {
       ? {}
       : { options: Number(f.evaluationOptionFlags) }),
   };
+}
+
+/** A FIELD tree as the model holds it: a table cell's (M4-23 part 2), whose content names it. */
+export function fieldTree(f: Field): DrawingField {
+  return mapField(f, 0);
 }
 
 /** `field` for a text's geometry: its FIELD tree, when it has one. */

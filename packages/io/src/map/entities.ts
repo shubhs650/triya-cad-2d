@@ -42,6 +42,7 @@ import {
   Insert,
   MText,
   TableEntity,
+  Field,
   type CellBorder,
   type CellStyle,
   type Color as AcadColor,
@@ -128,7 +129,7 @@ import { cellStyleMapOf, tableStyleRows } from './styles';
 import { roundTripTableContent } from './table-content';
 import { regionBoundary } from '../acis/region';
 import { readSab, readSat } from '../acis/records';
-import { textField } from './fields';
+import { fieldTree, textField } from './fields';
 import { common, hex, mapColor, mapEntityColor, mapLineweight, ref } from './common';
 import { proxyCurves } from './proxy';
 
@@ -727,6 +728,9 @@ function leaderLineOverrides(l: LeaderLine): MultiLeaderLineOverrides | undefine
 function cellText(c: TableEntityCell): string {
   const v = c.content?.cadValue;
   if (!v) return '';
+  // A field content (DWG from R2010, a DXF's TABLECONTENT) shows its root FIELD's value (M4-23).
+  const field = c.content?.field;
+  if (v.value == null && field instanceof Field) return field.formatString;
   if (typeof v.value === 'string') return v.value;
   return v.formattedValue || (v.value == null ? '' : String(v.value));
 }
@@ -1123,6 +1127,8 @@ function tableGeometry(
         ),
         ...(valueFormat ? { valueFormat } : {}),
         ...(value ? { value } : {}),
+        // A text cell's fields (M4-23 part 2): the FIELD its content names.
+        ...(!isBlock && k?.field instanceof Field ? { field: fieldTree(k.field) } : {}),
         ...(format ? { format } : {}),
       };
     }),

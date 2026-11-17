@@ -16,6 +16,9 @@
 // text whose fields are gone loses its tree, so AutoCAD does not put field values back over
 // what was typed. The drawing's FIELDLIST (ACAD_FIELDLIST), when it has one, lists the FIELDs
 // it holds, as AutoCAD's does.
+//
+// A table cell's fields (M4-23 part 2, `writeCellField`) are the same trees, owned by the table
+// and named by the cell's content rather than kept in a dictionary.
 import {
   CadDictionary,
   CadObject,
@@ -159,4 +162,32 @@ export function writeFields(
   }
   if (root) removeTree(o, root);
   if (after) addTree(r, o, after);
+}
+
+/**
+ * Writes a table cell's fields (M4-23 part 2) and returns the root FIELD the cell's content then
+ * names (DXF 344, acad-ts 0186), null for none: `root`, the one it named, with new values when
+ * the fields are the same, else a new tree owned by the table (AutoCAD's cell fields are not in
+ * a dictionary), the old one taken out of the FIELDLIST, as `writeFields` does for a text.
+ */
+export function writeCellField(
+  r: Resolver,
+  table: CadObject,
+  root: Field | null,
+  before: DrawingField | undefined,
+  after: DrawingField | undefined,
+): Field | null {
+  if (root && before && after && sameFields(before, after)) {
+    writeValues(root, after);
+    return root;
+  }
+  const list = fieldList(table);
+  if (root && list) {
+    const gone = new Set(fieldsOf(root));
+    list.fields = list.fields.filter((f) => !gone.has(f));
+  }
+  if (!after) return null;
+  const made = newField(r, after, table);
+  list?.fields.push(...fieldsOf(made));
+  return made;
 }

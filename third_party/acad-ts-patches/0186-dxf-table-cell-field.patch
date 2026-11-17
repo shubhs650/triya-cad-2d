@@ -1,0 +1,98 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 9899b4c..8d6a3b2 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -692,6 +692,12 @@ export abstract class DxfSectionReaderBase {
+       return true;
+     }
+ 
++    if (tmp.currentCellTemplate != null && code === 344) {
++      // A text cell's FIELD (DXF Reference, ACAD_TABLE: "Hard-pointer ID of the FIELD object").
++      tmp.currentCellTemplate.fieldHandle = this._reader.valueAsHandle;
++      return true;
++    }
++
+     if (tmp.currentCellTemplate != null && code === 7) {
+       // A cell's text style override names the style; it is resolved when the cell is built.
+       tmp.currentCellTemplate.textStyleOverrideName = this._reader.valueAsString;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 6238384..5017e1c 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1048,6 +1048,12 @@ export abstract class DxfSectionWriterBase {
+     }
+     this._writer.write(178, cell.virtualEdgeFlag);
+     this._writer.write(145, cell.rotation);
++    // A text cell's FIELD (344, DXF Reference ACAD_TABLE), which the cell owns: nothing else
++    // writes it.
++    if (cell.type !== CellType.Block && content?.field) {
++      this._writer.writeHandle(344, content.field);
++      this.holder.objects.push(content.field);
++    }
+ 
+     if (cell.type === CellType.Block) {
+       this._writer.writeHandle(340, cell.value ?? content?.blockRecord ?? null);
+diff --git a/src/IO/DXF/DxfWriter.ts b/src/IO/DXF/DxfWriter.ts
+index 31c7636..c61c7c7 100644
+--- a/src/IO/DXF/DxfWriter.ts
++++ b/src/IO/DXF/DxfWriter.ts
+@@ -26,6 +26,7 @@ import { CadObject } from '../../CadObject.js';
+ import { CadDictionary } from '../../Objects/CadDictionary.js';
+ import { Field } from '../../Objects/Field.js';
+ import { FieldList } from '../../Objects/FieldList.js';
++import { TableEntity } from '../../Entities/TableEntity.js';
+ 
+ type DxfTextOutput = {
+   write(value: string): void;
+@@ -197,6 +198,18 @@ export class DxfWriter extends CadWriterBase<DxfWriterConfiguration, DxfWriteTar
+       if (item instanceof CadDictionary) {
+         for (const entry of item) objects.push(entry);
+       }
++      if (item instanceof TableEntity) {
++        // A table cell's FIELD (344) is owned by the table.
++        for (const row of item.rows) {
++          for (const cell of row.cells) {
++            for (const content of cell.contents) {
++              if (!content.field) continue;
++              content.field.owner ??= item;
++              objects.push(content.field);
++            }
++          }
++        }
++      }
+       if (item instanceof FieldList) {
+         lists.push(item);
+         for (const field of item.fields) objects.push(field);
+diff --git a/src/IO/Templates/CadTableEntityTemplate.ts b/src/IO/Templates/CadTableEntityTemplate.ts
+index e6ed03b..3ba7352 100644
+--- a/src/IO/Templates/CadTableEntityTemplate.ts
++++ b/src/IO/Templates/CadTableEntityTemplate.ts
+@@ -156,6 +156,9 @@ export class CadTableCellTemplate implements ICadTemplate {
+ 
+ 	contentTemplates: CadTableCellContentTemplate[] = [];
+ 
++	/** DXF 344: the FIELD a text cell's content holds (its `_text` root). */
++	fieldHandle: number | null = null;
++
+ 	formatTextHeight: number | null = null;
+ 
+ 	styleId: number = 0;
+@@ -178,6 +181,18 @@ export class CadTableCellTemplate implements ICadTemplate {
+ 			contentTemplate.build(builder);
+ 		}
+ 
++		// A DXF text cell names its field (344) beside its value; the field goes on its content,
++		// where a DWG from R2010 states it.
++		const field = builder.tryGetCadObject<Field>(this.fieldHandle);
++		if (field) {
++			let content = this.cell.contents[0];
++			if (!content) {
++				content = new CellContent();
++				this.cell.contents.push(content);
++			}
++			content.field = field;
++		}
++
+ 		this.cell.styleOverride.textStyle = builder.tryGetCadObject<TextStyle>(this.textStyleOverrideHandle)
+ 			?? builder.tryGetTableEntry(this.textStyleOverrideName ?? '', TextStyle);
+ 		if (this.formatTextHeight != null) {

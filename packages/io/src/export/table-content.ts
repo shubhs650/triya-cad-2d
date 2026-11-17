@@ -18,6 +18,10 @@
 import {
   ACadVersion,
   CadDictionary,
+  CadValueType,
+  CellContent,
+  Field,
+  TableCellContentType,
   DictionaryCloningFlags,
   TableContentObject,
   TableEntity,
@@ -147,6 +151,7 @@ function rewriteTableContent(
     t.xDictionary!.remove(ROUNDTRIP_DICTIONARY_KEY);
     return;
   }
+  nameCellFields(content, t, after);
   rt.object.rawDxfCodes = tableContentCodes(content, rt.head);
   const kept = entries.slice(0, 7).map((e) => [e.code, e.value] as const);
   rt.record.clear();
@@ -156,6 +161,7 @@ function rewriteTableContent(
 
 function writeTableContent(doc: CadDocument, r: Resolver, t: TableEntity, g: TableGeometry): void {
   const content = newTableContent(r, g);
+  nameCellFields(content, t, g);
   const x = new XRecord();
   x.handle = r.allocate();
   x.cloningFlags = DictionaryCloningFlags.KeepExisting;
@@ -186,4 +192,39 @@ function writeTableContent(doc: CadDocument, r: Resolver, t: TableEntity, g: Tab
     dict.addByKey(ROUNDTRIP_DICTIONARY_KEY, x);
   }
   if (!doc.getCadObject(object.handle)) doc.registerCollection(object);
+}
+
+/**
+ * Names in `content` the FIELDs table `t`'s cells hold (M4-23 part 2), which the scratch table the
+ * content was written from does not make: a text cell with fields gets a field content naming its
+ * root FIELD (340), as a DWG from R2010 states it, and the content's field references (360) list
+ * the roots, in place of the ones its cells named before; a cell whose fields are gone holds its
+ * text as a value again. `t`'s grid is the content's, the edit written into both.
+ */
+function nameCellFields(content: TableEntity['content'], t: TableEntity, g: TableGeometry): void {
+  const before = new Set<unknown>();
+  const roots: Field[] = [];
+  content.rows.forEach((row, i) =>
+    row.cells.forEach((cell, j) => {
+      const field = t.rows[i]?.cells[j]?.contents[0]?.field ?? null;
+      let k = cell.contents[0];
+      if (k?.field) before.add(k.field);
+      if (field) {
+        roots.push(field);
+        if (!k) {
+          k = new CellContent();
+          cell.contents.push(k);
+        }
+        k.contentType = TableCellContentType.Field;
+        k.field = field;
+      } else if (k && k.contentType === TableCellContentType.Field && k.field instanceof Field) {
+        const text = g.cells[i]?.[j]?.text ?? '';
+        k.contentType = TableCellContentType.Value;
+        k.field = null;
+        if (k.cadValue.value == null) k.cadValue.setValue(text, CadValueType.String);
+      }
+    }),
+  );
+  const kept = content.fieldReferences.filter((f) => !before.has(f) && !roots.includes(f as Field));
+  content.fieldReferences = [...kept, ...roots];
 }

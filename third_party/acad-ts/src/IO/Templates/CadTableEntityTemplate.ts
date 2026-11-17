@@ -156,6 +156,9 @@ export class CadTableCellTemplate implements ICadTemplate {
 
 	contentTemplates: CadTableCellContentTemplate[] = [];
 
+	/** DXF 344: the FIELD a text cell's content holds (its `_text` root). */
+	fieldHandle: number | null = null;
+
 	formatTextHeight: number | null = null;
 
 	styleId: number = 0;
@@ -176,6 +179,18 @@ export class CadTableCellTemplate implements ICadTemplate {
 		this.cell.value = builder.tryGetCadObject<CadObject>(this.valueHandle);
 		for (const contentTemplate of this.contentTemplates) {
 			contentTemplate.build(builder);
+		}
+
+		// A DXF text cell names its field (344) beside its value; the field goes on its content,
+		// where a DWG from R2010 states it.
+		const field = builder.tryGetCadObject<Field>(this.fieldHandle);
+		if (field) {
+			let content = this.cell.contents[0];
+			if (!content) {
+				content = new CellContent();
+				this.cell.contents.push(content);
+			}
+			content.field = field;
 		}
 
 		this.cell.styleOverride.textStyle = builder.tryGetCadObject<TextStyle>(this.textStyleOverrideHandle)
