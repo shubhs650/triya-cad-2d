@@ -875,3 +875,65 @@ describe('rows and cells on cell styles of their own (M4-16 part 5)', () => {
     expect(styles(saved(bytes, model, table.handle))).toEqual(styles(g));
   });
 });
+
+describe('cells locked (M4-16 part 6)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+
+  /** Locks the first data row's content, the last row's format, and one cell both. */
+  async function edit(model: DocumentModel, id: () => EntityId) {
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    const g = () => (model.entity(id()) as Table).geom;
+    const style = () => model.tables.tableStyles.get(g().style!);
+    const centre = (i: number, j: number) => {
+      const b = tableCellBox(g(), style(), { r0: i, c0: j, r1: i, c1: j });
+      return tableToPlan(g(), { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    const run = async (cell: [number, number], to: [number, number], ...answers: string[]) => {
+      await bus.pick(centre(...cell), { grip: 1e-6 });
+      expect(bus.command).toBe('TABLECELL');
+      if (to !== cell) await bus.pick(centre(...to), { grip: 1e-6, shift: true });
+      for (const x of answers) await bus.submit(x);
+      expect(bus.promptText).toBe('Command:');
+    };
+    const last = g().rowHeights.length - 1;
+    const right = g().columnWidths.length - 1;
+    await run([2, 0], [2, right], 'LO', 'C');
+    await run([last, 0], [last, right], 'LO', 'F');
+    await run([last, 0], [last, 0], 'LO', 'B');
+    return g();
+  }
+
+  const locks = (t: TableGeometry) => t.cells.map((r) => r.map((c) => c.locked ?? ''));
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '3', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', '1', '2']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const g = await edit(model, () => made.id);
+    expect(locks(g)).toEqual([
+      ['', ''],
+      ['', ''],
+      ['content', 'content'],
+      ['', ''],
+      ['both', 'format'],
+    ]);
+    expect(locks(saved(bytes, model, made.handle))).toEqual(locks(g));
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    expect(table.geom.cells.flat().some((c) => c.locked)).toBe(false);
+    const g = await edit(model, () => table.id);
+    expect(locks(g)[2]!.every((l) => l === 'content')).toBe(true);
+    const back = saved(bytes, model, table.handle);
+    expect(locks(back)).toEqual(locks(g));
+  });
+});

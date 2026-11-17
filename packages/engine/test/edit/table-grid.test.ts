@@ -188,7 +188,7 @@ describe('what the Table Cell menu offers', () => {
   it('inserts and deletes rows anywhere, the last row excepted (M4-16 part 5)', () => {
     // The cells' formatting (M4-05 part 4) applies to any cells, Match Cell too (part 7);
     // Remove All Property Overrides only where a cell overrides something.
-    const FORMATS = ['BAckground', 'ALignment', 'BOrders', 'Height', 'DataFormat', 'Match'];
+    const FORMATS = ['BAckground', 'ALignment', 'BOrders', 'Height', 'LOcking', 'DataFormat', 'Match'];
     const at = (r0: number, r1: number, c0 = 0, c1 = 0) =>
       tableCellOptions(table(), STYLE, { r0, c0, r1, c1 });
     expect(at(2, 3)).toEqual([

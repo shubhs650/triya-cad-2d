@@ -19,6 +19,7 @@ import {
   documentInit,
   exportDocument,
   readCadDocument,
+  roundTripTableContent,
   UnsupportedChangeError,
   type CadFormat,
 } from '../src/index';
@@ -383,5 +384,67 @@ describe('ACAD_TABLE rows and cells on cell styles of their own', () => {
     edit(model, restyled(table(model).geom));
     const problems = refusal(() => exportDocument(readCadDocument(bytes), model, { format }));
     expect(problems.join('\n')).toMatch(/cell style other than their place gives them/);
+  });
+});
+
+describe('ACAD_TABLE cell locks (M4-16 part 6)', () => {
+  /** The last data row's first cell locked in content, its second in format and content. */
+  const locked = (g: TableGeometry): TableGeometry => ({
+    ...g,
+    cells: g.cells.map((row, i) =>
+      i === 2
+        ? row.map((c, j) => ({ ...c, locked: j === 0 ? ('content' as const) : ('both' as const) }))
+        : i === 1
+          ? row.map((c, j) => (j === 0 ? { ...c, locked: 'format' as const } : c))
+          : row,
+    ),
+  });
+  const locks = (g: TableGeometry) => g.cells.map((r) => r.map((c) => c.locked));
+
+  it.each([
+    ['R2018 DXF', ACadVersion.AC1032, 'dxf'],
+    ['R2007 DXF', ACadVersion.AC1021, 'dxf'],
+    ['R2018 DWG', ACadVersion.AC1032, 'dwg'],
+    ['R2010 DWG', ACadVersion.AC1024, 'dwg'],
+  ] as const)('saves them to %s, and unlocked again', (_w, version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    expect(
+      table(model)
+        .geom.cells.flat()
+        .some((c) => c.locked),
+    ).toBe(false);
+    edit(model, locked(table(model).geom));
+    const saved = exportDocument(readCadDocument(bytes), model, { format });
+    expect(locks(mapped(readCadDocument(saved)))).toEqual([
+      [undefined, undefined],
+      ['format', undefined],
+      ['content', 'both'],
+    ]);
+    // AutoCAD's state flags: 0x1 content locked, 0x10 format locked.
+    const doc = readCadDocument(saved);
+    const t = acadTable(doc);
+    const content = roundTripTableContent(t, (h) => doc.getCadObject(h))?.content;
+    const flags = (format === 'dwg' ? t.rows : (content?.rows ?? []))[2]!.cells.map(
+      (c) => c.stateFlags,
+    );
+    expect(flags).toEqual([0x1, 0x11]);
+    // Opened from that save and unlocked: the flags go.
+    const reopened = open(saved);
+    const g = table(reopened).geom;
+    edit(reopened, { ...g, cells: g.cells.map((r) => r.map(({ locked: _, ...c }) => c)) });
+    const plain = mapped(save(saved, reopened, format));
+    expect(plain.cells.flat().some((c) => c.locked)).toBe(false);
+  });
+
+  it.each([
+    ['R2004 DXF', ACadVersion.AC1018, 'dxf'],
+    ['R2007 DWG', ACadVersion.AC1021, 'dwg'],
+  ] as const)('refuses them in %s, which cannot state them', (_w, version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    edit(model, locked(table(model).geom));
+    const problems = refusal(() => exportDocument(readCadDocument(bytes), model, { format }));
+    expect(problems.join('\n')).toMatch(/locked cells/);
   });
 });
