@@ -29,7 +29,21 @@ import {
   type LayerRecord,
   type LayerState,
   type LayerStateLayer,
+  type LinetypeRecord,
+  type SymbolTableRecord,
 } from '../model/types';
+
+/**
+ * The tables a state is compared with and restored from: a drawing's (`DocumentModel`), or the
+ * app's mirror of them (the Layer States Manager's Same as DWG, M5-07 part 2).
+ */
+export interface LayerStateTables {
+  readonly tables: {
+    readonly layers: ReadonlyMap<Handle, LayerRecord>;
+    readonly linetypes: ReadonlyMap<Handle, LinetypeRecord>;
+    readonly plotStyles: ReadonlyMap<Handle, SymbolTableRecord>;
+  };
+}
 
 /** A layer state as a `.las` file or a caller states it: no handle, no owner yet. */
 export type LayerStateInit = Omit<LayerState, 'handle' | 'owner' | 'type' | 'raw'>;
@@ -148,8 +162,13 @@ export function saveLayerStateChange(
   const init: LayerStateInit = {
     name,
     description: options.description ?? old?.description ?? '',
-    // Hidden and last restored are the state's own, not what to restore.
-    mask: options.mask ?? (old ? old.mask & ~LAYER_STATE_MASK.lastRestored : LAYER_STATE_MASK.all),
+    // Hidden and last restored are the state's own, not what to restore: an overwrite (New
+    // with its name, Update) keeps them, so a state restored and updated is still the one the
+    // Layer Properties Manager names.
+    mask:
+      options.mask === undefined
+        ? (old?.mask ?? LAYER_STATE_MASK.all)
+        : (options.mask & LAYER_STATE_MASK.all) | ((old?.mask ?? 0) & ~LAYER_STATE_MASK.all),
     paperSpace: false,
     currentLayer: currentLayerName(model),
     layers: [...model.tables.layers.values()].map((l) => layerSettings(model, l)),
@@ -160,13 +179,18 @@ export function saveLayerStateChange(
   return b.build();
 }
 
-/** A `.las` file's state imported as a new state; layers and linetypes found by name. */
+/**
+ * A `.las` file's state imported as a new state; layers and linetypes found by name. With
+ * `replace`, a state of the same name goes first (the manager's "Do you want to overwrite it?").
+ */
 export function importLayerStateChange(
   model: DocumentModel,
   state: LayerStateInit,
+  replace = false,
 ): ChangeSet | string {
+  const old = replace ? layerStateNamed(model, state.name) : undefined;
   const why =
-    nameProblem(model, state.name) ??
+    nameProblem(model, state.name, old?.handle) ??
     descriptionProblem(state.description) ??
     maskProblem(state.mask);
   if (why) return why;
@@ -175,8 +199,11 @@ export function importLayerStateChange(
     [...model.tables.linetypes.values()].map((l) => [upper(l.name), l.handle]),
   );
   const b = new ChangeSetBuilder(model);
+  if (old) b.removeObject(old.handle);
   addState(model, b, {
     ...state,
+    // The file's own mark says nothing of this drawing.
+    mask: state.mask & ~LAYER_STATE_MASK.lastRestored,
     layers: state.layers.map((e) => {
       const { layer: _l, linetype: _t, ...rest } = e;
       const layer = layers.get(upper(e.name))?.handle;
@@ -193,7 +220,7 @@ function stateOf(model: DocumentModel, handle: Handle): LayerState | string {
 }
 
 /** The layer an entry names: by handle, else by name. */
-function layerOf(model: DocumentModel, e: LayerStateLayer): LayerRecord | undefined {
+function layerOf(model: LayerStateTables, e: LayerStateLayer): LayerRecord | undefined {
   const l = e.layer === undefined ? undefined : model.tables.layers.get(e.layer);
   if (l) return l;
   const key = upper(e.name);
@@ -201,14 +228,14 @@ function layerOf(model: DocumentModel, e: LayerStateLayer): LayerRecord | undefi
   return undefined;
 }
 
-function linetypeOf(model: DocumentModel, e: LayerStateLayer): Handle | undefined {
+function linetypeOf(model: LayerStateTables, e: LayerStateLayer): Handle | undefined {
   if (e.linetype !== undefined && model.tables.linetypes.has(e.linetype)) return e.linetype;
   const key = upper(e.linetypeName);
   for (const r of model.tables.linetypes.values()) if (upper(r.name) === key) return r.handle;
   return undefined;
 }
 
-function plotStyleOf(model: DocumentModel, name: string): Handle | undefined {
+function plotStyleOf(model: LayerStateTables, name: string): Handle | undefined {
   const key = upper(name);
   for (const r of model.tables.plotStyles.values()) if (upper(r.name) === key) return r.handle;
   return undefined;
@@ -219,7 +246,7 @@ const sameValue = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSO
 
 /** The layer properties `e` restores under `mask`, where they differ from `l`'s. */
 function restorePatch(
-  model: DocumentModel,
+  model: LayerStateTables,
   l: LayerRecord,
   e: LayerStateLayer,
   mask: number,
@@ -249,7 +276,23 @@ function restorePatch(
   return p as Partial<LayerRecord>;
 }
 
-/** Restore: the state's settings set on its layers, its current layer made current. */
+/**
+ * Same as DWG (the Layer States Manager's column, M5-07 part 2): whether every layer the state
+ * names that the drawing has is as the state has it, under the properties it restores. Layers it
+ * does not name, and those the drawing lacks, are not compared.
+ */
+export function layerStateMatches(model: LayerStateTables, state: LayerState): boolean {
+  return state.layers.every((e) => {
+    const l = layerOf(model, e);
+    return !l || Object.keys(restorePatch(model, l, e, state.mask)).length === 0;
+  });
+}
+
+/**
+ * Restore: the state's settings set on its layers, its current layer made current. The state is
+ * marked restored last (LayerStateMask kLastRestored), the mark taken off any other, so the Layer
+ * Properties Manager can name it.
+ */
 export function restoreLayerStateChange(
   model: DocumentModel,
   handle: Handle,
@@ -288,6 +331,13 @@ export function restoreLayerStateChange(
   }
   if (current && upper(current.name) !== upper(currentLayerName(model)))
     b.setHeader('$CLAYER', current.name);
+  for (const o of layerStates(model, true)) {
+    const mask =
+      o.handle === s.handle
+        ? o.mask | LAYER_STATE_MASK.lastRestored
+        : o.mask & ~LAYER_STATE_MASK.lastRestored;
+    if (mask !== o.mask) b.updateObject(o.handle, { mask } as Partial<LayerState>);
+  }
   return b.build();
 }
 
