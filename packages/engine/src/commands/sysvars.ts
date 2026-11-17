@@ -171,6 +171,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // drawn faded by this percentage, −90 to 90, initially 50; a negative value turns fading off
   // keeping the amount. LAYISO's Lock and fade sets it.
   { name: 'LAYLOCKFADECTL', store: 'app', kind: 'integer', min: -90, max: 90 },
+  // BINDTYPE (M5-04 part 2; AutoCAD 2024 Help, "Saved in: Not-saved"): how -XREF Bind binds an
+  // xref, 0 (initially) as Bind (`xref$0$name`), 1 as Insert (the names without the xref's).
+  { name: 'BINDTYPE', store: 'app', kind: 'integer', min: 0, max: 1 },
   // M3-06 part 1 (AutoCAD 2024 Help): POLARMODE's bits are 1 polar angles relative to the last
   // segment, 2 object snap tracking along the polar angles, 4 the additional angles, 8 Shift to
   // acquire tracking points (initially 0); POLARADDANG up to 10 additional angles separated by
