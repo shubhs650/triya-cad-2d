@@ -889,6 +889,20 @@ button {
   color: var(--chrome-text-muted);
 }
 
+.layer-tools {
+  flex-wrap: wrap;
+}
+
+/* The layer state restored last (M5-07 part 2). */
+.layer-state-current {
+  margin: 4px 8px 0;
+  color: var(--chrome-text-muted);
+}
+
+.layer-state-current span {
+  color: var(--chrome-text);
+}
+
 .layer-search {
   margin: 6px 8px;
   padding: 3px 6px;
@@ -4992,4 +5006,121 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* The Layer States Manager (M5-07 part 2): the list and its buttons side by side. */
+.cad-dialog.layer-states-manager {
+  max-width: min(640px, calc(100vw - 32px));
+}
+
+.layer-states-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.layer-states-list {
+  height: 220px;
+  overflow: auto;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.layer-states-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.layer-states-list th,
+.layer-states-list td {
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--chrome-border);
+  text-align: left;
+  font-weight: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.layer-states-list thead th {
+  position: sticky;
+  top: 0;
+  background: var(--chrome-bg);
+  font-weight: 600;
+}
+
+.layer-states-list tbody tr[aria-selected='true'] {
+  background: var(--chrome-hover);
+  outline: 1px solid var(--chrome-border);
+}
+
+.layer-states-list td input,
+.layer-states-list th input {
+  width: 100%;
+  font: inherit;
+}
+
+.layer-states-empty {
+  color: var(--chrome-text-muted);
+}
+
+.layer-states-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.layer-states-options,
+.layer-states-restore {
+  margin: 8px 0 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+.layer-states-options label,
+.layer-states-properties label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layer-states-more {
+  margin-top: 8px;
+}
+
+.layer-states-properties {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+}
+
+.layer-states-select {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.layer-states-message {
+  margin: 6px 0 0;
+}
+
+.layer-states-message[role='alert'] {
+  color: var(--danger-text);
+}
+
+@media (width < 700px) {
+  .layer-states-body {
+    grid-template-columns: 1fr;
+  }
+
+  .layer-states-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .layer-states-properties {
+    grid-template-columns: 1fr;
+  }
 }

@@ -401,7 +401,9 @@ export type FileAction =
   | 'export'
   | 'exportpdf'
   /** VIEW (M2-47 part 2): the View Manager dialog. */
-  | 'views';
+  | 'views'
+  /** LAYERSTATE (M5-07 part 2): the Layer States Manager dialog. */
+  | 'layerstates';
 
 export type ViewReply =
   | {

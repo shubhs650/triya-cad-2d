@@ -106,7 +106,12 @@ export type NamedLayerStateEdit =
       readonly description?: string;
       readonly mask?: number;
     }
-  | { readonly kind: 'layer-state-import'; readonly state: LayerStateInit };
+  | {
+      readonly kind: 'layer-state-import';
+      readonly state: LayerStateInit;
+      /** Overwrite a state of the same name (M5-07 part 2). */
+      readonly replace?: boolean;
+    };
 
 /**
  * A layout renamed, moved among the layout tabs or given a new page setup (M1-97): what LAYOUT
@@ -864,7 +869,7 @@ export class EngineSession {
                   description: e.description,
                   mask: e.mask,
                 })
-              : importLayerStateChange(m, e.state);
+              : importLayerStateChange(m, e.state, e.replace);
     return this.#layerStep(change, 'LAYERSTATE');
   }
 

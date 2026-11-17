@@ -261,6 +261,7 @@ describe('completions', () => {
     expect(completions(registry, 'l')).toEqual([
       { name: 'LINE', alias: 'L' },
       { name: 'LAYCUR' },
+      { name: 'LAYERSTATE' },
       { name: 'LAYFRZ' },
       { name: 'LAYISO' },
       { name: 'LAYLCK' },

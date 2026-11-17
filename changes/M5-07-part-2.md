@@ -1,0 +1,1 @@
+- M5-07 part 2 (#507): the Layer States Manager. LAYERSTATE (LAS) and the Layer Properties Manager's Layer States Manager button open it to save, update, rename, delete, restore, import and export (`.las`) layer states and choose what each restores; the Layer Properties Manager names the layer state restored last.

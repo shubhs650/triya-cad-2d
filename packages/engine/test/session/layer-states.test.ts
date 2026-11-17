@@ -8,6 +8,7 @@ import {
   EngineSession,
   LAYER_STATE_MASK,
   layerStateDictionary,
+  layerStateMatches,
   layerStateNamed,
   layerStates,
   type DocumentInit,
@@ -249,5 +250,73 @@ describe('layer states (M5-07)', () => {
     s.edit({ kind: 'layer-state-save', name: 'Plan' });
     s.edit({ kind: 'layer-delete', layers: [LAYER_DOORS] });
     expect(stateOf(s, 'Plan').layers.map((l) => l.layer)).toEqual([LAYER_0, LAYER_WALLS]);
+  });
+});
+
+// M5-07 part 2: what the Layer States Manager dialog needs of the engine. AutoCAD 2024 Help,
+// "Layer States Manager Dialog Box": Same as DWG says whether the drawing's layers are as the
+// state has them; the Layer Properties Manager names the state restored last ("last restored",
+// ObjectARX LayerStateMask kLastRestored); Import asks to overwrite a state of the same name.
+describe('layer states in the Layer States Manager (M5-07 part 2)', () => {
+  it('marks the state restored last, one state at a time, and Undo takes the mark back', async () => {
+    const s = new EngineSession(statesInit());
+    s.edit({ kind: 'layer-state-save', name: 'A' });
+    s.edit({ kind: 'layer-state-save', name: 'B' });
+    const last = (name: string) => (stateOf(s, name).mask & LAYER_STATE_MASK.lastRestored) !== 0;
+    expect([last('A'), last('B')]).toEqual([false, false]);
+    s.edit({ kind: 'layer-state-restore', state: stateOf(s, 'A').handle });
+    expect([last('A'), last('B')]).toEqual([true, false]);
+    s.edit({ kind: 'layer-state-restore', state: stateOf(s, 'B').handle });
+    expect([last('A'), last('B')]).toEqual([false, true]);
+    expect(s.undoState.nextUndo).toBe('LAYERSTATE');
+    await s.command({ kind: 'submit', text: 'U' });
+    expect([last('A'), last('B')]).toEqual([true, false]);
+    // Saving over a state (New with its name, Update) keeps its mark: it is the state's own.
+    s.edit({ kind: 'layer-state-save', name: 'A' });
+    expect([last('A'), last('B')]).toEqual([true, false]);
+    s.edit({ kind: 'layer-state-save', name: 'A', mask: LAYER_STATE_MASK.on });
+    expect(stateOf(s, 'A').mask).toBe(LAYER_STATE_MASK.on | LAYER_STATE_MASK.lastRestored);
+  });
+
+  it('says whether the layers are as a state has them, under what it restores', () => {
+    const s = new EngineSession(statesInit());
+    s.edit({ kind: 'layer-state-save', name: 'Plan' });
+    s.edit({ kind: 'layer-state-save', name: 'Colours', mask: LAYER_STATE_MASK.color });
+    const same = (name: string) => layerStateMatches(s.model, stateOf(s, name));
+    expect([same('Plan'), same('Colours')]).toEqual([true, true]);
+    edited(s, LAYER_DOORS, { on: false });
+    expect([same('Plan'), same('Colours')]).toEqual([false, true]);
+    edited(s, LAYER_DOORS, { on: true, linetype: DASHED });
+    expect([same('Plan'), same('Colours')]).toEqual([false, true]);
+    edited(s, LAYER_DOORS, { linetype: statesInit().tables!.layers![2]!.linetype });
+    expect(same('Plan')).toBe(true);
+    edited(s, LAYER_WALLS, { color: { kind: 'aci', index: 3 } });
+    expect([same('Plan'), same('Colours')]).toEqual([false, false]);
+    // A layer added since, which the state does not name, does not count.
+    s.edit({ kind: 'layer-state-save', name: 'Plan' });
+    s.edit({ kind: 'layer-new', name: 'Later' });
+    expect(same('Plan')).toBe(true);
+  });
+
+  it('imports over a state of the same name when asked to, as one step', async () => {
+    const s = new EngineSession(statesInit());
+    s.edit({ kind: 'layer-state-save', name: 'Plan', description: 'Mine' });
+    const old = stateOf(s, 'Plan').handle;
+    const imported: LayerStateInit = {
+      name: 'PLAN',
+      description: 'From the file',
+      mask: LAYER_STATE_MASK.on,
+      paperSpace: false,
+      currentLayer: '0',
+      layers: [],
+    };
+    expect(s.edit({ kind: 'layer-state-import', state: imported })).toMatchObject({ ok: false });
+    expect(s.edit({ kind: 'layer-state-import', state: imported, replace: true }).ok).toBe(true);
+    expect(layerStates(s.model).map((x) => [x.name, x.description])).toEqual([
+      ['PLAN', 'From the file'],
+    ]);
+    expect(s.model.objects.has(old)).toBe(false);
+    await s.command({ kind: 'submit', text: 'U' });
+    expect(stateOf(s, 'Plan')).toMatchObject({ handle: old, description: 'Mine' });
   });
 });
