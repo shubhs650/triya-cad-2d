@@ -4454,6 +4454,31 @@ button {
   overflow-wrap: anywhere;
 }
 
+/* Part 3: a point's X, Y and Z boxes in a row; Additional Format... below the two columns, and
+   its own dialog's groups (Additional text, Number separators, Zero suppression) stacked. */
+.table-cell-format-axes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.additional-format-open {
+  justify-self: start;
+  margin-top: 8px;
+}
+
+.cad-dialog.additional-format-dialog {
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.additional-format-group {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--chrome-border);
+}
+
 /* TOLERANCE's Geometric Tolerance (M4-11): six columns of symbol boxes and values, two rows;
    the Symbol and Material Condition pickers a grid of symbol boxes. */
 .cad-dialog.tolerance-dialog {

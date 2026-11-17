@@ -2,8 +2,9 @@
 // Cell Format dialog (Data type, Preview, Format, Precision, Symbol and Append symbol, the date
 // format and its Examples); OK gives every cell selected the type, numbers typed there shown in
 // its format, and what is typed later is read by it. On an empty part of the acadsharp AC1032
-// sample. The formats, the command and the save are unit- and corpus-tested in packages/engine
-// and packages/testkit.
+// sample. Part 3: Additional Format... (a thousands separator) and a point's X, Y and Z boxes.
+// The formats, the command and the save are unit- and corpus-tested in packages/engine and
+// packages/testkit.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, TableGeometry } from '@triya/engine';
 import { activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
@@ -167,4 +168,66 @@ test('Data Format... gives the cells selected a data type', async ({ page }) => 
   await expect.poll(async () => (await made(page))?.cells[4]?.[2]).toBe('$75.00');
   await away();
   await shot('3-formatted.png');
+
+  // M4-16 part 3: Additional Format... on the Cost column, a thousands separator.
+  await page.mouse.click(cell(2, 2).x, cell(2, 2).y);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(cell(4, 2).x, cell(4, 2).y);
+  await page.keyboard.up('Shift');
+  await page.keyboard.type('DF');
+  await page.keyboard.press('Enter');
+  await expect(dialog.getByLabel('Data type:')).toHaveValue('1');
+  await dialog.getByRole('button', { name: 'Additional Format...' }).click();
+  const more = page.getByRole('dialog', { name: 'Additional Format' });
+  await expect(more).toBeVisible();
+  await expect(more.getByLabel('Current value')).toHaveText('$1200.00');
+  // Currency's symbol is its prefix: the Additional text is not offered.
+  await expect(more.getByLabel('Prefix:')).toBeDisabled();
+  await expect(more.getByLabel('0 Feet')).toBeDisabled();
+  await more.getByLabel('Thousands:').selectOption({ label: ', (comma)' });
+  await expect(more.getByLabel('Current value')).toHaveText('$1,200.00');
+  await more.getByLabel('Trailing').check();
+  await expect(more.getByLabel('Current value')).toHaveText('$1,200');
+  await more.getByLabel('Trailing').uncheck();
+  await more.getByLabel('Conversion factor:').fill('0');
+  await expect(more.getByRole('alert')).toBeVisible();
+  await expect(more.getByRole('button', { name: 'OK' })).toBeDisabled();
+  await more.getByLabel('Conversion factor:').fill('1');
+  await shot('4-additional-format.png');
+  await more.getByRole('button', { name: 'OK' }).click();
+  await expect(more).toBeHidden();
+  await expect(dialog.getByLabel('Preview')).toHaveText('$1,200.00');
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(async () => (await made(page))?.cells.map((r) => r[2]))
+    .toEqual(['', 'Cost', '$1,200.00', '$950.50', '$75.00']);
+  expect((await made(page))!.formats[2]![2]).toBe('%lu2%pr2%ps[$,]%th44');
+
+  // A Point in the empty Flow cell showing X and Y only.
+  await page.mouse.click(cell(4, 1).x, cell(4, 1).y);
+  await page.keyboard.type('DF');
+  await page.keyboard.press('Enter');
+  await dialog.getByLabel('Data type:').selectOption({ label: 'Point' });
+  await dialog.getByLabel('Format:').selectOption({ label: 'Decimal' });
+  await dialog.getByLabel('Precision:').selectOption({ label: '0.0' });
+  await expect(dialog.getByLabel('Preview')).toHaveText('1234.5, 100.0, 0.0');
+  await dialog.getByLabel('Z', { exact: true }).uncheck();
+  await expect(dialog.getByLabel('Preview')).toHaveText('1234.5, 100.0');
+  await dialog.getByLabel('Y', { exact: true }).uncheck();
+  // One coordinate at least stays shown.
+  await expect(dialog.getByLabel('X', { exact: true })).toBeDisabled();
+  await dialog.getByLabel('Y', { exact: true }).check();
+  await shot('5-point-coordinates.png');
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toBeHidden();
+  await page.mouse.dblclick(cell(4, 1).x, cell(4, 1).y);
+  await expect(prompt(page)).toHaveText('Enter text:');
+  await page.keyboard.type('3,4,5');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(async () => (await made(page))?.cells[4]?.[1]).toBe('3.0, 4.0');
+  expect((await made(page))!.formats[4]![1]).toBe('%lu2%pr1%pt3');
+  await away();
+  await shot('6-after.png');
 });
