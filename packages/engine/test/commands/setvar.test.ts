@@ -865,6 +865,14 @@ describe('computed variables', () => {
     );
     expect(listed).toEqual([
       'CDATE             20261114.14373312 (read only)',
+      // What new center marks take (M4-08 part 3), kept for the session in any drawing.
+      'CENTERCROSSGAP    "0.05x"',
+      'CENTERCROSSSIZE   "0.1x"',
+      'CENTEREXE         3.5000',
+      'CENTERLAYER       "."',
+      'CENTERLTSCALE     1.0000',
+      'CENTERLTYPE       "CENTER2"',
+      'CENTERMARKEXE     1',
       'CLAYER            "WALLS"',
       'CTAB              "Model"',
       'DATE              2461359.60941111  (read only)',
