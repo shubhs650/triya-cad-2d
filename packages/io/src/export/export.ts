@@ -88,6 +88,7 @@ import { regionDataProblems } from './region';
 import { changedApps, xdataChanges } from './xdata';
 import { planTextStyles, writeTextStyles } from './text-styles';
 import { planAppIds, planUcs, planViews, planVports, writeViewRecords } from './view-records';
+import { forgetFields } from './fields';
 
 /** R12 and before, whose viewports state their view in the MVIEW xdata (as patch 0119 reads it). */
 const isR12 = (version: ACadVersion | undefined): boolean =>
@@ -649,6 +650,7 @@ export function triyaToAcad(
   // it owns (§6.2 rule 3); shared objects it points to stay. Its draw order entry goes with it,
   // as AutoCAD saves no entry for an erased entity.
   for (const e of p.removed) {
+    forgetFields(e);
     const block = e.owner as BlockRecord;
     block.sortEntitiesTable?.remove(e);
     block.entities.remove(e);

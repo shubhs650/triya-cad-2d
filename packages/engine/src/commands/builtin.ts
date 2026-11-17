@@ -58,6 +58,7 @@ import { matchpropCommand } from './modify/matchprop';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
+import { BLOCK_COMMANDS } from './blocks';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
 import { qselectCommand } from './qselect';
@@ -152,6 +153,7 @@ export function builtinCommands(): CommandRegistry {
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
+    ...BLOCK_COMMANDS.map((make) => make()),
     ...PALETTE_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
     ...UNITS_COMMANDS.map((make) => make()),
