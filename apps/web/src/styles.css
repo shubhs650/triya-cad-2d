@@ -4851,6 +4851,34 @@ button {
   resize: vertical;
 }
 
+.cad-dialog.insert-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.insert-dialog-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.insert-dialog-name > select {
+  min-width: 12em;
+  max-width: 100%;
+}
+
+.insert-dialog-unit {
+  margin: 0;
+}
+
+.insert-dialog-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+}
+
 .cad-dialog.block-definition-ask {
   width: min(420px, calc(100vw - 32px));
 }

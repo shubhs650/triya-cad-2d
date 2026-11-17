@@ -14,8 +14,8 @@
 //            Enter attribute values                                       (ATTREQ 1)
 //   BASE     Enter base point <0.0000,0.0000,0.0000>:
 //
-// BLOCK opens the Block Definition dialog (M5-01 part 2, below); INSERT runs -INSERT's prompts
-// until its dialog comes. What the blocks and references are made of is `edit/blocks.ts`'s.
+// BLOCK opens the Block Definition dialog (M5-01 part 2, below), INSERT the Insert dialog (part
+// 3, below). What the blocks and references are made of is `edit/blocks.ts`'s.
 //
 // Ambiguities, settled for the common drafter expectation and noted in the PR:
 // - Help does not word the refusals; they read "Invalid block name." (asked again), "Block "B"
@@ -24,13 +24,20 @@
 // - -INSERT's X, Y, Z presets set that axis alone (the others stay 1) and, like Scale, skip
 //   the scale prompts that follow the insertion point; Basepoint's point is picked on the block
 //   as its definition places it (base point at its own base point, unscaled, unturned);
-// - ATTDIA 1 asks the values at the command line too until the INSERT dialog brings AutoCAD's
-//   Edit Attributes dialog with it (M5-01 part 2).
+// - ATTDIA 1 asks new attribute values in the Edit Attributes dialog (M5-01 part 3), whose Cancel
+//   ends the command, nothing placed; a missing $ATTDIA is 0, the command line.
 import type { Vec2 } from '../geom/types';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { EntityId } from '../model/entity-ids';
-import type { AttdefGeometry, Entity, EntityGeometry, InsertGeometry } from '../model/types';
+import type { Handle } from '../model/handle';
+import type {
+  AttdefGeometry,
+  BlockTableRecord,
+  Entity,
+  EntityGeometry,
+  InsertGeometry,
+} from '../model/types';
 import {
   ATTRIBUTE_CONSTANT,
   ATTRIBUTE_PRESET,
@@ -55,7 +62,7 @@ import { insUnitsOf, insUnitsScale } from '../model/units';
 import { currentProps } from '../properties/current';
 import { toUcs, toWorld, turnToUcs } from '../input/ucs';
 import { INSUNITS_NAMES } from './drawing-units';
-import { wcmatch } from './modify/attributes';
+import { definitionEntry, wcmatch } from './modify/attributes';
 import { currentUcs } from './ucs';
 import { drawingUnits, formatDistance, formatNumber } from './units';
 import { modelSpaceOf } from './bus';
@@ -385,7 +392,8 @@ async function* makeBlock(
             ((e.geom as AttdefGeometry).flags & ATTRIBUTE_CONSTANT) === 0,
         )
     : [];
-  const values = yield* attributeValues(ctx, definitions);
+  const values = yield* attributeValues(ctx, name, definitions);
+  if (!values) return;
 
   const blockSettings: BlockSettings = {
     units: settings.units,
@@ -495,185 +503,396 @@ export function insertCommand(): CommandDef {
     dashVariant: true,
     usesSelection: 'none',
     async *run(ctx) {
+      if (!ctx.dash) return yield* insertDialog(ctx);
       const typed = yield* insertName(ctx);
       if (typed === undefined) return;
       const explode = typed.startsWith('*');
       const name = explode ? typed.slice(1).trim() : typed;
-      const r = blockNamed(ctx.model, name);
-      if (!r || !ctx.model.hasBlock(r.handle) || name.startsWith('*')) {
-        ctx.message(`Block "${name}" not found.`);
+      const refusal = insertRefusal(ctx, name);
+      if (refusal) {
+        ctx.message(refusal);
         return;
       }
-      if (isXrefRecord(r)) {
-        ctx.message(`Block "${r.name}" is an external reference.`);
-        return;
-      }
-      const block = r.handle;
-      const def = ctx.model.blocks.get(block)!;
+      const r = blockNamed(ctx.model, name)!;
       const k = insUnitsScale(r.units, insUnitsOf(ctx.model));
       ctx.message(`Units: ${INSUNITS_NAMES[r.units]}   Conversion:  ${formatNumber(k, 4)}`);
-      const uniform = explode || r.scalable === false;
-
-      // The insertion point, after any presets.
-      const presets: Presets = {};
-      const options = explode
-        ? ['Basepoint', 'Scale', 'Rotate']
-        : ['Basepoint', 'Scale', 'X', 'Y', 'Z', 'Rotate'];
-      let at: Vec2 | undefined;
-      while (!at) {
-        const scale = presets.scale ?? { x: 1, y: 1, z: 1 };
-        const shown: BlockPlacement = {
-          position: def.basePoint,
-          scale: { x: scale.x * k, y: scale.y * k, z: scale.z * k },
-          rotation: presets.rotation ?? zeroAngle(ctx),
-        };
-        ctx.preview(previewOf(ctx, block, shown));
-        const a = yield ctx.prompt.point({
-          message: 'Specify insertion point or',
-          options,
-          drag: { kind: 'preview', from: def.basePoint },
-        });
-        ctx.preview([]);
-        if (a.kind === 'point') {
-          at = a.point;
-          break;
-        }
-        if (a.kind !== 'keyword') return;
-        switch (a.keyword) {
-          case 'Basepoint': {
-            ctx.preview(
-              previewOf(ctx, block, {
-                position: def.basePoint,
-                scale: { x: 1, y: 1, z: 1 },
-                rotation: 0,
-              }),
-            );
-            const p = yield ctx.prompt.point({ message: 'Specify base point' });
-            ctx.preview([]);
-            if (p.kind !== 'point') return;
-            presets.base = p.point;
-            break;
-          }
-          case 'Scale': {
-            const v = yield* scaleFactor(ctx, 'Specify scale factor for XYZ axes');
-            presets.scale = { x: v, y: v, z: v };
-            break;
-          }
-          case 'X':
-          case 'Y':
-          case 'Z': {
-            const v = yield* scaleFactor(ctx, `Specify ${a.keyword} scale factor`);
-            const was = presets.scale ?? { x: 1, y: 1, z: 1 };
-            presets.scale = { ...was, [a.keyword.toLowerCase()]: v };
-            break;
-          }
-          default:
-            presets.rotation = yield* rotationAngle(ctx);
-        }
-      }
-
-      // The scale, unless preset.
-      let scale = presets.scale;
-      if (!scale && uniform) {
-        const v = yield* scaleFactor(ctx, 'Specify scale factor for XYZ axes');
-        scale = { x: v, y: v, z: v };
-      }
-      while (!scale) {
-        const a = yield ctx.prompt.distance({
-          message: 'Enter X scale factor, specify opposite corner, or',
-          options: ['Corner', 'XYZ'],
-          base: at,
-          defaultLabel: '1',
-        });
-        let corner: Vec2 | undefined;
-        if (a.kind === 'distance' && a.to) corner = a.to;
-        else if (a.kind !== 'keyword') {
-          // A number typed, or 1 at Enter.
-          const x = a.kind === 'distance' ? a.value : 1;
-          scale = { x, y: yield* otherScale(ctx, 'Enter Y scale factor', x), z: x };
-        } else if (a.keyword === 'Corner') {
-          const c = yield ctx.prompt.point({
-            message: 'Specify opposite corner',
-            rubberBand: { from: at, box: true },
-          });
-          if (c.kind !== 'point') return;
-          corner = c.point;
-        } else {
-          // XYZ.
-          const x = yield* scaleFactor(ctx, 'Specify X scale factor');
-          const y = yield* otherScale(ctx, 'Specify Y scale factor', x);
-          scale = { x, y, z: yield* otherScale(ctx, 'Specify Z scale factor', x) };
-        }
-        if (corner) {
-          // The corner's offset along the UCS's axes is the X and Y scale.
-          const d = turnToUcs(currentUcs(ctx), { x: corner.x - at.x, y: corner.y - at.y });
-          if (d.x === 0 || d.y === 0) {
-            ctx.message('Value must be nonzero.');
-            continue;
-          }
-          scale = { x: d.x, y: d.y, z: d.x };
-        }
-        if (scale && (scale.x === 0 || scale.y === 0 || scale.z === 0)) {
-          ctx.message('Value must be nonzero.');
-          scale = undefined;
-        }
-      }
-
-      // The rotation, unless preset.
-      const rotation = presets.rotation ?? (yield* rotationAngle(ctx, at));
-
-      const total = { x: scale.x * k, y: scale.y * k, z: scale.z * k };
-      // Basepoint: the block's point `presets.base` goes to `at`, not its base point.
-      let position = at;
-      if (presets.base) {
-        const offset = { x: presets.base.x - def.basePoint.x, y: presets.base.y - def.basePoint.y };
-        const c = Math.cos(rotation);
-        const s = Math.sin(rotation);
-        const ox = offset.x * total.x;
-        const oy = offset.y * total.y;
-        position = { x: at.x - (ox * c - oy * s), y: at.y - (ox * s + oy * c) };
-      }
-
-      // The attribute values (none for an exploded insert: its definitions stay definitions).
-      const definitions = explode ? [] : attributeDefinitions(ctx.model, block);
-      const values = yield* attributeValues(ctx, definitions);
-
-      lastInserted.set(ctx.model, r.name);
-      const geom: InsertGeometry = referenceGeometry(
-        ctx.model,
-        block,
-        { position, scale: total, rotation },
-        definitions,
-        values,
-      );
-      let refused: ReadonlyMap<string, number> = new Map();
-      ctx.edit((b) => {
-        refused = placeReference(
-          b,
-          ctx.model,
-          ctx.space,
-          currentProps(ctx.model),
-          geom,
-          explode,
-        ).refused;
-      });
-      for (const line of refusalMessages(refused, 'inserted')) ctx.message(line);
+      yield* insertBlock(ctx, r, { explode, uniform: explode || r.scalable === false });
     },
   };
+}
+
+/** Why `name` cannot be inserted: no such block, or an external reference. */
+function insertRefusal(ctx: CommandContext, name: string): string | undefined {
+  const r = name === '' || name.startsWith('*') ? undefined : blockNamed(ctx.model, name);
+  if (!r || !ctx.model.hasBlock(r.handle)) return `Block "${name}" not found.`;
+  if (isXrefRecord(r)) return `Block "${r.name}" is an external reference.`;
+  return undefined;
+}
+
+/** How a block is placed: what is fixed beforehand, and what is asked. */
+interface Placing {
+  /** Contents placed, not a reference (`*NAME`, the dialog's Explode). */
+  readonly explode: boolean;
+  /** One scale factor for X, Y and Z. */
+  readonly uniform: boolean;
+  /** The insertion point (world), not asked. */
+  readonly at?: Vec2;
+  /** The scale (before the unit conversion), not asked. */
+  readonly scale?: { x: number; y: number; z: number };
+  /** The rotation (world), not asked. */
+  readonly rotation?: number;
+  /** Repeat Placement: the insertion point asked again after each placement, until Esc. */
+  readonly repeat?: boolean;
+}
+
+/**
+ * Places block `r` as -INSERT asks for it (the insertion point with its presets, the scale, the
+ * rotation, the attribute values), what `placing` fixes not asked; once, or until Esc with
+ * Repeat Placement.
+ */
+async function* insertBlock(ctx: CommandContext, r: BlockTableRecord, placing: Placing): Sub<void> {
+  const block = r.handle;
+  const def = ctx.model.blocks.get(block)!;
+  const k = insUnitsScale(r.units, insUnitsOf(ctx.model));
+  const { explode, uniform } = placing;
+  for (;;) {
+    // The insertion point, after any presets.
+    const presets: Presets = {
+      ...(placing.scale && { scale: placing.scale }),
+      ...(placing.rotation !== undefined && { rotation: placing.rotation }),
+    };
+    const options = explode
+      ? ['Basepoint', 'Scale', 'Rotate']
+      : ['Basepoint', 'Scale', 'X', 'Y', 'Z', 'Rotate'];
+    let at = placing.at;
+    while (!at) {
+      const scale = presets.scale ?? { x: 1, y: 1, z: 1 };
+      const shown: BlockPlacement = {
+        position: def.basePoint,
+        scale: { x: scale.x * k, y: scale.y * k, z: scale.z * k },
+        rotation: presets.rotation ?? zeroAngle(ctx),
+      };
+      ctx.preview(previewOf(ctx, block, shown));
+      const a = yield ctx.prompt.point({
+        message: 'Specify insertion point or',
+        options,
+        drag: { kind: 'preview', from: def.basePoint },
+      });
+      ctx.preview([]);
+      if (a.kind === 'point') {
+        at = a.point;
+        break;
+      }
+      if (a.kind !== 'keyword') return;
+      switch (a.keyword) {
+        case 'Basepoint': {
+          ctx.preview(
+            previewOf(ctx, block, {
+              position: def.basePoint,
+              scale: { x: 1, y: 1, z: 1 },
+              rotation: 0,
+            }),
+          );
+          const p = yield ctx.prompt.point({ message: 'Specify base point' });
+          ctx.preview([]);
+          if (p.kind !== 'point') return;
+          presets.base = p.point;
+          break;
+        }
+        case 'Scale': {
+          const v = yield* scaleFactor(ctx, 'Specify scale factor for XYZ axes');
+          presets.scale = { x: v, y: v, z: v };
+          break;
+        }
+        case 'X':
+        case 'Y':
+        case 'Z': {
+          const v = yield* scaleFactor(ctx, `Specify ${a.keyword} scale factor`);
+          const was = presets.scale ?? { x: 1, y: 1, z: 1 };
+          presets.scale = { ...was, [a.keyword.toLowerCase()]: v };
+          break;
+        }
+        default:
+          presets.rotation = yield* rotationAngle(ctx);
+      }
+    }
+
+    // The scale, unless preset.
+    let scale = presets.scale;
+    if (!scale && uniform) {
+      const v = yield* scaleFactor(ctx, 'Specify scale factor for XYZ axes');
+      scale = { x: v, y: v, z: v };
+    }
+    while (!scale) {
+      const a = yield ctx.prompt.distance({
+        message: 'Enter X scale factor, specify opposite corner, or',
+        options: ['Corner', 'XYZ'],
+        base: at,
+        defaultLabel: '1',
+      });
+      let corner: Vec2 | undefined;
+      if (a.kind === 'distance' && a.to) corner = a.to;
+      else if (a.kind !== 'keyword') {
+        // A number typed, or 1 at Enter.
+        const x = a.kind === 'distance' ? a.value : 1;
+        scale = { x, y: yield* otherScale(ctx, 'Enter Y scale factor', x), z: x };
+      } else if (a.keyword === 'Corner') {
+        const c = yield ctx.prompt.point({
+          message: 'Specify opposite corner',
+          rubberBand: { from: at, box: true },
+        });
+        if (c.kind !== 'point') return;
+        corner = c.point;
+      } else {
+        // XYZ.
+        const x = yield* scaleFactor(ctx, 'Specify X scale factor');
+        const y = yield* otherScale(ctx, 'Specify Y scale factor', x);
+        scale = { x, y, z: yield* otherScale(ctx, 'Specify Z scale factor', x) };
+      }
+      if (corner) {
+        // The corner's offset along the UCS's axes is the X and Y scale.
+        const d = turnToUcs(currentUcs(ctx), { x: corner.x - at.x, y: corner.y - at.y });
+        if (d.x === 0 || d.y === 0) {
+          ctx.message('Value must be nonzero.');
+          continue;
+        }
+        scale = { x: d.x, y: d.y, z: d.x };
+      }
+      if (scale && (scale.x === 0 || scale.y === 0 || scale.z === 0)) {
+        ctx.message('Value must be nonzero.');
+        scale = undefined;
+      }
+    }
+
+    // The rotation, unless preset.
+    const rotation = presets.rotation ?? (yield* rotationAngle(ctx, at));
+
+    const total = { x: scale.x * k, y: scale.y * k, z: scale.z * k };
+    // Basepoint: the block's point `presets.base` goes to `at`, not its base point.
+    let position = at;
+    if (presets.base) {
+      const offset = { x: presets.base.x - def.basePoint.x, y: presets.base.y - def.basePoint.y };
+      const c = Math.cos(rotation);
+      const s = Math.sin(rotation);
+      const ox = offset.x * total.x;
+      const oy = offset.y * total.y;
+      position = { x: at.x - (ox * c - oy * s), y: at.y - (ox * s + oy * c) };
+    }
+
+    // The attribute values (none for an exploded insert: its definitions stay definitions).
+    const definitions = explode ? [] : attributeDefinitions(ctx.model, block);
+    const values = yield* attributeValues(ctx, r.name, definitions);
+    if (!values) return;
+
+    lastInserted.set(ctx.model, r.name);
+    const geom: InsertGeometry = referenceGeometry(
+      ctx.model,
+      block,
+      { position, scale: total, rotation },
+      definitions,
+      values,
+    );
+    let refused: ReadonlyMap<string, number> = new Map();
+    ctx.edit((b) => {
+      refused = placeReference(
+        b,
+        ctx.model,
+        ctx.space,
+        currentProps(ctx.model),
+        geom,
+        explode,
+      ).refused;
+    });
+    for (const line of refusalMessages(refused, 'inserted')) ctx.message(line);
+    // Repeat Placement asks for the next insertion point; a point given in the dialog is one.
+    if (!placing.repeat || placing.at) return;
+  }
+}
+
+// ── INSERT's Insert dialog ────────────────────────────────────────────────────────────────────
+//
+// AutoCAD 2024's INSERT opens the Blocks palette; its CLASSICINSERT opens the Insert dialog
+// ("Insert Dialog Box"), whose structure Triya's dialog keeps (UI_SPEC.md §7 lists INSERT among
+// the dialogs), with the Blocks palette's Repeat Placement added:
+//   Name (the drawing's blocks) · Insertion point (Specify On-screen, X, Y) · Scale (Specify
+//   On-screen, X, Y, Z, Uniform Scale) · Rotation (Specify On-screen, Angle) · Block Unit (Unit,
+//   Factor) · Explode · Repeat Placement · OK, Cancel.
+// What is Specify On-screen is asked with -INSERT's prompts once the dialog closes, the rest taken
+// from the dialog. Settled for the common drafter expectation (noted in the PR):
+// - the dialog opens on the settings it last closed with, per drawing (AutoCAD keeps them for the
+//   session), on the block inserted last, else the first block by name;
+// - Explode and a block that scales uniformly scale by the X factor alone, as AutoCAD's dialog
+//   greys Y and Z for them;
+// - Repeat Placement repeats the insertion point only when it is Specify On-screen;
+// - Browse... (a drawing file as the block) is a later part of M5-01; Z of the insertion point
+//   and Locate using Geographic Data are left out (2D, no geographic data).
+
+/** The Insert dialog's fields. */
+export interface InsertDialogSettings {
+  /** The block's name. */
+  readonly name: string;
+  readonly pointOnScreen: boolean;
+  /** The insertion point, in the current UCS. */
+  readonly point: Vec2;
+  readonly scaleOnScreen: boolean;
+  readonly scale: { readonly x: number; readonly y: number; readonly z: number };
+  /** One factor, X's, for all three axes. */
+  readonly uniformScale: boolean;
+  readonly rotationOnScreen: boolean;
+  /** Radians, from the current UCS's X axis. */
+  readonly rotation: number;
+  readonly explode: boolean;
+  /** The Blocks palette's Repeat Placement. */
+  readonly repeat: boolean;
+}
+
+/** A block the Name list offers, with what the dialog shows of it. */
+export interface InsertBlockEntry {
+  readonly name: string;
+  /** Its BLOCK_RECORD, for the preview (`StylePreview` kind 'block'). */
+  readonly handle: Handle;
+  /** Block Unit: an `$INSUNITS` code. */
+  readonly units: number;
+  /** Block Unit's Factor: its units into the drawing's (INSUNITS). */
+  readonly factor: number;
+  readonly scaleUniformly: boolean;
+  readonly allowExploding: boolean;
+}
+
+/** INSERT's Insert dialog. */
+export interface InsertDialogRequest {
+  readonly type: 'insert';
+  readonly settings: InsertDialogSettings;
+  /** The drawing's blocks (insertable, by name). */
+  readonly blocks: readonly InsertBlockEntry[];
+  /** Why the last OK placed nothing ("Block "X" not found."). */
+  readonly note?: string;
+}
+
+/** The Insert dialog's answer: its fields as OK closed it. */
+export interface InsertDialogAnswer {
+  readonly settings: InsertDialogSettings;
+}
+
+/** The settings the Insert dialog closed with last, per drawing. */
+const lastInsertSettings = new WeakMap<object, InsertDialogSettings>();
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** Whether `s` is settings the dialog can give (the bus hands the command any object). */
+function validInsertSettings(s: unknown): s is InsertDialogSettings {
+  const v = s as InsertDialogSettings | undefined;
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof v.name === 'string' &&
+    finite(v.point?.x) &&
+    finite(v.point?.y) &&
+    finite(v.scale?.x) &&
+    finite(v.scale?.y) &&
+    finite(v.scale?.z) &&
+    finite(v.rotation)
+  );
+}
+
+function insertEntry(ctx: CommandContext, r: BlockTableRecord): InsertBlockEntry {
+  return {
+    name: r.name,
+    handle: r.handle,
+    units: r.units,
+    factor: insUnitsScale(r.units, insUnitsOf(ctx.model)),
+    scaleUniformly: !r.scalable,
+    allowExploding: r.explodable,
+  };
+}
+
+async function* insertDialog(ctx: CommandContext): Sub<void> {
+  const blocks = insertableBlocks(ctx.model);
+  const last = lastInsertSettings.get(ctx.model);
+  const named = (n: string | undefined) =>
+    n === undefined ? undefined : blocks.find((r) => r.name.toUpperCase() === n.toUpperCase());
+  const name =
+    named(lastInserted.get(ctx.model))?.name ?? named(last?.name)?.name ?? blocks[0]?.name ?? '';
+  let settings: InsertDialogSettings = {
+    pointOnScreen: true,
+    point: { x: 0, y: 0 },
+    scaleOnScreen: false,
+    scale: { x: 1, y: 1, z: 1 },
+    uniformScale: false,
+    rotationOnScreen: false,
+    rotation: 0,
+    explode: false,
+    repeat: false,
+    ...last,
+    name,
+  };
+  let note: string | undefined;
+  for (;;) {
+    const a = yield ctx.prompt.dialog({
+      message: 'Insert',
+      dialog: {
+        type: 'insert',
+        settings,
+        blocks: blocks.map((r) => insertEntry(ctx, r)),
+        ...(note !== undefined && { note }),
+      },
+    });
+    if (a.kind !== 'dialog' || a.action !== 'ok' || !validInsertSettings(a.insert?.settings)) {
+      return;
+    }
+    settings = a.insert.settings;
+    note = insertRefusal(ctx, settings.name.trim());
+    const r = note ? undefined : blockNamed(ctx.model, settings.name.trim())!;
+    const uniform = settings.uniformScale || settings.explode || r?.scalable === false;
+    const s = settings.scale;
+    if (!note && !settings.scaleOnScreen && (s.x === 0 || (!uniform && (s.y === 0 || s.z === 0))))
+      note = 'Value must be nonzero.';
+    if (!note && settings.explode && r?.explodable === false)
+      note = `Block "${r.name}" cannot be exploded.`;
+    if (note || !r) continue;
+    lastInsertSettings.set(ctx.model, settings);
+    const ucs = currentUcs(ctx);
+    yield* insertBlock(ctx, r, {
+      explode: settings.explode,
+      uniform,
+      ...(!settings.pointOnScreen && { at: toWorld(ucs, settings.point) }),
+      ...(!settings.scaleOnScreen && { scale: uniform ? { x: s.x, y: s.x, z: s.x } : { ...s } }),
+      ...(!settings.rotationOnScreen && { rotation: ucs.angle + settings.rotation }),
+      repeat: settings.repeat,
+    });
+    return;
+  }
 }
 
 /**
  * The values of a new reference's attributes, one per definition: asked in order with ATTREQ 1
  * ("Enter attribute values", presets taken), those to verify asked again ("Verify attribute
- * values"); the defaults with ATTREQ 0.
+ * values"); the defaults with ATTREQ 0. ATTDIA 1 asks them in the Edit Attributes dialog
+ * instead, whose Cancel ends the command (undefined).
  */
 async function* attributeValues(
   ctx: CommandContext,
+  block: string,
   definitions: readonly Entity[],
-): Sub<string[]> {
+): Sub<string[] | undefined> {
   const values: string[] = definitions.map((e) => (e.geom as AttdefGeometry).value);
   const asked = attreq(ctx) ? definitions.map((e) => askedFor(e.geom as AttdefGeometry)) : [];
   if (!asked.some(Boolean)) return values;
+  if (attdia(ctx)) {
+    const shown = definitions.filter((_, i) => asked[i]);
+    const d = yield ctx.prompt.dialog({
+      message: 'Edit Attributes',
+      dialog: {
+        type: 'attedit',
+        block,
+        attributes: shown.map((e) => definitionEntry(e, (e.geom as AttdefGeometry).value)),
+      },
+    });
+    if (d.kind !== 'dialog') return undefined;
+    // The dialog answers the values it changed, by their definitions' handles.
+    const typed = new Map((d.attributes ?? []).map((p) => [p.handle, p.value]));
+    return definitions.map((e, i) => (asked[i] ? typed.get(e.handle) : undefined) ?? values[i]!);
+  }
   ctx.message('Enter attribute values');
   for (const [i, e] of definitions.entries()) {
     if (!asked[i]) continue;
@@ -691,6 +910,13 @@ async function* attributeValues(
     }
   }
   return values;
+}
+
+/** ATTDIA: 1 asks new attribute values in the Edit Attributes dialog, 0 (Triya's default) at
+ * the command line, as before the dialog came. */
+function attdia(ctx: CommandContext): boolean {
+  const v = ctx.model.header.get('$ATTDIA');
+  return v === 1 || v === true;
 }
 
 /** ATTREQ: 1 (the default) asks the attribute values, 0 takes their defaults. */

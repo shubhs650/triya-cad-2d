@@ -28,6 +28,7 @@ import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
 import type {
+  AttdefGeometry,
   Color,
   Entity,
   InsertAttribute,
@@ -126,33 +127,42 @@ export function multiLeaderAttributeEntries(
   for (const a of g.block?.attributes ?? []) {
     const e = a.definition === undefined ? undefined : model.entityByHandle(a.definition);
     if (e?.geom.kind !== 'ATTDEF' || (e.geom.flags & CONSTANT) !== 0 || out.has(e.handle)) continue;
-    const d = e.geom;
-    out.set(e.handle, {
-      handle: e.handle,
-      tag: d.tag,
-      prompt: d.prompt || d.tag,
-      value: a.value,
-      multiline: d.mtext !== undefined,
-      flags: d.flags,
-      style: d.style,
-      halign: d.halign,
-      valign: d.valign,
-      height: d.height,
-      rotation: d.rotation,
-      widthFactor: d.widthFactor,
-      oblique: d.oblique,
-      backward: d.backward,
-      upsideDown: d.upsideDown,
-      ...(d.mtext && { attachment: d.mtext.attachment }),
-      layer: e.layer,
-      color: e.color,
-      linetype: e.linetype,
-      lineweight: e.lineweight,
-      plotStyle: e.plotStyle ?? null,
-      annotative: e.annotative !== undefined,
-    });
+    out.set(e.handle, definitionEntry(e, a.value));
   }
   return [...out.values()];
+}
+
+/**
+ * An attribute definition as the Edit Attributes dialog shows it, holding `value`, keyed by the
+ * ATTDEF's handle: a block multileader's values (M2-44) and a new reference's (INSERT with
+ * ATTDIA 1, M5-01 part 3). The text properties shown are the ATTDEF's own.
+ */
+export function definitionEntry(e: Entity, value: string): AttributeEntry {
+  const d = e.geom as AttdefGeometry;
+  return {
+    handle: e.handle,
+    tag: d.tag,
+    prompt: d.prompt || d.tag,
+    value,
+    multiline: d.mtext !== undefined,
+    flags: d.flags,
+    style: d.style,
+    halign: d.halign,
+    valign: d.valign,
+    height: d.height,
+    rotation: d.rotation,
+    widthFactor: d.widthFactor,
+    oblique: d.oblique,
+    backward: d.backward,
+    upsideDown: d.upsideDown,
+    ...(d.mtext && { attachment: d.mtext.attachment }),
+    layer: e.layer,
+    color: e.color,
+    linetype: e.linetype,
+    lineweight: e.lineweight,
+    plotStyle: e.plotStyle ?? null,
+    annotative: e.annotative !== undefined,
+  };
 }
 
 /**
