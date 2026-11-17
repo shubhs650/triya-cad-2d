@@ -162,3 +162,87 @@ test('CENTERMARK and CENTERLINE', async ({ page }) => {
   await page.waitForTimeout(300);
   await shot('5-reopened-circle-moved.png');
 });
+
+// M4-08 part 3: the CENTER* variables and the commands that edit marks. A mark made with a
+// larger CENTERCROSSSIZE is let go of its circle (CENTERDISASSOCIATE: the circle moves without
+// it), put on another circle (CENTERREASSOCIATE) and given CENTEREXE's new extension
+// (CENTERRESET); MATCHPROP's Property Settings offers Center object (pedit.spec.ts).
+test('the CENTER* variables, CENTERDISASSOCIATE, CENTERREASSOCIATE and CENTERRESET', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const off = () => page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await off();
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-20, -20), 'Specify opposite corner:');
+  await type(page, p(50, 20), 'Command:');
+  const k = Math.min(box.width / 70, box.height / 40);
+  const click = async (x: number, y: number) => {
+    await page.mouse.click(box.x + box.width / 2 + (x - 15) * k, box.y + box.height / 2 - y * k);
+    await off();
+  };
+  await page.keyboard.press('F3');
+  for (const [x, r] of [
+    [0, 10],
+    [35, 6],
+  ] as const) {
+    await type(page, 'CIRCLE', /^Specify center point/);
+    await type(page, p(x, 0), /^Specify radius/);
+    await type(page, String(r), 'Command:');
+  }
+  // A variable's name at Command: sets it (SETVAR).
+  await type(page, 'CENTERCROSSSIZE', 'Enter new value for CENTERCROSSSIZE <"0.1x">:');
+  await type(page, '0.25x', 'Command:');
+  await type(page, 'CENTERMARK', 'Select circle or arc to add center mark:');
+  await click(-10, 0);
+  await expect.poll(async () => (await state(page)).length).toBe(1);
+  await type(page, '', 'Command:');
+  await page.waitForTimeout(300);
+  await shot('1-cross-size.png');
+
+  // Let go of its circle: the circle moves down without it.
+  await type(page, 'CENTERDISASSOCIATE', 'Select center marks or centerlines to disassociate:');
+  await click(2, 0);
+  await type(page, '', 'Command:');
+  await type(page, 'MOVE', 'Select objects:');
+  await click(-10 * Math.SQRT1_2, 10 * Math.SQRT1_2);
+  await type(page, '', /^Specify base point/);
+  await type(page, p(0, 0), /^Specify second point/);
+  await type(page, p(0, -6), 'Command:');
+  await page.waitForTimeout(300);
+  await shot('2-disassociated.png');
+  expect((await state(page)).map(({ x, y }) => [x - O, y - O])).toEqual([[0, 0]]);
+
+  // Put on the second circle, then given a CENTEREXE of 8.
+  await type(page, 'CENTERREASSOCIATE', 'Select center mark or centerline:');
+  await click(2, 0);
+  await expect(prompt(page)).toHaveText('Select circle or arc:');
+  await click(41, 0);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => (await state(page)).map(({ x, y }) => [x - O, y - O]))
+    .toEqual([[35, 0]]);
+  await type(page, 'CENTEREXE', /^Enter new value for CENTEREXE/);
+  await type(page, '8', 'Command:');
+  await type(page, 'CENTERRESET', 'Select center marks or centerlines to reset:');
+  await click(36, 0);
+  await type(page, '', 'Command:');
+  await page.waitForTimeout(300);
+  await shot('3-reassociated-and-reset.png');
+  const lines = await page.evaluate(() =>
+    (window as unknown as Dev).triyaDev
+      .changes()
+      .flatMap((cs) => cs.entities?.added ?? [])
+      .map((a) => a.entity.geom)
+      .filter((g) => g.kind === 'LINE')
+      .map((g) => (g as { end: { x: number } }).end.x),
+  );
+  // The last lines drawn reach 6 + 8 past the centre.
+  expect(Math.max(...lines.slice(-6).map(Math.abs))).toBeCloseTo(14);
+});

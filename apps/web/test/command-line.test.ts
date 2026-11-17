@@ -180,7 +180,7 @@ describe('completions', () => {
     // An acad.pgp alias of a command not built yet (BO, BOUNDARY's) completes nothing; SPL,
     // SPLINE's since M3-01 part 5, completes SPLINE (then SPLINEDIT, M3-02 part 6); REC,
     // RECTANG's since M3-01 part 3, completes RECTANG; C, CIRCLE's since M3-01, completes CIRCLE
-    // first, then CENTERLINE, CENTERMARK, CHAMFER, CHANGE, CHPROP, CLASSICGROUP, CLOSE, COPY and
+    // first, then the CENTER* commands, CHAMFER, CHANGE, CHPROP, CLASSICGROUP, CLOSE, COPY and
     // the Clipboard commands.
     expect(completions(registry, 'BO')).toEqual([]);
     expect(completions(registry, 'SPL')).toEqual([
@@ -190,9 +190,12 @@ describe('completions', () => {
     expect(completions(registry, 'REC')[0]).toEqual({ name: 'RECTANG', alias: 'REC' });
     expect(completions(registry, 'C')).toEqual([
       { name: 'CIRCLE', alias: 'C' },
-      // CENTERMARK and CENTERLINE (M4-08).
+      // CENTERMARK and CENTERLINE (M4-08), and the commands that edit them (part 3).
+      { name: 'CENTERDISASSOCIATE' },
       { name: 'CENTERLINE' },
       { name: 'CENTERMARK' },
+      { name: 'CENTERREASSOCIATE' },
+      { name: 'CENTERRESET' },
       { name: 'CHAMFER' },
       { name: 'CHANGE' },
       { name: 'CHPROP' },
@@ -236,8 +239,11 @@ describe('completions of system variables', () => {
     const first = c.findIndex((s) => s.variable);
     expect(c.slice(0, first).map((s) => s.name)).toEqual([
       'CIRCLE',
+      'CENTERDISASSOCIATE',
       'CENTERLINE',
       'CENTERMARK',
+      'CENTERREASSOCIATE',
+      'CENTERRESET',
       'CHAMFER',
       'CHANGE',
       'CHPROP',
@@ -251,6 +257,14 @@ describe('completions of system variables', () => {
     ]);
     expect(c.slice(first).map((s) => s.name)).toEqual([
       'CDATE',
+      // What new center marks take (M4-08 part 3), kept for the session in any drawing.
+      'CENTERCROSSGAP',
+      'CENTERCROSSSIZE',
+      'CENTEREXE',
+      'CENTERLAYER',
+      'CENTERLTSCALE',
+      'CENTERLTYPE',
+      'CENTERMARKEXE',
       'CETRANSPARENCY',
       'CHAMMODE',
       'CLAYER',

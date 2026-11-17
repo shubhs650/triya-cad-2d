@@ -47,9 +47,12 @@ describe('palette search', () => {
       'ATTEDIT',
       'BREAK',
       'BREAKATPOINT',
-      // M4-08: CENTERLINE and CENTERMARK.
+      // M4-08: CENTERLINE and CENTERMARK; part 3 the commands that edit them.
+      'CENTERDISASSOCIATE',
       'CENTERLINE',
       'CENTERMARK',
+      'CENTERREASSOCIATE',
+      'CENTERRESET',
       // M3-02 part 3: CHAMFER and FILLET.
       'CHAMFER',
       // M3-02 part 5: CHANGE and CHPROP.

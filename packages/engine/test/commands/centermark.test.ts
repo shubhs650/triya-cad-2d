@@ -20,6 +20,7 @@ import {
   compose,
   insertMatrix,
   isCenterMark,
+  matchedCenterMark,
   offsetCurveOf,
   toleranceForSize,
   type BusEvent,
@@ -300,8 +301,9 @@ describe('CENTERMARK', () => {
     await s.bus.script(['MOVE', '50,50', '', '0,0', '0,30']);
     const [mark] = s.marks();
     expect(mark!.geom).toMatchObject({ position: { x: 50, y: 80 } });
-    expect(s.record(mark!)).toBeUndefined();
-    expect(s.records()).toEqual([]);
+    // Still a center mark, as AutoCAD's is, associated to nothing (part 3).
+    expect(s.record(mark!)).toMatchObject({ kind: 'mark', objects: [] });
+    expect(s.records()).toHaveLength(1);
     // The circle moving now leaves it be.
     await s.bus.script(['MOVE', '60,50', '', '0,0', '10,0']);
     expect(s.marks()[0]!.geom).toMatchObject({ position: { x: 50, y: 80 } });
@@ -333,7 +335,7 @@ describe('CENTERMARK', () => {
     expect(t.records()).toEqual([]);
   });
 
-  it('copied with its circle, is a mark of the copy; copied alone, a plain block of its own', async () => {
+  it('copied with its circle, is a mark of the copy; copied alone, a disassociated mark of its own', async () => {
     const s = setup();
     await s.bus.script(['CENTERMARK', '60,50', '']);
     await s.bus.script(['COPY', '60,50', '50,50', '', '0,0', '100,0', '']);
@@ -355,14 +357,14 @@ describe('CENTERMARK', () => {
     expect(s.lines(marks.find((m) => m.handle !== copy.handle)!)).toEqual(
       markLines(50, 60, 10, 3.5),
     );
-    // The mark alone copied: no record, and the original's redraw leaves it be.
+    // The mark alone copied: a mark associated to nothing, and the original's redraw leaves it be.
     const t = setup();
     await t.bus.script(['CENTERMARK', '60,50', '']);
     await t.bus.script(['COPY', '50,50', '', '0,0', '0,-100', '']);
     const alone = t
       .marks()
       .find((m) => (m.geom as { position: { y: number } }).position.y === -50)!;
-    expect(t.record(alone)).toBeUndefined();
+    expect(t.record(alone)).toMatchObject({ kind: 'mark', objects: [], crossSize: '0.1x' });
     await t.bus.script(['SCALE', '60,50', '', '50,50', '2']);
     expect(t.lines(alone)).toEqual(markLines(50, -50, 10, 3.5));
   });
@@ -380,16 +382,17 @@ describe('CENTERMARK', () => {
     expect(copy.extDict).toBeDefined();
     expect(copy.extDict).not.toBe(mark!.extDict);
     expect(s.record(copy)!.owner).toBe(copy.extDict);
-    // Copied alone, a plain block reference: no dictionary.
+    // Copied alone, a mark of its own associated to nothing, in a dictionary of its own.
     await s.bus.script(['COPY', '50,50', '', '0,0', '0,-100', '']);
     const alone = s
       .marks()
       .find((m) => (m.geom as { position: { y: number } }).position.y === -50)!;
-    expect(alone.extDict).toBeUndefined();
-    // Moved on its own it lets go: the record leaves the dictionary, which stays.
+    expect(alone.extDict).toBeDefined();
+    expect(s.record(alone)).toMatchObject({ objects: [], owner: alone.extDict });
+    // Moved on its own it lets go: the record stays in the dictionary, associated to nothing.
     await s.bus.script(['MOVE', '50,50', '', '0,0', '0,30']);
     const moved = s.model.entityByHandle(mark!.handle)!;
-    expect(s.record(moved)).toBeUndefined();
+    expect(s.record(moved)).toMatchObject({ objects: [] });
     expect(moved.extDict).toBe(mark!.extDict);
   });
 
@@ -514,5 +517,221 @@ describe('CENTERLINE', () => {
     await s.bus.script(['CENTERLINE', '10,200', '25,200']);
     expect(s.log).toContain('The lines meet end to end: there is no centerline between them.');
     expect(s.marks()).toEqual([]);
+  });
+});
+
+/** `markLines` with a cross `cf` and gap `gf` of the diameter, extensions `e` (none when 0 shown). */
+function markLinesOf(
+  cx: number,
+  cy: number,
+  r: number,
+  e: number | undefined,
+  cf = 0.1,
+  gf = 0.05,
+): number[][] {
+  const c = cf * 2 * r;
+  const g = gf * 2 * r;
+  const out = [
+    [cx - c, cy, cx + c, cy],
+    [cx, cy - c, cx, cy + c],
+  ];
+  if (e !== undefined) {
+    out.push(
+      [cx - c - g, cy, cx - r - e, cy],
+      [cx + c + g, cy, cx + r + e, cy],
+      [cx, cy + c + g, cx, cy + r + e],
+      [cx, cy - c - g, cx, cy - r - e],
+    );
+  }
+  return out
+    .map((l) => ordered(l.map(r4)))
+    .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]! || a[2]! - b[2]! || a[3]! - b[3]!);
+}
+
+describe('the CENTER* variables (M4-08 part 3)', () => {
+  it("start at AutoCAD's initial values, text shown in quotes as SETVAR shows it", async () => {
+    const s = setup();
+    for (const [name, value] of [
+      ['CENTERCROSSSIZE', '"0.1x"'],
+      ['CENTERCROSSGAP', '"0.05x"'],
+      ['CENTEREXE', '3.5000'],
+      ['CENTERMARKEXE', '1'],
+      ['CENTERLTYPE', '"CENTER2"'],
+      ['CENTERLTSCALE', '1.0000'],
+      ['CENTERLAYER', '"."'],
+    ]) {
+      await s.bus.script(['SETVAR', name!]);
+      expect(s.bus.promptText).toBe(`Enter new value for ${name} <${value}>:`);
+      await s.bus.script(['']);
+    }
+    // Metric drawings start CENTEREXE at 3.5, imperial ones at 0.12.
+    const imperial = setup({ header: [['$MEASUREMENT', 0]] });
+    await imperial.bus.script(['SETVAR', 'CENTEREXE']);
+    expect(imperial.bus.promptText).toBe('Enter new value for CENTEREXE <0.1200>:');
+  });
+
+  it('give new marks their cross size, gap and extensions; CENTERMARKEXE 0 leaves extensions out', async () => {
+    const s = setup();
+    await s.bus.script(['SETVAR', 'CENTERCROSSSIZE', '0.2x']);
+    await s.bus.script(['SETVAR', 'CENTERCROSSGAP', '1']);
+    await s.bus.script(['SETVAR', 'CENTEREXE', '2']);
+    await s.bus.script(['CENTERMARK', '60,50', '']);
+    const [mark] = s.marks();
+    expect(s.record(mark!)).toMatchObject({
+      crossSize: '0.2x',
+      crossGap: '1',
+      extensions: [2, 2, 2, 2],
+      showExtensions: true,
+    });
+    // Arms 4 long (0.2 × 20), a gap of 1, extension lines from 5 to 12.
+    expect(s.lines(mark!)).toEqual(markLinesOf(50, 50, 10, 2, 0.2, 0.05));
+    await s.bus.script(['SETVAR', 'CENTERMARKEXE', '0']);
+    await s.bus.script(['CENTERMARK', '105,50', '']);
+    const arc = s.marks().find((m) => m.handle !== mark!.handle)!;
+    expect(s.record(arc)!.showExtensions).toBe(false);
+    expect(s.lines(arc)).toEqual(markLinesOf(100, 50, 5, undefined, 0.2));
+  });
+
+  it('refuse a cross size or gap that is no length or factor', async () => {
+    const s = setup();
+    await s.bus.script(['SETVAR', 'CENTERCROSSSIZE', 'big', '0.3X']);
+    expect(s.log).toContain('Requires a length, or a factor of the diameter followed by x.');
+    await s.bus.script(['SETVAR', 'CENTERCROSSSIZE']);
+    expect(s.bus.promptText).toBe('Enter new value for CENTERCROSSSIZE <"0.3X">:');
+  });
+
+  it('put new marks on CENTERLAYER (made when the drawing lacks it) in CENTERLTYPE at CENTERLTSCALE', async () => {
+    const s = setup();
+    await s.bus.script(['SETVAR', 'CENTERLAYER', 'Center lines']);
+    await s.bus.script(['SETVAR', 'CENTERLTYPE', 'Continuous']);
+    await s.bus.script(['SETVAR', 'CENTERLTSCALE', '0.5']);
+    await s.bus.script(['CENTERMARK', '60,50', '']);
+    const [mark] = s.marks();
+    const layer = s.model.tables.layers.get(mark!.layer)!;
+    expect(layer.name).toBe('Center lines');
+    expect(mark!.linetype).toBe('14');
+    expect(mark!.ltScale).toBe(0.5);
+    expect(s.log).not.toContain('Linetype CENTER2 is not in the drawing: ByLayer is used.');
+    // The layer made once: a second mark goes on it.
+    await s.bus.script(['CENTERLINE', '10,100', '10,110']);
+    const line = s.marks().find((m) => m.handle !== mark!.handle)!;
+    expect(line.layer).toBe(mark!.layer);
+    // "." puts them on the current layer in the current linetype.
+    await s.bus.script(['SETVAR', 'CENTERLAYER', '.']);
+    await s.bus.script(['SETVAR', 'CENTERLTYPE', '.']);
+    await s.bus.script(['CENTERMARK', '105,50', '']);
+    const third = s.marks().at(-1)!;
+    expect(third.layer).toBe(LAYER_WALLS);
+    expect(third.linetype).toBe('ByLayer');
+  });
+});
+
+describe('CENTERDISASSOCIATE, CENTERREASSOCIATE and CENTERRESET (M4-08 part 3)', () => {
+  it('CENTERDISASSOCIATE lets marks go of their objects, staying as drawn; other objects are left be', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERMARK', '60,50', '']);
+    await s.bus.script(['CENTERDISASSOCIATE', '50,50', '60,50', '']);
+    expect(s.log).toContain('1 center mark or centerline disassociated.');
+    const [mark] = s.marks();
+    expect(s.record(mark!)).toMatchObject({ kind: 'mark', objects: [] });
+    await s.bus.script(['MOVE', '60,50', '', '0,0', '10,0']);
+    expect(s.lines(s.marks()[0]!)).toEqual(markLines(50, 50, 10, 3.5));
+    // Undo brings the association back.
+    await s.bus.script(['U']);
+    await s.bus.script(['U']);
+    expect(s.record(s.marks()[0]!)).toMatchObject({ objects: ['30'] });
+  });
+
+  it('CENTERREASSOCIATE puts a disassociated mark on another circle or arc, which it then follows', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERMARK', '60,50', '']);
+    await s.bus.script(['CENTERDISASSOCIATE', '50,50', '']);
+    await s.bus.script(['CENTERREASSOCIATE']);
+    expect(s.bus.promptText).toBe('Select center mark or centerline:');
+    await s.bus.script(['50,50']);
+    expect(s.bus.promptText).toBe('Select circle or arc:');
+    await s.bus.script(['10,100', '105,50']);
+    expect(s.log).toContain('Object selected is not a circle or arc.');
+    const [mark] = s.marks();
+    expect(s.record(mark!)).toMatchObject({ kind: 'mark', objects: ['31'] });
+    expect(s.lines(mark!)).toEqual(markLines(100, 50, 5, 3.5));
+    await s.bus.script(['MOVE', '105,50', '', '0,0', '0,10']);
+    expect(s.lines(s.marks()[0]!)).toEqual(markLines(100, 60, 5, 3.5));
+  });
+
+  it('CENTERREASSOCIATE moves an associated centerline to two other lines, and refuses what is no mark', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERLINE', '10,100', '10,110']);
+    await s.bus.script(['CENTERREASSOCIATE', '60,50', '10,105', '10,200', '10,208']);
+    expect(s.log).toContain('Object selected is not a center mark or centerline.');
+    const [line] = s.marks();
+    expect(s.record(line!)).toMatchObject({ kind: 'line', objects: ['34', '35'] });
+    const [[x1, y1, x2, y2]] = s.lines(line!) as [number[]];
+    expect(Math.atan2(y2! - y1!, x2! - x1!)).toBeCloseTo(Math.atan(0.4) / 2, 4);
+    // The first pair moving now leaves it be.
+    await s.bus.script(['MOVE', '10,100', '', '0,0', '0,-50']);
+    expect(s.lines(s.marks()[0]!)).toEqual([[x1, y1, x2, y2]]);
+  });
+
+  it('CENTERRESET gives marks, associated or not, the extensions CENTEREXE states now', async () => {
+    const s = setup();
+    await s.bus.script(['CENTERMARK', '60,50', '105,50', '']);
+    await s.bus.script(['CENTERLINE', '10,100', '10,110']);
+    await s.bus.script(['CENTERDISASSOCIATE', '100,50', '']);
+    // The disassociated one moved off its arc on its own.
+    await s.bus.script(['MOVE', '100,50', '', '0,0', '0,-100']);
+    await s.bus.script(['SETVAR', 'CENTEREXE', '6']);
+    await s.bus.script(['CENTERRESET', '50,50', '100,-50', '10,105', '']);
+    expect(s.log).toContain('3 center marks or centerlines reset.');
+    const [circle, arc, line] = s.marks();
+    expect(s.lines(circle!)).toEqual(markLines(50, 50, 10, 6));
+    expect(s.record(circle!)!.extensions).toEqual([6, 6, 6, 6]);
+    expect(s.lines(arc!)).toEqual(markLines(100, -50, 5, 6));
+    expect(s.record(arc!)).toMatchObject({ objects: [], extensions: [6, 6, 6, 6] });
+    expect(s.lines(line!)).toEqual([[-6, 105, 26, 105]]);
+    // One undo step.
+    await s.bus.script(['U']);
+    expect(s.lines(s.marks()[1]!)).toEqual(markLines(100, -50, 5, 3.5));
+  });
+});
+
+describe("MATCHPROP's Center object (M4-08 part 3)", () => {
+  it('gives a mark the source mark’s cross size, gap and extensions', async () => {
+    const s = setup();
+    await s.bus.script(['SETVAR', 'CENTERCROSSSIZE', '0.2x']);
+    await s.bus.script(['SETVAR', 'CENTEREXE', '5']);
+    await s.bus.script(['CENTERMARK', '60,50', '']);
+    await s.bus.script(['SETVAR', 'CENTERCROSSSIZE', '0.1x']);
+    await s.bus.script(['SETVAR', 'CENTEREXE', '1']);
+    await s.bus.script(['CENTERMARK', '105,50', '']);
+    await s.bus.script(['CENTERLINE', '10,100', '10,110']);
+    await s.bus.script(['MATCHPROP', '50,50', '100,50', '10,105', '']);
+    expect(s.log).toContain(
+      'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Dim Text Hatch Polyline Viewport Table Material Multileader Center object',
+    );
+    const [, arc, line] = s.marks();
+    expect(s.record(arc!)).toMatchObject({ crossSize: '0.2x', extensions: [5, 5, 5, 5] });
+    expect(s.lines(arc!)).toEqual(markLinesOf(100, 50, 5, 5, 0.2));
+    // A centerline takes the extension.
+    expect(s.lines(line!)).toEqual([[-5, 105, 25, 105]]);
+  });
+
+  it('leaves marks be with Center object off', () => {
+    const source = { crossSize: '0.2x', crossGap: '1', extensions: [5, 5, 5, 5] };
+    const target: CenterMark = {
+      handle: 'A0',
+      owner: 'A1',
+      type: 'TRIYA_CENTERMARK',
+      insert: 'A2',
+      kind: 'mark',
+      objects: [],
+      crossSize: '0.1x',
+      crossGap: '0.05x',
+      extensions: [1, 1, 1, 1],
+      showExtensions: true,
+    };
+    expect(matchedCenterMark({ ...target, ...source }, target, true)).toMatchObject(source);
+    expect(matchedCenterMark({ ...target, ...source }, target, false)).toBeUndefined();
+    expect(matchedCenterMark(target, target, true)).toBeUndefined();
   });
 });

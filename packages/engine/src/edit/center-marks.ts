@@ -3,7 +3,10 @@
 // draws it; a `CenterMark` record in the INSERT's extension dictionary (a `TRIYA_CENTERMARK`
 // XRECORD in the file, DEC-066) keeps it associative to the circle, arc or lines it was made on. As a command ends (the bus's `followAssociations`) a
 // mark whose objects changed is drawn again from them, a mark whose object is gone goes with it,
-// and a mark moved on its own lets go of its objects.
+// and a mark moved on its own lets go of its objects: it stays a center mark, associated to
+// nothing (its record names no objects, part 3), as AutoCAD's disassociated marks are, until
+// CENTERREASSOCIATE gives it objects again. A save writes such a mark as DEC-066 item 3 says, its
+// dictionary empty, so a reopened one is a plain block reference.
 //
 // AutoCAD 2024 Help ("CENTERMARK (Command)", "CENTERLINE (Command)", "CENTERCROSSSIZE",
 // "CENTERCROSSGAP", "CENTEREXE", "CENTERMARKEXE", "CENTERLTYPE", "CENTERLTSCALE",
@@ -16,9 +19,11 @@
 // points to the middle of their end points, CENTEREXE past each.
 import type { Vec2 } from '../geom/types';
 import { add, cross, dot, length, midpoint, normalize, scale, sub } from '../geom/vec';
+import { centerLength, type CenterSettings } from './center-settings';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
+import type { RecordPatch } from '../model/update';
 import {
   isCenterMark,
   type CenterMark,
@@ -45,51 +50,8 @@ export function centerMarkOf(
   return undefined;
 }
 
-/** The settings a new mark takes (the CENTER* variables). */
-export interface CenterSettings {
-  /** CENTERCROSSSIZE: a length, or a factor of the diameter followed by `x`. */
-  readonly crossSize: string;
-  /** CENTERCROSSGAP, the same way. */
-  readonly crossGap: string;
-  /** CENTEREXE: how far extension lines go past the object. */
-  readonly extension: number;
-  /** CENTERMARKEXE: a center mark has extension lines. */
-  readonly showExtensions: boolean;
-}
-
-/** AutoCAD's initial values; CENTEREXE is 0.12 in imperial drawings and 3.5 in metric ones. */
-export function defaultCenterSettings(metric: boolean): CenterSettings {
-  return {
-    crossSize: '0.1x',
-    crossGap: '0.05x',
-    extension: metric ? 3.5 : 0.12,
-    showExtensions: true,
-  };
-}
-
-/** The settings the drawing states: CENTEREXE when it holds one (a DICTIONARYVAR), else AutoCAD's. */
-export function centerSettings(model: DocumentModel): CenterSettings {
-  const measurement = model.header.get('$MEASUREMENT');
-  const metric =
-    typeof measurement === 'number' ? measurement === 1 : model.meta.measurement === 'metric';
-  const out = defaultCenterSettings(metric);
-  const exe = model.header.get('CENTEREXE');
-  const n = typeof exe === 'string' ? Number(exe.trim()) : typeof exe === 'number' ? exe : NaN;
-  return exe !== undefined && Number.isFinite(n) && n >= 0 ? { ...out, extension: n } : out;
-}
-
-/** A CENTERCROSSSIZE-style value for a circle of `diameter`: `0.1x` is a tenth of it. */
-export function centerLength(text: string, diameter: number): number {
-  const t = text.trim();
-  const relative = /x$/i.test(t);
-  const n = Number(relative ? t.slice(0, -1) : t);
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return relative ? n * diameter : n;
-}
-
-/** Whether `text` is a value CENTERCROSSSIZE or CENTERCROSSGAP takes. */
-export const isCenterLength = (text: string): boolean =>
-  /^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?x?$/i.test(text.trim());
+/** Whether the mark follows objects: one CENTERDISASSOCIATE (or a move on its own) let go names none. */
+export const isAssociated = (r: Pick<CenterMark, 'objects'>): boolean => r.objects.length > 0;
 
 type Segment = readonly [Vec2, Vec2];
 
@@ -183,6 +145,7 @@ function shapeOf(
   r: Pick<CenterMark, 'kind' | 'objects' | 'extensions'>,
   entityOf: (h: Handle) => Entity | undefined,
 ): Shape | undefined {
+  if (!isAssociated(r)) return undefined;
   if (r.kind === 'mark') {
     const g = entityOf(r.objects[0]!)?.geom;
     if (g?.kind !== 'CIRCLE' && g?.kind !== 'ARC') return undefined;
@@ -325,12 +288,156 @@ export function remakeCenterMark(
   return true;
 }
 
+const patchOf = (fields: Partial<CenterMark>): RecordPatch<NonGraphicalObject> =>
+  fields as RecordPatch<NonGraphicalObject>;
+
 /**
- * Takes the record off a mark: it stays as drawn, a plain block reference. Its extension
- * dictionary stays, empty, as AutoCAD leaves an object's dictionary when its last entry goes.
+ * Lets a mark go of its objects (CENTERDISASSOCIATE, or the mark moved on its own): it stays as
+ * drawn, a center mark associated to nothing.
  */
 export function disassociateCenterMark(b: ChangeSetBuilder, r: CenterMark): void {
-  b.removeObject(r.handle);
+  b.updateObject(r.handle, patchOf({ objects: [] }));
+}
+
+/** The lines of `block` as the change being built has them. */
+function blockLines(b: ChangeSetBuilder, block: Handle): Segment[] {
+  const out: Segment[] = [];
+  for (const id of b.blockEntities(block)) {
+    const g = b.entity(id)?.geom;
+    if (g?.kind === 'LINE') out.push([g.start, g.end]);
+  }
+  return out;
+}
+
+/** Whether `a` and `b` are the same lines, in any order and either way round. */
+function sameSegments(a: readonly Segment[], b: readonly Segment[], tol: number): boolean {
+  if (a.length !== b.length) return false;
+  const near = (p: Vec2, q: Vec2) => length(sub(p, q)) <= tol;
+  const left = [...b];
+  for (const [p, q] of a) {
+    const i = left.findIndex(([s, e]) => (near(p, s) && near(q, e)) || (near(p, e) && near(q, s)));
+    if (i < 0) return false;
+    left.splice(i, 1);
+  }
+  return true;
+}
+
+/**
+ * The radius of the circle a center mark's `lines` (its block's, centred on the origin) were
+ * drawn for with the record `r`: the radius whose mark they are, tried from each line end less
+ * each extension, and from a relative cross size or gap; undefined when none draws them.
+ */
+function markRadius(lines: readonly Segment[], r: CenterMark): number | undefined {
+  const tries = new Set<number>();
+  const factor = (t: string | undefined) =>
+    t !== undefined && /x$/i.test(t.trim()) ? Number(t.trim().slice(0, -1)) : NaN;
+  for (const [p, q] of lines) {
+    for (const d of [length(p), length(q)]) {
+      for (const e of r.extensions) tries.add(d - e);
+      for (const f of [factor(r.crossSize), factor(r.crossSize) + factor(r.crossGap)]) {
+        if (f > 0) tries.add(d / (2 * f));
+      }
+    }
+  }
+  for (const radius of tries) {
+    if (!(radius > 0)) continue;
+    const tol = 1e-7 * Math.max(1, radius + Math.max(0, ...r.extensions));
+    if (sameSegments(centerMarkLines(radius, r), lines, tol)) return radius;
+  }
+  return undefined;
+}
+
+/**
+ * Draws a mark associated to nothing again with the record `after` from the lines it draws now
+ * (its block, drawn with `before`), where it is: a centerline keeps its line and changes how far
+ * it goes past its ends, a center mark the circle its lines were drawn for. Extensions are in
+ * the drawing, the block in its own units (a mark scaled on its own has a scale other than 1).
+ * Returns false, changing nothing, when its lines are not a mark `before` draws.
+ */
+function redrawFree(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  insert: Entity,
+  before: CenterMark,
+  after: CenterMark,
+): boolean {
+  if (insert.geom.kind !== 'INSERT') return false;
+  const k = Math.abs(insert.geom.scale.x) || 1;
+  const inBlock = (r: CenterMark): CenterMark => ({
+    ...r,
+    extensions: r.extensions.map((e) => e / k),
+  });
+  const lines = blockLines(b, insert.geom.block);
+  let segments: Segment[];
+  if (before.kind === 'line') {
+    if (lines.length !== 1) return false;
+    const [s, e] = lines[0]!;
+    const u = normalize(sub(e, s));
+    if (length(u) === 0) return false;
+    const was = inBlock(before).extensions;
+    const now = inBlock(after).extensions;
+    const s0 = add(s, scale(u, (was[0] ?? 0) - (now[0] ?? 0)));
+    const e0 = add(e, scale(u, (now[1] ?? 0) - (was[1] ?? 0)));
+    if (dot(sub(e0, s0), u) <= 0) return false;
+    segments = [[s0, e0]];
+  } else {
+    const radius = markRadius(lines, inBlock(before));
+    if (radius === undefined) return false;
+    segments = centerMarkLines(radius, inBlock(after));
+  }
+  fillBlock(b, model, insert.geom.block, segments);
+  return true;
+}
+
+/**
+ * Gives the mark of `insert` the record `after` (the same record, changed: CENTERRESET's
+ * extensions, MATCHPROP's Center object, CENTERREASSOCIATE's objects) and draws it again: from
+ * its objects when it has them, else from the lines it draws now. Returns false, changing
+ * nothing, when it cannot be drawn so (an object that makes no mark).
+ */
+export function redrawCenterMark(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  insert: Entity,
+  before: CenterMark,
+  after: CenterMark,
+): boolean {
+  const drawn = isAssociated(after)
+    ? remakeCenterMark(b, model, insert, after)
+    : redrawFree(b, model, insert, before, after);
+  if (!drawn) return false;
+  const { handle: _h, ...fields } = after;
+  b.updateObject(after.handle, patchOf(fields));
+  return true;
+}
+
+/**
+ * MATCHPROP's Center object (AutoCAD 2024 Help, "Property Settings Dialog Box": "Changes the
+ * center mark or centerline of the destination object to match those of the source"): the
+ * target's record with the source's cross size, gap, extension lines shown and extensions, or
+ * undefined when the setting is off or nothing changes. Between a center mark and a centerline
+ * only the extension goes over (the source's first, left or start, to each of the target's);
+ * the linetype and its scale are the Basic Properties' Ltype and Ltscale.
+ */
+export function matchedCenterMark(
+  source: CenterMark,
+  target: CenterMark,
+  on: boolean,
+): CenterMark | undefined {
+  if (!on) return undefined;
+  const next: CenterMark =
+    source.kind === target.kind
+      ? {
+          ...target,
+          extensions: [...source.extensions],
+          ...(target.kind === 'mark' && {
+            crossSize: source.crossSize,
+            crossGap: source.crossGap,
+            showExtensions: source.showExtensions,
+          }),
+        }
+      : { ...target, extensions: target.extensions.map(() => source.extensions[0] ?? 0) };
+  return JSON.stringify(next) === JSON.stringify(target) ? undefined : next;
 }
 
 const sameGeometry = (a: EntityGeometry, b: EntityGeometry): boolean =>
@@ -350,12 +457,17 @@ export function followCenterMarks(
       readonly updated?: readonly { readonly before: Entity; readonly after: Entity }[];
       readonly removed?: readonly { readonly entity: Entity }[];
     };
+    readonly objects?: { readonly updated?: readonly { readonly after: NonGraphicalObject }[] };
   }[],
 ): void {
   const updated = new Set<Handle>();
   const moved = new Set<Handle>();
   const removed = new Set<Handle>();
+  // Records the command changed itself (CENTERREASSOCIATE, CENTERRESET, MATCHPROP): their marks
+  // are where it drew them.
+  const redrawn = new Set<Handle>();
   for (const cs of changes) {
+    for (const u of cs.objects?.updated ?? []) redrawn.add(u.after.handle);
     for (const u of cs.entities?.updated ?? []) {
       updated.add(u.after.handle);
       if (!sameGeometry(u.before.geom, u.after.geom)) moved.add(u.after.handle);
@@ -363,8 +475,11 @@ export function followCenterMarks(
     for (const r of cs.entities?.removed ?? []) removed.add(r.entity.handle);
   }
   if (updated.size === 0 && removed.size === 0) return;
-  const work: { insert: Entity | undefined; r: CenterMark; act: 'remake' | 'erase' | 'drop' }[] =
-    [];
+  const work: {
+    insert: Entity | undefined;
+    r: CenterMark;
+    act: 'remake' | 'erase' | 'drop' | 'free';
+  }[] = [];
   for (const o of model.objects.values()) {
     if (!isCenterMark(o)) continue;
     const insert = model.entityByHandle(o.insert);
@@ -373,18 +488,22 @@ export function followCenterMarks(
       if (removed.has(o.insert)) work.push({ insert, r: o, act: 'drop' });
       continue;
     }
+    // A mark associated to nothing stays as it is whatever happens around it.
+    if (!isAssociated(o)) continue;
     if (o.objects.some((h) => removed.has(h) || !model.entityByHandle(h))) {
       if (o.objects.some((h) => removed.has(h))) work.push({ insert, r: o, act: 'erase' });
       continue;
     }
     if (o.objects.some((h) => moved.has(h))) work.push({ insert, r: o, act: 'remake' });
-    else if (moved.has(o.insert)) work.push({ insert, r: o, act: 'drop' });
+    else if (moved.has(o.insert) && !redrawn.has(o.handle)) {
+      work.push({ insert, r: o, act: 'free' });
+    }
   }
   if (work.length === 0) return;
   edit((b) => {
     for (const { insert, r, act } of work) {
       if (act === 'remake' && insert && remakeCenterMark(b, model, insert, r)) continue;
-      if (act === 'drop' && insert) {
+      if (act === 'free') {
         disassociateCenterMark(b, r);
         continue;
       }
@@ -396,8 +515,9 @@ export function followCenterMarks(
 
 /**
  * COPY gives each copy of a mark a block of its own (`copies`: original handle → copy), so that
- * drawing the original again leaves the copy be; a copy made with all its objects is a mark of
- * those copies, associative as the original is, and one made without them is a plain block.
+ * drawing the original again leaves the copy be, and a record of its own in a dictionary of its
+ * own: a copy made with all its objects is a mark of those copies, associative as the original
+ * is, and one made without them a mark associated to nothing.
  */
 export function copyCenterMarks(
   b: ChangeSetBuilder,
@@ -417,13 +537,13 @@ export function copyCenterMarks(
     }
     fillBlock(b, model, block.handle, segments);
     b.updateEntity(copy.id, { geom: { ...copy.geom, block: block.handle } });
-    if (!r.objects.every((h) => copies.has(h))) continue;
     const dictionary = b.allocateHandle();
     b.updateEntity(copy.id, { extDict: dictionary });
     const { handle: _h, owner: _o, insert: _i, ...fields } = r;
+    const all = isAssociated(r) && r.objects.every((h) => copies.has(h));
     b.addObject({
       ...fields,
-      objects: r.objects.map((h) => copies.get(h)!.handle),
+      objects: all ? r.objects.map((h) => copies.get(h)!.handle) : [],
       owner: dictionary,
       insert: copy.handle,
     } as Omit<CenterMark, 'handle'>);

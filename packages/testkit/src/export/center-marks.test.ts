@@ -226,6 +226,40 @@ describe('center marks and centerlines', () => {
     expect(records).toHaveLength(2);
   });
 
+  it('CENTERDISASSOCIATE and a copy made alone save as a mark let go; CENTERREASSOCIATE saves the record again (M4-08 part 3)', async () => {
+    // Made and disassociated in one session, and a copy of it made alone: each keeps an empty
+    // extension dictionary, as DEC-066 item 3 saves a mark let go of.
+    const a = await marked();
+    const mark = a.inserts().find((e) => e.geom.kind === 'INSERT' && e.geom.position.x === 50)!;
+    a.pickIds(mark.id);
+    await a.bus.script(['CENTERDISASSOCIATE', '0,0', '']);
+    a.pickIds(mark.id);
+    await a.bus.script(['COPY', '0,0', '', '0,0', '0,-100', '']);
+    const saved = a.save();
+    const doc = readCadDocument(saved);
+    const plain = savedInserts(saved).filter((i) => i.insertPoint.x === 50);
+    expect(plain.map((i) => i.insertPoint.y).sort()).toEqual([-50, 50]);
+    for (const i of plain) {
+      expect(recordGroups(i)).toBeUndefined();
+      expect(i.xDictionary).toBeInstanceOf(CadDictionary);
+    }
+    expect([...doc.getCadObjects()].filter((o) => o instanceof XRecord)).toHaveLength(1);
+    expect(roundTrip(saved).status).toBe('clean');
+    // Saved, reopened and disassociated: the record leaves the dictionary; reassociated, it is
+    // written again, naming the circle.
+    const b = open((await marked()).save());
+    const old = b.inserts().find((e) => e.geom.kind === 'INSERT' && e.geom.position.x === 50)!;
+    b.pickIds(old.id);
+    await b.bus.script(['CENTERDISASSOCIATE', '0,0', '']);
+    expect(savedInserts(b.save()).filter((i) => recordGroups(i) !== undefined)).toHaveLength(1);
+    b.pickIds(old.id, b.model.entityByHandle(source.circle)!.id);
+    await b.bus.script(['CENTERREASSOCIATE', '0,0', '0,0']);
+    expect(b.bus.command).toBeUndefined();
+    const again = savedInserts(b.save()).find((i) => i.insertPoint.x === 50)!;
+    const groups = recordGroups(again)!;
+    expect(handleOf(groups.find((g) => g.code === 331)!.value)).toBe(source.circle);
+  });
+
   it('a record of another version stays as read, and its mark is a plain block reference', async () => {
     const doc = readCadDocument((await marked()).save());
     for (const o of [...doc.getCadObjects()]) {
