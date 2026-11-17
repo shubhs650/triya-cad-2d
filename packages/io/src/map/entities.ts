@@ -11,6 +11,7 @@ import type {
 } from '@node-projects/acad-ts';
 import {
   TableCellStateFlags,
+  XRecord,
   CadValueType,
   AnnotScaleObjectContextData,
   CadDictionary,
@@ -124,10 +125,12 @@ import type {
   PolylineVertex,
   Transparency,
   Vec2,
+  TableBreaks,
 } from '@triya/engine';
 import { HATCH_BACKGROUND_APP, backgroundColorOf, tableRowTypes } from '@triya/engine';
 import { cellStyleMapOf, tableStyleRows, userCellStylesOf } from './styles';
-import { roundTripTableContent } from './table-content';
+import { ROUNDTRIP_DICTIONARY_KEY, ROUNDTRIP_TABLE, roundTripTableContent } from './table-content';
+import { dwgTableBreaks, recordBreaks } from './table-breaks';
 import { regionBoundary } from '../acis/region';
 import { readSab, readSat } from '../acis/records';
 import { fieldTree, textField } from './fields';
@@ -1192,6 +1195,7 @@ function tableGeometry(
     styledBy?.rows ?? t.rows,
     cellLocks(styledBy?.rows ?? t.rows, styledBy ? contentBorders(styledBy, cells) : cells),
   );
+  const breaks = tableBreaks(t);
   return {
     kind: 'ACAD_TABLE',
     ...(style ? { style } : {}),
@@ -1203,8 +1207,29 @@ function tableGeometry(
     cells: styled.cells,
     ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
     ...(styled.rowStyles ? { rowStyles: styled.rowStyles } : {}),
+    ...(breaks ? { breaks } : {}),
     ...planar(pl, t.normal, t.insertPoint.z, 0),
   };
+}
+
+/**
+ * A table's break settings (M4-16 part 10): a DWG from R2010's break data, or the break data of a
+ * DXF table's round-trip record. A DXF table AutoCAD broke into parts is written as an ACAD_TABLE
+ * per part, the record naming the others (`continued`) and this one's legacy codes holding its
+ * own rows only: it maps as those rows, unbroken, as before (joining the parts into one table is
+ * post-launch work, ROADMAP M4-33).
+ */
+function tableBreaks(t: TableEntity): TableBreaks | undefined {
+  const height = t.rows.reduce((s, r) => s + r.height, 0);
+  const dwg = dwgTableBreaks(t, height);
+  if (dwg) return dwg;
+  const record = t.xDictionary?.getEntry(ROUNDTRIP_DICTIONARY_KEY);
+  if (!(record instanceof XRecord)) return undefined;
+  const [first, second] = record.entries;
+  if (first?.code !== 102 || first.value !== ROUNDTRIP_TABLE || second?.code !== 360)
+    return undefined;
+  const read = recordBreaks(record.entries, height);
+  return read && read.continued === 0 ? read.breaks : undefined;
 }
 
 /**

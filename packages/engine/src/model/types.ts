@@ -1133,6 +1133,46 @@ export interface TableGeometry extends PlanarProps {
   readonly rowOrigins?: readonly (number | null)[];
   /** `rowOrigins` for the columns (Insert Columns and Delete Columns). */
   readonly columnOrigins?: readonly (number | null)[];
+  /**
+   * The table's break settings (M4-16 part 10): the Properties palette's Table Breaks and the
+   * table breaking grip. Absent when the file states none (a DWG's has-break-data 0, a DXF
+   * round-trip record laid out as version 2).
+   */
+  readonly breaks?: TableBreaks;
+}
+
+/**
+ * How a table breaks into parts (M4-16 part 10, AutoCAD 2024 Help "Table Breaks" in the
+ * Properties palette): with `enabled`, the rows go into parts no higher than `height`, laid out
+ * `direction` from the first, `spacing` apart, the title and header rows repeated at the top of
+ * each part (`repeatTop`; `repeatBottom` in a table that flows up, whose labels are at the
+ * bottom). AcDbTable's break option flags, flow direction, spacing and break heights (ODA spec
+ * TABLE, R2010+).
+ */
+export interface TableBreaks {
+  readonly enabled: boolean;
+  readonly direction: 'right' | 'left' | 'down';
+  readonly repeatTop: boolean;
+  readonly repeatBottom: boolean;
+  /** Each part after the first may be moved on its own (its `parts[k].offset`). */
+  readonly manualPositions: boolean;
+  /** Each part after the first may have a height of its own (its `parts[k].height`). */
+  readonly manualHeights: boolean;
+  /** The break height: the most a part holds (the first part's, and every part's by default). */
+  readonly height: number;
+  readonly spacing: number;
+  /**
+   * The parts' own settings, by part (index 0 the first part, which has none of its own): the
+   * offset of its origin from the insertion point (block coordinates) and its height. Kept while
+   * Manual positions or Manual heights is off, as AutoCAD keeps them.
+   */
+  readonly parts?: readonly (TableBreakPart | null)[];
+}
+
+/** A table part's own position and height (`TableBreaks.parts`). */
+export interface TableBreakPart {
+  readonly offset?: Vec2;
+  readonly height?: number;
 }
 
 /**

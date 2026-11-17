@@ -12,6 +12,8 @@ import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import { dynamicBlockOf } from '../model/dynamic-block';
 import { centerMarkOf, isAssociated } from '../edit/center-marks';
+import { defaultTableBreaks } from '../annotation/table-breaks';
+import { TABLE_BREAK_DIRECTIONS, TABLE_BREAK_FLAGS, type TableBreakFlag } from './table-breaks';
 import { dynamicProperties } from './dynamic';
 import type { EntityId } from '../model/entity-ids';
 import type {
@@ -1245,6 +1247,49 @@ function typeSections(
       add('Primary Units', group('Primary Units'));
       add('Alternate Units', group('Alternate Units'));
       add('Tolerances', group('Tolerances'));
+      break;
+    }
+    case 'ACAD_TABLE': {
+      // M4-16 part 10: AutoCAD 2024's Table Breaks rows. A table without break data shows the
+      // settings its breaking grip would start it on (`defaultTableBreaks`).
+      const b = (e: Entity) => {
+        const t = geomOf<'ACAD_TABLE'>(e);
+        return t.breaks ?? defaultTableBreaks(t);
+      };
+      const flag = (key: TableBreakFlag, label: string) =>
+        row(es, {
+          key,
+          label,
+          kind: 'choice',
+          options: YES_NO,
+          get: (e) => yesNo(b(e)[TABLE_BREAK_FLAGS[key]]),
+        });
+      add('Table Breaks', [
+        flag('breaksEnabled', 'Enabled'),
+        row(es, {
+          key: 'breaksDirection',
+          label: 'Direction',
+          kind: 'choice',
+          options: TABLE_BREAK_DIRECTIONS,
+          get: (e) => b(e).direction,
+        }),
+        flag('breaksRepeatTop', 'Repeat top labels'),
+        flag('breaksRepeatBottom', 'Repeat bottom labels'),
+        flag('breaksManualPositions', 'Manual positions'),
+        flag('breaksManualHeights', 'Manual heights'),
+        row(es, {
+          key: 'breaksHeight',
+          label: 'Break height',
+          kind: 'distance',
+          get: (e) => b(e).height,
+        }),
+        row(es, {
+          key: 'breaksSpacing',
+          label: 'Spacing',
+          kind: 'distance',
+          get: (e) => b(e).spacing,
+        }),
+      ]);
       break;
     }
     case 'TOLERANCE': {

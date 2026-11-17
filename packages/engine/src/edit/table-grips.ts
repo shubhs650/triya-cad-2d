@@ -4,8 +4,13 @@
 // its rows in proportion; the corner opposite both; and a grip at the top of each line between
 // two columns changes the width of the columns on either side, the table keeping its width ("only
 // the row or column adjacent to the grip you have selected will change. The table will maintain
-// its height or width"). Ctrl with a column grip, which resizes the table instead, and the table
-// breaking grip are not done yet.
+// its height or width"). Ctrl with a column grip resizes the table instead (M4-05 part 6).
+//
+// The table breaking grip (M4-16 part 10), a triangle in the middle of the far edge of each part
+// (the bottom, the top in a table that flows up), sets the break height, Table breaks enabled as
+// AutoCAD enables them when the grip is dragged; with Manual heights a part after the first takes
+// a height of its own. With Manual positions a grip at each such part's origin moves it. A broken
+// table has no height grips, its height being its parts'.
 //
 // A drag is read along the table's own axes. A row is not made lower than one line of its text
 // and its margins, nor a column narrower than its two margins (AutoCAD keeps a table's cells
@@ -14,7 +19,14 @@
 // measures text (the cell editor fits rows as text is typed).
 import type { Vec2 } from '../geom/types';
 import type { EntityGeometry, TableGeometry, TableStyleRecord } from '../model/types';
-import { rowCellStyle, tableCellBox, tableCellStyleNames, tableParts } from '../annotation/table';
+import {
+  rowCellStyle,
+  tableCellBox,
+  tableCellStyleNames,
+  tableParts,
+  tablePieces,
+} from '../annotation/table';
+import { defaultTableBreaks } from '../annotation/table-breaks';
 import { tableAxes } from '../spatial/entity-bounds';
 import { tableToPlan } from './table';
 
@@ -29,7 +41,11 @@ export type TableGripRole =
   | { readonly kind: 'size' }
   | { readonly kind: 'column'; readonly k: number }
   | { readonly kind: 'cellColumn'; readonly j: number; readonly start: boolean }
-  | { readonly kind: 'cellRow'; readonly i: number; readonly start: boolean };
+  | { readonly kind: 'cellRow'; readonly i: number; readonly start: boolean }
+  /** The table breaking grip of part `part` (M4-16 part 10). */
+  | { readonly kind: 'break'; readonly part: number }
+  /** The grip that moves part `part` (Manual positions). */
+  | { readonly kind: 'part'; readonly part: number };
 
 /** What a table's grips need of its table style: which way it flows and its sizes. */
 export type TableGripStyle = TableStyleRecord | undefined;
@@ -40,19 +56,37 @@ const sum = (a: readonly number[]) => a.reduce((s, x) => s + x, 0);
 export function tableGrips(
   g: TableGeometry,
   style: TableGripStyle,
-): { point: Vec2; role: TableGripRole }[] {
+): { point: Vec2; role: TableGripRole; towards?: Vec2 }[] {
   const w = sum(g.columnWidths);
-  const h = sum(g.rowHeights);
+  const up = style?.flowDirection === 1;
   if (g.columnWidths.length === 0 || g.rowHeights.length === 0) return [];
+  const pieces = tablePieces(g, style);
+  const heights = pieces.map((p) => sum(p.rows.map((i) => g.rowHeights[i]!)));
+  const h = heights[0]!;
   // The other edge of the rows: below the insertion point, above it in a table flowing up.
-  const across = style?.flowDirection === 1 ? h : -h;
-  const out: { point: Vec2; role: TableGripRole }[] = [
+  const across = up ? h : -h;
+  const out: { point: Vec2; role: TableGripRole; towards?: Vec2 }[] = [
     { point: tableToPlan(g, { x: w, y: 0 }), role: { kind: 'width' } },
-    { point: tableToPlan(g, { x: 0, y: across }), role: { kind: 'height' } },
-    { point: tableToPlan(g, { x: w, y: across }), role: { kind: 'size' } },
   ];
+  if (pieces.length === 1) {
+    out.push(
+      { point: tableToPlan(g, { x: 0, y: across }), role: { kind: 'height' } },
+      { point: tableToPlan(g, { x: w, y: across }), role: { kind: 'size' } },
+    );
+  }
+  // The breaking grips point away from the labels, along the table's y axis.
+  const o = tableToPlan(g, { x: 0, y: 0 });
+  const y1 = tableToPlan(g, { x: 0, y: up ? 1 : -1 });
+  const towards = { x: y1.x - o.x, y: y1.y - o.y };
+  pieces.forEach((p, k) => {
+    const far = { x: p.offset.x + w / 2, y: p.offset.y + (up ? heights[k]! : -heights[k]!) };
+    out.push({ point: tableToPlan(g, far), role: { kind: 'break', part: k }, towards });
+    if (k > 0 && g.breaks?.manualPositions) {
+      out.push({ point: tableToPlan(g, p.offset), role: { kind: 'part', part: k } });
+    }
+  });
   // The column grips along the top edge: where the rows start, the bottom in a table flowing up.
-  const top = style?.flowDirection === 1 ? h : 0;
+  const top = up ? h : 0;
   let x = 0;
   for (let k = 1; k < g.columnWidths.length; k++) {
     x += g.columnWidths[k - 1]!;
@@ -190,9 +224,41 @@ export function movedTableGrip(
     rowHeights = heights.map((v, i) => (i === role.i ? h + grown : v));
     if (role.start) position = tableToPlan(g, { x: 0, y: -grown * along });
   }
+  if (role.kind === 'break' || role.kind === 'part') return movedBreak(g, style, role, dx, dy);
   const same = (p: readonly number[], q: readonly number[]) => p.every((v, i) => v === q[i]);
   if (same(columnWidths, widths) && same(rowHeights, heights)) return undefined;
   return { ...g, position, columnWidths, rowHeights };
+}
+
+/** A breaking or part grip of table `g` dragged by (`dx`, `dy`) along the table's axes. */
+function movedBreak(
+  g: TableGeometry,
+  style: TableGripStyle,
+  role: { readonly kind: 'break' | 'part'; readonly part: number },
+  dx: number,
+  dy: number,
+): TableGeometry | undefined {
+  const pieces = tablePieces(g, style);
+  const piece = pieces[role.part];
+  if (!piece || (dx === 0 && dy === 0)) return undefined;
+  const b = g.breaks ?? defaultTableBreaks(g);
+  const parts = [...(b.parts ?? [])];
+  while (parts.length <= role.part) parts.push(null);
+  if (role.kind === 'part') {
+    if (role.part === 0) return undefined;
+    const offset = { x: piece.offset.x + dx, y: piece.offset.y + dy };
+    parts[role.part] = { ...parts[role.part], offset };
+    return { ...g, breaks: { ...b, parts } };
+  }
+  const now = sum(piece.rows.map((i) => g.rowHeights[i]!));
+  // Dragged towards the labels the part gets lower; it holds at least its labels and a row.
+  const lowest = sum(piece.rows.slice(0, piece.labels + 1).map((i) => g.rowHeights[i]!));
+  const height = Math.max(now + (style?.flowDirection === 1 ? dy : -dy), lowest);
+  if (role.part > 0 && b.manualHeights) {
+    parts[role.part] = { ...parts[role.part], height };
+    return { ...g, breaks: { ...b, enabled: true, parts } };
+  }
+  return { ...g, breaks: { ...b, enabled: true, height } };
 }
 
 /**

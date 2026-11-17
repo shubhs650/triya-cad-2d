@@ -270,10 +270,11 @@ export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
     case 'ACAD_TABLE':
       return [
         g(geom.position, 'move'),
-        ...tableGrips(geom, tableStyleOf(info)).map(({ point, role }): Grip => ({
+        ...tableGrips(geom, tableStyleOf(info)).map(({ point, role, towards }): Grip => ({
           point,
           kind: 'table',
           table: role,
+          ...(towards && { towards }),
         })),
       ];
     case 'INSERT':

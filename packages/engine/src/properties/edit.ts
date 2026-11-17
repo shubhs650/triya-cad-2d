@@ -9,6 +9,8 @@
 import { parseAngleValue, parseDistance, parseNumber } from '../commands/parse';
 import { moveBy, turnAbout } from '../edit/similarity';
 import { dissociateHatch, transformObjects } from '../edit/edit';
+import { writeTableBlock } from '../edit/table';
+import { tableBreakChange } from './table-breaks';
 import { rescaledReference } from '../edit/transform';
 import { centerMarkOf, redrawCenterMark } from '../edit/center-marks';
 import { isCenterLength } from '../edit/center-settings';
@@ -198,6 +200,10 @@ function typeRowChange(
 ): Change | undefined | 'invalid' {
   const g = e.geom;
   if (g.kind === 'HATCH') return hatchChange(e.id, g, key, v, patterns);
+  // M4-16 part 10: a table's Table Breaks rows.
+  const broken = tableBreakChange(e, key, v);
+  if (broken === 'invalid') return 'invalid';
+  if (broken) return geomPatch(broken);
   if (g.kind === 'MULTILEADER') {
     // M2-35 part 28: another Multileader style.
     const restyled = multiLeaderStyleChange(model, e, key, v, widths);
@@ -868,6 +874,8 @@ export function applyPropertyEdit(
     if ('patch' in c) {
       if (same(c.patch.geom, e.geom)) continue;
       b.updateEntity(e.id, c.patch);
+      // A table drawn in parts another way (Table Breaks): its block is drawn again.
+      if (c.patch.geom?.kind === 'ACAD_TABLE') writeTableBlock(b, model, e.id);
       changed++;
     } else if ('move' in c) {
       if (c.move.x === 0 && c.move.y === 0) continue;

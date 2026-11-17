@@ -50,6 +50,7 @@ import type {
   MTextGeometry,
 } from '../model/types';
 import type { AnnotationPart } from './multileader';
+import { breakPieces, pieceGeometry, type TablePiece } from './table-breaks';
 
 /** MTEXT format codes running to a `;` (AutoCAD's MTEXT format codes reference). */
 const MTEXT_ARGUMENT_CODES = new Set('AaCcFfHhQqTtWwpSs');
@@ -441,6 +442,17 @@ export function tableCellAt(
   style: TableStyleRecord | undefined,
   p: Vec2,
 ): [number, number] | undefined {
+  const pieces = tablePieces(g, style);
+  if (pieces.length > 1) {
+    // A broken table: the part `p` falls in, read as a table of its rows.
+    const types = tableRowStyles(g, style);
+    for (const piece of pieces) {
+      const local = { x: p.x - piece.offset.x, y: p.y - piece.offset.y };
+      const hit = tableCellAt(pieceGeometry(g, types, piece.rows), style, local);
+      if (hit) return [piece.rows[hit[0]]!, hit[1]];
+    }
+    return undefined;
+  }
   const l = rowLayout(g, style);
   const j = l.xs.findIndex((x, k) => k < l.columns && p.x >= x && p.x <= l.xs[k + 1]!);
   const i = [...Array(l.rows).keys()].find((k) => p.y >= l.yBottom(k) && p.y <= l.yTop(k));
@@ -454,6 +466,16 @@ export function tableCellBox(
   style: TableStyleRecord | undefined,
   r: { readonly r0: number; readonly c0: number; readonly r1: number; readonly c1: number },
 ): Box {
+  const broken = pieceOf(g, style, r.r0);
+  if (broken) {
+    // The rows of the range in the part its first row is drawn in.
+    const { geom, piece, at } = broken;
+    let end = at;
+    while (end + 1 < piece.rows.length && piece.rows[end + 1]! <= r.r1) end++;
+    const b = tableCellBox(geom, style, { ...r, r0: at, r1: end });
+    const d = piece.offset;
+    return { minX: b.minX + d.x, maxX: b.maxX + d.x, minY: b.minY + d.y, maxY: b.maxY + d.y };
+  }
   const l = rowLayout(g, style);
   return {
     minX: l.xs[r.c0]!,
@@ -496,6 +518,11 @@ export function tableCellText(
   j: number,
   text?: string,
 ): MTextGeometry {
+  const broken = pieceOf(g, style, i);
+  if (broken) {
+    const t = tableCellText(broken.geom, style, drawing, broken.at, j, text);
+    return movedText(t, broken.piece.offset);
+  }
   const l = rowLayout(g, style);
   return cellMText(g, style, drawing, l, rangeOf(g, l, i, j), text);
 }
@@ -513,6 +540,15 @@ export function tableFieldTexts(
   drawing: TableDrawing,
 ): MTextGeometry[] {
   if (!g.cells.some((row) => row.some((c) => c.field !== undefined))) return [];
+  const pieces = tablePieces(g, style);
+  if (pieces.length > 1) {
+    const types = tableRowStyles(g, style);
+    return pieces.flatMap((p) =>
+      tableFieldTexts(pieceGeometry(g, types, p.rows), style, drawing).map((t) =>
+        movedText(t, p.offset),
+      ),
+    );
+  }
   const l = rowLayout(g, style);
   const out: MTextGeometry[] = [];
   g.cells.forEach((row, i) =>
@@ -530,6 +566,79 @@ export function tableFieldTexts(
  * with `style`, the table's table style.
  */
 export function tableParts(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  drawing: TableDrawing,
+): TablePart[] {
+  const pieces = tablePieces(g, style);
+  if (pieces.length === 1) return wholeParts(g, style, drawing);
+  // A broken table (M4-16 part 10): each part drawn as a table of its rows, moved to its place;
+  // the block's one defpoint line stays at the insertion point.
+  const types = tableRowStyles(g, style);
+  const out: TablePart[] = [];
+  let defpoint: TablePart | undefined;
+  for (const p of pieces) {
+    for (const part of wholeParts(pieceGeometry(g, types, p.rows), style, drawing)) {
+      if (part.defpoint) defpoint = part;
+      else out.push({ ...part, geom: moved(part.geom, p.offset) });
+    }
+  }
+  if (defpoint) out.push(defpoint);
+  return out;
+}
+
+/** The parts table `g` is drawn as (M4-16 part 10): one, of every row, unless it is broken. */
+export function tablePieces(g: TableGeometry, style: TableStyleRecord | undefined): TablePiece[] {
+  return breakPieces(g, tableRowStyles(g, style), style?.flowDirection === 1);
+}
+
+/** A table part's geometry moved by `d` (the kinds `wholeParts` draws). */
+function moved(geom: TablePart['geom'], d: Vec2): TablePart['geom'] {
+  const at = (p: Vec2): Vec2 => ({ x: p.x + d.x, y: p.y + d.y });
+  switch (geom.kind) {
+    case 'LINE':
+      return { ...geom, start: at(geom.start), end: at(geom.end) };
+    case 'SOLID':
+      return {
+        ...geom,
+        corners: [
+          at(geom.corners[0]),
+          at(geom.corners[1]),
+          at(geom.corners[2]),
+          at(geom.corners[3]),
+        ],
+      };
+    case 'MTEXT':
+    case 'INSERT':
+      return { ...geom, position: at(geom.position) };
+    default:
+      return geom;
+  }
+}
+
+/**
+ * The part of a broken table that row `i` is drawn in (its first, for the labels repeated in
+ * every part) and its place in that part; undefined for a table drawn whole.
+ */
+function pieceOf(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  i: number,
+): { geom: TableGeometry; piece: TablePiece; at: number } | undefined {
+  const pieces = tablePieces(g, style);
+  if (pieces.length === 1) return undefined;
+  const piece = pieces.find((p) => p.rows.includes(i)) ?? pieces[0]!;
+  const geom = pieceGeometry(g, tableRowStyles(g, style), piece.rows);
+  return { geom, piece, at: Math.max(0, piece.rows.indexOf(i)) };
+}
+
+/** An MTEXT of a part moved to the part's place. */
+const movedText = (t: MTextGeometry, d: Vec2): MTextGeometry => ({
+  ...t,
+  position: { x: t.position.x + d.x, y: t.position.y + d.y },
+});
+
+function wholeParts(
   g: TableGeometry,
   style: TableStyleRecord | undefined,
   drawing: TableDrawing,

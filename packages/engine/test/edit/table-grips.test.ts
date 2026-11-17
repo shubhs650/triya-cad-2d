@@ -45,12 +45,14 @@ const shape = (r: ReturnType<typeof moveGrip>) =>
   r.kind === 'shape' && r.geom.kind === 'ACAD_TABLE' ? r.geom : undefined;
 
 describe('a table’s grips', () => {
-  it('are its insertion point, the corners and the tops of the lines between columns', () => {
+  it('are its insertion point, the corners, its breaking grip and the tops of the lines between columns', () => {
     expect(gripsOf(table(), info).map((g) => [g.point, g.kind, g.table?.kind])).toEqual([
       [{ x: 10, y: 20 }, 'move', undefined],
       [{ x: 16, y: 20 }, 'table', 'width'],
       [{ x: 10, y: 18.5 }, 'table', 'height'],
       [{ x: 16, y: 18.5 }, 'table', 'size'],
+      // The table breaking grip (M4-16 part 10), in the middle of the bottom edge.
+      [{ x: 13, y: 18.5 }, 'table', 'break'],
       [{ x: 11, y: 20 }, 'table', 'column'],
       [{ x: 13, y: 20 }, 'table', 'column'],
     ]);
@@ -65,6 +67,7 @@ describe('a table’s grips', () => {
       { x: 16, y: 20 },
       { x: 10, y: 21.5 },
       { x: 16, y: 21.5 },
+      { x: 13, y: 21.5 },
       { x: 11, y: 21.5 },
       { x: 13, y: 21.5 },
     ]);

@@ -1,6 +1,6 @@
 // The cell editor's added row saved (M4-05 part 2), rows and columns inserted and deleted and
 // cells merged (part 3), cells formatted, grips dragged and the table scaled (part 4), cell grips
-// dragged, Ctrl with a column grip and a spreadsheet's cells pasted into cells (part 6, M4-13), Match Cell and Remove All Property Overrides (part 7): Tab in a table's last cell adds a row, which
+// dragged, Ctrl with a column grip and a spreadsheet's cells pasted into cells (part 6, M4-13), Match Cell and Remove All Property Overrides (part 7), table breaks (M4-16 part 10): Tab in a table's last cell adds a row, which
 // the save writes as an inserted row (`rowOrigins`, DEC-046), for a table made in the drawing
 // (-TABLE) and for one the drawing came with (acadsharp's AC1032 sample table A35). The drawing
 // is saved as AC1032 DXF (DEC-047) and read back: the table is as edited.
@@ -15,6 +15,8 @@ import {
   tableCellText,
   tableDataFormatOf,
   tableDrawingOf,
+  tableGrips,
+  tablePieces,
   tableToPlan,
   type Entity,
   type EntityId,
@@ -1088,5 +1090,79 @@ describe('border linetypes, double lines and hidden borders (M4-16 part 7)', () 
       double: true,
     });
     expect(borders(saved(bytes, model, table.handle))).toEqual(borders(g));
+  });
+});
+
+describe('table breaks (M4-16 part 10)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+
+  /**
+   * Picks table `id` on its left edge, drags its breaking grip up to below its first data row
+   * (Table breaks enabled at that height), then sets Repeat top labels, Direction Down and a
+   * spacing in the Properties palette, as a drafter would.
+   */
+  async function edit(model: DocumentModel, id: () => EntityId) {
+    let picked: EntityId[] = [];
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) =>
+          Promise.resolve(
+            r.op === 'pick' ? { ok: true, ids: picked } : { ok: false, message: 'no view' },
+          ),
+      },
+    });
+    const g = () => (model.entity(id()) as Table).geom;
+    const style = () => model.tables.tableStyles.get(g().style!);
+    const box = tableCellBox(g(), style(), { r0: 0, c0: 0, r1: 0, c1: 0 });
+    picked = [id()];
+    await bus.pick(tableToPlan(g(), { x: 0, y: (box.minY + box.maxY) / 2 }), { grip: 1e-6 });
+    picked = [];
+    const grip = tableGrips(g(), style()).find((x) => x.role.kind === 'break')!.point;
+    const labels = g().rowHeights[0]! + g().rowHeights[1]! + g().rowHeights[2]!;
+    const total = g().rowHeights.reduce((s, h) => s + h, 0);
+    await bus.pick(grip, { grip: 1e-6 });
+    expect(bus.command).toBe('GRIP');
+    const up = tableToPlan(g(), { x: 0, y: total - labels - 1e-3 });
+    const at = tableToPlan(g(), { x: 0, y: 0 });
+    await bus.pick({ x: grip.x + up.x - at.x, y: grip.y + up.y - at.y });
+    expect(g().breaks).toMatchObject({ enabled: true });
+    await bus.setProperty({ key: 'breaksRepeatTop', value: 'yes' }, 'ACAD_TABLE');
+    await bus.setProperty({ key: 'breaksDirection', value: 'down' }, 'ACAD_TABLE');
+    await bus.setProperty({ key: 'breaksSpacing', value: '0.25' }, 'ACAD_TABLE');
+    expect(bus.promptText).toBe('Command:');
+    return g();
+  }
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '3', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', '1', '2', '3', '4', '5', '6']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const g = await edit(model, () => made.id);
+    const style = model.tables.tableStyles.get(g.style!);
+    expect(g.breaks).toMatchObject({ repeatTop: true, direction: 'down', spacing: 0.25 });
+    expect(tablePieces(g, style).map((p) => p.rows)).toEqual([
+      [0, 1, 2],
+      [0, 1, 3],
+      [0, 1, 4],
+    ]);
+    expect(saved(bytes, model, made.handle).breaks).toEqual(g.breaks);
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    expect(table.geom.breaks).toBeUndefined();
+    const g = await edit(model, () => table.id);
+    expect(tablePieces(g, model.tables.tableStyles.get(g.style!)).length).toBeGreaterThan(1);
+    expect(saved(bytes, model, table.handle).breaks).toEqual(g.breaks);
   });
 });
