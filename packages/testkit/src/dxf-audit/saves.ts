@@ -27,7 +27,9 @@ export type AuditSaveKind =
   // of the xref set's parent, both bind types (M5-04 part 2).
   | 'bind'
   | 'bind-insert'
-  | 'bind-objects';
+  | 'bind-objects'
+  // XCLIP's options on ezdxf's xclip.dxf, a corpus file saved by a testkit suite (M5-04 part 3).
+  | 'xclip';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version
