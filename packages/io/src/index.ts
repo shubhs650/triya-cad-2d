@@ -23,6 +23,7 @@ export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/ent
 export { mapSortEnts } from './map/sortents';
 export { mapTriyaArrays, TRIYA_ARRAY } from './map/triya-array';
 export { mapTriyaDims, TRIYA_DIMBREAK, TRIYA_DIMINSPECT } from './map/triya-dims';
+export { mapTriyaCenterMarks, TRIYA_CENTERMARK } from './map/triya-centermarks';
 export { mapLayouts, mapPageSetups } from './map/layouts';
 export { mapImageObjects, type ImageObject } from './map/images';
 export {
