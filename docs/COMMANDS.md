@@ -166,7 +166,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | LAYOFF / LAYON / LAYFRZ / LAYTHW / LAYLCK / LAYULK | — | 2 | | ~ (#501, M5-06 part 1: LAYOFF and LAYFRZ take the layer of each object picked until Enter, with Undo and Settings' paper space viewport choice; the current layer is turned off after a Yes and never frozen; LAYON and LAYTHW turn on and thaw every layer; LAYLCK and LAYULK lock and unlock the layer of one object picked. Each is one undo step. Picks of objects nested in blocks and xrefs (Settings' Block selection) wait for part 2) |
 | LAYMCUR / LAYMCH / LAYCUR | — | 2 | | ~ (#501, M5-06 part 1: LAYMCUR makes the layer of the object picked current; LAYCUR moves the objects selected to the current layer, LAYMCH to the layer of an object picked or, with Name, of a layer typed (the Change to Layer dialog waits for part 2); objects on locked layers are left alone) |
 | LAYWALK / LAYERP / LAYDEL / LAYMRG | — | 2 | | |
-| LAYERSTATE | LAS | 2 | | |
+| LAYERSTATE | LAS | 2 | Layer States Manager | ~ (M5-07 part 1, #503): the engine's New, Restore (with "Turn off layers not found in layer state"), Edit, Rename, Delete and Import of a `.las` file (session edits `layer-state-*`, one LAYERSTATE undo step each), `.las` Export (io `writeLas`), states saved in the drawing's `ACAD_LAYERSTATES` (DEC-072); the Layer States Manager dialog and LAYERSTATE command wait for part 2 |
 | LAYVPI / VPLAYER | — | 2 | | |
 | LINETYPE | LT | 2 | dialog + -LINETYPE | |
 | LTSCALE / CELTSCALE / PSLTSCALE / MSLTSCALE | LTS | 2 | sysvars | |
