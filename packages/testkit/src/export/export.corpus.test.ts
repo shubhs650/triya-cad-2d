@@ -69,6 +69,7 @@ import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
+import { withTableRecords } from '../tables/table-records.ts';
 import { cellStyleMapProblems } from '../mapping/cell-style-map.ts';
 import { saveAc1032Dxf, writeAuditSave } from '../dxf-audit/saves.ts';
 
@@ -1094,6 +1095,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
           const handle = Number.parseInt(h, 16);
           if (!original.getCadObject(handle)) ignoreHandles.add(handle);
         }
+        // An edited table's AutoCAD 2008 data is written again with it (M4-30).
+        withTableRecords(original, ignoreHandles);
         for (const h of [...ignoreHandles]) {
           const o = original.getCadObject(h);
           if (o instanceof Polyline) for (const v of o.vertices) ignoreHandles.add(v.handle);
@@ -1346,6 +1349,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
             Number.parseInt(h, 16),
           ),
         );
+        // An edited table's AutoCAD 2008 data is written again with it (M4-30).
+        withTableRecords(original, ignoreHandles);
         for (const h of [...ignoreHandles]) {
           const o = original.getCadObject(h);
           if (o instanceof Polyline) for (const v of o.vertices) ignoreHandles.add(v.handle);
