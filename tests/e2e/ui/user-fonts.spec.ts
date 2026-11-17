@@ -8,7 +8,14 @@ import path from 'node:path';
 import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
-import { expectShown, inkWeight, openWithDrop, openWithPicker } from '../app/page';
+import {
+  activeCanvas,
+  expectDrawn,
+  expectShown,
+  inkWeight,
+  openWithDrop,
+  openWithPicker,
+} from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -26,14 +33,25 @@ const FILLED = 400_000;
 async function openDrawing(page: Page): Promise<number> {
   await openWithPicker(page, DRAWING);
   await expectShown(page, 'hatch_text_box_in_hole.dxf');
+  // M4-27: `expectShown` passes on the navigation bar over a canvas the render worker has not
+  // drawn yet, and a first frame slower than the two looks below made the blank canvas the
+  // stand-in's ink (about an eighth of the hatch's), so the check after Remove failed.
+  await expectDrawn(page);
   // The drawing opens in its saved view (M1-22 part 3), where the magenta hatch reaches the
   // window's top and bottom, so the status line shrinking the canvas would cut hatch rows off
   // and the ink would drop whatever the font did. Zoom Extents leaves a margin round it.
+  const canvas = activeCanvas(page);
+  const zoomed = canvas.evaluate(
+    (c) =>
+      new Promise<void>((done) => c.addEventListener('framedrawn', () => done(), { once: true })),
+  );
   await page
     .getByRole('toolbar', { name: 'Navigation' })
     .getByRole('button', { name: 'Zoom Extents', exact: true })
     .click();
-  // The zoomed frame draws in the render worker: wait until two looks agree.
+  await zoomed;
+  // The zoomed view may settle over a few frames (and again once the text is measured): wait
+  // until two looks agree.
   let last = -1;
   let now = await inkWeight(page);
   while (now !== last) {

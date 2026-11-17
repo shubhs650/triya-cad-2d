@@ -178,7 +178,11 @@ export type CommandInput =
       /** What a relative point (`@`) in it counts from, where not the last point (M2-71). */
       readonly relativeTo?: Vec2;
     }
-  | { readonly kind: 'answer'; readonly answer: PromptAnswer }
+  /**
+   * A prompt's answer; a `seq` asks for a `read` output once it has been handled, as for `submit`:
+   * the in-place text editors number theirs (M4-31), so keys typed after them wait.
+   */
+  | { readonly kind: 'answer'; readonly answer: PromptAnswer; readonly seq?: number }
   /** Esc; a `seq` asks for a `read` output once it has been handled, as for `submit` (M2-71). */
   | { readonly kind: 'cancel'; readonly seq?: number }
   | { readonly kind: 'invoke'; readonly name: string }
@@ -279,9 +283,9 @@ export type CommandOutput =
   | { readonly type: 'commit'; readonly command: string }
   | { readonly type: 'change'; readonly change: ChangeSet }
   /**
-   * The submit numbered `seq` has been handled: the prompt it led to, `Command:` or a dialog's
-   * wait has been said already (M2-47 part 3). Until then the command line cannot tell whether
-   * a space typed is text or Enter, so it holds the keys typed ahead for that prompt.
+   * The submit, Esc or answer numbered `seq` has been handled: the prompt it led to, `Command:`
+   * or a dialog's wait has been said already (M2-47 part 3). Until then the command line cannot tell
+   * whether a space typed is text or Enter, so it holds the keys typed ahead for that prompt.
    */
   | { readonly type: 'read'; readonly seq: number }
   /**
@@ -443,9 +447,13 @@ export class EngineSession {
         if (seq === undefined) return done;
         return done.finally(() => this.#emit({ type: 'read', seq }));
       }
-      case 'answer':
+      case 'answer': {
         if (input.answer.kind === 'point') this.#bus.pointer(input.answer.point);
-        return this.#bus.answer(input.answer);
+        const done = this.#bus.answer(input.answer);
+        const seq = input.seq;
+        if (seq === undefined) return done;
+        return done.finally(() => this.#emit({ type: 'read', seq }));
+      }
       case 'cancel': {
         const done = this.#bus.cancel();
         const seq = input.seq;
