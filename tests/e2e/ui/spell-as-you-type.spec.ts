@@ -108,6 +108,38 @@ test('TEXT underlines a misspelled word and a right-click corrects it', async ({
   await expect.poll(() => texts(page)).toEqual(['SEE DIMENSION NOTTE']);
 });
 
+test('the spelling menu takes keys typed before its suggestions are in', async ({ page }) => {
+  // A drafter's Shift+F10, Up, Enter comes faster than the spelling worker's suggestions
+  // (found by M4-19's CI): the menu holds the focus from the moment it opens, so Up reaches
+  // Ignore All instead of the text line, and the suggestions arriving later leave it there.
+  test.setTimeout(120_000);
+  await open(page);
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '1000020,1000060', 'Specify height <2.5000>:');
+  await type(page, '5', /Specify rotation angle of text/);
+  await type(page, '', 'Enter text:');
+  const line = page.getByRole('textbox', { name: 'Text' });
+  await expect(line).toBeFocused();
+  const underlined = page.locator('.text-line-spelling .spell-error');
+  await page.keyboard.type('SEE NOTTE ');
+  await expect(underlined).toHaveText(['NOTTE']);
+
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('ArrowUp');
+  const ignoreAll = page.getByRole('menuitem', { name: 'Ignore All' });
+  await expect(ignoreAll).toBeFocused();
+  // The suggestions come in under it.
+  await expect(page.getByRole('menuitem', { name: 'NOTE', exact: true })).toBeVisible();
+  await expect(ignoreAll).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(underlined).toHaveCount(0);
+  await expect(line).toHaveValue('SEE NOTTE ');
+  await expect(line).toBeFocused();
+});
+
 test('MTEXT underlines misspelled words, learns words and turns the check off', async ({
   page,
 }) => {
