@@ -50,7 +50,7 @@ describe('mapImageObjects', () => {
   it('maps IMAGEFRAME, IMAGEQUALITY and WIPEOUTFRAME', () => {
     const doc = drawing();
     const raster = new RasterVariables('ACAD_IMAGE_VARS');
-    raster.isDisplayFrameShown = false;
+    raster.isDisplayFrameShown = 2;
     raster.displayQuality = 0;
     raster.units = 1;
     const wipeout = new WipeoutVariables('ACAD_WIPEOUT_VARS');
@@ -64,7 +64,8 @@ describe('mapImageObjects', () => {
         expect.objectContaining({
           handle: H(raster),
           type: 'RASTERVARIABLES',
-          frame: false,
+          // IMAGEFRAME 2, displayed but not plotted (acad-ts patch 0188).
+          frame: 2,
           quality: 'draft',
           units: 1,
         }),

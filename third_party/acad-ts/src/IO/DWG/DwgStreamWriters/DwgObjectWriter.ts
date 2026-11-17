@@ -4953,7 +4953,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 
 	private _writeRasterVariables(vars: RasterVariables): void {
 		this._writer.writeBitLong(vars.classVersion);
-		this._writer.writeBitShort(vars.isDisplayFrameShown ? 1 : 0);
+		this._writer.writeBitShort(vars.isDisplayFrameShown);
 		this._writer.writeBitShort(vars.displayQuality);
 		this._writer.writeBitShort(vars.units);
 	}

@@ -31,8 +31,8 @@ import {
 /**
  * IMAGEFRAME and WIPEOUTFRAME (RASTERVARIABLES / WIPEOUTVARIABLES DXF 70): whether frames are
  * drawn. AutoCAD's initial value of both is 1 (shown), which a drawing without the objects keeps.
- * WIPEOUTFRAME 2 ("displayed but not plotted") is shown on screen and off in a plot
- * (`imageFrames`); IMAGEFRAME 2 still reads as shown (acad-ts keeps it on or off).
+ * IMAGEFRAME and WIPEOUTFRAME 2 ("displayed but not plotted") are shown on screen and off in a
+ * plot (`imageFrames`).
  */
 export interface ImageFrames {
   readonly image: boolean;

@@ -6,7 +6,8 @@
 //   HEADER section holds, as io maps it, and the AcDbVariableDictionary ones it carries under
 //   their bare names (`CETRANSPARENCY`). Setting one is an edit, one undo step, saved with the
 //   drawing as AutoCAD saves it;
-// - an object: WIPEOUTFRAME, kept in the drawing's WIPEOUTVARIABLES (`wipeout.ts`);
+// - an object: WIPEOUTFRAME, kept in the drawing's WIPEOUTVARIABLES (`wipeout.ts`), and
+//   IMAGEFRAME, in its RASTERVARIABLES (`image.ts`, M5-04 part 4);
 // - the app (`APP_VARIABLES`): the drafting aids of the status bar (ORTHOMODE, OSMODE, …) and
 //   the per-user settings AutoCAD keeps in the registry (APERTURE, REVCLOUDGRIPS, …). The
 //   command asks the app for them through the view host (`sysvar` requests): commands never
@@ -78,7 +79,7 @@ export type NameTable =
 export interface SystemVariable {
   /** AutoCAD's name, upper case, without the header's `$`. */
   readonly name: string;
-  readonly store: 'header' | 'wipeout' | 'app' | 'computed' | 'vport';
+  readonly store: 'header' | 'wipeout' | 'raster' | 'app' | 'computed' | 'vport';
   /** The header entry (`$LTSCALE`, `CETRANSPARENCY`) of a header variable. */
   readonly key?: string;
   readonly kind: VariableKind;
@@ -365,6 +366,15 @@ const WIPEOUTFRAME: SystemVariable = {
   max: 2,
 };
 
+/** IMAGEFRAME (AutoCAD 2024 Help, "IMAGEFRAME (System Variable)"): 0, 1 or 2. */
+const IMAGEFRAME: SystemVariable = {
+  name: 'IMAGEFRAME',
+  store: 'raster',
+  kind: 'integer',
+  min: 0,
+  max: 2,
+};
+
 /**
  * The header variables DXF writes with an integer group code (62, 70, 280, 370, 380), as
  * acad-ts's header map has them; io's `sysvar-kinds.test.ts` keeps this list true. A number
@@ -636,7 +646,7 @@ function headerKey(model: VariableSource, name: string): string | undefined {
 
 /**
  * The system variable `name` names (any case), or undefined when Triya keeps none of that name:
- * the app's first, then WIPEOUTFRAME, then the drawing's header.
+ * the app's first, then WIPEOUTFRAME and IMAGEFRAME, then the drawing's header.
  */
 export function systemVariable(model: VariableSource, name: string): SystemVariable | undefined {
   const n = name.trim().toUpperCase();
@@ -644,6 +654,7 @@ export function systemVariable(model: VariableSource, name: string): SystemVaria
   const app = APP_VARIABLES.find((v) => v.name === n);
   if (app) return app;
   if (n === WIPEOUTFRAME.name) return WIPEOUTFRAME;
+  if (n === IMAGEFRAME.name) return IMAGEFRAME;
   const vport = VPORT_VARIABLES.find((v) => v.name === n);
   if (vport) return vport;
   const known = COMPUTED_VARIABLES.find((v) => v.name === n);
@@ -667,6 +678,7 @@ export function systemVariables(model: VariableSource): SystemVariable[] {
     if (v) out.set(v.name, v);
   }
   out.set(WIPEOUTFRAME.name, WIPEOUTFRAME);
+  out.set(IMAGEFRAME.name, IMAGEFRAME);
   for (const name of Object.keys(DICTIONARY_INITIAL)) {
     const v = systemVariable(model, name);
     if (v) out.set(v.name, v);

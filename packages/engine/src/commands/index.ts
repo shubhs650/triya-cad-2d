@@ -104,6 +104,16 @@ export * from './command-preview';
 export { GRIP_MODES, GRIP_OBJECT_LIMIT, gripCommand, type GripMode } from './modify/grips';
 export { revcloudCommand, revcloudAppId, revcloudXdata, type CloudType } from './draw/revcloud';
 export { setWipeoutFrame, wipeoutCommand, wipeoutFrame } from './draw/wipeout';
+export {
+  imageFrame,
+  imageQuality,
+  imageadjustCommand,
+  imageadjustDashCommand,
+  imageclipCommand,
+  imagequalityCommand,
+  rasterVariables,
+  setImageFrame,
+} from './image';
 export { hatchCommand, hatchCommands } from './draw/hatchedit';
 export { fieldCommand, type FieldDialogRequest } from './draw/field';
 export { toleranceCommand, type ToleranceRequest } from './draw/tolerance';
