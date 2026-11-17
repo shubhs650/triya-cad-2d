@@ -3406,3 +3406,20 @@ The DXF reader converts VERTEX group 50 from degrees to radians (the property is
 An ACAD_TABLE text cell names the FIELD holding its fields with group 344 (DXF Reference, ACAD_TABLE). The DXF reader ignored it and the writer never wrote it, so a table cell's fields were lost on a DXF round trip, and a FIELD only a table cell owned was not written at all. This reads 344 onto the cell's content (`CellContent.field`, where the DWG reader puts it), writes it back after group 145 for a text cell, and queues the FIELD (and, through the existing child handling, its children) for the OBJECTS section, registering it with the table as its owner. A test writes a table whose cell has a value and a field, and reads the same FIELD back on the cell's content.
 
 </details>
+
+### 0187 — a block record scales any way unless its file says it scales uniformly
+
+- **File:** `third_party/acad-ts-patches/0187-block-record-scale-uniformly-default.patch`
+- **Touches:** `src/Tables/BlockRecord.ts`
+- **Symptom:** `BlockRecord.canScale` (BLOCK_RECORD 281, the DWG R2007+ "block scaling" byte) defaulted to `true`. AutoCAD writes 281 = 1 for a block whose references scale uniformly (the Block Definition dialog's "Scale uniformly"; ezdxf's `BlockLayout.scale_uniformly`) and 0 for every ordinary block and every layout block. A file from before R2007 has no 281, so all its blocks read as scaling uniformly, and a block made in memory was written as one. Found by M5-01 part 2 (the Block Definition dialog), whose INSERT asked a single scale for such blocks.
+- **Fix:** default `canScale` to `false`, AutoCAD's and ezdxf's default for 281. Triya maps `scalable` as `!canScale` (`packages/io/src/map/tables.ts`).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0187 a block record scales any way (281 = 0) unless its file says it scales uniformly" (a new record, and an R2004 DWG's record read back, are not uniform).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Default BlockRecord.canScale to false (DXF 281 = 0)
+
+BLOCK_RECORD group 281 (DWG R2007+ "block scaling") is 1 when the block's references must scale uniformly; AutoCAD writes 0 for ordinary blocks and for `*Model_Space`/`*Paper_Space`, and ezdxf defaults it to 0 (`BlockLayout.scale_uniformly`). `canScale` defaulted to `true`, so every block of a pre-2007 file (which has no 281) and every block created in code came out as "scale uniformly". This defaults it to `false`. Worth considering separately: the property's name suggests the opposite of what 281 = 1 means.
+
+</details>

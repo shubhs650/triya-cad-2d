@@ -55,7 +55,9 @@ export class BlockRecord extends TableEntry {
 		this._blockEntity.owner = this;
 	}
 
-	public canScale: boolean = true;
+	// DXF 281, "Scale uniformly": 1 for a block whose references scale uniformly. AutoCAD writes 0
+	// for an ordinary block, and a file from before R2007 has no 281, so the default is false.
+	public canScale: boolean = false;
 
 	public entities: CadObjectCollection<Entity>;
 

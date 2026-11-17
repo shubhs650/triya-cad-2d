@@ -96,7 +96,8 @@ const BLOCK_RECORD: Checks<TableRecords['blockRecords']> = {
   340: ['handle', (r) => r.layout],
   70: ['int', (r) => r.units],
   280: ['bool', (r) => r.explodable],
-  281: ['bool', (r) => r.scalable],
+  // 1: Scale uniformly (M5-01 part 2).
+  281: ['bool', (r) => !r.scalable],
 };
 
 const APPID: Checks<TableRecords['appIds']> = {
