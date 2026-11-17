@@ -1039,6 +1039,7 @@ export class CanvasController {
       before.lwt !== state.lwt ||
       before.tpy !== state.tpy ||
       before.fieldDisplay !== state.fieldDisplay ||
+      before.layLockFade !== state.layLockFade ||
       before.gripSize !== state.gripSize ||
       before.gripColors !== state.gripColors ||
       before.gridStyle !== state.gridStyle
@@ -1773,6 +1774,8 @@ export class CanvasController {
       ...(!d.tpy && { showTransparency: false }),
       // FIELDDISPLAY (M4-10 part 3): the fields' grey background.
       ...(!d.fieldDisplay && { showFields: false }),
+      // LAYLOCKFADECTL (M5-06): how faded objects on locked layers are drawn.
+      layLockFade: d.layLockFade,
       gripSize: d.gripSize,
       gripColors: d.gripColors,
       ...(d.grid && { grid: { ...this.#grid(), ...(c.grid && { color: c.grid }) } }),

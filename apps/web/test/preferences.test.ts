@@ -70,6 +70,8 @@ describe('preferences', () => {
       arrayAssociativity: true,
       // FIELDDISPLAY 1 (M4-10 part 3).
       fieldDisplay: true,
+      // LAYLOCKFADECTL 50 (M5-06).
+      layLockFade: 50,
       // M3-06 part 1: POLARMODE 0 and POLARADDANG "" (AutoCAD's initial values), and the
       // Drafting Settings dialog's Quick Properties tab: top right, 50 pixels, collapsed to 3 rows.
       polarMode: 0,

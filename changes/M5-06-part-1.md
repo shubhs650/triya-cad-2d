@@ -1,0 +1,1 @@
+- M5-06 part 1 (#501): the layer tool row's commands: LAYOFF and LAYFRZ (pick objects until Enter, with Undo and Settings), LAYON, LAYTHW, LAYLCK, LAYULK, LAYMCUR, LAYCUR, LAYMCH, and LAYISO with LAYUNISO (other layers locked and faded, or turned off). LAYLOCKFADECTL is now a setting of its own (SETVAR, LAYISO's fade value) that the canvas draws locked layers with.
