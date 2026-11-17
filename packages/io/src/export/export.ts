@@ -684,8 +684,9 @@ export function triyaToAcad(
   }
   // A new table's AutoCAD 2008 data (M4-28), and an edited one's (M4-30), after its rows and
   // cells are written.
-  writeNewTableContents(original, r, added);
-  writeEditedTableContents(original, r, p.updated);
+  const tableStyleOf = (h: string) => model.tables.tableStyles.get(h);
+  writeNewTableContents(original, r, added, tableStyleOf);
+  writeEditedTableContents(original, r, p.updated, tableStyleOf);
   writeEntityOrder(original, model, r);
   writeGroupMembers(r, groups.plan);
   writeDimAssocs(r, dimAssocs.plan);

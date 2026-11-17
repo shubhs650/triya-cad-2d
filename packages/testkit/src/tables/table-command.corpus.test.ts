@@ -14,6 +14,7 @@ import {
   DocumentModel,
   PromptBus,
   blockExtentsOf,
+  defaultTableBreaks,
   builtinCommands,
   tableParts,
   type Entity,
@@ -21,6 +22,7 @@ import {
   type TablePart,
   withCellText,
   withRowsInserted,
+  writeTableBlock,
 } from '@triya/engine';
 import { ACadVersion } from '@node-projects/acad-ts';
 import { documentInit, readCadDocument } from '@triya/io';
@@ -138,6 +140,17 @@ describe('-TABLE on the public corpus (M4-05)', () => {
         });
       }
       expect(bus.promptText).toBe('Command:');
+      // The schedule broken into two parts, its labels repeated (M4-16 part 10), so the audited
+      // save also holds a table's break data.
+      {
+        const g = (model.entity(table.id) as Table).geom;
+        const height = g.rowHeights.slice(0, 4).reduce((s, h) => s + h, 0);
+        const b = new ChangeSetBuilder(model);
+        const breaks = { ...defaultTableBreaks(g), enabled: true, repeatTop: true, height };
+        b.updateEntity(table.id, { geom: { ...g, breaks } });
+        writeTableBlock(b, model, table.id);
+        model.apply(b.build());
+      }
       const made_ = model.entity(table.id) as Table;
       expect(made_.geom.cells[4]![3]!.text).toBe('{\\fArial|b1;Drain}');
 

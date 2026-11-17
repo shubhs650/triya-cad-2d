@@ -185,6 +185,7 @@ import {
 import { buildGrid, newTableProblems } from './table-new';
 import { cellStyleFileProblems, writeCellStyleNames } from './table-cell-styles';
 import { cellLockFileProblems, writeCellLocks } from './table-cell-locks';
+import { breakFileProblems } from './table-breaks';
 import { borderFileProblems } from './table-borders';
 import { tableStyleRows } from '../map/styles';
 import {
@@ -2280,6 +2281,7 @@ const tableWriter: Writer<TableGeometry> = {
     const table = g.style === undefined ? null : resolve(r, g.style, TableStyle);
     out.push(...cellStyleFileProblems(r, before, g, tableStyleRows(table)));
     out.push(...cellLockFileProblems(r, before, g));
+    out.push(...breakFileProblems(r, before, g));
     out.push(...borderFileProblems(r, before, g));
     // Each cell against the cell it was, wherever its row and column were.
     const was = before && alignedBefore(before, g);

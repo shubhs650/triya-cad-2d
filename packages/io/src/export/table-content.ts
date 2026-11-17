@@ -26,10 +26,10 @@ import {
   TableContentObject,
   TableEntity,
   XRecord,
-  XYZ,
   type CadDocument,
 } from '@node-projects/acad-ts';
-import type { Entity, TableGeometry } from '@triya/engine';
+import { tablePieces, type Entity, type TableGeometry, type TableStyleRecord } from '@triya/engine';
+import { breakRecordEntries, recordBreaks } from '../map/table-breaks';
 import {
   ROUNDTRIP_DICTIONARY_KEY,
   ROUNDTRIP_TABLE,
@@ -49,12 +49,13 @@ export function writeNewTableContents(
   doc: CadDocument,
   r: Resolver,
   added: readonly { e: unknown; after: Entity }[],
+  styleOf: StyleOf,
 ): void {
   if (!statesContent(r)) return;
   for (const { e, after } of added) {
     if (!(e instanceof TableEntity) || after.geom.kind !== 'ACAD_TABLE') continue;
     if (e.xDictionary?.getEntry(ROUNDTRIP_DICTIONARY_KEY)) continue;
-    writeTableContent(doc, r, e, after.geom as TableGeometry);
+    writeTableContent(doc, r, e, after.geom as TableGeometry, styleOf);
   }
 }
 
@@ -77,6 +78,8 @@ const CONTENT_FIELDS = [
   'rowStyles',
   'rowOrigins',
   'columnOrigins',
+  // The break settings (M4-16 part 10), which the record holding the content states.
+  'breaks',
 ] as const;
 
 /**
@@ -96,6 +99,7 @@ export function writeEditedTableContents(
   doc: CadDocument,
   r: Resolver,
   updated: readonly { acad: unknown; before: Pick<Entity, 'geom'>; after: Pick<Entity, 'geom'> }[],
+  styleOf: StyleOf,
 ): void {
   if (!statesContent(r)) return;
   for (const { acad, before, after } of updated) {
@@ -112,13 +116,14 @@ export function writeEditedTableContents(
       if (
         statesCellStyles(a) ||
         a.cells.some((row) => row.some((c) => c.locked)) ||
-        statesBorderExtras(a)
+        statesBorderExtras(a) ||
+        a.breaks !== undefined
       ) {
-        writeTableContent(doc, r, acad, a);
+        writeTableContent(doc, r, acad, a, styleOf);
       }
       continue;
     }
-    rewriteTableContent(doc, r, acad, b, a);
+    rewriteTableContent(doc, r, acad, b, a, styleOf);
   }
 }
 
@@ -127,47 +132,60 @@ function statesCellStyles(g: TableGeometry): boolean {
   return g.rowStyles !== undefined || g.cells.some((row) => row.some((c) => c.cellStyle));
 }
 
-/** The record's entries before any break range: 102, 360, 70 and 90 the range count. */
-const RECORD_HEAD = [102, 360, 70, 90] as const;
-
 function rewriteTableContent(
   doc: CadDocument,
   r: Resolver,
   t: TableEntity,
   before: TableGeometry,
   after: TableGeometry,
+  styleOf: StyleOf,
 ): void {
   const rt = roundTripTableContent(t, (h) => doc.getCadObject(h));
   if (!rt) return;
   const entries = rt.record.entries;
-  // One break range over every row (10 its position, 90 its first and last row), then at most the
-  // TABLEGEOMETRY: what every corpus table from R2007 states.
+  // The break data (M4-16 part 10) and one break range over every row, or the break data of a
+  // table that names no other parts (Triya's own), then at most the TABLEGEOMETRY.
+  const read = recordBreaks(entries, sum(before.rowHeights));
   const plain =
-    entries.length >= 7 &&
-    entries.length <= 8 &&
-    RECORD_HEAD.every((code, k) => entries[k]!.code === code) &&
-    entries[3]!.value === 1 &&
-    entries[4]!.code === 10 &&
-    entries[5]!.code === 90 &&
-    entries[5]!.value === 0 &&
-    entries[6]!.code === 90 &&
-    entries[6]!.value === before.rowHeights.length - 1 &&
-    (entries.length === 7 || entries[7]!.code === 361);
+    read !== undefined &&
+    read.continued === 0 &&
+    (read.breaks !== undefined ||
+      (read.onlyRange?.[0] === 0 && read.onlyRange[1] === before.rowHeights.length - 1));
   const content =
     plain && rt.content ? editedTableContent(r, rt.content, before, after) : undefined;
   if (!content) {
     t.xDictionary!.remove(ROUNDTRIP_DICTIONARY_KEY);
+    // A table broken in Triya keeps its breaks in a record of its own, as a new table's.
+    if (after.breaks) writeTableContent(doc, r, t, after, styleOf);
     return;
   }
   nameCellFields(content, t, after);
   rt.object.rawDxfCodes = tableContentCodes(content, rt.head);
-  const kept = entries.slice(0, 7).map((e) => [e.code, e.value] as const);
+  const kept = entries.slice(0, 2).map((e) => [e.code, e.value] as const);
   rt.record.clear();
-  for (const [code, value] of kept) rt.record.createEntry(code, value);
-  rt.record.entries[6]!.value = Math.max(0, content.rows.length - 1);
+  for (const [code, value] of [...kept, ...recordTail(after, styleOf)]) {
+    rt.record.createEntry(code, value);
+  }
 }
 
-function writeTableContent(doc: CadDocument, r: Resolver, t: TableEntity, g: TableGeometry): void {
+/** The style a table is drawn with, by its handle. */
+export type StyleOf = (handle: string) => TableStyleRecord | undefined;
+
+const sum = (a: readonly number[]) => a.reduce((s, x) => s + x, 0);
+
+/** The record's entries after its 360: the break data and break ranges of `g` (table-breaks.ts). */
+function recordTail(g: TableGeometry, styleOf: StyleOf): [number, unknown][] {
+  const style = g.style !== undefined ? styleOf(g.style) : undefined;
+  return breakRecordEntries(g.breaks, tablePieces(g, style));
+}
+
+function writeTableContent(
+  doc: CadDocument,
+  r: Resolver,
+  t: TableEntity,
+  g: TableGeometry,
+  styleOf: StyleOf,
+): void {
   const content = newTableContent(r, g);
   nameCellFields(content, t, g);
   const x = new XRecord();
@@ -182,11 +200,7 @@ function writeTableContent(doc: CadDocument, r: Resolver, t: TableEntity, g: Tab
   ]);
   x.createEntry(102, ROUNDTRIP_TABLE);
   x.createEntry(360, object);
-  x.createEntry(70, 2);
-  x.createEntry(90, 1);
-  x.createEntry(10, new XYZ(0, 0, 0));
-  x.createEntry(90, 0);
-  x.createEntry(90, Math.max(0, content.rows.length - 1));
+  for (const [code, value] of recordTail(g, styleOf)) x.createEntry(code, value);
   let dict = t.xDictionary;
   if (!dict) {
     dict = new CadDictionary();
