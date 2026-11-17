@@ -99,6 +99,11 @@ export interface DraftingState {
    */
   readonly layLockFade: number;
   /**
+   * BINDTYPE (M5-04 part 2): how -XREF Bind binds, 0 Bind or 1 Insert. AutoCAD saves it nowhere
+   * ("Not-saved"), initially 0, so neither do the preferences.
+   */
+  readonly bindType: 0 | 1;
+  /**
    * POLARMODE (M3-06 part 1): bits 1 polar angles relative to the last segment, 2 object snap
    * tracking along the polar angles, 4 the additional angles, 8 Shift to acquire tracking
    * points. AutoCAD keeps it per user, initially 0. Bits 1 and 8 act since part 3.
@@ -455,6 +460,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   arrayAssociativity: true,
   fieldDisplay: true,
   layLockFade: 50,
+  bindType: 0,
   polarMode: 0,
   polarAddAngles: '',
   snapType: 0,

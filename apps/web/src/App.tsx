@@ -1258,6 +1258,18 @@ async function detachXrefs(doc: number, blocks: readonly string[]): Promise<stri
   return undefined;
 }
 
+/** XREF Bind (M5-04 part 2) from the References palette: one XREF undo step. */
+async function bindXrefs(
+  doc: number,
+  blocks: readonly string[],
+  insert: boolean,
+): Promise<string | undefined> {
+  const r = await engines.edit(doc, { kind: 'xref-bind', blocks, insert });
+  if (!r.ok) return r.message;
+  store.edited(doc);
+  return undefined;
+}
+
 /** The xrefs every open drawing is waiting for. */
 function waitingXrefs(): { doc: number; xrefs: PendingXref[] }[] {
   return store
@@ -1944,6 +1956,13 @@ export function App() {
               detachXrefs(
                 active.id,
                 rows.map((r) => r.handle),
+              )
+            }
+            onBind={(rows, insert) =>
+              bindXrefs(
+                active.id,
+                rows.map((r) => r.handle),
+                insert,
               )
             }
             onClose={() => setPalette(undefined)}

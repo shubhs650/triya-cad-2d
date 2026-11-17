@@ -131,6 +131,8 @@ const VALUES: Readonly<
   FIELDDISPLAY: { get: (s) => bit(s.fieldDisplay), set: (v) => ({ fieldDisplay: v === 1 }) },
   // M5-06: locked layers' fading, the canvas's (`RenderStyle.layLockFade`); LAYISO sets it.
   LAYLOCKFADECTL: { get: (s) => s.layLockFade, set: (layLockFade) => ({ layLockFade }) },
+  // M5-04 part 2: how -XREF Bind binds (0 Bind, 1 Insert), for this session only.
+  BINDTYPE: { get: (s) => s.bindType, set: (v) => ({ bindType: v === 1 ? 1 : 0 }) },
 };
 
 /**
