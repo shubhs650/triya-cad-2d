@@ -4,9 +4,10 @@
 // the record and, as its INSERT is new too, the extension dictionary the model names as the
 // INSERT's `extDict` (hard owner, 280 = 1, 281 = 1, as AutoCAD makes an object's extension
 // dictionary). A mark whose objects changed has its record rewritten; one that lets go of them
-// (moved on its own) loses the record and keeps the dictionary, empty; an erased mark takes its
-// dictionary, and so its record, with it. A new mark let go of in the same session is saved with
-// its dictionary empty.
+// (moved on its own, CENTERDISASSOCIATE: its record in the model names no objects, part 3) loses
+// the record and keeps the dictionary, empty (DEC-066 item 3); an erased mark takes its
+// dictionary, and so its record, with it. A new mark let go of in the same session, or copied
+// without its objects, is saved with its dictionary empty.
 //
 // Refused, before anything changes: a record whose INSERT is not an entity of the drawing or does
 // not name its dictionary, one that moves to another INSERT or dictionary, a new record on an
@@ -21,11 +22,13 @@ import {
   type CadDocument,
 } from '@node-projects/acad-ts';
 import {
+  isAssociated,
   isCenterMark,
   type CenterMark,
   type DocumentInit,
   type DocumentModel,
   type Handle,
+  type NonGraphicalObject,
 } from '@triya/engine';
 import {
   CENTER_MARK_KINDS,
@@ -72,16 +75,19 @@ export function planTriyaCenterMarks(
   const old =
     version !== undefined && version !== ACadVersion.Unknown && version < ACadVersion.AC1015;
 
+  // A record associated to nothing is saved as none (DEC-066 item 3).
+  const saved = (o: NonGraphicalObject | undefined): o is CenterMark =>
+    isCenterMark(o) && isAssociated(o);
   for (const [h, b] of before) {
-    if (model.objects.has(h) || !model.entityByHandle(b.insert)) continue;
+    if (saved(model.objects.get(h)) || !model.entityByHandle(b.insert)) continue;
     const acad = resolve(r, h, XRecord);
     if (acad) plan.removed.push(acad);
     else problems.push(`TRIYA_CENTERMARK ${h}: the original is not an XRECORD`);
   }
   const owners = new Set<Handle>();
-  for (const o of model.objects.values()) owners.add(o.owner);
+  for (const o of model.objects.values()) if (!isCenterMark(o) || saved(o)) owners.add(o.owner);
   for (const a of model.objects.values()) {
-    if (!isCenterMark(a)) continue;
+    if (!saved(a)) continue;
     const b = before.get(a.handle);
     if (b && same(b, a)) continue;
     const out: string[] = [];
