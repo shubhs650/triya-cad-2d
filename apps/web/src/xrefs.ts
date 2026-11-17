@@ -40,7 +40,8 @@ export function pendingXrefs(init: DocumentInit, changes: readonly ChangeSet[]):
   const out: PendingXref[] = [];
   for (const r of records.values()) {
     const def = defs.get(r.handle);
-    if (!isXrefRecord(r) || !def || def.xrefLoaded || def.xrefPath === undefined) continue;
+    if (!isXrefRecord(r) || !def || def.xrefLoaded || def.xrefUnloaded) continue;
+    if (def.xrefPath === undefined) continue;
     out.push({ block: r.handle, name: r.name, path: def.xrefPath });
   }
   return out;
@@ -58,7 +59,7 @@ export function xrefsAnsweredBy(pending: readonly PendingXref[], fileName: strin
 // ── The References palette (UI_SPEC §6) ─────────────────────────────────────────────────────
 
 export type ReferenceKind = 'attach' | 'overlay' | 'image' | 'pdf';
-/** AutoCAD's statuses in the External References palette that Triya has (M5-04 adds Unload). */
+/** AutoCAD's statuses in the External References palette that Triya has. */
 export type ReferenceStatus = 'loaded' | 'not-found' | 'unloaded';
 
 export interface ReferenceRow {
@@ -116,6 +117,10 @@ export function referencesOf(
     for (const x of cs.objects?.removed ?? []) objects.delete(x.handle);
     for (const u of cs.objects?.updated ?? []) objects.set(u.after.handle, u.after);
     for (const x of cs.objects?.added ?? []) objects.set(x.handle, x);
+    // An xref unloaded or reloaded (M5-04): nothing is listed under it until it loads again.
+    for (const u of cs.blocks?.updated ?? []) {
+      if (u.before.xrefLoaded && !u.after.xrefLoaded) under.delete(u.after.handle);
+    }
     // An xref load: what it brought in is listed under the xref.
     const load = cs.blocks?.updated?.find((u) => u.after.xrefLoaded && !u.before.xrefLoaded);
     if (!load) {
@@ -163,7 +168,7 @@ export function referencesOf(
         kind: (r.flags ?? 0) & 8 ? 'overlay' : 'attach',
         name: r.name,
         path: def.xrefPath ?? '',
-        status: def.xrefLoaded ? 'loaded' : 'not-found',
+        status: def.xrefLoaded ? 'loaded' : def.xrefUnloaded ? 'unloaded' : 'not-found',
         depth,
       };
     }

@@ -1,0 +1,1 @@
+- M5-04 part 1 (#506): xrefs can be unloaded, reloaded and detached, from the References palette (select rows, then Reload, Unload or Detach) or with -XREF (?, Detach, Unload, Reload). A detached xref leaves the saved DXF with its references, clips and the layers the drawing kept of it; Detach is one undo step. XREF and EXTERNALREFERENCES open the References palette.
