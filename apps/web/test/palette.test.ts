@@ -248,6 +248,8 @@ describe('palette search', () => {
       'UPDATEFIELD',
       'VIEW',
       'WIPEOUT',
+      // M5-04 part 3: references clipped.
+      'XCLIP',
       'XLINE',
       'XREF',
       'ZOOM',

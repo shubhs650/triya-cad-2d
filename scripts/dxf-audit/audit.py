@@ -43,13 +43,16 @@ KINDS = (
     "tablestyle",
     "block",
 )
-# Saves of the thread-authored test drawings that are not corpus files (Rule 0), as
+# Saves of the thread-authored test drawings that are not corpus files (Rule 0), and of corpus
+# files edited by a testkit suite rather than the corpus suites, as
 # (fixture path, kind): each must be there and pass the audit with no exception. M5-04 part 2:
 # XREF Bind of the xref set's parent, both bind types (packages/testkit/src/xref/xref-bind.test.ts).
 FIXTURE_SAVES = (
     ("fixtures/xref/xref-parent.dxf", "bind"),
     ("fixtures/xref/xref-parent.dxf", "bind-insert"),
     ("fixtures/xref/xref-parent.dxf", "bind-objects"),
+    # XCLIP New boundary, OFF, Delete and generate Polyline on ezdxf's xclip.dxf (M5-04 part 3).
+    ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.
