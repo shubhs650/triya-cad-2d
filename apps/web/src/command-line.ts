@@ -191,13 +191,13 @@ export function promptParts(
 
 /**
  * Whether the keys held for `prompt` are its in-place editor's to take rather than the command
- * line's to replay (M4-20): TEXT's line editor placing new lines takes the keys typed while it
- * opened, as AutoCAD's does.
+ * line's to replay: the editor takes the keys typed while it opened, as AutoCAD's does. TEXT's
+ * line editor placing new lines (M4-20), TEXTEDIT's on a picked TEXT and the MTEXT editor
+ * (M4-26). A table cell's editor is left out: it types the keys carried from the cell before
+ * (M4-05 part 7).
  */
 export function takesTypeAhead(prompt: Prompt | undefined): boolean {
-  return (
-    prompt?.kind === 'string' && prompt.editor?.kind === 'text' && prompt.editor.value === undefined
-  );
+  return prompt?.kind === 'string' && prompt.editor !== undefined && !prompt.editor.cell;
 }
 
 /** The keys a command line holds (`holdsKey`), for an in-place editor to take (M4-20). */

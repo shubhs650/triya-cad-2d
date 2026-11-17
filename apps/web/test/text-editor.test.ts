@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import {
   autoStack,
   cellAhead,
+  editAhead,
   lineAhead,
+  mtextAhead,
   cellMoveFor,
   fieldAsText,
   formatAt,
@@ -378,6 +380,58 @@ describe("keys typed before TEXT's line editor opens (M4-20)", () => {
       ops: [{ kind: 'cancel' }],
       text: '',
       rest: ['L'],
+    });
+  });
+});
+
+// M4-26: keys typed before the MTEXT editor or TEXTEDIT's line editor opened, held by the
+// command line, are typed into the editor in order.
+describe('keys typed before the MTEXT editor opens', () => {
+  it('types characters, Backspace, Enter as a paragraph break and Tab as a tab', () => {
+    expect(mtextAhead([...'Ab', 'Backspace', 'c', 'Enter', 'd', 'Tab', 'e', 'ArrowLeft'])).toEqual({
+      ops: [
+        { kind: 'text', text: 'Ab' },
+        { kind: 'backspace' },
+        { kind: 'text', text: 'c' },
+        { kind: 'break' },
+        { kind: 'text', text: 'd\te' },
+      ],
+      rest: [],
+    });
+  });
+
+  it('cancels at Esc, the keys after it typed ahead of Command:', () => {
+    expect(mtextAhead(['x', 'Escape', ...'LINE', 'Enter'])).toEqual({
+      ops: [{ kind: 'text', text: 'x' }, { kind: 'cancel' }],
+      rest: [...'LINE', 'Enter'],
+    });
+  });
+});
+
+describe("keys typed before TEXTEDIT's line editor opens", () => {
+  it('replaces the selected value with the first key that types', () => {
+    expect(editAhead([...'Nwe', 'Backspace', 'Backspace', ...'ew'], undefined)).toEqual({
+      text: 'New',
+      rest: [],
+    });
+    // Backspace first deletes the value.
+    expect(editAhead(['Backspace', 'x'], undefined)).toEqual({ text: 'x', rest: [] });
+  });
+
+  it('goes on from what is typed into the editor already', () => {
+    expect(editAhead([...'xt'], 'Ne')).toEqual({ text: 'Next', rest: [] });
+  });
+
+  it('keeps the line at Enter and cancels at Esc, the keys after for the next prompt', () => {
+    expect(editAhead(['Enter', 'Enter', ...'L'], undefined)).toEqual({
+      op: { kind: 'keep' },
+      text: undefined,
+      rest: ['Enter', 'L'],
+    });
+    expect(editAhead([...'ab', 'Escape', 'c'], undefined)).toEqual({
+      op: { kind: 'cancel' },
+      text: 'ab',
+      rest: ['c'],
     });
   });
 });
