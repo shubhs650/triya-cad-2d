@@ -1,0 +1,1 @@
+- M4-08 part 2 (#468): center marks and centerlines keep their association through a save: each mark's settings and the objects it was made on are saved as a `TRIYA_CENTERMARK` record in the mark's extension dictionary (DEC-066, the owner's option A on #451), so a reopened mark still follows its circle, arc or lines; other readers draw it as the block reference it is.

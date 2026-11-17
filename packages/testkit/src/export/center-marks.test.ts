@@ -1,11 +1,12 @@
-// Center marks and centerlines (M4-08 part 1). Each is saved as AutoCAD saves the visible part
-// of one: an INSERT of an anonymous block of lines, which every reader draws. The record that
-// keeps it associative stays in the open drawing until needs-human #451 says how a save writes
-// it, so the file holds no Triya object for it and a reopened mark is a plain block reference.
+// Center marks and centerlines (M4-08). Each is saved as AutoCAD saves the visible part of one:
+// an INSERT of an anonymous block of lines, which every reader draws. The record that keeps it
+// associative is a `TRIYA_CENTERMARK` XRECORD in the INSERT's extension dictionary (part 2,
+// DEC-066, the owner's option A on #451), so a reopened mark still follows its objects.
 // The drawing is authored here (DEC-047): a circle r 10 at (50,50) and two parallel lines.
 import type { BlockRecord } from '@node-projects/acad-ts';
 import {
   ACadVersion,
+  CadDictionary,
   CadDocument,
   Circle,
   Insert,
@@ -59,6 +60,9 @@ function open(bytes: Uint8Array) {
   };
   const space = [...model.blocks.values()].find((b) => /^\*model_space$/i.test(b.name))!.handle;
   const bus = new PromptBus({ model, registry: builtinCommands(), view, space: () => space });
+  const pickIds = (...ids: EntityId[]) => {
+    picks = ids.map((id) => [id]);
+  };
   /** The next picks, one object each. */
   const pick = (...handles: string[]) => {
     picks = handles.map((h) => [model.entityByHandle(h)!.id]);
@@ -70,24 +74,45 @@ function open(bytes: Uint8Array) {
       .filter((e) => e.geom.kind === 'INSERT');
   const save = (): Uint8Array =>
     withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), model));
-  return { model, bus, pick, inserts, save };
+  return { model, bus, pick, pickIds, inserts, save };
+}
+
+/** The center-mark record in `insert`'s extension dictionary, as its groups. */
+function recordGroups(insert: Insert): { code: number; value: unknown }[] | undefined {
+  const dict = insert.xDictionary;
+  if (!(dict instanceof CadDictionary)) return undefined;
+  const x = dict.getEntry('TRIYA_CENTERMARK');
+  return x instanceof XRecord
+    ? x.entries.map((e) => ({ code: e.code, value: e.value }))
+    : undefined;
+}
+
+const savedInserts = (bytes: Uint8Array): Insert[] =>
+  [...readCadDocument(bytes).getCadObjects()].filter((o): o is Insert => o instanceof Insert);
+
+/** A handle group's value as a hex handle. */
+const handleOf = (v: unknown): string =>
+  (typeof v === 'number' ? v : (v as { handle: number }).handle).toString(16).toUpperCase();
+
+async function marked() {
+  const a = open(source.bytes);
+  a.pick(source.circle);
+  await a.bus.script(['CENTERMARK', '0,0', '']);
+  a.pick(...source.lines);
+  await a.bus.script(['CENTERLINE', '0,0', '0,0']);
+  expect(a.bus.command).toBeUndefined();
+  return a;
 }
 
 describe('center marks and centerlines', () => {
-  it('save as block references of anonymous blocks of lines, without the record', async () => {
-    const a = open(source.bytes);
-    a.pick(source.circle);
-    await a.bus.script(['CENTERMARK', '0,0', '']);
-    a.pick(...source.lines);
-    await a.bus.script(['CENTERLINE', '0,0', '0,0']);
-    expect(a.bus.command).toBeUndefined();
+  it('save as block references of anonymous blocks of lines with a TRIYA_CENTERMARK record', async () => {
+    const a = await marked();
     const made = a.inserts();
     expect(made).toHaveLength(2);
     expect(made.every((e) => centerMarkOf(a.model, e) !== undefined)).toBe(true);
     const saved = a.save();
 
-    const doc = readCadDocument(saved);
-    const inserts = [...doc.getCadObjects()].filter((o): o is Insert => o instanceof Insert);
+    const inserts = savedInserts(saved);
     expect(inserts).toHaveLength(2);
     const lineCounts = inserts.map((i) => {
       const block = i.block as BlockRecord;
@@ -99,16 +124,57 @@ describe('center marks and centerlines', () => {
       [10, 105],
       [50, 50],
     ]);
-    // No Triya record, and no extension dictionary on the marks.
-    expect([...doc.getCadObjects()].filter((o) => o instanceof XRecord)).toEqual([]);
-    expect(inserts.every((i) => !i.xDictionary)).toBe(true);
+    const mark = inserts.find((i) => i.insertPoint.x === 50)!;
+    const line = inserts.find((i) => i.insertPoint.x === 10)!;
+    // DEC-066: 70 version, 71 kind, 331 the objects, 1/3 cross size and gap, 40-43 extensions,
+    // 290 show extensions.
+    const m = recordGroups(mark)!;
+    expect(m.map((g) => g.code)).toEqual([70, 71, 331, 1, 3, 40, 41, 42, 43, 290]);
+    expect(m[0]!.value).toBe(1);
+    expect(m[1]!.value).toBe(0);
+    expect(handleOf(m[2]!.value)).toBe(source.circle);
+    expect(m.slice(3).map((g) => g.value)).toEqual(['0.1x', '0.05x', 3.5, 3.5, 3.5, 3.5, true]);
+    const l = recordGroups(line)!;
+    expect(l.map((g) => g.code)).toEqual([70, 71, 331, 331, 40, 41]);
+    expect(l[1]!.value).toBe(1);
+    expect([handleOf(l[2]!.value), handleOf(l[3]!.value)]).toEqual(source.lines);
+    // The dictionary is the INSERT's own, hard owner as AutoCAD makes one.
+    expect((mark.xDictionary as CadDictionary).hardOwnerFlag).toBe(true);
 
-    // Reopened, they are plain block references; saved again unchanged, no structural difference.
+    // Reopened, they are associative still; saved again unchanged, no structural difference.
     const b = open(saved);
     expect(b.inserts()).toHaveLength(2);
-    expect([...b.model.objects.values()].filter(isCenterMark)).toEqual([]);
+    const records = [...b.model.objects.values()].filter(isCenterMark);
+    expect(records.map((r) => r.kind).sort()).toEqual(['line', 'mark']);
+    const reopened = records.find((r) => r.kind === 'mark')!;
+    expect(reopened).toMatchObject({
+      objects: [source.circle],
+      crossSize: '0.1x',
+      crossGap: '0.05x',
+      extensions: [3.5, 3.5, 3.5, 3.5],
+      showExtensions: true,
+    });
+    expect(records.find((r) => r.kind === 'line')).toMatchObject({
+      objects: source.lines,
+      extensions: [3.5, 3.5],
+    });
     const r = roundTrip(saved);
     expect(r.status, JSON.stringify(r.sample)).toBe('clean');
+  });
+
+  it('follow their objects after a reopen, and save where they moved to', async () => {
+    const saved = (await marked()).save();
+    const b = open(saved);
+    b.pick(source.circle);
+    await b.bus.script(['MOVE', '0,0', '', '0,0', '5,5']);
+    b.pick(source.lines[0]);
+    await b.bus.script(['MOVE', '0,0', '', '0,0', '0,-10']);
+    const again = savedInserts(b.save());
+    expect(again.map((i) => [i.insertPoint.x, i.insertPoint.y]).sort()).toEqual([
+      [10, 100],
+      [55, 55],
+    ]);
+    expect(again.every((i) => recordGroups(i) !== undefined)).toBe(true);
   });
 
   it('save where the circle moved them to', async () => {
@@ -117,8 +183,59 @@ describe('center marks and centerlines', () => {
     await a.bus.script(['CENTERMARK', '0,0', '']);
     a.pick(source.circle);
     await a.bus.script(['MOVE', '0,0', '', '0,0', '5,5']);
-    const doc = readCadDocument(a.save());
-    const [mark] = [...doc.getCadObjects()].filter((o): o is Insert => o instanceof Insert);
+    const [mark] = savedInserts(a.save());
     expect([mark!.insertPoint.x, mark!.insertPoint.y]).toEqual([55, 55]);
+  });
+
+  it('a mark moved on its own saves as a plain block reference, its record left out', async () => {
+    // Made and let go in one session: the mark keeps an empty extension dictionary.
+    const a = await marked();
+    const mark = a.inserts().find((e) => e.geom.kind === 'INSERT' && e.geom.position.x === 50)!;
+    a.pickIds(mark.id);
+    await a.bus.script(['MOVE', '0,0', '', '0,0', '0,30']);
+    const saved = a.save();
+    const fresh = savedInserts(saved).find((i) => i.insertPoint.x === 50)!;
+    expect(fresh.insertPoint.y).toBe(80);
+    expect(recordGroups(fresh)).toBeUndefined();
+    expect(roundTrip(saved).status).toBe('clean');
+    // Saved, reopened and let go: the record leaves the dictionary.
+    const b = open((await marked()).save());
+    const old = b.inserts().find((e) => e.geom.kind === 'INSERT' && e.geom.position.x === 50)!;
+    b.pickIds(old.id);
+    await b.bus.script(['MOVE', '0,0', '', '0,0', '0,30']);
+    const after = savedInserts(b.save());
+    expect(after.filter((i) => recordGroups(i) !== undefined)).toHaveLength(1);
+  });
+
+  it('an erased mark takes its record with it; a copy saves a record of its own', async () => {
+    const b = open((await marked()).save());
+    const mark = b.inserts().find((e) => e.geom.kind === 'INSERT' && e.geom.position.x === 50)!;
+    b.pickIds(b.model.entityByHandle(source.circle)!.id, mark.id);
+    await b.bus.script(['COPY', '0,0', '0,0', '', '0,0', '0,-100', '']);
+    b.pick(...source.lines);
+    await b.bus.script(['ERASE', '0,0', '0,0', '']);
+    const doc = readCadDocument(b.save());
+    const inserts = [...doc.getCadObjects()].filter((o): o is Insert => o instanceof Insert);
+    expect(inserts.map((i) => [i.insertPoint.x, i.insertPoint.y]).sort()).toEqual([
+      [50, -50],
+      [50, 50],
+    ]);
+    expect(inserts.every((i) => recordGroups(i) !== undefined)).toBe(true);
+    expect(inserts[0]!.xDictionary).not.toBe(inserts[1]!.xDictionary);
+    const records = [...doc.getCadObjects()].filter((o) => o instanceof XRecord);
+    expect(records).toHaveLength(2);
+  });
+
+  it('a record of another version stays as read, and its mark is a plain block reference', async () => {
+    const doc = readCadDocument((await marked()).save());
+    for (const o of [...doc.getCadObjects()]) {
+      if (!(o instanceof XRecord)) continue;
+      const v = o.entries.find((e) => e.code === 70)!;
+      v.value = 2;
+    }
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const b = open(bytes);
+    expect([...b.model.objects.values()].filter(isCenterMark)).toEqual([]);
+    expect(roundTrip(bytes).status).toBe('clean');
   });
 });
