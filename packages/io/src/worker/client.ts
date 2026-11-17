@@ -58,17 +58,23 @@ export function openInWorker(bytes: Uint8Array, options: ReadInWorkerOptions): P
 }
 
 export interface SaveInWorkerOptions extends ReadInWorkerOptions {
-  /** The change sets the drawing's engine applied since it opened, in order. */
-  readonly changes: readonly ChangeSet[];
+  /**
+   * The change sets the drawing's engine applied since it opened, in order; or a promise of
+   * them, still being worked out while the worker starts.
+   */
+  readonly changes: readonly ChangeSet[] | Promise<readonly ChangeSet[]>;
 }
 
 /**
  * Save and Save As (M2-13): writes the drawing opened from `bytes`, with `changes`, as an AC1032
  * DXF in a new worker. `bytes` are copied, not transferred: the app keeps them for later saves.
+ * The worker starts at once, before `changes` resolve (M4-22): starting it, which loads the
+ * writer, took longer than the write, so it overlaps the engine working out what the saved file
+ * alone holds. When `changes` reject, the save rejects with their error and the worker ends.
  */
 export function saveInWorker(bytes: Uint8Array, options: SaveInWorkerOptions): Promise<Uint8Array> {
-  return runJob(bytes.slice(), options, (remote, own, progress) =>
-    remote.save(own, options.changes, options.format, progress),
+  return runJob(bytes.slice(), options, async (remote, own, progress) =>
+    remote.save(own, await options.changes, options.format, progress),
   );
 }
 
