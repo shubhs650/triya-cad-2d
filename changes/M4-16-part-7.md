@@ -1,0 +1,1 @@
+- M4-16 part 7 (#494): the table cell menu's Borders sets a border's linetype and double lines (with their spacing) and offers No Borders, Inside Horizontal and Inside Vertical; tables draw them, and they and hidden borders are kept through DXF saves.

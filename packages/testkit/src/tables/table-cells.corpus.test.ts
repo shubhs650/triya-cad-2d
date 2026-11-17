@@ -246,7 +246,7 @@ describe('cells formatted, grips dragged and the table scaled (M4-05 part 4)', (
     const last = rows - 1;
     await run([last - 1, 0], [last, 1], 'AL', 'MR');
     await run([last, 0], [last, 0], 'BA', '3');
-    await run([last - 1, 0], [last, 1], 'BO', 'O', '1', '0.5');
+    await run([last - 1, 0], [last, 1], 'BO', 'O', '1', '0.5', '', '');
     await run([last, 1], [last, 1], 'H', String(box(last, 1).maxY - box(last, 1).minY));
     // The table picked on its left edge, its first column grip dragged, then SCALE.
     picked = [id()];
@@ -935,5 +935,68 @@ describe('cells locked (M4-16 part 6)', () => {
     expect(locks(g)[2]!.every((l) => l === 'content')).toBe(true);
     const back = saved(bytes, model, table.handle);
     expect(locks(back)).toEqual(locks(g));
+  });
+});
+
+describe('border linetypes, double lines and hidden borders (M4-16 part 7)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+
+  /**
+   * Frames the first data row double in ACAD_ISO02W100, gives the last row's bottom a red 0.5 mm
+   * edge and hides the borders of the last row's first cell.
+   */
+  async function edit(model: DocumentModel, id: () => EntityId) {
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    const g = () => (model.entity(id()) as Table).geom;
+    const style = () => model.tables.tableStyles.get(g().style!);
+    const centre = (i: number, j: number) => {
+      const b = tableCellBox(g(), style(), { r0: i, c0: j, r1: i, c1: j });
+      return tableToPlan(g(), { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    const run = async (cell: [number, number], to: [number, number], ...answers: string[]) => {
+      await bus.pick(centre(...cell), { grip: 1e-6 });
+      expect(bus.command).toBe('TABLECELL');
+      if (to !== cell) await bus.pick(centre(...to), { grip: 1e-6, shift: true });
+      for (const x of answers) await bus.submit(x);
+      expect(bus.promptText).toBe('Command:');
+    };
+    const last = g().rowHeights.length - 1;
+    const right = g().columnWidths.length - 1;
+    await run([2, 0], [2, right], 'BO', 'O', '', '', 'acad_iso02w100', 'Y', '0.1');
+    await run([last, 0], [last, right], 'BO', 'B', 'red', '0.5', '', 'N');
+    await run([last, 0], [last, 0], 'BO', 'N');
+    return g();
+  }
+
+  /** The cells' borders, as compared after the save. */
+  const borders = (t: TableGeometry) => t.cells.map((r) => r.map((c) => c.format?.borders ?? {}));
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '3', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', '1', '2']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const g = await edit(model, () => made.id);
+    expect(g.cells[2]![0]!.format!.borders!.top).toMatchObject({ double: true, spacing: 0.1 });
+    expect(g.cells[4]![0]!.format!.borders!.left).toEqual({ hidden: true });
+    expect(borders(saved(bytes, model, made.handle))).toEqual(borders(g));
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    const g = await edit(model, () => table.id);
+    const lt = [...model.tables.linetypes.values()].find((l) => l.name === 'ACAD_ISO02W100')!;
+    expect(g.cells[2]![0]!.format!.borders!.left).toMatchObject({
+      linetype: lt.handle,
+      double: true,
+    });
+    expect(borders(saved(bytes, model, table.handle))).toEqual(borders(g));
   });
 });

@@ -249,11 +249,21 @@ interface Edge {
   readonly color: Color;
   readonly lineweight: Lineweight;
   readonly linetype: LinetypeRef;
+  /** A double border's spacing (M4-16 part 7). */
+  readonly double?: number;
 }
+
+/**
+ * The spacing of a double border that states none: the Cell Border Properties dialog's default.
+ */
+const DOUBLE_SPACING = 0.18;
 
 const sameColor = (a: Color, b: Color): boolean => JSON.stringify(a) === JSON.stringify(b);
 const sameEdge = (a: Edge, b: Edge): boolean =>
-  sameColor(a.color, b.color) && a.lineweight === b.lineweight && a.linetype === b.linetype;
+  sameColor(a.color, b.color) &&
+  a.lineweight === b.lineweight &&
+  a.linetype === b.linetype &&
+  a.double === b.double;
 
 /** The style border `b` with the cell's override `o` over it; undefined when hidden. */
 function edgeOf(
@@ -265,7 +275,8 @@ function edgeOf(
   return {
     color: o?.color ?? b?.color ?? BY_BLOCK,
     lineweight: o?.lineweight ?? b?.lineweight ?? 'ByBlock',
-    linetype: 'ByBlock',
+    linetype: o?.linetype ?? 'ByBlock',
+    ...(o?.double && { double: o.spacing ?? DOUBLE_SPACING }),
   };
 }
 
@@ -607,47 +618,30 @@ export function tableParts(
     const edge = edgeOf(cellStyle(i, j)?.borders[index], o);
     return { ...(edge && { edge }), overridden: o !== undefined };
   };
-  /** The edge between `a` (above or left, if any) and `b` (below or right, if any). */
+  /**
+   * The edge between `a` (above or left, if any) and `b` (below or right, if any), and which of
+   * them it is drawn by: 1 the cell below (right), -1 the cell above (left). A double border's
+   * second line lies inside the cell that draws it.
+   */
+  type Segment = { edge: Edge; toward: 1 | -1 } | undefined;
   const shared = (
     a: { edge?: Edge; overridden: boolean } | undefined,
     b: { edge?: Edge; overridden: boolean } | undefined,
-  ): Edge | undefined => {
-    if (b?.overridden) return b.edge;
-    if (a?.overridden) return a.edge;
-    return (b ?? a)?.edge;
+  ): Segment => {
+    const by = b?.overridden ? b : a?.overridden ? a : (b ?? a);
+    return by?.edge ? { edge: by.edge, toward: by === b ? 1 : -1 } : undefined;
   };
+  const sameSegment = (a: Segment, b: Segment): boolean =>
+    !a || !b ? a === b : a.toward === b.toward && sameEdge(a.edge, b.edge);
   const sameRange = (i: number, j: number, k: number, l: number) =>
     heads[i]![j]![0] === heads[k]![l]![0] && heads[i]![j]![1] === heads[k]![l]![1];
 
-  /** Lines along one boundary from `segments` (each an edge or a gap), joined where alike. */
-  const run = (
-    segments: (Edge | undefined)[],
-    line: (from: number, to: number) => TablePart['geom'],
-  ) => {
-    let from = 0;
-    for (let k = 1; k <= segments.length; k++) {
-      const a = segments[from];
-      const b = segments[k];
-      if (k < segments.length && a && b && sameEdge(a, b)) continue;
-      if (k < segments.length && !a && !b) continue;
-      if (a) {
-        parts.push({
-          geom: line(from, k),
-          color: a.color,
-          linetype: a.linetype,
-          lineweight: a.lineweight,
-        });
-      }
-      from = k;
-    }
-  };
-
-  // Row boundaries from the top down, each from the left.
-  for (let n = 0; n <= rows; n++) {
+  // Row boundaries from the top down, each segment one column; column boundaries from the left,
+  // each segment one visual row.
+  const rowSegments = Array.from({ length: rows + 1 }, (_, n) => {
     const above = n > 0 ? visual[n - 1] : undefined;
     const below = n < rows ? visual[n] : undefined;
-    const y = boundaryY(n);
-    const segments = Array.from({ length: columns }, (_, j): Edge | undefined => {
+    return Array.from({ length: columns }, (_, j): Segment => {
       if (above !== undefined && below !== undefined && sameRange(above, j, below, j)) {
         return undefined;
       }
@@ -656,27 +650,89 @@ export function tableParts(
         below !== undefined ? cellEdge(below, j, 'top') : undefined,
       );
     });
-    run(segments, (from, to) => ({
-      kind: 'LINE',
-      start: { x: xs[from]!, y },
-      end: { x: xs[to]!, y },
-    }));
-  }
-  // Column boundaries from the left, each from the top down.
-  for (let k = 0; k <= columns; k++) {
-    const segments = visual.map((i): Edge | undefined => {
+  });
+  const columnSegments = Array.from({ length: columns + 1 }, (_, k) =>
+    visual.map((i): Segment => {
       if (k > 0 && k < columns && sameRange(i, k - 1, i, k)) return undefined;
       return shared(
         k > 0 ? cellEdge(i, k - 1, 'right') : undefined,
         k < columns ? cellEdge(i, k, 'left') : undefined,
       );
-    });
-    run(segments, (from, to) => ({
-      kind: 'LINE',
-      start: { x: xs[k]!, y: boundaryY(from) },
-      end: { x: xs[k]!, y: boundaryY(to) },
-    }));
-  }
+    }),
+  );
+  // Which way y runs from one row boundary to the next.
+  const down = rows > 0 && boundaryY(1) < boundaryY(0) ? -1 : 1;
+  /** How far a double segment's second line lies off its boundary, signed along the axis. */
+  const offset = (seg: Segment, sign: number): number =>
+    seg?.edge.double !== undefined ? seg.toward * sign * seg.edge.double : 0;
+
+  /**
+   * Lines along one boundary from `segments`, joined where alike: each drawn edge, and for a
+   * double one a second line `offset` off it, its ends `inset` (the second lines of the double
+   * borders across its ends, so that a double outline closes at its corners).
+   */
+  const run = (
+    segments: readonly Segment[],
+    line: (
+      from: number,
+      to: number,
+      shift: number,
+      insetFrom: number,
+      insetTo: number,
+    ) => TablePart['geom'],
+    sign: number,
+    across: (end: number, toward: 1 | -1) => Segment,
+  ) => {
+    let from = 0;
+    for (let k = 1; k <= segments.length; k++) {
+      const a = segments[from];
+      if (k < segments.length && sameSegment(a, segments[k])) continue;
+      if (a) {
+        const style = {
+          color: a.edge.color,
+          linetype: a.edge.linetype,
+          lineweight: a.edge.lineweight,
+        };
+        parts.push({ geom: line(from, k, 0, 0, 0), ...style });
+        if (a.edge.double !== undefined) {
+          const ends = [across(from, a.toward), across(k, a.toward)] as const;
+          parts.push({
+            geom: line(from, k, offset(a, sign), offset(ends[0], 1), offset(ends[1], 1)),
+            ...style,
+          });
+        }
+      }
+      from = k;
+    }
+  };
+
+  rowSegments.forEach((segments, n) => {
+    const y = boundaryY(n);
+    run(
+      segments,
+      (from, to, shift, x0, x1) => ({
+        kind: 'LINE',
+        start: { x: xs[from]! + x0, y: y + shift },
+        end: { x: xs[to]! + x1, y: y + shift },
+      }),
+      down,
+      // The column boundary at the end, in the row the second line lies in.
+      (end, toward) => columnSegments[end]![toward === 1 ? n : n - 1],
+    );
+  });
+  columnSegments.forEach((segments, k) => {
+    run(
+      segments,
+      (from, to, shift, y0, y1) => ({
+        kind: 'LINE',
+        start: { x: xs[k]! + shift, y: boundaryY(from) + y0 * down },
+        end: { x: xs[k]! + shift, y: boundaryY(to) + y1 * down },
+      }),
+      1,
+      // The row boundary at the end, in the column the second line lies in.
+      (end, toward) => rowSegments[end]![toward === 1 ? k : k - 1],
+    );
+  });
   parts.push({
     geom: { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 0, y: 0 } },
     color: { kind: 'aci', index: 8 },

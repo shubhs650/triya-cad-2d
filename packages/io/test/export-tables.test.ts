@@ -257,11 +257,8 @@ describe('ACAD_TABLE', () => {
       (g) => cell(g, 1, 0, { format: { contentColor: { kind: 'rgb', r: 1, g: 2, b: 3 } } }),
       /cell \(1, 0\): contentColor: a DXF table cell holds ACI colours only/,
     ],
-    [
-      'a hidden edge in a DXF cell',
-      (g) => cell(g, 1, 0, { format: { borders: { left: { hidden: true } } } }),
-      /cell \(1, 0\): a hidden left edge, which acad-ts cannot write to DXF \(M1-81\)/,
-    ],
+    // A hidden edge in a DXF cell saves in the table's TABLECONTENT since M4-16 part 7; a DXF
+    // before R2007 still refuses it (export-tables-grid.test.ts, border linetypes …).
     [
       'cell margins outside a DWG from R2010',
       (g) => cell(g, 1, 0, { format: { margins: { left: 0.2 } } }),

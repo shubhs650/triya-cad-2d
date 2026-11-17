@@ -33,6 +33,7 @@ import {
   Color as AcadColor,
   MarginFlags,
   TableBorderPropertyFlags,
+  TableEntityBorderType,
   TableCellContentLayoutFlags,
   TableCellStylePropertyFlags,
   TextStyle,
@@ -50,7 +51,7 @@ import type {
   TableGeometry,
 } from '@triya/engine';
 import type { CadFormat } from '../read';
-import { acadColor, acadLineweight, resolve, same, type Resolver } from './entities';
+import { acadColor, acadLineweight, linetype, resolve, same, type Resolver } from './entities';
 import { colorProblems, LINEWEIGHTS } from './table-styles';
 
 type Edge = 'top' | 'right' | 'bottom' | 'left';
@@ -278,13 +279,8 @@ export function formatFileProblems(
       out.push(p.replace('table style', 'table cell'));
     }
   }
-  if (format === 'dxf') {
-    for (const side of EDGES) {
-      if (a?.borders?.[side]?.hidden && !b?.borders?.[side]?.hidden) {
-        out.push(`a hidden ${side} edge, which acad-ts cannot write to DXF (M1-81)`);
-      }
-    }
-  }
+  // Border linetypes, double lines and (in a DXF) hidden edges are checked for the whole table
+  // (table-borders.ts): a DXF states them in the table's TABLECONTENT where it has one.
   return out;
 }
 
@@ -532,6 +528,19 @@ export function writeCellStyleFormat(
     if (!!was?.hidden !== !!now?.hidden) {
       set(B.Invisibility, true);
       border.isInvisible = !!now?.hidden;
+    }
+    // The linetype, double line and spacing (M4-16 part 7): no override is ByBlock and single.
+    if (!same(was?.linetype, now?.linetype)) {
+      set(B.LineType, now?.linetype !== undefined);
+      if (now?.linetype !== undefined) border.lineType = linetype(r, now.linetype) ?? null;
+    }
+    if (!!was?.double !== !!now?.double) {
+      set(B.BorderType, !!now?.double);
+      border.type = now?.double ? TableEntityBorderType.Double : TableEntityBorderType.Single;
+    }
+    if (!same(was?.spacing, now?.spacing)) {
+      set(B.DoubleLineSpacing, now?.spacing !== undefined);
+      if (now?.spacing !== undefined) border.doubleLineSpacing = now.spacing;
     }
   }
   s.cellPropertyOverrideFlags = own;

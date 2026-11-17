@@ -6,12 +6,17 @@
 // A format goes on every cell of the range, the cells a merged cell covers too: they keep their
 // own borders, which draw the merged cell's outline where it runs along them
 // (annotation/table.ts). Borders follow the Cell Border Properties dialog's buttons: all
-// borders, the outside ones, the inside ones, or one side of the range. An edge two cells share
+// borders, the outside ones, the inside ones (or only the horizontal or vertical ones), no
+// borders (which hides them: the Table Style dialog's No Border "hides borders"; the Cell Border
+// Properties page says only that it applies the settings to none, and a drafter clicking it
+// expects the grid gone), or one side of the range. The dialog sets a border whole: its colour,
+// lineweight, linetype and double line (M4-16 part 7), and shows it. An edge two cells share
 // is drawn by the cell below (right of) it when that one overrides it, else by the cell above
 // (left); so where the cell across the edge outside the range already overrides that edge, it
 // takes the new border too, or the change would not show.
 import type {
   Color,
+  LinetypeRef,
   Lineweight,
   TableBorderFormat,
   TableCell,
@@ -33,9 +38,12 @@ export const TABLE_BORDER_SETS = [
   'All',
   'Outside',
   'Inside',
+  'None',
   'Top',
+  'Horizontal',
   'Bottom',
   'Left',
+  'Vertical',
   'Right',
 ] as const;
 
@@ -50,10 +58,14 @@ export interface TableCellFormatting {
   readonly background?: Color | null;
 }
 
-/** A border's colour and lineweight (Edit Borders' Color and Lineweight). */
+/** A border as Edit Borders sets it (Cell Border Properties' Border Properties). */
 export interface TableBorderStyle {
   readonly color: Color;
   readonly lineweight: Lineweight;
+  /** ByBlock when absent, as the dialog's default. */
+  readonly linetype?: LinetypeRef;
+  /** Double Line on, at this spacing. */
+  readonly double?: number;
 }
 
 type Side = 'top' | 'right' | 'bottom' | 'left';
@@ -101,11 +113,16 @@ function sidesOf(set: TableBorderSet, r: TableCellRange, i: number, j: number): 
   const all: Side[] = ['top', 'right', 'bottom', 'left'];
   switch (set) {
     case 'All':
+    case 'None':
       return all;
     case 'Outside':
       return all.filter((s) => edge[s]);
     case 'Inside':
       return all.filter((s) => !edge[s]);
+    case 'Horizontal':
+      return (['top', 'bottom'] as const).filter((s) => !edge[s]);
+    case 'Vertical':
+      return (['right', 'left'] as const).filter((s) => !edge[s]);
     case 'Top':
       return edge.top ? ['top'] : [];
     case 'Bottom':
@@ -117,13 +134,13 @@ function sidesOf(set: TableBorderSet, r: TableCellRange, i: number, j: number): 
   }
 }
 
-/** `c` with its border `side` given `b` over what it overrode. */
+/** `c` with its border `side` set to `b`, in place of what it overrode. */
 function bordered(c: TableCell, side: Side, b: TableBorderFormat): TableCell {
-  const borders = { ...c.format?.borders, [side]: { ...c.format?.borders?.[side], ...b } };
+  const borders = { ...c.format?.borders, [side]: b };
   return { ...c, format: { ...c.format, borders } };
 }
 
-/** The borders `set` names of range `r` given colour and lineweight `b` (Edit Borders). */
+/** The borders `set` names of range `r` given border `b`, or hidden for None (Edit Borders). */
 export function withCellBorders(
   g: TableGeometry,
   r: TableCellRange,
@@ -131,7 +148,16 @@ export function withCellBorders(
   b: TableBorderStyle,
 ): TableGeometry {
   const cells: Cells = g.cells.map((row) => [...row]);
-  const border: TableBorderFormat = { color: b.color, lineweight: b.lineweight };
+  // ByBlock is what an edge is drawn in without an override (a table style states no linetype).
+  const border: TableBorderFormat =
+    set === 'None'
+      ? { hidden: true }
+      : {
+          color: b.color,
+          lineweight: b.lineweight,
+          ...(b.linetype !== undefined && b.linetype !== 'ByBlock' && { linetype: b.linetype }),
+          ...(b.double !== undefined && { double: true, spacing: b.double }),
+        };
   for (let i = r.r0; i <= r.r1; i++) {
     for (let j = r.c0; j <= r.c1; j++) {
       for (const side of sidesOf(set, r, i, j)) {

@@ -806,10 +806,15 @@ const PROP_MARGINS: readonly ['left' | 'top' | 'right' | 'bottom', number][] = [
 ];
 /** The ACI of the colour method None. */
 const ACI_NONE = 257;
-/** AcDb::GridProperty bits of a border override. */
+/** AcDb::GridProperty bits of a border override (acad-ts `TableBorderPropertyFlags`). */
+const BORDER_TYPE = 0x01;
 const BORDER_LINEWEIGHT = 0x02;
+const BORDER_LINETYPE = 0x04;
 const BORDER_COLOR = 0x08;
 const BORDER_VISIBILITY = 0x10;
+const BORDER_SPACING = 0x20;
+/** AcDb::GridLineStyle: 2 a double line. */
+const BORDER_DOUBLE = 2;
 
 /**
  * A cell background colour. DWG R2010+ states "no fill" as the colour method None (0xC8),
@@ -883,7 +888,37 @@ function applyCellStyle(d: FormatDraft, s: CellStyle): void {
     if (f & BORDER_COLOR) edge(d, side).color = mapColor(b.color);
     if (f & BORDER_LINEWEIGHT) edge(d, side).lineweight = mapLineweight(b.lineWeight);
     if (f & BORDER_VISIBILITY && b.isInvisible) edge(d, side).hidden = true;
+    borderExtras(edge(d, side), b);
   }
+}
+
+/**
+ * A border's linetype, double line and its spacing (M4-16 part 7), which only a DWG from R2010
+ * and a DXF table's TABLECONTENT state. AutoCAD sets the type, linetype and spacing bits beside
+ * every border it writes (each corpus table: single, ByBlock, 1.125), so a single line and a
+ * ByBlock linetype are what an edge is drawn with anyway, and are no override; a spacing is kept
+ * on a double border only (`tableCellFormat`).
+ */
+function borderExtras(e: Mutable<TableBorderFormat>, b: CellBorder): void {
+  const f = b.propertyOverrideFlags;
+  if (f & BORDER_TYPE) {
+    if ((b.type as number) === BORDER_DOUBLE) e.double = true;
+    else delete e.double;
+  }
+  if (f & BORDER_LINETYPE) {
+    const l = borderLinetype(b.lineType);
+    if (l !== undefined && l !== 'ByBlock') e.linetype = l;
+    else delete e.linetype;
+  }
+  if (f & BORDER_SPACING) e.spacing = b.doubleLineSpacing;
+}
+
+/** A border's linetype: a DXF TABLECONTENT's may be a handle the reader could not resolve. */
+function borderLinetype(l: CellBorder['lineType']): LinetypeRef | undefined {
+  const name = (l as { name?: string } | null)?.name?.toUpperCase();
+  if (name === 'BYBLOCK') return 'ByBlock';
+  if (name === 'BYLAYER') return 'ByLayer';
+  return ref(l);
 }
 
 /**
@@ -933,6 +968,7 @@ export function tableCellFormat(
       delete d.margins[side];
 
   const { borders, margins, ...rest } = d;
+  for (const b of Object.values(borders)) if (!b.double) delete b.spacing;
   const kept = Object.entries(borders).filter(([, b]) => Object.keys(b).length > 0);
   const format: Mutable<TableCellFormat> = {
     ...rest,
@@ -1140,7 +1176,7 @@ function tableGeometry(
   const styled = cellStyleNames(
     t,
     styledBy?.rows ?? t.rows,
-    cellLocks(styledBy?.rows ?? t.rows, cells),
+    cellLocks(styledBy?.rows ?? t.rows, styledBy ? contentBorders(styledBy, cells) : cells),
   );
   return {
     kind: 'ACAD_TABLE',
@@ -1155,6 +1191,53 @@ function tableGeometry(
     ...(styled.rowStyles ? { rowStyles: styled.rowStyles } : {}),
     ...planar(pl, t.normal, t.insertPoint.z, 0),
   };
+}
+
+/**
+ * A DXF table's border linetypes, double lines and hidden edges (M4-16 part 7), which its legacy
+ * ACAD_TABLE codes do not state (acad-ts reads no edge visibility, 289/285/286/288, M1-81) and
+ * its TABLECONTENT does: each cell's borders folded from its column's, row's and own cell styles
+ * there, as a DWG from R2010's are (`tableCellFormat`), over the cell's legacy-mapped format.
+ */
+function contentBorders(content: TableContent, cells: TableCell[][]): TableCell[][] {
+  const rows = content.rows;
+  const grid =
+    rows.length === cells.length && rows.every((r, i) => r.cells.length === cells[i]!.length);
+  if (!grid) return cells;
+  return cells.map((row, i) =>
+    row.map((c, j) => {
+      const d: FormatDraft = { borders: {}, margins: {} };
+      const styles = [
+        content.columns[j]?.cellStyleOverride,
+        rows[i]!.cellStyleOverride,
+        rows[i]!.cells[j]!.styleOverride,
+      ];
+      for (const s of styles) {
+        if (!s?.hasData) continue;
+        for (const side of ['top', 'right', 'bottom', 'left'] as const) {
+          const b = borderOf(s, side);
+          if (b.propertyOverrideFlags & BORDER_VISIBILITY && b.isInvisible) {
+            edge(d, side).hidden = true;
+          }
+          borderExtras(edge(d, side), b);
+        }
+      }
+      let borders = c.format?.borders;
+      for (const [side, b] of Object.entries(d.borders) as [Edge, TableBorderFormat][]) {
+        const extra: Mutable<TableBorderFormat> = {};
+        if (b.linetype !== undefined) extra.linetype = b.linetype;
+        if (b.double) extra.double = true;
+        if (b.double && b.spacing !== undefined) extra.spacing = b.spacing;
+        if (b.hidden) extra.hidden = true;
+        if (Object.keys(extra).length > 0) {
+          borders = { ...borders, [side]: { ...borders?.[side], ...extra } };
+        }
+      }
+      return !borders || borders === c.format?.borders
+        ? c
+        : { ...c, format: { ...c.format, borders } };
+    }),
+  );
 }
 
 /**
@@ -1753,8 +1836,12 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   if (e instanceof MText) return mtextGeometry(e, ctx);
   // TableEntity extends Insert in acad-ts, so it is tested first.
   // A DXF table's rows' and cells' cell styles are in its TABLECONTENT only (M4-16 part 5).
-  if (e instanceof TableEntity)
-    return tableGeometry(e, roundTripTableContent(e)?.content ?? undefined);
+  // Its border linetypes (M4-16 part 7) name LTYPE records, resolved to tell ByBlock apart.
+  if (e instanceof TableEntity) {
+    const doc = e.document;
+    const resolve = (h: number) => doc?.getCadObject(h) ?? null;
+    return tableGeometry(e, roundTripTableContent(e, resolve)?.content ?? undefined);
+  }
   if (e instanceof Insert) return insertGeometry(e, ctx);
   if (
     e instanceof DimensionAligned ||

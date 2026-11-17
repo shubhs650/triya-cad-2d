@@ -448,3 +448,97 @@ describe('ACAD_TABLE cell locks (M4-16 part 6)', () => {
     expect(problems.join('\n')).toMatch(/locked cells/);
   });
 });
+
+describe('ACAD_TABLE border linetypes, double lines and hidden borders (M4-16 part 7)', () => {
+  const continuous = (model: DocumentModel): string =>
+    [...model.tables.linetypes.values()].find((l) => l.name.toUpperCase() === 'CONTINUOUS')!.handle;
+  const red = { kind: 'aci' as const, index: 1 };
+  /** The data row's first cell framed double in Continuous, its second's left edge hidden. */
+  const bordered = (g: TableGeometry, linetype: string): TableGeometry => ({
+    ...g,
+    cells: g.cells.map((row, i) =>
+      i !== 2
+        ? row
+        : row.map((c, j) =>
+            j === 0
+              ? {
+                  ...c,
+                  format: {
+                    ...c.format,
+                    borders: {
+                      top: { color: red, lineweight: 50, linetype, double: true, spacing: 0.05 },
+                      bottom: { double: true, spacing: 0.25 },
+                    },
+                  },
+                }
+              : { ...c, format: { ...c.format, borders: { left: { hidden: true } } } },
+          ),
+    ),
+  });
+  const borders = (g: TableGeometry) => g.cells[2]!.map((c) => c.format?.borders);
+
+  it.each([
+    ['R2018 DXF', ACadVersion.AC1032, 'dxf'],
+    ['R2007 DXF', ACadVersion.AC1021, 'dxf'],
+    ['R2018 DWG', ACadVersion.AC1032, 'dwg'],
+    ['R2010 DWG', ACadVersion.AC1024, 'dwg'],
+  ] as const)('saves them to %s, and plain again', (_w, version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    const lt = continuous(model);
+    edit(model, bordered(table(model).geom, lt));
+    const saved = exportDocument(readCadDocument(bytes), model, { format });
+    expect(borders(mapped(readCadDocument(saved)))).toEqual(
+      borders(bordered(table(model).geom, lt)),
+    );
+    // The border's type 2 (double), its linetype and spacing, in AutoCAD's border override bits.
+    const doc = readCadDocument(saved);
+    const t = acadTable(doc);
+    const content = roundTripTableContent(t, (h) => doc.getCadObject(h))?.content;
+    const top = (format === 'dwg' ? t.rows : (content?.rows ?? []))[2]!.cells[0]!.styleOverride
+      .topBorder;
+    expect([top.type, top.doubleLineSpacing, top.lineType?.name.toUpperCase()]).toEqual([
+      2,
+      0.05,
+      'CONTINUOUS',
+    ]);
+    expect(top.propertyOverrideFlags & 0x2d).toBe(0x2d);
+    // Opened from that save and the borders taken off: single, ByBlock and shown again.
+    const reopened = open(saved);
+    const g = table(reopened).geom;
+    edit(reopened, {
+      ...g,
+      cells: g.cells.map((r) => r.map(({ format: _, ...c }) => c)),
+    });
+    const plain = mapped(save(saved, reopened, format));
+    expect(borders(plain)).toEqual([undefined, undefined]);
+  });
+
+  it.each([
+    ['R2004 DXF', ACadVersion.AC1018, 'dxf', /border linetypes, double lines or hidden borders/],
+    ['R2007 DWG', ACadVersion.AC1021, 'dwg', /border linetypes or double lines/],
+  ] as const)('refuses them in %s, which cannot state them', (_w, version, format, why) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    edit(model, bordered(table(model).geom, continuous(model)));
+    const problems = refusal(() => exportDocument(readCadDocument(bytes), model, { format }));
+    expect(problems.join('\n')).toMatch(why);
+  });
+
+  it('saves a hidden edge alone to an R2007 DWG, whose cell flags state it', () => {
+    const bytes = drawing(ACadVersion.AC1021, 'dwg');
+    const model = open(bytes);
+    const g = table(model).geom;
+    edit(model, {
+      ...g,
+      cells: g.cells.map((row, i) =>
+        i === 2 ? row.map((c) => ({ ...c, format: { borders: { left: { hidden: true } } } })) : row,
+      ),
+    });
+    const back = mapped(save(bytes, model, 'dwg'));
+    expect(back.cells[2]!.map((c) => c.format?.borders?.left)).toEqual([
+      { hidden: true },
+      { hidden: true },
+    ]);
+  });
+});

@@ -92,9 +92,46 @@ describe('withCellBorders', () => {
       ['', 'right'],
       ['', 'right'],
     ]);
+    // Cell Border Properties' Inside Horizontal and Inside Vertical buttons (M4-16 part 7).
+    expect(sides(withCellBorders(table(), r, 'Horizontal', RED)).slice(1, 3)).toEqual([
+      ['bottom', 'bottom'],
+      ['top', 'top'],
+    ]);
+    expect(sides(withCellBorders(table(), r, 'Vertical', RED)).slice(1, 3)).toEqual([
+      ['right', 'left'],
+      ['right', 'left'],
+    ]);
   });
 
-  it('keeps what a border overrode besides, and gives the cell across an edge it overrides', () => {
+  it('gives a border its linetype and a double line, and No Borders hides them (M4-16 part 7)', () => {
+    const one = { r0: 1, c0: 0, r1: 1, c1: 0 };
+    const styled = withCellBorders(table(), one, 'Top', {
+      ...RED,
+      linetype: 'L1',
+      double: 0.05,
+    });
+    expect(styled.cells[1]![0]!.format!.borders!.top).toEqual({
+      ...RED,
+      linetype: 'L1',
+      double: true,
+      spacing: 0.05,
+    });
+    // ByBlock is what an edge is drawn in without an override: not kept as one.
+    const plain = withCellBorders(styled, one, 'Top', { ...RED, linetype: 'ByBlock' });
+    expect(plain.cells[1]![0]!.format!.borders!.top).toEqual(RED);
+    const none = withCellBorders(styled, one, 'None', RED);
+    expect(none.cells[1]![0]!.format!.borders).toEqual({
+      top: { hidden: true },
+      right: { hidden: true },
+      bottom: { hidden: true },
+      left: { hidden: true },
+    });
+    // Border properties applied to a hidden edge show it again.
+    const shown = withCellBorders(none, one, 'Left', RED);
+    expect(shown.cells[1]![0]!.format!.borders!.left).toEqual(RED);
+  });
+
+  it('gives the cell across an edge it overrides the border, shown (M4-16 part 7)', () => {
     const blue = { color: { kind: 'aci' as const, index: 5 }, hidden: true as const };
     const g = table({
       cells: [
@@ -106,8 +143,9 @@ describe('withCellBorders', () => {
     });
     const out = withCellBorders(g, { r0: 2, c0: 0, r1: 2, c1: 0 }, 'Top', RED);
     expect(out.cells[2]![0]!.format!.borders!.top).toEqual(RED);
-    // Cell (1, 0) above overrides the shared edge: it takes the border, its hidden flag kept.
-    expect(out.cells[1]![0]!.format!.borders!.bottom).toEqual({ ...RED, hidden: true });
+    // Cell (1, 0) above overrides the shared edge: it takes the border, which Cell Border
+    // Properties sets whole (its colour, lineweight, linetype and double line) and shows.
+    expect(out.cells[1]![0]!.format!.borders!.bottom).toEqual(RED);
     // Not the cell beside, which states nothing there.
     expect(out.cells[1]![1]!.format).toBeUndefined();
   });

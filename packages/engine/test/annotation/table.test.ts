@@ -260,6 +260,51 @@ describe('table engine (M4-05)', () => {
     ]);
   });
 
+  it('draws a border in its linetype, and a double one as a second line inside the cell (M4-16 part 7)', () => {
+    const edge = { linetype: 'L1', double: true, spacing: 0.05 } as const;
+    const g = table({
+      cells: [
+        [cell('Schedule', { columnSpan: 2 }), cell('', { merged: true })],
+        [cell('Tag'), cell('Size')],
+        [
+          cell('N1', {
+            format: { borders: { top: edge, right: edge, bottom: edge, left: edge } },
+          }),
+          cell(''),
+        ],
+      ],
+    });
+    const parts = draw(g).filter((p) => p.geom.kind === 'LINE' && !p.defpoint);
+    const inL1 = parts.filter((p) => p.linetype === 'L1');
+    // The cell's outline on the grid, and inside it a second outline 0.05 in, its corners meeting.
+    expect(lines(inL1).sort()).toEqual(
+      [
+        [0, -0.8133, 2.5, -0.8133],
+        [0.05, -0.8633, 2.45, -0.8633],
+        [0, -1.1733, 2.5, -1.1733],
+        [0.05, -1.1233, 2.45, -1.1233],
+        [0, -0.8133, 0, -1.1733],
+        [0.05, -0.8633, 0.05, -1.1233],
+        [2.5, -0.8133, 2.5, -1.1733],
+        [2.45, -0.8633, 2.45, -1.1233],
+      ].sort(),
+    );
+    // The rest of the grid stays ByBlock and single.
+    expect(lines(parts.filter((p) => p.linetype === 'ByBlock'))).toContainEqual([
+      2.5, -1.1733, 5.5, -1.1733,
+    ]);
+    // A double border only on top runs its second line the whole width of the cell.
+    const top = table({
+      cells: [
+        [cell('Schedule', { columnSpan: 2 }), cell('', { merged: true })],
+        [cell('Tag'), cell('Size')],
+        [cell('N1', { format: { borders: { top: { double: true } } } }), cell('')],
+      ],
+    });
+    // No spacing stated: the Cell Border Properties default, 0.18.
+    expect(lines(draw(top))).toContainEqual([0, -0.9933, 2.5, -0.9933]);
+  });
+
   it('merges a block of cells: one text and fill across it, no lines inside', () => {
     const g: TableGeometry = {
       ...table(),
