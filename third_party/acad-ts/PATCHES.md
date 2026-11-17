@@ -3423,3 +3423,20 @@ An ACAD_TABLE text cell names the FIELD holding its fields with group 344 (DXF R
 BLOCK_RECORD group 281 (DWG R2007+ "block scaling") is 1 when the block's references must scale uniformly; AutoCAD writes 0 for ordinary blocks and for `*Model_Space`/`*Paper_Space`, and ezdxf defaults it to 0 (`BlockLayout.scale_uniformly`). `canScale` defaulted to `true`, so every block of a pre-2007 file (which has no 281) and every block created in code came out as "scale uniformly". This defaults it to `false`. Worth considering separately: the property's name suggests the opposite of what 281 = 1 means.
 
 </details>
+
+### 0188 — IMAGEFRAME's "Displayed but not plotted" (2) read and written as on
+
+- **File:** `third_party/acad-ts-patches/0188-raster-image-frame-display-not-plot.patch`
+- **Touches:** `src/Objects/RasterVariables.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** RASTERVARIABLES 70 (DWG: BS) is IMAGEFRAME, 0 frames off, 1 displayed and plotted, 2 displayed but not plotted (AutoCAD 2024 Help, "IMAGEFRAME (System Variable)"). `RasterVariables.isDisplayFrameShown` was a boolean, so 2 read as `true` and was written back as 1: a drawing whose image frames show but do not plot plotted them after a save. The same fault as 0176 for WIPEOUTVARIABLES; found by M5-04 part 4 (IMAGEFRAME).
+- **Fix:** `isDisplayFrameShown` is the number the file holds (default 0, as `false` was); the DWG reader and both writers carry it as is. The DXF reader already converts by the property's type.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0188 IMAGEFRAME keeps "Displayed but not plotted" (2) through DXF and DWG"; testkit `images/image-commands.test.ts` saves IMAGEFRAME 2 and reads it back.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep RASTERVARIABLES display frame values 0, 1 and 2
+
+RASTERVARIABLES group 70 (DWG BS) holds IMAGEFRAME, which AutoCAD sets to 0 (frames off), 1 (displayed and plotted) or 2 (displayed but not plotted). `RasterVariables.isDisplayFrameShown` is a boolean, so a drawing with IMAGEFRAME 2 reads as `true` and is written back as 1, and its frames start plotting. This makes the property the number stored, read and written unchanged by the DWG reader, the DWG writer and the DXF writer (the DXF reader converts by the property's type already), matching the WipeoutVariables change for WIPEOUTFRAME. Callers that tested the property for truth keep working for 0 and 1.
+
+</details>

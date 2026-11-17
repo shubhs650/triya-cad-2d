@@ -429,6 +429,56 @@ describe('plotParts with a PDF underlay (M2-16 part 5)', () => {
   }
 });
 
+describe('plotParts with IMAGEFRAME (M5-04 part 4)', () => {
+  const image: ImageGeometry = {
+    kind: 'IMAGE',
+    position: { x: 0, y: 0 },
+    u: { x: 1, y: 0 },
+    v: { x: 0, y: 1 },
+    size: { x: 8, y: 4 },
+    displayFlags: 7,
+    clipping: false,
+    brightness: 50,
+    contrast: 50,
+    fade: 0,
+    clip: {
+      type: 'rectangle',
+      vertices: [
+        { x: -0.5, y: -0.5 },
+        { x: 7.5, y: 3.5 },
+      ],
+      inverted: false,
+    },
+  } as ImageGeometry;
+  const strokes = (frame?: number) => {
+    const objects =
+      frame === undefined
+        ? []
+        : [
+            {
+              handle: '83',
+              type: 'RASTERVARIABLES',
+              owner: '0C',
+              frame,
+              quality: 'high',
+              units: 0,
+            } as NonGraphicalObject,
+          ];
+    const { model } = drawing([entity('70', image)], { objects });
+    // The screen draws image frames with IMAGEFRAME 1 and 2.
+    const tessellate = { frames: { image: frame !== 0, wipeout: true } };
+    return plotParts(model, MODEL, { resolver, tessellate }).filter((p) => p.kind === 'stroke')
+      .length;
+  };
+
+  it('plots image frames with IMAGEFRAME 1, not with 0, and leaves out 2 (displayed but not plotted)', () => {
+    expect(strokes()).toBe(1);
+    expect(strokes(1)).toBe(1);
+    expect(strokes(0)).toBe(0);
+    expect(strokes(2)).toBe(0);
+  });
+});
+
 describe('plotParts with wipeouts (M2-24 part 2)', () => {
   const wipeout: ImageGeometry = {
     kind: 'WIPEOUT',

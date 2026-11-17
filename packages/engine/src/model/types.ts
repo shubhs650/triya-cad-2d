@@ -1930,14 +1930,20 @@ export interface PdfDefinition extends NonGraphicalObject {
 }
 
 /**
+ * IMAGEFRAME (AutoCAD 2024 Help, "IMAGEFRAME (System Variable)"): 0 image frames neither shown
+ * nor plotted, 1 shown and plotted (AutoCAD's initial value), 2 shown but not plotted.
+ */
+export type ImageFrame = 0 | 1 | 2;
+
+/**
  * The drawing's image display settings (DXF RASTERVARIABLES, `ACAD_IMAGE_VARS`): IMAGEFRAME
  * and IMAGEQUALITY. A drawing without the object uses AutoCAD's initial values, frame on and
  * high quality.
  */
 export interface RasterVariables extends NonGraphicalObject {
   readonly type: 'RASTERVARIABLES';
-  /** DXF 70: image frames shown. */
-  readonly frame: boolean;
+  /** DXF 70: IMAGEFRAME, as the file holds it (acad-ts patch 0188, M5-04 part 4). */
+  readonly frame: ImageFrame;
   /** DXF 71. */
   readonly quality: 'draft' | 'high';
   /** DXF 72: insertion units, 0 none, 1 millimetres, … 5 inches. */

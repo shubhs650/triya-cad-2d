@@ -57,6 +57,8 @@ FIXTURE_SAVES = (
     # packages/testkit/src/layers/layer-cleanup.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laymrg"),
+    # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
+    ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

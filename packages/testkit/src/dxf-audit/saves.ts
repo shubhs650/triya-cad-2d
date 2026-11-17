@@ -32,7 +32,9 @@ export type AuditSaveKind =
   | 'xclip'
   // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
   | 'laydel'
-  | 'laymrg';
+  | 'laymrg'
+  // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
+  | 'images';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version

@@ -661,7 +661,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(100, DxfSubclassMarker.rasterVariables);
 
     this._writer.write(90, variables.classVersion, map);
-    this._writer.write(70, variables.isDisplayFrameShown ? 1 : 0, map);
+    this._writer.write(70, variables.isDisplayFrameShown, map);
     this._writer.write(71, variables.displayQuality, map);
     this._writer.write(72, variables.units, map);
   }

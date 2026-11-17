@@ -6,9 +6,10 @@
 //   Enter variable(s) to list <*>:               (?: wild-card names, as WCMATCH takes them)
 // Which variables there are and where each is kept is `sysvars.ts`'s.
 import type { Vec2 } from '../geom/types';
-import type { HeaderValue, WipeoutFrame } from '../model/types';
+import type { HeaderValue, ImageFrame, WipeoutFrame } from '../model/types';
 import type { CommandContext, CommandDef } from './command';
 import { setWipeoutFrame, wipeoutFrame } from './draw/wipeout';
+import { imageFrame, setImageFrame } from './image';
 import { wcmatch } from './modify/attributes';
 import type { Prompt, PromptAnswer } from './prompt';
 import { modelSpaceOf } from './bus';
@@ -45,6 +46,8 @@ async function read(
       return { value: headerValue(v, ctx.model.header.get(v.key!) ?? v.initial!) };
     case 'wipeout':
       return { value: wipeoutFrame(ctx.model) };
+    case 'raster':
+      return { value: imageFrame(ctx.model) };
     case 'app': {
       const r = await ctx.view.request({ op: 'sysvar', name: v.name });
       if (!r.ok) return { problem: r.message };
@@ -215,6 +218,9 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
     }
     case 'wipeout':
       setWipeoutFrame(ctx, value as WipeoutFrame);
+      return;
+    case 'raster':
+      setImageFrame(ctx, value as ImageFrame);
       return;
     case 'app': {
       const r = await ctx.view.request(

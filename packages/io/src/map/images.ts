@@ -12,6 +12,7 @@ import {
 } from '@node-projects/acad-ts';
 import type {
   ImageDefinition,
+  ImageFrame,
   PdfDefinition,
   RasterVariables,
   WipeoutFrame,
@@ -27,6 +28,9 @@ export type ImageObject = ImageDefinition | RasterVariables | WipeoutVariables |
  * non-zero flag, and stays in the file as it was unless WIPEOUT Frames changes it.
  */
 const wipeoutFrame = (v: number): WipeoutFrame => (v === 0 || v === 2 ? v : 1);
+
+/** RASTERVARIABLES 70 as IMAGEFRAME, read as WIPEOUTFRAME is (acad-ts patch 0188, M5-04 part 4). */
+const imageFrame = (v: number): ImageFrame => (v === 0 || v === 2 ? v : 1);
 
 /** The drawing's image definitions and image display settings, by handle. */
 export function mapImageObjects(doc: CadDocument): ImageObject[] {
@@ -50,7 +54,7 @@ export function mapImageObjects(doc: CadDocument): ImageObject[] {
         ...common(o),
         type: 'RASTERVARIABLES',
         owner,
-        frame: o.isDisplayFrameShown,
+        frame: imageFrame(o.isDisplayFrameShown),
         quality: (o.displayQuality as number) === 0 ? 'draft' : 'high',
         units: o.units,
       });

@@ -79,7 +79,7 @@ function drawing(
   }
   if (!options.noVariables) {
     const raster = new AcadRasterVariables('ACAD_IMAGE_VARS');
-    raster.isDisplayFrameShown = true;
+    raster.isDisplayFrameShown = 1;
     raster.displayQuality = ImageDisplayQuality.High;
     raster.units = 1;
     root.add(raster);
@@ -153,8 +153,9 @@ const FIELD_EDITS: Record<
   // External References Unload / Reload.
   loaded: (m) => [definition(m, 'photo').handle, { loaded: false }],
   units: (m) => [definition(m, 'photo').handle, { units: 5 }],
-  // IMAGEFRAME 0, IMAGEQUALITY Draft.
-  'raster frame': (m) => [raster(m).handle, { frame: false }],
+  // IMAGEFRAME 0, and 2 (displayed but not plotted, M5-04 part 4), IMAGEQUALITY Draft.
+  'raster frame': (m) => [raster(m).handle, { frame: 0 }],
+  'raster frame not plotted': (m) => [raster(m).handle, { frame: 2 }],
   'raster quality': (m) => [raster(m).handle, { quality: 'draft' }],
   'raster units': (m) => [raster(m).handle, { units: 6 }],
   // WIPEOUTFRAME 0, and 2 (displayed but not plotted, M2-24 part 2).
@@ -197,7 +198,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
     let shown = '';
     edit(model, (b) => {
       b.updateObject(photo.handle, patch({ fileName: '..\\photos\\photo.png', loaded: false }));
-      b.updateObject(raster(model).handle, patch({ frame: false, quality: 'draft' }));
+      b.updateObject(raster(model).handle, patch({ frame: 2, quality: 'draft' }));
       b.updateObject(wipeout(model).handle, patch({ frame: 2 }));
       // IMAGEATTACH of a new file: its definition, and an image showing it, in one save.
       added = b.addObject(newDefinition(photo.owner, 'survey')).handle;
@@ -270,7 +271,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
           b.addObject({
             type: 'RASTERVARIABLES',
             owner: root,
-            frame: false,
+            frame: 2,
             quality: 'draft',
             units: 1,
           } as Omit<RasterVariables, 'handle'>).handle,
@@ -360,7 +361,8 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
       [update(photo, { pixelSize: { x: 1, y: -1 } }), /pixelSize: each value/],
       [update(photo, { loaded: 1 }), /loaded: 1 is not true or false/],
       [update(photo, { units: 1 }), /units: 1 is not 0 \(none\), 2 \(centimetres\) or 5/],
-      [update(raster, { frame: 'yes' }), /frame: "yes" is not true or false/],
+      [update(raster, { frame: 'yes' }), /frame: "yes" is not 0 \(off\), 1 \(on\) or 2/],
+      [update(raster, { frame: true }), /frame: true is not 0 \(off\), 1 \(on\) or 2/],
       [update(raster, { quality: 'low' }), /quality: "low" is not draft or high/],
       [update(raster, { units: 9 }), /units: 9 is not a whole number from 0 to 8/],
       [update(wipeout, { frame: null }), /frame: null is not 0 \(off\), 1 \(on\) or 2/],
@@ -379,7 +381,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
           b.addObject({
             type: 'RASTERVARIABLES',
             owner: root,
-            frame: true,
+            frame: 1,
             quality: 'high',
             units: 0,
           } as never),
@@ -431,7 +433,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
       b.addObject({
         type: 'RASTERVARIABLES',
         owner: root,
-        frame: true,
+        frame: 1,
         quality: 'high',
         units: 0,
       } as never),
