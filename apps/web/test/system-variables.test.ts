@@ -108,6 +108,14 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'FIELDDISPLAY')).toEqual({ ok: true, value: 0 });
   });
 
+  it('keep LAYLOCKFADECTL, 50 at first, which LAYISO sets (M5-06)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'LAYLOCKFADECTL')).toEqual({ ok: true, value: 50 });
+    systemVariableReply(d, 'LAYLOCKFADECTL', -30);
+    expect(d.get().layLockFade).toBe(-30);
+    expect(systemVariableReply(d, 'LAYLOCKFADECTL')).toEqual({ ok: true, value: -30 });
+  });
+
   it('keep AUTOSNAP’s bits, POLAR and OTRACK being the status bar’s buttons (M2-59)', () => {
     // AutoCAD 2024 Help, "AUTOSNAP": 1 marker, 2 SnapTip, 4 magnet, 8 polar tracking, 16
     // object snap tracking, 32 tooltips for polar and object snap tracking; initially 63.

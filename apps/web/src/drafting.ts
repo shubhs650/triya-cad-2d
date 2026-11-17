@@ -94,6 +94,11 @@ export interface DraftingState {
    */
   readonly fieldDisplay: boolean;
   /**
+   * LAYLOCKFADECTL (M5-06): objects on locked layers drawn faded by this percentage, −90 to 90
+   * (negative: not faded). AutoCAD keeps it per user, initially 50; LAYISO sets it.
+   */
+  readonly layLockFade: number;
+  /**
    * POLARMODE (M3-06 part 1): bits 1 polar angles relative to the last segment, 2 object snap
    * tracking along the polar angles, 4 the additional angles, 8 Shift to acquire tracking
    * points. AutoCAD keeps it per user, initially 0. Bits 1 and 8 act since part 3.
@@ -449,6 +454,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   rolloverTips: true,
   arrayAssociativity: true,
   fieldDisplay: true,
+  layLockFade: 50,
   polarMode: 0,
   polarAddAngles: '',
   snapType: 0,
