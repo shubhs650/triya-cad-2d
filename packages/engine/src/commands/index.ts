@@ -118,6 +118,10 @@ export type {
   BlockDefinitionEntry,
   BlockDefinitionRequest,
   BlockDefinitionSettings,
+  InsertBlockEntry,
+  InsertDialogAnswer,
+  InsertDialogRequest,
+  InsertDialogSettings,
 } from './blocks';
 export type {
   HatchDialogAnswer,

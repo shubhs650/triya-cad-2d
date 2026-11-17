@@ -31,7 +31,12 @@ import type { FieldSpec } from '../edit/field-codes';
 import { FIELD_EDIT, FIELD_INSERT, FIELD_UPDATE } from '../edit/fields';
 import type { ToleranceRequest } from './draw/tolerance';
 import type { TableBlockRequest, TableBlockSettings } from './draw/table-block';
-import type { BlockDefinitionAnswer, BlockDefinitionRequest } from './blocks';
+import type {
+  BlockDefinitionAnswer,
+  BlockDefinitionRequest,
+  InsertDialogAnswer,
+  InsertDialogRequest,
+} from './blocks';
 import type { TableCellFormatRequest } from './draw/table-data-format';
 import type { TableDataFormat } from '../edit/table-data';
 import type { GdtFrame } from '../edit/tolerance-frame';
@@ -765,6 +770,8 @@ export type DialogRequest =
   | TableBlockRequest
   /** BLOCK's Block Definition (M5-01 part 2). */
   | BlockDefinitionRequest
+  /** INSERT's Insert (M5-01 part 3). */
+  | InsertDialogRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
   | TableCellFormatRequest
   | ObjectGroupingRequest;
@@ -1006,6 +1013,8 @@ export type PromptAnswer =
        * closed it (BLOCK, M5-01 part 2).
        */
       readonly block?: BlockDefinitionAnswer;
+      /** The Insert dialog's fields as OK closed it (INSERT, M5-01 part 3). */
+      readonly insert?: InsertDialogAnswer;
       /** The Table Cell Format dialog's data format as OK closed it (M4-16). */
       readonly tableDataFormat?: TableDataFormat;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
