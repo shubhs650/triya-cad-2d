@@ -78,6 +78,7 @@ export type DraftingPreferences = Pick<
   | 'rolloverTips'
   | 'arrayAssociativity'
   | 'fieldDisplay'
+  | 'layLockFade'
   | 'polarMode'
   | 'polarAddAngles'
   | 'snapType'
@@ -176,6 +177,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     rolloverTips: true,
     arrayAssociativity: true,
     fieldDisplay: true,
+    layLockFade: 50,
     polarMode: 0,
     polarAddAngles: '',
     snapType: 0,
@@ -326,6 +328,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       rolloverTips: bool(k['rolloverTips'], d.drafting.rolloverTips),
       arrayAssociativity: bool(k['arrayAssociativity'], d.drafting.arrayAssociativity),
       fieldDisplay: bool(k['fieldDisplay'], d.drafting.fieldDisplay),
+      layLockFade: within(k['layLockFade'], { min: -90, max: 90 }, d.drafting.layLockFade),
       polarMode: within(k['polarMode'], { min: 0, max: 15 }, d.drafting.polarMode),
       selectSimilarMode: within(
         k['selectSimilarMode'],
@@ -467,6 +470,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     rolloverTips: s.rolloverTips,
     arrayAssociativity: s.arrayAssociativity,
     fieldDisplay: s.fieldDisplay,
+    layLockFade: s.layLockFade,
     polarMode: s.polarMode,
     polarAddAngles: s.polarAddAngles,
     snapType: s.snapType,

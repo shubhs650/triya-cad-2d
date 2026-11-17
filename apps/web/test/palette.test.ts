@@ -130,6 +130,18 @@ describe('palette search', () => {
       'JOIN',
       // M4-09 part 1: JUSTIFYTEXT and SCALETEXT.
       'JUSTIFYTEXT',
+      // M5-06 part 1: the layer tool row.
+      'LAYCUR',
+      'LAYFRZ',
+      'LAYISO',
+      'LAYLCK',
+      'LAYMCH',
+      'LAYMCUR',
+      'LAYOFF',
+      'LAYON',
+      'LAYTHW',
+      'LAYULK',
+      'LAYUNISO',
       'LENGTHEN',
       'LINE',
       'LIST',
