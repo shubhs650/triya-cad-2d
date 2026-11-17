@@ -1020,6 +1020,15 @@ export interface TableBorderFormat {
   readonly color?: Color;
   /** DXF 27x. */
   readonly lineweight?: Lineweight;
+  /**
+   * The border's linetype (M4-16 part 7); never ByBlock, which is what an edge is drawn in
+   * without one. Only a DWG from R2010 and a DXF table's TABLECONTENT state it.
+   */
+  readonly linetype?: LinetypeRef;
+  /** A double-line border (border type 2), stated where `linetype` is. */
+  readonly double?: true;
+  /** The spacing of a double line; kept only on a double border. */
+  readonly spacing?: number;
   readonly hidden?: true;
 }
 

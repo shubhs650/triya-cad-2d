@@ -19,7 +19,7 @@ import {
   type TableStyleRecord,
   type ViewReply,
 } from '../../src/index';
-import { sampleInit } from '../model/fixtures';
+import { linetype, sampleInit } from '../model/fixtures';
 
 const ACADISO: TableStyleRecord = { handle: '90', ...standardTableStyle(true, '16') };
 
@@ -44,6 +44,7 @@ function setup(picked: () => EntityId[] = () => [], clipboard?: () => ViewReply)
         },
       ],
       tableStyles: [ACADISO],
+      linetypes: [...(init.tables?.linetypes ?? []), linetype('7D1', 'DASHED')],
     },
   };
   const model = DocumentModel.create(withStyles);
@@ -467,7 +468,7 @@ describe('the Table Cell menu’s formatting (M4-05 part 4)', () => {
     await s.bus.pick(at(3, 1), { shift: true });
     await s.bus.submit('BO');
     expect(s.bus.promptText).toBe(
-      'Apply the border properties to [All/Outside/Inside/Top/Bottom/Left/Right] <All>:',
+      'Apply the border properties to [All/Outside/Inside/None/Top/Horizontal/Bottom/Left/Vertical/Right] <All>:',
     );
     await s.bus.submit('O');
     expect(s.bus.promptText).toBe('Enter border color <BYBLOCK>:');
@@ -476,6 +477,10 @@ describe('the Table Cell menu’s formatting (M4-05 part 4)', () => {
     await s.bus.submit('0.45');
     expect(s.messages).toContain('Invalid lineweight.');
     await s.bus.submit('0.5');
+    expect(s.bus.promptText).toBe('Enter border linetype <ByBlock>:');
+    await s.bus.submit('');
+    expect(s.bus.promptText).toBe('Double line? [Yes/No] <No>:');
+    await s.bus.submit('');
     expect(s.bus.promptText).toBe('Command:');
     const red = { color: { kind: 'aci', index: 1 }, lineweight: 50 };
     expect(formatOf(s, 2, 0)!.borders).toEqual({ top: red, left: red });
@@ -497,16 +502,68 @@ describe('the Table Cell menu’s formatting (M4-05 part 4)', () => {
     await nozzles(s);
     await s.bus.pick(at(2, 0));
     await s.bus.pick(at(3, 1), { shift: true });
-    await s.bus.script(['BO', 'I', 'blue', '']);
+    await s.bus.script(['BO', 'I', 'blue', '', '', '']);
     expect(formatOf(s, 2, 0)!.borders).toEqual({
       right: { color: { kind: 'aci', index: 5 }, lineweight: 'ByBlock' },
       bottom: { color: { kind: 'aci', index: 5 }, lineweight: 'ByBlock' },
     });
     await s.bus.pick(at(4, 1));
-    await s.bus.script(['BO', 'B', '', '0.3']);
+    await s.bus.script(['BO', 'B', '', '0.3', '', 'N']);
     expect(formatOf(s, 4, 1)!.borders).toEqual({
       bottom: { color: { kind: 'byBlock' }, lineweight: 30 },
     });
+  });
+
+  it('gives borders a linetype and double lines, and No Borders hides them (M4-16 part 7)', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.script(['BO', 'O', '', '']);
+    expect(s.bus.promptText).toBe('Enter border linetype <ByBlock>:');
+    await s.bus.submit('nonsense');
+    expect(s.messages).toContain(
+      'Linetype nonsense not found.  Use the LINETYPE command to load it.',
+    );
+    await s.bus.submit('dashed');
+    await s.bus.submit('Y');
+    // The default spacing is the cell's text height (AutoCAD's .1800 for its 0.18 imperial text).
+    expect(s.bus.promptText).toBe('Specify double line spacing <4.5000>:');
+    await s.bus.submit('0');
+    expect(s.messages).toContain('Requires a value greater than 0.');
+    await s.bus.submit('1.5');
+    expect(s.bus.promptText).toBe('Command:');
+    const edge = {
+      color: { kind: 'byBlock' },
+      lineweight: 'ByBlock',
+      linetype: '7D1',
+      double: true,
+      spacing: 1.5,
+    };
+    expect(formatOf(s, 2, 0)!.borders).toEqual({
+      top: edge,
+      right: edge,
+      bottom: edge,
+      left: edge,
+    });
+    const dashed = s.model
+      .blockEntities(s.table().geom.block!)
+      .map((id) => s.model.entity(id)!)
+      .filter((e) => e.geom.kind === 'LINE' && e.linetype === '7D1');
+    // The cell's outline and a second one inside it.
+    expect(dashed).toHaveLength(8);
+    // No Borders asks nothing more: the cell's edges are hidden, one undo step.
+    await s.bus.pick(at(2, 0));
+    await s.bus.script(['BO', 'N']);
+    expect(s.bus.promptText).toBe('Command:');
+    const hidden = { hidden: true };
+    expect(formatOf(s, 2, 0)!.borders).toEqual({
+      top: hidden,
+      right: hidden,
+      bottom: hidden,
+      left: hidden,
+    });
+    await s.bus.submit('U');
+    expect(formatOf(s, 2, 0)!.borders!.top).toEqual(edge);
   });
 
   it('sets the text height, its rows growing to fit', async () => {

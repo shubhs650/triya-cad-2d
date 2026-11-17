@@ -1,9 +1,12 @@
 // The Table Cell menu's formatting (M4-05 part 4): Background Fill, Alignment, Edit Borders
 // (AutoCAD 2024's Table Cell tab, Cell Styles panel, and the cell shortcut menu) and the text
 // height Properties sets, asked at the command line, as Triya has no ribbon yet. Edit Borders is
-// AutoCAD's Cell Border Properties dialog as prompts: which borders, then their colour and
-// lineweight (the dialog's defaults, ByBlock, at Enter). A border's linetype and double lines,
-// and hiding a border (which a DXF save cannot state yet, M1-81), are not done.
+// AutoCAD's Cell Border Properties dialog as prompts: which borders (No Borders hides them and
+// asks nothing more), then their colour, lineweight and linetype (the dialog's defaults, ByBlock,
+// at Enter), Double Line and its Spacing (M4-16 part 7). The dialog's Spacing default is .1800,
+// the data text height of AutoCAD's imperial Standard table style; the help does not say whether
+// it follows the drawing, so the default here is the text height of the first cell selected,
+// which is that .1800 in an imperial drawing and keeps the lines apart alike in a metric one.
 import { tableCellStyle } from '../../annotation/table';
 import {
   TABLE_BORDER_SETS,
@@ -12,7 +15,13 @@ import {
   type TableBorderSet,
 } from '../../edit/table-format';
 import type { TableCellRange } from '../../edit/table-grid';
-import type { Color, Lineweight, TableGeometry, TableStyleRecord } from '../../model/types';
+import type {
+  Color,
+  LinetypeRef,
+  Lineweight,
+  TableGeometry,
+  TableStyleRecord,
+} from '../../model/types';
 import type { CommandContext } from '../command';
 import type { Prompt, PromptAnswer, ShortcutMenuItem } from '../prompt';
 import { lineweightFromText } from '../modify/chprop';
@@ -43,10 +52,24 @@ const BY_BLOCK: Color = { kind: 'byBlock' };
 function firstCell(g: TableGeometry, style: TableStyleRecord | undefined, r: TableCellRange) {
   const c = g.cells[r.r0]![r.c0]!;
   const s = tableCellStyle(g, style, r.r0, r.c0);
+  const b = c.format?.borders;
   return {
     alignment: c.format?.alignment ?? s?.alignment ?? 1,
     textHeight: c.format?.textHeight ?? s?.textHeight ?? 0.18,
+    /** The spacing of a double border the cell already has, if any. */
+    spacing: [b?.top, b?.right, b?.bottom, b?.left].find((e) => e?.double)?.spacing,
   };
+}
+
+/** A linetype typed as CHPROP takes one: ByLayer, ByBlock or a loaded linetype's name. */
+function linetypeByName(ctx: CommandContext, name: string): LinetypeRef | undefined {
+  const u = name.trim().toUpperCase();
+  if (u === 'BYLAYER') return 'ByLayer';
+  if (u === 'BYBLOCK') return 'ByBlock';
+  for (const l of ctx.model.tables.linetypes.values()) {
+    if (l.name.toUpperCase() === u) return l.handle;
+  }
+  return undefined;
 }
 
 /** A colour typed as AutoCAD types one: a name, an ACI number, ByLayer, ByBlock or r,g,b. */
@@ -116,6 +139,9 @@ export async function* formattedTable(
         default: { kind: 'keyword', keyword: 'All' },
       });
       if (which.kind !== 'keyword') return undefined;
+      if (which.keyword === 'None') {
+        return withCellBorders(g, r, 'None', { color: BY_BLOCK, lineweight: 'ByBlock' });
+      }
       let color: Color | undefined;
       while (!color) {
         const a = yield ctx.prompt.string({
@@ -138,7 +164,42 @@ export async function* formattedTable(
           ctx.message('Invalid lineweight.');
         }
       }
-      return withCellBorders(g, r, which.keyword as TableBorderSet, { color, lineweight });
+      let linetype: LinetypeRef | undefined;
+      while (linetype === undefined) {
+        const a = yield ctx.prompt.string({
+          message: 'Enter border linetype',
+          defaultLabel: 'ByBlock',
+        });
+        if (a.kind === 'enter') linetype = 'ByBlock';
+        else if (a.kind !== 'string') return undefined;
+        else if ((linetype = linetypeByName(ctx, a.value)) === undefined) {
+          ctx.message(
+            `Linetype ${a.value.trim()} not found.  Use the LINETYPE command to load it.`,
+          );
+        }
+      }
+      const twice = yield ctx.prompt.keyword({
+        message: 'Double line?',
+        options: ['Yes', 'No'],
+        default: { kind: 'keyword', keyword: 'No' },
+      });
+      if (twice.kind !== 'keyword') return undefined;
+      let double: number | undefined;
+      while (twice.keyword === 'Yes' && double === undefined) {
+        const a = yield ctx.prompt.distance({
+          message: 'Specify double line spacing',
+          default: { kind: 'distance', value: now.spacing ?? now.textHeight },
+        });
+        if (a.kind !== 'distance') return undefined;
+        if (a.value > 0) double = a.value;
+        else ctx.message('Requires a value greater than 0.');
+      }
+      return withCellBorders(g, r, which.keyword as TableBorderSet, {
+        color,
+        lineweight,
+        linetype,
+        ...(double !== undefined && { double }),
+      });
     }
   }
 }
