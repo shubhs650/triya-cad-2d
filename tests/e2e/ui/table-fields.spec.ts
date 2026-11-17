@@ -1,14 +1,15 @@
 // M4-23 part 2: fields in table cells, from the app. The cell editor inserts a field (Ctrl+F
 // opens the Field dialog) as the MTEXT editor does, and the table draws the field's value; a
 // double click on the cell opens the editor on it with the field shown by its value, and the
-// field's right-click menu has Edit Field…, Update Field and Convert Field to Text. The codes,
+// field's right-click menu has Edit Field…, Update Field and Convert Field to Text; the field is
+// shaded grey on screen until FIELDDISPLAY is 0 (M4-32). The codes,
 // their evaluation and UPDATEFIELD/FIELDEVAL/REGEN are unit-tested in packages/engine
 // (test/commands/table-fields.test.ts) and the DXF save in packages/testkit
 // (src/export/table-fields.test.ts); this checks the app carries them end to end.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, TableGeometry } from '@triya/engine';
-import { activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
+import { activeCanvas, expectDrawn, expectShown, openWithPicker, viewOf } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -125,4 +126,21 @@ test('a table cell holds a field: inserted in the cell editor, updated from its 
   await page.mouse.move(box.x + 10, box.y + 10);
   await page.waitForTimeout(300);
   await shot('4-after.png');
+
+  // FIELDDISPLAY shades the cell's field (M4-32): 0 takes the grey background away, 1 brings it
+  // back. The shading's place and its leaving plots out are unit-tested in packages/render
+  // (test/table-fields.test.ts).
+  await expectDrawn(page, { timeout: 15_000 });
+  const canvas = activeCanvas(page);
+  const shaded = await canvas.screenshot();
+  await type(page, 'FIELDDISPLAY', 'Enter new value for FIELDDISPLAY <1>:');
+  await type(page, '0', 'Command:');
+  await page.mouse.move(box.x + 10, box.y + 10);
+  await expect.poll(async () => (await canvas.screenshot()).equals(shaded)).toBe(false);
+  await expectDrawn(page, { timeout: 15_000 });
+  await shot('5-fielddisplay-0.png');
+  await type(page, 'FIELDDISPLAY', 'Enter new value for FIELDDISPLAY <0>:');
+  await type(page, '1', 'Command:');
+  await page.mouse.move(box.x + 10, box.y + 10);
+  await expect.poll(async () => (await canvas.screenshot()).equals(shaded)).toBe(true);
 });

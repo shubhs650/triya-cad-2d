@@ -48,6 +48,8 @@ import {
   clipBoundary,
   partEntity,
   tableAxes,
+  tableDrawingOf,
+  tableFieldTexts,
   withLeaderBreaks,
   type SpatialFilter,
   type BlockDefinition,
@@ -324,6 +326,9 @@ export interface PrimitiveOwner {
   readonly context: BlockContext | undefined;
 }
 
+/** A field's grey background (FIELDDISPLAY), drawn on screen only. */
+const isFieldShade = (p: RenderPrimitive) => p.kind === 'fill' && p.fieldShade === true;
+
 /** Deepest nesting drawn. AutoCAD drawings rarely nest past a handful of levels. */
 const MAX_DEPTH = 32;
 
@@ -375,6 +380,7 @@ export function expandInsert(
     depth: number,
     chain: readonly Handle[],
     clip: PrimitiveClip | undefined,
+    keep?: (p: RenderPrimitive) => boolean,
   ): void => {
     const g = e.geom;
     if (g.kind === 'ATTDEF') {
@@ -401,6 +407,7 @@ export function expandInsert(
           : continuous;
     const tag = tagOf(chain, effectiveLayer(e, { layers, lwDefault: 0 }, ctx)?.handle);
     for (const p of tessellate(e.geom, used, src.tessellate)) {
+      if (keep && !keep(p)) continue;
       // transformPrimitive makes a fresh object, so tagging it in place copies nothing.
       const q = transformPrimitive(p, m) as {
         layers?: readonly Handle[];
@@ -454,14 +461,26 @@ export function expandInsert(
     const order = src.order(ref.block);
     const xclip = e.geom.kind === 'INSERT' ? src.clip?.(e.handle) : undefined;
     const flat = xclip?.boundary.flatMap((p) => [p.x, p.y]);
+    const fields = tableFields(e);
     for (const cell of ref.cells) {
       const cm = composeAffine(m, cell);
       // One array per cell, shared by every part inside it (and nested clips add theirs).
       const inner = flat ? [...(clip ?? []), transformPoints(flat, cm)] : clip;
+      // A table's field shading (M4-32) goes over the cells' fills, which the block starts with,
+      // and under everything after them, the cells' text first.
+      let shaded = fields.length === 0;
+      const shade = () => {
+        for (const text of fields)
+          draw(partEntity(e, { geom: text }), cm, ctx, depth, chain, inner, isFieldShade);
+        shaded = true;
+      };
       for (const id of order) {
         const child = src.model.entity(id);
-        if (child) draw(child, cm, ctx, depth, chain, inner);
+        if (!child) continue;
+        if (!shaded && child.geom.kind !== 'SOLID') shade();
+        draw(child, cm, ctx, depth, chain, inner);
       }
+      if (!shaded) shade();
       if (xclip?.frame) {
         // The frame, in the reference's owner coordinates, painted as the reference itself.
         const vertices = xclip.boundary.map((p) => ({ ...applyAffine(cell, p), bulge: 0 }));
@@ -489,6 +508,16 @@ export function expandInsert(
       };
       draw(attrib, m, ctx, depth, chain, clip);
     }
+  };
+  /**
+   * A table's cells' fields as MTEXTs (`tableFieldTexts`), whose FIELDDISPLAY shading the table
+   * shows: its `*T` block's MTEXTs carry no fields. None for anything else.
+   */
+  const tableFields = (e: Entity) => {
+    const g = e.geom;
+    if (g.kind !== 'ACAD_TABLE') return [];
+    const style = g.style !== undefined ? src.model.tables.tableStyles.get(g.style) : undefined;
+    return tableFieldTexts(g, style, tableDrawingOf(src.model));
   };
   walk(insert, IDENTITY, undefined, 0, [], undefined);
   return { prims, period, blocks, ...(owners ? { owners } : {}) };
