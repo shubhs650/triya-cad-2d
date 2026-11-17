@@ -552,8 +552,17 @@ export function triyaToAcad(
   const triyaArrays = planTriyaArrays(original, base, model, r);
   // Before the entities: a dimension's new extension dictionary holds its breaks (M4-02 part 4).
   const triyaDims = planTriyaDims(original, base, model, r);
-  // Before the entities: a new center mark's INSERT holds its record's new extension dictionary.
-  const triyaCenterMarks = planTriyaCenterMarks(original, base, model, r);
+  // Before the entities: the extension dictionaries the other writers make for new objects.
+  const newDictionaries = new Map([
+    ...newDimAssocDictionaries(dimAssocs.plan),
+    ...newSpatialFilterDictionaries(xclips.plan),
+    ...newCodedDictionaries(coded.plan),
+    ...newTriyaArrayDictionaries(triyaArrays.plan),
+    ...newTriyaDimDictionaries(triyaDims.plan),
+  ]);
+  // Before the entities: a new center mark's INSERT holds its record's new extension dictionary,
+  // and one let go of in the same session an empty one no other writer makes.
+  const triyaCenterMarks = planTriyaCenterMarks(original, base, model, r, newDictionaries);
   // A current style variable may name a style, and an arrow-block variable a block, by the name
   // the same save gives it (RENAME).
   const renamed = new Map<CadObject, string>(
@@ -573,14 +582,7 @@ export function triyaToAcad(
     model,
     r,
     format,
-    new Map([
-      ...newDimAssocDictionaries(dimAssocs.plan),
-      ...newSpatialFilterDictionaries(xclips.plan),
-      ...newCodedDictionaries(coded.plan),
-      ...newTriyaArrayDictionaries(triyaArrays.plan),
-      ...newTriyaDimDictionaries(triyaDims.plan),
-      ...newTriyaCenterMarkDictionaries(triyaCenterMarks.plan),
-    ]),
+    new Map([...newDictionaries, ...newTriyaCenterMarkDictionaries(triyaCenterMarks.plan)]),
   );
   // After the entities: a record the save removes may lose its last referrer in the same save.
   const purge = planPurge(original, base, model, r, p.removed);

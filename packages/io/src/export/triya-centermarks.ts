@@ -61,6 +61,8 @@ export function planTriyaCenterMarks(
   base: DocumentInit,
   model: DocumentModel,
   r: Resolver,
+  /** The new extension dictionaries other writers make, by entity: not empty ones. */
+  made: ReadonlyMap<Handle, Handle> = new Map(),
 ): { plan: TriyaCenterMarksPlan; problems: string[] } {
   const plan: TriyaCenterMarksPlan = { updated: [], added: [], removed: [], empty: [] };
   const problems: string[] = [];
@@ -114,7 +116,7 @@ export function planTriyaCenterMarks(
   // A new mark let go of in the session it was made keeps its dictionary with nothing in it.
   for (const e of model.entities()) {
     if (e.geom.kind !== 'INSERT' || e.extDict === undefined || baseEntities.has(e.handle)) continue;
-    if (owners.has(e.extDict) || !unused(doc, e.extDict)) continue;
+    if (made.has(e.handle) || owners.has(e.extDict) || !unused(doc, e.extDict)) continue;
     plan.empty.push({ insert: e.handle, dictionary: handle(e.extDict) });
   }
   return { plan, problems };
