@@ -10,6 +10,7 @@
 // xref-dependent one.
 import { LINEWEIGHT_VALUES } from '../commands/sysvars';
 import { ChangeSetBuilder } from '../model/builder';
+import { dropLayersFromStates } from './layer-states';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -235,6 +236,8 @@ export function deleteLayersChange(
       b.updateEntity(e.id, { geom: { ...e.geom, frozenLayers: kept } });
   }
   for (const h of gone) b.removeTableRecord('layers', h);
+  // Layer states stop naming them (M5-07).
+  dropLayersFromStates(b, gone);
   return b.build();
 }
 

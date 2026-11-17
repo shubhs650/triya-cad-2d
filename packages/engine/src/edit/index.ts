@@ -92,6 +92,7 @@ export * from './assoc-array';
 export * from './dimension-records';
 export * from './leader-breaks';
 export * from './center-marks';
+export * from './layer-states';
 export * from './center-mark-grips';
 export * from './center-settings';
 export * from './pedit';

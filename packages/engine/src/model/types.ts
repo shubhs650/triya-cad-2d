@@ -2225,6 +2225,80 @@ export const isCenterMark = (o: NonGraphicalObject | undefined): o is CenterMark
   o?.type === 'TRIYA_CENTERMARK';
 
 /**
+ * What restoring a layer state sets (M5-07, DXF 91 of its XRECORD): ObjectARX's
+ * `AcDbLayerStateManager::LayerStateMask`, the Layer States Manager's "Layer properties to
+ * restore". `vpFrozen` is VP Freeze in the current viewport, `newVpFrozen` New VP Freeze. `hidden`
+ * marks a state the manager does not list (a view's layer snapshot, `ACAD_VIEWS_<view>`), and
+ * `lastRestored` the one restored last.
+ */
+export const LAYER_STATE_MASK = {
+  on: 0x1,
+  frozen: 0x2,
+  locked: 0x4,
+  plot: 0x8,
+  newVpFrozen: 0x10,
+  color: 0x20,
+  linetype: 0x40,
+  lineweight: 0x80,
+  plotStyle: 0x100,
+  vpFrozen: 0x200,
+  transparency: 0x400,
+  all: 0x7ff,
+  hidden: 0x8000,
+  lastRestored: 0x10000,
+} as const;
+
+/** One layer's settings as a layer state keeps them (M5-07). */
+export interface LayerStateLayer {
+  /** The layer (DXF 330); absent when the state names a layer the drawing does not have. */
+  readonly layer?: Handle;
+  /** The layer's name as the state was saved or read (DXF 8, or the layer's name for a 330). */
+  readonly name: string;
+  /** DXF 90: 1 off, 2 frozen, 4 locked, 8 plotted, 16 New VP frozen, 32 VP frozen. */
+  readonly on: boolean;
+  readonly frozen: boolean;
+  readonly locked: boolean;
+  readonly plot: boolean;
+  readonly newVpFrozen: boolean;
+  readonly vpFrozen: boolean;
+  /** DXF 62, or 92 (and 300's colour book) for a true colour. */
+  readonly color: Color;
+  /** DXF 331: the LTYPE record, when the drawing has it. */
+  readonly linetype?: Handle;
+  /** The linetype's name (DXF 6 in a `.las` file). */
+  readonly linetypeName: string;
+  /** DXF 370. */
+  readonly lineweight: Lineweight;
+  /** DXF 1 (2 in a `.las` file): the plot style name, `Color_n` in a colour-dependent drawing. */
+  readonly plotStyle: string;
+  /** DXF 440: 0x02000000 | alpha, 0 for an opaque layer. */
+  readonly transparency: Transparency;
+}
+
+/**
+ * A named layer state (LAYERSTATE, M5-07): every layer's settings as they were when it was saved,
+ * which restoring it sets again. AutoCAD keeps it as an XRECORD in the `ACAD_LAYERSTATES`
+ * dictionary of the LAYER table's extension dictionary (`owner`), its entry name the state's
+ * name. A `.las` file holds the same groups (LAYERSTATEDICTIONARY, LAYERSTATE).
+ */
+export interface LayerState extends NonGraphicalObject {
+  readonly type: 'LAYER_STATE';
+  readonly name: string;
+  /** DXF 301. */
+  readonly description: string;
+  /** DXF 91: `LAYER_STATE_MASK` bits, what restoring it sets. */
+  readonly mask: number;
+  /** DXF 290: saved in a layout (paper space). */
+  readonly paperSpace: boolean;
+  /** DXF 302: the current layer's name when it was saved. */
+  readonly currentLayer: string;
+  readonly layers: readonly LayerStateLayer[];
+}
+
+export const isLayerState = (o: NonGraphicalObject | undefined): o is LayerState =>
+  o?.type === 'LAYER_STATE';
+
+/**
  * One DXF group code of a `CodedObject`, as the save writes it. A handle code's value (DXF 5,
  * 105, 320–369, 390–399, 480, 481 and 1005: `isHandleCode`) is the handle.
  */
@@ -2309,6 +2383,12 @@ export interface DocumentMeta {
    * while it holds nothing. A drawing without one cannot hold groups.
    */
   readonly groupDictionary?: Handle;
+  /**
+   * The `ACAD_LAYERSTATES` dictionary's handle (M5-07), which new layer states are filed in: known
+   * even while it holds none. A drawing without one gets it, under the LAYER table's extension
+   * dictionary, with its first layer state.
+   */
+  readonly layerStateDictionary?: Handle;
   /**
    * Names of style dictionary entries the I/O layer keeps without mapping (M2-29): an R13 or R14
    * DXF can list an R2007 STANDARD multileader style that acad-ts reads as a proxy object. The
