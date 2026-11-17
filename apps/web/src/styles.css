@@ -4816,3 +4816,69 @@ button {
   text-decoration: underline wavy #e5484d;
   text-decoration-skip-ink: none;
 }
+
+/* M5-05 part 3: a column header is a button sorting by it, the sort shown by an arrow. */
+.layer-table .layer-sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.layer-table .layer-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.layer-table .layer-sort-arrow {
+  margin-left: 4px;
+  font-size: 0.7em;
+}
+
+.layer-columns-menu {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+}
+
+/* Customize Layer Columns: the columns with their check boxes, the buttons beside them. */
+.cad-dialog.layer-columns-dialog {
+  width: min(400px, calc(100vw - 32px));
+}
+
+.layer-columns-body {
+  display: flex;
+  gap: 12px;
+}
+
+.layer-columns-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 280px;
+  margin: 0;
+  padding: 2px 0;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  list-style: none;
+}
+
+.layer-columns-list li {
+  padding: 1px 6px;
+}
+
+.layer-columns-list li[aria-current='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.layer-columns-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layer-columns-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

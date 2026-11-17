@@ -88,8 +88,11 @@ function currentTable<K extends 'layers' | 'linetypes'>(
 const currentLayers = (init: DocumentInit, changes: readonly ChangeSet[]): LayerRecord[] =>
   currentTable(init.tables?.layers, changes, 'layers');
 
-const byName = (a: { name: string }, b: { name: string }) =>
-  a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+/** AutoCAD's order of names: case aside, numbers by value (Layer2 before Layer10). */
+export const compareNames = (a: string, b: string): number =>
+  a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true });
+
+const byName = (a: { name: string }, b: { name: string }) => compareNames(a.name, b.name);
 
 /**
  * The linetypes Select Linetype lists as loaded, by name: the LTYPE table as changed, without

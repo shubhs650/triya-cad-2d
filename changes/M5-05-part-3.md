@@ -1,0 +1,1 @@
+- M5-05 part 3 (#504): the Layer Properties Manager sorts by a click on a column header (again to reverse), shows or hides columns from a right-click on the headers, and orders them in Customize Layer Columns; the columns and the sort are kept with your settings. Its search now filters a 200-layer drawing in 15–60 ms (under the 100 ms target).
