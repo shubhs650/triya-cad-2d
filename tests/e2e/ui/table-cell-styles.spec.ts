@@ -96,7 +96,17 @@ test('Set cell styles, Cell Style and title rows inserted', async ({ page }) => 
   await dialog.getByRole('button', { name: 'OK' }).click();
   await expect(prompt(page)).toHaveText('Specify insertion point:');
   await type(page, p(0, 0), 'Enter text:');
-  await page.keyboard.press('Escape');
+  // The header row and the first data row typed, Tab between the cells.
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  const texts = ['Mark', 'Size', 'Service', 'Qty', 'N1', '2"', 'Inlet', '1'];
+  for (const [k, text] of texts.entries()) {
+    await page.keyboard.type(text);
+    if (k === texts.length - 1) break;
+    await page.keyboard.press('Tab');
+    await expect(log.getByText(`Enter text: ${text}`, { exact: true }).first()).toBeVisible();
+    await expect(prompt(page)).toHaveText('Enter text:');
+  }
+  await page.keyboard.press('Control+Enter');
   await expect(prompt(page)).toHaveText('Command:');
   await expect
     .poll(async () => (await made(page))?.rowStyles)
@@ -123,24 +133,40 @@ test('Set cell styles, Cell Style and title rows inserted', async ({ page }) => 
     .poll(async () => (await made(page))?.rowStyles)
     .toEqual(['header', 'header', 'data', 'data', 'data', 'data']);
   await page.mouse.click(cell(0, 0).x, cell(0, 0).y);
+  await expect(prompt(page)).toHaveText(/^Enter a table cell option/);
   await page.keyboard.down('Shift');
   await page.mouse.click(cell(0, 3).x, cell(0, 3).y);
   await page.keyboard.up('Shift');
   await page.mouse.click(cell(0, 3).x, cell(0, 3).y, { button: 'right' });
+  await expect(menu).toBeVisible();
   await menu.getByRole('menuitem', { name: 'Cell Style' }).click();
   await expect(prompt(page)).toHaveText('Enter cell style [Title/Header/Data/ByRow] <ByRow>:');
   await type(page, 'T', 'Command:');
-  await expect
-    .poll(async () => (await made(page))?.rowStyles)
-    .toEqual(['title', 'header', 'data', 'data', 'data', 'data']);
+  // Title, header and data rows, as a table has them by their place: no row stated of its own.
+  await expect.poll(async () => (await made(page))?.rowStyles).toBeNull();
+  expect((await made(page))!.rows[0]).toBeGreaterThan(0.36);
+  // The title row merged across and typed.
+  let rows = (await made(page))!.rows;
+  await page.mouse.click(cell(0, 0, rows).x, cell(0, 0, rows).y);
+  await expect(prompt(page)).toHaveText(/^Enter a table cell option/);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(cell(0, 3, rows).x, cell(0, 3, rows).y);
+  await page.keyboard.up('Shift');
+  await type(page, 'MA', 'Command:');
+  await page.mouse.click(cell(0, 0, rows).x, cell(0, 0, rows).y);
+  await expect(prompt(page)).toHaveText(/^Enter a table cell option/);
+  await type(page, 'T', 'Enter text:');
+  await page.keyboard.type('NOZZLE SCHEDULE');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
   // One data cell on the Header cell style of its own.
-  const rows = (await made(page))!.rows;
-  const c = cell(3, 1, rows);
+  rows = (await made(page))!.rows;
+  const c = cell(2, 1, rows);
   await page.mouse.click(c.x, c.y);
   await type(page, 'CS', 'Enter cell style [Title/Header/Data/ByRow] <ByRow>:');
   await type(page, 'H', 'Command:');
-  await expect.poll(async () => (await made(page))?.own[3]).toEqual(['-', 'header', '-', '-']);
-  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10);
+  await expect.poll(async () => (await made(page))?.own[2]).toEqual(['-', 'header', '-', '-']);
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.9);
   await page.waitForTimeout(300);
   await shot('2-title-row-inserted-and-cell-styled.png');
 });
