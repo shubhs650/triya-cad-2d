@@ -13,6 +13,10 @@
 // MTEXT editor does (`askEditorText`), and a field code typed or inserted makes the cell's fields
 // (`TableCell.field`), the cell showing their values; a cell with fields opens on their codes.
 // A field's value is the cell's text as it is, not read by the cell's data format.
+//
+// A cell whose content is locked (M4-16 part 6) is not opened: TABLEDIT and a double click on it
+// say so, and Tab, Shift+Tab and the arrows pass over it to the next cell that way that is not
+// (AutoCAD's documentation does not say; a form whose labels are locked is filled in this way).
 import { tableCellAt, tableCellText } from '../../annotation/table';
 import {
   fitTableRow,
@@ -42,6 +46,7 @@ import type { DrawingUnits } from '../units';
 import { askEditorText, fieldContextOf } from './field';
 import { tableCellUnder } from './table-cell-menu';
 import { drawingUnits } from '../units';
+import { contentLocked } from '../../edit/table-locks';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -84,6 +89,10 @@ export async function* editTableCells(
     const [r, c] = at;
     const cell = t.g.cells[r]?.[c];
     if (!cell) return;
+    if (contentLocked(cell)) {
+      ctx.message('The cell’s content is locked.');
+      return;
+    }
     const drawing = tableDrawingOf(ctx.model);
     const local = tableCellText(t.g, t.style, drawing, r, c);
     const axis = tableAxes(t.g).x;
@@ -127,7 +136,7 @@ export async function* editTableCells(
       const lines = await linesOf(ctx, tableCellText(g, t.style, drawing, r, c));
       if (lines !== undefined) g = fitTableRow(g, t.style, r, c, lines);
     }
-    let next = a.cell ? tableCellMove(g, t.style, r, c, a.cell) : undefined;
+    let next = a.cell ? unlockedMove(g, t.style, r, c, a.cell) : undefined;
     if (a.cell === 'next' && next === undefined) {
       g = withRowAdded(g);
       next = [g.cells.length - 1, 0];
@@ -143,6 +152,24 @@ export async function* editTableCells(
     // An arrow at the table's edge, or Shift+Tab in the first cell, stays in the cell.
     at = next ?? at;
   }
+}
+
+/**
+ * The cell the editor moves to from (`i`, `j`) of table `g` (`tableCellMove`), passing over cells
+ * whose content is locked; undefined when there is none that way.
+ */
+function unlockedMove(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  i: number,
+  j: number,
+  move: Parameters<typeof tableCellMove>[4],
+): [number, number] | undefined {
+  let at = tableCellMove(g, style, i, j, move);
+  while (at && contentLocked(g.cells[at[0]]![at[1]]!)) {
+    at = tableCellMove(g, style, at[0], at[1], move);
+  }
+  return at;
 }
 
 /**

@@ -59,6 +59,7 @@ export * from './table-grid';
 export * from './table-format';
 export * from './table-grips';
 export * from './table-data';
+export * from './table-locks';
 export * from './spreadsheet';
 export * from './named-view';
 export { offsetCurveOf, offsetGeometry, offsetSide } from './offset';

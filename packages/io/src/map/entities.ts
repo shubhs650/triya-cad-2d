@@ -10,6 +10,7 @@ import type {
   TableEntityRow,
 } from '@node-projects/acad-ts';
 import {
+  TableCellStateFlags,
   CadValueType,
   AnnotScaleObjectContextData,
   CadDictionary,
@@ -1136,7 +1137,11 @@ function tableGeometry(
   const style = ref(t.style);
   const block = ref(t.block);
   const overrides = t.tableOverrides ? statedOverrides(t.tableOverrides) : contentOverrides(t);
-  const styled = cellStyleNames(t, styledBy?.rows ?? t.rows, cells);
+  const styled = cellStyleNames(
+    t,
+    styledBy?.rows ?? t.rows,
+    cellLocks(styledBy?.rows ?? t.rows, cells),
+  );
   return {
     kind: 'ACAD_TABLE',
     ...(style ? { style } : {}),
@@ -1150,6 +1155,27 @@ function tableGeometry(
     ...(styled.rowStyles ? { rowStyles: styled.rowStyles } : {}),
     ...planar(pl, t.normal, t.insertPoint.z, 0),
   };
+}
+
+/**
+ * Each cell's lock (M4-16 part 6), from `rows` as `cellStyleNames` reads them: a cell's state
+ * flags 0x1 (content locked) and 0x10 (format locked), the Open Design Specification's
+ * AcDbTableContent cell state values (acad-ts `TableCellStateFlags`). The read-only and linked
+ * flags of a data link's cells are not locks Triya sets, and are kept as read.
+ */
+function cellLocks(rows: readonly TableEntityRow[], cells: TableCell[][]): TableCell[][] {
+  const grid =
+    rows.length === cells.length && rows.every((r, i) => r.cells.length === cells[i]!.length);
+  if (!grid) return cells;
+  return cells.map((row, i) =>
+    row.map((c, j) => {
+      const flags = rows[i]!.cells[j]!.stateFlags;
+      const content = (flags & TableCellStateFlags.ContentLocked) !== 0;
+      const format = (flags & TableCellStateFlags.FormatLocked) !== 0;
+      const locked = content && format ? 'both' : content ? 'content' : format ? 'format' : null;
+      return locked ? { ...c, locked } : c;
+    }),
+  );
 }
 
 /**

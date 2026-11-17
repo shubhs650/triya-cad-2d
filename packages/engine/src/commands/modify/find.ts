@@ -32,6 +32,7 @@ import {
   findInText,
   hiddenEntity,
   lockedEntity,
+  lockedSlot,
   replaceInText,
   sameSlot,
   slotSyntax,
@@ -215,6 +216,12 @@ function lockedHit(ctx: CommandContext, h: Hit): boolean {
     (e !== undefined && lockedEntity(ctx.model, e)) ||
     (t !== undefined && lockedEntity(ctx.model, t))
   );
+}
+
+/** Whether a match is in a table cell whose content is locked (M4-16 part 6). */
+function lockedCellHit(ctx: CommandContext, h: Hit): boolean {
+  const e = ctx.model.entity(h.id);
+  return e !== undefined && lockedSlot(e, h.slot);
 }
 
 /** Matches in one piece of text of an object, as found in the drawing as it is now. */
@@ -402,6 +409,11 @@ export function findCommand(): CommandDef {
                 note = 'The object is on a locked layer.';
                 continue;
               }
+              if (lockedCellHit(ctx, h)) {
+                await step(current + 1);
+                note = 'The table cell is locked.';
+                continue;
+              }
               await replaceHits(ctx, [h], settings.replace);
               // On from the end of the replacement: its own text is not searched again. The
               // matches before this object's are as they were, so its own start where they did.
@@ -416,16 +428,21 @@ export function findCommand(): CommandDef {
             }
             case 'replaceAll': {
               const all = searched();
-              const free = all.filter((h) => !h.xref && !lockedHit(ctx, h));
+              const unlocked = all.filter((h) => !h.xref && !lockedHit(ctx, h));
+              const free = unlocked.filter((h) => !lockedCellHit(ctx, h));
               const n = await replaceHits(ctx, free, settings.replace);
               const xrefs = all.filter((h) => h.xref).length;
-              const locked = all.length - free.length - xrefs;
+              const locked = all.length - unlocked.length - xrefs;
+              const cells = unlocked.length - free.length;
               note =
                 all.length === 0
                   ? NOT_FOUND
                   : `${plural(n, 'match was', 'matches were')} replaced.` +
                     (locked > 0
                       ? ` ${plural(locked, 'match on a locked layer was', 'matches on locked layers were')} not.`
+                      : '') +
+                    (cells > 0
+                      ? ` ${plural(cells, 'match in a locked table cell was', 'matches in locked table cells were')} not.`
                       : '') +
                     (xrefs > 0
                       ? ` ${plural(xrefs, 'match in an xref was', 'matches in xrefs were')} not.`

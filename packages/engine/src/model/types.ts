@@ -981,7 +981,17 @@ export interface TableCell {
    * data (TABLECONTENT, a cell's 90), DWG from R2010 in the table.
    */
   readonly cellStyle?: TableCellStyleName;
+  /**
+   * What of the cell is locked (M4-16 part 6: AutoCAD's Cell Locking): its content (text, value,
+   * block, fields), its format (fill, alignment, borders, text height, data format, cell style)
+   * or both; absent when unlocked. DXF states it only in the table's AutoCAD 2008 data
+   * (TABLECONTENT, a cell's state flags 0x1 and 0x10), DWG from R2010 in the table.
+   */
+  readonly locked?: TableCellLock;
 }
+
+/** A table cell's lock (`TableCell.locked`). */
+export type TableCellLock = 'content' | 'format' | 'both';
 
 /**
  * A table cell's value other than text (`TableCell.value`). A number states its unit type

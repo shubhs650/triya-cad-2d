@@ -92,7 +92,6 @@ import {
   Spline,
   SplineFlags,
   TableCellContentType,
-  TableCellStateFlags,
   TableEntity,
   TableEntityCell,
   Field,
@@ -185,6 +184,7 @@ import {
 } from './table-cells';
 import { buildGrid, newTableProblems } from './table-new';
 import { cellStyleFileProblems, writeCellStyleNames } from './table-cell-styles';
+import { cellLockFileProblems, writeCellLocks } from './table-cell-locks';
 import { tableStyleRows } from '../map/styles';
 import {
   overrideFileProblems,
@@ -2278,6 +2278,7 @@ const tableWriter: Writer<TableGeometry> = {
     if (g.columnWidths.some((w) => !(w > 0))) out.push('a column width of 0 or less');
     const table = g.style === undefined ? null : resolve(r, g.style, TableStyle);
     out.push(...cellStyleFileProblems(r, before, g, tableStyleRows(table)));
+    out.push(...cellLockFileProblems(r, before, g));
     // Each cell against the cell it was, wherever its row and column were.
     const was = before && alignedBefore(before, g);
     if (!was || mergesChange(was, g)) out.push(...mergeProblems(g));
@@ -2327,6 +2328,8 @@ const tableWriter: Writer<TableGeometry> = {
     // Each row's and cell's cell style (M4-16 part 5) before the overrides, which a DWG from
     // R2010 states in the rows by their row type.
     if (styles) writeCellStyleNames(t, before, g);
+    // Each cell's lock (M4-16 part 6), where the file states it.
+    if (styles) writeCellLocks(t, g);
     const overrides = !before || !same(before.overrides, g.overrides);
     if (overrides) writeTableOverrides(r, t, before?.overrides, g.overrides);
     const onRow = (i: number, j: number, cell: TableEntityCell) =>
@@ -2659,8 +2662,8 @@ export function tableCellProblems(
       if (k && k.contentType & TableCellContentType.Field && !(k.field instanceof Field)) {
         out.push(`${at} holds a field (M4-10)`);
       }
-      if (cell.stateFlags & TableCellStateFlags.ContentLocked)
-        out.push(`${at}: its content is locked`);
+      // Locks are the model's (M4-16 part 6): the cell editor refuses a cell locked there.
+      if (a.locked === 'content' || a.locked === 'both') out.push(`${at}: its content is locked`);
       if (cell.hasLinkedData) out.push(`${at} is linked to external data`);
       if (b.block !== a.block && (cell.attributes.length > 0 || (k?.attributes.length ?? 0) > 0)) {
         out.push(`${at}: a block with attribute values`);

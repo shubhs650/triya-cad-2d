@@ -32,6 +32,7 @@ import {
   findInText,
   hiddenEntity,
   lockedEntity,
+  lockedSlot,
   slotSyntax,
   slotText,
   textPiecesOf,
@@ -218,7 +219,10 @@ function readOnly(ctx: CommandContext, p: Piece): string | undefined {
     const e = ctx.model.entity(id);
     return e !== undefined && lockedEntity(ctx.model, e);
   };
-  return locked(p.id) || locked(p.target) ? 'The object is on a locked layer.' : undefined;
+  if (locked(p.id) || locked(p.target)) return 'The object is on a locked layer.';
+  const e = ctx.model.entity(p.id);
+  // A table cell whose content is locked (M4-16 part 6).
+  return e !== undefined && lockedSlot(e, p.slot) ? 'The table cell is locked.' : undefined;
 }
 
 export function spellCommand(): CommandDef {

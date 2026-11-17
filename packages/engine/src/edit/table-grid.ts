@@ -27,6 +27,7 @@ import type {
 } from '../model/types';
 import { tableRangeHeads, tableRowStyles, withRowStyles } from '../annotation/table';
 import { withCellOverridesRemoved } from './table-format';
+import { rangeLocks } from './table-locks';
 import { mtextLiteral } from './clipboard-data';
 import type { SheetCells } from './spreadsheet';
 
@@ -43,8 +44,8 @@ export type TableMerge = 'all' | 'rows' | 'columns';
 
 /**
  * The options of the Table Cell menu, in its order, as typed at the command line: the cell's
- * text, its formatting (M4-05 part 4; Match Cell and Remove All Property Overrides, part 7), then
- * rows, columns and merging.
+ * text, its formatting (M4-05 part 4; Match Cell and Remove All Property Overrides, part 7;
+ * Locking, M4-16 part 6), then rows, columns and merging.
  */
 export const TABLE_CELL_OPTIONS = [
   'Text',
@@ -54,6 +55,7 @@ export const TABLE_CELL_OPTIONS = [
   'ALignment',
   'BOrders',
   'Height',
+  'LOcking',
   'DataFormat',
   'Match',
   'RemoveOverrides',
@@ -100,7 +102,7 @@ const empty = (c: Pick<TableCell, 'format' | 'cellStyle'>): TableCell => ({
 
 /** Cell `c` covered by a merged cell: its format and cell style kept, its contents gone. */
 function cover(c: TableCell): TableCell {
-  return { ...empty(c), rotation: c.rotation, merged: true };
+  return { ...empty(c), rotation: c.rotation, merged: true, ...(c.locked && { locked: c.locked }) };
 }
 
 /**
@@ -349,7 +351,10 @@ export function withCellsMerged(
  * The Table Cell menu's options that apply to range `r`, in its order. Rows are inserted and
  * deleted anywhere, title and header rows too, as each row keeps its cell style (M4-16 part 5;
  * until then only among the data rows). The last row or column is not deleted. Merging needs
- * more than one cell; Unmerge, a merged cell.
+ * more than one cell; Unmerge, a merged cell. A cell selected whose content is locked refuses its
+ * text, Paste, a block and merging, and a row or column to delete holding one refuses it; a cell
+ * whose format is locked refuses the formatting options and Cell Style (M4-16 part 6,
+ * table-locks.ts).
  */
 export function tableCellOptions(
   g: TableGeometry,
@@ -367,29 +372,39 @@ export function tableCellOptions(
   const merged = mergedHeads(g).some(
     ({ i, j }) => i >= r.r0 && i <= r.r1 && j >= r.c0 && j <= r.c1,
   );
+  const lock = rangeLocks(g, r);
+  const content = !lock.content;
+  const format = !lock.format;
+  // Deleting rows or columns takes them whole, every cell of them.
+  const last = { rows: g.cells.length - 1, columns: g.columnWidths.length - 1 };
+  const rowsFree = !rangeLocks(g, { ...r, c0: 0, c1: last.columns }).content;
+  const columnsFree = !rangeLocks(g, { ...r, r0: 0, r1: last.rows }).content;
   const on: Record<TableCellOption, boolean> = {
-    Text: true,
-    Paste: true,
-    BLock: true,
-    BAckground: true,
-    ALignment: true,
-    BOrders: true,
-    Height: true,
-    DataFormat: true,
+    Text: content,
+    Paste: content,
+    BLock: content,
+    BAckground: format,
+    ALignment: format,
+    BOrders: format,
+    Height: format,
+    LOcking: true,
+    DataFormat: format,
     Match: true,
-    RemoveOverrides: withCellOverridesRemoved(g, style, r).cells.some((row, i) =>
-      row.some((c, j) => c !== g.cells[i]![j] && !sameFormat(c.format, g.cells[i]![j]!.format)),
-    ),
-    CellStyle: true,
+    RemoveOverrides:
+      format &&
+      withCellOverridesRemoved(g, style, r).cells.some((row, i) =>
+        row.some((c, j) => c !== g.cells[i]![j] && !sameFormat(c.format, g.cells[i]![j]!.format)),
+      ),
+    CellStyle: format,
     Above: true,
     Below: true,
-    DeleteRows: r.r1 - r.r0 + 1 < rows,
+    DeleteRows: rowsFree && r.r1 - r.r0 + 1 < rows,
     Left: true,
     Right: true,
-    DeleteColumns: r.c1 - r.c0 + 1 < columns,
-    MergeAll: many,
-    MergeRows: many && r.c1 > r.c0,
-    MergeColumns: many && r.r1 > r.r0,
+    DeleteColumns: columnsFree && r.c1 - r.c0 + 1 < columns,
+    MergeAll: content && many,
+    MergeRows: content && many && r.c1 > r.c0,
+    MergeColumns: content && many && r.r1 > r.r0,
     Unmerge: merged,
   };
   return TABLE_CELL_OPTIONS.filter((k) => on[k]);

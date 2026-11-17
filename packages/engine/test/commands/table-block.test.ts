@@ -285,6 +285,19 @@ describe('TINSERT', () => {
     expect(s.bus.promptText).toBe('Command:');
   });
 
+  it('refuses a cell whose content is locked (M4-16 part 6)', async () => {
+    const s = setup();
+    await table(s);
+    await s.bus.pick(at(2, 1), { grip: 1 });
+    await s.bus.submit('LO');
+    await s.bus.submit('C');
+    await s.bus.script(['TINSERT']);
+    await s.bus.pick(at(2, 1));
+    expect(s.messages.at(-1)).toBe('The cell’s content is locked.');
+    expect(s.bus.promptText).toBe('Command:');
+    expect(s.table().geom.cells[2]![1]!.type).toBe('text');
+  });
+
   it('is the Table Cell menu Insert Block on the cell selected', async () => {
     const s = setup();
     await table(s);
