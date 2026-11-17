@@ -16,6 +16,7 @@ import type {
   TableCell,
   TableCellBorder,
   TableCellStyle,
+  TableCellStyleName,
   TableGeometry,
   TableStyleRecord,
 } from '../model/types';
@@ -27,6 +28,7 @@ import {
   tableRowHeight,
   tableRowTypes,
   rowCellStyle,
+  tableCellStyle,
   type TableDrawing,
 } from '../annotation/table';
 import { tableAxes } from '../spatial/entity-bounds';
@@ -112,17 +114,55 @@ export interface NewTable {
   /** Each row's height in lines of its row type's text (`tableRowHeight`). */
   readonly rowLines: number;
   readonly position: { readonly x: number; readonly y: number };
+  /** Insert Table's Set cell styles; absent for the table style's by their place. */
+  readonly cellStyles?: TableRowCellStyles;
+}
+
+/**
+ * Insert Table's Set cell styles (AutoCAD 2024 Help, "Insert Table Dialog Box": First row cell
+ * style, Second row cell style, All other row cell styles; M4-16 part 5).
+ */
+export interface TableRowCellStyles {
+  readonly first: TableCellStyleName;
+  readonly second: TableCellStyleName;
+  readonly others: TableCellStyleName;
+}
+
+/** The cell styles the first two rows of a table in `style` take by their place, and the rest. */
+export function placedRowCellStyles(
+  style: Pick<TableStyleRecord, 'suppressTitle' | 'suppressHeader'> | undefined,
+): TableRowCellStyles {
+  const [first, second] = tableRowTypes(style, 2) as [TableCellStyleName, TableCellStyleName];
+  return { first, second, others: 'data' };
+}
+
+/**
+ * The cell style of each of a new table's `rows` rows: by their place in `style` unless `chosen`
+ * (Insert Table's Set cell styles) says, its first and second for the first two rows and the
+ * rest for the others.
+ */
+function newRowTypes(
+  style: TableStyleRecord,
+  rows: number,
+  chosen: TableRowCellStyles | undefined,
+): TableCellStyleName[] {
+  if (!chosen) return tableRowTypes(style, rows);
+  return Array.from({ length: rows }, (_, i) =>
+    i === 0 ? chosen.first : i === 1 ? chosen.second : chosen.others,
+  );
 }
 
 /**
  * A new table's geometry, without its block: a title row merged across every column (as
  * AutoCAD's Standard title cell style merges it), a header row and `dataRows` data rows, each
- * `rowLines` lines of its own row type's text high, every cell empty.
+ * `rowLines` lines of its own row type's text high, every cell empty. Insert Table's Set cell
+ * styles (`cellStyles`) put the rows on others; a title row is merged wherever it is.
  */
 export function newTableGeometry(t: NewTable): TableGeometry {
   const first = tableRowTypes(t.style, 2).filter((r) => r !== 'data').length;
   const rows = first + t.dataRows;
-  const types = tableRowTypes(t.style, rows);
+  const placed = tableRowTypes(t.style, rows);
+  const types = newRowTypes(t.style, rows, t.cellStyles);
   const rowHeights = types.map((type) =>
     tableRowHeight(
       t.rowLines,
@@ -147,6 +187,7 @@ export function newTableGeometry(t: NewTable): TableGeometry {
     rowHeights,
     columnWidths: Array.from({ length: t.columns }, () => t.columnWidth),
     cells,
+    ...(types.some((type, i) => type !== placed[i]) && { rowStyles: types }),
   };
 }
 
@@ -210,8 +251,7 @@ export function fitTableRow(
 ): TableGeometry {
   const c = g.cells[i]?.[j];
   if (!c || Math.abs(Math.sin(c.rotation)) > 0.5) return g;
-  const type = tableRowTypes(style, g.rowHeights.length)[i]!;
-  const th = c.format?.textHeight ?? rowCellStyle(style, type)?.textHeight ?? 0.18;
+  const th = c.format?.textHeight ?? tableCellStyle(g, style, i, j)?.textHeight ?? 0.18;
   const vm = c.format?.margins?.top ?? g.overrides?.margins?.top ?? style?.verticalMargin ?? 0;
   const need = th * (1 + (lines - 1) * LINE_SPACING) + 2 * vm;
   const last = Math.min(i + c.rowSpan, g.rowHeights.length) - 1;
@@ -276,8 +316,7 @@ export function withCellBlock(
 ): TableGeometry {
   const c = g.cells[i]?.[j];
   if (!c) return g;
-  const type = tableRowTypes(style, g.rowHeights.length)[i]!;
-  const styled = rowCellStyle(style, type)?.alignment ?? 1;
+  const styled = tableCellStyle(g, style, i, j)?.alignment ?? 1;
   const { alignment: _alignment, ...kept } = c.format ?? {};
   const alignment = b.alignment ?? c.format?.alignment;
   const format = alignment !== undefined && alignment !== styled ? { ...kept, alignment } : kept;
@@ -440,6 +479,8 @@ export interface TableSize {
   readonly dataRows: number;
   /** Each row's height in lines (`tableRowHeight`). */
   readonly rowLines: number;
+  /** Insert Table's Set cell styles; absent for the table style's by their place. */
+  readonly cellStyles?: TableRowCellStyles;
 }
 
 /**
@@ -465,16 +506,20 @@ export function windowTableSize(
   const fits = (n: number) => Math.max(1, Math.floor(n + 1e-9));
   const columns = autoColumns ? fits(width / size.columnWidth) : size.columns;
   const columnWidth = autoColumns ? size.columnWidth : width / size.columns;
-  const above = tableRowTypes(style, 2).filter((r) => r !== 'data');
+  const placed = tableRowTypes(style, 2).filter((r) => r !== 'data').length;
+  const chosen = size.cellStyles;
+  const above = newRowTypes(style, placed, chosen);
+  const others = chosen?.others ?? 'data';
   const vm = style.verticalMargin;
-  const th = (type: 'title' | 'header' | 'data') => rowCellStyle(style, type)?.textHeight ?? 0.18;
+  const th = (type: TableCellStyleName) => rowCellStyle(style, type)?.textHeight ?? 0.18;
+  const kept = chosen ? { cellStyles: chosen } : {};
   if (autoRows) {
     const taken = above.reduce((h, type) => h + tableRowHeight(size.rowLines, th(type), vm), 0);
-    const dataRows = fits((height - taken) / tableRowHeight(size.rowLines, th('data'), vm));
-    return { columns, columnWidth, dataRows, rowLines: size.rowLines };
+    const dataRows = fits((height - taken) / tableRowHeight(size.rowLines, th(others), vm));
+    return { columns, columnWidth, dataRows, rowLines: size.rowLines, ...kept };
   }
-  const types = [...above, ...Array.from({ length: size.dataRows }, () => 'data' as const)];
+  const types = newRowTypes(style, placed + size.dataRows, chosen);
   const perLine = types.reduce((h, type) => h + (th(type) * 4) / 3, 0);
   const rowLines = fits((height - 2 * vm * types.length) / perLine);
-  return { columns, columnWidth, dataRows: size.dataRows, rowLines };
+  return { columns, columnWidth, dataRows: size.dataRows, rowLines, ...kept };
 }

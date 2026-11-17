@@ -185,7 +185,7 @@ describe('merging', () => {
 });
 
 describe('what the Table Cell menu offers', () => {
-  it('inserts and deletes rows only among the data rows', () => {
+  it('inserts and deletes rows anywhere, the last row excepted (M4-16 part 5)', () => {
     // The cells' formatting (M4-05 part 4) applies to any cells, Match Cell too (part 7);
     // Remove All Property Overrides only where a cell overrides something.
     const FORMATS = ['BAckground', 'ALignment', 'BOrders', 'Height', 'DataFormat', 'Match'];
@@ -198,6 +198,7 @@ describe('what the Table Cell menu offers', () => {
       ...FORMATS,
       // Its first data row's first cell has a colour of its own.
       'RemoveOverrides',
+      'CellStyle',
       'Above',
       'Below',
       'DeleteRows',
@@ -207,13 +208,16 @@ describe('what the Table Cell menu offers', () => {
       'MergeAll',
       'MergeColumns',
     ]);
-    // The header row: Below makes the new row the first data row; Above and Delete are refused.
+    // The header row: rows inserted beside it are header rows (each row keeps its cell style).
     expect(at(1, 1)).toEqual([
       'Text',
       'Paste',
       'BLock',
       ...FORMATS,
+      'CellStyle',
+      'Above',
       'Below',
+      'DeleteRows',
       'Left',
       'Right',
       'DeleteColumns',
@@ -224,6 +228,10 @@ describe('what the Table Cell menu offers', () => {
       'Paste',
       'BLock',
       ...FORMATS,
+      'CellStyle',
+      'Above',
+      'Below',
+      'DeleteRows',
       'Left',
       'Right',
       'Unmerge',
@@ -240,6 +248,7 @@ describe('what the Table Cell menu offers', () => {
       'Paste',
       'BLock',
       ...FORMATS,
+      'CellStyle',
       'Above',
       'Below',
       'Left',

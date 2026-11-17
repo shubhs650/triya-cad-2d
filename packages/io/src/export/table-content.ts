@@ -73,6 +73,7 @@ const CONTENT_FIELDS = [
   'columnWidths',
   'cells',
   'overrides',
+  'rowStyles',
   'rowOrigins',
   'columnOrigins',
 ] as const;
@@ -102,8 +103,20 @@ export function writeEditedTableContents(
     const b = before.geom as TableGeometry;
     const a = after.geom as TableGeometry;
     if (CONTENT_FIELDS.every((k) => same(b[k], a[k]))) continue;
+    // A table that came without AutoCAD 2008 data (a DXF from another program) gets it as a new
+    // table does when it now states what only that data holds: rows or cells on cell styles
+    // other than their place gives them (M4-16 part 5), which the legacy codes cannot state.
+    if (!acad.xDictionary?.getEntry(ROUNDTRIP_DICTIONARY_KEY)) {
+      if (statesCellStyles(a)) writeTableContent(doc, r, acad, a);
+      continue;
+    }
     rewriteTableContent(doc, r, acad, b, a);
   }
+}
+
+/** Whether `g` puts a row or cell on a cell style of its own (`rowStyles`, `cellStyle`). */
+function statesCellStyles(g: TableGeometry): boolean {
+  return g.rowStyles !== undefined || g.cells.some((row) => row.some((c) => c.cellStyle));
 }
 
 /** The record's entries before any break range: 102, 360, 70 and 90 the range count. */

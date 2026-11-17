@@ -30,6 +30,7 @@ import {
   tableDrawingOf,
   windowTableSize,
   writeTableBlock,
+  type TableRowCellStyles,
   type TableSize,
 } from '../../edit/table';
 import { currentProps } from '../../properties/current';
@@ -56,6 +57,8 @@ interface TableSettings {
   window: boolean;
   autoColumns: boolean;
   autoRows: boolean;
+  /** The dialog's Set cell styles, kept for the next table (the dialog only). */
+  cellStyles: TableRowCellStyles | undefined;
 }
 
 const value = (a: PromptAnswer): number => (a as { readonly value: number }).value;
@@ -182,6 +185,7 @@ function dialogSettings(
     lines: state.lines,
     autoColumns: state.autoColumns,
     autoRows: state.autoRows,
+    ...(state.cellStyles && { cellStyles: state.cellStyles }),
   };
 }
 
@@ -218,6 +222,7 @@ export function tableCommands(): CommandDef[] {
     window: false,
     autoColumns: false,
     autoRows: true,
+    cellStyles: undefined,
   };
   /** The drawing's style for its next table, or why it cannot have one. */
   const start = (ctx: CommandContext): Placing | undefined => {
@@ -279,22 +284,24 @@ export function tableCommands(): CommandDef[] {
         window: s.window,
         autoColumns: s.autoColumns,
         autoRows: s.autoRows,
+        cellStyles: s.cellStyles,
       });
       p = { ...p, style };
+      const size: TableSize = { ...sizeOf(p), ...(s.cellStyles && { cellStyles: s.cellStyles }) };
       if (s.window) {
         const c = yield ctx.prompt.point({ message: 'Specify first corner' });
         if (c.kind !== 'point') return;
-        const w = yield* tableWindow(ctx, p, sizeOf(p), s.autoColumns, s.autoRows, c.point);
+        const w = yield* tableWindow(ctx, p, size, s.autoColumns, s.autoRows, c.point);
         if (w) yield* placed(ctx, p, w.size, w.at);
         return;
       }
-      ctx.preview(tablePreview(ctx, p, sizeOf(p)));
+      ctx.preview(tablePreview(ctx, p, size));
       const at = yield ctx.prompt.point({
         message: 'Specify insertion point',
         drag: { kind: 'preview', from: { x: 0, y: 0 } },
       });
       ctx.preview([]);
-      if (at.kind === 'point') yield* placed(ctx, p, sizeOf(p), at.point);
+      if (at.kind === 'point') yield* placed(ctx, p, size, at.point);
     },
   };
 

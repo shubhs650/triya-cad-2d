@@ -184,6 +184,8 @@ import {
   writeMerges,
 } from './table-cells';
 import { buildGrid, newTableProblems } from './table-new';
+import { cellStyleFileProblems, writeCellStyleNames } from './table-cell-styles';
+import { tableStyleRows } from '../map/styles';
 import {
   overrideFileProblems,
   overrideValueProblems,
@@ -2274,6 +2276,8 @@ const tableWriter: Writer<TableGeometry> = {
     }
     if (g.rowHeights.some((h) => !(h > 0))) out.push('a row height of 0 or less');
     if (g.columnWidths.some((w) => !(w > 0))) out.push('a column width of 0 or less');
+    const table = g.style === undefined ? null : resolve(r, g.style, TableStyle);
+    out.push(...cellStyleFileProblems(r, before, g, tableStyleRows(table)));
     // Each cell against the cell it was, wherever its row and column were.
     const was = before && alignedBefore(before, g);
     if (!was || mergesChange(was, g)) out.push(...mergeProblems(g));
@@ -2320,6 +2324,9 @@ const tableWriter: Writer<TableGeometry> = {
     // in the rows' cell styles, which each cell folds in, so a cell there is then written against
     // what it maps as on its new row.
     const styles = dwgFrom2010(r.format, r.version);
+    // Each row's and cell's cell style (M4-16 part 5) before the overrides, which a DWG from
+    // R2010 states in the rows by their row type.
+    if (styles) writeCellStyleNames(t, before, g);
     const overrides = !before || !same(before.overrides, g.overrides);
     if (overrides) writeTableOverrides(r, t, before?.overrides, g.overrides);
     const onRow = (i: number, j: number, cell: TableEntityCell) =>

@@ -1,7 +1,9 @@
 // TABLE's Insert Table dialog (M4-05 part 2), with AutoCAD 2024's structure and labels (AutoCAD
 // Help, "Insert Table Dialog Box"; UI_SPEC.md §7): Table style, Insert options, Preview,
 // Insertion behavior (Specify insertion point or Specify window), Column & row settings
-// (Columns, Column width, Data rows, Row height in lines) and Set cell styles. With Specify
+// (Columns, Column width, Data rows, Row height in lines) and Set cell styles (First row cell
+// style, Second row cell style, All other row cell styles: Title, Header or Data, M4-16 part 5;
+// they open on the rows the table style gives by their place). With Specify
 // window, a radio button picks which of Columns and Column width the window sets (shown as
 // Auto), and the same for Data rows and Row height. OK sends the settings; the engine then asks
 // for the insertion point (dragging the table) or the window's corners.
@@ -9,10 +11,15 @@
 // The button beside Table style launches the Table Style dialog (TABLESTYLE, M4-05 part 5), the
 // dialog opening again on the style made current there. Left out or shown greyed, for the reasons
 // given: From a data link (data links are passthrough only, FILE_FIDELITY.md)
-// and From object data (Data Extraction is not in Triya), Set cell styles (the rows take their
-// table style's title, header and data cell styles in order; choosing others needs per-row cell
-// styles the model does not keep yet), and Help, as Triya's other dialogs leave it.
-import type { DialogRequest, InsertTableSettings, PromptAnswer } from '@triya/engine';
+// and From object data (Data Extraction is not in Triya), cell styles of the drafter's own in
+// Set cell styles (M1-99), and Help, as Triya's other dialogs leave it.
+import type {
+  DialogRequest,
+  InsertTableSettings,
+  PromptAnswer,
+  TableCellStyleName,
+  TableRowCellStyles,
+} from '@triya/engine';
 import { useId, useState } from 'react';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
@@ -64,16 +71,37 @@ function Field({
   );
 }
 
-/** The table as the style lays it out: a title row merged across, a header row, data rows. */
-function Preview({ title, header, up }: { title: boolean; header: boolean; up: boolean }) {
-  const rows = [
-    ...(title ? ['title'] : []),
-    ...(header ? ['header'] : []),
-    'data',
-    'data',
-    'data',
-    'data',
+const CELL_STYLES: readonly [TableCellStyleName, string][] = [
+  ['title', 'Title'],
+  ['header', 'Header'],
+  ['data', 'Data'],
+];
+
+/** The cell styles a table's first rows take by their place in its style, and the rest. */
+function placedCellStyles(style: Request['styles'][number] | undefined): TableRowCellStyles {
+  const first: TableCellStyleName[] = [
+    ...(style && !style.suppressTitle ? ['title' as const] : []),
+    ...(style && !style.suppressHeader ? ['header' as const] : []),
   ];
+  return { first: first[0] ?? 'data', second: first[1] ?? 'data', others: 'data' };
+}
+
+/**
+ * The table as its rows' cell styles lay it out: `first` rows the style gives (title and header
+ * unless suppressed), then four more, a title row merged across.
+ */
+function Preview({
+  first,
+  cellStyles,
+  up,
+}: {
+  first: number;
+  cellStyles: TableRowCellStyles;
+  up: boolean;
+}) {
+  const rows = Array.from({ length: first + 4 }, (_, i) =>
+    i === 0 ? cellStyles.first : i === 1 ? cellStyles.second : cellStyles.others,
+  );
   const shown = up ? [...rows].reverse() : rows;
   const w = 180;
   const h = 18;
@@ -126,9 +154,19 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
   const [width, setWidth] = useState(s0.width.toFixed(4));
   const [rows, setRows] = useState(String(s0.dataRows));
   const [lines, setLines] = useState(String(s0.lines));
+  const [chosenStyles, setChosenStyles] = useState(s0.cellStyles);
   const styleId = useId();
   const chosen =
     request.styles.find((x) => x.name.toUpperCase() === style.toUpperCase()) ?? request.styles[0];
+  const placed = placedCellStyles(chosen);
+  const cellStyles = chosenStyles ?? placed;
+  // Sent only when not the rows by their place, which a table states by leaving them out.
+  const sent =
+    cellStyles.first !== placed.first ||
+    cellStyles.second !== placed.second ||
+    cellStyles.others !== placed.others
+      ? { cellStyles }
+      : {};
   // What the window sets is not asked: Auto, its value kept for the next table.
   const columnsAuto = byWindow && autoColumns;
   const widthAuto = byWindow && !autoColumns;
@@ -146,6 +184,7 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
     (rowsAuto || n.rows !== undefined) &&
     (linesAuto || n.lines !== undefined);
   const settings = (): InsertTableSettings => ({
+    ...sent,
     style: chosen?.name ?? style,
     window: byWindow,
     columns: n.columns ?? s0.columns,
@@ -160,6 +199,7 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
   const ok = () => {
     if (!valid) return;
     const table: InsertTableSettings = {
+      ...sent,
       style: chosen?.name ?? style,
       window: byWindow,
       columns: n.columns ?? s0.columns,
@@ -172,14 +212,10 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
     void answer(doc, { kind: 'dialog', action: 'ok', table });
   };
   const cancel = () => engines.command(doc, { kind: 'cancel' });
-  const firstRows = [
-    ...(chosen && !chosen.suppressTitle ? ['Title'] : []),
-    ...(chosen && !chosen.suppressHeader ? ['Header'] : []),
-  ];
-  const cellStyles: [string, string][] = [
-    ['First row cell style:', firstRows[0] ?? 'Data'],
-    ['Second row cell style:', firstRows[1] ?? 'Data'],
-    ['All other row cell styles:', 'Data'],
+  const rowStyleFields: [keyof TableRowCellStyles, string][] = [
+    ['first', 'First row cell style:'],
+    ['second', 'Second row cell style:'],
+    ['others', 'All other row cell styles:'],
   ];
   return (
     <Modal label="Insert Table" className="insert-table-dialog" onOk={ok} onCancel={cancel}>
@@ -227,8 +263,8 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
           <fieldset className="insert-table-group">
             <legend>Preview</legend>
             <Preview
-              title={!chosen?.suppressTitle}
-              header={!chosen?.suppressHeader}
+              first={(chosen?.suppressTitle ? 0 : 1) + (chosen?.suppressHeader ? 0 : 1)}
+              cellStyles={cellStyles}
               up={chosen?.up ?? false}
             />
           </fieldset>
@@ -337,11 +373,23 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
           </fieldset>
           <fieldset className="insert-table-group">
             <legend>Set cell styles</legend>
-            {cellStyles.map(([label, value]) => (
-              <label key={label} className="cad-dialog-field insert-table-field">
+            {rowStyleFields.map(([key, label]) => (
+              <label key={key} className="cad-dialog-field insert-table-field">
                 <span>{label}</span>
-                <select value={value} disabled>
-                  <option value={value}>{value}</option>
+                <select
+                  value={cellStyles[key]}
+                  onChange={(e) =>
+                    setChosenStyles({
+                      ...cellStyles,
+                      [key]: e.currentTarget.value as TableCellStyleName,
+                    })
+                  }
+                >
+                  {CELL_STYLES.map(([name, shown]) => (
+                    <option key={name} value={name}>
+                      {shown}
+                    </option>
+                  ))}
                 </select>
               </label>
             ))}

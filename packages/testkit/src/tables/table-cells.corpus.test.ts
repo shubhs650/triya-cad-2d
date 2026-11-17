@@ -804,3 +804,74 @@ describe('cell data formats (M4-16 part 2, Data Format...)', () => {
     expect(tableDataFormatOf(backOf(money))).toEqual(euros);
   });
 });
+
+describe('rows and cells on cell styles of their own (M4-16 part 5)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+
+  /**
+   * Inserts a row above the title row (a title row too), deletes the header row, puts the last
+   * row on the Header cell style and the first data row's second cell on Title of its own.
+   */
+  async function edit(model: DocumentModel, id: () => EntityId) {
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    const g = () => (model.entity(id()) as Table).geom;
+    const style = () => model.tables.tableStyles.get(g().style!);
+    const centre = (i: number, j: number) => {
+      const b = tableCellBox(g(), style(), { r0: i, c0: j, r1: i, c1: j });
+      return tableToPlan(g(), { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    const run = async (cell: [number, number], to: [number, number], ...answers: string[]) => {
+      await bus.pick(centre(...cell), { grip: 1e-6 });
+      expect(bus.command).toBe('TABLECELL');
+      if (to !== cell) await bus.pick(centre(...to), { grip: 1e-6, shift: true });
+      for (const x of answers) await bus.submit(x);
+      expect(bus.promptText).toBe('Command:');
+    };
+    await run([0, 0], [0, 0], 'A');
+    await run([2, 0], [2, 0], 'DR');
+    const last = g().rowHeights.length - 1;
+    await run([last, 0], [last, g().columnWidths.length - 1], 'CS', 'H');
+    await run([2, 1], [2, 1], 'CS', 'T');
+    return g();
+  }
+
+  const styles = (t: TableGeometry) => ({
+    rows: t.rowStyles,
+    own: t.cells.map((r) => r.map((c) => c.cellStyle ?? '')),
+  });
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '3', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', '1', '2']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const g = await edit(model, () => made.id);
+    expect(styles(g)).toEqual({
+      rows: ['title', 'title', 'data', 'data', 'header'],
+      own: [
+        ['', ''],
+        ['', ''],
+        ['', 'title'],
+        ['', ''],
+        ['', ''],
+      ],
+    });
+    expect(styles(saved(bytes, model, made.handle))).toEqual(styles(g));
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    expect(table.geom.rowStyles).toBeUndefined();
+    const g = await edit(model, () => table.id);
+    expect(g.rowStyles).toEqual(['title', 'title', 'data', 'header']);
+    expect(g.cells[2]![1]!.cellStyle).toBe('title');
+    expect(styles(saved(bytes, model, table.handle))).toEqual(styles(g));
+  });
+});

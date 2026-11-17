@@ -15,7 +15,9 @@
 // Match Cell gives the cells clicked the first cell's format; Remove All Property Overrides
 // leaves the cells selected their cell style's (M4-05 part 7). Insert Block... opens TINSERT's
 // dialog on the first cell selected (M4-16). Data Format... opens the Table Cell Format dialog
-// (M4-16 part 2, `dataFormattedTable`).
+// (M4-16 part 2, `dataFormattedTable`). Cell Style puts the cells selected on the Title, Header or
+// Data cell style, or their row's (By Row); rows are inserted and deleted anywhere, each keeping
+// its cell style (M4-16 part 5).
 import { tableCellAt, tableCellBox, tableCellText, tableRangeHeads } from '../../annotation/table';
 import {
   fitTableRow,
@@ -25,7 +27,11 @@ import {
   writeTableBlock,
 } from '../../edit/table';
 import { tableCellGrips, type TableGripRole } from '../../edit/table-grips';
-import { withCellMatched, withCellOverridesRemoved } from '../../edit/table-format';
+import {
+  withCellMatched,
+  withCellOverridesRemoved,
+  withCellsStyled,
+} from '../../edit/table-format';
 import { tabSeparatedCells, type SheetCells } from '../../edit/spreadsheet';
 import { sameGrip } from '../../edit/grips';
 import {
@@ -46,7 +52,7 @@ import type { Vec2 } from '../../geom/types';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
-import type { TableGeometry, TableStyleRecord } from '../../model/types';
+import type { TableCellStyleName, TableGeometry, TableStyleRecord } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer, ShortcutMenuItem } from '../prompt';
 import { sub } from '../../geom/vec';
@@ -74,6 +80,8 @@ const LABELS: Readonly<Record<TableCellOption, string>> = {
   DataFormat: 'Data Format...',
   Match: 'Match Cell',
   RemoveOverrides: 'Remove All Property Overrides',
+  // AutoCAD's Table Cell tab, Cell Styles (M4-16 part 5).
+  CellStyle: 'Cell Style',
   Above: 'Insert Rows Above',
   Below: 'Insert Rows Below',
   DeleteRows: 'Delete Rows',
@@ -98,22 +106,25 @@ function refusal(o: TableCellOption, g: TableGeometry, r: TableCellRange): strin
   }
   if (o === 'Unmerge') return 'No merged cell is selected.';
   if (o === 'RemoveOverrides') return 'The cells selected override nothing of their cell style.';
-  if (o === 'Below') return 'Rows can be inserted below the header row and the data rows only.';
-  if (o.startsWith('Merge')) return 'Select more than one cell to merge.';
-  return 'Rows can be inserted above and deleted only among the data rows.';
+  return 'Select more than one cell to merge.';
 }
 
-/** Table `g` after option `o` on range `r`. */
-function edited(g: TableGeometry, r: TableCellRange, o: TableCellOption): TableGeometry {
+/** Table `g` (style `style`) after option `o` on range `r`. */
+function edited(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  r: TableCellRange,
+  o: TableCellOption,
+): TableGeometry {
   const rows = r.r1 - r.r0 + 1;
   const columns = r.c1 - r.c0 + 1;
   switch (o) {
     case 'Above':
-      return withRowsInserted(g, r.r0, rows, r.r0);
+      return withRowsInserted(g, r.r0, rows, r.r0, style);
     case 'Below':
-      return withRowsInserted(g, r.r1 + 1, rows, r.r1);
+      return withRowsInserted(g, r.r1 + 1, rows, r.r1, style);
     case 'DeleteRows':
-      return withRowsDeleted(g, r.r0, r.r1);
+      return withRowsDeleted(g, r.r0, r.r1, style);
     case 'Left':
       return withColumnsInserted(g, r.c0, columns, r.c0);
     case 'Right':
@@ -154,6 +165,39 @@ async function fittedRows(
     out = fitTableRow(out, style, i, j, lines ?? 1);
   }
   return out;
+}
+
+/** Cell Style's choices: AutoCAD's three cell styles, and By Row (the row's, none of its own). */
+const CELL_STYLES = ['Title', 'Header', 'Data', 'ByRow'] as const;
+
+const CELL_STYLE_NAMES: Readonly<
+  Record<(typeof CELL_STYLES)[number], TableCellStyleName | undefined>
+> = { Title: 'title', Header: 'header', Data: 'data', ByRow: undefined };
+
+/**
+ * Cell Style (AutoCAD's Table Cell tab, Cell Styles; M4-16 part 5): table `g` with the cells of
+ * range `r` on the cell style asked for (`withCellsStyled`), or undefined when ended at the prompt.
+ * The default is the first cell's: its own, else By Row.
+ */
+async function* cellStyledTable(
+  ctx: CommandContext,
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  r: TableCellRange,
+): AsyncGenerator<Prompt, TableGeometry | undefined, PromptAnswer> {
+  const own = g.cells[r.r0]![r.c0]!.cellStyle;
+  const now = CELL_STYLES.find((k) => CELL_STYLE_NAMES[k] === own) ?? 'ByRow';
+  const a = yield ctx.prompt.keyword({
+    message: 'Enter cell style',
+    options: CELL_STYLES,
+    default: { kind: 'keyword', keyword: now },
+    shortcutMenu: CELL_STYLES.map((k) => ({
+      label: k === 'ByRow' ? 'By Row' : k,
+      keyword: k,
+    })),
+  });
+  if (a.kind !== 'keyword') return undefined;
+  return withCellsStyled(g, style, r, CELL_STYLE_NAMES[a.keyword as (typeof CELL_STYLES)[number]]);
 }
 
 /**
@@ -327,10 +371,14 @@ export function tableCellCommand(start?: {
         if (o === 'Paste') {
           const cells = await clipboardCells(ctx);
           if (!cells) continue;
-          const pasted = withCellsPasted(t.g, [r.r0, r.c0], cells);
+          const pasted = withCellsPasted(t.g, [r.r0, r.c0], cells, t.style);
           g = await fittedRows(ctx, pasted.geom, t.style, pasted.range);
         } else if (o === 'RemoveOverrides') {
           g = withCellOverridesRemoved(t.g, t.style, r);
+        } else if (o === 'CellStyle') {
+          g = yield* cellStyledTable(ctx, t.g, t.style, r);
+          if (!g) return;
+          g = await fittedRows(ctx, g, t.style, r);
         } else if (o === 'DataFormat') {
           ctx.preview([]);
           g = yield* dataFormattedTable(ctx, t.g, r);
@@ -340,7 +388,7 @@ export function tableCellCommand(start?: {
           g = yield* formattedTable(ctx, t.g, t.style, r, o as TableCellFormatOption);
           if (!g) return;
           if (o === 'Height') g = await fittedRows(ctx, g, t.style, r);
-        } else g = edited(t.g, r, o);
+        } else g = edited(t.g, t.style, r, o);
         const changed = g;
         ctx.preview([]);
         ctx.edit((b) => {
