@@ -7,6 +7,8 @@
 //   TEXT in a style holding the dialog's font, big font, width factor, oblique angle, backwards,
 //   upside down and vertical, at the style's height (1 when the height is asked for as text is
 //   placed; the picture is fitted to what it draws either way).
+// - Insert (M5-01 part 3; AutoCAD Help, "Insert Dialog Box"): a reference to the block at its
+//   base point, unscaled and unturned, the blocks it nests copied with it.
 // - Multileader Style (AutoCAD 2024 Help, "Multileader Style Manager", Preview of: "Displays a
 //   preview image of the style that is selected in the Styles list", and "Modify Multileader
 //   Style Dialog Box": the image shows the settings as they are made): one multileader in a style
@@ -19,7 +21,12 @@ import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
-import type { MLeaderStyleRecord, MultiLeaderGeometry, TextGeometry } from '../model/types';
+import type {
+  InsertGeometry,
+  MLeaderStyleRecord,
+  MultiLeaderGeometry,
+  TextGeometry,
+} from '../model/types';
 import type { MLeaderStyleSettings } from '../annotation/mleaderstyle-fields';
 import { plainLayerZero, previewDrawing } from '../edit/dimstyle-preview';
 import {
@@ -51,6 +58,14 @@ export type StylePreview =
       readonly settings: MLeaderStyleSettings;
       /** The style they were read from, whose fields the dialog does not show are kept. */
       readonly from?: string;
+    }
+  | {
+      /**
+       * The Insert dialog's preview of a block (M5-01 part 3; AutoCAD Help, "Insert Dialog Box":
+       * "Displays a preview of the specified block to insert"): a reference to it, unscaled.
+       */
+      readonly kind: 'block';
+      readonly block: Handle;
     };
 
 /** The sample text, AutoCAD's own words for it. */
@@ -72,6 +87,10 @@ export function stylePreviewModel(
   preview: StylePreview,
 ): DocumentModel | undefined {
   const keep = new Set<Handle>();
+  if (preview.kind === 'block') {
+    if (!model.blocks.has(preview.block)) return undefined;
+    nestedBlocks(model, preview.block, keep);
+  }
   if (preview.kind === 'mleaderstyle') {
     for (const h of [preview.settings.arrowhead, preview.settings.block])
       if (model.blocks.has(h as Handle)) keep.add(h as Handle);
@@ -89,6 +108,19 @@ export function stylePreviewModel(
     pm.apply(b.build());
     return pm;
   }
+  if (preview.kind === 'block') {
+    const geom: InsertGeometry = {
+      kind: 'INSERT',
+      block: preview.block,
+      position: pm.blocks.get(preview.block)!.basePoint,
+      scale: { x: 1, y: 1, z: 1 },
+      rotation: 0,
+      attributes: [],
+    };
+    b.addEntity({ owner: space, layer, geom });
+    pm.apply(b.build());
+    return pm;
+  }
   // The style first, with the blocks it adds, so that its content block can be measured.
   const style = mleaderStyle(b, pm, preview.settings, preview.from);
   if (!style) return undefined;
@@ -97,6 +129,22 @@ export function stylePreviewModel(
   e.addEntity({ owner: space, layer, geom: mleaderSample(pm, style) });
   pm.apply(e.build());
   return pm;
+}
+
+/**
+ * `block` and every block its objects name (nested references, a dimension's block,
+ * arrowheads), added to `out`: what a preview drawing needs to draw it.
+ */
+function nestedBlocks(model: DocumentModel, block: Handle, out: Set<Handle>): void {
+  if (out.has(block)) return;
+  out.add(block);
+  for (const id of model.blockEntities(block)) {
+    const g = model.entity(id)?.geom;
+    if (!g) continue;
+    for (const v of Object.values(g))
+      if (typeof v === 'string' && model.blocks.has(v as Handle))
+        nestedBlocks(model, v as Handle, out);
+  }
 }
 
 /** "AaBb123" in a style of the dialog's settings. */
