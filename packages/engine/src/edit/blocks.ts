@@ -30,7 +30,7 @@ import { insUnitsOf } from '../model/units';
 import { isXrefRecord } from '../model/xref';
 import { followedBy, moveBy, scaleAbout, turnAbout, type Similarity } from './similarity';
 import { rescaledReference, transformGeometry } from './transform';
-import { copyObjects, eraseObjects, type EditReport } from './edit';
+import { copyObjects, copyProblem, eraseObjects, type EditReport } from './edit';
 import { validViewName } from './named-view';
 
 /** DXF 70 of an ATTDEF: the value never changes, so references carry no attribute for it. */
@@ -153,9 +153,19 @@ export function defineBlock(
       ...(units !== 0 ? { units } : {}),
     }).handle;
   }
-  const report = copyObjects(b, model, init.ids, t, {}, block);
-  if (init.erase) eraseObjects(b, model, init.ids);
-  return { ...report, block, redefined: existing !== undefined };
+  // A layout's viewports stay out of blocks, as AutoCAD keeps them out; what cannot be copied
+  // stays where it is, and is not erased either.
+  const refused = new Map<string, number>();
+  const taken = init.ids.filter((id) => {
+    const e = b.entity(id);
+    const problem =
+      e?.geom.kind === 'VIEWPORT' ? 'a viewport cannot be in a block' : e && copyProblem(e, t);
+    if (problem) refused.set(problem, (refused.get(problem) ?? 0) + 1);
+    return e !== undefined && !problem;
+  });
+  const report = copyObjects(b, model, taken, t, {}, block);
+  if (init.erase) eraseObjects(b, model, taken);
+  return { ...report, refused, block, redefined: existing !== undefined };
 }
 
 /** The block's attribute definitions that references carry (not constant), in block order. */

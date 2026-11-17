@@ -146,6 +146,19 @@ function addTree(r: Resolver, o: CadObject, d: DrawingField): void {
 }
 
 /**
+ * An erased text's fields leave the drawing's FIELDLIST with it (found by M5-01: BLOCK erases
+ * the texts it copies into the block): the list would otherwise still name FIELDs whose
+ * dictionary went with the text, which the save writes with no owner.
+ */
+export function forgetFields(o: CadObject): void {
+  const root = rootField(o);
+  const list = root && fieldList(o);
+  if (!list) return;
+  const gone = new Set(fieldsOf(root));
+  list.fields = list.fields.filter((f) => !gone.has(f));
+}
+
+/**
  * Writes a text's fields: their new values onto the tree it has when the fields are the same
  * (`before`'s), else a new tree in place of the old (none when `after` has no fields).
  */
