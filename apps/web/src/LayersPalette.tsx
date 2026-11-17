@@ -18,6 +18,9 @@
 // or hides them and opens Customize Layer Columns to order them; a click on a header sorts the
 // layers by it, a second click reversing it. The search's time from typing to the rows filtered
 // on screen is kept on the palette (acceptance: under 100 ms on 200 layers).
+// M5-07 part 2: Layer States Manager (Alt+S) opens LAYERSTATE's dialog, and the palette names
+// the layer state restored last while the layers are as it has them ("Unsaved Layer State"
+// otherwise), as AutoCAD's manager does.
 import {
   Fragment,
   memo,
@@ -44,6 +47,13 @@ import {
   type LayerColumnKey,
   type LayerColumnSettings,
 } from './layer-columns';
+import {
+  currentLayerStateName,
+  drawingLayerStates,
+  layerStateRows,
+  layerStateTables,
+  layerStatesManager,
+} from './layer-states';
 import { layerColorBooks, layerLinetypes, layerRows, type LayerRow } from './layers';
 import { SelectColorDialog } from './SelectColorDialog';
 
@@ -314,6 +324,13 @@ export function LayersPalette({
     [doc.opened, doc.id, doc.block, doc.revision, inLayout],
   );
   const sorted = useMemo(() => sortLayerRows(rows, columns.sort), [rows, columns.sort]);
+  const layerState = useMemo(() => {
+    const changes = engines.changesOf(doc.id);
+    const init = doc.opened.init;
+    return currentLayerStateName(
+      layerStateRows(drawingLayerStates(init, changes), layerStateTables(init, changes)),
+    );
+  }, [doc.opened, doc.id, doc.revision]);
   const needle = search.trim().toLowerCase();
   const shown = useMemo(
     () => (needle ? sorted.filter((r) => r.name.toLowerCase().includes(needle)) : sorted),
@@ -466,11 +483,20 @@ export function LayersPalette({
   };
 
   const onPaletteKey = (e: KeyboardEvent) => {
-    // AutoCAD's manager: Alt+N New Layer, Alt+D Delete Layer, Alt+C Set Current; Ctrl+A all.
+    // AutoCAD's manager: Alt+N New Layer, Alt+D Delete Layer, Alt+C Set Current, Alt+S Layer
+    // States Manager; Ctrl+A all.
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       const k = e.key.toLowerCase();
       const run =
-        k === 'n' ? newLayer : k === 'd' ? deleteLayers : k === 'c' ? setCurrent : undefined;
+        k === 'n'
+          ? newLayer
+          : k === 'd'
+            ? deleteLayers
+            : k === 'c'
+              ? setCurrent
+              : k === 's'
+                ? () => layerStatesManager.show(doc.id)
+                : undefined;
       if (run) {
         e.preventDefault();
         void run();
@@ -602,7 +628,19 @@ export function LayersPalette({
         >
           Set Current
         </button>
+        <button
+          type="button"
+          title="Layer States Manager (Alt+S)"
+          aria-label="Layer States Manager"
+          aria-keyshortcuts="Alt+S"
+          onClick={() => void layerStatesManager.show(doc.id)}
+        >
+          Layer States
+        </button>
       </div>
+      <p className="layer-state-current">
+        Layer state: <output aria-label="Layer state">{layerState}</output>
+      </p>
       <input
         type="search"
         className="layer-search"

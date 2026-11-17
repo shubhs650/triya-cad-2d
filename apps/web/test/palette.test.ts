@@ -136,6 +136,7 @@ describe('palette search', () => {
       'JUSTIFYTEXT',
       // M5-06 part 1: the layer tool row.
       'LAYCUR',
+      'LAYERSTATE',
       'LAYFRZ',
       'LAYISO',
       'LAYLCK',

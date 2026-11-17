@@ -1,0 +1,179 @@
+// The Layer States Manager (M5-07 part 2), LAYERSTATE's dialog: what it lists and the state it
+// keeps. AutoCAD 2024 Help, "Layer States Manager Dialog Box": the drawing's layer states with
+// Name, Space, Same as DWG and Description; New..., Update, Rename, Delete, Import... and
+// Export...; Restore Options ("Turn off layers not found in layer state", "Apply properties as
+// viewport overrides"); and, under More Restore Options, the Layer Properties to Restore, which
+// are the selected state's own (its mask). The Layer Properties Manager names the state restored
+// last, or says "Unsaved Layer State" once the layers are no longer as it has them.
+//
+// The engine worker holds the drawing (M1-67), so the dialog reads the states and the tables
+// they are compared with from the drawing as opened plus every change applied since.
+import {
+  LAYER_STATE_MASK,
+  isLayerState,
+  layerStateMatches,
+  type ChangeSet,
+  type DocumentInit,
+  type Handle,
+  type KeyedChanges,
+  type LayerState,
+  type LayerStateTables,
+  type NonGraphicalObject,
+  type TableName,
+  type TableRecords,
+} from '@triya/engine';
+
+/** A table as opened with `changes` applied in order, by handle. */
+function tableNow<K extends TableName>(
+  init: DocumentInit,
+  changes: readonly ChangeSet[],
+  table: K,
+): Map<Handle, TableRecords[K]> {
+  const now = new Map<Handle, TableRecords[K]>();
+  for (const r of (init.tables?.[table] ?? []) as TableRecords[K][]) now.set(r.handle, r);
+  for (const cs of changes) {
+    const c = cs.tables?.[table] as KeyedChanges<TableRecords[K]> | undefined;
+    for (const r of c?.removed ?? []) now.delete(r.handle);
+    for (const { after } of c?.updated ?? []) now.set(after.handle, after);
+    for (const r of c?.added ?? []) now.set(r.handle, r);
+  }
+  return now;
+}
+
+/** The tables a state is compared with (Same as DWG) and exported with. */
+export function layerStateTables(
+  init: DocumentInit,
+  changes: readonly ChangeSet[],
+): LayerStateTables {
+  return {
+    tables: {
+      layers: tableNow(init, changes, 'layers'),
+      linetypes: tableNow(init, changes, 'linetypes'),
+      plotStyles: tableNow(init, changes, 'plotStyles'),
+    },
+  };
+}
+
+/**
+ * The drawing's layer states the manager lists, by name (case ignored): a view's layer snapshot
+ * (`LAYER_STATE_MASK.hidden`) is the view's, not listed.
+ */
+export function drawingLayerStates(
+  init: DocumentInit,
+  changes: readonly ChangeSet[],
+): LayerState[] {
+  const now = new Map<Handle, NonGraphicalObject>();
+  for (const o of init.objects ?? []) if (isLayerState(o)) now.set(o.handle, o);
+  for (const cs of changes) {
+    for (const o of cs.objects?.removed ?? []) now.delete(o.handle);
+    for (const { after } of cs.objects?.updated ?? [])
+      if (isLayerState(after)) now.set(after.handle, after);
+    for (const o of cs.objects?.added ?? []) if (isLayerState(o)) now.set(o.handle, o);
+  }
+  return [...now.values()]
+    .filter(isLayerState)
+    .filter((s) => (s.mask & LAYER_STATE_MASK.hidden) === 0)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+}
+
+/** One row of the manager's list. */
+export interface LayerStateRow {
+  readonly handle: Handle;
+  readonly name: string;
+  /** Model, or Layout for a state saved in paper space (DXF 290). */
+  readonly space: 'Model' | 'Layout';
+  /** Same as DWG: whether the drawing's layers are as the state has them. */
+  readonly same: boolean;
+  readonly description: string;
+  /** The state restored last (LayerStateMask kLastRestored). */
+  readonly lastRestored: boolean;
+  readonly mask: number;
+  readonly state: LayerState;
+}
+
+export function layerStateRows(
+  states: readonly LayerState[],
+  tables: LayerStateTables,
+): LayerStateRow[] {
+  return states.map((s) => ({
+    handle: s.handle,
+    name: s.name,
+    space: s.paperSpace ? 'Layout' : 'Model',
+    same: layerStateMatches(tables, s),
+    description: s.description,
+    lastRestored: (s.mask & LAYER_STATE_MASK.lastRestored) !== 0,
+    mask: s.mask,
+    state: s,
+  }));
+}
+
+/** What the Layer Properties Manager shows when no restored state matches the layers. */
+export const UNSAVED_LAYER_STATE = 'Unsaved Layer State';
+
+/** The Layer Properties Manager's layer state: the one restored last while the layers match it. */
+export function currentLayerStateName(rows: readonly LayerStateRow[]): string {
+  const last = rows.find((r) => r.lastRestored);
+  return last && last.same ? last.name : UNSAVED_LAYER_STATE;
+}
+
+/** The Layer Properties to Restore, in AutoCAD's order, each a mask bit. */
+export const RESTORE_PROPERTIES: readonly { readonly bit: number; readonly label: string }[] = [
+  { bit: LAYER_STATE_MASK.on, label: 'On/Off' },
+  { bit: LAYER_STATE_MASK.frozen, label: 'Frozen/Thawed' },
+  { bit: LAYER_STATE_MASK.locked, label: 'Locked/Unlocked' },
+  { bit: LAYER_STATE_MASK.plot, label: 'Plot/No Plot' },
+  { bit: LAYER_STATE_MASK.vpFrozen, label: 'Current VP Frozen/Thawed' },
+  { bit: LAYER_STATE_MASK.newVpFrozen, label: 'New VP Frozen/Thawed' },
+  { bit: LAYER_STATE_MASK.color, label: 'Color' },
+  { bit: LAYER_STATE_MASK.linetype, label: 'Linetype' },
+  { bit: LAYER_STATE_MASK.lineweight, label: 'Lineweight' },
+  { bit: LAYER_STATE_MASK.transparency, label: 'Transparency' },
+  { bit: LAYER_STATE_MASK.plotStyle, label: 'Plot Style' },
+];
+
+/** The mask with `bit` set or cleared; the state's own bits (hidden, last restored) kept. */
+export function withRestoreProperty(mask: number, bit: number, on: boolean): number {
+  return on ? mask | bit : mask & ~bit;
+}
+
+/** Select All and Clear All: every property to restore, or none. */
+export function allRestoreProperties(mask: number, on: boolean): number {
+  return on ? mask | LAYER_STATE_MASK.all : mask & ~LAYER_STATE_MASK.all;
+}
+
+/** Export's file name: the state's, as AutoCAD offers it, without characters files refuse. */
+export function lasFileName(name: string): string {
+  return `${name.replace(/[\\/:*?"<>|]/g, '_')}.las`;
+}
+
+/** The manager open, by drawing, and what LAYERSTATE waits for: the dialog to close. */
+export const layerStatesManager = (() => {
+  let open: number | undefined;
+  let done: (() => void) | undefined;
+  const listeners = new Set<() => void>();
+  const set = (v: number | undefined) => {
+    open = v;
+    for (const l of listeners) l();
+  };
+  const finish = () => {
+    const d = done;
+    done = undefined;
+    d?.();
+  };
+  return {
+    get: () => open,
+    subscribe(l: () => void) {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    show(doc: number): Promise<void> {
+      finish();
+      set(doc);
+      return new Promise((resolve) => (done = resolve));
+    },
+    close() {
+      set(undefined);
+      finish();
+    },
+  };
+})();
