@@ -110,8 +110,11 @@ import {
   paragraphCodes,
   paragraphIndex,
   cellAhead,
+  editAhead,
+  mtextAhead,
   cellMoveFor,
   lineAhead,
+  type AheadOp,
   type CarriedKey,
   type CellMove,
   removeRange,
@@ -323,6 +326,37 @@ function TextLine({
     answerMarked(lineValue(marked));
     return true;
   };
+  /** TEXTEDIT: the value is still selected as it opened, nothing typed into it yet. */
+  const untouched = useRef(editing);
+  // TEXTEDIT's held keys (M4-26): typed into the line as they would be once it shows, the value
+  // selected, so the first key that types replaces it. Enter keeps the line, Esc cancels, and the
+  // keys after go back to the command line for the prompt that follows.
+  useLayoutEffect(() => {
+    if (!editing) return;
+    return commandLines.typeHeldInto(doc, (keys) => {
+      if (done.current) return false;
+      const before = typed.current;
+      const from = untouched.current ? undefined : lineShown(before);
+      const { op, text, rest } = editAhead(keys, from);
+      const now =
+        text === undefined
+          ? before
+          : lineEdited(from === undefined ? [] : before, text, text.length);
+      if (text !== undefined) {
+        untouched.current = false;
+        typed.current = now;
+        caret.current = text.length;
+        setParts(now);
+      }
+      if (op?.kind === 'keep') keep();
+      else if (op?.kind === 'cancel') {
+        done.current = true;
+        cancel(doc);
+      }
+      commandLines.giveHeld(doc, rest);
+      return true;
+    });
+  }, []);
   /** TEXT ended or cancelled from the editor: keys held after that are for `Command:`. */
   const closed = useRef(false);
   // The keys the command line held for the editor (M4-20): those typed while it opened, typed in
@@ -358,7 +392,8 @@ function TextLine({
     });
   }, []);
   useEffect(() => {
-    if (editing) input.current?.select();
+    // Keys typed ahead into it (M4-26) leave the caret after them instead.
+    if (untouched.current) input.current?.select();
     const onDown = (e: PointerEvent) => {
       if (!(e.target instanceof Element) || input.current?.contains(e.target)) return;
       if (e.target.closest('.spell-menu')) return;
@@ -394,6 +429,7 @@ function TextLine({
           value={value}
           size={Math.max(4, value.length + 1)}
           onChange={(e) => {
+            untouched.current = false;
             const at = e.target.selectionStart ?? e.target.value.length;
             const next = lineEdited(parts, e.target.value, at);
             // A field deleted whole moves the caret to where it was.
@@ -1563,13 +1599,8 @@ function MTextBox({
     };
   }, []);
 
-  // The keys typed while the editor moved here from another cell, typed in order (M4-05 part 7).
-  useEffect(() => {
-    const carry = carried.get(doc);
-    if (!request.cell || !carry) return;
-    carried.delete(doc);
-    if (performance.now() > carry.until) return;
-    const { ops, rest } = cellAhead(carry.keys);
+  /** Keys typed before the editor took them, typed in order (`cellAhead`, `mtextAhead`). */
+  const typeAhead = (ops: readonly AheadOp[], moved?: readonly CarriedKey[]) => {
     for (const op of ops) {
       switch (op.kind) {
         case 'text':
@@ -1586,7 +1617,7 @@ function MTextBox({
         }
         case 'move':
           finish(op.move);
-          carried.get(doc)?.keys.push(...rest);
+          carried.get(doc)?.keys.push(...(moved ?? []));
           break;
         case 'finish':
           finish();
@@ -1597,6 +1628,30 @@ function MTextBox({
           break;
       }
     }
+  };
+  // The keys typed while the editor moved here from another cell, typed in order (M4-05 part 7).
+  // Not a layout effect: they are typed once the contents are shown and selected, as above.
+  useEffect(() => {
+    const carry = carried.get(doc);
+    if (!request.cell || !carry) return;
+    carried.delete(doc);
+    if (performance.now() > carry.until) return;
+    const { ops, rest } = cellAhead(carry.keys);
+    typeAhead(ops, rest);
+  }, []);
+  // The keys the command line held for the editor (M4-26): those typed while it opened after
+  // MTEXT's opposite corner or on TEXTEDIT's pick, typed in order before any key typed into it,
+  // as AutoCAD's editor keeps them. After an Esc that cancels, they go back to the command line
+  // for `Command:`; once the editor has closed it takes no more.
+  useEffect(() => {
+    if (request.cell) return;
+    return commandLines.typeHeldInto(doc, (keys) => {
+      if (done.current) return false;
+      const { ops, rest } = mtextAhead(keys);
+      typeAhead(ops);
+      commandLines.giveHeld(doc, rest);
+      return true;
+    });
   }, []);
 
   // New columns or a new zoom lay the text out again.

@@ -359,6 +359,35 @@ export function cellAhead(keys: readonly CarriedKey[]): {
   return { ops, rest: [] };
 }
 
+/**
+ * Keys typed before the MTEXT editor opened (M4-26: after MTEXT's opposite corner, or while
+ * TEXTEDIT opens it on a picked MTEXT), which the command line held for the prompt not shown
+ * yet: AutoCAD's editor keeps them, so they are typed into it in order, as typed into it would
+ * be. Enter is a paragraph break and Tab a tab character there; Esc cancels, and the keys after
+ * it (`rest`) were typed ahead of `Command:`.
+ */
+export function mtextAhead(keys: readonly string[]): {
+  ops: AheadOp[];
+  rest: readonly string[];
+} {
+  const ops: AheadOp[] = [];
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!;
+    if (key === 'Escape') {
+      ops.push({ kind: 'cancel' });
+      return { ops, rest: keys.slice(i + 1) };
+    }
+    const last = ops.at(-1);
+    const text = key === 'Tab' ? '\t' : key.length === 1 ? key : undefined;
+    if (text !== undefined) {
+      if (last?.kind === 'text') ops[ops.length - 1] = { kind: 'text', text: last.text + text };
+      else ops.push({ kind: 'text', text });
+    } else if (key === 'Backspace') ops.push({ kind: 'backspace' });
+    else if (key === 'Enter') ops.push({ kind: 'break' });
+  }
+  return { ops, rest: [] };
+}
+
 // ── Fields (M4-10 part 4) ─────────────────────────────────────────────────────────────────────
 
 /** The field span at unit `at` and its index, if there is one. */
@@ -458,6 +487,33 @@ export function lineAhead(
     else if (key.length === 1) text += key;
   }
   return { ops, text, rest: [] };
+}
+
+/** What a key typed before TEXTEDIT's line editor opened does there. */
+export type EditAheadOp = { readonly kind: 'keep' } | { readonly kind: 'cancel' };
+
+/**
+ * Keys typed before TEXTEDIT's line editor opened on a picked TEXT (M4-26), which opens with the
+ * value selected: the first key that types replaces it (Backspace deletes it), as typed into the
+ * editor would, and the keys after go on from there. Enter keeps the line (`keep`), Esc cancels;
+ * the keys after either (`rest`) were typed ahead of the prompt that follows. `typed`: the line
+ * the keys go on from, undefined while the value is still selected; `text` is the same after the
+ * keys (undefined when none of them typed).
+ */
+export function editAhead(
+  keys: readonly string[],
+  typed: string | undefined,
+): { op?: EditAheadOp; text: string | undefined; rest: readonly string[] } {
+  let text = typed;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!;
+    if (key === 'Escape' || key === 'Enter') {
+      return { op: { kind: key === 'Enter' ? 'keep' : 'cancel' }, text, rest: keys.slice(i + 1) };
+    }
+    if (key === 'Backspace') text = text === undefined ? '' : text.slice(0, -1);
+    else if (key.length === 1) text = (text ?? '') + key;
+  }
+  return { text, rest: [] };
 }
 
 /** A line (`Rev %<\AcVar Date>%`) as its parts; with no `fields` (no Insert Field), its text. */
