@@ -85,8 +85,9 @@ class JudgeTest(unittest.TestCase):
         # layout's view in its paper-space viewport (M2-47 part 1) and after the palette's hatch
         # gradient, origin and associative rows (M2-35 part 13), and with view categories set
         # (M2-70), after -TABLE with a nozzle schedule typed in (M4-05), and after the Table Style
-        # dialog's styles with border linetypes and double lines (M4-16 part 8).
-        self.assertEqual(report.checked, 28)
+        # dialog's styles with border linetypes and double lines (M4-16 part 8), and after -BLOCK
+        # and -INSERT (M5-01 part 1).
+        self.assertEqual(report.checked, 30)
 
     def test_any_recover_or_audit_finding_fails(self) -> None:
         name = gate.save_name(DXF, "edited")
