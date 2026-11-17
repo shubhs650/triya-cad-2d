@@ -10,12 +10,18 @@
 // go, Set Current (Alt+C, or a double-click on Status) makes a layer current; a double-click on
 // a name (or F2) renames it and on a description edits it. Each is one LAYER undo step. Fully
 // keyboard operable: every toggle is a button.
+// M5-05 part 2: the Color, Linetype, Lineweight and Transparency cells are buttons opening
+// AutoCAD's dialogs for them (Select Color without ByLayer and ByBlock, Select Linetype,
+// Lineweight, Layer Transparency); OK sets the value on the row clicked, or on every selected
+// layer when the row is one of them, as one LAYER undo step.
 import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import type { EngineEdit, Handle } from '@triya/engine';
+import { transparencyOf, type EngineEdit, type Handle, type LayerProps } from '@triya/engine';
 import { controllerOf } from './canvas/registry';
 import type { DocumentStore, OpenDocument } from './documents';
 import { engines } from './engine/registry';
-import { layerRows, type LayerRow } from './layers';
+import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from './LayerDialogs';
+import { layerColorBooks, layerLinetypes, layerRows, type LayerRow } from './layers';
+import { SelectColorDialog } from './SelectColorDialog';
 
 type Toggle = 'on' | 'frozen' | 'locked' | 'plot';
 
@@ -35,6 +41,12 @@ const PLOT: ToggleColumn = {
   key: 'plot',
   title: 'Plot',
   label: (r) => (r.plot ? 'Plot' : 'No plot'),
+};
+
+/** A property cell whose dialog is open, and the row clicked. */
+type Picking = {
+  readonly cell: 'color' | 'linetype' | 'lineweight' | 'transparency';
+  readonly row: LayerRow;
 };
 
 /** A name or a description being typed in place. */
@@ -90,6 +102,7 @@ export function LayersPalette({
   const [picked, setPicked] = useState<ReadonlySet<Handle>>(new Set());
   const [anchor, setAnchor] = useState<Handle | undefined>();
   const [editing, setEditing] = useState<Editing | undefined>();
+  const [picking, setPicking] = useState<Picking | undefined>();
   const tableRef = useRef<HTMLTableElement>(null);
   // Only layers still listed stay selected (a delete, an undo or the search may take some away).
   const selected = useMemo(
@@ -232,6 +245,24 @@ export function LayersPalette({
     }
   };
 
+  /** The layers a cell clicked in `row` changes: every selected one when `row` is. */
+  const targets = (row: LayerRow): Handle | Handle[] =>
+    selected.has(row.handle) && selected.size > 1 ? [...selected] : row.handle;
+
+  /** A property dialog's OK: the value on the layers of the row it was opened from. */
+  const setProps = async (props: LayerProps) => {
+    if (!picking) return;
+    const row = picking.row;
+    setPicking(undefined);
+    await apply({ kind: 'layer', layer: targets(row), ...props });
+    focusRow(row.handle);
+  };
+  const closeDialog = () => {
+    const row = picking?.row;
+    setPicking(undefined);
+    if (row) focusRow(row.handle);
+  };
+
   const toggle = async (row: LayerRow, key: Toggle) => {
     const start = performance.now();
     // After a click Chromium runs nothing else on the page, the engine's answer included, until
@@ -241,8 +272,7 @@ export function LayersPalette({
       frame ??= performance.now();
     });
     // A click in a selected row changes every selected layer, to the opposite of that row's.
-    const layers = selected.has(row.handle) && selected.size > 1 ? [...selected] : row.handle;
-    const edit: EngineEdit = { kind: 'layer', layer: layers, [key]: !row[key] };
+    const edit: EngineEdit = { kind: 'layer', layer: targets(row), [key]: !row[key] };
     const result = await engines.edit(doc.id, edit);
     if (!result.ok) {
       setMessage(result.message);
@@ -278,6 +308,24 @@ export function LayersPalette({
         onClick={() => void toggle(r, t.key)}
       >
         {t.label(r)}
+      </button>
+    </td>
+  );
+
+  const propertyCell = (r: LayerRow, cell: Picking['cell'], title: string, text: string) => (
+    <td className={cell}>
+      <button
+        type="button"
+        className="layer-cell"
+        aria-label={`${title} ${r.name}`}
+        aria-haspopup="dialog"
+        title={text}
+        onClick={() => setPicking({ cell, row: r })}
+      >
+        {cell === 'color' && (
+          <span className="swatch" style={{ background: r.color.css }} aria-hidden />
+        )}
+        {text}
       </button>
     </td>
   );
@@ -380,6 +428,7 @@ export function LayersPalette({
               <th scope="col">Color</th>
               <th scope="col">Linetype</th>
               <th scope="col">Lineweight</th>
+              <th scope="col">Transparency</th>
               <th scope="col">Description</th>
             </tr>
           </thead>
@@ -415,12 +464,10 @@ export function LayersPalette({
                   </td>
                 )}
                 {toggleCell(r, PLOT)}
-                <td className="color">
-                  <span className="swatch" style={{ background: r.color.css }} aria-hidden />
-                  {r.color.label}
-                </td>
-                <td>{r.linetype}</td>
-                <td>{r.lineweight}</td>
+                {propertyCell(r, 'color', 'Color', r.color.label)}
+                {propertyCell(r, 'linetype', 'Linetype', r.linetype)}
+                {propertyCell(r, 'lineweight', 'Lineweight', r.lineweight)}
+                {propertyCell(r, 'transparency', 'Transparency', r.transparency)}
                 <td
                   className="description"
                   onDoubleClick={() => startEditing({ handle: r.handle, field: 'description' })}
@@ -435,6 +482,38 @@ export function LayersPalette({
         </table>
         {shown.length === 0 && <p className="empty">No layer matches “{search}”.</p>}
       </div>
+      {picking?.cell === 'color' && (
+        <SelectColorDialog
+          initial={picking.row.value.color}
+          books={layerColorBooks(doc.opened.init, engines.changesOf(doc.id))}
+          trueColors
+          notByLayer="A layer’s color cannot be ByLayer or ByBlock."
+          onOk={(color) => void setProps({ color })}
+          onCancel={closeDialog}
+        />
+      )}
+      {picking?.cell === 'linetype' && (
+        <SelectLinetypeDialog
+          initial={picking.row.value.linetype}
+          linetypes={layerLinetypes(doc.opened.init, engines.changesOf(doc.id))}
+          onOk={(linetype) => void setProps({ linetype })}
+          onCancel={closeDialog}
+        />
+      )}
+      {picking?.cell === 'lineweight' && (
+        <LineweightDialog
+          initial={picking.row.value.lineweight}
+          onOk={(lineweight) => void setProps({ lineweight })}
+          onCancel={closeDialog}
+        />
+      )}
+      {picking?.cell === 'transparency' && (
+        <LayerTransparencyDialog
+          initial={Number(picking.row.transparency)}
+          onOk={(percent) => void setProps({ transparency: transparencyOf(percent) })}
+          onCancel={closeDialog}
+        />
+      )}
     </aside>
   );
 }

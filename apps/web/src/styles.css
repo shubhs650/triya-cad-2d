@@ -978,6 +978,70 @@ button {
   vertical-align: middle;
 }
 
+/* M5-05 part 2: a property cell is a button opening its dialog, drawn as the cell's text. */
+.layer-table .layer-cell {
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.layer-table .layer-cell:hover,
+.layer-table .layer-cell:focus-visible {
+  border-color: var(--chrome-border);
+}
+
+/* Select Linetype's Loaded linetypes: Linetype, Appearance and Description in columns. */
+.cad-dialog.layer-linetype {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.linetype-head,
+.linetype-list [role='option'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px minmax(0, 1.4fr);
+  gap: 8px;
+  align-items: center;
+  padding: 2px 6px;
+}
+
+.linetype-head {
+  margin-top: 4px;
+  border-bottom: 1px solid var(--chrome-border);
+  color: var(--chrome-text-muted);
+}
+
+.linetype-list {
+  height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.linetype-list [role='option'] span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linetype-list [role='option'][aria-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.layer-lineweight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.layer-lineweight-list select {
+  font: inherit;
+}
+
 .palette .empty {
   padding: 8px;
   color: var(--chrome-text-muted);
