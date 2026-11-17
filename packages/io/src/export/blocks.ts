@@ -51,7 +51,7 @@ const SETTINGS_DEFAULTS = { units: 0, explodable: true, scalable: true } as cons
 const SETTINGS = ['units', 'explodable', 'scalable'] as const;
 
 /** Definition fields the save writes (the name is the record's). */
-const WRITTEN = new Set(['handle', 'name', 'basePoint']);
+const WRITTEN = new Set(['handle', 'name', 'basePoint', 'description']);
 
 export interface BlockPlan {
   readonly records: RecordPlan<BlockRecord, BlockTableRecord>;
@@ -59,6 +59,8 @@ export interface BlockPlan {
   readonly added: { readonly acad: BlockRecord; readonly basePoint: Vec2 }[];
   /** Definitions whose base point moves. */
   readonly moved: { readonly acad: BlockRecord; readonly basePoint: Vec2 }[];
+  /** New definitions with a description, and those whose description changes (BLOCK 4). */
+  readonly described: { readonly acad: BlockRecord; readonly description: string | null }[];
   /** The sheet blocks whose names layouts.ts swaps (another layout made current). */
   readonly swapping: ReadonlySet<Handle>;
 }
@@ -128,7 +130,13 @@ export function planBlocks(
         sheets.has(a.handle),
       ),
   });
-  const plan: BlockPlan = { records: records.plan, added: [], moved: [], swapping };
+  const plan: BlockPlan = {
+    records: records.plan,
+    added: [],
+    moved: [],
+    described: [],
+    swapping,
+  };
   const problems = [...records.problems];
   const baseDefs = new Map((base.blocks ?? []).map((d) => [d.handle, d]));
   for (const [h, a] of defs) {
@@ -157,10 +165,12 @@ export function planBlocks(
       problems.push(...out.map((p) => `block ${a.name} (${h}): ${p}`));
       continue;
     }
-    if (!moved) continue;
+    const described = b ? b.description !== a.description : a.description !== undefined;
+    if (!moved && !described) continue;
     const acad = resolve(r, h, BlockRecord);
     if (!acad) continue; // the record's own problem says why
-    (b ? plan.moved : plan.added).push({ acad, basePoint: a.basePoint });
+    if (moved) (b ? plan.moved : plan.added).push({ acad, basePoint: a.basePoint });
+    if (described) plan.described.push({ acad, description: a.description ?? null });
   }
   // A definition removed goes with its record, whose removal records.ts refuses.
   return { plan, problems };
@@ -268,7 +278,8 @@ function writeRecord(
   if (b && changed('flags')) acad.blockFlags = (a.flags ?? 0) as never;
   if (changed('units')) acad.units = a.units as never;
   if (changed('explodable')) acad.isExplodable = a.explodable;
-  if (changed('scalable')) acad.canScale = a.scalable;
+  // 281 is 1 for a block that scales uniformly (map/tables.ts).
+  if (changed('scalable')) acad.canScale = !a.scalable;
 }
 
 /**
@@ -300,4 +311,5 @@ export function writeBlocks(doc: CadDocument, r: Resolver, plan: BlockPlan): voi
   for (const { acad, basePoint } of plan.moved) {
     acad.blockEntity.basePoint = new XYZ(basePoint.x, basePoint.y, acad.blockEntity.basePoint.z);
   }
+  for (const { acad, description } of plan.described) acad.blockEntity.comments = description;
 }
