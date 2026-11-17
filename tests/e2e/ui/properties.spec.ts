@@ -431,6 +431,43 @@ test('gives a hatch another pattern, angle and scale from the palette', async ({
   await expect.poll(hatches).toEqual([{ ...crossed, angle: 15, scale: 2, gap: 6 }]);
   await page.mouse.move(300, 640);
   await page.screenshot({ path: test.info().outputPath('6-hatches-cross45.png') });
+
+  // M4-18: a pattern hatch's Background color, None until one is chosen, an index colour from
+  // the list or a true colour from Select Color..., and None again.
+  const background = palette.getByRole('combobox', { name: 'Background color' });
+  await expect(background).toHaveValue('none');
+  const backgrounds = () =>
+    page.evaluate(() => {
+      const out = new Map<string, unknown>();
+      for (const cs of (window as unknown as Dev).triyaDev.changes())
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'HATCH') {
+            out.set(u.after.handle, {
+              background: u.after.geom.background ?? 'none',
+              xdata: u.after.xdata?.length ?? 0,
+            });
+          }
+      return [...out.values()];
+    });
+  await background.selectOption({ label: 'Blue' });
+  await expect.poll(backgrounds).toEqual([{ background: { kind: 'aci', index: 5 }, xdata: 1 }]);
+  await background.selectOption({ label: 'Select Color...' });
+  const dialog = page.getByRole('dialog', { name: 'Select Color' });
+  await expect(dialog).toBeVisible();
+  // A background is an index or true colour: no colour books, as for a gradient's colours.
+  await expect(dialog.getByRole('tab', { name: 'True Color' })).toBeEnabled();
+  const field = dialog.getByRole('textbox', { name: 'Color' });
+  await field.fill('200,220,240');
+  await field.press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(backgrounds)
+    .toEqual([{ background: { kind: 'rgb', r: 200, g: 220, b: 240 }, xdata: 1 }]);
+  await expect(background).toHaveValue('rgb:200,220,240');
+  await page.mouse.move(300, 640);
+  await page.screenshot({ path: test.info().outputPath('7-hatch-background.png') });
+  await background.selectOption({ label: 'None' });
+  await expect.poll(backgrounds).toEqual([{ background: 'none', xdata: 0 }]);
 });
 
 // M2-35 part 6: General's Plot style (ByColor and read only in this colour-dependent drawing),

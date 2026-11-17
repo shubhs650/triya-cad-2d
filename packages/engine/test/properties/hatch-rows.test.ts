@@ -557,3 +557,122 @@ describe('a hatch’s gradient, origin and associative rows (M2-35 part 13)', ()
     expect(s.log.at(-1)).toBe('Invalid input.');
   });
 });
+
+// M4-18: AutoCAD 2024's Pattern category ends with Background color for a pattern hatch, the
+// HPBACKGROUNDCOLOR -HATCHEDIT's COlor sets (M4-07 part 3): None or an index or true colour,
+// kept as the hatch's HATCHBACKGROUNDCOLOR xdata and as `HatchGeometry.background`.
+describe('a pattern hatch’s Background color row (M4-18)', () => {
+  const ACAD = '90';
+  const withApps = (extra: NonNullable<DocumentInit['entities']>): DocumentInit => {
+    const i = init(extra);
+    return { ...i, tables: { ...i.tables, appIds: [{ handle: ACAD, name: 'ACAD' }] } };
+  };
+  const appIdsNamed = (s: ReturnType<typeof setup>, name: string) =>
+    [...s.model.tables.appIds.values()].filter((r) => r.name === name);
+
+  it('shows None or the colour for pattern hatches only, with Select Color...', () => {
+    const s = setup(
+      withApps([
+        entityInit('70', hatchGeom()),
+        entityInit('71', userGeom()),
+        entityInit('72', solidGeom()),
+        entityInit('73', gradientGeom()),
+        entityInit('74', hatchGeom({ background: { kind: 'rgb', r: 200, g: 220, b: 240 } })),
+      ]),
+    );
+    const one = rowOf(propertySheet(s.model, s.ids('70')), 'Background color')!;
+    expect(one).toMatchObject({ key: 'hatchBackground', kind: 'choice', value: 'none' });
+    expect(one.colorDialog).toBe('true');
+    expect(one.options?.[0]).toEqual({ value: 'none', label: 'None' });
+    expect(one.options?.map((o) => o.label)).toEqual([
+      'None',
+      'Red',
+      'Yellow',
+      'Green',
+      'Cyan',
+      'Blue',
+      'Magenta',
+      'White',
+    ]);
+    // The Pattern category's last row, as AutoCAD lays it out.
+    const pattern = propertySheet(s.model, s.ids('70')).sections.find(
+      (x) => x.title === 'Pattern',
+    )!;
+    expect(pattern.rows.at(-1)!.key).toBe('hatchBackground');
+    expect(rowOf(propertySheet(s.model, s.ids('71')), 'Background color')!.value).toBe('none');
+    expect(rowOf(propertySheet(s.model, s.ids('72')), 'Background color')).toBeUndefined();
+    expect(rowOf(propertySheet(s.model, s.ids('73')), 'Background color')).toBeUndefined();
+    const coloured = rowOf(propertySheet(s.model, s.ids('74')), 'Background color')!;
+    expect(coloured.value).toBe('rgb:200,220,240');
+    expect(coloured.options).toContainEqual({ value: 'rgb:200,220,240', label: '200,220,240' });
+    const mixed = rowOf(propertySheet(s.model, s.ids('70', '72', '74')), 'Background color')!;
+    expect(mixed.varies).toBe(true);
+  });
+
+  it('sets the colour as xdata and geometry, keeps other xdata, and takes it off again', async () => {
+    const other = [{ appId: ACAD, values: [{ code: 1000, value: 'kept' }] }];
+    const s = setup(
+      withApps([
+        entityInit('70', hatchGeom(), { xdata: other }),
+        entityInit('71', userGeom()),
+        entityInit('72', solidGeom()),
+        entityInit('73', gradientGeom()),
+      ]),
+    );
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'hatchBackground', value: 'aci:5' }, 'HATCH');
+    const app = appIdsNamed(s, 'HATCHBACKGROUNDCOLOR');
+    expect(app).toHaveLength(1);
+    const blue = { appId: app[0]!.handle, values: [{ code: 1071, value: 0xc3000005 | 0 }] };
+    expect(s.g('70').background).toEqual({ kind: 'aci', index: 5 });
+    expect(s.byHandle('70').xdata).toEqual([...other, blue]);
+    expect(s.g('71').background).toEqual({ kind: 'aci', index: 5 });
+    expect(s.byHandle('71').xdata).toEqual([blue]);
+    // A solid fill and a gradient have no background behind their lines.
+    expect(s.g('72')).toEqual(solidGeom());
+    expect(s.byHandle('72').xdata).toBeUndefined();
+    expect(s.g('73').background).toBeUndefined();
+    expect(s.bus.undo.state.undoable).toBe(1);
+    expect(rowOf(propertySheet(s.model, s.ids('70', '71')), 'Background color')!.value).toBe(
+      'aci:5',
+    );
+
+    // A true colour replaces it in place; the APPID is registered once.
+    await s.bus.setProperty({ key: 'hatchBackground', value: 'rgb:200,220,240' }, 'HATCH');
+    expect(appIdsNamed(s, 'HATCHBACKGROUNDCOLOR')).toHaveLength(1);
+    expect(s.g('70').background).toEqual({ kind: 'rgb', r: 200, g: 220, b: 240 });
+    expect(s.byHandle('70').xdata).toEqual([
+      ...other,
+      { appId: app[0]!.handle, values: [{ code: 1071, value: 0xc2c8dcf0 | 0 }] },
+    ]);
+    // The same colour again changes nothing.
+    await s.bus.setProperty({ key: 'hatchBackground', value: 'rgb:200,220,240' }, 'HATCH');
+    expect(s.bus.undo.state.undoable).toBe(2);
+
+    await s.bus.setProperty({ key: 'hatchBackground', value: 'none' }, 'HATCH');
+    expect(s.g('70').background).toBeUndefined();
+    expect(s.byHandle('70').xdata).toEqual(other);
+    expect(s.g('71').background).toBeUndefined();
+    expect(s.byHandle('71').xdata).toBeUndefined();
+    expect(s.bus.undo.state.undoable).toBe(3);
+
+    await s.bus.submit('U');
+    expect(s.g('71').background).toEqual({ kind: 'rgb', r: 200, g: 220, b: 240 });
+    expect(s.byHandle('71').xdata).toHaveLength(1);
+  });
+
+  it('refuses ByLayer, ByBlock, colour-book colours and nonsense', async () => {
+    const s = setup(withApps([entityInit('70', hatchGeom())]));
+    await s.bus.selectAll();
+    for (const value of ['ByLayer', 'ByBlock', 'rgb:1,2,3;BOOK;NAME', 'teal']) {
+      await s.bus.setProperty({ key: 'hatchBackground', value }, 'HATCH');
+      expect(s.log.at(-1), value).toBe('Invalid input.');
+    }
+    expect(s.g('70').background).toBeUndefined();
+    expect(appIdsNamed(s, 'HATCHBACKGROUNDCOLOR')).toHaveLength(0);
+    // None on a hatch without a background registers nothing.
+    await s.bus.setProperty({ key: 'hatchBackground', value: 'none' }, 'HATCH');
+    expect(appIdsNamed(s, 'HATCHBACKGROUNDCOLOR')).toHaveLength(0);
+    expect(s.bus.undo.state.undoable).toBe(0);
+  });
+});
