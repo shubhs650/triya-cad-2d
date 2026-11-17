@@ -20,6 +20,7 @@ import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
+import { contentMismatches, withTableRecords } from '../tables/table-records.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -110,8 +111,21 @@ describe('TriyaToAcad table-wide override edits on the public corpus', () => {
             model.entityByHandle(t.handle)!.geom,
           );
         }
+        // Each table's AutoCAD 2008 data holds the edit (M4-30).
+        for (const t of tables) {
+          const g = model.entityByHandle(t.handle)!.geom as TableGeometry;
+          // A DXF before R2007 also holds data of its own after it, so the record goes (DEC-069).
+          const pre2007 = options.format === 'dxf' && /AC10(15|18)/.test(f.path);
+          expect(contentMismatches(reopened, t.handle, g), `${f.path} ${t.handle}`).toEqual(
+            options.format === 'dxf' && !pre2007 ? [] : null,
+          );
+        }
         // Nothing else changes: the tables are the edit.
-        const ignoreHandles = new Set(tables.map((t) => Number.parseInt(t.handle, 16)));
+        // The tables' AutoCAD 2008 data is written again with them (M4-30).
+        const ignoreHandles = withTableRecords(
+          original,
+          new Set(tables.map((t) => Number.parseInt(t.handle, 16))),
+        );
         const diff = structuralDiff(original, reopened, { ignoreHandles }).differences.filter(
           (d) => !(d.handle === '0' && d.path.startsWith('$HANDSEED')),
         );

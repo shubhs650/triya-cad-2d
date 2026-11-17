@@ -2376,6 +2376,44 @@ export function newTableContent(r: Resolver, g: TableGeometry): TableEntity['con
   return t.content;
 }
 
+/** The custom data AutoCAD keeps a checksum of each cell under; how it is worked out is not published. */
+const CELL_CHECKSUM = 'ACAD_ROUNDTRIP_2008_CELL_CHECKSUM';
+
+/**
+ * The AutoCAD 2008 data of a DXF table edited from `before` to `after` (M4-30): `content`, the
+ * table's TABLECONTENT as read (map/table-content.ts), with the edit written into it as
+ * `tableWriter` writes one into a DWG from R2010, whose table states the same content: rows and
+ * columns moved, inserted and deleted by their origins (a new one on its neighbour's cell style),
+ * cell values, blocks, formats (in the cell's own cell style), rotations, merges as ranges and
+ * the table-wide overrides in the rows' cell styles; what Triya does not map (cell styles, locks,
+ * custom data, border linetypes, tooltips) kept as read. A changed or new cell loses its
+ * `ACAD_ROUNDTRIP_2008_CELL_CHECKSUM` custom data, which no longer matches it and which Triya
+ * cannot work out. Undefined when the content cannot state the edit (a DWG from R2010 refuses it,
+ * `tableCellProblems`: a cell the content holds several contents in, say) or its grid is not the
+ * one the table maps as: the caller then drops the record, and AutoCAD reads the legacy codes.
+ */
+export function editedTableContent(
+  r: Resolver,
+  content: TableEntity['content'],
+  before: TableGeometry,
+  after: TableGeometry,
+): TableEntity['content'] | undefined {
+  const t = new TableEntity();
+  Object.assign(t.content, content);
+  if (!gridOf(before, t.rows.length, t.columns.length)) return undefined;
+  const r2010: Resolver = { ...r, format: 'dwg', version: ACadVersion.AC1032 };
+  if (tableCellProblems(r2010, t, before, after).length > 0) return undefined;
+  const was = alignedBefore(before, after);
+  tableWriter.write(r2010, t, before, after);
+  for (const [i, j, b, a] of cells(was, after)) {
+    if (b && same(b, a)) continue;
+    const data = t.rows[i]!.cells[j]!.customDataCollection;
+    for (let k = data.length - 1; k >= 0; k--)
+      if (data[k]!.name === CELL_CHECKSUM) data.splice(k, 1);
+  }
+  return t.content;
+}
+
 /**
  * Writes cell (i, j)'s rotation into a DWG R2010+ table, where it is a content property folded
  * like the cell formats (map/entities.ts `tableCellRotation`): into the content format when that

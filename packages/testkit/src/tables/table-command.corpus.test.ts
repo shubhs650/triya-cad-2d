@@ -4,10 +4,13 @@
 // rows) in the cell editor that opens in its first cell, Tab moving on to each next cell, and its
 // `*T` block drawn again by the table engine after each. The drawing is saved as AC1032 DXF (DEC-047) and read back by
 // acad-ts: the table maps back as it was made, and its stored block is what the engine draws for
-// it. With TRIYA_DXF_AUDIT_DIR set the save goes to the ezdxf audit as the file's `table` save.
+// it. The first table the drawing came with, if any, gets a row and a cell typed in, which reads
+// back with its AutoCAD 2008 data holding the edit (M4-30). With TRIYA_DXF_AUDIT_DIR set the save
+// goes to the ezdxf audit as the file's `table` save.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
   blockExtentsOf,
@@ -16,6 +19,8 @@ import {
   type Entity,
   type TableGeometry,
   type TablePart,
+  withCellText,
+  withRowsInserted,
 } from '@triya/engine';
 import { ACadVersion } from '@node-projects/acad-ts';
 import { documentInit, readCadDocument } from '@triya/io';
@@ -23,6 +28,7 @@ import { describe, expect, it } from 'vitest';
 import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { saveAc1032Dxf, writeAuditSave } from '../dxf-audit/saves.ts';
+import { contentMismatches } from './table-records.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -135,8 +141,33 @@ describe('-TABLE on the public corpus (M4-05)', () => {
       const made_ = model.entity(table.id) as Table;
       expect(made_.geom.cells[4]![3]!.text).toBe('{\\fArial|b1;Drain}');
 
+      // The first table the drawing came with gets a data row and a cell typed in (M4-30), so
+      // the audited save also holds an edited table's AutoCAD 2008 data.
+      // A DXF's: a DWG's table saved as DXF is a conversion, which gets no new work (DEC-047).
+      const own = /\.dxf$/i.test(f.path)
+        ? [...model.entities()].find(
+            (e): e is Table => before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+          )
+        : undefined;
+      if (own) {
+        const rows = own.geom.rowHeights.length;
+        const b = new ChangeSetBuilder(model);
+        const g = withRowsInserted(own.geom, rows, 1, rows - 1);
+        const j = g.cells[rows]!.findIndex((c) => !c.merged && c.type === 'text');
+        b.updateEntity(own.id, { geom: j < 0 ? g : withCellText(g, rows, j, 'M4-30') });
+        model.apply(b.build());
+      }
       const save = withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), model));
       writeAuditSave(f.path, 'table', () => save);
+      if (own) {
+        const edited = model.entity(own.id) as Table;
+        const { rowOrigins: _r, ...want } = edited.geom;
+        expect(kept((unedited(save).entityByHandle(own.handle) as Table).geom), f.path).toEqual(
+          kept(want as TableGeometry),
+        );
+        const m = contentMismatches(readCadDocument(save), own.handle, edited.geom);
+        if (m !== null) expect(m, f.path).toEqual([]);
+      }
       const back = unedited(save);
       const reread = back.entityByHandle(made_.handle) as Table | undefined;
       expect(reread, f.path).toBeDefined();
