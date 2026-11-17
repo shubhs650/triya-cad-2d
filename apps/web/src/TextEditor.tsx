@@ -49,7 +49,7 @@ import type {
   TextEditorColumns,
   TextEditorRequest,
 } from '@triya/engine';
-import { FIELD_EDIT, FIELD_INSERT } from '@triya/engine';
+import { FIELD_EDIT, FIELD_INSERT, FIELD_UPDATE } from '@triya/engine';
 import { aciRgb, worldToScreen, type FontSources } from '@triya/render';
 import {
   contentOf,
@@ -140,6 +140,13 @@ const SHX_FONTS: readonly string[] = Object.keys(SHX_EQUIVALENTS)
   .map((n) => `${n}.shx`)
   .sort();
 
+/**
+ * Each drawing's Update Fields so far (M4-23). The editor opens again on the text it answered,
+ * which is the request it opened on when the field's value has not changed: counted in its key,
+ * the editor opens afresh rather than staying closed.
+ */
+const fieldUpdates = new Map<number, number>();
+
 export function TextEditor({
   doc,
   fonts = [],
@@ -159,7 +166,9 @@ export function TextEditor({
   // TEXT's line editor is one input for all the lines, so typing runs on while the engine
   // places a line and asks for the next.
   const key =
-    request.kind === 'text' && request.value === undefined ? 'text' : JSON.stringify(request);
+    request.kind === 'text' && request.value === undefined
+      ? 'text'
+      : `${JSON.stringify(request)}#${fieldUpdates.get(doc.id) ?? 0}`;
   return request.kind === 'text' ? (
     <TextLine key={key} doc={doc.id} request={request} controller={controller} />
   ) : (
@@ -1397,6 +1406,17 @@ function MTextBox({
     commit(markField(spans(), at, FIELD_EDIT), at + 1);
     finish();
   };
+  /**
+   * Update Field (M4-23; AutoCAD 2024 Help, "To Update a Field Manually": "In the In-Place Text
+   * Editor, select the field you want to update, right-click, and click Update Field"): the editor
+   * closes with the field marked, and opens again with the field's value evaluated now.
+   */
+  const updateField = (el: HTMLElement) => {
+    const at = unitOf(el);
+    commit(markField(spans(), at, FIELD_UPDATE), at + 1);
+    fieldUpdates.set(doc, (fieldUpdates.get(doc) ?? 0) + 1);
+    finish();
+  };
   /** Convert Field to Text: the field's value stays, as text. */
   const convertField = (el: HTMLElement) => {
     const at = unitOf(el);
@@ -1907,6 +1927,16 @@ function MTextBox({
             }}
           >
             Edit Field…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setFieldMenu(undefined);
+              updateField(fieldMenu.el);
+            }}
+          >
+            Update Field
           </button>
           <button
             type="button"
