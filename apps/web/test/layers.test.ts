@@ -4,7 +4,13 @@
 // of its viewports freeze each layer.
 import type { ChangeSet, DocumentInit, EntityInit, LayerRecord } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { layerRows } from '../src/layers';
+import {
+  layerColorBooks,
+  layerLinetypes,
+  layerRows,
+  linetypeDashes,
+  parseLayerTransparency,
+} from '../src/layers';
 
 const layer = (handle: string, name: string, extra: Partial<LayerRecord> = {}): LayerRecord => ({
   handle,
@@ -172,5 +178,119 @@ describe('layerRows', () => {
       ['Walls', { frozen: 1, of: 2 }],
     ]);
     expect(layerRows(init, [])[0]!.vpFrozen).toBeUndefined();
+  });
+});
+
+describe('the property cells (M5-05 part 2)', () => {
+  it('gives each row its colour, linetype, lineweight and transparency to edit', () => {
+    const glass: DocumentInit = {
+      ...init,
+      tables: {
+        ...init.tables,
+        layers: [layer('16', 'Glass', { transparency: { alpha: 179 }, lineweight: 25 })],
+      },
+    };
+    const row = layerRows(glass, [])[0]!;
+    expect(row).toMatchObject({
+      transparency: '30',
+      value: {
+        color: { kind: 'aci', index: 7 },
+        linetype: '14',
+        lineweight: 25,
+        transparency: { alpha: 179 },
+      },
+    });
+    // An opaque layer shows 0, as AutoCAD's Transparency column does.
+    expect(layerRows(init, [])[0]!.transparency).toBe('0');
+  });
+
+  it('lists the loaded linetypes by name, without ByLayer and ByBlock, as changed since', () => {
+    const lt = (handle: string, name: string, description = '') => ({
+      handle,
+      name,
+      description,
+      alignment: 'A',
+      patternLength: 0,
+      elements: [],
+    });
+    const withBy: DocumentInit = {
+      ...init,
+      tables: {
+        ...init.tables,
+        linetypes: [lt('17', 'ByBlock'), lt('18', 'ByLayer'), ...init.tables!.linetypes!],
+      },
+    };
+    const loaded: ChangeSet = {
+      tables: { linetypes: { added: [lt('19', 'CENTER', 'Center ____ _ ____')] } },
+    };
+    expect(layerLinetypes(withBy, [loaded]).map((l) => [l.name, l.description])).toEqual([
+      ['CENTER', 'Center ____ _ ____'],
+      ['Continuous', ''],
+      ['DASHED', ''],
+    ]);
+    // A row names a linetype loaded after the drawing opened.
+    const onCenter: DocumentInit = {
+      ...init,
+      tables: { ...init.tables, layers: [layer('20', 'Axes', { linetype: '19' })] },
+    };
+    expect(layerRows(onCenter, [loaded])[0]!.linetype).toBe('CENTER');
+  });
+
+  it("offers the colour books the layers' colours come from", () => {
+    const book = (r: number, colorName: string) => ({
+      kind: 'rgb' as const,
+      r,
+      g: 0,
+      b: 0,
+      bookName: 'RAL CLASSIC',
+      colorName,
+    });
+    const booked: DocumentInit = {
+      ...init,
+      tables: {
+        ...init.tables,
+        layers: [
+          layer('21', 'A', { color: book(200, 'RAL 3020') }),
+          layer('22', 'B', { color: book(100, 'RAL 3000') }),
+          layer('23', 'C', { color: book(200, 'RAL 3020') }),
+          layer('24', 'D', { color: { kind: 'rgb', r: 1, g: 2, b: 3 } }),
+        ],
+      },
+    };
+    expect(layerColorBooks(booked, [])).toEqual([
+      {
+        name: 'RAL CLASSIC',
+        colors: [
+          { name: 'RAL 3000', value: 'rgb:100,0,0;RAL CLASSIC;RAL 3000', rgb: [100, 0, 0] },
+          { name: 'RAL 3020', value: 'rgb:200,0,0;RAL CLASSIC;RAL 3020', rgb: [200, 0, 0] },
+        ],
+      },
+    ]);
+  });
+
+  it('reads the Layer Transparency field: a whole number from 0 to 90', () => {
+    expect(parseLayerTransparency('30')).toBe(30);
+    expect(parseLayerTransparency(' 0 ')).toBe(0);
+    expect(parseLayerTransparency('90')).toBe(90);
+    for (const bad of ['91', '-1', '12.5', '', 'half'])
+      expect(parseLayerTransparency(bad)).toBe('Transparency value must be between 0 and 90.');
+  });
+
+  it("draws a linetype's appearance as dashes scaled to the cell", () => {
+    expect(linetypeDashes([], 100)).toBeUndefined();
+    const el = (length: number) => ({
+      length,
+      shapeFlags: 0,
+      shapeNumber: 0,
+      offset: { x: 0, y: 0 },
+      rotation: 0,
+      scale: 0,
+    });
+    // DASHED (0.5, -0.25) repeated four times across 120 px: 20 px dashes, 10 px gaps.
+    expect(linetypeDashes([el(0.5), el(-0.25)], 120)).toEqual([20, 10]);
+    // A dot draws as a 1 px dash.
+    expect(linetypeDashes([el(0.5), el(-0.25), el(0), el(-0.25)], 100)).toEqual([
+      12.5, 6.25, 1, 6.25,
+    ]);
   });
 });

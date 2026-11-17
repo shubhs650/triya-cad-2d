@@ -5,7 +5,7 @@
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { DWG, DXF, expectDrawn, expectShown, ink, inkWeight, openWithPicker } from '../app/page';
-import { startApp } from '../app/server';
+import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -30,6 +30,17 @@ async function openLayers(page: Page, file: string) {
   // at the narrower size the docked palette leaves it (M2-50).
   await expectDrawn(page, { timeout: 15_000 });
   return palette;
+}
+
+/** The canvas's ink weight once two readings 150 ms apart agree. */
+async function settledInkWeight(page: Page): Promise<number> {
+  let last = -1;
+  for (;;) {
+    const now = await inkWeight(page);
+    if (now === last) return now;
+    last = now;
+    await page.waitForTimeout(150);
+  }
 }
 
 const toggleMs = async (page: Page) => {
@@ -218,4 +229,88 @@ test('manages layers: new, rename, a toggle on the rows selected, describe, curr
   await page.keyboard.press('Delete');
   await expect(row('Spare')).toHaveCount(0);
   await expect(palette.getByRole('alert')).toHaveCount(0);
+});
+
+test('sets a layer’s color, linetype, lineweight and transparency from its cells (M5-05)', async ({
+  page,
+}) => {
+  // multileaders.dxf: layers 0, Defpoints and LEADERS (the leaders), linetypes Continuous and
+  // DASHED.
+  const palette = await openLayers(page, path.join(CORPUS, '../self-authored/multileaders.dxf'));
+  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const row = (name: string) =>
+    table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
+
+  // Color: Select Color, with ByLayer and ByBlock unavailable to a layer.
+  await palette.getByRole('button', { name: 'Color LEADERS' }).click();
+  const color = page.getByRole('dialog', { name: 'Select Color' });
+  await expect(color.getByRole('button', { name: 'ByLayer' })).toBeDisabled();
+  await expect(color.getByRole('button', { name: 'ByBlock' })).toBeDisabled();
+  await color.getByRole('textbox', { name: 'Color' }).fill('bylayer');
+  await color.getByRole('button', { name: 'OK' }).click();
+  await expect(color.getByRole('alert')).toHaveText(
+    'A layer’s color cannot be ByLayer or ByBlock.',
+  );
+  await color.getByRole('gridcell', { name: 'Index color 1', exact: true }).click();
+  await color.getByRole('button', { name: 'OK' }).click();
+  await expect(color).toHaveCount(0);
+  await expect(palette.getByRole('button', { name: 'Color LEADERS' })).toHaveText('red');
+
+  // Linetype: Select Linetype lists the loaded linetypes, without ByLayer and ByBlock.
+  await palette.getByRole('button', { name: 'Linetype LEADERS' }).click();
+  const linetype = page.getByRole('dialog', { name: 'Select Linetype' });
+  const loaded = linetype.getByRole('listbox', { name: 'Loaded linetypes' });
+  await expect(loaded.getByRole('option')).toHaveText([/^Continuous/, /^DASHED/]);
+  await loaded.getByRole('option', { name: /^DASHED/ }).click();
+  await linetype.getByRole('button', { name: 'OK' }).click();
+  await expect(palette.getByRole('button', { name: 'Linetype LEADERS' })).toHaveText('DASHED');
+
+  // The leaders' share of the canvas's ink, measured against LEADERS off, since the canvas
+  // screenshot also holds the navigation bar (a redraw may still be on its way: settle first).
+  const full = await settledInkWeight(page);
+  const leadersOn = palette.getByRole('button', { name: 'On LEADERS' });
+  await leadersOn.click();
+  await expect.poll(() => inkWeight(page)).toBeLessThan(full * 0.95);
+  const bare = await settledInkWeight(page);
+  await leadersOn.click();
+  await expect.poll(() => inkWeight(page)).toBeGreaterThan(bare + (full - bare) * 0.9);
+
+  // Transparency and Lineweight on two layers at once: LEADERS and 0 selected.
+  await row('LEADERS').getByRole('rowheader').click();
+  await row('0')
+    .getByRole('rowheader')
+    .click({ modifiers: ['Control'] });
+  await palette.getByRole('button', { name: 'Transparency LEADERS' }).click();
+  const fade = page.getByRole('dialog', { name: 'Layer Transparency' });
+  const value = fade.getByRole('combobox', { name: 'Transparency value (0-90)' });
+  await expect(value).toHaveValue('0');
+  await value.fill('95');
+  await page.keyboard.press('Enter');
+  await expect(fade.getByRole('alert')).toHaveText('Transparency value must be between 0 and 90.');
+  await value.fill('80');
+  await page.keyboard.press('Enter');
+  await expect(fade).toHaveCount(0);
+  for (const n of ['LEADERS', '0'])
+    await expect(palette.getByRole('button', { name: `Transparency ${n}` })).toHaveText('80');
+  // The leaders fade on the canvas: 80 % transparent.
+  await expect.poll(() => inkWeight(page)).toBeLessThan(bare + (full - bare) * 0.5);
+
+  await palette.getByRole('button', { name: 'Lineweight 0' }).click();
+  const weight = page.getByRole('dialog', { name: 'Lineweight' });
+  await expect(weight.getByText('Original: Default')).toBeVisible();
+  await weight.getByRole('listbox', { name: 'Lineweights' }).selectOption('0.30 mm');
+  await expect(weight.getByText('New: 0.30 mm')).toBeVisible();
+  await weight.getByRole('button', { name: 'OK' }).click();
+  for (const n of ['LEADERS', '0'])
+    await expect(palette.getByRole('button', { name: `Lineweight ${n}` })).toHaveText('0.30 mm');
+
+  // Esc cancels a dialog and changes nothing; each change was one undo step.
+  await palette.getByRole('button', { name: 'Color 0' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Select Color' })).toHaveCount(0);
+  await expect(palette.getByRole('button', { name: 'Color 0' })).toHaveText('white');
+  await page.keyboard.press('Control+Z');
+  for (const n of ['LEADERS', '0'])
+    await expect(palette.getByRole('button', { name: `Lineweight ${n}` })).toHaveText('Default');
+  await expect(palette.getByRole('button', { name: 'Transparency LEADERS' })).toHaveText('80');
 });
