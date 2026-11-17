@@ -746,4 +746,61 @@ describe('cell data formats (M4-16 part 2, Data Format...)', () => {
     expect(data(back)).toEqual(data(g));
     expect(tableDataFormatOf(back.cells[3]![1]!)).toEqual({ type: 'angle', format: 1 });
   });
+
+  // M4-16 part 3: Additional Format... and a point's X, Y and Z boxes.
+  it('saves the Additional Format and a point’s coordinates', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    const at = (pick: (c: TableCell) => boolean): [number, number] => {
+      const i = table.geom.cells.findIndex((r) => r.some(pick));
+      return [i, table.geom.cells[i]!.findIndex(pick)];
+    };
+    const money = at((c) => c.valueFormat === '%lu2%pr2%ps[$,]');
+    const point = at((c) => c.value?.kind === 'point');
+    const half = at((c) => c.text === '0.500000');
+    const s = steps(model, table.id);
+    const metres: TableDataFormat = {
+      type: 'decimal',
+      format: 2,
+      precision: 2,
+      additional: { factor: 1000, prefix: 'L=', suffix: ' mm', decimal: ',', thousands: '.' },
+    };
+    const xy: TableDataFormat = { type: 'point', precision: 1, coordinates: 3 };
+    const euros: TableDataFormat = {
+      type: 'currency',
+      symbol: '€',
+      appendSymbol: true,
+      precision: 2,
+      additional: { decimal: ',', thousands: '.' },
+    };
+    await s.format(...half, metres);
+    await s.format(...point, xy);
+    await s.type(...point, '12.5,7,3');
+    await s.format(...money, euros);
+    await s.type(...money, '1.234,5€');
+    const g = s.g();
+    const cellOf = ([i, j]: [number, number]) => g.cells[i]![j]!;
+    expect(cellOf(half)).toMatchObject({
+      text: 'L=500,00 mm',
+      value: { kind: 'double', n: 0.5, units: 0 },
+      valueFormat: '%lu2%pr2%ps[L=, mm]%ct8[1000]%ds44%th46',
+    });
+    expect(cellOf(point)).toMatchObject({
+      text: '12.5, 7.0',
+      value: { kind: 'point', point: [12.5, 7, 3], dimensions: 3 },
+      valueFormat: '%pr1%pt3',
+    });
+    expect(cellOf(money)).toMatchObject({
+      text: '1.234,50€',
+      value: { kind: 'double', n: 1234.5, units: 16 },
+    });
+    const back = saved(bytes, model, table.handle);
+    expect(data(back)).toEqual(data(g));
+    const backOf = ([i, j]: [number, number]) => back.cells[i]![j]!;
+    expect(tableDataFormatOf(backOf(half))).toEqual(metres);
+    expect(tableDataFormatOf(backOf(point))).toEqual(xy);
+    expect(tableDataFormatOf(backOf(money))).toEqual(euros);
+  });
 });
