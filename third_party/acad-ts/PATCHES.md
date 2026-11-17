@@ -3372,3 +3372,20 @@ A layer whose colour comes from a colour book carries the colour's name in group
 The DXF reader converts VERTEX group 50 from degrees to radians (the property is mapped `IsAngle`), but `_writeVertex` writes `curveTangent` directly, so a tangent saved to DXF comes back 180/π times smaller. This writes it with `MathHelper.radToDegRoundTrip`, as the other angles written outside the class map are. A test writes a 2D polyline whose vertices have tangents of 45°, 0 and −90° and reads them back unchanged.
 
 </details>
+
+### 0185 — the TABLECONTENT object class is exported
+
+- **File:** `third_party/acad-ts-patches/0185-export-table-content-object.patch`
+- **Touches:** `src/index.ts`
+- **Symptom:** `Objects/TableContent.ts` (the TABLECONTENT object a DXF table's `ACAD_ROUNDTRIP_2008_TABLE_ENTITY` XRECORD names) was not exported; the index exports only the entity's own `TableContent` class of the same name. Nothing outside acad-ts could make the object, so a new table could not be given one (M4-28).
+- **Fix:** export it as `TableContentObject`.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0185 the TABLECONTENT object class is exported, so a save can make one for a new table".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Export the TABLECONTENT object class
+
+`Objects/TableContent.ts` is not exported from the package index, and its name collides with the table entity's `TableContent` content class, which is. This exports it as `TableContentObject`, so callers can create the object a DXF table's round-trip XRECORD owns.
+
+</details>
