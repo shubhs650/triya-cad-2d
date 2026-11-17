@@ -1,6 +1,7 @@
 // M4-16 part 6: table cells locked. The Table Cell menu's Locking locks the content, the format or
 // both of the cells selected; the menu then greys what the lock protects, and a double click on a
-// cell whose content is locked says so instead of opening the editor. The engine's rules and the
+// cell whose content is locked says so instead of opening the editor. Over a locked cell the
+// cursor carries a lock (part 11). The engine's rules and the
 // save are unit- and corpus-tested in packages/engine, packages/io and packages/testkit.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, TableGeometry } from '@triya/engine';
@@ -128,6 +129,28 @@ test('Locking locks cells; the menu greys what a lock protects', async ({ page }
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
+
+  // The cursor carries a lock over a locked cell, at Command: and with a cell selected
+  // (M4-16 part 11); over an unlocked cell, or in another command, it does not.
+  const cursor = page.locator('canvas[data-cursor]').first();
+  await page.mouse.move(cell(1, 0).x, cell(1, 0).y);
+  await expect(cursor).toHaveAttribute('data-cursor', / lock$/);
+  await page.mouse.move(cell(2, 0).x, cell(2, 0).y);
+  await expect(cursor).not.toHaveAttribute('data-cursor', / lock$/);
+  await page.mouse.click(cell(3, 1).x, cell(3, 1).y);
+  await expect(prompt(page)).toHaveText(/^Enter a table cell option/);
+  await page.mouse.move(cell(1, 1).x, cell(1, 1).y);
+  await expect(cursor).toHaveAttribute('data-cursor', / lock$/);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  await type(page, 'LINE', 'Specify first point:');
+  await page.mouse.move(cell(1, 0).x, cell(1, 0).y);
+  await page.mouse.move(cell(1, 1).x, cell(1, 1).y);
+  await expect(cursor).not.toHaveAttribute('data-cursor', / lock$/);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.mouse.move(cell(1, 0).x, cell(1, 0).y);
+  await expect(cursor).toHaveAttribute('data-cursor', / lock$/);
 
   // A double click on a locked cell says so and opens no editor.
   await page.mouse.dblclick(cell(1, 1).x, cell(1, 1).y);

@@ -373,6 +373,31 @@ function cellAt(ctx: CommandContext, id: EntityId, p: Vec2): Cell | undefined {
   return t && tableCellAt(t.g, t.style, tableFromPlan(t.g, p));
 }
 
+/**
+ * The lock of the table cell under `p` in `space` (M4-16 part 11): a merged cell's is every lock
+ * of the cells it covers, as Locking sets and refuses them (`rangeLocks`). Undefined where no
+ * cell a click could select lies (`tableCellUnder`), or it is unlocked.
+ */
+export function tableCellLockUnder(
+  model: DocumentModel,
+  space: Handle,
+  p: Vec2,
+): TableCellLock | undefined {
+  const under = tableCellUnder(model, space, p, 0);
+  const g = under && model.entity(under.id)?.geom;
+  if (!under || g?.kind !== 'ACAD_TABLE') return undefined;
+  const [i, j] = under.cell;
+  const c = g.cells[i]?.[j];
+  if (!c) return undefined;
+  const { content, format } = rangeLocks(g, {
+    r0: i,
+    c0: j,
+    r1: i + Math.max(1, c.rowSpan) - 1,
+    c1: j + Math.max(1, c.columnSpan) - 1,
+  });
+  return content && format ? 'both' : content ? 'content' : format ? 'format' : undefined;
+}
+
 /** TABLECELL on table `id` from cell `start`, or asking for the cell first. */
 export function tableCellCommand(start?: {
   readonly id: EntityId;
@@ -423,6 +448,8 @@ export function tableCellCommand(start?: {
           shortcutMenuTitle: 'Table cell options',
           // A press dragged across cells selects them all (M4-05 part 4).
           releaseExtends: true,
+          // Another locked cell under the cursor shows its lock, as at `Command:`.
+          cellLocks: true,
           grips: grips.map((g) => g.point),
           pasteKeyword: 'Paste',
         });

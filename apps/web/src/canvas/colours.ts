@@ -77,6 +77,23 @@ function paintbrush(color: string, halo: string): string {
   );
 }
 
+/**
+ * The lock by the crosshairs over a locked table cell (M4-16 part 11), in the corner MATCHPROP's
+ * paintbrush takes: a shackle over a body with a keyhole, haloed as the crosshairs are.
+ */
+function padlock(color: string, halo: string): string {
+  const shackle = 'M21.5 7.5V5.5A3 3 0 0 1 27.5 5.5V7.5';
+  const body = 'M19.5 7.5H29.5V14.5H19.5Z';
+  return (
+    `<g class="padlock">` +
+    `<path d="${shackle}" fill="none" stroke="${halo}" stroke-opacity="0.45" stroke-width="3.5"/>` +
+    `<path d="${body}" fill="${halo}" fill-opacity="0.45" stroke="${halo}" stroke-opacity="0.45" stroke-width="2"/>` +
+    `<path d="${shackle}" fill="none" stroke="${color}" stroke-width="1.5"/>` +
+    `<path d="${body}" fill="${color}"/>` +
+    `<path d="M24.5 10V12" stroke="${halo}" stroke-width="1.5" stroke-linecap="round"/></g>`
+  );
+}
+
 /** Half the cursor image; 31 px keeps within the 32 px every browser takes for a cursor. */
 const HALF = 15;
 
@@ -85,9 +102,10 @@ const HALF = 15;
  * The system crosshair stands in where a browser refuses the image. One image for every prompt:
  * AutoCAD adds a pickbox at `Command:`, but swapping cursor images as prompts change cost Chrome
  * enough main-thread time to delay the next prompt behind typed keys (CI, PR #256). `badge`
- * adds MATCHPROP's paintbrush, changed once as its destination prompt comes and goes.
+ * adds MATCHPROP's paintbrush, changed once as its destination prompt comes and goes, or the
+ * lock of a locked table cell under the cursor (M4-16 part 11), changed as it enters and leaves.
  */
-export function crosshairCursor(color: string, angle = 0, badge?: 'paintbrush'): string {
+export function crosshairCursor(color: string, angle = 0, badge?: 'paintbrush' | 'lock'): string {
   const halo = isDarkColor(color) ? '#ffffff' : '#000000';
   const n = 2 * HALF + 1;
   const c = HALF + 0.5;
@@ -101,6 +119,7 @@ export function crosshairCursor(color: string, angle = 0, badge?: 'paintbrush'):
     `<g stroke="${halo}" stroke-opacity="0.45" stroke-width="3"><path d="${cross}"/></g>` +
     `<g stroke="${color}" stroke-width="1"><path d="${cross}"/></g></g>` +
     (badge === 'paintbrush' ? paintbrush(color, halo) : '') +
+    (badge === 'lock' ? padlock(color, halo) : '') +
     `</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${HALF} ${HALF}, crosshair`;
 }

@@ -1181,3 +1181,62 @@ describe('Locking (M4-16 part 6)', () => {
     expect(formatOf(s, 3, 0)).toEqual({ background: { kind: 'aci', index: 2 } });
   });
 });
+
+describe('the lock shown over a locked cell (M4-16 part 11)', () => {
+  it('is the lock of the cell under the cursor at Command: and while cells are selected', async () => {
+    const s = setup();
+    await nozzles(s);
+    expect(s.bus.cellLock(at(2, 0))).toBeUndefined();
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('LO');
+    await s.bus.submit('B');
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('LO');
+    await s.bus.submit('F');
+    expect(s.bus.promptText).toBe('Command:');
+    expect(s.bus.cellLock(at(2, 0))).toBe('both');
+    expect(s.bus.cellLock(at(3, 1))).toBe('format');
+    // An unlocked cell, and outside the table: none.
+    expect(s.bus.cellLock(at(2, 1))).toBeUndefined();
+    expect(s.bus.cellLock({ x: 200, y: 200 })).toBeUndefined();
+    // While a cell is selected the Table Cell prompt asks the canvas to show it too.
+    await s.bus.pick(at(4, 1));
+    expect(s.bus.command).toBe('TABLECELL');
+    expect(s.prompt()!.cellLocks).toBe(true);
+    expect(s.bus.cellLock(at(2, 0))).toBe('both');
+    await s.bus.cancel();
+    // Inside any other command it is not shown.
+    await s.bus.submit('LINE');
+    expect(s.prompt()!.cellLocks).toBeUndefined();
+    expect(s.bus.cellLock(at(2, 0))).toBeUndefined();
+    await s.bus.cancel();
+    expect(s.bus.cellLock(at(2, 0))).toBe('both');
+  });
+
+  it('is shown over the whole of a merged cell holding a locked cell', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(3, 0));
+    await s.bus.submit('LO');
+    await s.bus.submit('F');
+    await s.bus.pick(at(2, 0));
+    await s.bus.pick(at(3, 0), { shift: true });
+    await s.bus.submit('MergeAll');
+    expect(s.texts()[3]![0]).toBe('^');
+    expect(s.bus.cellLock(at(2, 0))).toBe('format');
+    expect(s.bus.cellLock(at(3, 0))).toBe('format');
+    expect(s.bus.cellLock(at(4, 0))).toBeUndefined();
+  });
+
+  it('is not shown on a table whose layer is locked, whose cells cannot be selected', async () => {
+    const s = setup();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('LO');
+    await s.bus.submit('B');
+    const b = new ChangeSetBuilder(s.model);
+    b.updateTableRecord('layers', s.table().layer, { locked: true });
+    s.model.apply(b.build());
+    expect(s.bus.cellLock(at(2, 0))).toBeUndefined();
+  });
+});

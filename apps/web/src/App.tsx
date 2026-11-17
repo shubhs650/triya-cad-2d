@@ -321,6 +321,7 @@ engines.onCommand((doc, o) => {
   // A grip's hover menu (M3-05 part 2): shown from the engine's answer, gone as a command
   // starts or the grips change.
   if (o.type === 'grip-menu') gripMenus.answer(doc, o.point, o.grip, o.items);
+  if (o.type === 'cell-lock') for (const c of controllersOf(doc)) c.cellLocked(o.seq, o.lock);
   if (o.type === 'start' || o.type === 'grips') gripMenus.close(doc);
   // The Quick Access Undo and Redo buttons and the undo toast follow the history (M2-23).
   if (o.type === 'undo') undoStates.set(doc, o.state, o.action);
@@ -2218,6 +2219,8 @@ function ViewportCanvas({
       onLasso: (kind) => commandLines.lasso(id, kind && lassoPrompt(kind)),
       // Selection cycling's badge by the cursor over overlapping objects (M3-04 part 7).
       onOverlap: (at) => cyclingBadge.set(id, at),
+      // The lock by the cursor over a locked table cell (M4-16 part 11).
+      onCellLock: (q) => engines.command(id, { kind: 'cell-lock', seq: q.seq, point: q.point }),
       // A view changed is an undo step of the drawing's (M2-47 part 4); U finds this canvas
       // again by the name given here (`viewContext`'s `viewport`).
       onViewStep: (label, view) =>

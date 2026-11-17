@@ -82,4 +82,26 @@ describe('crosshairs, AutoSnap and AutoTrack colours', () => {
     expect(brush.indexOf('class="paintbrush"')).toBeGreaterThan(brush.lastIndexOf('</g></g>'));
     expect(brush).toContain('fill="#ff0000"');
   });
+
+  it('adds the lock of a locked table cell in the same corner, upright (M4-16 part 11)', () => {
+    const svg = (badge?: 'paintbrush' | 'lock') =>
+      decodeURIComponent(
+        /data:image\/svg\+xml,(.*)"\)/.exec(crosshairCursor('#ffffff', Math.PI / 6, badge))![1]!,
+      );
+    expect(svg()).not.toContain('class="padlock"');
+    expect(svg('paintbrush')).not.toContain('class="padlock"');
+    const lock = svg('lock');
+    expect(lock).toContain('<g class="padlock"');
+    expect(lock).not.toContain('class="paintbrush"');
+    expect(lock.indexOf('class="padlock"')).toBeGreaterThan(lock.lastIndexOf('</g></g>'));
+    // The body in the crosshairs' colour, the keyhole in the halo's; all within the 31 px image.
+    expect(lock).toContain('fill="#ffffff"');
+    expect(lock).toContain('stroke="#000000"');
+    for (const n of lock
+      .match(/\d+(\.\d+)?/g)!
+      .map(Number)
+      .filter((v) => v < 100)) {
+      expect(n).toBeLessThanOrEqual(31);
+    }
+  });
 });
