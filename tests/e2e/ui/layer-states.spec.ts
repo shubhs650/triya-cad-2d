@@ -35,12 +35,16 @@ async function openLayers(page: Page): Promise<Locator> {
 const manager = (page: Page) => page.getByRole('dialog', { name: 'Layer States Manager' });
 const states = (page: Page) => manager(page).getByRole('table', { name: 'Layer states' });
 const stateRow = (page: Page, name: string) =>
-  states(page).getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
+  states(page)
+    .getByRole('row')
+    .filter({ has: page.getByRole('rowheader', { name, exact: true }) });
 
 test('saves, restores, exports and imports layer states (M5-07)', async ({ page }) => {
   const palette = await openLayers(page);
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
   const layerState = palette.getByRole('status', { name: 'Layer state' });
   await expect(layerState).toHaveText('Unsaved Layer State');
+  await shot('1-layer-properties-manager.png');
 
   await palette.getByRole('button', { name: 'Layer States Manager' }).click();
   await expect(manager(page)).toBeVisible();
@@ -60,6 +64,7 @@ test('saves, restores, exports and imports layer states (M5-07)', async ({ page 
     'Every layer shown',
   ]);
   await expect(stateRow(page, 'All on')).toHaveAttribute('aria-selected', 'true');
+  await shot('2-state-saved.png');
   await manager(page).getByRole('button', { name: 'Close' }).click();
   await expect(manager(page)).toBeHidden();
 
@@ -71,10 +76,12 @@ test('saves, restores, exports and imports layer states (M5-07)', async ({ page 
   await enterCommand(page, 'LAS');
   await expect(manager(page)).toBeVisible();
   await expect(stateRow(page, 'All on').getByRole('cell').nth(1)).toHaveText('No');
+  await shot('3-hatch-off-not-same.png');
   await manager(page).getByRole('button', { name: 'Restore', exact: true }).click();
   await expect(manager(page)).toBeHidden();
   await expect(on).toHaveAttribute('aria-pressed', 'true');
   await expect(layerState).toHaveText('All on');
+  await shot('4-restored.png');
 
   // Export... the state as All on.las.
   await palette.getByRole('button', { name: 'Layer States Manager' }).click();
@@ -117,6 +124,7 @@ test('saves, restores, exports and imports layer states (M5-07)', async ({ page 
   await expect(color).toBeChecked();
   await color.click();
   await expect(color).not.toBeChecked();
+  await shot('5-more-restore-options.png');
   await stateRow(page, 'All on').click();
   await expect(color).toBeChecked();
   await stateRow(page, 'Mine').click();
