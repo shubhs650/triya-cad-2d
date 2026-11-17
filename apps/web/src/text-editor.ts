@@ -417,6 +417,49 @@ const pushText = (out: LinePart[], text: string): void => {
   else out.push({ text });
 };
 
+/** What a key typed before TEXT's line editor opened does there. */
+export type LineAheadOp =
+  | { readonly kind: 'line'; readonly value: string }
+  | { readonly kind: 'end' }
+  | { readonly kind: 'cancel' };
+
+/**
+ * Keys typed before TEXT's line editor opened (M4-20), which the command line held for the
+ * prompt not shown yet: AutoCAD's in-place editor keeps them, so they are typed into it in order.
+ * Enter places the line typed (`line`), or on an empty line ends TEXT (`end`); Esc cancels. The
+ * keys after an end or a cancel (`rest`) were typed ahead of `Command:`; `text` is the line left
+ * typed. A space is typed (TEXT takes spaces); Tab types nothing. `typed`: what the editor's line
+ * holds already, which the keys go on from.
+ */
+export function lineAhead(
+  keys: readonly string[],
+  typed = '',
+): {
+  ops: LineAheadOp[];
+  text: string;
+  rest: readonly string[];
+} {
+  const ops: LineAheadOp[] = [];
+  let text = typed;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!;
+    if (key === 'Escape') {
+      ops.push({ kind: 'cancel' });
+      return { ops, text: '', rest: keys.slice(i + 1) };
+    }
+    if (key === 'Enter') {
+      if (text === '') {
+        ops.push({ kind: 'end' });
+        return { ops, text, rest: keys.slice(i + 1) };
+      }
+      ops.push({ kind: 'line', value: text });
+      text = '';
+    } else if (key === 'Backspace') text = text.slice(0, -1);
+    else if (key.length === 1) text += key;
+  }
+  return { ops, text, rest: [] };
+}
+
 /** A line (`Rev %<\AcVar Date>%`) as its parts; with no `fields` (no Insert Field), its text. */
 export function lineParts(
   value: string,

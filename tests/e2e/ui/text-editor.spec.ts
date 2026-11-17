@@ -141,3 +141,66 @@ test('Esc in the MTEXT editor cancels the command and makes nothing', async ({ p
   await expect(page.getByRole('textbox', { name: 'Multiline text' })).toHaveCount(0);
   expect(await texts(page)).toEqual([]);
 });
+
+/**
+ * Keys as typed into the page with nothing in between: the engine cannot answer the first before
+ * the last is in, as when a drafter types faster than the engine shows the next prompt.
+ */
+const typeAhead = (page: Page, keys: readonly string[]) =>
+  page.evaluate((keys) => {
+    for (const key of keys) {
+      const target = document.activeElement ?? document.body;
+      target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    }
+  }, keys);
+
+// M4-20: AutoCAD keeps what is typed while TEXT's editor opens. Typed before the line editor was
+// shown, keys were held by the command line and replayed there, not in the editor: the line lost
+// its start, and its Enter, on an empty editor, ended TEXT, so the second Enter reached
+// `Command:` and started TEXT again.
+test('TEXT takes the keys typed before its line editor opens', async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page);
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '1000020,1000060', 'Specify height <2.5000>:');
+  await type(page, '5', 'Specify rotation angle of text <0.00>:');
+  // Enter takes the default rotation; the line starts before the editor is shown.
+  await typeAhead(page, ['Enter', ...'Triya']);
+  const line = page.getByRole('textbox', { name: 'Text' });
+  await expect(line).toBeFocused();
+  await page.keyboard.type(' 2D');
+  await expect(line).toHaveValue('Triya 2D');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(page.getByRole('textbox', { name: 'Command' })).toHaveValue('');
+  await expect.poll(() => texts(page)).toEqual([['TEXT', 'Triya 2D']]);
+
+  // Lines and the Enter that ends TEXT all typed ahead, and a command after them.
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '1000020,1000040', 'Specify height <5.0000>:');
+  await type(page, '', 'Specify rotation angle of text <0.00>:');
+  await typeAhead(page, [
+    'Enter',
+    ...'Fast one',
+    'Enter',
+    ...'Twp',
+    'Backspace',
+    'o',
+    'Enter',
+    'Enter',
+    ...'LINE',
+    'Enter',
+  ]);
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await expect(page.getByRole('textbox', { name: 'Text' })).toHaveCount(0);
+  await expect
+    .poll(() => texts(page))
+    .toEqual([
+      ['TEXT', 'Triya 2D'],
+      ['TEXT', 'Fast one'],
+      ['TEXT', 'Two'],
+    ]);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+});
