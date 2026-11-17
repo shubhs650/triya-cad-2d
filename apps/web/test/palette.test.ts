@@ -113,6 +113,9 @@ describe('palette search', () => {
       'EXPORT',
       'EXPORTPDF',
       'EXTEND',
+      // M5-04 part 1: the References palette.
+      'EXTERNALREFERENCES',
+      'EXTERNALREFERENCESCLOSE',
       // M4-10 part 2: the Field dialog.
       'FIELD',
       'FILLET',
@@ -245,6 +248,7 @@ describe('palette search', () => {
       'VIEW',
       'WIPEOUT',
       'XLINE',
+      'XREF',
       'ZOOM',
     ]);
     const erase = commandItems(builtinCommands()).find((i) => i.id === 'ERASE');

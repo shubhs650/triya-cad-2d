@@ -354,6 +354,7 @@ function clipBlock(
     dynamic: kind,
     dynamicOf,
     xrefLoaded: _loaded,
+    xrefUnloaded: _unloaded,
     // The BLOCK's own xdata, which the reader does not map (its BLOCK_RECORD's is the record's).
     xdata: _xdata,
     ...rest

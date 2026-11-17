@@ -27,6 +27,10 @@
 // name, a 3D solid's face materials, the header's $CMATERIAL and interference visual styles), so
 // those fields are read as references too.
 //
+// XREF Detach (M5-04 part 1) removes an xref's block record: its BLOCK and ENDBLK go as any
+// block's do, and the `xref|symbol` records the host kept of it (VISRETAIN) go with it; an
+// xref-dependent record of an xref that stays is still refused.
+//
 // Not purged here: shapes kept as nameless STYLE records.
 
 import type { CadDocument, Entity as AcadEntity } from '@node-projects/acad-ts';
@@ -384,6 +388,12 @@ export function planPurge(
   const r12 =
     version !== undefined && version !== ACadVersion.Unknown && version <= ACadVersion.AC1009;
   const targets: Target[] = [];
+  // XREF Detach (M5-04): an xref's block goes, and with it the `xref|name` records the drawing
+  // keeps of its symbols (VISRETAIN), as AutoCAD's detach takes them.
+  const detached = (base.tables?.blockRecords ?? [])
+    .filter((b) => ((b.flags ?? 0) & XREF_BLOCK) !== 0 && !model.tables.blockRecords.has(b.handle))
+    .map((b) => `${b.name.toUpperCase()}|`);
+  const ofDetached = (name: string) => detached.some((p) => name.toUpperCase().startsWith(p));
   for (const table of Object.keys(TABLES) as Purgeable[]) {
     const rules = TABLES[table];
     const after = model.tables[table as TableName];
@@ -400,8 +410,8 @@ export function planPurge(
         out.push('an internal visual style (DXF 291) cannot be purged');
       else if (acad?.owner instanceof CadDictionaryWithDefault && acad.owner.defaultEntry === acad)
         out.push(`it is the default of ${acad.owner.name || 'its dictionary'}`);
-      else if ((flags & XREF_DEPENDENT) !== 0)
-        out.push(`an xref-dependent ${rules.what} goes with its xref (XREF Detach, M1-21)`);
+      else if ((flags & XREF_DEPENDENT) !== 0 && !ofDetached(b.name))
+        out.push(`an xref-dependent ${rules.what} goes with its xref (XREF Detach)`);
       else if (acad instanceof VPort && doc.vPorts?.tryGetValue(VPort.defaultName) === acad)
         out.push(
           'the first *Active viewport is the current one (VPORTS Join keeps it and changes its view)',
@@ -540,7 +550,8 @@ function blockProblems(
     !model.layouts.some((l) => l.handle === b.layout);
   if (!layoutGoes && (b.layout !== undefined || LAYOUT_BLOCK.test(b.name)))
     return ["a layout's block goes with its layout (LAYOUT Delete)"];
-  if (((b.flags ?? 0) & XREF_BLOCK) !== 0) return ['an xref goes with XREF Detach (M1-21)'];
+  // An xref's block (XREF Detach) holds nothing in the host's file; its references go in the
+  // same save, or the checks below keep it.
   const out: string[] = [];
   if (model.blocks.has(hex(acad.handle))) out.push('its block definition stays');
   const erased = new Set<CadObject>(removedEntities);

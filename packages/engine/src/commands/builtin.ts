@@ -72,6 +72,7 @@ import { panCommand, regenCommand, zoomCommand } from './view/zoom';
 import { UNDO_COMMANDS } from './undo-commands';
 import { underlayLayersCommand } from './underlay-layers';
 import { layerToolCommands } from './layer-tools';
+import { XREF_COMMANDS } from './xref';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 import { ARRAY_COMMANDS } from './modify/array';
 
@@ -167,6 +168,7 @@ export function builtinCommands(): CommandRegistry {
     ...UCS_COMMANDS.map((make) => make()),
     underlayLayersCommand(),
     ...layerToolCommands(),
+    ...XREF_COMMANDS.map((make) => make()),
     ...INQUIRY_COMMANDS.map((make) => make()),
     ...ARRAY_COMMANDS.map((make) => make()),
     ...GROUP_COMMANDS.map((make) => make()),

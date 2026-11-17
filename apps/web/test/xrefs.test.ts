@@ -67,6 +67,27 @@ describe('pendingXrefs (M1-21)', () => {
   });
 });
 
+describe('an unloaded xref (M5-04)', () => {
+  const tb = init.blocks![1]!;
+  const unload: ChangeSet = {
+    blocks: { updated: [{ before: tb, after: { ...tb, xrefUnloaded: true } }] },
+  };
+  const reload: ChangeSet = {
+    blocks: { updated: [{ before: { ...tb, xrefUnloaded: true }, after: tb }] },
+  };
+
+  it('waits for no file and is listed as Unloaded until it is reloaded', () => {
+    expect(pendingXrefs(init, [unload]).map((x) => x.name)).toEqual(['PLAN']);
+    const none = { image: () => false, pdf: () => false };
+    expect(referencesOf(init, [unload], none).map((r) => [r.name, r.status])).toEqual([
+      ['TB', 'unloaded'],
+      ['PLAN', 'not-found'],
+    ]);
+    expect(missingFileNames(referencesOf(init, [unload], none))).toEqual(['plan.DXF']);
+    expect(pendingXrefs(init, [unload, reload]).map((x) => x.name)).toEqual(['TB', 'PLAN']);
+  });
+});
+
 describe('xrefsAnsweredBy (M1-21)', () => {
   it('matches the file name at the end of either kind of path, without case', () => {
     expect(fileNameOf('.\\Sheets\\tb.dxf')).toBe('tb.dxf');
