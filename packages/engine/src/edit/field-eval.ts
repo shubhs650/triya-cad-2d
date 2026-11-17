@@ -12,12 +12,15 @@
 // drawing's, not the drafter's: not an undo step, as AutoCAD's own evaluation is none.
 //
 // Triya opens, saves and plots in the app, which asks for the update (the session's `fields`
-// edit). eTransmit has no counterpart, and regeneration is left with the follow-up work.
+// edit). REGEN and REGENALL update fields themselves (M4-10 part 4), as their own undo step:
+// AutoCAD lists REGEN on the undo list, and U after it shows the values from before. eTransmit
+// has no counterpart.
 // FIELDEVAL is kept where AutoCAD keeps it, as a DICTIONARYVAR (text) of the drawing's variable
 // dictionary; a drawing without one has the initial 31.
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
+import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { EntityGeometry, InsertAttribute, MTextGeometry, TextFields } from '../model/types';
 import { evaluateFields, type FieldContext } from './fields';
@@ -28,7 +31,7 @@ export const FIELDEVAL = 'FIELDEVAL';
 export const FIELDEVAL_INITIAL = 31;
 
 /** The events that evaluate fields on their own, and their bits (FIELDEVAL's, DXF 91's). */
-export const FIELD_EVENTS = { open: 1, save: 2, plot: 4 } as const;
+export const FIELD_EVENTS = { open: 1, save: 2, plot: 4, regen: 16 } as const;
 export type FieldEvent = keyof typeof FIELD_EVENTS;
 
 /** The drawing's FIELDEVAL: its DICTIONARYVAR's value, else the initial 31. */
@@ -98,31 +101,55 @@ export function updateEntityFields(
 }
 
 /**
- * The change an event makes to the drawing's fields: every text in every space and block whose
- * fields FIELDEVAL and their own options let the event evaluate, undefined when nothing changes
- * (FIELDEVAL leaves the event out, or every value is already up to date). Saving takes the save's
- * time for SaveDate, plotting the plot's for PlotDate.
+ * The texts an event changes: every text in every space and block whose fields FIELDEVAL and
+ * their own options let the event evaluate, with its new geometry; none when FIELDEVAL leaves the
+ * event out or every value is already up to date. Saving takes the save's time for SaveDate,
+ * plotting the plot's for PlotDate.
  */
-export function fieldEventChange(
+export function fieldEventUpdates(
   base: Omit<FieldContext, 'space'>,
   event: FieldEvent,
-): ChangeSet | undefined {
+): { readonly id: EntityId; readonly geom: EntityGeometry }[] {
   const bit = FIELD_EVENTS[event];
   const model = base.model;
-  if ((fieldEval(model) & bit) === 0) return undefined;
+  if ((fieldEval(model) & bit) === 0) return [];
   const ctx: Omit<FieldContext, 'space'> = {
     ...base,
     ...(event === 'save' && { saveDate: base.now }),
     ...(event === 'plot' && { plotDate: base.now }),
   };
-  const b = new ChangeSetBuilder(model);
-  let changed = false;
+  const out: { id: EntityId; geom: EntityGeometry }[] = [];
   for (const e of model.entities()) {
     const u = updateEntityFields(e.geom, ctx, e.owner, bit);
     // A text none of whose fields the event evaluates stays exactly as it was.
     if (!u || u.evaluated === 0 || JSON.stringify(u.geom) === JSON.stringify(e.geom)) continue;
-    b.updateEntity(e.id, { geom: u.geom });
-    changed = true;
+    out.push({ id: e.id, geom: u.geom });
   }
-  return changed ? b.build() : undefined;
+  return out;
+}
+
+/**
+ * Whether an event may update any field: FIELDEVAL has its bit and some text holds a field. REGEN
+ * asks before it asks the app for the file name (M4-10 part 4).
+ */
+export function fieldEventMayUpdate(model: DocumentModel, event: FieldEvent): boolean {
+  if ((fieldEval(model) & FIELD_EVENTS[event]) === 0) return false;
+  for (const e of model.entities()) {
+    const g = e.geom;
+    if ('field' in g && g.field) return true;
+    if (g.kind === 'INSERT' && g.attributes.some((a) => a.field)) return true;
+  }
+  return false;
+}
+
+/** The change an event makes to the drawing's fields (`fieldEventUpdates`), undefined for none. */
+export function fieldEventChange(
+  base: Omit<FieldContext, 'space'>,
+  event: FieldEvent,
+): ChangeSet | undefined {
+  const updates = fieldEventUpdates(base, event);
+  if (updates.length === 0) return undefined;
+  const b = new ChangeSetBuilder(base.model);
+  for (const u of updates) b.updateEntity(u.id, { geom: u.geom });
+  return b.build();
 }

@@ -4,9 +4,15 @@
 // `%<FIELD_INSERT>%` where the field goes, the dialog opens, and the editor opens again with
 // the field in place. A text with fields keeps them as its FIELD and shows their values;
 // TEXTEDIT opens it on its codes.
+//
+// M4-10 part 4: Edit Field (AutoCAD 2024 Help, "To Edit a Field": "In the In-Place Text Editor,
+// double-click the field to display the Field dialog box"): the editor answers with
+// `%<FIELD_EDIT code>%` in the field's place, the dialog opens on the field's choices, and the
+// editor opens again with the field as the dialog left it. TEXT's line editor holds fields too.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
+  FIELD_EDIT,
   FIELD_INSERT,
   PromptBus,
   builtinCommands,
@@ -313,6 +319,15 @@ describe('Insert Field in the MTEXT editor', () => {
     expect(g.field).toBeUndefined();
   });
 
+  it("goes back to the editor on the dialog's Cancel (Esc), the text as it was", async () => {
+    const s = setup();
+    await s.bus.script(['MTEXT', '0,0', '60,-20']);
+    await s.bus.answer({ kind: 'string', value: `Note %<${FIELD_INSERT}>%`, editor: true });
+    await s.bus.cancel();
+    expect(s.bus.command).toBe('MTEXT');
+    expect(s.editor().value).toBe('Note ');
+  });
+
   it('keeps the columns the editor closed with', async () => {
     const s = setup();
     await s.bus.script(['MTEXT', '0,0', '60,-20']);
@@ -353,14 +368,128 @@ describe('TEXTEDIT on text with fields', () => {
     expect(g.field).toBeUndefined();
   });
 
-  it('drops the fields of a TEXT edited in its line editor, which has none', async () => {
+  it('opens a TEXT on its codes, each shown by its value, and keeps them', async () => {
     const s = setup();
     await s.bus.submit('TEXTEDIT');
     await s.bus.answer({ kind: 'selection', ids: [s.id('61')] });
-    expect(s.editor().value).toBe('Rev 2020');
+    const code = '\\AcVar Date \\f "yyyy"';
+    expect(s.editor().kind).toBe('text');
+    expect(s.editor().value).toBe(`Rev %<${code}>%`);
+    expect(s.editor().fields).toEqual({ [code]: '2020' });
+    await s.bus.answer({ kind: 'string', value: `Rev. %<${code}>%`, editor: true });
+    const g = s.model.entity(s.id('61'))!.geom as TextGeometry;
+    expect(g.value).toBe('Rev. 2026');
+    expect(g.field?.code).toBe('Rev. %<\\_FldIdx 0>%');
+  });
+
+  it('drops the fields of a TEXT whose fields were deleted', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTEDIT');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('61')] });
     await s.bus.answer({ kind: 'string', value: 'Rev B', editor: true });
     const g = s.model.entity(s.id('61'))!.geom as TextGeometry;
     expect(g.value).toBe('Rev B');
     expect(g.field).toBeUndefined();
+  });
+});
+
+describe('Insert Field in the TEXT line editor', () => {
+  it('opens the dialog and places the line with the field', async () => {
+    const s = setup();
+    await s.bus.script(['TEXT', '0,0', '2.5', '0']);
+    expect(s.editor().kind).toBe('text');
+    expect(s.editor().fields).toEqual({});
+    await s.bus.answer({ kind: 'string', value: `File %<${FIELD_INSERT}>%`, editor: true });
+    await s.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      field: { name: 'Filename', parts: 'name', extension: false },
+    });
+    const code = '\\AcVar Filename \\f "%fn2"';
+    expect(s.editor().kind).toBe('text');
+    expect(s.editor().value).toBe(`File %<${code}>%`);
+    expect(s.editor().fields).toEqual({ [code]: 'Plan' });
+    await s.bus.answer({ kind: 'string', value: `File %<${code}>%`, editor: true });
+    const g = s.added()[0]!.geom as TextGeometry;
+    expect(g.value).toBe('File Plan');
+    expect(g.field?.code).toBe('File %<\\_FldIdx 0>%');
+    // The next line opens empty below, as after any line.
+    expect(s.editor().value).toBeUndefined();
+    expect(s.editor().position.y).toBeLessThan(0);
+    await s.bus.answer({ kind: 'enter' });
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it('keeps a line typed on the command line as typed', async () => {
+    const s = setup();
+    await s.bus.script(['TEXT', '0,0', '2.5', '0']);
+    await s.bus.answer({ kind: 'string', value: 'A %<\\AcVar Filename \\f "%fn2">%' });
+    const g = s.added()[0]!.geom as TextGeometry;
+    expect(g.value).toBe('A Plan');
+    expect(g.field?.children[0]?.value).toBe('Plan');
+  });
+});
+
+describe('Edit Field in the editors', () => {
+  it('opens the dialog on the field and puts the edited field in its place', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTEDIT');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('62')] });
+    const code = '\\AcVar Date \\f "yyyy"';
+    await s.bus.answer({
+      kind: 'string',
+      value: `Issued on %<${FIELD_EDIT}${code}>%`,
+      editor: true,
+    });
+    const d = s.dialog();
+    expect(d.type).toBe('field');
+    expect(d.spec).toEqual({ name: 'Date', date: 'yyyy' });
+    await s.bus.answer({ kind: 'dialog', action: 'ok', field: { name: 'Date', date: 'MM/yyyy' } });
+    const edited = '\\AcVar Date \\f "MM/yyyy"';
+    expect(s.editor().value).toBe(`Issued on %<${edited}>%`);
+    expect(s.editor().fields).toEqual({ [code]: '2020', [edited]: '11/2026' });
+    await s.bus.answer({ kind: 'string', value: `Issued on %<${edited}>%`, editor: true });
+    const g = s.model.entity(s.id('62'))!.geom as MTextGeometry;
+    expect(g.contents).toBe('Issued on 11/2026');
+  });
+
+  it('keeps the field as it was when the dialog is cancelled', async () => {
+    const s = setup();
+    await s.bus.submit('TEXTEDIT');
+    await s.bus.answer({ kind: 'selection', ids: [s.id('61')] });
+    const code = '\\AcVar Date \\f "yyyy"';
+    await s.bus.answer({ kind: 'string', value: `Rev %<${FIELD_EDIT}${code}>%`, editor: true });
+    await s.bus.cancel();
+    expect(s.editor().value).toBe(`Rev %<${code}>%`);
+    expect(s.editor().kind).toBe('text');
+  });
+
+  it("opens an object's field on its object, and one the dialog cannot show as Insert Field does", async () => {
+    const s = setup();
+    await s.bus.script(['MTEXT', '0,0', '60,-20']);
+    const area = '\\AcObjProp Object(%<\\_ObjId 60>%).Area \\f "%lu2%pr1"';
+    await s.bus.answer({ kind: 'string', value: `A %<${FIELD_EDIT}${area}>%`, editor: true });
+    expect(s.dialog().spec).toEqual({
+      name: 'Object',
+      object: '60',
+      property: 'Area',
+      units: 2,
+      precision: 1,
+    });
+    expect(s.dialog().objectType).toBe('Circle');
+    expect(Object.keys(s.dialog().snapshot.objects['60']!)).toContain('Area');
+    await s.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      field: { ...s.dialog().spec!, property: 'Radius' },
+    });
+    const radius = '\\AcObjProp Object(%<\\_ObjId 60>%).Radius \\f "%lu2%pr1"';
+    expect(s.editor().value).toBe(`A %<${radius}>%`);
+    expect(s.editor().fields?.[radius]).toBe('10.0');
+    const author = '\\AcVar Author';
+    await s.bus.answer({ kind: 'string', value: `%<${FIELD_EDIT}${author}>%`, editor: true });
+    expect(s.dialog().spec).toBeUndefined();
+    await s.bus.cancel();
+    expect(s.editor().value).toBe(`%<${author}>%`);
   });
 });

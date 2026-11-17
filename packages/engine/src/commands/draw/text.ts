@@ -246,22 +246,29 @@ export function textCommand(): CommandDef {
       const props = currentProps(ctx.model);
       let line: Vec2 = at;
       for (;;) {
-        const a: PromptAnswer = yield ctx.prompt.string({
-          message: 'Enter text',
-          spaces: true,
-          pick: true,
-          editor: {
-            kind: 'text',
-            position: line,
-            rotation: angle,
-            height,
-            width: 0,
-            attachment: attachmentOf(j.h, j.v),
-            style: style.handle,
-            fontFile: style.font,
-            trueTypeFlags: style.trueTypeFlags,
+        // The line editor's Insert Field (M4-10 part 4) opens it again on the line with the
+        // field, which Enter then places.
+        const a: PromptAnswer = yield* askEditorText(
+          ctx,
+          {
+            message: 'Enter text',
+            spaces: true,
+            pick: true,
+            editor: {
+              kind: 'text',
+              position: line,
+              rotation: angle,
+              height,
+              width: 0,
+              attachment: attachmentOf(j.h, j.v),
+              style: style.handle,
+              fontFile: style.font,
+              trueTypeFlags: style.trueTypeFlags,
+              fields: {},
+            },
           },
-        });
+          ctx.space,
+        );
         if (a.kind === 'point') {
           // A click elsewhere: the next line starts there, as in AutoCAD's in-place TEXT
           // editor. A second point (Align, Fit) moves with it.
@@ -270,9 +277,13 @@ export function textCommand(): CommandDef {
           continue;
         }
         if (a.kind !== 'string' || a.value === '') return;
+        const typed = a.value.includes('%<')
+          ? textWithFields(a.value, { ...(await fieldContextOf(ctx)), space: ctx.space })
+          : { text: a.value };
         const geom: TextGeometry = {
           kind: 'TEXT',
-          value: a.value,
+          value: typed.text,
+          ...(typed.field && { field: typed.field }),
           style: style.handle,
           position: line,
           ...((j.h !== 0 || j.v !== 0) && { alignmentPoint: second ?? line }),
@@ -1072,8 +1083,8 @@ async function* editText(
     widthFactor: style?.widthFactor ?? 1,
     obliqueAngle: style?.obliqueAngle ?? 0,
   };
-  // An MTEXT's fields open as their codes, each shown by its value (M4-10 part 2).
-  const old = g.kind === 'TEXT' ? g.value : g.field ? editableFieldText(g.field) : g.contents;
+  // Fields open as their codes, each shown by its value (M4-10 parts 2 and 4).
+  const old = g.field ? editableFieldText(g.field) : g.kind === 'TEXT' ? g.value : g.contents;
   const cols = g.kind === 'MTEXT' ? editorColumns(g) : undefined;
   const a: PromptAnswer = yield* askEditorText(
     ctx,
@@ -1094,6 +1105,7 @@ async function* editText(
               style: g.style,
               ...font,
               value: old,
+              fields: g.field ? fieldValues(g.field) : {},
             }
           : {
               ...mtextEditorRequest(ctx.model, g),
@@ -1116,17 +1128,14 @@ async function* editText(
     return { id: entity.id, before: entity, erased: true };
   }
   let geom: TextGeometry | MTextGeometry;
-  if (g.kind === 'TEXT') {
-    // The line editor has no fields: a TEXT edited keeps what was typed, its fields dropped,
-    // so AutoCAD does not put their values back over it when it opens the drawing.
-    const { field: _dropped, ...rest } = g;
-    geom = { ...rest, value: a.value };
+  const { field: _was, ...rest } = g;
+  const typed =
+    a.value.includes('%<') || g.field
+      ? textWithFields(a.value, { ...(await fieldContextOf(ctx)), space: entity.owner }, g.field)
+      : { text: a.value };
+  if (rest.kind === 'TEXT') {
+    geom = { ...rest, value: typed.text, ...(typed.field && { field: typed.field }) };
   } else {
-    const { field: _was, ...rest } = g;
-    const typed =
-      a.value.includes('%<') || g.field
-        ? textWithFields(a.value, { ...(await fieldContextOf(ctx)), space: entity.owner }, g.field)
-        : { text: a.value };
     const m: MTextGeometry = {
       ...rest,
       contents: typed.text,
