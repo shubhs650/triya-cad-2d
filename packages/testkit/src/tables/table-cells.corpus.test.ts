@@ -21,6 +21,8 @@ import {
   type TableCell,
   type TableDataFormat,
   type TableGeometry,
+  type TableStyleRequest,
+  type TableStyleSettings,
 } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
@@ -872,6 +874,94 @@ describe('rows and cells on cell styles of their own (M4-16 part 5)', () => {
     const g = await edit(model, () => table.id);
     expect(g.rowStyles).toEqual(['title', 'title', 'data', 'header']);
     expect(g.cells[2]![1]!.cellStyle).toBe('title');
+    expect(styles(saved(bytes, model, table.handle))).toEqual(styles(g));
+  });
+});
+
+describe('rows and cells on cell styles of the drafter’s own (M4-16 part 9)', () => {
+  const bytes = new Uint8Array(readFileSync(`${corpusDir}${FILE}`));
+
+  /**
+   * TABLESTYLE gives the table's style the cell style Notes (from Data, its text 1.5 times as
+   * high); the Table Cell menu's Cell Style puts the last row on it and the first data row's
+   * second cell on it of its own.
+   */
+  async function edit(model: DocumentModel, id: () => EntityId) {
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    const g = () => (model.entity(id()) as Table).geom;
+    const style = () => model.tables.tableStyles.get(g().style!);
+    await bus.submit('TABLESTYLE');
+    const p = bus.prompt;
+    if (p?.kind !== 'dialog' || p.dialog.type !== 'tablestyle') throw new Error('no dialog');
+    const r = p.dialog as TableStyleRequest;
+    const shown = r.styles.find((x) => x.name === style()!.name)!.settings;
+    const notes = { ...shown.data, textHeight: shown.data.textHeight * 1.5 };
+    const settings: TableStyleSettings = {
+      ...shown,
+      userCellStyles: [{ name: 'Notes', settings: notes }],
+    };
+    await bus.answer({
+      kind: 'dialog',
+      action: 'apply',
+      tablestyle: { op: 'modify', name: style()!.name, settings },
+    });
+    await bus.answer({ kind: 'dialog', action: 'ok' });
+    expect(bus.promptText).toBe('Command:');
+    const centre = (i: number, j: number) => {
+      const b = tableCellBox(g(), style(), { r0: i, c0: j, r1: i, c1: j });
+      return tableToPlan(g(), { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    };
+    const run = async (cell: [number, number], to: [number, number], ...answers: string[]) => {
+      await bus.pick(centre(...cell), { grip: 1e-6 });
+      expect(bus.command).toBe('TABLECELL');
+      if (to !== cell) await bus.pick(centre(...to), { grip: 1e-6, shift: true });
+      for (const x of answers) await bus.submit(x);
+      expect(bus.promptText).toBe('Command:');
+    };
+    const last = g().rowHeights.length - 1;
+    await run([last, 0], [last, g().columnWidths.length - 1], 'CS', 'Notes');
+    await run([2, 1], [2, 1], 'CS', 'NOTES');
+    return g();
+  }
+
+  const styles = (t: TableGeometry) => ({
+    rows: t.rowStyles,
+    own: t.cells.map((r) => r.map((c) => c.cellStyle ?? '')),
+  });
+
+  it('saves in a table made in the drawing', async () => {
+    const model = read(bytes);
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    for (const a of ['-TABLE', '2', '3', '0,-500']) await bus.submit(a);
+    await typeCells(bus, ['T', 'A', 'B', '1', '2']);
+    const made = [...model.entities()].find(
+      (e): e is Table => !before.has(e.id) && e.geom.kind === 'ACAD_TABLE',
+    )!;
+    const g = await edit(model, () => made.id);
+    expect(styles(g)).toEqual({
+      rows: ['title', 'header', 'data', 'data', 101],
+      own: [
+        ['', ''],
+        ['', ''],
+        ['', 101],
+        ['', ''],
+        ['', ''],
+      ],
+    });
+    const back = saved(bytes, model, made.handle);
+    expect(styles(back)).toEqual(styles(g));
+    expect(back.rowHeights).toEqual(g.rowHeights);
+  });
+
+  it('saves in a table the drawing came with', async () => {
+    const model = read(bytes);
+    const table = [...model.entities()].find(
+      (e): e is Table => e.geom.kind === 'ACAD_TABLE' && e.handle === 'A35',
+    )!;
+    const g = await edit(model, () => table.id);
+    expect(g.rowStyles!.at(-1)).toBe(101);
+    expect(g.cells[2]![1]!.cellStyle).toBe(101);
     expect(styles(saved(bytes, model, table.handle))).toEqual(styles(g));
   });
 });

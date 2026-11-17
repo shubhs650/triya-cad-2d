@@ -4118,6 +4118,38 @@ button {
   min-width: 0;
 }
 
+/* The Cell styles list with Create a new cell style and Manage Cell Styles beside it (M4-16 part 9). */
+.tablestyle-cell-styles {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.tablestyle-cell-styles .cad-dialog-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tablestyle-cell-styles .cad-dialog-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.tablestyle-cell-styles button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.tablestyle-cell-styles button svg {
+  width: 16px;
+  height: 16px;
+}
+
 .tablestyle-borders {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));

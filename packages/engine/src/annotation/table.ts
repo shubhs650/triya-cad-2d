@@ -125,7 +125,11 @@ export interface TableDrawing {
 }
 
 /** The order of a table style's cell styles in the file (DXF and DWG before R2010). */
-const STYLE_INDEX: Readonly<Record<TableRowType, number>> = { data: 0, title: 1, header: 2 };
+const STYLE_INDEX: Readonly<Record<'title' | 'header' | 'data', number>> = {
+  data: 0,
+  title: 1,
+  header: 2,
+};
 
 /** Border index in a cell style: top, inside horizontal, bottom, left, inside vertical, right. */
 const TOP = 0;
@@ -206,13 +210,24 @@ export function withRowStyles(
   };
 }
 
-/** The cell style rows of `type` take in `style`. */
+/**
+ * The cell style rows of `type` take in `style`. A cell style of the drafter's own the style no
+ * longer holds (an id it does not list) is drawn as Data, as the rows on such a style were drawn
+ * before Triya kept them (M4-16 part 9).
+ */
 export function rowCellStyle(
   style: TableStyleRecord | undefined,
   type: TableRowType,
 ): TableCellStyle | undefined {
+  if (typeof type === 'number') {
+    return style?.userCellStyles?.find((c) => c.id === type) ?? style?.cellStyles[STYLE_INDEX.data];
+  }
   return style?.cellStyles[STYLE_INDEX[type]];
 }
+
+/** Whether `type` is one of the Title, Header and Data cell styles every table style holds. */
+export const isRowType = (type: TableRowType): type is 'title' | 'header' | 'data' =>
+  typeof type === 'string';
 
 /**
  * The height AutoCAD gives a row of `lines` lines of `textHeight` text: 4/3 of the text height

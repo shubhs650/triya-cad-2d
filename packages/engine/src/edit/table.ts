@@ -514,12 +514,15 @@ export function windowTableSize(
   const th = (type: TableCellStyleName) => rowCellStyle(style, type)?.textHeight ?? 0.18;
   const kept = chosen ? { cellStyles: chosen } : {};
   if (autoRows) {
-    const taken = above.reduce((h, type) => h + tableRowHeight(size.rowLines, th(type), vm), 0);
+    const taken = above.reduce<number>(
+      (h, type) => h + tableRowHeight(size.rowLines, th(type), vm),
+      0,
+    );
     const dataRows = fits((height - taken) / tableRowHeight(size.rowLines, th(others), vm));
     return { columns, columnWidth, dataRows, rowLines: size.rowLines, ...kept };
   }
   const types = newRowTypes(style, placed + size.dataRows, chosen);
-  const perLine = types.reduce((h, type) => h + (th(type) * 4) / 3, 0);
+  const perLine = types.reduce<number>((h, type) => h + (th(type) * 4) / 3, 0);
   const rowLines = fits((height - 2 * vm * types.length) / perLine);
   return { columns, columnWidth, dataRows: size.dataRows, rowLines, ...kept };
 }

@@ -828,3 +828,175 @@ describe('TABLESTYLE border linetypes and double lines (M4-16 part 8)', () => {
     expect(s.data.borders[2]).not.toHaveProperty('double');
   });
 });
+
+describe('TABLESTYLE cell styles of the drafter’s own (M4-16 part 9)', () => {
+  /** Settings with the cell styles of the drafter's own `own` (each started from Data). */
+  const withOwn = (
+    base: TableStyleSettings,
+    own: { id?: number; name: string; textHeight?: number }[],
+  ): TableStyleSettings => ({
+    ...base,
+    userCellStyles: own.map(({ id, name, textHeight }) => ({
+      ...(id !== undefined && { id }),
+      name,
+      settings: { ...base.data, ...(textHeight !== undefined && { textHeight }) },
+    })),
+  });
+
+  it('makes them with a new style, numbered from 101, and lists them in its settings', async () => {
+    const t = setup();
+    await t.bus.script(['TABLESTYLE']);
+    const base = t.request()!.styles[1]!.settings;
+    const r = await t.act({
+      op: 'new',
+      name: 'Schedule',
+      settings: withOwn(base, [{ name: 'Notes', textHeight: 4 }, { name: 'Totals' }]),
+    });
+    expect(r.note).toBeUndefined();
+    const made = t.style('Schedule')!;
+    expect(made.userCellStyles!.map((c) => [c.id, c.name, c.textHeight])).toEqual([
+      [101, 'Notes', 4],
+      [102, 'Totals', base.data.textHeight],
+    ]);
+    expect(r.styles.find((s) => s.name === 'Schedule')!.settings.userCellStyles).toEqual([
+      { id: 101, name: 'Notes', settings: { ...base.data, textHeight: 4 } },
+      { id: 102, name: 'Totals', settings: base.data },
+    ]);
+    // A style without any lists none.
+    expect(t.style('Standard')).not.toHaveProperty('userCellStyles');
+    expect(r.styles.find((s) => s.name === 'Standard')!.settings).not.toHaveProperty(
+      'userCellStyles',
+    );
+  });
+
+  it('renames one by its id, gives a new one the next id and deletes one no table is on', async () => {
+    const t = setup();
+    await t.bus.script(['TABLESTYLE']);
+    const base = t.request()!.styles[1]!.settings;
+    await t.act({
+      op: 'modify',
+      name: 'Standard',
+      settings: withOwn(base, [{ name: 'Notes' }, { name: 'Totals' }]),
+    });
+    expect(t.style('Standard')!.userCellStyles!.map((c) => c.id)).toEqual([101, 102]);
+    // Notes renamed Remarks; Totals deleted; Grand made: it takes 103, not Totals' 102 again.
+    const r = await t.act({
+      op: 'modify',
+      name: 'Standard',
+      settings: withOwn(base, [{ id: 101, name: 'Remarks', textHeight: 6 }, { name: 'Grand' }]),
+    });
+    expect(r.note).toBeUndefined();
+    expect(t.style('Standard')!.userCellStyles!.map((c) => [c.id, c.name, c.textHeight])).toEqual([
+      [101, 'Remarks', 6],
+      [103, 'Grand', base.data.textHeight],
+    ]);
+    // All deleted: the style holds none.
+    await t.act({ op: 'modify', name: 'Standard', settings: base });
+    expect(t.style('Standard')).not.toHaveProperty('userCellStyles');
+  });
+
+  it('refuses a taken, reserved or invalid name', async () => {
+    const t = setup();
+    await t.bus.script(['TABLESTYLE']);
+    const base = t.request()!.styles[1]!.settings;
+    const named = async (...names: string[]) =>
+      (
+        await t.act({
+          op: 'modify',
+          name: 'Standard',
+          settings: withOwn(
+            base,
+            names.map((name) => ({ name })),
+          ),
+        })
+      ).note;
+    expect(await named('Notes', 'NOTES')).toBe('A cell style with this name already exists.');
+    expect(await named('Data')).toBe('A cell style with this name already exists.');
+    expect(await named('_header')).toBe('A cell style with this name already exists.');
+    expect(await named('a<b')).toBe('Invalid cell style name.');
+    expect(await named(' Notes')).toBe('Invalid cell style name.');
+    expect(await named('')).toBe('Invalid cell style name.');
+    expect(t.style('Standard')).not.toHaveProperty('userCellStyles');
+    const bad = withOwn(base, [{ name: 'Notes', textHeight: 0 }]);
+    expect(tableStyleProblem(bad, ['Standard'])).toBe(
+      'The “Notes” cell style: the text height must be greater than 0.',
+    );
+  });
+
+  it('draws its tables again when one changes, and keeps one a table is on', async () => {
+    const t = setup();
+    await t.bus.script(['TABLESTYLE']);
+    const base = t.request()!.styles[1]!.settings;
+    await t.act({
+      op: 'modify',
+      name: 'Standard',
+      settings: withOwn(base, [{ name: 'Notes' }, { name: 'Totals' }]),
+    });
+    await t.bus.cancel();
+    await t.bus.script(['-TABLE', '2', '2', '0,0']);
+    await t.bus.cancel();
+    const [table] = t.tables();
+    const b = new ChangeSetBuilder(t.model);
+    b.updateEntity(table!.id, {
+      geom: { ...table!.geom, rowStyles: ['title', 'header', 101, 'data'] },
+    });
+    t.model.apply(b.build());
+    await t.bus.script(['TABLESTYLE']);
+    expect(t.request()!.styles.find((s) => s.name === 'Standard')!.usedCellStyles).toEqual([101]);
+    // Notes at 9 high: the row on it grows.
+    const before = (t.model.entity(table!.id) as Table).geom.rowHeights[2]!;
+    let r = await t.act({
+      op: 'modify',
+      name: 'Standard',
+      settings: withOwn(base, [
+        { id: 101, name: 'Notes', textHeight: 9 },
+        { id: 102, name: 'Totals' },
+      ]),
+    });
+    expect(r.note).toBeUndefined();
+    expect((t.model.entity(table!.id) as Table).geom.rowHeights[2]!).toBeGreaterThan(before);
+    // Notes deleted: refused, as a table is on it; Totals goes.
+    r = await t.act({
+      op: 'modify',
+      name: 'Standard',
+      settings: withOwn(base, [{ id: 102, name: 'Totals' }]),
+    });
+    expect(r.note).toBe('The cell style “Notes” is in use by a table and cannot be deleted.');
+    expect(t.style('Standard')!.userCellStyles!.map((c) => c.name)).toEqual(['Notes', 'Totals']);
+    r = await t.act({
+      op: 'modify',
+      name: 'Standard',
+      settings: withOwn(base, [{ id: 101, name: 'Notes', textHeight: 9 }]),
+    });
+    expect(r.note).toBeUndefined();
+    expect(t.style('Standard')!.userCellStyles!.map((c) => c.name)).toEqual(['Notes']);
+  });
+
+  it('puts a new table’s rows on them by Set cell styles, Data where the style has not the one chosen', async () => {
+    const t = setup();
+    await t.bus.script(['TABLESTYLE']);
+    const base = t.request()!.styles[1]!.settings;
+    await t.act({ op: 'modify', name: 'Standard', settings: withOwn(base, [{ name: 'Notes' }]) });
+    await t.bus.answer({ kind: 'dialog', action: 'ok' });
+    await t.bus.script(['TABLE']);
+    const p = t.bus.prompt;
+    expect(p?.kind === 'dialog' && p.dialog.type === 'inserttable' && p.dialog.styles).toEqual([
+      expect.objectContaining({ name: 'Standard', userCellStyles: [{ id: 101, name: 'Notes' }] }),
+      expect.objectContaining({ name: 'Parts' }),
+    ]);
+    const settings = (p as { dialog: { settings: InsertTableSettings } }).dialog.settings;
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      table: {
+        ...settings,
+        dataRows: 2,
+        cellStyles: { first: 101, second: 'header', others: 999 },
+      },
+    });
+    await t.bus.answer({ kind: 'point', point: { x: 0, y: 0 } });
+    await t.bus.cancel();
+    const [table] = t.tables();
+    expect(table!.geom.rowStyles).toEqual([101, 'header', 'data', 'data']);
+  });
+});

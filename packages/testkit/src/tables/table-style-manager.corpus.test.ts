@@ -13,11 +13,14 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
   builtinCommands,
+  tableRowTypes,
   tableStyleSettings,
   type Entity,
+  type TableCellStyleName,
   type EntityId,
   type TableGeometry,
   type TableStyleAction,
@@ -59,6 +62,12 @@ const comparable = (s: TableStyleSettings) =>
     data: { ...s.data, textStyle: s.data.textStyle.toUpperCase() },
     header: { ...s.header, textStyle: s.header.textStyle.toUpperCase() },
     title: { ...s.title, textStyle: s.title.textStyle.toUpperCase() },
+    ...(s.userCellStyles && {
+      userCellStyles: s.userCellStyles.map((u) => ({
+        ...u,
+        settings: { ...u.settings, textStyle: u.settings.textStyle.toUpperCase() },
+      })),
+    }),
   });
 
 const named = (model: DocumentModel, name: string): TableStyleRecord | undefined =>
@@ -90,6 +99,11 @@ function everything(s: TableStyleSettings, textStyle: string, k: number): TableS
     data: cell(s.data, 0),
     header: cell(s.header, 1),
     title: cell(s.title, 2),
+    // Cell styles of the drafter's own (M4-16 part 9), in the CELLSTYLEMAP after the three.
+    userCellStyles: [
+      { name: 'Triya Notes', settings: cell(s.data, 3) },
+      { name: 'Triya Totals', settings: cell(s.title, 4) },
+    ],
   };
 }
 
@@ -99,6 +113,9 @@ describe('Table Style dialog on the public corpus (M4-05 part 5)', () => {
   let current = 0;
   let redrawn = 0;
   const dwg2010s = new Set<string>();
+  /** Tables put on cell styles of the drafter's own, and how many read back on them. */
+  const ownStyled = new Map<string, { rows: TableCellStyleName[]; cell: number }>();
+  let ownSaved = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s keeps every table style setting the dialog makes through a save',
@@ -190,6 +207,24 @@ describe('Table Style dialog on the public corpus (M4-05 part 5)', () => {
         await bus.submit('');
         const now = model.entity(made.id) as Table;
         expect(now.geom.style, f.path).toBe(source.geom.style);
+        // Its last row on Triya Totals, a cell on Triya Notes (M4-16 part 9): saved in its
+        // TABLECONTENT by their ids.
+        const style = model.tables.tableStyles.get(now.geom.style!)!;
+        const [notes, totals] = style.userCellStyles!;
+        const rows = tableRowTypes(style, now.geom.rowHeights.length);
+        rows[rows.length - 1] = totals!.id;
+        const b = new ChangeSetBuilder(model);
+        b.updateEntity(made.id, {
+          geom: {
+            ...now.geom,
+            rowStyles: rows,
+            cells: now.geom.cells.map((row, i) =>
+              i === 2 ? row.map((c, j) => (j === 0 ? { ...c, cellStyle: notes!.id } : c)) : row,
+            ),
+          },
+        });
+        model.apply(b.build());
+        ownStyled.set(made.handle, { rows, cell: notes!.id });
       }
 
       const save = withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), model));
@@ -218,6 +253,13 @@ describe('Table Style dialog on the public corpus (M4-05 part 5)', () => {
           expect(strip(got), `${f.path} ${s.name}`).toEqual(strip(want));
         } else expect(got, `${f.path} ${s.name}`).toEqual(want);
       }
+      for (const [h, { rows, cell }] of ownStyled) {
+        const g = (back.entityByHandle(h) as Table).geom;
+        expect(g.rowStyles, `${f.path} ${h}`).toEqual(rows);
+        expect(g.cells[2]![0]!.cellStyle, `${f.path} ${h}`).toBe(cell);
+        ownSaved++;
+      }
+      ownStyled.clear();
       expect(named(back, 'Triya Renamed'), f.path).toBeDefined();
       expect(named(back, 'Triya Spare'), f.path).toBeUndefined();
       expect(named(back, 'Triya Gone'), f.path).toBeUndefined();
@@ -252,5 +294,6 @@ describe('Table Style dialog on the public corpus (M4-05 part 5)', () => {
     expect(dwg2010s.size).toBe(17);
     expect(current).toBeGreaterThan(0);
     expect(redrawn).toBeGreaterThan(0);
+    expect(ownSaved).toBeGreaterThan(0);
   });
 });

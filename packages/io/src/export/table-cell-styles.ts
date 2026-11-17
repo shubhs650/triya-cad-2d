@@ -6,13 +6,14 @@
 // the table as it writes the DWG's, so the legacy ACAD_TABLE codes, which give the first rows
 // their type by their place, never state them.
 //
-// Only what the edit changes is written: a row or cell on a cell style of the drafter's own (an
-// id naming none of the three, M1-99) keeps it unless the model's style for it changed. A cell
+// Only what the edit changes is written. A cell style of the drafter's own (M4-16 part 9) is
+// named by its id in the table style; an id the style does not list keeps it unless the model's
+// style for it changed. A cell
 // stating its row's style id as its own (ezdxf's tables do) is By Row to Triya, and is set to 0
 // only when its row changes under it.
 import { ACadVersion, type TableEntity } from '@node-projects/acad-ts';
 import { tableRowStyles, type TableCellStyleName, type TableGeometry } from '@triya/engine';
-import { rowTypeOf } from '../map/entities';
+import { cellStyleOfId } from '../map/entities';
 import { tableStyleRows } from '../map/styles';
 import type { Resolver } from './entities';
 import { neighbour, rowOrigins } from './table-grid';
@@ -48,15 +49,17 @@ export function writeCellStyleNames(
   was: TableGeometry | undefined,
   g: TableGeometry,
 ): void {
-  const ids = rowStyleIds(t.style);
-  const typeOf = rowTypeOf(t.style);
+  const rowIds = rowStyleIds(t.style);
+  // A cell style of the drafter's own is named by its id (M4-16 part 9).
+  const idOf = (n: TableCellStyleName) => (typeof n === 'number' ? n : rowIds[n]);
+  const typeOf = cellStyleOfId(t.style);
   const { after, before } = rowStylesOf(tableStyleRows(t.style), was, g);
   const origins = was ? rowOrigins(g) : g.cells.map(() => null);
   const columns = g.columnOrigins ?? g.columnWidths.map((_, j) => j);
   for (const [i, row] of t.rows.entries()) {
     const type = after[i]!;
     const rowChanged = before[i] !== type;
-    if (rowChanged && typeOf(row.styleId) !== type) row.styleId = ids[type];
+    if (rowChanged && typeOf(row.styleId) !== type) row.styleId = idOf(type);
     const o = origins[i];
     for (const [j, cell] of row.cells.entries()) {
       const c = g.cells[i]?.[j];
@@ -69,7 +72,7 @@ export function writeCellStyleNames(
       if (!rowChanged && b && b.cellStyle === c.cellStyle) continue;
       const want = c.cellStyle ?? type;
       const has = cell.styleId === 0 ? type : typeOf(cell.styleId);
-      if (has !== want) cell.styleId = c.cellStyle ? ids[c.cellStyle] : 0;
+      if (has !== want) cell.styleId = c.cellStyle !== undefined ? idOf(c.cellStyle) : 0;
     }
   }
 }

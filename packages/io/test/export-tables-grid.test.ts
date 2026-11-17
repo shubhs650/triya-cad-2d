@@ -387,6 +387,67 @@ describe('ACAD_TABLE rows and cells on cell styles of their own', () => {
   });
 });
 
+describe('ACAD_TABLE rows and cells on cell styles of the drafter’s own (M4-16 part 9)', () => {
+  it.each([
+    ['R2018 DXF', ACadVersion.AC1032],
+    ['R2007 DXF', ACadVersion.AC1021],
+  ] as const)('saves them to %s by their ids in the table style', (_w, version) => {
+    const bytes = drawing(version, 'dxf');
+    const model = open(bytes);
+    const g = table(model).geom;
+    const style = model.tables.tableStyles.get(g.style!)!;
+    const data = style.cellStyles[0]!;
+    const b = new ChangeSetBuilder(model);
+    b.updateTableRecord('tableStyles', style.handle, {
+      userCellStyles: [
+        {
+          ...data,
+          textHeight: 0.18,
+          alignment: 1,
+          fillColor: { kind: 'aci', index: 7 },
+          fillOn: false,
+          id: 101,
+          name: 'Notes',
+        },
+        {
+          ...data,
+          textHeight: 0.18,
+          alignment: 1,
+          fillColor: { kind: 'aci', index: 7 },
+          fillOn: false,
+          id: 102,
+          name: 'Totals',
+        },
+      ],
+    });
+    b.updateEntity(table(model).id, {
+      geom: {
+        ...g,
+        rowStyles: ['title', 'header', 102],
+        cells: g.cells.map((row, i) =>
+          i === 1 ? row.map((c, j) => (j === 1 ? { ...c, cellStyle: 101 } : c)) : row,
+        ),
+      },
+    });
+    model.apply(b.build());
+    const saved = exportDocument(readCadDocument(bytes), model, { format: 'dxf' });
+    const back = mapped(readCadDocument(saved));
+    expect(back.rowStyles).toEqual(['title', 'header', 102]);
+    expect(back.cells.map((r) => r.map((c) => c.cellStyle))).toEqual([
+      [undefined, undefined],
+      [undefined, 101],
+      [undefined, undefined],
+    ]);
+    // The TABLECONTENT names them by id.
+    const t = acadTable(readCadDocument(saved));
+    const content = roundTripTableContent(t, (h) =>
+      readCadDocument(saved).getCadObject(h),
+    )!.content!;
+    expect(content.rows.map((r) => r.styleId)).toEqual([1, 2, 102]);
+    expect(content.rows[1]!.cells[1]!.styleId).toBe(101);
+  });
+});
+
 describe('ACAD_TABLE cell locks (M4-16 part 6)', () => {
   /** The last data row's first cell locked in content, its second in format and content. */
   const locked = (g: TableGeometry): TableGeometry => ({

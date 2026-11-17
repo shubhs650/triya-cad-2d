@@ -15,6 +15,10 @@
 // M4-16 part 8: Modify Table Style's Borders tab gives the Data cell style's outside borders the
 // linetype ACAD_ISO02W100 as double lines 0.05 apart; the table drawn in Standard is drawn again
 // with them, and the dialog opens again on them.
+//
+// M4-16 part 9: Modify Table Style's Create a new cell style makes "Notes" from Data (filled yellow);
+// the Table Cell menu's Cell Style puts the last row on it by name; Manage Cell Styles keeps it
+// from being deleted (a table is on it), makes and deletes "Totals" and renames Notes "Remarks".
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, TableGeometry } from '@triya/engine';
 import path from 'node:path';
@@ -338,4 +342,146 @@ test('the Borders tab draws a style’s borders in a linetype and double', async
   await expect(prompt(page)).toHaveText('Command:');
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.9);
   await shot(page, 'part8-3-after');
+});
+
+test('cell styles of the drafter’s own: Create New Cell Style, Cell Style and Manage Cell Styles', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-1, -3), 'Specify opposite corner:');
+  await type(page, p(9, 1), 'Command:');
+  await type(page, '-TABLE', 'Enter number of columns or [Auto] <5>:');
+  await type(page, '3', 'Enter number of rows or [Auto] <1>:');
+  await type(page, '2', 'Specify insertion point or [Style/Width/Height]:');
+  await type(page, p(0, 0), 'Enter text:');
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('PARTS');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(async () => (await made(page))?.solids).toBe(0);
+
+  // Modify Table Style: Create a new cell style, Notes from Data, filled yellow.
+  await enterCommand(page, 'TS');
+  const dialog = page.getByRole('dialog', { name: 'Table Style' });
+  await expect(dialog).toBeVisible();
+  const list = dialog.getByRole('listbox', { name: 'Styles:' });
+  await list.getByRole('option', { name: /Standard/ }).click();
+  await dialog.getByRole('button', { name: 'Modify...' }).click();
+  const modify = page.getByRole('dialog', { name: 'Modify Table Style: Standard' });
+  const cellStyles = modify.getByLabel('Cell styles');
+  await expect(cellStyles.locator('option')).toHaveText([
+    'Data',
+    'Header',
+    'Title',
+    'Create new cell style...',
+    'Manage cell styles...',
+  ]);
+  await modify.getByRole('button', { name: 'Create a new cell style' }).click();
+  const create = page.getByRole('dialog', { name: 'Create New Cell Style' });
+  await expect(create.getByLabel('New Style Name:')).toHaveValue('Copy of Data');
+  await expect(create.getByLabel('Start With:')).toHaveValue('Data');
+  // A name every style holds is refused.
+  await create.getByLabel('New Style Name:').fill('Header');
+  await expect(create.getByRole('status')).toHaveText(
+    'A cell style with this name already exists.',
+  );
+  await expect(create.getByRole('button', { name: 'Continue' })).toBeDisabled();
+  await create.getByLabel('New Style Name:').fill('Notes');
+  await shot(page, 'part9-1-create-new-cell-style');
+  await create.getByRole('button', { name: 'Continue' }).click();
+  await expect(create).toBeHidden();
+  await expect(cellStyles).toHaveValue('0');
+  await expect(cellStyles.locator('option:checked')).toHaveText('Notes');
+  await modify.getByLabel('Fill color:').selectOption({ label: 'Yellow' });
+  await shot(page, 'part9-2-notes-cell-style');
+  await modify.getByRole('button', { name: 'OK' }).click();
+  await expect(modify).toBeHidden();
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // The last row on Notes, by the Table Cell menu's Cell Style: it is filled.
+  const view = await viewOf(page);
+  const rows = (await made(page))!.rows;
+  const centre = (i: number, j: number) => {
+    const top = rows.slice(0, i).reduce((a, b) => a + b, 0);
+    const s = view.at(O + 1.25 + 2.5 * j, O - top - rows[i]! / 2);
+    return { x: box.x + s.x, y: box.y + s.y };
+  };
+  const last = rows.length - 1;
+  await page.mouse.click(centre(last, 0).x, centre(last, 0).y);
+  await expect(prompt(page)).toHaveText(/^Enter a table cell option/);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(centre(last, 2).x, centre(last, 2).y);
+  await page.keyboard.up('Shift');
+  await type(page, 'CS', 'Enter cell style name or [Title/Header/Data/ByRow] <ByRow>:');
+  await type(page, 'Notes', 'Command:');
+  await expect.poll(async () => (await made(page))?.solids).toBeGreaterThan(0);
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.9);
+  await shot(page, 'part9-3-row-on-notes');
+
+  // Manage Cell Styles: Notes cannot be deleted (a table is on it); Totals made and deleted;
+  // Notes renamed Remarks.
+  await enterCommand(page, 'TS');
+  await list.getByRole('option', { name: /Standard/ }).click();
+  await dialog.getByRole('button', { name: 'Modify...' }).click();
+  await modify.getByRole('button', { name: 'Manage cell style list' }).click();
+  const manage = page.getByRole('dialog', { name: 'Manage Cell Styles' });
+  const styles = manage.getByRole('listbox', { name: 'Cell Styles:' });
+  await expect(styles.getByRole('option')).toHaveText(['Title', 'Header', 'Data', 'Notes']);
+  await styles.getByRole('option', { name: 'Title' }).click();
+  await expect(manage.getByRole('button', { name: 'Rename' })).toBeDisabled();
+  await expect(manage.getByRole('button', { name: 'Delete' })).toBeDisabled();
+  await styles.getByRole('option', { name: 'Notes' }).click();
+  await expect(manage.getByRole('button', { name: 'Rename' })).toBeEnabled();
+  await expect(manage.getByRole('button', { name: 'Delete' })).toBeDisabled();
+  await manage.getByRole('button', { name: 'New...' }).click();
+  await expect(create.getByLabel('Start With:')).toHaveValue('Notes');
+  await create.getByLabel('New Style Name:').fill('Totals');
+  await create.getByRole('button', { name: 'Continue' }).click();
+  await expect(styles.getByRole('option')).toHaveText([
+    'Title',
+    'Header',
+    'Data',
+    'Notes',
+    'Totals',
+  ]);
+  await expect(styles.getByRole('option', { name: 'Totals' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await manage.getByRole('button', { name: 'Delete' }).click();
+  await expect(styles.getByRole('option')).toHaveText(['Title', 'Header', 'Data', 'Notes']);
+  await styles.getByRole('option', { name: 'Notes' }).click();
+  await manage.getByRole('button', { name: 'Rename' }).click();
+  await manage.getByRole('textbox', { name: 'New name' }).fill('Remarks');
+  await page.keyboard.press('Enter');
+  await expect(styles.getByRole('option')).toHaveText(['Title', 'Header', 'Data', 'Remarks']);
+  await shot(page, 'part9-4-manage-cell-styles');
+  await manage.getByRole('button', { name: 'OK' }).click();
+  await expect(manage).toBeHidden();
+  await expect(cellStyles.locator('option')).toHaveText([
+    'Data',
+    'Header',
+    'Title',
+    'Remarks',
+    'Create new cell style...',
+    'Manage cell styles...',
+  ]);
+  await modify.getByRole('button', { name: 'OK' }).click();
+  await expect(modify).toBeHidden();
+  // Opened again: the rename kept, the table's row still on it.
+  await dialog.getByRole('button', { name: 'Modify...' }).click();
+  await expect(cellStyles.locator('option').nth(3)).toHaveText('Remarks');
+  await modify.getByRole('button', { name: 'Cancel' }).click();
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+  expect((await made(page))!.solids).toBeGreaterThan(0);
 });

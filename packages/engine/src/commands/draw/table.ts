@@ -20,7 +20,7 @@
 // AutoCAD's does. The sizes and the dialog's choices stay for the drawing's next table, as
 // AutoCAD keeps them this session.
 import type { Vec2 } from '../../geom/types';
-import type { EntityGeometry, TableStyleRecord } from '../../model/types';
+import type { EntityGeometry, TableCellStyleName, TableStyleRecord } from '../../model/types';
 import type { EntityId } from '../../model/entity-ids';
 import { tableParts } from '../../annotation/table';
 import {
@@ -209,7 +209,25 @@ function insertTableStyles(ctx: CommandContext): TableStyleEntry[] {
     suppressTitle: s.suppressTitle,
     suppressHeader: s.suppressHeader,
     up: s.flowDirection === 1,
+    ...(s.userCellStyles?.length && {
+      userCellStyles: s.userCellStyles.map((c) => ({ id: c.id, name: c.name })),
+    }),
   }));
+}
+
+/**
+ * Set cell styles as `style` holds them: a cell style of the drafter's own the style does not
+ * hold (kept from a table of another style) is Data (M4-16 part 9).
+ */
+function cellStylesIn(
+  style: TableStyleRecord | null,
+  c: TableRowCellStyles | undefined,
+): TableRowCellStyles | undefined {
+  if (!c) return undefined;
+  const ids = new Set((style?.userCellStyles ?? []).map((u) => u.id));
+  const held = (n: TableCellStyleName): TableCellStyleName =>
+    typeof n === 'number' && !ids.has(n) ? 'data' : n;
+  return { first: held(c.first), second: held(c.second), others: held(c.others) };
 }
 
 /** TABLE, -TABLE and TABLEDIT for one document, TABLE and -TABLE keeping one table's size. */
@@ -287,7 +305,8 @@ export function tableCommands(): CommandDef[] {
         cellStyles: s.cellStyles,
       });
       p = { ...p, style };
-      const size: TableSize = { ...sizeOf(p), ...(s.cellStyles && { cellStyles: s.cellStyles }) };
+      const cellStyles = cellStylesIn(style, s.cellStyles);
+      const size: TableSize = { ...sizeOf(p), ...(cellStyles && { cellStyles }) };
       if (s.window) {
         const c = yield ctx.prompt.point({ message: 'Specify first corner' });
         if (c.kind !== 'point') return;

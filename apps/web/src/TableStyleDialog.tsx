@@ -19,8 +19,15 @@
 // "Select a table:" with the dialogs hidden and opens this dialog again with the New or Modify
 // Table Style dialog on the table's formatting (`request.editing`).
 //
+// Cell styles of the drafter's own (M4-16 part 9): the Cell styles list has them after Data,
+// Header and Title, then "Create new cell style..." and "Manage cell styles...", which the two
+// buttons beside it open too: Create New Cell Style (New Style Name, Start With, Continue) and
+// Manage Cell Styles (the cell styles, New..., Rename, Delete; Title, Header and Data cannot be
+// renamed or deleted, nor one a table is on). They change the settings being edited, which OK
+// sends.
+//
 // Shown greyed, for the reasons the engine gives (commands/tablestyle.ts): Remove Table (no
-// table is kept in the style), Create and Manage Cell Styles (M1-99), Format, Type, Merge cells on row/column creation,
+// table is kept in the style), Format, Type, Merge cells on row/column creation,
 // Text angle (the file's table style has no place for them), and Help, as Triya's other dialogs
 // leave it. The margins are the style's, the same on each cell style. Colours are index colours,
 // which a DXF table style holds.
@@ -31,6 +38,7 @@
 import {
   LINEWEIGHTS,
   TABLE_CELL_STYLES,
+  cellStyleNameProblem,
   tableStylePreview,
   tableStyleProblem,
   type Color,
@@ -38,7 +46,6 @@ import {
   type Lineweight,
   type PromptAnswer,
   type TableCellBorder,
-  type TableCellStyleName,
   type TableCellStyleSettings,
   type TableStyleAction,
   type TableStyleEditing,
@@ -54,7 +61,13 @@ type Request = Extract<DialogRequest, { type: 'tablestyle' }>;
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
 
-const CELL_LABELS: Readonly<Record<TableCellStyleName, string>> = {
+/** One of the three cell styles every table style holds. */
+type StyleCell = (typeof TABLE_CELL_STYLES)[number];
+
+/** The cell style the editor shows: one of the three, or a cell style of the drafter's own by its place in the list. */
+type Shown = StyleCell | number;
+
+const CELL_LABELS: Readonly<Record<StyleCell, string>> = {
   data: 'Data',
   header: 'Header',
   title: 'Title',
@@ -322,6 +335,11 @@ export function TableStyleDialog({ doc, request }: { doc: number; request: Reque
           textStyles={request.textStyles}
           linetypes={request.linetypes}
           doubleSpacing={request.doubleSpacing}
+          usedCellStyles={
+            editing.isNew
+              ? []
+              : (request.styles.find((s) => s.name === editing.name)?.usedCellStyles ?? [])
+          }
           onCancel={() => setEditing(undefined)}
           onStart={(settings) => {
             setEditing(undefined);
@@ -411,15 +429,22 @@ function TableStyleEditor(props: {
   linetypes: Request['linetypes'];
   /** Spacing's value for a border not yet double. */
   doubleSpacing: number;
+  /** The ids of the style's cell styles of the drafter's own a table is on (not deleted). */
+  usedCellStyles: readonly number[];
   onOk: (s: TableStyleSettings) => void;
   onCancel: () => void;
   /** Select table to start from, with the settings as they stand. */
   onStart: (s: TableStyleSettings) => void;
 }) {
   const [s, setS] = useState(props.settings);
-  const [cellStyle, setCellStyle] = useState<TableCellStyleName>('data');
+  const [cellStyle, setCellStyle] = useState<Shown>('data');
   const [tab, setTab] = useState<Tab>('general');
-  const c = s[cellStyle];
+  const [creating, setCreating] = useState(false);
+  const [managing, setManaging] = useState(false);
+  const own = s.userCellStyles ?? [];
+  const cellOf = (n: Shown, from = s): TableCellStyleSettings =>
+    typeof n === 'number' ? from.userCellStyles![n]!.settings : from[n];
+  const c = cellOf(cellStyle);
   const first = c.borders.find((b) => b.visible) ?? c.borders[0]!;
   const [lineweight, setLineweight] = useState<Lineweight>(first.lineweight);
   const [borderColor, setBorderColor] = useState<Color>(first.color);
@@ -437,7 +462,29 @@ function TableStyleEditor(props: {
   const handles = props.linetypes.map((l) => l.handle);
   const problem = tableStyleProblem(s, props.textStyles, handles);
   const set = (patch: Partial<TableCellStyleSettings>) =>
-    setS({ ...s, [cellStyle]: { ...c, ...patch } });
+    setS(
+      typeof cellStyle === 'number'
+        ? {
+            ...s,
+            userCellStyles: own.map((u, k) =>
+              k === cellStyle ? { ...u, settings: { ...c, ...patch } } : u,
+            ),
+          }
+        : { ...s, [cellStyle]: { ...c, ...patch } },
+    );
+  /** Shows cell style `n` of settings `from`, its first border's properties on the Borders tab. */
+  const show = (n: Shown, from = s) => {
+    const cell = cellOf(n, from);
+    setCellStyle(n);
+    showBorder(cell.borders.find((x) => x.visible) ?? cell.borders[0]!);
+  };
+  const cellNames = [...TABLE_CELL_STYLES.map((n) => CELL_LABELS[n]), ...own.map((u) => u.name)];
+  /** The cell styles as Start With lists them, each with its settings. */
+  const startWith: [string, TableCellStyleSettings][] = [
+    ...TABLE_CELL_STYLES.map((n): [string, TableCellStyleSettings] => [CELL_LABELS[n], s[n]]),
+    ...own.map((u): [string, TableCellStyleSettings] => [u.name, u.settings]),
+  ];
+  const shownName = typeof cellStyle === 'number' ? own[cellStyle]!.name : CELL_LABELS[cellStyle];
   const ok = () => !problem && props.onOk(s);
   const borders = (edges: readonly number[]) => {
     const none = edges.length === 0;
@@ -488,25 +535,56 @@ function TableStyleEditor(props: {
         <div className="tablestyle-editor-right">
           <fieldset>
             <legend>Cell styles</legend>
-            <label className="cad-dialog-field">
-              <span className="visually-hidden">Cell styles</span>
-              <select
-                aria-label="Cell styles"
-                value={cellStyle}
-                onChange={(e) => {
-                  const n = e.target.value as TableCellStyleName;
-                  const b = s[n].borders.find((x) => x.visible) ?? s[n].borders[0]!;
-                  setCellStyle(n);
-                  showBorder(b);
-                }}
+            <div className="tablestyle-cell-styles">
+              <label className="cad-dialog-field">
+                <span className="visually-hidden">Cell styles</span>
+                <select
+                  aria-label="Cell styles"
+                  value={String(cellStyle)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === 'create') setCreating(true);
+                    else if (v === 'manage') setManaging(true);
+                    else show(/^\d+$/.test(v) ? Number(v) : (v as StyleCell));
+                  }}
+                >
+                  {TABLE_CELL_STYLES.map((n) => (
+                    <option key={n} value={n}>
+                      {CELL_LABELS[n]}
+                    </option>
+                  ))}
+                  {own.map((u, k) => (
+                    <option key={`own-${k}`} value={k}>
+                      {u.name}
+                    </option>
+                  ))}
+                  <option value="create">Create new cell style...</option>
+                  <option value="manage">Manage cell styles...</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                aria-label="Create a new cell style"
+                title="Create a new cell style"
+                onClick={() => setCreating(true)}
               >
-                {TABLE_CELL_STYLES.map((n) => (
-                  <option key={n} value={n}>
-                    {CELL_LABELS[n]}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="1.5" y="3.5" width="9" height="9" fill="none" stroke="currentColor" />
+                  <path d="M13 1v6M10 4h6" stroke="currentColor" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                aria-label="Manage cell style list"
+                title="Manage Cell Styles dialog"
+                onClick={() => setManaging(true)}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="currentColor" />
+                  <path d="M1.5 6h13M1.5 10.5h13M6 1.5v13" stroke="currentColor" />
+                </svg>
+              </button>
+            </div>
             <div role="tablist" className="cad-dialog-tabs">
               {TABS.map(([t, label]) => (
                 <button
@@ -556,7 +634,10 @@ function TableStyleEditor(props: {
                     </label>
                     <label className="cad-dialog-field">
                       <span>Type:</span>
-                      <select disabled value={cellStyle === 'data' ? 'Data' : 'Label'}>
+                      <select
+                        disabled
+                        value={cellStyle === 'title' || cellStyle === 'header' ? 'Label' : 'Data'}
+                      >
                         <option>Data</option>
                         <option>Label</option>
                       </select>
@@ -698,6 +779,221 @@ function TableStyleEditor(props: {
           Cancel
         </button>
       </div>
+      {creating && (
+        <CreateNewCellStyle
+          names={cellNames}
+          startWith={startWith}
+          from={shownName}
+          onCancel={() => setCreating(false)}
+          onContinue={(name, settings) => {
+            setCreating(false);
+            const next = { ...s, userCellStyles: [...own, { name, settings }] };
+            setS(next);
+            show(own.length, next);
+          }}
+        />
+      )}
+      {managing && (
+        <ManageCellStyles
+          own={own}
+          startWith={startWith}
+          from={shownName}
+          used={props.usedCellStyles}
+          onCancel={() => setManaging(false)}
+          onOk={(kept) => {
+            setManaging(false);
+            const { userCellStyles: _, ...rest } = s;
+            const next = kept.length > 0 ? { ...rest, userCellStyles: kept } : rest;
+            setS(next);
+            // The cell style shown stays shown where it is kept, else Data.
+            const shown = typeof cellStyle === 'number' ? own[cellStyle] : undefined;
+            const at = shown ? kept.indexOf(shown) : -1;
+            const was =
+              shown && at < 0 ? kept.findIndex((u) => u.id !== undefined && u.id === shown.id) : at;
+            show(shown ? (was >= 0 ? was : 'data') : cellStyle, next);
+          }}
+        />
+      )}
+    </Modal>
+  );
+}
+
+type OwnCellStyle = NonNullable<TableStyleSettings['userCellStyles']>[number];
+
+/**
+ * "Create New Cell Style": New Style Name and Start With (the cell styles of the table style
+ * being edited), Continue and Cancel (AutoCAD Help, "Create New Cell Style Dialog Box").
+ */
+function CreateNewCellStyle(props: {
+  /** The cell styles' names, which the new one cannot take. */
+  names: readonly string[];
+  startWith: readonly [string, TableCellStyleSettings][];
+  /** The cell style shown, which Start With starts on. */
+  from: string;
+  onCancel: () => void;
+  onContinue: (name: string, settings: TableCellStyleSettings) => void;
+}) {
+  const [name, setName] = useState(() => copyName(props.names, props.from));
+  const [from, setFrom] = useState(props.from);
+  const problem = cellStyleNameProblem(name.trim(), props.names);
+  const ok = () => {
+    const settings = props.startWith.find(([n]) => n === from)?.[1];
+    if (!problem && settings) props.onContinue(name.trim(), settings);
+  };
+  return (
+    <Modal label="Create New Cell Style" onOk={ok} onCancel={props.onCancel}>
+      <label className="cad-dialog-field">
+        <span>New Style Name:</span>
+        <input
+          type="text"
+          autoFocus
+          value={name}
+          maxLength={255}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+      <label className="cad-dialog-field">
+        <span>Start With:</span>
+        <select value={from} onChange={(e) => setFrom(e.target.value)}>
+          {props.startWith.map(([n]) => (
+            <option key={n}>{n}</option>
+          ))}
+        </select>
+      </label>
+      {problem !== undefined && name.trim() !== '' && (
+        <p className="dimstyle-note" role="status">
+          {problem}
+        </p>
+      )}
+      <div className="cad-dialog-buttons">
+        <button type="button" disabled={!!problem} onClick={ok}>
+          Continue
+        </button>
+        <button type="button" onClick={props.onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * "Manage Cell Styles": the table style's cell styles, with New..., Rename and Delete for those
+ * of the drafter's own (AutoCAD Help, "Manage Cell Styles Dialog Box"); Title, Header and Data
+ * are always in a table style, and one a table is on is not deleted. OK keeps the changes.
+ */
+function ManageCellStyles(props: {
+  own: readonly OwnCellStyle[];
+  startWith: readonly [string, TableCellStyleSettings][];
+  from: string;
+  used: readonly number[];
+  onCancel: () => void;
+  onOk: (own: OwnCellStyle[]) => void;
+}) {
+  const [own, setOwn] = useState<OwnCellStyle[]>([...props.own]);
+  // The selected list entry: 0–2 Title, Header, Data; 3 on the drafter's own.
+  const [selected, setSelected] = useState(0);
+  const [renaming, setRenaming] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [note, setNote] = useState<string>();
+  const fixed = ['Title', 'Header', 'Data'];
+  const names = [...fixed, ...own.map((u) => u.name)];
+  const mine = selected >= fixed.length ? own[selected - fixed.length] : undefined;
+  const inUse = mine?.id !== undefined && props.used.includes(mine.id);
+  const startWith: [string, TableCellStyleSettings][] = [
+    ...props.startWith.filter(([n]) => fixed.includes(n)),
+    ...own.map((u): [string, TableCellStyleSettings] => [u.name, u.settings]),
+  ];
+  const rename = (to: string | undefined) => {
+    setRenaming(false);
+    if (!mine || to === undefined || to === mine.name) return;
+    const problem = cellStyleNameProblem(
+      to,
+      names.filter((n) => n !== mine.name),
+    );
+    if (problem) return setNote(problem);
+    setNote(undefined);
+    setOwn(own.map((u) => (u === mine ? { ...u, name: to } : u)));
+  };
+  return (
+    <Modal label="Manage Cell Styles" onOk={() => props.onOk(own)} onCancel={props.onCancel}>
+      <div className="dimstyle-body">
+        <div className="dimstyle-left">
+          <span id="manage-cell-styles">Cell Styles:</span>
+          <ul
+            role="listbox"
+            aria-labelledby="manage-cell-styles"
+            className="dimstyle-list"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const d = e.key === 'ArrowDown' ? 1 : -1;
+                setSelected(Math.max(0, Math.min(names.length - 1, selected + d)));
+              } else if (e.key === 'F2' && mine) {
+                e.preventDefault();
+                setRenaming(true);
+              }
+            }}
+          >
+            {names.map((n, k) => (
+              <li
+                key={`${k}-${n}`}
+                role="option"
+                aria-selected={k === selected}
+                onClick={() => setSelected(k)}
+              >
+                {renaming && k === selected && mine ? <RenameInput name={n} onDone={rename} /> : n}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="dimstyle-buttons">
+          <button type="button" onClick={() => setCreating(true)}>
+            New...
+          </button>
+          <button type="button" disabled={!mine} onClick={() => setRenaming(true)}>
+            Rename
+          </button>
+          <button
+            type="button"
+            disabled={!mine || inUse}
+            title={inUse ? 'A table is on this cell style' : undefined}
+            onClick={() => {
+              setOwn(own.filter((u) => u !== mine));
+              setSelected(selected - 1);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+      {note !== undefined && (
+        <p className="dimstyle-note" role="status">
+          {note}
+        </p>
+      )}
+      <div className="cad-dialog-buttons">
+        <button type="button" onClick={() => props.onOk(own)}>
+          OK
+        </button>
+        <button type="button" onClick={props.onCancel}>
+          Cancel
+        </button>
+      </div>
+      {creating && (
+        <CreateNewCellStyle
+          names={names}
+          startWith={startWith}
+          from={names[selected] ?? 'Data'}
+          onCancel={() => setCreating(false)}
+          onContinue={(name, settings) => {
+            setCreating(false);
+            setOwn([...own, { name, settings }]);
+            setSelected(names.length);
+          }}
+        />
+      )}
     </Modal>
   );
 }

@@ -93,10 +93,13 @@ function placedCellStyles(style: Request['styles'][number] | undefined): TableRo
 function Preview({
   first,
   cellStyles,
+  names,
   up,
 }: {
   first: number;
   cellStyles: TableRowCellStyles;
+  /** The names of the cell styles of the drafter's own, by id. */
+  names: ReadonlyMap<number, string>;
   up: boolean;
 }) {
   const rows = Array.from({ length: first + 4 }, (_, i) =>
@@ -135,7 +138,13 @@ function Preview({
               fill="currentColor"
               fontSize={r === 'title' ? 10 : 8}
             >
-              {r === 'title' ? 'Title' : r === 'header' ? 'Header' : 'Data'}
+              {typeof r === 'number'
+                ? (names.get(r) ?? 'Data')
+                : r === 'title'
+                  ? 'Title'
+                  : r === 'header'
+                    ? 'Header'
+                    : 'Data'}
             </text>
           </g>
         ))}
@@ -159,7 +168,19 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
   const chosen =
     request.styles.find((x) => x.name.toUpperCase() === style.toUpperCase()) ?? request.styles[0];
   const placed = placedCellStyles(chosen);
-  const cellStyles = chosenStyles ?? placed;
+  // The style's cell styles of the drafter's own (M4-16 part 9); one chosen with another style
+  // that this one does not hold is Data, as the engine makes it.
+  const own = chosen?.userCellStyles ?? [];
+  const held = (n: TableCellStyleName): TableCellStyleName =>
+    typeof n === 'number' && !own.some((u) => u.id === n) ? 'data' : n;
+  const cellStyles = chosenStyles
+    ? {
+        first: held(chosenStyles.first),
+        second: held(chosenStyles.second),
+        others: held(chosenStyles.others),
+      }
+    : placed;
+  const names = new Map(own.map((u) => [u.id, u.name]));
   // Sent only when not the rows by their place, which a table states by leaving them out.
   const sent =
     cellStyles.first !== placed.first ||
@@ -265,6 +286,7 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
             <Preview
               first={(chosen?.suppressTitle ? 0 : 1) + (chosen?.suppressHeader ? 0 : 1)}
               cellStyles={cellStyles}
+              names={names}
               up={chosen?.up ?? false}
             />
           </fieldset>
@@ -377,17 +399,23 @@ export function InsertTableDialog({ doc, request }: { doc: number; request: Requ
               <label key={key} className="cad-dialog-field insert-table-field">
                 <span>{label}</span>
                 <select
-                  value={cellStyles[key]}
-                  onChange={(e) =>
+                  value={String(cellStyles[key])}
+                  onChange={(e) => {
+                    const v = e.currentTarget.value;
                     setChosenStyles({
                       ...cellStyles,
-                      [key]: e.currentTarget.value as TableCellStyleName,
-                    })
-                  }
+                      [key]: /^\d+$/.test(v) ? Number(v) : (v as TableCellStyleName),
+                    });
+                  }}
                 >
                   {CELL_STYLES.map(([name, shown]) => (
                     <option key={name} value={name}>
                       {shown}
+                    </option>
+                  ))}
+                  {own.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
                     </option>
                   ))}
                 </select>

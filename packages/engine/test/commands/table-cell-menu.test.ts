@@ -3,8 +3,10 @@
 // unmerged, a cell's text edited.
 import { describe, expect, it } from 'vitest';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
+  tableCellStyle,
   builtinCommands,
   dragMotion,
   standardTableStyle,
@@ -390,6 +392,75 @@ describe('title and header rows, and Cell Style (M4-16 part 5)', () => {
     await s.bus.cancel();
     expect(s.bus.promptText).toBe('Command:');
     expect(s.table().geom.cells[3]![1]!.cellStyle).toBeUndefined();
+  });
+});
+
+describe('Cell Style on cell styles of the drafter’s own (M4-16 part 9)', () => {
+  /** The setup with ACADISO holding the cell styles "Notes" (101) and "Totals" (102). */
+  function own() {
+    const s = setup();
+    const data = ACADISO.cellStyles[0]!;
+    const b = new ChangeSetBuilder(s.model);
+    b.updateTableRecord('tableStyles', '90', {
+      userCellStyles: [
+        { ...data, id: 101, name: 'Notes', textHeight: 7 },
+        { ...data, id: 102, name: 'Totals', fillOn: true, fillColor: { kind: 'aci', index: 2 } },
+      ],
+    });
+    s.model.apply(b.build());
+    return s;
+  }
+
+  it('lists them after the three and puts a row or a cell on one by name', async () => {
+    const s = own();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.pick(at(2, 1), { shift: true });
+    await s.bus.submit('CS');
+    expect(s.bus.promptText).toBe('Enter cell style name or [Title/Header/Data/ByRow] <ByRow>:');
+    const menu = s.prompt()!.shortcutMenu!;
+    expect(menu.map((m) => m.label)).toEqual([
+      'Title',
+      'Header',
+      'Data',
+      'By Row',
+      'Notes',
+      'Totals',
+    ]);
+    expect(menu[4]!.separatorBefore).toBe(true);
+    await s.bus.answer({ kind: 'keyword', keyword: 'Totals' });
+    expect(s.bus.promptText).toBe('Command:');
+    expect(s.table().geom.rowStyles).toEqual(['title', 'header', 102, 'data', 'data']);
+    // The row is drawn on it: its fill.
+    const block = s.table().geom.block!;
+    const fills = [...s.model.blockEntities(block)]
+      .map((id) => s.model.entity(id)!)
+      .filter((e) => e.geom.kind === 'SOLID' && e.color.kind === 'aci' && e.color.index === 2);
+    expect(fills.length).toBeGreaterThan(0);
+    // One cell on Notes, typed whole: its row grows to Notes' 7 high text.
+    const before = s.table().geom.rowHeights[3]!;
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('CS');
+    await s.bus.submit('notes');
+    expect(s.table().geom.cells[3]![1]!.cellStyle).toBe(101);
+    expect(s.table().geom.rowHeights[3]!).toBeGreaterThan(before);
+    await s.bus.pick(at(3, 1));
+    await s.bus.submit('CS');
+    expect(s.bus.promptText).toBe('Enter cell style name or [Title/Header/Data/ByRow] <Notes>:');
+    await s.bus.submit('BR');
+    expect(s.table().geom.cells[3]![1]!.cellStyle).toBeUndefined();
+  });
+
+  it('draws a cell style the table style no longer holds as Data', async () => {
+    const s = own();
+    await nozzles(s);
+    await s.bus.pick(at(2, 0));
+    await s.bus.submit('CS');
+    await s.bus.submit('Notes');
+    const style = s.model.tables.tableStyles.get('90')!;
+    const { userCellStyles: _, ...without } = style;
+    expect(tableCellStyle(s.table().geom, style, 2, 0)!.textHeight).toBe(7);
+    expect(tableCellStyle(s.table().geom, without, 2, 0)).toBe(style.cellStyles[0]);
   });
 });
 

@@ -1,0 +1,1 @@
+- M4-16 part 9 (#496): table styles get cell styles of your own: Create New Cell Style and Manage Cell Styles in the New and Modify Table Style dialog, rows and cells put on them by the Table Cell menu's Cell Style and Insert Table's Set cell styles, kept through DXF saves (in the style's CELLSTYLEMAP and the table's TABLECONTENT).

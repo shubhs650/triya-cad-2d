@@ -34,6 +34,12 @@
 // spacing 0x20) are set beside the values, as Triya's cell borders are: every corpus style
 // states flags 0 with the defaults, and AutoCAD's help does not say how it reads a style's.
 //
+// Cell styles of the drafter's own (M4-16 part 9, `userCellStyles`) are named cell styles beside
+// `_TITLE`, `_HEADER` and `_DATA` in the CELLSTYLEMAP (ids from 101, AutoCAD's numbering, class
+// data), which a DXF style is given when it gains one; added, renamed, written and removed there
+// by id. A DWG save refuses a change to them: save is DXF only (DEC-047), and the DWG's named cell
+// styles get no new work.
+//
 // Refused besides: a new style before R2004 (AutoCAD 2005 introduced tables); the data and unit types before R2007,
 // which the format has no place for; a true colour where acad-ts writes an ACI (DXF, which has
 // no true colour code for a table style, and DWG before R2004); colour-book colours; adding,
@@ -240,6 +246,8 @@ function tableStyleProblems(
   for (const k of ['suppressTitle', 'suppressHeader'] as const)
     if (changed(k) && typeof a[k] !== 'boolean')
       out.push(`${k}: ${JSON.stringify(a[k])} is not true or false`);
+  if (changed('userCellStyles'))
+    out.push(...userCellStyleProblems(r, version, format, b?.userCellStyles, a, place));
   if (!changed('cellStyles')) return out;
   if (!Array.isArray(a.cellStyles) || a.cellStyles.length !== ROWS.length) {
     out.push(`cellStyles: a table style has ${ROWS.length} row styles (data, title, header)`);
@@ -252,6 +260,47 @@ function tableStyleProblems(
       ),
     ),
   );
+  return out;
+}
+
+/** The names of the cell styles every style holds, which one of the drafter's own cannot take. */
+const RESERVED = new Set(['TITLE', 'HEADER', 'DATA', '_TITLE', '_HEADER', '_DATA', 'TABLE']);
+
+/** Why a style's cell styles of the drafter's own cannot be written (M4-16 part 9). */
+function userCellStyleProblems(
+  r: Resolver,
+  version: ACadVersion | undefined,
+  format: CadFormat | undefined,
+  b: TableStyleRecord['userCellStyles'],
+  a: TableStyleRecord,
+  place: string | undefined,
+): string[] {
+  const own = a.userCellStyles;
+  if (own === undefined) return [];
+  if (format !== 'dxf')
+    return ['userCellStyles: a DWG save does not write cell styles of the drafter’s own (DEC-047)'];
+  if (place) return [`userCellStyles: ${place}`];
+  if (!Array.isArray(own)) return ['userCellStyles: not a list of cell styles'];
+  const out: string[] = [];
+  const ids = new Set<number>();
+  const names = new Set<string>();
+  for (const c of own) {
+    const name = typeof c.name === 'string' ? c.name : '';
+    const where = `cell style ${JSON.stringify(c.name)}`;
+    // AutoCAD numbers them from 101; 1 to 4 are `_TITLE`, `_HEADER`, `_DATA` and "Table".
+    if (!isWhole(c.id, 5, 0x7fffffff))
+      out.push(`${where}: id ${JSON.stringify(c.id)} is not 5 or more`);
+    else if (ids.has(c.id)) out.push(`${where}: id ${c.id} is taken`);
+    ids.add(c.id);
+    if (name.trim() === '' || /[\r\n]/.test(name)) out.push(`${where}: not a name`);
+    else if (RESERVED.has(name.toUpperCase()) || names.has(name.toUpperCase()))
+      out.push(`${where}: the name is taken`);
+    names.add(name.toUpperCase());
+    const was = b?.find((x) => x.id === c.id);
+    out.push(
+      ...cellStyleProblems(r, version, format, true, was, c, place).map((p) => `${where} ${p}`),
+    );
+  }
   return out;
 }
 
@@ -461,7 +510,9 @@ function writeTableStyle(
   // A DXF style whose borders come to need a CELLSTYLEMAP is given one, written whole below; a
   // DWG's named cell styles hold them, but a DXF save writes those as rows (M1-96).
   const fresh =
-    (r.format === 'dxf' || !named) && !cellStyleMapOf(s) && a.cellStyles.some(statesBorderExtras);
+    (r.format === 'dxf' || !named) &&
+    !cellStyleMapOf(s) &&
+    (a.cellStyles.some(statesBorderExtras) || (a.userCellStyles?.length ?? 0) > 0);
   if (fresh) addCellStyleMap(r, s, a);
   const map = cellStyleMapRows(s);
   if (changed('description')) s.description = a.description;
@@ -484,7 +535,8 @@ function writeTableStyle(
     t.horizontalMargin = a.horizontalMargin;
     t.verticalMargin = a.verticalMargin;
   }
-  for (const c of [...(named ? rows : []), ...(map ?? [])]) {
+  // Every cell style of the map follows, those of the drafter's own too (M4-16 part 9).
+  for (const c of [...(named ? rows : []), ...(cellStyleMapOf(s)?.cellStyles ?? [])]) {
     if (changed('horizontalMargin') && (!b || c.horizontalMargin === b.horizontalMargin))
       c.horizontalMargin = a.horizontalMargin;
     if (changed('verticalMargin') && (!b || c.verticalMargin === b.verticalMargin))
@@ -492,6 +544,7 @@ function writeTableStyle(
   }
   if (changed('suppressTitle')) s.suppressTitle = a.suppressTitle;
   if (changed('suppressHeader')) s.suppressHeaderRow = a.suppressHeader;
+  if (changed('userCellStyles')) writeUserCellStyles(r, s, b?.userCellStyles, a.userCellStyles);
   if (!changed('cellStyles') && !fresh) return;
   a.cellStyles.forEach((c, i) => {
     writeCellStyle(r, rows[i]!, b?.cellStyles[i], c, named);
@@ -515,21 +568,7 @@ function addCellStyleMap(r: Resolver, s: TableStyle, a: TableStyleRecord): void 
     ['_DATA', 3, 2],
   ] as const;
   map.cellStyles = named.map(([name, id, styleClass]) => {
-    const c = new AcadCellStyle();
-    c.name = name;
-    c.id = id;
-    c.styleClass = styleClass as never;
-    c.cellStyleType = CellStyleType.Table;
-    c.hasData = true;
-    c.cellPropertyOverrideFlags = 0 as never;
-    c.backgroundColor = AcadColor.byEntity;
-    c.contentLayoutFlags = 1 as never;
-    c.scale = 1;
-    c.marginOverrideFlags = MarginFlags.Override;
-    c.horizontalMargin = a.horizontalMargin;
-    c.verticalMargin = a.verticalMargin;
-    c.bottomMargin = c.rightMargin = 0.06;
-    c.marginHorizontalSpacing = c.marginVerticalSpacing = 0.18;
+    const c = mapCellStyle(name, id, styleClass, a.horizontalMargin, a.verticalMargin);
     if (id === 1) c.tableCellStylePropertyFlags = 0x8000 as never;
     return c;
   });
@@ -544,6 +583,65 @@ function addCellStyleMap(r: Resolver, s: TableStyle, a: TableStyleRecord): void 
     s.xDictionary = dict;
   } else {
     dict.addByKey(CELL_STYLE_MAP, map);
+  }
+}
+
+/**
+ * A named cell style for a CELLSTYLEMAP, laid out as a new R2010 style's (`nameCellStyles`):
+ * class 1 label or 2 data, the margins `h` and `v` overridden, a None background.
+ */
+function mapCellStyle(
+  name: string,
+  id: number,
+  styleClass: number,
+  h: number,
+  v: number,
+): AcadCellStyle {
+  const c = new AcadCellStyle();
+  c.name = name;
+  c.id = id;
+  c.styleClass = styleClass as never;
+  c.cellStyleType = CellStyleType.Table;
+  c.hasData = true;
+  c.cellPropertyOverrideFlags = 0 as never;
+  c.backgroundColor = AcadColor.byEntity;
+  c.contentLayoutFlags = 1 as never;
+  c.scale = 1;
+  c.marginOverrideFlags = MarginFlags.Override;
+  c.horizontalMargin = h;
+  c.verticalMargin = v;
+  c.bottomMargin = c.rightMargin = 0.06;
+  c.marginHorizontalSpacing = c.marginVerticalSpacing = 0.18;
+  return c;
+}
+
+/**
+ * Writes the cell styles of the drafter's own (M4-16 part 9) into style `s`'s CELLSTYLEMAP, by
+ * id: one gone from `a` is removed, a new one added after the others as a data cell style (as
+ * AutoCAD's Create New Cell Style makes one) with the style's margins, and each written as `a`
+ * holds it (its name, then what changed from `b`).
+ */
+function writeUserCellStyles(
+  r: Resolver,
+  s: TableStyle,
+  b: TableStyleRecord['userCellStyles'],
+  a: TableStyleRecord['userCellStyles'],
+): void {
+  const map = cellStyleMapOf(s);
+  if (!map) return;
+  const was = new Map((b ?? []).map((c) => [c.id, c]));
+  const kept = new Set((a ?? []).map((c) => c.id));
+  const own = (c: CellStyle) => c.name !== '' && !RESERVED.has(c.name.toUpperCase());
+  map.cellStyles = map.cellStyles.filter((c) => !(own(c) && was.has(c.id) && !kept.has(c.id)));
+  for (const c of a ?? []) {
+    let acad = map.cellStyles.find((x) => own(x) && x.id === c.id);
+    const before = acad ? was.get(c.id) : undefined;
+    if (!acad) {
+      acad = mapCellStyle(c.name, c.id, 2, s.horizontalCellMargin, s.verticalCellMargin);
+      map.cellStyles.push(acad);
+    }
+    acad.name = c.name;
+    writeCellStyle(r, acad, before, c, true);
   }
 }
 

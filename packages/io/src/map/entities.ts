@@ -126,7 +126,7 @@ import type {
   Vec2,
 } from '@triya/engine';
 import { HATCH_BACKGROUND_APP, backgroundColorOf, tableRowTypes } from '@triya/engine';
-import { cellStyleMapOf, tableStyleRows } from './styles';
+import { cellStyleMapOf, tableStyleRows, userCellStylesOf } from './styles';
 import { roundTripTableContent } from './table-content';
 import { regionBoundary } from '../acis/region';
 import { readSab, readSat } from '../acis/records';
@@ -1081,6 +1081,20 @@ export function rowTypeOf(
 }
 
 /**
+ * The cell style a row's or cell's style id names (M4-16 part 9): `_TITLE`, `_HEADER` or `_DATA`
+ * as `rowTypeOf` reads them, else a cell style of the drafter's own the table style lists by that
+ * id (its `TableStyleRecord.userCellStyles`, map/styles.ts), named by the id; undefined for an
+ * id the style does not list.
+ */
+export function cellStyleOfId(
+  style: TableStyle | null,
+): (id: number) => TableCellStyleName | undefined {
+  const typeOf = rowTypeOf(style);
+  const own = new Set((style ? userCellStylesOf(style) : []).map((c) => c.id));
+  return (id) => typeOf(id) ?? (own.has(id) ? id : undefined);
+}
+
+/**
  * The table-wide overrides of a DWG R2010+ table: the margins are the table's own cell style;
  * a row type's values are what every row of that type overrides alike in its cell style (the
  * row's style id names the TABLESTYLE cell style `_TITLE`, `_HEADER` or `_DATA`). AutoCAD's DXF
@@ -1263,9 +1277,9 @@ function cellLocks(rows: readonly TableEntityRow[], cells: TableCell[][]): Table
 
 /**
  * Each row's and cell's cell style (M4-16 part 5), from `rows` (the table's own in a DWG from
- * R2010, a DXF table's TABLECONTENT's): a row's style id naming `_TITLE`, `_HEADER` or `_DATA`,
- * else the row type its place gives (as rows on a cell style of the drafter's own are drawn,
- * M1-99); a cell's own when it names one other than its row's (0 is By Row). The rows are stated
+ * R2010, a DXF table's TABLECONTENT's): a row's style id naming `_TITLE`, `_HEADER`, `_DATA` or a
+ * cell style of the drafter's own (part 9), else the row type its place gives; a cell's own when
+ * it names one other than its row's (0 is By Row). The rows are stated
  * only when they are not by their place; rows that do not match the table's grid say nothing.
  */
 function cellStyleNames(
@@ -1276,7 +1290,7 @@ function cellStyleNames(
   const grid =
     rows.length === cells.length && rows.every((r, i) => r.cells.length === cells[i]!.length);
   if (!grid) return { cells };
-  const typeOf = rowTypeOf(t.style);
+  const typeOf = cellStyleOfId(t.style);
   const placed = tableRowTypes(tableStyleRows(t.style), rows.length);
   const types = rows.map((r, i) => typeOf(r.styleId) ?? placed[i]!);
   const out = cells.map((row, i) =>
