@@ -81,7 +81,16 @@ function rowInserted(g: TableGeometry, model: DocumentModel): TableGeometry {
     rowHeights: [...g.rowHeights, 1.25],
     cells: [
       ...g.cells,
-      [text('N2'), { ...text(''), type: 'block', block: blockNamed(model, 'FLAG') }],
+      [
+        text('N2'),
+        {
+          ...text(''),
+          type: 'block',
+          block: blockNamed(model, 'FLAG'),
+          blockScale: 1,
+          autoFit: true,
+        },
+      ],
     ],
     rowOrigins: [0, 1, 2, null],
   };

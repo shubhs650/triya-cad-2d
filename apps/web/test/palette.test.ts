@@ -205,6 +205,8 @@ describe('palette search', () => {
       'TEXTALIGN',
       'TEXTEDIT',
       'TEXTTOFRONT',
+      // M4-16: a block in a table cell.
+      'TINSERT',
       // M4-11: the Geometric Tolerance dialog.
       'TOLERANCE',
       'TRIM',
