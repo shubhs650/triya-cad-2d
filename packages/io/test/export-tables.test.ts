@@ -214,10 +214,12 @@ describe('ACAD_TABLE', () => {
       (g) => cell(g, 1, 0, { rowSpan: 1.5 }),
       /cell \(1, 0\): rowSpan 1.5 is not a whole number of 1 or more/,
     ],
+    // A text cell turned into a block cell is written since M4-16 (TINSERT): its scale is checked.
     [
-      'a text cell turned into a block cell',
-      (g, m) => cell(g, 1, 0, { type: 'block', text: '', block: blockNamed(m, 'MARK') }),
-      /between text and block/,
+      'a block scale of 0',
+      (g, m) =>
+        cell(g, 1, 0, { type: 'block', text: '', block: blockNamed(m, 'MARK'), blockScale: 0 }),
+      /cell \(1, 0\): a block scale of 0 or less/,
     ],
     ['text in a block cell', (g) => cell(g, 2, 1, { text: 'x' }), /text in a block cell/],
     [

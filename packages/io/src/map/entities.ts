@@ -69,6 +69,7 @@ import {
   Spline,
   XLine,
   BlockRecord,
+  TableCellStylePropertyFlags,
   type CadDocument,
   type Entity,
   type TextStyle,
@@ -1057,6 +1058,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
         type: isBlock ? 'block' : 'text',
         text: isBlock ? '' : cellText(c),
         ...(block ? { block } : {}),
+        ...(isBlock ? blockFit(c) : {}),
         rowSpan: ranges ? (span?.rows ?? 1) : Math.max(1, c.borderHeight),
         columnSpan: ranges ? (span?.columns ?? 1) : Math.max(1, c.borderWidth),
         merged: ranges ? covered.has(`${i},${j}`) : c.mergedValue !== 0,
@@ -1736,4 +1738,19 @@ export function mapEntities(doc: CadDocument): MappedEntities {
     }
   }
   return { entities, unmapped };
+}
+
+/**
+ * A block cell's AutoFit and block scale: DXF 174 / 144 and DWG's cell fields up to R2007; a DWG
+ * from R2010 states them in the block content's format instead (its scale, and AutoScale among
+ * its property flags, acadsharp's AC1024+ samples). None when neither is stated: the block fits.
+ */
+function blockFit(c: TableEntityCell): { blockScale?: number; autoFit?: boolean } {
+  if (c.blockScale > 0) return { blockScale: c.blockScale, autoFit: c.autoFit };
+  const f = c.content?.format;
+  if (!f?.hasData || !(f.scale > 0)) return {};
+  return {
+    blockScale: f.scale,
+    autoFit: (f.propertyFlags & TableCellStylePropertyFlags.AutoScale) !== 0,
+  };
 }

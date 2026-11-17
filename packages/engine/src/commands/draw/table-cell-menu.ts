@@ -13,7 +13,8 @@
 // Paste (Ctrl+V while cells are selected, M4-13) pastes a spreadsheet's cells into the cells
 // from the first one selected (`withCellsPasted`), or another app's text into that cell.
 // Match Cell gives the cells clicked the first cell's format; Remove All Property Overrides
-// leaves the cells selected their cell style's (M4-05 part 7).
+// leaves the cells selected their cell style's (M4-05 part 7). Insert Block... opens TINSERT's
+// dialog on the first cell selected (M4-16).
 import { tableCellAt, tableCellBox, tableCellText, tableRangeHeads } from '../../annotation/table';
 import {
   fitTableRow,
@@ -51,6 +52,7 @@ import { sub } from '../../geom/vec';
 import { movedTableGrip } from '../../edit/table-grips';
 import { editTableCells, linesOf, pickTableCell, tableOf } from './table-cells';
 import { formattedTable, type TableCellFormatOption } from './table-cell-format';
+import { insertCellBlock } from './table-block';
 
 type Cell = [number, number];
 
@@ -59,6 +61,8 @@ const LABELS: Readonly<Record<TableCellOption, string>> = {
   Text: 'Edit Text',
   // AutoCAD's cell menu has Cut, Copy and Paste; Triya pastes another app's cells (M4-13).
   Paste: 'Paste',
+  // AutoCAD's cell menu: Insert > Block... (TINSERT's dialog, M4-16).
+  BLock: 'Insert Block...',
   BAckground: 'Background Fill',
   ALignment: 'Alignment',
   BOrders: 'Borders',
@@ -306,6 +310,11 @@ export function tableCellCommand(start?: {
           continue;
         }
         if (o === 'Text') return yield* editTableCells(ctx, id, r.r0, r.c0);
+        if (o === 'BLock') {
+          ctx.preview([]);
+          const [i, j] = tableRangeHeads(t.g)[r.r0]![r.c0]!;
+          return yield* insertCellBlock(ctx, id, i, j);
+        }
         if (o === 'Match') {
           const head = tableRangeHeads(t.g)[r.r0]![r.c0]!;
           return yield* matchCells(ctx, id, head);

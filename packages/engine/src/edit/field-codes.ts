@@ -171,3 +171,102 @@ export function fieldCode(spec: FieldSpec): string | undefined {
     }
   }
 }
+
+/** The `\AcVar` names that are the drawing's properties (DWGPROPS), which the dialog does not offer. */
+const DRAWING_PROPERTIES = new Set([
+  'AUTHOR',
+  'COMMENTS',
+  'HYPERLINKBASE',
+  'KEYWORDS',
+  'LASTSAVEDBY',
+  'REVISIONNUMBER',
+  'SUBJECT',
+  'TITLE',
+]);
+
+const NAMED: ReadonlySet<string> = new Set<FieldName>([
+  'CreateDate',
+  'Date',
+  'Filename',
+  'PageSetupName',
+  'PlotDate',
+  'PlotScale',
+  'SaveDate',
+]);
+
+/** A format's `%xxN` codes, undefined when it holds one the dialog has no choice for. */
+function formatCodes(format: string): Map<string, number> | undefined {
+  const codes = new Map<string, number>();
+  const rest = format.replace(/%(tc|lu|pr|fn)(\d+)/g, (_m, k: string, n: string) => {
+    codes.set(k, Number(n));
+    return '';
+  });
+  return rest === '' ? codes : undefined;
+}
+
+/**
+ * The Field dialog's state for a field code (`\AcVar Date \f "M/d/yyyy"`, without `%<` `>%`), as
+ * Edit Field opens the dialog on a field (M4-10 part 4; AutoCAD 2024 Help, "To Edit a Field");
+ * undefined for a field the dialog does not make (drawing properties, formulas, DIESEL, sheet
+ * sets) or whose format holds a code it has no choice for, which it could not show as it is.
+ * AutoCAD may write a version after the evaluator (`\AcVar.17.0`); a Filename field without a
+ * format shows the folder, name and extension (`%fn7`).
+ */
+export function fieldSpecOf(code: string): FieldSpec | undefined {
+  const m = /^\\(AcVar|AcObjProp)(?:\.[\d.]+)?\s+(.+?)(?:\s+\\f\s+"((?:[^"\\]|\\.)*)")?\s*$/.exec(
+    code.trim(),
+  );
+  if (!m) return undefined;
+  const format = (m[3] ?? '').replace(/\\(.)/g, '$1');
+  const target = m[2]!;
+  if (m[1] === 'AcObjProp') {
+    const o = /^Object\(%<\\_ObjId\s+([0-9A-Fa-f]+)>%\)\.(\w+)$/.exec(target);
+    const codes = formatCodes(format);
+    if (!o || !codes || codes.has('fn')) return undefined;
+    const property = o[2]!;
+    if (property === 'Layer' ? codes.has('lu') || codes.has('pr') : codes.has('tc'))
+      return undefined;
+    return { name: 'Object', object: o[1]!.toUpperCase(), property, ...numberSpec(codes) };
+  }
+  const name = target;
+  if (!/^\w+$/.test(name) || DRAWING_PROPERTIES.has(name.toUpperCase())) return undefined;
+  const known = [...NAMED].find((n) => n.toLowerCase() === name.toLowerCase()) as
+    FieldName | undefined;
+  if (known && DATE_FIELDS.has(known)) return { name: known, date: format };
+  const codes = formatCodes(format);
+  if (!codes) return undefined;
+  const textCase = codes.get('tc');
+  const cased = textCase !== undefined && textCase > 0 ? { textCase } : {};
+  if (known === 'Filename') {
+    if (codes.has('lu') || codes.has('pr')) return undefined;
+    const bits = codes.get('fn') ?? 7;
+    const parts: FilenameParts = (bits & 3) === 1 ? 'path' : (bits & 3) === 3 ? 'full' : 'name';
+    return { name: 'Filename', parts, extension: (bits & 4) !== 0, ...cased };
+  }
+  if (codes.has('fn')) return undefined;
+  if (known === 'PageSetupName') {
+    return codes.has('lu') || codes.has('pr') ? undefined : { name: 'PageSetupName', ...cased };
+  }
+  if (known === 'PlotScale') {
+    if (codes.has('tc')) return undefined;
+    if (codes.size === 0) return { name: 'PlotScale' };
+    if (codes.get('lu') !== 2) return undefined;
+    const precision = codes.get('pr');
+    return { name: 'PlotScale', scaleFormat: 1, ...(precision !== undefined && { precision }) };
+  }
+  return { name: 'SystemVariable', variable: name.toUpperCase(), ...cased, ...numberSpec(codes) };
+}
+
+/** A number's Format and Precision choices from its `%lu` and `%pr`. */
+function numberSpec(
+  codes: Map<string, number>,
+): Pick<FieldSpec, 'units' | 'precision' | 'textCase'> {
+  const units = codes.get('lu');
+  const precision = codes.get('pr');
+  const textCase = codes.get('tc');
+  return {
+    ...(units !== undefined && units > 0 && { units }),
+    ...(precision !== undefined && { precision }),
+    ...(textCase !== undefined && textCase > 0 && { textCase }),
+  };
+}
