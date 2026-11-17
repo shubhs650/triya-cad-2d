@@ -1,0 +1,1 @@
+- M4-16 part 6 (#493): table cells can be locked from the table cell menu's Locking (content, format or both); a locked cell refuses the edits its lock protects, the cell editor's Tab passes over it, FIND and SPELL leave its text, and the locks are kept through DXF saves.
