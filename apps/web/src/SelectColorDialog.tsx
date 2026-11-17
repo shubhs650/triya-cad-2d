@@ -9,6 +9,8 @@
 // The Color field at the bottom takes what -COLOR takes (a name, 1–255, ByLayer, ByBlock),
 // `r,g,b` and `BOOK$COLOR`; Enter is OK, Esc Cancel. The drawing's current colour (nothing
 // selected) takes index colours only: CECOLOR holds no true colour in DXF (M2-35 part 1).
+// Opened from the Layer Properties Manager (M5-05 part 2) ByLayer and ByBlock are greyed, as
+// AutoCAD's are there: a layer's colour is a colour of its own.
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { Color, ColorBook } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
@@ -43,6 +45,7 @@ export function SelectColorDialog({
   books,
   trueColors,
   indexOnly = 'The current color takes an index color only.',
+  notByLayer,
   onOk,
   onCancel,
 }: {
@@ -53,6 +56,8 @@ export function SelectColorDialog({
   trueColors: boolean;
   /** Why a true colour is refused when `trueColors` is false. */
   indexOnly?: string;
+  /** Set, ByLayer and ByBlock are greyed and typing them is refused with this (a layer). */
+  notByLayer?: string;
   onOk: (c: Color) => void;
   onCancel: () => void;
 }) {
@@ -72,6 +77,8 @@ export function SelectColorDialog({
     const c = parseColorField(text, books);
     if (!c) return 'Invalid color.';
     if (c.kind === 'rgb' && !trueColors) return indexOnly;
+    if (notByLayer !== undefined && (c.kind === 'byLayer' || c.kind === 'byBlock'))
+      return notByLayer;
     return c;
   };
 
@@ -106,7 +113,9 @@ export function SelectColorDialog({
         className="cad-dialog-panel"
         aria-label={TABS.find(([t]) => t === tab)![1]}
       >
-        {tab === 'index' && <IndexTab color={color} choose={choose} />}
+        {tab === 'index' && (
+          <IndexTab color={color} choose={choose} byLayer={notByLayer === undefined} />
+        )}
         {tab === 'true' && <TrueColorTab color={color} choose={choose} />}
         {tab === 'books' && <BooksTab books={books} color={color} choose={choose} />}
       </div>
@@ -214,7 +223,16 @@ function Swatches({
   );
 }
 
-function IndexTab({ color, choose }: { color: Color | undefined; choose: (c: Color) => void }) {
+function IndexTab({
+  color,
+  choose,
+  byLayer,
+}: {
+  color: Color | undefined;
+  choose: (c: Color) => void;
+  /** False greys ByLayer and ByBlock. */
+  byLayer: boolean;
+}) {
   const [over, setOver] = useState<number | undefined>();
   const chosen = color?.kind === 'aci' ? color.index : undefined;
   const pick = (index: number) => choose({ kind: 'aci', index });
@@ -253,6 +271,7 @@ function IndexTab({ color, choose }: { color: Color | undefined; choose: (c: Col
         <button
           type="button"
           aria-pressed={color?.kind === 'byLayer'}
+          disabled={!byLayer}
           onClick={() => choose({ kind: 'byLayer' })}
         >
           ByLayer
@@ -260,6 +279,7 @@ function IndexTab({ color, choose }: { color: Color | undefined; choose: (c: Col
         <button
           type="button"
           aria-pressed={color?.kind === 'byBlock'}
+          disabled={!byLayer}
           onClick={() => choose({ kind: 'byBlock' })}
         >
           ByBlock
