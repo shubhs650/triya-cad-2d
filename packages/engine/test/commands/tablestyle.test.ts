@@ -517,3 +517,160 @@ describe('tableStylePreview', () => {
     expect(up.parts.filter((x) => x.geom.kind === 'SOLID')).toHaveLength(15);
   });
 });
+
+describe('TABLESTYLE Select table to start from (M4-16 part 4)', () => {
+  /** A Parts table of two columns and two data rows whose cells and overrides restyle it. */
+  async function formattedTable(view?: ViewHost) {
+    const t = setup(view ? { view } : {});
+    await t.bus.script(['-TABLE', '2', '2', 'Style', 'Parts', '0,0']);
+    await t.bus.cancel();
+    const [table] = t.tables();
+    const g = table!.geom;
+    const cells = g.cells.map((row, i) =>
+      row.map((c, j) => {
+        if (i === 0 && j === 0)
+          return {
+            ...c,
+            format: {
+              alignment: 1,
+              textHeight: 7,
+              contentColor: { kind: 'aci', index: 1 },
+              background: { kind: 'aci', index: 4 },
+            },
+          };
+        if (i === 1 && j === 0)
+          return {
+            ...c,
+            format: {
+              textStyle: '17',
+              borders: {
+                top: { color: { kind: 'aci', index: 3 }, lineweight: 50 },
+                bottom: { hidden: true },
+              },
+            },
+          };
+        if (i === 2 && j === 0)
+          return {
+            ...c,
+            format: {
+              background: null,
+              borders: { bottom: { color: { kind: 'aci', index: 5 } }, right: { lineweight: 30 } },
+            },
+          };
+        return c;
+      }),
+    ) as TableGeometry['cells'];
+    const b = new ChangeSetBuilder(t.model);
+    b.updateEntity(table!.id, {
+      geom: { ...g, cells, overrides: { margins: { left: 3, top: 0.5 } } },
+    });
+    t.model.apply(b.build());
+    return { ...t, table: t.model.entity(table!.id) as Table };
+  }
+
+  it('takes a table’s direction, margins and the first cell of each row type as the cell styles', async () => {
+    const t = await formattedTable();
+    const { tableStartSettings } = await import('../../src/index');
+    await t.bus.script(['TABLESTYLE']);
+    const was = changed(t.request()!.styles[1]!.settings);
+    const s = tableStartSettings(t.model, t.table.geom, was);
+    // The description is the style's being made; the rest is the table's.
+    expect(s.description).toBe('Changed');
+    expect(s).toMatchObject({ up: false, horizontalMargin: 3, verticalMargin: 0.5 });
+    expect(s.title).toMatchObject({
+      alignment: 1,
+      textHeight: 7,
+      textColor: { kind: 'aci', index: 1 },
+      fill: { kind: 'aci', index: 4 },
+      textStyle: 'Standard',
+    });
+    // The header row is one row: its first cell's bottom edge is the cell style's bottom border.
+    expect(s.header.textStyle).toBe('Notes');
+    expect(s.header.borders[0]).toEqual({
+      lineweight: 50,
+      color: { kind: 'aci', index: 3 },
+      visible: true,
+    });
+    expect(s.header.borders[2]!.visible).toBe(false);
+    expect(s.header.borders[1]).toEqual(STANDARD.cellStyles[2]!.borders[1]);
+    // A data cell with rows below and columns to its right: its bottom and right edges are the
+    // inside borders.
+    expect(s.data.fill).toBeNull();
+    expect(s.data.borders[1]!.color).toEqual({ kind: 'aci', index: 5 });
+    expect(s.data.borders[4]!.lineweight).toBe(30);
+    expect(s.data.borders[2]).toEqual(STANDARD.cellStyles[0]!.borders[2]);
+    expect(s.data).toMatchObject({ alignment: 2, textHeight: 4.5 });
+  });
+
+  it('keeps a row type the table does not have as the style had it', async () => {
+    const t = await formattedTable();
+    const { tableStartSettings } = await import('../../src/index');
+    await t.bus.script(['TABLESTYLE']);
+    const was = changed(t.request()!.styles[1]!.settings);
+    const g = t.table.geom;
+    // A table of one row is a title row alone.
+    const one = {
+      ...g,
+      rowHeights: g.rowHeights.slice(0, 1),
+      cells: g.cells.slice(0, 1),
+    };
+    const s = tableStartSettings(t.model, one, was);
+    expect(s.title.textHeight).toBe(7);
+    expect(s.header).toEqual(was.header);
+    expect(s.data).toEqual(was.data);
+    // A table without a style of the drawing keeps the settings' direction and margins.
+    const loose = tableStartSettings(t.model, { ...one, style: 'FFFF', overrides: {} }, was);
+    expect(loose).toMatchObject({ up: true, horizontalMargin: 2, verticalMargin: 2.5 });
+  });
+
+  it('asks for a table and opens the style’s dialog again on what it gives', async () => {
+    const picks: Entity['id'][][] = [];
+    const t = await formattedTable({
+      request: (r) =>
+        Promise.resolve(
+          r.op === 'pick' ? { ok: true, ids: picks.shift() ?? [] } : { ok: false, message: 'no' },
+        ),
+    });
+    const line = [...t.model.entities()].find((e) => e.geom.kind === 'LINE');
+    picks.push([line!.id], [t.table.id]);
+    await t.bus.script(['TABLESTYLE']);
+    const settings = changed(t.request()!.styles[1]!.settings);
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'apply',
+      tablestyle: { op: 'start', name: 'Copy of Standard', isNew: true, settings },
+    });
+    expect(t.bus.prompt).toMatchObject({ kind: 'selection', message: 'Select a table' });
+    await t.bus.pick({ x: 0, y: 0 });
+    expect(t.log.some((l) => l.includes('The object selected is not a table.'))).toBe(true);
+    expect(t.bus.prompt).toMatchObject({ kind: 'selection' });
+    await t.bus.pick({ x: 0, y: 0 });
+    const r = t.request()!;
+    expect(r.editing).toMatchObject({ name: 'Copy of Standard', isNew: true });
+    expect(r.editing!.settings).toMatchObject({ horizontalMargin: 3, verticalMargin: 0.5 });
+    expect(r.editing!.settings.title.textHeight).toBe(7);
+    // Nothing is made until the dialog's OK.
+    expect(t.style('Copy of Standard')).toBeUndefined();
+    await t.act({ op: 'new', name: 'Copy of Standard', settings: r.editing!.settings });
+    expect(t.style('Copy of Standard')!.horizontalMargin).toBe(3);
+    expect(t.request()!.editing).toBeUndefined();
+  });
+
+  it('comes back on the settings it had when no table is picked', async () => {
+    const t = await formattedTable();
+    await t.bus.script(['TABLESTYLE']);
+    const settings = changed(t.request()!.styles[1]!.settings);
+    await t.act({ op: 'start', name: 'Parts', isNew: false, settings });
+    await t.bus.cancel();
+    expect(t.request()!.editing).toEqual({ name: 'Parts', isNew: false, settings });
+    // Ill-formed settings are not shown again.
+    await t.act({
+      op: 'start',
+      name: 'Parts',
+      isNew: false,
+      settings: { up: 1 } as unknown as TableStyleSettings,
+    });
+    expect(t.bus.prompt?.kind).toBe('dialog');
+    expect(t.request()!.editing).toBeUndefined();
+  });
+});

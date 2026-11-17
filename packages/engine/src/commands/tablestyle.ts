@@ -23,6 +23,12 @@
 // holds index colours only, so true colours are refused. Cell styles of the drafter's own
 // (Create a new cell style, Manage Cell Styles) wait for M1-99.
 //
+// Select table to start from (M4-16 part 4) hides the dialogs and asks "Select a table:"; the
+// New or Modify Table Style dialog then opens again on the table's formatting (`tableStartSettings`),
+// which OK makes the style's. AutoCAD also keeps the table's structure and contents in the style
+// as a template for new tables (with Remove Table to drop it); a DXF table style has no place
+// Triya writes for that template, so only the formatting is taken (noted in the PR).
+//
 // A drawing with no table style lists AutoCAD's Standard, which the first New, Modify or Set
 // Current adds, as TABLE adds it. A drawing that keeps no CTABLESTYLE variable (one AutoCAD did
 // not save) keeps Standard current: a save cannot add the variable (header.ts). AutoCAD has no
@@ -35,13 +41,20 @@ import type { Handle } from '../model/handle';
 import type {
   Color,
   Lineweight,
+  TableBorderFormat,
   TableCellBorder,
   TableCellStyle,
   TableGeometry,
   TableStyleRecord,
 } from '../model/types';
 import type { Prompt, PromptAnswer } from './prompt';
-import { tableCellText, tableParts, tableRangeHeads, type TablePart } from '../annotation/table';
+import {
+  tableCellText,
+  tableParts,
+  tableRangeHeads,
+  tableRowTypes,
+  type TablePart,
+} from '../annotation/table';
 import {
   currentTableStyle,
   fitTableRow,
@@ -112,6 +125,19 @@ export interface TableStyleRequest {
   readonly textStyles: readonly string[];
   /** Why the last action did nothing ("The current table style cannot be deleted."). */
   readonly note?: string;
+  /**
+   * The New or Modify Table Style dialog to open again at once, on these settings: after Select
+   * table to start from, on the table's formatting (or the settings it left, when none was picked).
+   */
+  readonly editing?: TableStyleEditing;
+}
+
+/** The New or Modify Table Style dialog being worked in: the style's name and its settings. */
+export interface TableStyleEditing {
+  readonly name: string;
+  /** New Table Style (OK makes the style), else Modify Table Style. */
+  readonly isNew: boolean;
+  readonly settings: TableStyleSettings;
 }
 
 /** What a Table Style dialog button or shortcut menu choice asks of TABLESTYLE. */
@@ -121,7 +147,9 @@ export type TableStyleAction =
   | { readonly op: 'new'; readonly name: string; readonly settings: TableStyleSettings }
   | { readonly op: 'modify'; readonly name: string; readonly settings: TableStyleSettings }
   | { readonly op: 'rename'; readonly name: string; readonly to: string }
-  | { readonly op: 'delete'; readonly name: string };
+  | { readonly op: 'delete'; readonly name: string }
+  /** Select table to start from, in the New or Modify Table Style dialog on these settings. */
+  | ({ readonly op: 'start' } & TableStyleEditing);
 
 const upper = (s: string) => s.toUpperCase();
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' });
@@ -284,6 +312,7 @@ export function tableStyleRequest(
   model: DocumentModel,
   selected?: string,
   note?: string,
+  editing?: TableStyleEditing,
 ): TableStyleRequest {
   const listed = listedStyles(model).sort((a, b) => byName(a.name, b.name));
   const used = usedTableStyles(model);
@@ -304,6 +333,7 @@ export function tableStyleRequest(
       .map((s) => s.name)
       .sort(byName),
     ...(note !== undefined && { note }),
+    ...(editing !== undefined && { editing }),
   };
 }
 
@@ -629,15 +659,120 @@ export function tableStylePreview(s: TableStyleSettings): TableStylePreview {
   };
 }
 
+/** The table style a table is drawn in, its style's record, or undefined. */
+function tableStyleOf(model: DocumentModel, g: TableGeometry): TableStyleRecord | undefined {
+  return g.style === undefined ? undefined : model.tables.tableStyles.get(g.style);
+}
+
+/** `b` with what border `f` of a cell overrides: its colour, lineweight and whether it shows. */
+function withBorder(b: TableCellBorder, f: TableBorderFormat | undefined): TableCellBorder {
+  if (!f) return b;
+  return {
+    lineweight: f.lineweight ?? b.lineweight,
+    color: f.color ?? b.color,
+    visible: f.hidden ? false : b.visible,
+  };
+}
+
+/**
+ * The settings Select table to start from gives the New or Modify Table Style dialog: table `g`'s
+ * formatting over `was` (what the dialog showed). The table direction and the margins are the
+ * table's (its style's, its own overrides over them); each of the Data, Header and Title cell
+ * styles is what the first cell of the table's first row of that type is drawn with (its style's
+ * cell style, the row type's overrides and the cell's own format, which the cell's format already
+ * folds in), as a drafter reads the table they picked; a row type the table has no row of keeps
+ * `was`'s. The cell's edges map onto the cell style's borders as the table engine draws them
+ * (annotation/table.ts): its top edge is the top border, its bottom edge the inside horizontal one
+ * when more rows of its type follow, else the bottom border, and its left and right edges the left
+ * border and the inside vertical or right one alike. The description stays `was`'s.
+ */
+export function tableStartSettings(
+  model: DocumentModel,
+  g: TableGeometry,
+  was: TableStyleSettings,
+): TableStyleSettings {
+  const style = tableStyleOf(model, g);
+  const base = style ? tableStyleSettings(model, style) : was;
+  const types = tableRowTypes(style, g.cells.length);
+  const heads = tableRangeHeads(g);
+  const margins = g.overrides?.margins;
+  const cell = (n: TableCellStyleName): TableCellStyleSettings => {
+    const i = types.indexOf(n);
+    if (i < 0) return was[n];
+    const [hi, hj] = heads[i]![0]!;
+    const c = g.cells[hi]![hj]!;
+    const s = base[n];
+    const f = { ...g.overrides?.[n], ...c.format };
+    const lastRow = types[hi + c.rowSpan] !== n;
+    const lastColumn = hj + c.columnSpan >= g.columnWidths.length;
+    const borders = [...s.borders];
+    const set = (k: number, e: TableBorderFormat | undefined) => {
+      borders[k] = withBorder(borders[k]!, e);
+    };
+    set(0, f.borders?.top);
+    set(lastRow ? 2 : 1, f.borders?.bottom);
+    set(3, f.borders?.left);
+    set(lastColumn ? 5 : 4, f.borders?.right);
+    return {
+      fill: f.background !== undefined ? f.background : s.fill,
+      alignment: f.alignment ?? s.alignment,
+      textStyle: f.textStyle !== undefined ? textStyleName(model, f.textStyle) : s.textStyle,
+      textHeight: f.textHeight ?? s.textHeight,
+      textColor: f.contentColor ?? s.textColor,
+      borders,
+    };
+  };
+  return {
+    description: was.description,
+    up: base.up,
+    horizontalMargin: margins?.left ?? base.horizontalMargin,
+    verticalMargin: margins?.top ?? base.verticalMargin,
+    data: cell('data'),
+    header: cell('header'),
+    title: cell('title'),
+  };
+}
+
+/**
+ * Select table to start from: "Select a table:" until a table is picked; the dialog's settings
+ * with its formatting, or as they were when Enter or Esc picks none.
+ */
+async function* startFromTable(
+  ctx: CommandContext,
+  editing: TableStyleEditing,
+): Sub<TableStyleEditing> {
+  for (;;) {
+    const a = yield ctx.prompt.selection({ message: 'Select a table', single: true, escape: true });
+    if (a.kind !== 'selection' || a.ids.length === 0) return editing;
+    const g = ctx.model.entity(a.ids[0]!)?.geom;
+    if (g?.kind === 'ACAD_TABLE')
+      return { ...editing, settings: tableStartSettings(ctx.model, g, editing.settings) };
+    ctx.message('The object selected is not a table.');
+  }
+}
+
 /** The Table Style dialog until Close: TABLESTYLE's, and the Insert Table dialog's launcher's. */
 export async function* tableStyleDialog(ctx: CommandContext, start?: string): Sub<void> {
   let selected: string | undefined = start;
   let note: string | undefined;
+  let editing: TableStyleEditing | undefined;
   for (;;) {
-    const request = tableStyleRequest(ctx.model, selected, note);
+    const request = tableStyleRequest(ctx.model, selected, note, editing);
     const a: PromptAnswer = yield ctx.prompt.dialog({ message: 'Table Style', dialog: request });
     if (a.kind !== 'dialog' || a.action !== 'apply' || !a.tablestyle) return;
-    const shown = await act(ctx, a.tablestyle);
+    editing = undefined;
+    note = undefined;
+    const t = a.tablestyle;
+    if (t.op === 'start') {
+      if (typeof t.name === 'string' && wellFormed(t.settings))
+        editing = yield* startFromTable(ctx, {
+          name: t.name,
+          isNew: t.isNew === true,
+          settings: t.settings,
+        });
+      continue;
+    }
+    const shown = await act(ctx, t);
     selected = shown.selected ?? selected;
     note = shown.note;
   }
