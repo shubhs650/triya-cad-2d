@@ -113,7 +113,11 @@ test('a double click on a field in the MTEXT editor edits it; its menu converts 
   await expect(again.locator('.mtext-field')).toHaveText([year, date]);
   await again.locator('.mtext-field').nth(1).click({ button: 'right' });
   const menu = page.getByRole('menu', { name: 'Field' });
-  await expect(menu.getByRole('menuitem')).toHaveText(['Edit Field…', 'Convert Field to Text']);
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Edit Field…',
+    'Update Field',
+    'Convert Field to Text',
+  ]);
   await page.screenshot({ path: test.info().outputPath('2-field-menu.png') });
   await menu.getByRole('menuitem', { name: 'Convert Field to Text' }).click();
   await expect(again.locator('.mtext-field')).toHaveText([year]);

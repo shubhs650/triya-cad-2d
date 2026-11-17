@@ -1,5 +1,6 @@
 // A text's fields (M4-10 part 1): the FIELD tree AutoCAD keeps in the `TEXT` entry of the
-// `ACAD_FIELD` dictionary in a TEXT's, MTEXT's, ATTDEF's or ATTRIB's extension dictionary,
+// `ACAD_FIELD` dictionary in a TEXT's, MTEXT's, ATTDEF's or ATTRIB's extension dictionary, or a
+// MULTILEADER's for its text (M4-23; AcDbObject::setField's "TEXT" property, as an MTEXT's),
 // mapped onto the text as `DrawingField` (DXF Reference, "FIELD"):
 //
 //   1  evaluator id (`_text` for the root)       2, 3  field code

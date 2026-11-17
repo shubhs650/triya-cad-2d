@@ -589,6 +589,11 @@ export interface MultiLeaderBranch {
 export interface MultiLeaderText {
   /** DXF 304, with MTEXT format codes. */
   readonly content: string;
+  /**
+   * The text's fields (M4-23), when the multileader's extension dictionary holds them: its
+   * `ACAD_FIELD` dictionary's `TEXT` entry, as an MTEXT's. `content` shows their values.
+   */
+  readonly field?: DrawingField;
   /** STYLE record handle (DXF 340 in the context data). */
   readonly style: Handle;
   /** DXF 12. */

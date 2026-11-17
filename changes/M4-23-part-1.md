@@ -1,0 +1,1 @@
+- M4-23 part 1 (#485): multileaders hold fields: Insert Field and Edit Field in MLEADER's and TEXTEDIT's In-Place Text Editor, evaluated by UPDATEFIELD, FIELDEVAL and REGEN, saved as the multileader's FIELD tree in DXF; the editor's field menu has Update Field.

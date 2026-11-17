@@ -18,9 +18,15 @@
 // code marked, `%<FIELD_EDIT code>%`; the dialog opens on the field's choices (`fieldSpecOf`;
 // one it does not make opens as Insert Field does) and the editor opens again with the field as
 // the dialog left it. TEXT's line editor does both too.
+//
+// Update Field (M4-23; AutoCAD 2024 Help, "To Update a Field Manually": "In the In-Place Text
+// Editor, select the field you want to update, right-click, and click Update Field"): the
+// editor answers with the field's code marked, `%<FIELD_UPDATE code>%`, and opens again on the
+// same text with that field's value evaluated now. No dialog opens.
 import {
   FIELD_EDIT,
   FIELD_INSERT,
+  FIELD_UPDATE,
   markedField,
   objectFieldProperties,
   textWithFields,
@@ -33,7 +39,7 @@ import type { Handle } from '../../model/handle';
 import type { MTextGeometry } from '../../model/types';
 import { typeLabel } from '../../properties/sheet';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
-import type { Prompt, PromptAnswer, StringPrompt } from '../prompt';
+import type { Prompt, PromptAnswer, StringPrompt, TextEditorRequest } from '../prompt';
 import { currentProps } from '../../properties/current';
 import { currentTextStyle, textSize } from './text';
 
@@ -149,12 +155,15 @@ export async function* askFieldCode(
  * A string prompt that opens the MTEXT editor, with its Insert Field: each time the editor
  * answers with `%<FIELD_INSERT>%` in its text, the Field dialog opens and the editor opens again
  * with the field made in that place (nothing there when the dialog is cancelled), showing the
- * field's value. The answer is the editor's last.
+ * field's value. Update Field opens it again with the field's value evaluated now, and calls
+ * `onUpdate`: the text then differs from the one the editor opened on, its codes the same. The
+ * answer is the editor's last.
  */
 export async function* askEditorText(
   ctx: CommandContext,
   prompt: Omit<StringPrompt, 'kind'>,
   space: Handle,
+  onUpdate?: () => void,
 ): AsyncGenerator<Prompt, PromptAnswer, PromptAnswer> {
   let p = prompt;
   const marker = `%<${FIELD_INSERT}>%`;
@@ -162,8 +171,18 @@ export async function* askEditorText(
     const a = yield ctx.prompt.string(p);
     if (a.kind !== 'string' || !a.editor || !p.editor) return a;
     const edited = markedField(a.value, FIELD_EDIT);
-    if (!a.value.includes(marker) && !edited) return a;
+    const updated = markedField(a.value, FIELD_UPDATE);
+    if (!a.value.includes(marker) && !edited && !updated) return a;
     const fc: FieldContext = { ...(await fieldContextOf(ctx)), space };
+    if (updated && !edited && !a.value.includes(marker)) {
+      // Update Field: the same text, the field's value evaluated now.
+      const at = updated.start + 2;
+      const value = a.value.slice(0, at) + a.value.slice(at + FIELD_UPDATE.length);
+      const now = textWithFields(`%<${updated.code}>%`, fc).text;
+      p = reopened(p, p.editor, a, value, { [updated.code]: now });
+      onUpdate?.();
+      continue;
+    }
     const was = edited?.code;
     const code: string | undefined = yield* askFieldCode(
       ctx,
@@ -173,24 +192,34 @@ export async function* askEditorText(
     // Cancel: an edited field stays as it was, an inserted one is not made.
     const made = code ?? was;
     const inserted = made === undefined ? '' : `%<${made}>%`;
-    const fields = { ...p.editor.fields };
-    if (made !== undefined && !(made in fields)) fields[made] = textWithFields(inserted, fc).text;
-    const { columns: _was, ...editor } = p.editor;
-    // The editor's columns as it closed (null: none), else as it opened.
-    const columns = a.columns === undefined ? p.editor.columns : (a.columns ?? undefined);
     const value = edited
       ? a.value.slice(0, edited.start) + inserted + a.value.slice(edited.end)
       : a.value.replace(marker, inserted);
-    p = {
-      ...p,
-      editor: {
-        ...editor,
-        value,
-        fields,
-        ...(columns && { columns }),
-      },
-    };
+    const known = made === undefined || made in (p.editor.fields ?? {});
+    p = reopened(p, p.editor, a, value, known ? {} : { [made]: textWithFields(inserted, fc).text });
   }
+}
+
+/** The editor's prompt opened again on `value`, with `values` among the fields it shows. */
+function reopened(
+  p: Omit<StringPrompt, 'kind'>,
+  editor: TextEditorRequest,
+  a: PromptAnswer & { readonly kind: 'string' },
+  value: string,
+  values: Readonly<Record<string, string>>,
+): Omit<StringPrompt, 'kind'> {
+  const { columns: _was, ...rest } = editor;
+  // The editor's columns as it closed (null: none), else as it opened.
+  const columns = a.columns === undefined ? editor.columns : (a.columns ?? undefined);
+  return {
+    ...p,
+    editor: {
+      ...rest,
+      value,
+      fields: { ...editor.fields, ...values },
+      ...(columns && { columns }),
+    },
+  };
 }
 
 const ATTACH = ['TL', 'TC', 'TR', 'ML', 'MC', 'MR', 'BL', 'BC', 'BR'];

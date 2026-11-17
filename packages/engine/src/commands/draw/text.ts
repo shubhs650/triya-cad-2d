@@ -880,21 +880,38 @@ async function* editMultiLeader(
   }
   const t = g.text!;
   const background = multiLeaderBackground(g, t);
-  const a = yield ctx.prompt.string({
-    message: 'Enter text',
-    spaces: true,
-    editor: mtextEditorRequest(ctx.model, {
-      ...multiLeaderMText(t),
-      ...(background && { background }),
-    }),
-  });
+  // Fields open as their codes, each shown by its value, as an MTEXT's (M4-23).
+  const old = t.field ? editableFieldText(t.field) : t.content;
+  let updated = false;
+  const a: PromptAnswer = yield* askEditorText(
+    ctx,
+    {
+      message: 'Enter text',
+      spaces: true,
+      editor: {
+        ...mtextEditorRequest(ctx.model, {
+          ...multiLeaderMText(t),
+          ...(background && { background }),
+        }),
+        value: old,
+        fields: t.field ? fieldValues(t.field) : {},
+      },
+    },
+    entity.owner,
+    () => (updated = true),
+  );
   if (a.kind === 'enter') return false;
   if (a.kind !== 'string') return undefined;
-  if (a.value === t.content) return false;
+  if (a.value === old && !updated) return false;
   if (a.value === '') {
     ctx.message('A multileader’s text cannot be empty: ERASE removes the multileader.');
     return false;
   }
+  const { field: _was, ...plain } = t;
+  const typed =
+    a.value.includes('%<') || t.field
+      ? textWithFields(a.value, { ...(await fieldContextOf(ctx)), space: entity.owner }, t.field)
+      : { text: a.value };
   let position = t.position;
   const style = g.style === undefined ? undefined : ctx.model.tables.mleaderStyles.get(g.style);
   const leftOfLanding =
@@ -908,11 +925,12 @@ async function* editMultiLeader(
       return r.ok && r.box ? r.box.maxX - r.box.minX : undefined;
     };
     const before = await width(t.content);
-    const after = await width(a.value);
+    const after = await width(typed.text);
     if (before !== undefined && after !== undefined)
       position = { x: position.x - (after - before), y: position.y };
   }
-  const geom: MultiLeaderGeometry = { ...g, text: { ...t, content: a.value, position } };
+  const text = { ...plain, content: typed.text, ...(typed.field && { field: typed.field }) };
+  const geom: MultiLeaderGeometry = { ...g, text: { ...text, position } };
   ctx.edit((b) => b.updateEntity(entity.id, { geom }));
   return { id: entity.id, before: entity, erased: false };
 }
@@ -1086,6 +1104,7 @@ async function* editText(
   // Fields open as their codes, each shown by its value (M4-10 parts 2 and 4).
   const old = g.field ? editableFieldText(g.field) : g.kind === 'TEXT' ? g.value : g.contents;
   const cols = g.kind === 'MTEXT' ? editorColumns(g) : undefined;
+  let updated = false;
   const a: PromptAnswer = yield* askEditorText(
     ctx,
     {
@@ -1114,6 +1133,7 @@ async function* editText(
             },
     },
     entity.owner,
+    () => (updated = true),
   );
   if (a.kind === 'enter') return false;
   if (a.kind !== 'string') return undefined;
@@ -1122,7 +1142,7 @@ async function* editText(
     g.kind === 'MTEXT' && a.columns !== undefined && !sameColumns(cols, a.columns)
       ? a.columns
       : undefined;
-  if (a.value === old && newColumns === undefined) return false;
+  if (a.value === old && newColumns === undefined && !updated) return false;
   if (a.value === '') {
     ctx.edit((b) => b.removeEntity(entity.id));
     return { id: entity.id, before: entity, erased: true };

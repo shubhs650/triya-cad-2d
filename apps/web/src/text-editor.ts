@@ -402,7 +402,7 @@ function fieldAt(spans: Spans, at: number): number | undefined {
   return undefined;
 }
 
-/** Edit Field: the field at `at` with `prefix` before its code, for the engine to find. */
+/** Edit Field, Update Field: the field at `at` with `prefix` before its code, for the engine. */
 export function markField(spans: Spans, at: number, prefix: string): MTextSpan[] {
   const i = fieldAt(spans, at);
   return spans.map((s, j) => (j === i && s.type === 'field' ? { ...s, code: prefix + s.code } : s));
