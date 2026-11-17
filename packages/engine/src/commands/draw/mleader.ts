@@ -14,6 +14,7 @@ import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
 import type {
   AttdefGeometry,
+  DrawingField,
   MLeaderStyleRecord,
   MTextGeometry,
   MultiLeaderAttribute,
@@ -56,6 +57,8 @@ import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { currentProps } from '../../properties/current';
 import { currentTextStyle } from './text';
+import { textWithFields } from '../../edit/fields';
+import { askEditorText, fieldContextOf } from './field';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -281,7 +284,14 @@ async function measured(ctx: CommandContext, text: MTextGeometry): Promise<Box |
   return r.ok ? r.box : undefined;
 }
 
-/** The text's contents: from the in-place editor at once, or line by line on the command line. */
+/** The text a multileader shows, and its fields when it has any (M4-23). */
+type Contents = { readonly content: string; readonly field?: DrawingField };
+
+/**
+ * The text's contents: from the in-place editor at once, or line by line on the command line.
+ * The editor offers Insert Field and Edit Field (M4-23, `askEditorText`); a field code in the
+ * text, typed or inserted, makes the text's fields, shown by their values, as MTEXT's.
+ */
 async function* askContents(
   ctx: CommandContext,
   request: {
@@ -291,32 +301,49 @@ async function* askContents(
     attachment: number;
     style: TextStyleRecord;
   },
-): Sub<string | undefined> {
+): Sub<Contents | undefined> {
   const lines: string[] = [];
+  let typed: string | undefined;
   for (;;) {
-    const a = yield ctx.prompt.string({
-      message: 'Enter text',
-      spaces: true,
-      ...(lines.length === 0 && {
-        editor: {
-          kind: 'mtext' as const,
-          position: request.position,
-          rotation: 0,
-          height: request.height,
-          width: request.width,
-          attachment: request.attachment,
-          style: request.style.handle,
-          fontFile: request.style.font,
-          trueTypeFlags: request.style.trueTypeFlags,
-        },
-      }),
-    });
+    const a: PromptAnswer =
+      lines.length === 0
+        ? yield* askEditorText(
+            ctx,
+            {
+              message: 'Enter text',
+              spaces: true,
+              editor: {
+                kind: 'mtext' as const,
+                position: request.position,
+                rotation: 0,
+                height: request.height,
+                width: request.width,
+                attachment: request.attachment,
+                style: request.style.handle,
+                fontFile: request.style.font,
+                trueTypeFlags: request.style.trueTypeFlags,
+                fields: {},
+              },
+            },
+            ctx.space,
+          )
+        : yield ctx.prompt.string({ message: 'Enter text', spaces: true });
     // Esc ends the command; the answer is text, or Enter, which ends the text as an empty line.
     const t = a as { readonly value?: string; readonly editor?: true };
-    if (t.editor) return t.value;
-    if (!t.value) return lines.join('\\P');
+    if (t.editor) {
+      typed = t.value;
+      break;
+    }
+    if (!t.value) {
+      typed = lines.join('\\P');
+      break;
+    }
     lines.push(t.value);
   }
+  if (!typed) return undefined;
+  if (!typed.includes('%<')) return { content: typed };
+  const r = textWithFields(typed, { ...(await fieldContextOf(ctx)), space: ctx.space });
+  return { content: r.text, ...(r.field && { field: r.field }) };
 }
 
 /**
@@ -598,14 +625,15 @@ async function* contentAt(
     }
     let { position, attachment } = textAnchor(style, landing, scale);
     const height = style.textHeight * scale;
-    const content: string | undefined = yield* askContents(ctx, {
+    const typed: Contents | undefined = yield* askContents(ctx, {
       position,
       height,
       width: 0,
       attachment,
       style: ts,
     });
-    if (!content) return undefined;
+    if (!typed) return undefined;
+    const { content } = typed;
     // Text on the left of its landing is right-aligned, unless the style always left-justifies:
     // then it moves left by its width, which the renderer measures.
     if (style.textAlignAlwaysLeft && attachment % 3 === 0) {
@@ -627,7 +655,7 @@ async function* contentAt(
         attachment -= 2;
       }
     }
-    return { text: { content, style: ts.handle, position, attachment, width: 0 } };
+    return { text: { ...typed, style: ts.handle, position, attachment, width: 0 } };
   }
   if (o.contentType === MLEADER_BLOCK) {
     const block: ContentBlock | undefined = yield* askContentBlock(ctx, style, o);
@@ -678,14 +706,14 @@ async function* contentFirstLeader(
     };
     const width = box.maxX - box.minX;
     const height = style.textHeight * scale;
-    const content: string | undefined = yield* askContents(ctx, {
+    const typed: Contents | undefined = yield* askContents(ctx, {
       position: { x: box.minX, y: box.maxY },
       height,
       width,
       attachment: 1,
       style: ts,
     });
-    if (!content) return undefined;
+    if (!typed) return undefined;
     const a = yield ctx.prompt.point({ message: 'Specify leader arrowhead location' });
     if (a.kind !== 'point') return undefined;
     const arrow = a.point;
@@ -715,7 +743,7 @@ async function* contentFirstLeader(
     return {
       vertices: [arrow],
       landing,
-      text: { content, style: ts.handle, position, attachment, width },
+      text: { ...typed, style: ts.handle, position, attachment, width },
     };
   }
   const chosen: ContentBlock | undefined = yield* askContentBlock(ctx, style, o);

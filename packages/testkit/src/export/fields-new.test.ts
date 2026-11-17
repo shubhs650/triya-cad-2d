@@ -22,6 +22,7 @@ import {
   type DrawingField,
   type EntityGeometry,
   type MTextGeometry,
+  type MultiLeaderGeometry,
   type ViewHost,
   type ViewReply,
 } from '@triya/engine';
@@ -226,5 +227,120 @@ describe('fields made in Triya save as DXF and read back', () => {
         tree(rootOf(original, e.handle)!).map((f) => f.handle),
       );
     }
+  });
+});
+
+// M4-23: a multileader's fields save as AutoCAD keeps an object's text fields: the root `_text`
+// FIELD under `TEXT` in the multileader's own ACAD_FIELD dictionary (AcDbObject::setField's
+// "TEXT" property, as an MTEXT's), each child a FIELD of its own.
+describe('multileader fields save as DXF and read back', () => {
+  const SAMPLE = 'third-party/acadsharp/sample_AC1032_ascii.dxf';
+  const YEAR = '\\AcVar Date \\f "yyyy"';
+
+  const leaders = (model: DocumentModel) =>
+    [...model.entities()].filter((e) => e.geom.kind === 'MULTILEADER');
+  const textOf = (model: DocumentModel, handle: string) => {
+    const g = model.entityByHandle(handle)!.geom as MultiLeaderGeometry;
+    return {
+      content: g.text?.content,
+      code: g.text?.field && editableFieldText(g.text.field),
+      values: g.text?.field?.children.map((c) => c.value),
+    };
+  };
+
+  it.each([UNCOMMON, SAMPLE])('MLEADER with fields in %s gets its own FIELD tree', async (path) => {
+    const model = modelOf(bytesOf(path));
+    const bus = session(model);
+    await bus.script(['CIRCLE', '500,500', '10']);
+    const circle = [...model.entities()].at(-1)!;
+    const area = `\\AcObjProp Object(%<\\_ObjId ${circle.handle}>%).Area \\f "%lu2%pr2"`;
+    await bus.script(['MLEADER', '0,0', '100,50']);
+    await bus.answer({
+      kind: 'string',
+      value: `Rev %<${YEAR}>%\\PArea %<${area}>%`,
+      editor: true,
+    });
+    expect(bus.command).toBeUndefined();
+    const made = leaders(model).at(-1)!;
+    const before = textOf(model, made.handle);
+    expect(before).toEqual({
+      content: 'Rev 2026\\PArea 314.16',
+      code: `Rev %<${YEAR}>%\\PArea %<${area}>%`,
+      values: ['2026', '314.16'],
+    });
+    const doc = readCadDocument(save(path, model));
+    const back = DocumentModel.create(documentInit(doc));
+    expect(textOf(back, made.handle)).toEqual(before);
+    const root = rootOf(doc, made.handle)!;
+    expect(root.evaluatorId).toBe('_text');
+    const fieldsOfIt = tree(root);
+    expect(fieldsOfIt).toHaveLength(3);
+    expect(root.children[1]!.cadObjects.map((o) => o.handle.toString(16).toUpperCase())).toEqual([
+      circle.handle,
+    ]);
+    const list = listed(doc);
+    if (list.size > 0) for (const f of fieldsOfIt) expect(list.has(f.handle)).toBe(true);
+    for (const f of fieldsOfIt) expect(f.handle).toBeLessThan(doc.header!.handleSeed);
+  });
+
+  it('updates the values in place, rebuilds the tree for new fields, and drops it with them', async () => {
+    const model = modelOf(bytesOf(UNCOMMON));
+    const bus = session(model);
+    await bus.script(['MLEADER', '0,0', '100,50']);
+    await bus.answer({ kind: 'string', value: `Rev %<${YEAR}>%`, editor: true });
+    const made = leaders(model).at(-1)!;
+    const first = readCadDocument(save(UNCOMMON, model));
+    const firstTree = tree(rootOf(first, made.handle)!).map((f) => f.handle);
+
+    // Reopened, a later UPDATEFIELD writes the new value onto the same FIELDs.
+    const reread = DocumentModel.create(documentInit(first));
+    const later = new PromptBus({
+      model: reread,
+      registry: builtinCommands(),
+      view: { request: () => Promise.resolve({ ok: true }) },
+      clock: { now: () => new Date(2027, 0, 2) },
+    });
+    const leader = reread.entityByHandle(made.handle)!;
+    await later.submit('UPDATEFIELD');
+    await later.answer({ kind: 'selection', ids: [leader.id] });
+    expect(textOf(reread, made.handle).content).toBe('Rev 2027');
+    const bytes = withPinnedClock(() =>
+      saveAc1032Dxf(readCadDocument(save(UNCOMMON, model)), reread),
+    );
+    const updated = readCadDocument(bytes);
+    expect(tree(rootOf(updated, made.handle)!).map((f) => f.handle)).toEqual(firstTree);
+    expect(textOf(DocumentModel.create(documentInit(updated)), made.handle).values).toEqual([
+      '2027',
+    ]);
+
+    // TEXTEDIT: another field gets a new tree; no field leaves none.
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [made.id] });
+    await bus.answer({
+      kind: 'string',
+      value: 'Rev %<\\AcVar Filename \\f "%tc1%fn2">%',
+      editor: true,
+    });
+    await bus.answer({ kind: 'enter' });
+    const rebuilt = readCadDocument(save(UNCOMMON, model));
+    expect(textOf(DocumentModel.create(documentInit(rebuilt)), made.handle)).toMatchObject({
+      content: 'Rev PLAN',
+      values: ['PLAN'],
+    });
+    const newTree = tree(rootOf(rebuilt, made.handle)!).map((f) => f.handle);
+    expect(newTree).toHaveLength(2);
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [made.id] });
+    await bus.answer({ kind: 'string', value: 'Rev PLAN', editor: true });
+    await bus.answer({ kind: 'enter' });
+    const cleared = readCadDocument(save(UNCOMMON, model));
+    expect(rootOf(cleared, made.handle)).toBeUndefined();
+    expect(textOf(DocumentModel.create(documentInit(cleared)), made.handle)).toEqual({
+      content: 'Rev PLAN',
+      code: undefined,
+      values: undefined,
+    });
+    const list = listed(cleared);
+    for (const h of newTree) expect(list.has(h)).toBe(false);
   });
 });
