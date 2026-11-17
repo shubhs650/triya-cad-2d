@@ -98,7 +98,6 @@ export function SelectLinetypeDialog({
   };
   return (
     <Modal label="Select Linetype" className="layer-linetype" onOk={ok} onCancel={onCancel}>
-      <p className="cad-dialog-title">Select Linetype</p>
       <span id="layer-linetypes-label">Loaded linetypes</span>
       <div className="linetype-head" aria-hidden>
         <span>Linetype</span>
@@ -162,7 +161,6 @@ export function LineweightDialog({
   const ok = () => onOk(chosen);
   return (
     <Modal label="Lineweight" className="layer-lineweight" onOk={ok} onCancel={onCancel}>
-      <p className="cad-dialog-title">Lineweight</p>
       <label className="layer-lineweight-list">
         <span>Lineweights:</span>
         <select
@@ -212,7 +210,6 @@ export function LayerTransparencyDialog({
   };
   return (
     <Modal label="Layer Transparency" className="layer-transparency" onOk={ok} onCancel={onCancel}>
-      <p className="cad-dialog-title">Layer Transparency</p>
       <label className="cad-dialog-field">
         <span>Transparency value (0-90):</span>
         <input
