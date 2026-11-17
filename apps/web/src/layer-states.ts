@@ -110,10 +110,18 @@ export function layerStateRows(
 /** What the Layer Properties Manager shows when no restored state matches the layers. */
 export const UNSAVED_LAYER_STATE = 'Unsaved Layer State';
 
-/** The Layer Properties Manager's layer state: the one restored last while the layers match it. */
-export function currentLayerStateName(rows: readonly LayerStateRow[]): string {
-  const last = rows.find((r) => r.lastRestored);
-  return last && last.same ? last.name : UNSAVED_LAYER_STATE;
+/**
+ * The Layer Properties Manager's layer state: the one restored last while the layers match it.
+ * Only that state is compared, and the tables are read only when there is one, so a drawing
+ * without layer states costs the manager nothing (its search must stay under 100 ms, M5-05).
+ */
+export function currentLayerStateName(init: DocumentInit, changes: readonly ChangeSet[]): string {
+  const last = drawingLayerStates(init, changes).find(
+    (s) => (s.mask & LAYER_STATE_MASK.lastRestored) !== 0,
+  );
+  return last && layerStateMatches(layerStateTables(init, changes), last)
+    ? last.name
+    : UNSAVED_LAYER_STATE;
 }
 
 /** The Layer Properties to Restore, in AutoCAD's order, each a mask bit. */

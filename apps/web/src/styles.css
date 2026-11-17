@@ -899,7 +899,7 @@ button {
   color: var(--chrome-text-muted);
 }
 
-.layer-state-current output {
+.layer-state-current span {
   color: var(--chrome-text);
 }
 

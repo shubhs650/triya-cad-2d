@@ -121,15 +121,15 @@ describe('layerStateRows', () => {
       ['Electrical', 'Layout', true, 'Lights'],
       ['plan', 'Model', true, ''],
     ]);
-    expect(currentLayerStateName(rows)).toBe(UNSAVED_LAYER_STATE);
+    expect(currentLayerStateName(init, [])).toBe(UNSAVED_LAYER_STATE);
 
     const after = rowsAfter([restored]);
     expect(after.map((r) => r.lastRestored)).toEqual([false, true]);
-    expect(currentLayerStateName(after)).toBe('plan');
+    expect(currentLayerStateName(init, [restored])).toBe('plan');
 
     const changed = rowsAfter([restored, doorsOff]);
     expect(changed.map((r) => r.same)).toEqual([false, false]);
-    expect(currentLayerStateName(changed)).toBe(UNSAVED_LAYER_STATE);
+    expect(currentLayerStateName(init, [restored, doorsOff])).toBe(UNSAVED_LAYER_STATE);
   });
 });
 

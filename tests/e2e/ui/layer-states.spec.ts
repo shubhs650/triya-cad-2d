@@ -42,7 +42,7 @@ const stateRow = (page: Page, name: string) =>
 test('saves, restores, exports and imports layer states (M5-07)', async ({ page }) => {
   const palette = await openLayers(page);
   const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
-  const layerState = palette.getByRole('status', { name: 'Layer state' });
+  const layerState = palette.locator('.layer-state-current span');
   await expect(layerState).toHaveText('Unsaved Layer State');
   await shot('1-layer-properties-manager.png');
 
