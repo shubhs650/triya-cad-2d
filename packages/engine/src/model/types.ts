@@ -2087,8 +2087,14 @@ export interface CenterMark extends NonGraphicalObject {
   readonly insert: Handle;
   /** A center mark on a circle or arc, or a centerline between two lines. */
   readonly kind: 'mark' | 'line';
-  /** The circle or arc; the centerline's first and second line. */
+  /** The circle or arc; the centerline's first and second line (a LINE or a polyline). */
   readonly objects: readonly Handle[];
+  /**
+   * A centerline's segment of each object (M4-29, DEC-068): the index of the vertex a polyline's
+   * straight segment starts at, -1 for a LINE. Absent when every object is a LINE or a circle or
+   * arc (the record DEC-066 sets out, version 1).
+   */
+  readonly segments?: readonly number[];
   /**
    * A center mark's cross size and gap as CENTERCROSSSIZE and CENTERCROSSGAP state them: a length,
    * or a factor of the circle's diameter followed by `x` (`0.1x`).
