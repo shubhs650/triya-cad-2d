@@ -153,7 +153,7 @@ describe('TriyaToAcad table rows and columns on the public corpus', () => {
         // Each table's AutoCAD 2008 data holds the edit (M4-30).
         for (const t of tables) {
           const g = model.entityByHandle(t.handle)!.geom as TableGeometry;
-          // A DXF before R2007 also holds data of its own after it, so the record goes (DEC-068).
+          // A DXF before R2007 also holds data of its own after it, so the record goes (DEC-069).
           const pre2007 = options.format === 'dxf' && /AC10(15|18)/.test(f.path);
           expect(contentMismatches(reopened, t.handle, g), `${f.path} ${t.handle}`).toEqual(
             options.format === 'dxf' && !pre2007 ? [] : null,

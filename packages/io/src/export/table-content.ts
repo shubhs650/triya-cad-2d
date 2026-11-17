@@ -82,7 +82,7 @@ const CONTENT_FIELDS = [
  * edited, and its TABLEGEOMETRY (361), AutoCAD's cache of each cell's content extents laid out for
  * the grid as it was, goes, as a new table states none (DEC-067 item 3): AutoCAD works the
  * extents out again. A record laid out otherwise (table breaks, a DXF before R2007's own round-trip
- * data after it) or a content the edit cannot be written into is dropped (DEC-068), so that
+ * data after it) or a content the edit cannot be written into is dropped (DEC-069), so that
  * AutoCAD reads the table from the legacy ACAD_TABLE codes, which hold the edit. A table whose
  * content fields did not change (moved, rotated, another layer) keeps its record as read.
  */

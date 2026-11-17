@@ -155,7 +155,7 @@ describe('TriyaToAcad table cell edits on the public corpus', () => {
           const g = model.entityByHandle(t.handle)!.geom as TableGeometry;
           // A cell left without the format its row gives it cannot be stated in the content
           // (a DWG from R2010 refuses it too), nor can a DXF before R2007's own data after the
-          // record be kept: the record then goes (DEC-068) and AutoCAD reads the legacy codes.
+          // record be kept: the record then goes (DEC-069) and AutoCAD reads the legacy codes.
           const m = contentMismatches(reopened, t.handle, g);
           if (m === null) continue;
           expect(m, `${f.path} ${t.handle}`).toEqual([]);
