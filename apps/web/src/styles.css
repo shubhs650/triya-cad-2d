@@ -4634,6 +4634,10 @@ button {
   white-space: nowrap;
 }
 
+/* The menu holds the focus only until its first item takes it; its items show the ring. */
+.spell-menu:focus {
+  outline: none;
+}
 .spell-menu > .spell-suggestion {
   font-weight: 600;
 }

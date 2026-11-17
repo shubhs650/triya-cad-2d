@@ -24,6 +24,31 @@ function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   return length(sub(p, add(a, scale(d, f))));
 }
 
+/**
+ * Whether g, the same sign at both ends of an interval, heads toward zero at its start (slope
+ * dlo) and away from it at its end (slope dhi): it then turns back somewhere inside.
+ */
+function turnsBack(glo: number, dlo: number, dhi: number): boolean {
+  return glo < 0 ? dlo > 0 && dhi < 0 : dlo < 0 && dhi > 0;
+}
+
+/**
+ * The two roots of g in [lo, hi] either side of its turning point, found by bisecting g', if
+ * g crosses zero there (it has the sign of g(lo) at both ends); otherwise none. A g of exactly
+ * zero at the turn is a double root: both bisections converge on it, and the caller keeps one
+ * of the coincident points.
+ */
+function pairBetween(
+  g: (u: number) => number,
+  dg: (u: number) => number,
+  lo: number,
+  hi: number,
+): number[] {
+  const m = bisect(dg, lo, hi);
+  if (Math.sign(g(m)) === Math.sign(g(lo))) return [];
+  return [bisect(g, lo, m), bisect(g, m, hi)];
+}
+
 /** Unit tangent in the direction of increasing parameter. */
 export function tangentAt(c: Curve, t: number): Vec2 {
   return normalize(derivativeAt(c, t));
@@ -69,14 +94,21 @@ function onPiece(pc: Piece, p: Vec2, tol: Tolerance): number[] {
         .filter((s): s is number => s !== undefined);
     case 'spline': {
       // Roots of g(u) = (S(u) − p) × S'(u), bracketed by sign changes between samples.
-      const g = (u: number): number => {
-        const [q, d] = pieceEval(pc, u);
-        return cross(sub(q, p), d);
+      // g'(u) = (S − p) × S'' (the S' × S' term vanishes) finds where g turns back: where the
+      // curve swings back across its own tangent line, two roots of g can sit closer together
+      // than any sampling step, with g the same sign at both ends of their interval (M4-19).
+      const gAt = (u: number): [number, number] => {
+        const [q, d, d2] = pieceEval(pc, u);
+        const r = sub(q, p);
+        return [cross(r, d), cross(r, d2)];
       };
+      const g = (u: number): number => gAt(u)[0];
+      const dg = (u: number): number => gAt(u)[1];
       const b = boxOf(pc.spline.controlPoints);
       const size = Math.max(b.maxX - b.minX, b.maxY - b.minY);
       const { s, points } = flattenPiece(pc, Math.max(tol.linear, 1e-4 * size));
       const out: number[] = [];
+      let [glo, dlo] = gAt(s[0]!);
       for (let i = 1; i < s.length; i++) {
         // The two tangent points from a p close to a flat stretch are about as far apart as p
         // is from the curve, so sub-sample each chord finely enough not to hide a pair of
@@ -87,11 +119,13 @@ function onPiece(pc: Piece, p: Vec2, tol: Tolerance): number[] {
         const n = Math.min(256, Math.max(4, Math.ceil((4 * length(sub(b, a))) / near)));
         for (let k = 0; k < n; k++) {
           const lo = s[i - 1]! + ((s[i]! - s[i - 1]!) * k) / n;
-          const hi = s[i - 1]! + ((s[i]! - s[i - 1]!) * (k + 1)) / n;
-          const glo = g(lo);
-          const ghi = g(hi);
+          const hi = k === n - 1 ? s[i]! : s[i - 1]! + ((s[i]! - s[i - 1]!) * (k + 1)) / n;
+          const [ghi, dhi] = gAt(hi);
           if (glo === 0) out.push(lo);
           else if (glo < 0 !== ghi < 0) out.push(bisect(g, lo, hi));
+          else if (ghi !== 0 && turnsBack(glo, dlo, dhi)) out.push(...pairBetween(g, dg, lo, hi));
+          glo = ghi;
+          dlo = dhi;
         }
       }
       return out.filter((u) => {

@@ -159,6 +159,52 @@ describe('tangents', () => {
     );
   });
 
+  it('finds a touching point with a second one close beside it (M4-19, fast-check seed -733541587)', () => {
+    // A degenerate rational cubic: repeated control points at the origin, weights 0.2 to 5.
+    // The tangent line at t ≈ 1.44888 (a knot) passes through `from` again at t ≈ 1.4535, so
+    // g(u) = (S(u) − from) × S'(u) has two roots closer together than the sign-change samples:
+    // g is positive at both ends of the sample interval holding them and dips below zero only
+    // between them.
+    const c: Spline = {
+      kind: 'SPLINE',
+      degree: 3,
+      knots: [
+        0, 0, 0, 0, 0.4488793471955675, 1.4488793471955665, 1.5251361549427034, 1.5251361549427034,
+        1.5251361549427034, 1.5251361549427034,
+      ],
+      controlPoints: [
+        P(0, 0),
+        P(0.010000000000000002, 0),
+        P(0, -160.72059096049998),
+        P(-150.69366589075833, 0),
+        P(0, 0),
+        P(0, 0.81602791528813),
+      ],
+      weights: [
+        0.2, 0.2, 0.20000000000000004, 0.20000000000000023, 1.8156224357115294, 4.999999999999988,
+      ],
+    };
+    const d = domain(c);
+    const t = d.start + 0.9499999999999988 * (d.end - d.start);
+    const q = pointAt(c, t);
+    const u = tangentAt(c, t);
+    const k = 2.8584908800886026;
+    const from = P(q.x - k * u.x, q.y - k * u.y);
+    const found = tangentPointsFrom(c, from, TOL);
+    const eps = 1e-6 * sizeOf(c);
+    expect(found.some((f) => Math.hypot(f.point.x - q.x, f.point.y - q.y) < eps)).toBe(true);
+    // Its neighbour is a tangent point from `from` too, and is found with it.
+    expect(found.some((f) => f.t > t + 1e-3 && f.t < t + 1e-2)).toBe(true);
+    for (const f of found) {
+      expectNear(pointAt(c, f.t), f.point, eps);
+      const v = tangentAt(c, f.t);
+      const w = { x: f.point.x - from.x, y: f.point.y - from.y };
+      expect(Math.abs(v.x * w.y - v.y * w.x)).toBeLessThan(
+        1e-6 * Math.max(1, Math.hypot(w.x, w.y)),
+      );
+    }
+  });
+
   it('polyline arcs give tangent points at polyline parameters', () => {
     const p: Polyline = {
       kind: 'LWPOLYLINE',
