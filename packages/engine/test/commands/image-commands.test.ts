@@ -411,3 +411,67 @@ describe('IMAGEQUALITY and IMAGEFRAME', () => {
     expect(t.raster()).toMatchObject({ owner: ROOT, frame: 0, quality: 'high' });
   });
 });
+
+describe('image commands, ending early', () => {
+  it('IMAGECLIP and IMAGEADJUST end quietly on Esc, and change nothing', async () => {
+    const t = drawing();
+    const before = JSON.stringify(t.geom('40'));
+    // Esc at Select image to clip, and at the boundary's first corner.
+    await t.bus.submit('IMAGECLIP');
+    await t.bus.cancel();
+    expect(t.bus.command).toBeUndefined();
+    await t.imageclip(ON_40);
+    await t.bus.script(['N', 'R']);
+    await t.bus.cancel();
+    expect(t.bus.command).toBeUndefined();
+    // Esc at each of IMAGEADJUST's prompts.
+    for (const steps of [[], ['B']]) {
+      await t.bus.submit('IMAGEADJUST');
+      await t.bus.pick({ x: 105, y: 95 });
+      await t.bus.pick({ x: 95, y: 105 });
+      await t.bus.submit('');
+      await t.bus.script(steps);
+      await t.bus.cancel();
+      expect(t.bus.command).toBeUndefined();
+    }
+    expect(JSON.stringify(t.geom('40'))).toBe(before);
+  });
+
+  it('IMAGEADJUST counts one object that is not an image, and stops when none is', async () => {
+    const t = drawing();
+    await t.bus.submit('IMAGEADJUST');
+    // Line 30 alone.
+    await t.bus.pick({ x: 5, y: 0 });
+    await t.bus.submit('');
+    expect(t.log.at(-1)).toBe('1 object is not an image.');
+    expect(t.bus.command).toBeUndefined();
+  });
+
+  it('IMAGEADJUST with the value an image has already is no change', async () => {
+    const t = drawing();
+    await t.bus.submit('IMAGEADJUST');
+    await t.bus.pick({ x: 105, y: 95 });
+    await t.bus.pick({ x: 95, y: 105 });
+    await t.bus.submit('');
+    await t.bus.script(['B', '50']);
+    expect(t.geom('40').brightness).toBe(50);
+    // Nothing to undo: U reports so rather than taking back an empty step.
+    await t.bus.script(['U']);
+    expect(t.log.join('\n')).toMatch(/Nothing to undo|Everything has been undone/);
+  });
+
+  it('IMAGEQUALITY again changes nothing, and a drawing without a named object dictionary refuses', async () => {
+    const t = drawing();
+    await t.bus.script(['IMAGEQUALITY', 'D', 'IMAGEQUALITY', 'D']);
+    expect(t.raster()!.quality).toBe('draft');
+    const bare = setup([image({ x: 100, y: 100 })], { objects: [IMAGEDEF] });
+    await bare.bus.script(['IMAGEQUALITY', 'D']);
+    expect(bare.log.at(-1)).toBe(
+      'The drawing has no named object dictionary to keep IMAGEQUALITY in.',
+    );
+    await bare.bus.script(['IMAGEFRAME', '2']);
+    expect(bare.log.at(-1)).toBe(
+      'The drawing has no named object dictionary to keep IMAGEFRAME in.',
+    );
+  });
+});
