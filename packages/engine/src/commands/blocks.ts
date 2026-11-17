@@ -14,8 +14,8 @@
 //            Enter attribute values                                       (ATTREQ 1)
 //   BASE     Enter base point <0.0000,0.0000,0.0000>:
 //
-// BLOCK and INSERT run the same prompts until their dialogs come (M5-01 part 2). What the blocks
-// and references are made of is `edit/blocks.ts`'s.
+// BLOCK opens the Block Definition dialog (M5-01 part 2, below); INSERT runs -INSERT's prompts
+// until its dialog comes. What the blocks and references are made of is `edit/blocks.ts`'s.
 //
 // Ambiguities, settled for the common drafter expectation and noted in the PR:
 // - Help does not word the refusals; they read "Invalid block name." (asked again), "Block "B"
@@ -30,19 +30,22 @@ import type { Vec2 } from '../geom/types';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { EntityId } from '../model/entity-ids';
-import type { AttdefGeometry, EntityGeometry, InsertGeometry } from '../model/types';
+import type { AttdefGeometry, Entity, EntityGeometry, InsertGeometry } from '../model/types';
 import {
+  ATTRIBUTE_CONSTANT,
   ATTRIBUTE_PRESET,
   ATTRIBUTE_VERIFY,
   attributeDefinitions,
   blockNameProblem,
   blockNamed,
   defineBlock,
+  definitionAttribute,
   insertableBlocks,
   placeReference,
   referenceGeometry,
   selfReferences,
   type BlockPlacement,
+  type BlockSettings,
 } from '../edit/blocks';
 import { refusalMessages } from '../edit/edit';
 import { followedBy, moveBy, scaleAbout, turnAbout } from '../edit/similarity';
@@ -50,7 +53,7 @@ import { transformGeometry } from '../edit/transform';
 import { isXrefRecord } from '../model/xref';
 import { insUnitsOf, insUnitsScale } from '../model/units';
 import { currentProps } from '../properties/current';
-import { toUcs, turnToUcs } from '../input/ucs';
+import { toUcs, toWorld, turnToUcs } from '../input/ucs';
 import { INSUNITS_NAMES } from './drawing-units';
 import { wcmatch } from './modify/attributes';
 import { currentUcs } from './ucs';
@@ -122,6 +125,10 @@ export function blockCommand(): CommandDef {
     erases: true,
     usesSelection: 'during',
     async *run(ctx) {
+      if (!ctx.dash) {
+        yield* blockDialog(ctx);
+        return;
+      }
       const name = yield* blockName(ctx);
       if (name === undefined) return;
       const existing = blockNamed(ctx.model, name);
@@ -163,6 +170,254 @@ export function blockCommand(): CommandDef {
       for (const line of refusalMessages(refused, 'put in the block')) ctx.message(line);
     },
   };
+}
+
+// ── BLOCK: the Block Definition dialog ─────────────────────────────────────────────────────────
+//
+// AutoCAD 2024 Help, "Block Definition Dialog Box": Name; Base point (Specify On-screen, Pick
+// point, X, Y, Z); Objects (Specify On-screen, Select objects, Quick Select, Retain / Convert to
+// block / Delete, the count selected); Behavior (Annotative, Scale uniformly, Allow exploding);
+// Settings (Block unit, Hyperlink); Description; Open in block editor. Pick point and Select
+// objects close the dialog for the pick and open it again; with Specify On-screen the point or
+// the objects are asked once OK closes it. Objects selected as BLOCK starts are its objects.
+//
+// Left out, and why: Z (Triya draws the plan; a block's base point is 2D), Quick Select (QSELECT
+// is its own command), Annotative (DEC-058), Hyperlink (Triya has no hyperlinks) and Open in block
+// editor (BEDIT is M5-02). Where Help is silent, settled for the common drafter expectation:
+// the dialog opens on a blank name, base 0,0, the drawing's units and the last Objects choice
+// (Convert to block the first time); picking a block in the Name list shows its settings
+// (the web dialog); the dialog itself asks before redefining a block and before making an empty
+// one; a converted reference is on the current layer, turned with the UCS so that it lies over
+// the objects, its attribute values asked as -INSERT asks them (ATTREQ).
+
+/** The Block Definition dialog's fields. */
+export interface BlockDefinitionSettings {
+  readonly name: string;
+  /** The base point, in the current UCS. */
+  readonly base: Vec2;
+  /** Base point "Specify On-screen": asked once the dialog closes. */
+  readonly baseOnScreen: boolean;
+  /** Objects "Specify On-screen": selected once the dialog closes. */
+  readonly objectsOnScreen: boolean;
+  /** What becomes of the objects: Retain, Convert to block or Delete. */
+  readonly objects: 'retain' | 'convert' | 'delete';
+  readonly scaleUniformly: boolean;
+  readonly allowExploding: boolean;
+  /** Block unit, an `$INSUNITS` code. */
+  readonly units: number;
+  readonly description: string;
+}
+
+/** A block the Name list offers, with the settings the dialog shows when it is picked. */
+export interface BlockDefinitionEntry {
+  readonly name: string;
+  readonly scaleUniformly: boolean;
+  readonly allowExploding: boolean;
+  readonly units: number;
+  readonly description: string;
+}
+
+/** BLOCK's Block Definition dialog. */
+export interface BlockDefinitionRequest {
+  readonly type: 'block';
+  readonly settings: BlockDefinitionSettings;
+  /** How many objects are selected (the Objects group's "n objects selected"). */
+  readonly selected: number;
+  /** The drawing's blocks, as the Name list offers them (insertable, by name). */
+  readonly blocks: readonly BlockDefinitionEntry[];
+  /** Why the last OK made nothing ("Invalid block name."). */
+  readonly note?: string;
+}
+
+/** The Block Definition dialog's answer: its fields, and the pick that closed it, if one did. */
+export interface BlockDefinitionAnswer {
+  readonly settings: BlockDefinitionSettings;
+  readonly pick?: 'point' | 'objects';
+}
+
+/** The Objects choice the dialog opens on next, per drawing (AutoCAD keeps it per session). */
+const lastObjects = new WeakMap<object, BlockDefinitionSettings['objects']>();
+
+const OBJECT_CHOICES = new Set(['retain', 'convert', 'delete']);
+
+/** Whether `s` is settings the dialog can give (the bus hands the command any object). */
+function validBlockSettings(s: unknown): s is BlockDefinitionSettings {
+  const v = s as BlockDefinitionSettings | undefined;
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof v.name === 'string' &&
+    Number.isFinite(v.base?.x) &&
+    Number.isFinite(v.base?.y) &&
+    OBJECT_CHOICES.has(v.objects) &&
+    Number.isInteger(v.units) &&
+    v.units >= 0 &&
+    v.units < INSUNITS_NAMES.length &&
+    typeof v.description === 'string'
+  );
+}
+
+function entryOf(ctx: CommandContext, name: string): BlockDefinitionEntry {
+  const r = blockNamed(ctx.model, name)!;
+  return {
+    name: r.name,
+    scaleUniformly: !r.scalable,
+    allowExploding: r.explodable,
+    units: r.units,
+    description: ctx.model.blocks.get(r.handle)?.description ?? '',
+  };
+}
+
+async function* blockDialog(ctx: CommandContext): Sub<void> {
+  let settings: BlockDefinitionSettings = {
+    name: '',
+    base: { x: 0, y: 0 },
+    baseOnScreen: false,
+    objectsOnScreen: false,
+    objects: lastObjects.get(ctx.model) ?? 'convert',
+    scaleUniformly: false,
+    allowExploding: true,
+    units: insUnitsOf(ctx.model),
+    description: '',
+  };
+  let ids: readonly EntityId[] = ctx.preselected;
+  let note: string | undefined;
+  for (;;) {
+    const a = yield ctx.prompt.dialog({
+      message: 'Block Definition',
+      dialog: {
+        type: 'block',
+        settings,
+        selected: ids.length,
+        blocks: insertableBlocks(ctx.model).map((r) => entryOf(ctx, r.name)),
+        ...(note !== undefined && { note }),
+      },
+    });
+    note = undefined;
+    if (a.kind !== 'dialog' || !a.block || !validBlockSettings(a.block.settings)) return;
+    settings = a.block.settings;
+    if (a.block.pick === 'point') {
+      const p = yield ctx.prompt.point({
+        message: 'Specify insertion base point',
+        escape: true,
+      });
+      if (p.kind === 'point') settings = { ...settings, base: toUcs(currentUcs(ctx), p.point) };
+      continue;
+    }
+    if (a.block.pick === 'objects') {
+      // A selection of its own, not the pre-selection the dialog opened on.
+      const s = yield ctx.prompt.selection({
+        message: 'Select objects',
+        pickfirst: false,
+        escape: true,
+      });
+      if (s.kind === 'selection') ids = s.ids;
+      continue;
+    }
+    if (a.action !== 'ok') return;
+
+    // OK: what refuses the block reopens the dialog saying why (AutoCAD's alerts).
+    const name = settings.name.trim();
+    const existing = blockNameProblem(name) ? undefined : blockNamed(ctx.model, name);
+    note =
+      blockNameProblem(name) ??
+      (existing && isXrefRecord(existing)
+        ? `Block "${existing.name}" is an external reference.`
+        : undefined);
+    if (!note && existing && !settings.objectsOnScreen) note = selfReference(ctx, ids, existing);
+    if (note) continue;
+    lastObjects.set(ctx.model, settings.objects);
+    yield* makeBlock(ctx, settings, ids);
+    return;
+  }
+}
+
+/** Why `ids` cannot go into `existing`: one of them is, or holds, a reference to it. */
+function selfReference(
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+  existing: { readonly handle: string; readonly name: string },
+): string | undefined {
+  return selfReferences(ctx.model, ids, existing.handle).length > 0
+    ? `Block "${existing.name}" references itself.`
+    : undefined;
+}
+
+/** The dialog's OK: the on-screen picks, then the block, the objects' fate and any reference. */
+async function* makeBlock(
+  ctx: CommandContext,
+  settings: BlockDefinitionSettings,
+  selected: readonly EntityId[],
+): Sub<void> {
+  const ucs = currentUcs(ctx);
+  let base = toWorld(ucs, settings.base);
+  if (settings.baseOnScreen) {
+    const p = yield ctx.prompt.point({ message: 'Specify insertion base point' });
+    if (p.kind !== 'point') return;
+    base = p.point;
+  }
+  let ids = selected;
+  if (settings.objectsOnScreen) {
+    const s = yield ctx.prompt.selection({ message: 'Select objects', pickfirst: false });
+    ids = s.kind === 'selection' ? s.ids : [];
+    if (ids.length === 0) {
+      ctx.message('No objects selected.');
+      return;
+    }
+  }
+  const name = settings.name.trim();
+  const existing = blockNamed(ctx.model, name);
+  const refusal = existing && selfReference(ctx, ids, existing);
+  if (refusal) {
+    ctx.message(refusal);
+    return;
+  }
+
+  // Convert to block: the reference's attributes are the selected definitions, as they lie.
+  // An empty block has nothing to convert.
+  const convert = settings.objects === 'convert' && ids.length > 0;
+  const definitions = convert
+    ? ids
+        .map((id) => ctx.model.entity(id))
+        .filter(
+          (e): e is NonNullable<typeof e> =>
+            e?.geom.kind === 'ATTDEF' &&
+            ((e.geom as AttdefGeometry).flags & ATTRIBUTE_CONSTANT) === 0,
+        )
+    : [];
+  const values = yield* attributeValues(ctx, definitions);
+
+  const blockSettings: BlockSettings = {
+    units: settings.units,
+    explodable: settings.allowExploding,
+    scalable: !settings.scaleUniformly,
+    description: settings.description.trim(),
+  };
+  let refused: ReadonlyMap<string, number> = new Map();
+  ctx.edit((b) => {
+    const made = defineBlock(b, ctx.model, {
+      name,
+      base,
+      ids,
+      ucs,
+      erase: settings.objects !== 'retain',
+      settings: blockSettings,
+    });
+    refused = made.refused;
+    if (!convert) return;
+    // The reference lies over the objects: at the base point, turned with the UCS the block was
+    // made in, unscaled.
+    const geom: InsertGeometry = {
+      kind: 'INSERT',
+      block: made.block,
+      position: base,
+      scale: { x: 1, y: 1, z: 1 },
+      rotation: ucs.angle,
+      attributes: definitions.map((e, i) => definitionAttribute(e, values[i])),
+    };
+    placeReference(b, ctx.model, ctx.space, currentProps(ctx.model), geom);
+  });
+  for (const line of refusalMessages(refused, 'put in the block')) ctx.message(line);
 }
 
 // ── -INSERT ───────────────────────────────────────────────────────────────────────────────────
@@ -381,26 +636,7 @@ export function insertCommand(): CommandDef {
 
       // The attribute values (none for an exploded insert: its definitions stay definitions).
       const definitions = explode ? [] : attributeDefinitions(ctx.model, block);
-      const values: string[] = definitions.map((e) => (e.geom as AttdefGeometry).value);
-      const asked = attreq(ctx) ? definitions.map((e) => askedFor(e.geom as AttdefGeometry)) : [];
-      if (asked.some(Boolean)) {
-        ctx.message('Enter attribute values');
-        for (const [i, e] of definitions.entries()) {
-          if (!asked[i]) continue;
-          values[i] = yield* attributeValue(ctx, e.geom as AttdefGeometry, values[i]!);
-        }
-        const verify = definitions.filter(
-          (e, i) => asked[i] && ((e.geom as AttdefGeometry).flags & ATTRIBUTE_VERIFY) !== 0,
-        );
-        if (verify.length > 0) {
-          ctx.message('Verify attribute values');
-          for (const [i, e] of definitions.entries()) {
-            const g = e.geom as AttdefGeometry;
-            if (!asked[i] || (g.flags & ATTRIBUTE_VERIFY) === 0) continue;
-            values[i] = yield* attributeValue(ctx, g, values[i]!);
-          }
-        }
-      }
+      const values = yield* attributeValues(ctx, definitions);
 
       lastInserted.set(ctx.model, r.name);
       const geom: InsertGeometry = referenceGeometry(
@@ -424,6 +660,37 @@ export function insertCommand(): CommandDef {
       for (const line of refusalMessages(refused, 'inserted')) ctx.message(line);
     },
   };
+}
+
+/**
+ * The values of a new reference's attributes, one per definition: asked in order with ATTREQ 1
+ * ("Enter attribute values", presets taken), those to verify asked again ("Verify attribute
+ * values"); the defaults with ATTREQ 0.
+ */
+async function* attributeValues(
+  ctx: CommandContext,
+  definitions: readonly Entity[],
+): Sub<string[]> {
+  const values: string[] = definitions.map((e) => (e.geom as AttdefGeometry).value);
+  const asked = attreq(ctx) ? definitions.map((e) => askedFor(e.geom as AttdefGeometry)) : [];
+  if (!asked.some(Boolean)) return values;
+  ctx.message('Enter attribute values');
+  for (const [i, e] of definitions.entries()) {
+    if (!asked[i]) continue;
+    values[i] = yield* attributeValue(ctx, e.geom as AttdefGeometry, values[i]!);
+  }
+  const verify = definitions.filter(
+    (e, i) => asked[i] && ((e.geom as AttdefGeometry).flags & ATTRIBUTE_VERIFY) !== 0,
+  );
+  if (verify.length > 0) {
+    ctx.message('Verify attribute values');
+    for (const [i, e] of definitions.entries()) {
+      const g = e.geom as AttdefGeometry;
+      if (!asked[i] || (g.flags & ATTRIBUTE_VERIFY) === 0) continue;
+      values[i] = yield* attributeValue(ctx, g, values[i]!);
+    }
+  }
+  return values;
 }
 
 /** ATTREQ: 1 (the default) asks the attribute values, 0 takes their defaults. */

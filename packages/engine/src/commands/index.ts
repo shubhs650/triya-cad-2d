@@ -114,6 +114,12 @@ export {
 } from './draw/table-block';
 export type { TableCellFormatRequest } from './draw/table-data-format';
 export type {
+  BlockDefinitionAnswer,
+  BlockDefinitionEntry,
+  BlockDefinitionRequest,
+  BlockDefinitionSettings,
+} from './blocks';
+export type {
   HatchDialogAnswer,
   HatchDialogButton,
   HatchDialogRequest,
