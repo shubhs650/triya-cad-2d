@@ -19,13 +19,24 @@ export { mapHeader, type MappedHeader } from './map/header';
 export { mapTables, type MappedTables } from './map/tables';
 export { CELL_STYLE_MAP, cellStyleMapOf, mappedCellStyleMap } from './map/styles';
 export { aciOfTrueColor } from './map/common';
-export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/entities';
+export {
+  mapEntities,
+  tableEntityGeometry,
+  type MappedEntities,
+  type UnmappedEntity,
+} from './map/entities';
 export { mapSortEnts } from './map/sortents';
 export { mapTriyaArrays, TRIYA_ARRAY } from './map/triya-array';
 export { mapTriyaDims, TRIYA_DIMBREAK, TRIYA_DIMINSPECT } from './map/triya-dims';
 export { mapTriyaCenterMarks, TRIYA_CENTERMARK } from './map/triya-centermarks';
 export { mapLayouts, mapPageSetups } from './map/layouts';
-export { readTableContent, tableContentCodes, type RawCode } from './map/table-content';
+export {
+  readTableContent,
+  roundTripTableContent,
+  tableContentCodes,
+  type RawCode,
+  type RoundTripTableContent,
+} from './map/table-content';
 export { mapImageObjects, type ImageObject } from './map/images';
 export {
   exportDocument,

@@ -78,7 +78,7 @@ import {
 import { planMLineStyles, writeMLineStyles } from './mline-styles';
 import { planTableStyles, writeTableStyles } from './table-styles';
 import { blockUser, newTableFileProblems } from './table-new';
-import { writeNewTableContents } from './table-content';
+import { writeEditedTableContents, writeNewTableContents } from './table-content';
 import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { planPurge, writePurge } from './purge';
@@ -682,8 +682,10 @@ export function triyaToAcad(
     writeEntity(r, e, undefined, after);
     if (r12 && e instanceof Viewport) addR12View(original, e);
   }
-  // A new table's AutoCAD 2008 data (M4-28), after its rows and cells are written.
+  // A new table's AutoCAD 2008 data (M4-28), and an edited one's (M4-30), after its rows and
+  // cells are written.
   writeNewTableContents(original, r, added);
+  writeEditedTableContents(original, r, p.updated);
   writeEntityOrder(original, model, r);
   writeGroupMembers(r, groups.plan);
   writeDimAssocs(r, dimAssocs.plan);
