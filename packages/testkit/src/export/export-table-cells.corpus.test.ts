@@ -23,6 +23,7 @@ import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
+import { contentMismatches, withTableRecords } from '../tables/table-records.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -148,8 +149,28 @@ describe('TriyaToAcad table cell edits on the public corpus', () => {
             model.entityByHandle(t.handle)!.geom,
           );
         }
+        // Each table's AutoCAD 2008 data holds the edit (M4-30).
+        const rewritten: string[] = [];
+        for (const t of tables) {
+          const g = model.entityByHandle(t.handle)!.geom as TableGeometry;
+          // A cell left without the format its row gives it cannot be stated in the content
+          // (a DWG from R2010 refuses it too), nor can a DXF before R2007's own data after the
+          // record be kept: the record then goes (DEC-068) and AutoCAD reads the legacy codes.
+          const m = contentMismatches(reopened, t.handle, g);
+          if (m === null) continue;
+          expect(m, `${f.path} ${t.handle}`).toEqual([]);
+          rewritten.push(t.handle);
+        }
+        // acadsharp's A35 and ezdxf's tables have no such cell.
+        const pre2007 = /AC10(15|18)/.test(f.path);
+        if (options.format === 'dxf' && !pre2007) expect(rewritten, f.path).not.toEqual([]);
+        else expect(rewritten, f.path).toEqual([]);
         // Nothing else changes: the tables are the edit.
-        const ignoreHandles = new Set(tables.map((t) => Number.parseInt(t.handle, 16)));
+        // The tables' AutoCAD 2008 data is written again with them (M4-30).
+        const ignoreHandles = withTableRecords(
+          original,
+          new Set(tables.map((t) => Number.parseInt(t.handle, 16))),
+        );
         const diff = structuralDiff(original, reopened, { ignoreHandles }).differences.filter(
           (d) => !(d.handle === '0' && d.path.startsWith('$HANDSEED')),
         );

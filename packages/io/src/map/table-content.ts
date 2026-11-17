@@ -421,9 +421,13 @@ function writeTableFormat(o: Out, s: CellStyle): void {
         o.put(40, m);
       o.put(309, 'CELLMARGIN_END');
     }
-    // As read; otherwise the borders that override something, in edge order, as AutoCAD lists them.
-    const edges =
-      listedBorders.get(s) ?? EDGE_ORDER.filter((e) => BORDER[e]!(s).propertyOverrideFlags !== 0);
+    // The borders listed as read, then those that override something since (an edited cell's,
+    // M4-30), in edge order, as AutoCAD lists them.
+    const listed = listedBorders.get(s) ?? [];
+    const edges = [
+      ...listed,
+      ...EDGE_ORDER.filter((e) => !listed.includes(e) && BORDER[e]!(s).propertyOverrideFlags !== 0),
+    ];
     o.put(94, edges.length);
     for (const edge of edges) {
       const b = BORDER[edge]!(s);
