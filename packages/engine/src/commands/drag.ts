@@ -13,6 +13,8 @@ import { placeDimension, type DimPlacement } from '../edit/dimension';
 import type { GripFunction } from '../edit/grip-functions';
 import type { ArrayGripRole } from '../edit/array-grips';
 import type { TableGripRole } from '../edit/table-grips';
+import { centerMarkDragLines, type CenterMarkDrag } from '../edit/center-mark-grips';
+import type { GeneralProps } from '../properties/sheet';
 import type { CommandPreview } from './command-preview';
 import { sketchGeometry, type Sketch } from './draw/sketch';
 
@@ -84,6 +86,18 @@ export type DragPreview =
       readonly kind: 'table';
       readonly id: EntityId;
       readonly role: TableGripRole;
+      readonly from: Vec2;
+    }
+  /**
+   * A center mark's or centerline's extension grip being dragged (M4-24): the mark `id` drawn,
+   * with its properties `props`, as the grip at `mark.end` moved by the cursor less `from`
+   * would draw it (`centerMarkDragLines`), the mark itself faded.
+   */
+  | {
+      readonly kind: 'centerMark';
+      readonly id: EntityId;
+      readonly props: GeneralProps;
+      readonly mark: CenterMarkDrag;
       readonly from: Vec2;
     }
   /**
@@ -235,5 +249,13 @@ export function dragMotion(
         m: IDENTITY,
         array: { id: drag.id, role: drag.role, fn: drag.fn, to: cursor },
       };
+    case 'centerMark': {
+      const to = add(drag.mark.end, sub(cursor, drag.from));
+      const shapes = centerMarkDragLines(drag.mark, to).map(([start, end]) => ({
+        geom: { kind: 'LINE' as const, start, end },
+        props: drag.props,
+      }));
+      return { ids: [], m: IDENTITY, preview: { faded: [drag.id], shapes } };
+    }
   }
 }

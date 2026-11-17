@@ -59,6 +59,7 @@ import {
 import { transformObjects } from './edit';
 import type { Grip } from './grips';
 import { revcloudOf, type CloudInfo } from './revcloud';
+import { centerMarkGripsOf, type CenterMarkGrips } from './center-mark-grips';
 import { moveBy } from './similarity';
 
 /** What an array's triangle (or a polar array's base) grip sizes. */
@@ -102,13 +103,13 @@ export interface TableGripInfo {
 }
 
 /**
- * What `gripsOf` needs besides an object's geometry: a cloud's arc, an array's grips, or a
- * table's style.
+ * What `gripsOf` needs besides an object's geometry: a cloud's arc, an array's or a center
+ * mark's grips (M4-24), or a table's style.
  */
-export type GripInfo = CloudInfo | ArrayGrips | TableGripInfo;
+export type GripInfo = CloudInfo | ArrayGrips | TableGripInfo | CenterMarkGrips;
 
 export const isArrayGrips = (i: GripInfo | undefined): i is ArrayGrips =>
-  i !== undefined && 'grips' in i;
+  i !== undefined && 'record' in i;
 
 /** The array's INSERT transform, from its block's coordinates to the drawing's. */
 function arrayMatrix(model: DocumentModel, insert: Entity): Matrix2D {
@@ -229,7 +230,7 @@ export function gripInfoOf(model: DocumentModel, e: Entity): GripInfo | undefine
     const s = e.geom.style;
     return { tableStyle: s !== undefined ? model.tables.tableStyles.get(s) : undefined };
   }
-  return arrayGripsOf(model, e) ?? revcloudOf(model, e);
+  return arrayGripsOf(model, e) ?? centerMarkGripsOf(model, e) ?? revcloudOf(model, e);
 }
 
 // ── What a grip does ────────────────────────────────────────────────────────────────────────

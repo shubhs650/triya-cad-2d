@@ -24,6 +24,7 @@ import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type {
+  CenterMark,
   DimAssoc,
   Entity,
   EntityGeometry,
@@ -36,12 +37,13 @@ import type {
 } from '../model/types';
 import { copyAssocArrays } from './assoc-array';
 import { copyGroups } from './groups';
-import { isAssocArray, isDimBreak, isDimInspect } from '../model/types';
+import { isAssocArray, isCenterMark, isDimBreak, isDimInspect } from '../model/types';
 import { carryDimensionRecords, copyDimensionRecords } from './dimension-records';
-import { copyCenterMarks } from './center-marks';
+import { copyCenterMarks, redrawCenterMark } from './center-marks';
+import { centerMarkGripEdit } from './center-mark-grips';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry, type StretchOptions } from './stretch';
-import { moveGrip } from './grips';
+import { moveGrip, sameGrip } from './grips';
 import { gripInfoOf } from './array-grips';
 import { writeTableBlock } from './table';
 import { tableTextScaled } from './table-format';
@@ -417,6 +419,8 @@ export interface StretchPlan {
   readonly move: readonly EntityId[];
   readonly shape: ReadonlyMap<EntityId, EntityGeometry>;
   readonly refused: ReadonlyMap<string, number>;
+  /** Center marks whose extension grip was dragged: their records as they become (M4-24). */
+  readonly marks?: ReadonlyMap<EntityId, CenterMark>;
 }
 
 /** The points of a box (edges included, as AutoCAD's window takes a point on its edge). */
@@ -524,10 +528,19 @@ export function planGrip(
 ): StretchPlan {
   const move: EntityId[] = [];
   const shape = new Map<EntityId, EntityGeometry>();
+  const marks = new Map<EntityId, CenterMark>();
   for (const id of ids) {
     const e = model.entity(id);
     if (!e) continue;
     const info = gripInfoOf(model, e);
+    // A center mark's extension grip stretches the extension in its record (M4-24).
+    const mark = info && 'centerMark' in info ? info : undefined;
+    const end = mark?.grips.find((x) => x.centerMark !== undefined && sameGrip(x.point, grip));
+    if (mark && end) {
+      const next = centerMarkGripEdit(model, e, mark.centerMark, end.centerMark!, to);
+      if (next) marks.set(id, next);
+      continue;
+    }
     // Ctrl with a table's column grip sizes the table (M4-05 part 6).
     const r = moveGrip(
       e.geom,
@@ -538,7 +551,7 @@ export function planGrip(
     if (r.kind === 'move') move.push(id);
     else if (r.kind === 'shape') shape.set(id, r.geom);
   }
-  return { move, shape, refused: new Map() };
+  return { move, shape, refused: new Map(), ...(marks.size > 0 && { marks }) };
 }
 
 /**
@@ -580,6 +593,13 @@ function applyStretch(
     // A table's grip sizes its rows and columns: its block is drawn again (M4-05 part 4).
     if (geom.kind === 'ACAD_TABLE') writeTableBlock(b, model, id);
     reshaped.push(id);
+  }
+  // A center mark drawn again with its stretched extension, as CENTERRESET draws one.
+  for (const [id, next] of plan.marks ?? []) {
+    const e = b.entity(id);
+    const before = e && model.objects.get(next.handle);
+    if (!e || isLocked(b, e) || !isCenterMark(before)) continue;
+    if (redrawCenterMark(b, model, e, before, next)) reshaped.push(id);
   }
   const moved = transformObjects(b, model, plan.move, moveBy(d));
   for (const [reason, n] of moved.refused) refused.set(reason, (refused.get(reason) ?? 0) + n);
