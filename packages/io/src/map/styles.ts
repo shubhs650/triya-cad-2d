@@ -103,7 +103,46 @@ const border = (b: CellBorder): TableCellBorder => ({
   lineweight: mapLineweight(b.lineWeight as number),
   visible: !b.isInvisible,
   color: mapColor(b.color),
+  ...borderExtras(b),
 });
+
+/** DWG / DXF border type 2: a double line (ODA spec, grid format). */
+const DOUBLE = 2;
+
+/**
+ * A named cell style's border linetype, double line and its spacing (M4-16 part 8): a table
+ * style states them as values, its override flags 0 (every corpus style: single, no linetype,
+ * 0.045). No linetype and ByBlock are what a border is drawn in anyway, so neither is kept, nor
+ * the spacing of a single line. A row style before R2010 has none (acad-ts's defaults).
+ */
+function borderExtras(b: CellBorder): Pick<TableCellBorder, 'linetype' | 'double' | 'spacing'> {
+  const name = (b.lineType as { name?: string } | null)?.name?.toUpperCase();
+  const linetype =
+    name === 'BYBLOCK' ? undefined : name === 'BYLAYER' ? 'ByLayer' : ref(b.lineType);
+  return {
+    ...(linetype !== undefined && { linetype }),
+    ...((b.type as number) === DOUBLE && { double: true, spacing: b.doubleLineSpacing }),
+  };
+}
+
+/**
+ * Row styles `rows` with the border linetypes and double lines of the CELLSTYLEMAP `map` (in the
+ * same order) folded in: a DXF's row styles have no place for them.
+ */
+function withMapBorders(rows: TableCellStyle[], map: TableCellStyle[] | undefined) {
+  if (!map) return rows;
+  return rows.map((c, i) => ({
+    ...c,
+    borders: c.borders.map((b, k) => {
+      const { linetype, double, spacing } = map[i]!.borders[k]!;
+      return {
+        ...b,
+        ...(linetype !== undefined && { linetype }),
+        ...(double && { double, spacing: spacing! }),
+      };
+    }),
+  }));
+}
 
 /**
  * Whether acad-ts read the cell style from a DWG TABLESTYLE from R2010, where it is a named
@@ -231,6 +270,13 @@ export function tableStyle(s: TableStyle): TableStyleRecord {
     verticalMargin: table ? table.verticalMargin : s.verticalCellMargin,
     suppressTitle: table ? false : s.suppressTitle,
     suppressHeader: table ? false : s.suppressHeaderRow,
-    cellStyles: rowStyles(s).map((c) => cellStyle(c)),
+    // A DXF's (and a DWG's before R2010) rows have no border linetypes or double lines; its
+    // CELLSTYLEMAP, kept in step, states them.
+    cellStyles: table
+      ? rowStyles(s).map((c) => cellStyle(c))
+      : withMapBorders(
+          rowStyles(s).map((c) => cellStyle(c)),
+          rowStyles(s).length > 0 ? mappedCellStyleMap(s) : undefined,
+        ),
   };
 }

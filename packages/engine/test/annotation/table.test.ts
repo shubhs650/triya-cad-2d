@@ -305,6 +305,56 @@ describe('table engine (M4-05)', () => {
     expect(lines(draw(top))).toContainEqual([0, -0.9933, 2.5, -0.9933]);
   });
 
+  it('draws a table style’s border linetypes and double lines, a cell’s override over them (M4-16 part 8)', () => {
+    // The data cell style's outside borders dashed and double, 0.05 apart; its inside ones plain.
+    const data = STYLE.cellStyles[0]!;
+    const styled: TableStyleRecord = {
+      ...STYLE,
+      cellStyles: [
+        {
+          ...data,
+          borders: data.borders.map((b, k) =>
+            k === 1 || k === 4 ? b : { ...b, linetype: 'L1', double: true, spacing: 0.05 },
+          ),
+        },
+        ...STYLE.cellStyles.slice(1),
+      ],
+    };
+    const parts = draw(table(), styled).filter((p) => p.geom.kind === 'LINE' && !p.defpoint);
+    const inL1 = lines(parts.filter((p) => p.linetype === 'L1'));
+    // The data row's outline on the grid, and inside it a second outline 0.05 in.
+    expect(inL1).toContainEqual([0, -1.1733, 5.5, -1.1733]);
+    expect(inL1).toContainEqual([0.05, -1.1233, 5.45, -1.1233]);
+    expect(inL1).toContainEqual([0.05, -0.8633, 0.05, -1.1233]);
+    // The header row above keeps its own cell style's borders: ByBlock, single.
+    expect(lines(parts.filter((p) => p.linetype === 'ByBlock'))).toContainEqual([
+      0, -0.4533, 5.5, -0.4533,
+    ]);
+    // The line between the data cells is the inside vertical border: plain.
+    expect(inL1).not.toContainEqual([2.5, -0.8133, 2.5, -1.1733]);
+    // A cell overriding only its bottom border's colour keeps the style's linetype and double line.
+    const over = table({
+      cells: [
+        [cell('Schedule', { columnSpan: 2 }), cell('', { merged: true })],
+        [cell('Tag'), cell('Size')],
+        [
+          cell('N1', { format: { borders: { bottom: { color: { kind: 'aci', index: 1 } } } } }),
+          cell(''),
+        ],
+      ],
+    });
+    const red = draw(over, styled).filter(
+      (p) => p.geom.kind === 'LINE' && p.color?.kind === 'aci' && p.color.index === 1,
+    );
+    expect(red.map((p) => p.linetype)).toEqual(['L1', 'L1']);
+    expect(lines(red).sort()).toEqual(
+      [
+        [0, -1.1733, 2.5, -1.1733],
+        [0.05, -1.1233, 2.5, -1.1233],
+      ].sort(),
+    );
+  });
+
   it('merges a block of cells: one text and fill across it, no lines inside', () => {
     const g: TableGeometry = {
       ...table(),

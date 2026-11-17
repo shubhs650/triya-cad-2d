@@ -11,6 +11,10 @@
 //
 // M4-16 part 4: New Table Style's Select table to start from hides the dialogs, asks "Select a
 // table:" and opens New Table Style again on the formatting of the table picked (a cyan title).
+//
+// M4-16 part 8: Modify Table Style's Borders tab gives the Data cell style's outside borders the
+// linetype ACAD_ISO02W100 as double lines 0.05 apart; the table drawn in Standard is drawn again
+// with them, and the dialog opens again on them.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, TableGeometry } from '@triya/engine';
 import path from 'node:path';
@@ -244,4 +248,94 @@ test('Select table to start from gives a new style the table’s formatting', as
   await editor.getByRole('button', { name: 'Cancel' }).click();
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(prompt(page)).toHaveText('Command:');
+});
+
+test('the Borders tab draws a style’s borders in a linetype and double', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-1, -3), 'Specify opposite corner:');
+  await type(page, p(9, 1), 'Command:');
+  await type(page, '-TABLE', 'Enter number of columns or [Auto] <5>:');
+  await type(page, '3', 'Enter number of rows or [Auto] <1>:');
+  await type(page, '2', 'Specify insertion point or [Style/Width/Height]:');
+  await type(page, p(0, 0), 'Enter text:');
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('PARTS');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  // A linetype scale that shows ACAD_ISO02W100's dashes across the cells.
+  await page.keyboard.type('LTSCALE');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText(/^Enter new value for LTSCALE/);
+  await type(page, '0.02', 'Command:');
+  await shot(page, 'part8-1-before');
+
+  /** The made table's block lines in a linetype of their own, and the handle of the linetype. */
+  const dashed = () =>
+    page.evaluate(() => {
+      const all = new Map<string, Entity>();
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const a of cs.entities?.added ?? []) all.set(a.entity.handle, a.entity);
+        for (const u of cs.entities?.updated ?? []) all.set(u.after.handle, u.after);
+        for (const r of cs.entities?.removed ?? []) all.delete(r.entity.handle);
+      }
+      const t = [...all.values()].find((e) => e.geom.kind === 'ACAD_TABLE');
+      const block = (t?.geom as TableGeometry | undefined)?.block;
+      const lines = [...all.values()].filter(
+        // Not the Defpoints line (ByLayer).
+        (x) =>
+          x.owner === block &&
+          x.geom.kind === 'LINE' &&
+          x.linetype !== 'ByBlock' &&
+          x.linetype !== 'ByLayer',
+      );
+      return { count: lines.length, linetypes: [...new Set(lines.map((x) => x.linetype))] };
+    });
+  expect((await dashed()).count).toBe(0);
+
+  await enterCommand(page, 'TS');
+  const dialog = page.getByRole('dialog', { name: 'Table Style' });
+  await expect(dialog).toBeVisible();
+  const list = dialog.getByRole('listbox', { name: 'Styles:' });
+  await list.getByRole('option', { name: /Standard/ }).click();
+  await dialog.getByRole('button', { name: 'Modify...' }).click();
+  const modify = page.getByRole('dialog', { name: 'Modify Table Style: Standard' });
+  await expect(modify.getByLabel('Cell styles')).toHaveValue('data');
+  await modify.getByRole('tab', { name: 'Borders' }).click();
+  const spacing = modify.getByLabel('Spacing:');
+  await expect(spacing).toBeDisabled();
+  await expect(spacing).toHaveValue('0.045');
+  await modify.getByLabel('Linetype:').selectOption({ label: 'ACAD_ISO02W100' });
+  await modify.getByLabel('Double line').check();
+  await spacing.fill('0.05');
+  await modify.getByLabel('Color:').selectOption({ label: 'Blue' });
+  await modify.getByRole('button', { name: 'Outside Borders' }).click();
+  await shot(page, 'part8-2-borders-tab');
+  await modify.getByRole('button', { name: 'OK' }).click();
+  await expect(modify).toBeHidden();
+  // The two data rows' outline, each line with a second one inside it: 4 sides by 2 lines, the
+  // sides across the rows a line per row.
+  await expect.poll(async () => (await dashed()).count).toBeGreaterThanOrEqual(8);
+  const { count, linetypes } = await dashed();
+  expect(count % 2).toBe(0);
+  expect(linetypes).toHaveLength(1);
+
+  // Modify again shows them on the Borders tab.
+  await dialog.getByRole('button', { name: 'Modify...' }).click();
+  await modify.getByRole('tab', { name: 'Borders' }).click();
+  await expect(modify.getByLabel('Linetype:')).toHaveValue(linetypes[0]!);
+  await expect(modify.getByLabel('Double line')).toBeChecked();
+  await expect(spacing).toHaveValue('0.05');
+  await modify.getByRole('button', { name: 'Cancel' }).click();
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.9);
+  await shot(page, 'part8-3-after');
 });

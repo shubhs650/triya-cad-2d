@@ -1540,6 +1540,15 @@ export interface TableCellBorder {
   readonly lineweight: Lineweight;
   readonly visible: boolean;
   readonly color: Color;
+  /**
+   * The border's linetype (M4-16 part 8); never ByBlock, which is what a border without one is
+   * drawn in. Only a named cell style states it: a DWG's from R2010 and a CELLSTYLEMAP's.
+   */
+  readonly linetype?: LinetypeRef;
+  /** A double-line border (border type 2), stated where `linetype` is. */
+  readonly double?: true;
+  /** The spacing of a double line; kept only on a double border. */
+  readonly spacing?: number;
 }
 
 /** A TABLESTYLE cell style (the Data, Header and Title rows of the DXF record). */
