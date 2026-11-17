@@ -279,6 +279,17 @@ export async function typeAtOnce(page: Page, text: string): Promise<void> {
 }
 
 /**
+ * Waits until the engine has read every input sent from the command line (its `data-reading`
+ * clears) and so shows the prompt they lead to. `Command:` alone is no sign a typed command ran:
+ * keys typed ahead are read later, and until then the prompt from before them still shows (M2-52).
+ * A spec that rolls the wheel, clicks or reads the view after typing waits here first, or the
+ * wheel races the typed ZOOM (undo-views.spec.ts, M4-25).
+ */
+export async function expectInputsRead(page: Page): Promise<void> {
+  await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
+}
+
+/**
  * Enters `text` at the command line, ended by Enter, once the engine has read every input sent
  * before (M2-75). A fill replaces the field's text at once, while the keys typed ahead of a
  * prompt not shown yet are held and replayed in order (M2-71): a fill made while the engine still
@@ -287,7 +298,7 @@ export async function typeAtOnce(page: Page, text: string): Promise<void> {
  * (tests/lint/e2e-command-fill.test.ts); keys typed with `page.keyboard` need no wait.
  */
 export async function enterCommand(page: Page, text: string): Promise<void> {
-  await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
+  await expectInputsRead(page);
   const input = page.getByLabel('Command', { exact: true });
   await input.fill(text);
   await input.press('Enter');

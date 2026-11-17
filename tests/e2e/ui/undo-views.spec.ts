@@ -3,7 +3,14 @@
 // single step, and No keeps each its own.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, activeCanvas, expectShown, openWithPicker, worldAt } from '../app/page';
+import {
+  DXF,
+  activeCanvas,
+  expectInputsRead,
+  expectShown,
+  openWithPicker,
+  worldAt,
+} from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -47,11 +54,18 @@ async function expectView(page: Page, v: { x: number; y: number; per100: number 
     .toBe(true);
 }
 
+/**
+ * Types `lines`, each ended by Enter, and waits until the engine has read them all and is back at
+ * `Command:`. `Command:` alone shows before the engine reads keys typed ahead (M2-52): the wheel
+ * rolled next then zoomed before the typed ZOOM did, a LINE was still open when the wheel's step
+ * was recorded, and a view read missed the zoom just typed (M4-25).
+ */
 async function type(page: Page, ...lines: string[]): Promise<void> {
   for (const text of lines) {
     await page.keyboard.type(text);
     await page.keyboard.press('Enter');
   }
+  await expectInputsRead(page);
   await expect(prompt(page)).toHaveText('Command:');
 }
 
