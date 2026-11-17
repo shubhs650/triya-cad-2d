@@ -10,6 +10,9 @@ import { parseAngleValue, parseDistance, parseNumber } from '../commands/parse';
 import { moveBy, turnAbout } from '../edit/similarity';
 import { dissociateHatch, transformObjects } from '../edit/edit';
 import { rescaledReference } from '../edit/transform';
+import { centerMarkOf, redrawCenterMark } from '../edit/center-marks';
+import { isCenterLength } from '../edit/center-settings';
+import type { CenterMark } from '../model/types';
 import { relaidLines } from '../edit/hatch-lines';
 import {
   HATCH_BACKGROUND_APP,
@@ -841,6 +844,11 @@ export function applyPropertyEdit(
   if (DIMENSION_KEYS.test(edit.key)) {
     return { ...dimensionEdit(b, model, editable, edit), refused };
   }
+  if (CENTER_MARK_KEYS.test(edit.key)) {
+    const r = centerMarkEdit(b, model, editable, edit);
+    for (const [reason, n] of r.refused) refused.set(reason, (refused.get(reason) ?? 0) + n);
+    return { changed: r.changed, ...(r.invalid && { invalid: r.invalid }), refused };
+  }
 
   const n = numeric(edit.value, ANGLE_KEYS.has(edit.key) ? 'angle' : 'number');
   const flag = yesNo(edit.value);
@@ -1088,4 +1096,56 @@ function toleranceEdit(
     changed++;
   }
   return { changed };
+}
+
+const CENTER_MARK_KEYS =
+  /^(centerCrossSize|centerCrossGap|centerShowExtensions|centerExtension:\d)$/;
+const NOT_DRAWN = 'it cannot be drawn so';
+
+/**
+ * A center mark's or centerline's row (M4-24): its record changed and the mark drawn again, as
+ * CENTERRESET and MATCHPROP's Center object draw one (`redrawCenterMark`): from its objects when
+ * it is associative, else from its own lines. A cross size or gap is a length or a factor of the
+ * diameter followed by `x`, as CENTERCROSSSIZE takes it; an extension is zero or more, as
+ * CENTEREXE is. A row a mark does not have (a centerline's cross size) leaves it be.
+ */
+function centerMarkEdit(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  entities: readonly Entity[],
+  edit: PropertyEdit,
+): { changed: number; refused: Map<string, number>; invalid?: string } {
+  const refused = new Map<string, number>();
+  const v = edit.value;
+  let change: (r: CenterMark) => CenterMark | undefined;
+  const extension = /^centerExtension:(\d)$/.exec(edit.key);
+  if (extension) {
+    const i = Number(extension[1]);
+    const n = numeric(v, 'distance');
+    if (n === undefined || n < 0) return { changed: 0, refused, invalid: INVALID };
+    change = (r) =>
+      i < r.extensions.length
+        ? { ...r, extensions: r.extensions.map((e, k) => (k === i ? n : e)) }
+        : undefined;
+  } else if (edit.key === 'centerShowExtensions') {
+    const on = yesNo(v);
+    if (on === undefined) return { changed: 0, refused, invalid: INVALID };
+    change = (r) => (r.kind === 'mark' ? { ...r, showExtensions: on } : undefined);
+  } else {
+    if (typeof v !== 'string' || !isCenterLength(v)) {
+      return { changed: 0, refused, invalid: INVALID };
+    }
+    const text = v.trim();
+    const field = edit.key === 'centerCrossSize' ? 'crossSize' : 'crossGap';
+    change = (r) => (r.kind === 'mark' ? { ...r, [field]: text } : undefined);
+  }
+  let changed = 0;
+  for (const e of entities) {
+    const before = e.geom.kind === 'INSERT' ? centerMarkOf(model, e) : undefined;
+    const after = before && change(before);
+    if (!before || !after || same(after, before)) continue;
+    if (redrawCenterMark(b, model, e, before, after)) changed++;
+    else refused.set(NOT_DRAWN, (refused.get(NOT_DRAWN) ?? 0) + 1);
+  }
+  return { changed, refused };
 }

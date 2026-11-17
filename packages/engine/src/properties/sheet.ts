@@ -11,6 +11,7 @@ import { distance, sub } from '../geom/vec';
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import { dynamicBlockOf } from '../model/dynamic-block';
+import { centerMarkOf, isAssociated } from '../edit/center-marks';
 import { dynamicProperties } from './dynamic';
 import type { EntityId } from '../model/entity-ids';
 import type {
@@ -602,6 +603,112 @@ function vertexRows(g: G<'LWPOLYLINE'>, at: number): PropertyRow[] {
   ];
 }
 
+/** A center mark's extensions by its own axes, a centerline's by its ends (M4-24). */
+const MARK_EXTENSIONS = ['Left', 'Right', 'Top', 'Bottom'] as const;
+const LINE_EXTENSIONS = ['Start', 'End'] as const;
+
+/**
+ * The center marks and centerlines `es` are (M4-24), when every one is a mark Triya made; else
+ * undefined. Their kind: 'mark', 'line', or 'both'.
+ */
+export function centerMarkKind(
+  model: DocumentModel,
+  es: readonly Entity[],
+): 'mark' | 'line' | 'both' | undefined {
+  const kinds = new Set<string>();
+  for (const e of es) {
+    const r = e.geom.kind === 'INSERT' ? centerMarkOf(model, e) : undefined;
+    if (!r) return undefined;
+    kinds.add(r.kind);
+  }
+  if (kinds.size === 0) return undefined;
+  return kinds.size > 1 ? 'both' : (kinds.values().next().value as 'mark' | 'line');
+}
+
+/**
+ * A selection of center marks and centerlines (M4-24): AutoCAD 2024 lists them as their own
+ * type, "Center Mark" or "Centerline", with their position, a mark's rotation, and the settings
+ * the CENTER* variables gave them (cross size and gap as typed, a length or a factor of the
+ * diameter followed by `x`; extension lines shown; each extension) and whether they are
+ * associative, which only CENTERDISASSOCIATE and CENTERREASSOCIATE change. AutoCAD's help names
+ * these settings without the palette's grouping: Triya puts them in a section named for the
+ * type. A mark and a centerline together show what both have. Undefined for other references.
+ */
+function centerMarkRows(
+  model: DocumentModel,
+  es: readonly Entity[],
+): PropertySection[] | undefined {
+  const kind = centerMarkKind(model, es);
+  if (!kind) return undefined;
+  const g = (e: Entity) => geomOf<'INSERT'>(e);
+  const r = (e: Entity) => centerMarkOf(model, e)!;
+  const geometry: PropertyRow[] = [
+    row(es, {
+      key: 'positionX',
+      label: 'Position X',
+      kind: 'distance',
+      get: (e) => g(e).position.x,
+    }),
+    row(es, {
+      key: 'positionY',
+      label: 'Position Y',
+      kind: 'distance',
+      get: (e) => g(e).position.y,
+    }),
+  ];
+  const rows: PropertyRow[] = [];
+  const extension = (i: number, side: string) =>
+    row(es, {
+      key: `centerExtension:${i}`,
+      label: `${side} extension`,
+      kind: 'distance',
+      get: (e) => r(e).extensions[i] ?? 0,
+    });
+  if (kind === 'mark') {
+    geometry.push(
+      row(es, { key: 'rotation', label: 'Rotation', kind: 'angle', get: (e) => g(e).rotation }),
+    );
+    rows.push(
+      row(es, {
+        key: 'centerCrossSize',
+        label: 'Cross size',
+        kind: 'text',
+        get: (e) => r(e).crossSize ?? '0.1x',
+      }),
+      row(es, {
+        key: 'centerCrossGap',
+        label: 'Cross gap',
+        kind: 'text',
+        get: (e) => r(e).crossGap ?? '0.05x',
+      }),
+      row(es, {
+        key: 'centerShowExtensions',
+        label: 'Show extensions',
+        kind: 'choice',
+        options: YES_NO,
+        get: (e) => yesNo(r(e).showExtensions === true),
+      }),
+      ...MARK_EXTENSIONS.map((side, i) => extension(i, side)),
+    );
+  } else if (kind === 'line') {
+    rows.push(...LINE_EXTENSIONS.map((side, i) => extension(i, side)));
+  }
+  rows.push(
+    row(es, {
+      key: 'centerAssociative',
+      label: 'Associative',
+      kind: 'choice',
+      options: YES_NO,
+      readOnly: true,
+      get: (e) => yesNo(isAssociated(r(e))),
+    }),
+  );
+  return [
+    { title: 'Geometry', rows: geometry },
+    { title: kind === 'line' ? 'Centerline' : 'Center Mark', rows },
+  ];
+}
+
 /** The sections a selection of one type shows after General. */
 function typeSections(
   model: DocumentModel,
@@ -983,6 +1090,11 @@ function typeSections(
       break;
     case 'INSERT': {
       const g = (e: Entity) => geomOf<'INSERT'>(e);
+      const marks = centerMarkRows(model, es);
+      if (marks) {
+        for (const x of marks) add(x.title, [...x.rows]);
+        break;
+      }
       add('Geometry', [
         row(es, {
           key: 'positionX',
@@ -1736,7 +1848,18 @@ export function propertySheet(
   const all = filtered(model, ids, undefined);
   const counts = new Map<EntityType, number>();
   for (const e of all) counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
-  const types = [...counts].map(([type, count]) => ({ type, label: typeLabel(type), count }));
+  // Center marks and centerlines are listed by their own names (M4-24).
+  const label = (type: EntityType): string => {
+    const kind =
+      type === 'INSERT'
+        ? centerMarkKind(
+            model,
+            all.filter((e) => e.type === type),
+          )
+        : undefined;
+    return kind === 'line' ? 'Centerline' : kind ? 'Center Mark' : typeLabel(type);
+  };
+  const types = [...counts].map(([type, count]) => ({ type, label: label(type), count }));
   const narrowed = filter !== undefined && counts.has(filter) ? filter : undefined;
   const es = narrowed ? all.filter((e) => e.type === narrowed) : all;
   const units = propertyUnits(model);

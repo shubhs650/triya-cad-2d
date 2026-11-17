@@ -246,3 +246,97 @@ test('the CENTER* variables, CENTERDISASSOCIATE, CENTERREASSOCIATE and CENTERRES
   // The last lines drawn reach 6 + 8 past the centre.
   expect(Math.max(...lines.slice(-6).map(Math.abs))).toBeCloseTo(14);
 });
+
+// M4-24: a mark's grips and Properties rows. The mark's right extension grip, dragged out, draws
+// the mark as it would be and stretches the extension; Properties lists it as a Center Mark, with
+// its cross size, gap, extension lines, extensions and Associative, and edits them. The grips and
+// rows are unit-tested in packages/engine (center-mark-grips.test.ts).
+test('a center mark’s grips and Properties rows (M4-24)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const off = () => page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await off();
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-20, -20), 'Specify opposite corner:');
+  await type(page, p(50, 20), 'Command:');
+  const k = Math.min(box.width / 70, box.height / 40);
+  const at = (x: number, y: number) => ({
+    x: box.x + box.width / 2 + (x - 15) * k,
+    y: box.y + box.height / 2 - y * k,
+  });
+  await page.keyboard.press('F3');
+  await type(page, 'CIRCLE', /^Specify center point/);
+  await type(page, p(0, 0), /^Specify radius/);
+  await type(page, '10', 'Command:');
+  await type(page, 'CENTERMARK', 'Select circle or arc to add center mark:');
+  const edge = at(10, 0);
+  await page.mouse.click(edge.x, edge.y);
+  await off();
+  await expect.poll(async () => (await state(page)).length).toBe(1);
+  await type(page, '', 'Command:');
+
+  /** The mark's record as the changes leave it. */
+  const record = () =>
+    page.evaluate(() => {
+      let r: { extensions: number[]; crossSize?: string; showExtensions?: boolean } | undefined;
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const o of cs.objects?.added ?? []) if (o.type === 'TRIYA_CENTERMARK') r = o as never;
+        for (const u of cs.objects?.updated ?? []) {
+          if (u.after.type === 'TRIYA_CENTERMARK') r = u.after as never;
+        }
+      }
+      return r;
+    });
+  expect((await record())!.extensions).toEqual([3.5, 3.5, 3.5, 3.5]);
+
+  // Selected by its centre: its grips are the centre and each extension line's end.
+  const centre = at(0, 0);
+  await page.mouse.click(centre.x, centre.y);
+  await off();
+  await page.waitForTimeout(300);
+  await shot('6-mark-grips.png');
+  // The right extension's grip, dragged out to x 20: the mark is drawn as it will be.
+  const grip = at(13.5, 0);
+  await page.mouse.click(grip.x, grip.y);
+  await expect(prompt(page)).toHaveText('Specify stretch point or [Base point/Copy/Undo/eXit]:');
+  const to = at(20, 1);
+  await page.mouse.move(to.x, to.y, { steps: 5 });
+  await page.waitForTimeout(300);
+  await shot('7-extension-dragged.png');
+  await type(page, `#${p(20, 1)}`, 'Command:');
+  await expect.poll(async () => (await record())!.extensions).toEqual([3.5, 10, 3.5, 3.5]);
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toHaveText(
+    'Center Mark (1)',
+  );
+  for (const group of ['Geometry', 'Center Mark']) {
+    await expect(palette.getByRole('table', { name: group })).toBeVisible();
+  }
+  await expect(palette.getByRole('textbox', { name: 'Right extension' })).toHaveValue(/^10/);
+  await expect(palette.getByRole('textbox', { name: 'Cross size' })).toHaveValue('0.1x');
+  await shot('8-mark-rows.png');
+
+  // Left extension 6 and cross size 4 (a length): the mark is drawn again with them.
+  const left = palette.getByRole('textbox', { name: 'Left extension' });
+  await left.fill('6');
+  await left.press('Enter');
+  await expect.poll(async () => (await record())!.extensions).toEqual([6, 10, 3.5, 3.5]);
+  const size = palette.getByRole('textbox', { name: 'Cross size' });
+  await size.fill('4');
+  await size.press('Enter');
+  await expect.poll(async () => (await record())!.crossSize).toBe('4');
+  await palette.getByRole('combobox', { name: 'Show extensions' }).selectOption({ label: 'No' });
+  await expect.poll(async () => (await record())!.showExtensions).toBe(false);
+  await expect(palette.getByLabel('Associative', { exact: true })).toHaveText('Yes');
+  await off();
+  await page.waitForTimeout(300);
+  await shot('9-mark-edited.png');
+});

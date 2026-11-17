@@ -98,7 +98,12 @@ export type GripKind =
   /** A non-associative hatch's boundary vertex: the boundary stretches. */
   | 'boundary'
   /** A table's corner or column grip (M4-05 part 4): `table` says what it sizes. */
-  | 'table';
+  | 'table'
+  /**
+   * A center mark's or centerline's extension line end (M4-24): `centerMark` is the extension
+   * it stretches; the grip mode edits the mark's record.
+   */
+  | 'centerMark';
 
 export interface Grip {
   readonly point: Vec2;
@@ -112,6 +117,8 @@ export interface Grip {
   readonly array?: ArrayGripRole;
   /** A `table` grip's role (M4-05 part 4). */
   readonly table?: TableGripRole;
+  /** A `centerMark` grip's extension, the record's index (M4-24). */
+  readonly centerMark?: number;
 }
 
 const g = (point: Vec2, kind: GripKind): Grip => ({ point, kind });
@@ -159,8 +166,8 @@ const tableStyleOf = (info: GripInfo | undefined) =>
 
 /**
  * The grips an object shows, none for kinds without standard grips yet. `info` (`gripInfoOf`):
- * the object is a revision cloud, which shows its corners, or an associative array, which shows
- * its array grips.
+ * the object is a revision cloud, which shows its corners, or an associative array or a center
+ * mark, which shows its own grips.
  */
 export function gripsOf(geom: EntityGeometry, info?: GripInfo): Grip[] {
   if (info && 'grips' in info && geom.kind === 'INSERT') return [...info.grips];
@@ -401,7 +408,9 @@ export function moveGrip(
     case 'move':
       return { kind: 'move' };
     case 'array':
-      // An array grip edits the array's definition: the grip command does that.
+    case 'centerMark':
+      // An array grip edits the array's definition, a center mark's its record: the grip
+      // command does that.
       return { kind: 'none' };
     case 'stretch':
       return stretchGeometry(geom, (p) => sameGrip(p, grip), d, {

@@ -37,6 +37,9 @@ import {
   type GripDimensions,
 } from '../../edit/grips';
 import { gripInfoOf } from '../../edit/array-grips';
+import { centerMarkDrag } from '../../edit/center-mark-grips';
+import { shapeProps } from '../command-preview';
+import type { DragPreview } from '../drag';
 import { mirrorIn, moveBy, scaleAbout, turnAbout, type Similarity } from '../../edit/similarity';
 import type { DocumentModel } from '../../model/document';
 import type { TransformOptions } from '../../edit/transform';
@@ -91,6 +94,28 @@ function isTableColumnGrip(model: DocumentModel, ids: readonly EntityId[], grip:
       )
     );
   });
+}
+
+/**
+ * The drag of a center mark's extension grip at `grip` (M4-24), when it is one of the first
+ * selected object that has a grip there: the mark drawn as it would be.
+ */
+function centerMarkGripDrag(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  grip: Vec2,
+  from: Vec2,
+): DragPreview | undefined {
+  for (const id of ids) {
+    const e = model.entity(id);
+    const info = e && gripInfoOf(model, e);
+    const found = e && gripsOf(e.geom, info).find((g) => sameGrip(g.point, grip));
+    if (!found) continue;
+    if (!info || !('centerMark' in info) || found.centerMark === undefined) return undefined;
+    const mark = centerMarkDrag(model, e, info.centerMark, found.centerMark);
+    return mark && { kind: 'centerMark', id, props: shapeProps(e), mark, from };
+  }
+  return undefined;
 }
 
 /** Copies of the objects with a grip at `grip`, that grip dragged to `to` (STRETCH with Copy). */
@@ -253,7 +278,12 @@ export function gripCommand(
               rubberBand: { from: base },
               drag: group
                 ? { kind: 'move', ids, from: base }
-                : { kind: 'grip', ids, grip: hot, from: base },
+                : (centerMarkGripDrag(ctx.model, ids, hot, base) ?? {
+                    kind: 'grip',
+                    ids,
+                    grip: hot,
+                    from: base,
+                  }),
               ...(!group && base === hot && gripDimensions(ctx, ids, hot)),
             });
             break;
