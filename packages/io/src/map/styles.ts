@@ -197,6 +197,18 @@ export const mappedCellStyleMap = (s: TableStyle): TableCellStyle[] | undefined 
 /** DWG "merge flags" bit of the Table cell style for a table that grows up (ODA spec). */
 export const FLOW_BOTTOM_TO_TOP = 0x10000;
 
+/** The title and header rows `s` suppresses, as `tableStyle` maps them. */
+export function tableStyleRows(
+  s: TableStyle | null | undefined,
+): Pick<TableStyleRecord, 'suppressTitle' | 'suppressHeader'> {
+  if (!s) return { suppressTitle: false, suppressHeader: false };
+  const table = isNamedCellStyle(s.tableCellStyle);
+  return {
+    suppressTitle: table ? false : s.suppressTitle,
+    suppressHeader: table ? false : s.suppressHeaderRow,
+  };
+}
+
 export function tableStyle(s: TableStyle): TableStyleRecord {
   // From R2010 a DWG keeps the table-wide settings in the style's "Table" cell style: its
   // margins, and the flow direction as a flag (the ODA spec's cell style merge flags, which may

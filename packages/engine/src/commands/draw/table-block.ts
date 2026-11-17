@@ -8,7 +8,7 @@
 // dialog's Browse..., which inserts another drawing as a block, waits for INSERT, M5); without
 // AutoFit only the cell's row grows to hold the block (`fitTableBlockRow`).
 import { isContentBlock } from '../../properties/multileader-block';
-import { rowCellStyle, tableRowTypes } from '../../annotation/table';
+import { tableCellStyle } from '../../annotation/table';
 import {
   tableDrawingOf,
   withCellBlock,
@@ -56,8 +56,7 @@ function settingsFor(
   const t = tableOf(ctx, id);
   const c = t?.g.cells[i]?.[j];
   if (!t || !c) return undefined;
-  const type = tableRowTypes(t.style, t.g.rowHeights.length)[i]!;
-  const alignment = c.format?.alignment ?? rowCellStyle(t.style, type)?.alignment ?? 1;
+  const alignment = c.format?.alignment ?? tableCellStyle(t.g, t.style, i, j)?.alignment ?? 1;
   const held = c.type === 'block' && blocks.some((b) => b.handle === c.block);
   return {
     ...((held ? c.block : blocks[0]?.handle) !== undefined && {

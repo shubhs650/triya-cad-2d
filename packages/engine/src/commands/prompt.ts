@@ -11,6 +11,7 @@ import type { ColorBook } from '../properties/color-books';
 import type { OverkillSettings } from '../edit/overkill';
 import type { GripDimensions } from '../edit/grips';
 import type { ArrayCountField } from '../edit/array-grips';
+import type { TableRowCellStyles } from '../edit/table';
 import type { QuickSelectCriteria, QuickSelectType } from '../selection/qselect';
 import type { FilterItem, FilterNameKey } from '../selection/filter';
 import type { PropertyUnits } from '../properties/sheet';
@@ -461,6 +462,11 @@ export interface InsertTableSettings {
   readonly lines: number;
   readonly autoColumns: boolean;
   readonly autoRows: boolean;
+  /**
+   * Set cell styles (M4-16 part 5): the first, second and other rows' cell styles; absent for
+   * the table style's title and header rows by their place, then data rows.
+   */
+  readonly cellStyles?: TableRowCellStyles;
 }
 
 /** A table style as the Insert Table dialog lists and previews it. */

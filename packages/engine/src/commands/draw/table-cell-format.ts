@@ -4,7 +4,7 @@
 // AutoCAD's Cell Border Properties dialog as prompts: which borders, then their colour and
 // lineweight (the dialog's defaults, ByBlock, at Enter). A border's linetype and double lines,
 // and hiding a border (which a DXF save cannot state yet, M1-81), are not done.
-import { rowCellStyle, tableRowTypes } from '../../annotation/table';
+import { tableCellStyle } from '../../annotation/table';
 import {
   TABLE_BORDER_SETS,
   withCellBorders,
@@ -42,7 +42,7 @@ const BY_BLOCK: Color = { kind: 'byBlock' };
 /** What the range's first cell is drawn with: its own format, else its row's cell style. */
 function firstCell(g: TableGeometry, style: TableStyleRecord | undefined, r: TableCellRange) {
   const c = g.cells[r.r0]![r.c0]!;
-  const s = rowCellStyle(style, tableRowTypes(style, g.cells.length)[r.r0]!);
+  const s = tableCellStyle(g, style, r.r0, r.c0);
   return {
     alignment: c.format?.alignment ?? s?.alignment ?? 1,
     textHeight: c.format?.textHeight ?? s?.textHeight ?? 0.18,

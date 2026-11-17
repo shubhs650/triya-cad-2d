@@ -1,0 +1,1 @@
+- M4-16 part 5 (#490): table rows and cells keep their Title, Header or Data cell style, so title and header rows can be inserted and deleted anywhere; the table cell menu's Cell Style puts rows or cells on another cell style, Insert Table's Set cell styles choose a new table's first rows' styles, and all of it is kept through DXF saves.

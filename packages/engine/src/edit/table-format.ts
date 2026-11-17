@@ -16,10 +16,16 @@ import type {
   TableBorderFormat,
   TableCell,
   TableCellFormat,
+  TableCellStyleName,
   TableGeometry,
   TableStyleRecord,
 } from '../model/types';
-import { rowCellStyle, tableRowTypes } from '../annotation/table';
+import {
+  rowCellStyle,
+  tableCellStyleNames,
+  tableRowStyles,
+  withRowStyles,
+} from '../annotation/table';
 import type { TableCellRange } from './table-grid';
 
 /** The borders Edit Borders applies to (the Cell Border Properties dialog's buttons). */
@@ -158,10 +164,10 @@ export function tableTextScaled(
   k: number,
 ): TableGeometry {
   if (k === 1) return g;
-  const types = tableRowTypes(style, g.cells.length);
+  const types = tableCellStyleNames(g, style);
   const cells = g.cells.map((row, i) =>
-    row.map((c) => {
-      const h = c.format?.textHeight ?? rowCellStyle(style, types[i]!)?.textHeight ?? 0.18;
+    row.map((c, j) => {
+      const h = c.format?.textHeight ?? rowCellStyle(style, types[i]![j]!)?.textHeight ?? 0.18;
       const m = c.format?.margins;
       const margins = m && {
         margins: Object.fromEntries(Object.entries(m).map(([s, v]) => [s, v * k])),
@@ -198,7 +204,7 @@ export function withCellOverridesRemoved(
   style: TableStyleRecord | undefined,
   r: TableCellRange,
 ): TableGeometry {
-  const types = tableRowTypes(style, g.cells.length);
+  const types = tableRowStyles(g, style);
   const cells: Cells = g.cells.map((row, i) =>
     i < r.r0 || i > r.r1
       ? [...row]
@@ -209,6 +215,36 @@ export function withCellOverridesRemoved(
         }),
   );
   return { ...g, cells };
+}
+
+/**
+ * Table `g` with the cells of range `r` on cell style `name`, or their row's when undefined
+ * (AutoCAD's Table Cell tab, Cell Styles, with By Row; M4-16 part 5). Cells across every column
+ * put their rows on it, their own cell styles dropped: a title or header row is a row on that
+ * cell style (AutoCAD's Help does not say which of row and cells a whole row selected sets; the
+ * row is what Insert Rows then copies, as a drafter making a title row expects). Fewer cells each
+ * take it as their own, unless it is their row's. Formats stay as they are: what a cell overrides
+ * overrides its new cell style too.
+ */
+export function withCellsStyled(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  r: TableCellRange,
+  name: TableCellStyleName | undefined,
+): TableGeometry {
+  const rows = tableRowStyles(g, style);
+  const inRange = (i: number, j: number) => i >= r.r0 && i <= r.r1 && j >= r.c0 && j <= r.c1;
+  const own = (c: TableCell, i: number, as: TableCellStyleName | undefined): TableCell => {
+    const { cellStyle: _, ...rest } = c;
+    return as === undefined || as === rows[i] ? rest : { ...rest, cellStyle: as };
+  };
+  const whole = r.c0 === 0 && r.c1 === g.columnWidths.length - 1;
+  const cells = g.cells.map((row, i) =>
+    row.map((c, j) => (inRange(i, j) ? own(c, i, whole ? undefined : name) : c)),
+  );
+  if (!whole || name === undefined) return { ...g, cells };
+  const types = rows.map((t, i) => (i >= r.r0 && i <= r.r1 ? name : t));
+  return withRowStyles({ ...g, cells }, style, types);
 }
 
 /**

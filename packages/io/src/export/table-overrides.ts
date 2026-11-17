@@ -43,7 +43,9 @@ import type {
   TableOverrides,
   TableRowFormat,
 } from '@triya/engine';
+import { tableRowStyles } from '@triya/engine';
 import { rowTypeOf, tableCellFormat, tableMargins } from '../map/entities';
+import { tableStyleRows } from '../map/styles';
 import { acadColor, resolve, same, type Resolver } from './entities';
 import { beginCellStyle, dwgFrom2010, formatValueProblems } from './table-cells';
 import { copyStyle, originProblems, rowsAt, cellStylesAt } from './table-grid';
@@ -356,8 +358,9 @@ function rowTypesAfter(
 ): (RowType | undefined)[] | undefined {
   const style = acad ? acad.style : g.style === undefined ? null : resolve(r, g.style, TableStyle);
   const typeOf = rowTypeOf(style ?? null);
+  // A new table's rows are on the cell styles it states (M4-16 part 5).
+  if (!acad) return tableRowStyles(g, tableStyleRows(style ?? null));
   const fresh = newRows(style ?? null, g.cells.length);
-  if (!acad) return fresh.map((row) => typeOf(row.styleId));
   if (!Array.isArray(g.cells)) return undefined;
   return rowsAt(acad, g).map((row, i) => typeOf((row ?? fresh[i])?.styleId ?? 0));
 }
