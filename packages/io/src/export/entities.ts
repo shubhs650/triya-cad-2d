@@ -2360,6 +2360,18 @@ const tableWriter: Writer<TableGeometry> = {
 };
 
 /**
+ * The content a DWG from R2010 states for the new table `g` (M4-28): the rows, columns and cells
+ * with their cell styles, the table-wide overrides in the rows' cell styles and the merges as
+ * ranges, as `tableWriter` writes a new table into such a DWG, on a table of its own that joins
+ * no drawing. A DXF save writes it as the table's TABLECONTENT (table-content.ts).
+ */
+export function newTableContent(r: Resolver, g: TableGeometry): TableEntity['content'] {
+  const t = new TableEntity();
+  tableWriter.write({ ...r, format: 'dwg', version: ACadVersion.AC1032 }, t, undefined, g);
+  return t.content;
+}
+
+/**
  * Writes cell (i, j)'s rotation into a DWG R2010+ table, where it is a content property folded
  * like the cell formats (map/entities.ts `tableCellRotation`): into the content format when that
  * rotates the content already, since it wins, into the cell's own cell style otherwise. A

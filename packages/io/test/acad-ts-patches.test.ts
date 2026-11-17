@@ -2,6 +2,7 @@
 // patch is reverted, which is what proves the patch is still needed after an upstream sync.
 import type { Polyline } from '@node-projects/acad-ts';
 import {
+  TableContentObject,
   ACadVersion,
   ArcLengthSymbolPosition,
   AttributeDefinition,
@@ -2875,5 +2876,12 @@ describe('acad-ts local patches', () => {
       ...([...read.entities!].find((e) => e instanceof Polyline2D) as Polyline).vertices,
     ] as Vertex2D[];
     expect(back.map((v) => v.curveTangent)).toEqual([Math.PI / 4, 0, -Math.PI / 2]);
+  });
+  it('0185 the TABLECONTENT object class is exported, so a save can make one for a new table', () => {
+    // M4-28 writes a new table's TABLECONTENT from its codes; without the export nothing outside
+    // acad-ts could make the object the DXF writer writes raw.
+    const object = new TableContentObject();
+    expect(object.objectName).toBe('TABLECONTENT');
+    expect(object.rawDxfCodes).toBeNull();
   });
 });

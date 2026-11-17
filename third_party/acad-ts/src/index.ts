@@ -479,6 +479,9 @@ export { LeaderContentType } from './Objects/LeaderContentType.js';
 export { LeaderDrawOrderType } from './Objects/LeaderDrawOrderType.js';
 export { LeaderLinePropertOverrideFlags } from './Objects/LeaderLinePropertOverrideFlags.js';
 export { LinkedData, LinkedTableData, FormattedTableData } from './Objects/LinkedData.js';
+// The TABLECONTENT object (a table's AutoCAD 2008 data under its round-trip XRECORD); the entity's
+// TableContent above is the table's own content (0185).
+export { TableContent as TableContentObject } from './Objects/TableContent.js';
 export { MapSource } from './Objects/MapSource.js';
 export { Material, MaterialChannelFlags, MaterialIlluminationModel, MaterialMode } from './Objects/Material.js';
 export { MLineStyleElement, MLineStyle } from './Objects/MLineStyle.js';
