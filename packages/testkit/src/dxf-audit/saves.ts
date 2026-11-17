@@ -22,7 +22,12 @@ export type AuditSaveKind =
   | 'categories'
   | 'table'
   | 'tablestyle'
-  | 'block';
+  | 'block'
+  // Saves of a thread-authored fixture, not a corpus file (audit.py `FIXTURE_SAVES`): XREF Bind
+  // of the xref set's parent, both bind types (M5-04 part 2).
+  | 'bind'
+  | 'bind-insert'
+  | 'bind-objects';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version

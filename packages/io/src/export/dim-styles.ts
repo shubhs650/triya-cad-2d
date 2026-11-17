@@ -35,7 +35,7 @@ import { aciOfTrueColor } from '../map/common';
 import { DIMVARS, dimStyle, type DimVarKind, type DimVarProperty } from '../map/dimvars';
 import type { CadFormat } from '../read';
 import { resolve, same, type Resolver } from './entities';
-import { planRecords, XREF_BITS, type RecordPlan } from './records';
+import { planRecords, xrefBitsProblem, type RecordPlan } from './records';
 import { writeXdata } from './xdata';
 
 export type DimStylePlan = RecordPlan<DimensionStyle, DimStyleRecord>;
@@ -190,8 +190,8 @@ function dimStyleProblems(
   reference: DimStyleRecord,
 ): string[] {
   const out: string[] = [];
-  if ((((b?.flags ?? 0) ^ (a.flags ?? 0)) & XREF_BITS) !== 0)
-    out.push('the xref-dependent flags belong to the xref');
+  const bits = xrefBitsProblem(b, a);
+  if (bits) out.push(bits);
   for (const name of Object.keys(a.vars)) {
     if (!VARS.has(name)) out.push(`${name} is not a DIMSTYLE variable`);
   }

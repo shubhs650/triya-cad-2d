@@ -19,7 +19,7 @@ import type {
   LinetypeRecord,
 } from '@triya/engine';
 import { resolve, type Resolver } from './entities';
-import { changes, planRecords, XREF_BITS, type RecordPlan } from './records';
+import { changes, planRecords, xrefBitsProblem, type RecordPlan } from './records';
 import { SHAPE_FILE } from './text-styles';
 
 /** DXF 74: text, shape (1 is absolute rotation). */
@@ -62,8 +62,8 @@ function linetypeProblems(
     out.push(`${b.name} is not a linetype to edit`);
   else if (b && name === LineType.continuousName.toUpperCase() && changed('elements'))
     out.push('Continuous has no pattern');
-  if (((b?.flags ?? 0) ^ (a.flags ?? 0)) & XREF_BITS)
-    out.push('the xref-dependent flags belong to the xref');
+  const bits = xrefBitsProblem(b, a);
+  if (bits) out.push(bits);
   // acad-ts writes DXF 72 as `A`, the only alignment AutoCAD has.
   if (changed('alignment') && a.alignment !== 'A') out.push('the alignment is always A');
   if (changed('elements', 'patternLength')) {

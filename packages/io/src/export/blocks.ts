@@ -39,6 +39,17 @@ const OWN_FLAGS = 1 | 2;
 const ANONYMOUS = 1;
 /** BLOCK DXF 70 bits of an xref (4, 8 overlay) and of a block an xref brings (16, 32). */
 const XREF_BLOCK = 4 | 8 | 16 | 32;
+const XREF = 4 | 8;
+
+/**
+ * Whether record `a` is xref `b` bound (XREF Bind, M5-04 part 2): a block of the drawing now,
+ * with no xref bits, whose BLOCK loses its path (DXF 1).
+ */
+const bound = (b: BlockTableRecord | undefined, a: BlockTableRecord | undefined): boolean =>
+  b !== undefined &&
+  a !== undefined &&
+  ((b.flags ?? 0) & XREF) !== 0 &&
+  ((a.flags ?? 0) & ~OWN_FLAGS) === 0;
 
 /** `$INSUNITS` codes: 0 unitless to 24 US survey miles (AutoCAD 2024). */
 const MAX_UNITS = 24;
@@ -63,6 +74,8 @@ export interface BlockPlan {
   readonly described: { readonly acad: BlockRecord; readonly description: string | null }[];
   /** The sheet blocks whose names layouts.ts swaps (another layout made current). */
   readonly swapping: ReadonlySet<Handle>;
+  /** Xrefs bound (XREF Bind): their BLOCK loses its path. */
+  readonly bound: BlockRecord[];
 }
 
 /**
@@ -98,7 +111,9 @@ export function planBlocks(
       h,
       onlyNewDictionary(drawOrder, was.get(h), b)
         ? was.get(h)!
-        : !was.has(h) && b.extDict !== undefined && codedDictionaries.get(h) === b.extDict
+        : // A bound xref's new draw order table (M5-04 part 2): the record changes otherwise too.
+          (drawOrder.newDictionaries.has(h) && was.get(h)?.extDict === undefined) ||
+            (!was.has(h) && b.extDict !== undefined && codedDictionaries.get(h) === b.extDict)
           ? withoutDictionary(b)
           : b,
     ]),
@@ -136,6 +151,7 @@ export function planBlocks(
     moved: [],
     described: [],
     swapping,
+    bound: [],
   };
   const problems = [...records.problems];
   const baseDefs = new Map((base.blocks ?? []).map((d) => [d.handle, d]));
@@ -148,9 +164,12 @@ export function planBlocks(
     if (b && (!same(b.dynamic, a.dynamic) || !same(b.dynamicOf, a.dynamicOf)))
       out.push('dynamic block links change (Triya does not evaluate dynamic blocks)');
     if (!b) out.push(...newDynamicProblems(model, a, model.tables.blockRecords.get(h), graphs));
+    const unbound = bound(was.get(h), record) && a.xrefPath === undefined;
     const rest = (d: BlockDefinition | undefined) =>
       Object.fromEntries(
-        Object.entries(d ?? {}).filter(([k]) => !WRITTEN.has(k) && !k.startsWith('dynamic')),
+        Object.entries(d ?? {}).filter(
+          ([k]) => !WRITTEN.has(k) && !k.startsWith('dynamic') && !(unbound && k === 'xrefPath'),
+        ),
       );
     if (!same(rest(b), rest(a)))
       out.push('BLOCK or ENDBLK handles, xdata, reactors or an extension dictionary change');
@@ -166,9 +185,10 @@ export function planBlocks(
       continue;
     }
     const described = b ? b.description !== a.description : a.description !== undefined;
-    if (!moved && !described) continue;
+    if (!moved && !described && !unbound) continue;
     const acad = resolve(r, h, BlockRecord);
     if (!acad) continue; // the record's own problem says why
+    if (unbound && b?.xrefPath !== undefined) plan.bound.push(acad);
     if (moved) (b ? plan.moved : plan.added).push({ acad, basePoint: a.basePoint });
     if (described) plan.described.push({ acad, description: a.description ?? null });
   }
@@ -242,7 +262,10 @@ function recordProblems(
     out.push("a layout's block comes with its layout (LAYOUT New)");
   if (b && !same(b.layout, a.layout)) out.push('its layout changes');
   if (!b || !same(b.flags ?? 0, flags)) {
-    if ((flags & ~OWN_FLAGS) !== 0 || ((b?.flags ?? 0) & ~OWN_FLAGS) !== 0)
+    if (bound(b, a)) {
+      if (((b!.flags ?? 0) & ANONYMOUS) !== (flags & ANONYMOUS))
+        out.push('a block cannot become anonymous or named');
+    } else if ((flags & ~OWN_FLAGS) !== 0 || ((b?.flags ?? 0) & ~OWN_FLAGS) !== 0)
       out.push(`block flags ${flags} (xref blocks are M1-21)`);
     else if (b && ((b.flags ?? 0) & ANONYMOUS) !== (flags & ANONYMOUS))
       out.push('a block cannot become anonymous or named');
@@ -312,4 +335,6 @@ export function writeBlocks(doc: CadDocument, r: Resolver, plan: BlockPlan): voi
     acad.blockEntity.basePoint = new XYZ(basePoint.x, basePoint.y, acad.blockEntity.basePoint.z);
   }
   for (const { acad, description } of plan.described) acad.blockEntity.comments = description;
+  // Bound: the record's flags (written above) are its BLOCK's; the path goes.
+  for (const acad of plan.bound) acad.blockEntity.xRefPath = null;
 }
