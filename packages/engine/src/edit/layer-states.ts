@@ -122,7 +122,9 @@ function ownerFor(model: DocumentModel, b: ChangeSetBuilder): Handle {
 }
 
 function addState(model: DocumentModel, b: ChangeSetBuilder, init: LayerStateInit): void {
-  b.addObject({ type: 'LAYER_STATE', owner: ownerFor(model, b), ...init } as Omit<
+  const owner = ownerFor(model, b);
+  // AutoCAD lists the dictionary as the record's reactor too.
+  b.addObject({ type: 'LAYER_STATE', owner, reactors: [owner], ...init } as Omit<
     LayerState,
     'handle'
   >);

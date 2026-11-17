@@ -61,6 +61,7 @@ import { newDimAssocDictionaries, planDimAssocs, writeDimAssocs } from './dim-as
 import { newSpatialFilterDictionaries, planSpatialFilters, writeSpatialFilters } from './xclips';
 import { newTriyaArrayDictionaries, planTriyaArrays, writeTriyaArrays } from './triya-arrays';
 import { newTriyaDimDictionaries, planTriyaDims, writeTriyaDims } from './triya-dims';
+import { planLayerStates, writeLayerStates } from './layer-states';
 import {
   newTriyaCenterMarkDictionaries,
   planTriyaCenterMarks,
@@ -193,7 +194,7 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   // writers (draw-order.ts, image-objects.ts, groups.ts, dim-assocs.ts, xclips.ts,
   // coded-objects.ts) and so do associative arrays' records (triya-arrays.ts) and dimensions'
   // breaks and inspection data (triya-dims.ts) and center marks' records (triya-centermarks.ts,
-  // M4-08 part 2, DEC-066).
+  // M4-08 part 2, DEC-066), and layer states (layer-states.ts, M5-07).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'GROUP' &&
@@ -204,6 +205,7 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
     o.type !== 'TRIYA_DIMBREAK' &&
     o.type !== 'TRIYA_DIMINSPECT' &&
     o.type !== 'TRIYA_CENTERMARK' &&
+    o.type !== 'LAYER_STATE' &&
     !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
@@ -530,6 +532,7 @@ export function triyaToAcad(
   );
   const dimStyles = planDimStyles(original, base, model, r, format);
   const layers = planLayers(original, base, model, r);
+  const layerStates = planLayerStates(original, base, model, r);
   // After the text styles and linetypes they may name.
   const mleaderStyles = planMLeaderStyles(original, base, model, r, format);
   const tableStyles = planTableStyles(original, base, model, r, format);
@@ -595,6 +598,7 @@ export function triyaToAcad(
     ...linetypes.problems,
     ...dimStyles.problems,
     ...layers.problems,
+    ...layerStates.problems,
     ...mleaderStyles.problems,
     ...tableStyles.problems,
     ...mlineStyles.problems,
@@ -627,6 +631,8 @@ export function triyaToAcad(
   writeBlocks(original, r, blocks.plan);
   writeDimStyles(original, r, dimStyles.plan);
   writeLayers(original, r, layers.plan);
+  // After the layers: a state may name a layer the same save adds.
+  writeLayerStates(original, r, layerStates.plan);
   writeMLeaderStyles(original, r, mleaderStyles.plan);
   writeTableStyles(original, r, tableStyles.plan);
   writeMLineStyles(original, r, mlineStyles.plan);
