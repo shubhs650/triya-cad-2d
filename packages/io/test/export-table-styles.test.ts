@@ -6,7 +6,9 @@ import {
   CadDictionary,
   CadDocument,
   DictionaryVariable,
+  LineType,
   MarginFlags,
+  TableEntityBorderType,
   TableStyle,
   TextStyle,
 } from '@node-projects/acad-ts';
@@ -22,8 +24,10 @@ import {
 import { describe, expect, it } from 'vitest';
 import { same } from '../src/export/entities';
 import {
+  cellStyleMapOf,
   documentInit,
   exportDocument,
+  mappedCellStyleMap,
   readCadDocument,
   triyaToAcad,
   UnsupportedChangeError,
@@ -36,8 +40,10 @@ function drawing(
   version = ACadVersion.AC1018,
   format: CadFormat = 'dxf',
   current = TableStyle.defaultName,
+  prepare?: (doc: CadDocument) => void,
 ): Uint8Array {
   const doc = new CadDocument(version);
+  prepare?.(doc);
   const romans = new TextStyle('ROMANS');
   romans.filename = 'romans.shx';
   doc.textStyles!.add(romans);
@@ -513,5 +519,162 @@ describe('TABLESTYLE objects', () => {
     expect(comparable(back.tables!.tableStyles!.find((s) => s.handle === h))).toEqual(
       comparable(model.tables.tableStyles.get(h)),
     );
+  });
+});
+
+describe('table style border linetypes and double lines (M4-16 part 8)', () => {
+  /** The fixture with the linetype DASHED loaded. */
+  const dashed = (version: ACadVersion, format: CadFormat) =>
+    drawing(version, format, TableStyle.defaultName, (doc) => {
+      const l = new LineType('DASHED');
+      l.description = '__ __ __';
+      doc.lineTypes!.add(l);
+    });
+  const linetype = (m: DocumentModel, name: string) =>
+    [...m.tables.linetypes.values()].find((l) => l.name.toUpperCase() === name)!.handle;
+  /** A named cell style's place: a DXF (in its CELLSTYLEMAP) or a DWG from R2010. */
+  const placed = SAVES.filter(
+    ([v, f]) => v >= ACadVersion.AC1018 && (f === 'dxf' || v >= ACadVersion.AC1024),
+  );
+
+  it.each(placed)('writes and reads back edited and new styles’ borders (%s %s)', (v, format) => {
+    const bytes = dashed(v, format);
+    const model = open(bytes);
+    const grid = style(model, 'GRID');
+    const dash = linetype(model, 'DASHED');
+    const outline = { linetype: dash, double: true as const, spacing: 0.09 };
+    let added = '';
+    edit(model, (b) => {
+      const data = grid.cellStyles[0]!;
+      b.updateTableRecord('tableStyles', grid.handle, {
+        cellStyles: [
+          { ...data, borders: data.borders.map((e, k) => (k === 0 ? { ...e, ...outline } : e)) },
+          ...border(grid, 1, 5, { linetype: 'ByLayer' }).cellStyles.slice(1),
+        ],
+      });
+      const { handle: _h, raw: _raw, ...rest } = grid;
+      added = b.addTableRecord('tableStyles', {
+        ...rest,
+        name: 'Door Schedule',
+        suppressTitle: false,
+        cellStyles: rest.cellStyles.map((c) => ({
+          ...c,
+          alignment: 5,
+          borders: c.borders.map((e) => ({ ...e, double: true as const, spacing: 0.5 })),
+        })),
+      }).handle;
+    });
+    const back = saved(bytes, model, format);
+    const get = (h: string) => back.tables!.tableStyles!.find((s) => s.handle === h);
+    // A DXF style gains the extension dictionary its CELLSTYLEMAP is named in.
+    const { extDict: _x, ...gridBack } = comparable(get(grid.handle))!;
+    expect(gridBack).toEqual(comparable(model.tables.tableStyles.get(grid.handle)));
+    expect(get(grid.handle)!.cellStyles[0]!.borders[0]).toMatchObject(outline);
+    expect(get(grid.handle)!.cellStyles[1]!.borders[5]!.linetype).toBe('ByLayer');
+    const { extDict: _y, ...addedBack } = comparable(get(added))!;
+    expect(addedBack).toEqual(comparable(model.tables.tableStyles.get(added)));
+    if (format !== 'dxf') return;
+    // A DXF states them in the CELLSTYLEMAP, which the edited style is given (the fixture has
+    // none), kept in step with the rows; the rows have no place for them.
+    const doc = readCadDocument(exportDocument(readCadDocument(bytes), model, { format }));
+    const acad = doc.getCadObject(Number.parseInt(grid.handle, 16)) as TableStyle;
+    const map = cellStyleMapOf(acad)!;
+    expect(map.cellStyles.map((c) => [c.id, c.name])).toEqual([
+      [1, '_TITLE'],
+      [2, '_HEADER'],
+      [3, '_DATA'],
+    ]);
+    const rows = mappedCellStyleMap(acad)!;
+    const record = get(grid.handle)!;
+    rows.forEach((c, i) => {
+      const r = record.cellStyles[i]!;
+      expect([c.textStyle, c.textHeight, c.alignment, c.borders]).toEqual([
+        r.textStyle,
+        r.textHeight,
+        r.alignment,
+        r.borders,
+      ]);
+    });
+    expect(acad.dataCellStyle.topBorder.type).toBe(TableEntityBorderType.Single);
+  });
+
+  it('leaves a DXF style without a CELLSTYLEMAP without one when nothing needs it', () => {
+    const bytes = dashed(ACadVersion.AC1032, 'dxf');
+    const model = open(bytes);
+    const grid = style(model, 'GRID');
+    edit(model, (b) =>
+      b.updateTableRecord('tableStyles', grid.handle, border(grid, 0, 2, { lineweight: 35 })),
+    );
+    const doc = readCadDocument(exportDocument(readCadDocument(bytes), model, { format: 'dxf' }));
+    expect(cellStyleMapOf(doc.getCadObject(Number.parseInt(grid.handle, 16)) as TableStyle)).toBe(
+      undefined,
+    );
+  });
+
+  it('refuses what the file has no place for and values the dialog does not take', () => {
+    const cases: [
+      ACadVersion,
+      CadFormat,
+      (s: TableStyleRecord, m: DocumentModel) => Partial<TableStyleRecord>,
+      RegExp,
+    ][] = [
+      [
+        ACadVersion.AC1021,
+        'dwg',
+        (s, m) => border(s, 0, 0, { linetype: linetype(m, 'DASHED') }),
+        /data row top border linetype: a DWG table style before R2010 has no place for it/,
+      ],
+      [
+        ACadVersion.AC1018,
+        'dwg',
+        (s) => border(s, 2, 1, { double: true, spacing: 0.1 }),
+        /header row inside horizontal border double: a DWG table style before R2010 has no place for it/,
+      ],
+      [
+        ACadVersion.AC1032,
+        'dxf',
+        (s) => border(s, 1, 3, { linetype: 'FFFF' }),
+        /title row left border linetype: FFFF does not exist/,
+      ],
+      [
+        ACadVersion.AC1032,
+        'dxf',
+        (s) => border(s, 1, 3, { linetype: 'ByBlock' }),
+        /title row left border linetype: ByBlock is no linetype/,
+      ],
+      [
+        ACadVersion.AC1032,
+        'dxf',
+        (s) => border(s, 0, 4, { double: true, spacing: 0 }),
+        /data row inside vertical border spacing: 0 is not more than 0/,
+      ],
+      [
+        ACadVersion.AC1032,
+        'dxf',
+        (s) => border(s, 0, 4, { double: true }),
+        /data row inside vertical border spacing: undefined is not more than 0/,
+      ],
+      [
+        ACadVersion.AC1032,
+        'dxf',
+        (s) => border(s, 0, 4, { spacing: 0.2 }),
+        /data row inside vertical border spacing: a single line has none/,
+      ],
+      [
+        ACadVersion.AC1032,
+        'dxf',
+        (s) => border(s, 0, 4, { double: false as never }),
+        /data row inside vertical border double: false is not true/,
+      ],
+    ];
+    for (const [version, format, change, message] of cases) {
+      const bytes = dashed(version, format);
+      const model = open(bytes);
+      const s = style(model, 'GRID');
+      edit(model, (b) => b.updateTableRecord('tableStyles', s.handle, change(s, model)));
+      expect(refusal(() => triyaToAcad(readCadDocument(bytes), model, format)).join('\n')).toMatch(
+        message,
+      );
+    }
   });
 });

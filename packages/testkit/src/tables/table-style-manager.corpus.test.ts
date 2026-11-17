@@ -1,12 +1,13 @@
 // TABLESTYLE's Table Style dialog on every readable public corpus file (M4-05 part 5): a table is
 // made with -TABLE in the current table style; New makes a style with every setting of the New
 // Table Style dialog changed (direction, margins, and each cell style's fill, alignment, text
-// style, height and colour and its borders' lineweight, colour and visibility); Modify changes the
-// current style, which draws its tables again (the corpus's own and the one made); Set Current
-// makes the new style current where the drawing keeps CTABLESTYLE; MATCHPROP's Table gives the
-// made table the new style; a spare style is renamed and another deleted. A drawing without
-// table styles gets AutoCAD's Standard with its first one. The drawing is saved as AC1032 DXF
-// (DEC-047), read back by acad-ts and mapped: every style comes back as the dialog showed it
+// style, height and colour and its borders' lineweight, colour, visibility, and since M4-16 part
+// 8 linetype and double line); Modify changes the current style, which draws its tables again
+// (the corpus's own and the one made); Set Current makes the new style current where the drawing
+// keeps CTABLESTYLE; MATCHPROP's Table gives the made table the new style; a spare style is
+// renamed and another deleted. A drawing without table styles gets AutoCAD's Standard with its
+// first one. The drawing is saved as AC1032 DXF (DEC-047; audited by ezdxf as kind
+// `tablestyle`), read back by acad-ts and mapped: every style comes back as the dialog showed it
 // (compared by name, text styles by name), the renamed one under its new name, the deleted one
 // gone, and every table in a changed style with the rows and block the engine drew.
 import { readFileSync } from 'node:fs';
@@ -29,7 +30,7 @@ import { documentInit, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
-import { saveAc1032Dxf } from '../dxf-audit/saves.ts';
+import { saveAc1032Dxf, writeAuditSave } from '../dxf-audit/saves.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -72,10 +73,13 @@ function everything(s: TableStyleSettings, textStyle: string, k: number): TableS
     textStyle,
     textHeight: c.textHeight * 1.5,
     textColor: { kind: 'aci' as const, index: 2 + n },
+    // A border linetype and double lines (M4-16 part 8): ByLayer, which every drawing has.
     borders: c.borders.map((b, e) => ({
       lineweight: e % 2 === 0 ? 35 : ('ByLayer' as const),
       color: { kind: 'aci' as const, index: 3 + e },
       visible: e !== n + 1,
+      ...(e % 3 === 0 && { linetype: 'ByLayer' as const }),
+      ...(e % 3 === 1 && { double: true as const, spacing: 0.05 * (n + 1) }),
     })),
   });
   return {
@@ -124,6 +128,9 @@ describe('Table Style dialog on the public corpus (M4-05 part 5)', () => {
         expect(r.textStyles, f.path).toEqual([]);
         styleless++;
         await bus.cancel();
+        writeAuditSave(f.path, 'tablestyle', () =>
+          withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), read(bytes))),
+        );
         return;
       }
       await bus.answer({ kind: 'dialog', action: 'ok' });
@@ -186,6 +193,8 @@ describe('Table Style dialog on the public corpus (M4-05 part 5)', () => {
       }
 
       const save = withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), model));
+      // ezdxf's audit of the styles made and modified, their CELLSTYLEMAPs too (M4-16 part 8).
+      writeAuditSave(f.path, 'tablestyle', () => save);
       const back = read(save);
       // Every style as the dialog showed it, by name.
       for (const s of model.tables.tableStyles.values()) {

@@ -23,7 +23,7 @@ import {
   type TextStyleRecord,
   type ViewHost,
 } from '../../src/index';
-import { sampleInit } from '../model/fixtures';
+import { linetype, sampleInit } from '../model/fixtures';
 
 const text = (handle: string, name: string): TextStyleRecord => ({
   handle,
@@ -672,5 +672,159 @@ describe('TABLESTYLE Select table to start from (M4-16 part 4)', () => {
     });
     expect(t.bus.prompt?.kind).toBe('dialog');
     expect(t.request()!.editing).toBeUndefined();
+  });
+});
+
+describe('TABLESTYLE border linetypes and double lines (M4-16 part 8)', () => {
+  /** The setup with the linetype DASHED (handle 30) loaded. */
+  function dashed() {
+    const t = setup();
+    const b = new ChangeSetBuilder(t.model);
+    const { handle: _h, ...record } = linetype('', 'DASHED');
+    b.addTableRecord('linetypes', record);
+    t.model.apply(b.build());
+    const h = [...t.model.tables.linetypes.values()].find((l) => l.name === 'DASHED')!.handle;
+    return { ...t, dashedHandle: h };
+  }
+
+  it('lists the loaded linetypes and the double line spacing a new border starts with', async () => {
+    const t = dashed();
+    await t.bus.script(['TABLESTYLE']);
+    const r = t.request()!;
+    expect(r.linetypes).toEqual([
+      { name: 'Continuous', handle: '14' },
+      { name: 'DASHED', handle: t.dashedHandle },
+    ]);
+    // A metric drawing: AutoCAD's 0.045 in millimetres.
+    expect(r.doubleSpacing).toBeCloseTo(1.125);
+  });
+
+  it('gives a new style the Borders tab’s linetype, double line and spacing, and modifies them', async () => {
+    const t = dashed();
+    await t.bus.script(['TABLESTYLE']);
+    const base = t.request()!.styles[1]!.settings;
+    const outline = { linetype: t.dashedHandle, double: true as const, spacing: 0.5 };
+    const settings: TableStyleSettings = {
+      ...base,
+      data: {
+        ...base.data,
+        borders: base.data.borders.map((b, k) => (k === 1 || k === 4 ? b : { ...b, ...outline })),
+      },
+      header: {
+        ...base.header,
+        borders: base.header.borders.map((b) => ({ ...b, linetype: 'ByLayer' })),
+      },
+    };
+    let r = await t.act({ op: 'new', name: 'Schedule', settings });
+    expect(r.note).toBeUndefined();
+    expect(r.styles.find((s) => s.name === 'Schedule')!.settings).toEqual(settings);
+    const made = t.style('Schedule')!;
+    expect(made.cellStyles[0]!.borders[0]).toMatchObject(outline);
+    expect(made.cellStyles[0]!.borders[1]).not.toHaveProperty('linetype');
+    expect(made.cellStyles[2]!.borders[3]).toMatchObject({ linetype: 'ByLayer' });
+    expect(made.cellStyles[2]!.borders[3]).not.toHaveProperty('double');
+
+    // Modify takes the double line off again: its spacing goes with it.
+    const single: TableStyleSettings = {
+      ...settings,
+      data: {
+        ...settings.data,
+        borders: settings.data.borders.map(({ double: _d, spacing: _s, ...b }) => b),
+      },
+    };
+    r = await t.act({ op: 'modify', name: 'Schedule', settings: single });
+    expect(r.note).toBeUndefined();
+    expect(t.style('Schedule')!.cellStyles[0]!.borders[0]).toEqual({
+      ...base.data.borders[0],
+      linetype: t.dashedHandle,
+    });
+  });
+
+  it('draws the style’s tables again in their borders’ linetypes and double lines', async () => {
+    const t = dashed();
+    await t.bus.script(['-TABLE', '2', '2', '0,0']);
+    await t.bus.cancel();
+    const [table] = t.tables();
+    await t.bus.script(['TABLESTYLE']);
+    const base = t.request()!.styles[1]!.settings;
+    const settings: TableStyleSettings = {
+      ...base,
+      data: {
+        ...base.data,
+        borders: base.data.borders.map((b) => ({
+          ...b,
+          linetype: t.dashedHandle,
+          double: true,
+          spacing: 0.5,
+        })),
+      },
+    };
+    await t.act({ op: 'modify', name: 'Standard', settings });
+    const g = (t.model.entity(table!.id) as Table).geom;
+    const lines = [...t.model.blockEntities(g.block!)]
+      .map((id) => t.model.entity(id)!)
+      .filter((e) => e.geom.kind === 'LINE' && e.linetype === t.dashedHandle);
+    // The data rows' grid, each line with a second one beside it.
+    expect(lines.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('refuses a linetype the drawing does not have and a double line without a spacing', async () => {
+    const t = dashed();
+    await t.bus.script(['TABLESTYLE']);
+    const base = t.request()!.styles[1]!.settings;
+    const bad = (border: Partial<TableStyleSettings['data']['borders'][number]>) =>
+      t.act({
+        op: 'new',
+        name: 'Bad',
+        settings: {
+          ...base,
+          header: {
+            ...base.header,
+            borders: base.header.borders.map((b) => ({ ...b, ...border })),
+          },
+        },
+      });
+    expect((await bad({ linetype: 'FF' })).note).toBe(
+      'Header cell style: choose a linetype of the drawing.',
+    );
+    expect((await bad({ double: true, spacing: 0 })).note).toBe(
+      'Header cell style: the double line spacing must be greater than 0.',
+    );
+    expect((await bad({ double: true })).note).toBe(
+      'Header cell style: the double line spacing must be greater than 0.',
+    );
+    expect(t.style('Bad')).toBeUndefined();
+    const lts = t.request()!.linetypes.map((l) => l.handle);
+    expect(tableStyleProblem(base, ['Standard'], lts)).toBeUndefined();
+  });
+
+  it('takes a picked table’s border linetypes and double lines (Select table to start from)', async () => {
+    const t = dashed();
+    await t.bus.script(['-TABLE', '2', '2', '0,0']);
+    await t.bus.cancel();
+    const [table] = t.tables();
+    const g = table!.geom;
+    const cells = g.cells.map((row, i) =>
+      row.map((c, j) =>
+        i === 2 && j === 0
+          ? {
+              ...c,
+              format: {
+                borders: { top: { linetype: t.dashedHandle, double: true, spacing: 0.25 } },
+              },
+            }
+          : c,
+      ),
+    ) as TableGeometry['cells'];
+    const { tableStartSettings } = await import('../../src/index');
+    await t.bus.script(['TABLESTYLE']);
+    const was = t.request()!.styles[1]!.settings;
+    const s = tableStartSettings(t.model, { ...g, cells }, was);
+    expect(s.data.borders[0]).toMatchObject({
+      linetype: t.dashedHandle,
+      double: true,
+      spacing: 0.25,
+    });
+    expect(s.data.borders[2]).not.toHaveProperty('double');
   });
 });

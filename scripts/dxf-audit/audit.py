@@ -40,6 +40,7 @@ KINDS = (
     "hatch",
     "categories",
     "table",
+    "tablestyle",
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

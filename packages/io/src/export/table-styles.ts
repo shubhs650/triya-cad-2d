@@ -26,6 +26,14 @@
 // the TABLEs using it point at it by handle, and CTABLESTYLE, which names it, must change with
 // it (header.ts).
 //
+// A border's linetype, double line and spacing (M4-16 part 8) have no place in the rows: a DWG
+// from R2010 states them in its named cell styles and a DXF (or a DWG before R2010 that has one)
+// in the CELLSTYLEMAP. A DXF style without a CELLSTYLEMAP is given one, laid out as AutoCAD's
+// (`_TITLE`, `_HEADER` and `_DATA`, in the style's extension dictionary), when its borders need
+// it; a DWG before R2010 without one refuses them. Their override bits (type 0x1, linetype 0x4,
+// spacing 0x20) are set beside the values, as Triya's cell borders are: every corpus style
+// states flags 0 with the defaults, and AutoCAD's help does not say how it reads a style's.
+//
 // Refused besides: a new style before R2004 (AutoCAD 2005 introduced tables); the data and unit types before R2007,
 // which the format has no place for; a true colour where acad-ts writes an ACI (DXF, which has
 // no true colour code for a table style, and DWG before R2004); colour-book colours; adding,
@@ -34,7 +42,13 @@
 import {
   ACadVersion,
   CadDictionary,
+  CellStyle as AcadCellStyle,
+  CellStyleMap,
   CellStyleType,
+  DictionaryCloningFlags,
+  LineType,
+  TableBorderPropertyFlags,
+  TableEntityBorderType,
   Color as AcadColor,
   MarginFlags,
   TableStyle,
@@ -54,10 +68,16 @@ import type {
   TableStyleRecord,
 } from '@triya/engine';
 import type { CadFormat } from '../read';
-import { acadColor, acadLineweight, resolve, same, type Resolver } from './entities';
+import { acadColor, acadLineweight, linetype, resolve, same, type Resolver } from './entities';
 import { entryRenameProblems, renameEntries } from './dictionary-entries';
 import { changes, planRecords, type RecordPlan } from './records';
-import { cellStyleMapRows, FLOW_BOTTOM_TO_TOP, isNamedCellStyle } from '../map/styles';
+import {
+  CELL_STYLE_MAP,
+  cellStyleMapOf,
+  cellStyleMapRows,
+  FLOW_BOTTOM_TO_TOP,
+  isNamedCellStyle,
+} from '../map/styles';
 
 export type TableStylePlan = RecordPlan<TableStyle, TableStyleRecord>;
 
@@ -99,7 +119,15 @@ export function planTableStyles(
     removable: true,
     problems: (b, a, acad) => {
       const named = acad ? isNamedCellStyle(acad.tableCellStyle) : namedNew;
-      const out = tableStyleProblems(r, version, format, named, b, a);
+      const out = tableStyleProblems(
+        r,
+        version,
+        format,
+        named,
+        b,
+        a,
+        borderPlace(acad, named, format),
+      );
       if (b && acad && b.name !== a.name)
         out.push(
           ...entryRenameProblems(acad, a.name, (o) =>
@@ -150,6 +178,28 @@ function nameCellStyles(s: TableStyle): void {
   s.titleCellStyle.tableCellStylePropertyFlags = 0x8000 as never;
 }
 
+/**
+ * Why a style's borders cannot state a linetype or double line (M4-16 part 8), or undefined: the
+ * named cell styles that hold them are a DWG's from R2010, the CELLSTYLEMAP (whose `_TITLE`,
+ * `_HEADER` and `_DATA` a DXF style without one is given), or none.
+ */
+function borderPlace(
+  acad: TableStyle | undefined,
+  named: boolean,
+  format: CadFormat | undefined,
+): string | undefined {
+  if (acad && cellStyleMapRows(acad)) return undefined;
+  if (acad && cellStyleMapOf(acad))
+    return 'the style’s CELLSTYLEMAP lacks its _TITLE, _HEADER or _DATA cell style';
+  // A DXF writes a DWG's named cell styles as rows: it is given a CELLSTYLEMAP too.
+  if (named || format === 'dxf') return undefined;
+  return 'a DWG table style before R2010 has no place for it';
+}
+
+/** Whether a row style's borders state what only a named cell style holds (M4-16 part 8). */
+const statesBorderExtras = (c: TableCellStyle): boolean =>
+  c.borders.some((e) => e.linetype !== undefined || e.double !== undefined);
+
 /** Whether a named cell style's background colour fills (map/styles.ts `fills`). */
 const fills = (c: Color): boolean =>
   c.kind === 'rgb' || (c.kind === 'aci' && c.index >= 1 && c.index <= 255);
@@ -161,6 +211,7 @@ function tableStyleProblems(
   named: boolean,
   b: TableStyleRecord | undefined,
   a: TableStyleRecord,
+  place: string | undefined,
 ): string[] {
   const out: string[] = [];
   const changed = changes(b, a);
@@ -196,7 +247,7 @@ function tableStyleProblems(
   }
   a.cellStyles.forEach((c, i) =>
     out.push(
-      ...cellStyleProblems(r, version, format, named, b?.cellStyles[i], c).map(
+      ...cellStyleProblems(r, version, format, named, b?.cellStyles[i], c, place).map(
         (p) => `${ROWS[i]} row ${p}`,
       ),
     ),
@@ -211,6 +262,7 @@ function cellStyleProblems(
   named: boolean,
   b: TableCellStyle | undefined,
   a: TableCellStyle,
+  place: string | undefined,
 ): string[] {
   if (b && same(b, a)) return [];
   const out: string[] = [];
@@ -265,8 +317,39 @@ function cellStyleProblems(
     if (edge('visible') && typeof e.visible !== 'boolean')
       p.push(`visible: ${JSON.stringify(e.visible)} is not true or false`);
     if (edge('color')) p.push(...colorProblems(version, format, 'color', e.color));
+    p.push(...borderExtraProblems(r, was, e, place));
     out.push(...p.map((q) => `${EDGES[i]} border ${q}`));
   });
+  return out;
+}
+
+/** Why a border's linetype, double line or spacing cannot be written (M4-16 part 8). */
+function borderExtraProblems(
+  r: Resolver,
+  b: TableCellBorder | undefined,
+  a: TableCellBorder,
+  place: string | undefined,
+): string[] {
+  const changed = changes(b, a);
+  const out: string[] = [];
+  if (changed('linetype') && a.linetype !== undefined) {
+    if (place) out.push(`linetype: ${place}`);
+    else if (a.linetype === 'ByBlock') out.push('linetype: ByBlock is no linetype (leave it out)');
+    else if (a.linetype !== 'ByLayer' && !resolve(r, a.linetype, LineType))
+      out.push(`linetype: ${a.linetype} does not exist`);
+  }
+  if (changed('double') && a.double !== undefined) {
+    if (place) out.push(`double: ${place}`);
+    else if (a.double !== true) out.push(`double: ${JSON.stringify(a.double)} is not true`);
+  }
+  if (changed('double', 'spacing')) {
+    if (
+      a.double === true &&
+      !(typeof a.spacing === 'number' && a.spacing > 0 && Number.isFinite(a.spacing))
+    )
+      out.push(`spacing: ${JSON.stringify(a.spacing)} is not more than 0`);
+    if (a.double !== true && a.spacing !== undefined) out.push('spacing: a single line has none');
+  }
   return out;
 }
 
@@ -288,11 +371,39 @@ export function colorProblems(
   return [];
 }
 
-function writeBorder(border: CellBorder, b: TableCellBorder | undefined, a: TableCellBorder): void {
+/**
+ * Writes a border's changes; a named cell style's (`named`) also its linetype, double line and
+ * spacing, with their override bits (M4-16 part 8). No linetype is none of the border's own
+ * (DXF 340 = 0, as AutoCAD states it).
+ */
+function writeBorder(
+  r: Resolver,
+  border: CellBorder,
+  b: TableCellBorder | undefined,
+  a: TableCellBorder,
+  named: boolean,
+): void {
   const changed = changes(b, a);
   if (changed('lineweight')) border.lineWeight = acadLineweight(a.lineweight) as never;
   if (changed('visible')) border.isInvisible = !a.visible;
   if (changed('color')) border.color = acadColor(a.color);
+  if (!named) return;
+  const B = TableBorderPropertyFlags;
+  const flag = (bit: number) => {
+    border.propertyOverrideFlags = (border.propertyOverrideFlags | bit) as never;
+  };
+  if (changed('linetype')) {
+    border.lineType = a.linetype === undefined ? null : (linetype(r, a.linetype) ?? null);
+    flag(B.LineType);
+  }
+  if (changed('double')) {
+    border.type = a.double ? TableEntityBorderType.Double : TableEntityBorderType.Single;
+    flag(B.BorderType);
+  }
+  if (changed('spacing') && a.spacing !== undefined) {
+    border.doubleLineSpacing = a.spacing;
+    flag(B.DoubleLineSpacing);
+  }
 }
 
 /**
@@ -333,7 +444,7 @@ function writeCellStyle(
     c.verticalInsideBorder,
     c.rightBorder,
   ];
-  a.borders.forEach((e, i) => writeBorder(borders[i]!, b?.borders[i], e));
+  a.borders.forEach((e, i) => writeBorder(r, borders[i]!, b?.borders[i], e, named));
 }
 
 /** Writes the fields of `a` that differ from `b` (every one when `b` is undefined). */
@@ -347,6 +458,11 @@ function writeTableStyle(
   const t = s.tableCellStyle;
   const named = isNamedCellStyle(t);
   const rows = [s.dataCellStyle, s.titleCellStyle, s.headerCellStyle];
+  // A DXF style whose borders come to need a CELLSTYLEMAP is given one, written whole below; a
+  // DWG's named cell styles hold them, but a DXF save writes those as rows (M1-96).
+  const fresh =
+    (r.format === 'dxf' || !named) && !cellStyleMapOf(s) && a.cellStyles.some(statesBorderExtras);
+  if (fresh) addCellStyleMap(r, s, a);
   const map = cellStyleMapRows(s);
   if (changed('description')) s.description = a.description;
   if (changed('flowDirection')) {
@@ -376,11 +492,59 @@ function writeTableStyle(
   }
   if (changed('suppressTitle')) s.suppressTitle = a.suppressTitle;
   if (changed('suppressHeader')) s.suppressHeaderRow = a.suppressHeader;
-  if (!changed('cellStyles')) return;
+  if (!changed('cellStyles') && !fresh) return;
   a.cellStyles.forEach((c, i) => {
     writeCellStyle(r, rows[i]!, b?.cellStyles[i], c, named);
-    if (map) writeCellStyle(r, map[i]!, b?.cellStyles[i], c, true);
+    if (map) writeCellStyle(r, map[i]!, fresh ? undefined : b?.cellStyles[i], c, true);
   });
+}
+
+/**
+ * Gives table style `s` a CELLSTYLEMAP as AutoCAD's DXF saves hold one (acadsharp
+ * sample_AC1032_ascii.dxf): `_TITLE`, `_HEADER` and `_DATA` cell styles (ids 1 to 3), named
+ * ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP in the style's extension dictionary (hard owner,
+ * cloning kept), each laid out as a new R2010 style's (`nameCellStyles`) with the style's
+ * margins. `writeTableStyle` then writes the rows' values into it.
+ */
+function addCellStyleMap(r: Resolver, s: TableStyle, a: TableStyleRecord): void {
+  const map = new CellStyleMap();
+  map.handle = r.allocate();
+  const named = [
+    ['_TITLE', 1, 1],
+    ['_HEADER', 2, 1],
+    ['_DATA', 3, 2],
+  ] as const;
+  map.cellStyles = named.map(([name, id, styleClass]) => {
+    const c = new AcadCellStyle();
+    c.name = name;
+    c.id = id;
+    c.styleClass = styleClass as never;
+    c.cellStyleType = CellStyleType.Table;
+    c.hasData = true;
+    c.cellPropertyOverrideFlags = 0 as never;
+    c.backgroundColor = AcadColor.byEntity;
+    c.contentLayoutFlags = 1 as never;
+    c.scale = 1;
+    c.marginOverrideFlags = MarginFlags.Override;
+    c.horizontalMargin = a.horizontalMargin;
+    c.verticalMargin = a.verticalMargin;
+    c.bottomMargin = c.rightMargin = 0.06;
+    c.marginHorizontalSpacing = c.marginVerticalSpacing = 0.18;
+    if (id === 1) c.tableCellStylePropertyFlags = 0x8000 as never;
+    return c;
+  });
+  let dict = s.xDictionary;
+  if (!dict) {
+    dict = new CadDictionary();
+    dict.handle = r.allocate();
+    dict.hardOwnerFlag = true;
+    dict.clonningFlags = DictionaryCloningFlags.KeepExisting;
+    dict.addByKey(CELL_STYLE_MAP, map);
+    // Joining the style registers the dictionary and the map with the drawing.
+    s.xDictionary = dict;
+  } else {
+    dict.addByKey(CELL_STYLE_MAP, map);
+  }
 }
 
 /**

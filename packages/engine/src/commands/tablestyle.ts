@@ -11,15 +11,17 @@
 //
 // The settings are the table direction and, for each of the Data, Header and Title cell styles,
 // the General tab's fill colour, alignment and margins, the Text tab's text style, height and
-// colour, and the Borders tab's lineweight, colour and which borders show. A modified style's
+// colour, and the Borders tab's lineweight, linetype, colour, double line and its spacing, and
+// which borders show (the linetype and double line since M4-16 part 8). A modified style's
 // tables are drawn again in it (their `*T` blocks), each row growing to hold its text at the new
 // height, as AutoCAD updates them; a row never shrinks, as when a cell's text is edited.
 //
 // Where the drawing's file has no place for a setting it is shown and not changed: a TABLESTYLE
 // before R2010 (and the DXF, which AutoCAD writes in that form) holds one horizontal and one
 // vertical margin for the whole style, so the margins are the style's, shown on each cell style;
-// it holds no text angle, cell format other than the data and unit types, border linetype,
-// double line or "merge cells on row/column creation" setting of its own. A DXF table style
+// it holds no text angle, cell format other than the data and unit types, or "merge cells on
+// row/column creation" setting of its own; a border's linetype and double line are kept in the
+// named cell styles beside it (io export/table-styles.ts). A DXF table style
 // holds index colours only, so true colours are refused. Cell styles of the drafter's own
 // (Create a new cell style, Manage Cell Styles) wait for M1-99.
 //
@@ -127,6 +129,10 @@ export interface TableStyleRequest {
   readonly selected: string;
   /** The drawing's text styles, for the Text tab's Text style list. */
   readonly textStyles: readonly string[];
+  /** The drawing's linetypes, for the Borders tab's Linetype list (beside ByBlock and ByLayer). */
+  readonly linetypes: readonly { readonly name: string; readonly handle: Handle }[];
+  /** The Borders tab's Spacing for a border not yet double: AutoCAD's 0.045, in the drawing's units. */
+  readonly doubleSpacing: number;
   /** Why the last action did nothing ("The current table style cannot be deleted."). */
   readonly note?: string;
   /**
@@ -231,7 +237,10 @@ function wellFormed(s: unknown): s is TableStyleSettings {
           typeof b === 'object' &&
           b !== null &&
           typeof (b as TableCellBorder).visible === 'boolean' &&
-          isAnyColor((b as TableCellBorder).color),
+          isAnyColor((b as TableCellBorder).color) &&
+          ['undefined', 'string'].includes(typeof (b as TableCellBorder).linetype) &&
+          [undefined, true].includes((b as TableCellBorder).double) &&
+          ['undefined', 'number'].includes(typeof (b as TableCellBorder).spacing),
       )
     );
   };
@@ -254,6 +263,8 @@ const CELL_LABEL: Readonly<Record<TableCellStyleName, string>> = {
 export function tableStyleProblem(
   s: TableStyleSettings,
   textStyles: readonly string[],
+  /** The linetypes a border may take (`TableStyleRequest.linetypes`), beside ByLayer. */
+  linetypes?: readonly Handle[],
 ): string | undefined {
   for (const k of ['horizontalMargin', 'verticalMargin'] as const) {
     if (!(Number.isFinite(s[k]) && s[k] >= 0)) return 'A cell margin must be 0 or more.';
@@ -273,6 +284,11 @@ export function tableStyleProblem(
       return `${where}a table style takes index colors only.`;
     if (c.borders.some((b) => !isLineweight(b.lineweight)))
       return `${where}choose a lineweight from the list.`;
+    const linetype = (l: string) => l === 'ByLayer' || (linetypes?.includes(l) ?? true);
+    if (c.borders.some((b) => b.linetype !== undefined && !linetype(b.linetype)))
+      return `${where}choose a linetype of the drawing.`;
+    if (c.borders.some((b) => b.double && !(Number.isFinite(b.spacing) && b.spacing! > 0)))
+      return `${where}the double line spacing must be greater than 0.`;
   }
   return undefined;
 }
@@ -336,9 +352,22 @@ export function tableStyleRequest(
       .filter((s) => ((s.flags ?? 0) & 1) === 0)
       .map((s) => s.name)
       .sort(byName),
+    linetypes: borderLinetypes(model),
+    // Every corpus table style's borders state 0.045 (imperial); a metric drawing's is in mm.
+    doubleSpacing: model.meta.measurement === 'imperial' ? 0.045 : 1.125,
     ...(note !== undefined && { note }),
     ...(editing !== undefined && { editing }),
   };
+}
+
+/**
+ * The linetypes a border may take: the drawing's, but ByBlock and ByLayer (offered by name) and
+ * linetypes of xrefs, in the order the file lists them.
+ */
+function borderLinetypes(model: DocumentModel): { name: string; handle: Handle }[] {
+  return [...model.tables.linetypes.values()]
+    .filter((l) => !['BYBLOCK', 'BYLAYER'].includes(upper(l.name)) && !l.name.includes('|'))
+    .map((l) => ({ name: l.name, handle: l.handle }));
 }
 
 const NAME_IN_USE = 'A table style with this name already exists.';
@@ -381,11 +410,21 @@ function cellStyleOf(
     fillOn,
     dataType: c?.dataType ?? 0,
     unitType: c?.unitType ?? 0,
-    borders: s.borders.map((b) => ({
-      lineweight: b.lineweight,
-      visible: b.visible,
-      color: b.color,
-    })),
+    borders: s.borders.map(styleBorder),
+  };
+}
+
+/**
+ * A border as the settings give it: ByBlock is no linetype, and a spacing is kept on a double
+ * line only, as io maps a named cell style's border (M4-16 part 8).
+ */
+function styleBorder(b: TableCellBorder): TableCellBorder {
+  return {
+    lineweight: b.lineweight,
+    visible: b.visible,
+    color: b.color,
+    ...(b.linetype !== undefined && b.linetype !== 'ByBlock' && { linetype: b.linetype }),
+    ...(b.double && { double: true as const, spacing: b.spacing! }),
   };
 }
 
@@ -518,7 +557,8 @@ async function act(
   a: TableStyleAction,
 ): Promise<{ selected?: string; note?: string }> {
   const model = ctx.model;
-  const textStyles = tableStyleRequest(model).textStyles;
+  const { textStyles } = tableStyleRequest(model);
+  const linetypes = borderLinetypes(model).map((l) => l.handle);
   const current = currentTableStyle(model) ?? unsavedStandard(model);
   switch (a.op) {
     case 'current': {
@@ -539,7 +579,8 @@ async function act(
       if (!wellFormed(a.settings)) return {};
       if (model.tables.textStyles.size === 0)
         return { note: 'The drawing has no text style, which a table style needs.' };
-      const problem = nameProblem(model, name) ?? tableStyleProblem(a.settings, textStyles);
+      const problem =
+        nameProblem(model, name) ?? tableStyleProblem(a.settings, textStyles, linetypes);
       if (problem) return { note: problem };
       // The record of the style shown when New... was chosen gives what the dialog does not.
       const from = current?.handle === '' ? undefined : current;
@@ -552,7 +593,7 @@ async function act(
     case 'modify': {
       const s = styleNamed(model, a.name);
       if (!s || !wellFormed(a.settings)) return {};
-      const problem = tableStyleProblem(a.settings, textStyles);
+      const problem = tableStyleProblem(a.settings, textStyles, linetypes);
       if (problem) return { selected: s.name, note: problem };
       const patch = changedFields(model, s, a.settings);
       if (!patch) return { selected: s.name };
@@ -668,13 +709,21 @@ function tableStyleOf(model: DocumentModel, g: TableGeometry): TableStyleRecord 
   return g.style === undefined ? undefined : model.tables.tableStyles.get(g.style);
 }
 
-/** `b` with what border `f` of a cell overrides: its colour, lineweight and whether it shows. */
+/**
+ * `b` with what border `f` of a cell overrides: its colour, lineweight, linetype, double line
+ * and whether it shows (each property the cell leaves out the style's, as the table engine
+ * draws it).
+ */
 function withBorder(b: TableCellBorder, f: TableBorderFormat | undefined): TableCellBorder {
   if (!f) return b;
+  const linetype = f.linetype ?? b.linetype;
+  const double = f.double ?? b.double;
   return {
     lineweight: f.lineweight ?? b.lineweight,
     color: f.color ?? b.color,
     visible: f.hidden ? false : b.visible,
+    ...(linetype !== undefined && { linetype }),
+    ...(double && { double, spacing: (f.double ? f.spacing : undefined) ?? b.spacing ?? 0.18 }),
   };
 }
 

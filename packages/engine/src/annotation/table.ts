@@ -265,18 +265,23 @@ const sameEdge = (a: Edge, b: Edge): boolean =>
   a.linetype === b.linetype &&
   a.double === b.double;
 
-/** The style border `b` with the cell's override `o` over it; undefined when hidden. */
+/**
+ * The style border `b` with the cell's override `o` over it; undefined when hidden. Each property
+ * the override leaves out is the style's, as a DWG's and a TABLECONTENT's override flags say per
+ * property (M4-16 part 8): a cell overriding a colour keeps its style's linetype and double line.
+ */
 function edgeOf(
   b: TableCellBorder | undefined,
   o: TableBorderFormat | undefined,
 ): Edge | undefined {
   if (o?.hidden) return undefined;
   if (b && !b.visible && !o) return undefined;
+  const double = o?.double ? (o.spacing ?? b?.spacing) : b?.double ? b.spacing : undefined;
   return {
     color: o?.color ?? b?.color ?? BY_BLOCK,
     lineweight: o?.lineweight ?? b?.lineweight ?? 'ByBlock',
-    linetype: o?.linetype ?? 'ByBlock',
-    ...(o?.double && { double: o.spacing ?? DOUBLE_SPACING }),
+    linetype: o?.linetype ?? b?.linetype ?? 'ByBlock',
+    ...((o?.double || b?.double) && { double: double ?? DOUBLE_SPACING }),
   };
 }
 

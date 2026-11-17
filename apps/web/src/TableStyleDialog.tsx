@@ -21,9 +21,13 @@
 //
 // Shown greyed, for the reasons the engine gives (commands/tablestyle.ts): Remove Table (no
 // table is kept in the style), Create and Manage Cell Styles (M1-99), Format, Type, Merge cells on row/column creation,
-// Text angle, the border Linetype, Double line and Spacing (the file's table style has no place
-// for them), and Help, as Triya's other dialogs leave it. The margins are the style's, the same
-// on each cell style. Colours are index colours, which a DXF table style holds.
+// Text angle (the file's table style has no place for them), and Help, as Triya's other dialogs
+// leave it. The margins are the style's, the same on each cell style. Colours are index colours,
+// which a DXF table style holds.
+//
+// The Borders tab's Linetype (ByBlock, ByLayer and the drawing's linetypes; Other... waits for
+// M5-08's linetype loading), Double line and Spacing (greyed unless Double line is on) are
+// applied with the other properties by a border button (M4-16 part 8).
 import {
   LINEWEIGHTS,
   TABLE_CELL_STYLES,
@@ -316,6 +320,8 @@ export function TableStyleDialog({ doc, request }: { doc: number; request: Reque
           title={`${editing.isNew ? 'New' : 'Modify'} Table Style: ${editing.name}`}
           settings={editing.settings}
           textStyles={request.textStyles}
+          linetypes={request.linetypes}
+          doubleSpacing={request.doubleSpacing}
           onCancel={() => setEditing(undefined)}
           onStart={(settings) => {
             setEditing(undefined);
@@ -402,6 +408,9 @@ function TableStyleEditor(props: {
   title: string;
   settings: TableStyleSettings;
   textStyles: readonly string[];
+  linetypes: Request['linetypes'];
+  /** Spacing's value for a border not yet double. */
+  doubleSpacing: number;
   onOk: (s: TableStyleSettings) => void;
   onCancel: () => void;
   /** Select table to start from, with the settings as they stand. */
@@ -414,7 +423,19 @@ function TableStyleEditor(props: {
   const first = c.borders.find((b) => b.visible) ?? c.borders[0]!;
   const [lineweight, setLineweight] = useState<Lineweight>(first.lineweight);
   const [borderColor, setBorderColor] = useState<Color>(first.color);
-  const problem = tableStyleProblem(s, props.textStyles);
+  // The Linetype list's value: '' ByBlock (no linetype), 'ByLayer' or a linetype's handle.
+  const [linetype, setLinetype] = useState<string>(first.linetype ?? '');
+  const [double, setDouble] = useState(first.double === true);
+  const [spacing, setSpacing] = useState(String(first.spacing ?? props.doubleSpacing));
+  const showBorder = (b: TableCellBorder) => {
+    setLineweight(b.lineweight);
+    setBorderColor(b.color);
+    setLinetype(b.linetype ?? '');
+    setDouble(b.double === true);
+    setSpacing(String(b.spacing ?? props.doubleSpacing));
+  };
+  const handles = props.linetypes.map((l) => l.handle);
+  const problem = tableStyleProblem(s, props.textStyles, handles);
   const set = (patch: Partial<TableCellStyleSettings>) =>
     setS({ ...s, [cellStyle]: { ...c, ...patch } });
   const ok = () => !problem && props.onOk(s);
@@ -425,7 +446,13 @@ function TableStyleEditor(props: {
         none
           ? { ...b, visible: false }
           : edges.includes(k)
-            ? { lineweight, color: borderColor, visible: true }
+            ? {
+                lineweight,
+                color: borderColor,
+                visible: true,
+                ...(linetype !== '' && { linetype }),
+                ...(double && { double: true as const, spacing: Number(spacing) }),
+              }
             : b,
       ),
     });
@@ -470,8 +497,7 @@ function TableStyleEditor(props: {
                   const n = e.target.value as TableCellStyleName;
                   const b = s[n].borders.find((x) => x.visible) ?? s[n].borders[0]!;
                   setCellStyle(n);
-                  setLineweight(b.lineweight);
-                  setBorderColor(b.color);
+                  showBorder(b);
                 }}
               >
                 {TABLE_CELL_STYLES.map((n) => (
@@ -607,8 +633,17 @@ function TableStyleEditor(props: {
                   </label>
                   <label className="cad-dialog-field">
                     <span>Linetype:</span>
-                    <select disabled value="ByBlock">
-                      <option>ByBlock</option>
+                    <select value={linetype} onChange={(e) => setLinetype(e.target.value)}>
+                      <option value="">ByBlock</option>
+                      <option value="ByLayer">ByLayer</option>
+                      {props.linetypes.map((l) => (
+                        <option key={l.handle} value={l.handle}>
+                          {l.name}
+                        </option>
+                      ))}
+                      {linetype !== '' && linetype !== 'ByLayer' && !handles.includes(linetype) && (
+                        <option value={linetype}>{linetype}</option>
+                      )}
                     </select>
                   </label>
                   <ColorField
@@ -617,12 +652,22 @@ function TableStyleEditor(props: {
                     onChange={(v) => v && setBorderColor(v)}
                   />
                   <label className="cad-dialog-check">
-                    <input type="checkbox" disabled readOnly checked={false} />
+                    <input
+                      type="checkbox"
+                      checked={double}
+                      onChange={(e) => setDouble(e.target.checked)}
+                    />
                     Double line
                   </label>
                   <label className="cad-dialog-field">
                     <span>Spacing:</span>
-                    <input type="text" disabled value="0.045" readOnly />
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      disabled={!double}
+                      value={spacing}
+                      onChange={(e) => setSpacing(e.target.value)}
+                    />
                   </label>
                   <div className="tablestyle-borders" role="group" aria-label="Borders">
                     {BORDER_SETS.map(([label, edges]) => (
