@@ -1,0 +1,1 @@
+- M4-16 part 8 (#PR): the Table Style dialog's Borders tab sets a border's linetype, double line and spacing; the style's tables draw them, and they are kept through DXF saves (in the style's CELLSTYLEMAP).
