@@ -9,6 +9,8 @@
 import type { Vec2 } from '../../geom/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { ViewReply, ViewRequest } from './host';
+import { fieldEventMayUpdate, fieldEventUpdates } from '../../edit/field-eval';
+import { fieldContextOf } from '../draw/field';
 
 const ZOOM_OPTIONS = [
   'All',
@@ -197,12 +199,23 @@ export function panCommand(): CommandDef {
   };
 }
 
-/** REGEN (the space shown) and REGENALL (every viewport of it). */
+/**
+ * REGEN (the space shown) and REGENALL (every viewport of it). Each first updates the drawing's
+ * fields as FIELDEVAL's regeneration bit (16) and their own options allow (M4-10 part 4).
+ */
 export function regenCommand(all: boolean): CommandDef {
   return {
     name: all ? 'REGENALL' : 'REGEN',
     // eslint-disable-next-line require-yield -- a command that prompts for nothing
     async *run(ctx) {
+      const updates = fieldEventMayUpdate(ctx.model, 'regen')
+        ? fieldEventUpdates(await fieldContextOf(ctx), 'regen')
+        : [];
+      if (updates.length > 0) {
+        ctx.edit((b) => {
+          for (const u of updates) b.updateEntity(u.id, { geom: u.geom });
+        });
+      }
       const r = await viewRequest(ctx, { op: 'regen', all });
       if (r.ok) ctx.message(r.view?.paper ? 'Regenerating layout.' : 'Regenerating model.');
     },

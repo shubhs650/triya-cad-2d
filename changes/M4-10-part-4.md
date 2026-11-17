@@ -1,0 +1,1 @@
+- M4-10 part 4 (#469): REGEN updates fields; a double click on a field in the text editor opens the Field dialog on it (its right-click menu also converts it to plain text); single-line TEXT takes fields too (Ctrl+F inserts one, a double click edits one).

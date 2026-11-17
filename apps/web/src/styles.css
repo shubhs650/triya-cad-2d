@@ -2060,6 +2060,13 @@ button {
   background: rgb(128 128 128 / 50%);
 }
 
+/* A field's right-click menu (M4-10 part 4), where the click was. */
+.mtext-field-menu {
+  right: auto;
+  z-index: 2;
+  white-space: nowrap;
+}
+
 .mtext-toolbar {
   position: absolute;
   left: 0;

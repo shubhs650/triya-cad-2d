@@ -10,6 +10,7 @@ import {
   editableFieldText,
   fieldCode,
   fieldOfText,
+  fieldSpecOf,
   fieldValues,
   objectFieldProperties,
   previewField,
@@ -91,6 +92,79 @@ describe('fieldCode', () => {
   it('escapes a quote in a picture', () => {
     expect(fieldCode({ name: 'Date', date: "'on' d" })).toBe('\\AcVar Date \\f "\'on\' d"');
     expect(fieldCode({ name: 'Date', date: 'a"b' })).toBe('\\AcVar Date \\f "a\\"b"');
+  });
+});
+
+// M4-10 part 4: Edit Field opens the Field dialog on the field's own choices.
+describe('fieldSpecOf', () => {
+  const specs = [
+    { name: 'Date', date: 'dd/MM/yyyy' },
+    { name: 'CreateDate', date: 'M/d/yyyy h:mm tt' },
+    { name: 'SaveDate', date: 'a"b' },
+    { name: 'PlotDate', date: 'yyyy' },
+    { name: 'Filename', parts: 'name' },
+    { name: 'Filename', parts: 'name', extension: false },
+    { name: 'Filename', parts: 'path' },
+    { name: 'Filename', parts: 'full', textCase: 1 },
+    { name: 'PageSetupName' },
+    { name: 'PageSetupName', textCase: 2 },
+    { name: 'PlotScale' },
+    { name: 'PlotScale', scaleFormat: 1, precision: 0 },
+    { name: 'SystemVariable', variable: 'CTAB', textCase: 1 },
+    { name: 'SystemVariable', variable: 'LTSCALE', precision: 2 },
+    { name: 'SystemVariable', variable: 'TEXTSIZE', units: 2, precision: 3 },
+    { name: 'Object', object: '60', property: 'Area', units: 2, precision: 2 },
+    { name: 'Object', object: '2A', property: 'Length' },
+    { name: 'Object', object: '60', property: 'Layer', textCase: 4 },
+  ] as const;
+
+  it('reads back the choices of every field the dialog makes', () => {
+    for (const spec of specs) {
+      const code = fieldCode(spec)!;
+      expect(fieldCode(fieldSpecOf(code)!), code).toBe(code);
+    }
+    expect(fieldSpecOf('\\AcVar Date \\f "dd/MM/yyyy"')).toEqual({
+      name: 'Date',
+      date: 'dd/MM/yyyy',
+    });
+    expect(fieldSpecOf('\\AcVar Filename \\f "%tc1%fn7"')).toEqual({
+      name: 'Filename',
+      parts: 'full',
+      extension: true,
+      textCase: 1,
+    });
+    expect(fieldSpecOf('\\AcObjProp Object(%<\\_ObjId 2a>%).Area \\f "%lu2%pr2"')).toEqual({
+      name: 'Object',
+      object: '2A',
+      property: 'Area',
+      units: 2,
+      precision: 2,
+    });
+  });
+
+  it("reads AutoCAD's own codes: a version after the evaluator, a field without a format", () => {
+    expect(fieldSpecOf('\\AcVar.17.0 Date \\f "M/d/yyyy"')).toEqual({
+      name: 'Date',
+      date: 'M/d/yyyy',
+    });
+    expect(fieldSpecOf('\\AcVar Filename')).toEqual({
+      name: 'Filename',
+      parts: 'full',
+      extension: true,
+    });
+    expect(fieldSpecOf('\\AcVar ctab')).toEqual({ name: 'SystemVariable', variable: 'CTAB' });
+    expect(fieldSpecOf('\\AcVar Date')).toEqual({ name: 'Date', date: '' });
+  });
+
+  it('is undefined for a field the dialog cannot show as it is', () => {
+    // Drawing properties, formulas, DIESEL, sheet sets; format codes the dialog has no choice for.
+    expect(fieldSpecOf('\\AcVar Author')).toBeUndefined();
+    expect(fieldSpecOf('\\AcVar CustomDP.Client')).toBeUndefined();
+    expect(fieldSpecOf('\\AcExpr (1+2)')).toBeUndefined();
+    expect(fieldSpecOf('\\AcDiesel $(getvar,dwgname)')).toBeUndefined();
+    expect(fieldSpecOf('\\AcVar LTSCALE \\f "%lu2%ds44"')).toBeUndefined();
+    expect(fieldSpecOf('\\AcObjProp Object(%<\\_ObjId 60>%).Area \\f "%ct8"')).toBeUndefined();
+    expect(fieldSpecOf('junk')).toBeUndefined();
   });
 });
 

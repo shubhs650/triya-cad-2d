@@ -6,7 +6,15 @@ import {
   autoStack,
   cellAhead,
   cellMoveFor,
+  fieldAsText,
   formatAt,
+  lineEdited,
+  lineFieldAt,
+  lineParts,
+  lineShown,
+  lineSplit,
+  lineValue,
+  markField,
   paragraphAt,
   formatRange,
   hasFormat,
@@ -269,5 +277,73 @@ describe('keys typed while the editor moves to the next cell (M4-05 part 7)', ()
       ops: [{ kind: 'text', text: 'F' }],
       rest: [],
     });
+  });
+});
+
+// M4-10 part 4: Edit Field marks a field for the Field dialog; Convert Field to Text keeps its
+// value as text. TEXT's line editor holds fields too, each one atom shown by its value.
+describe('fields in the editors', () => {
+  const f = (code: string, format = {}): MTextSpan => ({ type: 'field', code, format });
+
+  it('marks the field at an offset for Edit Field, or turns it into its value', () => {
+    const spans = [t('Rev '), f('\\AcVar Date', { bold: true }), t('!')];
+    expect(markField(spans, 4, '\u0000EDIT')).toEqual([
+      t('Rev '),
+      f('\u0000EDIT\\AcVar Date', { bold: true }),
+      t('!'),
+    ]);
+    expect(fieldAsText(spans, 4, '2026')).toEqual([t('Rev '), t('2026', { bold: true }), t('!')]);
+    // No field there: as they were.
+    expect(markField(spans, 1, '\u0000EDIT')).toEqual(spans);
+    expect(fieldAsText(spans, 5, 'x')).toEqual(spans);
+  });
+
+  const code = '\\AcVar Date \\f "yyyy"';
+  const fields = { [code]: '2020' };
+  const parts = lineParts(`Rev %<${code}>% A`, fields);
+
+  it('reads a line into text and fields, shown by their values', () => {
+    expect(parts).toEqual([{ text: 'Rev ' }, { code, value: '2020' }, { text: ' A' }]);
+    expect(lineShown(parts)).toBe('Rev 2020 A');
+    expect(lineValue(parts)).toBe(`Rev %<${code}>% A`);
+    // Nested object ids stay in their field; a field with no value shows ----.
+    const obj = '\\AcObjProp Object(%<\\_ObjId 2A>%).Area';
+    expect(lineParts(`%<${obj}>%`, {})).toEqual([{ code: obj, value: '----' }]);
+    // Without fields the line is its text, codes and all.
+    expect(lineParts(`a %<${code}>%`, undefined)).toEqual([{ text: `a %<${code}>%` }]);
+    expect(lineParts('', fields)).toEqual([]);
+  });
+
+  it('keeps fields the typing does not touch', () => {
+    // Typed before, after and next to the field.
+    expect(lineValue(lineEdited(parts, 'Rev. 2020 A', 4))).toBe(`Rev. %<${code}>% A`);
+    expect(lineValue(lineEdited(parts, 'Rev 2020 AB', 11))).toBe(`Rev %<${code}>% AB`);
+    expect(lineValue(lineEdited(parts, 'Rev 2020x A', 9))).toBe(`Rev %<${code}>%x A`);
+    expect(lineValue(lineEdited(parts, 'Rev x2020 A', 5))).toBe(`Rev x%<${code}>% A`);
+    // A character like the field's own next to it.
+    expect(lineValue(lineEdited(parts, 'Rev 20200 A', 9))).toBe(`Rev %<${code}>%0 A`);
+    expect(lineValue(lineEdited(parts, 'Rev 22020 A', 5))).toBe(`Rev 2%<${code}>% A`);
+  });
+
+  it('deletes a field whole when the typing reaches into it', () => {
+    // Backspace at its end, Delete at its start, typing inside, a selection over it.
+    expect(lineValue(lineEdited(parts, 'Rev 202 A', 7))).toBe('Rev  A');
+    expect(lineValue(lineEdited(parts, 'Rev 020 A', 4))).toBe('Rev  A');
+    expect(lineValue(lineEdited(parts, 'Rev 20x20 A', 7))).toBe('Rev x A');
+    expect(lineValue(lineEdited(parts, 'ReB', 3))).toBe('ReB');
+  });
+
+  it('splits a line at a place, a field across it before', () => {
+    expect(lineSplit(parts, 2)).toEqual([[{ text: 'Re' }], [{ text: 'v ' }, parts[1], parts[2]]]);
+    expect(lineSplit(parts, 6)).toEqual([[parts[0], parts[1]], [parts[2]]]);
+    expect(lineSplit(parts, 4)).toEqual([[parts[0]], [parts[1], parts[2]]]);
+    expect(lineSplit(parts, 10)).toEqual([parts, []]);
+  });
+
+  it('finds the field at a place in the line', () => {
+    expect(lineFieldAt(parts, 3)).toBeUndefined();
+    expect(lineFieldAt(parts, 4)).toEqual({ index: 1, start: 4, end: 8 });
+    expect(lineFieldAt(parts, 7)).toEqual({ index: 1, start: 4, end: 8 });
+    expect(lineFieldAt(parts, 8)).toBeUndefined();
   });
 });
