@@ -2,6 +2,9 @@
 // them (right-click a column header, or Customize Layer Columns) and orders them, Name always
 // shown; a click on a header sorts the layers by that column, a second click reverses it. AutoCAD
 // keeps these in the user's profile, so Triya keeps them with the preferences.
+// M5-05 part 5: each column has a width (AutoCAD's list sizes its columns, not their contents),
+// set by dragging a header's edge or by the header menu's Maximize and Optimize items; a header
+// dragged sideways moves its column; Freeze Column keeps the columns up to it from scrolling.
 import type { Lineweight } from '@triya/engine';
 import { compareNames, type LayerRow } from './layers';
 
@@ -24,22 +27,28 @@ export interface LayerColumn {
   readonly title: string;
   /** Shown only while a layout is (AutoCAD's VP columns). */
   readonly layoutOnly?: true;
+  /** Its width (px) until the user sizes it: room for its widest usual content. */
+  readonly width: number;
 }
+
+/** A column is never narrower than this (its header's edge stays draggable) nor wider than that. */
+export const MIN_COLUMN_WIDTH = 24;
+export const MAX_COLUMN_WIDTH = 1200;
 
 /** AutoCAD's columns in its default order. */
 export const LAYER_COLUMNS: readonly LayerColumn[] = [
-  { key: 'status', title: 'Status' },
-  { key: 'name', title: 'Name' },
-  { key: 'on', title: 'On' },
-  { key: 'frozen', title: 'Freeze' },
-  { key: 'locked', title: 'Lock' },
-  { key: 'vpFreeze', title: 'VP Freeze', layoutOnly: true },
-  { key: 'plot', title: 'Plot' },
-  { key: 'color', title: 'Color' },
-  { key: 'linetype', title: 'Linetype' },
-  { key: 'lineweight', title: 'Lineweight' },
-  { key: 'transparency', title: 'Transparency' },
-  { key: 'description', title: 'Description' },
+  { key: 'status', title: 'Status', width: 56 },
+  { key: 'name', title: 'Name', width: 180 },
+  { key: 'on', title: 'On', width: 88 },
+  { key: 'frozen', title: 'Freeze', width: 88 },
+  { key: 'locked', title: 'Lock', width: 88 },
+  { key: 'vpFreeze', title: 'VP Freeze', layoutOnly: true, width: 88 },
+  { key: 'plot', title: 'Plot', width: 88 },
+  { key: 'color', title: 'Color', width: 110 },
+  { key: 'linetype', title: 'Linetype', width: 130 },
+  { key: 'lineweight', title: 'Lineweight', width: 110 },
+  { key: 'transparency', title: 'Transparency', width: 110 },
+  { key: 'description', title: 'Description', width: 200 },
 ];
 
 const COLUMN = new Map(LAYER_COLUMNS.map((c) => [c.key, c]));
@@ -58,13 +67,21 @@ export interface LayerColumnSettings {
   readonly order: readonly LayerColumnKey[];
   readonly hidden: readonly LayerColumnKey[];
   readonly sort: LayerSort;
+  /** The widths (px) the user gave columns; the others have their default width. */
+  readonly widths: Readonly<Partial<Record<LayerColumnKey, number>>>;
+  /** Freeze Column: this column and the ones before it do not scroll sideways. */
+  readonly frozen?: LayerColumnKey;
 }
 
 export const DEFAULT_LAYER_COLUMNS: LayerColumnSettings = {
   order: KEYS,
   hidden: [],
   sort: { key: 'name', descending: false },
+  widths: {},
 };
+
+const clampWidth = (w: number) =>
+  Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(w)));
 
 const isKey = (v: unknown): v is LayerColumnKey =>
   typeof v === 'string' && COLUMN.has(v as LayerColumnKey);
@@ -96,7 +113,70 @@ export function normalizeLayerColumns(raw: unknown): LayerColumnSettings {
   const sort = isKey(key)
     ? { key, descending: (s as Record<string, unknown>)['descending'] === true }
     : d.sort;
-  return { order, hidden, sort };
+  const widths: Partial<Record<LayerColumnKey, number>> = {};
+  const w = r['widths'];
+  if (typeof w === 'object' && w !== null && !Array.isArray(w))
+    for (const [k, v] of Object.entries(w))
+      if (isKey(k) && typeof v === 'number' && Number.isFinite(v)) widths[k] = clampWidth(v);
+  const frozen = isKey(r['frozen']) ? r['frozen'] : undefined;
+  return frozen ? { order, hidden, sort, widths, frozen } : { order, hidden, sort, widths };
+}
+
+/** Column `key`'s width (px): the user's, or its default. */
+export const layerColumnWidth = (s: LayerColumnSettings, key: LayerColumnKey): number =>
+  s.widths[key] ?? COLUMN.get(key)!.width;
+
+/** The settings with `widths` given to those columns, each kept within bounds. */
+export function withLayerColumnWidths(
+  s: LayerColumnSettings,
+  widths: Readonly<Partial<Record<LayerColumnKey, number>>>,
+): LayerColumnSettings {
+  const next = { ...s.widths };
+  for (const [k, v] of Object.entries(widths) as [LayerColumnKey, number][])
+    next[k] = clampWidth(v);
+  return { ...s, widths: next };
+}
+
+/**
+ * Maximize: the list's width left over once every column fits its contents (`fitted`), shared
+ * equally among the columns `grow` (a pixel the division leaves goes to the last). AutoCAD's help
+ * describes Maximize and Optimize in nearly the same words ("to maximize the display of the column
+ * content"); Triya's Optimize fits a column to its contents and Maximize also fills the list's
+ * width, so that the two differ in a way a drafter can see.
+ */
+export function maximizedWidths<K extends string>(
+  fitted: Readonly<Record<K, number>>,
+  grow: readonly K[],
+  available: number,
+): Record<K, number> {
+  const next = { ...fitted } as Record<K, number>;
+  const used = (Object.values(fitted) as number[]).reduce((a, b) => a + b, 0);
+  const free = Math.floor(available - used);
+  if (free <= 0 || grow.length === 0) return next;
+  const each = Math.floor(free / grow.length);
+  grow.forEach((k, i) => {
+    next[k] = fitted[k] + each + (i === grow.length - 1 ? free - each * grow.length : 0);
+  });
+  return next;
+}
+
+/**
+ * Freeze Column: the visible columns up to and including the frozen one, each with its offset
+ * from the list's left edge (the widths of the frozen columns before it). None when no column is
+ * frozen or the frozen column is not shown.
+ */
+export function frozenLayerColumns(
+  s: LayerColumnSettings,
+  visible: readonly LayerColumn[],
+): Map<LayerColumnKey, number> {
+  const frozen = new Map<LayerColumnKey, number>();
+  const last = visible.findIndex((c) => c.key === s.frozen);
+  let left = 0;
+  for (const c of visible.slice(0, last + 1)) {
+    frozen.set(c.key, left);
+    left += layerColumnWidth(s, c.key);
+  }
+  return frozen;
 }
 
 /** The columns the manager shows, in order. */
@@ -117,6 +197,19 @@ export function moveLayerColumn(
   const j = i + by;
   if (i < 0 || j < 0 || j >= next.length) return next;
   [next[i], next[j]] = [next[j]!, next[i]!];
+  return next;
+}
+
+/** A header dragged onto another: its column goes before that one (`undefined`: last). */
+export function moveLayerColumnBefore(
+  order: readonly LayerColumnKey[],
+  key: LayerColumnKey,
+  before: LayerColumnKey | undefined,
+): LayerColumnKey[] {
+  if (key === before) return [...order];
+  const next = order.filter((k) => k !== key);
+  const at = before === undefined ? -1 : next.indexOf(before);
+  next.splice(at < 0 ? next.length : at, 0, key);
   return next;
 }
 
