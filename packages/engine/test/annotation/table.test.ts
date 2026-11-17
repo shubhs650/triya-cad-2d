@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   standardTableStyle,
   tableCellShown,
+  tableFieldTexts,
   tableParts,
   tableRowHeight,
   tableRowTypes,
@@ -381,5 +382,41 @@ describe('table engine (M4-05)', () => {
 
   it('draws nothing for a table without rows or columns', () => {
     expect(draw(table({ rowHeights: [], cells: [] }))).toEqual([]);
+  });
+});
+
+// M4-32: FIELDDISPLAY shades a cell's fields from the cell, as the `*T` block's MTEXTs carry none.
+describe('tableFieldTexts (M4-32)', () => {
+  const field = {
+    evaluator: '_text',
+    code: '%<\\_FldIdx 0>%',
+    children: [
+      { evaluator: 'AcVar', code: '\\AcVar Filename', children: [], objects: [], value: 'n1' },
+    ],
+    objects: [],
+  };
+
+  it('gives each text cell with fields its MTEXT as the block draws it, with the fields', () => {
+    const g = table({
+      cells: [
+        [cell('Schedule', { columnSpan: 2 }), cell('', { merged: true })],
+        [cell('Tag'), cell('Size')],
+        [cell('n1', { field, valueFormat: '%tc1' }), cell('')],
+      ],
+    });
+    const drawn = draw(g).find((p) => p.geom.kind === 'MTEXT' && p.geom.contents === 'N1')!;
+    expect(tableFieldTexts(g, STYLE, { textStyle: 'STD' })).toEqual([{ ...drawn.geom, field }]);
+  });
+
+  it('gives none for a table without fields, an empty, merged-over or block cell', () => {
+    expect(tableFieldTexts(table(), STYLE, { textStyle: 'STD' })).toEqual([]);
+    const g = table({
+      cells: [
+        [cell('Schedule', { columnSpan: 2 }), cell('x', { merged: true, field })],
+        [cell('', { field }), cell('', { type: 'block', block: 'B', field })],
+        [cell('N1'), cell('')],
+      ],
+    });
+    expect(tableFieldTexts(g, STYLE, { textStyle: 'STD' })).toEqual([]);
   });
 });
