@@ -470,6 +470,31 @@ export function tableCellText(
 }
 
 /**
+ * The MTEXT of each text cell holding fields (M4-23 part 2), placed as `tableParts` draws the
+ * cell's text and carrying the cell's fields: what FIELDDISPLAY shades on screen (M4-32). The
+ * `*T` block's own MTEXTs carry no fields (the block is saved as drawn, and AutoCAD keeps a
+ * cell's fields in the cell), so the renderer shades a table's fields from these. Empty for a
+ * table without fields.
+ */
+export function tableFieldTexts(
+  g: TableGeometry,
+  style: TableStyleRecord | undefined,
+  drawing: TableDrawing,
+): MTextGeometry[] {
+  if (!g.cells.some((row) => row.some((c) => c.field !== undefined))) return [];
+  const l = rowLayout(g, style);
+  const out: MTextGeometry[] = [];
+  g.cells.forEach((row, i) =>
+    row.forEach((c, j) => {
+      if (c.merged || c.type !== 'text' || c.field === undefined || c.text === '') return;
+      const text = cellMText(g, style, drawing, l, rangeOf(g, l, i, j), tableCellShown(c));
+      out.push({ ...text, field: c.field });
+    }),
+  );
+  return out;
+}
+
+/**
  * The parts of table `g`'s `*T` block, in block coordinates (see the head of this file), drawn
  * with `style`, the table's table style.
  */
