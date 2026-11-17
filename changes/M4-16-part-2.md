@@ -1,0 +1,1 @@
+- M4-16 part 2 (#472): the table cell menu's Data Format... opens the Table Cell Format dialog (data type, format, precision, currency symbol, date format, with a preview); cells hold numbers, angles, currencies, percentages, dates and points shown in their format, text typed into a cell is read by it, and all of it is kept through saves.

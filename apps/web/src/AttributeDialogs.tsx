@@ -55,6 +55,7 @@ import { HatchDialog } from './HatchDialog';
 import { FieldDialog } from './FieldDialog';
 import { ToleranceDialog } from './ToleranceDialog';
 import { InsertCellBlockDialog } from './InsertCellBlockDialog';
+import { TableCellFormatDialog } from './TableCellFormatDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -146,6 +147,8 @@ export function AttributeDialogs({
       return <ToleranceDialog key={key} doc={doc.id} request={d} />;
     case 'tinsert':
       return <InsertCellBlockDialog key={key} doc={doc.id} request={d} />;
+    case 'tablecellformat':
+      return <TableCellFormatDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

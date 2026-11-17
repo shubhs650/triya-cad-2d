@@ -47,6 +47,7 @@ export const TABLE_CELL_OPTIONS = [
   'ALignment',
   'BOrders',
   'Height',
+  'DataFormat',
   'Match',
   'RemoveOverrides',
   'Above',
@@ -317,6 +318,7 @@ export function tableCellOptions(
     ALignment: true,
     BOrders: true,
     Height: true,
+    DataFormat: true,
     Match: true,
     RemoveOverrides: withCellOverridesRemoved(g, style, r).cells.some((row, i) =>
       row.some((c, j) => c !== g.cells[i]![j] && !sameFormat(c.format, g.cells[i]![j]!.format)),
@@ -362,7 +364,8 @@ export function withCellsPasted(
     row.forEach((c, j) => {
       const target = out[r0 + i]![c0 + j]!;
       if (c.merged || target.merged) return;
-      const { block: _, ...rest } = target;
+      // A pasted cell holds the text pasted, not a value (M4-16).
+      const { block: _, value: _value, ...rest } = target;
       out[r0 + i]![c0 + j] = { ...rest, type: 'text', text: mtextLiteral(c.text) };
     }),
   );
