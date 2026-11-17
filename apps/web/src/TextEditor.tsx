@@ -74,7 +74,14 @@ import {
   type MTextSpan,
   type MTextTabStop,
 } from '@triya/text';
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from 'react';
 import { controllerOf } from './canvas/registry';
 import type { CanvasController } from './canvas/controller';
 import { commandLines } from './command-line';
@@ -104,6 +111,7 @@ import {
   paragraphIndex,
   cellAhead,
   cellMoveFor,
+  lineAhead,
   type CarriedKey,
   type CellMove,
   removeRange,
@@ -315,6 +323,28 @@ function TextLine({
     answerMarked(lineValue(marked));
     return true;
   };
+  // The keys typed while the editor opened, which the command line held for it (M4-20): typed
+  // in order before any key typed into the editor itself, as AutoCAD's editor keeps them. Each
+  // Enter places a line; the keys after the Enter that ends TEXT, or after Esc, go back to the
+  // command line for `Command:`.
+  useLayoutEffect(() => {
+    if (editing) return;
+    const keys = commandLines.takeHeld(doc);
+    if (keys.length === 0) return;
+    const { ops, text, rest } = lineAhead(keys);
+    for (const op of ops) {
+      if (op.kind === 'line') {
+        engines.command(doc, { kind: 'answer', answer: { kind: 'string', value: op.value } });
+      } else if (op.kind === 'end') {
+        engines.command(doc, { kind: 'answer', answer: { kind: 'enter' } });
+      } else cancel(doc);
+    }
+    commandLines.giveHeld(doc, rest);
+    const typedAhead = lineEdited([], text, text.length);
+    typed.current = typedAhead;
+    caret.current = text.length;
+    setParts(typedAhead);
+  }, []);
   useEffect(() => {
     if (editing) input.current?.select();
     const onDown = (e: PointerEvent) => {

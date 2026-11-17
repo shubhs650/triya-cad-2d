@@ -189,10 +189,30 @@ export function promptParts(
   };
 }
 
+/**
+ * Whether the keys held for `prompt` are its in-place editor's to take rather than the command
+ * line's to replay (M4-20): TEXT's line editor placing new lines takes the keys typed while it
+ * opened, as AutoCAD's does.
+ */
+export function takesTypeAhead(prompt: Prompt | undefined): boolean {
+  return (
+    prompt?.kind === 'string' && prompt.editor?.kind === 'text' && prompt.editor.value === undefined
+  );
+}
+
+/** The keys a command line holds (`holdsKey`), for an in-place editor to take (M4-20). */
+export interface HeldKeys {
+  /** The keys held, which the command line then no longer holds. */
+  take(): readonly string[];
+  /** Keys held again after the ones held: typed ahead of the prompt after the editor's. */
+  give(keys: readonly string[]): void;
+}
+
 /** Each open drawing's command line. */
 export class CommandLines {
   readonly #states = new Map<number, CommandLineState>();
   readonly #listeners = new Set<() => void>();
+  readonly #held = new Map<number, HeldKeys>();
   #version = 0;
 
   subscribe = (listener: () => void): (() => void) => {
@@ -202,6 +222,24 @@ export class CommandLines {
 
   /** Moves whenever any drawing's command line changes (for useSyncExternalStore). */
   version = (): number => this.#version;
+
+  /** The command line showing `doc` holds its keys in `keys`; returns the release. */
+  holdKeys(doc: number, keys: HeldKeys): () => void {
+    this.#held.set(doc, keys);
+    return () => {
+      if (this.#held.get(doc) === keys) this.#held.delete(doc);
+    };
+  }
+
+  /** The keys held for `doc`'s prompt, taken from its command line. */
+  takeHeld(doc: number): readonly string[] {
+    return this.#held.get(doc)?.take() ?? [];
+  }
+
+  /** Keys held again by `doc`'s command line, for the prompt after the editor's. */
+  giveHeld(doc: number, keys: readonly string[]): void {
+    if (keys.length > 0) this.#held.get(doc)?.give(keys);
+  }
 
   get(doc: number): CommandLineState {
     return this.#states.get(doc) ?? IDLE;
