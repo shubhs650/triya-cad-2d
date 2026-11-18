@@ -47,6 +47,8 @@ describe('palette search', () => {
       'ARRAYPOLAR',
       'ARRAYRECT',
       'ATTEDIT',
+      // M5-02 part 2: references given their block's attributes.
+      'ATTSYNC',
       // M5-01 part 1: blocks made and inserted at the command line, and BASE.
       'BASE',
       // M5-02 part 1: the Block Editor.

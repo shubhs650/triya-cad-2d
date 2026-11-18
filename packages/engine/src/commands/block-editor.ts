@@ -14,14 +14,19 @@
 // Decisions (noted in the PR): the editor shows the definition in its own coordinates, the base
 // point where the definition keeps it (AutoCAD's documentation does not say whether the editor
 // moves the base point to 0,0; the stored coordinates keep a save byte-for-byte unless edited).
-// Not yet (later M5-02 parts): a new block named in the dialog or at -BEDIT (AutoCAD makes an
-// empty one), <Current Drawing>, opening another block while the editor is open, the authoring
-// palettes and parameters (dynamic block authoring is a PRD non-goal), REFEDIT and ATTSYNC.
+//
+// M5-02 part 2: a name no block has, typed in the dialog or at -BEDIT, makes an empty block (base
+// point 0,0, the drawing's units) and opens it, as AutoCAD does ("Block to create or edit");
+// making it counts as an edit not saved, so BCLOSE's Discard takes the block away again and
+// BSAVE keeps it (AutoCAD keeps a new block only once it is saved).
+// Not yet (later M5-02 parts): <Current Drawing>, opening another block while the editor is
+// open, the authoring palettes and parameters (dynamic block authoring is a PRD non-goal) and
+// REFEDIT.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { Handle } from '../model/handle';
 import type { BlockTableRecord } from '../model/types';
-import { blockNamed, insertableBlocks } from '../edit/blocks';
+import { blockNameProblem, blockNamed, defineBlock, insertableBlocks } from '../edit/blocks';
 import { wcmatch } from './modify/attributes';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -59,10 +64,14 @@ export function editableBlocks(ctx: CommandContext): BlockTableRecord[] {
   return insertableBlocks(ctx.model).filter((r) => !r.name.includes('|'));
 }
 
-/** Why the block named `name` cannot be edited, or undefined. */
+/**
+ * Why the block named `name` cannot be edited, or undefined: a name no block has is a new block,
+ * when it may name one.
+ */
 function editRefusal(ctx: CommandContext, name: string): string | undefined {
   const r = blockNamed(ctx.model, name);
-  if (!r || !editableBlocks(ctx).includes(r)) return `Block "${name}" not found.`;
+  if (!r) return blockNameProblem(name);
+  if (!editableBlocks(ctx).includes(r)) return `Block "${name}" not found.`;
   return undefined;
 }
 
@@ -81,9 +90,18 @@ function selectedBlock(
   return blocks.find((r) => r.handle === g.block)?.name;
 }
 
-/** Shows `r` in the Block Editor. */
-async function open(ctx: CommandContext, r: BlockTableRecord): Promise<void> {
-  ctx.blockEditor.open(r.handle);
+/** Shows the block named `name` in the Block Editor, making an empty one if there is none. */
+async function open(ctx: CommandContext, name: string): Promise<void> {
+  let r = blockNamed(ctx.model, name);
+  if (r) ctx.blockEditor.open(r.handle);
+  else {
+    let block = '';
+    const made = ctx.edit((b) => {
+      block = defineBlock(b, ctx.model, { name, base: { x: 0, y: 0 }, ids: [] }).block;
+    });
+    ctx.blockEditor.open(block, made);
+    r = ctx.model.tables.blockRecords.get(block)!;
+  }
   // The app shows the block; without one (a script, a test) the engine draws in it all the same.
   await ctx.view.request({ op: 'blockEditor', block: r.handle, name: r.name });
 }
@@ -112,7 +130,7 @@ async function* dashBedit(ctx: CommandContext): Sub<void> {
       ctx.message(refusal);
       continue;
     }
-    await open(ctx, blockNamed(ctx.model, name)!);
+    await open(ctx, name);
     return;
   }
 }
@@ -139,7 +157,7 @@ async function* beditDialog(ctx: CommandContext): Sub<void> {
     name = a.bedit.name.trim();
     note = editRefusal(ctx, name);
     if (note) continue;
-    await open(ctx, blockNamed(ctx.model, name)!);
+    await open(ctx, name);
     return;
   }
 }

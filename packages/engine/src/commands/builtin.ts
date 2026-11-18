@@ -60,6 +60,7 @@ import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { BLOCK_COMMANDS } from './blocks';
 import { BLOCK_EDITOR_COMMANDS } from './block-editor';
+import { attsyncCommand } from './attsync';
 import { wblockCommand } from './wblock';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
@@ -173,6 +174,7 @@ export function builtinCommands(): CommandRegistry {
     ...CLIPBOARD_COMMANDS.map((make) => make()),
     ...BLOCK_COMMANDS.map((make) => make()),
     ...BLOCK_EDITOR_COMMANDS.map((make) => make()),
+    attsyncCommand(),
     wblockCommand(),
     ...PALETTE_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),

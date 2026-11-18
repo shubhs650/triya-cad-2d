@@ -7,6 +7,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DXF, activeCanvas, enterCommand, expectShown, openWithPicker, worldAt } from '../app/page';
 import { startApp } from '../app/server';
 
@@ -148,4 +149,113 @@ test('BEDIT edits a block in the Block Editor; BCLOSE saves or discards the edit
   await ask.getByRole('button', { name: 'Discard the changes and close the Block Editor' }).click();
   await expect(bar).toBeHidden();
   await expect.poll(() => doorContents(page)).toEqual(['CIRCLE', 'LWPOLYLINE']);
+});
+
+const TITLE = fileURLToPath(
+  new URL('../../../packages/testkit/fixtures/attributes/title-block.dxf', import.meta.url),
+);
+
+/** The last attribute moves ATTSYNC made: how far each reference's first attribute went. */
+const syncedBy = (page: Page) =>
+  page.evaluate(() => {
+    const out: number[] = [];
+    for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+      for (const u of cs.entities?.updated ?? []) {
+        if (u.after.geom.kind !== 'INSERT' || u.before.geom.kind !== 'INSERT') continue;
+        const [a, b] = [u.before.geom.attributes[0], u.after.geom.attributes[0]];
+        if (a && b) out.push(Math.round(b.position.y - a.position.y));
+      }
+    }
+    return out;
+  });
+
+/** Whether block `name` exists now, as the engine's edits left it. */
+const blockExists = (page: Page, name: string) =>
+  page.evaluate((n) => {
+    let made = false;
+    for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+      for (const b of cs.blocks?.added ?? []) if (b.name === n) made = true;
+      for (const b of cs.blocks?.removed ?? []) if (b.name === n) made = false;
+    }
+    return made;
+  }, name);
+
+// M5-02 part 2: the Block Definition dialog's "Open in block editor" shows the block it made; a
+// new name in Edit Block Definition makes an empty block, which Discard takes away again; and
+// ATTSYNC gives the title block's reference the attributes its edited definition now places.
+test('Open in block editor, a new block from BEDIT, and ATTSYNC', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, TITLE);
+  await expectShown(page, path.basename(TITLE));
+  await expect(prompt(page)).toHaveText('Command:');
+  const box = (await activeCanvas(page).boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  const bar = page.getByRole('toolbar', { name: 'Block Editor' });
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+
+  // BLOCK with Open in block editor: a circle made block PLATE, shown in the editor.
+  await enterCommand(page, 'CIRCLE');
+  await expect(prompt(page)).toHaveText(/^Specify center point for circle/);
+  await type(page, '-50,0', /^Specify radius of circle/);
+  await type(page, '10', 'Command:');
+  await enterCommand(page, 'BLOCK');
+  const define = page.getByRole('dialog', { name: 'Block Definition' });
+  await expect(define).toBeVisible();
+  await define.getByLabel('Name:').fill('PLATE');
+  await define.getByRole('checkbox', { name: 'Specify On-screen' }).nth(1).check();
+  await define.getByRole('checkbox', { name: 'Open in block editor' }).check();
+  await shot(page, '5-open-in-block-editor');
+  await define.getByRole('button', { name: 'OK' }).click();
+  await expect(prompt(page)).toHaveText('Select objects:');
+  await type(page, 'L', 'Select objects:');
+  await type(page, '', 'Command:');
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText('Block Editor: PLATE');
+  // Made before the editor opened: closing asks nothing.
+  await bar.getByRole('button', { name: 'Close Block Editor' }).click();
+  await expect(bar).toBeHidden();
+  expect(await blockExists(page, 'PLATE')).toBe(true);
+
+  // A new name in Edit Block Definition: an empty block, opened; Discard takes it away.
+  await enterCommand(page, 'BEDIT');
+  const edit = page.getByRole('dialog', { name: 'Edit Block Definition' });
+  await expect(edit).toBeVisible();
+  await edit.getByLabel('Block to create or edit').fill('BRACKET');
+  await edit.getByRole('button', { name: 'OK' }).click();
+  await expect(bar).toContainText('Block Editor: BRACKET');
+  expect(await blockExists(page, 'BRACKET')).toBe(true);
+  await enterCommand(page, 'BCLOSE');
+  const ask = page.getByRole('dialog', { name: 'Block - Changes Not Saved' });
+  await expect(ask).toBeVisible();
+  await ask.getByRole('button', { name: 'Discard the changes and close the Block Editor' }).click();
+  await expect(bar).toBeHidden();
+  expect(await blockExists(page, 'BRACKET')).toBe(false);
+
+  // The title block's contents moved up 30 in the editor: its attributes stay behind until
+  // ATTSYNC places them as the definition now does.
+  await enterCommand(page, 'ZOOM');
+  await type(page, 'E', 'Command:');
+  await enterCommand(page, '-BEDIT');
+  await type(page, 'TITLE-BLOCK', 'Command:');
+  await expect(bar).toBeVisible();
+  await enterCommand(page, 'MOVE');
+  await expect(prompt(page)).toHaveText('Select objects:');
+  await type(page, 'ALL', 'Select objects:');
+  await type(page, '', /^Specify base point or \[Displacement\]/);
+  await type(page, '0,30', /^Specify second point/);
+  await type(page, '', 'Command:');
+  await enterCommand(page, 'BCLOSE');
+  await ask.getByRole('button', { name: 'Save the changes to TITLE-BLOCK' }).click();
+  await expect(bar).toBeHidden();
+  await enterCommand(page, 'ZOOM');
+  await type(page, 'E', 'Command:');
+  await shot(page, '6-before-attsync');
+  await enterCommand(page, 'ATTSYNC');
+  await expect(prompt(page)).toHaveText('Enter an option [?/Name/Select] <Select>:');
+  await type(page, 'N', 'Enter name of block to update:');
+  await type(page, 'TITLE-BLOCK', 'Command:');
+  await expect(log).toContainText('ATTSYNC complete.');
+  await expect.poll(() => syncedBy(page)).toEqual([30]);
+  await shot(page, '7-after-attsync');
 });

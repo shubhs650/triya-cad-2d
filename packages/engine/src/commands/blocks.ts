@@ -225,6 +225,11 @@ export interface BlockDefinitionSettings {
   /** Block unit, an `$INSUNITS` code. */
   readonly units: number;
   readonly description: string;
+  /**
+   * "Open in block editor" (M5-02 part 2): the block, once made, is shown in the Block Editor.
+   * The dialog offers it only while the editor is closed (`BlockDefinitionRequest.editing`).
+   */
+  readonly openInEditor?: boolean;
 }
 
 /** A block the Name list offers, with the settings the dialog shows when it is picked. */
@@ -246,6 +251,8 @@ export interface BlockDefinitionRequest {
   readonly blocks: readonly BlockDefinitionEntry[];
   /** Why the last OK made nothing ("Invalid block name."). */
   readonly note?: string;
+  /** The Block Editor is open: "Open in block editor" is not offered. */
+  readonly editing?: boolean;
 }
 
 /** The Block Definition dialog's answer: its fields, and the pick that closed it, if one did. */
@@ -310,6 +317,7 @@ async function* blockDialog(ctx: CommandContext): Sub<void> {
         selected: ids.length,
         blocks: insertableBlocks(ctx.model).map((r) => entryOf(ctx, r.name)),
         ...(note !== undefined && { note }),
+        ...(ctx.blockEditor.block !== undefined && { editing: true }),
       },
     });
     note = undefined;
@@ -414,6 +422,7 @@ async function* makeBlock(
     description: settings.description.trim(),
   };
   let refused: ReadonlyMap<string, number> = new Map();
+  let block = '';
   ctx.edit((b) => {
     const made = defineBlock(b, ctx.model, {
       name,
@@ -424,6 +433,7 @@ async function* makeBlock(
       settings: blockSettings,
     });
     refused = made.refused;
+    block = made.block;
     if (!convert) return;
     // The reference lies over the objects: at the base point, turned with the UCS the block was
     // made in, unscaled.
@@ -438,6 +448,11 @@ async function* makeBlock(
     placeReference(b, ctx.model, ctx.space, currentProps(ctx.model), geom);
   });
   for (const line of refusalMessages(refused, 'put in the block')) ctx.message(line);
+  // "Open in block editor": the block made is already saved, so closing keeps it either way.
+  if (settings.openInEditor === true && ctx.blockEditor.block === undefined) {
+    ctx.blockEditor.open(block);
+    await ctx.view.request({ op: 'blockEditor', block, name: blockNamed(ctx.model, name)!.name });
+  }
 }
 
 // ── -INSERT ───────────────────────────────────────────────────────────────────────────────────
