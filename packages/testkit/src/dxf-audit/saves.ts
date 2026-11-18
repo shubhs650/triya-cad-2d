@@ -54,6 +54,8 @@ export type AuditSaveKind =
   | 'refedit'
   // PDFATTACH on ezdxf's colors.dxf (no underlays) and the underlay fixture (M5-04 part 8).
   | 'pdfattach'
+  // PDFCLIP and PDFADJUST on the underlay fixture (M5-04 part 9).
+  | 'pdfclip'
   // ATTDEF's definitions, a block of them and a reference on ezdxf's colors.dxf (M5-03 part 1).
   | 'attdef'
   // A bundled template as it is, and a new drawing made from it, drawn in, its title block

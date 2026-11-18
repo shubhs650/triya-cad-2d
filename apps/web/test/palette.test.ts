@@ -207,8 +207,11 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      // M5-04 part 9: PDFADJUST and PDFCLIP.
+      'PDFADJUST',
       // M5-04 part 8: PDFATTACH.
       'PDFATTACH',
+      'PDFCLIP',
       // M3-02 part 5: PEDIT.
       'PEDIT',
       // M3-01 part 3: PLINE, POLYGON and RECTANG.
