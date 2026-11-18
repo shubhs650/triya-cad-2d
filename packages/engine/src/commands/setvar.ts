@@ -12,7 +12,7 @@ import { setWipeoutFrame, wipeoutFrame } from './draw/wipeout';
 import { imageFrame, setImageFrame } from './image';
 import { wcmatch } from './modify/attributes';
 import type { Prompt, PromptAnswer } from './prompt';
-import { modelSpaceOf } from './bus';
+import { isPaperSpace, modelSpaceOf } from './bus';
 import {
   annotationScaleValue,
   calendarDate,
@@ -144,7 +144,9 @@ async function computed(
     case 'CTAB':
       return { value: shownLayout(ctx)?.name ?? 'Model' };
     case 'TILEMODE':
-      return { value: ctx.space === modelSpaceOf(ctx.model) ? 1 : 0 };
+      return { value: isPaperSpace(ctx.model, ctx.space) ? 0 : 1 };
+    case 'BLOCKEDITOR':
+      return { value: ctx.blockEditor.block === undefined ? 0 : 1 };
     case 'AREA':
       return { value: inquiryResults(ctx.model).area };
     case 'PERIMETER':

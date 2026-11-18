@@ -101,6 +101,7 @@ import { ShortcutMenu } from './ShortcutMenu';
 import { DraftingToggles } from './DraftingToggles';
 import {
   DocumentStore,
+  inLayout,
   isDirty,
   layoutsOf,
   spacesOf,
@@ -500,6 +501,12 @@ function viewContext(id: number): ViewContext {
         };
       }
       store.showSpace(doc.id, block);
+      return { ok: true };
+    },
+    // BEDIT and BCLOSE (M5-02): the Block Editor shows the block, or closes.
+    blockEditor: (block, name) => {
+      if (block === undefined) store.closeBlockEditor(id);
+      else store.openBlockEditor(id, block, name ?? '');
       return { ok: true };
     },
     clipboard: (content) => clipboardRequest(id, content),
@@ -2230,6 +2237,9 @@ function PreviewToggle({ doc }: { readonly doc: number | undefined }) {
 /** The world point under the cursor, written straight into the status bar (no React render). */
 let showCursor: (p: { x: number; y: number } | undefined) => void = () => {};
 
+/** The block definitions a Block Editor showed (M5-02): not spaces whose canvas is kept. */
+const editorCanvases = new Set<string>();
+
 /** One container per space of the document shown so far; the space on screen is visible. */
 function DocumentCanvas({
   doc,
@@ -2241,11 +2251,16 @@ function DocumentCanvas({
   onMode: (m: CanvasMode) => void;
 }) {
   const [shown, setShown] = useState<readonly string[]>([doc.block]);
+  const editing = doc.blockEditor?.block;
   useEffect(() => {
-    setShown((s) => (s.includes(doc.block) ? s : [...s, doc.block]));
+    // A Block Editor's canvas goes when it closes (M5-02): the next BEDIT draws the block anew.
+    const spaces = (s: readonly string[]) =>
+      s.filter((b) => b === editing || !editorCanvases.has(b));
+    if (editing !== undefined) editorCanvases.add(editing);
+    setShown((s) => (s.includes(doc.block) ? spaces(s) : [...spaces(s), doc.block]));
     // Commands draw in the space shown, as AutoCAD's current space.
     engines.command(doc.id, { kind: 'space', block: doc.block });
-  }, [doc.id, doc.block]);
+  }, [doc.id, doc.block, editing]);
   return (
     <div id={`doc-${doc.id}`} role="tabpanel" className="doc-canvas" hidden={!active}>
       {shown.map((block) => (
@@ -2547,9 +2562,29 @@ function ViewportCanvas({
   );
 }
 
-/** Model, then the layouts in tab order (DXF 71). */
+/**
+ * Model, then the layouts in tab order (DXF 71). While the Block Editor is open (M5-02) its bar
+ * takes their place, as AutoCAD's editor leaves no tab to switch to: the block's name, Save
+ * Block (BSAVE) and Close Block Editor (BCLOSE).
+ */
 function LayoutTabs({ doc }: { doc: OpenDocument | undefined }) {
   if (!doc) return <nav className="layout-tabs" aria-label="Layouts" />;
+  if (doc.blockEditor) {
+    const run = (name: string) => engines.command(doc.id, { kind: 'invoke', name });
+    return (
+      <div className="layout-tabs block-editor-bar" role="toolbar" aria-label="Block Editor">
+        <span className="block-editor-name">
+          Block Editor: <strong>{doc.blockEditor.name}</strong>
+        </span>
+        <button type="button" onClick={() => run('BSAVE')}>
+          Save Block
+        </button>
+        <button type="button" onClick={() => run('BCLOSE')}>
+          Close Block Editor
+        </button>
+      </div>
+    );
+  }
   const tabs = spacesOf(doc, engines.changesOf(doc.id));
   return (
     <nav className="layout-tabs" aria-label="Layouts">
@@ -2595,7 +2630,7 @@ function StatusBar({
   );
   const lwdisplay = header.get('$LWDISPLAY');
   // A layout's coordinates are in its paper space's UCS (M3-06 part 7).
-  const paper = doc !== undefined && doc.block !== doc.opened.modelSpace;
+  const paper = doc !== undefined && inLayout(doc);
   // The drawing's units or decimal, as Settings has it (M2-20, coordinates.ts).
   const display = useSyncExternalStore(preferences.subscribe, preferences.get).coordinates;
   // LWT shows the drawing's LWDISPLAY until the drafter turns it (M2-04 part 2).
@@ -2632,7 +2667,7 @@ function StatusBar({
         <>
           <span className="version">{doc.opened.summary.version}</span>
           <span className="space" data-testid="space">
-            {doc.block === doc.opened.modelSpace ? 'MODEL' : 'PAPER'}
+            {inLayout(doc) ? 'PAPER' : 'MODEL'}
           </span>
         </>
       )}

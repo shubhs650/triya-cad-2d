@@ -8,8 +8,16 @@ export interface OpenDocument {
   readonly id: number;
   readonly name: string;
   readonly opened: OpenResult;
-  /** The space shown: model space or a layout's paper-space block record. */
+  /**
+   * The space shown: model space or a layout's paper-space block record, or the block definition
+   * the Block Editor shows (`blockEditor`).
+   */
   readonly block: string;
+  /**
+   * The Block Editor (BEDIT, M5-02): the block definition it shows (`block` while it is open),
+   * its name, and the space shown before it opened, which BCLOSE shows again.
+   */
+  readonly blockEditor?: { readonly block: string; readonly name: string; readonly from: string };
   /** The layout tab shown last (TILEMODE 0 shows it again, M2-59 part 5), if any has been. */
   readonly lastLayout?: string;
   /** Edits applied by the drawing's engine so far (M1-67): chrome that mirrors it re-reads. */
@@ -50,6 +58,10 @@ export function tabBlock(
   );
   return (layouts.find((s) => s.block === paper?.handle) ?? layouts[0])?.block;
 }
+
+/** Whether the space shown is a layout's paper space (not model space, not the Block Editor). */
+export const inLayout = (doc: Pick<OpenDocument, 'opened' | 'block' | 'blockEditor'>): boolean =>
+  doc.blockEditor === undefined && doc.block !== doc.opened.modelSpace;
 
 /** `block` as the layout tab shown last, when it is a layout's. */
 const layoutShown = (opened: OpenResult, block: string) =>
@@ -237,9 +249,27 @@ export class DocumentStore {
     this.#set({ notice: undefined });
   }
 
-  /** Shows the Model tab or a layout tab of a document. */
+  /** Shows the Model tab or a layout tab of a document (not while its Block Editor is open). */
   showSpace(id: number, block: string): void {
-    this.#update(id, (d) => ({ ...d, block, ...layoutShown(d.opened, block) }));
+    this.#update(id, (d) => (d.blockEditor ? d : { ...d, block, ...layoutShown(d.opened, block) }));
+  }
+
+  /** BEDIT (M5-02): shows the block definition `block` in the Block Editor. */
+  openBlockEditor(id: number, block: string, name: string): void {
+    this.#update(id, (d) => ({
+      ...d,
+      block,
+      blockEditor: { block, name, from: d.blockEditor?.from ?? d.block },
+    }));
+  }
+
+  /** BCLOSE (M5-02): closes the Block Editor, showing again the space shown before it. */
+  closeBlockEditor(id: number): void {
+    this.#update(id, (d) => {
+      if (!d.blockEditor) return d;
+      const { blockEditor, ...rest } = d;
+      return { ...rest, block: blockEditor.from };
+    });
   }
 
   dismissError(): void {

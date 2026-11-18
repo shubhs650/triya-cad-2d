@@ -9,7 +9,7 @@ import { controllerOf } from './canvas/registry';
 import type { ViewportSize } from './canvas/navigate';
 import { stateOf, type NamedView } from './canvas/view-host';
 import { namedView } from './canvas/views';
-import type { OpenDocument } from './documents';
+import { inLayout, type OpenDocument } from './documents';
 import { drawingViews } from './saved-views';
 
 /** VIEW table flag 1: a paper-space view. */
@@ -20,7 +20,7 @@ const PAPER_VIEW = 1;
  * write the VIEW table): model-space views on the Model tab, paper-space views in a layout.
  */
 function fileViewsOf(doc: OpenDocument, changes: readonly ChangeSet[]): ViewRecord[] {
-  const inModel = doc.block === doc.opened.modelSpace;
+  const inModel = !inLayout(doc);
   return drawingViews(doc.opened.init, changes).filter((v: ViewRecord) =>
     (v.flags ?? 0) & PAPER_VIEW ? !inModel : inModel,
   );

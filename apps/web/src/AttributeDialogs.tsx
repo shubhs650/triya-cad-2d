@@ -58,6 +58,7 @@ import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { AttdefDialog } from './AttdefDialog';
 import { InsertDialog } from './InsertDialog';
+import { BlockChangesNotSavedDialog, EditBlockDefinitionDialog } from './BlockEditorDialogs';
 import { WriteBlockDialog } from './WriteBlockDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 import { LayerListDialog } from './LayerListDialog';
@@ -175,6 +176,10 @@ export function AttributeDialogs({
       return <InsertDialog key={key} doc={doc.id} request={d} />;
     case 'wblock':
       return <WriteBlockDialog key={key} doc={doc.id} request={d} />;
+    case 'bedit':
+      return <EditBlockDefinitionDialog key={key} doc={doc.id} request={d} />;
+    case 'bclose':
+      return <BlockChangesNotSavedDialog key={key} doc={doc.id} request={d} />;
     case 'layerlist':
       return <LayerListDialog key={key} doc={doc.id} request={d} />;
     case 'laywalk':

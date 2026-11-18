@@ -43,6 +43,8 @@ export type AuditSaveKind =
   | 'xbind'
   // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).
   | 'wblock'
+  // A block edited in the Block Editor (BEDIT, ERASE, LINE, BSAVE, BCLOSE; M5-02 part 1).
+  | 'bedit'
   // PDFATTACH on ezdxf's colors.dxf (no underlays) and the underlay fixture (M5-04 part 8).
   | 'pdfattach'
   // ATTDEF's definitions, a block of them and a reference on ezdxf's colors.dxf (M5-03 part 1).

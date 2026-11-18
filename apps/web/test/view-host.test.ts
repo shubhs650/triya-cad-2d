@@ -254,6 +254,23 @@ describe('answerView', () => {
     expect(asked).toEqual(['Layout1', undefined]);
   });
 
+  it('hands the Block Editor to the app, with or without a canvas (M5-02 part 1)', () => {
+    const { ctx } = context(undefined);
+    const r = { op: 'blockEditor', block: '50', name: 'B' } as const;
+    expect(now(answerView(r, ctx))).toEqual({ ok: false, message: NO_TABS });
+    const asked: (string | undefined)[][] = [];
+    const blockEditor = (block: string | undefined, name: string | undefined): ViewReply => {
+      asked.push([block, name]);
+      return { ok: true };
+    };
+    expect(now(answerView(r, { ...ctx, blockEditor }))).toEqual({ ok: true });
+    expect(now(answerView({ op: 'blockEditor' }, { ...ctx, blockEditor }))).toEqual({ ok: true });
+    expect(asked).toEqual([
+      ['50', 'B'],
+      [undefined, undefined],
+    ]);
+  });
+
   it('hands the Selection list to the app, refused where there is none (M3-04 part 3)', async () => {
     const { ctx } = context(undefined);
     const r = {

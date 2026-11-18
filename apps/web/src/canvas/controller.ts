@@ -580,9 +580,15 @@ export class CanvasController {
     canvas.className = 'drawing-canvas';
     // Dynamic Input's tooltip takes the layout colour over a layout (M3-06 part 8).
     canvas.dataset['space'] = this.#layout ? 'layout' : 'model';
+    // Neither model space nor a layout's: a block definition the Block Editor shows (M5-02).
+    const editing = !this.#layout && block !== opened.modelSpace;
     canvas.setAttribute(
       'aria-label',
-      this.#layout ? `Layout ${this.#layout.name}` : (hooks.tile?.label ?? 'Model'),
+      this.#layout
+        ? `Layout ${this.#layout.name}`
+        : editing
+          ? 'Block Editor'
+          : (hooks.tile?.label ?? 'Model'),
     );
     container.append(canvas);
     this.#canvas = canvas;
@@ -1712,9 +1718,11 @@ export class CanvasController {
    * The view a space was saved in, as AutoCAD reopens a drawing: model space in the `*Active`
    * VPORT's view, a layout in its paper-space viewport's view (M1-22 part 3). Without one (no
    * VPORT table, a 3D view, a layout never shown) model space opens at its extents and a
-   * layout with its whole sheet in view (`#opening`).
+   * layout with its whole sheet in view (`#opening`), as does the Block Editor's block.
    */
   #savedView(): ViewTransform | undefined {
+    // The Block Editor's block (M5-02) has no saved view: it opens at its extents.
+    if (!this.#layout && this.block !== this.#opened.modelSpace) return undefined;
     return this.#layout
       ? paperSpaceView(paperSpaceViewport(this.#opened.init.entities, this.block), this.#size)
       : savedModelView(
