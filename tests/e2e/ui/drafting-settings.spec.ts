@@ -522,6 +522,9 @@ test('snaps along polar paths by the polar distance, relative to the last segmen
   await page.mouse.move(below.x, below.y);
   await expect(tip(page)).toBeHidden();
   await page.mouse.move(p.x, p.y);
+  // The hidden tip still reads "Endpoint" from before: wait for the snap at the cursor to show
+  // it, or Shift comes before the endpoint is there to acquire.
+  await expect(tip(page)).toBeVisible();
   await expect(tip(page)).toHaveText('Endpoint');
   await page.keyboard.down('Shift');
   await page.keyboard.up('Shift');
@@ -574,6 +577,7 @@ test('tracks a point with TK and sets the Dynamic Input tab', async ({ page }) =
   await type(page, 'MID', 'of');
   p = at(X0 + 0.2, Y0 + 22);
   await page.mouse.move(p.x, p.y);
+  await expect(tip(page)).toBeVisible();
   await expect(tip(page)).toHaveText('Midpoint');
   await shot(page, '14-tracking-to-midpoint');
   await page.mouse.click(p.x, p.y);
