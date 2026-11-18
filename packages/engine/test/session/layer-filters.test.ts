@@ -243,3 +243,13 @@ describe('layer filters (M5-07 part 4)', () => {
     expect(filterOf(s, 'Openings').layers).toEqual([LAYER_A_WIN]);
   });
 });
+
+describe('layers in use (All Used Layers, M5-07 part 5)', () => {
+  it('names the layers objects are on, as the manager lists them', () => {
+    const s = new EngineSession(filtersInit());
+    const used = s.layersInUse();
+    expect(used).toContain(LAYER_WALLS);
+    expect(used).not.toContain(LAYER_DOORS);
+    expect(used).not.toContain(LAYER_A_WIN);
+  });
+});

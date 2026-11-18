@@ -8,6 +8,8 @@
 //   not selected (an xref's layers left out, as nothing can go on them). OK asks, as AutoCAD
 //   does, whether to merge, and Yes merges them: their objects go to the target layer and they
 //   are purged (one LAYER undo step).
+// - With a group filter selected in the filter tree (M5-07 part 5), Remove From Group Filter takes
+//   the selected layers out of it (one LAYER step).
 import { useEffect, useRef, useState } from 'react';
 import type { Handle } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
@@ -20,6 +22,7 @@ export type LayerListAction =
   | 'delete'
   | 'description'
   | 'merge'
+  | 'removeFromGroup'
   | 'all'
   | 'clear'
   | 'allButCurrent'
@@ -31,6 +34,8 @@ interface Item {
   readonly separator?: boolean;
   /** Greyed unless one layer is selected, or any. */
   readonly needs?: 'one' | 'any';
+  /** Shown only with a group filter selected. */
+  readonly group?: true;
 }
 
 const ITEMS: readonly Item[] = [
@@ -40,6 +45,7 @@ const ITEMS: readonly Item[] = [
   { action: 'delete', label: 'Delete Layer', needs: 'any' },
   { action: 'description', label: 'Change Description', needs: 'one' },
   { action: 'merge', label: 'Merge Selected Layer(s) to...', needs: 'any', separator: true },
+  { action: 'removeFromGroup', label: 'Remove From Group Filter', needs: 'any', group: true },
   { action: 'all', label: 'Select All', separator: true },
   { action: 'clear', label: 'Clear All' },
   { action: 'allButCurrent', label: 'Select All but Current' },
@@ -49,12 +55,15 @@ const ITEMS: readonly Item[] = [
 export function LayerListMenu({
   at,
   selected,
+  group = false,
   onAction,
   onClose,
 }: {
   at: { readonly x: number; readonly y: number };
   /** How many layers are selected. */
   selected: number;
+  /** Whether a group filter is selected in the filter tree. */
+  group?: boolean;
   onAction: (a: LayerListAction) => void;
   onClose: () => void;
 }) {
@@ -94,7 +103,7 @@ export function LayerListMenu({
         }
       }}
     >
-      {ITEMS.map((it) => (
+      {ITEMS.filter((it) => group || !it.group).map((it) => (
         <button
           key={it.action}
           type="button"

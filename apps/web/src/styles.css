@@ -930,6 +930,119 @@ button {
   color: var(--danger-text);
 }
 
+/* M5-07 part 5: the filter tree beside the list, and the count under them. */
+.layer-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.layer-filters {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 132px;
+  min-height: 0;
+  border-right: 1px solid var(--chrome-border);
+}
+
+.layer-filter-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.layer-filter-tree [role='treeitem'] {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.layer-filter-tree [role='treeitem'][aria-selected='true'] {
+  background: var(--chrome-bg);
+  color: var(--accent);
+}
+
+.layer-filter-tree [role='treeitem'][data-drop] {
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.layer-filter-twisty {
+  flex: 0 0 12px;
+  text-align: center;
+}
+
+.layer-filter-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layer-filter-tree .layer-in-place {
+  min-width: 0;
+  width: 100%;
+}
+
+.layer-filter-invert {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.layer-filter-count {
+  margin: 0;
+  padding: 3px 8px;
+  border-top: 1px solid var(--chrome-border);
+  color: var(--chrome-text-muted);
+}
+
+.layer-filter-dialog {
+  width: min(900px, 95vw);
+}
+
+.layer-filter-name-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layer-filter-grid-wrap,
+.layer-filter-preview-wrap {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.layer-filter-grid,
+.layer-filter-preview {
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+.layer-filter-grid th,
+.layer-filter-grid td,
+.layer-filter-preview th,
+.layer-filter-preview td {
+  padding: 1px 4px;
+  border: 1px solid var(--chrome-border);
+  text-align: left;
+  font-weight: normal;
+}
+
+.layer-filter-cell {
+  display: flex;
+}
+
+.layer-filter-cell input {
+  width: 80px;
+}
+
 .layer-table-wrap {
   flex: 1;
   min-height: 0;
