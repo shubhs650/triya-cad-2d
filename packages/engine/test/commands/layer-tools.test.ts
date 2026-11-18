@@ -260,7 +260,7 @@ describe('LAYMCH', () => {
 
   it('Name takes a layer by its name, asking again for one the drawing lacks', async () => {
     const t = setup();
-    await t.bus.script(['LAYMCH']);
+    await t.bus.script(['-LAYMCH']);
     await t.bus.pick(t.on(L0));
     await t.bus.script(['', 'N']);
     expect(t.bus.promptText).toBe('Enter layer name:');
@@ -280,6 +280,81 @@ describe('LAYMCH', () => {
     await t.bus.pick(t.on(L0));
     await t.bus.script(['', '']);
     expect(t.bus.prompt).toBeUndefined();
+    expect(t.layerOf('30')).toBe(L0);
+  });
+});
+
+// M5-06 part 3: LAYMCH's Name opens AutoCAD's Change to Layer dialog (AutoCAD Help, "LAYMCH
+// (Command)", "Change to Layer Dialog Box": Current Layer, where a new name makes a layer, and the
+// Destination Layer list); -LAYMCH keeps the name typed.
+describe("LAYMCH's Change to Layer dialog", () => {
+  const dialogOf = (t: ReturnType<typeof setup>) => {
+    const p = t.bus.prompt;
+    return p?.kind === 'dialog' && p.dialog.type === 'layerlist' ? p.dialog : undefined;
+  };
+
+  it('lists the layers with the current one, and OK moves the objects to the layer chosen', async () => {
+    const t = setup();
+    await t.bus.script(['LAYMCH']);
+    await t.bus.pick(t.on(L0));
+    await t.bus.script(['', 'N']);
+    expect(dialogOf(t)).toEqual({
+      type: 'layerlist',
+      title: 'Change to Layer',
+      multiple: false,
+      current: 'WALLS',
+      layers: ['0', 'DOORS', 'NOTES', 'WALLS'].map((name) => ({
+        handle: Object.keys(NAMES).find((h) => NAMES[h] === name),
+        name,
+      })),
+    });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layers: [DOORS] });
+    expect(t.layerOf('30')).toBe(DOORS);
+    expect(t.log).toContain('1 object changed to layer "DOORS".');
+  });
+
+  it('makes a layer named in Current Layer that the drawing lacks, in one undo step', async () => {
+    const t = setup();
+    await t.bus.script(['LAYMCH']);
+    await t.bus.pick(t.on(L0));
+    await t.bus.pick(t.on(NOTES));
+    await t.bus.script(['', 'N']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layerName: ' ROOF ' });
+    const roof = [...t.model.tables.layers.values()].find((l) => l.name === 'ROOF')!;
+    expect(roof).toBeDefined();
+    expect(t.layerOf('30')).toBe(roof.handle);
+    expect(t.layerOf('33')).toBe(roof.handle);
+    expect(t.log).toContain('Layer "ROOF" created.');
+    expect(t.log).toContain('2 objects changed to layer "ROOF".');
+    await t.bus.script(['U']);
+    expect(t.layerOf('30')).toBe(L0);
+    expect([...t.model.tables.layers.values()].some((l) => l.name === 'ROOF')).toBe(false);
+  });
+
+  it('takes an existing layer typed in Current Layer whatever its case', async () => {
+    const t = setup();
+    await t.bus.script(['LAYMCH']);
+    await t.bus.pick(t.on(L0));
+    await t.bus.script(['', 'N']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layerName: 'notes' });
+    expect(t.layerOf('30')).toBe(NOTES);
+    expect(t.model.tables.layers.size).toBe(4);
+  });
+
+  it('says why a name cannot be a layer and goes back, as Cancel does', async () => {
+    const t = setup();
+    await t.bus.script(['LAYMCH']);
+    await t.bus.pick(t.on(L0));
+    await t.bus.script(['', 'N']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layerName: 'A<B' });
+    expect(t.log.at(-1)).toMatch(/invalid|cannot/i);
+    expect(t.bus.promptText).toBe('Select object on destination layer or [Name]:');
+    await t.bus.script(['N']);
+    await t.bus.answer({ kind: 'escape' });
+    expect(t.bus.promptText).toBe('Select object on destination layer or [Name]:');
+    await t.bus.script(['N']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layers: [] });
+    expect(t.bus.promptText).toBe('Select object on destination layer or [Name]:');
     expect(t.layerOf('30')).toBe(L0);
   });
 });
@@ -383,9 +458,17 @@ describe('Esc', () => {
     await esc('LAYISO', 'S', 'O');
     await esc('LAYISO', 'S', 'L');
     await esc('LAYISO');
-    await t.bus.script(['LAYMCH']);
+    await t.bus.script(['-LAYMCH']);
     await t.bus.pick(t.on(L0));
     await esc('', 'N');
+    // Esc in the Change to Layer dialog is its Cancel: back to the pick, then a second ends it.
+    await t.bus.script(['LAYMCH']);
+    await t.bus.pick(t.on(L0));
+    await t.bus.script(['', 'N']);
+    await t.bus.cancel();
+    expect(t.bus.promptText).toBe('Select object on destination layer or [Name]:');
+    await t.bus.cancel();
+    expect(t.bus.prompt).toBeUndefined();
     await t.bus.script(['LAYMCH']);
     await t.bus.pick(t.on(L0));
     await esc('');

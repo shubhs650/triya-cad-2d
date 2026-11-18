@@ -175,6 +175,21 @@ export function newLayerChange(
   like?: Handle,
   name: string = newLayerName(model),
 ): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  const made = newLayer(b, model, like, name);
+  return typeof made === 'string' ? made : b.build();
+}
+
+/**
+ * `newLayerChange` into a builder (LAYMCH's Change to Layer makes the layer typed and moves the
+ * objects to it in one step): the new layer, or why it cannot be made, with nothing added.
+ */
+export function newLayer(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  like: Handle | undefined,
+  name: string,
+): LayerRecord | string {
   const why = nameProblem(model, name);
   if (why) return why;
   const base =
@@ -182,8 +197,7 @@ export function newLayerChange(
       ? (named(model, '0') ?? model.tables.layers.values().next().value)
       : model.tables.layers.get(like);
   if (!base) return like === undefined ? 'The drawing has no layers.' : `No layer ${like}.`;
-  const b = new ChangeSetBuilder(model);
-  b.addTableRecord('layers', {
+  return b.addTableRecord('layers', {
     name,
     color: base.color,
     linetype: base.linetype,
@@ -196,7 +210,6 @@ export function newLayerChange(
     locked: base.locked,
     ...(base.plotStyle !== undefined && { plotStyle: base.plotStyle }),
   });
-  return b.build();
 }
 
 /** The layers any object is on: in model space, the layouts and every block definition. */
