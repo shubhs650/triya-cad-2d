@@ -10,16 +10,21 @@
 // greys Insertion Point and Text Settings. The engine checks the fields and makes the
 // definition (commands/attdef.ts), reopening the dialog with a note when it refuses them.
 //
-// Left out (commands/attdef.ts says why): Z, Annotative (shown greyed, DEC-058), the Default's
-// Insert Field button, and Help, as Triya's other dialogs leave it.
+// The Default holds fields (M5-03 part 4): Insert Field (its button, Ctrl+F) and Edit Field (a
+// double click on one) close the dialog for the Field dialog, which the engine opens, and it
+// comes back with the field made (FieldValueInput.tsx).
+//
+// Left out (commands/attdef.ts says why): Z, Annotative (shown greyed, DEC-058), and Help, as
+// Triya's other dialogs leave it.
 import type { AttdefSettings, DialogRequest, PromptAnswer } from '@triya/engine';
 import { useId, useState } from 'react';
-import { Modal, shownValue, storedValue } from './AttributeDialogs';
+import { Modal } from './AttributeDialogs';
+import { FieldValueInput } from './FieldValueInput';
 import { NumberField, OnScreen, numberOf, shown } from './ImageAttachDialog';
 import { engines } from './engine/registry';
 
 type Request = Extract<DialogRequest, { type: 'attdefine' }>;
-type Pick = 'height' | 'rotation' | 'width' | 'value';
+type Pick = 'height' | 'rotation' | 'width' | 'value' | 'field';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -138,7 +143,7 @@ export function AttdefDialog({ doc, request }: { doc: number; request: Request }
   /** A length or angle field with its button to pick it on screen. */
   const picked = (
     label: string,
-    what: Exclude<Pick, 'value'>,
+    what: Exclude<Pick, 'value' | 'field'>,
     v: string,
     set: (v: string) => void,
     off: boolean,
@@ -209,22 +214,20 @@ export function AttdefDialog({ doc, request }: { doc: number; request: Request }
             <div className="attdef-picked">
               <label className="cad-dialog-field" htmlFor={ids.value}>
                 <span>Default:</span>
-                {multiline ? (
-                  <textarea
-                    id={ids.value}
-                    rows={2}
-                    value={shownValue(value, true)}
-                    onChange={(e) => setValue(storedValue(e.currentTarget.value, true))}
-                  />
-                ) : (
-                  <input
-                    id={ids.value}
-                    type="text"
-                    value={value}
-                    autoComplete="off"
-                    onChange={(e) => setValue(e.currentTarget.value)}
-                  />
-                )}
+                <FieldValueInput
+                  id={ids.value}
+                  value={value}
+                  fields={request.fields}
+                  multiline={multiline}
+                  onChange={setValue}
+                  onField={(marked) =>
+                    answer(doc, {
+                      kind: 'dialog',
+                      action: 'ok',
+                      attdefine: { settings: { ...settings(), value: marked }, pick: 'field' },
+                    })
+                  }
+                />
               </label>
               {multiline && (
                 <button
