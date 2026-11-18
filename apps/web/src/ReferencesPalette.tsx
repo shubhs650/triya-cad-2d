@@ -11,7 +11,7 @@
 // M5-04 part 2: Bind…, on loaded xrefs the drawing attaches itself, opens the Bind Xrefs dialog
 // (Bind or Insert). M5-04 part 5: Attach Image... runs IMAGEATTACH. M5-04 part 6: Attach DWG...
 // runs XATTACH (AutoCAD's palette names its drawing attach so; a .dxf is picked as well as a
-// .dwg). Path comes with a later part.
+// .dwg). M5-04 part 8: Attach PDF... runs PDFATTACH. Path comes with a later part.
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { BindXrefsDialog } from './BindXrefsDialog';
 import type { ReferenceKind, ReferenceRow, ReferenceStatus } from './xrefs';
@@ -42,12 +42,15 @@ export function ReferencesPalette({
   onBind,
   onAttachImage,
   onAttachDrawing,
+  onAttachPdf,
   onClose,
 }: {
   /** Attach DWG... (XATTACH, M5-04 part 6), as the palette's Attach menu offers it. */
   onAttachDrawing?: () => void;
   /** Attach Image... (IMAGEATTACH, M5-04 part 5), as the palette's Attach menu offers it. */
   onAttachImage?: () => void;
+  /** Attach PDF... (PDFATTACH, M5-04 part 8), as the palette's Attach menu offers it. */
+  onAttachPdf?: () => void;
   /** XREF Bind, as Insert when `insert`: why not, or undefined. */
   onBind?: (rows: readonly ReferenceRow[], insert: boolean) => Promise<string | undefined>;
   /** XREF Unload: what it did, one line each. */
@@ -136,6 +139,11 @@ export function ReferencesPalette({
         {onAttachImage && (
           <button type="button" onClick={onAttachImage}>
             Attach Image...
+          </button>
+        )}
+        {onAttachPdf && (
+          <button type="button" onClick={onAttachPdf}>
+            Attach PDF...
           </button>
         )}
         {waiting > 0 && (

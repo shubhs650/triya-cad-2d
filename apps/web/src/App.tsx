@@ -63,6 +63,7 @@ import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
 import { AttributeDialogs } from './AttributeDialogs';
 import type { XrefFiles } from './XrefAttachDialog';
+import type { PdfAttachFiles } from './PdfAttachDialog';
 import { PlotDialog, download, plotDialog } from './PlotDialog';
 import { PublishDialog, publishDialog, type BackgroundDrawings } from './PublishDialog';
 import {
@@ -172,7 +173,7 @@ import {
 import { undoStates } from './undo';
 import { UndoButtons } from './UndoButtons';
 import { UndoToast } from './UndoToast';
-import { PdfPages, fileKey } from './underlay/pages';
+import { PdfPages, fileKey, pageSizesOf } from './underlay/pages';
 import { openPdf } from './underlay/pdfjs';
 import { PlotPreview } from './PlotPreview';
 import { AliasEditor } from './AliasEditor';
@@ -1248,6 +1249,26 @@ const xrefSources = new Map<string, Supplied>();
  * The drawings XATTACH's dialog picks (M5-04 part 6): Block Unit shows the file's INSUNITS, and
  * the file attached joins `xrefSources`, so the xref loads from it (and Reload reads it again).
  */
+/**
+ * The PDF files PDFATTACH's Attach PDF Underlay dialog lists and picks (M5-04 part 8): the pages
+ * of those supplied this session, a picked one read with pdf.js, and on OK supplied as a dropped
+ * one is, so its underlays draw at once.
+ */
+const pdfFiles: PdfAttachFiles = {
+  pages: (fileName) => pdfPages.pages(fileName),
+  read: async (bytes) => {
+    try {
+      return await pageSizesOf(await openPdf(bytes));
+    } catch {
+      return undefined;
+    }
+  },
+  add: (fileName, bytes) => {
+    pdfPages.add(fileName, bytes);
+    supplied.changed();
+  },
+};
+
 const xrefFiles: XrefFiles = {
   units: async (file) => {
     const opened = await openDrawing(file);
@@ -2055,6 +2076,7 @@ export function App() {
               engines.command(active.id, { kind: 'invoke', name: 'IMAGEATTACH' })
             }
             onAttachDrawing={() => engines.command(active.id, { kind: 'invoke', name: 'XATTACH' })}
+            onAttachPdf={() => engines.command(active.id, { kind: 'invoke', name: 'PDFATTACH' })}
             onBind={(rows, insert) =>
               bindXrefs(
                 active.id,
@@ -2115,6 +2137,7 @@ export function App() {
           supplied.changed();
         }}
         xrefFiles={xrefFiles}
+        pdfFiles={pdfFiles}
       />
       <PlotDialog
         doc={active}

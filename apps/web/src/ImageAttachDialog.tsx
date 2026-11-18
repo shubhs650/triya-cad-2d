@@ -23,10 +23,10 @@ type Request = Extract<DialogRequest, { type: 'imageattach' }>;
 const ACCEPT = '.bmp,.dib,.rle,.jpg,.jpeg,.jpe,.jfif,.png,.tif,.tiff,.gif';
 
 /** A number as its field shows it. */
-const shown = (v: number) => String(Number(v.toFixed(6)));
+export const shown = (v: number) => String(Number(v.toFixed(6)));
 
 /** A finite number, or undefined. */
-const numberOf = (t: string): number | undefined => {
+export const numberOf = (t: string): number | undefined => {
   const n = Number(t.trim());
   return t.trim() !== '' && Number.isFinite(n) ? n : undefined;
 };
@@ -40,7 +40,7 @@ interface Picked extends ImageAttachEntry {
 const baseName = (fileName: string) =>
   fileName.replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, '') || fileName;
 
-function NumberField({
+export function NumberField({
   label,
   value,
   onChange,
@@ -68,7 +68,13 @@ function NumberField({
   );
 }
 
-function OnScreen({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+export function OnScreen({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <label className="matchprop-check">
       <input

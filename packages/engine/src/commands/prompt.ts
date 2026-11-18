@@ -38,6 +38,7 @@ import type {
   InsertDialogRequest,
 } from './blocks';
 import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
+import type { PdfAttachAnswer, PdfAttachRequest } from './pdf-attach';
 import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
 import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
 import type { BlockCloseRequest, BlockEditRequest } from './block-editor';
@@ -781,6 +782,8 @@ export type DialogRequest =
   | InsertDialogRequest
   /** IMAGEATTACH's Attach Image (M5-04 part 5). */
   | ImageAttachRequest
+  /** PDFATTACH's Attach PDF Underlay (M5-04 part 8). */
+  | PdfAttachRequest
   /** LAYWALK's LayerWalk (M5-06 part 4). */
   | LayerWalkRequest
   | XrefAttachRequest
@@ -1053,6 +1056,8 @@ export type PromptAnswer =
       readonly insert?: InsertDialogAnswer;
       /** The Attach Image dialog's file and fields as OK closed it (IMAGEATTACH, M5-04 part 5). */
       readonly imageAttach?: ImageAttachAnswer;
+      /** The Attach PDF Underlay dialog's file, pages and fields as OK closed it (PDFATTACH, M5-04 part 8). */
+      readonly pdfAttach?: PdfAttachAnswer;
       /**
        * The Attach External Reference dialog's file and fields as OK closed it (XATTACH, M5-04
        * part 6).
