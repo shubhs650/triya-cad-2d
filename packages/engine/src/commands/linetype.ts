@@ -14,14 +14,19 @@
 //     bundled triya-iso.lin by default; the app reads it (view request `linetypeFile`). AutoCAD's
 //     Create writes a new .lin file, which Triya does not do yet (M5-08 later part).
 //   - LTSCALE: "Enter new linetype scale factor <current>:", then "Regenerating model.".
+//   - Other... at the end of the Properties palette's Linetype list (M5-08 part 2, as the ribbon's
+//     Properties panel offers it in AutoCAD 2024) opens the same Linetype Manager
+//     (`otherLinetype`); its OK also gives the linetype highlighted to the objects the palette
+//     shows, or makes it current with none, all in the palette's one PROPERTIES undo step.
 //
 // AutoCAD's Help gives no wording for -LINETYPE's reports; settled on the common drafter
 // expectation (noted in the PR): "Linetype X loaded.", "Linetype X is already loaded.  Reload
 // it?", "Linetype X reloaded.", "Linetype X not found in <file>.", and why a definition stays
 // out.
 import type { ChangeSetBuilder } from '../model/builder';
+import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { LinetypeElement } from '../model/types';
+import type { EntityType, LinetypeElement } from '../model/types';
 import {
   currentLinetypeName,
   deleteLinetypes,
@@ -35,6 +40,7 @@ import {
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import { wcmatch } from './modify/attributes';
+import { applyProperty } from './modify/property-edit';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -64,6 +70,12 @@ export interface LinetypeRequest {
   readonly ltscale: number;
   readonly celtscale: number;
   readonly psltscale: boolean;
+  /**
+   * Opened by the Properties palette's Other... (M5-08 part 2): OK also applies the linetype
+   * highlighted (`LinetypeAnswer.apply`), to the objects the palette shows or, with none, as the
+   * current linetype.
+   */
+  readonly apply?: true;
 }
 
 /** What the Linetype Manager's OK changes; absent fields stay as they are. */
@@ -77,6 +89,8 @@ export interface LinetypeAnswer {
   readonly ltscale?: number;
   readonly celtscale?: number;
   readonly psltscale?: boolean;
+  /** Other... (`LinetypeRequest.apply`): the linetype, by name, the palette's objects take. */
+  readonly apply?: string;
 }
 
 const upper = (s: string) => s.toUpperCase();
@@ -301,6 +315,49 @@ async function* dashLinetype(ctx: CommandContext): Sub<void> {
   }
 }
 
+/** The Linetype Manager's request on the drawing as it is. */
+function managerRequest(ctx: CommandContext, apply = false): LinetypeRequest {
+  const h = ctx.model.header;
+  return {
+    type: 'linetype',
+    linetypes: linetypeRows(ctx),
+    current: currentLinetypeName(ctx.model),
+    ltscale: numberOf(h.get('$LTSCALE'), 1),
+    celtscale: numberOf(h.get('$CELTSCALE'), 1),
+    psltscale: h.get('$PSLTSCALE') !== 0,
+    ...(apply && { apply: true as const }),
+  };
+}
+
+/**
+ * The Properties palette's Other... (M5-08 part 2): the Linetype Manager, whose OK makes its
+ * changes and then gives the linetype highlighted to `ids` (of the type `filter`), or makes it
+ * current with none, as the palette's Linetype list does. A linetype loaded in the dialog is in
+ * the drawing by then, so the objects name the new record.
+ */
+export async function* otherLinetype(
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+  filter: EntityType | undefined,
+): Sub<void> {
+  const a = yield ctx.prompt.dialog({
+    message: 'Linetype Manager',
+    dialog: managerRequest(ctx, true),
+  });
+  if (a.kind !== 'dialog' || a.action !== 'ok' || !a.linetype) return;
+  applyManager(ctx, a.linetype);
+  const name = a.linetype.apply;
+  if (name === undefined) return;
+  // The palette's options: ByLayer and ByBlock by name, the others by their record's handle.
+  const by = upper(name) === 'BYLAYER' ? 'ByLayer' : upper(name) === 'BYBLOCK' ? 'ByBlock' : '';
+  const value = by || linetypeNamed(ctx.model, name)?.handle;
+  if (value === undefined) {
+    ctx.message(`Linetype ${name} not found.`);
+    return;
+  }
+  await applyProperty(ctx, ids, { key: 'linetype', value }, filter);
+}
+
 /** LINETYPE (and -LINETYPE), with AutoCAD's aliases LT and LTYPE. */
 export function linetypeCommand(): CommandDef {
   return {
@@ -313,17 +370,9 @@ export function linetypeCommand(): CommandDef {
         yield* dashLinetype(ctx);
         return;
       }
-      const h = ctx.model.header;
       const a = yield ctx.prompt.dialog({
         message: 'Linetype Manager',
-        dialog: {
-          type: 'linetype',
-          linetypes: linetypeRows(ctx),
-          current: currentLinetypeName(ctx.model),
-          ltscale: numberOf(h.get('$LTSCALE'), 1),
-          celtscale: numberOf(h.get('$CELTSCALE'), 1),
-          psltscale: h.get('$PSLTSCALE') !== 0,
-        },
+        dialog: managerRequest(ctx),
       });
       if (a.kind !== 'dialog' || a.action !== 'ok' || !a.linetype) return;
       applyManager(ctx, a.linetype);

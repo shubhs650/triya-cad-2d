@@ -7,7 +7,7 @@
 // - Delete refuses Continuous (in use) and takes a linetype just loaded.
 // - Select Linetype's Load... loads TRIYA_WATER, chosen for the layer.
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, enterCommand, expectShown, openWithPicker } from '../app/page';
+import { DXF, activeCanvas, enterCommand, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -142,4 +142,83 @@ test('loads linetypes, sets the current one and the scales, and deletes (M5-08)'
   await shot('4-select-linetype-loaded.png');
   await select.getByRole('button', { name: 'OK' }).click();
   await expect(palette.getByRole('button', { name: 'Linetype HATCH' })).toHaveText('TRIYA_WATER');
+});
+
+// M5-08 part 2: the Properties palette's Linetype list ends with AutoCAD's "Other...", which
+// opens the Linetype Manager; a linetype loaded there from a user's .lin goes to the selection
+// at OK (one undo step), and with nothing selected it is made the current linetype.
+test('Other... in the Properties palette loads a linetype from a .lin and applies it (M5-08)', async ({
+  page,
+}) => {
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, 'clockwise_arcs_hatch.dxf');
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  // A frame and a circle to give the linetype (the drawing has one hatch).
+  await enterCommand(page, 'RECTANG');
+  await enterCommand(page, '-300,-200');
+  await enterCommand(page, '300,200');
+  await enterCommand(page, 'CIRCLE');
+  await enterCommand(page, '0,0');
+  await enterCommand(page, '150');
+  await enterCommand(page, 'ZOOM');
+  await enterCommand(page, 'W');
+  await enterCommand(page, '-330,-230');
+  await enterCommand(page, '330,230');
+  await expect(page.getByTestId('command-prompt')).toHaveText('Command:');
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toContainText(
+    /^All \(3\)/,
+  );
+  const linetype = palette.getByRole('combobox', { name: 'Linetype' });
+  await expect(linetype.locator('option').last()).toHaveText('Other...');
+
+  await linetype.selectOption({ label: 'Other...' });
+  await expect(manager(page)).toBeVisible();
+  await expect(manager(page)).toContainText('OK applies the highlighted linetype');
+  await manager(page).getByRole('button', { name: 'Load...' }).click();
+  await loader(page)
+    .getByLabel('Linetype file to load')
+    .setInputFiles({ name: 'pipes.lin', mimeType: 'text/plain', buffer: Buffer.from(PIPES) });
+  await option(page, 'loader', 'PIPE').click();
+  await loader(page).getByRole('button', { name: 'OK' }).click();
+  await expect(loader(page)).toBeHidden();
+  // The linetype just loaded is highlighted, ready for OK.
+  await expect(option(page, 'manager', 'PIPE')).toHaveAttribute('aria-selected', 'true');
+  await shot('5-other-linetype-manager.png');
+  await manager(page).getByRole('button', { name: 'OK' }).click();
+  await expect(manager(page)).toBeHidden();
+  await expect(linetype.locator('option:checked')).toHaveText('PIPE');
+  // Unselected, for the PR's screenshot only.
+  await activeCanvas(page).hover({ position: { x: 300, y: 300 } });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  await shot('6-other-applied-to-selection.png');
+
+  // One undo step takes the linetype and the load back.
+  await enterCommand(page, 'U');
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  await expect(linetype.locator('option', { hasText: /^PIPE$/ })).toHaveCount(0);
+
+  // With nothing selected, the linetype highlighted is made current (CELTYPE).
+  await page.keyboard.press('Escape');
+  await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toHaveText(
+    'No selection',
+  );
+  await linetype.selectOption({ label: 'Other...' });
+  await manager(page).getByRole('button', { name: 'Load...' }).click();
+  await loader(page).getByLabel('File', { exact: true }).selectOption('triya-utilities.lin');
+  await option(page, 'loader', 'TRIYA_WATER').click();
+  await loader(page).getByRole('button', { name: 'OK' }).click();
+  await manager(page).getByRole('button', { name: 'OK' }).click();
+  await expect(manager(page)).toBeHidden();
+  await expect(linetype.locator('option:checked')).toHaveText('TRIYA_WATER');
+  await enterCommand(page, 'CELTYPE');
+  await expect(page.getByTestId('command-prompt')).toContainText('TRIYA_WATER');
+  await page.keyboard.press('Escape');
 });
