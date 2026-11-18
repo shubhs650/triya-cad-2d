@@ -324,6 +324,12 @@ export interface BlockExpansion {
 export interface PrimitiveOwner {
   readonly entity: Entity;
   readonly context: BlockContext | undefined;
+  /**
+   * The block references holding the part, from the one expanded inward, then the object it
+   * belongs to (M5-06 part 5: a nested pick): the last reference itself for its attributes, and
+   * the dimension, table, multileader, leader, tolerance or multiline whose parts it is.
+   */
+  readonly path: readonly EntityId[];
 }
 
 /** A field's grey background (FIELDDISPLAY), drawn on screen only. */
@@ -367,6 +373,21 @@ export function expandInsert(
     return t;
   };
   const layers = src.model.tables.layers;
+  // The owners' paths (M5-06 part 5) that end with an object hit whole: a dimension, table or
+  // annotation, whose parts keep its path.
+  const wholes = new WeakSet<readonly EntityId[]>();
+  /**
+   * The path to a part painted as `e` within `path`: only a block reference is walked into, so
+   * an attribute (`e.id` is its reference's), an XCLIP frame and the parts of an object hit
+   * whole keep `path`.
+   */
+  const pathTo = (path: readonly EntityId[], e: Entity): readonly EntityId[] =>
+    path[path.length - 1] === e.id || wholes.has(path) ? path : [...path, e.id];
+  const inside = (path: readonly EntityId[], e: Entity): readonly EntityId[] => {
+    const next = pathTo(path, e);
+    if (e.geom.kind !== 'INSERT') wholes.add(next);
+    return next;
+  };
 
   const def = (block: Handle) => src.model.blocks.get(block);
   // TOLERANCE frames size their compartments by the text (M1-52 part 4).
@@ -380,6 +401,7 @@ export function expandInsert(
     depth: number,
     chain: readonly Handle[],
     clip: PrimitiveClip | undefined,
+    path: readonly EntityId[],
     keep?: (p: RenderPrimitive) => boolean,
   ): void => {
     const g = e.geom;
@@ -387,11 +409,11 @@ export function expandInsert(
       // Only a constant definition shows through a reference, as its value.
       if (!(g.flags & 2) || !attributeShown(g.flags, attMode)) return;
       const shown = attributeText(g);
-      draw({ ...e, geom: shown, type: shown.kind }, m, ctx, depth, chain, clip);
+      draw({ ...e, geom: shown, type: shown.kind }, m, ctx, depth, chain, clip, path);
       return;
     }
     if (expands(e, def)) {
-      walk(e, m, ctx, depth + 1, chain, clip);
+      walk(e, m, ctx, depth + 1, chain, clip, owners ? inside(path, e) : path);
       return;
     }
     const paint = src.paint(e, src.model, ctx);
@@ -418,7 +440,7 @@ export function expandInsert(
       prims.push(q as RenderPrimitive);
     }
     if (owners) {
-      const owner = { entity: e, context: ctx };
+      const owner = { entity: e, context: ctx, path: pathTo(path, e) };
       while (owners.length < prims.length) owners.push(owner);
     }
   };
@@ -429,6 +451,7 @@ export function expandInsert(
     depth: number,
     above: readonly Handle[],
     clip: PrimitiveClip | undefined,
+    path: readonly EntityId[],
   ): void => {
     if (depth > MAX_DEPTH) return;
     // Below the top level, a reference's own layer hides everything in it when frozen in a
@@ -449,7 +472,7 @@ export function expandInsert(
         // FILLMODE off leaves a multiline's fill out (AutoCAD 2024 help, FILLMODE).
         if (e.geom.kind === 'MLINE' && part.geom.kind === 'HATCH' && src.tessellate?.fill === false)
           continue;
-        draw(partEntity(e, part), m, outer, depth, chain, clip);
+        draw(partEntity(e, part), m, outer, depth, chain, clip, path);
       }
       return;
     }
@@ -471,21 +494,21 @@ export function expandInsert(
       let shaded = fields.length === 0;
       const shade = () => {
         for (const text of fields)
-          draw(partEntity(e, { geom: text }), cm, ctx, depth, chain, inner, isFieldShade);
+          draw(partEntity(e, { geom: text }), cm, ctx, depth, chain, inner, path, isFieldShade);
         shaded = true;
       };
       for (const id of order) {
         const child = src.model.entity(id);
         if (!child) continue;
         if (!shaded && child.geom.kind !== 'SOLID') shade();
-        draw(child, cm, ctx, depth, chain, inner);
+        draw(child, cm, ctx, depth, chain, inner, path);
       }
       if (!shaded) shade();
       if (xclip?.frame) {
         // The frame, in the reference's owner coordinates, painted as the reference itself.
         const vertices = xclip.boundary.map((p) => ({ ...applyAffine(cell, p), bulge: 0 }));
         const geom = { kind: 'LWPOLYLINE', vertices, closed: true } as const;
-        draw({ ...e, type: 'LWPOLYLINE', geom }, m, outer, depth, chain, clip);
+        draw({ ...e, type: 'LWPOLYLINE', geom }, m, outer, depth, chain, clip, path);
       }
     }
     if (e.geom.kind !== 'INSERT') return;
@@ -506,7 +529,7 @@ export function expandInsert(
         ltScale: a.ltScale,
         visible: a.visible,
       };
-      draw(attrib, m, ctx, depth, chain, clip);
+      draw(attrib, m, ctx, depth, chain, clip, path);
     }
   };
   /**
@@ -519,6 +542,6 @@ export function expandInsert(
     const style = g.style !== undefined ? src.model.tables.tableStyles.get(g.style) : undefined;
     return tableFieldTexts(g, style, tableDrawingOf(src.model));
   };
-  walk(insert, IDENTITY, undefined, 0, [], undefined);
+  walk(insert, IDENTITY, undefined, 0, [], undefined, owners ? inside([], insert) : []);
   return { prims, period, blocks, ...(owners ? { owners } : {}) };
 }
