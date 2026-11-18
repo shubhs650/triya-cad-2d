@@ -3,8 +3,9 @@
 // uploaded, a failing suite cannot hide the others, and nothing merges before CI is green.
 // DEC-053 (M2-58): gates run as parallel pieces; each required check is the job that gathers its
 // pieces and fails unless every one of them succeeded.
-// DEC-055 (M2-64): sized for three task threads at once: at most 8 runners per PR run, and a push
-// to main whose tree already passed every gate on its PR runs only the perf budgets.
+// DEC-055 (M2-64): a push to main whose tree already passed every gate on its PR runs only the
+// perf budgets. DEC-075: sized for two task threads at once, at most 8 runners per run, and split
+// by duration so the slowest piece is as short as the runners allow.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -221,16 +222,78 @@ describe('ci.yml gates', () => {
     },
   );
 
-  // Playwright splits a suite by `--shard=i/n`; each shard job must name its own piece of the
-  // same n, or a piece of the suite would never run.
-  it.each(['test:fidelity', 'test:ui'])('runs every shard of `pnpm %s`', (script) => {
-    const [, job] = jobRunning(script)!;
+  // Playwright splits the fidelity suite by `--shard=i/n`; each shard job must name its own
+  // piece of the same n, or a piece of the suite would never run.
+  it('runs every shard of `pnpm test:fidelity`', () => {
+    const [, job] = jobRunning('test:fidelity')!;
     const n = shardCount(job)!;
     expect(n).toBeGreaterThan(1);
     expect(job.strategy?.matrix?.['shard']).toEqual(Array.from({ length: n }, (_, i) => i + 1));
     expect(job.strategy?.['fail-fast']).toBe(false);
-    expect(stepRunning(job, script)!.run!.trim()).toBe(
-      `pnpm ${script} --shard=\${{ matrix.shard }}/${n}`,
+    expect(stepRunning(job, 'test:fidelity')!.run!.trim()).toBe(
+      `pnpm test:fidelity --shard=\${{ matrix.shard }}/${n}`,
+    );
+  });
+
+  // DEC-075: the UI suite runs the spec files tests/ci/ui-shard.ts lists for shard i/n (split by
+  // duration), and the shard then fails unless every one of its files has results.
+  it('runs every shard of `pnpm test:ui` by the duration-balanced file lists', () => {
+    const [, job] = jobRunning('test:ui')!;
+    const n = shardCount(job)!;
+    const step = stepRunning(job, 'test:ui')!;
+    const lines = step.run!.trim().split('\n');
+    expect(lines).toEqual([
+      `files="$(node --experimental-strip-types tests/ci/ui-shard.ts \${{ matrix.shard }}/${n})"`,
+      'pnpm test:ui $files',
+      `node --experimental-strip-types tests/ci/ui-shard.ts --ran \${{ matrix.shard }}/${n} "$TRIYA_PW_TIMINGS"`,
+    ]);
+    expect(step.env?.['TRIYA_UI_TIMINGS']).toBe('test-reports/ci-timings/ui.json');
+    expect(step.env?.['TRIYA_PW_TIMINGS']).toBe(
+      'test-reports/ui-timings/ui-${{ matrix.shard }}.json',
+    );
+    const steps = job.steps ?? [];
+    const kept = steps.find(
+      (s) =>
+        s.uses?.startsWith('actions/upload-artifact@') &&
+        s.with?.['name'] === 'ui-timings-${{ matrix.shard }}',
+    );
+    expect(kept?.if).toBe('${{ !cancelled() }}');
+    expect(kept?.with?.['path']).toBe('test-reports/ui-timings/');
+    const config = readFileSync(path.join(root, 'playwright.config.ts'), 'utf8');
+    expect(config).toContain("['./tests/e2e/timings-reporter.ts']");
+  });
+
+  // DEC-075: every shard of a run splits by the same durations, the artifacts that
+  // `detect hot-path changes` picked once for the whole run.
+  it('fetches the shard timings the changes job picked before each sharded suite', () => {
+    const changes = ci.jobs['changes']!;
+    expect(changes.outputs?.['timings']).toBe('${{ steps.timings.outputs.artifacts }}');
+    const pick = (changes.steps ?? []).find((s) => (s as { id?: string }).id === 'timings')!;
+    expect(pick.run).toContain('status=success');
+    expect(pick.run).toContain('select(.head_repository.id == .repository.id)');
+    for (const [script, env, file] of [
+      ['test:shard', 'TRIYA_VITEST_TIMINGS', 'test-reports/ci-timings/vitest.json'],
+      ['test:ui', 'TRIYA_UI_TIMINGS', 'test-reports/ci-timings/ui.json'],
+    ] as const) {
+      const [, job] = jobRunning(script)!;
+      const steps = job.steps ?? [];
+      const fetch = steps.findIndex((s) => s.run?.trim() === 'bash scripts/ci-timings-fetch.sh');
+      expect(fetch, script).toBeGreaterThan(-1);
+      expect(steps[fetch]!.env?.['ARTIFACTS']).toBe('${{ needs.changes.outputs.timings }}');
+      const run = stepRunning(job, script)!;
+      expect(steps.indexOf(run)).toBeGreaterThan(fetch);
+      expect(run.env?.[env]).toBe(file);
+    }
+  });
+
+  it('fails the unit check unless every Vitest file has a result in the merged report', () => {
+    const checks = ci.jobs['checks']!;
+    const steps = checks.steps ?? [];
+    const merge = steps.indexOf(stepRunning(checks, 'test:merge')!);
+    const every = steps.findIndex((s) => s.run?.includes('scripts/vitest-every-file.ts'));
+    expect(every).toBeGreaterThan(merge);
+    expect(steps[every]!.run).toContain(
+      'vitest list --filesOnly --json=test-reports/vitest/files.json',
     );
   });
 
@@ -291,20 +354,37 @@ describe('ci.yml gates', () => {
   });
 });
 
-// DEC-055 (M2-64): three task threads share the account's 20 concurrent jobs. Every merge starts a
-// run on main and an update-branch run on each other open PR at once, so each PR run asks for at
-// most 8 runners, and main does not run again the suites its tree already passed on its PR (with
-// main requiring PRs to be up to date, the squash commit's tree is the PR's tested merge tree).
-describe('ci.yml for three threads at once', () => {
+// DEC-075 (after DEC-055, M2-64): two task threads share the account's 20 concurrent jobs, with
+// 15-16 of them for CI. Every merge starts a run on main and an update-branch run on the other open
+// PR, so each run asks for at most 8 runners, and main does not run again the suites its tree
+// already passed on its PR (with main requiring PRs to be up to date, the squash commit's tree is
+// the PR's tested merge tree).
+describe('ci.yml for two threads at once', () => {
   const expanded = (job: Job) => shardCount(job) ?? 1;
+  const GATHERING = ['checks', 'browser', 'passed'];
 
   it('asks for at most 8 runners at once on a PR', () => {
     const together = Object.entries(ci.jobs).filter(
-      ([id, job]) =>
-        id !== 'changes' && id !== 'perf' && needsOf(job).every((n) => n === 'changes'),
+      ([id, job]) => id !== 'changes' && needsOf(job).every((n) => n === 'changes'),
     );
     const runners = together.reduce((sum, [, job]) => sum + expanded(job), 0);
     expect(runners).toBeLessThanOrEqual(8);
+    // Every other piece waits for a single-runner piece and takes the runner it frees: offline
+    // after lint and types, perf after offline. The gathering jobs start once the matrix pieces
+    // they gather have finished.
+    const chained = Object.entries(ci.jobs).filter(
+      ([id]) => id !== 'changes' && !together.some(([t]) => t === id) && !GATHERING.includes(id),
+    );
+    expect(chained.map(([id]) => id).sort()).toEqual(['offline', 'perf']);
+    expect(needsOf(ci.jobs['offline']!)).toEqual(['changes', 'static']);
+    expect(needsOf(ci.jobs['perf']!)).toEqual(['changes', 'offline']);
+    for (const id of ['static', 'offline']) expect(shardCount(ci.jobs[id]!)).toBeUndefined();
+    expect(needsOf(ci.jobs['checks']!)).toEqual(expect.arrayContaining(['unit', 'static']));
+    expect(needsOf(ci.jobs['browser']!)).toEqual(expect.arrayContaining(['playwright', 'offline']));
+  });
+
+  it('runs the Vitest suite in four shards', () => {
+    expect(shardCount(jobRunning('test:shard')![1])).toBe(4);
   });
 
   it('runs the fidelity and UI suites in the same three shards', () => {
@@ -354,8 +434,11 @@ describe('ci.yml for three threads at once', () => {
   it.each(GATED_SCRIPTS)('skips `pnpm %s` only when the tree already passed', (script) => {
     const [id, job] = jobRunning(script)!;
     expect(needsOf(job)).toContain('changes');
-    if (REQUIRED_CHECKS.includes(job.name ?? '')) {
-      expect(job.if).toContain(SKIP_IF_PASSED);
+    if (REQUIRED_CHECKS.includes(job.name ?? '') || needsOf(job).length > 1) {
+      // A gathering job, or a piece queued behind another piece (DEC-075), runs whatever the
+      // pieces before it did, unless the tree already passed.
+      expect(job.if, id).toContain(SKIP_IF_PASSED);
+      expect(job.if, id).toContain('!cancelled()');
     } else {
       expect(job.if, id).toBe(`\${{ ${SKIP_IF_PASSED} }}`);
     }

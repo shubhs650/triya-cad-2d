@@ -18,6 +18,15 @@ name: CI
 # already passed both required checks on its PR (main requires PRs to be up to date, so the
 # squash commit's tree is the merge tree the PR's run tested) skips the suites and runs only the
 # perf budgets. Every PR run still runs every gate.
+#
+# DEC-075: two task threads, at most 8 runners each (16 of the 20), and the shortest wall-clock
+# time per PR. Four unit shards and three fidelity · UI shards start together with
+# `lint · typecheck`; `build · offline · io` and then `performance budgets` follow it on the same
+# runner slot, so a run never holds more than 8 runners. Unit and UI shards split by duration:
+# the committed timings overlaid with those of the last green PR runs, which
+# `detect hot-path changes` picks once for the whole run so every shard computes the same split;
+# the unit check also fails unless every Vitest file has a result. The ezdxf audit runs on all of
+# the gathering job's CPUs.
 
 on:
   pull_request:
@@ -80,11 +89,12 @@ jobs:
           "$bin/qpdf" --version
       - run: qpdf --check packages/testkit/fixtures/pdf/plot-sheet.pdf
 
-  # `pnpm test` in three pieces of about equal length (tests/ci/shard.ts splits by the durations
-  # in tests/ci/vitest-timings.json). Each piece keeps its Vitest blob (results and coverage) and
-  # the DXF saves it wrote for the ezdxf audit; the required check below merges them.
+  # `pnpm test` in four pieces of about equal length (tests/ci/shard.ts splits by the durations
+  # in tests/ci/vitest-timings.json, overlaid with the recent green runs' ones, DEC-075). Each
+  # piece keeps its Vitest blob (results and coverage) and the DXF saves it wrote for the ezdxf
+  # audit; the required check below merges them.
   unit:
-    name: unit · shard ${{ matrix.shard }}/3
+    name: unit · shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [changes]
@@ -92,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -101,11 +111,17 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Timings of the last green runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACTS: ${{ needs.changes.outputs.timings }}
+        run: bash scripts/ci-timings-fetch.sh
       # The corpus suites also write every AC1032 DXF save, unedited and edited, for the ezdxf
       # audit (M1-105, DEC-047 item 7).
-      - run: pnpm test:shard --shard=${{ matrix.shard }}/3 --outputFile.blob=test-reports/vitest-blobs/blob-${{ matrix.shard }}.json
+      - run: pnpm test:shard --shard=${{ matrix.shard }}/4 --outputFile.blob=test-reports/vitest-blobs/blob-${{ matrix.shard }}.json
         env:
           TRIYA_DXF_AUDIT_DIR: test-reports/dxf-audit
+          TRIYA_VITEST_TIMINGS: test-reports/ci-timings/vitest.json
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
@@ -143,10 +159,15 @@ jobs:
           path: test-reports
       # One blob per shard, or the merged run would silently cover less than the whole suite.
       - name: Every shard's results arrived
-        run: test "$(find test-reports/vitest-blobs -name 'blob-*.json' | wc -l)" -eq 3
+        run: test "$(find test-reports/vitest-blobs -name 'blob-*.json' | wc -l)" -eq 4
       # The whole suite's results and coverage in one report: fails on any failed test and
       # applies the coverage gates (vitest.config.ts) to the merged coverage.
       - run: pnpm test:merge
+      # And it has a result for every test file the suite includes, whatever the shards did.
+      - name: Every test file ran
+        run: |
+          pnpm exec vitest list --filesOnly --json=test-reports/vitest/files.json
+          node --experimental-strip-types scripts/vitest-every-file.ts test-reports/vitest/files.json test-reports/vitest/results.json
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
@@ -154,7 +175,10 @@ jobs:
           path: test-reports/vitest/results.json
           retention-days: 14
       - uses: actions/setup-python@v5
-        with: { python-version: '3.13' }
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: scripts/dxf-audit/requirements.txt
       - run: python -m pip install -r scripts/dxf-audit/requirements.txt
       - run: python -m unittest discover -s scripts/dxf-audit
       - run: python scripts/dxf-audit/audit.py test-reports/dxf-audit
@@ -180,6 +204,7 @@ jobs:
       hot: ${{ steps.diff.outputs.hot }}
       tree: ${{ steps.tree.outputs.tree }}
       tested: ${{ steps.tree.outputs.tested }}
+      timings: ${{ steps.timings.outputs.artifacts }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 2 }
@@ -204,6 +229,26 @@ jobs:
             fi
           fi
           echo "tested=$tested" >> "$GITHUB_OUTPUT"
+      # DEC-075: the shard-timing artifacts of this repository's last three green PR runs
+      # ("<run>/<artifact id>/<name>"), picked once here so every shard of this run splits by the
+      # same durations. A failed lookup leaves the list empty, and every shard then splits by the
+      # committed timings alone.
+      - id: timings
+        if: ${{ steps.tree.outputs.tested != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifacts=""
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&status=success&per_page=10" \
+            --jq '.workflow_runs[] | select(.head_repository.id == .repository.id) | .id' || true)"
+          for run in $(echo "$runs" | head -n 3); do
+            found="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.expired == false and (.name == "vitest-results" or (.name | startswith("ui-timings-")))) | "\(.id)/\(.name)"' \
+              || true)"
+            for a in $found; do artifacts="$artifacts $run/$a"; done
+          done
+          echo "artifacts=${artifacts# }" >> "$GITHUB_OUTPUT"
+          echo "Shard timings from: ${artifacts:-the committed timings only}"
       - id: diff
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
@@ -215,9 +260,11 @@ jobs:
             echo "hot=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # The fidelity and UI suites in three Playwright shards (each job runs its piece of both, so
-  # their uneven files even out) plus the production-build suites; the required check
-  # "fidelity · offline · ui" below gathers them. They do not wait for the unit check.
+  # The fidelity and UI suites in three Playwright shards (each job runs its piece of both) plus
+  # the production-build suites; the required check "fidelity · offline · ui" below gathers them.
+  # They do not wait for the unit check. Fidelity tests split by count (each test is its own
+  # group); UI spec files split by duration (tests/ci/ui-shard.ts, DEC-075), and each shard keeps
+  # its files' durations as `ui-timings-<i>` for later runs.
   playwright:
     name: fidelity · ui · shard ${{ matrix.shard }}/3
     runs-on: ubuntu-latest
@@ -266,8 +313,27 @@ jobs:
             playwright-report/
             test-reports/fidelity/
           retention-days: 14
+      - name: Timings of the last green runs
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACTS: ${{ needs.changes.outputs.timings }}
+        run: bash scripts/ci-timings-fetch.sh
       - if: ${{ !cancelled() }}
-        run: pnpm test:ui --shard=${{ matrix.shard }}/3
+        env:
+          TRIYA_UI_TIMINGS: test-reports/ci-timings/ui.json
+          TRIYA_PW_TIMINGS: test-reports/ui-timings/ui-${{ matrix.shard }}.json
+        run: |
+          files="$(node --experimental-strip-types tests/ci/ui-shard.ts ${{ matrix.shard }}/3)"
+          pnpm test:ui $files
+          node --experimental-strip-types tests/ci/ui-shard.ts --ran ${{ matrix.shard }}/3 "$TRIYA_PW_TIMINGS"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ui-timings-${{ matrix.shard }}
+          path: test-reports/ui-timings/
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -278,13 +344,15 @@ jobs:
             test-reports/fidelity/
           retention-days: 14
 
-  # The offline suite serves the production build (M2-19), so the build runs here.
+  # The offline suite serves the production build (M2-19), so the build runs here. It starts once
+  # `lint · typecheck` has finished, on the runner that job frees (DEC-075: 8 runners a run), and
+  # runs whatever that job's result, so one red run still shows every broken gate.
   offline:
     name: build · offline · io
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [changes]
-    if: ${{ needs.changes.outputs.tested != 'true' }}
+    needs: [changes, static]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.tested != 'true' }}
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -362,14 +430,17 @@ jobs:
     name: performance budgets
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [changes]
+    # After `build · offline · io`, on the runner it frees (DEC-075), whatever its result; on a
+    # main push whose tree already passed, that job is skipped and perf runs straight away.
+    needs: [changes, offline]
     # Always on main; on PRs that touch render/engine/io, or when asked via the `perf` label
     # or a "[perf]" title.
     if: >-
+      ${{ !cancelled() && needs.changes.result == 'success' && (
       github.ref == 'refs/heads/main'
       || needs.changes.outputs.hot == 'true'
       || contains(github.event.pull_request.labels.*.name, 'perf')
-      || contains(github.event.pull_request.title, '[perf]')
+      || contains(github.event.pull_request.title, '[perf]')) }}
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }

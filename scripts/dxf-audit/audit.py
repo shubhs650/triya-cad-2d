@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -106,6 +108,8 @@ FIXTURE_SAVES = (
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.
 UNREADABLE_TAG = "unreadable"
 DANGLING_OWNER = "DEAD0"
+# The canary's broken copy, written into the saves directory (never audited ahead, see main).
+CANARY = "canary-dangling-owner.dxf"
 # ezdxf.audit.AuditError.INVALID_OWNER_HANDLE
 INVALID_OWNER_HANDLE = 202
 
@@ -137,6 +141,29 @@ def audit_file(path: Path) -> list[Finding]:
     findings += [Finding("audit", int(e.code), e.message) for e in audited.errors]
     findings += [Finding("audit", int(e.code), e.message) for e in audited.fixes]
     return findings
+
+
+def audit_all(paths: list[Path], audit=audit_file, workers: int | None = None) -> dict[Path, list[Finding]]:
+    """``audit`` of every path, keyed by the resolved path, on one process per CPU (DEC-075).
+
+    Each file is audited on its own, so the findings are the same as one at a time; only the
+    wall-clock time of the gate (about 2,000 saves) shrinks. ``audit`` must be picklable.
+    """
+    unique = sorted({p.resolve() for p in paths})
+    if not unique:
+        return {}
+    with ProcessPoolExecutor(max_workers=workers or os.cpu_count() or 1) as pool:
+        return dict(zip(unique, pool.map(audit, unique, chunksize=8)))
+
+
+def cached(results: dict[Path, list[Finding]], audit=audit_file):
+    """``audit`` answered from ``results`` (by resolved path), auditing anything else directly."""
+
+    def lookup(path: Path) -> list[Finding]:
+        found = results.get(path.resolve())
+        return list(found) if found is not None else audit(path)
+
+    return lookup
 
 
 def save_name(corpus_path: str, kind: str) -> str:
@@ -330,7 +357,7 @@ def canary(saves_dir: Path, audit=audit_file) -> str | None:
     clean = next((p for p in sorted(saves_dir.glob("*.unedited.dxf")) if not audit(p)), None)
     if clean is None:
         return "canary: no clean save to break"
-    broken = saves_dir / "canary-dangling-owner.dxf"
+    broken = saves_dir / CANARY
     text = clean.read_text(encoding="utf-8", errors="surrogateescape")
     broken.write_text(break_owner(text), encoding="utf-8", errors="surrogateescape")
     if not any(x.code == INVALID_OWNER_HANDLE for x in audit(broken)):
@@ -350,8 +377,13 @@ def main(argv: list[str]) -> int:
     exceptions = json.loads(args.exceptions.read_text())["files"]
     files = readable_files(manifest)
 
-    broken = canary(args.saves)
-    report = judge(files, args.saves, args.corpus, exceptions, fixtures=FIXTURE_SAVES)
+    # Every save, and every source an exception names, audited in parallel up front; the checks
+    # below then read the findings in the same order as before.
+    sources = [args.corpus / path for path in exceptions]
+    saves = [p for p in sorted(args.saves.glob("*.dxf")) if p.name != CANARY]
+    audit = cached(audit_all(saves + sources))
+    broken = canary(args.saves, audit=audit)
+    report = judge(files, args.saves, args.corpus, exceptions, audit=audit, fixtures=FIXTURE_SAVES)
     if broken:
         report.failures.insert(0, broken)
     for line in report.allowed:
