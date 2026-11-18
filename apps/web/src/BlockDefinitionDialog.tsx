@@ -8,8 +8,11 @@
 // nothing; the engine makes the block (commands/blocks.ts). Pick point and Select objects hand
 // the dialog's fields to the engine, which closes it for the pick and opens it again.
 //
-// Left out (commands/blocks.ts says why): Z, Quick Select, Annotative, Hyperlink and Open in
-// block editor; Help, as Triya's other dialogs leave it.
+// M5-02 part 2: "Open in block editor" (bottom left, as AutoCAD has it) shows the block made in
+// the Block Editor; it is not offered while the editor is open.
+//
+// Left out (commands/blocks.ts says why): Z, Quick Select, Annotative and Hyperlink; Help, as
+// Triya's other dialogs leave it.
 import {
   INSUNITS_NAMES,
   type BlockDefinitionSettings,
@@ -49,6 +52,7 @@ export function BlockDefinitionDialog({ doc, request }: { doc: number; request: 
   const [allowExploding, setAllowExploding] = useState(s.allowExploding);
   const [units, setUnits] = useState(s.units);
   const [description, setDescription] = useState(s.description);
+  const [openInEditor, setOpenInEditor] = useState(s.openInEditor === true);
   const [asking, setAsking] = useState<Asking>(undefined);
   const ids = {
     name: useId(),
@@ -87,6 +91,7 @@ export function BlockDefinitionDialog({ doc, request }: { doc: number; request: 
     allowExploding,
     units,
     description,
+    ...(openInEditor && !request.editing && { openInEditor: true }),
   });
   const pick = (what: 'point' | 'objects') =>
     answer(doc, { kind: 'dialog', action: 'select', block: { settings: settings(), pick: what } });
@@ -260,7 +265,17 @@ export function BlockDefinitionDialog({ doc, request }: { doc: number; request: 
           X and Y are numbers.
         </p>
       )}
-      <div className="cad-dialog-buttons">
+      <div className="cad-dialog-buttons block-definition-buttons">
+        {!request.editing && (
+          <label className="matchprop-check block-definition-open">
+            <input
+              type="checkbox"
+              checked={openInEditor}
+              onChange={(e) => setOpenInEditor(e.currentTarget.checked)}
+            />
+            Open in block editor
+          </label>
+        )}
         <button type="button" onClick={() => ok()} disabled={!baseValid}>
           OK
         </button>

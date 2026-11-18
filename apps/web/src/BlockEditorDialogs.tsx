@@ -8,7 +8,9 @@
 // - BCLOSE's Block - Changes Not Saved: Save the changes to <name>, Discard the changes and
 //   close the Block Editor, and Cancel (the editor stays open).
 //
-// Left out (block-editor.ts says why): <Current Drawing>, a new block's name, and Help.
+// M5-02 part 2: a name no block has makes a new, empty block, which opens in the editor.
+//
+// Left out (block-editor.ts says why): <Current Drawing>, and Help.
 import type { DialogRequest, PromptAnswer } from '@triya/engine';
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Modal } from './AttributeDialogs';

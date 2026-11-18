@@ -111,10 +111,10 @@ describe('BEDIT', () => {
   it('notes a block it cannot open and asks again; Cancel opens nothing', async () => {
     const t = await editor();
     await t.bus.submit('BEDIT');
-    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: 'NONE' } });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: 'A<B' } });
     const d = t.dialog() as Extract<DialogRequest, { type: 'bedit' }>;
-    expect(d.note).toBe('Block "NONE" not found.');
-    expect(d.name).toBe('NONE');
+    expect(d.note).toBe('Invalid block name.');
+    expect(d.name).toBe('A<B');
     await t.bus.cancel();
     expect(t.editorRequests()).toEqual([]);
     expect(await t.variable('BLOCKEDITOR')).toMatch(/BLOCKEDITOR = 0 /);
@@ -143,6 +143,95 @@ describe('BEDIT', () => {
     await t.bus.script(['-BEDIT', '']);
     expect(t.bus.promptText).toBe('Command:');
     expect(t.editorRequests()).toEqual([]);
+  });
+});
+
+describe('a new block (M5-02 part 2)', () => {
+  const recordNamed = (t: Awaited<ReturnType<typeof editor>>, name: string) =>
+    [...t.model.tables.blockRecords.values()].find((r) => r.name === name);
+
+  it('a name no block has makes an empty block at 0,0 and opens it', async () => {
+    const t = await editor();
+    await t.bus.submit('BEDIT');
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: ' Door ' } });
+    expect(t.bus.promptText).toBe('Command:');
+    const r = recordNamed(t, 'Door')!;
+    expect(r).toBeDefined();
+    expect(t.model.blocks.get(r.handle)!.basePoint).toEqual({ x: 0, y: 0 });
+    expect(t.contents(r.handle)).toEqual([]);
+    expect(t.editorRequests()).toEqual([{ op: 'blockEditor', block: r.handle, name: 'Door' }]);
+    await t.bus.script(['LINE', '0,0', '0,3', '']);
+    expect(t.contents(r.handle)).toHaveLength(1);
+    expect(t.model.blockEntities(MODEL_SPACE)).toHaveLength(3);
+  });
+
+  it('-BEDIT takes a new name too; one AutoCAD refuses is refused', async () => {
+    const t = await editor();
+    await t.bus.script(['-BEDIT', 'A|B']);
+    expect(t.log.at(-1)).toBe('Invalid block name.');
+    expect(t.bus.promptText).toBe('Enter block name or [?]:');
+    await t.bus.submit('WINDOW');
+    expect(t.bus.promptText).toBe('Command:');
+    expect(recordNamed(t, 'WINDOW')).toBeDefined();
+    expect(await t.variable('BLOCKEDITOR')).toMatch(/BLOCKEDITOR = 1 /);
+  });
+
+  it('is not saved until BSAVE: Discard takes the block away, U brings it back', async () => {
+    const t = await editor();
+    await t.bus.script(['-BEDIT', 'DOOR', 'BCLOSE']);
+    expect(t.dialog()).toEqual({ type: 'bclose', name: 'DOOR' });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bclose: 'discard' });
+    expect(recordNamed(t, 'DOOR')).toBeUndefined();
+    expect(await t.variable('BLOCKEDITOR')).toMatch(/BLOCKEDITOR = 0 /);
+    await t.bus.submit('U');
+    expect(recordNamed(t, 'DOOR')).toBeDefined();
+  });
+
+  it('BSAVE keeps it, empty or not; BCLOSE then asks nothing', async () => {
+    const t = await editor();
+    await t.bus.script(['-BEDIT', 'DOOR', 'CIRCLE', '0,0', '1', 'BSAVE', 'BCLOSE']);
+    expect(t.dialog()).toBeUndefined();
+    const r = recordNamed(t, 'DOOR')!;
+    expect(t.contents(r.handle)).toHaveLength(1);
+    // It is a block like any other now: -INSERT places it.
+    await t.bus.script(['-INSERT', 'DOOR', '10,10', '1', '', '0']);
+    expect(t.model.blockEntities(MODEL_SPACE)).toHaveLength(4);
+  });
+
+  it('the Block Definition dialog\'s "Open in block editor" opens the block it made', async () => {
+    const t = await editor();
+    await t.bus.submit('BLOCK');
+    const d = t.dialog() as Extract<DialogRequest, { type: 'block' }>;
+    expect(d.editing).toBeUndefined();
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      block: {
+        settings: { ...d.settings, name: 'PART', objectsOnScreen: true, openInEditor: true },
+      },
+    });
+    expect(t.bus.promptText).toBe('Select objects:');
+    await t.bus.answer({ kind: 'selection', ids: [t.id('30')] });
+    const r = recordNamed(t, 'PART')!;
+    expect(t.editorRequests()).toEqual([{ op: 'blockEditor', block: r.handle, name: 'PART' }]);
+    // Made before the editor opened: nothing to save, closing keeps it.
+    await t.bus.submit('BCLOSE');
+    expect(t.dialog()).toBeUndefined();
+    expect(recordNamed(t, 'PART')).toBeDefined();
+    // Inside the editor the option is not offered, and a block made there opens nothing.
+    await t.bus.script(['-BEDIT', 'B', 'BLOCK']);
+    const inside = t.dialog() as Extract<DialogRequest, { type: 'block' }>;
+    expect(inside.editing).toBe(true);
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      block: {
+        settings: { ...inside.settings, name: 'NESTED', objectsOnScreen: true, openInEditor: true },
+      },
+    });
+    await t.bus.answer({ kind: 'selection', ids: [t.id('51')] });
+    expect(recordNamed(t, 'NESTED')).toBeDefined();
+    expect(t.editorRequests().at(-1)).toEqual({ op: 'blockEditor', block: B, name: 'B' });
   });
 });
 
