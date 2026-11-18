@@ -87,8 +87,9 @@ class JudgeTest(unittest.TestCase):
         # (M2-70), after -TABLE with a nozzle schedule typed in (M4-05), and after the Table Style
         # dialog's styles with border linetypes and double lines (M4-16 part 8), and after -BLOCK
         # and -INSERT (M5-01 part 1), and WBLOCK's new drawing of its model space (M5-01 part 4),
-        # and a block edited in the Block Editor (M5-02 part 1).
-        self.assertEqual(report.checked, 34)
+        # and a block edited in the Block Editor (M5-02 part 1), and a new block and ATTSYNC
+        # (M5-02 part 2).
+        self.assertEqual(report.checked, 36)
 
     def test_fixture_saves_are_checked_with_no_exceptions(self) -> None:
         # M5-04 part 2: the xref bind saves, which are no corpus file's.
@@ -105,9 +106,9 @@ class JudgeTest(unittest.TestCase):
             {},
             fixtures,
         )
-        # The corpus saves of the test above (34 with the Block Editor's, M5-02 part 1) and the
+        # The corpus saves of the test above (36 with ATTSYNC's, M5-02 part 2) and the
         # fixture's.
-        self.assertEqual(report.checked, 35)
+        self.assertEqual(report.checked, 37)
         self.assertEqual(
             report.failures,
             [

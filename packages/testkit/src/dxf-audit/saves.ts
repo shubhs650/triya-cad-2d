@@ -47,6 +47,9 @@ export type AuditSaveKind =
   | 'wblock'
   // A block edited in the Block Editor (BEDIT, ERASE, LINE, BSAVE, BCLOSE; M5-02 part 1).
   | 'bedit'
+  // A new block made in the Block Editor, and ATTSYNC after a block's attribute definitions
+  // changed (M5-02 part 2).
+  | 'attsync'
   // PDFATTACH on ezdxf's colors.dxf (no underlays) and the underlay fixture (M5-04 part 8).
   | 'pdfattach'
   // ATTDEF's definitions, a block of them and a reference on ezdxf's colors.dxf (M5-03 part 1).

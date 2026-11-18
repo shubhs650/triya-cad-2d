@@ -5096,6 +5096,15 @@ button {
   flex: 1 1 auto;
 }
 
+.block-definition-buttons {
+  align-items: center;
+}
+
+/* "Open in block editor" sits at the bottom left, as AutoCAD has it (M5-02 part 2). */
+.block-definition-open {
+  margin-right: auto;
+}
+
 .attdef-define {
   width: min(640px, calc(100vw - 32px));
 }
