@@ -83,6 +83,12 @@ FIXTURE_SAVES = (
     # LINETYPE's loads (text linetypes too), reload and delete on ezdxf's colors.dxf (M5-08
     # part 1, packages/testkit/src/layers/linetype-load.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "linetype"),
+    # The bundled templates as they are, and a new drawing made from each, drawn in, its title
+    # block filled in and saved (M5-10, packages/testkit/src/templates/templates.test.ts).
+    ("assets/templates/triya-iso.dxf", "template"),
+    ("assets/templates/triya-iso.dxf", "new"),
+    ("assets/templates/triya-ansi.dxf", "template"),
+    ("assets/templates/triya-ansi.dxf", "new"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

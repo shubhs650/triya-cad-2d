@@ -196,6 +196,8 @@ describe('palette search', () => {
       'MOVE',
       'MREDO',
       'MTEXT',
+      // M5-10: NEW and QNEW.
+      'NEW',
       'OFFSET',
       'OOPS',
       'OSNAP',
@@ -222,6 +224,7 @@ describe('palette search', () => {
       // M5-09 part 1: PURGE.
       'PURGE',
       'QDIM',
+      'QNEW',
       'QSAVE',
       'QSELECT',
       'QUICKPROPERTIES',

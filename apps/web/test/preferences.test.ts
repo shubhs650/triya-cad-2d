@@ -545,3 +545,17 @@ describe('the Layer Properties Manager’s columns (M5-05 part 3)', () => {
     expect(normalizePreferences({}).layerColumns.hidden).toEqual([]);
   });
 });
+
+describe('the default template for QNEW (M5-10)', () => {
+  it('is Triya ISO (mm) until the user picks another, and none when they clear it', () => {
+    expect(normalizePreferences({}).defaultTemplate).toBe('triya-iso');
+    expect(normalizePreferences({ defaultTemplate: 'triya-ansi' }).defaultTemplate).toBe(
+      'triya-ansi',
+    );
+    expect(normalizePreferences({ defaultTemplate: '' }).defaultTemplate).toBe('');
+    expect(normalizePreferences({ defaultTemplate: 7 }).defaultTemplate).toBe('triya-iso');
+    expect(normalizePreferences({ defaultTemplate: 'x'.repeat(300) }).defaultTemplate).toBe(
+      'triya-iso',
+    );
+  });
+});

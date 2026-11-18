@@ -217,6 +217,8 @@ export function systemVariableReply(
 export interface DrawingFacts {
   /** The file it was opened from or last saved as. */
   readonly name: string;
+  /** A new drawing from a template (M5-10): named Drawing<n>.dxf, untitled until it is saved. */
+  readonly untitled?: boolean;
   readonly edits: number;
   readonly savedEdits: number;
 }
@@ -235,7 +237,7 @@ export function drawingVariableReply(doc: DrawingFacts, name: string): ViewReply
     case 'DWGPREFIX':
       return { ok: true, value: '' };
     case 'DWGTITLED':
-      return { ok: true, value: doc.name === '' ? 0 : 1 };
+      return { ok: true, value: doc.name === '' || doc.untitled === true ? 0 : 1 };
     case 'DBMOD':
       return { ok: true, value: doc.edits === doc.savedEdits ? 0 : 1 };
     default:
