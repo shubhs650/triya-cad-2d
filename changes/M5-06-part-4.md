@@ -1,0 +1,1 @@
+- M5-06 part 4 (#519): LAYWALK opens the LayerWalk dialog: the layers chosen in its list are shown and every other layer hidden as you walk through them, with Always Show layers, Select Objects, Purge of unreferenced layers, Save Layer State, Inspect, a wildcard filter (with saved filters) and Restore on Exit; the whole walk is one undo step.

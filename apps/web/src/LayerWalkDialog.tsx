@@ -246,6 +246,7 @@ export function LayerWalkDialog({ doc, request }: { doc: number; request: Reques
         onKeyDown={keys}
         onContextMenu={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setMenu({ x: e.clientX, y: e.clientY });
         }}
       >
