@@ -73,6 +73,7 @@ import { XbindDialog } from './XbindDialog';
 import { LinetypeManagerDialog } from './LinetypeManager';
 import type { LinetypeFiles } from './linetype-files';
 import { LayerWalkDialog } from './LayerWalkDialog';
+import { PurgeConfirmDialog, PurgeDialog } from './PurgeDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
 import { PdfAttachDialog, type PdfAttachFiles } from './PdfAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
@@ -206,6 +207,12 @@ export function AttributeDialogs({
       // One key while LAYWALK runs: each walk step is a new request, and the dialog keeps its
       // focus and list position through them (it remounts only after Select Objects).
       return <LayerWalkDialog key="laywalk" doc={doc.id} request={d} />;
+    case 'purge':
+      // One key while PURGE runs: each purge or Details is a new request, and the dialog keeps
+      // its view, checks and open types through them.
+      return <PurgeDialog key="purge" doc={doc.id} request={d} />;
+    case 'purgeconfirm':
+      return <PurgeConfirmDialog key={key} doc={doc.id} request={d} />;
     case 'imageattach':
       return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
     case 'pdfattach':
