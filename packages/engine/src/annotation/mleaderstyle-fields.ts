@@ -19,11 +19,11 @@
 import type { Color, Lineweight, MLeaderStyleRecord } from '../model/types';
 import type { Handle } from '../model/handle';
 import { parseNumber } from '../commands/parse';
+import { lineweightText, type LineweightUnits } from '../commands/lweight';
 import { colorValue } from '../properties/color-books';
 import {
   LINEWEIGHTS,
   colorLabel,
-  lineweightLabel,
   lineweightValue,
   parseColorValue,
   parseLineweightValue,
@@ -116,6 +116,11 @@ export interface MLeaderStyleLists {
   readonly arrowheads: readonly MLeaderStyleOption[];
   /** The drawing's blocks, then AutoCAD's built-in blocks it lacks. */
   readonly blocks: readonly MLeaderStyleOption[];
+  /**
+   * The units LWUNITS lists lineweights in (M5-12), which the app knows and hands in with the
+   * engine's lists; millimetres when it does not say.
+   */
+  readonly lineweightUnits?: LineweightUnits;
 }
 
 export interface MLeaderStyleField {
@@ -159,9 +164,10 @@ function colorOptions(value: string): MLeaderStyleOption[] {
   return out;
 }
 
-const LINEWEIGHT_OPTIONS: readonly MLeaderStyleOption[] = [
+/** ByLayer, ByBlock, Default and AutoCAD's lineweights, listed in LWUNITS' units (M5-12). */
+const lineweightOptions = (l: MLeaderStyleLists): MLeaderStyleOption[] => [
   ...(['ByLayer', 'ByBlock', 'Default'] as const).map((w) => ({ value: w, label: w })),
-  ...LINEWEIGHTS.map((w) => ({ value: String(w), label: lineweightLabel(w) })),
+  ...LINEWEIGHTS.map((w) => ({ value: String(w), label: lineweightText(w, l.lineweightUnits) })),
 ];
 
 /** AutoCAD's segment angle list. */
@@ -225,7 +231,7 @@ export const MLEADERSTYLE_FIELDS: readonly MLeaderStyleField[] = [
     group: 'General',
     label: 'Lineweight',
     kind: 'choice',
-    options: LINEWEIGHT_OPTIONS,
+    options: lineweightOptions,
   },
   {
     key: 'arrowhead',

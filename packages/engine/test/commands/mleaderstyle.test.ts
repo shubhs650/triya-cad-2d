@@ -13,6 +13,7 @@ import {
   MLEADER_TEXT_OVERRIDES,
   PromptBus,
   builtinCommands,
+  mleaderStyleFieldOptions,
   mleaderStyleProblem,
   mleaderStyleSettings,
   newMultiLeader,
@@ -522,6 +523,29 @@ describe('Modify Multileader Style fields', () => {
     expect(setMLeaderStyleField(s, 'frame', true).frame).toBe(true);
     expect(setMLeaderStyleField(s, 'leaderType', '2').leaderType).toBe('2');
     expect(mleaderStyleProblem(settings({ scaleToLayout: true, scale: 1 }))).toBeUndefined();
+  });
+
+  // M5-12: the leader's Lineweight list in LWUNITS' units (AutoCAD 2024 Help, "LWUNITS").
+  it('lists the leader lineweight in inches under LWUNITS 0, millimetres otherwise', () => {
+    const f = MLEADERSTYLE_FIELDS.find((x) => x.key === 'lineweight')!;
+    const lists = { linetypes: [], textStyles: [], arrowheads: [], blocks: [] };
+    const labels = (units?: 'mm' | 'in') =>
+      mleaderStyleFieldOptions(
+        f,
+        units ? { ...lists, lineweightUnits: units } : lists,
+        settings(),
+      ).map((o) => `${o.value}=${o.label}`);
+    expect(labels('in').slice(0, 5)).toEqual([
+      'ByLayer=ByLayer',
+      'ByBlock=ByBlock',
+      'Default=Default',
+      '0=0.000"',
+      '5=0.002"',
+    ]);
+    expect(labels('in')).toContain('211=0.083"');
+    expect(labels('in').some((l) => l.endsWith(' mm'))).toBe(false);
+    expect(labels()).toContain('25=0.25 mm');
+    expect(labels('mm')).toContain('25=0.25 mm');
   });
 
   it('reads a style scaled to its layout as scale 0', () => {

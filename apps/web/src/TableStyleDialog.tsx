@@ -38,12 +38,14 @@
 import {
   LINEWEIGHTS,
   TABLE_CELL_STYLES,
+  lineweightText,
   cellStyleNameProblem,
   tableStylePreview,
   tableStyleProblem,
   type Color,
   type DialogRequest,
   type Lineweight,
+  type LineweightUnits,
   type PromptAnswer,
   type TableCellBorder,
   type TableCellStyleSettings,
@@ -55,6 +57,7 @@ import { aciRgb } from '@triya/render';
 import { useEffect, useId, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
+import { useLineweightUnits } from './lineweight-units';
 
 type Request = Extract<DialogRequest, { type: 'tablestyle' }>;
 
@@ -110,10 +113,12 @@ function colorOptions(current: Color | null, none: boolean): [string, string][] 
   return out;
 }
 
-const lineweightLabel = (w: Lineweight): string =>
-  typeof w === 'number' ? `${(w / 100).toFixed(2)} mm` : String(w);
-
 const LINEWEIGHT_OPTIONS: readonly Lineweight[] = ['ByBlock', 'ByLayer', ...LINEWEIGHTS];
+
+/** The Borders tab's Lineweight list, in LWUNITS' units as AutoCAD lists it (M5-12). */
+export function tableLineweightOptions(units: LineweightUnits): { value: string; label: string }[] {
+  return LINEWEIGHT_OPTIONS.map((w) => ({ value: String(w), label: lineweightText(w, units) }));
+}
 
 /** AutoCAD's next free `Copy of <name>` name. */
 function copyName(names: readonly string[], from: string): string {
@@ -441,6 +446,7 @@ function TableStyleEditor(props: {
   const [tab, setTab] = useState<Tab>('general');
   const [creating, setCreating] = useState(false);
   const [managing, setManaging] = useState(false);
+  const lwUnits = useLineweightUnits();
   const own = s.userCellStyles ?? [];
   const cellOf = (n: Shown, from = s): TableCellStyleSettings =>
     typeof n === 'number' ? from.userCellStyles![n]!.settings : from[n];
@@ -705,9 +711,9 @@ function TableStyleEditor(props: {
                         setLineweight(v === 'ByBlock' || v === 'ByLayer' ? v : Number(v));
                       }}
                     >
-                      {LINEWEIGHT_OPTIONS.map((w) => (
-                        <option key={String(w)} value={String(w)}>
-                          {lineweightLabel(w)}
+                      {tableLineweightOptions(lwUnits).map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
                         </option>
                       ))}
                     </select>
