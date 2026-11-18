@@ -8,7 +8,9 @@
 // vertices are (the engine does not know them). The record checks every table shares are in
 // records.ts; what a save cannot keep yet is refused before anything changes: removing a block
 // (PURGE), xref and layout blocks (M1-21), except the sheet block of a layout the same save adds
-// (LAYOUT New, layouts.ts), and changes to a dynamic block's links. A new block may be dynamic,
+// (LAYOUT New, layouts.ts) and a new xref (XATTACH, M5-04 part 6: its BLOCK's DXF 70 bit 4, or 4
+// and 8 for an overlay, and DXF 1 path; its content is the xref's file's and never saved), and
+// changes to a dynamic block's links. A new block may be dynamic,
 // or a state of a dynamic block, when the file will say so (M2-32 part 4: PASTECLIP). The two sheet blocks that
 // swap names when another layout is made current are renamed by layouts.ts, which checks the swap.
 
@@ -40,6 +42,7 @@ const ANONYMOUS = 1;
 /** BLOCK DXF 70 bits of an xref (4, 8 overlay) and of a block an xref brings (16, 32). */
 const XREF_BLOCK = 4 | 8 | 16 | 32;
 const XREF = 4 | 8;
+const XREF_FLAG = 4;
 
 /**
  * Whether record `a` is xref `b` bound (XREF Bind, M5-04 part 2): a block of the drawing now,
@@ -76,6 +79,8 @@ export interface BlockPlan {
   readonly swapping: ReadonlySet<Handle>;
   /** Xrefs bound (XREF Bind): their BLOCK loses its path. */
   readonly bound: BlockRecord[];
+  /** New xrefs (XATTACH): their BLOCK's path (DXF 1). */
+  readonly attached: { readonly acad: BlockRecord; readonly path: string }[];
 }
 
 /**
@@ -152,6 +157,7 @@ export function planBlocks(
     described: [],
     swapping,
     bound: [],
+    attached: [],
   };
   const problems = [...records.problems];
   const baseDefs = new Map((base.blocks ?? []).map((d) => [d.handle, d]));
@@ -165,10 +171,15 @@ export function planBlocks(
       out.push('dynamic block links change (Triya does not evaluate dynamic blocks)');
     if (!b) out.push(...newDynamicProblems(model, a, model.tables.blockRecords.get(h), graphs));
     const unbound = bound(was.get(h), record) && a.xrefPath === undefined;
+    // A new xref's path is its BLOCK's DXF 1 (XATTACH); its record says it is an xref.
+    const attached = !b && isNewXref(record) && a.xrefPath !== undefined;
     const rest = (d: BlockDefinition | undefined) =>
       Object.fromEntries(
         Object.entries(d ?? {}).filter(
-          ([k]) => !WRITTEN.has(k) && !k.startsWith('dynamic') && !(unbound && k === 'xrefPath'),
+          ([k]) =>
+            !WRITTEN.has(k) &&
+            !k.startsWith('dynamic') &&
+            !((unbound || attached) && k === 'xrefPath'),
         ),
       );
     if (!same(rest(b), rest(a)))
@@ -189,12 +200,20 @@ export function planBlocks(
     const acad = resolve(r, h, BlockRecord);
     if (!acad) continue; // the record's own problem says why
     if (unbound && b?.xrefPath !== undefined) plan.bound.push(acad);
+    if (attached) plan.attached.push({ acad, path: a.xrefPath! });
     if (moved) (b ? plan.moved : plan.added).push({ acad, basePoint: a.basePoint });
     if (described) plan.described.push({ acad, description: a.description ?? null });
   }
   // A definition removed goes with its record, whose removal records.ts refuses.
   return { plan, problems };
 }
+
+/**
+ * Whether a new record is an xref the save may add (XATTACH): BLOCK DXF 70 bit 4 (an attachment)
+ * or bits 4 and 8 (an overlay), with no other bit; AutoCAD writes no other combination.
+ */
+const isNewXref = (a: BlockTableRecord | undefined): boolean =>
+  a !== undefined && (a.flags === XREF_FLAG || a.flags === XREF);
 
 const withoutDictionary = (b: BlockTableRecord): BlockTableRecord => {
   const { extDict: _x, ...rest } = b;
@@ -265,6 +284,9 @@ function recordProblems(
     if (bound(b, a)) {
       if (((b!.flags ?? 0) & ANONYMOUS) !== (flags & ANONYMOUS))
         out.push('a block cannot become anonymous or named');
+    } else if (!b && isNewXref(a)) {
+      if (def?.xrefPath === undefined || def.xrefPath === '')
+        out.push("a new xref's block names its file (DXF 1)");
     } else if ((flags & ~OWN_FLAGS) !== 0 || ((b?.flags ?? 0) & ~OWN_FLAGS) !== 0)
       out.push(`block flags ${flags} (xref blocks are M1-21)`);
     else if (b && ((b.flags ?? 0) & ANONYMOUS) !== (flags & ANONYMOUS))
@@ -337,4 +359,6 @@ export function writeBlocks(doc: CadDocument, r: Resolver, plan: BlockPlan): voi
   for (const { acad, description } of plan.described) acad.blockEntity.comments = description;
   // Bound: the record's flags (written above) are its BLOCK's; the path goes.
   for (const acad of plan.bound) acad.blockEntity.xRefPath = null;
+  // Attached: the record's flags (made with it) are its BLOCK's; the path is its DXF 1.
+  for (const { acad, path } of plan.attached) acad.blockEntity.xRefPath = path;
 }

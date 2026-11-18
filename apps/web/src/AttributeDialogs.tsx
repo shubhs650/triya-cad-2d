@@ -59,6 +59,7 @@ import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { InsertDialog } from './InsertDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
+import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -75,6 +76,7 @@ export function AttributeDialogs({
   fonts,
   patternSources = [],
   onImageFile,
+  xrefFiles,
 }: {
   doc: { id: number } | undefined;
   /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
@@ -85,6 +87,8 @@ export function AttributeDialogs({
   patternSources?: readonly string[];
   /** An image file IMAGEATTACH attached (M5-04 part 5): the app's images serve it. */
   onImageFile?: (fileName: string, bytes: Uint8Array) => void;
+  /** The drawing files XATTACH's dialog picks (M5-04 part 6): read, and kept to load from. */
+  xrefFiles?: XrefFiles;
 }) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
@@ -161,6 +165,8 @@ export function AttributeDialogs({
       return <InsertDialog key={key} doc={doc.id} request={d} />;
     case 'imageattach':
       return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
+    case 'xrefattach':
+      return <XrefAttachDialog key={key} doc={doc.id} request={d} files={xrefFiles} />;
   }
 }
 

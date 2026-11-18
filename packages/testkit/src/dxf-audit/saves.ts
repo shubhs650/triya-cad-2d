@@ -36,7 +36,9 @@ export type AuditSaveKind =
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).
-  | 'imageattach';
+  | 'imageattach'
+  // XATTACH of the xref set's files on ezdxf's colors.dxf (M5-04 part 6).
+  | 'xattach';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version

@@ -812,6 +812,8 @@ export class EngineSession {
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }
+    // XATTACH's load (M5-04 part 6) is part of its undo step.
+    this.#bus.joinLoad(change);
     return { ok: true, change };
   }
 

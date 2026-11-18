@@ -63,6 +63,9 @@ FIXTURE_SAVES = (
     # packages/testkit/src/raster/image-attach.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "imageattach"),
     ("third-party/ezdxf/examples_dxf/images.dxf", "imageattach"),
+    # XATTACH of the xref set's files on a drawing without xrefs (M5-04 part 6,
+    # packages/testkit/src/xref/xref-attach.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "xattach"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.
