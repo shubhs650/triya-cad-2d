@@ -277,7 +277,7 @@ test('the Borders tab draws a style’s borders in a linetype and double', async
   // A linetype scale that shows ACAD_ISO02W100's dashes across the cells.
   await page.keyboard.type('LTSCALE');
   await page.keyboard.press('Enter');
-  await expect(prompt(page)).toHaveText(/^Enter new value for LTSCALE/);
+  await expect(prompt(page)).toHaveText(/^Enter new linetype scale factor/);
   await type(page, '0.02', 'Command:');
   await shot(page, 'part8-1-before');
 

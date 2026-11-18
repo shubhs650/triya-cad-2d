@@ -305,7 +305,6 @@ async function* dashLinetype(ctx: CommandContext): Sub<void> {
 export function linetypeCommand(): CommandDef {
   return {
     name: 'LINETYPE',
-    aliases: ['LTYPE'],
     dashVariant: true,
     usesSelection: 'none',
     keepsSelection: true,

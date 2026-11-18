@@ -119,6 +119,7 @@ export const ALIASES: Readonly<Record<string, string>> = {
   LA: 'LAYER',
   LAS: 'LAYERSTATE',
   LT: 'LINETYPE',
+  LTYPE: 'LINETYPE',
   LTS: 'LTSCALE',
   LW: 'LWEIGHT',
   COL: 'COLOR',

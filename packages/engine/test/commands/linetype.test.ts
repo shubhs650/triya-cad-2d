@@ -454,6 +454,70 @@ describe('-LINETYPE', () => {
   });
 });
 
+describe('LINETYPE and -LINETYPE: refusals', () => {
+  it('reports what OK could not do: an unknown current linetype, a refused load', async () => {
+    const t = drawing();
+    await t.bus.script(['LINETYPE']);
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: { current: 'NOPE', load: [{ ...CENTER, name: 'BYLAYER' }] },
+    } as PromptAnswer);
+    expect(t.log).toContain('Linetype NOPE not found.');
+    expect(t.log).toContain('Linetype BYLAYER not loaded: BYLAYER is always in the drawing.');
+    // Apply (not a button the manager has) changes nothing.
+    await t.bus.script(['LINETYPE']);
+    await t.bus.answer({ kind: 'dialog', action: 'apply' } as PromptAnswer);
+    expect(t.bus.command).toBeUndefined();
+  });
+
+  it('says so when the app reads no files, and Enter or nothing typed ends an option', async () => {
+    const model = DocumentModel.create(init());
+    const log: string[] = [];
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    bus.on((e: BusEvent) => {
+      if (e.type === 'log') log.push(e.line);
+    });
+    await bus.script(['-LINETYPE', 'L', '']);
+    expect(bus.prompt?.message).toBe('Enter an option');
+    await bus.script(['L', 'X', '']);
+    expect(log).toContain('There is no view to change.');
+    await bus.script(['S', '']);
+    expect(bus.prompt?.message).toBe('Enter an option');
+    await bus.cancel();
+    expect(model.header.get('$CELTYPE')).toBe('ByLayer');
+  });
+
+  it('a reload question cancelled loads nothing; a shape linetype is reported refused', async () => {
+    const shape: LinetypeDefinition = {
+      name: 'FENCE',
+      description: '',
+      elements: [
+        el(1),
+        {
+          length: -1,
+          embed: {
+            kind: 'shape',
+            shapeName: 'CIRC1',
+            style: 'ltypeshp.shx',
+            scale: 1,
+            rotation: 0,
+            rotationMode: 'relative',
+            offset: { x: 0, y: 0 },
+          },
+        },
+      ],
+    };
+    const t = drawing({ 'fence.lin': [shape] });
+    await t.bus.script(['-LINETYPE', 'L', 'FENCE', 'fence']);
+    expect(t.log.some((l) => l.startsWith('Linetype FENCE not loaded: shape CIRC1'))).toBe(true);
+    await t.bus.script(['L', 'DASHED', 'pipes']);
+    expect(t.bus.prompt?.message).toBe('Linetype DASHED is already loaded.  Reload it?');
+    await t.bus.cancel();
+    expect(t.model.tables.linetypes.get(DASHED)!.description).toBe('Dashed __ __');
+  });
+});
+
 describe('LTSCALE', () => {
   it('asks for the factor, refuses zero, and regenerates', async () => {
     const t = drawing();
@@ -464,6 +528,9 @@ describe('LTSCALE', () => {
     expect(t.log).toContain('Regenerating model.');
     expect(t.model.header.get('$LTSCALE')).toBe(2.5);
     expect(t.bus.undo.state.nextUndo).toBe('LTSCALE');
+    await t.bus.script(['LTSCALE', '']);
+    expect(t.model.header.get('$LTSCALE')).toBe(2.5);
+    expect(t.bus.command).toBeUndefined();
   });
 });
 
