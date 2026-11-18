@@ -8,17 +8,23 @@
 //     generate Polyline   a polyline along each clip, with the current properties
 //     New boundary    Delete old boundary(s)? [Yes/No] <Yes>:   (when one is clipped already)
 //                     Outside mode - Objects outside boundary will be hidden.
-//                     Specify clipping boundary [Select polyline/Polygonal/Rectangular] <Rectangular>:
+//                     Specify clipping boundary or select invert option
+//                       [Select polyline/Polygonal/Rectangular/Invert clip] <Rectangular>:
 //                       Rectangular:  Specify first corner:  Specify opposite corner:
 //                       Polygonal:    Specify first point:  Specify next point or [Undo]:
 //                       Select polyline:  Select polyline:
+//                       Invert clip:  Inside mode - Objects inside boundary will be hidden.
+//                                     (and asks again; a second Invert clip goes back to Outside)
 //
 // The whole command is one XCLIP undo step; the save writes each clip as AutoCAD's SPATIAL_FILTER
 // (io export/xclips.ts). A new boundary applies to every reference selected, as in AutoCAD.
 //
+// Invert clip (M5-04 part 11) hides what lies inside the boundary: the filter keeps the boundary
+// as `inverted` and the save writes it to an ACAD_XREC_ROUNDTRIP record as AutoCAD 2015 and later
+// do (edit/xclip.ts `setClip`). generate Polyline follows an inverted clip's boundary as drawn.
+//
 // Left out: Clipdepth (front and back clipping planes are 3D, PRD non-goal 1; a clip's planes
-// are kept), and Invert clip, whose inner boundary AutoCAD keeps in an ACAD_XREC_ROUNDTRIP record
-// the save does not write yet (a later part of M5-04).
+// are kept).
 //
 // Ambiguity: the help says a clipping polyline "must consist of straight line segments"; its
 // arcs are followed by chords here, as WIPEOUT's Polyline does, rather than refused (the common
@@ -157,13 +163,24 @@ async function* newBoundary(ctx: CommandContext, refs: readonly Entity[]): Sub<v
     });
     if (keyword(a) !== 'Yes') return;
   }
+  let inverted = false;
   ctx.message('Outside mode - Objects outside boundary will be hidden.');
-  const a = yield ctx.prompt.keyword({
-    message: 'Specify clipping boundary',
-    options: ['Select polyline', 'Polygonal', 'Rectangular'],
-    default: { kind: 'keyword', keyword: 'Rectangular' },
-  });
-  const how = keyword(a);
+  let how: string | undefined;
+  for (;;) {
+    const a = yield ctx.prompt.keyword({
+      message: 'Specify clipping boundary or select invert option',
+      options: ['Select polyline', 'Polygonal', 'Rectangular', 'Invert clip'],
+      default: { kind: 'keyword', keyword: 'Rectangular' },
+    });
+    how = keyword(a);
+    if (how !== 'Invert clip') break;
+    inverted = !inverted;
+    ctx.message(
+      inverted
+        ? 'Inside mode - Objects inside boundary will be hidden.'
+        : 'Outside mode - Objects outside boundary will be hidden.',
+    );
+  }
   const boundary =
     how === 'Select polyline'
       ? yield* fromPolyline(ctx)
@@ -175,7 +192,7 @@ async function* newBoundary(ctx: CommandContext, refs: readonly Entity[]): Sub<v
   if (!boundary) return;
   ctx.edit((b) => {
     for (const e of refs) {
-      if (!setClip(b, ctx.model, e, boundary)) {
+      if (!setClip(b, ctx.model, e, boundary, inverted)) {
         ctx.message(`Block reference ${e.handle} has a zero scale and cannot be clipped.`);
       }
     }

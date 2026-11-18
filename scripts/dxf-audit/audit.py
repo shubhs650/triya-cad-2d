@@ -59,6 +59,8 @@ FIXTURE_SAVES = (
     ("fixtures/xref/xref-parent.dxf", "bind-objects"),
     # XCLIP New boundary, OFF, Delete and generate Polyline on ezdxf's xclip.dxf (M5-04 part 3).
     ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip"),
+    # XCLIP Invert clip's ACAD_XREC_ROUNDTRIP records on ezdxf's xclip.dxf (M5-04 part 11).
+    ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip-invert"),
     # LAYDEL and LAYMRG of every layer they can take on ACadSharp's AC1032 sample (M5-06 part 2,
     # packages/testkit/src/layers/layer-cleanup.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),

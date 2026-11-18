@@ -30,6 +30,8 @@ export type AuditSaveKind =
   | 'bind-objects'
   // XCLIP's options on ezdxf's xclip.dxf, a corpus file saved by a testkit suite (M5-04 part 3).
   | 'xclip'
+  // XCLIP Invert clip on ezdxf's xclip.dxf: ACAD_XREC_ROUNDTRIP records (M5-04 part 11).
+  | 'xclip-invert'
   // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
   | 'laydel'
   | 'laymrg'

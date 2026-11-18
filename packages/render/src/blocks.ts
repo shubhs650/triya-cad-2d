@@ -37,6 +37,9 @@
 // the reference; each part carries the boundaries of every clipped reference around it (nested
 // clips intersect). XCLIP OFF shows the whole block. The frame is the boundary drawn with the
 // reference's own properties, unless XCLIPFRAME is 0 (AutoCAD 2024 help: 1 and 2 display it).
+// An inverted clip (M5-04 part 11) shows the block around its inner boundary (the region the
+// engine's `clipBoundary` cuts it out of, nonzero winding leaving the hole), framed by that
+// inner boundary alone.
 // The reference's ATTRIBs are not clipped: the filter clips the block's contents, and ATTRIBs
 // belong to the INSERT (AutoCAD's help does not say; the drafter's expectation that XCLIP leaves
 // attributes showing is encoded here, an ambiguity noted in the PR).
@@ -46,6 +49,7 @@
 import {
   annotationParts,
   clipBoundary,
+  clipFrame,
   partEntity,
   tableAxes,
   tableDrawingOf,
@@ -193,8 +197,10 @@ function transformPoints(points: readonly number[], m: Affine): number[] {
 
 /** XCLIP (M1-103): where a reference is clipped, in its block's coordinates. */
 export interface InsertClip {
-  /** The closed boundary polygon. */
+  /** The closed polygon the block shows inside (an inverted clip's region around its hole). */
   readonly boundary: readonly Vec2[];
+  /** The frame: the boundary the drafter drew (an inverted clip's inner boundary). */
+  readonly outline: readonly Vec2[];
   /** Whether the frame shows (XCLIPFRAME not 0). */
   readonly frame: boolean;
 }
@@ -211,7 +217,8 @@ export function insertClips(model: DocumentModel): (insert: Handle) => InsertCli
     if (o.type !== 'SPATIAL_FILTER') continue;
     const f = o as SpatialFilter;
     const boundary = f.enabled ? clipBoundary(f) : undefined;
-    if (boundary) clips.set(f.insert, { boundary, frame });
+    const outline = boundary && clipFrame(f);
+    if (boundary && outline) clips.set(f.insert, { boundary, outline, frame });
   }
   return (insert) => clips.get(insert);
 }
@@ -535,7 +542,7 @@ export function expandInsert(
       if (!shaded) shade();
       if (xclip?.frame) {
         // The frame, in the reference's owner coordinates, painted as the reference itself.
-        const vertices = xclip.boundary.map((p) => ({ ...applyAffine(cell, p), bulge: 0 }));
+        const vertices = xclip.outline.map((p) => ({ ...applyAffine(cell, p), bulge: 0 }));
         const geom = { kind: 'LWPOLYLINE', vertices, closed: true } as const;
         draw({ ...e, type: 'LWPOLYLINE', geom }, m, outer, depth, chain, clip, path);
       }
