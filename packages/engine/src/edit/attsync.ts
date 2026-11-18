@@ -77,10 +77,13 @@ function syncedAttributes(
     if (!was) return { ...a, handle: b.allocateHandle() };
     // The ATTRIB stays the same object: its xdata, reactors, extension dictionary and the file
     // record it came from go with it, as a save keeps them.
-    const { handle, xdata, reactors, extDict, raw } = was;
+    const { handle, xdata, reactors, extDict, raw, field } = was;
+    // Its value keeps its own fields, not the default's (M5-03 part 4).
+    const { field: _default, ...placedA } = a;
     return {
-      ...a,
+      ...placedA,
       handle,
+      ...(field !== undefined && { field }),
       ...(xdata !== undefined && { xdata }),
       ...(reactors !== undefined && { reactors }),
       ...(extDict !== undefined && { extDict }),

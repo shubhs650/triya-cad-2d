@@ -212,8 +212,11 @@ export function attributeDefinitions(model: DocumentModel, block: Handle): Entit
  * `value` (the definition's default when absent). It has no handle yet (`placeReference`).
  */
 export function definitionAttribute(e: Entity, value?: string): InsertAttribute {
-  const { kind: _kind, prompt: _prompt, ...fields } = e.geom as AttdefGeometry;
+  const { kind: _kind, prompt: _prompt, field, ...fields } = e.geom as AttdefGeometry;
   const v = value ?? fields.value;
+  // A default holding fields (M5-03 part 4) gives them to an attribute that takes the default
+  // (as shown); one given another value holds that text alone.
+  const keeps = field !== undefined && v === (fields.mtext?.contents ?? fields.value);
   return {
     handle: '0',
     layer: e.layer,
@@ -225,6 +228,7 @@ export function definitionAttribute(e: Entity, value?: string): InsertAttribute 
     ...(e.visible !== undefined && { visible: e.visible }),
     ...fields,
     value: v,
+    ...(keeps && { field }),
     ...(fields.mtext && { mtext: { ...fields.mtext, contents: v } }),
   } as InsertAttribute;
 }

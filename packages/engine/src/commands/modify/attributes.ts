@@ -30,6 +30,7 @@ import type { Handle } from '../../model/handle';
 import type {
   AttdefGeometry,
   Color,
+  DrawingField,
   Entity,
   InsertAttribute,
   InsertGeometry,
@@ -49,6 +50,13 @@ import type {
   SelectionWindow,
 } from '../prompt';
 import { mtextEditorRequest } from '../draw/text';
+import { askEditorText, askMarkedField, fieldContextOf } from '../draw/field';
+import {
+  editableFieldText,
+  fieldValues,
+  textWithFields,
+  type FieldContext,
+} from '../../edit/fields';
 import { colorBooks } from '../../properties/color-books';
 
 /** DXF 70 bit 1: invisible; bit 2: constant (a constant attribute is never an ATTRIB to edit). */
@@ -82,6 +90,23 @@ function promptsOf(model: DocumentModel, block: Handle): Map<string, string> {
   return out;
 }
 
+/** The value an attribute holds: a multiline one's contents. */
+const valueOf = (a: Pick<TextFields, 'value' | 'field'> & { readonly mtext?: MTextGeometry }) =>
+  a.mtext ? a.mtext.contents : a.value;
+
+/**
+ * An attribute's (or a definition's default) value as the dialogs edit it (M5-03 part 4): its
+ * fields as their codes, with what each shows. `fields` is there, empty, for one without fields
+ * too, so the dialog offers Insert Field.
+ */
+export function valueEntry(
+  a: Pick<TextFields, 'value' | 'field'> & { readonly mtext?: MTextGeometry },
+): Pick<AttributeEntry, 'value' | 'fields'> {
+  return a.field
+    ? { value: editableFieldText(a.field), fields: fieldValues(a.field) }
+    : { value: valueOf(a), fields: {} };
+}
+
 /** An INSERT's editable attributes as the dialogs show them, in the reference's order. */
 export function attributeEntries(model: DocumentModel, g: InsertGeometry): AttributeEntry[] {
   const prompts = promptsOf(model, g.block);
@@ -91,7 +116,7 @@ export function attributeEntries(model: DocumentModel, g: InsertGeometry): Attri
       handle: a.handle,
       tag: a.tag,
       prompt: prompts.get(a.tag.toUpperCase()) || a.tag,
-      value: a.mtext ? a.mtext.contents : a.value,
+      ...valueEntry(a),
       multiline: a.mtext !== undefined,
       flags: a.flags,
       style: a.style,
@@ -456,6 +481,12 @@ export function patchAttribute(
     if (j) Object.assign(changes, j);
   }
   let base: InsertAttribute = a;
+  // A value typed over its fields holds the text alone (a field kept would bring its value back
+  // at the next evaluation); `applyPatches` gives a value with field codes its fields again.
+  if (p.value !== undefined && p.value !== valueOf(a) && a.field) {
+    const { field: _was, ...rest } = base;
+    base = rest;
+  }
   if (p.plotStyle !== undefined && p.plotStyle !== (a.plotStyle ?? null)) {
     if (p.plotStyle === null) {
       const { plotStyle: _byLayer, ...rest } = a;
@@ -496,7 +527,23 @@ async function applyPatches(
   patches: readonly AttributePatch[],
 ): Promise<void> {
   const g = ctx.model.entity(id)!.geom as InsertGeometry;
-  const byHandle = new Map(patches.map((p) => [p.handle, p]));
+  // The dialogs' values hold their fields as codes (M5-03 part 4): each value changed is the
+  // text it shows, and its fields (none: the text alone).
+  const fc = patches.some((p) => p.value !== undefined)
+    ? { ...(await fieldContextOf(ctx)), space: ctx.model.entity(id)!.owner }
+    : undefined;
+  const fieldsOf = new Map<Handle, DrawingField | undefined>();
+  const byHandle = new Map(
+    patches.map((p): [Handle, AttributePatch] => {
+      const a = g.attributes.find((x) => x.handle === p.handle);
+      if (!a || p.value === undefined || !fc) return [p.handle, p];
+      const { value, ...rest } = p;
+      if (value === valueEntry(a).value) return [p.handle, rest];
+      const t = textWithFields(value, fc, a.field);
+      fieldsOf.set(p.handle, t.field);
+      return [p.handle, { ...p, value: t.text }];
+    }),
+  );
   const moving = g.attributes.filter((a) => {
     const p = byHandle.get(a.handle);
     return p !== undefined && rejustifies(a, p);
@@ -512,7 +559,7 @@ async function applyPatches(
   const attributes = g.attributes.map((a) => {
     const p = byHandle.get(a.handle);
     if (!p) return a;
-    const next = patchAttribute(a, p, outlines.get(a.handle));
+    const next = withField(patchAttribute(a, p, outlines.get(a.handle)), fieldsOf, a.handle);
     if (rejustifies(a, p) && next.halign === a.halign && next.valign === a.valign) {
       ctx.message(`The ${a.tag} attribute cannot be measured: its justification is unchanged.`);
     }
@@ -520,6 +567,19 @@ async function applyPatches(
   });
   if (attributes.every((a, i) => a === g.attributes[i])) return;
   ctx.edit((b) => b.updateEntity(id, { geom: { ...g, attributes } }));
+}
+
+/** `a` holding the fields `fieldsOf` gives it, if it gives any (none: the text alone). */
+function withField(
+  a: InsertAttribute,
+  fieldsOf: ReadonlyMap<Handle, DrawingField | undefined>,
+  handle: Handle,
+): InsertAttribute {
+  if (!fieldsOf.has(handle)) return a;
+  const field = fieldsOf.get(handle);
+  if (same(field, a.field)) return a;
+  const { field: _was, ...rest } = a;
+  return field ? { ...rest, field } : rest;
 }
 
 /** Replaces one attribute of the reference (the -ATTEDIT options and the MTEXT editor). */
@@ -543,14 +603,25 @@ async function* editMultiline(
   id: EntityId,
   handle: Handle,
 ): AsyncGenerator<Prompt, boolean, PromptAnswer> {
-  const g = ctx.model.entity(id)!.geom as InsertGeometry;
-  const mtext = g.attributes.find((x) => x.handle === handle)?.mtext;
-  if (!mtext) return true;
-  const answer = yield ctx.prompt.string({
-    message: 'Enter attribute value',
-    spaces: true,
-    editor: mtextEditorRequest(ctx.model, mtext),
-  });
+  const e = ctx.model.entity(id)!;
+  const a = (e.geom as InsertGeometry).attributes.find((x) => x.handle === handle);
+  const mtext = a?.mtext;
+  if (!a || !mtext) return true;
+  // The editor holds the value's fields, and its Insert Field makes more (M5-03 part 4).
+  const shown = valueEntry(a);
+  const answer: PromptAnswer = yield* askEditorText(
+    ctx,
+    {
+      message: 'Enter attribute value',
+      spaces: true,
+      editor: {
+        ...mtextEditorRequest(ctx.model, mtext),
+        value: shown.value,
+        fields: shown.fields!,
+      },
+    },
+    e.owner,
+  );
   if (answer.kind === 'string') await applyPatches(ctx, id, [{ handle, value: answer.value }]);
   return answer.kind === 'string' || answer.kind === 'enter';
 }
@@ -625,7 +696,19 @@ export function eatteditCommand(): CommandDef {
             },
           });
           if (d.kind !== 'dialog') return;
-          await applyPatches(ctx, id, d.attributes ?? []);
+          let patches = d.attributes ?? [];
+          if (d.action === 'field' && d.target !== undefined) {
+            // Insert Field or Edit Field on the Value (M5-03 part 4): the Field dialog, then the
+            // value with the field made in its place, applied as the other changes are.
+            const marked = patches.find((p) => p.handle === d.target)?.value;
+            if (marked !== undefined) {
+              const owner = ctx.model.entity(id)!.owner;
+              const fc: FieldContext = { ...(await fieldContextOf(ctx)), space: owner };
+              const value: string = yield* askMarkedField(ctx, fc, marked);
+              patches = patches.map((p) => (p.handle === d.target ? { ...p, value } : p));
+            }
+          }
+          await applyPatches(ctx, id, patches);
           if (d.action === 'ok') return;
           if (d.action === 'select') break;
           selected = d.target ?? selected;
@@ -837,8 +920,6 @@ async function markAttribute(ctx: CommandContext, a: InsertAttribute): Promise<v
 
 const attributeOf = (ctx: CommandContext, f: Found): InsertAttribute =>
   (ctx.model.entity(f.id)!.geom as InsertGeometry).attributes.find((a) => a.handle === f.handle)!;
-
-const valueOf = (a: InsertAttribute) => (a.mtext ? a.mtext.contents : a.value);
 
 /**
  * `text` with the first occurrence of `from` replaced. AutoCAD's documentation does not say how

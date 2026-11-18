@@ -27,6 +27,7 @@ import {
   FIELD_EDIT,
   FIELD_INSERT,
   FIELD_UPDATE,
+  fieldValues,
   markedField,
   objectFieldProperties,
   textWithFields,
@@ -36,7 +37,7 @@ import {
 import { fieldCode, fieldSpecOf, type FieldSpec } from '../../edit/field-codes';
 import { drawingUnits } from '../units';
 import type { Handle } from '../../model/handle';
-import type { MTextGeometry } from '../../model/types';
+import type { DrawingField, MTextGeometry } from '../../model/types';
 import { typeLabel } from '../../properties/sheet';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer, StringPrompt, TextEditorRequest } from '../prompt';
@@ -149,6 +150,48 @@ export async function* askFieldCode(
       objectType = typeLabel(e.geom.kind);
     }
   }
+}
+
+/**
+ * A dialog's text box with a field marked (M5-03 part 4: the Default of ATTDEF's Attribute
+ * Definition dialog and of BATTMAN's Edit Attribute, EATTEDIT's Value): `%<FIELD_INSERT>%`
+ * where Insert Field puts one, or `%<FIELD_EDIT code>%` on the field Edit Field opens. The
+ * Field dialog opens (on the field edited), and the text comes back with the field made in that
+ * place; Cancel leaves an edited field as it was and inserts none. A text with neither mark
+ * comes back as it is, without a dialog.
+ */
+export async function* askMarkedField(
+  ctx: CommandContext,
+  fc: FieldContext,
+  value: string,
+): AsyncGenerator<Prompt, string, PromptAnswer> {
+  const marker = `%<${FIELD_INSERT}>%`;
+  const edited = markedField(value, FIELD_EDIT);
+  if (!edited && !value.includes(marker)) return value;
+  const was = edited?.code;
+  const code: string | undefined = yield* askFieldCode(
+    ctx,
+    fc,
+    was === undefined ? undefined : fieldSpecOf(was),
+  );
+  const made = code ?? was;
+  const inserted = made === undefined ? '' : `%<${made}>%`;
+  return edited
+    ? value.slice(0, edited.start) + inserted + value.slice(edited.end)
+    : value.replace(marker, inserted);
+}
+
+/**
+ * What a dialog's text box shows for each field of `value` (field codes in place), by its
+ * code: the value it takes now, or, for a field `old` holds, the value it keeps.
+ */
+export function fieldValuesOf(
+  value: string,
+  fc: FieldContext,
+  old?: DrawingField,
+): Record<string, string> {
+  const t = textWithFields(value, fc, old);
+  return t.field ? fieldValues(t.field) : {};
 }
 
 /**

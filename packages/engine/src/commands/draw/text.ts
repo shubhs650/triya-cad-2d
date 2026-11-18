@@ -1068,6 +1068,13 @@ async function* editAttdef(
     }
     break;
   }
+  const was = entity.geom as AttdefGeometry;
+  const shown = (x: AttdefGeometry) => (x.mtext ? x.mtext.contents : x.value);
+  if (g.field && shown(g) !== shown(was)) {
+    // A default typed over its fields holds the text alone (M5-03 part 4), as EATTEDIT's value.
+    const { field: _was, ...rest } = g;
+    g = rest;
+  }
   if (JSON.stringify(g) === JSON.stringify(entity.geom)) return false;
   ctx.edit((b) => b.updateEntity(entity.id, { geom: g }));
   return { id: entity.id, before: entity, erased: false };
