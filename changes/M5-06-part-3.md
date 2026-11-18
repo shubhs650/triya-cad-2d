@@ -1,0 +1,1 @@
+- M5-06 part 3 (#517): LAYMCH's Name opens the Change to Layer dialog (a name the drawing lacks makes that layer), LAYDEL's the Delete Layers dialog and LAYMRG's the Merge Layers and Merge to Layer dialogs, each listing only the layers the command can take; -LAYMCH, -LAYDEL and -LAYMRG keep typed names.
