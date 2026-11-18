@@ -156,12 +156,11 @@ test.describe('navigation bar and layout tabs', () => {
     expect((await unit(page, cx, cy)) / u0).toBeCloseTo(2, 2);
 
     await nav(page, 'Zoom All').click();
-    const u = await unit(page, cx, cy);
-    const centre = await worldAt(page, cx, cy);
     // The union of limits (0,0)–(12,9) and the extents is the extents here, so ZOOM All
-    // centres on the extents' centre, about (926, -227).
-    expect(Math.abs(centre.x - 926)).toBeLessThan(2 * u + 2);
-    expect(Math.abs(centre.y + 227.5)).toBeLessThan(2 * u + 2);
+    // centres on the extents' centre, about (926, -227). Polled: clicked before the renderer
+    // first measured the text, ZOOM All shows the extents without it and again once measured
+    // (`againOnceMeasured`), and CI read the first view (y 25 units off, PR #548).
+    await expect.poll(() => extentsCentred(page, cx, cy)).toBe(true);
   });
 
   test('PAN drags the drawing with the left button until Esc', async ({ page }) => {
