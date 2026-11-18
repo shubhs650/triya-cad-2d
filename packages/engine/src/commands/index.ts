@@ -113,6 +113,8 @@ export {
   imagequalityCommand,
   rasterVariables,
   setImageFrame,
+  type ImageAdjustRequest,
+  type ImageAdjustSettings,
 } from './image';
 export {
   imageattachCommand,
