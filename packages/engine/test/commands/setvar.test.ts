@@ -463,8 +463,8 @@ describe('distance variables (M2-35 part 23)', () => {
     expect(s.bus.promptText).toBe('Enter new value for DIMCEN <-0\'-0 1/16">:');
     await s.bus.script(['', 'DIMTXT', '3/32']);
     expect(s.model.header.get('$DIMTXT')).toBe(0.09375);
-    // A factor stays a plain number.
-    await s.bus.script(['LTSCALE']);
+    // A factor stays a plain number (LTSCALE alone is the command, M5-08).
+    await s.bus.script(['SETVAR', 'LTSCALE']);
     expect(s.bus.promptText).toBe('Enter new value for LTSCALE <1.0000>:');
   });
 

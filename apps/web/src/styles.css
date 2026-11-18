@@ -1096,6 +1096,102 @@ button {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+/* LINETYPE's Linetype Manager and Load or Reload Linetypes (M5-08). */
+.cad-dialog.linetype-manager,
+.cad-dialog.linetype-load {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.linetype-manager-top,
+.linetype-file {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.linetype-manager-top label,
+.linetype-file label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.linetype-manager-actions,
+.linetype-select-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.linetype-manager-actions {
+  margin-left: auto;
+}
+
+.linetype-select-buttons {
+  margin-top: 6px;
+}
+
+.linetype-current {
+  margin: 4px 0;
+}
+
+.linetype-list [role='option'][aria-current='true'] span:first-child {
+  font-weight: 600;
+}
+
+.linetype-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 8px 0 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+.linetype-details label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.linetype-details label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.linetype-message {
+  margin: 6px 0 0;
+}
+
+.linetype-message[role='alert'] {
+  color: var(--danger-text);
+}
+
+.linetype-reload {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg);
+}
+
+.linetype-reload p {
+  margin: 0 0 6px;
+}
+
+.linetype-reload button + button {
+  margin-left: 6px;
+}
+
+@media (width < 520px) {
+  .linetype-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .layer-lineweight-list {
   display: flex;
   flex-direction: column;

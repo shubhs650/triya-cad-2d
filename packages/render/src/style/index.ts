@@ -10,6 +10,7 @@ export {
   type DashOptions,
   type EmbedPlacement,
 } from './dash';
+export { BUNDLED_LIN_FILES, TRIYA_ISO_LIN, TRIYA_UTILITIES_LIN } from './bundled-lin';
 export { parseLin, type LinFile, type LinIssue } from './lin';
 export { mixColors, parseHex, tintColor } from './mix';
 export {

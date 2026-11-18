@@ -278,10 +278,17 @@ describe('completions', () => {
       { name: 'LAYUNISO' },
       { name: 'LAYWALK' },
       { name: 'LENGTHEN' },
+      // M5-08: LINETYPE and LTSCALE.
+      { name: 'LINETYPE' },
       { name: 'LIST' },
+      { name: 'LTSCALE' },
     ]);
-    expect(completions(registry, 'LI')).toEqual([{ name: 'LIST', alias: 'LI' }, { name: 'LINE' }]);
-    expect(completions(registry, "'lin")).toEqual([{ name: 'LINE' }]);
+    expect(completions(registry, 'LI')).toEqual([
+      { name: 'LIST', alias: 'LI' },
+      { name: 'LINE' },
+      { name: 'LINETYPE' },
+    ]);
+    expect(completions(registry, "'lin")).toEqual([{ name: 'LINE' }, { name: 'LINETYPE' }]);
   });
 
   it('offers nothing for coordinates, blanks or unknown text', () => {
@@ -339,7 +346,8 @@ describe('completions of system variables', () => {
     expect(variables).toContain('ORTHOMODE');
     expect(variables).toContain('CTAB');
     expect(variables).not.toContain('DIMSCALE');
-    expect(completions(registry, 'lts', variables)).toEqual([{ name: 'LTSCALE', variable: true }]);
+    // LTSCALE is a command too (M5-08), offered as one.
+    expect(completions(registry, 'lun', variables)).toEqual([{ name: 'LUNITS', variable: true }]);
     expect(completions(registry, "'ortho", variables)).toEqual([
       { name: 'ORTHOMODE', variable: true },
     ]);
@@ -383,7 +391,7 @@ describe('completions of system variables', () => {
       'CTAB',
     ]);
     // Without variables (a drawing not open), commands only.
-    expect(completions(registry, 'lts')).toEqual([]);
+    expect(completions(registry, 'lun')).toEqual([]);
   });
 });
 

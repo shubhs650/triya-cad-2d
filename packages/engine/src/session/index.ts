@@ -63,6 +63,7 @@ import {
   type LayerStateInit,
 } from '../edit/layer-states';
 import { layerPreviousOf } from '../commands/layer-previous';
+import { loadLinetypes, type LinetypeDefinition } from '../edit/linetypes';
 
 /**
  * A layer's on, frozen and locked states (LAYER palette toggles, M1-23) and, from the Layer
@@ -116,6 +117,17 @@ export type NamedLayerStateEdit =
       /** Overwrite a state of the same name (M5-07 part 2). */
       readonly replace?: boolean;
     };
+
+/**
+ * Linetypes loaded from a .lin file outside the Linetype Manager (M5-08: the Layer Properties
+ * Manager's Select Linetype Load...): new names added, names the drawing has reloaded when
+ * `reload` says so; one LINETYPE undo step, refused when nothing loads.
+ */
+export interface LinetypeLoadEdit {
+  readonly kind: 'linetype-load';
+  readonly linetypes: readonly LinetypeDefinition[];
+  readonly reload?: boolean;
+}
 
 /**
  * A layout renamed, moved among the layout tabs or given a new page setup (M1-97): what LAYOUT
@@ -242,6 +254,7 @@ export type EngineEdit =
   | LayerStateEdit
   | LayerTableEdit
   | NamedLayerStateEdit
+  | LinetypeLoadEdit
   | LayoutEdit
   | XrefLoadEdit
   | XrefUnloadEdit
@@ -709,6 +722,7 @@ export class EngineSession {
       e.kind === 'layer-state-import'
     )
       return this.#layerStatesEdit(e);
+    if (e.kind === 'linetype-load') return this.#linetypeLoad(e);
     if (e.kind === 'aliases') {
       this.#registry.setUserAliases(e.aliases);
       return { ok: true, change: {} };
@@ -866,6 +880,19 @@ export class EngineSession {
             ? mergeLayersChange(this.model, e.layers, e.target)
             : currentLayerChange(this.model, e.layer),
     );
+  }
+
+  #linetypeLoad(e: LinetypeLoadEdit): EditResult {
+    const b = new ChangeSetBuilder(this.model);
+    const r = loadLinetypes(b, this.model, e.linetypes, e.reload ?? false);
+    if (r.loaded.length + r.reloaded.length === 0) {
+      const why = r.refused[0];
+      return {
+        ok: false,
+        message: why ? `Linetype ${why.name} not loaded: ${why.reason}.` : 'No linetype loaded.',
+      };
+    }
+    return this.#layerStep(b.build(), 'LINETYPE');
   }
 
   #layerStatesEdit(e: NamedLayerStateEdit): EditResult {

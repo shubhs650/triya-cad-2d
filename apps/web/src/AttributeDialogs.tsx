@@ -63,10 +63,18 @@ import { WriteBlockDialog } from './WriteBlockDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 import { LayerListDialog } from './LayerListDialog';
 import { XbindDialog } from './XbindDialog';
+import { LinetypeManagerDialog } from './LinetypeManager';
+import type { LinetypeFiles } from './linetype-files';
 import { LayerWalkDialog } from './LayerWalkDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
 import { PdfAttachDialog, type PdfAttachFiles } from './PdfAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
+
+/** Where no app hands over linetype files (tests): no files, none kept. */
+const NO_LINETYPE_FILES: LinetypeFiles = {
+  list: () => [],
+  add: () => Promise.resolve({ error: 'Linetype files cannot be kept here.' }),
+};
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -85,6 +93,7 @@ export function AttributeDialogs({
   patternSources = [],
   onImageFile,
   xrefFiles,
+  linetypeFiles,
   pdfFiles,
 }: {
   doc: { id: number } | undefined;
@@ -98,6 +107,8 @@ export function AttributeDialogs({
   onImageFile?: (fileName: string, bytes: Uint8Array) => void;
   /** The drawing files XATTACH's dialog picks (M5-04 part 6): read, and kept to load from. */
   xrefFiles?: XrefFiles;
+  /** The linetype files LINETYPE's Load... reads (M5-08). */
+  linetypeFiles?: LinetypeFiles;
   /** The PDF files PDFATTACH's dialog reads and supplies (M5-04 part 8). */
   pdfFiles?: PdfAttachFiles;
 }) {
@@ -196,6 +207,15 @@ export function AttributeDialogs({
       return <XbindDialog key={key} doc={doc.id} request={d} />;
     case 'attdefine':
       return <AttdefDialog key={key} doc={doc.id} request={d} />;
+    case 'linetype':
+      return (
+        <LinetypeManagerDialog
+          key={key}
+          doc={doc.id}
+          request={d}
+          files={linetypeFiles ?? NO_LINETYPE_FILES}
+        />
+      );
   }
 }
 

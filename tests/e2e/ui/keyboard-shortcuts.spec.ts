@@ -62,7 +62,7 @@ test("AutoCAD's keys, a command given a key, kept, and reset", async ({ page }) 
 
   // A search lists commands too; LINE takes Ctrl+L from ORTHO.
   await dialog(page).getByRole('searchbox').fill('line');
-  await list.getByRole('option', { name: /^LINE/ }).click();
+  await list.getByRole('option', { name: /^LINE(?!TYPE)/ }).click();
   const press = dialog(page).getByRole('textbox', { name: 'Press new shortcut key:' });
   await press.focus();
   await page.keyboard.press('l');

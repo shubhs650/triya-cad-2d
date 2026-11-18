@@ -59,6 +59,7 @@ import {
   type LayerListAction,
 } from './LayerListMenu';
 import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from './LayerDialogs';
+import type { LinetypeFiles } from './linetype-files';
 import {
   MIN_COLUMN_WIDTH,
   frozenLayerColumns,
@@ -347,6 +348,7 @@ export function LayersPalette({
   columns,
   onColumns,
   onClose,
+  linetypeFiles,
 }: {
   doc: OpenDocument;
   store: DocumentStore;
@@ -354,6 +356,8 @@ export function LayersPalette({
   columns: LayerColumnSettings;
   onColumns: (s: LayerColumnSettings) => void;
   onClose: () => void;
+  /** The linetype files Select Linetype's Load... reads (M5-08). */
+  linetypeFiles?: LinetypeFiles | undefined;
 }) {
   const [search, setSearch] = useState('');
   const [columnsMenu, setColumnsMenu] = useState<
@@ -948,6 +952,17 @@ export function LayersPalette({
           linetypes={layerLinetypes(doc.opened.init, engines.changesOf(doc.id))}
           onOk={(linetype) => void setProps({ linetype })}
           onCancel={closeDialog}
+          files={linetypeFiles}
+          onLoad={async (linetypes, reload) => {
+            const result = await engines.edit(doc.id, { kind: 'linetype-load', linetypes, reload });
+            if (!result.ok) {
+              setMessage(result.message);
+              return undefined;
+            }
+            setMessage(undefined);
+            store.edited(doc.id);
+            return (result.change.tables?.linetypes?.added ?? []).map((l) => l.handle);
+          }}
         />
       )}
       {picking?.cell === 'lineweight' && (

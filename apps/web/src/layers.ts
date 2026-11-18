@@ -149,13 +149,26 @@ const APPEARANCE_REPEATS = 4;
  * Shapes and text in a complex linetype show as the gap they sit in.
  */
 export function linetypeDashes(
-  elements: readonly LinetypeElement[],
+  elements: readonly Pick<LinetypeElement, 'length'>[],
   width: number,
 ): number[] | undefined {
   const period = elements.reduce((sum, e) => sum + Math.abs(e.length), 0);
   if (elements.length === 0 || period <= 0) return undefined;
   const scale = width / APPEARANCE_REPEATS / period;
-  return elements.map((e) => (e.length === 0 ? 1 : Math.abs(e.length) * scale));
+  // A dash array alternates dash and gap, so gaps next to each other (a complex linetype's
+  // text sits between two, M5-08) are one gap, and dashes next to each other one dash.
+  const out: number[] = [];
+  let gap: boolean | undefined;
+  for (const e of elements) {
+    const isGap = e.length < 0;
+    const len = e.length === 0 ? 1 : Math.abs(e.length) * scale;
+    if (gap === isGap) out[out.length - 1]! += len;
+    else out.push(len);
+    gap = isGap;
+  }
+  // A pattern ending in a dash runs into the next repetition's first dash.
+  if (out.length > 1 && out.length % 2 === 1) out[0]! += out.pop()!;
+  return out;
 }
 
 /** The palette rows by name, as AutoCAD sorts them; `block` is the layout shown, if any. */

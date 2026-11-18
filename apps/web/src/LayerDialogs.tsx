@@ -3,7 +3,7 @@
 // layer's Linetype, Lineweight and Transparency cells (its Color cell opens Select Color). Each
 // starts from the value of the row clicked; OK sets it on every layer selected.
 // - Select Linetype: Loaded linetypes (Linetype, Appearance, Description), one chosen; Load...
-//   loads from a .lin file, which waits for M5-08's loader and is greyed until then.
+//   opens Load or Reload Linetypes (M5-08) and loads the linetypes picked, one LINETYPE step.
 // - Lineweight: the list of AutoCAD's lineweights and Default, with Original and New below.
 // - Layer Transparency: "Transparency value (0-90)", typed or picked in tens.
 // Enter is OK and Esc Cancel in each (`Modal`); every list is keyboard operable.
@@ -16,33 +16,10 @@ import {
   type Lineweight,
 } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
-import { linetypeDashes, parseLayerTransparency } from './layers';
-
-/** The Appearance column's sample, in CSS pixels. */
-const SAMPLE_WIDTH = 96;
-
-function Appearance({ linetype }: { linetype: LinetypeRecord }) {
-  const dashes = linetypeDashes(linetype.elements, SAMPLE_WIDTH);
-  return (
-    <svg
-      className="linetype-sample"
-      width={SAMPLE_WIDTH}
-      height="8"
-      viewBox={`0 0 ${SAMPLE_WIDTH} 8`}
-      aria-hidden
-    >
-      <line
-        x1="0"
-        y1="4"
-        x2={SAMPLE_WIDTH}
-        y2="4"
-        stroke="currentColor"
-        strokeWidth="1"
-        strokeDasharray={dashes?.join(' ')}
-      />
-    </svg>
-  );
-}
+import { parseLayerTransparency } from './layers';
+import { LinetypeAppearance, LoadLinetypesDialog } from './LinetypeManager';
+import type { LinetypeDefinition } from '@triya/engine';
+import type { LinetypeFiles } from './linetype-files';
 
 function Buttons({ ok, cancel }: { ok: () => void; cancel: () => void }) {
   return (
@@ -62,13 +39,20 @@ export function SelectLinetypeDialog({
   linetypes,
   onOk,
   onCancel,
+  files,
+  onLoad,
 }: {
   initial: Handle;
   /** The loaded linetypes, by name (`layerLinetypes`). */
   linetypes: readonly LinetypeRecord[];
   onOk: (linetype: Handle) => void;
   onCancel: () => void;
+  /** The linetype files Load... reads (M5-08); without them Load... is greyed. */
+  files?: LinetypeFiles | undefined;
+  /** Loads the linetypes picked; the handles of those loaded, or undefined when refused. */
+  onLoad?: (linetypes: LinetypeDefinition[], reload: boolean) => Promise<Handle[] | undefined>;
 }) {
+  const [loading, setLoading] = useState(false);
   const [chosen, setChosen] = useState<Handle | undefined>(
     linetypes.some((l) => l.handle === initial) ? initial : linetypes[0]?.handle,
   );
@@ -125,7 +109,7 @@ export function SelectLinetypeDialog({
             onDoubleClick={() => onOk(l.handle)}
           >
             <span>{l.name}</span>
-            <Appearance linetype={l} />
+            <LinetypeAppearance elements={l.elements} />
             <span>{l.description}</span>
           </div>
         ))}
@@ -137,10 +121,24 @@ export function SelectLinetypeDialog({
         <button type="button" onClick={onCancel}>
           Cancel
         </button>
-        <button type="button" disabled title="Loading a linetype comes with the Linetype Manager.">
+        <button type="button" disabled={!files || !onLoad} onClick={() => setLoading(true)}>
           Load...
         </button>
       </div>
+      {loading && files && onLoad && (
+        <LoadLinetypesDialog
+          files={files}
+          loaded={linetypes.map((l) => l.name)}
+          onOk={(defs, reload) => {
+            setLoading(false);
+            void onLoad(defs, reload).then((handles) => {
+              // The first linetype loaded is chosen, as AutoCAD's list selects it.
+              if (handles?.[0] !== undefined) setChosen(handles[0]);
+            });
+          }}
+          onCancel={() => setLoading(false)}
+        />
+      )}
     </Modal>
   );
 }
