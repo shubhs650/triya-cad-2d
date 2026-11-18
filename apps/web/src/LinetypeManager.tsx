@@ -9,13 +9,24 @@
 //   (which sets the object scale: the bundled ISO linetypes are drawn for a 1 mm pen). Delete
 //   refuses ByLayer, ByBlock, Continuous, the current linetype, xref-dependent linetypes and
 //   linetypes in use, saying so; nothing changes the drawing until OK, which is one LINETYPE
-//   undo step. Renaming and editing a description in Details are left for later (read only).
+//   undo step. Details' Name and Description rename and describe the linetype selected (M5-08
+//   part 4): ByLayer, ByBlock and xref-dependent linetypes are read only and Continuous keeps
+//   its name ("Linetype names cannot be edited for ByLayer, ByBlock, Continuous, and
+//   xref-dependent linetypes"); OK refuses an empty, invalid or taken name, saying so.
 // - Load or Reload Linetypes: File (the bundled files, then the user's .lin files; Browse... picks
 //   one from disk, which is kept with the user's, Settings > Linetypes), Available Linetypes
 //   (multi-select, Select All and Clear All on its shortcut menu, here buttons). OK on a
 //   linetype the drawing has asks AutoCAD's Reload Linetype: reload them or keep them.
 // Each is keyboard operable: Enter is OK and Esc Cancel (`Modal`).
-import type { DialogRequest, Handle, LinetypeAnswer, LinetypeDefinition } from '@triya/engine';
+import {
+  LINETYPE_DESCRIPTION_MAX,
+  linetypeNameProblem,
+  type DialogRequest,
+  type Handle,
+  type LinetypeAnswer,
+  type LinetypeDefinition,
+  type LinetypeEdit,
+} from '@triya/engine';
 import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
@@ -306,6 +317,8 @@ interface Row {
   readonly elements: readonly { readonly length: number }[];
   readonly xref: boolean;
   readonly used: boolean;
+  /** Loaded (or reloaded) in the dialog: its definition in `loads`, by the name it loaded as. */
+  readonly loadKey?: string;
 }
 
 const sortRows = (rows: Row[]): Row[] => {
@@ -324,6 +337,19 @@ const positive = (s: string): number | undefined => {
 };
 
 const shown = (n: number) => String(Number(n.toPrecision(10)));
+
+/** Why OK cannot take Details' names: empty, invalid or another linetype's (ignoring case). */
+function detailsProblem(rows: readonly Row[]): string | undefined {
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const name = r.name.trim();
+    const bad = linetypeNameProblem(name);
+    if (bad) return bad;
+    if (seen.has(upper(name))) return `A linetype named ${name} already exists.`;
+    seen.add(upper(name));
+  }
+  return undefined;
+}
 
 export function LinetypeManagerDialog({
   doc,
@@ -351,6 +377,11 @@ export function LinetypeManagerDialog({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string>();
   const list = useRef<HTMLDivElement>(null);
+  /** The drawing's linetypes as the dialog opened on them, by handle (Details' renames). */
+  const original = useMemo(
+    () => new Map(request.linetypes.map((l) => [l.handle as string, l])),
+    [request.linetypes],
+  );
 
   const visible = rows.filter((r) => {
     const keep = filter === 'all' ? true : filter === 'used' ? r.used : r.xref;
@@ -369,15 +400,39 @@ export function LinetypeManagerDialog({
       setMessage('The scale factors must be numbers greater than zero.');
       return;
     }
+    const problem = detailsProblem(rows);
+    if (problem) {
+      setMessage(problem);
+      return;
+    }
+    // A linetype loaded here loads as Details left it; one the drawing has is edited by handle.
+    const load = [...loads.entries()].map(([k, def]) => {
+      const row = rows.find((r) => r.handle === undefined && r.loadKey === k);
+      return row ? { ...def, name: row.name.trim(), description: row.description } : def;
+    });
+    const edit: LinetypeEdit[] = [];
+    for (const r of rows) {
+      const was = r.handle === undefined ? undefined : original.get(r.handle);
+      if (!was) continue;
+      const name = r.name.trim() !== was.name ? r.name.trim() : undefined;
+      const description = r.description !== was.description ? r.description : undefined;
+      if (name !== undefined || description !== undefined)
+        edit.push({
+          handle: was.handle,
+          ...(name !== undefined && { name }),
+          ...(description !== undefined && { description }),
+        });
+    }
     const answer: LinetypeAnswer = {
-      ...(loads.size > 0 && { load: [...loads.values()] }),
+      ...(load.length > 0 && { load }),
+      ...(edit.length > 0 && { edit }),
       ...(deleted.length > 0 && { delete: deleted }),
       current,
       ltscale: lt,
       celtscale: ct,
       psltscale,
       // Other... in the Properties palette (M5-08 part 2): the linetype highlighted is applied.
-      ...(request.apply && one && { apply: one.name }),
+      ...(request.apply && one && { apply: one.name.trim() }),
     };
     void engines.command(doc, {
       kind: 'answer',
@@ -395,6 +450,7 @@ export function LinetypeManagerDialog({
       if (at >= 0 && (next[at]!.xref || FIXED.includes(upper(def.name)))) continue;
       nextLoads.set(upper(def.name), def);
       const row: Row = {
+        loadKey: upper(def.name),
         key: at >= 0 ? next[at]!.key : `new:${upper(def.name)}`,
         ...(at >= 0 && next[at]!.handle !== undefined && { handle: next[at]!.handle }),
         name: at >= 0 ? next[at]!.name : def.name,
@@ -442,7 +498,7 @@ export function LinetypeManagerDialog({
       const nextLoads = new Map(loads);
       const handles: Handle[] = [];
       for (const r of rows.filter((x) => gone.has(x.key))) {
-        nextLoads.delete(upper(r.name));
+        if (r.loadKey !== undefined) nextLoads.delete(r.loadKey);
         if (r.handle !== undefined) handles.push(r.handle);
       }
       setLoads(nextLoads);
@@ -477,6 +533,21 @@ export function LinetypeManagerDialog({
       ?.querySelector(`[data-key="${CSS.escape(k.to)}"]`)
       ?.scrollIntoView({ block: 'nearest' });
   };
+
+  /** Details' Name or Description typed for the linetype selected; Current follows its name. */
+  const detail = (field: 'name' | 'description', value: string) => {
+    if (!one) return;
+    if (field === 'name' && isCurrent(one)) setCurrent(value);
+    setRows(rows.map((r) => (r.key === one.key ? { ...r, [field]: value } : r)));
+    setMessage(undefined);
+  };
+  const by =
+    one !== undefined &&
+    ['BYLAYER', 'BYBLOCK'].includes(upper(original.get(one.handle ?? '')?.name ?? one.name));
+  const readOnly = !one || one.xref || by;
+  const nameFixed =
+    readOnly ||
+    (one.handle !== undefined && FIXED.includes(upper(original.get(one.handle)?.name ?? '')));
 
   const iso = one !== undefined && /ISO/i.test(one.name);
   const pen = PEN_WIDTHS.find((w) => positive(celtscale) === w);
@@ -566,7 +637,11 @@ export function LinetypeManagerDialog({
           <legend>Details</legend>
           <label>
             Name
-            <input readOnly value={one?.name ?? ''} />
+            <input
+              readOnly={nameFixed}
+              value={one?.name ?? ''}
+              onChange={(e) => detail('name', e.target.value)}
+            />
           </label>
           <label>
             Global scale factor
@@ -578,7 +653,12 @@ export function LinetypeManagerDialog({
           </label>
           <label>
             Description
-            <input readOnly value={one?.description ?? ''} />
+            <input
+              readOnly={readOnly}
+              maxLength={LINETYPE_DESCRIPTION_MAX}
+              value={one?.description ?? ''}
+              onChange={(e) => detail('description', e.target.value)}
+            />
           </label>
           <label>
             Current object scale

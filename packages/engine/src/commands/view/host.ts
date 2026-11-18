@@ -246,6 +246,19 @@ export type ViewRequest =
    */
   | { readonly op: 'linetypeFile'; readonly file?: string }
   /**
+   * -LINETYPE Create (M5-08 part 4): the definition `*name,description` / `pattern` (starting
+   * `A,`) checked and written to the user's .lin file `file`, a new file or one kept already,
+   * replacing a definition of the same name. Answered with the file written as `linetypeFile`,
+   * or why it was not.
+   */
+  | {
+      readonly op: 'linetypeCreate';
+      readonly file: string;
+      readonly name: string;
+      readonly description: string;
+      readonly pattern: string;
+    }
+  /**
    * A system variable the app keeps (SETVAR, M2-42: the drafting aids and the per-user settings
    * of `APP_VARIABLES`): set to `value` when one is given (already checked against the
    * variable's range), and answered with the value it holds. A text variable (POLARADDANG,
@@ -538,6 +551,8 @@ export type ViewReply =
       readonly linetypeFile?: {
         readonly name: string;
         readonly linetypes: readonly LinetypeDefinition[];
+        /** One of the files Triya ships, which -LINETYPE Create does not change (M5-08 part 4). */
+        readonly bundled?: boolean;
       };
       /** What a `sysvar` variable holds (M2-42): a number, or text (DWGNAME, M2-59). */
       readonly value?: number | string;
