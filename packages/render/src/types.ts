@@ -6,6 +6,7 @@ import type {
   Box,
   ChangeSet,
   DragMotion,
+  Entity,
   EntityId,
   GroupGrip,
   Handle,
@@ -56,6 +57,12 @@ export interface RenderStyle {
    * drawing, and starts it at 50.
    */
   readonly layLockFade?: number;
+  /**
+   * XFADECTL, 0…90 (M5-02 part 5): while a reference is edited in place (`setRefEdit`), every
+   * object not in the working set draws faded by this percentage; 0 draws them normally. AutoCAD
+   * keeps it in the registry and starts it at 50.
+   */
+  readonly xFade?: number;
   /**
    * TRANSPARENCYDISPLAY (M1-108): object transparency shown; false draws every object opaque.
    * AutoCAD's initial value is 1, so absent shows it.
@@ -459,6 +466,11 @@ export interface Renderer {
   /** The entities to draw selected (M2-03): highlighted over the scene; none clears it. */
   setHighlight(ids: readonly EntityId[]): void;
   /**
+   * The reference edited in place (REFEDIT, M5-02 part 5): the working set drawn in full and the
+   * rest faded (XFADECTL), the other references to its block drawing it whole; undefined, none.
+   */
+  setRefEdit(display: RefEditDisplay | undefined): void;
+  /**
    * The objects a command drags with the cursor (M2-06 part 2), drawn moved on the transient
    * layer over their originals; undefined ends the drag.
    */
@@ -569,4 +581,23 @@ export function screenToWorld(
     x: view.center.x + (p.x - width / 2) / view.scale,
     y: view.center.y - (p.y - height / 2) / view.scale,
   };
+}
+
+/**
+ * A reference edited in place (REFEDIT, M5-02 part 5) as the canvas shows it. The working set is
+ * carried out of its block into the space while it is edited, so the block holds only the rest:
+ * the reference edited draws that, and every other reference to the block draws the definition as
+ * it was (`order`, with `held` for what went out) until REFCLOSE saves the edit, as AutoCAD's do.
+ */
+export interface RefEditDisplay {
+  /** The block edited. */
+  readonly block: Handle;
+  /** The references from the one picked (in the space shown) inward to the one edited. */
+  readonly path: readonly EntityId[];
+  /** The block's entities, in block order, before the working set went out. */
+  readonly order: readonly EntityId[];
+  /** The objects carried out, as the definition held them. */
+  readonly held: readonly Entity[];
+  /** The working set: objects of the space drawn in full; every other object fades by XFADECTL. */
+  readonly working: readonly EntityId[];
 }

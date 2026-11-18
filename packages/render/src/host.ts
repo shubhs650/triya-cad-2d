@@ -39,6 +39,7 @@ import type {
   DrawnEntity,
   RasterPixels,
   RenderPrimitive,
+  RefEditDisplay,
   RenderStyle,
   ScreenRect,
   SelectQuery,
@@ -308,6 +309,12 @@ export class RendererHost {
   setHighlight(ids: readonly EntityId[]): void {
     if (this.#session) this.#session.renderer.setHighlight(ids);
     else this.#post({ type: 'highlight', ids });
+  }
+
+  /** The reference edited in place (M5-02 part 5); undefined, none. */
+  setRefEdit(display: RefEditDisplay | undefined): void {
+    if (this.#session) this.#session.renderer.setRefEdit(display);
+    else this.#post({ type: 'ref-edit', display: display ?? null });
   }
 
   /** The objects a command drags with the cursor (M2-06 part 2); undefined ends the drag. */

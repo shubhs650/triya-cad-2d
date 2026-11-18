@@ -1,0 +1,1 @@
+- M5-02 part 5 (#539): editing a reference in place now looks as it does in AutoCAD. Everything not in the working set is drawn faded by XFADECTL (0 to 90, 50 at first), and the block's other references keep drawing the whole definition until Save Changes, instead of losing the objects being edited.

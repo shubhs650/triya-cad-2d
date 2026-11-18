@@ -47,6 +47,7 @@ import {
   type CommandDef,
   type CommandGenerator,
   type CommandRegistry,
+  type RefEditSession,
   type ResolvedCommand,
 } from './command';
 import { blocklessDimensionBlocks, regenerateRestyled } from './modify/dimensions';
@@ -197,9 +198,16 @@ export type BusEvent =
   | { readonly type: 'commit'; readonly record: CommandRecord }
   /**
    * A reference edit in place (M5-02 part 3) started, ended or its working set changed: `name`
-   * is the block edited, absent when none is; objects not in `working` show faded.
+   * is the block edited, absent when none is; objects not in `working` show faded (XFADECTL).
+   * `held` comes with the first event of an edit started or resumed (M5-02 part 5): the block as
+   * it was, which every reference but the one edited draws until the edit is saved.
    */
-  | { readonly type: 'refEdit'; readonly name?: string; readonly working: readonly EntityId[] }
+  | {
+      readonly type: 'refEdit';
+      readonly name?: string;
+      readonly working: readonly EntityId[];
+      readonly held?: RefEditHeld;
+    }
   /** The undo history changed (a step added, undone or redone, a mark, a group, Control). */
   | {
       readonly type: 'undo';
@@ -224,6 +232,18 @@ export type BusEvent =
     };
 
 /** A selected group's one grip (M3-13): at the centre of its members' extents. */
+/**
+ * A block edited in place as the canvases draw its other references (M5-02 part 5): `order` its
+ * entities in block order before the working set went out, `entities` those carried out as the
+ * definition held them, `path` the references from the one picked inward to the one edited.
+ */
+export interface RefEditHeld {
+  readonly block: Handle;
+  readonly path: readonly EntityId[];
+  readonly order: readonly EntityId[];
+  readonly entities: readonly Entity[];
+}
+
 export interface GroupGrip {
   readonly ids: readonly EntityId[];
   readonly box?: true;
@@ -431,15 +451,33 @@ export class PromptBus {
       this.#blockEditor?.changes.push(cs);
       this.#refEdit.applied(cs);
     };
+    // The edit the canvases were last told the block of (M5-02 part 5), sent once per start.
+    let told: RefEditSession | undefined;
     this.#refEdit = new RefEdits({
       model: this.#model,
       apply: (cs) => this.#apply(cs),
       record: (cs) => this.#changes.push(cs),
       changed: () => {
         const s = this.#refEdit.session;
+        const fresh = s !== undefined && s !== told;
+        told = s;
         this.#emit(
           s
-            ? { type: 'refEdit', name: s.name, working: [...this.#refEdit.working] }
+            ? {
+                type: 'refEdit',
+                name: s.name,
+                working: [...this.#refEdit.working],
+                ...(fresh
+                  ? {
+                      held: {
+                        block: s.block,
+                        path: s.path,
+                        order: s.order,
+                        entities: [...s.originals.values()],
+                      },
+                    }
+                  : {}),
+              }
             : { type: 'refEdit', working: [] },
         );
       },

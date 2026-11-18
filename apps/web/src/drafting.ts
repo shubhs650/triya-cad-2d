@@ -99,6 +99,11 @@ export interface DraftingState {
    */
   readonly layLockFade: number;
   /**
+   * XFADECTL (M5-02 part 5): while a reference is edited in place, objects not in the working set
+   * drawn faded by this percentage, 0 to 90 (0: not faded). AutoCAD keeps it per user, initially 50.
+   */
+  readonly xFade: number;
+  /**
    * LWDEFAULT (M5-08 part 3): what a Default lineweight draws as, hundredths of a millimetre, one
    * of AutoCAD's lineweights. AutoCAD keeps it per user, initially 25; Lineweight Settings sets it.
    */
@@ -476,6 +481,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   arrayAssociativity: true,
   fieldDisplay: true,
   layLockFade: 50,
+  xFade: 50,
   lwDefault: 25,
   lwUnits: 1,
   lwScale: 1,
