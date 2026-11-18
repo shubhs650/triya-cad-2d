@@ -49,9 +49,13 @@ describe('palette search', () => {
       'ATTEDIT',
       // M5-01 part 1: blocks made and inserted at the command line, and BASE.
       'BASE',
+      // M5-02 part 1: the Block Editor.
+      'BCLOSE',
+      'BEDIT',
       'BLOCK',
       'BREAK',
       'BREAKATPOINT',
+      'BSAVE',
       // M4-08: CENTERLINE and CENTERMARK; part 3 the commands that edit them.
       'CENTERDISASSOCIATE',
       'CENTERLINE',

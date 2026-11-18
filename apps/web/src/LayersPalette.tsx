@@ -44,7 +44,7 @@ import {
 } from 'react';
 import { transparencyOf, type EngineEdit, type Handle, type LayerProps } from '@triya/engine';
 import { controllerOf } from './canvas/registry';
-import type { DocumentStore, OpenDocument } from './documents';
+import { inLayout as layoutShown, type DocumentStore, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import {
   CustomizeLayerColumnsDialog,
@@ -373,7 +373,7 @@ export function LayersPalette({
   const [last, setLast] = useState<
     { click: number; frame: number; drawn: number | undefined } | undefined
   >();
-  const inLayout = doc.block !== doc.opened.modelSpace;
+  const inLayout = layoutShown(doc);
   const rows = useMemo(
     () => layerRows(doc.opened.init, engines.changesOf(doc.id), inLayout ? doc.block : undefined),
     // `revision` changes when the engine applied an edit, which is what the rows read.

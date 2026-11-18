@@ -579,9 +579,15 @@ export class CanvasController {
     canvas.className = 'drawing-canvas';
     // Dynamic Input's tooltip takes the layout colour over a layout (M3-06 part 8).
     canvas.dataset['space'] = this.#layout ? 'layout' : 'model';
+    // Neither model space nor a layout's: a block definition the Block Editor shows (M5-02).
+    const editing = !this.#layout && block !== opened.modelSpace;
     canvas.setAttribute(
       'aria-label',
-      this.#layout ? `Layout ${this.#layout.name}` : (hooks.tile?.label ?? 'Model'),
+      this.#layout
+        ? `Layout ${this.#layout.name}`
+        : editing
+          ? 'Block Editor'
+          : (hooks.tile?.label ?? 'Model'),
     );
     container.append(canvas);
     this.#canvas = canvas;
