@@ -4,8 +4,9 @@
 // size when DXF 41/42 are the drawing units in an inch: 25.4 in a millimetre drawing, as AutoCAD
 // attaches one. The Attach PDF Underlay dialog's Scale multiplies that (AutoCAD Help, "Attach PDF
 // Underlay Dialog Box", Scale: "applied after the true width ... in AutoCAD units is
-// determined"). A unitless drawing takes inches or millimetres by MEASUREMENT, as a pasted
-// picture does (edit/picture.ts `unitsPerInch`): AutoCAD's help leaves a PDF's case unstated.
+// determined"). A unitless drawing converts nothing: a unit is the page's inch, as AutoCAD
+// attaches a PDF at scale 1 there (its help's wording is the Attach Image dialog's, whose
+// "scale is the width" rule a PDF page, always of known size, has no need of).
 //
 // Definitions: one per page, named "<file> - <page>" (how AutoCAD names its ACAD_PDFDEFINITIONS
 // entries, as ezdxf writes them too), the file named alone (No path); a page of a file the
@@ -19,7 +20,7 @@ import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { Entity, PdfDefinition, UnderlayGeometry } from '../model/types';
 import type { GeneralProps } from '../properties/sheet';
-import { unitsPerInch } from './picture';
+import { insUnitsOf, metresPerUnit } from '../model/units';
 
 /** A page of a PDF file, as the app read it: its number from 1 and its size in inches. */
 export interface PdfAttachPage {
@@ -47,8 +48,12 @@ export function hasPageSize(p: PdfAttachPage): boolean {
 
 /** DXF 41/42 for the dialog's `scale`: the drawing units in an inch times it. */
 export function underlayScaleFor(model: DocumentModel, scale: number): number {
-  return unitsPerInch(model) * scale;
+  const units = insUnitsOf(model);
+  const metres = units === 0 ? undefined : metresPerUnit(units);
+  return metres === undefined ? scale : (INCH / metres) * scale;
 }
+
+const INCH = 0.0254;
 
 /** The drawing's PDFDEFINITION for the file's page, or a new one. */
 function pdfDefinition(

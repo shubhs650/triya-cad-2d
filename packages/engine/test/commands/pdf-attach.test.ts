@@ -8,7 +8,8 @@
 //     <0>:"; the scale prompt's Unit option is left out);
 //   - a page is its true size in drawing units times the scale (DXF 41/42 = scale × drawing units
 //     an inch), its lower-left corner at the insertion point, the next page selected to the right
-//     of the one before, an inch (at the scale) apart;
+//     of the one before, an inch (at the scale) apart; a unitless drawing converts nothing (a
+//     unit is the page's inch);
 //   - a new PDFDEFINITION per page, named "<file> - <page>" as AutoCAD names them; a page of a
 //     file the drawing shows already is attached with its definition; one undo step.
 import { describe, expect, it } from 'vitest';
@@ -164,7 +165,6 @@ describe('PDFATTACH: placing the underlay', () => {
 
   it('takes Enter as the scale 1, refuses a scale that is not positive, and opens on the last settings', async () => {
     const t = drawing(0);
-    setHeader(t.model, '$MEASUREMENT', 0);
     await t.bus.submit('PDFATTACH');
     await t.ok(PLAN, { scaleOnScreen: true, rotation: Math.PI / 2 });
     await t.bus.script(['5,5', '-2']);
@@ -172,7 +172,7 @@ describe('PDFATTACH: placing the underlay', () => {
     await t.bus.submit('');
     expect(t.bus.command).toBeUndefined();
     const [g] = t.underlays();
-    // A unitless drawing in inches (MEASUREMENT 0, imperial): scale 1, turned 90°.
+    // A unitless drawing: a unit is the page's inch, scale 1; turned 90°.
     expect(g!.scale.x).toBe(1);
     expect(r6(g!.rotation)).toBe(r6(Math.PI / 2));
     await t.bus.submit('PDFATTACH');
@@ -206,8 +206,8 @@ describe('PDFATTACH: placing the underlay', () => {
     await t.ok({ fileName: 'SHEET.PDF', pages: [A4, A3] }, FIXED);
     const [one, two] = t.underlays();
     expect(two!.definition).toBe('90');
-    // A unitless metric drawing (MEASUREMENT 1) in millimetres.
-    expect(one!.scale.x).toBe(25.4);
+    // A unitless drawing converts nothing, metric (MEASUREMENT 1) or not.
+    expect(one!.scale.x).toBe(1);
     expect(
       t.defsNow().map((d) => [d.handle === one!.definition, d.name, d.fileName, d.owner]),
     ).toEqual([

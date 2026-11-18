@@ -46,11 +46,8 @@ function ppiOf(p: ClipboardPicture): Vec2 {
   return ok(p.ppi?.x) && ok(p.ppi?.y) ? p.ppi! : { x: SCREEN_PPI, y: SCREEN_PPI };
 }
 
-/**
- * Drawing units in an inch: by INSUNITS, or by MEASUREMENT in a unitless drawing. PDFATTACH
- * sizes a page by it too (edit/underlay-attach.ts).
- */
-export function unitsPerInch(model: DocumentModel): number {
+/** Drawing units in an inch: by INSUNITS, or by MEASUREMENT in a unitless drawing. */
+function unitsPerInch(model: DocumentModel): number {
   const metres = metresPerUnit(insUnitsOf(model));
   if (metres !== undefined) return INCH / metres;
   const m = model.header.get('$MEASUREMENT');
