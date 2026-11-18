@@ -89,6 +89,12 @@ FIXTURE_SAVES = (
     ("assets/templates/triya-iso.dxf", "new"),
     ("assets/templates/triya-ansi.dxf", "template"),
     ("assets/templates/triya-ansi.dxf", "new"),
+    # The drawings "Open with no template - Imperial / Metric" opens, and a new drawing made from
+    # each, drawn in and saved (M5-10 part 2, same test file).
+    ("assets/templates/no-template-imperial.dxf", "template"),
+    ("assets/templates/no-template-imperial.dxf", "new"),
+    ("assets/templates/no-template-metric.dxf", "template"),
+    ("assets/templates/no-template-metric.dxf", "new"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

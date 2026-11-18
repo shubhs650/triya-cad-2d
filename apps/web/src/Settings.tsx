@@ -39,12 +39,14 @@ export function Settings({
   fonts,
   plotStyles,
   linetypes,
+  templates,
   deviceFonts,
   open,
   onClose,
   onAdd,
   onAddFonts,
   onAddFiles,
+  onAddTemplates,
   onEditAliases,
   onEditShortcuts,
 }: {
@@ -55,6 +57,8 @@ export function Settings({
   fonts: FontStore;
   plotStyles: SupportFileStore;
   linetypes: SupportFileStore;
+  /** The user's drawing templates (M5-10 part 2). */
+  templates: SupportFileStore;
   deviceFonts: DeviceFonts;
   open: boolean;
   onClose: () => void;
@@ -62,6 +66,8 @@ export function Settings({
   onAddFonts: (files: Iterable<File>) => void;
   /** Plot style tables and linetype files, each to its store. */
   onAddFiles: (files: Iterable<File>) => void;
+  /** Drawing templates, each opened to check it before it is kept. */
+  onAddTemplates: (files: Iterable<File>) => void;
   /** Opens the Edit Aliases dialog (M3-10). */
   onEditAliases?: () => void;
   /** Opens the Keyboard Shortcuts dialog (M3-10 part 2). */
@@ -211,6 +217,17 @@ export function Settings({
         testId="linetype-picker"
         store={linetypes}
         onAdd={onAddFiles}
+      />
+      <SupportFiles
+        title="Templates"
+        about="Your .dxf drawing templates, listed in the Select Template dialog (NEW) after the bundled ones. Each is opened as it is added, to check that a drawing can start from it. They stay on this device."
+        empty="No templates added."
+        listLabel="Template files"
+        button="Add templates…"
+        accept=".dxf"
+        testId="template-picker"
+        store={templates}
+        onAdd={onAddTemplates}
       />
       <section aria-labelledby="aliases-title">
         <h3 id="aliases-title">Command aliases</h3>
