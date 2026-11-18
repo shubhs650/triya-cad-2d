@@ -222,3 +222,94 @@ test('Other... in the Properties palette loads a linetype from a .lin and applie
   await expect(page.getByTestId('command-prompt')).toContainText('TRIYA_WATER');
   await page.keyboard.press('Escape');
 });
+
+// M5-08 part 4: -LINETYPE Create writes a new linetype into one of the user's .lin files
+// (custom.lin by default), which Load then loads; the Linetype Manager's Details rename and
+// describe it (a taken name refused at OK, Continuous's name read only), and the renamed
+// linetype made current is what a line drawn then takes.
+test('-LINETYPE Create writes a .lin; Details rename and describe a linetype (M5-08)', async ({
+  page,
+}) => {
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, 'clockwise_arcs_hatch.dxf');
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  const prompt = page.getByTestId('command-prompt');
+
+  await enterCommand(page, '-LINETYPE');
+  await expect(prompt).toContainText('Enter an option [?/Create/Load/Set]');
+  await enterCommand(page, 'C');
+  await enterCommand(page, 'FENCE');
+  await expect(prompt).toContainText('Enter name of linetype file <custom.lin>');
+  await enterCommand(page, '');
+  await expect(prompt).toContainText('Descriptive text');
+  await enterCommand(page, 'Fence ----x----x----');
+  await expect(log).toContainText('Enter linetype pattern (on next line):');
+  await expect(prompt).toContainText('A,');
+  await enterCommand(page, '12,-3,0,-3');
+  await expect(log).toContainText('New linetype definition saved to file custom.lin.');
+  await shot('7-linetype-create.png');
+  // Load it from the file just written.
+  await enterCommand(page, 'L');
+  await enterCommand(page, 'FENCE');
+  await enterCommand(page, 'custom');
+  await expect(log).toContainText('Linetype FENCE loaded.');
+  await page.keyboard.press('Escape');
+  await expect(prompt).toHaveText('Command:');
+
+  await enterCommand(page, 'LT');
+  await expect(option(page, 'manager', 'FENCE')).toBeVisible();
+  await manager(page).getByRole('button', { name: 'Show details' }).click();
+  const name = manager(page).getByLabel('Name');
+  const description = manager(page).getByLabel('Description');
+  // Continuous keeps its name; its description may change.
+  await option(page, 'manager', 'Continuous').click();
+  await expect(name).toHaveAttribute('readonly', '');
+  await expect(description).not.toHaveAttribute('readonly', '');
+  await option(page, 'manager', 'ByLayer').click();
+  await expect(description).toHaveAttribute('readonly', '');
+
+  await option(page, 'manager', 'FENCE').click();
+  await expect(description).toHaveValue('Fence ----x----x----');
+  await name.fill('continuous');
+  await manager(page).getByRole('button', { name: 'OK' }).click();
+  await expect(manager(page).getByRole('alert')).toHaveText(
+    'A linetype named continuous already exists.',
+  );
+  await name.fill('SITE_FENCE');
+  await description.fill('Site fence ----x----');
+  await manager(page).getByRole('button', { name: 'Current' }).click();
+  await expect(manager(page)).toContainText('Current Linetype: SITE_FENCE');
+  await expect(option(page, 'manager', 'SITE_FENCE')).toContainText('Site fence ----x----');
+  await shot('8-details-rename.png');
+  await manager(page).getByRole('button', { name: 'OK' }).click();
+  await expect(manager(page)).toBeHidden();
+
+  // A line drawn now is in SITE_FENCE.
+  await enterCommand(page, 'CECOLOR');
+  await enterCommand(page, '1');
+  await enterCommand(page, 'LINE');
+  await enterCommand(page, '-290,-40');
+  await enterCommand(page, '330,-40');
+  await enterCommand(page, '');
+  await enterCommand(page, 'ZOOM');
+  await enterCommand(page, 'E');
+  await expect(prompt).toHaveText('Command:');
+  await enterCommand(page, 'CELTYPE');
+  await expect(prompt).toContainText('SITE_FENCE');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  await shot('9-site-fence-line.png');
+
+  // The manager opens on the renamed linetype; the loader lists custom.lin with the user's files.
+  await enterCommand(page, 'LT');
+  await expect(option(page, 'manager', 'SITE_FENCE')).toContainText('Site fence ----x----');
+  await expect(option(page, 'manager', 'FENCE')).toHaveCount(0);
+  await manager(page).getByRole('button', { name: 'Load...' }).click();
+  await loader(page).getByLabel('File', { exact: true }).selectOption('custom.lin');
+  await expect(option(page, 'loader', 'FENCE')).toBeVisible();
+  await loader(page).getByRole('button', { name: 'Cancel' }).click();
+  await manager(page).getByRole('button', { name: 'Cancel' }).click();
+  await expect(manager(page)).toBeHidden();
+});

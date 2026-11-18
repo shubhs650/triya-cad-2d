@@ -134,7 +134,12 @@ import { hoverRollover, rollovers } from './rollover';
 import { gripMenus } from './grip-menu';
 import { GripMenu } from './GripMenu';
 import { hatchPatternListReply, hatchPatternNames, hatchPatternReply } from './hatch-patterns';
-import { linetypeFileReply, linetypeFileSources, type LinetypeFiles } from './linetype-files';
+import {
+  createLinetype,
+  linetypeFileReply,
+  linetypeFileSources,
+  type LinetypeFiles,
+} from './linetype-files';
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
@@ -501,6 +506,8 @@ function viewContext(id: number): ViewContext {
     hatchPatternList: () => hatchPatternListReply(patterns.sources()),
     // -LINETYPE's files (M5-08): the bundled set and the user's .lin files.
     linetypeFile: (file) => linetypeFileReply(linetypeFiles.list(), file),
+    // -LINETYPE Create (M5-08 part 4): written to the user's .lin files.
+    linetypeCreate: (r) => createLinetype(linetypeFiles, r),
     // SETVAR's variables the app keeps (M2-42), and those of the drawing it tells (M2-59).
     sysvar: (name, value) =>
       (doc && drawingVariableReply(doc, name)) ?? systemVariableReply(drafting, name, value),

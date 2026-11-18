@@ -1,0 +1,1 @@
+- M5-08 part 4 (#533): the Linetype Manager's details now rename a linetype and change its description, and -LINETYPE Create writes a new linetype you type at the command line into one of your own .lin files, ready to load.

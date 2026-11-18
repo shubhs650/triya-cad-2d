@@ -16,6 +16,7 @@ import {
   PromptBus,
   builtinCommands,
   deleteLinetypes,
+  editLinetypes,
   linetypesInUse,
   loadLinetypes,
   type BusEvent,
@@ -305,11 +306,20 @@ function drawing(files: Record<string, readonly LinetypeDefinition[]> = {}) {
   const view: ViewHost = {
     request: (r) => {
       asked.push(r);
+      if (r.op === 'linetypeCreate')
+        return Promise.resolve(
+          /^A,[-\d.,]+$/.test(r.pattern)
+            ? { ok: true, linetypeFile: { name: r.file, linetypes: [] } }
+            : { ok: false, message: 'Bad pattern.' },
+        );
       if (r.op !== 'linetypeFile') return Promise.resolve({ ok: false, message: 'no view' });
       const key = (r.file ?? 'triya-iso.lin').toLowerCase().replace(/(\.lin)?$/, '.lin');
       const found = all[key];
+      const bundled = key === 'triya-iso.lin';
       return Promise.resolve(
-        found ? { ok: true, linetypeFile: { name: key, linetypes: found } } : { ok: true },
+        found
+          ? { ok: true, linetypeFile: { name: key, linetypes: found, ...(bundled && { bundled }) } }
+          : { ok: true },
       );
     },
   };
@@ -659,3 +669,211 @@ describe('Other... in the Properties palette (M5-08 part 2)', () => {
 });
 
 void MODEL_SPACE;
+
+// M5-08 part 4: renaming and describing a linetype in the Linetype Manager's Details ("Linetype
+// Manager": "Name: Displays the selected linetype name, which can be edited ... Linetype names
+// cannot be edited for ByLayer, ByBlock, Continuous, and xref-dependent linetypes";
+// "Description: ... which can be edited in the details section"), and -LINETYPE Create
+// ("-LINETYPE (Command)": "Creates a new linetype and stores it in an LIN file").
+describe('editing a linetype: rename and describe (M5-08 part 4)', () => {
+  const edit = (m: DocumentModel, edits: Parameters<typeof editLinetypes>[2]) => {
+    const b = new ChangeSetBuilder(m);
+    const r = editLinetypes(b, m, edits);
+    m.apply(b.build());
+    return r;
+  };
+
+  it('renames (handle kept, objects keep it) and describes; CELTYPE follows a rename', () => {
+    const base = init();
+    const m = DocumentModel.create({
+      ...base,
+      header: new Map([...(base.header ?? []), ['$CELTYPE', 'DASHED']]),
+    });
+    const r = edit(m, [
+      { handle: DASHED, name: 'SITE_DASH', description: 'Site dashes' },
+      { handle: HIDDEN, description: 'Hidden edges' },
+    ]);
+    expect(r).toEqual({
+      renamed: [{ from: 'DASHED', to: 'SITE_DASH' }],
+      described: ['SITE_DASH', 'HIDDEN'],
+      refused: [],
+    });
+    expect(m.tables.linetypes.get(DASHED)).toMatchObject({
+      name: 'SITE_DASH',
+      description: 'Site dashes',
+    });
+    expect(m.tables.linetypes.get(HIDDEN)!.description).toBe('Hidden edges');
+    expect(m.header.get('$CELTYPE')).toBe('SITE_DASH');
+    expect([...m.entities()].find((e) => e.handle === '51')).toMatchObject({ linetype: DASHED });
+  });
+
+  it('a change of case alone renames; unchanged fields make no change', () => {
+    const m = DocumentModel.create(init());
+    const r = edit(m, [
+      { handle: DASHED, name: 'Dashed' },
+      { handle: HIDDEN, name: 'HIDDEN', description: 'Solid line' },
+    ]);
+    expect(r).toEqual({ renamed: [{ from: 'DASHED', to: 'Dashed' }], described: [], refused: [] });
+    expect(m.tables.linetypes.get(DASHED)!.name).toBe('Dashed');
+  });
+
+  it("refuses AutoCAD's: fixed names, xref-dependent, taken or invalid names, long descriptions", () => {
+    const m = DocumentModel.create(init());
+    const cont = [...m.tables.linetypes.values()].find((l) => l.name === 'Continuous')!;
+    const r = edit(m, [
+      { handle: cont.handle, name: 'SOLID' },
+      { handle: cont.handle, description: 'Solid, unbroken' },
+      { handle: BYLAYER, description: 'x' },
+      { handle: XREF_DOT, name: 'DOT' },
+      { handle: HIDDEN, name: 'dashed' },
+      { handle: HIDDEN, name: 'A<B' },
+      { handle: HIDDEN, name: '  ' },
+      { handle: KEPT, description: 'x'.repeat(48) },
+    ]);
+    expect(r.renamed).toEqual([]);
+    expect(r.described).toEqual(['Continuous']);
+    expect(r.refused).toEqual([
+      'The name of Continuous cannot be changed.',
+      'ByLayer cannot be edited.',
+      'PLAN|DOT is xref-dependent and cannot be changed.',
+      'A linetype named dashed already exists.',
+      'A<B is not a valid linetype name.',
+      'A linetype name cannot be empty.',
+      'The description of KEPT is longer than 47 characters.',
+    ]);
+    expect(m.tables.linetypes.get(cont.handle)).toMatchObject({
+      name: 'Continuous',
+      description: 'Solid, unbroken',
+    });
+  });
+
+  it('names may be swapped in one step', () => {
+    const m = DocumentModel.create(init());
+    const r = edit(m, [
+      { handle: DASHED, name: 'HIDDEN' },
+      { handle: HIDDEN, name: 'DASHED' },
+    ]);
+    expect(r.refused).toEqual([]);
+    expect(m.tables.linetypes.get(DASHED)!.name).toBe('HIDDEN');
+    expect(m.tables.linetypes.get(HIDDEN)!.name).toBe('DASHED');
+  });
+});
+
+describe('LINETYPE: Details rename and describe (M5-08 part 4)', () => {
+  it('OK renames and describes with the other changes, one LINETYPE step; U undoes it', async () => {
+    const t = drawing();
+    await t.bus.script(['LINETYPE']);
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: {
+        load: [{ ...GAS, name: 'MY_GAS', description: 'Mine' }],
+        edit: [{ handle: HIDDEN, name: 'BACK', description: 'Hidden behind' }],
+        current: 'BACK',
+      },
+    } as PromptAnswer);
+    expect(named(t.model, 'MY_GAS')!.description).toBe('Mine');
+    expect(t.model.tables.linetypes.get(HIDDEN)).toMatchObject({
+      name: 'BACK',
+      description: 'Hidden behind',
+    });
+    expect(t.model.header.get('$CELTYPE')).toBe('BACK');
+    expect(t.bus.undo.state.nextUndo).toBe('LINETYPE');
+    await t.bus.script(['U']);
+    expect(t.model.tables.linetypes.get(HIDDEN)!.name).toBe('HIDDEN');
+    expect(t.model.header.get('$CELTYPE')).toBe('ByLayer');
+  });
+
+  it('a renamed current linetype stays current and is not deleted; refusals are reported', async () => {
+    const t = drawing();
+    t.model.apply(
+      (() => {
+        const b = new ChangeSetBuilder(t.model);
+        b.setHeader('$CELTYPE', 'HIDDEN');
+        return b.build();
+      })(),
+    );
+    await t.bus.script(['LINETYPE']);
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: {
+        edit: [
+          { handle: HIDDEN, name: 'BEHIND' },
+          { handle: XREF_DOT, name: 'DOT' },
+        ],
+        current: 'BEHIND',
+        delete: [HIDDEN],
+      },
+    } as PromptAnswer);
+    expect(t.model.tables.linetypes.get(HIDDEN)!.name).toBe('BEHIND');
+    expect(t.model.header.get('$CELTYPE')).toBe('BEHIND');
+    expect(t.log).toContain('PLAN|DOT is xref-dependent and cannot be changed.');
+    expect(t.log).toContain('HIDDEN is the current linetype. It was not deleted.');
+  });
+});
+
+describe('-LINETYPE Create (M5-08 part 4)', () => {
+  it('asks the name, the file, the description and the pattern, and has the app write it', async () => {
+    const t = drawing({ 'custom.lin': [] });
+    await t.bus.script(['-LINETYPE', 'C', 'FENCE', '', 'Fence ---x---x---', '.5,-.25,0,-.25']);
+    const asked = t.asked.filter((r) => r.op === 'linetypeCreate');
+    expect(asked).toEqual([
+      {
+        op: 'linetypeCreate',
+        file: 'custom.lin',
+        name: 'FENCE',
+        description: 'Fence ---x---x---',
+        pattern: 'A,.5,-.25,0,-.25',
+      },
+    ]);
+    expect(t.log).toContain('Enter linetype pattern (on next line):');
+    expect(t.log).toContain('New linetype definition saved to file custom.lin.');
+    // The drawing is not changed: Load loads it (AutoCAD: "you must load it").
+    expect(named(t.model, 'FENCE')).toBeUndefined();
+    expect(t.bus.prompt?.message).toBe('Enter an option');
+    await t.bus.cancel();
+    expect(t.bus.undo.state.nextUndo).toBeUndefined();
+  });
+
+  it('asks before overwriting a definition the file has; No writes nothing', async () => {
+    const t = drawing();
+    await t.bus.script(['-LT', 'C', 'triya_gas', 'pipes']);
+    expect(t.bus.prompt?.message).toBe(
+      'Linetype TRIYA_GAS already exists in pipes.lin.  Overwrite it?',
+    );
+    await t.bus.script(['']);
+    expect(t.bus.prompt?.message).toBe('Enter an option');
+    await t.bus.script(['C', 'triya_gas', 'pipes.lin', 'Y', '', 'A,1,-1']);
+    expect(t.asked.filter((r) => r.op === 'linetypeCreate')).toEqual([
+      {
+        op: 'linetypeCreate',
+        file: 'pipes.lin',
+        name: 'triya_gas',
+        description: '',
+        pattern: 'A,1,-1',
+      },
+    ]);
+    await t.bus.cancel();
+  });
+
+  it('refuses a fixed or invalid name, a bundled file, a long description; reports the app', async () => {
+    const t = drawing({ 'custom.lin': [] });
+    await t.bus.script(['-LT', 'C', 'continuous']);
+    expect(t.log).toContain('continuous is a reserved linetype name.');
+    await t.bus.script(['C', 'A=B']);
+    expect(t.log).toContain('A=B is not a valid linetype name.');
+    await t.bus.script(['C', 'X', 'triya-iso']);
+    expect(t.log).toContain('triya-iso.lin is bundled with Triya and cannot be changed.');
+    await t.bus.script(['C', 'X', '', 'y'.repeat(48)]);
+    expect(t.log).toContain('A description cannot exceed 47 characters.');
+    expect(t.bus.prompt?.message).toBe('Descriptive text');
+    await t.bus.script(['', '']);
+    // Enter for the pattern writes nothing.
+    expect(t.asked.some((r) => r.op === 'linetypeCreate')).toBe(false);
+    expect(t.bus.prompt?.message).toBe('Enter an option');
+    await t.bus.script(['C', 'X', '', '', 'B,1']);
+    expect(t.log).toContain('Bad pattern.');
+    await t.bus.cancel();
+  });
+});

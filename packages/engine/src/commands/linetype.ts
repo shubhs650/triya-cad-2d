@@ -7,12 +7,19 @@
 //     Linetypes dialog, reading the bundled set and the user's .lin files), Delete, Current and
 //     the details (Global scale factor LTSCALE, Current object scale CELTSCALE, Use paper space
 //     units for scaling PSLTSCALE). OK makes the changes as one LINETYPE undo step.
-//   - -LINETYPE: "Enter an option [?/Load/Set]". ? lists a file's linetypes, Load loads the
+//   - -LINETYPE: "Enter an option [?/Create/Load/Set]". ? lists a file's linetypes, Load loads the
 //     names typed (wild cards, commas) from a file, asking "Reload it?" for each one loaded
 //     already, Set makes one current (CELTYPE), loading it from the bundled file when the drawing
 //     lacks it. The file is asked for at the command line ("Enter name of linetype file"), the
-//     bundled triya-iso.lin by default; the app reads it (view request `linetypeFile`). AutoCAD's
-//     Create writes a new .lin file, which Triya does not do yet (M5-08 later part).
+//     bundled triya-iso.lin by default; the app reads it (view request `linetypeFile`).
+//   - -LINETYPE Create (M5-08 part 4): "Enter name of linetype to create", the file ("Enter name
+//     of linetype file", one of the user's .lin files, new or kept already; the bundled files are
+//     not changed), "Wish to overwrite it?" when the file defines the name already, "Descriptive
+//     text" (47 characters at most) and "Enter linetype pattern (on next line):" after "A,". The
+//     app checks and writes the definition (view request `linetypeCreate`); the drawing is not
+//     changed, so Load loads it, as AutoCAD's Help says ("you must load it").
+//   - The Linetype Manager's Details rename and describe the linetype selected (M5-08 part 4,
+//     `editLinetypes`), with its other changes.
 //   - LTSCALE: "Enter new linetype scale factor <current>:", then "Regenerating model.".
 //   - Other... at the end of the Properties palette's Linetype list (M5-08 part 2, as the ribbon's
 //     Properties panel offers it in AutoCAD 2024) opens the same Linetype Manager
@@ -30,11 +37,16 @@ import type { EntityType, LinetypeElement } from '../model/types';
 import {
   currentLinetypeName,
   deleteLinetypes,
+  editLinetypes,
+  isFixedLinetype,
   isXrefLinetype,
+  LINETYPE_DESCRIPTION_MAX,
+  linetypeNameProblem,
   linetypeNamed,
   linetypesInUse,
   loadLinetypes,
   type LinetypeDefinition,
+  type LinetypeEdit,
   type LinetypeLoadReport,
 } from '../edit/linetypes';
 import type { CommandContext, CommandDef } from './command';
@@ -82,6 +94,11 @@ export interface LinetypeRequest {
 export interface LinetypeAnswer {
   /** Linetypes the Load dialog loaded (or reloaded, where the drafter said so). */
   readonly load?: readonly LinetypeDefinition[];
+  /**
+   * Linetypes renamed or described in Details (M5-08 part 4), of those the drawing had; one
+   * loaded in the dialog comes renamed in `load`.
+   */
+  readonly edit?: readonly LinetypeEdit[];
   /** Linetypes Delete took (of those the drawing had). */
   readonly delete?: readonly Handle[];
   /** The linetype Current set, by name. */
@@ -132,7 +149,8 @@ function setCurrent(
   const record = linetypeNamed(ctx.model, name)?.name;
   const fresh = loaded.find((n) => upper(n) === upper(name));
   const by = upper(name) === 'BYLAYER' ? 'ByLayer' : upper(name) === 'BYBLOCK' ? 'ByBlock' : '';
-  const set = record ?? fresh ?? by;
+  // A name loaded or given in the same step wins over one the drawing has (a swap of names).
+  const set = fresh ?? record ?? by;
   if (set === '') return false;
   b.setHeader('$CELTYPE', set);
   return true;
@@ -150,10 +168,12 @@ function applyManager(ctx: CommandContext, a: LinetypeAnswer): void {
   let load: LinetypeLoadReport | undefined;
   let removed: { deleted: readonly string[]; refused: readonly string[] } | undefined;
   let unknown: string | undefined;
+  let edited: ReturnType<typeof editLinetypes> | undefined;
   const ltscale = a.ltscale !== undefined && a.ltscale > 0 ? a.ltscale : undefined;
   const celtscale = a.celtscale !== undefined && a.celtscale > 0 ? a.celtscale : undefined;
   const changes =
     (a.load?.length ?? 0) > 0 ||
+    (a.edit?.length ?? 0) > 0 ||
     (a.delete?.length ?? 0) > 0 ||
     (a.current !== undefined && upper(a.current) !== upper(currentLinetypeName(ctx.model))) ||
     (ltscale !== undefined && ltscale !== numberOf(header.get('$LTSCALE'), 1)) ||
@@ -162,13 +182,22 @@ function applyManager(ctx: CommandContext, a: LinetypeAnswer): void {
   if (!changes) return;
   ctx.edit((b) => {
     if (a.load?.length) load = loadLinetypes(b, ctx.model, a.load);
+    // Names as the step leaves them: Details' renames (CELTYPE follows one), then Current.
+    const renamed = new Map<string, string>();
+    if (a.edit?.length) {
+      edited = editLinetypes(b, ctx.model, a.edit, load?.loaded);
+      for (const r of edited.renamed) renamed.set(upper(r.to), r.from);
+    }
     // Current goes first: a linetype made current is not deleted, and one no longer current is.
     let current = currentLinetypeName(ctx.model);
     if (a.current !== undefined && upper(a.current) !== upper(current)) {
-      if (setCurrent(b, ctx, a.current, load?.loaded)) current = a.current;
+      const fresh = [...(load?.loaded ?? []), ...(edited?.renamed.map((r) => r.to) ?? [])];
+      if (setCurrent(b, ctx, a.current, fresh)) current = a.current;
       else unknown = a.current;
     }
-    if (a.delete?.length) removed = deleteLinetypes(b, ctx.model, a.delete, current);
+    // Delete judges by the drawing's names: a renamed current linetype by its old name.
+    const currentWas = renamed.get(upper(current)) ?? current;
+    if (a.delete?.length) removed = deleteLinetypes(b, ctx.model, a.delete, currentWas);
     if (ltscale !== undefined && ltscale !== numberOf(header.get('$LTSCALE'), 1))
       b.setHeader('$LTSCALE', ltscale);
     if (celtscale !== undefined && celtscale !== numberOf(header.get('$CELTSCALE'), 1))
@@ -178,6 +207,7 @@ function applyManager(ctx: CommandContext, a: LinetypeAnswer): void {
   });
   if (load)
     for (const f of load.refused) ctx.message(`Linetype ${f.name} not loaded: ${f.reason}.`);
+  for (const why of edited?.refused ?? []) ctx.message(why);
   if (unknown !== undefined) ctx.message(`Linetype ${unknown} not found.`);
   for (const why of removed?.refused ?? []) ctx.message(`${why} It was not deleted.`);
 }
@@ -301,15 +331,81 @@ async function* dashSet(ctx: CommandContext): Sub<void> {
   }
 }
 
+/** The file -LINETYPE Create offers (AutoCAD offers acad.lin; Triya's own files stay as shipped). */
+export const CREATE_LINETYPE_FILE = 'custom.lin';
+
+async function* dashCreate(ctx: CommandContext): Sub<void> {
+  const n = yield ctx.prompt.string({ message: 'Enter name of linetype to create' });
+  if (n.kind !== 'string' || n.value.trim() === '') return;
+  const name = n.value.trim();
+  if (isFixedLinetype(name)) {
+    ctx.message(`${name} is a reserved linetype name.`);
+    return;
+  }
+  const bad = linetypeNameProblem(name);
+  if (bad) {
+    ctx.message(bad);
+    return;
+  }
+  const f = yield ctx.prompt.string({
+    message: 'Enter name of linetype file',
+    defaultLabel: CREATE_LINETYPE_FILE,
+    spaces: true,
+  });
+  if (f.kind !== 'string' && f.kind !== 'enter') return;
+  const typed =
+    f.kind === 'string' && f.value.trim() !== '' ? f.value.trim() : CREATE_LINETYPE_FILE;
+  const asked = /\.lin$/i.test(typed) ? typed : `${typed}.lin`;
+  const r = await ctx.view.request({ op: 'linetypeFile', file: asked });
+  if (!r.ok) {
+    ctx.message(r.message);
+    return;
+  }
+  const file = r.linetypeFile?.name ?? asked;
+  if (r.linetypeFile?.bundled) {
+    ctx.message(`${file} is bundled with Triya and cannot be changed.`);
+    return;
+  }
+  const had = r.linetypeFile?.linetypes.find((l) => upper(l.name) === upper(name));
+  if (had) {
+    const o = yield ctx.prompt.keyword({
+      message: `Linetype ${had.name} already exists in ${file}.  Overwrite it?`,
+      options: ['Yes', 'No'],
+      default: { kind: 'keyword', keyword: 'No' },
+    });
+    if (o.kind !== 'keyword' || o.keyword !== 'Yes') return;
+  }
+  let description: string;
+  for (;;) {
+    const d = yield ctx.prompt.string({ message: 'Descriptive text', spaces: true });
+    if (d.kind !== 'string' && d.kind !== 'enter') return;
+    description = d.kind === 'string' ? d.value.trim() : '';
+    if (description.length <= LINETYPE_DESCRIPTION_MAX) break;
+    ctx.message(`A description cannot exceed ${LINETYPE_DESCRIPTION_MAX} characters.`);
+  }
+  ctx.message('Enter linetype pattern (on next line):');
+  const p = yield ctx.prompt.string({ message: 'A,', spaces: true });
+  if (p.kind !== 'string' || p.value.trim() === '') return;
+  // "A," is written already; a drafter typing it again means the same pattern.
+  const pattern = `A,${p.value.trim().replace(/^a\s*,/i, '')}`;
+  const w = await ctx.view.request({ op: 'linetypeCreate', file, name, description, pattern });
+  if (!w.ok) {
+    ctx.message(w.message);
+    return;
+  }
+  ctx.message(`New linetype definition saved to file ${w.linetypeFile?.name ?? file}.`);
+}
+
 async function* dashLinetype(ctx: CommandContext): Sub<void> {
   for (;;) {
     ctx.message(`Current line type:  "${currentLinetypeName(ctx.model)}"`);
     const a = yield ctx.prompt.keyword({
       message: 'Enter an option',
-      options: ['?', 'Load', 'Set'],
+      options: ['?', 'Create', 'Load', 'Set'],
     });
     if (a.kind !== 'keyword') return;
     if (a.keyword === '?') yield* dashList(ctx);
+    else if (a.keyword === 'Create') yield* dashCreate(ctx);
     else if (a.keyword === 'Load') yield* dashLoad(ctx);
     else yield* dashSet(ctx);
   }
