@@ -19,10 +19,16 @@ import {
 import { listObject } from '../../src/commands/inquiry/list';
 import { LAYER_0, blockRecord, entityInit, linetype, sampleInit } from '../model/fixtures';
 
-function host(picked: () => EntityId[]): ViewHost {
+function host(picked: () => EntityId[], lwunits?: number): ViewHost {
   return {
     request: (r): Promise<ViewReply> =>
-      Promise.resolve(r.op === 'pick' ? { ok: true, ids: picked() } : { ok: false, message: 'no' }),
+      Promise.resolve(
+        r.op === 'pick'
+          ? { ok: true, ids: picked() }
+          : r.op === 'sysvar' && r.name === 'LWUNITS' && lwunits !== undefined
+            ? { ok: true, value: lwunits }
+            : { ok: false, message: 'no' },
+      ),
   };
 }
 
@@ -120,10 +126,14 @@ function drawing(header: [string, HeaderValue][] = []): DocumentInit {
   };
 }
 
-function setup(header: [string, HeaderValue][] = []) {
+function setup(header: [string, HeaderValue][] = [], lwunits?: number) {
   const model = DocumentModel.create(drawing(header));
   let picks: EntityId[] = [];
-  const bus = new PromptBus({ model, registry: builtinCommands(), view: host(() => picks) });
+  const bus = new PromptBus({
+    model,
+    registry: builtinCommands(),
+    view: host(() => picks, lwunits),
+  });
   const log: string[] = [];
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);
@@ -186,6 +196,12 @@ describe('LIST', () => {
       '              Thickness = 2.0000',
       '              from point, X=1.0000  Y=1.0000  Z=0.0000',
     ]);
+  });
+
+  // M5-12: AutoCAD lists a lineweight in LWUNITS' units (AutoCAD 2024 Help, "LWUNITS").
+  it('writes the lineweight in inches under LWUNITS 0, millimetres under 1', async () => {
+    expect(await setup([], 0).list('40')).toContain('              Lineweight: 0.012"');
+    expect(await setup([], 1).list('40')).toContain('              Lineweight: 0.30 mm');
   });
 
   it('lists a circle on its layer, and a paper space object', async () => {

@@ -52,6 +52,7 @@ import { StylePreview } from './StylePreview';
 import { drawingFileModel, type StyleSource } from './dimstyle-import';
 import { Modal } from './AttributeDialogs';
 import { engines } from './engine/registry';
+import { useLineweightUnits } from './lineweight-units';
 
 type Request = Extract<DialogRequest, { type: 'dimstyle' }>;
 
@@ -116,6 +117,8 @@ export function DimStyleDialog({
   const [renaming, setRenaming] = useState<string>();
   const [menu, setMenu] = useState<{ x: number; y: number }>();
   const [confirm, setConfirm] = useState<string>();
+  // The lineweight lists in LWUNITS' units (M5-12).
+  const lwUnits = useLineweightUnits();
   const send = (dimstyle: DimStyleAction) =>
     answer(doc, { kind: 'dialog', action: 'apply', dimstyle });
   const close = () => answer(doc, { kind: 'dialog', action: 'ok' });
@@ -381,7 +384,7 @@ export function DimStyleDialog({
             }
             doc={doc}
             vars={editing.vars}
-            lists={request.lists}
+            lists={{ ...request.lists, lineweightUnits: lwUnits }}
             {...(editing.mode === 'new' &&
               editing.use &&
               editing.use !== 'all' && { use: editing.use })}

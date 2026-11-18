@@ -26,6 +26,7 @@ import type { Color, Entity, EntityGeometry, PolylineVertex } from '../../model/
 import { polylineArea, polylineLength } from '../../properties/measure';
 import { lineHeights } from '../../edit/line-heights';
 import type { CommandDef } from '../command';
+import { lineweightText, lineweightUnitsOf, type LineweightUnits } from '../lweight';
 import {
   drawingUnits,
   formatAngle,
@@ -62,8 +63,12 @@ function typeName(e: Entity): string {
   return e.type;
 }
 
-/** The lines LIST writes for `e`. */
-export function listObject(model: DocumentModel, e: Entity): string[] {
+/** The lines LIST writes for `e`, its lineweight in `lineweightUnits` (LWUNITS, M5-12). */
+export function listObject(
+  model: DocumentModel,
+  e: Entity,
+  lineweightUnits: LineweightUnits = 'mm',
+): string[] {
   const u = drawingUnits(model.header);
   const layer = model.tables.layers.get(e.layer)?.name ?? '';
   const space = model.tables.blockRecords.get(e.owner)?.name.toLowerCase();
@@ -84,7 +89,7 @@ export function listObject(model: DocumentModel, e: Entity): string[] {
       row(
         'Lineweight:',
         typeof w === 'number'
-          ? `${(w / 100).toFixed(2)} mm`
+          ? lineweightText(w, lineweightUnits)
           : w === 'ByBlock'
             ? 'BYBLOCK'
             : 'Default',
@@ -428,11 +433,12 @@ export function listCommand(): CommandDef {
     async *run(ctx) {
       const a = yield ctx.prompt.selection({ message: 'Select objects' });
       if (a.kind !== 'selection') return;
+      const units = await lineweightUnitsOf(ctx);
       a.ids.forEach((id, i) => {
         const e = ctx.model.entity(id);
         if (!e) return;
         if (i > 0) ctx.message('');
-        for (const line of listObject(ctx.model, e)) ctx.message(line);
+        for (const line of listObject(ctx.model, e, units)) ctx.message(line);
       });
     },
   };

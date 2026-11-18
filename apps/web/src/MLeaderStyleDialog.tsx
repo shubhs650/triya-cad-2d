@@ -40,6 +40,7 @@ import { Modal } from './AttributeDialogs';
 import { StylePreview } from './StylePreview';
 import { SelectColorDialog } from './SelectColorDialog';
 import { engines } from './engine/registry';
+import { useLineweightUnits } from './lineweight-units';
 
 type Request = Extract<DialogRequest, { type: 'mleaderstyle' }>;
 
@@ -64,6 +65,8 @@ export function MLeaderStyleDialog({ doc, request }: { doc: number; request: Req
   const [editing, setEditing] = useState<Editing>();
   const [renaming, setRenaming] = useState<string>();
   const [menu, setMenu] = useState<{ x: number; y: number }>();
+  // The leader's Lineweight list in LWUNITS' units (M5-12).
+  const lwUnits = useLineweightUnits();
   const send = (mleaderstyle: MLeaderStyleAction) =>
     answer(doc, { kind: 'dialog', action: 'apply', mleaderstyle });
   const close = () => answer(doc, { kind: 'dialog', action: 'ok' });
@@ -228,7 +231,7 @@ export function MLeaderStyleDialog({ doc, request }: { doc: number; request: Req
           doc={doc}
           from={editing.mode === 'new' ? editing.from! : editing.name}
           settings={editing.settings}
-          lists={request.lists}
+          lists={{ ...request.lists, lineweightUnits: lwUnits }}
           onCancel={() => setEditing(undefined)}
           onOk={(settings) => {
             if (editing.mode === 'new')
