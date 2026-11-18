@@ -42,7 +42,9 @@ export type AuditSaveKind =
   // XBIND of the xref set's block and layers (M5-04 part 7).
   | 'xbind'
   // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).
-  | 'wblock';
+  | 'wblock'
+  // A block edited in the Block Editor (BEDIT, ERASE, LINE, BSAVE, BCLOSE; M5-02 part 1).
+  | 'bedit';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version
