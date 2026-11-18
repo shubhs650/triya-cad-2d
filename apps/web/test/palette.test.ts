@@ -46,6 +46,9 @@ describe('palette search', () => {
       'ARRAYPATH',
       'ARRAYPOLAR',
       'ARRAYRECT',
+      // M5-03 part 1: ATTDEF and ATTDISP.
+      'ATTDEF',
+      'ATTDISP',
       'ATTEDIT',
       // M5-02 part 2: references given their block's attributes.
       'ATTSYNC',

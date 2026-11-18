@@ -130,6 +130,16 @@ export {
   type PdfAttachSettings,
 } from './pdf-attach';
 export {
+  attdefCommand,
+  attdefGeometry,
+  attdispCommand,
+  type AttdefDefineAnswer,
+  type AttdefDefineRequest,
+  type AttdefModes,
+  type AttdefSettings,
+  type AttdefStyleEntry,
+} from './attdef';
+export {
   laywalkCommand,
   type LayerWalkAnswer,
   type LayerWalkLayer,

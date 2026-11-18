@@ -39,6 +39,7 @@ import type {
 } from './blocks';
 import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
 import type { PdfAttachAnswer, PdfAttachRequest } from './pdf-attach';
+import type { AttdefDefineAnswer, AttdefDefineRequest } from './attdef';
 import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
 import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
 import type { BlockCloseRequest, BlockEditRequest } from './block-editor';
@@ -784,6 +785,8 @@ export type DialogRequest =
   | ImageAttachRequest
   /** PDFATTACH's Attach PDF Underlay (M5-04 part 8). */
   | PdfAttachRequest
+  /** ATTDEF's Attribute Definition (M5-03 part 1). */
+  | AttdefDefineRequest
   /** LAYWALK's LayerWalk (M5-06 part 4). */
   | LayerWalkRequest
   | XrefAttachRequest
@@ -1058,6 +1061,11 @@ export type PromptAnswer =
       readonly imageAttach?: ImageAttachAnswer;
       /** The Attach PDF Underlay dialog's file, pages and fields as OK closed it (PDFATTACH, M5-04 part 8). */
       readonly pdfAttach?: PdfAttachAnswer;
+      /**
+       * The Attribute Definition dialog's fields as OK (or a pick button, `select`) closed it
+       * (ATTDEF, M5-03 part 1).
+       */
+      readonly attdefine?: AttdefDefineAnswer;
       /**
        * The Attach External Reference dialog's file and fields as OK closed it (XATTACH, M5-04
        * part 6).
