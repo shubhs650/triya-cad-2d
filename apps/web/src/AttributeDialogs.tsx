@@ -62,6 +62,7 @@ import { LayerListDialog } from './LayerListDialog';
 import { XbindDialog } from './XbindDialog';
 import { LayerWalkDialog } from './LayerWalkDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
+import { PdfAttachDialog, type PdfAttachFiles } from './PdfAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
@@ -80,6 +81,7 @@ export function AttributeDialogs({
   patternSources = [],
   onImageFile,
   xrefFiles,
+  pdfFiles,
 }: {
   doc: { id: number } | undefined;
   /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
@@ -92,6 +94,8 @@ export function AttributeDialogs({
   onImageFile?: (fileName: string, bytes: Uint8Array) => void;
   /** The drawing files XATTACH's dialog picks (M5-04 part 6): read, and kept to load from. */
   xrefFiles?: XrefFiles;
+  /** The PDF files PDFATTACH's dialog reads and supplies (M5-04 part 8). */
+  pdfFiles?: PdfAttachFiles;
 }) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
@@ -174,6 +178,8 @@ export function AttributeDialogs({
       return <LayerWalkDialog key="laywalk" doc={doc.id} request={d} />;
     case 'imageattach':
       return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
+    case 'pdfattach':
+      return <PdfAttachDialog key={key} doc={doc.id} request={d} files={pdfFiles} />;
     case 'xrefattach':
       return <XrefAttachDialog key={key} doc={doc.id} request={d} files={xrefFiles} />;
     case 'xbind':

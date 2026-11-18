@@ -40,7 +40,9 @@ export type AuditSaveKind =
   // XATTACH of the xref set's files on ezdxf's colors.dxf (M5-04 part 6).
   | 'xattach'
   // XBIND of the xref set's block and layers (M5-04 part 7).
-  | 'xbind';
+  | 'xbind'
+  // PDFATTACH on ezdxf's colors.dxf (no underlays) and the underlay fixture (M5-04 part 8).
+  | 'pdfattach';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version
