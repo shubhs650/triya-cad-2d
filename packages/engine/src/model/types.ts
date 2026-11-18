@@ -2318,6 +2318,33 @@ export const isLayerState = (o: NonGraphicalObject | undefined): o is LayerState
   o?.type === 'LAYER_STATE';
 
 /**
+ * A layer filter (the Layer Properties Manager's filter tree, M5-07 part 4; DEC-076). AutoCAD
+ * 2005+ keeps each as an XRECORD in the `ACLYDICTIONARY` dictionary of the LAYER table's
+ * extension dictionary (`owner`): DXF 1 its class (`AcLyLayerFilter` for a property filter,
+ * `AcLyLayerGroup` for a group filter), 300 its name, 301 a property filter's expression, 330 a
+ * group filter's layers. A nested filter is filed in the `ACLYDICTIONARY` of its parent's
+ * extension dictionary.
+ */
+export interface LayerFilter extends NonGraphicalObject {
+  readonly type: 'LAYER_FILTER';
+  /** DXF 300. */
+  readonly name: string;
+  /** DXF 1: `AcLyLayerFilter` (property) or `AcLyLayerGroup` (group). */
+  readonly filterType: 'property' | 'group';
+  /** DXF 301: a property filter's expression (ObjectARX `AcLyLayerFilter::filterExpression`). */
+  readonly expression: string;
+  /** DXF 330: a group filter's layers, as put in it. */
+  readonly layers: readonly Handle[];
+  /** The filter it is nested in, absent at the top of the tree. */
+  readonly parent?: Handle;
+  /** The `ACLYDICTIONARY` its nested filters are filed in, when it has one. */
+  readonly nested?: Handle;
+}
+
+export const isLayerFilter = (o: NonGraphicalObject | undefined): o is LayerFilter =>
+  o?.type === 'LAYER_FILTER';
+
+/**
  * One DXF group code of a `CodedObject`, as the save writes it. A handle code's value (DXF 5,
  * 105, 320–369, 390–399, 480, 481 and 1005: `isHandleCode`) is the handle.
  */
@@ -2408,6 +2435,11 @@ export interface DocumentMeta {
    * dictionary, with its first layer state.
    */
   readonly layerStateDictionary?: Handle;
+  /**
+   * The LAYER table's `ACLYDICTIONARY` (M5-07 part 4), which new top-level layer filters are filed
+   * in: known even while it holds none. A drawing without one gets it with its first filter.
+   */
+  readonly layerFilterDictionary?: Handle;
   /**
    * Names of style dictionary entries the I/O layer keeps without mapping (M2-29): an R13 or R14
    * DXF can list an R2007 STANDARD multileader style that acad-ts reads as a proxy object. The

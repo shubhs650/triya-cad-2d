@@ -10,6 +10,7 @@
 // xref-dependent one.
 import { LINEWEIGHT_VALUES } from '../commands/sysvars';
 import { ChangeSetBuilder } from '../model/builder';
+import { dropLayersFromFilters } from './layer-filters';
 import { dropLayersFromStates } from './layer-states';
 import { eraseObjects } from './edit';
 import { explodeGroup, groupsOf } from './groups';
@@ -267,6 +268,7 @@ export function deleteLayers(
   for (const h of gone) b.removeTableRecord('layers', h);
   // Layer states stop naming them (M5-07).
   dropLayersFromStates(b, gone);
+  dropLayersFromFilters(b, gone);
   return undefined;
 }
 
@@ -353,6 +355,7 @@ export function mergeLayers(
   }
   for (const h of gone) b.removeTableRecord('layers', h);
   dropLayersFromStates(b, gone);
+  dropLayersFromFilters(b, gone);
   return undefined;
 }
 
@@ -438,5 +441,6 @@ export function deleteLayersWithObjects(
   }
   for (const h of gone) b.removeTableRecord('layers', h);
   dropLayersFromStates(b, gone);
+  dropLayersFromFilters(b, gone);
   return undefined;
 }

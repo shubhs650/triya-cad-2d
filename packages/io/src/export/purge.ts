@@ -225,6 +225,8 @@ const HANDLE_KEYS = new Set([
   'arrowhead',
   'definition',
   'frozenLayers',
+  // A group filter's layers (M5-07 part 4).
+  'layers',
   'plotStyle',
   'material',
   'visualStyle',
