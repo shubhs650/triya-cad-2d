@@ -429,10 +429,42 @@ function usersOf(model: DocumentModel, uses: Uses, item: PurgeItem): Map<string,
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** "Possible Reasons" for each user. */
-function reasons(model: DocumentModel, item: PurgeItem, users: Map<string, number>): string[] {
+/** The current item each name variable sets ("It is the current layer."). */
+const CURRENT: Readonly<Record<string, string>> = {
+  $CLAYER: 'layer',
+  $CELTYPE: 'linetype',
+  $TEXTSTYLE: 'text style',
+  $DIMSTYLE: 'dimension style',
+  CMLEADERSTYLE: 'multileader style',
+  CTABLESTYLE: 'table style',
+  $CMLSTYLE: 'mline style',
+  $CMATERIAL: 'material',
+};
+
+/** What a record of each table is called in a reason. */
+const RECORD: Readonly<Record<TableName, string>> = {
+  layers: 'layer',
+  linetypes: 'linetype',
+  textStyles: 'text style',
+  dimStyles: 'dimension style',
+  mleaderStyles: 'multileader style',
+  tableStyles: 'table style',
+  appIds: 'registered application',
+  views: 'view',
+  ucs: 'UCS',
+  vports: 'viewport configuration',
+  blockRecords: 'block',
+  mlineStyles: 'mline style',
+  materials: 'material',
+  visualStyles: 'visual style',
+  plotStyles: 'plot style',
+};
+
+/** "Possible Reasons": one line per user. */
+function reasons(model: DocumentModel, users: Map<string, number>): string[] {
   const out: string[] = [];
-  const rules = PURGE_RULES[item.category];
   for (const [unit, n] of users) {
+    const h = unit.slice(2);
     if (unit === 'space')
       out.push(`${plural(n, 'object')} in the drawing ${n === 1 ? 'uses' : 'use'} it.`);
     else if (unit === 'pinned')
@@ -440,53 +472,28 @@ function reasons(model: DocumentModel, item: PurgeItem, users: Map<string, numbe
     else if (unit === 'members') out.push(`It holds ${plural(n, 'object')}.`);
     else if (unit.startsWith('header:')) {
       const name = unit.slice(7);
-      const current: Record<string, string> = {
-        $CLAYER: 'layer',
-        $CELTYPE: 'linetype',
-        $TEXTSTYLE: 'text style',
-        $DIMSTYLE: 'dimension style',
-        CMLEADERSTYLE: 'multileader style',
-        CTABLESTYLE: 'table style',
-        $CMLSTYLE: 'mline style',
-        $CMATERIAL: 'material',
-      };
       out.push(
-        current[name]
-          ? `It is the current ${current[name]}.`
+        CURRENT[name]
+          ? `It is the current ${CURRENT[name]}.`
           : `The ${name.replace(/^\$/, '')} setting names it.`,
       );
-    } else if (unit.startsWith('b:')) {
-      const b = model.tables.blockRecords.get(unit.slice(2));
-      out.push(`It is used in block "${b?.name ?? unit.slice(2)}".`);
-    } else if (unit.startsWith('r:')) {
-      const h = unit.slice(2);
-      const found = recordNamed(model, h);
-      out.push(found ? `The ${found.what} "${found.name}" uses it.` : `Record ${h} uses it.`);
-    } else if (unit.startsWith('o:')) {
-      const o = model.objects.get(unit.slice(2));
-      const name = (o as { name?: string } | undefined)?.name;
-      out.push(
-        o?.type === 'GROUP'
-          ? `The group "${name}" uses it.`
-          : `A ${(o?.type ?? 'object').toLowerCase().replace(/_/g, ' ')}${name ? ` "${name}"` : ''} uses it.`,
-      );
+    } else if (unit.startsWith('b:'))
+      out.push(`It is used in block "${model.tables.blockRecords.get(h)!.name}".`);
+    else if (unit.startsWith('r:')) {
+      const [table, r] = Object.entries(model.tables)
+        .map(
+          ([t, records]) =>
+            [t, (records as ReadonlyMap<Handle, SymbolTableRecord>).get(h)] as const,
+        )
+        .find(([, r]) => r !== undefined)!;
+      out.push(`The ${RECORD[table as TableName]} "${r!.name}" uses it.`);
+    } else {
+      const o = model.objects.get(h)!;
+      const name = (o as { name?: string }).name;
+      out.push(`A ${o.type.toLowerCase().replace(/_/g, ' ')}${name ? ` "${name}"` : ''} uses it.`);
     }
   }
-  if (out.length === 0) out.push(`The ${rules.one} is in use.`);
   return out;
-}
-
-function recordNamed(model: DocumentModel, h: Handle): { what: string; name: string } | undefined {
-  for (const c of PURGE_CATEGORIES) {
-    const t = PURGE_RULES[c].table;
-    const r = t && (model.tables[t].get(h) as SymbolTableRecord | undefined);
-    if (r) return { what: PURGE_RULES[c].one, name: r.name };
-  }
-  for (const t of ['views', 'ucs', 'vports'] as const) {
-    const r = model.tables[t].get(h);
-    if (r) return { what: t === 'ucs' ? 'UCS' : t.slice(0, -1), name: r.name };
-  }
-  return undefined;
 }
 
 /** What PURGE can take now, and what it cannot with why (the dialog's two views). */
@@ -503,7 +510,7 @@ export function purgeState(model: DocumentModel): PurgeState {
       }
       const users = usersOf(model, uses, item);
       if (users.size === 0) purgeable.push(item);
-      else inUse.push({ ...item, reasons: reasons(model, item, users) });
+      else inUse.push({ ...item, reasons: reasons(model, users) });
     }
   }
   return { purgeable, inUse };

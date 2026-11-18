@@ -38,6 +38,7 @@ const LOCKED = '2D';
 // Linetypes.
 const CONTINUOUS = '14';
 const HIDDEN = '18';
+const DASHED = '3B';
 // Blocks.
 const UNUSED = '17';
 const NESTED = '19';
@@ -85,6 +86,7 @@ function setup(o: { pinned?: string[] } = {}) {
   const model = DocumentModel.create({
     ...init,
     handSeed: '100',
+    header: new Map([...init.header!, ['$DIMBLK', 'USED'], ['$TEXTSTYLE', 'Standard']]),
     tables: {
       ...init.tables,
       layers: [
@@ -97,7 +99,11 @@ function setup(o: { pinned?: string[] } = {}) {
         { ...layer(LOCKED, 'LOCKED'), locked: true },
         { ...layer('2C', 'Site|Walls'), flags: 16 | 32 },
       ],
-      linetypes: [linetype(CONTINUOUS, 'Continuous'), linetype(HIDDEN, 'HIDDEN')],
+      linetypes: [
+        linetype(CONTINUOUS, 'Continuous'),
+        linetype(HIDDEN, 'HIDDEN'),
+        linetype(DASHED, 'DASHED'),
+      ],
       textStyles: [
         { ...record(STANDARD, 'Standard') } as never,
         { ...record(NOTE, 'NOTE') } as never,
@@ -154,7 +160,7 @@ function setup(o: { pinned?: string[] } = {}) {
         mask: 0,
         paperSpace: false,
         currentLayer: '0',
-        layers: [{ layer: FROZEN, name: 'FROZEN', linetype: CONTINUOUS }],
+        layers: [{ layer: FROZEN, name: 'FROZEN', linetype: DASHED }],
       } as unknown as NonGraphicalObject,
     ],
     ...(o.pinned && { purgePinned: o.pinned }),
@@ -251,7 +257,11 @@ describe('purgeState', () => {
     expect(why('INBLOCK')).toEqual(['It is used in block "UNUSED".']);
     expect(why('NESTED')).toEqual(['It is used in block "UNUSED".']);
     expect(why('HIDDEN')).toEqual(['The layer "OLD" uses it.']);
-    expect(why('USED')).toEqual(['1 object in the drawing uses it.']);
+    expect(why('USED')).toEqual([
+      '1 object in the drawing uses it.',
+      'The DIMBLK setting names it.',
+    ]);
+    expect(why('DASHED')).toEqual(['A layer state "S1" uses it.']);
     expect(why('PINNED')).toEqual([
       'It is used in block "*D1".',
       'Objects Triya keeps without editing them use it, or the file needs it.',
@@ -379,6 +389,18 @@ describe('-PURGE', () => {
     expect(t.has('31') && t.has('32') && t.has('33')).toBe(true);
     await t.bus.script(['-PURGE', 'E']);
     expect(t.log).toContain('No empty text objects found.');
+  });
+
+  it('ends at Esc, changing nothing', async () => {
+    const t = setup();
+    await t.bus.script(['-PURGE']);
+    await t.bus.cancel();
+    await t.bus.script(['-PURGE', 'LA']);
+    await t.bus.cancel();
+    await t.bus.script(['-PURGE', 'LA', '']);
+    await t.bus.cancel();
+    expect(t.layers()).toContain('OLD');
+    expect(t.bus.undo.state.undoable).toBe(0);
   });
 
   it('says what it does not purge', async () => {

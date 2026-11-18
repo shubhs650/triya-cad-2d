@@ -140,8 +140,7 @@ export function purgeCommand(): CommandDef {
         options: TYPES.map(([k]) => k),
       });
       if (a.kind !== 'keyword') return;
-      const type = TYPES.find(([k]) => k === a.keyword)?.[1];
-      if (type === undefined) return;
+      const type = TYPES.find(([k]) => k === a.keyword)![1];
       if (type === 'zero' || type === 'empty') {
         purgeUnnamed(ctx, type);
         return;
