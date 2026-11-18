@@ -8,7 +8,7 @@
 // - Acceptance: the search filters the 200 layers in under 100 ms.
 // M5-05 part 5: the header menu's Maximize/Optimize items and Freeze Column, a header dragged to
 // move its column, its edge dragged to size it.
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { BENCH_LAYERS, benchDwg } from '../../../packages/testkit/src/bench/drawing';
 import { expectShown, openWithPicker } from '../app/page';
@@ -190,6 +190,67 @@ test('filters 200 layers in under 100 ms (M5-05 acceptance)', async ({ page }) =
   test.info().annotations.push({ type: 'filter ms', description: times.join(', ') });
   console.log(`M5-05 filter on 200 layers: ${times.join(', ')} ms`);
   for (const t of times) expect(t).toBeLessThan(FILTER_MS);
+});
+
+// M5-13: clearing the search showed the 91 rows it hid by building and laying out every one of
+// their cells again (2,800 layout objects, 103–106 ms on loaded CI runners). A row the search
+// hides now keeps its layout, so showing it again lays out the rows, not their cells. Layout
+// objects are counted, not milliseconds, so the test does not depend on the runner's load; the
+// times are logged for the roadmap's acceptance (restore under 60 ms in CI).
+test('shows the rows a search hid without laying out their cells again (M5-13)', async ({
+  page,
+  browser,
+}) => {
+  const palette = await openLayers(page);
+  const rows = table(palette).getByRole('rowheader');
+  await expect(rows).toHaveCount(201);
+  const before = await table(palette).ariaSnapshot();
+  const search = palette.getByRole('searchbox', { name: 'Search for layer' });
+  const laidOut: number[] = [];
+  const times: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    await search.fill('bench-1');
+    await expect(rows).toHaveCount(110);
+    await palette.evaluate((p) => {
+      p.removeAttribute('data-last-filter-ms');
+      (window as { filtered?: Promise<string> }).filtered = new Promise((resolve) => {
+        const seen = new MutationObserver(() => {
+          const ms = p.getAttribute('data-last-filter-ms');
+          if (!ms) return;
+          seen.disconnect();
+          resolve(ms);
+        });
+        seen.observe(p, { attributes: true, attributeFilter: ['data-last-filter-ms'] });
+      });
+    });
+    const trace = test.info().outputPath(`restore-${i}.json`);
+    await browser.startTracing(page, { path: trace, categories: ['devtools.timeline'] });
+    await search.fill('');
+    times.push(
+      Number(await page.evaluate(() => (window as { filtered?: Promise<string> }).filtered)),
+    );
+    await browser.stopTracing();
+    // Every layout pass from the typing to the frame drawn (the forced one and the frame's own).
+    const events = (
+      JSON.parse(readFileSync(trace, 'utf8')) as {
+        traceEvents: { name: string; args?: { beginData?: { dirtyObjects?: number } } }[];
+      }
+    ).traceEvents;
+    laidOut.push(
+      events
+        .filter((e) => e.name === 'Layout')
+        .reduce((sum, e) => sum + (e.args?.beginData?.dirtyObjects ?? 0), 0),
+    );
+    await expect(rows).toHaveCount(201);
+  }
+  test.info().annotations.push({ type: 'restore ms', description: times.join(', ') });
+  console.log(
+    `M5-13 restore on 200 layers: ${times.join(', ')} ms; laid out ${laidOut.join(', ')}`,
+  );
+  // The 80 rows shown again and the list around them: fewer than one object per layer.
+  for (const n of laidOut) expect(n).toBeLessThan(201);
+  // What a screen reader is given is the list as it was before the search.
+  expect(await table(palette).ariaSnapshot()).toBe(before);
 });
 
 /** A header's left edge and width on the page. */
