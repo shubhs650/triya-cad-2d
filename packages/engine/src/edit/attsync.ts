@@ -72,10 +72,21 @@ function syncedAttributes(
     defs,
     values,
   );
-  return placed.attributes.map((a, i) => ({
-    ...a,
-    handle: kept[i]?.handle ?? b.allocateHandle(),
-  }));
+  return placed.attributes.map((a, i) => {
+    const was = kept[i];
+    if (!was) return { ...a, handle: b.allocateHandle() };
+    // The ATTRIB stays the same object: its xdata, reactors, extension dictionary and the file
+    // record it came from go with it, as a save keeps them.
+    const { handle, xdata, reactors, extDict, raw } = was;
+    return {
+      ...a,
+      handle,
+      ...(xdata !== undefined && { xdata }),
+      ...(reactors !== undefined && { reactors }),
+      ...(extDict !== undefined && { extDict }),
+      ...(raw !== undefined && { raw }),
+    };
+  });
 }
 
 /**
