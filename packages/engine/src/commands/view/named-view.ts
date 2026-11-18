@@ -13,7 +13,7 @@
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { saveNamedView, validViewName, type ViewExtent } from '../../edit/named-view';
-import { modelSpaceOf } from '../bus';
+import { isPaperSpace } from '../bus';
 import { viewRequest } from './zoom';
 import { windowDialog } from '../file';
 
@@ -122,7 +122,7 @@ export function viewCommand(): CommandDef {
       const height = Math.abs(q.y - p.y);
       if (!(width > 0) || !(height > 0)) return ctx.message('The window has no area.');
       const center = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-      save(ctx, name, { center, width, height }, ctx.space !== modelSpaceOf(ctx.model));
+      save(ctx, name, { center, width, height }, isPaperSpace(ctx.model, ctx.space));
     },
   };
 }

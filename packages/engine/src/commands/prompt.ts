@@ -40,6 +40,7 @@ import type {
 import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
 import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
 import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
+import type { BlockCloseRequest, BlockEditRequest } from './block-editor';
 import type { XbindRequest } from './xbind';
 import type { XrefAttachAnswer, XrefAttachRequest } from './xref-attach';
 import type { TableCellFormatRequest } from './draw/table-data-format';
@@ -787,6 +788,10 @@ export type DialogRequest =
   | XbindRequest
   /** WBLOCK's Write Block (M5-01 part 4). */
   | WriteBlockRequest
+  /** BEDIT's Edit Block Definition (M5-02 part 1). */
+  | BlockEditRequest
+  /** BCLOSE's Block - Changes Not Saved (M5-02 part 1). */
+  | BlockCloseRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
   | TableCellFormatRequest
   | ObjectGroupingRequest;
@@ -1055,6 +1060,10 @@ export type PromptAnswer =
       readonly xrefAttach?: XrefAttachAnswer;
       /** The Write Block dialog's fields as OK (or a pick) closed it (WBLOCK, M5-01 part 4). */
       readonly wblock?: WriteBlockAnswer;
+      /** The block the Edit Block Definition dialog's OK opens (BEDIT, M5-02 part 1). */
+      readonly bedit?: { readonly name: string };
+      /** Block - Changes Not Saved's choice (BCLOSE, M5-02 part 1). */
+      readonly bclose?: 'save' | 'discard';
       /** The Table Cell Format dialog's data format as OK closed it (M4-16). */
       readonly tableDataFormat?: TableDataFormat;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */

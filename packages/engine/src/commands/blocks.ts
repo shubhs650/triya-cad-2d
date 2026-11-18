@@ -54,6 +54,7 @@ import {
   ATTRIBUTE_VERIFY,
   attributeDefinitions,
   blockNameProblem,
+  blockReaches,
   blockNamed,
   defineBlock,
   definitionAttribute,
@@ -76,7 +77,7 @@ import { INSUNITS_NAMES } from './drawing-units';
 import { definitionEntry, wcmatch } from './modify/attributes';
 import { currentUcs } from './ucs';
 import { drawingUnits, formatDistance, formatNumber } from './units';
-import { modelSpaceOf } from './bus';
+import { isPaperSpace } from './bus';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -631,6 +632,8 @@ function insertRefusal(ctx: CommandContext, name: string): string | undefined {
   const r = name === '' || name.startsWith('*') ? undefined : blockNamed(ctx.model, name);
   if (!r || !ctx.model.hasBlock(r.handle)) return `Block "${name}" not found.`;
   if (isXrefRecord(r)) return `Block "${r.name}" is an external reference.`;
+  // In the Block Editor (M5-02): the block may not hold a reference to itself, at any depth.
+  if (blockReaches(ctx.model, r.handle, ctx.space)) return `Block "${r.name}" references itself.`;
   return undefined;
 }
 
@@ -1093,7 +1096,12 @@ export function baseCommand(): CommandDef {
     usesSelection: 'none',
     keepsSelection: true,
     async *run(ctx) {
-      const paper = ctx.space !== modelSpaceOf(ctx.model);
+      const editing = ctx.blockEditor.block;
+      if (editing !== undefined) {
+        yield* blockBase(ctx, editing);
+        return;
+      }
+      const paper = isPaperSpace(ctx.model, ctx.space);
       const key = paper ? '$PINSBASE' : '$INSBASE';
       const was = ctx.model.header.get(key) as { x: number; y: number; z?: number } | undefined;
       const u = drawingUnits(ctx.model.header);
@@ -1109,6 +1117,25 @@ export function baseCommand(): CommandDef {
       ctx.edit((b) => b.setHeader(key, { x: p.x, y: p.y, z: was?.z ?? 0 }));
     },
   };
+}
+
+/**
+ * BASE in the Block Editor (M5-02 part 1): the block's own base point, which every reference
+ * places at its insertion point (AutoCAD's base point parameter; the definition keeps its
+ * coordinates, so each reference shows the contents moved by the change).
+ */
+async function* blockBase(ctx: CommandContext, block: Handle): Sub<void> {
+  const def = ctx.model.blocks.get(block);
+  if (!def) return;
+  const u = drawingUnits(ctx.model.header);
+  const ucs = currentUcs(ctx);
+  const was = toUcs(ucs, def.basePoint);
+  const a = yield ctx.prompt.point({
+    message: 'Enter base point',
+    defaultLabel: [was.x, was.y, 0].map((v) => formatDistance(v, u)).join(','),
+  });
+  if (a.kind !== 'point') return;
+  ctx.edit((b) => b.updateBlock(block, { basePoint: { x: a.point.x, y: a.point.y } }));
 }
 
 /** The block commands, for `builtinCommands`. */

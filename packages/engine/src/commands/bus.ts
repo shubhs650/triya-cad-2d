@@ -16,7 +16,8 @@ import { OSNAP, type DeferredModes } from '../input/osnap';
 import { orthoPoint } from '../input/constrain';
 import { toUcs, toWorld, ucsOf, type PlanUcs } from '../input/ucs';
 import { ChangeSetBuilder } from '../model/builder';
-import type { ChangeSet } from '../model/changeset';
+import { isXrefRecord } from '../model/xref';
+import { invertChangeSet, isEmptyChangeSet, type ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
@@ -123,12 +124,20 @@ export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
 
 /**
  * The command a double click on `e` runs: `DOUBLE_CLICK`'s for its type, except that only a
- * block reference with attributes to edit opens EATTEDIT (one without opens the Block Editor in
- * AutoCAD, which Triya does not have: nothing opens).
+ * block reference with attributes to edit opens EATTEDIT; one without opens its block in the
+ * Block Editor (BEDIT, M5-02), when `model` says the block is one the editor opens (not an
+ * xref's, which AutoCAD's REFEDIT edits, nor an anonymous one).
  */
-export function doubleClickCommand(e: Entity | undefined): string | undefined {
+export function doubleClickCommand(
+  e: Entity | undefined,
+  model?: DocumentModel,
+): string | undefined {
   if (!e) return undefined;
-  if (e.geom.kind === 'INSERT' && !hasEditableAttributes(e)) return undefined;
+  if (e.geom.kind === 'INSERT' && !hasEditableAttributes(e)) {
+    const r = model?.tables.blockRecords.get(e.geom.block);
+    const editable = r && !r.name.startsWith('*') && !r.name.includes('|') && !isXrefRecord(r);
+    return editable ? 'BEDIT' : undefined;
+  }
   // Only a multileader of text: a block one's attributes are not edited in place yet.
   if (e.geom.kind === 'MULTILEADER' && !textEdited(e)) return undefined;
   return DOUBLE_CLICK[e.geom.kind];
@@ -353,6 +362,11 @@ export class PromptBus {
   readonly #registry: CommandRegistry;
   readonly #apply: (change: ChangeSet) => void;
   readonly #space: () => Handle;
+  /**
+   * The Block Editor (M5-02): the block definition it shows, which commands draw in, and the
+   * edits made since BEDIT opened it or BSAVE last saved it, which BCLOSE's Discard takes back.
+   */
+  #blockEditor: { readonly block: Handle; changes: ChangeSet[] } | undefined;
   readonly #view: ViewHost;
   readonly #dimensions: DimensionRegenerator | undefined;
   readonly #hatchLines: HatchLinesOf | undefined;
@@ -405,8 +419,14 @@ export class PromptBus {
     this.#apply = (cs) => {
       apply(cs);
       this.#forget(cs);
+      this.#blockEditor?.changes.push(cs);
     };
-    this.#space = options.space ?? (() => modelSpaceOf(this.#model));
+    const shown = options.space ?? (() => modelSpaceOf(this.#model));
+    // The Block Editor's block while it is open (and the block is there: an undo may take it).
+    this.#space = () => {
+      const b = this.#blockEditor?.block;
+      return b !== undefined && this.#model.hasBlock(b) ? b : shown();
+    };
     this.#view = options.view ?? NO_VIEW;
     this.#dimensions = options.dimensions;
     this.#hatchLines = options.hatchLines;
@@ -701,10 +721,12 @@ export class PromptBus {
       const ids = r.ok ? (r.ids ?? []) : [];
       // Inside an empty table cell nothing drawn is under the cursor: the cell's table is.
       const id =
-        ids.find((i) => doubleClickCommand(this.#model.entity(i)) !== undefined) ??
+        ids.find((i) => doubleClickCommand(this.#model.entity(i), this.#model) !== undefined) ??
         tableCellUnder(this.#model, this.#space(), point, 0)?.id;
       if (id === undefined) return;
-      const found = this.#registry.resolve(doubleClickCommand(this.#model.entity(id))!);
+      const found = this.#registry.resolve(
+        doubleClickCommand(this.#model.entity(id), this.#model)!,
+      );
       if (!found) return;
       if (top) await this.#cancel();
       this.#idle.clear();
@@ -979,7 +1001,7 @@ export class PromptBus {
 
   /** The current UCS of the space the commands draw in (M3-06 part 7). */
   #ucs(): PlanUcs {
-    return ucsOf(this.#model.header, this.#space() !== modelSpaceOf(this.#model));
+    return ucsOf(this.#model.header, isPaperSpace(this.#model, this.#space()));
   }
 
   /** How text typed for a point reads: from `lastPoint`, in the drawing's units and UCS. */
@@ -1159,6 +1181,32 @@ export class PromptBus {
       },
       get space() {
         return bus.#space();
+      },
+      blockEditor: {
+        get block() {
+          return bus.#blockEditor?.block;
+        },
+        get unsaved() {
+          return bus.#blockEditor?.changes.some((c) => !isEmptyChangeSet(c)) === true;
+        },
+        open: (block) => {
+          this.#blockEditor = { block, changes: [] };
+        },
+        save: () => {
+          if (this.#blockEditor) this.#blockEditor.changes = [];
+        },
+        close: (discard) => {
+          const editing = this.#blockEditor;
+          this.#blockEditor = undefined;
+          if (!discard || !editing) return;
+          // The edits taken back, last first, join this command's undo step: U puts them back.
+          for (const c of [...editing.changes].reverse()) {
+            if (isEmptyChangeSet(c)) continue;
+            const back = invertChangeSet(c);
+            this.#apply(back);
+            this.#changes.push(back);
+          }
+        },
       },
       select: (ids) => {
         this.#idle.clear();
@@ -1779,6 +1827,14 @@ export function modelSpaceOf(model: DocumentModel): Handle {
     if (r.name.toUpperCase() === '*MODEL_SPACE') return r.handle;
   }
   throw new Error('the drawing has no *Model_Space block record');
+}
+
+/**
+ * Whether `space` is a paper layout's (its paper space UCS, $PINSBASE): not model space, and not
+ * a block definition the Block Editor shows (M5-02), which works as model space does.
+ */
+export function isPaperSpace(model: DocumentModel, space: Handle): boolean {
+  return space !== modelSpaceOf(model) && model.layouts.some((l) => l.blockRecord === space);
 }
 
 /** The grip of `ids` nearest `p` within `within`, or undefined (M2-06). */

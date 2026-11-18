@@ -181,6 +181,11 @@ export type ViewRequest =
    * over: `drawing`'s objects, or without it the whole drawing as Save would write it.
    */
   | { readonly op: 'writeBlock'; readonly file: string; readonly drawing?: BlockDrawing }
+  /**
+   * BEDIT and BCLOSE (M5-02 part 1): the app shows the Block Editor on the definition `block`
+   * (named `name`), or without one closes it and shows again the space it showed before.
+   */
+  | { readonly op: 'blockEditor'; readonly block?: Handle; readonly name?: string }
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes a palette. */
   | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean }
   /**
