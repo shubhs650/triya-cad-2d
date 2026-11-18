@@ -131,8 +131,12 @@ export interface BlockEditorControl {
   readonly block: Handle | undefined;
   /** Edits made since BEDIT opened it or BSAVE last saved it. */
   readonly unsaved: boolean;
-  /** Shows `block` for editing: the space commands draw in until it closes. */
-  open(block: Handle): void;
+  /**
+   * Shows `block` for editing: the space commands draw in until it closes. `made` is the change
+   * that made a new block for the editor (BEDIT on a new name): it counts as an edit not saved,
+   * so Discard takes the block away again.
+   */
+  open(block: Handle, made?: ChangeSet): void;
   /** Keeps the edits made so far: a later Discard takes back only those made after. */
   save(): void;
   /**

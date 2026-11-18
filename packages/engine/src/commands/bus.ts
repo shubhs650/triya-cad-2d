@@ -1219,8 +1219,8 @@ export class PromptBus {
         get unsaved() {
           return bus.#blockEditor?.changes.some((c) => !isEmptyChangeSet(c)) === true;
         },
-        open: (block) => {
-          this.#blockEditor = { block, changes: [] };
+        open: (block, made) => {
+          this.#blockEditor = { block, changes: made ? [made] : [] };
         },
         save: () => {
           if (this.#blockEditor) this.#blockEditor.changes = [];
