@@ -124,7 +124,9 @@ function initOf(m: DocumentModel): DocumentInit {
   };
 }
 
-function setup(o: { loaded?: boolean; file?: boolean } = {}) {
+function setup(
+  o: { loaded?: boolean; file?: boolean | 'unreadable'; write?: 'download' | 'fail' } = {},
+) {
   const loaded = o.loaded ?? true;
   const model = DocumentModel.create(hostInit(loaded));
   if (loaded) model.apply(xrefLoadChange(model, XREF, planInit()));
@@ -145,14 +147,19 @@ function setup(o: { loaded?: boolean; file?: boolean } = {}) {
       }
       if (r.op === 'xrefDrawing') {
         if (o.file === false) return Promise.resolve({ ok: true });
+        if (o.file === 'unreadable')
+          return Promise.resolve({ ok: false, message: 'plan.dxf could not be read: damaged' });
         return Promise.resolve({ ok: true, xrefDrawing: { name: 'plan.dxf', init: file } });
       }
       if (r.op === 'writeXref') {
+        if (o.write === 'fail')
+          return Promise.resolve({ ok: false, message: 'plan.dxf was not written: disk full' });
         writes.push({ block: r.block, file: r.file, changes: r.changes });
         const m = DocumentModel.create(file);
         for (const cs of r.changes) applyToReplica(m, cs, 'xref file');
         file = initOf(m);
-        return Promise.resolve({ ok: true, written: { file: 'plan.dxf', downloaded: false } });
+        const downloaded = o.write === 'download';
+        return Promise.resolve({ ok: true, written: { file: 'plan.dxf', downloaded } });
       }
       return base.request(r);
     },
@@ -300,5 +307,28 @@ describe('REFEDIT of an external reference (M5-02 part 6)', () => {
     await t.pickReference();
     expect(t.log.at(-1)).toBe('** The external reference is not loaded **');
     expect(await t.name()).toMatch(/REFEDITNAME = ""/);
+  });
+
+  it('says where the file went when it was downloaded, and why when it was not written', async () => {
+    const d = setup({ write: 'download' });
+    await d.refedit();
+    await d.bus.script(['ERASE', '105,6', '', 'REFCLOSE', 'S']);
+    expect(d.log.slice(-2)).toEqual([
+      'Xref "PLAN" saved: reference edits written to plan.dxf.',
+      "plan.dxf was downloaded: put it in place of the xref's file to keep the edits.",
+    ]);
+    const f = setup({ write: 'fail' });
+    await f.refedit();
+    await f.bus.script(['LINE', '100,20', '110,20', '', 'REFCLOSE', 'S']);
+    expect(f.log.at(-1)).toBe('** plan.dxf was not written: disk full **');
+    // The line is the xref's content all the same: the host never saves it.
+    const drawn = f.content().at(-1)!;
+    expect(f.model.blocks.get(XREF)!.xrefLoaded).toContain(drawn.handle);
+    expect(f.model.blocks.get(XREF)!.xrefHandles?.some(([h]) => h === drawn.handle)).toBe(false);
+    const u = setup({ file: 'unreadable' });
+    await u.refedit();
+    await u.bus.script(['REFCLOSE', 'S']);
+    expect(u.log.at(-1)).toBe('** plan.dxf could not be read: damaged **');
+    expect(await u.name()).toMatch(/REFEDITNAME = "PLAN"/);
   });
 });
