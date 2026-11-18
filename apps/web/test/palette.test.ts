@@ -136,6 +136,7 @@ describe('palette search', () => {
       'HATCHTOBACK',
       'ID',
       'IMAGEADJUST',
+      'IMAGEATTACH',
       'IMAGECLIP',
       'IMAGEQUALITY',
       'INSERT',
