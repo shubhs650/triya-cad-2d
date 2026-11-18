@@ -117,6 +117,9 @@ test('DesignCenter adds another open drawing’s layer and inserts its block whe
   const target = { x: 300, y: 220 };
   const at = await worldAt(page, target.x, target.y);
   await block.dragTo(activeCanvas(page), { targetPosition: target });
+  // The prompt reads "Command:" before the drop too, so wait for the insert itself: reading
+  // the changes once the prompt matched raced the engine's answer (CI, 2026-11-18).
+  await expect.poll(async () => (await added(page)).inserts).toHaveLength(1);
   await expect(prompt(page)).toHaveText('Command:');
   const after = await added(page);
   expect(after.blocks).toContain('TITLE-BLOCK');

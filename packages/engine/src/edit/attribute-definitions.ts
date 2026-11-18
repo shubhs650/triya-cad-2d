@@ -16,11 +16,17 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { AttdefGeometry, Entity, InsertAttribute, InsertGeometry } from '../model/types';
+import type {
+  AttdefGeometry,
+  DrawingField,
+  Entity,
+  InsertAttribute,
+  InsertGeometry,
+} from '../model/types';
 import type { EntityPatch } from '../model/update';
 import type { AttributeDefinitionEntry, AttributeDefinitionPatch } from '../commands/prompt';
 import type { TextOutline } from '../commands/view/host';
-import { definitionEntry, patchAttribute } from '../commands/modify/attributes';
+import { definitionEntry, patchAttribute, valueEntry } from '../commands/modify/attributes';
 import { isXrefRecord, loadedXrefHandles } from '../model/xref';
 
 /** DXF 70 bits the manager changes: invisible, verify, preset. Constant (2) stays. */
@@ -32,6 +38,12 @@ export interface DefinitionChanges {
   readonly order: readonly Handle[];
   readonly removed: readonly Handle[];
   readonly attributes: readonly AttributeDefinitionPatch[];
+  /**
+   * The fields of each default changed, by the ATTDEF's handle (M5-03 part 4): the patch's value
+   * is then the text the default shows, and the definition takes these fields (undefined: none).
+   * A default changed without an entry here holds its text alone.
+   */
+  readonly fields?: ReadonlyMap<Handle, DrawingField | undefined>;
 }
 
 /** The block's ATTDEF entities, constant ones too, in block order. */
@@ -47,6 +59,8 @@ export function definitionManagerEntry(e: Entity): AttributeDefinitionEntry {
   const d = e.geom as AttdefGeometry;
   return {
     ...definitionEntry(e, d.mtext ? d.mtext.contents : d.value),
+    // The default with its fields as codes (M5-03 part 4).
+    ...valueEntry(d),
     prompt: d.prompt,
     lockPosition: d.lockPosition === true,
     ...(d.mtext && { boundaryWidth: d.mtext.width }),
@@ -82,9 +96,15 @@ function patched(
   e: Entity,
   p: AttributeDefinitionPatch,
   outline?: TextOutline,
+  fieldsOf?: ReadonlyMap<Handle, DrawingField | undefined>,
 ): EntityPatch | undefined {
   const d = e.geom as AttdefGeometry;
-  const a = patchAttribute(asAttribute(e), p, outline);
+  let a = patchAttribute(asAttribute(e), p, outline);
+  const field = fieldsOf?.has(e.handle) ? fieldsOf.get(e.handle) : a.field;
+  if (JSON.stringify(field) !== JSON.stringify(a.field)) {
+    const { field: _was, ...rest } = a;
+    a = field ? { ...rest, field } : rest;
+  }
   const {
     handle: _h,
     layer,
@@ -158,7 +178,7 @@ export function changeDefinitions(
   for (const p of changes.attributes) {
     const e = byHandle.get(p.handle);
     if (!e || changes.removed.includes(p.handle)) continue;
-    const next = patched(e, p, outlines.get(p.handle));
+    const next = patched(e, p, outlines.get(p.handle), changes.fields);
     if (!next) continue;
     // A plot style of undefined is ByLayer: the patch takes it off.
     b.updateEntity(e.id, next);

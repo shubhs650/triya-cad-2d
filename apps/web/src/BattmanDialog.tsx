@@ -22,8 +22,10 @@
 // references"), each change in Edit Attribute is sent as a `preview`, which the engine shows on
 // the definitions and references at once and takes back before the next answer; AutoCAD greys
 // the checkbox while "Apply changes to existing references" is off, and keeps it per user, as
-// the settings are kept. Left out: the Default's Insert Field button (with M5-03's Insert
-// Field), and Help, as Triya's other dialogs leave it.
+// the settings are kept. The Default holds fields (M5-03 part 4): Insert Field and Edit Field
+// answer `field` with the manager's state (`resume`); the engine opens the Field dialog and then
+// the manager again on that state, Edit Attribute open with the field made. Left out: Help, as
+// Triya's other dialogs leave it.
 import type {
   AttributeDefinitionEntry,
   AttributeDefinitionPatch,
@@ -34,7 +36,7 @@ import type {
   LineweightUnits,
   PromptAnswer,
 } from '@triya/engine';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ATTACHMENTS,
   AttributeProperties,
@@ -45,8 +47,8 @@ import {
   justification,
   lineweightLabel,
   shownValue,
-  storedValue,
 } from './AttributeDialogs';
+import { FieldValueInput, fieldValueShown } from './FieldValueInput';
 import { SelectColorDialog } from './SelectColorDialog';
 import { engines } from './engine/registry';
 import { useLineweightUnits } from './lineweight-units';
@@ -176,7 +178,7 @@ function cell(r: Request, e: Entry, c: BattmanColumn, lwUnits: LineweightUnits):
     case 'prompt':
       return e.prompt;
     case 'default':
-      return shownValue(e.value, e.multiline).replace(/\n/g, ' ¶ ');
+      return shownValue(fieldValueShown(e.value, e.fields), e.multiline).replace(/\n/g, ' ¶ ');
     case 'modes':
       return modesText(e);
     case 'annotative':
@@ -247,9 +249,13 @@ function patchOf(was: Entry, now: Entry): AttributeDefinitionPatch | undefined {
 }
 
 export function BattmanDialog({ doc, request }: { doc: number; request: Request }) {
-  const [rows, setRows] = useState<readonly Entry[]>(request.attributes);
-  const [removed, setRemoved] = useState<readonly Handle[]>([]);
-  const [selected, setSelected] = useState(request.selected ?? request.attributes[0]?.handle);
+  // Back from Edit Attribute's Insert Field (M5-03 part 4): the manager as it stood.
+  const resume = request.resume;
+  const [rows, setRows] = useState<readonly Entry[]>(resume?.rows ?? request.attributes);
+  const [removed, setRemoved] = useState<readonly Handle[]>(resume?.removed ?? []);
+  const [selected, setSelected] = useState(
+    resume ? resume.selected : (request.selected ?? request.attributes[0]?.handle),
+  );
   const [settings, setSettings] = useState(loadBattmanSettings);
   const [editing, setEditing] = useState<Entry | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -290,6 +296,21 @@ export function BattmanDialog({ doc, request }: { doc: number; request: Request 
   const preview = (e?: Entry) => {
     if (settings.autoPreview && settings.applyToExisting) sendPreview(e, true);
   };
+  // Edit Attribute opens again once the manager is shown (its modal over the manager's), the
+  // field made showing in the drawing at once, as any other Edit Attribute change does.
+  useEffect(() => {
+    if (!resume) return;
+    setEditing(resume.editing);
+    preview(resume.editing);
+  }, []);
+  /** Insert Field or Edit Field on the Default: the Field dialog, the manager kept meanwhile. */
+  const field = (e: Entry) =>
+    answer(doc, {
+      kind: 'dialog',
+      action: 'field',
+      battman: state(),
+      resume: { rows, removed, ...(selected !== undefined && { selected }), editing: e },
+    });
 
   const move = (by: -1 | 1) => {
     if (!row) return;
@@ -439,6 +460,7 @@ export function BattmanDialog({ doc, request }: { doc: number; request: Request 
             sendPreview(e, on);
           }}
           onChange={preview}
+          onField={field}
           onOk={(e) => {
             setRows(rows.map((r) => (r.handle === e.handle ? e : r)));
             setEditing(undefined);
@@ -475,6 +497,7 @@ function EditAttributeDialog({
   canPreview,
   onAutoPreview,
   onChange,
+  onField,
   onOk,
   onCancel,
 }: {
@@ -487,6 +510,8 @@ function EditAttributeDialog({
   onAutoPreview: (on: boolean, e: Entry) => void;
   /** The definition as it now stands, for the Auto preview. */
   onChange: (e: Entry) => void;
+  /** Insert Field or Edit Field: the definition with its Default marking the field's place. */
+  onField: (e: Entry) => void;
   onOk: (e: Entry) => void;
   onCancel: () => void;
 }) {
@@ -576,19 +601,13 @@ function EditAttributeDialog({
               </label>
               <label className="cad-dialog-field">
                 <span>Default:</span>
-                {e.multiline ? (
-                  <textarea
-                    rows={3}
-                    value={shownValue(e.value, true)}
-                    onChange={(x) => set({ value: storedValue(x.target.value, true) })}
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    value={e.value}
-                    onChange={(x) => set({ value: storedValue(x.target.value, false) })}
-                  />
-                )}
+                <FieldValueInput
+                  value={e.value}
+                  {...(e.fields && { fields: e.fields })}
+                  multiline={e.multiline}
+                  onChange={(value) => set({ value })}
+                  onField={(marked) => onField({ ...e, value: marked })}
+                />
               </label>
               {tagProblem && (
                 <p role="alert" className="cell-block-error">

@@ -89,13 +89,21 @@ describe('attributes edited with EATTEDIT save as DXF and read back', () => {
           ...(i === 2 && plotStyle !== undefined && { plotStyle }),
         }));
         await bus.answer({ kind: 'dialog', action: 'ok', attributes: patches });
+        // The dialog edits a value with its fields as codes (M5-03 part 4): the attribute then
+        // shows each field's value, evaluated again, before " (edited)".
+        const now = new Map(
+          (model.entity(ref.id)!.geom as InsertGeometry).attributes.map((a) => [a.handle, a]),
+        );
         for (const [i, a] of d.attributes.entries()) {
           const was = before.get(a.handle)!;
           // Without a canvas DXF 10 stays at the insertion point, which DXF 11 takes.
           const at = was.halign === 0 && was.valign === 0 ? was.position : was.alignmentPoint;
           const turned = i === 1 && !a.annotative;
+          const shown = valueOf(now.get(a.handle)!);
+          if (Object.keys(a.fields ?? {}).length === 0) expect(shown).toBe(`${a.value} (edited)`);
+          else expect(shown.endsWith(' (edited)')).toBe(true);
           expected.set(a.handle, {
-            value: `${a.value} (edited)`,
+            value: shown,
             height: a.height * (i === 0 ? 2 : 1),
             ...(turned && {
               justified: a.multiline
