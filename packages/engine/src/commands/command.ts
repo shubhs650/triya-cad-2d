@@ -8,7 +8,7 @@ import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { EntityId } from '../model/entity-ids';
 import type { Entity, EntityGeometry } from '../model/types';
-import type { Similarity } from '../edit/similarity';
+import type { Placement } from '../edit/refedit';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
@@ -157,7 +157,7 @@ export interface RefEditSession {
   /** The space the working set is edited in: the one the reference picked is in. */
   readonly space: Handle;
   /** How the references picked place the block's contents in `space`. */
-  readonly t: Similarity;
+  readonly t: Placement;
   /** The references from the one picked inward to the one edited. */
   readonly path: readonly EntityId[];
   /** Lock objects not in working set: they cannot be taken by a command that edits. */

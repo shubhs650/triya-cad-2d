@@ -28,6 +28,13 @@ export interface Similarity {
 
 /** `m` as a similarity; throws for a matrix that shears, squashes or collapses. */
 export function similarity(m: Matrix2D): Similarity {
+  const t = asSimilarity(m);
+  if (!t) throw new Error('an edit transform must be a similarity');
+  return t;
+}
+
+/** `m` as a similarity, or undefined for a matrix that shears, squashes or collapses. */
+export function asSimilarity(m: Matrix2D): Similarity | undefined {
   const det = determinant(m);
   const sx = Math.hypot(m.a, m.b);
   const sy = Math.hypot(m.c, m.d);
@@ -36,7 +43,7 @@ export function similarity(m: Matrix2D): Similarity {
     det !== 0 &&
     Math.abs(sx - sy) <= 1e-12 * sx &&
     Math.abs(m.a * m.c + m.b * m.d) <= 1e-12 * sx * sy;
-  if (!ok) throw new Error('an edit transform must be a similarity');
+  if (!ok) return undefined;
   return { m, scale: sx, angle: angleOf({ x: m.a, y: m.b }), reflect: det < 0 };
 }
 

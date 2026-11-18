@@ -1,0 +1,1 @@
+- M5-02 part 8 (#558): REFEDIT now edits block references scaled differently in X and Y. Their objects are carried out by the scale; circles and arcs are edited as ellipses and come back as the same circles and arcs, under their own handles, while they stay round. This completes M5-02.
