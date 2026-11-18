@@ -26,6 +26,7 @@ import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { InsertGeometry } from '../model/types';
+import type { Similarity } from '../edit/similarity';
 import { blockReaches } from '../edit/blocks';
 import {
   extractWorkingSet,
@@ -35,6 +36,10 @@ import {
 } from '../edit/refedit';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
+// What each prompt answers (Esc ends the command instead, so no other kind arrives).
+type SelectionAnswer = Extract<PromptAnswer, { kind: 'selection' }>;
+type KeywordAnswer = Extract<PromptAnswer, { kind: 'keyword' }>;
+type DialogAnswer = Extract<PromptAnswer, { kind: 'dialog' }>;
 
 /** One reference of the Reference Edit dialog's Reference name tree. */
 export interface RefEditEntry {
@@ -82,7 +87,7 @@ const insertOf = (ctx: CommandContext, id: EntityId): InsertGeometry | undefined
 };
 
 const blockName = (ctx: CommandContext, block: Handle): string =>
-  ctx.model.tables.blockRecords.get(block)?.name ?? '';
+  ctx.model.tables.blockRecords.get(block)!.name;
 
 /** Why a reference edit cannot start now, or undefined. */
 function startRefusal(ctx: CommandContext, name: string): string | undefined {
@@ -99,18 +104,18 @@ function startRefusal(ctx: CommandContext, name: string): string | undefined {
  */
 async function* selectReference(ctx: CommandContext): Sub<EntityId[] | undefined> {
   for (;;) {
-    const a = yield ctx.prompt.selection({
+    const a = (yield ctx.prompt.selection({
       message: 'Select reference',
       single: true,
       pickfirst: true,
-    });
-    if (a.kind !== 'selection' || a.ids.length === 0) return undefined;
+    })) as SelectionAnswer;
+    if (a.ids.length === 0) return undefined;
     const id = a.ids[0]!;
     if (!insertOf(ctx, id)) {
       ctx.message('Selected object is not a reference.');
       continue;
     }
-    const pick = a.pick ?? a.takes?.[0]?.pick;
+    const pick = a.pick;
     const path: EntityId[] = [id];
     if (pick) {
       const r = await ctx.view.request({ op: 'nested', point: pick, id });
@@ -123,9 +128,11 @@ async function* selectReference(ctx: CommandContext): Sub<EntityId[] | undefined
 
 /** The objects of the edited block that "Select nested objects:" picks take. */
 async function* nestedObjects(ctx: CommandContext, path: readonly EntityId[]): Sub<EntityId[]> {
-  const a = yield ctx.prompt.selection({ message: 'Select nested objects', pickfirst: false });
-  if (a.kind !== 'selection') return [];
-  const takes: readonly SelectionTake[] = a.takes ?? (a.pick ? [{ ids: a.ids, pick: a.pick }] : []);
+  const a = (yield ctx.prompt.selection({
+    message: 'Select nested objects',
+    pickfirst: false,
+  })) as SelectionAnswer;
+  const takes: readonly SelectionTake[] = a.takes ?? [];
   const out = new Set<EntityId>();
   const top = path[0]!;
   for (const take of takes) {
@@ -147,11 +154,10 @@ const refusal = (why: string): string => `** ${why[0]!.toUpperCase()}${why.slice
 function start(
   ctx: CommandContext,
   path: readonly EntityId[],
+  t: Similarity,
   settings: RefEditSettings,
   chosen?: readonly EntityId[],
 ): void {
-  const t = pathPlacement(ctx.model, path);
-  if (typeof t === 'string') return;
   const block = insertOf(ctx, path.at(-1)!)!.block;
   const all = wholeWorkingSet(ctx.model, block, settings.attributes);
   const wanted = chosen ? new Set(chosen) : undefined;
@@ -188,7 +194,7 @@ async function* refeditDialog(ctx: CommandContext, path: EntityId[]): Sub<void> 
   let chosen = 0;
   let note: string | undefined;
   for (;;) {
-    const a = yield ctx.prompt.dialog({
+    const a = (yield ctx.prompt.dialog({
       message: 'Reference Edit',
       dialog: {
         type: 'refedit',
@@ -200,8 +206,8 @@ async function* refeditDialog(ctx: CommandContext, path: EntityId[]): Sub<void> 
         settings,
         ...(note !== undefined && { note }),
       },
-    });
-    if (a.kind !== 'dialog' || a.action !== 'ok' || !a.refedit) return;
+    })) as DialogAnswer;
+    if (!a.refedit) return;
     chosen = Math.max(0, Math.min(path.length - 1, a.refedit.chosen));
     settings = a.refedit.settings;
     remembered.set(ctx.model, settings);
@@ -212,20 +218,18 @@ async function* refeditDialog(ctx: CommandContext, path: EntityId[]): Sub<void> 
       continue;
     }
     const objects = settings.prompt ? yield* nestedObjects(ctx, levels) : undefined;
-    start(ctx, levels, settings, objects);
+    start(ctx, levels, t, settings, objects);
     return;
   }
 }
 
-async function* yesNo(ctx: CommandContext, message: string, yes: boolean): Sub<boolean> {
-  for (;;) {
-    const a = yield ctx.prompt.keyword({
-      message,
-      options: ['Yes', 'No'],
-      default: { kind: 'keyword', keyword: yes ? 'Yes' : 'No' },
-    });
-    if (a.kind === 'keyword') return a.keyword === 'Yes';
-  }
+async function* noOrYes(ctx: CommandContext, message: string): Sub<boolean> {
+  const a = (yield ctx.prompt.keyword({
+    message,
+    options: ['Yes', 'No'],
+    default: { kind: 'keyword', keyword: 'No' },
+  })) as KeywordAnswer;
+  return a.keyword === 'Yes';
 }
 
 async function* dashRefedit(ctx: CommandContext, path: EntityId[]): Sub<void> {
@@ -234,12 +238,11 @@ async function* dashRefedit(ctx: CommandContext, path: EntityId[]): Sub<void> {
     for (;;) {
       const r = insertOf(ctx, path[level]!)!;
       ctx.message(`Nesting level: ${blockName(ctx, r.block)}`);
-      const a = yield ctx.prompt.keyword({
+      const a = (yield ctx.prompt.keyword({
         message: 'Select nesting level',
         options: ['Ok', 'Next'],
         default: { kind: 'keyword', keyword: 'Next' },
-      });
-      if (a.kind !== 'keyword') return;
+      })) as KeywordAnswer;
       if (a.keyword === 'Ok') break;
       level = (level + 1) % path.length;
     }
@@ -250,16 +253,15 @@ async function* dashRefedit(ctx: CommandContext, path: EntityId[]): Sub<void> {
     ctx.message(refusal(t));
     return;
   }
-  const how = yield ctx.prompt.keyword({
+  const how = (yield ctx.prompt.keyword({
     message: 'Enter object selection method',
     options: ['All', 'Nested'],
     default: { kind: 'keyword', keyword: 'All' },
-  });
-  if (how.kind !== 'keyword') return;
+  })) as KeywordAnswer;
   const objects = how.keyword === 'Nested' ? yield* nestedObjects(ctx, levels) : undefined;
   const was = remembered.get(ctx.model) ?? DEFAULTS;
-  const attributes = yield* yesNo(ctx, 'Display attribute definitions', false);
-  start(ctx, levels, { ...was, attributes }, objects);
+  const attributes = yield* noOrYes(ctx, 'Display attribute definitions');
+  start(ctx, levels, t, { ...was, attributes }, objects);
 }
 
 export function refeditCommand(): CommandDef {
@@ -302,15 +304,13 @@ export function refsetCommand(): CommandDef {
       if (notOpen(ctx, 'REFSET')) return;
       const s = ctx.refEdit.session!;
       ctx.message('Transfer objects between the RefEdit working set and host drawing...');
-      const a = yield ctx.prompt.keyword({
+      const a = (yield ctx.prompt.keyword({
         message: 'Enter an option',
         options: ['Add', 'Remove'],
         default: { kind: 'keyword', keyword: 'Add' },
-      });
-      if (a.kind !== 'keyword') return;
+      })) as KeywordAnswer;
       const add = a.keyword === 'Add';
-      const sel = yield ctx.prompt.selection({ message: 'Select objects' });
-      if (sel.kind !== 'selection') return;
+      const sel = (yield ctx.prompt.selection({ message: 'Select objects' })) as SelectionAnswer;
       const working = ctx.refEdit.working;
       const inSpace = sel.ids.filter((id) => ctx.model.entity(id)?.owner === s.space);
       if (add) {
@@ -348,12 +348,11 @@ export function refcloseCommand(): CommandDef {
     async *run(ctx) {
       if (notOpen(ctx, 'REFCLOSE')) return;
       const s = ctx.refEdit.session!;
-      const a = yield ctx.prompt.keyword({
+      const a = (yield ctx.prompt.keyword({
         message: 'Enter option',
         options: ['Save', 'Discard reference changes'],
         default: { kind: 'keyword', keyword: 'Save' },
-      });
-      if (a.kind !== 'keyword') return;
+      })) as KeywordAnswer;
       if (a.keyword !== 'Save') {
         ctx.refEdit.close({ discard: true });
         ctx.message('Reference edits discarded.');

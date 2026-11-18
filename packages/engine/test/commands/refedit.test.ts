@@ -112,6 +112,16 @@ function setup() {
       entityInit('38', lineGeom(0, 0, 0, 1), { owner: DOOR, layer: LOCKED }),
       entityInit('39', lineGeom(0, 0, 0.1, 0), { owner: KNOB, layer: L0 }),
       entityInit(
+        '3B',
+        {
+          kind: 'CIRCLE',
+          center: { x: 0, y: 0 },
+          radius: 0.05,
+          normal: { x: 1, y: 0, z: 0 },
+        } as unknown as EntityGeometry,
+        { owner: KNOB, layer: L0 },
+      ),
+      entityInit(
         DOOR_REF,
         insert(DOOR, { x: 100, y: 100 }, { scale: { x: 2, y: 2 }, rotation: Math.PI / 2 }),
         { layer: WALLS },
@@ -327,7 +337,9 @@ describe('REFEDIT', () => {
       action: 'ok',
       refedit: { chosen: 1, settings: d.settings },
     });
-    expect(t.contents(KNOB)).toEqual([]);
+    // A circle out of the XY plane cannot be turned: it stays in the block.
+    expect(t.contents(KNOB)).toEqual(['3B']);
+    expect(t.log).toContain('1 could not be edited in place and stayed in the block.');
     near(lineOf(t.geom('39')).end, 100, 100.2);
     expect(await t.name()).toMatch(/REFEDITNAME = "KNOB"/);
   });
@@ -402,7 +414,82 @@ describe('REFEDIT', () => {
   });
 });
 
+describe('REFEDIT edges', () => {
+  it('Esc or Cancel at any step starts nothing', async () => {
+    const t = setup();
+    await t.bus.submit('REFEDIT');
+    await t.bus.cancel();
+    await t.bus.submit('REFEDIT');
+    await t.pick('line');
+    await t.bus.cancel();
+    await t.bus.submit('-REFEDIT');
+    await t.pick('knob');
+    await t.bus.cancel();
+    await t.bus.submit('-REFEDIT');
+    await t.pick('line');
+    await t.bus.cancel();
+    expect(await t.name()).toMatch(/REFEDITNAME = ""/);
+    expect(t.contents(DOOR)).toHaveLength(5);
+  });
+
+  it('Enter at "Select reference" ends it; a reference taken without a pick is edited alone', async () => {
+    const t = setup();
+    await t.bus.script(['REFEDIT', '']);
+    expect(t.bus.promptText).toBe('Command:');
+    await t.bus.submit('REFEDIT');
+    await t.bus.answer({ kind: 'selection', ids: [t.id(DOOR_REF)] });
+    const d = t.dialog() as Extract<DialogRequest, { type: 'refedit' }>;
+    expect(d.references.map((r) => r.name)).toEqual(['DOOR']);
+  });
+
+  it('nested picks that miss the block take nothing: an empty working set', async () => {
+    const t = setup();
+    await t.refedit('line', 0, { prompt: true });
+    // A pick on the drawing's own line, then one through another reference path.
+    await t.bus.pick({ x: 5, y: 50 });
+    await t.pick('tall');
+    await t.bus.submit('');
+    expect(t.log).toContain('0 objects in the working set.');
+    expect(t.contents(DOOR)).toHaveLength(5);
+    // Objects drawn join it; Discard with nothing carried out takes them back.
+    await t.bus.script(['LINE', '0,0', '1,1', '', 'REFCLOSE', 'D']);
+    expect(t.contents(MODEL)).toEqual(['30', DOOR_REF, PLAIN_REF, TALL_REF]);
+  });
+
+  it('an object of the drawing brought back by U does not join the working set', async () => {
+    const t = setup();
+    await t.refedit('line', 0, { lock: false });
+    await t.bus.script(['ERASE', '5,50', '', 'U', 'LINE', '0,0', '1,1', '', 'U', 'REDO']);
+    expect(t.events.at(-1)!.working).not.toContain(t.id('30'));
+    await t.bus.script(['REFCLOSE', 'S']);
+    expect(t.owner('30')).toBe(MODEL);
+    expect(t.contents(DOOR)).toHaveLength(6);
+  });
+
+  it('REFSET and REFCLOSE end quietly on Esc', async () => {
+    const t = setup();
+    await t.refedit('line');
+    await t.bus.submit('REFSET');
+    await t.bus.cancel();
+    await t.bus.script(['REFSET', 'R']);
+    await t.bus.cancel();
+    await t.bus.submit('REFCLOSE');
+    await t.bus.cancel();
+    expect(await t.name()).toMatch(/REFEDITNAME = "DOOR"/);
+  });
+});
+
 describe('-REFEDIT', () => {
+  it('Esc at the selection method or the attribute question starts nothing', async () => {
+    const t = setup();
+    await t.bus.submit('-REFEDIT');
+    await t.pick('line');
+    expect(t.bus.promptText).toBe('Enter object selection method [All/Nested] <All>:');
+    await t.bus.script(['']);
+    await t.bus.cancel();
+    expect(await t.name()).toMatch(/REFEDITNAME = ""/);
+  });
+
   it('asks the nesting level, the selection method and the attribute definitions', async () => {
     const t = setup();
     await t.bus.submit('-REFEDIT');

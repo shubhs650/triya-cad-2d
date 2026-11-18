@@ -66,28 +66,23 @@ export class RefEdits implements RefEditControl {
   }
 
   add(ids: readonly EntityId[]): void {
-    const run = this.#active;
-    if (!run) return;
-    for (const id of ids) run.working.add(id);
+    for (const id of ids) this.#active!.working.add(id);
     this.#host.changed();
   }
 
   remove(ids: readonly EntityId[]): void {
-    const run = this.#active;
-    if (!run) return;
-    for (const id of ids) run.working.delete(id);
+    for (const id of ids) this.#active!.working.delete(id);
     this.#host.changed();
   }
 
   touched(): ReadonlySet<EntityId | Handle> {
     const out = new Set<EntityId | Handle>();
-    for (const cs of this.#active?.changes.slice(1) ?? []) changedIn(cs, out);
+    for (const cs of this.#active!.changes.slice(1)) changedIn(cs, out);
     return out;
   }
 
   close(o: { readonly saved?: ChangeSet; readonly discard?: boolean }): void {
-    const run = this.#active;
-    if (!run) return;
+    const run = this.#active!;
     this.#active = undefined;
     // Save's change was recorded as it was applied: it is the closing, not an edit.
     if (o.saved && run.changes.at(-1) === o.saved) run.changes.pop();
@@ -134,11 +129,10 @@ export class RefEdits implements RefEditControl {
         if (opening >= 0) {
           // The changes the step made from REFEDIT's on were applied before it resumed.
           run.changes = changes.slice(opening);
-          delete run.closedAt;
           this.#active = run;
         }
         if (closing && this.#active === run) {
-          run.changes.length = run.closedAt ?? run.changes.length;
+          run.changes.length = run.closedAt!;
           this.#active = undefined;
         }
       }
@@ -147,7 +141,7 @@ export class RefEdits implements RefEditControl {
   }
 
   #resume(run: Run): void {
-    if (run.closedAt !== undefined) run.changes.length = run.closedAt;
+    run.changes.length = run.closedAt!;
     this.#active = run;
   }
 }
