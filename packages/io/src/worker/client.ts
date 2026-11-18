@@ -5,7 +5,7 @@
 // io compiles without DOM types, so the worker and the abort signal are typed structurally;
 // a browser `Worker` and `AbortSignal` satisfy them.
 import * as Comlink from 'comlink';
-import type { ChangeSet } from '@triya/engine';
+import type { ChangeSet, Clipboard, HeaderValue } from '@triya/engine';
 import type { CadFormat, ReadSummary } from '../read';
 import type { IoApi, IoProgress, OpenResult } from './api';
 
@@ -76,6 +76,18 @@ export function saveInWorker(bytes: Uint8Array, options: SaveInWorkerOptions): P
   return runJob(bytes.slice(), options, async (remote, own, progress) =>
     remote.save(own, await options.changes, options.format, progress),
   );
+}
+
+/**
+ * WBLOCK (M5-01 part 4): writes `content`'s objects as a new AC1032 DXF, with `header`'s
+ * variables, in a new worker (`writeBlockDrawing`).
+ */
+export function writeBlockInWorker(
+  content: Clipboard,
+  header: Readonly<Record<string, HeaderValue>>,
+  options: ReadInWorkerOptions,
+): Promise<Uint8Array> {
+  return runJob(new Uint8Array(0), options, (remote) => remote.writeBlock(content, header));
 }
 
 async function runJob<T>(

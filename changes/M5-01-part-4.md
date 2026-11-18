@@ -1,0 +1,1 @@
+- M5-01 part 4 (#510): WBLOCK writes objects, a block or the whole drawing to a new DXF drawing file (the Write Block dialog, and -WBLOCK at the command line), and INSERT inserts a drawing file as a block (the Insert dialog's Browse..., -INSERT `name=file`), redefining a block of that name only when asked to. M5-01 is complete.

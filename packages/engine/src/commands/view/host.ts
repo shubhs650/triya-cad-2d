@@ -7,7 +7,13 @@ import type { Vec2 } from '../../geom/types';
 import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
-import type { Color, HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
+import type {
+  Color,
+  HatchPatternLine,
+  HeaderValue,
+  MTextGeometry,
+  TextGeometry,
+} from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 import type { ClipboardPicture } from '../../edit/picture';
 import type { SheetCells } from '../../edit/spreadsheet';
@@ -170,6 +176,17 @@ export type ViewRequest =
    * there; without, a paste reads it.
    */
   | { readonly op: 'clipboard'; readonly content?: Clipboard }
+  /**
+   * -INSERT `name=file` (M5-01 part 4): the drawing file `file` (its name, the extension
+   * optional), which the app finds among the drawings open and the files it was given for
+   * xrefs, answered as `drawing`: its model space as a block's contents (`drawingContent`).
+   */
+  | { readonly op: 'drawingFile'; readonly file: string }
+  /**
+   * WBLOCK (M5-01 part 4): the app writes the new drawing file `file` (DXF, DEC-047) and hands it
+   * over: `drawing`'s objects, or without it the whole drawing as Save would write it.
+   */
+  | { readonly op: 'writeBlock'; readonly file: string; readonly drawing?: BlockDrawing }
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes a palette. */
   | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean }
   /**
@@ -424,6 +441,16 @@ export interface NestedPick {
   readonly attribute?: Handle;
 }
 
+/**
+ * What WBLOCK writes as a new drawing (M5-01 part 4): the objects, whose base point goes to the
+ * new drawing's origin, and the header variables it takes from the drawing (`$INSUNITS` the
+ * dialog's Insert units).
+ */
+export interface BlockDrawing {
+  readonly content: Clipboard;
+  readonly header: Readonly<Record<string, HeaderValue>>;
+}
+
 export type ViewReply =
   | {
       readonly ok: true;
@@ -466,6 +493,8 @@ export type ViewReply =
        * selected view's window, which VIEW shows while it asks for a new one.
        */
       readonly boundary?: { readonly a: Vec2; readonly b: Vec2 };
+      /** What a `drawingFile` request read: the file's name and its model space (M5-01). */
+      readonly drawing?: { readonly name: string; readonly content: Clipboard };
       /** What a `clipboard` read found; absent when the Clipboard is empty. */
       readonly clipboard?: Clipboard;
       /** The Clipboard's objects were copied from this drawing (PASTEORIG refuses them). */

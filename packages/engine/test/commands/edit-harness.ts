@@ -109,6 +109,8 @@ export function host(model: () => DocumentModel, variables?: Map<string, number>
           });
         return Promise.resolve({ ok: true, ids });
       }
+      // No drawing file is found by name (-INSERT, M5-01 part 4).
+      if (r.op === 'drawingFile') return Promise.resolve({ ok: true });
       return Promise.resolve({ ok: false, message: 'no' });
     },
   };
