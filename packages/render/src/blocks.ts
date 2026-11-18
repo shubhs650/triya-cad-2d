@@ -303,6 +303,20 @@ export interface BlockSource {
   readonly tessellate?: TessellateContext;
   /** XCLIP (M1-103): a reference's clip, by INSERT handle (`insertClips`); none without it. */
   readonly clip?: (insert: Handle) => InsertClip | undefined;
+  /** REFEDIT (M5-02 part 5): the block edited in place, as the other references draw it. */
+  readonly held?: () => HeldBlock | undefined;
+}
+
+/**
+ * A block whose working set is out of it, edited in place (M5-02 part 5): every reference but the
+ * one edited (reached through `path`) draws the definition as it was, `order` in draw order, an
+ * object carried out as `entities` holds it and the rest as the block has them now.
+ */
+export interface HeldBlock {
+  readonly block: Handle;
+  readonly path: readonly EntityId[];
+  readonly order: readonly EntityId[];
+  readonly entities: ReadonlyMap<EntityId, Entity>;
 }
 
 export interface BlockExpansion {
@@ -390,6 +404,11 @@ export function expandInsert(
   };
 
   const def = (block: Handle) => src.model.blocks.get(block);
+  // REFEDIT (M5-02 part 5): the references walked into, outermost first, while a block is held.
+  const held = src.held?.();
+  const refs: EntityId[] = [];
+  const isEdited = () =>
+    refs.length === held!.path.length && refs.every((id, i) => id === held!.path[i]);
   // TOLERANCE frames size their compartments by the text (M1-52 part 4).
   const text = src.tessellate?.text;
   const measure = text ? textMeasure(text) : undefined;
@@ -481,7 +500,17 @@ export function expandInsert(
     const ctx = src.insertContext(e, src.model, outer);
     if (!ctx) return;
     blocks.add(ref.block);
-    const order = src.order(ref.block);
+    if (held) refs.push(e.id);
+    // The definition as it was, but in the reference edited (M5-02 part 5).
+    const asHeld = held !== undefined && ref.block === held.block && !isEdited();
+    const order = asHeld ? held.order : src.order(ref.block);
+    const childOf = (id: EntityId): Entity | undefined => {
+      if (!asHeld) return src.model.entity(id);
+      const kept = held.entities.get(id);
+      if (kept) return kept;
+      const now = src.model.entity(id);
+      return now?.owner === ref.block ? now : undefined;
+    };
     const xclip = e.geom.kind === 'INSERT' ? src.clip?.(e.handle) : undefined;
     const flat = xclip?.boundary.flatMap((p) => [p.x, p.y]);
     const fields = tableFields(e);
@@ -498,7 +527,7 @@ export function expandInsert(
         shaded = true;
       };
       for (const id of order) {
-        const child = src.model.entity(id);
+        const child = childOf(id);
         if (!child) continue;
         if (!shaded && child.geom.kind !== 'SOLID') shade();
         draw(child, cm, ctx, depth, chain, inner, path);
@@ -511,6 +540,7 @@ export function expandInsert(
         draw({ ...e, type: 'LWPOLYLINE', geom }, m, outer, depth, chain, clip, path);
       }
     }
+    if (held) refs.pop();
     if (e.geom.kind !== 'INSERT') return;
     for (const a of e.geom.attributes) {
       if (!attributeShown(a.flags, attMode)) continue;

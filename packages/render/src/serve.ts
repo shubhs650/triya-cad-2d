@@ -127,6 +127,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'highlight':
         r.setHighlight(m.ids);
         break;
+      case 'ref-edit':
+        r.setRefEdit(m.display ?? undefined);
+        break;
       case 'drag':
         r.setDrag(m.motion ?? undefined);
         break;

@@ -81,7 +81,14 @@ import {
   type SpatialIndex,
   type ViewportGeometry,
 } from '@triya/engine';
-import { expandInsert, expands, insertClips, type BlockSource, type InsertClip } from './blocks';
+import {
+  expandInsert,
+  expands,
+  insertClips,
+  type BlockSource,
+  type HeldBlock,
+  type InsertClip,
+} from './blocks';
 import { createPaint, defaultPaint, LWDEFAULT_INITIAL, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { aciRgb, rgbHex } from './style/aci';
@@ -143,6 +150,7 @@ import {
   type PrimitiveClip,
   type PrimitiveColor,
   type RasterPixels,
+  type RefEditDisplay,
   type RenderPrimitive,
   type RenderStyle,
   type Renderer,
@@ -285,6 +293,8 @@ interface CacheEntry {
   readonly blocks?: ReadonlySet<Handle>;
   /** The entity's own LAYER, which hides it when frozen in a viewport (M1-18). */
   readonly layer?: Handle;
+  /** The entity drawn, which fades while a reference is edited in place unless in the working set. */
+  readonly id?: EntityId;
 }
 
 /**
@@ -398,6 +408,9 @@ const GREEK_ALPHA = 0.35;
 /** LAYLOCKFADECTL: AutoCAD's initial value, and the most it fades (its range is −90…90). */
 const LAYLOCKFADE_DEFAULT = 50;
 const LAYLOCKFADE_MAX = 90;
+/** XFADECTL (M5-02 part 5): AutoCAD's initial value, and the most it fades (its range is 0…90). */
+const XFADE_DEFAULT = 50;
+const XFADE_MAX = 90;
 /** Header variables that change how every entity is painted. */
 const PAINT_HEADER = new Set([
   '$LTSCALE',
@@ -674,6 +687,8 @@ export class Canvas2DRenderer implements Renderer {
   #previewed: readonly EntityId[] = [];
   /** The locked layers (M1-69), found again after a layer change; undefined until needed. */
   #locked: ReadonlySet<Handle> | undefined;
+  /** The reference edited in place (M5-02 part 5): its working set and its block as it was. */
+  #refEdit: { readonly held: HeldBlock; readonly working: ReadonlySet<EntityId> } | undefined;
   #sceneDirty = true;
   /**
    * Something other than the view changed since the scene was drawn (content, style, size,
@@ -740,6 +755,7 @@ export class Canvas2DRenderer implements Renderer {
       order: (block) => this.#blockOrder(block),
       tessellate: this.#tessellate,
       clip: (insert) => (this.#clips ??= insertClips(this.#model))(insert),
+      held: () => this.#refEdit?.held,
     };
     this.#now = o.now ?? (() => performance.now());
     this.#requestIdle = o.requestIdle ?? ((cb) => setTimeout(cb, 50));
@@ -826,6 +842,64 @@ export class Canvas2DRenderer implements Renderer {
     if (ids.length === 0 && this.#highlight.size === 0) return;
     this.#highlight = new Set(ids);
     this.#sceneDirty = this.#contentDirty = true;
+  }
+
+  setRefEdit(display: RefEditDisplay | undefined): void {
+    const was = this.#refEdit?.held;
+    const same =
+      was !== undefined &&
+      display !== undefined &&
+      was.block === display.block &&
+      sameIds(was.path, display.path) &&
+      sameIds(this.#refEditOrder ?? [], display.order) &&
+      was.entities.size === display.held.length &&
+      display.held.every((e) => was.entities.get(e.id) === e);
+    if (!display) {
+      if (!this.#refEdit) return;
+      this.#refEdit = this.#refEditOrder = undefined;
+      this.#heldRefs.clear();
+    } else {
+      const held: HeldBlock = same
+        ? was
+        : {
+            block: display.block,
+            path: display.path,
+            order: this.#heldOrder(display.block, display.order),
+            entities: new Map(display.held.map((e) => [e.id, e])),
+          };
+      if (!same) this.#refEditOrder = display.order;
+      this.#refEdit = { held, working: new Set(display.working) };
+    }
+    // The references drawing the block (directly or nested) draw it again, as it was or as it is.
+    if (!same) {
+      const blocks = new Set<Handle>();
+      if (was) blocks.add(was.block);
+      if (display) blocks.add(display.block);
+      this.#cache.forEach((entry, id) => {
+        if (entry?.blocks && [...blocks].some((b) => entry.blocks!.has(b))) this.#cacheEntity(id);
+      });
+    }
+    this.#sceneDirty = this.#contentDirty = true;
+  }
+
+  /** The cached references drawing the block edited in place as it was (`#entryOf`). */
+  readonly #heldRefs = new Set<EntityId>();
+
+  /** The block order REFEDIT's display was given, to know it again (`setRefEdit`). */
+  #refEditOrder: readonly EntityId[] | undefined;
+
+  /** `order` (a block's entities in block order) in draw order, by the block's SORTENTSTABLE. */
+  #heldOrder(block: Handle, order: readonly EntityId[]): readonly EntityId[] {
+    if (!this.#sortTables) {
+      this.#sortTables = new Map();
+      for (const o of this.#model.objects.values())
+        if (isSortEnts(o)) this.#sortTables.set(o.block, o);
+    }
+    const table = this.#sortTables.get(block);
+    if (!table) return order;
+    const handles = order.map((id) => this.#model.ids.handleOf(id));
+    if (handles.some((h) => h === undefined)) return order;
+    return drawOrder(handles as Handle[], table.entries).map((h) => this.#model.ids.idOf(h)!);
   }
 
   setDrag(motion: DragMotion | undefined): void {
@@ -1065,6 +1139,19 @@ export class Canvas2DRenderer implements Renderer {
     return hit !== undefined ? previewObjects(this.#model, hit, o) : [];
   }
 
+  /**
+   * A primitive as a pick or a window tests it. An unclipped PDF underlay's fill states no path,
+   * since its page's size is only in the PDF: once the page is known it is tested as the page
+   * (the outline drawn round it), and before nothing of it can be taken (M5-04 part 9, so
+   * PDFCLIP and PDFADJUST can pick an unclipped underlay, as AutoCAD picks one by its frame).
+   */
+  #selectable(prim: RenderPrimitive): RenderPrimitive | undefined {
+    if (prim.kind !== 'fill' || !prim.underlay || prim.path.length > 0) return prim;
+    const u = prim.underlay;
+    const page = this.#underlays?.(underlayKey(u.definition, u.layersOff))?.page;
+    return page ? { ...prim, path: pagePath(u.frame, page) } : undefined;
+  }
+
   select(query: SelectQuery): EntityId[] {
     const poly = query.polygon;
     const test: (p: RenderPrimitive) => boolean = poly
@@ -1079,10 +1166,11 @@ export class Canvas2DRenderer implements Renderer {
     const all = query.kind === 'window' ? 'every' : 'some';
     const out: EntityId[] = [];
     for (const id of this.#index.query(this.#block, query.box)) {
-      const prims = this.#cache[id]?.prims;
+      const prims = this.#cache[id]?.prims.map((p) => this.#selectable(p));
       // Nothing drawn (a layer off or frozen): nothing to take.
       if (!prims || prims.length === 0) continue;
-      if (prims[all](test)) out.push(id);
+      if (prims.every((p) => p === undefined)) continue;
+      if (prims[all]((p) => p !== undefined && test(p))) out.push(id);
     }
     return out.sort((a, b) => a - b);
   }
@@ -1340,7 +1428,9 @@ export class Canvas2DRenderer implements Renderer {
       const entry = this.#cache[id];
       if (!entry) continue;
       let d = Infinity;
-      for (const prim of entry.prims) {
+      for (const drawn of entry.prims) {
+        const prim = this.#selectable(drawn);
+        if (!prim) continue;
         // A part clipped away by XCLIP (M1-103) is not there to pick.
         if (prim.clip && !insideClips(prim.clip, p)) continue;
         d = Math.min(d, distanceTo(prim, p));
@@ -1481,11 +1571,17 @@ export class Canvas2DRenderer implements Renderer {
     source: BlockSource,
   ): CacheEntry | undefined {
     let prims: readonly RenderPrimitive[];
-    let extra: Pick<CacheEntry, 'dashes' | 'blocks' | 'layer'>;
+    let extra: Pick<CacheEntry, 'dashes' | 'blocks' | 'layer' | 'id'>;
+    let held = false;
     if (expands(e, this.#blockDef)) {
       // The reference decides its own visibility: an off layer still shows its contents on
       // other layers.
       const x = expandInsert(e, source, { dashes: false });
+      held = this.#refEdit !== undefined && x.blocks.has(this.#refEdit.held.block);
+      if (source === this.#blockSource) {
+        if (held) this.#heldRefs.add(id);
+        else this.#heldRefs.delete(id);
+      }
       if (x.prims.length === 0 && x.blocks.size === 0) return undefined;
       prims = x.prims;
       const build = (linetypeScale: number) =>
@@ -1508,9 +1604,9 @@ export class Canvas2DRenderer implements Renderer {
         );
       extra = period > 0 ? { dashes: { period, build, built: new Map() } } : {};
     }
-    extra = { ...extra, layer: e.layer };
+    extra = { ...extra, layer: e.layer, id };
     // The size and centre drive the sub-pixel LOD; unknown bounds never count as small.
-    const b = this.#index.bounds(id);
+    const b = held ? undefined : this.#index.bounds(id);
     return b?.kind === 'box'
       ? {
           prims,
@@ -1582,7 +1678,13 @@ export class Canvas2DRenderer implements Renderer {
     swap?: (id: EntityId, entry: CacheEntry) => CacheEntry | undefined,
   ): CacheEntry[] {
     const { order, rank } = this.#orderedOf(block);
-    const hits = this.#index.query(block, box);
+    let hits = this.#index.query(block, box);
+    // The references drawing a block edited in place as it was (M5-02 part 5): the index bounds
+    // them by what the block holds now, which may be nothing, so they are always drawn.
+    if (this.#heldRefs.size > 0) {
+      const extra = [...this.#heldRefs].filter((id) => this.#model.entity(id)?.owner === block);
+      if (extra.length > 0) hits = [...new Set([...hits, ...extra])];
+    }
     const entries: CacheEntry[] = [];
     if (hits.length * 8 > order.length) {
       // Most of the block is in view: mark the hits and walk the block in draw order, which
@@ -2329,6 +2431,8 @@ export class Canvas2DRenderer implements Renderer {
     // Locked-layer fading (M1-69): the canvas alpha is set only when it changes, and is back
     // at 1 when the frame ends.
     const fade = this.#fade();
+    // In-place reference editing (M5-02 part 5): what is not in the working set fades.
+    const xfade = this.#xfade();
     // Object transparency (M1-108) multiplies in, unless TRANSPARENCYDISPLAY is off.
     const transparent = this.#style.showTransparency !== false;
     const opacity = (p: RenderPrimitive): number =>
@@ -2388,9 +2492,12 @@ export class Canvas2DRenderer implements Renderer {
 
     for (const entry of entries) {
       if (frozen && entry.layer !== undefined && frozen.has(entry.layer)) continue;
+      const lockedEntry =
+        fade !== undefined && entry.layer !== undefined && fade.locked.has(entry.layer);
       const entryAlpha =
         (frame.alpha ?? 1) *
-        (fade && entry.layer !== undefined && fade.locked.has(entry.layer) ? fade.alpha : 1);
+        (lockedEntry ? fade.alpha : 1) *
+        (xfade && !(entry.id !== undefined && xfade.working.has(entry.id)) ? xfade.alpha : 1);
       // LOD: an entity under a pixel is a dot, or nothing in a reduced frame. A POINT with a
       // PDMODE figure is sized by the view, not by the entity (M3-01 part 4).
       if (entry.size * scale < 1 && !hasFigure(entry)) {
@@ -2421,7 +2528,7 @@ export class Canvas2DRenderer implements Renderer {
         // In a block, a part fades when the reference's layer (the entry's) or a layer below it
         // is locked; AutoCAD's help does not say for the nested case (ambiguity noted, M1-69).
         const a =
-          (entryAlpha === (frame.alpha ?? 1) && fade && prim.layers?.some((l) => fade.locked.has(l))
+          (!lockedEntry && fade && prim.layers?.some((l) => fade.locked.has(l))
             ? entryAlpha * fade.alpha
             : entryAlpha) * opacity(prim);
         const color = this.#color(prim.color);
@@ -2781,6 +2888,17 @@ export class Canvas2DRenderer implements Renderer {
     return this.#locked.size > 0 ? { alpha: 1 - amount / 100, locked: this.#locked } : undefined;
   }
 
+  /**
+   * The alpha objects not in the working set draw at while a reference is edited in place
+   * (XFADECTL, M5-02 part 5), with the working set; undefined when nothing fades.
+   */
+  #xfade(): { readonly alpha: number; readonly working: ReadonlySet<EntityId> } | undefined {
+    const edit = this.#refEdit;
+    if (!edit) return undefined;
+    const amount = Math.min(XFADE_MAX, this.#style.xFade ?? XFADE_DEFAULT);
+    return amount > 0 ? { alpha: 1 - amount / 100, working: edit.working } : undefined;
+  }
+
   #color(c: PrimitiveColor): string {
     return c === 'foreground'
       ? this.#style.foreground
@@ -3095,4 +3213,9 @@ function distanceTo(prim: RenderPrimitive, p: { x: number; y: number }): number 
     }
   }
   return prim.kind === 'fill' && crossings % 2 === 1 ? 0 : best;
+}
+
+/** Whether two id lists hold the same ids in the same order. */
+function sameIds(a: readonly EntityId[], b: readonly EntityId[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
 }

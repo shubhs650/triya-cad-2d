@@ -121,6 +121,7 @@ export {
   type ImageAttachRequest,
   type ImageAttachSettings,
 } from './image-attach';
+export { pdfadjustCommand, pdfclipCommand } from './pdf-underlay';
 export {
   pdfattachCommand,
   type PdfAttachAnswer,

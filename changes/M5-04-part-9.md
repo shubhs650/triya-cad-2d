@@ -1,0 +1,1 @@
+- M5-04 part 9 (#541): PDFCLIP clips a PDF underlay to a rectangle, a polygon or a selected polyline, turns its clip on or off, or removes it; PDFADJUST sets the fade, contrast, monochrome and adjust-colours-for-background of the underlays selected. Both are saved to DXF and undone in one step. An unclipped underlay can now be picked by its page.

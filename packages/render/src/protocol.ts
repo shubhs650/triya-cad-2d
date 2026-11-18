@@ -31,6 +31,7 @@ import type {
   DrawnEntity,
   RasterPixels,
   RenderPrimitive,
+  RefEditDisplay,
   RenderStyle,
   ScreenRect,
   SelectQuery,
@@ -115,6 +116,8 @@ export type HostMessage =
   | { readonly type: 'select'; readonly id: number; readonly query: SelectQuery }
   /** The entities to draw selected (M2-03). */
   | { readonly type: 'highlight'; readonly ids: readonly EntityId[] }
+  /** The reference edited in place (M5-02 part 5); null, none. */
+  | { readonly type: 'ref-edit'; readonly display: RefEditDisplay | null }
   /** The objects a command drags with the cursor (M2-06 part 2); null ends the drag. */
   | { readonly type: 'drag'; readonly motion: DragMotion | null }
   /** The objects to show grips on and the hot grip (M2-06 part 2). */
