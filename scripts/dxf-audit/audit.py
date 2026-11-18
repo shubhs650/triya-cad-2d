@@ -59,6 +59,10 @@ FIXTURE_SAVES = (
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laymrg"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
+    # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,
+    # packages/testkit/src/raster/image-attach.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "imageattach"),
+    ("third-party/ezdxf/examples_dxf/images.dxf", "imageattach"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

@@ -114,6 +114,13 @@ export {
   rasterVariables,
   setImageFrame,
 } from './image';
+export {
+  imageattachCommand,
+  type ImageAttachAnswer,
+  type ImageAttachEntry,
+  type ImageAttachRequest,
+  type ImageAttachSettings,
+} from './image-attach';
 export { hatchCommand, hatchCommands } from './draw/hatchedit';
 export { fieldCommand, type FieldDialogRequest } from './draw/field';
 export { toleranceCommand, type ToleranceRequest } from './draw/tolerance';

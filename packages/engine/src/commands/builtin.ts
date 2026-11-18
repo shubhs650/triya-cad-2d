@@ -83,6 +83,7 @@ import {
   imageclipCommand,
   imagequalityCommand,
 } from './image';
+import { imageattachCommand } from './image-attach';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 import { ARRAY_COMMANDS } from './modify/array';
 
@@ -186,6 +187,7 @@ export function builtinCommands(): CommandRegistry {
     ...XREF_COMMANDS.map((make) => make()),
     xclipCommand(),
     imageclipCommand(),
+    imageattachCommand(),
     imageadjustCommand(),
     imageadjustDashCommand(),
     imagequalityCommand(),

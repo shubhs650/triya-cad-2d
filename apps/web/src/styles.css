@@ -4918,6 +4918,38 @@ button {
   margin: 8px 0 0;
 }
 
+/* M5-04 part 5: IMAGEATTACH's Attach Image dialog. */
+.cad-dialog.image-attach-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.image-attach-name {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.image-attach-preview {
+  width: 160px;
+  height: 120px;
+  border: 1px solid var(--chrome-border);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.image-attach-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* A small image shows its pixels, as a preview of what is attached. */
+  image-rendering: pixelated;
+}
+
+.image-attach-details {
+  margin-top: 8px;
+}
+
 .cad-dialog.block-definition-ask {
   width: min(420px, calc(100vw - 32px));
 }
