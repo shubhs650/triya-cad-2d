@@ -1139,6 +1139,19 @@ export class Canvas2DRenderer implements Renderer {
     return hit !== undefined ? previewObjects(this.#model, hit, o) : [];
   }
 
+  /**
+   * A primitive as a pick or a window tests it. An unclipped PDF underlay's fill states no path,
+   * since its page's size is only in the PDF: once the page is known it is tested as the page
+   * (the outline drawn round it), and before nothing of it can be taken (M5-04 part 9, so
+   * PDFCLIP and PDFADJUST can pick an unclipped underlay, as AutoCAD picks one by its frame).
+   */
+  #selectable(prim: RenderPrimitive): RenderPrimitive | undefined {
+    if (prim.kind !== 'fill' || !prim.underlay || prim.path.length > 0) return prim;
+    const u = prim.underlay;
+    const page = this.#underlays?.(underlayKey(u.definition, u.layersOff))?.page;
+    return page ? { ...prim, path: pagePath(u.frame, page) } : undefined;
+  }
+
   select(query: SelectQuery): EntityId[] {
     const poly = query.polygon;
     const test: (p: RenderPrimitive) => boolean = poly
@@ -1153,10 +1166,11 @@ export class Canvas2DRenderer implements Renderer {
     const all = query.kind === 'window' ? 'every' : 'some';
     const out: EntityId[] = [];
     for (const id of this.#index.query(this.#block, query.box)) {
-      const prims = this.#cache[id]?.prims;
+      const prims = this.#cache[id]?.prims.map((p) => this.#selectable(p));
       // Nothing drawn (a layer off or frozen): nothing to take.
       if (!prims || prims.length === 0) continue;
-      if (prims[all](test)) out.push(id);
+      if (prims.every((p) => p === undefined)) continue;
+      if (prims[all]((p) => p !== undefined && test(p))) out.push(id);
     }
     return out.sort((a, b) => a - b);
   }
@@ -1414,7 +1428,9 @@ export class Canvas2DRenderer implements Renderer {
       const entry = this.#cache[id];
       if (!entry) continue;
       let d = Infinity;
-      for (const prim of entry.prims) {
+      for (const drawn of entry.prims) {
+        const prim = this.#selectable(drawn);
+        if (!prim) continue;
         // A part clipped away by XCLIP (M1-103) is not there to pick.
         if (prim.clip && !insideClips(prim.clip, p)) continue;
         d = Math.min(d, distanceTo(prim, p));

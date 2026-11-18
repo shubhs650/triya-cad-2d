@@ -72,7 +72,7 @@ function setup(
     r.frame();
     return scene;
   };
-  return { r, layers, asked, redraw, rasters };
+  return { r, layers, asked, redraw, rasters, model: d.model };
 }
 
 function transformAt(c: FakeContext, name: string, n = 0): Call | undefined {
@@ -211,5 +211,25 @@ describe('underlays', () => {
     expect(c.named('drawImage')).toHaveLength(1);
     rasters[underlayKey('9A', ['Notes', 'Walls'])] = { ...PAGE, pixels: { ...PAGE.pixels } };
     expect(redraw().named('drawImage')).toHaveLength(2);
+  });
+
+  it('picks and selects an unclipped underlay by its page once the page is known (M5-04 part 9)', () => {
+    // The page, 8 × 4 at world (10, 20): its left edge at device x 80, y 30–70.
+    const { r, redraw, rasters, model } = setup([{ handle: '20', geom: underlay() }]);
+    redraw();
+    const handles = (ids: readonly number[]) => ids.map((id) => model.ids.handleOf(id));
+    const window = { kind: 'window', box: { minX: 9, minY: 19, maxX: 19, maxY: 25 } } as const;
+    const crossing = { kind: 'crossing', box: { minX: 9, minY: 21, maxX: 11, maxY: 22 } } as const;
+    // Its page unknown, nothing of it can be picked: the fill states no path.
+    expect(r.hitTest({ x: 80, y: 40 }, 2)).toEqual([]);
+    expect(r.select(window)).toEqual([]);
+    rasters['9A'] = PAGE;
+    redraw();
+    expect(handles(r.hitTest({ x: 80, y: 40 }, 2))).toEqual(['20']);
+    expect(handles(r.hitTest({ x: 120, y: 40 }, 2))).toEqual(['20']);
+    expect(r.hitTest({ x: 190, y: 40 }, 2)).toEqual([]);
+    expect(handles(r.select(window))).toEqual(['20']);
+    expect(handles(r.select(crossing))).toEqual(['20']);
+    expect(r.select({ ...window, box: { ...window.box, maxX: 17 } })).toEqual([]);
   });
 });
