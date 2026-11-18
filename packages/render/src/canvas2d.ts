@@ -82,7 +82,7 @@ import {
   type ViewportGeometry,
 } from '@triya/engine';
 import { expandInsert, expands, insertClips, type BlockSource, type InsertClip } from './blocks';
-import { defaultPaint, type PaintFunction } from './paint';
+import { createPaint, defaultPaint, LWDEFAULT_INITIAL, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { aciRgb, rgbHex } from './style/aci';
 import { gridLines, type GridLines, type GridSpec } from './grid';
@@ -372,6 +372,12 @@ export const DEFAULT_STYLE: RenderStyle = {
   showLineweights: false,
 };
 
+/** The paint for a style's LWDEFAULT: the shared default one at AutoCAD's initial 25. */
+function paintFor(style: RenderStyle): PaintFunction {
+  const lw = style.lineweightDefault ?? LWDEFAULT_INITIAL;
+  return lw === LWDEFAULT_INITIAL ? defaultPaint : createPaint({ lwDefault: lw });
+}
+
 /** The frame budget (ARCHITECTURE.md §7.2): 60 fps. */
 const FRAME_BUDGET_MS = 16;
 /**
@@ -539,7 +545,9 @@ export class Canvas2DRenderer implements Renderer {
   readonly #surface: Surface;
   readonly #scene: Surface;
   readonly #transientLayer: Surface;
-  readonly #paint: PaintFunction;
+  /** The objects' paint; replaced when LWDEFAULT changes, unless the caller supplied it. */
+  #paint: PaintFunction;
+  readonly #ownPaint: boolean;
   /**
    * Fonts and text styles for TEXT and MTEXT (M1-41), image frame settings (M1-19), the
    * hatch pattern library (M1-50), FILLMODE (M1-46) and ATTMODE (M1-14). One object shared
@@ -696,7 +704,8 @@ export class Canvas2DRenderer implements Renderer {
     this.#scene = o.createLayer();
     this.#transientLayer = o.createLayer();
     this.#style = o.style ?? DEFAULT_STYLE;
-    this.#paint = o.paint ?? defaultPaint;
+    this.#ownPaint = o.paint === undefined;
+    this.#paint = o.paint ?? paintFor(this.#style);
     this.#createLayer = o.createLayer;
     this.#images = o.images;
     this.#underlays = o.underlays;
@@ -724,8 +733,10 @@ export class Canvas2DRenderer implements Renderer {
     if (o.patterns?.length) this.#tessellate.patterns = patternLibrary(o.patterns);
     this.#blockSource = {
       model: this.#model,
-      paint: this.#paint,
-      insertContext: this.#paint.insertContext ?? defaultPaint.insertContext,
+      // Through `#paint`, which an LWDEFAULT change replaces.
+      paint: (e, model, block) => this.#paint(e, model, block),
+      insertContext: (insert, model, outer) =>
+        (this.#paint.insertContext ?? defaultPaint.insertContext)(insert, model, outer),
       order: (block) => this.#blockOrder(block),
       tessellate: this.#tessellate,
       clip: (insert) => (this.#clips ??= insertClips(this.#model))(insert),
@@ -767,7 +778,17 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   setStyle(style: RenderStyle): void {
+    const lwDefault = this.#style.lineweightDefault;
     this.#style = style;
+    // LWDEFAULT changed (M5-08 part 3): Default lineweights are resolved with the paint, at
+    // cache time, so every object is resolved again, as for a layer change.
+    if (
+      this.#ownPaint &&
+      (style.lineweightDefault ?? LWDEFAULT_INITIAL) !== (lwDefault ?? LWDEFAULT_INITIAL)
+    ) {
+      this.#paint = paintFor(style);
+      this.#cacheBlock();
+    }
     this.#sceneDirty = this.#contentDirty = this.#transientDirty = true;
   }
 
@@ -2778,7 +2799,11 @@ export class Canvas2DRenderer implements Renderer {
             space: 'paper',
             pixelsPerMillimetre: this.#view.scale * this.#paperUnitsPerMm,
           }
-        : { show: this.#style.showLineweights, space: 'model' },
+        : {
+            show: this.#style.showLineweights,
+            space: 'model',
+            displayScale: this.#style.lineweightScale ?? 1,
+          },
     );
     return css * this.#dpr;
   }

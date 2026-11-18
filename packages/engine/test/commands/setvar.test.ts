@@ -268,6 +268,21 @@ describe('SETVAR', () => {
     expect(bare.log.at(-1)).toBe('There is no view to change.');
   });
 
+  it('asks the app for LWDEFAULT, one of the lineweights, and LWUNITS (M5-08 part 3)', async () => {
+    const app = appHost({ LWDEFAULT: 25, LWUNITS: 1 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['LWDEFAULT']);
+    expect(s.bus.promptText).toBe('Enter new value for LWDEFAULT <25>:');
+    await s.bus.script(['26']);
+    expect(s.log.at(-1)).toMatch(/^Value must be one of 0, 5, 9, .*, 200, 211\.$/);
+    await s.bus.script(['35']);
+    expect(app.values['LWDEFAULT']).toBe(35);
+    await s.bus.script(['LWUNITS', '2']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 1.');
+    await s.bus.script(['0']);
+    expect(app.values['LWUNITS']).toBe(0);
+  });
+
   it('asks the app for the per-user settings AutoCAD keeps in the registry (M2-59)', async () => {
     // AutoCAD 2024 Help: AUTOSNAP 0–63 (bits 1 marker, 2 tooltip, 4 magnet, 8 polar tracking,
     // 16 object snap tracking, 32 their tooltips); AUTOSNAPSIZE 1–20; DYNMODE −3–3 (a negative

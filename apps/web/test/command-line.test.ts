@@ -282,6 +282,8 @@ describe('completions', () => {
       { name: 'LINETYPE' },
       { name: 'LIST' },
       { name: 'LTSCALE' },
+      // M5-08 part 3: LWEIGHT.
+      { name: 'LWEIGHT' },
     ]);
     expect(completions(registry, 'LI')).toEqual([
       { name: 'LIST', alias: 'LI' },

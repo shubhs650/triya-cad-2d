@@ -197,6 +197,35 @@ describe('lineweights', () => {
     expect(width(redraw())).toBe(4); // 1 mm is 3.78 px
   });
 
+  it('follows the style’s LWDEFAULT, Default re-resolved when it changes (M5-08 part 3)', () => {
+    const { r, redraw } = setup([heavy({ lineweight: 'Default' }), entity('21', line(0, 1, 9, 1))]);
+    r.setStyle(LWT);
+    expect(width(redraw())).toBe(1); // AutoCAD's initial 0.25 mm is 0.94 px
+    r.setStyle({ ...LWT, lineweightDefault: 100 });
+    expect(width(redraw())).toBe(4); // 1 mm is 3.78 px
+    r.setStyle({ ...LWT, lineweightDefault: 211 });
+    expect(width(redraw())).toBe(8);
+    r.setStyle(LWT);
+    expect(width(redraw())).toBe(1);
+  });
+
+  it('leaves a paint the caller supplied alone when LWDEFAULT changes', () => {
+    const { r, redraw } = setup([heavy({ lineweight: 'Default' })], { lwDefault: 100 });
+    r.setStyle({ ...LWT, lineweightDefault: 211 });
+    expect(width(redraw())).toBe(4);
+  });
+
+  it('scales Model-tab widths by Adjust Display Scale, but not paper widths', () => {
+    const { r, redraw } = setup([heavy()]);
+    r.setStyle({ ...LWT, lineweightScale: 2 });
+    expect(width(redraw())).toBe(4); // 0.5 mm × 2 is 3.78 px
+    r.setStyle({ ...LWT, lineweightScale: 0.25 });
+    expect(width(redraw())).toBe(1);
+    const paper = setup([heavy({ owner: PAPER })], { block: PAPER });
+    paper.r.setStyle({ ...LWT, lineweightScale: 2 });
+    expect(width(paper.redraw())).toBeCloseTo(5, 12);
+  });
+
   it('shows layout lineweights in paper millimetres at the current zoom', () => {
     const { r, redraw } = setup([heavy({ owner: PAPER })], { block: PAPER });
     r.setStyle(LWT);

@@ -34,6 +34,7 @@ import { commandLines } from './command-line';
 import { engines } from './engine/registry';
 import { SelectColorDialog } from './SelectColorDialog';
 import { MatchPropDialog } from './MatchPropDialog';
+import { LineweightDialog } from './LineweightDialog';
 import { PointStyleDialog } from './PointStyleDialog';
 import { InspectionDialog } from './InspectionDialog';
 import { OverkillDialog } from './OverkillDialog';
@@ -211,6 +212,8 @@ export function AttributeDialogs({
       return <AttdefDialog key={key} doc={doc.id} request={d} />;
     case 'battman':
       return <BattmanDialog key={key} doc={doc.id} request={d} />;
+    case 'lweight':
+      return <LineweightDialog key={key} doc={doc.id} request={d} />;
     case 'linetype':
       return (
         <LinetypeManagerDialog

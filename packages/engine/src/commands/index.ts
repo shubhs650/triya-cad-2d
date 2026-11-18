@@ -164,6 +164,17 @@ export {
   type LinetypeRequest,
   type LinetypeRow,
 } from './linetype';
+export {
+  LWDEFAULT,
+  LWDEFAULT_INITIAL,
+  LWUNITS,
+  lineweightText,
+  lineweightTyped,
+  lweightCommand,
+  nearestLineweight,
+  type LineweightRequest,
+  type LineweightUnits,
+} from './lweight';
 export { hatchCommand, hatchCommands } from './draw/hatchedit';
 export { fieldCommand, type FieldDialogRequest } from './draw/field';
 export { toleranceCommand, type ToleranceRequest } from './draw/tolerance';
