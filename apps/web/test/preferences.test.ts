@@ -72,6 +72,8 @@ describe('preferences', () => {
       fieldDisplay: true,
       // LAYLOCKFADECTL 50 (M5-06).
       layLockFade: 50,
+      // XFADECTL 50 (M5-02 part 5).
+      xFade: 50,
       // LWDEFAULT 25, LWUNITS 1 (millimetres) and Adjust Display Scale 1 (M5-08 part 3).
       lwDefault: 25,
       lwUnits: 1,
@@ -417,6 +419,15 @@ describe('preferences', () => {
     expect(lw({ lwDefault: -3, lwUnits: '0', lwScale: 0.1 })).toEqual([25, 1, 1]);
   });
 
+  it('keep XFADECTL from 0 to 90 (M5-02 part 5)', () => {
+    const fade = (xFade: unknown) => normalizePreferences({ drafting: { xFade } }).drafting.xFade;
+    expect(fade(0)).toBe(0);
+    expect(fade(90)).toBe(90);
+    expect(fade(-10)).toBe(50);
+    expect(fade(91)).toBe(50);
+    expect(fade('70')).toBe(50);
+  });
+
   it('keep the grip colours as ACI 1 to 255, each on its own (M3-05 part 5)', () => {
     const colors = (gripColors: unknown) =>
       normalizePreferences({ drafting: { gripColors } }).drafting.gripColors;
@@ -543,5 +554,19 @@ describe('the Layer Properties Manager’s columns (M5-05 part 3)', () => {
     expect(p.layerColumns.hidden).toEqual(['plot']);
     expect(p.layerColumns.sort).toEqual({ key: 'color', descending: true });
     expect(normalizePreferences({}).layerColumns.hidden).toEqual([]);
+  });
+});
+
+describe('the default template for QNEW (M5-10)', () => {
+  it('is Triya ISO (mm) until the user picks another, and none when they clear it', () => {
+    expect(normalizePreferences({}).defaultTemplate).toBe('triya-iso');
+    expect(normalizePreferences({ defaultTemplate: 'triya-ansi' }).defaultTemplate).toBe(
+      'triya-ansi',
+    );
+    expect(normalizePreferences({ defaultTemplate: '' }).defaultTemplate).toBe('');
+    expect(normalizePreferences({ defaultTemplate: 7 }).defaultTemplate).toBe('triya-iso');
+    expect(normalizePreferences({ defaultTemplate: 'x'.repeat(300) }).defaultTemplate).toBe(
+      'triya-iso',
+    );
   });
 });

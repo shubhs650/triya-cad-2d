@@ -116,6 +116,14 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'LAYLOCKFADECTL')).toEqual({ ok: true, value: -30 });
   });
 
+  it('keep XFADECTL, 50 at first, 0 to 90 (M5-02 part 5)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'XFADECTL')).toEqual({ ok: true, value: 50 });
+    systemVariableReply(d, 'XFADECTL', 70);
+    expect(d.get().xFade).toBe(70);
+    expect(systemVariableReply(d, 'XFADECTL')).toEqual({ ok: true, value: 70 });
+  });
+
   it('keep LWDEFAULT, 25 at first, and LWUNITS, millimetres at first (M5-08 part 3)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'LWDEFAULT')).toEqual({ ok: true, value: 25 });
@@ -358,6 +366,10 @@ describe('variables of the drawing the app answers (M2-59)', () => {
       value: 'Drawing1.dxf',
     });
     expect(drawingVariableReply({ ...doc, name: '' }, 'DWGTITLED')).toEqual({ ok: true, value: 0 });
+    // A new drawing from a template (M5-10): named Drawing2.dxf, untitled until it is saved.
+    const fresh = { ...doc, name: 'Drawing2.dxf', untitled: true };
+    expect(drawingVariableReply(fresh, 'DWGNAME')).toEqual({ ok: true, value: 'Drawing2.dxf' });
+    expect(drawingVariableReply(fresh, 'DWGTITLED')).toEqual({ ok: true, value: 0 });
     expect(drawingVariableReply(doc, 'ORTHOMODE')).toBeUndefined();
   });
 

@@ -5809,6 +5809,108 @@ button {
   margin-top: 8px;
 }
 
+/* M5-10: the start screen's New drawing / Templates… / Open drawing… and NEW's Select Template. */
+.start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.cad-dialog.select-template {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.select-template-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.select-template-list {
+  flex: 1 1 220px;
+  height: 160px;
+  min-width: 0;
+}
+
+.select-template-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.select-template-file {
+  opacity: 0.7;
+}
+
+.select-template-list:focus-visible .layer-list-active {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+
+.select-template-description {
+  flex: 1 1 160px;
+  min-height: 3em;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* M5-10 part 2: Open and its arrow (Open with no template - Imperial / Metric). The menu opens
+   upwards, inside the dialog, from the dialog's bottom row. */
+.split-button {
+  position: relative;
+  display: inline-flex;
+}
+
+.split-button > button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.split-button-arrow {
+  min-width: 0;
+  margin-left: -1px;
+  padding-inline: 6px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.split-button-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+}
+
+.split-button-menu > button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.split-button-menu > button:hover,
+.split-button-menu > button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: none;
+}
+
+.split-button-menu > button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* PURGE's Purge dialog and Confirm Purge (M5-09 part 2, PurgeDialog.tsx). */
 .cad-dialog.purge-dialog {
   width: min(560px, calc(100vw - 32px));

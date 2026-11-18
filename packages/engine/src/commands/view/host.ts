@@ -454,7 +454,11 @@ export type FileAction =
   /** VIEW (M2-47 part 2): the View Manager dialog. */
   | 'views'
   /** LAYERSTATE (M5-07 part 2): the Layer States Manager dialog. */
-  | 'layerstates';
+  | 'layerstates'
+  /** NEW (M5-10): the Select Template dialog; a new drawing from the template chosen. */
+  | 'new'
+  /** QNEW (M5-10): a new drawing from the default template, or NEW's dialog without one. */
+  | 'qnew';
 
 /**
  * The object a pick hit inside a block reference (M5-06 part 5), as AutoCAD's nested selection

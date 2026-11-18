@@ -29,6 +29,7 @@ import {
 import { closeOnDelete } from './local-data';
 import { normalizeWords } from './custom-dictionary';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
+import { DEFAULT_TEMPLATE_ID } from './templates';
 import { DEFAULT_TOOLTIP, tooltipAppearanceOf } from './tooltip-appearance';
 import { ALIAS_FILE_MAX } from './user-aliases';
 
@@ -85,6 +86,7 @@ export type DraftingPreferences = Pick<
   | 'arrayAssociativity'
   | 'fieldDisplay'
   | 'layLockFade'
+  | 'xFade'
   | 'lwDefault'
   | 'lwUnits'
   | 'lwScale'
@@ -144,6 +146,11 @@ export interface Preferences {
   readonly spellCheck: boolean;
   /** The Layer Properties Manager's columns and sort (M5-05 part 3, layer-columns.ts). */
   readonly layerColumns: LayerColumnSettings;
+  /**
+   * The template QNEW and the start screen's New drawing open (M5-10, templates.ts): its id, or
+   * '' for none, when QNEW opens the Select Template dialog as AutoCAD's does.
+   */
+  readonly defaultTemplate: string;
 }
 
 /** POLARANG's choices in AutoCAD's Drafting Settings, degrees. */
@@ -189,6 +196,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     arrayAssociativity: true,
     fieldDisplay: true,
     layLockFade: 50,
+    xFade: 50,
     lwDefault: 25,
     lwUnits: 1,
     lwScale: 1,
@@ -234,6 +242,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   customDictionary: [],
   spellCheck: true,
   layerColumns: DEFAULT_LAYER_COLUMNS,
+  defaultTemplate: DEFAULT_TEMPLATE_ID,
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -316,6 +325,10 @@ export function normalizePreferences(raw: unknown): Preferences {
     customDictionary: normalizeWords(raw['customDictionary']),
     spellCheck: bool(raw['spellCheck'], d.spellCheck),
     layerColumns: normalizeLayerColumns(raw['layerColumns']),
+    defaultTemplate:
+      typeof raw['defaultTemplate'] === 'string' && raw['defaultTemplate'].length <= 260
+        ? raw['defaultTemplate']
+        : d.defaultTemplate,
     drafting: {
       // OSMODE's 14 mode bits and OSNAP_OFF.
       osmode:
@@ -345,6 +358,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       arrayAssociativity: bool(k['arrayAssociativity'], d.drafting.arrayAssociativity),
       fieldDisplay: bool(k['fieldDisplay'], d.drafting.fieldDisplay),
       layLockFade: within(k['layLockFade'], { min: -90, max: 90 }, d.drafting.layLockFade),
+      xFade: within(k['xFade'], { min: 0, max: 90 }, d.drafting.xFade),
       // M5-08 part 3: one of AutoCAD's lineweights; mm or inches; the slider's range.
       lwDefault:
         typeof k['lwDefault'] === 'number' && LINEWEIGHTS.includes(k['lwDefault'])
@@ -499,6 +513,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     arrayAssociativity: s.arrayAssociativity,
     fieldDisplay: s.fieldDisplay,
     layLockFade: s.layLockFade,
+    xFade: s.xFade,
     lwDefault: s.lwDefault,
     lwUnits: s.lwUnits,
     lwScale: s.lwScale,

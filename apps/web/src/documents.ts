@@ -36,6 +36,11 @@ export interface OpenDocument {
    */
   readonly edits: number;
   readonly savedEdits: number;
+  /**
+   * A new drawing from a template (NEW, QNEW; M5-10): named Drawing<n>.dxf but untitled
+   * (DWGTITLED 0), with no file to save over, until its first save names it.
+   */
+  readonly untitled?: boolean;
 }
 
 /**
@@ -142,9 +147,17 @@ export class DocumentStore {
 
   /**
    * A file opened: it gets a tab, which shows. Returns the new document's id. A drawing
-   * recovered after a crash (M2-14) opens with the `edits` it had unsaved.
+   * recovered after a crash (M2-14) opens with the `edits` it had unsaved; a new drawing from a
+   * template (M5-10) opens `untitled`.
    */
-  opened(name: string, opened: OpenResult, block: string, file?: DrawingFile, edits = 0): number {
+  opened(
+    name: string,
+    opened: OpenResult,
+    block: string,
+    file?: DrawingFile,
+    edits = 0,
+    options: { readonly untitled?: boolean } = {},
+  ): number {
     const doc: OpenDocument = {
       id: this.#nextId++,
       name,
@@ -155,6 +168,7 @@ export class DocumentStore {
       ...(file && { file }),
       edits,
       savedEdits: 0,
+      ...(options.untitled === true && { untitled: true }),
     };
     this.#set({
       docs: [...this.#state.docs, doc],
@@ -233,7 +247,8 @@ export class DocumentStore {
    * the save ran stay unsaved).
    */
   saved(id: number, name: string, file: DrawingFile, edits: number): void {
-    this.#update(id, (d) => ({ ...d, name, file, savedEdits: edits }));
+    // A save names a new drawing (M5-10): it is no longer untitled.
+    this.#update(id, ({ untitled: _untitled, ...d }) => ({ ...d, name, file, savedEdits: edits }));
     this.#set({ notice: `Saved ${name}.` });
   }
 

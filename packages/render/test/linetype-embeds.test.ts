@@ -139,6 +139,34 @@ describe('text in complex linetypes (M1-45)', () => {
     expect(e.minY).toBeCloseTo(0.35, 9);
   });
 
+  it('rights upright (U=) text in its own box on a line drawn right to left (M5-08)', () => {
+    // The line runs towards −x: placements at x = 1.9 − 0.35 = 1.55 and 0.6, and Y = -0.05 is
+    // to the line's right, +y. Relative text reads towards −x, upside down, in the box
+    // x 1.55 − w … 1.55, y 0.05 − 0.1 … 0.05 (the text is 0.1 high; romans' A only fills the
+    // bottom tenth of it, so upside down its ink is at y 0.04 … 0.05). Upright text reads
+    // towards +x in that same box, turned about its middle so it stays in the gap the pattern
+    // leaves for it: its baseline is the box's bottom, y −0.05, and its ink y −0.05 … −0.04.
+    const back: EntityGeometry = { kind: 'LINE', start: { x: 1.9, y: 0 }, end: { x: 0, y: 0 } };
+    const rel = extents(glyphs(tessellate(back, paint(gas(embedText())), context()))[0]!.path);
+    expect(rel.minY).toBeCloseTo(0.04, 9);
+    expect(rel.maxY).toBeCloseTo(0.05, 9);
+    expect(rel.maxX).toBeCloseTo(1.55, 9);
+    const up = embedText({ rotationMode: 'upright' });
+    const e = extents(glyphs(tessellate(back, paint(gas(up)), context()))[0]!.path);
+    expect(e.minY).toBeCloseTo(-0.05, 9);
+    expect(e.maxY).toBeCloseTo(-0.04, 9);
+    // A's advance is 2 font units, 0.02: the boxes are x 1.53 … 1.55 and 0.58 … 0.6, and the
+    // upright A starts each box's baseline, ink 0.58 … 0.59 and 1.53 … 1.54.
+    expect(e.minX).toBeCloseTo(0.58, 9);
+    expect(e.maxX).toBeCloseTo(1.54, 9);
+    // Forwards, upright text draws as relative text does.
+    const fwd = extents(glyphs(tessellate(line(1.9), paint(gas(up)), context()))[0]!.path);
+    const plain = extents(
+      glyphs(tessellate(line(1.9), paint(gas(embedText())), context()))[0]!.path,
+    );
+    expect(fwd).toEqual(plain);
+  });
+
   it('draws nothing in the gap without fonts, or for a style it cannot find', () => {
     expect(glyphs(tessellate(line(1.9), paint(gas(embedText())), {}))).toEqual([]);
     const lost = embedText({ style: 'FFFF' });

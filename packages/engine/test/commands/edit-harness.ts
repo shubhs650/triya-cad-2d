@@ -15,6 +15,7 @@ import {
   type EntityGeometry,
   type EntityId,
   type ImageGeometry,
+  type UnderlayGeometry,
   type ViewHost,
   type Vec2,
   type ViewReply,
@@ -48,6 +49,29 @@ function imageFrameGeom(g: ImageGeometry): EntityGeometry {
     vertices: [at(0, 0), at(size.x, 0), at(size.x, size.y), at(0, size.y)],
   } as EntityGeometry;
 }
+
+/**
+ * The harness's PDF pages are 10 × 10 inches (the engine never reads a PDF): an underlay's frame
+ * is that page placed by its matrix (render/underlay.ts `underlayFrame`), as a closed polyline.
+ */
+export const HARNESS_PAGE = 10;
+function underlayFrameGeom(g: UnderlayGeometry): EntityGeometry {
+  const cos = Math.cos(g.rotation);
+  const sin = Math.sin(g.rotation);
+  const sy = g.scale.y * (g.upsideDown ? -1 : 1);
+  const at = (i: number, j: number) => ({
+    x: g.position.x + g.scale.x * cos * i - sy * sin * j,
+    y: g.position.y + g.scale.x * sin * i + sy * cos * j,
+    bulge: 0,
+  });
+  const n = HARNESS_PAGE;
+  return {
+    kind: 'LWPOLYLINE',
+    closed: true,
+    vertices: [at(0, 0), at(n, 0), at(n, n), at(0, n)],
+  } as EntityGeometry;
+}
+
 const BLOCK = '50';
 
 /** STANDARD (16, no fixed height) and NOTES (17, 3.5 high) are the drawing's text styles. */
@@ -78,8 +102,15 @@ export function host(model: () => DocumentModel, variables?: Map<string, number>
         const hits: [number, EntityId][] = [];
         for (const e of model().entities()) {
           if (e.owner !== MODEL_SPACE) continue;
-          // An image is picked by its frame (M5-04 part 4), as AutoCAD's are.
-          const c = offsetCurveOf(e.geom.kind === 'IMAGE' ? imageFrameGeom(e.geom) : e.geom);
+          // An image is picked by its frame (M5-04 part 4), as AutoCAD's are; an underlay by
+          // its page's (M5-04 part 9).
+          const c = offsetCurveOf(
+            e.geom.kind === 'IMAGE'
+              ? imageFrameGeom(e.geom)
+              : e.geom.kind === 'PDFUNDERLAY'
+                ? underlayFrameGeom(e.geom)
+                : e.geom,
+          );
           const d = c ? closestPoint(c, r.point, toleranceForSize(100)).distance : Infinity;
           if (d < 0.25) hits.push([d, e.id]);
         }

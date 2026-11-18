@@ -163,6 +163,7 @@ function start(
   const wanted = chosen ? new Set(chosen) : undefined;
   const ids = wanted ? ctx.model.blockEntities(block).filter((id) => wanted.has(id)) : all;
   const firstNew = ctx.model.handles.handSeed;
+  const order = [...ctx.model.blockEntities(block)];
   let refused = 0;
   let originals: RefEditSession['originals'] = new Map();
   const extraction = ctx.edit((b) => {
@@ -179,6 +180,7 @@ function start(
     lock: settings.lock,
     extraction,
     originals,
+    order,
     firstNew,
   };
   ctx.refEdit.open(session);

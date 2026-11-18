@@ -181,6 +181,7 @@ describe('the default keyboard map', () => {
   it('has the file, window and command line keys', () => {
     expect(
       [
+        'Ctrl+N',
         'Ctrl+O',
         'Ctrl+S',
         'Ctrl+Shift+S',
@@ -192,6 +193,7 @@ describe('the default keyboard map', () => {
         'Ctrl+M',
       ].map((k) => map.actionFor(k)),
     ).toEqual([
+      'file:new',
       'file:open',
       'file:save',
       'file:saveas',

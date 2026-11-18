@@ -166,6 +166,8 @@ export interface RefEditSession {
   readonly extraction: ChangeSet;
   /** The objects carried out, as the definition held them. */
   readonly originals: ReadonlyMap<EntityId, Entity>;
+  /** The block's entities in block order before the working set went out (M5-02 part 5). */
+  readonly order: readonly EntityId[];
   /** The handle the drawing's next new object takes as the edit starts: objects from it are new. */
   readonly firstNew: Handle;
 }

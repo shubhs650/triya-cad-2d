@@ -6,6 +6,7 @@
 // lists and the colour books Select Color offers.
 import {
   colorValue,
+  lineweightText,
   transparencyValue,
   type ChangeSet,
   type Color,
@@ -16,6 +17,7 @@ import {
   type LayerRecord,
   type LinetypeElement,
   type LinetypeRecord,
+  type LineweightUnits,
   type Lineweight,
   type KeyedChanges,
   type TableRecords,
@@ -66,8 +68,9 @@ function colorCell(c: Color): LayerRow['color'] {
   return { label: c.kind, css: 'transparent' };
 }
 
-const lineweightCell = (w: LayerRecord['lineweight']): string =>
-  typeof w === 'number' ? `${(w / 100).toFixed(2)} mm` : w;
+/** A layer's lineweight in LWUNITS's units (M5-08), Default by name. */
+const lineweightCell = (w: LayerRecord['lineweight'], units: LineweightUnits): string =>
+  typeof w === 'number' ? lineweightText(w, units) : w;
 
 /** Table `table` as opened with `changes` applied in order. */
 function currentTable<K extends 'layers' | 'linetypes'>(
@@ -176,6 +179,8 @@ export function layerRows(
   init: DocumentInit,
   changes: readonly ChangeSet[],
   block?: Handle,
+  /** LWUNITS: the Lineweight column in millimetres or inches (M5-08). */
+  lwUnits: LineweightUnits = 'mm',
 ): LayerRow[] {
   // The current layer as the changes left it: the Properties palette sets it (M2-35).
   let current = new Map(init.header ?? []).get('$CLAYER');
@@ -205,7 +210,7 @@ export function layerRows(
       plot: l.plot,
       color: colorCell(l.color),
       linetype: linetypes.get(l.linetype) ?? l.linetype,
-      lineweight: lineweightCell(l.lineweight),
+      lineweight: lineweightCell(l.lineweight, lwUnits),
       description: l.description ?? '',
       transparency: String(transparencyValue(l.transparency)),
       value: {

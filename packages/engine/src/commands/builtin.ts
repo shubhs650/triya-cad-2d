@@ -91,6 +91,7 @@ import {
 } from './image';
 import { imageattachCommand } from './image-attach';
 import { pdfattachCommand } from './pdf-attach';
+import { pdfadjustCommand, pdfclipCommand } from './pdf-underlay';
 import { attdefCommand, attdispCommand } from './attdef';
 import { battmanCommand } from './battman';
 import { xattachCommand } from './xref-attach';
@@ -208,6 +209,8 @@ export function builtinCommands(): CommandRegistry {
     imageclipCommand(),
     imageattachCommand(),
     pdfattachCommand(),
+    pdfclipCommand(),
+    pdfadjustCommand(),
     attdefCommand(),
     attdispCommand(),
     battmanCommand(),

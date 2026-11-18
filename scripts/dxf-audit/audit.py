@@ -77,12 +77,27 @@ FIXTURE_SAVES = (
     # packages/testkit/src/underlay/pdf-attach.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "pdfattach"),
     ("fixtures/underlay/pdf-underlay.dxf", "pdfattach"),
+    # PDFCLIP and PDFADJUST on the underlay fixture (M5-04 part 9,
+    # packages/testkit/src/underlay/pdf-clip.test.ts).
+    ("fixtures/underlay/pdf-underlay.dxf", "pdfclip"),
     # ATTDEF's definitions, a block of them and a reference (M5-03 part 1,
     # packages/testkit/src/attributes/attdef.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "attdef"),
     # LINETYPE's loads (text linetypes too), reload and delete on ezdxf's colors.dxf (M5-08
     # part 1, packages/testkit/src/layers/linetype-load.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "linetype"),
+    # The bundled templates as they are, and a new drawing made from each, drawn in, its title
+    # block filled in and saved (M5-10, packages/testkit/src/templates/templates.test.ts).
+    ("assets/templates/triya-iso.dxf", "template"),
+    ("assets/templates/triya-iso.dxf", "new"),
+    ("assets/templates/triya-ansi.dxf", "template"),
+    ("assets/templates/triya-ansi.dxf", "new"),
+    # The drawings "Open with no template - Imperial / Metric" opens, and a new drawing made from
+    # each, drawn in and saved (M5-10 part 2, same test file).
+    ("assets/templates/no-template-imperial.dxf", "template"),
+    ("assets/templates/no-template-imperial.dxf", "new"),
+    ("assets/templates/no-template-metric.dxf", "template"),
+    ("assets/templates/no-template-metric.dxf", "new"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

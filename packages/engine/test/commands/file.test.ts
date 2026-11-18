@@ -49,6 +49,9 @@ describe('the file commands', () => {
     ['EXPORT', 'export'],
     ['EXP', 'export'],
     ['EXPORTPDF', 'exportpdf'],
+    // M5-10: NEW opens the Select Template dialog, QNEW the default template.
+    ['NEW', 'new'],
+    ['QNEW', 'qnew'],
   ] as const)('%s asks the app to %s', async (name, action) => {
     const { bus, asked, model } = setup();
     const version = model.version;

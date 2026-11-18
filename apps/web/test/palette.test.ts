@@ -196,6 +196,8 @@ describe('palette search', () => {
       'MOVE',
       'MREDO',
       'MTEXT',
+      // M5-10: NEW and QNEW.
+      'NEW',
       'OFFSET',
       'OOPS',
       'OSNAP',
@@ -205,8 +207,11 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      // M5-04 part 9: PDFADJUST and PDFCLIP.
+      'PDFADJUST',
       // M5-04 part 8: PDFATTACH.
       'PDFATTACH',
+      'PDFCLIP',
       // M3-02 part 5: PEDIT.
       'PEDIT',
       // M3-01 part 3: PLINE, POLYGON and RECTANG.
@@ -222,6 +227,7 @@ describe('palette search', () => {
       // M5-09 part 1: PURGE.
       'PURGE',
       'QDIM',
+      'QNEW',
       'QSAVE',
       'QSELECT',
       'QUICKPROPERTIES',

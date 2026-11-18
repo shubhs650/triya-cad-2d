@@ -106,6 +106,7 @@ import {
   type PlotPart,
   type PlotRequest,
   type RasterPixels,
+  type RefEditDisplay,
   type RenderPrimitive,
   type RenderStyle,
   type ScreenRect,
@@ -1047,6 +1048,7 @@ export class CanvasController {
       before.tpy !== state.tpy ||
       before.fieldDisplay !== state.fieldDisplay ||
       before.layLockFade !== state.layLockFade ||
+      before.xFade !== state.xFade ||
       before.lwDefault !== state.lwDefault ||
       before.lwScale !== state.lwScale ||
       before.gripSize !== state.gripSize ||
@@ -1387,6 +1389,12 @@ export class CanvasController {
   /** The objects to draw selected (M2-03). */
   setHighlight(ids: readonly EntityId[]): void {
     this.#host.setHighlight(ids);
+    this.#requestFrame();
+  }
+
+  /** The reference edited in place (M5-02 part 5): what fades, how other references draw. */
+  setRefEdit(display: RefEditDisplay | undefined): void {
+    this.#host.setRefEdit(display);
     this.#requestFrame();
   }
 
@@ -1801,6 +1809,8 @@ export class CanvasController {
       ...(!d.fieldDisplay && { showFields: false }),
       // LAYLOCKFADECTL (M5-06): how faded objects on locked layers are drawn.
       layLockFade: d.layLockFade,
+      // XFADECTL (M5-02 part 5): how faded what is not in REFEDIT's working set is drawn.
+      xFade: d.xFade,
       gripSize: d.gripSize,
       gripColors: d.gripColors,
       ...(d.grid && { grid: { ...this.#grid(), ...(c.grid && { color: c.grid }) } }),

@@ -6,6 +6,7 @@ import type {
   ChangeSet,
   Clipboard,
   CommandInput,
+  CommandOutput,
   EditResult,
   EngineEdit,
   EntityId,
@@ -29,7 +30,12 @@ import {
   lassoPrompt,
   type FieldEvent,
 } from '@triya/engine';
-import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
+import {
+  decodeRaster,
+  type DrawnEntity,
+  type RefEditDisplay,
+  type ScreenRect,
+} from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   CanvasController,
@@ -84,6 +90,16 @@ import { ViewManager } from './ViewManager';
 import { viewManager } from './view-manager';
 import { layerStatesManager } from './layer-states';
 import { LayerStatesManager } from './LayerStatesManager';
+import { SelectTemplateDialog } from './SelectTemplateDialog';
+import {
+  BUNDLED_TEMPLATES,
+  newDrawingName,
+  selectTemplate,
+  templateById,
+  templateFiles,
+  userTemplates,
+  type DrawingTemplate,
+} from './templates';
 import { underlayLayersDialog } from './underlay-layers';
 import { UnderlayLayers } from './UnderlayLayers';
 import { exportFile } from './export-file';
@@ -341,7 +357,13 @@ engines.onCommand((doc, o) => {
   // The Quick Access Undo and Redo buttons and the undo toast follow the history (M2-23).
   if (o.type === 'undo') undoStates.set(doc, o.state, o.action);
   // REFEDIT (M5-02 part 3): the Edit Reference bar shows while a reference is edited in place.
-  if (o.type === 'refEdit') store.setRefEdit(doc, o.name);
+  if (o.type === 'refEdit') {
+    store.setRefEdit(doc, o.name);
+    const display = refEditDisplay(refEdits.get(doc), o);
+    if (display) refEdits.set(doc, display);
+    else refEdits.delete(doc);
+    for (const c of controllersOf(doc)) c.setRefEdit(display);
+  }
   if (o.type === 'selection') {
     selections.set(doc, o.ids);
     for (const c of controllersOf(doc)) c.setHighlight(o.ids);
@@ -465,6 +487,25 @@ async function clearAllLocalData(): Promise<ClearReport> {
 
 /** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
 const selections = new Map<number, readonly EntityId[]>();
+/** Each drawing's reference edited in place (M5-02 part 5), for canvases made during the edit. */
+const refEdits = new Map<number, RefEditDisplay>();
+
+/**
+ * The canvases' display of a reference edited in place (M5-02 part 5) after the engine's
+ * `refEdit` event: the block as it was comes with an edit's first event, the working set with
+ * every one; none once the edit ends.
+ */
+function refEditDisplay(
+  was: RefEditDisplay | undefined,
+  o: Extract<CommandOutput, { type: 'refEdit' }>,
+): RefEditDisplay | undefined {
+  if (o.name === undefined) return undefined;
+  if (o.held) {
+    const { block, path, order, entities } = o.held;
+    return { block, path, order, held: entities, working: o.working };
+  }
+  return was && { ...was, working: o.working };
+}
 /** Each drawing's grips as its engine last showed them (M2-06), for canvases made later. */
 const grips = new Map<
   number,
@@ -844,6 +885,11 @@ async function fileCommand(
     queueMicrotask(() => void closeAll());
     return { ok: true };
   }
+  if (action === 'new' || action === 'qnew') {
+    // NEW and QNEW (M5-10): the new drawing opens in a tab of its own, so the command ends here.
+    queueMicrotask(() => (action === 'new' ? void selectNewDrawing() : quickNewDrawing()));
+    return { ok: true };
+  }
   if (await saveDoc(id, action)) {
     const doc = store.getSnapshot().docs.find((d) => d.id === id);
     return { ok: true, ...(doc && { file: doc.name }) };
@@ -1077,6 +1123,43 @@ const linetypeFiles: LinetypeFiles = {
   },
 };
 const supportStores = [plotStyles, linetypes] as const;
+/**
+ * The user's own templates (M5-10 part 2, Settings > Templates): .dxf files kept on this device,
+ * each opened by an I/O worker as it is added. Not among `supportStores`: a .dxf dropped on the
+ * window opens as a drawing.
+ */
+const TEMPLATE_FILES = templateFiles(openDrawing);
+const templates = new SupportFileStore(TEMPLATE_FILES, opfsSupportFiles(TEMPLATE_FILES));
+void templates.load();
+/** The user's templates as the Select Template dialog lists them, made once per store state. */
+const userTemplateList = (() => {
+  let state: ReturnType<SupportFileStore['getSnapshot']> | undefined;
+  let list: readonly DrawingTemplate[] = [];
+  return (): readonly DrawingTemplate[] => {
+    const now = templates.getSnapshot();
+    if (now.files !== state?.files) list = userTemplates(now.files, (n) => templates.file(n));
+    state = now;
+    return list;
+  };
+})();
+/** The Select Template dialog's list: the bundled templates, then the user's. */
+const templateList = (() => {
+  let user: readonly DrawingTemplate[] | undefined;
+  let all: readonly DrawingTemplate[] = BUNDLED_TEMPLATES;
+  return (): readonly DrawingTemplate[] => {
+    const now = userTemplateList();
+    if (now !== user) all = [...BUNDLED_TEMPLATES, ...now];
+    user = now;
+    return all;
+  };
+})();
+
+function addTemplates(files: Iterable<File>): void {
+  for (const f of files) {
+    if (!TEMPLATE_FILES.accepts(f.name)) continue;
+    void f.arrayBuffer().then((b) => templates.add(f.name, new Uint8Array(b)));
+  }
+}
 /** The plot style tables added in Settings, which the Plot dialog lists (M2-17 part 3). */
 const userPlotStyleTables = () => plotStyleTablesIn(plotStyles);
 
@@ -1489,6 +1572,7 @@ async function open(
     readonly handle?: { readonly kind: string };
   },
   recovered?: Recovered,
+  options: { readonly untitled?: boolean } = {},
 ): Promise<void> {
   store.startOpening(file.name);
   // Its engine worker loads while the file is read (M4-22).
@@ -1500,7 +1584,7 @@ async function open(
     if (!opened.modelSpace) throw new Error('the drawing has no model space');
     const handle = file.handle?.kind === 'file' ? (file.handle as SaveHandle) : undefined;
     const saved = drawingFile(bytes, opened.summary, handle);
-    const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits);
+    const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits, options);
     // The drawing's authoritative document goes to its engine worker (M1-67).
     engines.start(id, opened.init, recovered?.changes);
     tellSessionVariables(id);
@@ -1548,6 +1632,33 @@ async function openRecent(key: string): Promise<void> {
   const r = await recent.open(key);
   if (!r.ok) store.fail(r.message);
   else void open({ name: r.handle.name, getFile: () => Promise.resolve(r.file), handle: r.handle });
+}
+
+/**
+ * A new drawing from `template` (NEW, QNEW; M5-10): the template's file opened as a drawing of
+ * its own, Drawing<n>.dxf, untitled, so its first save is a Save As and never touches the
+ * template.
+ */
+async function newDrawing(template: DrawingTemplate): Promise<void> {
+  const { docs, opening } = store.getSnapshot();
+  const name = newDrawingName([...docs.map((d) => d.name), ...opening]);
+  await open(
+    { name, getFile: async () => new Blob([(await template.load()) as Uint8Array<ArrayBuffer>]) },
+    undefined,
+    { untitled: true },
+  );
+}
+
+/** NEW: the Select Template dialog, then a new drawing from the template chosen. */
+async function selectNewDrawing(): Promise<void> {
+  const chosen = await selectTemplate.show();
+  if (chosen) await newDrawing(chosen);
+}
+
+/** QNEW: a new drawing from the default template, or NEW's dialog when none is set. */
+function quickNewDrawing(): void {
+  const t = templateById(preferences.get().defaultTemplate, userTemplateList());
+  void (t ? newDrawing(t) : selectNewDrawing());
 }
 
 const fromFile = (f: File): Supplied => {
@@ -1724,6 +1835,10 @@ export function App() {
   useEffect(
     () =>
       onShortcuts({
+        'file:new': () => {
+          void selectNewDrawing();
+          return true;
+        },
         'file:open': () => {
           pick();
           return true;
@@ -1833,6 +1948,14 @@ export function App() {
         <span className="app-name">Triya CAD 2D</span>
         <span className="badge">v{__APP_VERSION__} beta</span>
         <OfflineStatus pwa={pwa} />
+        <button
+          type="button"
+          className="open-button"
+          title="New drawing from the default template (QNEW)"
+          onClick={quickNewDrawing}
+        >
+          New
+        </button>
         <button type="button" className="open-button" onClick={pick} aria-keyshortcuts="Control+O">
           Open
         </button>
@@ -1896,12 +2019,14 @@ export function App() {
         fonts={fonts}
         plotStyles={plotStyles}
         linetypes={linetypes}
+        templates={templates}
         deviceFonts={deviceFonts}
         open={settings}
         onClose={() => setSettings(false)}
         onAdd={addPatterns}
         onAddFonts={addFonts}
         onAddFiles={addSupportFiles}
+        onAddTemplates={addTemplates}
         onEditAliases={() => setAliasEditor(true)}
         onEditShortcuts={() => setShortcutEditor(true)}
       />
@@ -2032,10 +2157,18 @@ export function App() {
           {state.docs.length === 0 && (
             <div className="start" data-testid="start">
               <h1>Triya CAD 2D</h1>
-              <p>Open a DWG or DXF drawing, or drop one anywhere on this window.</p>
-              <button type="button" onClick={pick}>
-                Open drawing…
-              </button>
+              <p>Start a new drawing, or open a DWG or DXF one (or drop it anywhere here).</p>
+              <div className="start-actions">
+                <button type="button" onClick={quickNewDrawing}>
+                  New drawing
+                </button>
+                <button type="button" onClick={() => void selectNewDrawing()}>
+                  Templates…
+                </button>
+                <button type="button" onClick={pick}>
+                  Open drawing…
+                </button>
+              </div>
               <RecentDrawings entries={recentFiles} onOpen={(key) => void openRecent(key)} />
               <p className="privacy">Drawings never leave this device.</p>
             </div>
@@ -2198,6 +2331,7 @@ export function App() {
         edited={(id) => store.edited(id)}
       />
       <LayerStatesManager doc={active} edited={(id) => store.edited(id)} />
+      <TemplateChooser />
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
@@ -2569,6 +2703,8 @@ function ViewportCanvas({
     c.setPrompt(commandLines.get(id).prompt);
     const selected = selections.get(id);
     if (selected?.length) c.setHighlight(selected);
+    const editing = refEdits.get(id);
+    if (editing) c.setRefEdit(editing);
     const shown = grips.get(id);
     if (shown?.ids.length || shown?.groups?.length) c.setGrips(shown.ids, shown.hot, shown.groups);
     showCurrent(id, block, visibleRef.current);
@@ -2734,5 +2870,25 @@ function StatusBar({
         </>
       )}
     </footer>
+  );
+}
+
+/** NEW's Select Template dialog (M5-10), while NEW waits for it. */
+function TemplateChooser() {
+  const open = useSyncExternalStore(selectTemplate.subscribe, selectTemplate.isOpen);
+  const defaultId = useSyncExternalStore(
+    preferences.subscribe,
+    () => preferences.get().defaultTemplate,
+  );
+  const list = useSyncExternalStore(templates.subscribe, templateList);
+  if (!open) return null;
+  return (
+    <SelectTemplateDialog
+      templates={list}
+      defaultId={defaultId}
+      onDefault={(id) => preferences.update({ defaultTemplate: id })}
+      onOpen={(t) => selectTemplate.close(t)}
+      onCancel={() => selectTemplate.close()}
+    />
   );
 }
