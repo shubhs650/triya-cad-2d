@@ -18,6 +18,8 @@ export interface OpenDocument {
    * its name, and the space shown before it opened, which BCLOSE shows again.
    */
   readonly blockEditor?: { readonly block: string; readonly name: string; readonly from: string };
+  /** The block a reference edit in place (REFEDIT, M5-02 part 3) is editing, while one is. */
+  readonly refEdit?: string;
   /** The layout tab shown last (TILEMODE 0 shows it again, M2-59 part 5), if any has been. */
   readonly lastLayout?: string;
   /** Edits applied by the drawing's engine so far (M1-67): chrome that mirrors it re-reads. */
@@ -249,9 +251,25 @@ export class DocumentStore {
     this.#set({ notice: undefined });
   }
 
-  /** Shows the Model tab or a layout tab of a document (not while its Block Editor is open). */
+  /**
+   * Shows the Model tab or a layout tab of a document (not while its Block Editor is open or a
+   * reference is edited in place, whose working set is in the space shown).
+   */
   showSpace(id: number, block: string): void {
-    this.#update(id, (d) => (d.blockEditor ? d : { ...d, block, ...layoutShown(d.opened, block) }));
+    this.#update(id, (d) =>
+      d.blockEditor || d.refEdit !== undefined
+        ? d
+        : { ...d, block, ...layoutShown(d.opened, block) },
+    );
+  }
+
+  /** REFEDIT and REFCLOSE (M5-02 part 3): the block edited in place, or none. */
+  setRefEdit(id: number, name: string | undefined): void {
+    this.#update(id, (d) => {
+      if (d.refEdit === name) return d;
+      const { refEdit: _was, ...rest } = d;
+      return name === undefined ? rest : { ...rest, refEdit: name };
+    });
   }
 
   /** BEDIT (M5-02): shows the block definition `block` in the Block Editor. */

@@ -335,6 +335,8 @@ engines.onCommand((doc, o) => {
   if (o.type === 'start' || o.type === 'grips') gripMenus.close(doc);
   // The Quick Access Undo and Redo buttons and the undo toast follow the history (M2-23).
   if (o.type === 'undo') undoStates.set(doc, o.state, o.action);
+  // REFEDIT (M5-02 part 3): the Edit Reference bar shows while a reference is edited in place.
+  if (o.type === 'refEdit') store.setRefEdit(doc, o.name);
   if (o.type === 'selection') {
     selections.set(doc, o.ids);
     for (const c of controllersOf(doc)) c.setHighlight(o.ids);
@@ -2584,10 +2586,37 @@ function ViewportCanvas({
 /**
  * Model, then the layouts in tab order (DXF 71). While the Block Editor is open (M5-02) its bar
  * takes their place, as AutoCAD's editor leaves no tab to switch to: the block's name, Save
- * Block (BSAVE) and Close Block Editor (BCLOSE).
+ * Block (BSAVE) and Close Block Editor (BCLOSE). While a reference is edited in place (M5-02
+ * part 3) the Edit Reference bar does, with the buttons of AutoCAD's Edit Reference panel: the
+ * working set is in the space shown, so no other tab is offered either.
  */
 function LayoutTabs({ doc }: { doc: OpenDocument | undefined }) {
   if (!doc) return <nav className="layout-tabs" aria-label="Layouts" />;
+  if (doc.refEdit !== undefined) {
+    const run = (name: string, option: string) => {
+      engines.command(doc.id, { kind: 'invoke', name });
+      engines.command(doc.id, { kind: 'submit', text: option });
+    };
+    return (
+      <div className="layout-tabs block-editor-bar" role="toolbar" aria-label="Edit Reference">
+        <span className="block-editor-name">
+          Editing reference: <strong>{doc.refEdit}</strong>
+        </span>
+        <button type="button" onClick={() => run('REFSET', 'Add')}>
+          Add to Working Set
+        </button>
+        <button type="button" onClick={() => run('REFSET', 'Remove')}>
+          Remove from Working Set
+        </button>
+        <button type="button" onClick={() => run('REFCLOSE', 'Discard')}>
+          Discard Changes
+        </button>
+        <button type="button" onClick={() => run('REFCLOSE', 'Save')}>
+          Save Changes
+        </button>
+      </div>
+    );
+  }
   if (doc.blockEditor) {
     const run = (name: string) => engines.command(doc.id, { kind: 'invoke', name });
     return (

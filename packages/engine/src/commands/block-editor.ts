@@ -20,8 +20,8 @@
 // making it counts as an edit not saved, so BCLOSE's Discard takes the block away again and
 // BSAVE keeps it (AutoCAD keeps a new block only once it is saved).
 // Not yet (later M5-02 parts): <Current Drawing>, opening another block while the editor is
-// open, the authoring palettes and parameters (dynamic block authoring is a PRD non-goal) and
-// REFEDIT.
+// open, and the authoring palettes and parameters (dynamic block authoring is a PRD non-goal).
+// REFEDIT (M5-02 part 3, refedit.ts) edits a block in place instead; the two refuse each other.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { Handle } from '../model/handle';
@@ -170,6 +170,10 @@ export function beditCommand(): CommandDef {
     async *run(ctx) {
       if (ctx.blockEditor.block !== undefined) {
         ctx.message('** The Block Editor is already open **');
+        return;
+      }
+      if (ctx.refEdit.session) {
+        ctx.message('** BEDIT is not allowed while a reference is edited in place **');
         return;
       }
       yield* ctx.dash ? dashBedit(ctx) : beditDialog(ctx);

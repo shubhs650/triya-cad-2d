@@ -45,6 +45,7 @@ KINDS = (
     "wblock",
     "bedit",
     "attsync",
+    "refedit",
 )
 # Saves of the thread-authored test drawings that are not corpus files (Rule 0), and of corpus
 # files edited by a testkit suite rather than the corpus suites, as
