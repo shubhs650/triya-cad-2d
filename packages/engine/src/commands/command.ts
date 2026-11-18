@@ -7,7 +7,8 @@ import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { EntityId } from '../model/entity-ids';
-import type { EntityGeometry } from '../model/types';
+import type { Entity, EntityGeometry } from '../model/types';
+import type { Similarity } from '../edit/similarity';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
@@ -60,6 +61,8 @@ export interface CommandContext {
   readonly space: Handle;
   /** The Block Editor (BEDIT, BSAVE, BCLOSE; M5-02), which makes a block's definition `space`. */
   readonly blockEditor: BlockEditorControl;
+  /** The reference edited in place (REFEDIT, REFSET, REFCLOSE; M5-02 part 3). */
+  readonly refEdit: RefEditControl;
   readonly prompt: typeof prompts;
   /**
    * The drawing's undo history, for UNDO, U, REDO and OOPS. Undoing goes around `edit`: it is
@@ -144,6 +147,49 @@ export interface BlockEditorControl {
    * command's undo step.
    */
   close(discard: boolean): void;
+}
+
+/** A reference edit in place (M5-02 part 3): what REFEDIT carried out of which block. */
+export interface RefEditSession {
+  /** The block edited (REFEDITNAME). */
+  readonly name: string;
+  readonly block: Handle;
+  /** The space the working set is edited in: the one the reference picked is in. */
+  readonly space: Handle;
+  /** How the references picked place the block's contents in `space`. */
+  readonly t: Similarity;
+  /** The references from the one picked inward to the one edited. */
+  readonly path: readonly EntityId[];
+  /** Lock objects not in working set: they cannot be taken by a command that edits. */
+  readonly lock: boolean;
+  /** The change that carried the working set out (REFEDIT's). */
+  readonly extraction: ChangeSet;
+  /** The objects carried out, as the definition held them. */
+  readonly originals: ReadonlyMap<EntityId, Entity>;
+  /** The handle the drawing's next new object takes as the edit starts: objects from it are new. */
+  readonly firstNew: Handle;
+}
+
+/**
+ * The reference edited in place (M5-02 part 3). Objects drawn while it is open join the working
+ * set; U back past REFEDIT ends the edit and REDO resumes it; U after REFCLOSE resumes it too.
+ */
+export interface RefEditControl {
+  readonly session: RefEditSession | undefined;
+  /** The working set: the objects of `session.space` that go back into the block on Save. */
+  readonly working: ReadonlySet<EntityId>;
+  /** Starts the edit REFEDIT's change (`session.extraction`) carried out. */
+  open(session: RefEditSession): void;
+  /** REFSET Add and Remove. */
+  add(ids: readonly EntityId[]): void;
+  remove(ids: readonly EntityId[]): void;
+  /** The entities and objects changed since REFEDIT carried the working set out. */
+  touched(): ReadonlySet<EntityId | Handle>;
+  /**
+   * Ends the edit: `saved` is the change that carried the working set back (REFCLOSE's Save);
+   * `discard` takes back every change made since REFEDIT, in this command's undo step.
+   */
+  close(o: { readonly saved?: ChangeSet; readonly discard?: boolean }): void;
 }
 
 /** Where the engine reads the local date and time: injected, so tests fix it. */

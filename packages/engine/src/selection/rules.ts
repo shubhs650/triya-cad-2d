@@ -49,6 +49,13 @@ export function onLockedLayers(model: DocumentModel, ids: readonly EntityId[]): 
   return out;
 }
 
+/**
+ * What "Select objects" says of objects REFEDIT's Lock objects not in working set kept out
+ * (M5-02 part 3; AutoCAD's help says only that they are "filtered from the selection set").
+ */
+export const outsideMessage = (n: number): string =>
+  `${n} ${n === 1 ? 'was' : 'were'} not in the working set.`;
+
 /** The objects of `ids` that still exist in `space`, in order. */
 export function inSpace(model: DocumentModel, space: Handle, ids: readonly EntityId[]): EntityId[] {
   return ids.filter((id) => model.entity(id)?.owner === space);

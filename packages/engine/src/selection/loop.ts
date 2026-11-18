@@ -44,7 +44,7 @@ import {
 } from '../commands/prompt';
 import type { ViewReply, ViewRequest } from '../commands/view/host';
 import { typeLabel } from '../properties/sheet';
-import { inSpace, onLockedLayers, selectAll, selectLast } from './rules';
+import { inSpace, onLockedLayers, outsideMessage, selectAll, selectLast } from './rules';
 
 /**
  * SELECTIONCYCLING (AutoCAD 2024 Help): 0 off, 1 a badge where objects overlap, 2 the badge and
@@ -125,6 +125,8 @@ export interface SelectionLoopHost {
   /** PICKADD and PICKAUTO as the app last set them (AutoCAD's 2 and 5 when not given). */
   pickadd?(): number;
   pickauto?(): number;
+  /** The objects of `ids` a command that edits may not take while a reference is edited in place. */
+  outsideWorkingSet?(ids: readonly EntityId[]): ReadonlySet<EntityId>;
 }
 
 export interface SelectionLoopOptions {
@@ -718,7 +720,10 @@ export class SelectionLoop {
     const model = this.#host.model;
     const unique = [...new Set(found)];
     const locked = this.#o.editable ? onLockedLayers(model, unique) : new Set<EntityId>();
-    const taken = unique.filter((id) => !locked.has(id));
+    const outside = this.#o.editable
+      ? (this.#host.outsideWorkingSet?.(unique) ?? new Set<EntityId>())
+      : new Set<EntityId>();
+    const taken = unique.filter((id) => !locked.has(id) && !outside.has(id));
     const before = this.#ids;
     const had = new Set(before);
     this.#undoTakes.push(this.#takes);
@@ -762,6 +767,7 @@ export class SelectionLoop {
     if (locked.size > 0) {
       this.#say(`${locked.size} ${locked.size === 1 ? 'was' : 'were'} on a locked layer.`);
     }
+    if (outside.size > 0) this.#say(outsideMessage(outside.size));
     return this.#single && op !== 'remove' && taken.length > 0 ? 'done' : 'more';
   }
 }

@@ -88,8 +88,8 @@ class JudgeTest(unittest.TestCase):
         # dialog's styles with border linetypes and double lines (M4-16 part 8), and after -BLOCK
         # and -INSERT (M5-01 part 1), and WBLOCK's new drawing of its model space (M5-01 part 4),
         # and a block edited in the Block Editor (M5-02 part 1), and a new block and ATTSYNC
-        # (M5-02 part 2).
-        self.assertEqual(report.checked, 36)
+        # (M5-02 part 2), and a block reference edited in place (M5-02 part 3).
+        self.assertEqual(report.checked, 38)
 
     def test_fixture_saves_are_checked_with_no_exceptions(self) -> None:
         # M5-04 part 2: the xref bind saves, which are no corpus file's.
@@ -106,9 +106,9 @@ class JudgeTest(unittest.TestCase):
             {},
             fixtures,
         )
-        # The corpus saves of the test above (36 with ATTSYNC's, M5-02 part 2) and the
+        # The corpus saves of the test above (38 with REFEDIT's, M5-02 part 3) and the
         # fixture's.
-        self.assertEqual(report.checked, 37)
+        self.assertEqual(report.checked, 39)
         self.assertEqual(
             report.failures,
             [
