@@ -58,6 +58,7 @@ export {
 export * from './dimension';
 export * from './dimstyle-preview';
 export * from './dimstyle-import';
+export * from './design-center';
 export * from './table';
 export * from './table-grid';
 export * from './table-format';

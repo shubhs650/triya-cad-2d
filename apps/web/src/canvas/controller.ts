@@ -1440,6 +1440,20 @@ export class CanvasController {
     return { x: r.left + s.x, y: r.top + s.y };
   }
 
+  /**
+   * The world point shown at window pixels `client`, undefined off the canvas (M5-11: where an
+   * item dragged from DesignCenter was dropped).
+   */
+  worldOfClient(client: Vec2): Vec2 | undefined {
+    const v = this.#view;
+    if (!v) return undefined;
+    const r = this.#canvas.getBoundingClientRect();
+    const x = client.x - r.left;
+    const y = client.y - r.top;
+    if (x < 0 || y < 0 || x > r.width || y > r.height) return undefined;
+    return screenToWorld(v, this.#size.width, this.#size.height, { x, y });
+  }
+
   /** The objects a selection window between two world points takes (M2-03). */
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]> {
     return this.#host.select(windowArea(a, b, crossing));

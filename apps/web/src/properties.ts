@@ -114,7 +114,7 @@ export class PropertySheets {
 export const propertySheets = new PropertySheets();
 
 /** Which palette docks (one at a time until the palette stack, M7-03); PROPERTIES opens one. */
-export type PaletteName = 'layers' | 'health' | 'references' | 'properties';
+export type PaletteName = 'designcenter' | 'layers' | 'health' | 'references' | 'properties';
 
 class DockedPalette {
   #current: PaletteName | undefined;
