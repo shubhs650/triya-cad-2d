@@ -26,6 +26,7 @@ import {
   type DialogRequest,
   type Lineweight,
   type LinetypeRef,
+  type NamedRecord,
   type PromptAnswer,
 } from '@triya/engine';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -57,6 +58,7 @@ import { ToleranceDialog } from './ToleranceDialog';
 import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { AttdefDialog } from './AttdefDialog';
+import { BattmanDialog } from './BattmanDialog';
 import { InsertDialog } from './InsertDialog';
 import { BlockChangesNotSavedDialog, EditBlockDefinitionDialog } from './BlockEditorDialogs';
 import { WriteBlockDialog } from './WriteBlockDialog';
@@ -196,6 +198,8 @@ export function AttributeDialogs({
       return <XbindDialog key={key} doc={doc.id} request={d} />;
     case 'attdefine':
       return <AttdefDialog key={key} doc={doc.id} request={d} />;
+    case 'battman':
+      return <BattmanDialog key={key} doc={doc.id} request={d} />;
   }
 }
 
@@ -255,13 +259,13 @@ export function Modal({
 }
 
 /** DXF 72/73 as AutoCAD's justification names. */
-function justification(h: number, v: number): string {
+export function justification(h: number, v: number): string {
   const named = JUSTIFICATIONS.find((j) => j.halign === h && j.valign === v);
   return named?.name ?? `${h},${v}`;
 }
 
 /** MTEXT attachment points 1–9, as a multiline attribute's Justification list names them. */
-const ATTACHMENTS = [
+export const ATTACHMENTS = [
   'Top left',
   'Top center',
   'Top right',
@@ -290,7 +294,7 @@ const colorKey = (c: Color) => JSON.stringify(c);
 /** The Color list's last choice, which opens the Select Color dialog (M2-35 part 23). */
 const SELECT_COLOR = 'select-color';
 
-function colorLabel(c: Color): string {
+export function colorLabel(c: Color): string {
   const named = COLORS.find(([, v]) => colorKey(v) === colorKey(c));
   if (named) return named[0];
   if (c.kind === 'aci') return `Color ${c.index}`;
@@ -304,10 +308,10 @@ const LINEWEIGHTS = [
   211,
 ];
 
-const lineweightLabel = (w: Lineweight) =>
+export const lineweightLabel = (w: Lineweight) =>
   typeof w === 'number' ? `${(w / 100).toFixed(2)} mm` : w;
 
-const deg = (r: number) => Number(((r * 180) / Math.PI).toPrecision(10));
+export const deg = (r: number) => Number(((r * 180) / Math.PI).toPrecision(10));
 const rad = (d: number) => (d * Math.PI) / 180;
 const shown = (v: number) => Number(v.toPrecision(10));
 
@@ -360,25 +364,6 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
       attributes: patches(),
       ...(row && { target: row.handle }),
     });
-  const num = (
-    label: string,
-    value: number,
-    onChange: (v: number) => void,
-    valid: (v: number) => boolean = Number.isFinite,
-  ) => (
-    <label className="cad-dialog-field">
-      <span>{label}:</span>
-      <input
-        type="number"
-        step="any"
-        defaultValue={shown(value)}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (e.target.value !== '' && valid(v)) onChange(v);
-        }}
-      />
-    </label>
-  );
   const TABS: readonly [Tab, string][] = [
     ['attribute', 'Attribute'],
     ['text', 'Text Options'],
@@ -491,188 +476,17 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
           </>
         )}
         {tab === 'text' && row && (
-          <div className="cad-dialog-grid">
-            <label className="cad-dialog-field">
-              <span>Text Style:</span>
-              <select value={row.style} onChange={(e) => set({ style: e.target.value })}>
-                {request.styles.map((s) => (
-                  <option key={s.handle} value={s.handle}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="cad-dialog-field">
-              <span>Justification:</span>
-              {row.multiline ? (
-                <select
-                  value={row.attachment ?? 1}
-                  onChange={(e) => set({ attachment: Number(e.target.value) })}
-                >
-                  {ATTACHMENTS.map((name, i) => (
-                    <option key={name} value={i + 1}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <select
-                  // An annotative attribute keeps a placement per annotation scale (DEC-013).
-                  disabled={row.annotative}
-                  value={`${row.halign},${row.valign}`}
-                  onChange={(e) => {
-                    const [halign, valign] = e.target.value.split(',').map(Number);
-                    set({ halign: halign!, valign: valign! });
-                  }}
-                >
-                  {!JUSTIFICATIONS.some(
-                    (j) => j.halign === row.halign && j.valign === row.valign,
-                  ) && (
-                    <option value={`${row.halign},${row.valign}`}>
-                      {justification(row.halign, row.valign)}
-                    </option>
-                  )}
-                  {JUSTIFICATIONS.map((j) => (
-                    <option key={j.name} value={`${j.halign},${j.valign}`}>
-                      {j.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </label>
-            {num(
-              'Height',
-              row.height,
-              (v) => set({ height: v }),
-              (v) => v > 0,
-            )}
-            {num('Rotation', deg(row.rotation), (v) => set({ rotation: rad(v) }))}
-            <label
-              className="cad-dialog-check"
-              title="Annotative objects are kept as they are; Triya does not make them (DEC-013)"
-            >
-              <input type="checkbox" checked={row.annotative} disabled readOnly />
-              Annotative
-            </label>
-            {num(
-              'Width Factor',
-              row.widthFactor,
-              (v) => set({ widthFactor: v }),
-              (v) => v > 0,
-            )}
-            {num(
-              'Oblique Angle',
-              deg(row.oblique),
-              (v) => set({ oblique: rad(v) }),
-              (v) => Math.abs(v) <= 85,
-            )}
-            <label className="cad-dialog-check">
-              <input
-                type="checkbox"
-                checked={row.backward}
-                onChange={(e) => set({ backward: e.target.checked })}
-              />
-              Backwards
-            </label>
-            <label className="cad-dialog-check">
-              <input
-                type="checkbox"
-                checked={row.upsideDown}
-                onChange={(e) => set({ upsideDown: e.target.checked })}
-              />
-              Upside down
-            </label>
-          </div>
+          <AttributeTextOptions row={row} set={set} styles={request.styles} />
         )}
         {tab === 'properties' && row && (
-          <div className="cad-dialog-grid">
-            <label className="cad-dialog-field">
-              <span>Layer:</span>
-              <select value={row.layer} onChange={(e) => set({ layer: e.target.value })}>
-                {request.layers.map((l) => (
-                  <option key={l.handle} value={l.handle}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="cad-dialog-field">
-              <span>Linetype:</span>
-              <select
-                value={row.linetype}
-                onChange={(e) => set({ linetype: e.target.value as LinetypeRef })}
-              >
-                <option value="ByLayer">ByLayer</option>
-                <option value="ByBlock">ByBlock</option>
-                {request.linetypes
-                  .filter((l) => !/^by(layer|block)$/i.test(l.name))
-                  .map((l) => (
-                    <option key={l.handle} value={l.handle}>
-                      {l.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="cad-dialog-field">
-              <span>Color:</span>
-              <select
-                value={colorKey(row.color)}
-                onChange={(e) => {
-                  if (e.target.value === SELECT_COLOR) setPickingColor(true);
-                  else set({ color: JSON.parse(e.target.value) as Color });
-                }}
-              >
-                {!COLORS.some(([, c]) => colorKey(c) === colorKey(row.color)) && (
-                  <option value={colorKey(row.color)}>{colorLabel(row.color)}</option>
-                )}
-                {COLORS.map(([label, c]) => (
-                  <option key={label} value={colorKey(c)}>
-                    {label}
-                  </option>
-                ))}
-                <option value={SELECT_COLOR}>Select Color...</option>
-              </select>
-            </label>
-            <label className="cad-dialog-field">
-              <span>Plot style:</span>
-              {request.plotStyles ? (
-                <select
-                  value={row.plotStyle ?? ''}
-                  onChange={(e) =>
-                    set({ plotStyle: e.target.value === '' ? null : e.target.value })
-                  }
-                >
-                  <option value="">ByLayer</option>
-                  {request.plotStyles.map((p) => (
-                    <option key={p.handle} value={p.handle}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                // A colour-dependent drawing plots by colour, as AutoCAD greys it out.
-                <select disabled value="ByColor">
-                  <option value="ByColor">ByColor</option>
-                </select>
-              )}
-            </label>
-            <label className="cad-dialog-field">
-              <span>Lineweight:</span>
-              <select
-                value={String(row.lineweight)}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  set({ lineweight: /^\d+$/.test(v) ? Number(v) : (v as Lineweight) });
-                }}
-              >
-                {(['ByLayer', 'ByBlock', 'Default', ...LINEWEIGHTS] as Lineweight[]).map((w) => (
-                  <option key={String(w)} value={String(w)}>
-                    {lineweightLabel(w)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <AttributeProperties
+            row={row}
+            set={set}
+            layers={request.layers}
+            linetypes={request.linetypes}
+            plotStyles={request.plotStyles}
+            onSelectColor={() => setPickingColor(true)}
+          />
         )}
       </div>
       {pickingColor && row && (
@@ -700,6 +514,268 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
         </button>
       </div>
     </Modal>
+  );
+}
+
+/** A number field that takes only the values `valid` allows (uncontrolled: key it to reset). */
+function NumberInput({
+  label,
+  value,
+  onChange,
+  valid = Number.isFinite,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  valid?: (v: number) => boolean;
+}) {
+  return (
+    <label className="cad-dialog-field">
+      <span>{label}:</span>
+      <input
+        type="number"
+        step="any"
+        defaultValue={shown(value)}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (e.target.value !== '' && valid(v)) onChange(v);
+        }}
+      />
+    </label>
+  );
+}
+
+/**
+ * The Text Options tab of the Enhanced Attribute Editor and of BATTMAN's Edit Attribute (M5-03
+ * part 2): Text Style, Justification, Height, Rotation, Annotative (shown only, DEC-013), Width
+ * Factor, Oblique Angle, Backwards, Upside down; with `boundaryWidth`, a multiline attribute's
+ * Boundary width too.
+ */
+export function AttributeTextOptions({
+  row,
+  set,
+  styles,
+  boundaryWidth,
+}: {
+  row: AttributeEntry;
+  set: (patch: Partial<AttributeEntry>) => void;
+  styles: readonly NamedRecord[];
+  boundaryWidth?: { readonly value: number; readonly onChange: (v: number) => void } | undefined;
+}) {
+  const num = (
+    label: string,
+    value: number,
+    onChange: (v: number) => void,
+    valid: (v: number) => boolean = Number.isFinite,
+  ) => <NumberInput label={label} value={value} onChange={onChange} valid={valid} />;
+  return (
+    <div className="cad-dialog-grid">
+      <label className="cad-dialog-field">
+        <span>Text Style:</span>
+        <select value={row.style} onChange={(e) => set({ style: e.target.value })}>
+          {styles.map((s) => (
+            <option key={s.handle} value={s.handle}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="cad-dialog-field">
+        <span>Justification:</span>
+        {row.multiline ? (
+          <select
+            value={row.attachment ?? 1}
+            onChange={(e) => set({ attachment: Number(e.target.value) })}
+          >
+            {ATTACHMENTS.map((name, i) => (
+              <option key={name} value={i + 1}>
+                {name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <select
+            // An annotative attribute keeps a placement per annotation scale (DEC-013).
+            disabled={row.annotative}
+            value={`${row.halign},${row.valign}`}
+            onChange={(e) => {
+              const [halign, valign] = e.target.value.split(',').map(Number);
+              set({ halign: halign!, valign: valign! });
+            }}
+          >
+            {!JUSTIFICATIONS.some((j) => j.halign === row.halign && j.valign === row.valign) && (
+              <option value={`${row.halign},${row.valign}`}>
+                {justification(row.halign, row.valign)}
+              </option>
+            )}
+            {JUSTIFICATIONS.map((j) => (
+              <option key={j.name} value={`${j.halign},${j.valign}`}>
+                {j.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </label>
+      {num(
+        'Height',
+        row.height,
+        (v) => set({ height: v }),
+        (v) => v > 0,
+      )}
+      {num('Rotation', deg(row.rotation), (v) => set({ rotation: rad(v) }))}
+      <label
+        className="cad-dialog-check"
+        title="Annotative objects are kept as they are; Triya does not make them (DEC-013)"
+      >
+        <input type="checkbox" checked={row.annotative} disabled readOnly />
+        Annotative
+      </label>
+      {num(
+        'Width Factor',
+        row.widthFactor,
+        (v) => set({ widthFactor: v }),
+        (v) => v > 0,
+      )}
+      {num(
+        'Oblique Angle',
+        deg(row.oblique),
+        (v) => set({ oblique: rad(v) }),
+        (v) => Math.abs(v) <= 85,
+      )}
+      <label className="cad-dialog-check">
+        <input
+          type="checkbox"
+          checked={row.backward}
+          onChange={(e) => set({ backward: e.target.checked })}
+        />
+        Backwards
+      </label>
+      <label className="cad-dialog-check">
+        <input
+          type="checkbox"
+          checked={row.upsideDown}
+          onChange={(e) => set({ upsideDown: e.target.checked })}
+        />
+        Upside down
+      </label>
+      {boundaryWidth && row.multiline && (
+        <NumberInput
+          label="Boundary width"
+          value={boundaryWidth.value}
+          onChange={boundaryWidth.onChange}
+          valid={(v) => v >= 0}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Properties tab of the Enhanced Attribute Editor and of BATTMAN's Edit Attribute: Layer,
+ * Linetype, Color (its "Select Color..." calls `onSelectColor`), Plot style and Lineweight.
+ */
+export function AttributeProperties({
+  row,
+  set,
+  layers,
+  linetypes,
+  plotStyles,
+  onSelectColor,
+}: {
+  row: AttributeEntry;
+  set: (patch: Partial<AttributeEntry>) => void;
+  layers: readonly NamedRecord[];
+  linetypes: readonly NamedRecord[];
+  plotStyles: readonly NamedRecord[] | undefined;
+  onSelectColor: () => void;
+}) {
+  return (
+    <div className="cad-dialog-grid">
+      <label className="cad-dialog-field">
+        <span>Layer:</span>
+        <select value={row.layer} onChange={(e) => set({ layer: e.target.value })}>
+          {layers.map((l) => (
+            <option key={l.handle} value={l.handle}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="cad-dialog-field">
+        <span>Linetype:</span>
+        <select
+          value={row.linetype}
+          onChange={(e) => set({ linetype: e.target.value as LinetypeRef })}
+        >
+          <option value="ByLayer">ByLayer</option>
+          <option value="ByBlock">ByBlock</option>
+          {linetypes
+            .filter((l) => !/^by(layer|block)$/i.test(l.name))
+            .map((l) => (
+              <option key={l.handle} value={l.handle}>
+                {l.name}
+              </option>
+            ))}
+        </select>
+      </label>
+      <label className="cad-dialog-field">
+        <span>Color:</span>
+        <select
+          value={colorKey(row.color)}
+          onChange={(e) => {
+            if (e.target.value === SELECT_COLOR) onSelectColor();
+            else set({ color: JSON.parse(e.target.value) as Color });
+          }}
+        >
+          {!COLORS.some(([, c]) => colorKey(c) === colorKey(row.color)) && (
+            <option value={colorKey(row.color)}>{colorLabel(row.color)}</option>
+          )}
+          {COLORS.map(([label, c]) => (
+            <option key={label} value={colorKey(c)}>
+              {label}
+            </option>
+          ))}
+          <option value={SELECT_COLOR}>Select Color...</option>
+        </select>
+      </label>
+      <label className="cad-dialog-field">
+        <span>Plot style:</span>
+        {plotStyles ? (
+          <select
+            value={row.plotStyle ?? ''}
+            onChange={(e) => set({ plotStyle: e.target.value === '' ? null : e.target.value })}
+          >
+            <option value="">ByLayer</option>
+            {plotStyles.map((p) => (
+              <option key={p.handle} value={p.handle}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          // A colour-dependent drawing plots by colour, as AutoCAD greys it out.
+          <select disabled value="ByColor">
+            <option value="ByColor">ByColor</option>
+          </select>
+        )}
+      </label>
+      <label className="cad-dialog-field">
+        <span>Lineweight:</span>
+        <select
+          value={String(row.lineweight)}
+          onChange={(e) => {
+            const v = e.target.value;
+            set({ lineweight: /^\d+$/.test(v) ? Number(v) : (v as Lineweight) });
+          }}
+        >
+          {(['ByLayer', 'ByBlock', 'Default', ...LINEWEIGHTS] as Lineweight[]).map((w) => (
+            <option key={String(w)} value={String(w)}>
+              {lineweightLabel(w)}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
   );
 }
 

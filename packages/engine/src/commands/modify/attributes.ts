@@ -529,8 +529,9 @@ function replaceAttribute(ctx: CommandContext, id: EntityId, next: InsertAttribu
   ctx.edit((b) => b.updateEntity(id, { geom: { ...g, attributes } }));
 }
 
-const records = (rs: Iterable<{ readonly handle: Handle; readonly name: string }>): NamedRecord[] =>
-  [...rs].map((r) => ({ handle: r.handle, name: r.name }));
+export const records = (
+  rs: Iterable<{ readonly handle: Handle; readonly name: string }>,
+): NamedRecord[] => [...rs].map((r) => ({ handle: r.handle, name: r.name }));
 
 /**
  * The in-place MTEXT editor on a multiline attribute (the `...` button by its value): the
@@ -581,7 +582,7 @@ async function* pickReference(
 }
 
 /** The named plot styles an attribute may take: none in a colour-dependent drawing. */
-function plotStyleChoices(ctx: CommandContext): NamedRecord[] | undefined {
+export function plotStyleChoices(ctx: CommandContext): NamedRecord[] | undefined {
   const mode = ctx.model.header.get('$PSTYLEMODE');
   if (mode !== 0 && mode !== false) return undefined;
   return records(ctx.model.tables.plotStyles.values());
