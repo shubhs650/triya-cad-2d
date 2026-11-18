@@ -44,13 +44,26 @@ async function type(page: Page, text: string, next: string | RegExp): Promise<vo
   await expect(prompt(page)).toHaveText(next);
 }
 
-/** The system clipboard's first item: its types, and its PNG's size and dark pixels. */
+/**
+ * The system clipboard's first item: its types, and its PNG's size and dark pixels. Undefined
+ * while the clipboard is empty, or when the copy's write lands while this reads (the browser then
+ * rejects the item's blobs with "Clipboard data has changed", seen in CI on #556): a poll reads
+ * it again.
+ */
 const systemClipboard = (page: Page) =>
   page.evaluate(async () => {
     const [item] = await navigator.clipboard.read();
     if (!item) return undefined;
-    const picture = item.types.includes('image/png')
-      ? await createImageBitmap(await item.getType('image/png')).then((bitmap) => {
+    const changed = (e: unknown) => {
+      if (e instanceof DOMException && e.name === 'InvalidStateError') return undefined;
+      throw e;
+    };
+    const png = item.types.includes('image/png')
+      ? await item.getType('image/png').catch(changed)
+      : undefined;
+    if (item.types.includes('image/png') && !png) return undefined;
+    const picture = png
+      ? await createImageBitmap(png).then((bitmap) => {
           const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
           const ctx = canvas.getContext('2d')!;
           ctx.drawImage(bitmap, 0, 0);

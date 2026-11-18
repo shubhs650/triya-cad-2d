@@ -57,6 +57,11 @@ export function isXrefRecord(r: SymbolTableRecord | undefined): boolean {
   return r !== undefined && ((r.flags ?? 0) & (XREF_FLAG | XREF_OVERLAY_FLAG)) !== 0;
 }
 
+/** Whether a record is xref-dependent (`xref|name`, DXF 70 bit 16). */
+export function isXrefDependent(r: SymbolTableRecord): boolean {
+  return ((r.flags ?? 0) & DEPENDENT_FLAG) !== 0 || r.name.includes('|');
+}
+
 /** The tables whose records an xref brings in. Views, UCSs, VPORTs and app ids stay home. */
 const COPIED_TABLES: readonly TableName[] = [
   'layers',

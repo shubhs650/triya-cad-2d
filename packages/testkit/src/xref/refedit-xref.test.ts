@@ -17,6 +17,7 @@ import {
   type DocumentInit,
   type DocumentModel,
   type Entity,
+  type EntityId,
   type ViewReply,
   type ViewRequest,
 } from '@triya/engine';
@@ -57,7 +58,12 @@ function loadedParent() {
   load(session, 'xref-child-ovl', child);
   load(session, 'xref-grandchild', bytesOf(XREF_GRANDCHILD));
   const writes: { file: string; changes: readonly ChangeSet[] }[] = [];
+  /** What the `nested` request answers: the references a pick goes through. */
+  let path: readonly EntityId[] = [];
   const request = (r: ViewRequest): Promise<ViewReply> => {
+    if (r.op === 'nested') {
+      return Promise.resolve({ ok: true, nested: { path: [...path] } });
+    }
     if (r.op === 'xrefDrawing')
       return Promise.resolve({ ok: true, xrefDrawing: { name: XREF_CHILD, init: initOf(child) } });
     if (r.op === 'writeXref') {
@@ -76,7 +82,18 @@ function loadedParent() {
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);
   });
-  return { session, model: session.model, bus, log, writes, child: () => child };
+  const nestedPath = (ids: readonly EntityId[]) => {
+    path = ids;
+  };
+  return {
+    session,
+    model: session.model,
+    bus,
+    log,
+    writes,
+    child: () => child,
+    nestedPath,
+  };
 }
 
 /** An entity's data without its id, which only the drawing open gives. */
@@ -161,5 +178,97 @@ describe('REFEDIT of an xref on the xref set (M5-02 part 6)', () => {
       .blockEntities(recordNamed(again.model, 'xref-child-tb')!.handle)
       .map((id) => again.model.entity(id)!.geom.kind);
     expect(loaded).toEqual(t.model.blockEntities(tb).map((id) => t.model.entity(id)!.geom.kind));
+  });
+});
+
+// M5-02 part 7: the title block's LOGO, which the attachment brought in as
+// `xref-child-tb|LOGO`, edited in place through the attachment and written to the LOGO block of
+// the title block's file (`fixtures__xref__xref-child-tb.dxf.refedit-xref-block.dxf`).
+describe('REFEDIT of a block the xref set brought in (M5-02 part 7)', () => {
+  it("writes the edits to LOGO in the title block's file, which reads back and loads again", async () => {
+    const t = loadedParent();
+    const tb = recordNamed(t.model, 'xref-child-tb')!.handle;
+    const logo = recordNamed(t.model, 'xref-child-tb|LOGO')!.handle;
+    const ms = recordNamed(t.model, '*Model_Space')!.handle;
+    const reference = t.model
+      .blockEntities(ms)
+      .map((id) => t.model.entity(id)!)
+      .find((e) => e.geom.kind === 'INSERT' && e.geom.block === tb)!;
+    const logoReference = t.model
+      .blockEntities(tb)
+      .map((id) => t.model.entity(id)!)
+      .find((e) => e.geom.kind === 'INSERT' && e.geom.block === logo)!;
+    const fileOf = new Map(t.model.blocks.get(tb)!.xrefHandles);
+    const content = t.model.blockEntities(logo).map((id) => t.model.entity(id)!);
+    const [erased, moved] = content.filter((e) => e.geom.kind === 'LINE');
+
+    // A pick on the logo goes through the attachment and its reference to LOGO.
+    t.nestedPath([reference.id, logoReference.id]);
+    // The logo's centre in the parent: the title block's (20, 30).
+    const at = (x: number, y: number) => `${CHILD_AT.x + 20 + x},${CHILD_AT.y + 30 + y}`;
+    await t.bus.submit('-REFEDIT');
+    await t.bus.answer({
+      kind: 'selection',
+      ids: [reference.id],
+      pick: { x: CHILD_AT.x + 20, y: CHILD_AT.y + 30 },
+    });
+    await t.bus.script(['N', 'O', '', '']);
+    expect(t.log).toContain('3 objects in the working set.');
+    await t.bus.submit('ERASE');
+    await t.bus.answer({ kind: 'selection', ids: [erased!.id] });
+    await t.bus.submit('MOVE');
+    await t.bus.answer({ kind: 'selection', ids: [moved!.id] });
+    await t.bus.script(['0,0', '2,0']);
+    await t.bus.script(['LINE', at(-12, -12), at(12, 12), '', 'REFCLOSE', 'S']);
+    expect(t.log.at(-1)).toBe(
+      `Xref "xref-child-tb" saved: reference edits to "xref-child-tb|LOGO" written to ${XREF_CHILD}.`,
+    );
+    expect(t.writes).toHaveLength(1);
+
+    const written = t.child();
+    writeAuditSave(AUDIT_PATH, 'refedit-xref-block', () => written);
+    const was = modelOf(bytesOf(XREF_CHILD));
+    const now = modelOf(written);
+    const block = (m: DocumentModel, name: string) =>
+      m.blockEntities(recordNamed(m, name)!.handle).map((id) => m.entity(id)!);
+
+    // LOGO: the erased line gone, the moved one 2 to the right, the new line last.
+    const erasedInFile = fileOf.get(erased!.handle)!;
+    const movedInFile = fileOf.get(moved!.handle)!;
+    const nowLogo = block(now, 'LOGO');
+    const wasLogo = block(was, 'LOGO');
+    expect(nowLogo.map((e) => e.handle)).not.toContain(erasedInFile);
+    const m = now.entityByHandle(movedInFile)!.geom as Extract<Entity['geom'], { kind: 'LINE' }>;
+    const m0 = was.entityByHandle(movedInFile)!.geom as typeof m;
+    expect(m.start.x).toBeCloseTo(m0.start.x + 2, 9);
+    expect(m.end.y).toBeCloseTo(m0.end.y, 9);
+    const circle = wasLogo.find((e) => e.geom.kind === 'CIRCLE')!;
+    expect(data(now.entityByHandle(circle.handle)!)).toEqual(data(circle));
+    const drawn = nowLogo.at(-1)!;
+    expect(was.entityByHandle(drawn.handle)).toBeUndefined();
+    expect(drawn.geom).toMatchObject({
+      kind: 'LINE',
+      start: { x: -12, y: -12 },
+      end: { x: 12, y: 12 },
+    });
+    expect(nowLogo).toHaveLength(wasLogo.length);
+    // Model space as the file had it.
+    const wasMs = block(was, '*Model_Space');
+    expect(block(now, '*Model_Space').map(data)).toEqual(wasMs.map(data));
+
+    // The parent's save holds none of it.
+    const parent = modelOf(
+      withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytesOf(XREF_PARENT)), t.model)),
+    );
+    expect(recordNamed(parent, 'xref-child-tb|LOGO')).toBeUndefined();
+
+    // The parent loads the title block's new file with the edited LOGO.
+    const again = new EngineSession(initOf(bytesOf(XREF_PARENT)));
+    load(again, 'xref-child-tb', written);
+    const kinds = (m: DocumentModel) =>
+      m
+        .blockEntities(recordNamed(m, 'xref-child-tb|LOGO')!.handle)
+        .map((id) => m.entity(id)!.geom.kind);
+    expect(kinds(again.model)).toEqual(kinds(t.model));
   });
 });

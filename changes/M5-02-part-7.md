@@ -1,0 +1,1 @@
+- M5-02 part 7 (#556): REFEDIT now edits a block that a loaded xref brought in (`xref|name`, picked through the xref's reference), and REFCLOSE Save writes the edits into that block of the xref's own DXF file, leaving the rest of the file as it was.
