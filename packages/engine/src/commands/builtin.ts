@@ -78,6 +78,7 @@ import { underlayLayersCommand } from './underlay-layers';
 import { layerStateCommand } from './layer-states';
 import { layerToolCommands } from './layer-tools';
 import { laydelCommand, laymrgCommand } from './layer-cleanup';
+import { purgeCommand } from './purge';
 import { laywalkCommand } from './layer-walk';
 import { layerpCommand, layerpmodeCommand } from './layer-previous';
 import { XREF_COMMANDS } from './xref';
@@ -196,6 +197,7 @@ export function builtinCommands(): CommandRegistry {
     underlayLayersCommand(),
     ...layerToolCommands(),
     laydelCommand(),
+    purgeCommand(),
     laymrgCommand(),
     laywalkCommand(),
     layerpCommand(),
