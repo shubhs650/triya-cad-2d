@@ -80,6 +80,12 @@ export type PropertyValue = number | string | boolean;
 export interface PropertyOption {
   readonly value: string;
   readonly label: string;
+  /**
+   * A lineweight, hundredths of a millimetre (M5-08): `label` gives it in millimetres, and a
+   * front end lists it in the units LWUNITS names instead (`lineweightText`), as AutoCAD's
+   * Properties palette does.
+   */
+  readonly lineweight?: number;
 }
 
 export interface PropertyRow {
@@ -1530,7 +1536,7 @@ const LEADER_TYPES: readonly PropertyOption[] = [
 /** The lineweight choices: ByLayer, ByBlock, Default, then AutoCAD's lineweights. */
 const WEIGHT_OPTIONS: readonly PropertyOption[] = [
   ...(['ByLayer', 'ByBlock', 'Default'] as const).map((w) => ({ value: w, label: w })),
-  ...LINEWEIGHTS.map((w) => ({ value: String(w), label: lineweightLabel(w) })),
+  ...LINEWEIGHTS.map((w) => ({ value: String(w), label: lineweightLabel(w), lineweight: w })),
 ];
 
 /**

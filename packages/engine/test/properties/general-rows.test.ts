@@ -188,6 +188,22 @@ describe('General’s rows and 3D Visualization', () => {
     expect(titles(sheet)).toEqual(['General', 'Geometry']);
   });
 
+  it('marks each lineweight choice with its lineweight, for LWUNITS to list (M5-08)', () => {
+    const s = setup();
+    const options = rowOf(s.sheet('20'), 'Lineweight')!.options!;
+    expect(options.slice(0, 4)).toEqual([
+      { value: 'ByLayer', label: 'ByLayer' },
+      { value: 'ByBlock', label: 'ByBlock' },
+      { value: 'Default', label: 'Default' },
+      { value: '0', label: '0.00 mm', lineweight: 0 },
+    ]);
+    expect(options.find((o) => o.value === '211')).toEqual({
+      value: '211',
+      label: '2.11 mm',
+      lineweight: 211,
+    });
+  });
+
   it('keeps the six current settings only when nothing is selected', () => {
     const s = setup();
     expect(labels(propertySheet(s.model, []), 'General')).toEqual([

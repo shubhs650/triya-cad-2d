@@ -23,6 +23,11 @@ export interface EmbedPlacement {
   readonly angle: number;
   /** `S=` times the linetype scale; a text renderer multiplies in the style's fixed height. */
   readonly scale: number;
+  /**
+   * Upright text turned half a turn so it reads left to right (or bottom to top): the text
+   * renderer turns it about the middle of its box, so it stays where relative text would be.
+   */
+  readonly turned?: true;
 }
 
 export interface DashedPath {
@@ -234,14 +239,21 @@ class Measured {
     const oy = embed.offset.y * scale;
     const along = Math.atan2(d.y, d.x);
     let angle = embed.rotationMode === 'absolute' ? embed.rotation : along + embed.rotation;
-    // Upright: turn half a turn when the text would otherwise read right to left. AutoCAD
-    // does not say where the turn pivots; it turns about the insertion point here.
-    if (embed.rotationMode === 'upright' && Math.cos(angle) < -1e-12) angle += Math.PI;
+    // Upright (M5-08): turn half a turn when the text would otherwise read right to left, or
+    // top to bottom on a vertical line (drafting's rule: vertical text reads from the right).
+    // AutoCAD's Help says only that U= keeps the text "upright and readable", not where the
+    // turn pivots; `turned` has the text renderer turn it about the middle of its box, so it
+    // stays in the gap the pattern leaves for it (the common drafter expectation).
+    const c = Math.cos(angle);
+    const turned =
+      embed.rotationMode === 'upright' && (c < -1e-12 || (c <= 1e-12 && Math.sin(angle) < 0));
+    if (turned) angle += Math.PI;
     return {
       embed,
       at: { x: p.x + d.x * ox - d.y * oy, y: p.y + d.y * ox + d.x * oy },
       angle: normalize(angle),
       scale: embed.scale * scale,
+      ...(turned && { turned: true as const }),
     };
   }
 }

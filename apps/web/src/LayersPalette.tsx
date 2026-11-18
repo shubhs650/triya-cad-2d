@@ -36,6 +36,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent,
   type MouseEvent,
   type ReactElement,
@@ -74,6 +75,7 @@ import {
   type LayerColumnKey,
   type LayerColumnSettings,
 } from './layer-columns';
+import { drafting } from './drafting';
 import { currentLayerStateName, layerStatesManager } from './layer-states';
 import { layerColorBooks, layerLinetypes, layerRows, type LayerRow } from './layers';
 import { SelectColorDialog } from './SelectColorDialog';
@@ -378,10 +380,20 @@ export function LayersPalette({
     { click: number; frame: number; drawn: number | undefined } | undefined
   >();
   const inLayout = layoutShown(doc);
+  // The Lineweight column in LWUNITS's units (M5-08).
+  const lwUnits = useSyncExternalStore(drafting.subscribe, () =>
+    drafting.get().lwUnits === 0 ? 'in' : 'mm',
+  );
   const rows = useMemo(
-    () => layerRows(doc.opened.init, engines.changesOf(doc.id), inLayout ? doc.block : undefined),
+    () =>
+      layerRows(
+        doc.opened.init,
+        engines.changesOf(doc.id),
+        inLayout ? doc.block : undefined,
+        lwUnits,
+      ),
     // `revision` changes when the engine applied an edit, which is what the rows read.
-    [doc.opened, doc.id, doc.block, doc.revision, inLayout],
+    [doc.opened, doc.id, doc.block, doc.revision, inLayout, lwUnits],
   );
   const sorted = useMemo(() => sortLayerRows(rows, columns.sort), [rows, columns.sort]);
   const layerState = useMemo(
@@ -967,6 +979,7 @@ export function LayersPalette({
       )}
       {picking?.cell === 'lineweight' && (
         <LineweightDialog
+          units={lwUnits}
           initial={picking.row.value.lineweight}
           onOk={(lineweight) => void setProps({ lineweight })}
           onCancel={closeDialog}

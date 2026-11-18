@@ -217,9 +217,39 @@ describe('embedded text and shapes', () => {
     expect(rel.at.y).toBeCloseTo(0.05, 12);
 
     const up = pattern('*UP\nA,.5,-.2,["GAS",STANDARD,U=0],-.25');
-    expect(dashPath(backwards, up, 1).embeds[0]!.angle).toBeCloseTo(0, 12);
+    const righted = dashPath(backwards, up, 1).embeds[0]!;
+    expect(righted.angle).toBeCloseTo(0, 12);
+    // Turned half a turn: the text renderer turns it about the middle of its box (M5-08).
+    expect(righted.turned).toBe(true);
+    expect(dashPath([along(0), along(1.9)], up, 1).embeds[0]!.turned).toBeUndefined();
+    expect(rel.turned).toBeUndefined();
     const abs = pattern('*ABS\nA,.5,-.2,["GAS",STANDARD,A=30],-.25');
     expect(dashPath(backwards, abs, 1).embeds[0]!.angle).toBeCloseTo(Math.PI / 6, 12);
+  });
+
+  it('reads upright text bottom to top on a vertical line, whichever way it runs', () => {
+    // Drafting convention (and AutoCAD's upright text): vertical text reads from the right.
+    const up = pattern('*UP\nA,.5,-.2,["GAS",STANDARD,U=0],-.25');
+    const rising = dashPath(
+      [
+        { x: 0, y: 0 },
+        { x: 0, y: 1.9 },
+      ],
+      up,
+      1,
+    ).embeds[0]!;
+    expect(rising.angle).toBeCloseTo(Math.PI / 2, 12);
+    expect(rising.turned).toBeUndefined();
+    const falling = dashPath(
+      [
+        { x: 0, y: 1.9 },
+        { x: 0, y: 0 },
+      ],
+      up,
+      1,
+    ).embeds[0]!;
+    expect(falling.angle).toBeCloseTo(Math.PI / 2, 12);
+    expect(falling.turned).toBe(true);
   });
 
   it('scales the offset and the size by the linetype scale', () => {

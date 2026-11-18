@@ -47,10 +47,12 @@ export interface LinePattern {
 const ABSOLUTE = 1;
 const TEXT = 2;
 const SHAPE = 4;
+/** `U=`: not in acad-ts's flags, but AutoCAD writes it (74 = 10 on the samples' GAS_LINE). */
+const UPRIGHT = 8;
 
 /**
- * The pattern of an LTYPE record. DXF has no upright bit, so `U=` rotation saved by AutoCAD
- * reads as relative; that is all the record can say.
+ * The pattern of an LTYPE record. `U=` rotation is DXF 74 bit 8, which AutoCAD writes though its
+ * DXF reference lists only bits 1, 2 and 4 (M5-08; Triya's loader writes it too).
  */
 export function patternOf(record: LinetypeRecord): LinePattern {
   return {
@@ -67,7 +69,8 @@ export function patternOf(record: LinetypeRecord): LinePattern {
           ...(e.style ? { style: e.style } : {}),
           scale: e.scale,
           rotation: e.rotation,
-          rotationMode: e.shapeFlags & ABSOLUTE ? 'absolute' : 'relative',
+          rotationMode:
+            e.shapeFlags & ABSOLUTE ? 'absolute' : e.shapeFlags & UPRIGHT ? 'upright' : 'relative',
           offset: e.offset,
         },
       };

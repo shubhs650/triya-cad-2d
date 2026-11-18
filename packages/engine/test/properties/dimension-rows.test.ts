@@ -258,6 +258,16 @@ describe('a dimension’s Properties groups (M2-35 part 5)', () => {
     expect(s.rowOf('Arrow 1')).toMatchObject({ kind: 'choice', value: '' });
     expect(s.rowOf('Dim line color')).toMatchObject({ value: 'ByBlock', colorDialog: 'index' });
     expect(s.rowOf('Dim line lineweight').value).toBe('-2');
+    // Its lineweights carry their widths, for the palette to list in LWUNITS (M5-08).
+    expect(s.rowOf('Ext line lineweight').options).toContainEqual({
+      value: '25',
+      label: '0.25 mm',
+      lineweight: 25,
+    });
+    expect(s.rowOf('Ext line lineweight').options).toContainEqual({
+      value: '-3',
+      label: 'Default',
+    });
     expect(s.rowOf('Dim line 1').value).toBe('on');
     expect(s.rowOf('Dim line linetype').value).toBe(BYBLOCK);
     expect(s.rowOf('Fill color').value).toBe('None');

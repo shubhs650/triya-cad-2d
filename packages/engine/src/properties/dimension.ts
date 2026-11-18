@@ -273,12 +273,19 @@ const LINEWEIGHTS = [
   0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200,
   211,
 ];
-const WEIGHT_OPTIONS = opts([
-  [-1, 'ByLayer'],
-  [-2, 'ByBlock'],
-  [-3, 'Default'],
-  ...LINEWEIGHTS.map((w) => [w, `${(w / 100).toFixed(2)} mm`] as const),
-]);
+const WEIGHT_OPTIONS: PropertyOption[] = [
+  ...opts([
+    [-1, 'ByLayer'],
+    [-2, 'ByBlock'],
+    [-3, 'Default'],
+  ]),
+  // Marked as lineweights, for the palette to list in LWUNITS (M5-08).
+  ...LINEWEIGHTS.map((w) => ({
+    value: String(w),
+    label: `${(w / 100).toFixed(2)} mm`,
+    lineweight: w,
+  })),
+];
 
 /** A DIMVAR linetype: a handle to one of the drawing's linetypes, absent read as ByBlock. */
 function linetypeRow(name: string, label: string): DimvarRow {

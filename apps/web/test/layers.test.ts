@@ -122,6 +122,11 @@ describe('layerRows', () => {
     });
   });
 
+  it('lists lineweights in inches with LWUNITS 0 (M5-08)', () => {
+    const rows = layerRows(init, [], undefined, 'in');
+    expect(rows.map((r) => r.lineweight)).toEqual(['Default', 'Default', '0.020"']);
+  });
+
   it("names a colour-book colour by its colour's name, as the manager's Color column does", () => {
     // M2-35 part 19: io reads a layer's DXF 430 (acadsharp's Layer_color_book).
     const booked: DocumentInit = {

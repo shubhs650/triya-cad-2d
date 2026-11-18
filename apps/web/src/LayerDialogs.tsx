@@ -10,10 +10,11 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import {
   LINEWEIGHTS,
-  lineweightLabel,
+  lineweightText,
   type Handle,
   type LinetypeRecord,
   type Lineweight,
+  type LineweightUnits,
 } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
 import { parseLayerTransparency } from './layers';
@@ -147,16 +148,20 @@ export function SelectLinetypeDialog({
 const WEIGHTS: readonly Lineweight[] = ['Default', ...LINEWEIGHTS];
 
 export function LineweightDialog({
+  units = 'mm',
   initial,
   onOk,
   onCancel,
 }: {
+  /** LWUNITS: the list in millimetres or inches (M5-08). */
+  units?: LineweightUnits;
   initial: Lineweight;
   onOk: (w: Lineweight) => void;
   onCancel: () => void;
 }) {
   const [chosen, setChosen] = useState<Lineweight>(initial);
   const ok = () => onOk(chosen);
+  const lineweightLabel = (w: Lineweight) => (typeof w === 'number' ? lineweightText(w, units) : w);
   return (
     <Modal label="Lineweight" className="layer-lineweight" onOk={ok} onCancel={onCancel}>
       <label className="layer-lineweight-list">
