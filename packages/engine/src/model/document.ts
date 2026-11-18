@@ -47,6 +47,11 @@ export interface DocumentInit {
   readonly passthroughLayers?: readonly Handle[];
   /** Their own linetypes (M5-08), which the Linetype Manager may not delete either. */
   readonly passthroughLinetypes?: readonly Handle[];
+  /**
+   * Records PURGE may never take (M5-09): the I/O layer's word that the saved file refers to
+   * them where the document does not show it, or cannot purge them for what they are.
+   */
+  readonly purgePinned?: readonly Handle[];
   readonly entities?: readonly EntityInit[];
 }
 
@@ -76,6 +81,8 @@ export class DocumentModel {
   readonly passthroughLayers: ReadonlySet<Handle>;
   /** The linetypes of the objects kept without mapping (`DocumentInit.passthroughLinetypes`). */
   readonly passthroughLinetypes: ReadonlySet<Handle>;
+  /** Records PURGE may never take (`DocumentInit.purgePinned`). */
+  readonly purgePinned: ReadonlySet<Handle>;
 
   readonly #header = new Map<string, HeaderValue>();
   readonly #tables = Object.fromEntries(TABLE_NAMES.map((t) => [t, new Map()])) as MutableTables;
@@ -128,6 +135,7 @@ export class DocumentModel {
     this.passthrough = new Set(init.passthrough ?? []);
     this.passthroughLayers = new Set(init.passthroughLayers ?? []);
     this.passthroughLinetypes = new Set(init.passthroughLinetypes ?? []);
+    this.purgePinned = new Set(init.purgePinned ?? []);
     for (const e of init.entities ?? []) {
       const list = this.#blockEntities.get(e.owner);
       if (!list) throw new Error(`entity ${e.handle}: owner block ${e.owner} does not exist`);

@@ -179,3 +179,18 @@ export {
   newLayerName,
   type LayerProps,
 } from './layer-manager';
+export {
+  PURGE_CATEGORIES,
+  PURGE_RULES,
+  emptyTextObjects,
+  isEmptyText,
+  isZeroLength,
+  purgeClosure,
+  purgeInto,
+  purgeState,
+  zeroLengthObjects,
+  type InUseItem,
+  type PurgeCategory,
+  type PurgeItem,
+  type PurgeState,
+} from './purge';
