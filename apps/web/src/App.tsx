@@ -90,6 +90,8 @@ import {
   newDrawingName,
   selectTemplate,
   templateById,
+  templateFiles,
+  userTemplates,
   type DrawingTemplate,
 } from './templates';
 import { underlayLayersDialog } from './underlay-layers';
@@ -1090,6 +1092,43 @@ const linetypeFiles: LinetypeFiles = {
   },
 };
 const supportStores = [plotStyles, linetypes] as const;
+/**
+ * The user's own templates (M5-10 part 2, Settings > Templates): .dxf files kept on this device,
+ * each opened by an I/O worker as it is added. Not among `supportStores`: a .dxf dropped on the
+ * window opens as a drawing.
+ */
+const TEMPLATE_FILES = templateFiles(openDrawing);
+const templates = new SupportFileStore(TEMPLATE_FILES, opfsSupportFiles(TEMPLATE_FILES));
+void templates.load();
+/** The user's templates as the Select Template dialog lists them, made once per store state. */
+const userTemplateList = (() => {
+  let state: ReturnType<SupportFileStore['getSnapshot']> | undefined;
+  let list: readonly DrawingTemplate[] = [];
+  return (): readonly DrawingTemplate[] => {
+    const now = templates.getSnapshot();
+    if (now.files !== state?.files) list = userTemplates(now.files, (n) => templates.file(n));
+    state = now;
+    return list;
+  };
+})();
+/** The Select Template dialog's list: the bundled templates, then the user's. */
+const templateList = (() => {
+  let user: readonly DrawingTemplate[] | undefined;
+  let all: readonly DrawingTemplate[] = BUNDLED_TEMPLATES;
+  return (): readonly DrawingTemplate[] => {
+    const now = userTemplateList();
+    if (now !== user) all = [...BUNDLED_TEMPLATES, ...now];
+    user = now;
+    return all;
+  };
+})();
+
+function addTemplates(files: Iterable<File>): void {
+  for (const f of files) {
+    if (!TEMPLATE_FILES.accepts(f.name)) continue;
+    void f.arrayBuffer().then((b) => templates.add(f.name, new Uint8Array(b)));
+  }
+}
 /** The plot style tables added in Settings, which the Plot dialog lists (M2-17 part 3). */
 const userPlotStyleTables = () => plotStyleTablesIn(plotStyles);
 
@@ -1587,7 +1626,7 @@ async function selectNewDrawing(): Promise<void> {
 
 /** QNEW: a new drawing from the default template, or NEW's dialog when none is set. */
 function quickNewDrawing(): void {
-  const t = templateById(preferences.get().defaultTemplate);
+  const t = templateById(preferences.get().defaultTemplate, userTemplateList());
   void (t ? newDrawing(t) : selectNewDrawing());
 }
 
@@ -1949,12 +1988,14 @@ export function App() {
         fonts={fonts}
         plotStyles={plotStyles}
         linetypes={linetypes}
+        templates={templates}
         deviceFonts={deviceFonts}
         open={settings}
         onClose={() => setSettings(false)}
         onAdd={addPatterns}
         onAddFonts={addFonts}
         onAddFiles={addSupportFiles}
+        onAddTemplates={addTemplates}
         onEditAliases={() => setAliasEditor(true)}
         onEditShortcuts={() => setShortcutEditor(true)}
       />
@@ -2805,10 +2846,11 @@ function TemplateChooser() {
     preferences.subscribe,
     () => preferences.get().defaultTemplate,
   );
+  const list = useSyncExternalStore(templates.subscribe, templateList);
   if (!open) return null;
   return (
     <SelectTemplateDialog
-      templates={BUNDLED_TEMPLATES}
+      templates={list}
       defaultId={defaultId}
       onDefault={(id) => preferences.update({ defaultTemplate: id })}
       onOpen={(t) => selectTemplate.close(t)}
