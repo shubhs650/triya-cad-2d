@@ -31,6 +31,9 @@ describe('palette search', () => {
       '-TABLE',
       // M3-09: the Drawing Units questions at the command line.
       '-UNITS',
+      // M5-11: DesignCenter.
+      'ADCCLOSE',
+      'ADCENTER',
       'AIMLEADEREDITADD',
       'AIMLEADEREDITREMOVE',
       // M3-02 part 4: BREAK, BREAKATPOINT, JOIN, EXPLODE, LENGTHEN, REVERSE and ALIGN.

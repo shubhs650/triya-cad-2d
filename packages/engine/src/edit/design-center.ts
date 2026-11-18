@@ -10,7 +10,7 @@
 // (a layer's linetype, a style's text style, a block's contents, layers and nested blocks), so a
 // duplicate is ignored with everything only it would have brought. Dimension styles go with
 // their sub-styles (dimstyle-import.ts). Layouts and xrefs, which DesignCenter also lists, are
-// left for later parts of M5-11 (ROADMAP.md).
+// not in the lite palette (PRD FR-B7: blocks, layers and styles).
 import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';

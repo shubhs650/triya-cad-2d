@@ -8,7 +8,7 @@
 //   - Add <Category>(s) and Insert Block... do the same from the buttons, as the shortcut menu's;
 //   - a duplicate definition is ignored (the command line says which).
 // Click picks an item, Ctrl or Shift adds one. Folders, History, layouts, xrefs and the preview
-// and description panes are left for later parts (ROADMAP.md).
+// and description panes are not in the lite palette (PRD FR-B7: blocks, layers and styles).
 import {
   useEffect,
   useRef,
