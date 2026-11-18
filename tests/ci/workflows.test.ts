@@ -472,10 +472,27 @@ describe('ci.yml caching and artifacts', () => {
       // System libraries are not cacheable; browsers are only downloaded on a miss.
       const install = (job.steps ?? []).find((s) => s.run?.includes('playwright install '));
       expect(install?.if).toContain("cache-hit != 'true'");
-      const deps = (job.steps ?? []).find((s) => s.run?.includes('playwright install-deps'));
-      expect(deps).toBeDefined();
+      const steps = job.steps ?? [];
+      const deps = steps.findIndex((s) => s.run?.trim() === 'bash scripts/ci-browser-deps.sh');
+      expect(deps).toBeGreaterThan(-1);
+      // The packages' .deb files are cached per runner image and Playwright version, so a slow
+      // Ubuntu mirror (4 min 22 s on 2026-11-18) is off the critical path.
+      const apt = steps.findIndex(
+        (s) => s.uses?.startsWith('actions/cache@') && s.with?.['path'] === '~/.cache/pw-apt',
+      );
+      expect(apt).toBeGreaterThan(-1);
+      expect(apt).toBeLessThan(deps);
+      expect(String(steps[apt]!.with?.['key'])).toBe(
+        'pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}',
+      );
+      const pw = steps.find((s) => (s as { id?: string }).id === 'pw');
+      expect(pw?.run).toContain('echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"');
+      const script = readFileSync(path.join(root, 'scripts/ci-browser-deps.sh'), 'utf8');
+      expect(script).toContain('$HOME/.cache/pw-apt');
+      expect(script).toContain('sudo dpkg -i');
+      expect(script).toContain('pnpm exec playwright install-deps chromium');
       // Without apt (2026-11-11) the job still fails when Chromium misses a library.
-      expect(deps!.run).toContain("grep 'not found'");
+      expect(script).toContain("grep 'not found'");
     }
   });
 
