@@ -32,8 +32,11 @@ async function loadedParent(page: Page): Promise<void> {
   const border = await ink(page);
   await openWithDrop(page, path.join(FIXTURES, 'xref-child-tb.dxf'));
   await expect.poll(() => ink(page), { timeout: 30_000 }).toBeGreaterThan(border + 3000);
+  const child = await ink(page);
   await openWithDrop(page, path.join(FIXTURES, 'xref-grandchild.dxf'));
-  await page.waitForTimeout(500);
+  // Loaded once it draws (xref.spec.ts waits the same way): a fixed pause raced a busy CI
+  // runner, XBIND then listing only the two xrefs loaded.
+  await expect.poll(() => ink(page), { timeout: 30_000 }).toBeGreaterThan(child + 500);
 }
 
 const layerRow = (page: Page, name: string) =>
