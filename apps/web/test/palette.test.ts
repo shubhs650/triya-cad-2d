@@ -179,6 +179,8 @@ describe('palette search', () => {
       'LINETYPE',
       'LIST',
       'LTSCALE',
+      // M5-08 part 3: Lineweight Settings and -LWEIGHT.
+      'LWEIGHT',
       // M3-02 part 5: MATCHPROP.
       'MATCHPROP',
       'MEASURE',

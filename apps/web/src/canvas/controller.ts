@@ -1047,6 +1047,8 @@ export class CanvasController {
       before.tpy !== state.tpy ||
       before.fieldDisplay !== state.fieldDisplay ||
       before.layLockFade !== state.layLockFade ||
+      before.lwDefault !== state.lwDefault ||
+      before.lwScale !== state.lwScale ||
       before.gripSize !== state.gripSize ||
       before.gripColors !== state.gripColors ||
       before.gridStyle !== state.gridStyle
@@ -1790,6 +1792,9 @@ export class CanvasController {
     const c = this.#colours;
     const shared = {
       showLineweights,
+      // LWDEFAULT and Adjust Display Scale (M5-08 part 3).
+      lineweightDefault: d.lwDefault,
+      lineweightScale: d.lwScale,
       selection: c.selection,
       ...(!d.tpy && { showTransparency: false }),
       // FIELDDISPLAY (M4-10 part 3): the fields' grey background.

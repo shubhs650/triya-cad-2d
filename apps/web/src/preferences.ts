@@ -5,10 +5,11 @@
 // ORTHO, SNAP, GRID, LWT and TPY are each drawing's own in AutoCAD (ORTHOMODE, SNAPMODE,
 // GRIDMODE, LWDISPLAY, TRANSPARENCYDISPLAY) and stay per session, as M2-04 built them.
 import { GRIP_COLORS_DEFAULT, type GripColors } from '@triya/render';
-import { OSMODE_DEFAULT, OSNAP_OFF } from '@triya/engine';
+import { LINEWEIGHTS, OSMODE_DEFAULT, OSNAP_OFF } from '@triya/engine';
 import {
   AUTOSNAP_KEPT,
   INITIAL_MODIFY_OPTIONS,
+  LWSCALE_RANGE,
   MODIFY_OPTIONS,
   QP_DISTANCES,
   QP_QUADRANTS,
@@ -84,6 +85,9 @@ export type DraftingPreferences = Pick<
   | 'arrayAssociativity'
   | 'fieldDisplay'
   | 'layLockFade'
+  | 'lwDefault'
+  | 'lwUnits'
+  | 'lwScale'
   | 'polarMode'
   | 'polarAddAngles'
   | 'snapType'
@@ -185,6 +189,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
     arrayAssociativity: true,
     fieldDisplay: true,
     layLockFade: 50,
+    lwDefault: 25,
+    lwUnits: 1,
+    lwScale: 1,
     polarMode: 0,
     polarAddAngles: '',
     snapType: 0,
@@ -338,6 +345,18 @@ export function normalizePreferences(raw: unknown): Preferences {
       arrayAssociativity: bool(k['arrayAssociativity'], d.drafting.arrayAssociativity),
       fieldDisplay: bool(k['fieldDisplay'], d.drafting.fieldDisplay),
       layLockFade: within(k['layLockFade'], { min: -90, max: 90 }, d.drafting.layLockFade),
+      // M5-08 part 3: one of AutoCAD's lineweights; mm or inches; the slider's range.
+      lwDefault:
+        typeof k['lwDefault'] === 'number' && LINEWEIGHTS.includes(k['lwDefault'])
+          ? k['lwDefault']
+          : d.drafting.lwDefault,
+      lwUnits: within(k['lwUnits'], { min: 0, max: 1 }, d.drafting.lwUnits) as 0 | 1,
+      lwScale:
+        typeof k['lwScale'] === 'number' &&
+        k['lwScale'] >= LWSCALE_RANGE.min &&
+        k['lwScale'] <= LWSCALE_RANGE.max
+          ? k['lwScale']
+          : d.drafting.lwScale,
       polarMode: within(k['polarMode'], { min: 0, max: 15 }, d.drafting.polarMode),
       selectSimilarMode: within(
         k['selectSimilarMode'],
@@ -480,6 +499,9 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     arrayAssociativity: s.arrayAssociativity,
     fieldDisplay: s.fieldDisplay,
     layLockFade: s.layLockFade,
+    lwDefault: s.lwDefault,
+    lwUnits: s.lwUnits,
+    lwScale: s.lwScale,
     polarMode: s.polarMode,
     polarAddAngles: s.polarAddAngles,
     snapType: s.snapType,

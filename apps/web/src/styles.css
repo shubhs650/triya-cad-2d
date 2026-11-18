@@ -1096,6 +1096,77 @@ button {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+/* LWEIGHT's Lineweight Settings (M5-08 part 3). */
+.cad-dialog.lweight-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.lweight-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.lweight-list-group {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.lweight-list {
+  height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.lweight-list [role='option'] {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 2px 6px;
+  min-height: 22px;
+}
+
+.lweight-list [role='option'][aria-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.lweight-sample {
+  display: block;
+  background: currentColor;
+}
+
+.lweight-settings {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lweight-settings fieldset label,
+.lweight-check,
+.lweight-default {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.lweight-scale {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.lweight-scale input {
+  flex: 1;
+  min-width: 0;
+}
+
+.lweight-current {
+  margin: 8px 0 0;
+}
+
 /* LINETYPE's Linetype Manager and Load or Reload Linetypes (M5-08). */
 .cad-dialog.linetype-manager,
 .cad-dialog.linetype-load {
