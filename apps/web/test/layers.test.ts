@@ -292,5 +292,7 @@ describe('the property cells (M5-05 part 2)', () => {
     expect(linetypeDashes([el(0.5), el(-0.25), el(0), el(-0.25)], 100)).toEqual([
       12.5, 6.25, 1, 6.25,
     ]);
+    // Gaps either side of a complex linetype's text are one gap (M5-08).
+    expect(linetypeDashes([el(12), el(-1.5), el(-7.5)], 84)).toEqual([12, 9]);
   });
 });

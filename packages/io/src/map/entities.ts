@@ -143,6 +143,8 @@ export interface UnmappedEntity {
   readonly type: string;
   /** Its LAYER's handle: the layer cannot go while the object stays (M5-06 part 2). */
   readonly layer?: string;
+  /** Its LTYPE's handle, unless ByLayer or ByBlock: the linetype cannot go either (M5-08). */
+  readonly linetype?: string;
   readonly reason:
     | 'not mapped yet'
     | 'tilted plane'
@@ -415,6 +417,7 @@ function insertGeometry(e: Insert, ctx: Ctx): EntityGeometry | UnmappedEntity['r
         handle: hex(a.handle),
         type: a.objectName,
         layer: hex(a.layer.handle),
+        ...ownLinetype(a),
         reason: 'tilted plane',
       });
     else attributes.push({ ...entityProps(a), ...attributeFields(a, apl, ctx) });
@@ -1985,10 +1988,22 @@ function entityProps(e: Entity): EntityProps & ObjectCommon {
   };
 }
 
+/** An unmapped object's own linetype (not ByLayer or ByBlock), which must stay in the drawing. */
+function ownLinetype(e: Entity): { linetype?: string } {
+  const l = linetypeRef(e);
+  return l === 'ByLayer' || l === 'ByBlock' ? {} : { linetype: l };
+}
+
 function entity(e: Entity, owner: BlockRecord, ctx: Ctx): EntityInit | UnmappedEntity {
   const geom = geometry(e, ctx);
   if (typeof geom === 'string')
-    return { handle: hex(e.handle), type: e.objectName, layer: hex(e.layer.handle), reason: geom };
+    return {
+      handle: hex(e.handle),
+      type: e.objectName,
+      layer: hex(e.layer.handle),
+      ...ownLinetype(e),
+      reason: geom,
+    };
   return { ...entityProps(e), type: geom.kind, owner: hex(owner.handle), geom };
 }
 

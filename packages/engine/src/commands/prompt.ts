@@ -44,6 +44,7 @@ import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
 import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
 import type { BlockCloseRequest, BlockEditRequest } from './block-editor';
 import type { XbindRequest } from './xbind';
+import type { LinetypeAnswer, LinetypeRequest } from './linetype';
 import type { XrefAttachAnswer, XrefAttachRequest } from './xref-attach';
 import type { TableCellFormatRequest } from './draw/table-data-format';
 import type { TableDataFormat } from '../edit/table-data';
@@ -849,6 +850,8 @@ export type DialogRequest =
   | XrefAttachRequest
   /** XBIND's Xbind dialog (M5-04 part 7). */
   | XbindRequest
+  /** LINETYPE's Linetype Manager (M5-08). */
+  | LinetypeRequest
   /** WBLOCK's Write Block (M5-01 part 4). */
   | WriteBlockRequest
   /** BEDIT's Edit Block Definition (M5-02 part 1). */
@@ -1147,6 +1150,8 @@ export type PromptAnswer =
       readonly layerName?: string;
       /** The Xbind dialog's Definitions to Bind as OK closed it (XBIND, M5-04 part 7). */
       readonly xbind?: readonly Handle[];
+      /** The Linetype Manager's changes as OK closed it (LINETYPE, M5-08). */
+      readonly linetype?: LinetypeAnswer;
       /** The LayerWalk dialog's settings, with its Purge or Save Layer State (M5-06 part 4). */
       readonly laywalk?: LayerWalkAnswer;
     }

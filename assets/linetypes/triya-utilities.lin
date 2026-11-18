@@ -1,0 +1,14 @@
+;; Triya CAD 2D bundled utility linetypes (MIT, see LICENSE). Authored for Triya in the
+;; complex linetype format AutoCAD documents ("About Text in Custom Linetypes"). Not derived
+;; from any Autodesk file.
+;;
+;; Lengths are millimetres, for a drawing in millimetres at LTSCALE 1. Each line carries its
+;; letters in the Standard text style, 2.5 mm high, upright (U=0), centred on the line in a
+;; 9 mm gap between 12 mm dashes.
+;;
+*TRIYA_GAS,Gas line ----GAS----GAS----
+A,12,-1.5,["GAS",Standard,S=2.5,U=0,X=0,Y=-1.25],-7.5
+*TRIYA_WATER,Water line ----W----W----
+A,12,-3.5,["W",Standard,S=2.5,U=0,X=0,Y=-1.25],-5.5
+*TRIYA_HOT_WATER,Hot water line ----HW----HW----
+A,12,-2.5,["HW",Standard,S=2.5,U=0,X=0,Y=-1.25],-6.5

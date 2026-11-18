@@ -173,7 +173,10 @@ describe('palette search', () => {
       'LAYWALK',
       'LENGTHEN',
       'LINE',
+      // M5-08: the Linetype Manager, -LINETYPE and LTSCALE.
+      'LINETYPE',
       'LIST',
+      'LTSCALE',
       // M3-02 part 5: MATCHPROP.
       'MATCHPROP',
       'MEASURE',
