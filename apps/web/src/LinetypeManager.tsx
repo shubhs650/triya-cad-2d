@@ -376,6 +376,8 @@ export function LinetypeManagerDialog({
       ltscale: lt,
       celtscale: ct,
       psltscale,
+      // Other... in the Properties palette (M5-08 part 2): the linetype highlighted is applied.
+      ...(request.apply && one && { apply: one.name }),
     };
     void engines.command(doc, {
       kind: 'answer',
@@ -406,6 +408,17 @@ export function LinetypeManagerDialog({
     setRows(sortRows(next));
     setLoads(nextLoads);
     setMessage(undefined);
+    // Opened by Other..., the linetype just loaded is highlighted, ready to be applied at OK.
+    if (request.apply) {
+      const loaded = defs.filter((d) => nextLoads.has(upper(d.name)));
+      const first = loaded
+        .map((d) => next.find((r) => upper(r.name) === upper(d.name))?.key)
+        .find((k) => k !== undefined);
+      if (first !== undefined) {
+        setSelected(new Set([first]));
+        setAnchor(first);
+      }
+    }
   };
 
   const remove = () => {
@@ -505,6 +518,12 @@ export function LinetypeManagerDialog({
       <p className="linetype-current">
         Current Linetype: <strong>{current}</strong>
       </p>
+      {request.apply && (
+        <p className="linetype-apply-note">
+          OK applies the highlighted linetype to the objects selected, or makes it current when none
+          are.
+        </p>
+      )}
       <span id="linetype-manager-label" className="visually-hidden">
         Linetypes
       </span>

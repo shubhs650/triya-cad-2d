@@ -5,7 +5,7 @@
 // (center-marks.test.ts).
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
-import { activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 import path from 'node:path';
 
@@ -413,3 +413,38 @@ test('CENTERLINE on polyline segments follows the segment (M4-29)', async ({ pag
 });
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
+
+// M5-08 part 2: a drawing without CENTER2 loads it from the bundled drafting linetypes with
+// the first mark (DEC-073), so the mark is drawn in CENTER2, not ByLayer.
+test('CENTERMARK loads CENTER2 into a drawing that lacks it (M5-08)', async ({ page }) => {
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, 'clockwise_arcs_hatch.dxf');
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Escape');
+  await type(page, 'CIRCLE', /^Specify center point/);
+  await type(page, '0,0', /^Specify radius/);
+  await type(page, '30', 'Command:');
+  await type(page, 'ZOOM', /^Specify corner of window/);
+  await type(page, '-60,-40', 'Specify opposite corner:');
+  await type(page, '#60,40', 'Command:');
+  await type(page, 'CENTERMARK', 'Select circle or arc to add center mark:');
+  await type(page, '30,0', 'Select circle or arc to add center mark:');
+  await type(page, '', 'Command:');
+  const marks = await state(page);
+  expect(marks).toHaveLength(1);
+  expect(marks[0]!.linetype).not.toBe('ByLayer');
+  await expect(page.getByRole('log', { name: 'Recent command lines' })).not.toContainText(
+    'ByLayer is used',
+  );
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(300);
+  await shot('7-center2-loaded.png');
+  await type(page, 'LINETYPE', 'Linetype Manager:');
+  const manager = page.getByRole('dialog', { name: 'Linetype Manager' });
+  await expect(
+    manager.getByRole('option').filter({ has: page.getByText('CENTER2', { exact: true }) }),
+  ).toContainText('Center line (half size)');
+  await manager.getByRole('button', { name: 'Cancel' }).click();
+});

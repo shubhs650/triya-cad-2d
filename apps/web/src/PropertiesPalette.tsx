@@ -12,6 +12,9 @@
 // them, and the vertex shown is marked on the canvas while one of its rows has the focus.
 // An MTEXT's Contents has AutoCAD's "..." button, which opens the In-Place Text Editor on it
 // (M2-35 part 9); the MTEXT stays selected and the palette shows what the editor wrote.
+// Linetype's last choice, "Other...", opens the Linetype Manager (M5-08 part 2): what it loads
+// joins the drawing and the linetype highlighted at OK goes to the objects shown, or is made
+// current with none, as one undo step.
 // Fully keyboard operable: every value is a native select, text field or button.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
@@ -55,7 +58,8 @@ export function PropertiesPalette({
     });
   const set = (key: string, value: string) =>
     engines.command(doc.id, { kind: 'property', edit: { key, value } });
-  const openEditor = () => engines.command(doc.id, { kind: 'property-editor', key: 'contents' });
+  const openEditor = (key: EditorKey = 'contents') =>
+    engines.command(doc.id, { kind: 'property-editor', key });
   const stepVertex = (vertex: number) =>
     engines.command(doc.id, { kind: 'property-vertex', vertex });
   const markVertex = (point: Vec2 | undefined) =>
@@ -91,6 +95,12 @@ export function PropertiesPalette({
   );
 }
 
+/**
+ * What the session's `property-editor` opens: an MTEXT's In-Place Text Editor (`contents`) or
+ * the Linetype Manager for the Linetype list's Other... (`linetype`, M5-08 part 2).
+ */
+export type EditorKey = 'contents' | 'linetype';
+
 /** A polyline vertex row (M2-35 part 8): the Vertex spinner or one of the vertex's own rows. */
 const isVertexRow = (key: string) => key === 'vertex' || key.startsWith('vertex:');
 
@@ -112,7 +122,7 @@ export function PropertySections({
   quick?: boolean;
   narrow: (type: string) => void;
   set: (key: string, value: string) => void;
-  openEditor: () => void;
+  openEditor: (key?: EditorKey) => void;
   stepVertex: (vertex: number) => void;
   markVertex: (point: Vec2 | undefined) => void;
   patternNames: readonly string[];
@@ -194,6 +204,9 @@ export function PropertySections({
                         selectColor={
                           r.key === 'color' || r.colorDialog ? () => setPicking(r) : undefined
                         }
+                        otherLinetype={
+                          r.key === 'linetype' ? () => openEditor('linetype') : undefined
+                        }
                       />
                     </td>
                   </tr>
@@ -219,6 +232,8 @@ export function PropertySections({
 
 /** The Color list's last entry, as AutoCAD's: not a colour, it opens the dialog. */
 const SELECT_COLOR = 'select-color';
+/** The Linetype list's last entry, as AutoCAD's: not a linetype, it opens the Linetype Manager. */
+const OTHER_LINETYPE = 'other-linetype';
 
 function PropertyField({
   row,
@@ -228,17 +243,20 @@ function PropertyField({
   set,
   suggestions,
   selectColor,
+  otherLinetype,
 }: {
   row: PropertyRow;
   stepVertex: (vertex: number) => void;
   /** A row's `...` button (`PropertyRow.editor`): the In-Place Text Editor on the object. */
-  openEditor: () => void;
+  openEditor: (key?: EditorKey) => void;
   units: PropertyUnits;
   set: (key: string, value: string) => void;
   /** Values a typed field offers as it is typed (a datalist). */
   suggestions?: readonly string[] | undefined;
   /** Color's "Select Color..." choice, which opens the Select Color dialog. */
   selectColor?: (() => void) | undefined;
+  /** Linetype's "Other..." choice, which opens the Linetype Manager (M5-08 part 2). */
+  otherLinetype?: (() => void) | undefined;
 }) {
   if (row.readOnly) {
     const shown = (
@@ -255,7 +273,7 @@ function PropertyField({
           className="row-editor"
           aria-label={`Edit ${row.label} in the text editor`}
           title="Opens the In-Place Text Editor"
-          onClick={openEditor}
+          onClick={() => openEditor('contents')}
         >
           ...
         </button>
@@ -272,6 +290,7 @@ function PropertyField({
         onChange={(e) => {
           const v = e.currentTarget.value;
           if (v === SELECT_COLOR) selectColor?.();
+          else if (v === OTHER_LINETYPE) otherLinetype?.();
           else if (v !== VARIES) set(row.key, v);
         }}
       >
@@ -286,6 +305,7 @@ function PropertyField({
           </option>
         ))}
         {selectColor && <option value={SELECT_COLOR}>Select Color...</option>}
+        {otherLinetype && <option value={OTHER_LINETYPE}>Other...</option>}
       </select>
     );
   }

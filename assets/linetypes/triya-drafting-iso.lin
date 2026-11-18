@@ -1,0 +1,33 @@
+;; Triya CAD 2D bundled drafting linetypes, millimetres (MIT, see LICENSE).
+;; Authored for Triya from the line conventions of ASME Y14.2 (center, hidden and phantom lines:
+;; long dashes, short dashes and gaps), written in the .lin format AutoCAD documents. Not
+;; derived from any Autodesk file. The names are the drafting names AutoCAD's CENTERLTYPE and
+;; other settings use (CENTER2 for center marks): "2" is half size, "X2" twice size (DEC-073).
+;;
+;; Lengths are millimetres, for a drawing in millimetres at LTSCALE 1: triya-drafting.lin's
+;; inches times 25.4.
+;;
+*CENTER,Center line
+A,31.75,-3.175,6.35,-3.175
+*CENTER2,Center line (half size)
+A,15.875,-1.5875,3.175,-1.5875
+*CENTERX2,Center line (twice size)
+A,63.5,-6.35,12.7,-6.35
+*DASHED,Dashed line
+A,12.7,-3.175
+*DASHED2,Dashed line (half size)
+A,6.35,-1.5875
+*DASHEDX2,Dashed line (twice size)
+A,25.4,-6.35
+*HIDDEN,Hidden line
+A,6.35,-3.175
+*HIDDEN2,Hidden line (half size)
+A,3.175,-1.5875
+*HIDDENX2,Hidden line (twice size)
+A,12.7,-6.35
+*PHANTOM,Phantom line
+A,31.75,-3.175,6.35,-3.175,6.35,-3.175
+*PHANTOM2,Phantom line (half size)
+A,15.875,-1.5875,3.175,-1.5875,3.175,-1.5875
+*PHANTOMX2,Phantom line (twice size)
+A,63.5,-6.35,12.7,-6.35,12.7,-6.35

@@ -373,9 +373,10 @@ export type CommandInput =
   | { readonly kind: 'property-vertex'; readonly vertex: number }
   /**
    * A row's `...` button (`PropertyRow.editor`, M2-35 part 9): an MTEXT's Contents opens the
-   * In-Place Text Editor on the one MTEXT the palette shows.
+   * In-Place Text Editor on the one MTEXT the palette shows. `linetype` is the Linetype list's
+   * Other... (M5-08 part 2): the Linetype Manager, applying its linetype to what the palette shows.
    */
-  | { readonly kind: 'property-editor'; readonly key: 'contents' }
+  | { readonly kind: 'property-editor'; readonly key: 'contents' | 'linetype' }
   /**
    * The cursor rests on object `id` (M2-35 part 21, ROLLOVERTIPS): the engine answers with its
    * rollover tooltip (`rolloverSheet`), whether or not it is selected; the selection stays.
@@ -625,7 +626,10 @@ export class EngineSession {
         // part 30), which no commit announces.
         return this.#bus.setProperty(input.edit, this.#filter).then(() => this.#queueSheet());
       case 'property-editor':
-        return this.#bus.editContents(this.#filter);
+        // The Linetype list's Other... (M5-08 part 2), or an MTEXT's Contents `...`.
+        return input.key === 'linetype'
+          ? this.#bus.otherLinetype(this.#filter)
+          : this.#bus.editContents(this.#filter);
       case 'property-vertex':
         this.#vertex = Math.max(0, Math.trunc(input.vertex));
         if (this.#properties) this.#sendSheet();
