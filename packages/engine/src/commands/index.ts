@@ -122,6 +122,13 @@ export {
   type ImageAttachSettings,
 } from './image-attach';
 export {
+  laywalkCommand,
+  type LayerWalkAnswer,
+  type LayerWalkLayer,
+  type LayerWalkRequest,
+  type LayerWalkSettings,
+} from './layer-walk';
+export {
   xattachCommand,
   type XrefAttachAnswer,
   type XrefAttachEntry,
