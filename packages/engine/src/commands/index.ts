@@ -121,6 +121,13 @@ export {
   type ImageAttachRequest,
   type ImageAttachSettings,
 } from './image-attach';
+export {
+  laywalkCommand,
+  type LayerWalkAnswer,
+  type LayerWalkLayer,
+  type LayerWalkRequest,
+  type LayerWalkSettings,
+} from './layer-walk';
 export { hatchCommand, hatchCommands } from './draw/hatchedit';
 export { fieldCommand, type FieldDialogRequest } from './draw/field';
 export { toleranceCommand, type ToleranceRequest } from './draw/tolerance';

@@ -276,6 +276,7 @@ describe('completions', () => {
       { name: 'LAYTHW' },
       { name: 'LAYULK' },
       { name: 'LAYUNISO' },
+      { name: 'LAYWALK' },
       { name: 'LENGTHEN' },
       { name: 'LIST' },
     ]);

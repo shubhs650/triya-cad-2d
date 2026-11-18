@@ -38,6 +38,7 @@ import type {
   InsertDialogRequest,
 } from './blocks';
 import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
+import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
 import type { TableCellFormatRequest } from './draw/table-data-format';
 import type { TableDataFormat } from '../edit/table-data';
 import type { GdtFrame } from '../edit/tolerance-frame';
@@ -776,6 +777,8 @@ export type DialogRequest =
   | InsertDialogRequest
   /** IMAGEATTACH's Attach Image (M5-04 part 5). */
   | ImageAttachRequest
+  /** LAYWALK's LayerWalk (M5-06 part 4). */
+  | LayerWalkRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
   | TableCellFormatRequest
   | ObjectGroupingRequest;
@@ -1046,6 +1049,8 @@ export type PromptAnswer =
       readonly layers?: readonly Handle[];
       /** Change to Layer: a layer name typed that the drawing lacks, which is made. */
       readonly layerName?: string;
+      /** The LayerWalk dialog's settings, with its Purge or Save Layer State (M5-06 part 4). */
+      readonly laywalk?: LayerWalkAnswer;
     }
   | { readonly kind: 'enter' }
   /** Esc at a prompt that takes it (`escape`). */
