@@ -5,6 +5,7 @@
 // the Layers palette lists; U takes them back. SHOTS=<dir> saves the PR's screenshots.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import type { ChangeSet } from '@triya/engine';
 import { enterCommand, expectShown, ink, openWithDrop, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
@@ -33,7 +34,20 @@ async function loadedParent(page: Page): Promise<void> {
   await openWithDrop(page, path.join(FIXTURES, 'xref-child-tb.dxf'));
   await expect.poll(() => ink(page), { timeout: 30_000 }).toBeGreaterThan(border + 3000);
   await openWithDrop(page, path.join(FIXTURES, 'xref-grandchild.dxf'));
-  await page.waitForTimeout(500);
+  // The grandchild's load has reached the drawing once its GC layer has come in (it brings the
+  // child's too). A fixed wait raced it on CI: the canvas draws a load before the drawing's
+  // engine has it, and XBIND opened without the grandchild.
+  await expect
+    .poll(() => page.evaluate(loadedLayers), { timeout: 30_000 })
+    .toContain('xref-grandchild|GC');
+}
+
+/** The layers the drawing's loads and edits have added so far. */
+function loadedLayers(): string[] {
+  type Dev = { triyaDev: { changes(): readonly ChangeSet[] } };
+  return (window as unknown as Dev).triyaDev
+    .changes()
+    .flatMap((cs) => (cs.tables?.layers?.added ?? []).map((l) => l.name));
 }
 
 const layerRow = (page: Page, name: string) =>
