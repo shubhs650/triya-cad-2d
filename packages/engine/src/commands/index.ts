@@ -148,6 +148,16 @@ export {
   type LayerWalkSettings,
 } from './layer-walk';
 export {
+  purgeCommand,
+  type PurgeAnswer,
+  type PurgeConfirmRequest,
+  type PurgeDetails,
+  type PurgeInUseRow,
+  type PurgeRequest,
+  type PurgeSettings,
+  type PurgeView,
+} from './purge';
+export {
   xattachCommand,
   type XrefAttachAnswer,
   type XrefAttachEntry,

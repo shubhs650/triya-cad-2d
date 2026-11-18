@@ -2,6 +2,9 @@
 // (Command)", "Purge Dialog Box"): only what nothing uses goes, one level per -PURGE run,
 // nested with purgeClosure; what AutoCAD never purges stays; zero-length geometry and empty text
 // go from model space and the layouts, not from blocks or locked layers; one undo step.
+// M5-09 part 2: PURGE's Purge dialog ("Purge Dialog Box"): Purgeable Items and Find
+// Non-Purgeable Items, Purge Checked Items and Purge All, Confirm Purge for each item, nested
+// items, unnamed objects, Possible Reasons, Details and Select Objects.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
@@ -12,7 +15,11 @@ import {
   zeroLengthObjects,
   emptyTextObjects,
   type BusEvent,
+  type DialogRequest,
   type EntityGeometry,
+  type PromptAnswer,
+  type PurgeAnswer,
+  type ViewRequest,
   type NonGraphicalObject,
 } from '../../src/index';
 import {
@@ -224,10 +231,21 @@ function setup(o: { pinned?: string[] } = {}) {
     ],
     passthrough: ['3F'],
   });
+  // The canvas measures objects as one box (the Purge dialog's Details) and zooms to them.
+  const canvas = host(() => model, new Map());
+  const requests: ViewRequest[] = [];
   const bus = new PromptBus({
     model,
     registry: builtinCommands(),
-    view: host(() => model, new Map()),
+    view: {
+      request: (r) => {
+        requests.push(r);
+        if (r.op === 'bounds')
+          return Promise.resolve({ ok: true, box: { minX: 0, minY: 1, maxX: 10, maxY: 1 } });
+        if (r.op === 'objects') return Promise.resolve({ ok: true });
+        return canvas.request(r);
+      },
+    },
   });
   const log: string[] = [];
   bus.on((e: BusEvent) => {
@@ -236,7 +254,7 @@ function setup(o: { pinned?: string[] } = {}) {
   const layers = () => [...model.tables.layers.values()].map((l) => l.name);
   const blocks = () => [...model.blocks.values()].map((b) => b.name);
   const has = (h: string) => model.entityByHandle(h) !== undefined;
-  return { model, bus, log, layers, blocks, has };
+  return { model, bus, log, layers, blocks, has, requests };
 }
 
 const names = (items: readonly { name: string }[]) => items.map((i) => i.name);
@@ -292,6 +310,12 @@ describe('purgeState', () => {
     expect(names(nested)).not.toContain('USED');
     // Only purgeable items start a closure.
     expect(purgeClosure(model, [INBLOCK], true)).toEqual([]);
+    // Nested items are what the chosen ones use: other unused items stay unless chosen.
+    expect(names(purgeClosure(model, [UNUSED], true)).sort()).toEqual([
+      'INBLOCK',
+      'NESTED',
+      'UNUSED',
+    ]);
   });
 });
 
@@ -421,5 +445,227 @@ describe('-PURGE', () => {
     await t.bus.script(['-PURGE', 'ST', '', 'N']);
     expect(t.log).toContain('No unreferenced text styles found.');
     expect(t.model.tables.textStyles.has(NOTE)).toBe(true);
+  });
+});
+
+describe('The Purge dialog', () => {
+  type Purge = Extract<DialogRequest, { type: 'purge' }>;
+  const dialog = (bus: PromptBus): Purge => {
+    const p = bus.prompt;
+    if (p?.kind !== 'dialog' || p.dialog.type !== 'purge') throw new Error('no Purge dialog');
+    return p.dialog;
+  };
+  const confirmShown = (bus: PromptBus) => {
+    const p = bus.prompt;
+    return p?.kind === 'dialog' && p.dialog.type === 'purgeconfirm' ? p.dialog : undefined;
+  };
+  /** The dialog's answer: its settings as shown, with `patch` and `action`. */
+  const answer = (
+    bus: PromptBus,
+    patch: PurgeAnswer,
+    action: 'apply' | 'ok' | 'select' = 'apply',
+  ) =>
+    bus.answer({
+      kind: 'dialog',
+      action,
+      purge: { settings: dialog(bus).settings, view: dialog(bus).view, ...patch },
+    } as PromptAnswer);
+  const confirm = (bus: PromptBus, said: 'this' | 'all' | 'skip') =>
+    bus.answer({ kind: 'dialog', action: 'ok', purge: { confirm: said } });
+  const noConfirm = {
+    confirm: false,
+    nested: false,
+    zeroLength: false,
+    emptyText: false,
+    orphaned: false,
+  };
+
+  it('opens on the purgeable items, the items in use with why, and its options', async () => {
+    const t = setup();
+    await t.bus.script(['PURGE']);
+    const d = dialog(t.bus);
+    expect(d.view).toBe('purgeable');
+    expect(names(d.purgeable)).toEqual(['UNUSED', 'EMPTY', 'FROZEN', 'OLD', 'NOTE']);
+    // Registered applications are -PURGE's alone, as the help's note says.
+    expect(d.purgeable.some((i) => i.category === 'appIds')).toBe(false);
+    expect(d.inUse.some((i) => i.category === 'appIds')).toBe(false);
+    expect(d.inUse.find((i) => i.name === 'WALLS')?.reasons).toEqual([
+      '1 object in the drawing uses it.',
+      'It is the current layer.',
+    ]);
+    expect(d.zeroLength).toBe(2);
+    expect(d.emptyText).toBe(2);
+    expect(d.settings).toEqual({
+      confirm: true,
+      nested: false,
+      zeroLength: false,
+      emptyText: false,
+      orphaned: false,
+    });
+    await answer(t.bus, {}, 'ok');
+    expect(t.bus.prompt).toBeUndefined();
+    expect(t.bus.undo.state.undoable).toBe(0);
+  });
+
+  it('Purge Checked Items purges what is checked and stays open, one undo step', async () => {
+    const t = setup();
+    await t.bus.script(['PURGE']);
+    await answer(t.bus, { settings: noConfirm, run: 'checked', checked: [OLD, NOTE, WALLS] });
+    // WALLS is in use: only what is purgeable goes.
+    expect(t.layers()).not.toContain('OLD');
+    expect(t.layers()).toContain('WALLS');
+    expect(t.model.tables.textStyles.has(NOTE)).toBe(false);
+    expect(t.log).toContain('Deleting layer "OLD".');
+    expect(dialog(t.bus).note).toBe('2 items purged.');
+    // The lists are the drawing's now: HIDDEN, which only OLD used, can go.
+    expect(names(dialog(t.bus).purgeable)).toContain('HIDDEN');
+    expect(names(dialog(t.bus).purgeable)).not.toContain('OLD');
+    await answer(t.bus, { run: 'checked', checked: [HIDDEN] });
+    expect(t.model.tables.linetypes.has(HIDDEN)).toBe(false);
+    await answer(t.bus, {}, 'ok');
+    await t.bus.script(['U']);
+    expect(t.layers()).toContain('OLD');
+    expect(t.model.tables.linetypes.has(HIDDEN)).toBe(true);
+    expect(t.model.tables.textStyles.has(NOTE)).toBe(true);
+  });
+
+  it('Purge All with nested items takes what only the purged items use, and unnamed objects', async () => {
+    const t = setup();
+    await t.bus.script(['PURGE']);
+    await answer(t.bus, {
+      settings: { ...noConfirm, nested: true, zeroLength: true, emptyText: true },
+      run: 'all',
+    });
+    expect(t.blocks()).not.toContain('UNUSED');
+    expect(t.blocks()).not.toContain('NESTED');
+    expect(t.layers()).not.toContain('INBLOCK');
+    expect(t.model.tables.linetypes.has(HIDDEN)).toBe(false);
+    // Registered applications stay (-PURGE Regapps purges them).
+    expect(t.model.tables.appIds.has(MYAPP)).toBe(true);
+    expect(t.has('41') || t.has('2E')).toBe(false);
+    expect(dialog(t.bus).note).toMatch(
+      /^\d+ items purged\. 2 zero-length geometry objects deleted\. 2 empty text objects deleted\.$/,
+    );
+    expect(dialog(t.bus).zeroLength).toBe(0);
+    // Without nested items, one level goes.
+    const u = setup();
+    await u.bus.script(['PURGE']);
+    await answer(u.bus, { settings: noConfirm, run: 'all' });
+    expect(u.blocks()).not.toContain('UNUSED');
+    expect(u.blocks()).toContain('NESTED');
+    expect(u.has('41')).toBe(true);
+    // Nothing left: the dialog says so.
+    const v = setup();
+    await v.bus.script(['PURGE']);
+    await answer(v.bus, { settings: noConfirm, run: 'checked', checked: [] });
+    expect(dialog(v.bus).note).toBe('Nothing was purged.');
+    // A view change alone purges nothing; unnamed objects checked with none left say nothing.
+    await answer(v.bus, { view: 'inUse' });
+    expect(dialog(v.bus).view).toBe('inUse');
+    expect(dialog(v.bus).note).toBeUndefined();
+    await answer(t.bus, { run: 'checked', checked: [] });
+    expect(dialog(t.bus).note).toBe('Nothing was purged.');
+  });
+
+  it('confirms each item: Purge this item, Skip this item, Purge all items', async () => {
+    const t = setup();
+    await t.bus.script(['PURGE']);
+    await answer(t.bus, { run: 'checked', checked: [UNUSED, OLD, FROZEN, NOTE] });
+    expect(confirmShown(t.bus)).toEqual({ type: 'purgeconfirm', one: 'block', name: 'UNUSED' });
+    await confirm(t.bus, 'skip');
+    expect(confirmShown(t.bus)).toMatchObject({ one: 'layer', name: 'FROZEN' });
+    await confirm(t.bus, 'this');
+    expect(confirmShown(t.bus)).toMatchObject({ one: 'layer', name: 'OLD' });
+    await confirm(t.bus, 'all');
+    // Purge all items takes the rest without asking.
+    expect(confirmShown(t.bus)).toBeUndefined();
+    expect(t.blocks()).toContain('UNUSED');
+    expect(t.layers()).not.toContain('FROZEN');
+    expect(t.layers()).not.toContain('OLD');
+    expect(t.model.tables.textStyles.has(NOTE)).toBe(false);
+    expect(dialog(t.bus).note).toBe('3 items purged.');
+  });
+
+  it('confirms nested items too; what a skipped item uses stays; Esc skips', async () => {
+    const t = setup();
+    await t.bus.script(['PURGE']);
+    await answer(t.bus, {
+      settings: { ...dialog(t.bus).settings, nested: true },
+      run: 'checked',
+      checked: [UNUSED, OLD],
+    });
+    expect(confirmShown(t.bus)).toMatchObject({ name: 'UNUSED' });
+    await confirm(t.bus, 'this');
+    expect(confirmShown(t.bus)).toMatchObject({ name: 'OLD' });
+    await t.bus.cancel();
+    // OLD skipped: HIDDEN, which only it uses, is never asked for. UNUSED's nested items are.
+    const asked: string[] = [];
+    for (let c = confirmShown(t.bus); c; c = confirmShown(t.bus)) {
+      asked.push(c.name);
+      await confirm(t.bus, 'this');
+    }
+    expect(asked.sort()).toEqual(['INBLOCK', 'NESTED']);
+    expect(t.blocks()).not.toContain('UNUSED');
+    expect(t.blocks()).not.toContain('NESTED');
+    expect(t.layers()).not.toContain('INBLOCK');
+    expect(t.layers()).toContain('OLD');
+    expect(t.model.tables.linetypes.has(HIDDEN)).toBe(true);
+  });
+
+  it('Find Non-Purgeable Items: Details of the objects using an item', async () => {
+    const t = setup();
+    await t.bus.script(['PURGE']);
+    await answer(t.bus, { view: 'inUse', details: WALLS });
+    const d = dialog(t.bus);
+    expect(d.view).toBe('inUse');
+    expect(d.details).toEqual({
+      handle: WALLS,
+      objects: 1,
+      spaces: [{ name: 'Model', objects: 1 }],
+      here: 1,
+      extents: { minX: 0, minY: 1, maxX: 10, maxY: 1 },
+    });
+    // Through a block: layer 0's objects in USED reach model space by the insert, besides the
+    // objects on it; a group's members are its objects.
+    await answer(t.bus, { details: FULL_GROUP });
+    expect(dialog(t.bus).details).toMatchObject({ objects: 1, here: 1 });
+    await answer(t.bus, { details: USED });
+    expect(dialog(t.bus).details).toMatchObject({ objects: 1 });
+    // An item only a layer state uses has no objects, so nothing to measure.
+    await answer(t.bus, { details: DASHED });
+    expect(dialog(t.bus).details).toMatchObject({ objects: 0, here: 0, spaces: [] });
+    expect(dialog(t.bus).details?.extents).toBeUndefined();
+  });
+
+  it('Select Objects closes the dialog, selects the objects using the item and zooms to them', async () => {
+    const t = setup();
+    await t.bus.script(['PURGE']);
+    await answer(t.bus, { view: 'inUse', details: WALLS }, 'select');
+    expect(t.bus.prompt).toBeUndefined();
+    const walls = t.model.entityByHandle('21')!.id;
+    expect(t.bus.selection).toEqual([walls]);
+    expect(t.requests).toContainEqual({ op: 'objects', ids: [walls] });
+    // An item no object uses selects nothing, and the view stays.
+    const asked = t.requests.length;
+    await t.bus.script(['PURGE']);
+    await answer(t.bus, { view: 'inUse', details: DASHED }, 'select');
+    expect(t.bus.selection).toEqual([]);
+    expect(t.log.at(-1)).toBe('0 found.');
+    expect(t.requests.slice(asked).some((r) => r.op === 'objects')).toBe(false);
+    // The next PURGE opens on Purgeable Items, with the options it closed with.
+    await t.bus.script(['PURGE']);
+    expect(dialog(t.bus).view).toBe('purgeable');
+    await answer(t.bus, { settings: { ...noConfirm, nested: true } }, 'ok');
+    await t.bus.script(['PURGE']);
+    expect(dialog(t.bus).settings).toEqual({ ...noConfirm, nested: true });
+  });
+
+  it('Esc closes it, changing nothing', async () => {
+    const t = setup();
+    await t.bus.script(['PURGE']);
+    await t.bus.cancel();
+    expect(t.bus.prompt).toBeUndefined();
+    expect(t.layers()).toContain('OLD');
+    expect(t.bus.undo.state.undoable).toBe(0);
   });
 });
