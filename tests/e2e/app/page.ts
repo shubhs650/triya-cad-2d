@@ -290,15 +290,28 @@ export async function expectInputsRead(page: Page): Promise<void> {
 }
 
 /**
+ * Waits until no modal dialog is open (M5-14). A dialog's OK or Esc answers the engine, unnumbered
+ * (the command line holds no keys for it), and the dialog stays open until the engine's reply
+ * closes it. While it is open (`showModal`) the rest of the page is inert: the command line cannot
+ * take the focus, so a fill and Enter meant for it reach the dialog instead, and templates.spec.ts
+ * lost a NEW typed straight after DIMSTYLE's Esc on loaded CI runners.
+ */
+export async function expectNoModalDialog(page: Page): Promise<void> {
+  await expect(page.locator('dialog:modal')).toHaveCount(0);
+}
+
+/**
  * Enters `text` at the command line, ended by Enter, once the engine has read every input sent
  * before (M2-75). A fill replaces the field's text at once, while the keys typed ahead of a
  * prompt not shown yet are held and replayed in order (M2-71): a fill made while the engine still
  * read the input before replaced that input's text, whose Enter was held, and export.spec.ts lost
- * a point and repeated LINE in CI. Specs never fill the command line themselves
- * (tests/lint/e2e-command-fill.test.ts); keys typed with `page.keyboard` need no wait.
+ * a point and repeated LINE in CI. It also waits for a closing dialog to close (M5-14). Specs
+ * never fill the command line themselves (tests/lint/e2e-command-fill.test.ts); keys typed with
+ * `page.keyboard` need no wait.
  */
 export async function enterCommand(page: Page, text: string): Promise<void> {
   await expectInputsRead(page);
+  await expectNoModalDialog(page);
   const input = page.getByLabel('Command', { exact: true });
   await input.fill(text);
   await input.press('Enter');
