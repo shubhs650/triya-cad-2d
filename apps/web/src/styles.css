@@ -938,26 +938,62 @@ button {
 
 .layer-table {
   /* M5-05 part 5: the columns have widths (the table's width is theirs), contents cut. */
-  table-layout: fixed;
-  border-collapse: collapse;
   white-space: nowrap;
   --layer-row-bg: transparent;
 }
 
+/*
+ * M5-13: each row is a grid on the columns' widths (`--layer-columns`), not a table row, so that
+ * a row the search hides can keep its layout (content-visibility does not apply to table rows).
+ * The elements keep their table roles. A cell cuts its contents only when its column may need
+ * it (generated from `cutLayerColumns`): every cut is a clip of its own to lay out and paint.
+ */
+.layer-table,
+.layer-table thead,
+.layer-table tbody,
 .layer-table th,
 .layer-table td {
-  overflow: hidden;
+  display: block;
+}
+
+.layer-table tr {
+  display: grid;
+  grid-template-columns: var(--layer-columns);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.layer-table th,
+.layer-table td {
+  min-width: 0;
+  /* Centred in the row's height, as a table cell's contents are; the cell keeps that height. */
+  align-content: center;
   text-overflow: ellipsis;
   padding: 2px 6px;
-  border-bottom: 1px solid var(--chrome-border);
   text-align: left;
   font-weight: normal;
 }
 
-.layer-table thead th {
+/*
+ * A row the search hides is hidden (LayersPalette's `searchCss`); its cells are skipped with it
+ * (content-visibility: hidden), so their own visibility stays: showing the row again then
+ * restyles the row, not every element in its cells.
+ */
+@supports (content-visibility: hidden) {
+  .layer-table tbody tr > * {
+    visibility: visible;
+  }
+}
+
+/* The header row stays at the top while the rows scroll (a cell cannot leave its grid row). */
+.layer-table thead {
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+.layer-table thead th {
+  position: relative;
+  overflow: hidden;
   background: var(--chrome-bg);
   color: var(--chrome-text-muted);
 }

@@ -29,6 +29,11 @@ export interface LayerColumn {
   readonly layoutOnly?: true;
   /** Its width (px) until the user sizes it: room for its widest usual content. */
   readonly width: number;
+  /**
+   * Its contents always fit its default width (a toggle, an icon, a lineweight, a percentage),
+   * so its cells need not cut them until the column is narrowed (M5-13).
+   */
+  readonly fits?: true;
 }
 
 /** A column is never narrower than this (its header's edge stays draggable) nor wider than that. */
@@ -37,17 +42,17 @@ export const MAX_COLUMN_WIDTH = 1200;
 
 /** AutoCAD's columns in its default order. */
 export const LAYER_COLUMNS: readonly LayerColumn[] = [
-  { key: 'status', title: 'Status', width: 56 },
+  { key: 'status', title: 'Status', width: 56, fits: true },
   { key: 'name', title: 'Name', width: 180 },
-  { key: 'on', title: 'On', width: 88 },
-  { key: 'frozen', title: 'Freeze', width: 88 },
-  { key: 'locked', title: 'Lock', width: 88 },
-  { key: 'vpFreeze', title: 'VP Freeze', layoutOnly: true, width: 88 },
-  { key: 'plot', title: 'Plot', width: 88 },
+  { key: 'on', title: 'On', width: 88, fits: true },
+  { key: 'frozen', title: 'Freeze', width: 88, fits: true },
+  { key: 'locked', title: 'Lock', width: 88, fits: true },
+  { key: 'vpFreeze', title: 'VP Freeze', layoutOnly: true, width: 88, fits: true },
+  { key: 'plot', title: 'Plot', width: 88, fits: true },
   { key: 'color', title: 'Color', width: 110 },
   { key: 'linetype', title: 'Linetype', width: 130 },
-  { key: 'lineweight', title: 'Lineweight', width: 110 },
-  { key: 'transparency', title: 'Transparency', width: 110 },
+  { key: 'lineweight', title: 'Lineweight', width: 110, fits: true },
+  { key: 'transparency', title: 'Transparency', width: 110, fits: true },
   { key: 'description', title: 'Description', width: 200 },
 ];
 
@@ -136,6 +141,24 @@ export function withLayerColumnWidths(
     next[k] = clampWidth(v);
   return { ...s, widths: next };
 }
+
+/** The rows' grid tracks: each column shown at its width, in order (M5-13). */
+export const layerColumnTracks = (
+  s: LayerColumnSettings,
+  visible: readonly LayerColumn[],
+): string => visible.map((c) => `${layerColumnWidth(s, c.key)}px`).join(' ');
+
+/**
+ * The columns shown whose cells cut their contents at the column's edge: those whose text can be
+ * any length, and the others once narrowed below their default width. A cell that cuts is a clip
+ * of its own to lay out and paint, so the cells that never need it go without (M5-13: about a
+ * third of the time taken to show the rows again after a search).
+ */
+export const cutLayerColumns = (
+  s: LayerColumnSettings,
+  visible: readonly LayerColumn[],
+): LayerColumnKey[] =>
+  visible.filter((c) => !c.fits || layerColumnWidth(s, c.key) < c.width).map((c) => c.key);
 
 /**
  * Maximize: the list's width left over once every column fits its contents (`fitted`), shared

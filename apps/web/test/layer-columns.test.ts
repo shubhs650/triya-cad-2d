@@ -8,7 +8,9 @@ import {
   LAYER_COLUMNS,
   MAX_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
+  cutLayerColumns,
   frozenLayerColumns,
+  layerColumnTracks,
   layerColumnWidth,
   maximizedWidths,
   moveLayerColumn,
@@ -222,6 +224,45 @@ describe('sorting the manager’s rows (M5-05 part 3)', () => {
 
 // M5-05 part 5: the header menu's Maximize/Optimize/Freeze Column, and dragging a header (or its
 // edge) to move (or size) a column. The widths and the frozen column are the user's too.
+describe('the rows’ column tracks and the columns that cut their contents (M5-13)', () => {
+  const visible = visibleLayerColumns(DEFAULT_LAYER_COLUMNS, false);
+
+  it('lays the rows out on the columns’ widths, in the order shown', () => {
+    const s = { ...DEFAULT_LAYER_COLUMNS, widths: { name: 250 } };
+    const shown = visibleLayerColumns(s, false);
+    expect(layerColumnTracks(s, shown)).toBe(
+      shown.map((c) => `${layerColumnWidth(s, c.key)}px`).join(' '),
+    );
+    expect(layerColumnTracks(s, shown).split(' ')[1]).toBe('250px');
+  });
+
+  it('cuts the columns whose text can be any length, the others only once narrowed', () => {
+    // A name, a colour (a colour book's name), a linetype or a description can be wider than
+    // any width; a toggle, the status, a lineweight or a transparency fits its default width.
+    expect(cutLayerColumns(DEFAULT_LAYER_COLUMNS, visible)).toEqual([
+      'name',
+      'color',
+      'linetype',
+      'description',
+    ]);
+    const narrowed = { ...DEFAULT_LAYER_COLUMNS, widths: { on: 40, lineweight: 110, name: 600 } };
+    expect(cutLayerColumns(narrowed, visible)).toEqual([
+      'name',
+      'on',
+      'color',
+      'linetype',
+      'description',
+    ]);
+    // Only the columns shown.
+    const hidden = { ...narrowed, hidden: ['on' as const, 'description' as const] };
+    expect(cutLayerColumns(hidden, visibleLayerColumns(hidden, false))).toEqual([
+      'name',
+      'color',
+      'linetype',
+    ]);
+  });
+});
+
 describe('column widths, moving and freezing (M5-05 part 5)', () => {
   it('gives every column a default width, the user’s width when set', () => {
     for (const c of LAYER_COLUMNS) expect(c.width).toBeGreaterThanOrEqual(MIN_COLUMN_WIDTH);
