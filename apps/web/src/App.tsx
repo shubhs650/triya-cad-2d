@@ -62,6 +62,7 @@ import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
 import { AttributeDialogs } from './AttributeDialogs';
+import type { XrefFiles } from './XrefAttachDialog';
 import { PlotDialog, download, plotDialog } from './PlotDialog';
 import { PublishDialog, publishDialog, type BackgroundDrawings } from './PublishDialog';
 import {
@@ -509,10 +510,15 @@ function viewContext(id: number): ViewContext {
         underlays: r.underlays,
         ...(r.current !== undefined && { current: r.current }),
       }),
-    // -XREF Unload and Reload (M5-04), as the References palette's buttons.
+    // -XREF Unload and Reload (M5-04), as the References palette's buttons; XATTACH's load of
+    // the xref it attached (M5-04 part 6).
     xref: async (action, blocks) => ({
       ok: true,
-      messages: await (action === 'unload' ? unloadXrefs(id, blocks) : reloadXrefs(id, blocks)),
+      messages: await (action === 'unload'
+        ? unloadXrefs(id, blocks)
+        : action === 'attach'
+          ? attachXrefs(id, blocks)
+          : reloadXrefs(id, blocks)),
     }),
     // PROPERTIES and PROPERTIESCLOSE (M2-21); QUICKPROPERTIES (M2-35 part 21) shows Quick
     // Properties for the objects it left selected, whatever QPMODE says.
@@ -1195,6 +1201,19 @@ async function supplyNow(sources: readonly Supplied[], mode: 'drop' | 'reference
  */
 const xrefSources = new Map<string, Supplied>();
 
+/**
+ * The drawings XATTACH's dialog picks (M5-04 part 6): Block Unit shows the file's INSUNITS, and
+ * the file attached joins `xrefSources`, so the xref loads from it (and Reload reads it again).
+ */
+const xrefFiles: XrefFiles = {
+  units: async (file) => {
+    const opened = await openDrawing(file);
+    const units = new Map(opened.init.header ?? []).get('$INSUNITS');
+    return typeof units === 'number' && Number.isInteger(units) && units >= 0 ? units : 0;
+  },
+  attach: (file) => xrefSources.set(fileKey(file.name), fromFile(file)),
+};
+
 /** The name of xref `block` of drawing `doc`, for messages. */
 function xrefName(doc: number, block: string): string {
   const d = store.getSnapshot().docs.find((x) => x.id === doc);
@@ -1234,6 +1253,30 @@ async function reloadXrefs(doc: number, blocks: readonly string[]): Promise<stri
   }
   await Promise.all(controllersOf(doc).map((c) => c.flush()));
   store.edited(doc, false);
+  out.push(...(await loadFromSources(doc, names, (name) => `Xref "${name}" has been reloaded.`)));
+  return out;
+}
+
+/**
+ * XATTACH (M5-04 part 6): the xrefs it just made loaded from the file its dialog picked (kept in
+ * `xrefSources`), with the xrefs they bring in; their loads join the command's undo step. One
+ * line each, as AutoCAD's: loaded, or not found.
+ */
+async function attachXrefs(doc: number, blocks: readonly string[]): Promise<string[]> {
+  const names = new Map(blocks.map((b) => [b, xrefName(doc, b)]));
+  return loadFromSources(doc, names, (name) => `"${name}" loaded.`);
+}
+
+/**
+ * Loads the waiting xrefs of drawing `doc` from the files this session found for them (dropped,
+ * picked, or in a kept folder), and says for each of `names` whether it loaded.
+ */
+async function loadFromSources(
+  doc: number,
+  names: ReadonlyMap<string, string>,
+  loaded: (name: string) => string,
+): Promise<string[]> {
+  const out: string[] = [];
   const waiting = waitingXrefs().find((w) => w.doc === doc)?.xrefs ?? [];
   const sources = new Set<Supplied>();
   for (const x of waiting) {
@@ -1251,7 +1294,7 @@ async function reloadXrefs(doc: number, blocks: readonly string[]): Promise<stri
     out.push(
       still.has(block)
         ? `Xref "${name}" not found: drop its file, or the folder that holds it, on the window.`
-        : `Xref "${name}" has been reloaded.`,
+        : loaded(name),
     );
   }
   return out;
@@ -1968,6 +2011,7 @@ export function App() {
             onAttachImage={() =>
               engines.command(active.id, { kind: 'invoke', name: 'IMAGEATTACH' })
             }
+            onAttachDrawing={() => engines.command(active.id, { kind: 'invoke', name: 'XATTACH' })}
             onBind={(rows, insert) =>
               bindXrefs(
                 active.id,
@@ -2027,6 +2071,7 @@ export function App() {
           images.add(name, bytes);
           supplied.changed();
         }}
+        xrefFiles={xrefFiles}
       />
       <PlotDialog
         doc={active}

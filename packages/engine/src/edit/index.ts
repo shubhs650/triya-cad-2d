@@ -137,6 +137,13 @@ export * from './tolerance-frame';
 export { detachXrefs, xrefDetachChange, xrefDetachProblem } from './xrefs';
 export { bindXrefs, xrefBindChange, xrefBindProblem } from './xref-bind';
 export {
+  attachXref,
+  xrefFileName,
+  xrefNameFor,
+  xrefOfFile,
+  type XrefAttachFile,
+} from './xref-attach';
+export {
   clipOf,
   clipOutline,
   inverseInsertMatrix,

@@ -254,6 +254,8 @@ interface Frame {
   prompt: Prompt | undefined;
   /** It waits on the app (`waitsOnApp`): no prompt shows (M2-41). */
   waiting?: boolean;
+  /** It waits on the app loading the xrefs it attached (XATTACH, M5-04 part 6: `joinLoad`). */
+  attaching?: boolean;
   /** The selection its "Select objects" prompt is building (M2-03). */
   select?: SelectionLoop | undefined;
   /** The point the command it runs inside was collecting (`'ZOOM` typed at FROM's base point). */
@@ -852,6 +854,19 @@ export class PromptBus {
     if (this.#history.length > logged) this.#showPrompt();
   }
 
+  /**
+   * An xref load the app applied to the drawing (the session's `xref-load`, M1-21) while the
+   * command asks it to load the xrefs the command attached (XATTACH's `xref` request, M5-04 part
+   * 6): the load joins the command's undo step, so U takes the xref back with its content and
+   * redo brings it back loaded. Any other load is no undo step (AutoCAD's loads are none) and is
+   * left alone: false.
+   */
+  joinLoad(change: ChangeSet): boolean {
+    if (!this.#stack.at(-1)?.attaching) return false;
+    this.#changes.push(change);
+    return true;
+  }
+
   /** The body of a palette edit: `applyProperty`, on this bus's drawing. */
   async #applyProperty(
     ctx: CommandContext,
@@ -1189,6 +1204,14 @@ export class PromptBus {
    */
   async #hostRequest(r: ViewRequest): Promise<ViewReply> {
     const frame = this.#stack.at(-1);
+    if (frame && r.op === 'xref' && r.action === 'attach') {
+      frame.attaching = true;
+      try {
+        return await this.#view.request(r);
+      } finally {
+        frame.attaching = false;
+      }
+    }
     if (!frame || !waitsOnApp(r)) return this.#view.request(r);
     frame.waiting = true;
     this.#emit({ type: 'waiting', command: frame.def.name });
