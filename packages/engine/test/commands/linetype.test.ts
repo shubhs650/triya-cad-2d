@@ -555,4 +555,107 @@ describe('the linetype-load edit (Select Linetype Load...)', () => {
   });
 });
 
+describe('Other... in the Properties palette (M5-08 part 2)', () => {
+  const lineOf = (t: ReturnType<typeof drawing>) => t.model.entityByHandle('51')!;
+
+  it('loads in the Linetype Manager and gives the selection the linetype highlighted, one undo step', async () => {
+    const t = drawing();
+    await t.bus.selectAll();
+    const selected = [...t.bus.selection];
+    await t.bus.otherLinetype();
+    expect(t.bus.command).toBe('PROPERTIES');
+    expect(t.request()).toMatchObject({ apply: true, current: 'ByLayer' });
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: { load: [GAS], apply: 'triya_gas', ltscale: 1, celtscale: 1, psltscale: true },
+    } as PromptAnswer);
+    expect(t.bus.command).toBeUndefined();
+    const gas = named(t.model, 'TRIYA_GAS')!;
+    expect(lineOf(t).linetype).toBe(gas.handle);
+    // CELTYPE is not touched with objects shown, and they stay selected.
+    expect(t.model.header.get('$CELTYPE')).toBe('ByLayer');
+    expect([...t.bus.selection]).toEqual(selected);
+    expect(t.bus.undo.state.nextUndo).toBe('PROPERTIES');
+    await t.bus.script(['U']);
+    expect(named(t.model, 'TRIYA_GAS')).toBeUndefined();
+    expect(lineOf(t).linetype).toBe(DASHED);
+  });
+
+  it('makes the linetype current with nothing selected; ByLayer and ByBlock by name', async () => {
+    const t = drawing();
+    await t.bus.otherLinetype();
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: { apply: 'HIDDEN' },
+    } as PromptAnswer);
+    expect(t.model.header.get('$CELTYPE')).toBe('HIDDEN');
+    await t.bus.selectAll();
+    await t.bus.otherLinetype();
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: { apply: 'BYBLOCK' },
+    } as PromptAnswer);
+    expect(lineOf(t).linetype).toBe('ByBlock');
+  });
+
+  it('Cancel changes nothing; OK without a linetype makes only the manager’s changes; an unknown one is said', async () => {
+    const t = drawing();
+    await t.bus.selectAll();
+    const version = t.model.version;
+    await t.bus.otherLinetype();
+    await t.bus.cancel();
+    expect(t.bus.command).toBeUndefined();
+    expect(t.model.version).toBe(version);
+    await t.bus.otherLinetype();
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: { load: [CENTER] },
+    } as PromptAnswer);
+    expect(named(t.model, 'TRIYA_CENTER')).toBeDefined();
+    expect(lineOf(t).linetype).toBe(DASHED);
+    await t.bus.otherLinetype();
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: { apply: 'NOPE' },
+    } as PromptAnswer);
+    expect(t.log).toContain('Linetype NOPE not found.');
+    expect(lineOf(t).linetype).toBe(DASHED);
+  });
+
+  it('cancels a running command first, keeping the selection its Select objects prompt built', async () => {
+    const t = drawing();
+    await t.bus.script(['MOVE']);
+    await t.bus.selectAll();
+    const selected = [...t.bus.selection];
+    expect(selected.length).toBeGreaterThan(0);
+    await t.bus.otherLinetype();
+    expect(t.bus.command).toBe('PROPERTIES');
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      linetype: { apply: 'HIDDEN' },
+    } as PromptAnswer);
+    expect(lineOf(t).linetype).toBe(HIDDEN);
+    expect([...t.bus.selection]).toEqual(selected);
+  });
+
+  it('the session’s property-editor input with key linetype opens the manager', async () => {
+    const s = new EngineSession(init());
+    const out: unknown[] = [];
+    s.onCommand((o) => out.push(o));
+    await s.command({ kind: 'property-editor', key: 'linetype' });
+    const prompt = out
+      .filter((o): o is { type: 'prompt'; prompt: { dialog?: DialogRequest } } => {
+        return (o as { type: string }).type === 'prompt';
+      })
+      .at(-1);
+    expect(prompt?.prompt.dialog).toMatchObject({ type: 'linetype', apply: true });
+  });
+});
+
 void MODEL_SPACE;

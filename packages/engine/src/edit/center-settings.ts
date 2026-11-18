@@ -15,7 +15,7 @@ export interface CenterSource {
 }
 
 /** Whether the drawing is metric: $MEASUREMENT when it states it, else how it was opened. */
-function metric(model: CenterSource): boolean {
+export function metric(model: CenterSource): boolean {
   const m = model.header.get('$MEASUREMENT');
   return typeof m === 'number' ? m === 1 : model.meta?.measurement === 'metric';
 }

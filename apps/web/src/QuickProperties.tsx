@@ -182,7 +182,7 @@ export function QuickProperties({
         sheet={sheet}
         narrow={narrow}
         set={set}
-        openEditor={() => engines.command(doc.id, { kind: 'property-editor', key: 'contents' })}
+        openEditor={(key = 'contents') => engines.command(doc.id, { kind: 'property-editor', key })}
         stepVertex={() => {}}
         markVertex={() => {}}
         patternNames={patternNames}

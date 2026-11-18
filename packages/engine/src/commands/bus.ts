@@ -52,6 +52,7 @@ import {
 import { blocklessDimensionBlocks, regenerateRestyled } from './modify/dimensions';
 import { followAssociations } from './modify/array';
 import { applyProperty } from './modify/property-edit';
+import { otherLinetype } from './linetype';
 import {
   DEFAULT_ANGLES,
   parseAngle,
@@ -954,6 +955,35 @@ export class PromptBus {
         keepsSelection: true,
         async *run(ctx) {
           yield* editContents(ctx, entity);
+        },
+      };
+      await this.#start(def, false, false);
+    });
+  }
+
+  /**
+   * The Properties palette's Other... in its Linetype list (M5-08 part 2): the Linetype Manager,
+   * whose OK loads what it loaded and gives the linetype highlighted to the objects the palette
+   * shows (of the type `filter`), or makes it current with none. One PROPERTIES undo step the
+   * command line does not echo, the objects staying selected; a running command is cancelled
+   * first, the manager being a dialog of its own (one at "Select objects" too, whose selection
+   * the palette showed and the linetype goes to).
+   */
+  otherLinetype(filter?: EntityType): Promise<void> {
+    return this.#enqueue(async () => {
+      const ids = [...this.selection];
+      const selecting = this.#selecting() !== undefined;
+      if (this.#stack.length > 0) await this.#cancel();
+      if (selecting) {
+        this.#idle.set(ids);
+        this.#showSelection();
+      }
+      const def: CommandDef = {
+        name: 'PROPERTIES',
+        usesSelection: 'none',
+        keepsSelection: true,
+        async *run(ctx) {
+          yield* otherLinetype(ctx, ids, filter);
         },
       };
       await this.#start(def, false, false);
