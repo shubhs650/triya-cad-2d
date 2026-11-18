@@ -77,6 +77,10 @@ export function serveEngine(port: Endpoint<EngineRequest, EngineReply>): void {
         );
         return;
       }
+      if (data.type === 'purge-health') {
+        port.postMessage({ type: 'purge-health', id: data.id, health: session.purgeHealth() });
+        return;
+      }
       const result = session.edit(data.edit);
       if (result.ok) share(result.change);
       port.postMessage({ type: 'result', id: data.id, result });

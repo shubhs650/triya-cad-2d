@@ -2054,6 +2054,7 @@ export function App() {
         {active && palette === 'health' && (
           <HealthPalette
             doc={active}
+            store={store}
             patternSources={patterns.sources()}
             fontStore={fonts}
             deviceFonts={deviceFonts}

@@ -1452,6 +1452,18 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* Purge fixes (M5-09 part 3): the card's buttons under its table. */
+.health-fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+
+.health-fixes button {
+  padding: 2px 10px;
+}
+
 /* Dimensions that differ (M2-30 part 3): the handle with its kind and space under it. */
 .health-dimensions th[scope='row'] {
   white-space: nowrap;

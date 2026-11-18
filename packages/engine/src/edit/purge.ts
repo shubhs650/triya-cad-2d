@@ -646,6 +646,52 @@ export function purgeInto(
   dropLayersFromStates(b, layers);
 }
 
+/**
+ * What the Health palette counts (M5-09 part 3, PRD FR-Z4): the unused named items by category
+ * (registered applications left to -PURGE, as in the Purge dialog), how many more "Purge nested
+ * items" would take with them, and the zero-length geometry and empty text PURGE would delete.
+ */
+export interface PurgeHealth {
+  /** Categories with unused items, in the Purge dialog's order; none listed with 0. */
+  readonly unused: readonly {
+    readonly category: PurgeCategory;
+    readonly title: string;
+    readonly count: number;
+  }[];
+  /** Items in use only by the unused ones: they go with them. */
+  readonly nested: number;
+  readonly zeroLength: number;
+  readonly emptyText: number;
+}
+
+/** The unused named items the Health palette offers to purge (not registered applications). */
+export function unusedItems(model: DocumentModel): PurgeItem[] {
+  return purgeState(model).purgeable.filter((i) => i.category !== 'appIds');
+}
+
+export function purgeHealth(model: DocumentModel): PurgeHealth {
+  const unused = unusedItems(model);
+  const counts = new Map<PurgeCategory, number>();
+  for (const i of unused) counts.set(i.category, (counts.get(i.category) ?? 0) + 1);
+  const all = unused.length
+    ? purgeClosure(
+        model,
+        unused.map((i) => i.handle),
+        true,
+      ).length
+    : 0;
+  return {
+    unused: PURGE_CATEGORIES.filter((c) => counts.has(c)).map((category) => ({
+      category,
+      title: PURGE_RULES[category].title,
+      count: counts.get(category)!,
+    })),
+    nested: all - unused.length,
+    zeroLength: zeroLengthObjects(model).length,
+    emptyText: emptyTextObjects(model).length,
+  };
+}
+
 // ── Unnamed objects ───────────────────────────────────────────────────────────────────────
 
 /** Model space and the layouts' objects not on a locked layer, which PURGE may delete. */

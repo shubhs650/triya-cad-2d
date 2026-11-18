@@ -10,6 +10,7 @@ import {
   type EditResult,
   type EngineEdit,
   type PaperView,
+  type PurgeHealth,
 } from '@triya/engine';
 import type { ChangeLink } from '@triya/render';
 import type { Endpoint, EngineReply, EngineRequest } from './protocol';
@@ -33,6 +34,7 @@ export class EngineHost {
   readonly #session: EngineSession | undefined;
   readonly #pending = new Map<number, Pending>();
   readonly #blocks = new Map<number, PendingBlocks>();
+  readonly #health = new Map<number, { resolve(h: PurgeHealth): void; reject(e: Error): void }>();
   readonly #commandListeners = new Set<(o: CommandOutput) => void>();
   #nextId = 1;
   #nextLink = 1;
@@ -132,14 +134,30 @@ export class EngineHost {
     });
   }
 
+  /** What the Health palette's purge card counts (M5-09 part 3), as the drawing is now. */
+  purgeHealth(): Promise<PurgeHealth> {
+    if (this.#disposed) return Promise.reject(new Error('engine host disposed'));
+    if (this.#session) return Promise.resolve(this.#session.purgeHealth());
+    const id = this.#nextId++;
+    return new Promise((resolve, reject) => {
+      this.#health.set(id, { resolve, reject });
+      this.#worker!.postMessage({ type: 'purge-health', id });
+    });
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#worker?.terminate();
-    for (const p of [...this.#pending.values(), ...this.#blocks.values()]) {
+    for (const p of [
+      ...this.#pending.values(),
+      ...this.#blocks.values(),
+      ...this.#health.values(),
+    ]) {
       p.reject(new Error('engine host disposed'));
     }
     this.#pending.clear();
     this.#blocks.clear();
+    this.#health.clear();
     this.#commandListeners.clear();
   }
 
@@ -149,6 +167,13 @@ export class EngineHost {
 
   #receive(m: EngineReply): void {
     if (m.type === 'command') return this.#commandOutput(m.output);
+    const health = m.id === undefined ? undefined : this.#health.get(m.id);
+    if (health) {
+      this.#health.delete(m.id!);
+      if (m.type === 'purge-health') health.resolve(m.health);
+      else health.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
+      return;
+    }
     const blocks = m.id === undefined ? undefined : this.#blocks.get(m.id);
     if (blocks) {
       this.#blocks.delete(m.id!);
@@ -156,7 +181,7 @@ export class EngineHost {
       else blocks.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
       return;
     }
-    if (m.type === 'save-blocks' || m.type === 'save-views') return;
+    if (m.type === 'save-blocks' || m.type === 'save-views' || m.type === 'purge-health') return;
     const p = m.id === undefined ? undefined : this.#pending.get(m.id);
     if (m.id !== undefined) this.#pending.delete(m.id);
     if (m.type === 'result') p?.resolve(m.result);

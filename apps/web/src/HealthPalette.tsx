@@ -10,12 +10,20 @@
 // engine draws for it, asked of the render side (it has the drawing as edited and the fonts),
 // again after every edit while the palette is open. One that differs is listed with what
 // differs and, in the space on screen, a button that zooms to it.
+// Purge fixes (M5-09 part 3, PRD FR-Z4 "unused layers/blocks/styles, empty text, zero-length
+// ... one-click fixes"): what PURGE would take, asked of the drawing's engine again after every
+// edit while the palette is open. Unused items: their counts by category, Purge All (each unused
+// item and what only they use, as the Purge dialog's Purge All with Purge nested items) and
+// Purge... (the Purge dialog, to choose); zero-length geometry and empty text: Delete. Each fix
+// is one PURGE undo step; registered applications are left to -PURGE, as in the dialog.
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { DimensionMismatch, DrawingDimensionHealth } from '@triya/dims';
+import type { PurgeEdit, PurgeHealth } from '@triya/engine';
 import { healthReport, type HealthReport } from '@triya/io/health';
 import { patternLibrary } from '@triya/render';
 import { controllerOf, controllersOf } from './canvas/registry';
-import type { OpenDocument } from './documents';
+import type { DocumentStore, OpenDocument } from './documents';
+import { engines } from './engine/registry';
 import { appFontErrors, appFonts } from './fonts';
 import type { DeviceFonts } from './local-fonts';
 import type { FontStore } from './user-fonts';
@@ -28,12 +36,15 @@ const REFERENCE_KIND: Record<HealthReport['references'][number]['kind'], string>
 
 export function HealthPalette({
   doc,
+  store,
   patternSources,
   fontStore,
   deviceFonts,
   onClose,
 }: {
   doc: OpenDocument;
+  /** For the purge fixes: the drawing's revision moves with each (M5-09 part 3). */
+  store: DocumentStore;
   /** The user's .pat files (M1-50): the report is redone when they change. */
   patternSources: readonly string[];
   /** The user's font files (M1-38): the report is redone when they change. */
@@ -85,6 +96,8 @@ export function HealthPalette({
             <dd>{units.measurement === 'metric' ? 'Metric' : 'Imperial'}</dd>
           </dl>
         </Card>
+
+        <PurgeCards doc={doc} store={store} />
 
         <Card id="fonts" title="Missing fonts" count={fonts.missing.length}>
           {fonts.missing.length === 0 ? (
@@ -240,6 +253,141 @@ export function HealthPalette({
         </Card>
       </div>
     </aside>
+  );
+}
+
+/**
+ * What PURGE would take from the drawing, from its engine: asked again after every edit; undefined
+ * until the first answer.
+ */
+function usePurgeHealth(doc: OpenDocument): PurgeHealth | undefined {
+  const [health, setHealth] = useState<{ doc: number; health: PurgeHealth }>();
+  useEffect(() => {
+    let live = true;
+    engines.purgeHealth(doc.id).then(
+      (h) => {
+        if (live && h) setHealth({ doc: doc.id, health: h });
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [doc.id, doc.revision]);
+  return health?.doc === doc.id ? health.health : undefined;
+}
+
+function PurgeCards({ doc, store }: { doc: OpenDocument; store: DocumentStore }) {
+  const health = usePurgeHealth(doc);
+  const [message, setMessage] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const fix = async (what: PurgeEdit['what']) => {
+    setBusy(true);
+    try {
+      const r = await engines.edit(doc.id, { kind: 'purge', what });
+      if (!r.ok) {
+        setMessage(r.message);
+        return;
+      }
+      setMessage(undefined);
+      store.edited(doc.id);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!health) {
+    return (
+      <Card id="unused" title="Unused items">
+        <p className="empty">Checking…</p>
+      </Card>
+    );
+  }
+  const total = health.unused.reduce((n, c) => n + c.count, 0);
+  const status = message && (
+    <p className="hint" role="status">
+      {message}
+    </p>
+  );
+  return (
+    <>
+      <Card id="unused" title="Unused items" count={total}>
+        {total === 0 ? (
+          <p className="empty">None: every named item is in use.</p>
+        ) : (
+          <>
+            <p className="hint">
+              Layers, blocks and styles nothing in the drawing uses.
+              {health.nested > 0 &&
+                ` Purging them also takes ${plural(health.nested, 'item')} only they use.`}
+            </p>
+            <Counts
+              label="Unused items"
+              head={['Category', 'Unused']}
+              rows={health.unused.map((c) => [c.title, c.count])}
+            />
+          </>
+        )}
+        <div className="health-fixes">
+          {total > 0 && (
+            <button type="button" disabled={busy} onClick={() => void fix('unused')}>
+              Purge All
+            </button>
+          )}
+          <button
+            type="button"
+            title="Choose what to purge in the Purge dialog"
+            onClick={() => engines.command(doc.id, { kind: 'invoke', name: 'PURGE' })}
+          >
+            Purge…
+          </button>
+        </div>
+        {status}
+      </Card>
+
+      <Card id="zero-length" title="Zero-length geometry" count={health.zeroLength}>
+        {health.zeroLength === 0 ? (
+          <p className="empty">None.</p>
+        ) : (
+          <>
+            <p className="hint">
+              Lines, arcs, circles and polylines with no length, outside blocks and locked layers.
+            </p>
+            <div className="health-fixes">
+              <button
+                type="button"
+                disabled={busy}
+                aria-label="Delete zero-length geometry"
+                onClick={() => void fix('zero-length')}
+              >
+                Delete
+              </button>
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Card id="empty-text" title="Empty text objects" count={health.emptyText}>
+        {health.emptyText === 0 ? (
+          <p className="empty">None.</p>
+        ) : (
+          <>
+            <p className="hint">
+              Text and multiline text showing only spaces, outside blocks and locked layers.
+            </p>
+            <div className="health-fixes">
+              <button
+                type="button"
+                disabled={busy}
+                aria-label="Delete empty text objects"
+                onClick={() => void fix('empty-text')}
+              >
+                Delete
+              </button>
+            </div>
+          </>
+        )}
+      </Card>
+    </>
   );
 }
 
