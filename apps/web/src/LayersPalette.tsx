@@ -29,6 +29,9 @@
 // dragged sideways moves its column; Freeze Column keeps the columns up to it from scrolling.
 // Typing in the search re-creates only the rows it hides or shows (`rowElements`), so the
 // filter stays far under 100 ms on 200 layers with React's development build too.
+// M5-13: the rows are grid rows on the columns' widths (a table's rows can keep no layout while
+// hidden), and a row the search hides keeps its layout, so clearing the search lays out no cell
+// again; only the columns whose contents can overflow cut them (`cutLayerColumns`).
 import {
   Fragment,
   memo,
@@ -37,6 +40,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
   type ReactElement,
@@ -63,7 +67,9 @@ import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from 
 import type { LinetypeFiles } from './linetype-files';
 import {
   MIN_COLUMN_WIDTH,
+  cutLayerColumns,
   frozenLayerColumns,
+  layerColumnTracks,
   layerColumnWidth,
   maximizedWidths,
   moveLayerColumnBefore,
@@ -321,9 +327,22 @@ const RowCells = memo(function RowCells({
 /**
  * The search: the rows whose lower-case name does not contain `needle` are not shown, as
  * `shown` leaves them out. One rule, so that typing changes no row (M5-05 part 5).
+ * M5-13: a row left out keeps its layout (content-visibility: hidden skips its cells without
+ * dropping their boxes) and is hidden from view and from assistive technology. Showing it again
+ * then lays out the row, not its cells: display: none made the browser build and lay out all 91
+ * rows' cells again, 2,800 layout objects, as the search was cleared.
  */
-const searchCss = (needle: string): string =>
-  `.layer-table tbody tr:not([data-search*="${CSS.escape(needle)}"]){display:none}`;
+const searchCss = (needle: string): string => {
+  const out = `.layer-table tbody tr:not([data-search*="${CSS.escape(needle)}"])`;
+  return (
+    `@supports (content-visibility:hidden){${out}{content-visibility:hidden;visibility:hidden;border-bottom-width:0}}` +
+    `@supports not (content-visibility:hidden){${out}{display:none}}`
+  );
+};
+
+/** M5-13: the cells of the columns that may need it cut their contents at the column's edge. */
+const cutColumnsCss = (keys: readonly LayerColumnKey[]): string =>
+  keys.map((k) => `.layer-table tbody [data-col="${k}"]{overflow:hidden}`).join('\n');
 
 /**
  * Freeze Column: the frozen columns stay at their offsets from the list's left edge while it
@@ -412,6 +431,7 @@ export function LayersPalette({
   const widthOf = (k: LayerColumnKey) => layerColumnWidth(shownColumns, k);
   const frozen = frozenLayerColumns(shownColumns, visible);
   const tableWidth = visible.reduce((sum, c) => sum + widthOf(c.key), 0);
+  const cutColumns = cutLayerColumns(shownColumns, visible);
   // Typing → rows filtered on screen: until the frame showing them has been drawn (a task posted
   // from that frame's animation callback runs once its style, layout and paint are done).
   // Written on the element itself, so measuring it renders nothing more.
@@ -704,8 +724,8 @@ export function LayersPalette({
     const range = document.createRange();
     for (const cell of tableRef.current?.querySelectorAll<HTMLElement>(`[data-col="${key}"]`) ??
       []) {
-      // A row the search hides has no box.
-      if (cell.getClientRects().length === 0) continue;
+      // A row the search hides keeps its boxes (M5-13), but its cells are not shown.
+      if (!cell.checkVisibility()) continue;
       // A header's grip sits on its edge: only the header's title counts.
       range.selectNodeContents(cell.querySelector('.layer-sort') ?? cell);
       const style = getComputedStyle(cell);
@@ -835,18 +855,19 @@ export function LayersPalette({
       <div className="layer-table-wrap">
         {needle && <style>{searchCss(needle)}</style>}
         {frozen.size > 0 && <style>{frozenColumnsCss(frozen)}</style>}
+        {cutColumns.length > 0 && <style>{cutColumnsCss(cutColumns)}</style>}
         <table
           ref={tableRef}
           className="layer-table"
           aria-label="Layers of the drawing"
           aria-multiselectable="true"
-          style={{ width: tableWidth }}
+          style={
+            {
+              width: tableWidth,
+              '--layer-columns': layerColumnTracks(shownColumns, visible),
+            } as CSSProperties
+          }
         >
-          <colgroup>
-            {visible.map((c) => (
-              <col key={c.key} style={{ width: widthOf(c.key) }} />
-            ))}
-          </colgroup>
           <thead>
             <tr
               onContextMenu={(e) => {
