@@ -31,6 +31,7 @@ import {
   type Entity,
   type EntityId,
   type HeaderValue,
+  type LinetypeDefinition,
   type Matrix2D,
   type ViewHost,
   type ViewReply,
@@ -92,12 +93,23 @@ function drawing(o: { center2?: boolean; header?: [string, HeaderValue][] } = {}
   };
 }
 
-function setup(o: Parameters<typeof drawing>[0] = {}) {
+/** What the app reads for a `linetypeFile` request, by file name (none by default). */
+type Files = Record<string, readonly LinetypeDefinition[]>;
+
+function setup(o: Parameters<typeof drawing>[0] & { files?: Files } = {}) {
   const model = DocumentModel.create(drawing(o));
+  const asked: string[] = [];
   // A pick takes the nearest object within 0.25: a curve by its distance, a block reference by
   // its insertion point.
   const view: ViewHost = {
     request: (r): Promise<ViewReply> => {
+      if (r.op === 'linetypeFile') {
+        asked.push(r.file ?? '');
+        const found = o.files?.[r.file ?? ''];
+        return Promise.resolve(
+          found ? { ok: true, linetypeFile: { name: r.file!, linetypes: found } } : { ok: true },
+        );
+      }
       if (r.op !== 'pick') return Promise.resolve({ ok: false, message: 'no' });
       const hits: [number, EntityId][] = [];
       for (const e of model.entities()) {
@@ -139,7 +151,7 @@ function setup(o: Parameters<typeof drawing>[0] = {}) {
       })
       .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]! || a[2]! - b[2]! || a[3]! - b[3]!);
   };
-  return { model, bus, log, marks, record, records, lines };
+  return { model, bus, log, marks, record, records, lines, asked };
 }
 
 /** A center mark at (cx, cy) on a circle of radius r: cross ±0.2r·…, extensions to r + e. */
@@ -854,5 +866,52 @@ describe("MATCHPROP's Center object (M4-08 part 3)", () => {
     expect(matchedCenterMark({ ...target, ...source }, target, true)).toMatchObject(source);
     expect(matchedCenterMark({ ...target, ...source }, target, false)).toBeUndefined();
     expect(matchedCenterMark(target, target, true)).toBeUndefined();
+  });
+});
+
+describe('CENTERLTYPE loaded from the bundled drafting linetypes (M5-08 part 2)', () => {
+  const center2 = (k: number): LinetypeDefinition => ({
+    name: 'CENTER2',
+    description: 'Center line (half size)',
+    elements: [0.625, -0.0625, 0.125, -0.0625].map((length) => ({ length: length * k })),
+  });
+  const files: Files = {
+    'triya-drafting.lin': [center2(1)],
+    'triya-drafting-iso.lin': [center2(25.4)],
+  };
+  const center2Of = (m: DocumentModel) =>
+    [...m.tables.linetypes.values()].find((l) => l.name === 'CENTER2');
+
+  it('a metric drawing loads CENTER2 in millimetres once, in the marks’ undo step', async () => {
+    const s = setup({ files });
+    await s.bus.script(['CENTERMARK', '60,50', '105,50', '']);
+    const lt = center2Of(s.model)!;
+    expect(lt.elements.map((e) => e.length)).toEqual([15.875, -1.5875, 3.175, -1.5875]);
+    expect(s.marks().map((m) => m.linetype)).toEqual([lt.handle, lt.handle]);
+    expect(s.asked).toEqual(['triya-drafting-iso.lin']);
+    expect(s.log).not.toContain('Linetype CENTER2 is not in the drawing: ByLayer is used.');
+    await s.bus.script(['U']);
+    expect(s.marks()).toHaveLength(0);
+    expect(center2Of(s.model)).toBeUndefined();
+  });
+
+  it('an imperial drawing loads it in inches; CENTERLINE loads it too', async () => {
+    const s = setup({ files, header: [['$MEASUREMENT', 0]] });
+    await s.bus.script(['CENTERLINE', '10,100', '10,110']);
+    const lt = center2Of(s.model)!;
+    expect(lt.elements.map((e) => e.length)).toEqual([0.625, -0.0625, 0.125, -0.0625]);
+    expect(s.marks()[0]!.linetype).toBe(lt.handle);
+    expect(s.asked).toEqual(['triya-drafting.lin']);
+  });
+
+  it('a drawing with CENTER2 reads no file; a file without it leaves the mark ByLayer', async () => {
+    const has = setup({ files, center2: true });
+    await has.bus.script(['CENTERMARK', '60,50', '']);
+    expect(has.asked).toEqual([]);
+    expect(has.marks()[0]!.linetype).toBe('15');
+    const lacks = setup({ files: { 'triya-drafting-iso.lin': [] } });
+    await lacks.bus.script(['CENTERMARK', '60,50', '']);
+    expect(lacks.marks()[0]!.linetype).toBe('ByLayer');
+    expect(lacks.log).toContain('Linetype CENTER2 is not in the drawing: ByLayer is used.');
   });
 });

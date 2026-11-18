@@ -20,11 +20,15 @@ describe('linetype files', () => {
     expect(files.map((f) => [f.name, f.bundled])).toEqual([
       ['triya-iso.lin', true],
       ['triya-utilities.lin', true],
+      ['triya-drafting.lin', true],
+      ['triya-drafting-iso.lin', true],
       ['pipes.lin', false],
     ]);
     expect(linetypeFileSources().map((f) => f.name)).toEqual([
       'triya-iso.lin',
       'triya-utilities.lin',
+      'triya-drafting.lin',
+      'triya-drafting-iso.lin',
     ]);
   });
 

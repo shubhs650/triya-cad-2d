@@ -8,6 +8,11 @@
 // and extensions (part 3, edit/center-settings.ts), on CENTERLAYER (the current layer, ".") in
 // CENTERLTYPE (CENTER2) at CENTERLTSCALE (1).
 //
+// M5-08 part 2: a drawing without CENTERLTYPE's linetype loads it, as AutoCAD loads it from
+// CENTERLTYPEFILE (a registry setting, acad.lin or acadiso.lin), from the bundled
+// `triya-drafting.lin` (inches) or `triya-drafting-iso.lin` (millimetres, a metric drawing),
+// whose CENTER2 is Triya's own (DEC-073); in the mark's undo step, when the first mark is made.
+//
 // Part 3 adds AutoCAD 2024's commands that edit them (AutoCAD Help, "CENTERDISASSOCIATE
 // (Command)", "CENTERREASSOCIATE (Command)", "CENTERRESET (Command)"):
 //   CENTERDISASSOCIATE  Select center marks or centerlines to disassociate:
@@ -32,7 +37,8 @@ import {
   redrawCenterMark,
   segmentsField,
 } from '../../edit/center-marks';
-import { centerSettings, type CenterSettings } from '../../edit/center-settings';
+import { centerSettings, metric, type CenterSettings } from '../../edit/center-settings';
+import { linetypeNamed, loadLinetypes } from '../../edit/linetypes';
 import { AnonymousNames } from '../../edit/edit';
 import type { ChangeSetBuilder } from '../../model/builder';
 import type { DocumentModel } from '../../model/document';
@@ -50,10 +56,33 @@ type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 /** CENTERLTYPE's initial value. */
 export const CENTER_LINETYPE = 'CENTER2';
 
+/** The bundled files CENTERLTYPE is loaded from (AutoCAD's CENTERLTYPEFILE), by units. */
+export const CENTER_LINETYPE_FILES = {
+  imperial: 'triya-drafting.lin',
+  metric: 'triya-drafting-iso.lin',
+} as const;
+
 /**
- * The linetype a new mark takes: CENTERLTYPE's, the current one for ".". A drawing without the
- * linetype named draws the mark ByLayer (AutoCAD loads it from CENTERLTYPEFILE; Triya's linetype
- * loader is roadmap M5-08), and `missing` names it.
+ * Loads CENTERLTYPE's linetype when the drawing lacks it (M5-08 part 2), from the bundled file
+ * for the drawing's units, as its own edit in the command's undo step. Nothing is said: AutoCAD
+ * loads it silently. A file that lacks it (or no app to read it) leaves `markLinetype` to fall
+ * back to ByLayer and say so.
+ */
+async function loadMarkLinetype(ctx: CommandContext, s: CenterSettings): Promise<void> {
+  const name = s.linetype.trim();
+  if (name === '.' || /^by(layer|block)$/i.test(name) || linetypeNamed(ctx.model, name)) return;
+  const file = metric(ctx.model) ? CENTER_LINETYPE_FILES.metric : CENTER_LINETYPE_FILES.imperial;
+  const r = await ctx.view.request({ op: 'linetypeFile', file });
+  const def = r.ok
+    ? r.linetypeFile?.linetypes.find((l) => l.name.toUpperCase() === name.toUpperCase())
+    : undefined;
+  if (def) ctx.edit((b) => loadLinetypes(b, ctx.model, [def]));
+}
+
+/**
+ * The linetype a new mark takes: CENTERLTYPE's, the current one for ".". A drawing still without
+ * the linetype named (`loadMarkLinetype` found none to load) draws the mark ByLayer, and
+ * `missing` names it.
  */
 function markLinetype(
   model: DocumentModel,
@@ -115,6 +144,7 @@ function centermarkCommand(): CommandDef {
           continue;
         }
         const settings = centerSettings(ctx.model);
+        await loadMarkLinetype(ctx, settings);
         const { linetype, missing } = markLinetype(ctx.model, settings);
         if (missing && !told) ctx.message(missingMessage(missing));
         told = true;
@@ -183,6 +213,7 @@ function centerlineCommand(): CommandDef {
       const lines = yield* pickLines(ctx);
       if (!lines) return;
       const settings = centerSettings(ctx.model);
+      await loadMarkLinetype(ctx, settings);
       const { linetype, missing } = markLinetype(ctx.model, settings);
       let made: Entity | undefined;
       ctx.edit((b) => {

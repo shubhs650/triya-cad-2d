@@ -179,8 +179,40 @@ describe('bundled linetypes (assets/linetypes)', () => {
     }
   });
 
+  it('reads triya-drafting.lin and its millimetre twin: the drafting families, .5x and 2x (M5-08 part 2)', () => {
+    const read = (name: string) => {
+      const f = parseLin(readFileSync(`${repo}assets/linetypes/${name}`, 'latin1'));
+      expect(f.errors).toEqual([]);
+      expect(f.warnings).toEqual([]);
+      return f.linetypes;
+    };
+    const inch = read('triya-drafting.lin');
+    const mm = read('triya-drafting-iso.lin');
+    const families = ['CENTER', 'DASHED', 'HIDDEN', 'PHANTOM'];
+    expect(inch.map((l) => l.name)).toEqual(families.flatMap((f) => [f, `${f}2`, `${f}X2`]));
+    expect(mm.map((l) => l.name)).toEqual(inch.map((l) => l.name));
+    const lengths = (l: (typeof inch)[number]) => l.elements.map((e) => e.length);
+    const named = (name: string) => inch.find((l) => l.name === name)!;
+    for (const f of families) {
+      const base = lengths(named(f));
+      expect(lengths(named(`${f}2`))).toEqual(base.map((x) => x / 2));
+      expect(lengths(named(`${f}X2`))).toEqual(base.map((x) => x * 2));
+    }
+    // CENTER2, CENTERLTYPE's initial value: a long dash, a short dash and gaps (ASME Y14.2).
+    expect(lengths(named('CENTER2'))).toEqual([0.625, -0.0625, 0.125, -0.0625]);
+    inch.forEach((l, i) => {
+      expect(mm[i]!.description).toBe(l.description);
+      lengths(mm[i]!).forEach((x, j) => expect(x).toBeCloseTo(lengths(l)[j]! * 25.4, 9));
+    });
+  });
+
   it('embeds the bundled files exactly as assets/linetypes has them (M5-08)', () => {
-    expect(BUNDLED_LIN_FILES.map((f) => f.name)).toEqual(['triya-iso.lin', 'triya-utilities.lin']);
+    expect(BUNDLED_LIN_FILES.map((f) => f.name)).toEqual([
+      'triya-iso.lin',
+      'triya-utilities.lin',
+      'triya-drafting.lin',
+      'triya-drafting-iso.lin',
+    ]);
     for (const f of BUNDLED_LIN_FILES)
       expect(f.source).toBe(readFileSync(`${repo}assets/linetypes/${f.name}`, 'latin1'));
   });
