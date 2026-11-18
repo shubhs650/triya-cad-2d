@@ -515,3 +515,72 @@ describe('BATTMAN', () => {
     expect([g.halign, g.alignmentPoint]).toEqual([4, { x: 2, y: 2 }]);
   });
 });
+
+// M5-03 part 3: Edit Attribute's "Auto preview changes" (AutoCAD Help, "Edit Attribute Dialog
+// Box (BATTMAN)": "Controls whether or not the drawing area is immediately updated to display any
+// visible attribute changes you make ... not available if Apply Changes to Existing References
+// is not selected"): a `preview` answer shows the changes on the definitions and references at
+// once, the dialog staying as it was; the next answer takes the preview back first, so Apply or
+// OK makes the change once and Cancel leaves the drawing as it was.
+describe('BATTMAN Auto preview changes', () => {
+  const heights = (t: Awaited<ReturnType<typeof drawing>>) => [
+    (t.definition('NO').geom as AttdefGeometry).height,
+    ...t.refs().map((e) => (e.geom as InsertGeometry).attributes[0]!.height),
+  ];
+
+  it('shows the changes on the references at once, and Cancel takes them back', async () => {
+    const t = await drawing();
+    await t.bus.submit('BATTMAN');
+    await t.close('apply', { next: t.tag });
+    const shown = t.request();
+    const handles = t.refs().map((e) => (e.geom as InsertGeometry).attributes.map((a) => a.handle));
+    await t.close('preview', { attributes: [t.patch('NO', { height: 5 })] });
+    expect(heights(t)).toEqual([5, 5, 5]);
+    // The dialog shows what it showed: the manager still holds the change, not yet applied.
+    expect(t.request()).toEqual(shown);
+    // The next preview replaces it.
+    await t.close('preview', { attributes: [t.patch('NO', { height: 4, tag: 'NUM' })] });
+    expect(t.refs().map((e) => (e.geom as InsertGeometry).attributes[0]!.height)).toEqual([4, 4]);
+    expect(t.values(t.refs()[0]!)).toEqual([
+      ['NUM', 'M-101'],
+      ['REV', '3'],
+    ]);
+    await t.bus.cancel();
+    expect(t.bus.prompt).toBeUndefined();
+    expect(heights(t)).toEqual([2.5, 2.5, 2.5]);
+    expect(t.values(t.refs()[0]!)).toEqual([
+      ['NO', 'M-101'],
+      ['REV', '3'],
+    ]);
+    // The attributes are the same objects as before.
+    expect(t.refs().map((e) => (e.geom as InsertGeometry).attributes.map((a) => a.handle))).toEqual(
+      handles,
+    );
+  });
+
+  it('makes the change once with OK, in one undo step', async () => {
+    const t = await drawing();
+    await t.bus.submit('BATTMAN');
+    await t.close('apply', { next: t.tag });
+    const change = { attributes: [t.patch('NO', { height: 5 })] };
+    await t.close('preview', change);
+    await t.close('preview', change);
+    await t.close('ok', change);
+    expect(t.bus.prompt).toBeUndefined();
+    expect(heights(t)).toEqual([5, 5, 5]);
+    await t.bus.submit('U');
+    expect(heights(t)).toEqual([2.5, 2.5, 2.5]);
+  });
+
+  it('shows nothing without "Apply changes to existing references"', async () => {
+    const t = await drawing();
+    await t.bus.submit('BATTMAN');
+    await t.close('apply', { next: t.tag });
+    await t.close('preview', {
+      applyToExisting: false,
+      attributes: [t.patch('NO', { height: 5 })],
+    });
+    expect(heights(t)).toEqual([2.5, 2.5, 2.5]);
+    expect(t.request().block).toBe(t.tag);
+  });
+});

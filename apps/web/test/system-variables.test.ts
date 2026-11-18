@@ -30,7 +30,9 @@ describe('system variables the app keeps', () => {
     expect(d.get().modifyOptions.OFFSETGAPTYPE).toBe(2);
     // The unsaved ones are not the per-user settings.
     expect(d.get().modifyOptions).not.toHaveProperty('OFFSETDIST');
-    expect(d.get().sessionOptions).toEqual({ OFFSETDIST: 2.5, CHAMMODE: 1 });
+    expect(d.get().sessionOptions).toEqual({ OFFSETDIST: 2.5, CHAMMODE: 1, AFLAGS: 16 });
+    // AFLAGS (M5-03 part 3): ATTDEF's modes, Lock position at first.
+    expect(systemVariableReply(d, 'AFLAGS', 1 | 32)).toEqual({ ok: true, value: 33 });
     // Setting what it holds changes nothing.
     const before = d.get();
     systemVariableReply(d, 'OFFSETGAPTYPE', 2);

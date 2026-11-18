@@ -281,10 +281,14 @@ export const INITIAL_MODIFY_OPTIONS: Readonly<Record<string, number>> = Object.f
   Object.entries(MODIFY_OPTIONS).map(([name, o]) => [name, o.initial]),
 );
 
-/** OFFSETDIST −1 (Through) and CHAMMODE 0 (two distances), AutoCAD's initial values. */
+/**
+ * OFFSETDIST −1 (Through), CHAMMODE 0 (two distances) and AFLAGS 16 (ATTDEF's Lock position,
+ * M5-03 part 3), AutoCAD's initial values.
+ */
 export const INITIAL_SESSION_OPTIONS: Readonly<Record<string, number>> = {
   OFFSETDIST: -1,
   CHAMMODE: 0,
+  AFLAGS: 16,
 };
 
 /** Quick Properties' Quadrant, as the Drafting Settings dialog lists them. */

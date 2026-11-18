@@ -24,6 +24,16 @@
 //   refused ("That block has no attribute definitions.") and the prompt asks again; Enter or Esc
 //   there returns to the dialog on the block it showed;
 // - a dynamic block's reference stands for its definition, as EATTEDIT's block name does.
+//
+// Edit Attribute's "Auto preview changes" (M5-03 part 3; Help: "Controls whether or not the
+// drawing area is immediately updated to display any visible attribute changes you make ... not
+// available if Apply Changes to Existing References is not selected"): the dialog answers
+// `preview` with its changes as they stand, which are put on the definitions and the references
+// (the Edit Attribute changes; Move and Remove wait for Apply), and the same dialog is shown
+// again. Every answer, and the command's end however it ends, takes the preview back first, so
+// Apply and OK make the changes once and Cancel leaves the drawing as it was (the undo step then
+// holds the preview and its taking back, which cancel out).
+import type { ChangeSet } from '../model/changeset';
 import type { Handle } from '../model/handle';
 import type { BlockTableRecord, TextGeometry } from '../model/types';
 import { dynamicBlockOf } from '../model/dynamic-block';
@@ -31,6 +41,7 @@ import { ChangeSetBuilder } from '../model/builder';
 import { colorBooks } from '../properties/color-books';
 import { insertableBlocks } from '../edit/blocks';
 import { syncAttributes } from '../edit/attsync';
+import { revertChanges } from '../edit/edit';
 import {
   changeDefinitions,
   definitionManagerEntry,
@@ -177,6 +188,22 @@ async function apply(ctx: CommandContext, m: BattmanAnswer): Promise<void> {
   }
 }
 
+/**
+ * Auto preview: the Edit Attribute changes `m` holds put on the definitions and, as "Apply
+ * changes to existing references" asks, the references; the change sets made go into `out`.
+ */
+async function preview(ctx: CommandContext, m: BattmanAnswer, out: ChangeSet[]): Promise<void> {
+  if (!m.applyToExisting || !ctx.model.hasBlock(m.block)) return;
+  const order = definitionsOf(ctx.model, m.block).map((e) => e.handle);
+  const changes: DefinitionChanges = { order, removed: [], attributes: m.attributes };
+  if (!changeDefinitions(new ChangeSetBuilder(ctx.model), ctx.model, m.block, changes)) return;
+  const outlines = await outlinesFor(ctx, m);
+  out.push(ctx.edit((b) => changeDefinitions(b, ctx.model, m.block, changes, outlines, true)));
+  if (referencesTo(ctx.model, m.block).length > 0) {
+    out.push(ctx.edit((b) => syncAttributes(b, ctx.model, m.block)));
+  }
+}
+
 export function battmanCommand(): CommandDef {
   return {
     name: 'BATTMAN',
@@ -189,25 +216,42 @@ export function battmanCommand(): CommandDef {
       }
       let block = preselected(ctx, blocks) ?? blocks[0]!.handle;
       let selected: Handle | undefined;
-      for (;;) {
-        const d = yield ctx.prompt.dialog({
-          message: 'Block Attribute Manager',
-          dialog: request(ctx, blocks, block, selected),
-        });
-        if (d.kind !== 'dialog') return;
-        const m = d.battman;
-        if (m) await apply(ctx, m);
-        if (d.action === 'ok') return;
-        if (d.action === 'select') {
-          block = (yield* pickBlock(ctx)) ?? block;
-          selected = undefined;
-        } else if (m?.next !== undefined && m.next !== block) {
-          block = m.next;
-          selected = undefined;
-        } else selected = m?.selected;
-        blocks = attributedBlocks(ctx);
-        if (blocks.length === 0) return;
-        if (!blocks.some((r) => r.handle === block)) block = blocks[0]!.handle;
+      // The Auto preview showing, taken back before anything else happens.
+      const previewed: ChangeSet[] = [];
+      const takeBack = () => {
+        for (const cs of previewed.splice(0).reverse()) ctx.edit((b) => revertChanges(b, cs));
+      };
+      let shown: DialogRequest | undefined;
+      try {
+        for (;;) {
+          const dialog = shown ?? request(ctx, blocks, block, selected);
+          shown = undefined;
+          const d = yield ctx.prompt.dialog({ message: 'Block Attribute Manager', dialog });
+          takeBack();
+          if (d.kind !== 'dialog') return;
+          const m = d.battman;
+          if (d.action === 'preview') {
+            if (m) await preview(ctx, m, previewed);
+            // The same request: the dialog keeps the changes it holds.
+            shown = dialog;
+            continue;
+          }
+          if (m) await apply(ctx, m);
+          if (d.action === 'ok') return;
+          if (d.action === 'select') {
+            block = (yield* pickBlock(ctx)) ?? block;
+            selected = undefined;
+          } else if (m?.next !== undefined && m.next !== block) {
+            block = m.next;
+            selected = undefined;
+          } else selected = m?.selected;
+          blocks = attributedBlocks(ctx);
+          if (blocks.length === 0) return;
+          if (!blocks.some((r) => r.handle === block)) block = blocks[0]!.handle;
+        }
+      } finally {
+        // Esc, Cancel or another command: the drawing as the last Apply left it.
+        takeBack();
       }
     },
   };
