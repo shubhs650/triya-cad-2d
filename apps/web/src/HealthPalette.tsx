@@ -257,24 +257,37 @@ export function HealthPalette({
 }
 
 /**
- * What PURGE would take from the drawing, from its engine: asked again after every edit; undefined
- * until the first answer.
+ * How long the drawing must stay unedited before the purge counts are asked again: they walk the
+ * whole drawing in its engine (about a quarter second at 100k objects), so a run of edits asks once.
+ */
+const PURGE_HEALTH_SETTLE_MS = 300;
+
+/**
+ * What PURGE would take from the drawing, from its engine: asked at once for a drawing shown, and
+ * again once its edits settle; undefined until the first answer.
  */
 function usePurgeHealth(doc: OpenDocument): PurgeHealth | undefined {
   const [health, setHealth] = useState<{ doc: number; health: PurgeHealth }>();
+  const known = health?.doc === doc.id;
   useEffect(() => {
     let live = true;
-    engines.purgeHealth(doc.id).then(
-      (h) => {
-        if (live && h) setHealth({ doc: doc.id, health: h });
-      },
-      () => {},
+    const timer = setTimeout(
+      () =>
+        void engines.purgeHealth(doc.id).then(
+          (h) => {
+            if (live && h) setHealth({ doc: doc.id, health: h });
+          },
+          () => {},
+        ),
+      known ? PURGE_HEALTH_SETTLE_MS : 0,
     );
     return () => {
       live = false;
+      clearTimeout(timer);
     };
+    // `known` only picks the delay: asking again when the first answer comes would be wasted.
   }, [doc.id, doc.revision]);
-  return health?.doc === doc.id ? health.health : undefined;
+  return known ? health.health : undefined;
 }
 
 function PurgeCards({ doc, store }: { doc: OpenDocument; store: DocumentStore }) {

@@ -512,7 +512,10 @@ function reasons(model: DocumentModel, users: Map<string, number>): string[] {
 
 /** What PURGE can take now, and what it cannot with why (the dialog's two views). */
 export function purgeState(model: DocumentModel): PurgeState {
-  const uses = collectUses(model);
+  return stateWith(model, collectUses(model));
+}
+
+function stateWith(model: DocumentModel, uses: Uses): PurgeState {
   const purgeable: PurgeItem[] = [];
   const inUse: InUseItem[] = [];
   for (const category of PURGE_CATEGORIES) {
@@ -549,7 +552,16 @@ export function purgeClosure(
   nested: boolean,
   kept: ReadonlySet<Handle> = new Set(),
 ): PurgeItem[] {
-  const uses = collectUses(model);
+  return closureWith(model, collectUses(model), chosen, nested, kept);
+}
+
+function closureWith(
+  model: DocumentModel,
+  uses: Uses,
+  chosen: readonly Handle[],
+  nested: boolean,
+  kept: ReadonlySet<Handle>,
+): PurgeItem[] {
   const all = PURGE_CATEGORIES.flatMap((c) => itemsOf(model, c)).filter(
     (i) => !fixedReason(model, i) && !kept.has(i.handle),
   );
@@ -670,16 +682,21 @@ export function unusedItems(model: DocumentModel): PurgeItem[] {
 }
 
 export function purgeHealth(model: DocumentModel): PurgeHealth {
-  const unused = unusedItems(model);
+  // One walk of the drawing for both: it is most of the cost (a quarter second at 100k objects).
+  const uses = collectUses(model);
+  const unused = stateWith(model, uses).purgeable.filter((i) => i.category !== 'appIds');
   const counts = new Map<PurgeCategory, number>();
   for (const i of unused) counts.set(i.category, (counts.get(i.category) ?? 0) + 1);
   const all = unused.length
-    ? purgeClosure(
+    ? closureWith(
         model,
+        uses,
         unused.map((i) => i.handle),
         true,
+        new Set(),
       ).length
     : 0;
+  const loose = looseObjects(model);
   return {
     unused: PURGE_CATEGORIES.filter((c) => counts.has(c)).map((category) => ({
       category,
@@ -687,8 +704,8 @@ export function purgeHealth(model: DocumentModel): PurgeHealth {
       count: counts.get(category)!,
     })),
     nested: all - unused.length,
-    zeroLength: zeroLengthObjects(model).length,
-    emptyText: emptyTextObjects(model).length,
+    zeroLength: loose.filter(isZeroLength).length,
+    emptyText: loose.filter(isEmptyText).length,
   };
 }
 
