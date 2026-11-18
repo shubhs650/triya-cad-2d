@@ -196,8 +196,8 @@ export function LoadLinetypesDialog({
     >
       <div className="linetype-file">
         <label>
-          File
-          <select value={fileName} onChange={(e) => choose(e.target.value)}>
+          <span>File</span>
+          <select aria-label="File" value={fileName} onChange={(e) => choose(e.target.value)}>
             {listed.map((f) => (
               <option key={`${f.bundled}:${f.name}`} value={f.name}>
                 {f.name}
@@ -214,7 +214,7 @@ export function LoadLinetypesDialog({
           type="file"
           accept=".lin"
           hidden
-          aria-label="Linetype file"
+          aria-label="Linetype file to load"
           onChange={(e) => {
             void added(e.target.files?.[0]);
             e.target.value = '';
@@ -472,8 +472,12 @@ export function LinetypeManagerDialog({
     <Modal label="Linetype Manager" className="linetype-manager" onOk={ok} onCancel={cancel}>
       <div className="linetype-manager-top">
         <label>
-          Linetype filters
-          <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+          <span>Linetype filters</span>
+          <select
+            aria-label="Linetype filters"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as Filter)}
+          >
             <option value="all">Show all linetypes</option>
             <option value="used">Show all used linetypes</option>
             <option value="xref">Show all Xref dependent linetypes</option>
@@ -574,8 +578,9 @@ export function LinetypeManagerDialog({
             Use paper space units for scaling
           </label>
           <label>
-            ISO pen width
+            <span>ISO pen width</span>
             <select
+              aria-label="ISO pen width"
               disabled={!iso}
               value={pen === undefined ? '' : String(pen)}
               onChange={(e) => e.target.value && setCeltscale(e.target.value)}
