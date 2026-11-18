@@ -57,6 +57,9 @@ export type AuditSaveKind =
   | 'attsync'
   // A block reference edited in place (-REFEDIT, ERASE, LINE, REFCLOSE Save; M5-02 part 3).
   | 'refedit'
+  // A reference scaled differently in X and Y edited in place and saved, a circle and a line
+  // drawn into its block (M5-02 part 8).
+  | 'refedit-scaled'
   // An xref edited in place and saved to its own file: the title block of the xref set as
   // REFCLOSE writes it (M5-02 part 6).
   | 'refedit-xref'

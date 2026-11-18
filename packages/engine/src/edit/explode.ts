@@ -685,8 +685,12 @@ function explodeNonuniform(
   return made;
 }
 
-/** `g` carried by the nonuniform `m` as an object of its own kind, or undefined if it cannot be. */
-function carriedGeometry(
+/**
+ * `g` carried by the nonuniform `m` as an object of its own kind (a circle or an arc as an
+ * ellipse), or undefined if it cannot be. REFEDIT carries a nonuniformly scaled reference's
+ * objects out and back by it too (M5-02 part 8).
+ */
+export function carriedGeometry(
   b: ChangeSetBuilder,
   g: EntityGeometry,
   m: Matrix2D,

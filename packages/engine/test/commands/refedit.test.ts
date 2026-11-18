@@ -10,12 +10,14 @@
 //     was not edited exactly as it was; Discard takes every change back.
 import { describe, expect, it } from 'vitest';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
   builtinCommands,
   type BusEvent,
   type DialogRequest,
   type EntityGeometry,
+  type InsertGeometry,
   type NestedPick,
   type RefEditSettings,
   type Vec2,
@@ -415,6 +417,11 @@ describe('REFEDIT', () => {
 
   it('refuses what it cannot edit in place, and while another edit or the Block Editor is open', async () => {
     const t = setup();
+    // The reference scaled 1 by 2 turned over (its extrusion direction down): not in plan.
+    const b = new ChangeSetBuilder(t.model);
+    const tall = t.model.entity(t.id(TALL_REF))!;
+    b.updateEntity(tall.id, { geom: { ...tall.geom, normal: { x: 0, y: 0, z: -1 } } as never });
+    t.model.apply(b.build());
     await t.bus.submit('REFEDIT');
     await t.pick('tall');
     const d = t.dialog() as Extract<DialogRequest, { type: 'refedit' }>;
@@ -424,7 +431,7 @@ describe('REFEDIT', () => {
       refedit: { chosen: 0, settings: d.settings },
     });
     expect((t.dialog() as Extract<DialogRequest, { type: 'refedit' }>).note).toBe(
-      '** A block reference scaled differently in X and Y cannot be edited in place **',
+      '** The block reference is not in plan **',
     );
     await t.bus.cancel();
     await t.bus.script(['REFEDIT', '5,50']);
@@ -551,14 +558,206 @@ describe('-REFEDIT', () => {
     await t.bus.submit('');
     expect(t.contents(MODEL).slice(4)).toEqual(['35']);
   });
+});
 
-  it('refuses a reference scaled differently in X and Y', async () => {
+// M5-02 part 8: a reference scaled differently in X and Y (TALL_REF, DOOR at 300,0 scaled 1 by 2)
+// is edited in place as any other. Its objects are carried out by the scale as objects of their
+// own kind, as EXPLODE carries them (lines, a reference whose axes stay square, text whose
+// frame stays square); a circle or an arc, which the scale draws as an ellipse, is edited as an
+// ellipse standing in for it and comes back a circle or an arc under its own handle while it
+// stays one. Objects drawn meanwhile go back by the inverse scale; one the inverse cannot carry
+// as an object of its kind stays in the drawing.
+describe('REFEDIT of a reference scaled differently in X and Y (part 8)', () => {
+  type Ellipse = Extract<EntityGeometry, { kind: 'ELLIPSE' }>;
+  const tallEdit = async () => {
+    const t = setup();
+    const was = new Map(t.contents(DOOR).map((h) => [h, t.model.entity(t.id(h))!]));
+    await t.refedit('tall');
+    const standIn = t.contents(MODEL).find((h) => t.geom(h).kind === 'ELLIPSE')!;
+    return { ...t, was, standIn };
+  };
+  const radii = (e: Ellipse) => {
+    const major = Math.hypot(e.majorAxis.x, e.majorAxis.y);
+    return { major, minor: major * e.ratio };
+  };
+
+  it('carries the block out by the scale, a circle as an ellipse standing in for it', async () => {
+    const t = await tallEdit();
+    expect(t.contents(DOOR)).toEqual(['37']);
+    expect(t.contents(MODEL).filter((h) => h !== t.standIn)).toEqual([
+      '30',
+      DOOR_REF,
+      PLAIN_REF,
+      TALL_REF,
+      '34',
+      '36',
+      '38',
+    ]);
+    near(lineOf(t.geom('34')).start, 300, 0);
+    near(lineOf(t.geom('34')).end, 301, 0);
+    near(lineOf(t.geom('38')).end, 300, 2);
+    // KNOB's reference keeps its axes square under the scale: it stays a reference, scaled.
+    expect(t.geom('36')).toMatchObject({ kind: 'INSERT', position: { x: 300, y: 0 } });
+    expect((t.geom('36') as InsertGeometry).scale).toMatchObject({ x: 1, y: 2 });
+    // The circle at (1,0) r 0.5 drawn as the reference draws it.
+    const e = t.geom(t.standIn) as Ellipse;
+    near(e.center, 301, 0);
+    expect(radii(e).major).toBeCloseTo(1, 12);
+    expect(radii(e).minor).toBeCloseTo(0.5, 12);
+    expect(t.model.entity(t.id('35'))).toBeUndefined();
+    expect(t.model.entity(t.id(t.standIn))!.layer).toBe(L0);
+    expect(t.log).toContain('4 objects in the working set.');
+    expect(t.log).toContain(
+      '1 circle or arc is edited as an ellipse while the block is scaled differently in X and Y.',
+    );
+    // The canvas draws the other references with the block as it was, the circle included.
+    expect(t.events.at(-1)!.working).toEqual(['34', t.standIn, '36', '38'].map(t.id));
+    expect(t.events.at(-1)!.held!.entities).toEqual(
+      ['34', '35', '36', '38'].map((h) => t.was.get(h)),
+    );
+  });
+
+  it('Save with nothing edited puts the block back exactly as it was', async () => {
+    const t = await tallEdit();
+    await t.bus.script(['REFCLOSE', 'S']);
+    expect(t.log.at(-1)).toBe('Block "DOOR" redefined: reference edits saved.');
+    expect(t.contents(MODEL)).toEqual(['30', DOOR_REF, PLAIN_REF, TALL_REF]);
+    expect(t.contents(DOOR)).toEqual(['37', '34', '35', '36', '38']);
+    for (const [h, e] of t.was) expect(t.model.entity(t.id(h))).toEqual(e);
+    expect(t.model.entity(t.id(t.standIn))).toBeUndefined();
+  });
+
+  it('Save carries edits back by the inverse scale: the circle stays a circle under its handle', async () => {
+    const t = await tallEdit();
+    // The ellipse moved up 2: the circle moves up 1 in the block.
+    await t.bus.script(['MOVE']);
+    await t.bus.pick({ x: 301.5, y: 0 });
+    await t.bus.script(['', '0,0', '0,2']);
+    await t.bus.script(['LINE', '310,0', '310,4', '']);
+    const line = t.contents(MODEL).at(-1)!;
+    await t.bus.script(['CIRCLE', '320,0', '1']);
+    const circle = t.contents(MODEL).at(-1)!;
+    // A donut is a polyline of arcs with a width, which the inverse scale cannot carry.
+    await t.bus.script(['DONUT', '0.5', '1', '330,0', '']);
+    const donut = t.contents(MODEL).at(-1)!;
+    await t.bus.script(['REFCLOSE', 'S']);
+    expect(t.log).toContain(
+      '1 object could not be carried back into a block scaled differently in X and Y and stays in the drawing.',
+    );
+    expect(t.log.at(-1)).toBe('Block "DOOR" redefined: reference edits saved.');
+    expect(t.contents(MODEL)).toEqual(['30', DOOR_REF, PLAIN_REF, TALL_REF, donut]);
+    // The circle: the same object, one up.
+    const c = t.geom('35') as Extract<EntityGeometry, { kind: 'CIRCLE' }>;
+    expect(c.kind).toBe('CIRCLE');
+    near(c.center, 1, 1);
+    expect(c.radius).toBeCloseTo(0.5, 12);
+    expect(t.owner('35')).toBe(DOOR);
+    expect(t.model.entity(t.id('35'))!.handle).toBe('35');
+    // The line drawn (310,0)-(310,4) is (10,0)-(10,2) in the block.
+    near(lineOf(t.geom(line)).start, 10, 0);
+    near(lineOf(t.geom(line)).end, 10, 2);
+    // The circle drawn at (320,0) r 1 is an ellipse in the block, (20,0) 1 by 0.5.
+    const blockEllipses = t.contents(DOOR).filter((h) => t.geom(h).kind === 'ELLIPSE');
+    expect(t.contents(DOOR)).not.toContain(circle);
+    expect(blockEllipses).toHaveLength(1);
+    const e = t.geom(blockEllipses[0]!) as Ellipse;
+    near(e.center, 20, 0);
+    expect(radii(e).major).toBeCloseTo(1, 12);
+    expect(radii(e).minor).toBeCloseTo(0.5, 12);
+    // Untouched objects exactly as they were.
+    expect(t.model.entity(t.id('34'))).toEqual(t.was.get('34'));
+    expect(t.model.entity(t.id('36'))).toEqual(t.was.get('36'));
+  });
+
+  it('a circle edited out of round comes back an ellipse, the circle erased', async () => {
+    const t = await tallEdit();
+    await t.bus.script(['ROTATE']);
+    await t.bus.pick({ x: 301.5, y: 0 });
+    await t.bus.script(['', '301,0', '90']);
+    await t.bus.script(['REFCLOSE', 'S']);
+    expect(t.model.entity(t.id('35'))).toBeUndefined();
+    const made = t.contents(DOOR).filter((h) => !t.was.has(h));
+    expect(made).toHaveLength(1);
+    const e = t.geom(made[0]!) as Ellipse;
+    expect(e.kind).toBe('ELLIPSE');
+    near(e.center, 1, 0);
+    expect(radii(e).major).toBeCloseTo(1, 12);
+    expect(radii(e).minor).toBeCloseTo(0.25, 12);
+    expect(t.model.entity(t.id(made[0]!))!.layer).toBe(L0);
+  });
+
+  it('an arc comes back an arc under its handle; one drawn meanwhile goes back an elliptical arc', async () => {
+    const t = setup();
+    const b = new ChangeSetBuilder(t.model);
+    const line = t.model.entity(t.id('34'))!;
+    const added = b.addEntity({
+      owner: DOOR,
+      layer: line.layer,
+      color: line.color,
+      linetype: line.linetype,
+      lineweight: line.lineweight,
+      transparency: line.transparency,
+      ltScale: line.ltScale,
+      visible: line.visible,
+      geom: {
+        kind: 'ARC',
+        center: { x: 3, y: 0 },
+        radius: 1,
+        startAngle: 0,
+        endAngle: Math.PI / 2,
+      },
+    });
+    t.model.apply(b.build());
+    await t.refedit('tall');
+    expect(t.model.entity(added.id)).toBeUndefined();
+    // The quarter arc as the reference draws it, from (304,0) to (303,2), moved up 2.
+    await t.bus.script(['MOVE']);
+    await t.bus.pick({ x: 304, y: 0 });
+    await t.bus.script(['', '0,0', '0,2']);
+    await t.bus.script(['ARC', 'C', '340,0', '341,0', '340,1']);
+    const drawn = t.contents(MODEL).at(-1)!;
+    expect(t.geom(drawn).kind).toBe('ARC');
+    await t.bus.script(['REFCLOSE', 'S']);
+    const a = t.model.entity(added.id)!;
+    expect(a.handle).toBe(added.handle);
+    expect(a.owner).toBe(DOOR);
+    const g = a.geom as Extract<EntityGeometry, { kind: 'ARC' }>;
+    expect(g.kind).toBe('ARC');
+    near(g.center, 3, 1);
+    expect(g.radius).toBeCloseTo(1, 12);
+    expect(g.startAngle).toBeCloseTo(0, 12);
+    expect(g.endAngle).toBeCloseTo(Math.PI / 2, 12);
+    const made = t.contents(DOOR).filter((h) => t.geom(h).kind === 'ELLIPSE');
+    expect(made).toHaveLength(1);
+    const e = t.geom(made[0]!) as Ellipse;
+    near(e.center, 40, 0);
+    expect(e.endParam - e.startParam).toBeCloseTo(Math.PI / 2, 12);
+  });
+
+  it('Discard puts the circle back; U and REDO end and resume the edit', async () => {
+    const t = await tallEdit();
+    await t.bus.script(['MOVE']);
+    await t.bus.pick({ x: 301.5, y: 0 });
+    await t.bus.script(['', '0,0', '0,2', 'REFCLOSE', 'D']);
+    expect(t.contents(MODEL)).toEqual(['30', DOOR_REF, PLAIN_REF, TALL_REF]);
+    for (const [h, e] of t.was) expect(t.model.entity(t.id(h))).toEqual(e);
+    await t.bus.submit('U');
+    expect(await t.name()).toMatch(/REFEDITNAME = "DOOR"/);
+    expect(t.model.entity(t.id('35'))).toBeUndefined();
+    await t.bus.script(['REFCLOSE', 'S']);
+    expect((t.geom('35') as Extract<EntityGeometry, { kind: 'CIRCLE' }>).center.y).toBeCloseTo(
+      1,
+      12,
+    );
+  });
+
+  it('-REFEDIT edits it too', async () => {
     const t = setup();
     await t.bus.submit('-REFEDIT');
     await t.pick('tall');
-    expect(t.log.at(-1)).toBe(
-      '** A block reference scaled differently in X and Y cannot be edited in place **',
-    );
-    expect(t.bus.promptText).toBe('Command:');
+    expect(t.bus.promptText).toBe('Enter object selection method [All/Nested] <All>:');
+    await t.bus.script(['', '']);
+    expect(await t.name()).toMatch(/REFEDITNAME = "DOOR"/);
+    expect(t.owner('34')).toBe(MODEL);
   });
 });

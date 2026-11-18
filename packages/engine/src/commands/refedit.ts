@@ -22,8 +22,10 @@
 // - A block a loaded xref brought in (`xref|name`, a reference nested in the xref's) is edited the
 //   same way (M5-02 part 7): REFCLOSE Save writes the edits to that block in the xref's file.
 //
-// Decisions (noted in the PRs): a block reference scaled differently in X and Y is refused (Triya's
-// edits carry objects by similarities only, so a circle could not come back as a circle); REFSET
+// - A reference scaled differently in X and Y is edited the same way (M5-02 part 8): its objects
+//   carried by the scale, a circle or an arc as an ellipse standing in for it (edit/refedit.ts).
+//
+// Decisions (noted in the PRs): REFSET
 // Remove keeps an xref's own objects, and those of a block it brought in, in the working set (outside it they would be the host's on the
 // xref's layers, which the host does not save); the names stay `xref|name` while an xref is
 // edited, whatever "Create unique layer, style, and block names" says (that renaming is
@@ -37,7 +39,6 @@ import type { DocumentInit, DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { InsertGeometry } from '../model/types';
-import type { Similarity } from '../edit/similarity';
 import { isXrefRecord, xrefBringing } from '../model/xref';
 import { blockReaches } from '../edit/blocks';
 import { contentHandles, xrefWrite } from '../edit/xref-save';
@@ -46,6 +47,7 @@ import {
   pathPlacement,
   returnWorkingSet,
   wholeWorkingSet,
+  type Placement,
 } from '../edit/refedit';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -167,7 +169,7 @@ const refusal = (why: string): string => `** ${why[0]!.toUpperCase()}${why.slice
 function start(
   ctx: CommandContext,
   path: readonly EntityId[],
-  t: Similarity,
+  t: Placement,
   settings: RefEditSettings,
   chosen?: readonly EntityId[],
 ): void {
@@ -178,10 +180,12 @@ function start(
   const firstNew = ctx.model.handles.handSeed;
   const order = [...ctx.model.blockEntities(block)];
   let refused = 0;
+  let standIns = 0;
   let originals: RefEditSession['originals'] = new Map();
   const extraction = ctx.edit((b) => {
     const ex = extractWorkingSet(b, ctx.model, ids, t, ctx.space);
     refused = ex.refused;
+    standIns = ex.standIns;
     originals = ex.originals;
   });
   const session: RefEditSession = {
@@ -202,6 +206,10 @@ function start(
     `${originals.size} ${originals.size === 1 ? 'object' : 'objects'} in the working set.`,
   );
   if (refused > 0) ctx.message(`${refused} could not be edited in place and stayed in the block.`);
+  if (standIns > 0)
+    ctx.message(
+      `${standIns} ${standIns === 1 ? 'circle or arc is' : 'circles or arcs are'} edited as ${standIns === 1 ? 'an ellipse' : 'ellipses'} while the block is scaled differently in X and Y.`,
+    );
 }
 
 async function* refeditDialog(ctx: CommandContext, path: EntityId[]): Sub<void> {
@@ -493,8 +501,15 @@ export function refcloseCommand(): CommandDef {
       const drawing = xref !== undefined ? await xrefFile(ctx, xref) : undefined;
       if (xref !== undefined && !drawing) return;
       const touched = ctx.refEdit.touched();
-      const saved = ctx.edit((b) => returnWorkingSet(b, ctx.model, { ...s, touched }, ids));
+      let left: EntityId[] = [];
+      const saved = ctx.edit((b) => {
+        left = returnWorkingSet(b, ctx.model, { ...s, touched }, ids);
+      });
       ctx.refEdit.close({ saved });
+      if (left.length > 0)
+        ctx.message(
+          `${left.length} ${left.length === 1 ? 'object' : 'objects'} could not be carried back into a block scaled differently in X and Y and ${left.length === 1 ? 'stays' : 'stay'} in the drawing.`,
+        );
       if (xref !== undefined && drawing) await writeXref(ctx, s, xref, drawing);
       else ctx.message(`Block "${s.name}" redefined: reference edits saved.`);
     },
