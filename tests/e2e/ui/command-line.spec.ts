@@ -4,7 +4,15 @@
 // Up recalls; F2 shows the whole history.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
-import { DXF, activeCanvas, expectShown, ink, openWithPicker, typeAtOnce } from '../app/page';
+import {
+  DXF,
+  activeCanvas,
+  enterCommand,
+  expectShown,
+  ink,
+  openWithPicker,
+  typeAtOnce,
+} from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -150,4 +158,49 @@ test('input typed ahead of a prompt is read by the prompt it reaches (M2-47 part
   await expect(views.getByRole('button', { name: 'Three words' })).toBeVisible();
   await expect(views.getByRole('listitem')).toHaveCount(2);
   await page.screenshot({ path: test.info().outputPath('typed-ahead-views.png') });
+});
+
+// M5-14: templates.spec.ts lost a NEW typed straight after DIMSTYLE's Escape on loaded CI runners.
+// Escape answers the engine and the dialog stays open until the engine's reply comes back; while
+// it is open (a modal <dialog>) the rest of the page is inert, so the command line cannot take the
+// focus and Playwright's fill and Enter went to the dialog. Here the engine worker's replies are
+// held back so that the dialog always outlives the Escape by a moment, as on a slow runner.
+test('a command entered while a dialog is closing waits for it to close (M5-14)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    const Base = window.Worker;
+    const w = window as unknown as { triyaEngineDelay?: number };
+    window.Worker = class extends Base {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes('engine/worker')) return;
+        const add = this.addEventListener.bind(this) as Worker['addEventListener'];
+        let last = 0;
+        // Each reply is handled `triyaEngineDelay` ms after it came, in the order they came.
+        this.addEventListener = ((type: string, listener: EventListener, o?: unknown) => {
+          if (type !== 'message') return add(type, listener, o as AddEventListenerOptions);
+          return add('message', (e) => {
+            const at = Math.max(performance.now() + (w.triyaEngineDelay ?? 0), last);
+            last = at;
+            setTimeout(() => listener.call(this, e), at - performance.now());
+          });
+        }) as Worker['addEventListener'];
+      }
+    };
+  });
+  await open(page);
+  await expect(prompt(page)).toHaveText('Command:');
+  await enterCommand(page, 'DIMSTYLE');
+  const manager = page.getByRole('dialog', { name: 'Dimension Style Manager' });
+  await expect(manager).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as { triyaEngineDelay: number }).triyaEngineDelay = 500;
+  });
+  await page.keyboard.press('Escape');
+  await enterCommand(page, 'LINE');
+  await expect(manager).toBeHidden();
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await expect(history(page)).toContainText('Command: LINE');
 });
