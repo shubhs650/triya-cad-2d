@@ -35,7 +35,7 @@ import { Modal } from './AttributeDialogs';
 import { controllerOf } from './canvas/registry';
 import { stateOf } from './canvas/view-host';
 import { namedView } from './canvas/views';
-import type { OpenDocument } from './documents';
+import { inLayout as layoutShown, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { drawingViews } from './saved-views';
 import {
@@ -109,7 +109,7 @@ function ManagerBody({
   const [boundaryEdit] = useState(() => kept?.editing);
 
   const ctl = controllerOf(doc.id, doc.block);
-  const inLayout = doc.block !== doc.opened.modelSpace;
+  const inLayout = layoutShown(doc);
   const views = drawingViews(doc.opened.init, changes);
   const tree = viewTree(views);
   const byKey = new Map(views.map((v) => [keyOf(v), v]));

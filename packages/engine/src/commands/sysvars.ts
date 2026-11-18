@@ -287,10 +287,11 @@ export const DRAWING_VARIABLES: readonly SystemVariable[] = [
  * tab (M2-59 part 5); VIEWSIZE and VIEWCTR the view the canvas shows (its height in drawing
  * units, and its centre); SCREENSIZE the canvas's size in (CSS) pixels; AREA, PERIMETER and
  * DISTANCE the last results of AREA, DIST and MEASUREGEOM in this session (M3-07; AutoCAD keeps
- * them unsaved, as Triya does).
+ * them unsaved, as Triya does); BLOCKEDITOR whether the Block Editor is open (M5-02).
  */
 export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
   { name: 'AREA', store: 'computed', kind: 'real', readOnly: true },
+  { name: 'BLOCKEDITOR', store: 'computed', kind: 'integer', readOnly: true },
   { name: 'CDATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
   { name: 'CTAB', store: 'computed', kind: 'name', table: 'layouts' },
   { name: 'DATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },

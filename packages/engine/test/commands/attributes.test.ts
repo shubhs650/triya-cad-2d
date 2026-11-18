@@ -891,11 +891,13 @@ describe('double-click', () => {
     expect(dialog(bus).type).toBe('attdef');
   });
 
-  it('on a block without attributes opens nothing', async () => {
+  it('on a block without attributes opens it in the Block Editor (BEDIT, M5-02)', async () => {
     const { bus, byHandle } = setup();
+    // Without the drawing, the block is not known.
     expect(doubleClickCommand(byHandle('80'))).toBeUndefined();
     await bus.doubleClick({ x: 500, y: 0 });
-    expect(bus.command).toBeUndefined();
+    expect(bus.command).toBe('BEDIT');
+    expect(dialog(bus).type).toBe('bedit');
   });
 });
 

@@ -491,6 +491,17 @@ button {
   padding: 3px 10px;
 }
 
+/* The Block Editor's bar (M5-02), in the layout tabs' place. */
+.block-editor-bar {
+  align-items: center;
+  gap: 8px;
+  background: var(--chrome-bg-raised);
+}
+
+.block-editor-name {
+  margin-right: 8px;
+}
+
 .status-bar {
   display: flex;
   align-items: center;
@@ -5391,6 +5402,58 @@ button {
   .layer-states-properties {
     grid-template-columns: 1fr;
   }
+}
+
+/* BEDIT's Edit Block Definition and BCLOSE's Block - Changes Not Saved (M5-02 part 1). */
+.bedit-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.bedit-dialog-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.bedit-dialog-blocks {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bedit-dialog-list {
+  height: 200px;
+}
+
+.bedit-dialog-list:focus-visible .layer-list-active {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+
+.bedit-dialog-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 160px;
+}
+
+.bedit-dialog-description {
+  min-height: 3em;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bedit-dialog-note {
+  margin: 8px 0 0;
+}
+
+.cad-dialog-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
 }
 
 /* M5-04 part 8: PDFATTACH's Attach PDF Underlay dialog. */

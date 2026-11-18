@@ -172,6 +172,7 @@ export type {
   WriteBlockSource,
 } from './wblock';
 export { wblockCopy, wblockFileName } from './wblock';
+export type { BlockCloseRequest, BlockEditEntry, BlockEditRequest } from './block-editor';
 export type {
   HatchDialogAnswer,
   HatchDialogButton,
