@@ -58,6 +58,8 @@ export type AuditSaveKind =
   | 'pdfclip'
   // ATTDEF's definitions, a block of them and a reference on ezdxf's colors.dxf (M5-03 part 1).
   | 'attdef'
+  // ATTREDEF of the title-block test drawing's block (M5-03 part 3).
+  | 'attredef'
   // A bundled template as it is, and a new drawing made from it, drawn in, its title block
   // filled in and saved (M5-10).
   | 'template'

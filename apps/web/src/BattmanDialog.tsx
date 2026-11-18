@@ -11,16 +11,19 @@
 // - Edit Attribute: Active Block; tabs Attribute (Mode: Invisible, Constant, Verify, Preset,
 //   Multiple lines, Constant and Multiple lines shown only; Data: Tag, Prompt, Default), Text
 //   Options (with a multiline definition's Boundary width) and Properties, as the Enhanced
-//   Attribute Editor's; OK, Cancel.
+//   Attribute Editor's; Auto preview changes (M5-03 part 3), OK, Cancel.
 // - Block Attribute Settings: "Display in list" (Tag always), Select All, Clear All, "Emphasize
 //   duplicate tags", "Apply changes to existing references"; OK, Cancel. Kept for the next
 //   BATTMAN, as AutoCAD keeps them.
 //
 // The manager holds Edit, Move and Remove until Apply, OK or Sync (the engine's BattmanAnswer
 // carries them); another block in the Block list, or Select block, applies them first. Cancel
-// drops what was not applied. Left out: Edit Attribute's "Auto preview changes" (the changes
-// show once applied) and the Default's Insert Field button (with M5-03's Insert Field), and Help,
-// as Triya's other dialogs leave it.
+// drops what was not applied. With Auto preview changes on (and "Apply changes to existing
+// references"), each change in Edit Attribute is sent as a `preview`, which the engine shows on
+// the definitions and references at once and takes back before the next answer; AutoCAD greys
+// the checkbox while "Apply changes to existing references" is off, and keeps it per user, as
+// the settings are kept. Left out: the Default's Insert Field button (with M5-03's Insert
+// Field), and Help, as Triya's other dialogs leave it.
 import type {
   AttributeDefinitionEntry,
   AttributeDefinitionPatch,
@@ -106,13 +109,16 @@ export interface BattmanSettings {
   readonly columns: readonly BattmanColumn[];
   readonly emphasizeDuplicates: boolean;
   readonly applyToExisting: boolean;
+  /** Edit Attribute's "Auto preview changes" (M5-03 part 3). */
+  readonly autoPreview: boolean;
 }
 
-/** AutoCAD's: Tag, Prompt, Default and Modes listed; both options on. */
+/** AutoCAD's: Tag, Prompt, Default and Modes listed; every option on. */
 export const DEFAULT_BATTMAN_SETTINGS: BattmanSettings = {
   columns: ['tag', 'prompt', 'default', 'modes'],
   emphasizeDuplicates: true,
   applyToExisting: true,
+  autoPreview: true,
 };
 
 const STORAGE_KEY = 'triya.battman.settings';
@@ -130,6 +136,7 @@ export function loadBattmanSettings(): BattmanSettings {
       columns: columns.includes('tag') ? columns : ['tag', ...columns],
       emphasizeDuplicates: v.emphasizeDuplicates ?? true,
       applyToExisting: v.applyToExisting ?? true,
+      autoPreview: v.autoPreview ?? true,
     };
   } catch {
     return DEFAULT_BATTMAN_SETTINGS;
@@ -266,6 +273,20 @@ export function BattmanDialog({ doc, request }: { doc: number; request: Request 
   });
   const send = (action: 'ok' | 'apply' | 'select', more?: Partial<BattmanAnswer>) =>
     answer(doc, { kind: 'dialog', action, battman: state(more) });
+  // Auto preview: the manager's changes with `e` as Edit Attribute has it now (none: as the
+  // manager holds them), shown in the drawing until the next answer.
+  const sendPreview = (e: Entry | undefined, show: boolean) => {
+    const now = e ? rows.map((r) => (r.handle === e.handle ? e : r)) : rows;
+    const attributes = show
+      ? now
+          .map((r) => patchOf(original.get(r.handle)!, r))
+          .filter((p): p is AttributeDefinitionPatch => p !== undefined)
+      : [];
+    answer(doc, { kind: 'dialog', action: 'preview', battman: state({ attributes }) });
+  };
+  const preview = (e?: Entry) => {
+    if (settings.autoPreview && settings.applyToExisting) sendPreview(e, true);
+  };
 
   const move = (by: -1 | 1) => {
     if (!row) return;
@@ -404,11 +425,25 @@ export function BattmanDialog({ doc, request }: { doc: number; request: Request 
           block={request.blocks.find((b) => b.handle === request.block)?.name ?? ''}
           entry={editing}
           request={request}
+          autoPreview={settings.autoPreview}
+          canPreview={settings.applyToExisting}
+          onAutoPreview={(on, e) => {
+            const next = { ...settings, autoPreview: on };
+            setSettings(next);
+            saveBattmanSettings(next);
+            // On, the drawing shows the changes made so far at once; off, it shows them once
+            // they are applied.
+            sendPreview(e, on);
+          }}
+          onChange={preview}
           onOk={(e) => {
             setRows(rows.map((r) => (r.handle === e.handle ? e : r)));
             setEditing(undefined);
           }}
-          onCancel={() => setEditing(undefined)}
+          onCancel={() => {
+            setEditing(undefined);
+            preview();
+          }}
         />
       )}
       {settingsOpen && (
@@ -433,19 +468,33 @@ function EditAttributeDialog({
   block,
   entry,
   request,
+  autoPreview,
+  canPreview,
+  onAutoPreview,
+  onChange,
   onOk,
   onCancel,
 }: {
   block: string;
   entry: Entry;
   request: Request;
+  /** "Auto preview changes", and whether it is offered ("Apply changes to existing references"). */
+  autoPreview: boolean;
+  canPreview: boolean;
+  onAutoPreview: (on: boolean, e: Entry) => void;
+  /** The definition as it now stands, for the Auto preview. */
+  onChange: (e: Entry) => void;
   onOk: (e: Entry) => void;
   onCancel: () => void;
 }) {
   const [e, setE] = useState(entry);
   const [tab, setTab] = useState<Tab>('attribute');
   const [pickingColor, setPickingColor] = useState(false);
-  const set = (patch: Partial<Entry>) => setE((x) => ({ ...x, ...patch }));
+  const set = (patch: Partial<Entry>) => {
+    const next = { ...e, ...patch };
+    setE(next);
+    onChange(next);
+  };
   const tag = e.tag.trim();
   const tagProblem =
     tag === '' ? 'A tag is required.' : /\s/.test(tag) ? 'A tag cannot contain spaces.' : '';
@@ -580,7 +629,16 @@ function EditAttributeDialog({
           onCancel={() => setPickingColor(false)}
         />
       )}
-      <div className="cad-dialog-buttons">
+      <div className="cad-dialog-buttons battman-edit-buttons">
+        <label className="matchprop-check">
+          <input
+            type="checkbox"
+            checked={autoPreview && canPreview}
+            disabled={!canPreview}
+            onChange={(x) => onAutoPreview(x.target.checked, e)}
+          />
+          Auto preview changes
+        </label>
         <button type="button" disabled={tagProblem !== ''} onClick={ok}>
           OK
         </button>

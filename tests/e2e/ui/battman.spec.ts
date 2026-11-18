@@ -172,3 +172,63 @@ test('the Block Attribute Manager edits, orders and removes definitions', async 
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });
+
+// M5-03 part 3: Edit Attribute's "Auto preview changes": on (as AutoCAD starts), a change shows
+// on the reference at once, before OK; Cancel takes it back; off, nothing shows until Apply;
+// greyed while "Apply changes to existing references" is off.
+test("Edit Attribute's Auto preview changes shows changes on the reference at once", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  await expectDrawn(page, { timeout: 15_000 });
+  await expect(prompt(page)).toHaveText('Command:');
+  /** TITLE's height on the reference, as the last change left it (the file's when none did). */
+  const titleHeight = async () => (await changed(page)).attributes?.['TITLE'];
+  await shot(page, '7-before-preview');
+
+  await enterCommand(page, 'BATTMAN');
+  const dialog = page.getByRole('dialog', { name: 'Block Attribute Manager' });
+  const rows = dialog.getByRole('listbox', { name: 'Attribute definitions' }).getByRole('option');
+  await rows.filter({ hasText: 'TITLE' }).first().dblclick();
+  const edit = page.getByRole('dialog', { name: 'Edit Attribute' });
+  const auto = edit.getByLabel('Auto preview changes');
+  await expect(auto).toBeChecked();
+  await edit.getByRole('tab', { name: 'Text Options' }).click();
+  await edit.getByLabel('Height:').fill('12');
+  // The reference shows it while the dialog is still open.
+  await expect.poll(titleHeight).toBe(12);
+  await expect(edit).toBeVisible();
+  await expect(edit.getByLabel('Height:')).toHaveValue('12');
+  await shot(page, '8-auto-preview');
+  // Cancel takes it back.
+  await edit.getByRole('button', { name: 'Cancel' }).click();
+  await expect(edit).toBeHidden();
+  await expect.poll(titleHeight).not.toBe(12);
+  const original = await titleHeight();
+
+  // Off: nothing shows until Apply.
+  await rows.filter({ hasText: 'TITLE' }).first().dblclick();
+  await auto.uncheck();
+  await edit.getByRole('tab', { name: 'Text Options' }).click();
+  await edit.getByLabel('Height:').fill('9');
+  await edit.getByRole('button', { name: 'OK' }).click();
+  expect(await titleHeight()).toBe(original);
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+  await expect.poll(titleHeight).toBe(9);
+
+  // Greyed without "Apply changes to existing references".
+  await dialog.getByRole('button', { name: 'Settings...' }).click();
+  const settings = page.getByRole('dialog', { name: 'Block Attribute Settings' });
+  await settings.getByLabel('Apply changes to existing references').uncheck();
+  await settings.getByRole('button', { name: 'OK' }).click();
+  await rows.filter({ hasText: 'TITLE' }).first().dblclick();
+  await expect(auto).toBeDisabled();
+  await edit.getByRole('button', { name: 'Cancel' }).click();
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+  await shot(page, '9-after-apply');
+});

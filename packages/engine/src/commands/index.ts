@@ -131,8 +131,12 @@ export {
   type PdfAttachSettings,
 } from './pdf-attach';
 export { attributedBlocks, battmanCommand } from './battman';
+export { attredefCommand } from './attredef';
 export {
   attdefCommand,
+  AFLAGS,
+  aflagsModes,
+  aflagsOf,
   attdefGeometry,
   attdispCommand,
   type AttdefDefineAnswer,

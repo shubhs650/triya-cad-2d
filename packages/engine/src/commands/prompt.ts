@@ -1059,7 +1059,7 @@ export type PromptAnswer =
        * makes them and picks another block; `mtext` makes them and opens the MTEXT editor on the
        * multiline attribute `target` (the value's `...` button).
        */
-      readonly action: 'ok' | 'apply' | 'select' | 'mtext' | 'remove';
+      readonly action: 'ok' | 'apply' | 'select' | 'mtext' | 'remove' | 'preview';
       readonly attributes?: readonly AttributePatch[];
       /** The Block Attribute Manager's state (BATTMAN, M5-03 part 2). */
       readonly battman?: BattmanAnswer;
