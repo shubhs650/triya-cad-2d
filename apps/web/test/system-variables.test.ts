@@ -358,6 +358,10 @@ describe('variables of the drawing the app answers (M2-59)', () => {
       value: 'Drawing1.dxf',
     });
     expect(drawingVariableReply({ ...doc, name: '' }, 'DWGTITLED')).toEqual({ ok: true, value: 0 });
+    // A new drawing from a template (M5-10): named Drawing2.dxf, untitled until it is saved.
+    const fresh = { ...doc, name: 'Drawing2.dxf', untitled: true };
+    expect(drawingVariableReply(fresh, 'DWGNAME')).toEqual({ ok: true, value: 'Drawing2.dxf' });
+    expect(drawingVariableReply(fresh, 'DWGTITLED')).toEqual({ ok: true, value: 0 });
     expect(drawingVariableReply(doc, 'ORTHOMODE')).toBeUndefined();
   });
 

@@ -77,6 +77,16 @@ describe('DocumentStore', () => {
     expect(showing(s)).toBe('d');
   });
 
+  it('opens a new drawing from a template untitled, until its first save (M5-10)', () => {
+    const s = new DocumentStore();
+    s.startOpening('Drawing1.dxf');
+    const id = s.opened('Drawing1.dxf', opened, '1F', undefined, 0, { untitled: true });
+    expect(s.getSnapshot().docs[0]).toMatchObject({ name: 'Drawing1.dxf', untitled: true });
+    s.saved(id, 'bracket.dxf', {} as never, 0);
+    expect(s.getSnapshot().docs[0]!.name).toBe('bracket.dxf');
+    expect(s.getSnapshot().docs[0]!.untitled).toBeUndefined();
+  });
+
   it('reports a failed open and clears it on the next open', () => {
     const s = new DocumentStore();
     s.startOpening('x.dwg');
