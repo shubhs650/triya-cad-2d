@@ -153,6 +153,8 @@ import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { drawingFileReply, type HeldDrawing } from './block-files';
+import { DesignCenterPalette } from './DesignCenterPalette';
+import { DESIGN_CENTER_DRAG, designCenterDrop, takeDesignCenterDrag } from './design-center';
 import { writeBlockFile } from './block-file-io';
 import { drawingFileModel, openDrawingModel } from './dimstyle-import';
 import { EXPORT_MEDIA } from './export';
@@ -1339,6 +1341,19 @@ async function supplyNow(sources: readonly Supplied[], mode: 'drop' | 'reference
 }
 
 /**
+ * An item DesignCenter dragged, dropped at window pixels `client` (M5-11): added to the drawing
+ * shown, a block inserted at the point dropped on its canvas (off the canvas, only added).
+ */
+function designCenterDropped(client: Vec2): void {
+  const drag = takeDesignCenterDrag();
+  const { docs, active } = store.getSnapshot();
+  const doc = docs.find((d) => d.id === active);
+  if (!drag || !doc) return;
+  const at = controllerOf(doc.id, doc.block)?.worldOfClient(client);
+  void designCenterDrop(doc.id, drag.source, drag.category, drag.names, at && { at });
+}
+
+/**
  * The drawings -INSERT `name=file` finds by name (M5-01 part 4): those open, as their engines hold
  * them now, then the files that answered xrefs this session.
  */
@@ -1864,6 +1879,11 @@ export function App() {
           if (store.getSnapshot().active !== undefined) dockedPalette.toggle('properties');
           return true;
         },
+        // Ctrl+2: DesignCenter (M5-11), as AutoCAD's ADCENTER.
+        designcenter: () => {
+          if (store.getSnapshot().active !== undefined) dockedPalette.toggle('designcenter');
+          return true;
+        },
       }),
     [pick],
   );
@@ -1932,7 +1952,8 @@ export function App() {
         if (e.dataTransfer.types.includes('Files')) setDragging(true);
       }}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes('Files')) return;
+        const item = e.dataTransfer.types.includes(DESIGN_CENTER_DRAG);
+        if (!item && !e.dataTransfer.types.includes('Files')) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
       }}
@@ -1942,6 +1963,12 @@ export function App() {
       onDrop={(e) => {
         e.preventDefault();
         setDragging(false);
+        // An item dragged out of DesignCenter (M5-11): added to the drawing shown, a block
+        // inserted where it was dropped on the canvas.
+        if (e.dataTransfer.types.includes(DESIGN_CENTER_DRAG)) {
+          designCenterDropped({ x: e.clientX, y: e.clientY });
+          return;
+        }
         const items = dropItems(e.dataTransfer);
         // A drop with no items list (some synthetic drops) still has its files.
         if (items.length) void droppedItems(items);
@@ -2208,6 +2235,13 @@ export function App() {
             onClose={() => setPalette(undefined)}
           />
         )}
+        {active && palette === 'designcenter' && (
+          <DesignCenterPalette
+            doc={active}
+            docs={state.docs}
+            onClose={() => setPalette(undefined)}
+          />
+        )}
         {active && palette === 'references' && (
           <ReferencesPalette
             rows={references}
@@ -2284,6 +2318,13 @@ export function App() {
               onClick={() => togglePalette('references')}
             >
               References
+            </button>
+            <button
+              type="button"
+              aria-expanded={palette === 'designcenter'}
+              onClick={() => togglePalette('designcenter')}
+            >
+              DesignCenter
             </button>
           </nav>
         )}

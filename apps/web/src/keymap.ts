@@ -63,6 +63,7 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   // AutoCAD's Ctrl+J and Ctrl+M are Enter: they end the input, or repeat the last command.
   { id: 'enter', label: 'Enter (repeat last command)', group: 'Edit', keys: ['Ctrl+J', 'Ctrl+M'] },
   { id: 'properties', label: 'Properties palette', group: 'View', keys: ['Ctrl+1'] },
+  { id: 'designcenter', label: 'DesignCenter', group: 'View', keys: ['Ctrl+2'] },
   { id: 'history', label: 'Command history', group: 'View', keys: ['F2'] },
   // Triya's command palette; AutoCAD's Ctrl+K (HYPERLINK) has no command in Triya.
   { id: 'palette', label: 'Command palette', group: 'View', keys: ['Ctrl+K'] },

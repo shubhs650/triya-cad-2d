@@ -29,6 +29,7 @@ export {
 } from './drawing-units';
 export { rayCommand, xlineCommand } from './draw/xline';
 export { dashDimstyleCommand } from './dimstyle-dash';
+export { designCenterCommand, type DesignCenterDrop } from './design-center';
 export {
   dimStyleRequest,
   dimstyleCommand,

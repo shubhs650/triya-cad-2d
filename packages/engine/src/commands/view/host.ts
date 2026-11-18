@@ -429,9 +429,10 @@ export interface PlotScript {
 
 /**
  * The palettes a command opens or closes (M2-21): the Properties palette, and Quick Properties
- * (QUICKPROPERTIES, M2-35 part 21), shown for the objects selected whatever QPMODE says.
+ * (QUICKPROPERTIES, M2-35 part 21), shown for the objects selected whatever QPMODE says;
+ * DesignCenter (ADCENTER, ADCCLOSE; M5-11).
  */
-export type PaletteName = 'properties' | 'quick' | 'references';
+export type PaletteName = 'designcenter' | 'properties' | 'quick' | 'references';
 
 /**
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows

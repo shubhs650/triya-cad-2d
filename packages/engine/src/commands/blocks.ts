@@ -643,7 +643,7 @@ function blockOfDrawing(ctx: CommandContext, name: string, content: Clipboard): 
 }
 
 /** Why `name` cannot be inserted: no such block, or an external reference. */
-function insertRefusal(ctx: CommandContext, name: string): string | undefined {
+export function insertRefusal(ctx: CommandContext, name: string): string | undefined {
   const r = name === '' || name.startsWith('*') ? undefined : blockNamed(ctx.model, name);
   if (!r || !ctx.model.hasBlock(r.handle)) return `Block "${name}" not found.`;
   if (isXrefRecord(r)) return `Block "${r.name}" is an external reference.`;
@@ -957,13 +957,21 @@ function insertEntry(ctx: CommandContext, r: BlockTableRecord): InsertBlockEntry
   };
 }
 
-async function* insertDialog(ctx: CommandContext): Sub<void> {
+/**
+ * INSERT's Insert dialog, on block `block` when given (DesignCenter's Insert Block..., M5-11),
+ * else on the block inserted last.
+ */
+export async function* insertDialog(ctx: CommandContext, block?: string): Sub<void> {
   const blocks = insertableBlocks(ctx.model);
   const last = lastInsertSettings.get(ctx.model);
   const named = (n: string | undefined) =>
     n === undefined ? undefined : blocks.find((r) => r.name.toUpperCase() === n.toUpperCase());
   const name =
-    named(lastInserted.get(ctx.model))?.name ?? named(last?.name)?.name ?? blocks[0]?.name ?? '';
+    named(block)?.name ??
+    named(lastInserted.get(ctx.model))?.name ??
+    named(last?.name)?.name ??
+    blocks[0]?.name ??
+    '';
   let settings: InsertDialogSettings = {
     pointOnScreen: true,
     point: { x: 0, y: 0 },
