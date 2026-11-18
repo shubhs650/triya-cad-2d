@@ -10,6 +10,7 @@ import type {
   ChangeSet,
   DragMotion,
   EntityId,
+  NestedPick,
   GroupGrip,
   MTextGeometry,
   EnclosedSpace,
@@ -102,6 +103,14 @@ export type HostMessage =
       readonly screen: { readonly x: number; readonly y: number };
       readonly aperture: number;
     }
+  /** What a pick hit inside a block reference (M5-06 part 5); the answer is a `nested`. */
+  | {
+      readonly type: 'nestedHit';
+      readonly id: number;
+      readonly screen: { readonly x: number; readonly y: number };
+      readonly aperture: number;
+      readonly entity: EntityId;
+    }
   /** The entities a selection window takes (M2-03); the answer is a `reply` with ids. */
   | { readonly type: 'select'; readonly id: number; readonly query: SelectQuery }
   /** The entities to draw selected (M2-03). */
@@ -185,6 +194,8 @@ export type HostMessage =
 export type WorkerMessage =
   | { readonly type: 'reply'; readonly id: number; readonly ids?: readonly EntityId[] }
   | { readonly type: 'entities'; readonly id: number; readonly entities: readonly DrawnEntity[] }
+  /** What a pick hit inside a block reference, or null (M5-06 part 5). */
+  | { readonly type: 'nested'; readonly id: number; readonly hit: NestedPick | null }
   /** The thumbnail asked for, transferred; null when the canvas was never sized. */
   | { readonly type: 'thumbnail'; readonly id: number; readonly bitmap: ImageBitmap | null }
   /** The object snap points asked for (M2-04), best first. */

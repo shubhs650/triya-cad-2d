@@ -71,7 +71,7 @@ describe('LAYOFF and LAYON', () => {
   it('turns off the layer of each object picked until Enter, and LAYON turns them all on', async () => {
     const t = setup();
     await t.bus.script(['LAYOFF']);
-    expect(t.log).toContain('Current settings: Viewports=Vpfreeze');
+    expect(t.log).toContain('Current settings: Viewports=Vpfreeze, Block nesting level=Block');
     expect(t.bus.promptText).toBe(
       'Select an object on the layer to be turned off or [Settings/Undo]:',
     );
@@ -122,11 +122,11 @@ describe('LAYOFF and LAYON', () => {
 
   it('Settings keeps the viewport choice for the drawing', async () => {
     const t = setup();
-    await t.bus.script(['LAYOFF', 'S']);
+    await t.bus.script(['LAYOFF', 'S', 'V']);
     expect(t.bus.promptText).toBe('In paper space viewport use [Vpfreeze/Off] <Vpfreeze>:');
     await t.bus.script(['O', '']);
     await t.bus.script(['LAYOFF']);
-    expect(t.log).toContain('Current settings: Viewports=Off');
+    expect(t.log).toContain('Current settings: Viewports=Off, Block nesting level=Block');
   });
 
   it('LAYON with every layer on changes nothing and is no undo step', async () => {
@@ -141,7 +141,7 @@ describe('LAYFRZ and LAYTHW', () => {
   it('freezes the layer of each object picked, never the current one', async () => {
     const t = setup();
     await t.bus.script(['LAYFRZ']);
-    expect(t.log).toContain('Current settings: Viewports=Vpfreeze');
+    expect(t.log).toContain('Current settings: Viewports=Vpfreeze, Block nesting level=Block');
     expect(t.bus.promptText).toBe('Select an object on a layer to be frozen or [Settings/Undo]:');
     await t.bus.pick(t.on(DOORS));
     expect(t.log).toContain('Layer "DOORS" has been frozen.');
@@ -151,11 +151,11 @@ describe('LAYFRZ and LAYTHW', () => {
     expect(t.states('frozen')).toEqual([true, false, true, false]);
     await t.bus.script(['U']);
     expect(t.states('frozen')).toEqual([false, false, true, false]);
-    await t.bus.script(['S']);
+    await t.bus.script(['S', 'V']);
     expect(t.bus.promptText).toBe('In paper space viewport use [Freeze/Vpfreeze] <Vpfreeze>:');
     await t.bus.script(['F', '']);
     await t.bus.script(['LAYFRZ']);
-    expect(t.log).toContain('Current settings: Viewports=Freeze');
+    expect(t.log).toContain('Current settings: Viewports=Freeze, Block nesting level=Block');
     await t.bus.script(['']);
     await t.bus.script(['LAYTHW']);
     expect(t.log).toContain('All layers have been thawed.');

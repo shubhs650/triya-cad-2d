@@ -14,8 +14,9 @@
 //     use the LAYISO command will be retained").
 //
 // Each command is one undo step; picks take objects on locked layers too, since the layer, not
-// the object, is edited. Left for part 2: picks of objects nested in blocks and xrefs (AutoCAD's
-// "Block selection" setting), LAYWALK, LAYERP, LAYDEL and LAYMRG.
+// the object, is edited. A pick on a block reference or an xref takes the layer of the object
+// picked inside it (part 5, `nested-pick.ts`): LAYOFF and LAYFRZ as their Block selection setting
+// says, the other picks always (Entity).
 //
 // Viewports: AutoCAD freezes (Vpfreeze) a layer in the layout viewport made current only;
 // Triya cannot make one current yet (MSPACE, M6-02), and outside one AutoCAD changes the layer
@@ -33,6 +34,7 @@ import type { LayerRecord } from '../model/types';
 import type { EntityId } from '../model/entity-ids';
 import { currentLayer } from '../properties/current';
 import { newLayer } from '../edit/layer-manager';
+import { BLOCK_SELECTIONS, pickedLayer, selectedLayers, type BlockSelection } from './nested-pick';
 
 /** DXF 70 bit 16: a layer that came in with an xref (its objects stay on it). */
 const XREF_DEPENDENT = 16;
@@ -49,6 +51,9 @@ type LayerFlags = Partial<Pick<LayerRecord, 'on' | 'frozen' | 'locked'>>;
 interface LayerToolState {
   offViewports: 'Vpfreeze' | 'Off';
   freezeViewports: 'Freeze' | 'Vpfreeze';
+  /** LAYOFF's and LAYFRZ's Block selection nesting level (part 5). */
+  offBlocks: BlockSelection;
+  freezeBlocks: BlockSelection;
   isoMode: 'Off' | 'Lock and fade';
   isoViewports: 'Vpfreeze' | 'Off';
   /** What the last LAYISO changed: each layer's flags before it and as LAYISO left them. */
@@ -86,10 +91,15 @@ function setFlags(ctx: CommandContext, patches: ReadonlyMap<Handle, LayerFlags>)
   });
 }
 
-/** One layer pick ("Select an object on the layer to be …"); undefined at Enter or Esc. */
+const isXrefLayer = (l: LayerRecord) => ((l.flags ?? 0) & XREF_DEPENDENT) !== 0;
+
+/**
+ * One layer pick ("Select an object on the layer to be …"), into blocks and xrefs (Entity);
+ * undefined at Enter or Esc.
+ */
 async function* pickLayer(ctx: CommandContext, message: string): Asking<LayerRecord> {
   const a = yield ctx.prompt.selection({ message, single: true });
-  return a.kind === 'selection' ? layerOfObject(ctx, a.ids[0]) : undefined;
+  return a.kind === 'selection' ? await pickedLayer(ctx, a, 'Entity') : undefined;
 }
 
 /**
@@ -102,8 +112,10 @@ function layerPicksCommand(name: 'LAYOFF' | 'LAYFRZ', state: LayerToolState): Co
     name,
     usesSelection: 'during',
     async *run(ctx) {
+      const blocks = () => (off ? state.offBlocks : state.freezeBlocks);
       ctx.message(
-        `Current settings: Viewports=${off ? state.offViewports : state.freezeViewports}`,
+        `Current settings: Viewports=${off ? state.offViewports : state.freezeViewports}, ` +
+          `Block nesting level=${blocks()}`,
       );
       const done: { handle: Handle; before: LayerFlags }[] = [];
       for (;;) {
@@ -115,6 +127,22 @@ function layerPicksCommand(name: 'LAYOFF' | 'LAYFRZ', state: LayerToolState): Co
           single: true,
         });
         if (a.kind === 'keyword' && a.keyword === 'Settings') {
+          const t = yield ctx.prompt.keyword({
+            message: 'Enter setting type for',
+            options: ['Viewports', 'Block selection'],
+          });
+          if (t.kind !== 'keyword') return;
+          if (t.keyword === 'Block selection') {
+            const n = yield ctx.prompt.keyword({
+              message: 'Enter Block Selection nesting level',
+              options: [...BLOCK_SELECTIONS],
+              default: { kind: 'keyword', keyword: blocks() },
+            });
+            if (n.kind !== 'keyword') return;
+            if (off) state.offBlocks = n.keyword as BlockSelection;
+            else state.freezeBlocks = n.keyword as BlockSelection;
+            continue;
+          }
           const choices = off ? ['Vpfreeze', 'Off'] : ['Freeze', 'Vpfreeze'];
           const s = yield ctx.prompt.keyword({
             message: 'In paper space viewport use',
@@ -133,7 +161,7 @@ function layerPicksCommand(name: 'LAYOFF' | 'LAYFRZ', state: LayerToolState): Co
           continue;
         }
         if (a.kind !== 'selection') return;
-        const layer = layerOfObject(ctx, a.ids[0]);
+        const layer = await pickedLayer(ctx, a, blocks());
         if (!layer) return;
         if (!off && isCurrent(ctx, layer)) {
           ctx.message(`Cannot freeze layer ${quoted(layer.name)}.  It is the CURRENT layer.`);
@@ -207,6 +235,11 @@ function laymcurCommand(): CommandDef {
     async *run(ctx) {
       const layer = yield* pickLayer(ctx, 'Select object whose layer will become current');
       if (!layer) return;
+      // An xref's layer cannot be current, as the Layer Properties Manager refuses it too.
+      if (isXrefLayer(layer)) {
+        ctx.message(`Layer ${quoted(layer.name)} is xref-dependent and cannot be made current.`);
+        return;
+      }
       makeCurrent(ctx, layer);
       ctx.message(`${layer.name} is now the current layer.`);
     },
@@ -370,14 +403,14 @@ function layisoCommand(state: LayerToolState): CommandDef {
           ? `Current setting: Hide layers, Viewports=${state.isoViewports}`
           : `Current setting: Lock layers, Fade=${await fadeValue(ctx)}`,
       );
-      let ids: readonly EntityId[];
+      let isolated: LayerRecord[];
       for (;;) {
         const a = yield ctx.prompt.selection({
           message: 'Select objects on the layer(s) to be isolated or',
           options: ['Settings'],
         });
         if (a.kind === 'selection') {
-          ids = a.ids;
+          isolated = await selectedLayers(ctx, a, 'Entity');
           break;
         }
         if (a.kind !== 'keyword') return;
@@ -403,11 +436,6 @@ function layisoCommand(state: LayerToolState): CommandDef {
         await ctx.view.request({ op: 'sysvar', name: LAYLOCKFADECTL, value: fade });
         state.isoMode = 'Lock and fade';
       }
-      const isolated: LayerRecord[] = [];
-      for (const id of ids) {
-        const l = layerOfObject(ctx, id);
-        if (l && !isolated.includes(l)) isolated.push(l);
-      }
       if (isolated.length === 0) return;
       const lock = state.isoMode === 'Lock and fade';
       const keep = new Set(isolated.map((l) => l.handle));
@@ -427,7 +455,10 @@ function layisoCommand(state: LayerToolState): CommandDef {
         return { handle, before, after };
       });
       setFlags(ctx, patches);
-      if (!keep.has(currentLayer(ctx.model))) makeCurrent(ctx, isolated[0]!);
+      // An xref's layer cannot be current: the first isolated layer of the drawing's own is made
+      // current, or the current layer stays when every isolated one is an xref's.
+      const next = isolated.find((l) => !isXrefLayer(l) && !l.frozen);
+      if (!keep.has(currentLayer(ctx.model)) && next) makeCurrent(ctx, next);
       ctx.message(
         isolated.length === 1
           ? `Layer ${quoted(isolated[0]!.name)} has been isolated.`
@@ -485,6 +516,8 @@ export function layerToolCommands(): CommandDef[] {
   const state: LayerToolState = {
     offViewports: 'Vpfreeze',
     freezeViewports: 'Vpfreeze',
+    offBlocks: 'Block',
+    freezeBlocks: 'Block',
     isoMode: 'Lock and fade',
     isoViewports: 'Vpfreeze',
     isolated: undefined,
