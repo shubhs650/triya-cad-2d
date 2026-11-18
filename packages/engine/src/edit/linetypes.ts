@@ -274,3 +274,107 @@ export function deleteLinetypes(
   }
   return { deleted, refused };
 }
+
+/** One linetype's Details as the Linetype Manager changes them (M5-08 part 4). */
+export interface LinetypeEdit {
+  readonly handle: Handle;
+  /** The new name; absent (or the same) keeps it. */
+  readonly name?: string;
+  /** The new description; absent keeps it. */
+  readonly description?: string;
+}
+
+/** "A description cannot exceed 47 characters" (AutoCAD Help, "About Custom Linetypes"). */
+export const LINETYPE_DESCRIPTION_MAX = 47;
+
+/** Why `name` cannot name a linetype, or undefined (taken names are checked by the caller). */
+export function linetypeNameProblem(name: string): string | undefined {
+  if (name.trim() === '') return 'A linetype name cannot be empty.';
+  if (NAME_INVALID.test(name) || name.includes('|') || name.length > 255)
+    return `${name} is not a valid linetype name.`;
+  return undefined;
+}
+
+/**
+ * Renames and describes linetypes (one builder step), as the Linetype Manager's Details does:
+ * ByLayer and ByBlock are not edited, Continuous keeps its name, xref-dependent linetypes are
+ * left alone, a name has to be valid and not another linetype's (ignoring case, as the step
+ * leaves them, so names may be swapped; `taken`: names loaded in the same step), and a
+ * description holds at most 47 characters. CELTYPE names the current linetype, so it follows a
+ * rename. Objects, layers and styles hold the record's handle, which is kept.
+ */
+export function editLinetypes(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  edits: readonly LinetypeEdit[],
+  taken: readonly string[] = [],
+): {
+  /** The names changed, by their old and new names. */
+  readonly renamed: readonly { readonly from: string; readonly to: string }[];
+  readonly described: readonly string[];
+  readonly refused: readonly string[];
+} {
+  const refusals: { at: number; why: string }[] = [];
+  const renames = new Map<Handle, { at: number; name: string }>();
+  const describes: { at: number; handle: Handle; description: string }[] = [];
+  edits.forEach((e, at) => {
+    const l = model.tables.linetypes.get(e.handle);
+    if (!l) return;
+    const rename = e.name !== undefined && e.name !== l.name ? e.name.trim() : undefined;
+    const describe =
+      e.description !== undefined && e.description !== l.description ? e.description : undefined;
+    if (rename === undefined && describe === undefined) return;
+    const by = ['BYLAYER', 'BYBLOCK'].includes(upper(l.name));
+    let why: string | undefined;
+    if (by) why = `${l.name} cannot be edited.`;
+    else if (isXrefLinetype(l)) why = `${l.name} is xref-dependent and cannot be changed.`;
+    else if (rename !== undefined && isFixedLinetype(l.name))
+      why = `The name of ${l.name} cannot be changed.`;
+    else if (rename !== undefined) why = linetypeNameProblem(rename);
+    if (!why && rename !== undefined && isFixedLinetype(rename))
+      why = `A linetype named ${rename} already exists.`;
+    if (!why && describe !== undefined && describe.length > LINETYPE_DESCRIPTION_MAX)
+      why = `The description of ${l.name} is longer than ${LINETYPE_DESCRIPTION_MAX} characters.`;
+    if (why) refusals.push({ at, why });
+    else {
+      if (rename !== undefined) renames.set(l.handle, { at, name: rename });
+      if (describe !== undefined) describes.push({ at, handle: l.handle, description: describe });
+    }
+  });
+  // A rename onto a name another linetype has as the step leaves it is refused; refusing one may
+  // make another collide (a swap half refused), so until none does.
+  const loaded = new Set(taken.map(upper));
+  for (let changed = true; changed;) {
+    changed = false;
+    const finals = new Map<string, Handle[]>();
+    for (const l of model.tables.linetypes.values()) {
+      const n = upper(renames.get(l.handle)?.name ?? l.name);
+      finals.set(n, [...(finals.get(n) ?? []), l.handle]);
+    }
+    for (const [h, r] of renames) {
+      const n = upper(r.name);
+      if ((finals.get(n)?.length ?? 0) > 1 || loaded.has(n)) {
+        refusals.push({ at: r.at, why: `A linetype named ${r.name} already exists.` });
+        renames.delete(h);
+        changed = true;
+      }
+    }
+  }
+  const renamed: { from: string; to: string }[] = [];
+  const described: string[] = [];
+  const current = linetypeNamed(model, currentLinetypeName(model));
+  for (const [h, r] of [...renames].sort((x, y) => x[1].at - y[1].at)) {
+    renamed.push({ from: model.tables.linetypes.get(h)!.name, to: r.name });
+    b.updateTableRecord('linetypes', h, { name: r.name });
+    if (current?.handle === h) b.setHeader('$CELTYPE', r.name);
+  }
+  for (const d of describes) {
+    b.updateTableRecord('linetypes', d.handle, { description: d.description });
+    described.push(renames.get(d.handle)?.name ?? model.tables.linetypes.get(d.handle)!.name);
+  }
+  return {
+    renamed,
+    described,
+    refused: refusals.sort((x, y) => x.at - y.at).map((r) => r.why),
+  };
+}
