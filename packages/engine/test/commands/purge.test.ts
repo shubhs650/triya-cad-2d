@@ -8,14 +8,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
+  EngineSession,
   PromptBus,
   builtinCommands,
   purgeClosure,
+  purgeHealth,
   purgeState,
   zeroLengthObjects,
   emptyTextObjects,
   type BusEvent,
   type DialogRequest,
+  type DocumentInit,
   type EntityGeometry,
   type PromptAnswer,
   type PurgeAnswer,
@@ -88,9 +91,10 @@ const mtext = (contents: string) =>
     attachment: 1,
   }) as unknown as EntityGeometry;
 
-function setup(o: { pinned?: string[] } = {}) {
+/** The drawing every test purges (see the handles above). */
+function purgeInit(o: { pinned?: string[] } = {}): DocumentInit {
   const init = sampleInit();
-  const model = DocumentModel.create({
+  return {
     ...init,
     handSeed: '100',
     header: new Map([...init.header!, ['$DIMBLK', 'USED'], ['$TEXTSTYLE', 'Standard']]),
@@ -230,7 +234,11 @@ function setup(o: { pinned?: string[] } = {}) {
       ),
     ],
     passthrough: ['3F'],
-  });
+  };
+}
+
+function setup(o: { pinned?: string[] } = {}) {
+  const model = DocumentModel.create(purgeInit(o));
   // The canvas measures objects as one box (the Purge dialog's Details) and zooms to them.
   const canvas = host(() => model, new Map());
   const requests: ViewRequest[] = [];
@@ -667,5 +675,84 @@ describe('The Purge dialog', () => {
     expect(t.bus.prompt).toBeUndefined();
     expect(t.layers()).toContain('OLD');
     expect(t.bus.undo.state.undoable).toBe(0);
+  });
+});
+
+// M5-09 part 3: the Health palette's purge card (PRD FR-Z4 "unused layers/blocks/styles, empty
+// text, zero-length ... one-click fixes"): what PURGE would take, counted, and its fixes as engine
+// edits, each one PURGE undo step.
+describe('The Health palette purge fixes', () => {
+  it('counts the unused named items by category, zero-length geometry and empty text', () => {
+    const { model } = setup({ pinned: [PINNED] });
+    const h = purgeHealth(model);
+    expect(h.unused).toEqual([
+      { category: 'blocks', title: 'Blocks', count: 1 },
+      { category: 'groups', title: 'Groups', count: 1 },
+      { category: 'layers', title: 'Layers', count: 2 },
+      { category: 'textStyles', title: 'Text Styles', count: 1 },
+    ]);
+    // Registered applications are -PURGE's (as in the Purge dialog), not counted.
+    expect(h.unused.some((c) => c.category === 'appIds')).toBe(false);
+    // Nested: what only the unused items use goes with them.
+    expect(h.nested).toBe(3);
+    expect(h.zeroLength).toBe(zeroLengthObjects(model).length);
+    expect(h.emptyText).toBe(emptyTextObjects(model).length);
+    expect(h.zeroLength).toBe(2);
+    expect(h.emptyText).toBe(2);
+  });
+
+  it('Purge all takes every unused item and what only they use, one PURGE undo step', () => {
+    const s = new EngineSession(purgeInit());
+    expect(s.purgeHealth().unused.length).toBeGreaterThan(0);
+    const r = s.edit({ kind: 'purge', what: 'unused' });
+    expect(r.ok).toBe(true);
+    const names = [...s.model.tables.layers.values()].map((l) => l.name);
+    expect(names).not.toContain('OLD');
+    expect(names).not.toContain('INBLOCK');
+    expect(names).toContain('WALLS');
+    expect([...s.model.blocks.values()].map((b) => b.name)).not.toContain('NESTED');
+    // As the Purge dialog's Purge All: what the purge itself freed (DASHED, which layer state S1
+    // named only for the purged layer FROZEN) shows after it, for the next click.
+    expect(s.purgeHealth().unused).toEqual([
+      { category: 'linetypes', title: 'Linetypes', count: 1 },
+    ]);
+    expect(s.edit({ kind: 'purge', what: 'unused' }).ok).toBe(true);
+    expect(s.purgeHealth().unused).toEqual([]);
+    // Unnamed objects stay: they have their own fixes.
+    expect(s.purgeHealth().zeroLength).toBe(2);
+    // Registered applications stay too.
+    expect([...s.model.tables.appIds.values()].map((a) => a.name)).toContain('MYAPP');
+    expect(s.undoState.undoList).toEqual(['PURGE', 'PURGE']);
+  });
+
+  it('deletes zero-length geometry and empty text, each one PURGE undo step', () => {
+    const s = new EngineSession(purgeInit());
+    expect(s.edit({ kind: 'purge', what: 'zero-length' }).ok).toBe(true);
+    expect(s.model.entityByHandle('41')).toBeUndefined();
+    expect(s.model.entityByHandle('43')).toBeUndefined();
+    // Locked layers keep theirs.
+    expect(s.model.entityByHandle('42')).toBeDefined();
+    expect(s.purgeHealth().zeroLength).toBe(0);
+    expect(s.purgeHealth().emptyText).toBe(2);
+    expect(s.edit({ kind: 'purge', what: 'empty-text' }).ok).toBe(true);
+    expect(s.model.entityByHandle('2E')).toBeUndefined();
+    expect(s.model.entityByHandle('30')).toBeUndefined();
+    expect(s.model.entityByHandle('31')).toBeDefined();
+    expect(s.purgeHealth().emptyText).toBe(0);
+    expect(s.undoState.undoList).toEqual(['PURGE', 'PURGE']);
+  });
+
+  it('refuses when there is nothing to purge, changing nothing', () => {
+    const s = new EngineSession(purgeInit());
+    s.edit({ kind: 'purge', what: 'zero-length' });
+    const r = s.edit({ kind: 'purge', what: 'zero-length' });
+    expect(r).toEqual({ ok: false, message: 'No zero-length geometry found.' });
+    s.edit({ kind: 'purge', what: 'unused' });
+    s.edit({ kind: 'purge', what: 'unused' });
+    expect(s.edit({ kind: 'purge', what: 'unused' })).toEqual({
+      ok: false,
+      message: 'No unused named items found.',
+    });
+    expect(s.undoState.undoable).toBe(3);
   });
 });

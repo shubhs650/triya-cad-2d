@@ -385,6 +385,61 @@ describe('EngineHost paperViews (M2-47 part 1)', () => {
   });
 });
 
+describe('EngineHost purgeHealth (M5-09 part 3)', () => {
+  /** The sample with an unused layer and a zero-length line. */
+  const withUnused: DocumentInit = {
+    ...init,
+    tables: {
+      ...init.tables,
+      layers: [
+        ...(init.tables?.layers ?? []),
+        { ...init.tables!.layers![0]!, handle: '12', name: 'OLD' },
+      ],
+    },
+    layouts: [{ handle: '22', name: 'Model', tabOrder: 0, blockRecord: '1F' }],
+    entities: [
+      {
+        handle: '30',
+        owner: '1F',
+        type: 'LINE',
+        layer: '11',
+        color: { kind: 'byLayer' },
+        linetype: 'ByLayer',
+        lineweight: 'ByLayer',
+        transparency: 'ByLayer',
+        ltScale: 1,
+        visible: true,
+        geom: { kind: 'LINE', start: { x: 1, y: 1 }, end: { x: 1, y: 1 } },
+      },
+    ],
+  };
+
+  it('counts what PURGE would take, in the worker or on the main thread, and follows the fixes', async () => {
+    for (const host of [new EngineHost(withUnused, inProcessWorker), new EngineHost(withUnused)]) {
+      expect(await host.purgeHealth()).toEqual({
+        unused: [{ category: 'layers', title: 'Layers', count: 1 }],
+        nested: 0,
+        zeroLength: 1,
+        emptyText: 0,
+      });
+      expect((await host.edit({ kind: 'purge', what: 'unused' })).ok).toBe(true);
+      expect((await host.edit({ kind: 'purge', what: 'zero-length' })).ok).toBe(true);
+      expect(await host.purgeHealth()).toMatchObject({ unused: [], zeroLength: 0 });
+      host.dispose();
+    }
+  });
+
+  it('is undefined for a drawing not open', async () => {
+    const engines = new Engines(
+      (i) => new EngineHost(i),
+      () => [],
+    );
+    expect(await engines.purgeHealth(7)).toBeUndefined();
+    engines.start(7, withUnused);
+    expect((await engines.purgeHealth(7))?.zeroLength).toBe(1);
+  });
+});
+
 describe('change sets straight to the render workers (M2-62)', () => {
   type Numbered = { seq: number; change: unknown };
   /** What a linked renderer hears on its port. */

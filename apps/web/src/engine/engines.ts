@@ -14,6 +14,7 @@ import type {
   EditResult,
   EngineEdit,
   PaperView,
+  PurgeHealth,
 } from '@triya/engine';
 import type { ChangeLink } from '@triya/render';
 import type { EngineHost } from './host';
@@ -131,6 +132,15 @@ export class Engines {
   async paperViews(doc: number, layouts: readonly PaperView[]): Promise<ChangeSet | undefined> {
     const engine = this.#engines.get(doc);
     return engine && layouts.length > 0 ? engine.paperViews(layouts) : undefined;
+  }
+
+  /**
+   * What the Health palette's purge card counts (M5-09 part 3): the drawing's unused named items,
+   * zero-length geometry and empty text; undefined when the drawing is not open.
+   */
+  async purgeHealth(doc: number): Promise<PurgeHealth | undefined> {
+    const engine = this.#engines.get(doc);
+    return engine ? engine.purgeHealth() : undefined;
   }
 
   /** Applies an edit to a drawing and shows it on every canvas of that drawing. */

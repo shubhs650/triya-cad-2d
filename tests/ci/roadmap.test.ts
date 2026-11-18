@@ -19,13 +19,7 @@ const id = (line: string) => /\*\*([A-Z0-9]+-[0-9A-Z]+)\*\*/.exec(line)?.[1] ?? 
  * editing then (M5-03 #540, M5-04 #541, M5-09 #536), left alone so those PRs would not conflict
  * with the change. May only shrink: separate a pair and delete it here.
  */
-const STILL_ADJACENT = [
-  'M5-02 / M5-03',
-  'M5-03 / M5-04',
-  'M5-04 / M5-05',
-  'M5-08 / M5-09',
-  'M5-09 / M5-10',
-];
+const STILL_ADJACENT = ['M5-02 / M5-03', 'M5-03 / M5-04', 'M5-04 / M5-05'];
 
 describe('docs/ROADMAP.md layout', () => {
   const lines = roadmap.split('\n');
