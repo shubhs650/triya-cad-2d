@@ -41,6 +41,8 @@ export type AuditSaveKind =
   | 'xattach'
   // XBIND of the xref set's block and layers (M5-04 part 7).
   | 'xbind'
+  // LINETYPE's loads, reloads and deletes on ezdxf's colors.dxf (M5-08 part 1).
+  | 'linetype'
   // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).
   | 'wblock';
 

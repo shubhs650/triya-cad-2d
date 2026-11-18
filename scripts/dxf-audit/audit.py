@@ -70,6 +70,9 @@ FIXTURE_SAVES = (
     # XBIND of the xref set's block and layers (M5-04 part 7,
     # packages/testkit/src/xref/xbind.test.ts).
     ("fixtures/xref/xref-parent.dxf", "xbind"),
+    # LINETYPE's loads (text linetypes too), reload and delete on ezdxf's colors.dxf (M5-08
+    # part 1, packages/testkit/src/layers/linetype-load.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "linetype"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.
