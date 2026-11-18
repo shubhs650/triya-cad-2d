@@ -202,5 +202,7 @@ describe('leaders on the public corpus (M1-52)', () => {
     // (2 frames with GD&T text in each of the 20 acadsharp samples).
     expect(frames).toBeGreaterThanOrEqual(40);
     expect([...seen].sort()).toEqual(['d', 'j', 'n', 'p']);
-  });
+    // Every readable corpus file read and its frames drawn twice: 12 s alone, 18 to 34 s on a
+    // loaded CI shard, past the 30 s default, so it gets the corpus walks' own allowance.
+  }, 120_000);
 });
