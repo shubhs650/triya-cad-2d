@@ -153,10 +153,21 @@ export function referencesOf(
     const load = cs.blocks?.updated?.find((u) => u.after.xrefLoaded && !u.before.xrefLoaded);
     if (!load) {
       // The drawing's own, made since it opened: a pasted picture's (M2-54, M2-72) or a pasted
-      // image's or underlay's (M2-32).
+      // image's or underlay's (M2-32), an xref attached (XATTACH, M5-04 part 6).
       for (const o of cs.objects?.added ?? []) {
         const kind = fileObject(o.type);
         if (kind && !top.some((n) => n.handle === o.handle)) top.push({ kind, handle: o.handle });
+      }
+      const own = (h: string) => {
+        if (!top.some((n) => n.handle === h)) top.push({ kind: 'xref', handle: h });
+      };
+      for (const x of r?.added ?? []) if (isXrefRecord(x)) own(x.handle);
+      // A nested xref XATTACH made the drawing's own: it leaves its xref's content.
+      for (const u of cs.blocks?.updated ?? []) {
+        if (!u.before.xrefLoaded || !u.after.xrefLoaded) continue;
+        const kept = new Set(u.after.xrefLoaded);
+        for (const h of u.before.xrefLoaded)
+          if (!kept.has(h) && isXrefRecord(records.get(h))) own(h);
       }
       continue;
     }
