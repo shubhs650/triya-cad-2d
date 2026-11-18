@@ -90,6 +90,7 @@ import {
 import { imageattachCommand } from './image-attach';
 import { pdfattachCommand } from './pdf-attach';
 import { attdefCommand, attdispCommand } from './attdef';
+import { battmanCommand } from './battman';
 import { xattachCommand } from './xref-attach';
 import { xbindCommand } from './xbind';
 import { linetypeCommand, ltscaleCommand } from './linetype';
@@ -204,6 +205,7 @@ export function builtinCommands(): CommandRegistry {
     pdfattachCommand(),
     attdefCommand(),
     attdispCommand(),
+    battmanCommand(),
     xattachCommand(),
     xbindCommand(),
     linetypeCommand(),
