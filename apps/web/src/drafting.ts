@@ -99,6 +99,19 @@ export interface DraftingState {
    */
   readonly layLockFade: number;
   /**
+   * LWDEFAULT (M5-08 part 3): what a Default lineweight draws as, hundredths of a millimetre, one
+   * of AutoCAD's lineweights. AutoCAD keeps it per user, initially 25; Lineweight Settings sets it.
+   */
+  readonly lwDefault: number;
+  /** LWUNITS: lineweights listed in millimetres (1, AutoCAD's initial value) or inches (0). */
+  readonly lwUnits: 0 | 1;
+  /**
+   * Lineweight Settings' Adjust Display Scale (M5-08 part 3): the Model tab's lineweight widths
+   * multiplied by it, `LWSCALE_RANGE`, initially 1. AutoCAD keeps its slider per user and names
+   * no system variable for it.
+   */
+  readonly lwScale: number;
+  /**
    * BINDTYPE (M5-04 part 2): how -XREF Bind binds, 0 Bind or 1 Insert. AutoCAD saves it nowhere
    * ("Not-saved"), initially 0, so neither do the preferences.
    */
@@ -240,6 +253,9 @@ export interface DraftingState {
  * in: Registry), their initial values and highest values (each starts at 0). OFFSET, TRIM, EXTEND,
  * FILLET, CHAMFER and PEDIT read them as they start and set them when their options change.
  */
+/** Adjust Display Scale's slider: Min to Max, in steps (M5-08 part 3). */
+export const LWSCALE_RANGE = { min: 0.25, max: 3, step: 0.25 } as const;
+
 export const MODIFY_OPTIONS: Readonly<Record<string, { initial: number; max: number }>> = {
   OFFSETERASE: { initial: 0, max: 1 },
   OFFSETGAPTYPE: { initial: 0, max: 2 },
@@ -460,6 +476,9 @@ export const INITIAL_DRAFTING: DraftingState = {
   arrayAssociativity: true,
   fieldDisplay: true,
   layLockFade: 50,
+  lwDefault: 25,
+  lwUnits: 1,
+  lwScale: 1,
   bindType: 0,
   polarMode: 0,
   polarAddAngles: '',

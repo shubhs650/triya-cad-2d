@@ -34,6 +34,18 @@ export interface RenderStyle {
   /** LWT: lineweights shown at their width; off draws every line 1 px. */
   readonly showLineweights: boolean;
   /**
+   * LWDEFAULT (M5-08 part 3): what a Default lineweight draws as, hundredths of a millimetre.
+   * AutoCAD keeps it in the registry, not the drawing; absent is its initial 25 (0.25 mm). A
+   * change re-resolves every object's paint.
+   */
+  readonly lineweightDefault?: number;
+  /**
+   * Lineweight Settings' Adjust Display Scale (M5-08 part 3): the Model tab's lineweight widths
+   * multiplied by it (`LineweightDisplay.displayScale`); layouts show real paper widths. Absent
+   * is 1.
+   */
+  readonly lineweightScale?: number;
+  /**
    * Around a layout's sheet, a CSS colour (M1-18); the sheet itself is `background`, so ACI 7
    * contrasts with the paper. Defaults to the background moved toward grey.
    */

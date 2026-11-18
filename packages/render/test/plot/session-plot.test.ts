@@ -62,6 +62,13 @@ describe('RenderSession.plot', () => {
     expect(parts[0]).toMatchObject({ kind: 'stroke', paint: { color: [255, 0, 0] } });
   });
 
+  it('plots a Default lineweight at the screen’s LWDEFAULT (M5-08 part 3)', () => {
+    const s = session();
+    expect(s.plot()[0]).toMatchObject({ kind: 'stroke', paint: { lineweight: 0.25 } });
+    s.renderer.setStyle({ ...s.renderer.style, lineweightDefault: 100 });
+    expect(s.plot()[0]).toMatchObject({ kind: 'stroke', paint: { lineweight: 1 } });
+  });
+
   it('reduces each glyph’s font to its bytes, one object per font, cloneable', () => {
     const parts = session().plot();
     const glyphs = parts.flatMap((p) =>
