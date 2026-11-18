@@ -290,6 +290,30 @@ describe('patternOf', () => {
       rotationMode: 'relative',
     });
   });
+
+  it('reads DXF 74 bit 8 as upright rotation (U=), as AutoCAD writes it (M5-08)', () => {
+    // GAS_LINE in the ACadSharp samples: 74 = 10, text (2) and upright (8).
+    const element = (shapeFlags: number) => ({
+      length: -0.2,
+      shapeFlags,
+      shapeNumber: 0,
+      style: '11',
+      offset: { x: -0.1, y: -0.05 },
+      rotation: 0,
+      scale: 0.1,
+      text: 'GAS',
+    });
+    const record = {
+      handle: '20',
+      name: 'GAS_LINE',
+      description: '',
+      alignment: 'A',
+      patternLength: 0.4,
+      elements: [element(2 | 8), element(2), element(4 | 8)],
+    } as unknown as LinetypeRecord;
+    const modes = patternOf(record).elements.map((e) => e.embed?.rotationMode);
+    expect(modes).toEqual(['upright', 'relative', 'upright']);
+  });
 });
 
 describe('lineweightPixels', () => {

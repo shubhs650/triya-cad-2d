@@ -30,7 +30,15 @@ import { controllerOf } from './canvas/registry';
 import { SelectColorDialog } from './SelectColorDialog';
 import type { OpenDocument } from './documents';
 import { engines } from './engine/registry';
-import { VARIES, editText, propertySheets, typeOptions, valueText } from './properties';
+import { drafting } from './drafting';
+import {
+  VARIES,
+  editText,
+  lineweightsListed,
+  propertySheets,
+  typeOptions,
+  valueText,
+} from './properties';
 
 export function PropertiesPalette({
   doc,
@@ -236,7 +244,7 @@ const SELECT_COLOR = 'select-color';
 const OTHER_LINETYPE = 'other-linetype';
 
 function PropertyField({
-  row,
+  row: sent,
   stepVertex,
   openEditor,
   units,
@@ -258,6 +266,9 @@ function PropertyField({
   /** Linetype's "Other..." choice, which opens the Linetype Manager (M5-08 part 2). */
   otherLinetype?: (() => void) | undefined;
 }) {
+  // Lineweights in the units LWUNITS names (M5-08), as the Lineweight Settings dialog sets it.
+  const lwUnits = useSyncExternalStore(drafting.subscribe, () => drafting.get().lwUnits);
+  const row = lineweightsListed(sent, lwUnits === 0 ? 'in' : 'mm');
   if (row.readOnly) {
     const shown = (
       <span className="read-only" aria-label={row.label}>

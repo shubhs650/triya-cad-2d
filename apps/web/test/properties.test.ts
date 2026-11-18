@@ -1,7 +1,13 @@
 // M2-21: how the Properties palette shows a row's value, in the drawing's units.
 import { describe, expect, it } from 'vitest';
 import type { PropertyRow, PropertySheet, PropertyUnits } from '@triya/engine';
-import { PropertySheets, editText, typeOptions, valueText } from '../src/properties';
+import {
+  PropertySheets,
+  editText,
+  lineweightsListed,
+  typeOptions,
+  valueText,
+} from '../src/properties';
 
 const decimal: PropertyUnits = { lunits: 2, luprec: 4, aunits: 0, auprec: 0 };
 const arch: PropertyUnits = { lunits: 4, luprec: 4, aunits: 1, auprec: 4 };
@@ -72,6 +78,33 @@ describe('Properties values', () => {
         auprec: 2,
       }),
     ).toBe(`N 30d30' W`);
+  });
+});
+
+describe('lineweights in LWUNITS (M5-08)', () => {
+  const weights = row({
+    key: 'lineweight',
+    label: 'Lineweight',
+    kind: 'choice',
+    value: '30',
+    options: [
+      { value: 'ByLayer', label: 'ByLayer' },
+      { value: 'Default', label: 'Default' },
+      { value: '30', label: '0.30 mm', lineweight: 30 },
+      { value: '211', label: '2.11 mm', lineweight: 211 },
+    ],
+  });
+
+  it('lists them in inches with LWUNITS 0, as AutoCAD does, and leaves the rest alone', () => {
+    const inches = lineweightsListed(weights, 'in');
+    expect(inches.options!.map((o) => o.label)).toEqual(['ByLayer', 'Default', '0.012"', '0.083"']);
+    expect(valueText(inches, decimal)).toBe('0.012"');
+  });
+
+  it('keeps millimetres, and a row without lineweights, as the engine sent them', () => {
+    expect(lineweightsListed(weights, 'mm')).toBe(weights);
+    const other = row({ kind: 'choice', options: [{ value: '1', label: 'Straight' }] });
+    expect(lineweightsListed(other, 'in')).toBe(other);
   });
 });
 

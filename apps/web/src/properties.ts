@@ -5,8 +5,8 @@
 // whole as the status bar's coordinates), angles by AUNITS/AUPREC without a degree sign for
 // decimal degrees, areas and plain numbers with LUPREC decimal places.
 import { formatAngle, formatLinear } from '@triya/dims';
-import { formatAngle as angtos, DECIMAL_UNITS } from '@triya/engine';
-import type { PropertyRow, PropertySheet, PropertyUnits } from '@triya/engine';
+import { formatAngle as angtos, DECIMAL_UNITS, lineweightText } from '@triya/engine';
+import type { LineweightUnits, PropertyRow, PropertySheet, PropertyUnits } from '@triya/engine';
 
 export const VARIES = '*VARIES*';
 
@@ -47,6 +47,22 @@ export function valueText(row: PropertyRow, u: PropertyUnits): string {
     default:
       return String(v);
   }
+}
+
+/**
+ * A row with its lineweights listed in `units`, LWUNITS's (M5-08; AutoCAD 2024 Help, "LWUNITS":
+ * "Controls whether lineweight units are displayed in inches or millimeters"). The engine lists
+ * them in millimetres; LWUNITS is the user's setting, kept by the app. The row itself when
+ * nothing changes.
+ */
+export function lineweightsListed(row: PropertyRow, units: LineweightUnits): PropertyRow {
+  if (units === 'mm' || !row.options?.some((o) => o.lineweight !== undefined)) return row;
+  return {
+    ...row,
+    options: row.options.map((o) =>
+      o.lineweight === undefined ? o : { ...o, label: lineweightText(o.lineweight, units) },
+    ),
+  };
 }
 
 /**
