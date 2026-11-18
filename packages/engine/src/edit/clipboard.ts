@@ -348,6 +348,7 @@ function clipBlock(
     dynamic: kind,
     dynamicOf,
     xrefLoaded: _loaded,
+    xrefHandles: _handles,
     xrefUnloaded: _unloaded,
     // The BLOCK's own xdata, which the reader does not map (its BLOCK_RECORD's is the record's).
     xdata: _xdata,
@@ -616,6 +617,25 @@ export function pasteDefinitions(b: ChangeSetBuilder, model: DocumentModel, clip
   pasteInto(b, model, { ...clip, entities: [], groups: [] }, '0');
 }
 
+/**
+ * The Clipboard's objects pasted into `owner` of `model`, left where they are, where `known`
+ * names what `model` holds already of what the Clipboard carries (source handle to `model`'s):
+ * those are used as they are, whatever their names (REFCLOSE's write to an xref's file, M5-02
+ * part 6: what the xref's load brought in). Returns the objects pasted and every source handle
+ * the paste gave a handle of `model`, the objects' own included.
+ */
+export function pasteKnown(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  clip: Clipboard,
+  owner: Handle,
+  known: ReadonlyMap<Handle, Handle>,
+): { readonly report: EditReport; readonly map: ReadonlyMap<Handle, Handle> } {
+  const map = new Map<Handle, Handle>();
+  const report = pasteInto(b, model, clip, owner, undefined, known, map);
+  return { report, map };
+}
+
 /** The Clipboard's objects pasted into `owner`, carried by `t` (left where they are without). */
 function pasteInto(
   b: ChangeSetBuilder,
@@ -623,8 +643,9 @@ function pasteInto(
   clip: Clipboard,
   owner: Handle,
   t?: Similarity,
+  known?: ReadonlyMap<Handle, Handle>,
+  map = new Map<Handle, Handle>(),
 ): EditReport {
-  const map = new Map<Handle, Handle>();
   const added: [TableName, ObjectCommon][] = [];
   /** Named blocks the target has already: their contents are the target's. */
   const kept = new Set<Handle>();
@@ -636,6 +657,12 @@ function pasteInto(
   ][]) {
     for (const r of list) {
       const name = (r as SymbolTableRecord).name;
+      const held = known?.get(r.handle);
+      if (held !== undefined) {
+        map.set(r.handle, held);
+        if (t === 'blockRecords') kept.add(r.handle);
+        continue;
+      }
       // An anonymous block, by name or by flag (DXF 70 bit 1: an R2000 DWG keeps a dynamic block
       // under its true name with that bit, where its DXF names it `*U`).
       const anonymous =
@@ -653,7 +680,11 @@ function pasteInto(
       added.push([t, r]);
     }
   }
-  for (const o of clip.objects ?? []) pasteDefinition(b, model, o, map);
+  for (const o of clip.objects ?? []) {
+    const held = known?.get(o.handle);
+    if (held !== undefined) map.set(o.handle, held);
+    else pasteDefinition(b, model, o, map);
+  }
   const contents = clip.blockEntities.filter((e) => !kept.has(e.owner));
   // A kept block's ATTDEFs are the target's of the same tag (a multileader's values name them).
   for (const e of clip.blockEntities) {

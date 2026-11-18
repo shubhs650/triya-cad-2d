@@ -287,11 +287,13 @@ export function xrefLoadChange(
   // compare the same afterwards.
   fresh.sort(compareHandles);
   const added: Handle[] = [];
+  const pairs: [Handle, Handle][] = [];
   for (const h of fresh) {
     if (map.has(h)) continue;
     const to = model.handles.allocate();
     map.set(h, to);
     added.push(to);
+    pairs.push([to, h]);
   }
 
   // ── The change set ────────────────────────────────────────────────────────────────────────
@@ -362,7 +364,12 @@ export function xrefLoadChange(
       ? { x: insBase.x, y: insBase.y }
       : xrefDef.basePoint;
   const moved = basePoint.x !== xrefDef.basePoint.x || basePoint.y !== xrefDef.basePoint.y;
-  const after = deepFreeze({ ...xrefDef, ...(moved ? { basePoint } : {}), xrefLoaded: added });
+  const after = deepFreeze({
+    ...xrefDef,
+    ...(moved ? { basePoint } : {}),
+    xrefLoaded: added,
+    xrefHandles: pairs,
+  });
   return {
     ...(Object.keys(tables).length ? { tables: tables as NonNullable<ChangeSet['tables']> } : {}),
     blocks: { added: blocks, updated: [{ before: xrefDef, after }] },
@@ -393,7 +400,7 @@ export function withoutXrefContent(model: DocumentModel): DocumentModel {
   ) as NonNullable<DocumentInit['tables']>;
   const blocks = keep(model.blocks).map((b) => {
     if (!b.xrefLoaded && !b.xrefUnloaded) return b;
-    const { xrefLoaded: _l, xrefUnloaded: _u, ...rest } = b;
+    const { xrefLoaded: _l, xrefUnloaded: _u, xrefHandles: _h, ...rest } = b;
     return rest;
   });
   const entities: EntityInit[] = [];
@@ -623,6 +630,6 @@ export function xrefUnloadChange(model: DocumentModel, block: Handle, reload = f
   const def = model.blocks.get(block)!;
   const unloaded = reload ? undefined : true;
   if (def.xrefLoaded || def.xrefUnloaded !== unloaded)
-    b.updateBlock(block, { xrefLoaded: undefined, xrefUnloaded: unloaded });
+    b.updateBlock(block, { xrefLoaded: undefined, xrefHandles: undefined, xrefUnloaded: unloaded });
   return b.build();
 }

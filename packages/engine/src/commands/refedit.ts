@@ -15,19 +15,30 @@
 //   REFSET Add and Remove move objects between it and the drawing; REFCLOSE Save carries it back
 //   into the block, so every reference shows the edits, and Discard takes every change back.
 //
-// Decisions (noted in the PR): a block reference scaled differently in X and Y is refused (Triya's
-// edits carry objects by similarities only, so a circle could not come back as a circle); xrefs
-// wait for a later part; the reference's own attributes stay shown, where AutoCAD hides them while
+// - An attached or overlaid xref, once loaded, is edited the same way (M5-02 part 6): REFCLOSE
+//   Save also writes the edits to the xref's own file (edit/xref-save.ts), which the app reads
+//   (`xrefDrawing`) and writes (`writeXref`); the host keeps them as the xref's loaded content.
+//
+// Decisions (noted in the PRs): a block reference scaled differently in X and Y is refused (Triya's
+// edits carry objects by similarities only, so a circle could not come back as a circle); a block
+// an xref brought in (`xref|name`) is refused (its definition is the xref file's); REFSET Remove
+// keeps an xref's own objects in the working set (outside it they would be the host's on the
+// xref's layers, which the host does not save); the names stay `xref|name` while an xref is
+// edited, whatever "Create unique layer, style, and block names" says (that renaming is
+// AutoCAD's way of showing the xref's names in the host, which Triya's loads already do); the
+// reference's own attributes stay shown, where AutoCAD hides them while
 // the definitions are shown; Discard takes back what was done to the drawing outside the working
 // set too (only possible with Lock objects not in working set off), as the Block Editor's does.
 import type { CommandContext, CommandDef, RefEditSession } from './command';
 import type { Prompt, PromptAnswer, SelectionTake } from './prompt';
-import type { DocumentModel } from '../model/document';
+import type { DocumentInit, DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { InsertGeometry } from '../model/types';
 import type { Similarity } from '../edit/similarity';
+import { isXrefRecord } from '../model/xref';
 import { blockReaches } from '../edit/blocks';
+import { contentHandles, xrefWrite } from '../edit/xref-save';
 import {
   extractWorkingSet,
   pathPlacement,
@@ -325,12 +336,108 @@ export function refsetCommand(): CommandDef {
         ctx.refEdit.add(ids);
         ctx.message(`${ids.length} Added to working set`);
       } else {
-        const ids = inSpace.filter((id) => working.has(id));
+        let ids = inSpace.filter((id) => working.has(id));
+        // An xref's own objects stay its (see the decisions above).
+        if (isXref(ctx, s)) {
+          const own = ids.filter((id) => s.originals.has(id));
+          if (own.length > 0) {
+            ctx.message(
+              `${own.length} ${own.length === 1 ? 'belongs' : 'belong'} to xref "${s.name}" and ${own.length === 1 ? 'stays' : 'stay'} in the working set.`,
+            );
+            ids = ids.filter((id) => !s.originals.has(id));
+          }
+        }
         ctx.refEdit.remove(ids);
         ctx.message(`${ids.length} Removed from working set`);
       }
     },
   };
+}
+
+const isXref = (ctx: CommandContext, s: RefEditSession): boolean =>
+  isXrefRecord(ctx.model.tables.blockRecords.get(s.block));
+
+/**
+ * What each xref's writes added to its file this session, `[host, file]` handles, kept outside
+ * the undo history: U after REFCLOSE takes the block's own list back, but not the file.
+ */
+const written = new WeakMap<DocumentModel, Map<Handle, Map<Handle, Handle>>>();
+
+/** The xref's file as the app reads it now, or undefined (said why) when it has none. */
+async function xrefFile(ctx: CommandContext, s: RefEditSession): Promise<DocumentInit | undefined> {
+  const path = ctx.model.blocks.get(s.block)?.xrefPath ?? '';
+  const r = await ctx.view.request({ op: 'xrefDrawing', block: s.block });
+  if (!r.ok) {
+    ctx.message(`** ${r.message} **`);
+    return undefined;
+  }
+  if (!r.xrefDrawing) {
+    ctx.message(
+      `** The file of xref "${s.name}" (${path}) is not at hand: drop it on the window, then REFCLOSE again **`,
+    );
+    return undefined;
+  }
+  return r.xrefDrawing.init;
+}
+
+/**
+ * REFCLOSE Save of an xref, once the working set is back in its block: the edits written to the
+ * xref's file, the objects new to it made the xref's content (`xrefLoaded`, so the host never
+ * saves them) and, once written, matched with their handles in the file (`xrefHandles`).
+ */
+async function writeXref(
+  ctx: CommandContext,
+  s: RefEditSession,
+  drawing: DocumentInit,
+): Promise<void> {
+  const def = ctx.model.blocks.get(s.block)!;
+  let byFile = written.get(ctx.model);
+  if (!byFile) written.set(ctx.model, (byFile = new Map()));
+  const before = byFile.get(s.block) ?? new Map<Handle, Handle>();
+  let w;
+  try {
+    w = xrefWrite(ctx.model, s.block, drawing, before);
+  } catch (e) {
+    ctx.message(`** ${e instanceof Error ? e.message : String(e)} **`);
+    return;
+  }
+  if (w.refused > 0)
+    ctx.message(
+      `${w.refused} ${w.refused === 1 ? 'object' : 'objects'} could not be written to the xref's file.`,
+    );
+  // The content the host shows is the xref's, whether or not the write below succeeds.
+  const loaded = new Set(def.xrefLoaded ?? []);
+  const fresh = ctx.model
+    .blockEntities(s.block)
+    .flatMap((id) => contentHandles(ctx.model.entity(id)!))
+    .filter((h) => !loaded.has(h));
+  const listed = (pairs: readonly (readonly [Handle, Handle])[]) => {
+    if (fresh.length === 0 && pairs.length === 0) return;
+    ctx.edit((b) =>
+      b.updateBlock(s.block, {
+        xrefLoaded: [...(def.xrefLoaded ?? []), ...fresh],
+        xrefHandles: [...(def.xrefHandles ?? []), ...pairs],
+      }),
+    );
+  };
+  if (w.changes.length === 0) {
+    listed([]);
+    ctx.message(`Xref "${s.name}": no reference edits to save.`);
+    return;
+  }
+  const file = def.xrefPath ?? '';
+  const r = await ctx.view.request({ op: 'writeXref', block: s.block, file, changes: w.changes });
+  if (!r.ok) {
+    listed([]);
+    ctx.message(`** ${r.message} **`);
+    return;
+  }
+  listed(w.added);
+  byFile.set(s.block, new Map([...before, ...w.added]));
+  const name = r.written?.file ?? file;
+  if (r.written?.downloaded)
+    ctx.message(`${name} was downloaded: put it in place of the xref's file to keep the edits.`);
+  ctx.message(`Xref "${s.name}" saved: reference edits written to ${name}.`);
 }
 
 /** The working set in the order it goes back: the objects carried out first, as the block had them. */
@@ -368,10 +475,14 @@ export function refcloseCommand(): CommandDef {
         );
         return;
       }
+      // An xref's edits go to its file, which must be at hand before anything changes.
+      const drawing = isXref(ctx, s) ? await xrefFile(ctx, s) : undefined;
+      if (isXref(ctx, s) && !drawing) return;
       const touched = ctx.refEdit.touched();
       const saved = ctx.edit((b) => returnWorkingSet(b, ctx.model, { ...s, touched }, ids));
       ctx.refEdit.close({ saved });
-      ctx.message(`Block "${s.name}" redefined: reference edits saved.`);
+      if (drawing) await writeXref(ctx, s, drawing);
+      else ctx.message(`Block "${s.name}" redefined: reference edits saved.`);
     },
   };
 }

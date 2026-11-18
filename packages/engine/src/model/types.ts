@@ -1761,6 +1761,12 @@ export interface BlockDefinition extends ObjectCommon {
    */
   readonly xrefLoaded?: readonly Handle[];
   /**
+   * With `xrefLoaded`: each object of the xref's content as the host holds it, with the handle it
+   * has in the xref's own file (M5-02 part 6), `[host, file]`: what REFCLOSE writes back to that
+   * file when the xref is edited in place. Session state, never saved, as `xrefLoaded`.
+   */
+  readonly xrefHandles?: readonly (readonly [Handle, Handle])[];
+  /**
    * Set on an xref the user unloaded (XREF Unload, M5-04): its file is not loaded again until
    * the xref is reloaded, and the References palette lists it as Unloaded. Session state: the
    * DXF has no group for it (the BLOCK's 70 bit 32 "resolved" is ignored on input), so a save
