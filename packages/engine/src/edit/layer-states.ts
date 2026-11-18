@@ -8,6 +8,9 @@
 //     "Turn off layers not found in layer state" turns off the layers it does not name, "so that
 //     the drawing looks the same way it did when the named layer state was saved".
 //   - Delete and Rename change the list; Edit changes the description and what is restored.
+//   - Edit Layer State (the manager's Edit..., M5-07 part 3) changes the layers the state names
+//     and their settings, adds layers of the drawing it does not name ("Add layers to layer
+//     state", each with its settings now) and removes some ("Remove layers from layer state").
 //   - Import takes a `.las` file's state (io `parseLas`): layers it names that the drawing does
 //     not have are kept by name, as the file names them, and skipped on restore.
 //
@@ -22,6 +25,7 @@ import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import { aciOfTrueColor } from '../model/aci';
+import { LINEWEIGHTS } from '../properties/sheet';
 import {
   LAYER_STATE_MASK,
   isLayerState,
@@ -101,8 +105,11 @@ function maskProblem(mask: number | undefined): string | undefined {
 const aciOf = (c: Color): number =>
   c.kind === 'aci' ? c.index : c.kind === 'rgb' ? aciOfTrueColor(c.r, c.g, c.b) : 7;
 
-/** A layer's settings now, as a state keeps them. */
-function layerSettings(model: DocumentModel, l: LayerRecord): LayerStateLayer {
+/**
+ * A layer's settings now, as a state keeps them: what New saves for it, and what Edit Layer
+ * State's "Add layers to layer state" adds (with the app's mirror of the tables).
+ */
+export function layerStateEntry(model: LayerStateTables, l: LayerRecord): LayerStateLayer {
   const linetype = model.tables.linetypes.get(l.linetype);
   const style = l.plotStyle === undefined ? undefined : model.tables.plotStyles.get(l.plotStyle);
   return {
@@ -185,7 +192,7 @@ export function saveLayerState(
         : (options.mask & LAYER_STATE_MASK.all) | ((old?.mask ?? 0) & ~LAYER_STATE_MASK.all),
     paperSpace: false,
     currentLayer: currentLayerName(model),
-    layers: [...model.tables.layers.values()].map((l) => layerSettings(model, l)),
+    layers: [...model.tables.layers.values()].map((l) => layerStateEntry(model, l)),
   };
   if (old) b.updateObject(old.handle, init);
   else addState(model, b, init);
@@ -363,7 +370,52 @@ export function deleteLayerStateChange(model: DocumentModel, handle: Handle): Ch
   return b.build();
 }
 
-/** Rename (the list's name in place) and Edit (description, layer properties to restore). */
+const LAYER_LINEWEIGHTS = new Set<unknown>(['Default', ...LINEWEIGHTS]);
+
+/**
+ * Edit Layer State's layers, checked and made consistent with the drawing: a layer named by
+ * handle takes the drawing's name for it (a rename since the save), a linetype named by handle
+ * the record's name; or why they are refused. A layer the drawing lacks (a `.las` file's) stays
+ * named, as the state keeps it.
+ */
+function editedLayers(
+  model: DocumentModel,
+  layers: readonly LayerStateLayer[],
+): LayerStateLayer[] | string {
+  const out: LayerStateLayer[] = [];
+  const seen = new Set<string>();
+  for (const e of layers) {
+    const l = e.layer === undefined ? undefined : model.tables.layers.get(e.layer);
+    if (e.layer !== undefined && !l) return `Layer "${e.name}" is not in the drawing.`;
+    const name = l?.name ?? e.name;
+    if (name.trim() === '') return 'A layer in the state has no name.';
+    if (seen.has(upper(name))) return `Layer "${e.name}" is listed twice.`;
+    seen.add(upper(name));
+    if (e.color.kind !== 'aci' && e.color.kind !== 'rgb')
+      return 'A layer’s color cannot be ByLayer or ByBlock.';
+    const linetype = e.linetype === undefined ? undefined : model.tables.linetypes.get(e.linetype);
+    if (e.linetype !== undefined && !linetype)
+      return `Linetype ${e.linetype} is not in the drawing.`;
+    if (!LAYER_LINEWEIGHTS.has(e.lineweight)) return 'Invalid lineweight.';
+    const t = e.transparency;
+    if (typeof t !== 'object' || !Number.isInteger(t.alpha) || t.alpha < 0 || t.alpha > 255)
+      return 'Invalid transparency.';
+    // Spread over `e`, so its keys keep their order and an unchanged entry compares the same.
+    const entry: { -readonly [K in keyof LayerStateLayer]: LayerStateLayer[K] } = {
+      ...e,
+      name,
+      ...(linetype ? { linetypeName: linetype.name } : {}),
+    };
+    if (entry.layer === undefined) delete entry.layer;
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
+ * Rename (the list's name in place), Edit (description, layer properties to restore) and Edit
+ * Layer State (the layers and their settings, M5-07 part 3).
+ */
 export function editLayerStateChange(
   model: DocumentModel,
   handle: Handle,
@@ -371,17 +423,22 @@ export function editLayerStateChange(
     readonly name?: string | undefined;
     readonly description?: string | undefined;
     readonly mask?: number | undefined;
+    readonly layers?: readonly LayerStateLayer[] | undefined;
   },
 ): ChangeSet | string {
   const s = stateOf(model, handle);
   if (typeof s === 'string') return s;
+  const layers = edit.layers === undefined ? undefined : editedLayers(model, edit.layers);
+  if (typeof layers === 'string') return layers;
   const why =
     (edit.name === undefined ? undefined : nameProblem(model, edit.name, s.handle)) ??
     descriptionProblem(edit.description) ??
     maskProblem(edit.mask);
   if (why) return why;
   const patch = Object.fromEntries(
-    Object.entries(edit).filter(([k, v]) => v !== undefined && s[k as keyof LayerState] !== v),
+    Object.entries({ ...edit, layers }).filter(
+      ([k, v]) => v !== undefined && !sameValue(s[k as keyof LayerState], v),
+    ),
   );
   const b = new ChangeSetBuilder(model);
   if (Object.keys(patch).length > 0) b.updateObject(s.handle, patch);
