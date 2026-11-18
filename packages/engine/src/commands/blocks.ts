@@ -635,7 +635,7 @@ function insertRefusal(ctx: CommandContext, name: string): string | undefined {
 }
 
 /** How a block is placed: what is fixed beforehand, and what is asked. */
-interface Placing {
+export interface Placing {
   /** Contents placed, not a reference (`*NAME`, the dialog's Explode). */
   readonly explode: boolean;
   /** One scale factor for X, Y and Z. */
@@ -648,6 +648,11 @@ interface Placing {
   readonly rotation?: number;
   /** Repeat Placement: the insertion point asked again after each placement, until Esc. */
   readonly repeat?: boolean;
+  /**
+   * An xref placed (XATTACH, M5-04 part 6): its insertion point prompt has no Basepoint, as
+   * XATTACH's has none, and the reference is not the block INSERT offers next (INSNAME).
+   */
+  readonly xref?: boolean;
 }
 
 /**
@@ -655,7 +660,11 @@ interface Placing {
  * rotation, the attribute values), what `placing` fixes not asked; once, or until Esc with
  * Repeat Placement.
  */
-async function* insertBlock(ctx: CommandContext, r: BlockTableRecord, placing: Placing): Sub<void> {
+export async function* insertBlock(
+  ctx: CommandContext,
+  r: BlockTableRecord,
+  placing: Placing,
+): Sub<void> {
   const block = r.handle;
   const def = ctx.model.blocks.get(block)!;
   const k = insUnitsScale(r.units, insUnitsOf(ctx.model));
@@ -668,7 +677,9 @@ async function* insertBlock(ctx: CommandContext, r: BlockTableRecord, placing: P
     };
     const options = explode
       ? ['Basepoint', 'Scale', 'Rotate']
-      : ['Basepoint', 'Scale', 'X', 'Y', 'Z', 'Rotate'];
+      : placing.xref
+        ? ['Scale', 'X', 'Y', 'Z', 'Rotate']
+        : ['Basepoint', 'Scale', 'X', 'Y', 'Z', 'Rotate'];
     let at = placing.at;
     while (!at) {
       const scale = presets.scale ?? { x: 1, y: 1, z: 1 };
@@ -789,7 +800,7 @@ async function* insertBlock(ctx: CommandContext, r: BlockTableRecord, placing: P
     const values = yield* attributeValues(ctx, r.name, definitions);
     if (!values) return;
 
-    lastInserted.set(ctx.model, r.name);
+    if (!placing.xref) lastInserted.set(ctx.model, r.name);
     const geom: InsertGeometry = referenceGeometry(
       ctx.model,
       block,

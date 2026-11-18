@@ -32,6 +32,10 @@ import type { Handle } from '../model/handle';
 import type { LayerRecord } from '../model/types';
 import type { EntityId } from '../model/entity-ids';
 import { currentLayer } from '../properties/current';
+import { newLayer } from '../edit/layer-manager';
+
+/** DXF 70 bit 16: a layer that came in with an xref (its objects stay on it). */
+const XREF_DEPENDENT = 16;
 
 /** LAYLOCKFADECTL: how faded objects on locked layers are drawn (AutoCAD's initial 50). */
 export const LAYLOCKFADECTL = 'LAYLOCKFADECTL';
@@ -241,10 +245,52 @@ function laycurCommand(): CommandDef {
   };
 }
 
+/**
+ * Change to Layer's new layer: `name` made (with layer 0's properties, as the Layer Properties
+ * Manager's New Layer makes one when no layer is selected) and the objects moved to it, one edit;
+ * undefined, said why, when the name cannot be a layer's.
+ */
+function changeToNewLayer(
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+  name: string,
+): number | undefined {
+  const existing = [...ctx.model.tables.layers.values()].find(
+    (l) => l.name.toUpperCase() === name.toUpperCase(),
+  );
+  if (existing) {
+    const n = moveToLayer(ctx, ids, existing.handle);
+    ctx.message(`${objects(n)} changed to layer ${quoted(existing.name)}.`);
+    return n;
+  }
+  let problem: string | undefined;
+  let n = 0;
+  ctx.edit((b) => {
+    const made = newLayer(b, ctx.model, undefined, name);
+    if (typeof made === 'string') {
+      problem = made;
+      return;
+    }
+    for (const id of ids) {
+      if (ctx.model.entity(id) === undefined) continue;
+      b.updateEntity(id, { layer: made.handle });
+      n++;
+    }
+  });
+  if (problem) {
+    ctx.message(problem);
+    return undefined;
+  }
+  ctx.message(`Layer ${quoted(name)} created.`);
+  ctx.message(`${objects(n)} changed to layer ${quoted(name)}.`);
+  return n;
+}
+
 /** LAYMCH: the objects selected moved to the layer of an object picked, or of a layer named. */
 function laymchCommand(): CommandDef {
   return {
     name: 'LAYMCH',
+    dashVariant: true,
     usesSelection: 'during',
     async *run(ctx) {
       const a = yield ctx.prompt.selection({
@@ -262,9 +308,36 @@ function laymchCommand(): CommandDef {
         if (b.kind === 'selection') {
           target = layerOfObject(ctx, b.ids[0]);
           if (!target) return;
+        } else if (b.kind === 'keyword' && !ctx.dash) {
+          // Name opens the Change to Layer dialog (M5-06 part 3); a name typed in its Current
+          // Layer box that the drawing lacks makes that layer, in the same undo step.
+          const d = yield ctx.prompt.dialog({
+            message: 'Change to Layer',
+            escape: true,
+            dialog: {
+              type: 'layerlist',
+              title: 'Change to Layer',
+              multiple: false,
+              current: ctx.model.tables.layers.get(currentLayer(ctx.model))?.name ?? '0',
+              layers: [...ctx.model.tables.layers.values()]
+                .filter((l) => ((l.flags ?? 0) & XREF_DEPENDENT) === 0)
+                .sort((x, y) =>
+                  x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' }),
+                )
+                .map((l) => ({ handle: l.handle, name: l.name })),
+            },
+          });
+          if (d.kind !== 'dialog' || d.action !== 'ok') continue;
+          const name = d.layerName?.trim();
+          if (name) {
+            const made = changeToNewLayer(ctx, a.ids, name);
+            if (made !== undefined) return;
+            continue;
+          }
+          target =
+            d.layers?.[0] === undefined ? undefined : ctx.model.tables.layers.get(d.layers[0]);
         } else if (b.kind === 'keyword') {
-          // AutoCAD's Name opens the Change to Layer dialog; -LAYMCH's asks for the name, as
-          // here until the dialog comes (M5-06 part 2).
+          // -LAYMCH asks for the name at the command line.
           const n = yield ctx.prompt.string({ message: 'Enter layer name' });
           if (n.kind !== 'string') return;
           const wanted = n.value.trim().toUpperCase();

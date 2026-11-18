@@ -185,12 +185,14 @@ export type ViewRequest =
   | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean }
   /**
    * -XREF Unload and Reload (M5-04): the app unloads the xrefs `blocks`, or reloads them from
-   * the files it finds by name (a load reads a file, which only the app can). Answers with what
-   * it did, one line each, in `messages`.
+   * the files it finds by name (a load reads a file, which only the app can). XATTACH's `attach`
+   * (M5-04 part 6): the app loads the xrefs just made from the file the dialog picked; those
+   * loads join the command's undo step (`PromptBus.joinLoad`). Answers with what it did, one
+   * line each, in `messages`.
    */
   | {
       readonly op: 'xref';
-      readonly action: 'unload' | 'reload';
+      readonly action: 'unload' | 'reload' | 'attach';
       readonly blocks: readonly Handle[];
     }
   /**

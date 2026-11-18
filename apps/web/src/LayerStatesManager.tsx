@@ -455,7 +455,7 @@ function RenameField({ name, onDone }: { name: string; onDone: (to: string) => v
  * New Layer State to Save: the name and description of the state New saves. A name the drawing
  * has asks whether to overwrite that state first.
  */
-function NewLayerState({
+export function NewLayerState({
   existing,
   problem,
   onSave,

@@ -4,21 +4,24 @@
 //
 //   - XREF (XR) and EXTERNALREFERENCES (ER) open the External References palette, which is
 //     Triya's References palette; EXTERNALREFERENCESCLOSE closes it.
-//   - -XREF: "Enter an option [?/Detach/Unload/Reload]". `?` lists the xrefs whose names match
+//   - -XREF: "Enter an option [?/Bind/Detach/Unload/Reload]". `?` lists the xrefs whose names match
 //     "Enter xref(s) to list <*>", each with its saved path, then "Total Xref(s): N". Detach,
 //     Unload and Reload ask "Enter xref name(s) to detach" (to unload, to reload), names or
-//     wildcard patterns separated by commas.
+//     wildcard patterns separated by commas. Bind ("Enter xref name(s) to bind") binds as
+//     BINDTYPE says (M5-04 part 2): 0 Bind, 1 Insert.
 //
 // Detach is one undo step (`detachXrefs`). Unload and Reload change what the drawing shows, not
 // the drawing, and reloading reads a file, so the app does both (the `xref` view request), as
 // the palette's buttons do. Only xrefs the drawing attaches itself are detached or unloaded
 // (AutoCAD: "nested xrefs cannot be detached"); a nested one is reloaded with its own file.
-// Left for later parts of M5-04: Bind, Path, Overlay and Attach (AutoCAD's default option).
+// Bind is one undo step too (`bindXrefs`, edit/xref-bind.ts); only loaded xrefs are bound.
+// Left for later parts of M5-04: Path, Overlay and Attach (AutoCAD's default option).
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { BlockTableRecord } from '../model/types';
 import { isXrefRecord, xrefBringing } from '../model/xref';
 import { detachXrefs } from '../edit/xrefs';
+import { bindXrefs, xrefBindProblem } from '../edit/xref-bind';
 import { wcmatch } from './modify/attributes';
 import { viewRequest } from './view/zoom';
 
@@ -74,7 +77,7 @@ function topLevel(ctx: CommandContext, named: readonly BlockTableRecord[], verb:
 async function* dashXref(ctx: CommandContext): Sub<void> {
   const a = yield ctx.prompt.keyword({
     message: 'Enter an option',
-    options: ['?', 'Detach', 'Unload', 'Reload'],
+    options: ['?', 'Bind', 'Detach', 'Unload', 'Reload'],
   });
   if (a.kind !== 'keyword') return;
   if (a.keyword === '?') {
@@ -84,6 +87,26 @@ async function* dashXref(ctx: CommandContext): Sub<void> {
   const verb = a.keyword.toLowerCase();
   const named = yield* xrefNames(ctx, verb);
   if (!named || named.length === 0) return;
+  if (a.keyword === 'Bind') {
+    const binding = topLevel(ctx, named, 'bound').filter((r) => {
+      const problem = xrefBindProblem(ctx.model, r.handle);
+      if (problem) ctx.message(problem);
+      return !problem;
+    });
+    if (binding.length === 0) return;
+    const type = await ctx.view.request({ op: 'sysvar', name: 'BINDTYPE' });
+    const insert = type.ok && type.value === 1;
+    ctx.edit((b) =>
+      bindXrefs(
+        b,
+        ctx.model,
+        binding.map((r) => r.handle),
+        insert,
+      ),
+    );
+    for (const r of binding) ctx.message(`Binding Xref "${r.name}".`);
+    return;
+  }
   if (a.keyword === 'Detach') {
     const going = topLevel(ctx, named, 'detached');
     if (going.length === 0) return;

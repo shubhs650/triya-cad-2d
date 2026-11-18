@@ -38,6 +38,7 @@ import {
   xrefUnloadProblem,
 } from '../model/xref';
 import { xrefDetachChange, xrefDetachProblem } from '../edit/xrefs';
+import { xrefBindChange, xrefBindProblem } from '../edit/xref-bind';
 import type { EntityId } from '../model/entity-ids';
 import type { EntityType, TableCellLock } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
@@ -48,6 +49,7 @@ import { fieldEventChange, type FieldEvent } from '../edit/field-eval';
 import {
   currentLayerChange,
   deleteLayersChange,
+  mergeLayersChange,
   layerPropsChange,
   newLayerChange,
   type LayerProps,
@@ -60,6 +62,7 @@ import {
   saveLayerStateChange,
   type LayerStateInit,
 } from '../edit/layer-states';
+import { layerPreviousOf } from '../commands/layer-previous';
 
 /**
  * A layer's on, frozen and locked states (LAYER palette toggles, M1-23) and, from the Layer
@@ -78,6 +81,8 @@ export interface LayerStateEdit extends LayerProps {
 export type LayerTableEdit =
   | { readonly kind: 'layer-new'; readonly like?: Handle; readonly name?: string }
   | { readonly kind: 'layer-delete'; readonly layers: readonly Handle[] }
+  /** Merge Selected Layer(s) to (M5-05 part 4): their objects move to `target`, they go. */
+  | { readonly kind: 'layer-merge'; readonly layers: readonly Handle[]; readonly target: Handle }
   | { readonly kind: 'layer-current'; readonly layer: Handle };
 
 /**
@@ -128,7 +133,8 @@ export interface LayoutEdit {
 /**
  * An xref's drawing found (M1-21): its file as the importer maps it, loaded as the content of
  * the host's xref block (`xrefLoadChange`). Not an undoable edit in AutoCAD either: loading
- * changes what the drawing shows, not the drawing.
+ * changes what the drawing shows, not the drawing. The load XATTACH asks for while it runs is
+ * part of its undo step (M5-04 part 6, `PromptBus.joinLoad`).
  */
 export interface XrefLoadEdit {
   readonly kind: 'xref-load';
@@ -152,6 +158,16 @@ export interface XrefUnloadEdit {
 export interface XrefDetachEdit {
   readonly kind: 'xref-detach';
   readonly blocks: readonly Handle[];
+}
+
+/**
+ * The References palette's Bind (M5-04 part 2, `xrefBindChange`): the xrefs made blocks of the
+ * drawing, as the Bind Xrefs dialog's Insert says when `insert`. One XREF undo step.
+ */
+export interface XrefBindEdit {
+  readonly kind: 'xref-bind';
+  readonly blocks: readonly Handle[];
+  readonly insert?: boolean;
 }
 
 /**
@@ -230,6 +246,7 @@ export type EngineEdit =
   | XrefLoadEdit
   | XrefUnloadEdit
   | XrefDetachEdit
+  | XrefBindEdit
   | NamedViewEdit
   | ViewTableEdit
   | SessionVariableEdit
@@ -671,12 +688,18 @@ export class EngineSession {
     if (e.kind === 'xref-load') return this.#xrefLoad(e);
     if (e.kind === 'xref-unload') return this.#xrefUnload(e);
     if (e.kind === 'xref-detach') return this.#xrefDetach(e);
+    if (e.kind === 'xref-bind') return this.#xrefBind(e);
     if (e.kind === 'view') return this.#viewEdit(e);
     if (e.kind === 'view-delete' || e.kind === 'view-rename' || e.kind === 'view-category')
       return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     if (e.kind === 'fields') return this.#fieldEvent(e);
-    if (e.kind === 'layer-new' || e.kind === 'layer-delete' || e.kind === 'layer-current')
+    if (
+      e.kind === 'layer-new' ||
+      e.kind === 'layer-delete' ||
+      e.kind === 'layer-merge' ||
+      e.kind === 'layer-current'
+    )
       return this.#layerTableEdit(e);
     if (
       e.kind === 'layer-state-save' ||
@@ -790,6 +813,8 @@ export class EngineSession {
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }
+    // XATTACH's load (M5-04 part 6) is part of its undo step.
+    this.#bus.joinLoad(change);
     return { ok: true, change };
   }
 
@@ -813,6 +838,17 @@ export class EngineSession {
     return { ok: true, change };
   }
 
+  #xrefBind(e: XrefBindEdit): EditResult {
+    for (const h of e.blocks) {
+      const problem = xrefBindProblem(this.model, h);
+      if (problem) return { ok: false, message: problem };
+    }
+    const change = xrefBindChange(this.model, e.blocks, e.insert);
+    this.model.apply(change);
+    this.#step('XREF', change);
+    return { ok: true, change };
+  }
+
   #layerEdit(e: LayerStateEdit): EditResult {
     const { kind: _kind, layer, ...props } = e;
     return this.#layerStep(
@@ -826,7 +862,9 @@ export class EngineSession {
         ? newLayerChange(this.model, e.like, e.name)
         : e.kind === 'layer-delete'
           ? deleteLayersChange(this.model, e.layers)
-          : currentLayerChange(this.model, e.layer),
+          : e.kind === 'layer-merge'
+            ? mergeLayersChange(this.model, e.layers, e.target)
+            : currentLayerChange(this.model, e.layer),
     );
   }
 
@@ -865,7 +903,9 @@ export class EngineSession {
    * empty change is no step (DEC-049).
    */
   #step(label: string, change: ChangeSet): void {
-    this.#bus.undo.push({ command: label, changes: [change] });
+    layerPreviousOf(this.model).record(this.model, [change]);
+    // The manager's LAYER steps join the LAYER step just before them under UNDO Control Layer.
+    this.#bus.undo.push({ command: label, changes: [change] }, { layer: label === 'LAYER' });
   }
 
   /** PICKFIRST as the app last set it (M2-59): picks at `Command:` select. */

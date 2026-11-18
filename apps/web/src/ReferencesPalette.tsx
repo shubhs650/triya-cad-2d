@@ -8,8 +8,12 @@
 // M5-04 part 1: the External References palette's Reload, Unload and Detach, on the xrefs
 // selected (a click selects a row, Ctrl or Shift adds one). As AutoCAD's, only the xrefs the
 // drawing attaches itself can be unloaded or detached; a nested one is reloaded with its file.
-// Attach, Bind and Path come with later parts.
+// M5-04 part 2: Bind…, on loaded xrefs the drawing attaches itself, opens the Bind Xrefs dialog
+// (Bind or Insert). M5-04 part 5: Attach Image... runs IMAGEATTACH. M5-04 part 6: Attach DWG...
+// runs XATTACH (AutoCAD's palette names its drawing attach so; a .dxf is picked as well as a
+// .dwg). Path comes with a later part.
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { BindXrefsDialog } from './BindXrefsDialog';
 import type { ReferenceKind, ReferenceRow, ReferenceStatus } from './xrefs';
 
 const KIND: Record<ReferenceKind, string> = {
@@ -35,8 +39,17 @@ export function ReferencesPalette({
   onUnload,
   onReload,
   onDetach,
+  onBind,
+  onAttachImage,
+  onAttachDrawing,
   onClose,
 }: {
+  /** Attach DWG... (XATTACH, M5-04 part 6), as the palette's Attach menu offers it. */
+  onAttachDrawing?: () => void;
+  /** Attach Image... (IMAGEATTACH, M5-04 part 5), as the palette's Attach menu offers it. */
+  onAttachImage?: () => void;
+  /** XREF Bind, as Insert when `insert`: why not, or undefined. */
+  onBind?: (rows: readonly ReferenceRow[], insert: boolean) => Promise<string | undefined>;
   /** XREF Unload: what it did, one line each. */
   onUnload?: (rows: readonly ReferenceRow[]) => Promise<readonly string[]>;
   /** XREF Reload: what it did, one line each. */
@@ -61,6 +74,8 @@ export function ReferencesPalette({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [said, setSaid] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
+  /** The xrefs the Bind Xrefs dialog binds, while it is open. */
+  const [binding, setBinding] = useState<readonly ReferenceRow[]>();
   // A reference that goes (detached, or nested in one unloaded) is no longer selected.
   useEffect(() => {
     const present = new Set(rows.map((r) => r.handle));
@@ -74,6 +89,8 @@ export function ReferencesPalette({
   const xrefs =
     picked.length > 0 && picked.every((r) => r.kind === 'attach' || r.kind === 'overlay');
   const topLevel = xrefs && picked.every((r) => r.depth === 0);
+  // An xref is bound from what was loaded of it (AutoCAD: "the xref must be loaded").
+  const loaded = topLevel && picked.every((r) => r.status === 'loaded');
   const select = (e: MouseEvent, handle: string) => {
     const add = e.ctrlKey || e.metaKey || e.shiftKey;
     setSelected((s) => {
@@ -111,6 +128,16 @@ export function ReferencesPalette({
         <button type="button" onClick={() => folder.current?.click()}>
           Choose folder…
         </button>
+        {onAttachDrawing && (
+          <button type="button" onClick={onAttachDrawing}>
+            Attach DWG...
+          </button>
+        )}
+        {onAttachImage && (
+          <button type="button" onClick={onAttachImage}>
+            Attach Image...
+          </button>
+        )}
         {waiting > 0 && (
           <button type="button" onClick={onReconnect}>
             Reconnect {waiting === 1 ? 'kept folder' : `${waiting} kept folders`}
@@ -166,7 +193,29 @@ export function ReferencesPalette({
           >
             Detach
           </button>
+          <button
+            type="button"
+            disabled={!loaded || busy || !onBind}
+            title="Binds the selected xrefs: they become blocks of the drawing"
+            onClick={() => setBinding(picked)}
+          >
+            Bind…
+          </button>
         </div>
+      )}
+      {binding && (
+        <BindXrefsDialog
+          names={binding.map((r) => r.name)}
+          onCancel={() => setBinding(undefined)}
+          onOk={(insert) => {
+            const rows = binding;
+            setBinding(undefined);
+            void run(async () => {
+              const problem = await onBind!(rows, insert);
+              return problem ? [problem] : rows.map((r) => `Xref "${r.name}" has been bound.`);
+            });
+          }}
+        />
       )}
       {said.length > 0 && (
         <ul className="references-said" aria-label="What was done" aria-live="polite">

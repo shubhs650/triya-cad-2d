@@ -100,7 +100,7 @@ describe('MLINE', () => {
     t.normal = new XYZ(1, 0, 1);
     d2.entities?.add(t);
     expect(mapEntities(d2).unmapped).toEqual([
-      { handle: H(t), type: 'MLINE', reason: 'tilted plane' },
+      { handle: H(t), type: 'MLINE', layer: H(t.layer), reason: 'tilted plane' },
     ]);
   });
 });

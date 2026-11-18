@@ -21,6 +21,14 @@
 // M5-07 part 2: Layer States Manager (Alt+S) opens LAYERSTATE's dialog, and the palette names
 // the layer state restored last while the layers are as it has them ("Unsaved Layer State"
 // otherwise), as AutoCAD's manager does.
+// M5-05 part 4: a right-click on a layer (Shift+F10 on a row) shows the layer list menu
+// (LayerListMenu.tsx), whose Merge Selected Layer(s) to... opens Merge to Layer; the manager's
+// changes one after another are one LAYER undo step while UNDO Control Layer is on (the engine).
+// M5-05 part 5: the columns have widths (a fixed table layout, contents cut with an ellipsis),
+// sized by dragging a header's edge or by the header menu's Maximize and Optimize items; a header
+// dragged sideways moves its column; Freeze Column keeps the columns up to it from scrolling.
+// Typing in the search re-creates only the rows it hides or shows (`rowElements`), so the
+// filter stays far under 100 ms on 200 layers with React's development build too.
 import {
   Fragment,
   memo,
@@ -30,6 +38,7 @@ import {
   useState,
   type KeyboardEvent,
   type MouseEvent,
+  type ReactElement,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -37,12 +46,29 @@ import { transparencyOf, type EngineEdit, type Handle, type LayerProps } from '@
 import { controllerOf } from './canvas/registry';
 import type { DocumentStore, OpenDocument } from './documents';
 import { engines } from './engine/registry';
-import { CustomizeLayerColumnsDialog, LayerColumnsMenu } from './LayerColumns';
+import {
+  CustomizeLayerColumnsDialog,
+  LayerColumnHeader,
+  LayerColumnsMenu,
+  type LayerColumnSizing,
+} from './LayerColumns';
+import {
+  LayerListMenu,
+  MergeToLayerDialog,
+  mergeTargets,
+  type LayerListAction,
+} from './LayerListMenu';
 import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from './LayerDialogs';
 import {
+  MIN_COLUMN_WIDTH,
+  frozenLayerColumns,
+  layerColumnWidth,
+  maximizedWidths,
+  moveLayerColumnBefore,
   sortAfterClick,
   sortLayerRows,
   visibleLayerColumns,
+  withLayerColumnWidths,
   type LayerColumn,
   type LayerColumnKey,
   type LayerColumnSettings,
@@ -149,7 +175,7 @@ function cellOf(
   act: RefObject<RowActions>,
 ): ReactNode {
   const toggleCell = (t: ToggleColumn) => (
-    <td>
+    <td data-col={key}>
       <button
         type="button"
         className={`toggle ${t.key}`}
@@ -163,7 +189,7 @@ function cellOf(
     </td>
   );
   const propertyCell = (cell: Picking['cell'], title: string, text: string) => (
-    <td className={cell}>
+    <td className={cell} data-col={key}>
       <button
         type="button"
         className="layer-cell"
@@ -182,7 +208,7 @@ function cellOf(
   switch (key) {
     case 'status':
       return (
-        <td className="status" onDoubleClick={() => act.current.setCurrent(r)}>
+        <td className="status" data-col={key} onDoubleClick={() => act.current.setCurrent(r)}>
           {r.current ? <span aria-label="Current layer">✓</span> : null}
         </td>
       );
@@ -191,6 +217,7 @@ function cellOf(
         <th
           scope="row"
           className="name"
+          data-col={key}
           onDoubleClick={() => act.current.edit({ handle: r.handle, field: 'name' })}
         >
           {editing === 'name' ? (
@@ -207,7 +234,7 @@ function cellOf(
       return toggleCell(TOGGLES[key]);
     case 'vpFreeze':
       return (
-        <td className="vp-freeze">
+        <td className="vp-freeze" data-col={key}>
           {r.vpFrozen && r.vpFrozen.of > 0 ? `${r.vpFrozen.frozen} of ${r.vpFrozen.of}` : '—'}
         </td>
       );
@@ -223,6 +250,7 @@ function cellOf(
       return (
         <td
           className="description"
+          data-col={key}
           onDoubleClick={() => act.current.edit({ handle: r.handle, field: 'description' })}
         >
           {editing === 'description' ? (
@@ -235,32 +263,32 @@ function cellOf(
   }
 }
 
+interface RowProps {
+  readonly row: LayerRow;
+  readonly columns: readonly LayerColumn[];
+  readonly selected: boolean;
+  readonly tabbable: boolean;
+  readonly editing: Editing['field'] | undefined;
+  readonly act: RefObject<RowActions>;
+}
+
 /**
- * One layer's row. Memoised: it renders again only when its layer, its columns or its selected,
- * hidden or editing state changes. A row the search leaves out is hidden, not removed, so that
- * typing in the search does not build rows again.
+ * One layer's row. Memoised: it renders again only when its layer, its columns or its selected
+ * or editing state changes. The search hides the rows it leaves out with one style rule on the
+ * name each row carries (`searchCss`), so typing in it renders no row again (M5-05 part 5).
  */
 const LayerRowView = memo(function LayerRowView({
   row,
   columns,
-  hidden,
   selected,
   tabbable,
   editing,
   act,
-}: {
-  row: LayerRow;
-  columns: readonly LayerColumn[];
-  hidden: boolean;
-  selected: boolean;
-  tabbable: boolean;
-  editing: Editing['field'] | undefined;
-  act: RefObject<RowActions>;
-}) {
+}: RowProps) {
   return (
     <tr
-      hidden={hidden}
       data-handle={row.handle}
+      data-search={row.name.toLowerCase()}
       data-current={row.current}
       aria-selected={selected}
       tabIndex={tabbable ? 0 : -1}
@@ -287,6 +315,32 @@ const RowCells = memo(function RowCells({
   return columns.map((c) => <Fragment key={c.key}>{cellOf(row, c.key, editing, act)}</Fragment>);
 });
 
+/**
+ * The search: the rows whose lower-case name does not contain `needle` are not shown, as
+ * `shown` leaves them out. One rule, so that typing changes no row (M5-05 part 5).
+ */
+const searchCss = (needle: string): string =>
+  `.layer-table tbody tr:not([data-search*="${CSS.escape(needle)}"]){display:none}`;
+
+/**
+ * Freeze Column: the frozen columns stay at their offsets from the list's left edge while it
+ * scrolls sideways, drawn over the cells scrolling under them (a header over both). The keys and
+ * offsets come from the column settings, never from the drawing.
+ */
+function frozenColumnsCss(frozen: ReadonlyMap<LayerColumnKey, number>): string {
+  const rules: string[] = [];
+  const keys = [...frozen.keys()];
+  for (const [k, left] of frozen) {
+    rules.push(`.layer-table [data-col="${k}"]{position:sticky;left:${left}px;z-index:1}`);
+    rules.push(`.layer-table thead [data-col="${k}"]{z-index:3}`);
+    rules.push(`.layer-table tbody [data-col="${k}"]{background:var(--layer-frozen-bg)}`);
+  }
+  rules.push(
+    `.layer-table [data-col="${keys.at(-1)}"]{box-shadow:inset -1px 0 var(--chrome-border)}`,
+  );
+  return rules.join('\n');
+}
+
 export function LayersPalette({
   doc,
   store,
@@ -302,8 +356,16 @@ export function LayersPalette({
   onClose: () => void;
 }) {
   const [search, setSearch] = useState('');
-  const [columnsMenu, setColumnsMenu] = useState<{ x: number; y: number } | undefined>();
+  const [columnsMenu, setColumnsMenu] = useState<
+    { x: number; y: number; column: LayerColumnKey } | undefined
+  >();
+  /** A column's width while its header's edge is dragged (saved when it is let go). */
+  const [sizing, setSizing] = useState<{ key: LayerColumnKey; width: number } | undefined>();
+  /** The rows' elements as last rendered, re-created only for a row whose props changed. */
+  const rowElements = useRef(new Map<Handle, { props: RowProps; element: ReactElement }>());
   const [customizing, setCustomizing] = useState(false);
+  const [listMenu, setListMenu] = useState<{ x: number; y: number } | undefined>();
+  const [merging, setMerging] = useState<readonly LayerRow[] | undefined>();
   const paletteRef = useRef<HTMLElement>(null);
   /** When the search last changed, until its rows are on screen. */
   const searchedAt = useRef<number | undefined>(undefined);
@@ -327,8 +389,13 @@ export function LayersPalette({
     () => (needle ? sorted.filter((r) => r.name.toLowerCase().includes(needle)) : sorted),
     [sorted, needle],
   );
-  const listed = useMemo(() => new Set(shown.map((r) => r.handle)), [shown]);
   const visible = useMemo(() => visibleLayerColumns(columns, inLayout), [columns, inLayout]);
+  const shownColumns = sizing
+    ? withLayerColumnWidths(columns, { [sizing.key]: sizing.width })
+    : columns;
+  const widthOf = (k: LayerColumnKey) => layerColumnWidth(shownColumns, k);
+  const frozen = frozenLayerColumns(shownColumns, visible);
+  const tableWidth = visible.reduce((sum, c) => sum + widthOf(c.key), 0);
   // Typing → rows filtered on screen: until the frame showing them has been drawn (a task posted
   // from that frame's animation callback runs once its style, layout and paint are done).
   // Written on the element itself, so measuring it renders nothing more.
@@ -408,6 +475,39 @@ export function LayersPalette({
       select(new Set());
   };
 
+  const mergeLayers = async (target: Handle) => {
+    const from = merging;
+    setMerging(undefined);
+    if (!from) return;
+    if (await apply({ kind: 'layer-merge', layers: from.map((r) => r.handle), target })) {
+      select(new Set([target]), target);
+      focusRow(target);
+    }
+  };
+
+  /** The layer list menu's items (AutoCAD's shortcut menu on the layers). */
+  const onListAction = (a: LayerListAction) => {
+    const one = selectedRows.length === 1 ? selectedRows[0] : undefined;
+    if (a === 'current') void setCurrent();
+    else if (a === 'new') void newLayer();
+    else if (a === 'rename' && one) startEditing({ handle: one.handle, field: 'name' });
+    else if (a === 'delete') void deleteLayers();
+    else if (a === 'description' && one) startEditing({ handle: one.handle, field: 'description' });
+    else if (a === 'merge') setMerging(selectedRows);
+    else if (a === 'all') select(new Set(shown.map((r) => r.handle)));
+    else if (a === 'clear') select(new Set());
+    else if (a === 'allButCurrent')
+      select(new Set(shown.filter((r) => !r.current).map((r) => r.handle)));
+    else if (a === 'invert')
+      select(new Set(shown.filter((r) => !selected.has(r.handle)).map((r) => r.handle)));
+  };
+
+  /** The menu on a layer: the layer is selected first unless it is already. */
+  const openListMenu = (row: LayerRow, at: { x: number; y: number }) => {
+    if (!selected.has(row.handle)) select(new Set([row.handle]), row.handle);
+    setListMenu(at);
+  };
+
   const setCurrent = async (row?: LayerRow) => {
     const r = row ?? (selectedRows.length === 1 ? selectedRows[0] : undefined);
     if (r) await apply({ kind: 'layer-current', layer: r.handle });
@@ -470,6 +570,10 @@ export function LayersPalette({
     } else if (e.key === 'Delete') {
       e.preventDefault();
       void deleteLayers();
+    } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+      e.preventDefault();
+      const box = e.currentTarget.getBoundingClientRect();
+      openListMenu(row, { x: box.left + 24, y: box.bottom });
     }
   };
 
@@ -575,6 +679,70 @@ export function LayersPalette({
     },
   };
 
+  /**
+   * Column `key`'s width fitting its header and the contents of the rows listed (Optimize).
+   * A cell's contents are measured as laid out on one line, whatever the cell cuts off.
+   */
+  const fittedWidth = (key: LayerColumnKey): number => {
+    let width = MIN_COLUMN_WIDTH;
+    const range = document.createRange();
+    for (const cell of tableRef.current?.querySelectorAll<HTMLElement>(`[data-col="${key}"]`) ??
+      []) {
+      // A row the search hides has no box.
+      if (cell.getClientRects().length === 0) continue;
+      // A header's grip sits on its edge: only the header's title counts.
+      range.selectNodeContents(cell.querySelector('.layer-sort') ?? cell);
+      const style = getComputedStyle(cell);
+      const pad = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      width = Math.max(width, Math.ceil(range.getBoundingClientRect().width + pad) + 2);
+    }
+    return width;
+  };
+  const sizeColumns = (how: LayerColumnSizing, column: LayerColumnKey) => {
+    const all = how === 'maximize-all' || how === 'optimize-all';
+    const keys = all ? visible.map((c) => c.key) : [column];
+    const fitted: Partial<Record<LayerColumnKey, number>> = {};
+    for (const k of keys) fitted[k] = fittedWidth(k);
+    if (how === 'optimize' || how === 'optimize-all') {
+      onColumns(withLayerColumnWidths(columns, fitted));
+      return;
+    }
+    // Maximize: fitted, then the list's room left over shared among them.
+    const widths: Partial<Record<LayerColumnKey, number>> = {};
+    for (const c of visible) widths[c.key] = fitted[c.key] ?? layerColumnWidth(columns, c.key);
+    const room = tableRef.current?.parentElement?.clientWidth ?? 0;
+    onColumns(
+      withLayerColumnWidths(
+        columns,
+        maximizedWidths(widths as Record<LayerColumnKey, number>, keys, room),
+      ),
+    );
+  };
+
+  // A row's element is made again only when its props change: typing in the search hides and
+  // shows rows, and making all 201 elements again took most of the filter's time in React's
+  // development build (M5-05 part 5).
+  const rowViews = new Map<Handle, { props: RowProps; element: ReactElement }>();
+  const firstShown = shown[0]?.handle;
+  const rowList = sorted.map((r) => {
+    const props: RowProps = {
+      row: r,
+      columns: visible,
+      selected: selected.has(r.handle),
+      tabbable: selected.has(r.handle) || (selected.size === 0 && firstShown === r.handle),
+      editing: editing?.handle === r.handle ? editing.field : undefined,
+      act,
+    };
+    const was = rowElements.current.get(r.handle);
+    const same =
+      was !== undefined &&
+      (Object.keys(props) as (keyof RowProps)[]).every((k) => was.props[k] === props[k]);
+    const view = same ? was : { props, element: <LayerRowView key={r.handle} {...props} /> };
+    rowViews.set(r.handle, view);
+    return view.element;
+  });
+  rowElements.current = rowViews;
+
   const one = selectedRows.length === 1;
   return (
     <aside
@@ -649,71 +817,73 @@ export function LayersPalette({
         </p>
       )}
       <div className="layer-table-wrap">
+        {needle && <style>{searchCss(needle)}</style>}
+        {frozen.size > 0 && <style>{frozenColumnsCss(frozen)}</style>}
         <table
           ref={tableRef}
           className="layer-table"
           aria-label="Layers of the drawing"
           aria-multiselectable="true"
+          style={{ width: tableWidth }}
         >
+          <colgroup>
+            {visible.map((c) => (
+              <col key={c.key} style={{ width: widthOf(c.key) }} />
+            ))}
+          </colgroup>
           <thead>
             <tr
               onContextMenu={(e) => {
                 e.preventDefault();
-                setColumnsMenu({ x: e.clientX, y: e.clientY });
+                const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-col]');
+                const column = (th?.dataset['col'] as LayerColumnKey | undefined) ?? 'name';
+                setColumnsMenu({ x: e.clientX, y: e.clientY, column });
               }}
             >
               {visible.map((c) => {
                 const sorting = columns.sort.key === c.key;
                 return (
-                  <th
+                  <LayerColumnHeader
                     key={c.key}
-                    scope="col"
-                    aria-sort={
+                    columnKey={c.key}
+                    title={c.title}
+                    sort={
                       sorting ? (columns.sort.descending ? 'descending' : 'ascending') : undefined
                     }
-                  >
-                    <button
-                      type="button"
-                      className="layer-sort"
-                      title={`Sort by ${c.title}`}
-                      onClick={() =>
-                        onColumns({ ...columns, sort: sortAfterClick(columns.sort, c.key) })
+                    onSort={() =>
+                      onColumns({ ...columns, sort: sortAfterClick(columns.sort, c.key) })
+                    }
+                    onMenu={(at) => setColumnsMenu({ ...at, column: c.key })}
+                    onMove={(before) =>
+                      onColumns({
+                        ...columns,
+                        order: moveLayerColumnBefore(columns.order, c.key, before),
+                      })
+                    }
+                    onResize={(width, done) => {
+                      if (!done) {
+                        setSizing({ key: c.key, width });
+                        return;
                       }
-                      onKeyDown={(e) => {
-                        if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
-                          e.preventDefault();
-                          const box = e.currentTarget.getBoundingClientRect();
-                          setColumnsMenu({ x: box.left, y: box.bottom });
-                        }
-                      }}
-                    >
-                      {c.title}
-                      {sorting && (
-                        <span className="layer-sort-arrow" aria-hidden>
-                          {columns.sort.descending ? '▼' : '▲'}
-                        </span>
-                      )}
-                    </button>
-                  </th>
+                      setSizing(undefined);
+                      onColumns(withLayerColumnWidths(columns, { [c.key]: width }));
+                    }}
+                    onOptimize={() => sizeColumns('optimize', c.key)}
+                  />
                 );
               })}
             </tr>
           </thead>
-          <tbody>
-            {sorted.map((r) => (
-              <LayerRowView
-                key={r.handle}
-                row={r}
-                columns={visible}
-                hidden={!listed.has(r.handle)}
-                selected={selected.has(r.handle)}
-                tabbable={
-                  selected.has(r.handle) || (selected.size === 0 && shown[0]?.handle === r.handle)
-                }
-                editing={editing?.handle === r.handle ? editing.field : undefined}
-                act={act}
-              />
-            ))}
+          <tbody
+            onContextMenu={(e) => {
+              const tr = (e.target as HTMLElement).closest<HTMLElement>('tr[data-handle]');
+              const row = tr && shown.find((r) => r.handle === tr.dataset.handle);
+              if (!row) return;
+              e.preventDefault();
+              openListMenu(row, { x: e.clientX, y: e.clientY });
+            }}
+          >
+            {rowList}
           </tbody>
         </table>
         {shown.length === 0 && <p className="empty">No layer matches “{search}”.</p>}
@@ -724,11 +894,32 @@ export function LayersPalette({
           settings={columns}
           inLayout={inLayout}
           onChange={onColumns}
+          onSize={sizeColumns}
           onCustomize={() => {
             setColumnsMenu(undefined);
             setCustomizing(true);
           }}
           onClose={() => setColumnsMenu(undefined)}
+        />
+      )}
+      {listMenu && (
+        <LayerListMenu
+          at={listMenu}
+          selected={selectedRows.length}
+          onAction={onListAction}
+          onClose={() => setListMenu(undefined)}
+        />
+      )}
+      {merging && (
+        <MergeToLayerDialog
+          layers={merging.map((r) => r.name)}
+          targets={mergeTargets(sorted, new Set(merging.map((r) => r.handle)))}
+          onMerge={(target) => void mergeLayers(target)}
+          onCancel={() => {
+            setMerging(undefined);
+            const first = merging[0];
+            if (first) focusRow(first.handle);
+          }}
         />
       )}
       {customizing && (

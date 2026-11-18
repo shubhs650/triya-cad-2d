@@ -59,6 +59,11 @@ import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { InsertDialog } from './InsertDialog';
 import { WriteBlockDialog } from './WriteBlockDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
+import { LayerListDialog } from './LayerListDialog';
+import { XbindDialog } from './XbindDialog';
+import { LayerWalkDialog } from './LayerWalkDialog';
+import { ImageAttachDialog } from './ImageAttachDialog';
+import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -74,6 +79,8 @@ export function AttributeDialogs({
   docs = [],
   fonts,
   patternSources = [],
+  onImageFile,
+  xrefFiles,
 }: {
   doc: { id: number } | undefined;
   /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
@@ -82,6 +89,10 @@ export function AttributeDialogs({
   fonts?: readonly string[];
   /** The user's .pat files (M1-50), for the hatch dialogs' pattern lists (M4-07 part 5). */
   patternSources?: readonly string[];
+  /** An image file IMAGEATTACH attached (M5-04 part 5): the app's images serve it. */
+  onImageFile?: (fileName: string, bytes: Uint8Array) => void;
+  /** The drawing files XATTACH's dialog picks (M5-04 part 6): read, and kept to load from. */
+  xrefFiles?: XrefFiles;
 }) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
@@ -158,6 +169,18 @@ export function AttributeDialogs({
       return <InsertDialog key={key} doc={doc.id} request={d} />;
     case 'wblock':
       return <WriteBlockDialog key={key} doc={doc.id} request={d} />;
+    case 'layerlist':
+      return <LayerListDialog key={key} doc={doc.id} request={d} />;
+    case 'laywalk':
+      // One key while LAYWALK runs: each walk step is a new request, and the dialog keeps its
+      // focus and list position through them (it remounts only after Select Objects).
+      return <LayerWalkDialog key="laywalk" doc={doc.id} request={d} />;
+    case 'imageattach':
+      return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
+    case 'xrefattach':
+      return <XrefAttachDialog key={key} doc={doc.id} request={d} files={xrefFiles} />;
+    case 'xbind':
+      return <XbindDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

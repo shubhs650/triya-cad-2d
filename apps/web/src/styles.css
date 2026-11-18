@@ -926,13 +926,17 @@ button {
 }
 
 .layer-table {
-  width: 100%;
+  /* M5-05 part 5: the columns have widths (the table's width is theirs), contents cut. */
+  table-layout: fixed;
   border-collapse: collapse;
   white-space: nowrap;
+  --layer-row-bg: transparent;
 }
 
 .layer-table th,
 .layer-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 2px 6px;
   border-bottom: 1px solid var(--chrome-border);
   text-align: left;
@@ -942,8 +946,42 @@ button {
 .layer-table thead th {
   position: sticky;
   top: 0;
+  z-index: 2;
   background: var(--chrome-bg);
   color: var(--chrome-text-muted);
+}
+
+/* A frozen column's cells hide the cells scrolling under them, in the row's own colour. */
+.layer-table tbody tr {
+  --layer-frozen-bg: linear-gradient(var(--layer-row-bg), var(--layer-row-bg)), var(--chrome-bg);
+}
+
+/* M5-05 part 5: the grip on a header's right edge sizes the column. */
+.layer-table .layer-col-grip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.layer-table .layer-col-grip:hover {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* A header dragged to move its column, and where it would go. */
+.layer-table thead th[data-dragging='true'] {
+  opacity: 0.6;
+}
+
+.layer-table thead th[data-drop='before'] {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.layer-table thead th[data-drop='after'] {
+  box-shadow: inset -2px 0 var(--accent);
 }
 
 .layer-table tr[data-current='true'] .name {
@@ -952,7 +990,8 @@ button {
 
 /* M5-05: the rows selected, as the manager's list highlights them. */
 .layer-table tbody tr[aria-selected='true'] {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  --layer-row-bg: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--layer-row-bg);
 }
 
 .layer-table tbody tr:focus-visible {
@@ -3931,6 +3970,157 @@ button {
   color: #fff;
 }
 
+/* XBIND's Xbind dialog (M5-04 part 7, XbindDialog.tsx). */
+.cad-dialog.xbind-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.xbind-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.xbind-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.xbind-tree,
+.xbind-dialog .xbind-list {
+  height: 240px;
+  overflow: auto;
+  padding: 2px;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.xbind-item {
+  padding: 2px 4px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.xbind-level-2 {
+  padding-left: 20px;
+}
+
+.xbind-level-3 {
+  padding-left: 40px;
+}
+
+.xbind-twisty {
+  display: inline-block;
+  width: 1em;
+  margin-right: 4px;
+  text-align: center;
+}
+
+.xbind-item[aria-selected='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.xbind-tree:focus-within .xbind-item:focus-visible {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+
+.xbind-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.xbind-empty {
+  color: var(--chrome-text-muted);
+}
+
+@media (max-width: 600px) {
+  .xbind-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .xbind-buttons {
+    flex-direction: row;
+  }
+}
+
+/* The layer tools' list dialogs (M5-06 part 3, LayerListDialog.tsx). */
+.cad-dialog.layer-list-dialog {
+  width: min(320px, calc(100vw - 32px));
+}
+
+.layer-list-dialog .layer-list-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.layer-list-dialog .layer-list {
+  height: 220px;
+  margin-top: 4px;
+}
+
+.layer-list-dialog .layer-list:focus-visible .layer-list-active {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+
+.layer-list-dialog .layer-list-empty {
+  margin: 4px 0 0;
+  color: var(--chrome-text-muted);
+}
+
+/* LAYWALK's LayerWalk dialog (M5-06 part 4, LayerWalkDialog.tsx). */
+.cad-dialog.layer-walk {
+  width: min(300px, calc(100vw - 32px));
+}
+
+.layer-walk .layer-walk-list {
+  height: 260px;
+  margin-top: 4px;
+}
+
+.layer-walk .layer-walk-list:focus-visible .layer-list-active {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+
+.layer-walk .layer-walk-hold {
+  display: inline-block;
+  width: 1ch;
+  margin-right: 4px;
+}
+
+.layer-walk .layer-walk-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.layer-walk .layer-walk-filter {
+  flex: 1;
+  min-width: 0;
+}
+
+.layer-walk .layer-walk-note {
+  margin: 8px 0 0;
+  color: var(--chrome-text-muted);
+}
+
+.layer-walk .layer-walk-restore {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-right: auto;
+}
+
 .dimstyle-list .dimstyle-overrides,
 .dimstyle-list .dimstyle-substyle {
   padding-left: 16px;
@@ -4879,6 +5069,38 @@ button {
   margin: 8px 0 0;
 }
 
+/* M5-04 part 5: IMAGEATTACH's Attach Image dialog. */
+.cad-dialog.image-attach-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.image-attach-name {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.image-attach-preview {
+  width: 160px;
+  height: 120px;
+  border: 1px solid var(--chrome-border);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.image-attach-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* A small image shows its pixels, as a preview of what is attached. */
+  image-rendering: pixelated;
+}
+
+.image-attach-details {
+  margin-top: 8px;
+}
+
 .cad-dialog.block-definition-ask {
   width: min(420px, calc(100vw - 32px));
 }
@@ -4969,6 +5191,11 @@ button {
 
 /* M5-05 part 3: a column header is a button sorting by it, the sort shown by an arrow. */
 .layer-table .layer-sort {
+  width: 100%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  touch-action: none;
   padding: 0;
   border: 0;
   background: none;
@@ -4987,9 +5214,25 @@ button {
   font-size: 0.7em;
 }
 
-.layer-columns-menu {
+.layer-columns-menu,
+.layer-list-menu {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
+}
+
+/* Merge to Layer (M5-05 part 4): the Target Layer list, then AutoCAD's question. */
+.cad-dialog.merge-to-layer {
+  width: min(320px, calc(100vw - 32px));
+}
+
+.merge-to-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.merge-to-layer-list select {
+  font: inherit;
 }
 
 /* Customize Layer Columns: the columns with their check boxes, the buttons beside them. */

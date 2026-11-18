@@ -39,6 +39,7 @@ export * from './grip-functions';
 export { hasDynamicColumns, withColumnCount } from './mtext-grips';
 export { hatchGripPoint, viewportCorners } from './shape-grips';
 export * from './revcloud';
+export * from './image-clip';
 export * from './clipboard';
 export * from './clipboard-data';
 export * from './picture';
@@ -134,9 +135,41 @@ export * from './field-eval';
 export * from './spelling';
 export * from './tolerance-frame';
 export { detachXrefs, xrefDetachChange, xrefDetachProblem } from './xrefs';
+export { bindXrefs, xrefBindChange, xrefBindProblem } from './xref-bind';
+export {
+  XBIND_TABLES,
+  xbindChange,
+  xbindDefinition,
+  xbindDefinitions,
+  xbindXrefs,
+  type XbindDefinition,
+  type XbindKind,
+  type XbindReport,
+  type XbindXref,
+} from './xbind';
+export {
+  attachXref,
+  xrefFileName,
+  xrefNameFor,
+  xrefOfFile,
+  type XrefAttachFile,
+} from './xref-attach';
+export {
+  clipOf,
+  clipOutline,
+  inverseInsertMatrix,
+  selfIntersecting,
+  setClip,
+  setClipEnabled,
+  xclipProblem,
+} from './xclip';
 export {
   currentLayerChange,
   deleteLayersChange,
+  mergeLayersChange,
+  mergeLayers,
+  deleteLayersWithObjects,
+  layerRemovalProblem,
   layerPropsChange,
   layersInUse,
   newLayerChange,

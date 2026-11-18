@@ -493,7 +493,8 @@ function editedImageObject(o: ImageObject): Partial<ImageObject> {
   }
   if (o.type === 'RASTERVARIABLES') {
     return {
-      frame: !o.frame,
+      // IMAGEFRAME 2 (displayed but not plotted, M5-04 part 4) unless it is 2 already.
+      frame: o.frame === 2 ? 1 : 2,
       quality: o.quality === 'draft' ? 'high' : 'draft',
       units: (o.units + 1) % 9,
     };

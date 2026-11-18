@@ -22,6 +22,19 @@ import { writeXdata, xdataProblems } from './xdata';
 /** DXF 70 bits that mark a record as an xref's: the xref owns them, not the drawing. */
 export const XREF_BITS = 16 | 32;
 
+/**
+ * Why a record's xref-dependent bits cannot change from `b` to `a`, or undefined: the xref owns
+ * them, but XREF Bind (M5-04 part 2) makes its records the drawing's, which loses both.
+ */
+export function xrefBitsProblem(
+  b: { readonly flags?: number } | undefined,
+  a: { readonly flags?: number },
+): string | undefined {
+  if ((((b?.flags ?? 0) ^ (a.flags ?? 0)) & XREF_BITS) === 0) return undefined;
+  if (b && ((a.flags ?? 0) & XREF_BITS) === 0) return undefined;
+  return 'the xref-dependent flags belong to the xref';
+}
+
 /** Record fields no table writer handles yet (xdata: on a record the file has). */
 const UNSUPPORTED = ['xdata', 'reactors', 'extDict'] as const;
 
@@ -100,7 +113,8 @@ export function planRecords<A extends CadObject & { name: string }, R extends Sy
       // Table.add would make up a name for a nameless record, and a rename to '' loses its key.
       if (nameless && b) out.push('a record cannot be renamed to no name');
       if (b && fixed.has(b.name.toUpperCase())) out.push(`${b.name} cannot be renamed`);
-      else if (b && ((b.flags ?? 0) & XREF_BITS) !== 0)
+      // Bound (XREF Bind): renamed as it stops being the xref's.
+      else if (b && ((b.flags ?? 0) & XREF_BITS) !== 0 && ((a.flags ?? 0) & XREF_BITS) !== 0)
         out.push(`an xref-dependent ${rules.what} cannot be renamed`);
       else if (!nameless && !rules.namesRepeat && (names.get(a.name.toUpperCase()) ?? 0) > 1)
         out.push(`another ${rules.what} is named ${a.name}`);

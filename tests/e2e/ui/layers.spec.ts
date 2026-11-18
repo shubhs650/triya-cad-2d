@@ -304,13 +304,104 @@ test('sets a layer’s color, linetype, lineweight and transparency from its cel
   for (const n of ['LEADERS', '0'])
     await expect(palette.getByRole('button', { name: `Lineweight ${n}` })).toHaveText('0.30 mm');
 
-  // Esc cancels a dialog and changes nothing; each change was one undo step.
+  // Esc cancels a dialog and changes nothing. UNDO Control Layer is on, as in AutoCAD: the
+  // manager's changes one after another are one LAYER step, which Ctrl+Z undoes (M5-05 part 4).
   await palette.getByRole('button', { name: 'Color 0' }).click();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: 'Select Color' })).toHaveCount(0);
   await expect(palette.getByRole('button', { name: 'Color 0' })).toHaveText('white');
   await page.keyboard.press('Control+Z');
-  for (const n of ['LEADERS', '0'])
+  for (const n of ['LEADERS', '0']) {
     await expect(palette.getByRole('button', { name: `Lineweight ${n}` })).toHaveText('Default');
-  await expect(palette.getByRole('button', { name: 'Transparency LEADERS' })).toHaveText('80');
+    await expect(palette.getByRole('button', { name: `Transparency ${n}` })).toHaveText('0');
+  }
+  await expect(palette.getByRole('button', { name: 'Linetype LEADERS' })).toHaveText('Continuous');
+  await expect(palette.getByRole('button', { name: 'Color LEADERS' })).not.toHaveText('red');
+});
+
+test('merges layers from the layer list menu, one undo step with the changes before (M5-05)', async ({
+  page,
+}) => {
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  // clockwise_arcs_hatch.dxf: the hatch is on HATCH.
+  const palette = await openLayers(page, DXF);
+  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const row = (name: string) =>
+    table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
+  const full = await settledInkWeight(page);
+
+  // A new layer, Notes, to merge into.
+  await palette.getByRole('button', { name: 'New Layer' }).click();
+  await expect(palette.getByRole('textbox', { name: 'Name of Layer1' })).toBeFocused();
+  await page.keyboard.type('Notes');
+  await page.keyboard.press('Enter');
+
+  // A right-click on HATCH selects it alone and shows the layer list menu.
+  await row('HATCH').getByRole('rowheader').click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Layer list' });
+  await expect(menu).toBeVisible();
+  await expect(row('HATCH')).toHaveAttribute('aria-selected', 'true');
+  await expect(row('Notes')).toHaveAttribute('aria-selected', 'false');
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Set current',
+    'New Layer',
+    'Rename Layer',
+    'Delete Layer',
+    'Change Description',
+    'Merge Selected Layer(s) to...',
+    'Select All',
+    'Clear All',
+    'Select All but Current',
+    'Invert Selection',
+  ]);
+  await shot('1-layer-list-menu.png');
+  await menu.getByRole('menuitem', { name: 'Merge Selected Layer(s) to...' }).click();
+
+  // Merge to Layer: every layer but HATCH, then AutoCAD's question.
+  const merge = page.getByRole('dialog', { name: 'Merge to Layer' });
+  const target = merge.getByRole('listbox', { name: 'Target Layer' });
+  await expect(target.getByRole('option')).not.toContainText(['HATCH']);
+  await target.selectOption('Notes');
+  await shot('2-merge-to-layer.png');
+  await merge.getByRole('button', { name: 'OK' }).click();
+  const confirm = merge.getByRole('alertdialog', { name: 'Merge to Layer - Confirm' });
+  await expect(confirm).toHaveText(
+    /Merging layer "HATCH" into layer "Notes"\. Do you want to continue\?/,
+  );
+  await shot('3-merge-question.png');
+  await confirm.getByRole('button', { name: 'Yes' }).click();
+  await expect(merge).toHaveCount(0);
+
+  // HATCH is gone and its hatch is on Notes: Notes off empties the canvas.
+  await expect(row('HATCH')).toHaveCount(0);
+  await expect(row('Notes')).toHaveAttribute('aria-selected', 'true');
+  await shot('4-merged.png');
+  await palette.getByRole('button', { name: 'On Notes' }).click();
+  await expect.poll(() => inkWeight(page)).toBeLessThan(full * 0.5);
+  await palette.getByRole('button', { name: 'On Notes' }).click();
+  await expect.poll(() => inkWeight(page)).toBeGreaterThan(full * 0.9);
+
+  // The menu from the keyboard: Shift+F10 on a row, Select All but Current, Invert Selection.
+  await row('Notes').focus();
+  await page.keyboard.press('Shift+F10');
+  await menu.getByRole('menuitem', { name: 'Select All but Current' }).click();
+  const selected = table.locator('tbody tr[aria-selected="true"]');
+  await expect(selected).toHaveCount((await table.locator('tbody tr').count()) - 1);
+  await expect(table.locator('tbody tr[data-current="true"]')).toHaveAttribute(
+    'aria-selected',
+    'false',
+  );
+  await row('Notes').getByRole('rowheader').click({ button: 'right' });
+  await menu.getByRole('menuitem', { name: 'Invert Selection' }).click();
+  await expect(selected).toHaveCount(1);
+  await expect(table.locator('tbody tr[data-current="true"]')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+
+  // The new layer, the merge and the toggles were one LAYER step: Ctrl+Z brings HATCH back
+  // and takes Notes away.
+  await page.keyboard.press('Control+Z');
+  await expect(row('HATCH')).toHaveCount(1);
+  await expect(row('Notes')).toHaveCount(0);
 });

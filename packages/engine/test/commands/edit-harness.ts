@@ -14,6 +14,7 @@ import {
   type NonGraphicalObject,
   type EntityGeometry,
   type EntityId,
+  type ImageGeometry,
   type ViewHost,
   type Vec2,
   type ViewReply,
@@ -32,6 +33,21 @@ import {
 } from '../model/fixtures';
 
 export const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
+
+/** An image's frame as a closed polyline: its corners from DXF 10, 11, 12 and 13. */
+function imageFrameGeom(g: ImageGeometry): EntityGeometry {
+  const { position: p, u, v, size } = g;
+  const at = (i: number, j: number) => ({
+    x: p.x + u.x * i + v.x * j,
+    y: p.y + u.y * i + v.y * j,
+    bulge: 0,
+  });
+  return {
+    kind: 'LWPOLYLINE',
+    closed: true,
+    vertices: [at(0, 0), at(size.x, 0), at(size.x, size.y), at(0, size.y)],
+  } as EntityGeometry;
+}
 const BLOCK = '50';
 
 /** STANDARD (16, no fixed height) and NOTES (17, 3.5 high) are the drawing's text styles. */
@@ -62,7 +78,8 @@ export function host(model: () => DocumentModel, variables?: Map<string, number>
         const hits: [number, EntityId][] = [];
         for (const e of model().entities()) {
           if (e.owner !== MODEL_SPACE) continue;
-          const c = offsetCurveOf(e.geom);
+          // An image is picked by its frame (M5-04 part 4), as AutoCAD's are.
+          const c = offsetCurveOf(e.geom.kind === 'IMAGE' ? imageFrameGeom(e.geom) : e.geom);
           const d = c ? closestPoint(c, r.point, toleranceForSize(100)).distance : Infinity;
           if (d < 0.25) hits.push([d, e.id]);
         }

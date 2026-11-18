@@ -44,6 +44,33 @@ KINDS = (
     "block",
     "wblock",
 )
+# Saves of the thread-authored test drawings that are not corpus files (Rule 0), and of corpus
+# files edited by a testkit suite rather than the corpus suites, as
+# (fixture path, kind): each must be there and pass the audit with no exception. M5-04 part 2:
+# XREF Bind of the xref set's parent, both bind types (packages/testkit/src/xref/xref-bind.test.ts).
+FIXTURE_SAVES = (
+    ("fixtures/xref/xref-parent.dxf", "bind"),
+    ("fixtures/xref/xref-parent.dxf", "bind-insert"),
+    ("fixtures/xref/xref-parent.dxf", "bind-objects"),
+    # XCLIP New boundary, OFF, Delete and generate Polyline on ezdxf's xclip.dxf (M5-04 part 3).
+    ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip"),
+    # LAYDEL and LAYMRG of every layer they can take on ACadSharp's AC1032 sample (M5-06 part 2,
+    # packages/testkit/src/layers/layer-cleanup.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laymrg"),
+    # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
+    ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
+    # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,
+    # packages/testkit/src/raster/image-attach.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "imageattach"),
+    ("third-party/ezdxf/examples_dxf/images.dxf", "imageattach"),
+    # XATTACH of the xref set's files on a drawing without xrefs (M5-04 part 6,
+    # packages/testkit/src/xref/xref-attach.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "xattach"),
+    # XBIND of the xref set's block and layers (M5-04 part 7,
+    # packages/testkit/src/xref/xbind.test.ts).
+    ("fixtures/xref/xref-parent.dxf", "xbind"),
+)
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.
 UNREADABLE_TAG = "unreadable"
@@ -191,9 +218,10 @@ def judge(
     audit=audit_file,
     limitation=ezdxf_limitation,
     read_back=READ_BACK,
+    fixtures: tuple[tuple[str, str], ...] = (),
 ) -> Report:
-    """Audit the saves of ``files``; ``audit``, ``limitation`` and ``read_back`` are injectable
-    for the tests."""
+    """Audit the saves of ``files`` and the ``fixtures`` saves; ``audit``, ``limitation`` and
+    ``read_back`` are injectable for the tests."""
     report = Report()
     known = {f["path"] for f in files}
     for path in sorted(set(exceptions) - known):
@@ -236,6 +264,17 @@ def judge(
             report.failures.extend(read_back_failures(name, save, read_back))
         for code in sorted(set(allowed) - seen):
             report.failures.append(f"{path}: exception {code} is stale, no save reports it")
+    for path, kind in fixtures:
+        name = save_name(path, kind)
+        save = saves_dir / name
+        error = saves_dir / f"{name}.error.txt"
+        if error.exists():
+            report.failures.append(f"{name}: the save threw: {error.read_text().strip()}")
+        elif not save.exists():
+            report.failures.append(f"{name}: missing (did the testkit suites run with TRIYA_DXF_AUDIT_DIR?)")
+        else:
+            report.checked += 1
+            report.failures.extend(f"{name}: {x.stage} {x.code} {x.message}" for x in audit(save))
     return report
 
 
@@ -281,7 +320,7 @@ def main(argv: list[str]) -> int:
     files = readable_files(manifest)
 
     broken = canary(args.saves)
-    report = judge(files, args.saves, args.corpus, exceptions)
+    report = judge(files, args.saves, args.corpus, exceptions, fixtures=FIXTURE_SAVES)
     if broken:
         report.failures.insert(0, broken)
     for line in report.allowed:
@@ -289,7 +328,8 @@ def main(argv: list[str]) -> int:
     for line in report.failures:
         print(f"FAIL     {line}")
     print(
-        f"dxf-audit: {report.checked} saves of {len(files)} corpus files checked, "
+        f"dxf-audit: {report.checked} saves of {len(files)} corpus files and "
+        f"{len(FIXTURE_SAVES)} fixture saves checked, "
         f"{len(report.failures)} failures, {len(report.allowed)} allowed findings, "
         f"canary {'passed the audit (bad)' if broken else 'caught'}"
     )

@@ -37,7 +37,11 @@ import type {
   InsertDialogAnswer,
   InsertDialogRequest,
 } from './blocks';
+import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
+import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
 import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
+import type { XbindRequest } from './xbind';
+import type { XrefAttachAnswer, XrefAttachRequest } from './xref-attach';
 import type { TableCellFormatRequest } from './draw/table-data-format';
 import type { TableDataFormat } from '../edit/table-data';
 import type { GdtFrame } from '../edit/tolerance-frame';
@@ -743,6 +747,7 @@ export type DialogRequest =
       readonly settings: UnitsSettings;
       readonly direction?: true;
     }
+  | LayerListRequest
   | {
       /** TABLE's Insert Table (M4-05 part 2), opened on the settings of the last table. */
       readonly type: 'inserttable';
@@ -773,6 +778,13 @@ export type DialogRequest =
   | BlockDefinitionRequest
   /** INSERT's Insert (M5-01 part 3). */
   | InsertDialogRequest
+  /** IMAGEATTACH's Attach Image (M5-04 part 5). */
+  | ImageAttachRequest
+  /** LAYWALK's LayerWalk (M5-06 part 4). */
+  | LayerWalkRequest
+  | XrefAttachRequest
+  /** XBIND's Xbind dialog (M5-04 part 7). */
+  | XbindRequest
   /** WBLOCK's Write Block (M5-01 part 4). */
   | WriteBlockRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
@@ -787,6 +799,22 @@ export interface GroupRow {
   /** An unnamed group (`*A3`), listed only with Include Unnamed checked. */
   readonly unnamed: boolean;
   readonly members: number;
+}
+
+/**
+ * A layer tool's list of layers (M5-06 part 3): LAYMCH's Change to Layer, LAYDEL's Delete
+ * Layers, LAYMRG's Merge Layers and Merge to Layer (AutoCAD 2024 Help, those dialog boxes),
+ * listing only the layers the command can take, by name. OK answers `layers`; Change to Layer
+ * may answer a `layerName` the drawing lacks instead, making it. Cancel answers `escape`.
+ */
+export interface LayerListRequest {
+  readonly type: 'layerlist';
+  readonly title: 'Change to Layer' | 'Delete Layers' | 'Merge Layers' | 'Merge to Layer';
+  readonly layers: readonly { readonly handle: Handle; readonly name: string }[];
+  /** Several layers may be chosen (Shift and Ctrl), as in Delete Layers and Merge Layers. */
+  readonly multiple: boolean;
+  /** Change to Layer: the current layer, which its Current Layer box opens on. */
+  readonly current?: string;
 }
 
 /**
@@ -1018,6 +1046,13 @@ export type PromptAnswer =
       readonly block?: BlockDefinitionAnswer;
       /** The Insert dialog's fields as OK closed it (INSERT, M5-01 part 3). */
       readonly insert?: InsertDialogAnswer;
+      /** The Attach Image dialog's file and fields as OK closed it (IMAGEATTACH, M5-04 part 5). */
+      readonly imageAttach?: ImageAttachAnswer;
+      /**
+       * The Attach External Reference dialog's file and fields as OK closed it (XATTACH, M5-04
+       * part 6).
+       */
+      readonly xrefAttach?: XrefAttachAnswer;
       /** The Write Block dialog's fields as OK (or a pick) closed it (WBLOCK, M5-01 part 4). */
       readonly wblock?: WriteBlockAnswer;
       /** The Table Cell Format dialog's data format as OK closed it (M4-16). */
@@ -1025,6 +1060,14 @@ export type PromptAnswer =
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
       readonly filter?: { readonly list: readonly FilterItem[]; readonly name: string };
       readonly target?: Handle;
+      /** The layers chosen in a layer tool's list (M5-06 part 3). */
+      readonly layers?: readonly Handle[];
+      /** Change to Layer: a layer name typed that the drawing lacks, which is made. */
+      readonly layerName?: string;
+      /** The Xbind dialog's Definitions to Bind as OK closed it (XBIND, M5-04 part 7). */
+      readonly xbind?: readonly Handle[];
+      /** The LayerWalk dialog's settings, with its Purge or Save Layer State (M5-06 part 4). */
+      readonly laywalk?: LayerWalkAnswer;
     }
   | { readonly kind: 'enter' }
   /** Esc at a prompt that takes it (`escape`). */

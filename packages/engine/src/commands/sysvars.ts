@@ -6,7 +6,8 @@
 //   HEADER section holds, as io maps it, and the AcDbVariableDictionary ones it carries under
 //   their bare names (`CETRANSPARENCY`). Setting one is an edit, one undo step, saved with the
 //   drawing as AutoCAD saves it;
-// - an object: WIPEOUTFRAME, kept in the drawing's WIPEOUTVARIABLES (`wipeout.ts`);
+// - an object: WIPEOUTFRAME, kept in the drawing's WIPEOUTVARIABLES (`wipeout.ts`), and
+//   IMAGEFRAME, in its RASTERVARIABLES (`image.ts`, M5-04 part 4);
 // - the app (`APP_VARIABLES`): the drafting aids of the status bar (ORTHOMODE, OSMODE, …) and
 //   the per-user settings AutoCAD keeps in the registry (APERTURE, REVCLOUDGRIPS, …). The
 //   command asks the app for them through the view host (`sysvar` requests): commands never
@@ -78,7 +79,7 @@ export type NameTable =
 export interface SystemVariable {
   /** AutoCAD's name, upper case, without the header's `$`. */
   readonly name: string;
-  readonly store: 'header' | 'wipeout' | 'app' | 'computed' | 'vport';
+  readonly store: 'header' | 'wipeout' | 'raster' | 'app' | 'computed' | 'vport';
   /** The header entry (`$LTSCALE`, `CETRANSPARENCY`) of a header variable. */
   readonly key?: string;
   readonly kind: VariableKind;
@@ -171,6 +172,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // drawn faded by this percentage, −90 to 90, initially 50; a negative value turns fading off
   // keeping the amount. LAYISO's Lock and fade sets it.
   { name: 'LAYLOCKFADECTL', store: 'app', kind: 'integer', min: -90, max: 90 },
+  // BINDTYPE (M5-04 part 2; AutoCAD 2024 Help, "Saved in: Not-saved"): how -XREF Bind binds an
+  // xref, 0 (initially) as Bind (`xref$0$name`), 1 as Insert (the names without the xref's).
+  { name: 'BINDTYPE', store: 'app', kind: 'integer', min: 0, max: 1 },
   // M3-06 part 1 (AutoCAD 2024 Help): POLARMODE's bits are 1 polar angles relative to the last
   // segment, 2 object snap tracking along the polar angles, 4 the additional angles, 8 Shift to
   // acquire tracking points (initially 0); POLARADDANG up to 10 additional angles separated by
@@ -357,6 +361,15 @@ export function calendarDate(d: Date): number {
 const WIPEOUTFRAME: SystemVariable = {
   name: 'WIPEOUTFRAME',
   store: 'wipeout',
+  kind: 'integer',
+  min: 0,
+  max: 2,
+};
+
+/** IMAGEFRAME (AutoCAD 2024 Help, "IMAGEFRAME (System Variable)"): 0, 1 or 2. */
+const IMAGEFRAME: SystemVariable = {
+  name: 'IMAGEFRAME',
+  store: 'raster',
   kind: 'integer',
   min: 0,
   max: 2,
@@ -633,7 +646,7 @@ function headerKey(model: VariableSource, name: string): string | undefined {
 
 /**
  * The system variable `name` names (any case), or undefined when Triya keeps none of that name:
- * the app's first, then WIPEOUTFRAME, then the drawing's header.
+ * the app's first, then WIPEOUTFRAME and IMAGEFRAME, then the drawing's header.
  */
 export function systemVariable(model: VariableSource, name: string): SystemVariable | undefined {
   const n = name.trim().toUpperCase();
@@ -641,6 +654,7 @@ export function systemVariable(model: VariableSource, name: string): SystemVaria
   const app = APP_VARIABLES.find((v) => v.name === n);
   if (app) return app;
   if (n === WIPEOUTFRAME.name) return WIPEOUTFRAME;
+  if (n === IMAGEFRAME.name) return IMAGEFRAME;
   const vport = VPORT_VARIABLES.find((v) => v.name === n);
   if (vport) return vport;
   const known = COMPUTED_VARIABLES.find((v) => v.name === n);
@@ -664,6 +678,7 @@ export function systemVariables(model: VariableSource): SystemVariable[] {
     if (v) out.set(v.name, v);
   }
   out.set(WIPEOUTFRAME.name, WIPEOUTFRAME);
+  out.set(IMAGEFRAME.name, IMAGEFRAME);
   for (const name of Object.keys(DICTIONARY_INITIAL)) {
     const v = systemVariable(model, name);
     if (v) out.set(v.name, v);

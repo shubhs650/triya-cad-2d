@@ -103,10 +103,12 @@ type Entry =
       readonly kind: 'record';
       record: UndoRecord;
       /**
-       * A ZOOM or PAN step the next one may join (UNDO Control Combine): only while it is the
-       * newest entry since it was made, so a step undone and redone starts a run of its own.
+       * A ZOOM or PAN step the next one may join (UNDO Control Combine), or a Layer Properties
+       * Manager step the next of those may join (UNDO Control Layer): only while it is the
+       * newest entry since it was made, so a step undone and redone, or one another step was
+       * pushed over, starts a run of its own.
        */
-      combines?: boolean;
+      combines?: 'view' | 'layer';
     }
   | { readonly kind: 'mark' };
 
@@ -213,18 +215,38 @@ export class UndoStack {
    * change sets are all empty is no step (DEC-049). `erases` marks ERASE-like commands, whose
    * removed entities become the OOPS set.
    */
-  push(record: CommandRecord, options: { readonly erases?: boolean } = {}): void {
+  push(
+    record: CommandRecord,
+    options: { readonly erases?: boolean; readonly layer?: boolean } = {},
+  ): void {
     if (options.erases) this.#erased = erasedBy(record.changes);
     const changes = record.changes.filter((c) => !isEmptyChangeSet(c));
     if (changes.length === 0 || this.#control === 'none') return;
     const bytes = changes.reduce((n, c) => n + estimateBytes(c), 0);
     this.#dropRedo();
+    const last = this.#undo.at(-1);
     if (this.#group) {
       this.#group.changes.push(...changes);
       this.#group.bytes += bytes;
       this.#bytes += bytes;
+    } else if (
+      options.layer === true &&
+      this.#settings.combineLayer &&
+      last?.kind === 'record' &&
+      last.combines === 'layer'
+    ) {
+      // UNDO Control Layer (M5-05 part 4): the manager's changes one after another are one step.
+      last.record = {
+        ...last.record,
+        changes: [...last.record.changes, ...changes],
+        bytes: last.record.bytes + bytes,
+      };
+      this.#bytes += bytes;
     } else {
-      this.#pushRecord({ label: record.command, changes, bytes });
+      this.#pushRecord(
+        { label: record.command, changes, bytes },
+        options.layer === true ? 'layer' : undefined,
+      );
     }
     this.#trim();
     this.#changed();
@@ -252,7 +274,7 @@ export class UndoStack {
       this.#settings.combineZoomPan &&
       COMBINED.has(step.label) &&
       last?.kind === 'record' &&
-      last.combines === true
+      last.combines === 'view'
     ) {
       const views = last.record.views ?? [];
       const has = views.some((v) => v.viewport === step.viewport);
@@ -266,7 +288,7 @@ export class UndoStack {
     } else {
       this.#pushRecord(
         { label: step.label, changes: [], views: [slot()], bytes: VIEW_BYTES },
-        COMBINED.has(step.label),
+        COMBINED.has(step.label) ? 'view' : undefined,
       );
     }
     this.#trim();
@@ -448,7 +470,7 @@ export class UndoStack {
     }
     this.#swapViews(e.record.views ?? []);
     // A step redone is no longer the one the drafter's last zoom made: the next starts anew.
-    e.combines = false;
+    delete e.combines;
   }
 
   /**
@@ -480,7 +502,10 @@ export class UndoStack {
     throw new Error(`${why}; the undo history was cleared`);
   }
 
-  #pushRecord(record: UndoRecord, combines = false): void {
+  #pushRecord(record: UndoRecord, combines?: 'view' | 'layer'): void {
+    // The step below stops being the newest: nothing joins it again, even once U takes this off.
+    const below = this.#undo.at(-1);
+    if (below?.kind === 'record') delete below.combines;
     this.#undo.push(combines ? { kind: 'record', record, combines } : { kind: 'record', record });
     this.#bytes += record.bytes;
   }

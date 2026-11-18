@@ -97,6 +97,8 @@ export function referencesOf(
   const objects = new Map((init.objects ?? []).map((o) => [o.handle, o]));
   const top: Node[] = [];
   const under = new Map<string, Node[]>();
+  /** What was listed under each xref bound, for its undo. */
+  const bound = new Map<string, Node[]>();
   const fileObject = (type: string): Node['kind'] | undefined =>
     type === 'IMAGEDEF' ? 'image' : type === 'PDFDEFINITION' ? 'pdf' : undefined;
   for (const r of init.tables?.blockRecords ?? []) {
@@ -117,6 +119,32 @@ export function referencesOf(
     for (const x of cs.objects?.removed ?? []) objects.delete(x.handle);
     for (const u of cs.objects?.updated ?? []) objects.set(u.after.handle, u.after);
     for (const x of cs.objects?.added ?? []) objects.set(x.handle, x);
+    // An xref bound (M5-04 part 2): it is no reference any more, and the images and underlays
+    // it brought are the drawing's own. Undone, it lists what it did before.
+    const updated = cs.blocks?.updated ?? [];
+    const binds = updated.filter((u) => u.before.xrefPath !== undefined && !u.after.xrefPath);
+    const unbinds = updated.filter((u) => u.before.xrefPath === undefined && u.after.xrefPath);
+    if (binds.length > 0 || unbinds.length > 0) {
+      for (const u of binds) {
+        bound.set(u.after.handle, under.get(u.after.handle) ?? []);
+        under.delete(u.after.handle);
+      }
+      for (const o of cs.objects?.updated ?? []) {
+        const kind = fileObject(o.after.type);
+        const h = o.after.handle;
+        if (kind && binds.length > 0 && !top.some((n) => n.handle === h))
+          top.push({ kind, handle: h });
+      }
+      const back = new Set<string>();
+      for (const u of unbinds) {
+        const children = bound.get(u.after.handle) ?? [];
+        bound.delete(u.after.handle);
+        under.set(u.after.handle, children);
+        for (const n of children) back.add(n.handle);
+      }
+      if (back.size > 0) top.splice(0, top.length, ...top.filter((n) => !back.has(n.handle)));
+      continue;
+    }
     // An xref unloaded or reloaded (M5-04): nothing is listed under it until it loads again.
     for (const u of cs.blocks?.updated ?? []) {
       if (u.before.xrefLoaded && !u.after.xrefLoaded) under.delete(u.after.handle);
@@ -125,10 +153,21 @@ export function referencesOf(
     const load = cs.blocks?.updated?.find((u) => u.after.xrefLoaded && !u.before.xrefLoaded);
     if (!load) {
       // The drawing's own, made since it opened: a pasted picture's (M2-54, M2-72) or a pasted
-      // image's or underlay's (M2-32).
+      // image's or underlay's (M2-32), an xref attached (XATTACH, M5-04 part 6).
       for (const o of cs.objects?.added ?? []) {
         const kind = fileObject(o.type);
         if (kind && !top.some((n) => n.handle === o.handle)) top.push({ kind, handle: o.handle });
+      }
+      const own = (h: string) => {
+        if (!top.some((n) => n.handle === h)) top.push({ kind: 'xref', handle: h });
+      };
+      for (const x of r?.added ?? []) if (isXrefRecord(x)) own(x.handle);
+      // A nested xref XATTACH made the drawing's own: it leaves its xref's content.
+      for (const u of cs.blocks?.updated ?? []) {
+        if (!u.before.xrefLoaded || !u.after.xrefLoaded) continue;
+        const kept = new Set(u.after.xrefLoaded);
+        for (const h of u.before.xrefLoaded)
+          if (!kept.has(h) && isXrefRecord(records.get(h))) own(h);
       }
       continue;
     }

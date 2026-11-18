@@ -23,6 +23,8 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       // M4-03 part 2: dimension styles at the command line.
       '-DIMSTYLE',
+      // M5-04 part 4: the image commands.
+      '-IMAGEADJUST',
       // M4-04: a text style made at the command line.
       '-STYLE',
       // M4-05: a table on the command line.
@@ -133,23 +135,33 @@ describe('palette search', () => {
       'HATCHEDIT',
       'HATCHTOBACK',
       'ID',
+      'IMAGEADJUST',
+      'IMAGEATTACH',
+      'IMAGECLIP',
+      'IMAGEQUALITY',
       'INSERT',
       'JOIN',
       // M4-09 part 1: JUSTIFYTEXT and SCALETEXT.
       'JUSTIFYTEXT',
       // M5-06 part 1: the layer tool row.
       'LAYCUR',
+      // M5-06 part 2: LAYDEL, LAYERP, LAYERPMODE and LAYMRG.
+      'LAYDEL',
+      'LAYERP',
+      'LAYERPMODE',
       'LAYERSTATE',
       'LAYFRZ',
       'LAYISO',
       'LAYLCK',
       'LAYMCH',
       'LAYMCUR',
+      'LAYMRG',
       'LAYOFF',
       'LAYON',
       'LAYTHW',
       'LAYULK',
       'LAYUNISO',
+      'LAYWALK',
       'LENGTHEN',
       'LINE',
       'LIST',
@@ -250,6 +262,12 @@ describe('palette search', () => {
       // M5-01 part 4: the Write Block dialog.
       'WBLOCK',
       'WIPEOUT',
+      // M5-04 part 6: drawings attached and overlaid.
+      'XATTACH',
+      // M5-04 part 7: xref-dependent definitions bound one by one.
+      'XBIND',
+      // M5-04 part 3: references clipped.
+      'XCLIP',
       'XLINE',
       'XREF',
       'ZOOM',

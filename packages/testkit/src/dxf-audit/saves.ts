@@ -23,6 +23,25 @@ export type AuditSaveKind =
   | 'table'
   | 'tablestyle'
   | 'block'
+  // Saves of a thread-authored fixture, not a corpus file (audit.py `FIXTURE_SAVES`): XREF Bind
+  // of the xref set's parent, both bind types (M5-04 part 2).
+  | 'bind'
+  | 'bind-insert'
+  | 'bind-objects'
+  // XCLIP's options on ezdxf's xclip.dxf, a corpus file saved by a testkit suite (M5-04 part 3).
+  | 'xclip'
+  // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
+  | 'laydel'
+  | 'laymrg'
+  // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
+  | 'images'
+  // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).
+  | 'imageattach'
+  // XATTACH of the xref set's files on ezdxf's colors.dxf (M5-04 part 6).
+  | 'xattach'
+  // XBIND of the xref set's block and layers (M5-04 part 7).
+  | 'xbind'
+  // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).
   | 'wblock';
 
 /**

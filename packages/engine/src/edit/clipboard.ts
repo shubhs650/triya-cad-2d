@@ -81,7 +81,7 @@ import {
   type Xdata,
 } from '../model/types';
 import { insUnitsOf, insUnitsScale } from '../model/units';
-import { HANDLE_KEYS, isXrefRecord, renumber } from '../model/xref';
+import { DIMVAR_REFERENCES, HANDLE_KEYS, isXrefRecord, renumber } from '../model/xref';
 import {
   AnonymousNames,
   copyProblem,
@@ -162,18 +162,6 @@ const LINKS = new Set([
   'layout',
   'blockRecord',
 ]);
-
-/** The dimension variables that name a record (DXF 340–347): DIMTXSTY, the arrow blocks, linetypes. */
-export const DIMVAR_REFERENCES: readonly string[] = [
-  'DIMTXSTY',
-  'DIMLDRBLK',
-  'DIMBLK',
-  'DIMBLK1',
-  'DIMBLK2',
-  'DIMLTYPE',
-  'DIMLTEX1',
-  'DIMLTEX2',
-];
 
 /** DXF 1005: a database handle in xdata, which AutoCAD translates when objects are copied in. */
 const XDATA_HANDLE = 1005;
@@ -618,6 +606,14 @@ export function pasteObjects(
     if (ids.every((id) => id !== undefined)) createGroup(b, model, { ids: ids as EntityId[] });
   }
   return report;
+}
+
+/**
+ * The Clipboard's definitions alone (its records, blocks and the objects they hold) pasted into
+ * `model`, as PASTECLIP brings them in with the objects: XBIND's copies (M5-04 part 7, xbind.ts).
+ */
+export function pasteDefinitions(b: ChangeSetBuilder, model: DocumentModel, clip: Clipboard): void {
+  pasteInto(b, model, { ...clip, entities: [], groups: [] }, '0');
 }
 
 /** The Clipboard's objects pasted into `owner`, carried by `t` (left where they are without). */

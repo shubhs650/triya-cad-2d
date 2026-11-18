@@ -145,8 +145,14 @@ export interface ViewContext {
    * tab shown last.
    */
   readonly tab?: (name: string | undefined) => ViewReply;
-  /** -XREF Unload and Reload (M5-04): the app unloads or reloads the xrefs, as the palette does. */
-  readonly xref?: (action: 'unload' | 'reload', blocks: readonly Handle[]) => Promise<ViewReply>;
+  /**
+   * -XREF Unload and Reload (M5-04): the app unloads or reloads the xrefs, as the palette does;
+   * XATTACH's Attach (M5-04 part 6): it loads the xrefs just attached from the file picked.
+   */
+  readonly xref?: (
+    action: 'unload' | 'reload' | 'attach',
+    blocks: readonly Handle[],
+  ) => Promise<ViewReply>;
   /**
    * -INSERT `name=file` (M5-01 part 4): the drawing file of that name among the drawings open
    * and the files given for xrefs, its model space answered as `drawing`; none found, no drawing.

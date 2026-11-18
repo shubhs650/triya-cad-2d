@@ -11,6 +11,8 @@
 import { LINEWEIGHT_VALUES } from '../commands/sysvars';
 import { ChangeSetBuilder } from '../model/builder';
 import { dropLayersFromStates } from './layer-states';
+import { eraseObjects } from './edit';
+import { explodeGroup, groupsOf } from './groups';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -173,6 +175,21 @@ export function newLayerChange(
   like?: Handle,
   name: string = newLayerName(model),
 ): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  const made = newLayer(b, model, like, name);
+  return typeof made === 'string' ? made : b.build();
+}
+
+/**
+ * `newLayerChange` into a builder (LAYMCH's Change to Layer makes the layer typed and moves the
+ * objects to it in one step): the new layer, or why it cannot be made, with nothing added.
+ */
+export function newLayer(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  like: Handle | undefined,
+  name: string,
+): LayerRecord | string {
   const why = nameProblem(model, name);
   if (why) return why;
   const base =
@@ -180,8 +197,7 @@ export function newLayerChange(
       ? (named(model, '0') ?? model.tables.layers.values().next().value)
       : model.tables.layers.get(like);
   if (!base) return like === undefined ? 'The drawing has no layers.' : `No layer ${like}.`;
-  const b = new ChangeSetBuilder(model);
-  b.addTableRecord('layers', {
+  return b.addTableRecord('layers', {
     name,
     color: base.color,
     linetype: base.linetype,
@@ -194,13 +210,14 @@ export function newLayerChange(
     locked: base.locked,
     ...(base.plotStyle !== undefined && { plotStyle: base.plotStyle }),
   });
-  return b.build();
 }
 
 /** The layers any object is on: in model space, the layouts and every block definition. */
 export function layersInUse(model: DocumentModel): Set<Handle> {
   const used = new Set<Handle>();
   for (const e of model.entities()) used.add(e.layer);
+  // And the objects kept without mapping (M5-06 part 2), which no edit can take off a layer.
+  for (const h of model.passthroughLayers) used.add(h);
   return used;
 }
 
@@ -212,6 +229,19 @@ export function deleteLayersChange(
   model: DocumentModel,
   handles: readonly Handle[],
 ): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  return deleteLayers(b, model, handles) ?? b.build();
+}
+
+/**
+ * {@link deleteLayersChange} into `b` (LAYWALK's Purge builds in its command's edit, M5-06
+ * part 4): undefined when deleted, otherwise why not, with nothing built.
+ */
+export function deleteLayers(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  handles: readonly Handle[],
+): string | undefined {
   const layers = layersOf(model, handles);
   if (typeof layers === 'string') return layers;
   const used = layersInUse(model);
@@ -228,7 +258,6 @@ export function deleteLayersChange(
     if (why) return `Layer "${l.name}" was not deleted: ${why}.`;
   }
   const gone = new Set(layers.map((l) => l.handle));
-  const b = new ChangeSetBuilder(model);
   for (const e of model.entities()) {
     if (e.geom.kind !== 'VIEWPORT') continue;
     const kept = e.geom.frozenLayers.filter((h) => !gone.has(h));
@@ -238,7 +267,7 @@ export function deleteLayersChange(
   for (const h of gone) b.removeTableRecord('layers', h);
   // Layer states stop naming them (M5-07).
   dropLayersFromStates(b, gone);
-  return b.build();
+  return undefined;
 }
 
 /** `handle` made the current layer ($CLAYER): the change (empty when it is), or why not. */
@@ -251,4 +280,163 @@ export function currentLayerChange(model: DocumentModel, handle: Handle): Change
   const b = new ChangeSetBuilder(model);
   b.setHeader('$CLAYER', l.name);
   return b.build();
+}
+
+/**
+ * `handles` merged into `target`, as the manager's Merge Selected Layer(s) to does: every object
+ * on them (in model space, the layouts, every block definition and a block reference's
+ * attributes) moves to `target`, then the layers go as Delete Layer takes them (out of the
+ * viewports that freeze them and the layer states that name them). All or nothing.
+ *
+ * AutoCAD's help does not say what it does with layer 0, Defpoints, the current layer or an
+ * xref-dependent layer as a source; merging deletes the layer, so these are refused as Delete
+ * Layer refuses them (the drafter makes another layer current first). The target may not be one
+ * of the sources nor xref-dependent, as no object of the drawing can go on an xref's layer.
+ */
+export function mergeLayersChange(
+  model: DocumentModel,
+  handles: readonly Handle[],
+  target: Handle,
+): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  return mergeLayers(b, model, handles, target) ?? b.build();
+}
+
+/**
+ * {@link mergeLayersChange} into `b` (LAYMRG builds in its command's edit): undefined when
+ * merged, otherwise why not, with nothing built.
+ */
+export function mergeLayers(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  handles: readonly Handle[],
+  target: Handle,
+): string | undefined {
+  const layers = layersOf(model, handles);
+  if (typeof layers === 'string') return layers;
+  if (layers.length === 0) return 'Select the layers to merge.';
+  const into = model.tables.layers.get(target);
+  if (!into) return `No layer ${target}.`;
+  if (isXref(into)) return 'Cannot merge into an xref-dependent layer.';
+  for (const l of layers) {
+    const why =
+      l.handle === target
+        ? 'it is the target layer'
+        : isFixed(l)
+          ? 'layer 0 and Defpoints cannot be merged'
+          : isCurrent(model, l)
+            ? 'it is the current layer'
+            : isXref(l)
+              ? 'it is xref-dependent'
+              : model.passthroughLayers.has(l.handle)
+                ? 'it has objects Triya cannot edit yet'
+                : undefined;
+    if (why) return `Layer "${l.name}" was not merged: ${why}.`;
+  }
+  const gone = new Set(layers.map((l) => l.handle));
+  for (const e of model.entities()) {
+    const g = e.geom;
+    const attributes =
+      g.kind === 'INSERT' && g.attributes.some((a) => gone.has(a.layer))
+        ? g.attributes.map((a) => (gone.has(a.layer) ? { ...a, layer: target } : a))
+        : undefined;
+    const frozen =
+      g.kind === 'VIEWPORT' && g.frozenLayers.some((h) => gone.has(h))
+        ? g.frozenLayers.filter((h) => !gone.has(h))
+        : undefined;
+    const patch = {
+      ...(gone.has(e.layer) && { layer: target }),
+      ...(attributes && g.kind === 'INSERT' && { geom: { ...g, attributes } }),
+      ...(frozen && g.kind === 'VIEWPORT' && { geom: { ...g, frozenLayers: frozen } }),
+    };
+    if (Object.keys(patch).length > 0) b.updateEntity(e.id, patch);
+  }
+  for (const h of gone) b.removeTableRecord('layers', h);
+  dropLayersFromStates(b, gone);
+  return undefined;
+}
+
+/**
+ * Why LAYDEL or LAYMRG cannot take `l` from the drawing, or undefined. AutoCAD's help names no
+ * layer they refuse; both purge the layer, so they refuse what the manager's Delete Layer does
+ * (layer 0, Defpoints, the current layer and an xref's layers), as Merge Selected Layer(s) to.
+ */
+export function layerRemovalProblem(
+  model: DocumentModel,
+  l: LayerRecord,
+  verb: 'deleted' | 'merged',
+): string | undefined {
+  if (isFixed(l)) return `Layer "${l.name}" cannot be ${verb}.`;
+  if (isCurrent(model, l)) return `Layer "${l.name}" is the current layer and cannot be ${verb}.`;
+  if (isXref(l)) return `Layer "${l.name}" is xref-dependent and cannot be ${verb}.`;
+  // An object Triya keeps without mapping can be neither erased nor moved.
+  if (model.passthroughLayers.has(l.handle))
+    return `Layer "${l.name}" has objects Triya cannot edit yet and cannot be ${verb}.`;
+  return undefined;
+}
+
+/**
+ * LAYDEL (AutoCAD Help, "LAYDEL (Command)": "Deletes all objects on a layer and purges the
+ * layer. This command also changes block definitions that use the layer to be deleted."): every
+ * object on `handles`, in model space, the layouts and every block definition, erased as ERASE
+ * erases it (whatever refers to it lets go), a block reference's attributes on them dropped, the
+ * layers out of the viewports and layer states and purged. All or nothing: undefined when done,
+ * otherwise why not, with nothing built.
+ */
+export function deleteLayersWithObjects(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  handles: readonly Handle[],
+): string | undefined {
+  const layers = layersOf(model, handles);
+  if (typeof layers === 'string') return layers;
+  if (layers.length === 0) return 'Select the layers to delete.';
+  for (const l of layers) {
+    const why = layerRemovalProblem(model, l, 'deleted');
+    if (why) return why;
+  }
+  const gone = new Set(layers.map((l) => l.handle));
+  const on = [...model.entities()].filter((e) => gone.has(e.layer));
+  // A layout's own paper-space view (VIEWPORT id 1) is not an object the drafter can erase.
+  const sheet = on.find((e) => e.geom.kind === 'VIEWPORT' && e.geom.id === 1);
+  if (sheet) {
+    const l = model.tables.layers.get(sheet.layer)!;
+    return `Layer "${l.name}" holds a layout's paper-space view and cannot be deleted.`;
+  }
+  // A layer's viewport overrides name their viewport, which cannot be erased yet (M1-62).
+  const overridden = new Set<Handle>();
+  for (const l of model.tables.layers.values())
+    for (const o of l.viewportOverrides ?? []) overridden.add(o.viewport);
+  const kept = on.find((e) => overridden.has(e.handle));
+  if (kept) {
+    const l = model.tables.layers.get(kept.layer)!;
+    return `Layer "${l.name}" holds a viewport with layer overrides, which cannot be erased yet.`;
+  }
+  eraseObjects(
+    b,
+    model,
+    on.map((e) => e.id),
+  );
+  // A group LAYDEL leaves with no objects goes too: it would select nothing, and a reader's
+  // audit (ezdxf: "Removed empty group") drops an empty GROUP anyway. Ambiguity: AutoCAD's help
+  // says nothing; its REMOVE from a group keeps a group however few it keeps (removeFromGroup).
+  const counts = new Map(groupsOf(model).map((g) => [g.handle, g.entities.length]));
+  for (const g of groupsOf(b))
+    if (g.entities.length === 0 && (counts.get(g.handle) ?? 0) > 0) explodeGroup(b, model, g);
+  for (const e of model.entities()) {
+    // As ERASE left it: an erased object is gone, a kept one may have let go of one erased.
+    const g = b.entity(e.id)?.geom;
+    if (!g) continue;
+    if (g.kind === 'INSERT' && g.attributes.some((a) => gone.has(a.layer)))
+      b.updateEntity(e.id, {
+        geom: { ...g, attributes: g.attributes.filter((a) => !gone.has(a.layer)) },
+      });
+    if (g.kind === 'VIEWPORT' && g.frozenLayers.some((h) => gone.has(h)))
+      b.updateEntity(e.id, {
+        geom: { ...g, frozenLayers: g.frozenLayers.filter((h) => !gone.has(h)) },
+      });
+  }
+  for (const h of gone) b.removeTableRecord('layers', h);
+  dropLayersFromStates(b, gone);
+  return undefined;
 }

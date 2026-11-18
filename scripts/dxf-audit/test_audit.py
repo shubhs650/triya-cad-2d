@@ -89,6 +89,32 @@ class JudgeTest(unittest.TestCase):
         # and -INSERT (M5-01 part 1), and WBLOCK's new drawing of its model space (M5-01 part 4).
         self.assertEqual(report.checked, 32)
 
+    def test_fixture_saves_are_checked_with_no_exceptions(self) -> None:
+        # M5-04 part 2: the xref bind saves, which are no corpus file's.
+        fixtures = (("fixtures/x.dxf", "bind"), ("fixtures/x.dxf", "gone"))
+        name = gate.save_name("fixtures/x.dxf", "bind")
+        (self.saves / name).write_text("")
+        report = gate.judge(
+            FILES,
+            self.saves,
+            Path("/corpus"),
+            {},
+            fake_audit({name: [gate.Finding("audit", 202, "Deleted IMAGEDEF")]}),
+            lambda _save, _x: None,
+            {},
+            fixtures,
+        )
+        # The corpus saves of the test above (32 with WBLOCK's, M5-01 part 4) and the fixture's.
+        self.assertEqual(report.checked, 33)
+        self.assertEqual(
+            report.failures,
+            [
+                f"{name}: audit 202 Deleted IMAGEDEF",
+                f"{gate.save_name('fixtures/x.dxf', 'gone')}: missing (did the testkit suites run "
+                "with TRIYA_DXF_AUDIT_DIR?)",
+            ],
+        )
+
     def test_any_recover_or_audit_finding_fails(self) -> None:
         name = gate.save_name(DXF, "edited")
         report = self.run_judge({name: [gate.Finding("audit", 202, "Deleted FIELD")]})
