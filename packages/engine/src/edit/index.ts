@@ -141,6 +141,7 @@ export * from './spelling';
 export * from './tolerance-frame';
 export { detachXrefs, xrefDetachChange, xrefDetachProblem } from './xrefs';
 export { bindXrefs, xrefBindChange, xrefBindProblem } from './xref-bind';
+export { xrefWrite, contentHandles, type XrefWrite } from './xref-save';
 export {
   XBIND_TABLES,
   xbindChange,

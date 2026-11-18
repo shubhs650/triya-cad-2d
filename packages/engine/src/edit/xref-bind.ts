@@ -187,6 +187,7 @@ export function bindXrefs(
     b.updateBlock(h, {
       xrefPath: undefined,
       xrefLoaded: undefined,
+      xrefHandles: undefined,
       ...(def.flags !== undefined ? { flags: def.flags & ~(XREF_BITS | DEPENDENT_BITS) } : {}),
     });
   }

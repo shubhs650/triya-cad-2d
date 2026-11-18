@@ -15,6 +15,8 @@ import type {
   TextGeometry,
 } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
+import type { ChangeSet } from '../../model/changeset';
+import type { DocumentInit } from '../../model/document';
 import type { ClipboardPicture } from '../../edit/picture';
 import type { SheetCells } from '../../edit/spreadsheet';
 import type { UndoView } from '../undo';
@@ -188,6 +190,24 @@ export type ViewRequest =
    * over: `drawing`'s objects, or without it the whole drawing as Save would write it.
    */
   | { readonly op: 'writeBlock'; readonly file: string; readonly drawing?: BlockDrawing }
+  /**
+   * REFCLOSE Save of an xref edited in place (M5-02 part 6): the xref `block`'s file as it is
+   * now, which the app finds by the name of its saved path among the files that answered xrefs,
+   * read again and answered as `xrefDrawing`; none when it holds no such file.
+   */
+  | { readonly op: 'xrefDrawing'; readonly block: Handle }
+  /**
+   * REFCLOSE Save of an xref (M5-02 part 6): the app writes `changes` (made on the drawing the
+   * `xrefDrawing` request answered, in its handles) to the xref's file, saved as Save writes a
+   * drawing (an AC1032 DXF from the file's own bytes): in place where it may, else downloaded.
+   */
+  | {
+      readonly op: 'writeXref';
+      readonly block: Handle;
+      /** The xref's saved path. */
+      readonly file: string;
+      readonly changes: readonly ChangeSet[];
+    }
   /**
    * BEDIT and BCLOSE (M5-02 part 1): the app shows the Block Editor on the definition `block`
    * (named `name`), or without one closes it and shows again the space it showed before.
@@ -524,6 +544,13 @@ export type ViewReply =
        * selected view's window, which VIEW shows while it asks for a new one.
        */
       readonly boundary?: { readonly a: Vec2; readonly b: Vec2 };
+      /** What an `xrefDrawing` request read: the file's name and its drawing (M5-02 part 6). */
+      readonly xrefDrawing?: { readonly name: string; readonly init: DocumentInit };
+      /**
+       * Where a `writeXref` request wrote the xref's file: in place, or `downloaded` (a file the
+       * browser lets the app read but not write, M5-02 part 6).
+       */
+      readonly written?: { readonly file: string; readonly downloaded: boolean };
       /** What a `drawingFile` request read: the file's name and its model space (M5-01). */
       readonly drawing?: { readonly name: string; readonly content: Clipboard };
       /** What a `clipboard` read found; absent when the Clipboard is empty. */
