@@ -81,6 +81,8 @@ interface CategoryRules {
   /** What AutoCAD's messages call one ("layer"), and several ("layers"). */
   readonly one: string;
   readonly many: string;
+  /** The Purge dialog's tree node ("Layers"), AutoCAD's. */
+  readonly title: string;
   /** The table holding the records; groups are objects. */
   readonly table?: TableName;
   /** Names AutoCAD never purges (purge.ts in @triya/io keeps the same list). */
@@ -93,6 +95,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   blocks: {
     one: 'block',
     many: 'blocks',
+    title: 'Blocks',
     table: 'blockRecords',
     fixed: [],
     header: ['$DIMBLK', '$DIMBLK1', '$DIMBLK2', '$DIMLDRBLK'],
@@ -100,14 +103,16 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   dimStyles: {
     one: 'dimension style',
     many: 'dimension styles',
+    title: 'Dimension Styles',
     table: 'dimStyles',
     fixed: ['Standard'],
     header: ['$DIMSTYLE'],
   },
-  groups: { one: 'group', many: 'groups', fixed: [], header: [] },
+  groups: { one: 'group', many: 'groups', title: 'Groups', fixed: [], header: [] },
   layers: {
     one: 'layer',
     many: 'layers',
+    title: 'Layers',
     table: 'layers',
     fixed: ['0', 'Defpoints'],
     header: ['$CLAYER'],
@@ -115,6 +120,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   linetypes: {
     one: 'linetype',
     many: 'linetypes',
+    title: 'Linetypes',
     table: 'linetypes',
     fixed: ['ByLayer', 'ByBlock', 'Continuous'],
     header: ['$CELTYPE', '$DIMLTYPE', '$DIMLTEX1', '$DIMLTEX2'],
@@ -122,6 +128,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   materials: {
     one: 'material',
     many: 'materials',
+    title: 'Materials',
     table: 'materials',
     fixed: ['ByLayer', 'ByBlock', 'Global'],
     header: ['$CMATERIAL'],
@@ -129,6 +136,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   mleaderStyles: {
     one: 'multileader style',
     many: 'multileader styles',
+    title: 'Multileader Styles',
     table: 'mleaderStyles',
     fixed: ['Standard'],
     header: ['CMLEADERSTYLE'],
@@ -136,6 +144,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   plotStyles: {
     one: 'plot style',
     many: 'plot styles',
+    title: 'Plot Styles',
     table: 'plotStyles',
     fixed: ['Normal'],
     header: [],
@@ -143,6 +152,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   textStyles: {
     one: 'text style',
     many: 'text styles',
+    title: 'Text Styles',
     table: 'textStyles',
     fixed: ['Standard'],
     header: ['$TEXTSTYLE', '$DIMTXSTY'],
@@ -150,6 +160,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   mlineStyles: {
     one: 'mline style',
     many: 'mline styles',
+    title: 'Multiline Styles',
     table: 'mlineStyles',
     fixed: ['Standard'],
     header: ['$CMLSTYLE'],
@@ -157,6 +168,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   tableStyles: {
     one: 'table style',
     many: 'table styles',
+    title: 'Table Styles',
     table: 'tableStyles',
     fixed: ['Standard'],
     header: ['CTABLESTYLE'],
@@ -164,6 +176,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   visualStyles: {
     one: 'visual style',
     many: 'visual styles',
+    title: 'Visual Styles',
     table: 'visualStyles',
     fixed: [
       '2dWireframe',
@@ -182,6 +195,7 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
   appIds: {
     one: 'registered application',
     many: 'registered applications',
+    title: 'Registered Applications',
     table: 'appIds',
     fixed: ['ACAD'],
     header: [],
@@ -525,17 +539,19 @@ const unitOf = (item: PurgeItem) =>
 
 /**
  * The items to purge: `chosen` (those of them purgeable now), and with `nested` whatever only
- * they and the others going use, until nothing more can go. In the order they go: blocks first,
- * so what is left purges the objects they held.
+ * they and the others going use, until nothing more can go; never one of `kept` (the Purge
+ * dialog's Confirm Purge skipped it, so what only it uses stays too). In the order they go:
+ * blocks first, so what is left purges the objects they held.
  */
 export function purgeClosure(
   model: DocumentModel,
   chosen: readonly Handle[],
   nested: boolean,
+  kept: ReadonlySet<Handle> = new Set(),
 ): PurgeItem[] {
   const uses = collectUses(model);
   const all = PURGE_CATEGORIES.flatMap((c) => itemsOf(model, c)).filter(
-    (i) => !fixedReason(model, i),
+    (i) => !fixedReason(model, i) && !kept.has(i.handle),
   );
   const users = new Map(all.map((i) => [i.handle, usersOf(model, uses, i)]));
   const wanted = new Set(chosen);
@@ -547,8 +563,10 @@ export function purgeClosure(
     for (let grew = true; grew;) {
       grew = false;
       for (const i of all) {
-        if (going.has(i.handle)) continue;
-        if ([...users.get(i.handle)!.keys()].every((u) => units.has(u))) {
+        // What nothing uses goes only when chosen: nested items are those the going ones use.
+        const by = [...users.get(i.handle)!.keys()];
+        if (going.has(i.handle) || by.length === 0) continue;
+        if (by.every((u) => units.has(u))) {
           going.set(i.handle, i);
           units.add(unitOf(i));
           grew = true;
@@ -558,6 +576,41 @@ export function purgeClosure(
   }
   const order = new Map(PURGE_CATEGORIES.map((c, n) => [c, n]));
   return [...going.values()].sort((a, b) => order.get(a.category)! - order.get(b.category)!);
+}
+
+/**
+ * The objects in model space and the layouts that use the item, directly or through what uses
+ * it (an insert of a block holding objects on a layer, a dimension of a style using a text
+ * style), and a group's members: the Purge dialog's Details and Select Objects ("selects the
+ * non-purgeable objects", AutoCAD Help, "Purge Dialog Box").
+ */
+export function objectsUsing(model: DocumentModel, item: Handle): Handle[] {
+  const uses = collectUses(model);
+  const out = new Set<Handle>();
+  const take = (h: Handle) => {
+    const e = model.entityByHandle(h);
+    if (e && spaceOf(model, e.owner)) out.add(h);
+  };
+  const g = model.objects.get(item);
+  if (g && isGroup(g)) for (const h of g.entities) take(h);
+  const seen = new Set([item]);
+  const queue = [item];
+  while (queue.length > 0) {
+    for (const [unit, by] of uses.get(queue.pop()!) ?? []) {
+      if (unit === 'space') for (const h of by) take(h);
+      else if (/^[bro]:/.test(unit) && !seen.has(unit.slice(2))) {
+        seen.add(unit.slice(2));
+        queue.push(unit.slice(2));
+      }
+    }
+  }
+  return [...out];
+}
+
+/** Whether `block` is model space or a layout's. */
+function spaceOf(model: DocumentModel, block: Handle): boolean {
+  const r = model.tables.blockRecords.get(block);
+  return r !== undefined && (isLayoutBlock(r) || r.handle === modelSpaceOf(model));
 }
 
 /** Purges `items` (from {@link purgeClosure}) into `b`. */

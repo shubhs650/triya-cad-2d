@@ -185,6 +185,7 @@ export {
   emptyTextObjects,
   isEmptyText,
   isZeroLength,
+  objectsUsing,
   purgeClosure,
   purgeInto,
   purgeState,

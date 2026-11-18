@@ -41,6 +41,7 @@ import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
 import type { PdfAttachAnswer, PdfAttachRequest } from './pdf-attach';
 import type { AttdefDefineAnswer, AttdefDefineRequest } from './attdef';
 import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
+import type { PurgeAnswer, PurgeConfirmRequest, PurgeRequest } from './purge';
 import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
 import type { BlockCloseRequest, BlockEditRequest } from './block-editor';
 import type { RefEditAnswer, RefEditRequest } from './refedit';
@@ -849,6 +850,9 @@ export type DialogRequest =
   | AttdefDefineRequest
   /** LAYWALK's LayerWalk (M5-06 part 4). */
   | LayerWalkRequest
+  /** PURGE's Purge dialog and its Confirm Purge (M5-09 part 2). */
+  | PurgeRequest
+  | PurgeConfirmRequest
   | XrefAttachRequest
   /** XBIND's Xbind dialog (M5-04 part 7). */
   | XbindRequest
@@ -1163,6 +1167,8 @@ export type PromptAnswer =
       readonly lineweight?: Lineweight;
       /** The LayerWalk dialog's settings, with its Purge or Save Layer State (M5-06 part 4). */
       readonly laywalk?: LayerWalkAnswer;
+      /** The Purge dialog's view, options and what to purge, or Confirm Purge's (M5-09 part 2). */
+      readonly purge?: PurgeAnswer;
     }
   | { readonly kind: 'enter' }
   /** Esc at a prompt that takes it (`escape`). */
