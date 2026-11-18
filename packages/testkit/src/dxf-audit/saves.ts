@@ -41,6 +41,8 @@ export type AuditSaveKind =
   | 'xattach'
   // XBIND of the xref set's block and layers (M5-04 part 7).
   | 'xbind'
+  // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).
+  | 'wblock'
   // PDFATTACH on ezdxf's colors.dxf (no underlays) and the underlay fixture (M5-04 part 8).
   | 'pdfattach';
 

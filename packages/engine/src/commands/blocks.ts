@@ -14,6 +14,16 @@
 //            Enter attribute values                                       (ATTREQ 1)
 //   BASE     Enter base point <0.0000,0.0000,0.0000>:
 //
+// A drawing file as the block (M5-01 part 4, AutoCAD Help "-INSERT (Command)": "name=file"
+// "inserts a drawing file as a block named name"; "About Inserting Blocks"): -INSERT's
+// `name=file` (`name=` takes the file of the block's own name), and a name no block has, read
+// the drawing file, whose model space becomes the block, based at its $INSBASE, in its units;
+// INSERT's Browse... picks the file in the dialog. A block of the name already there is
+// redefined from the file at the command line's "Block "NAME" already exists. Redefine it?
+// [Yes/No] <No>" (No inserts the block as it is) and at the dialog's Redefine Block question.
+// The browser reads no folder by itself, so the app finds a typed file among the drawings open
+// and the files given for xrefs; "File "NAME" not found." otherwise.
+//
 // BLOCK opens the Block Definition dialog (M5-01 part 2, below), INSERT the Insert dialog (part
 // 3, below). What the blocks and references are made of is `edit/blocks.ts`'s.
 //
@@ -55,6 +65,7 @@ import {
   type BlockSettings,
 } from '../edit/blocks';
 import { refusalMessages } from '../edit/edit';
+import { blockFromClipboard, clipboardHoldsBlock, type Clipboard } from '../edit/clipboard';
 import { followedBy, moveBy, scaleAbout, turnAbout } from '../edit/similarity';
 import { transformGeometry } from '../edit/transform';
 import { isXrefRecord } from '../model/xref';
@@ -507,7 +518,20 @@ export function insertCommand(): CommandDef {
       const typed = yield* insertName(ctx);
       if (typed === undefined) return;
       const explode = typed.startsWith('*');
-      const name = explode ? typed.slice(1).trim() : typed;
+      let name = explode ? typed.slice(1).trim() : typed;
+      // name=file, or a name no block has: the drawing file (M5-01 part 4).
+      const eq = name.indexOf('=');
+      const file =
+        eq >= 0
+          ? name.slice(eq + 1).trim() || name.slice(0, eq).trim()
+          : name !== '' && !insertableBlock(ctx, name)
+            ? name
+            : undefined;
+      if (file !== undefined) {
+        name = eq >= 0 ? name.slice(0, eq).trim() : fileBlockName(file);
+        const loaded = yield* fileBlock(ctx, name, file, eq >= 0);
+        if (!loaded) return;
+      }
       const refusal = insertRefusal(ctx, name);
       if (refusal) {
         ctx.message(refusal);
@@ -519,6 +543,87 @@ export function insertCommand(): CommandDef {
       yield* insertBlock(ctx, r, { explode, uniform: explode || r.scalable === false });
     },
   };
+}
+
+/** The block `name` names, when it has contents and is no xref. */
+function insertableBlock(ctx: CommandContext, name: string): BlockTableRecord | undefined {
+  const r = blockNamed(ctx.model, name);
+  return r && ctx.model.hasBlock(r.handle) && !isXrefRecord(r) ? r : undefined;
+}
+
+/** The block a drawing file makes: its name without folders and extension. */
+export function fileBlockName(file: string): string {
+  const base = file.split(/[\\/]/).pop() ?? file;
+  return base.replace(/\.(dxf|dwg)$/i, '').trim();
+}
+
+/**
+ * -INSERT's drawing file as block `name` (`typed`: as `name=file`, else a name no block has):
+ * asks before redefining a block of the name (No keeps it, to be inserted as it is), then reads
+ * the file through the app and makes the block. Returns false when nothing is to be inserted.
+ */
+async function* fileBlock(
+  ctx: CommandContext,
+  name: string,
+  file: string,
+  typed: boolean,
+): Sub<boolean> {
+  // A name no block has is a block not found, unless a drawing file of that name answers it.
+  const notFound = `Block "${name}" not found.`;
+  const problem = blockNameProblem(name);
+  if (problem) {
+    ctx.message(typed ? problem : notFound);
+    return false;
+  }
+  const existing = blockNamed(ctx.model, name);
+  if (existing && isXrefRecord(existing)) {
+    ctx.message(`Block "${existing.name}" is an external reference.`);
+    return false;
+  }
+  if (existing && ctx.model.hasBlock(existing.handle)) {
+    const a = yield ctx.prompt.keyword({
+      message: `Block "${existing.name}" already exists. Redefine it?`,
+      options: ['Yes', 'No'],
+      default: { kind: 'keyword', keyword: 'No' },
+    });
+    if ((a as { readonly keyword: string }).keyword !== 'Yes') return true;
+  }
+  const reply = await ctx.view.request({ op: 'drawingFile', file });
+  if (!reply.ok || !reply.drawing) {
+    // A file found that cannot be read says why; one not found, what the drafter asked for.
+    ctx.message(!reply.ok ? reply.message : typed ? `File "${file}" not found.` : notFound);
+    return false;
+  }
+  return blockOfDrawing(ctx, name, reply.drawing.content);
+}
+
+/** Why a drawing file cannot be block `name` (the Insert dialog's note). */
+function drawingRefusal(ctx: CommandContext, name: string, content: Clipboard): string | undefined {
+  const problem = blockNameProblem(name);
+  if (problem) return problem;
+  const existing = blockNamed(ctx.model, name);
+  if (existing && isXrefRecord(existing))
+    return `Block "${existing.name}" is an external reference.`;
+  if (clipboardHoldsBlock(content, name)) return `Block "${name}" references itself.`;
+  return undefined;
+}
+
+/** Block `name` made, or redefined, from a drawing's contents; false when it would hold itself. */
+function blockOfDrawing(ctx: CommandContext, name: string, content: Clipboard): boolean {
+  if (clipboardHoldsBlock(content, name)) {
+    ctx.message(`Block "${name}" references itself.`);
+    return false;
+  }
+  let refused: ReadonlyMap<string, number> = new Map();
+  let redefined = false;
+  ctx.edit((b) => {
+    const made = blockFromClipboard(b, ctx.model, content, name);
+    refused = made.refused;
+    redefined = made.redefined;
+  });
+  if (redefined) ctx.message(`Block "${name}" redefined.`);
+  for (const line of refusalMessages(refused, 'put in the block')) ctx.message(line);
+  return true;
 }
 
 /** Why `name` cannot be inserted: no such block, or an external reference. */
@@ -776,13 +881,30 @@ export interface InsertDialogRequest {
   readonly settings: InsertDialogSettings;
   /** The drawing's blocks (insertable, by name). */
   readonly blocks: readonly InsertBlockEntry[];
+  /** The drawing's `$INSUNITS`, which a drawing file's units convert into (Block Unit). */
+  readonly units: number;
+  /** The drawing file Browse... picked before the dialog last closed, still the one named. */
+  readonly file?: string;
   /** Why the last OK placed nothing ("Block "X" not found."). */
   readonly note?: string;
+}
+
+/**
+ * The drawing file Browse... picked (M5-01 part 4): its file name and model space
+ * (`drawingContent`); without `content`, the one the dialog was opened with (`file`).
+ */
+export interface InsertDialogFile {
+  readonly file: string;
+  readonly content?: Clipboard;
+  /** The answer to Redefine Block where the drawing has a block of the name: No inserts it. */
+  readonly redefine: boolean;
 }
 
 /** The Insert dialog's answer: its fields as OK closed it. */
 export interface InsertDialogAnswer {
   readonly settings: InsertDialogSettings;
+  /** The block is this drawing file's (Browse...). */
+  readonly drawing?: InsertDialogFile;
 }
 
 /** The settings the Insert dialog closed with last, per drawing. */
@@ -838,6 +960,8 @@ async function* insertDialog(ctx: CommandContext): Sub<void> {
     name,
   };
   let note: string | undefined;
+  /** The drawing file Browse... picked, kept while the dialog opens again with a note. */
+  let picked: { readonly file: string; readonly content: Clipboard } | undefined;
   for (;;) {
     const a = yield ctx.prompt.dialog({
       message: 'Insert',
@@ -845,6 +969,8 @@ async function* insertDialog(ctx: CommandContext): Sub<void> {
         type: 'insert',
         settings,
         blocks: blocks.map((r) => insertEntry(ctx, r)),
+        units: insUnitsOf(ctx.model),
+        ...(picked && { file: picked.file }),
         ...(note !== undefined && { note }),
       },
     });
@@ -852,7 +978,15 @@ async function* insertDialog(ctx: CommandContext): Sub<void> {
       return;
     }
     settings = a.insert.settings;
-    note = insertRefusal(ctx, settings.name.trim());
+    const drawing = a.insert.drawing;
+    const content =
+      drawing?.content ?? (drawing?.file === picked?.file ? picked?.content : undefined);
+    picked = drawing && content ? { file: drawing.file, content } : undefined;
+    note = picked ? drawingRefusal(ctx, settings.name.trim(), picked.content) : undefined;
+    if (!note && picked && (drawing!.redefine || !insertableBlock(ctx, settings.name.trim()))) {
+      if (!blockOfDrawing(ctx, settings.name.trim(), picked.content)) return;
+    }
+    note ??= insertRefusal(ctx, settings.name.trim());
     const r = note ? undefined : blockNamed(ctx.model, settings.name.trim())!;
     const uniform = settings.uniformScale || settings.explode || r?.scalable === false;
     const s = settings.scale;

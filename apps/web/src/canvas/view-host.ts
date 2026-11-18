@@ -153,6 +153,13 @@ export interface ViewContext {
     action: 'unload' | 'reload' | 'attach',
     blocks: readonly Handle[],
   ) => Promise<ViewReply>;
+  /**
+   * -INSERT `name=file` (M5-01 part 4): the drawing file of that name among the drawings open
+   * and the files given for xrefs, its model space answered as `drawing`; none found, no drawing.
+   */
+  readonly drawingFile?: (file: string) => Promise<ViewReply>;
+  /** WBLOCK (M5-01 part 4): the app writes the new drawing file and hands it over. */
+  readonly writeBlock?: (r: Extract<ViewRequest, { op: 'writeBlock' }>) => Promise<ViewReply>;
   /** ULAYERS (M2-56 part 1): the Underlay Layers dialog, answered when it closes. */
   readonly underlayLayers?: (
     r: Extract<ViewRequest, { op: 'underlayLayers' }>,
@@ -195,6 +202,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'xref') {
     return ctx.xref ? ctx.xref(r.action, r.blocks) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'drawingFile') {
+    return ctx.drawingFile ? ctx.drawingFile(r.file) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'writeBlock') {
+    return ctx.writeBlock ? ctx.writeBlock(r) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };

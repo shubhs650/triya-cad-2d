@@ -82,7 +82,13 @@ import {
 } from '../model/types';
 import { insUnitsOf, insUnitsScale } from '../model/units';
 import { DIMVAR_REFERENCES, HANDLE_KEYS, isXrefRecord, renumber } from '../model/xref';
-import { AnonymousNames, copyProblem, transformObjects, type EditReport } from './edit';
+import {
+  AnonymousNames,
+  copyProblem,
+  eraseObjects,
+  transformObjects,
+  type EditReport,
+} from './edit';
 import { followedBy, moveBy, scaleAbout, type Similarity } from './similarity';
 
 /** The definitions the Clipboard carries, by table, as the source holds them. */
@@ -927,4 +933,71 @@ export function pasteAsBlock(
     },
   });
   return { ids: [ref.id], refused: new Map(), unannotated: 0 };
+}
+
+/**
+ * A drawing as a block (M5-01 part 4: INSERT's Browse..., -INSERT `name=file`, AutoCAD Help
+ * "About Inserting Blocks": "the inserted drawing's model space objects become a block
+ * definition"): what its model space holds, based at its `$INSBASE`, in its units, as the
+ * Clipboard carries objects between drawings. Objects the Clipboard cannot carry are counted in
+ * `refused`.
+ */
+export function drawingContent(model: DocumentModel): ClipboardCopy {
+  let space: Handle | undefined;
+  for (const r of model.tables.blockRecords.values()) {
+    if (r.name.toUpperCase() === '*MODEL_SPACE') space = r.handle;
+  }
+  const ids = space === undefined ? [] : model.blockEntities(space);
+  const base = model.header.get('$INSBASE') as { x?: unknown; y?: unknown } | undefined;
+  const at = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return copyToClipboard(model, ids, { x: at(base?.x), y: at(base?.y) });
+}
+
+/** True when the Clipboard brings a block named `name` (case aside) with it. */
+export function clipboardHoldsBlock(clip: Clipboard, name: string): boolean {
+  const upper = name.trim().toUpperCase();
+  return (clip.tables.blockRecords ?? []).some((r) => r.name.toUpperCase() === upper);
+}
+
+export interface ClipboardBlockReport extends EditReport {
+  /** The block's record. */
+  readonly block: Handle;
+  /** True when the drawing's block of the name was redefined. */
+  readonly redefined: boolean;
+}
+
+/**
+ * The Clipboard's objects (a drawing's, `drawingContent`) as block `name`, as they lie, based at
+ * the Clipboard's base point, in its units; the drawing's block of that name, if any, redefined
+ * (its contents replaced, every reference drawing the new ones). Blocks the objects use that the
+ * drawing has by name are the drawing's, as a paste takes them. The caller has checked the name,
+ * that the drawing's block of the name is no xref, and that the Clipboard brings no block of the
+ * name (`clipboardHoldsBlock`), which would hold itself.
+ */
+export function blockFromClipboard(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  clip: Clipboard,
+  name: string,
+): ClipboardBlockReport {
+  const upper = name.trim().toUpperCase();
+  const existing = [...model.tables.blockRecords.values()].find(
+    (r) => r.name.toUpperCase() === upper && model.hasBlock(r.handle),
+  );
+  const units = clip.insUnits ?? 0;
+  let block: Handle;
+  if (existing) {
+    block = existing.handle;
+    eraseObjects(b, model, b.blockEntities(block));
+    b.updateBlock(block, { basePoint: clip.base });
+    if (existing.units !== units) b.updateTableRecord('blockRecords', block, { units });
+  } else {
+    block = b.addBlock({
+      name: name.trim(),
+      basePoint: clip.base,
+      ...(units !== 0 ? { units } : {}),
+    }).handle;
+  }
+  const report = pasteInto(b, model, clip, block);
+  return { ...report, block, redefined: existing !== undefined };
 }

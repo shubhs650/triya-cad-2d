@@ -1,8 +1,9 @@
 // What the I/O worker exposes over Comlink (ARCHITECTURE.md §3). Pure functions of their
 // arguments, so the same object runs behind a real Worker or, in tests, a MessageChannel.
-import type { ChangeSet } from '@triya/engine';
+import type { ChangeSet, Clipboard, HeaderValue } from '@triya/engine';
 import * as Comlink from 'comlink';
 import { saveSession } from '../export/save';
+import { writeBlockDrawing } from '../export/write-block';
 import { openDocument, type OpenedDocument } from '../map/document';
 import {
   detectFormat,
@@ -77,6 +78,18 @@ export const ioApi = {
     await onProgress?.({ stage: 'write', fraction: 0 });
     const out = saveSession(bytes, changes, format);
     await onProgress?.({ stage: 'done', fraction: 1 });
+    return Comlink.transfer(out, [out.buffer]);
+  },
+
+  /**
+   * WBLOCK (M5-01 part 4): a new AC1032 DXF holding `content`'s objects, based at its origin,
+   * with `header`'s variables (`writeBlockDrawing`).
+   */
+  async writeBlock(
+    content: Clipboard,
+    header: Readonly<Record<string, HeaderValue>>,
+  ): Promise<Uint8Array> {
+    const out = writeBlockDrawing(content, header);
     return Comlink.transfer(out, [out.buffer]);
   },
 };

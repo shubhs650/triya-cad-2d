@@ -59,6 +59,7 @@ import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { BLOCK_COMMANDS } from './blocks';
+import { wblockCommand } from './wblock';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
 import { qselectCommand } from './qselect';
@@ -170,6 +171,7 @@ export function builtinCommands(): CommandRegistry {
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
     ...BLOCK_COMMANDS.map((make) => make()),
+    wblockCommand(),
     ...PALETTE_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
     ...UNITS_COMMANDS.map((make) => make()),

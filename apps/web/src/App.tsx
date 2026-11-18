@@ -128,6 +128,10 @@ import { hatchPatternListReply, hatchPatternNames, hatchPatternReply } from './h
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
+import { drawingFileReply, type HeldDrawing } from './block-files';
+import { writeBlockFile } from './block-file-io';
+import { drawingFileModel, openDrawingModel } from './dimstyle-import';
+import { EXPORT_MEDIA } from './export';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import { Pwa, type ContainerLike, type InstallPromptLike } from './pwa';
 import { InstallButton, OfflineStatus, UpdateBanner } from './PwaChrome';
@@ -511,6 +515,21 @@ function viewContext(id: number): ViewContext {
         underlays: r.underlays,
         ...(r.current !== undefined && { current: r.current }),
       }),
+    // -INSERT name=file (M5-01 part 4): a drawing open, or a file given for xrefs.
+    drawingFile: (file) => drawingFileReply(file, heldDrawings()),
+    // WBLOCK (M5-01 part 4): its new drawing, or the whole drawing as EXPORT's DXF, downloaded.
+    writeBlock: async (r) => {
+      try {
+        const bytes = r.drawing ? await writeBlockFile(r.drawing) : await exportDxf(id);
+        download(r.file, bytes, EXPORT_MEDIA.dxf);
+        return { ok: true, file: r.file };
+      } catch (e) {
+        return {
+          ok: false,
+          message: `${r.file} was not written: ${e instanceof Error ? e.message : String(e)}`,
+        };
+      }
+    },
     // -XREF Unload and Reload (M5-04), as the References palette's buttons; XATTACH's load of
     // the xref it attached (M5-04 part 6).
     xref: async (action, blocks) => ({
@@ -1194,6 +1213,23 @@ async function supplyNow(sources: readonly Supplied[], mode: 'drop' | 'reference
     // What the loads brought in may be in a kept folder.
     if (used.size) void resolveKept();
   }
+}
+
+/**
+ * The drawings -INSERT `name=file` finds by name (M5-01 part 4): those open, as their engines hold
+ * them now, then the files that answered xrefs this session.
+ */
+function heldDrawings(): HeldDrawing[] {
+  return [
+    ...store.getSnapshot().docs.map((d) => ({
+      name: d.name,
+      model: () => openDrawingModel(d, engines.changesOf(d.id)),
+    })),
+    ...[...xrefSources.values()].map((f) => ({
+      name: f.name,
+      model: async () => drawingFileModel(await f.getFile()),
+    })),
+  ];
 }
 
 /**

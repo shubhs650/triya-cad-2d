@@ -5105,6 +5105,31 @@ button {
   width: min(420px, calc(100vw - 32px));
 }
 
+/* M5-01 part 4: the Insert dialog's Browse... and Path, and the Write Block dialog's Source. */
+.insert-dialog-browse {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.insert-dialog-path {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.write-block-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: center;
+}
+
+.write-block-sources > select {
+  min-width: 10em;
+  max-width: 100%;
+}
+
 /* M4-17: spell checking as you type. MTEXT's misspelled words are a CSS highlight over its DOM;
    TEXT's line lays a copy of its text, transparent but for the underlines, under the input. */
 ::highlight(triya-spelling),
