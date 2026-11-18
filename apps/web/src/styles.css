@@ -5096,6 +5096,59 @@ button {
   flex: 1 1 auto;
 }
 
+.attdef-define {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.attdef-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.attdef-column {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.attdef-define .attdef-column .cad-dialog-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.attdef-define .attdef-column .cad-dialog-field > span {
+  flex: none;
+  min-width: 7.5em;
+}
+
+.attdef-define .attdef-column .cad-dialog-field > input[type='text'],
+.attdef-define .attdef-column .cad-dialog-field > select,
+.attdef-define .attdef-column .cad-dialog-field > textarea {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 4em;
+}
+
+.attdef-picked {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.attdef-picked > button {
+  flex: none;
+  min-width: 2em;
+}
+
+.attdef-define textarea {
+  resize: vertical;
+}
+
+.attdef-align-below {
+  margin: 8px 0 0;
+}
+
 .block-definition-groups {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));

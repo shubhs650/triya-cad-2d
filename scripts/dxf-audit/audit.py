@@ -75,6 +75,9 @@ FIXTURE_SAVES = (
     # packages/testkit/src/underlay/pdf-attach.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "pdfattach"),
     ("fixtures/underlay/pdf-underlay.dxf", "pdfattach"),
+    # ATTDEF's definitions, a block of them and a reference (M5-03 part 1,
+    # packages/testkit/src/attributes/attdef.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "attdef"),
     # LINETYPE's loads (text linetypes too), reload and delete on ezdxf's colors.dxf (M5-08
     # part 1, packages/testkit/src/layers/linetype-load.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "linetype"),

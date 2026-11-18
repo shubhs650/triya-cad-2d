@@ -46,6 +46,9 @@ describe('palette search', () => {
       'ARRAYPATH',
       'ARRAYPOLAR',
       'ARRAYRECT',
+      // M5-03 part 1: ATTDEF and ATTDISP.
+      'ATTDEF',
+      'ATTDISP',
       'ATTEDIT',
       // M5-01 part 1: blocks made and inserted at the command line, and BASE.
       'BASE',

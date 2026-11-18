@@ -56,6 +56,7 @@ import { FieldDialog } from './FieldDialog';
 import { ToleranceDialog } from './ToleranceDialog';
 import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 import { BlockDefinitionDialog } from './BlockDefinitionDialog';
+import { AttdefDialog } from './AttdefDialog';
 import { InsertDialog } from './InsertDialog';
 import { BlockChangesNotSavedDialog, EditBlockDefinitionDialog } from './BlockEditorDialogs';
 import { WriteBlockDialog } from './WriteBlockDialog';
@@ -80,8 +81,9 @@ const answer = (doc: number, a: PromptAnswer) =>
 const cancel = (doc: number) => engines.command(doc, { kind: 'cancel' });
 
 /** A multiline value as its text area shows it: one line per `\P` paragraph. */
-const shownValue = (v: string, multiline: boolean) => (multiline ? v.replace(/\\P/g, '\n') : v);
-const storedValue = (v: string, multiline: boolean) =>
+export const shownValue = (v: string, multiline: boolean) =>
+  multiline ? v.replace(/\\P/g, '\n') : v;
+export const storedValue = (v: string, multiline: boolean) =>
   multiline ? v.replace(/\r?\n/g, '\\P') : v.replace(/\r?\n/g, ' ');
 
 export function AttributeDialogs({
@@ -203,6 +205,8 @@ export function AttributeDialogs({
       return <XrefAttachDialog key={key} doc={doc.id} request={d} files={xrefFiles} />;
     case 'xbind':
       return <XbindDialog key={key} doc={doc.id} request={d} />;
+    case 'attdefine':
+      return <AttdefDialog key={key} doc={doc.id} request={d} />;
     case 'linetype':
       return (
         <LinetypeManagerDialog
