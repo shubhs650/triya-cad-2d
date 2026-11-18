@@ -213,6 +213,27 @@ describe('inserts', () => {
     expect(r.hitTest({ x: 80, y: 25 }, 2)).toEqual([]);
   });
 
+  it('says which nested object a pick hit inside an insert, through nesting (M5-06 part 5)', () => {
+    const { d, r } = setup([
+      lineInB(),
+      inB('51', line(0, 0, 0, 1)),
+      entity('52', insertOf(B, { position: { x: 2, y: 0 } }), { owner: N }),
+      entity('20', insertOf(N, { position: { x: 3, y: 0 } })),
+      entity('21', line(0, 2, 10, 2)),
+    ]);
+    const id = (h: string) => d.model.ids.idOf(h)!;
+    const handles = (path: readonly number[] | undefined) =>
+      path?.map((p) => d.model.ids.handleOf(p));
+    // Screen (55, 25) is world (5.5, 0), on B's line through N's insert of B at (5, 0).
+    expect(handles(r.nestedHit({ x: 55, y: 25 }, 2, id('20'))?.path)).toEqual(['20', '52', '50']);
+    // Screen (50, 20) is world (5, 0.5), on B's other line.
+    expect(handles(r.nestedHit({ x: 50, y: 20 }, 2, id('20'))?.path)).toEqual(['20', '52', '51']);
+    // World (8, 0): near nothing in it.
+    expect(r.nestedHit({ x: 80, y: 25 }, 2, id('20'))).toBeNull();
+    // Not a block reference.
+    expect(r.nestedHit({ x: 50, y: 5 }, 2, id('21'))).toBeNull();
+  });
+
   it('draws nothing for an invisible insert', () => {
     const { redraw } = setup([lineInB(), entity('20', insertOf(B), { visible: false })]);
     expect(redraw().named('moveTo')).toHaveLength(0);

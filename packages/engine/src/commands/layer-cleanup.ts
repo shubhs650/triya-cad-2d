@@ -21,14 +21,17 @@
 // an xref's layers) when it is picked, and LAYMRG an xref-dependent target. The warning's
 // wording follows AutoCAD's ("******** WARNING ********", "You are about to …"); its help does
 // not quote it, so the lines naming several layers are Triya's.
+//
+// A pick on a block reference or an xref takes the layer of the object picked inside it (M5-06
+// part 5, `nested-pick.ts`), for the layers and the target alike.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { ChangeSetBuilder } from '../model/builder';
-import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { LayerRecord } from '../model/types';
 import type { LayerListRequest } from './prompt';
 import { deleteLayersWithObjects, layerRemovalProblem, mergeLayers } from '../edit/layer-manager';
+import { pickedLayer } from './nested-pick';
 
 /** DXF 70 bit 16: a layer that came in with an xref. */
 const XREF_DEPENDENT = 16;
@@ -37,11 +40,6 @@ type Asking<T> = AsyncGenerator<Prompt, T | undefined, PromptAnswer>;
 
 const quoted = (name: string) => `"${name}"`;
 const names = (layers: readonly LayerRecord[]) => layers.map((l) => quoted(l.name)).join(', ');
-
-function layerOfObject(ctx: CommandContext, id: EntityId): LayerRecord | undefined {
-  const e = ctx.model.entity(id);
-  return e && ctx.model.tables.layers.get(e.layer);
-}
 
 function layerNamed(ctx: CommandContext, name: string): LayerRecord | undefined {
   const wanted = name.trim().toUpperCase();
@@ -138,7 +136,7 @@ async function* gatherLayers(ctx: CommandContext, verb: 'delete' | 'merge'): Ask
       taken = listed;
       done = true;
     } else if (a.kind === 'selection' && a.ids.length > 0) {
-      const l = layerOfObject(ctx, a.ids[0]!);
+      const l = await pickedLayer(ctx, a, 'Entity');
       if (l) taken = [l];
     } else {
       return chosen;
@@ -239,7 +237,7 @@ export function laymrgCommand(): CommandDef {
           target = (yield* askLayerList(ctx, 'Merge to Layer', targets, false))?.[0];
           if (!target) continue;
         } else if (a.kind === 'selection' && a.ids.length > 0)
-          target = layerOfObject(ctx, a.ids[0]!);
+          target = await pickedLayer(ctx, a, 'Entity');
         else return;
         if (target && layers.includes(target)) {
           ctx.message(`Layer ${quoted(target.name)} is being merged; select another layer.`);

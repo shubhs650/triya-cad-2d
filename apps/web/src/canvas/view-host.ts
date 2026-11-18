@@ -10,6 +10,7 @@ import type {
   Box,
   Clipboard,
   EntityId,
+  NestedPick,
   FileAction,
   Handle,
   MTextGeometry,
@@ -53,6 +54,8 @@ export interface ViewTarget {
    */
   whenViewed(): Promise<boolean>;
   pick(point: Vec2): Promise<EntityId[]>;
+  /** What a pick hit inside a block reference (M5-06 part 5). */
+  pickNested(point: Vec2, id: EntityId): Promise<NestedPick | undefined>;
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]>;
   /** What a selection polygon (WPolygon, CPolygon) or fence takes (M3-04). */
   selectPath(points: readonly Vec2[], kind: 'window' | 'crossing' | 'fence'): Promise<EntityId[]>;
@@ -331,6 +334,10 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
     }
     case 'pick':
       return t.pick(r.point).then((ids) => ({ ok: true, ids }));
+    case 'nested':
+      return t
+        .pickNested(r.point, r.id)
+        .then((nested) => ({ ok: true, ...(nested && { nested }) }));
     case 'select':
       return t.selectWindow(r.a, r.b, r.crossing).then((ids) => ({ ok: true, ids }));
     case 'selectPath':
