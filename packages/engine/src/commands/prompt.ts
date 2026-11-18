@@ -38,6 +38,7 @@ import type {
   InsertDialogRequest,
 } from './blocks';
 import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
+import type { XrefAttachAnswer, XrefAttachRequest } from './xref-attach';
 import type { TableCellFormatRequest } from './draw/table-data-format';
 import type { TableDataFormat } from '../edit/table-data';
 import type { GdtFrame } from '../edit/tolerance-frame';
@@ -776,6 +777,7 @@ export type DialogRequest =
   | InsertDialogRequest
   /** IMAGEATTACH's Attach Image (M5-04 part 5). */
   | ImageAttachRequest
+  | XrefAttachRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
   | TableCellFormatRequest
   | ObjectGroupingRequest;
@@ -1037,6 +1039,11 @@ export type PromptAnswer =
       readonly insert?: InsertDialogAnswer;
       /** The Attach Image dialog's file and fields as OK closed it (IMAGEATTACH, M5-04 part 5). */
       readonly imageAttach?: ImageAttachAnswer;
+      /**
+       * The Attach External Reference dialog's file and fields as OK closed it (XATTACH, M5-04
+       * part 6).
+       */
+      readonly xrefAttach?: XrefAttachAnswer;
       /** The Table Cell Format dialog's data format as OK closed it (M4-16). */
       readonly tableDataFormat?: TableDataFormat;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */

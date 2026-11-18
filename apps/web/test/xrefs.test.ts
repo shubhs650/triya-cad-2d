@@ -217,6 +217,46 @@ describe('referencesOf (M1-21)', () => {
     const erased = referencesOf(withImages, [paste, { objects: { removed: [pasted] } }], none);
     expect(erased.some((r) => r.handle === '60')).toBe(false);
   });
+
+  it('lists an xref XATTACH made as its own, once, and a nested one it made its own (M5-04 part 6)', () => {
+    const def = { handle: '70', name: 'SITE', basePoint: { x: 0, y: 0 }, xrefPath: 'site.dxf' };
+    const attach: ChangeSet = {
+      tables: { blockRecords: { added: [record('70', 'SITE', 12)] } },
+      blocks: { added: [def] },
+    };
+    const undo: ChangeSet = {
+      tables: { blockRecords: { removed: [record('70', 'SITE', 12)] } },
+      blocks: { removed: [def] },
+    };
+    const rows = referencesOf(init, [attach], none);
+    expect(rows.at(-1)).toEqual({
+      handle: '70',
+      kind: 'overlay',
+      name: 'SITE',
+      path: 'site.dxf',
+      status: 'not-found',
+      depth: 0,
+    });
+    expect(referencesOf(init, [attach, undo], none).some((r) => r.handle === '70')).toBe(false);
+    const redone = referencesOf(init, [attach, undo, attach], none);
+    expect(redone.filter((r) => r.handle === '70')).toHaveLength(1);
+
+    // GRID, which TB's load brought in, attached again: it leaves TB's content.
+    const load = tbLoad();
+    const loaded = load.blocks!.updated![0]!.after;
+    const adopt: ChangeSet = {
+      blocks: {
+        updated: [{ before: loaded, after: { ...loaded, xrefLoaded: ['41', '42', '43'] } }],
+      },
+    };
+    expect(referencesOf(init, [load, adopt], none).map((r) => [r.name, r.depth])).toEqual([
+      ['TB', 0],
+      ['GRID', 1],
+      ['logo', 1],
+      ['PLAN', 0],
+      ['GRID', 0],
+    ]);
+  });
 });
 
 describe('loadXrefFiles (M1-21)', () => {

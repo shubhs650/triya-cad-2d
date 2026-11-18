@@ -133,7 +133,8 @@ export interface LayoutEdit {
 /**
  * An xref's drawing found (M1-21): its file as the importer maps it, loaded as the content of
  * the host's xref block (`xrefLoadChange`). Not an undoable edit in AutoCAD either: loading
- * changes what the drawing shows, not the drawing.
+ * changes what the drawing shows, not the drawing. The load XATTACH asks for while it runs is
+ * part of its undo step (M5-04 part 6, `PromptBus.joinLoad`).
  */
 export interface XrefLoadEdit {
   readonly kind: 'xref-load';
@@ -812,6 +813,8 @@ export class EngineSession {
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }
+    // XATTACH's load (M5-04 part 6) is part of its undo step.
+    this.#bus.joinLoad(change);
     return { ok: true, change };
   }
 

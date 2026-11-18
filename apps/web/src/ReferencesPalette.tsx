@@ -9,8 +9,9 @@
 // selected (a click selects a row, Ctrl or Shift adds one). As AutoCAD's, only the xrefs the
 // drawing attaches itself can be unloaded or detached; a nested one is reloaded with its file.
 // M5-04 part 2: Bind…, on loaded xrefs the drawing attaches itself, opens the Bind Xrefs dialog
-// (Bind or Insert). M5-04 part 5: Attach Image... runs IMAGEATTACH. Attaching xrefs and Path
-// come with later parts.
+// (Bind or Insert). M5-04 part 5: Attach Image... runs IMAGEATTACH. M5-04 part 6: Attach DWG...
+// runs XATTACH (AutoCAD's palette names its drawing attach so; a .dxf is picked as well as a
+// .dwg). Path comes with a later part.
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { BindXrefsDialog } from './BindXrefsDialog';
 import type { ReferenceKind, ReferenceRow, ReferenceStatus } from './xrefs';
@@ -40,8 +41,11 @@ export function ReferencesPalette({
   onDetach,
   onBind,
   onAttachImage,
+  onAttachDrawing,
   onClose,
 }: {
+  /** Attach DWG... (XATTACH, M5-04 part 6), as the palette's Attach menu offers it. */
+  onAttachDrawing?: () => void;
   /** Attach Image... (IMAGEATTACH, M5-04 part 5), as the palette's Attach menu offers it. */
   onAttachImage?: () => void;
   /** XREF Bind, as Insert when `insert`: why not, or undefined. */
@@ -124,6 +128,11 @@ export function ReferencesPalette({
         <button type="button" onClick={() => folder.current?.click()}>
           Choose folder…
         </button>
+        {onAttachDrawing && (
+          <button type="button" onClick={onAttachDrawing}>
+            Attach DWG...
+          </button>
+        )}
         {onAttachImage && (
           <button type="button" onClick={onAttachImage}>
             Attach Image...

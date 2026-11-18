@@ -340,9 +340,16 @@ describe('block definitions', () => {
     expect(refused((b) => b.addBlock({ name: 'X', basePoint: { x: 0, y: 0 }, flags: 1 }))).toEqual([
       expect.stringMatching(/an anonymous block's name starts with \*/),
     ]);
+    // A new xref (XATTACH, M5-04 part 6) names its file; other xref bits stay refused.
     expect(refused((b) => b.addBlock({ name: 'X', basePoint: { x: 0, y: 0 }, flags: 4 }))).toEqual([
-      expect.stringMatching(/block flags 4/),
+      expect.stringMatching(/a new xref's block names its file \(DXF 1\)/),
     ]);
+    expect(refused((b) => b.addBlock({ name: 'X', basePoint: { x: 0, y: 0 }, flags: 8 }))).toEqual([
+      expect.stringMatching(/block flags 8/),
+    ]);
+    expect(refused((b) => b.addBlock({ name: 'X', basePoint: { x: 0, y: 0 }, flags: 20 }))).toEqual(
+      [expect.stringMatching(/block flags 20/)],
+    );
     expect(
       refused((b) => b.addBlock({ name: '*Paper_Space3', basePoint: { x: 0, y: 0 }, flags: 1 })),
     ).toEqual([expect.stringMatching(/a layout's block comes with its layout/)]);

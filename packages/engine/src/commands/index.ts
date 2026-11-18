@@ -121,6 +121,13 @@ export {
   type ImageAttachRequest,
   type ImageAttachSettings,
 } from './image-attach';
+export {
+  xattachCommand,
+  type XrefAttachAnswer,
+  type XrefAttachEntry,
+  type XrefAttachRequest,
+  type XrefAttachSettings,
+} from './xref-attach';
 export { hatchCommand, hatchCommands } from './draw/hatchedit';
 export { fieldCommand, type FieldDialogRequest } from './draw/field';
 export { toleranceCommand, type ToleranceRequest } from './draw/tolerance';
