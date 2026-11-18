@@ -261,6 +261,8 @@ describe('palette search', () => {
       'WIPEOUT',
       // M5-04 part 6: drawings attached and overlaid.
       'XATTACH',
+      // M5-04 part 7: xref-dependent definitions bound one by one.
+      'XBIND',
       // M5-04 part 3: references clipped.
       'XCLIP',
       'XLINE',

@@ -259,3 +259,31 @@ function compareSeed(seed: string, handles: readonly string[]): boolean {
   const s = BigInt(`0x${seed}`);
   return handles.every((h) => BigInt(`0x${h}`) < s);
 }
+
+describe("xrefLoadChange: a dimension style's references (M5-04 part 7)", () => {
+  it('renumbers DIMTXSTY and the other reference DIMVARs into the host, dropping ones naming nothing', () => {
+    const child = childInit();
+    const model = DocumentModel.create(hostInit());
+    model.apply(
+      xrefLoadChange(model, XREF, {
+        ...child,
+        tables: {
+          ...child.tables,
+          dimStyles: [
+            {
+              handle: '18',
+              name: 'ISO',
+              vars: { DIMTXSTY: '16', DIMLDRBLK: '40', DIMLTYPE: '77', DIMSCALE: 2 },
+            },
+          ],
+        },
+      }),
+    );
+    const iso = byName(model.tables.dimStyles, 'CHILD|ISO')!;
+    expect(iso.vars).toEqual({
+      DIMTXSTY: byName(model.tables.textStyles, 'CHILD|Standard')!.handle,
+      DIMLDRBLK: byName(model.tables.blockRecords, 'CHILD|DOOR')!.handle,
+      DIMSCALE: 2,
+    });
+  });
+});
