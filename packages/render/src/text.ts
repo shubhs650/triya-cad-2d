@@ -984,6 +984,10 @@ export function linetypeEmbedPrimitives(
     const style = e.style === undefined ? undefined : ctx.style(e.style);
     if (!style) continue;
     if (e.kind === 'text') {
+      // Turned upright text (M5-08) hangs from its top right corner at the placement: turned
+      // half a turn, that corner is where the unturned text's bottom left one was, so the text
+      // fills the same box, turned about its middle.
+      const turned = p.turned === true;
       drawText(
         out,
         {
@@ -995,8 +999,9 @@ export function linetypeEmbedPrimitives(
           rotation: p.angle,
           widthFactor: style.widthFactor,
           oblique: style.obliqueAngle,
-          halign: 0,
-          valign: 0,
+          halign: turned ? 2 : 0,
+          valign: turned ? 3 : 0,
+          ...(turned && { alignmentPoint: p.at }),
           backward: false,
           upsideDown: false,
         },
