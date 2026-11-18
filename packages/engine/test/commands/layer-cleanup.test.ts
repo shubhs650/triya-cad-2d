@@ -186,7 +186,9 @@ describe('LAYDEL', () => {
     expect(t.log).toContain('Layer "0" cannot be deleted.');
     await t.bus.pick(t.on(WALLS));
     expect(t.log).toContain('Layer "WALLS" is the current layer and cannot be deleted.');
-    await t.bus.script(['N', 'site|walls']);
+    // The Delete Layers dialog does not list it, and refuses it should it come anyway.
+    await t.bus.script(['N']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layers: [SITE] });
     expect(t.log).toContain('Layer "Site|Walls" is xref-dependent and cannot be deleted.');
     expect(t.bus.promptText).toBe('Select object on layer to delete or [Name]:');
     await t.bus.script(['']);
@@ -357,5 +359,84 @@ describe('what LAYDEL and LAYMRG cannot take or leave', () => {
     await t.bus.script(['', 'Y']);
     expect(t.model.objects.has('3C')).toBe(false);
     expect((t.model.objects.get('3D') as Group).entities).toEqual(['33']);
+  });
+});
+
+// M5-06 part 3: Name opens AutoCAD's Delete Layers, Merge Layers and Merge to Layer dialogs
+// (AutoCAD Help, "LAYDEL (Command)": "Name: Displays the Delete Layers dialog box"; "LAYMRG
+// (Command)": the Merge Layers and Merge to Layer dialog boxes). The dash forms keep the names
+// typed at the command line.
+describe('the layer dialogs of LAYDEL and LAYMRG', () => {
+  const dialogOf = (t: ReturnType<typeof setup>) => {
+    const p = t.bus.prompt;
+    return p?.kind === 'dialog' && p.dialog.type === 'layerlist' ? p.dialog : undefined;
+  };
+  const listed = (t: ReturnType<typeof setup>) => dialogOf(t)?.layers.map((l) => l.name);
+
+  it("LAYDEL's Name lists the layers it can delete, and OK deletes the ones chosen", async () => {
+    const t = setup();
+    await t.bus.script(['LAYDEL', 'N']);
+    expect(dialogOf(t)).toMatchObject({ title: 'Delete Layers', multiple: true });
+    // Not 0, the current WALLS or the xref's Site|Walls.
+    expect(listed(t)).toEqual(['DOORS', 'NOTES']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layers: [DOORS, NOTES] });
+    expect(t.log).toContain('You are about to delete layers "DOORS", "NOTES" from this drawing.');
+    expect(t.bus.promptText).toBe('Do you wish to continue? [Yes/No] <No>:');
+    await t.bus.script(['Y']);
+    expect(t.model.tables.layers.has(DOORS) || t.model.tables.layers.has(NOTES)).toBe(false);
+  });
+
+  it('leaves a locked layer out of the Delete Layers list, as AutoCAD does', async () => {
+    const t = setup();
+    const b = new ChangeSetBuilder(t.model);
+    b.updateTableRecord('layers', NOTES, { locked: true });
+    t.model.apply(b.build());
+    await t.bus.script(['LAYDEL', 'N']);
+    expect(listed(t)).toEqual(['DOORS']);
+  });
+
+  it('goes back to the pick prompt at Cancel, keeping the layers already picked', async () => {
+    const t = setup();
+    await t.bus.script(['LAYDEL']);
+    await t.bus.pick(t.on(NOTES));
+    await t.bus.script(['N']);
+    // NOTES is already chosen.
+    expect(listed(t)).toEqual(['DOORS']);
+    await t.bus.answer({ kind: 'escape' });
+    expect(t.bus.promptText).toBe('Select object on layer to delete or [Name/Undo]:');
+    await t.bus.script(['N']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layers: [] });
+    expect(t.bus.promptText).toBe('Select object on layer to delete or [Name/Undo]:');
+    await t.bus.script(['', 'Y']);
+    expect(t.model.tables.layers.has(NOTES)).toBe(false);
+    expect(t.model.tables.layers.has(DOORS)).toBe(true);
+  });
+
+  it('refuses a layer the dialog was not offering', async () => {
+    const t = setup();
+    await t.bus.script(['LAYDEL', 'N']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layers: [WALLS, DOORS] });
+    expect(t.log).toContain('Layer "WALLS" is the current layer and cannot be deleted.');
+    expect(t.log).toContain('You are about to delete layer "DOORS" from this drawing.');
+  });
+
+  it("LAYMRG's Name opens Merge Layers, and the target's Name opens Merge to Layer", async () => {
+    const t = setup();
+    await t.bus.script(['LAYMRG', 'N']);
+    expect(dialogOf(t)).toMatchObject({ title: 'Merge Layers', multiple: true });
+    expect(listed(t)).toEqual(['DOORS', 'NOTES']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layers: [DOORS] });
+    expect(t.bus.promptText).toBe('Select object on target layer or [Name]:');
+    await t.bus.script(['N']);
+    expect(dialogOf(t)).toMatchObject({ title: 'Merge to Layer', multiple: false });
+    // Not DOORS (being merged) or the xref's layer.
+    expect(listed(t)).toEqual(['0', 'NOTES', 'WALLS']);
+    await t.bus.answer({ kind: 'escape' });
+    expect(t.bus.promptText).toBe('Select object on target layer or [Name]:');
+    await t.bus.script(['N']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', layers: [NOTES] });
+    expect(t.log).toContain('You are about to merge layer "DOORS" into layer "NOTES".');
+    await t.bus.script(['Y']);
+    expect(t.layerOf('32')).toBe(NOTES);
   });
 });

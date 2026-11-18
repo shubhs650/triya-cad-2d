@@ -58,6 +58,7 @@ import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { InsertDialog } from './InsertDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
+import { LayerListDialog } from './LayerListDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
 
@@ -163,6 +164,8 @@ export function AttributeDialogs({
       return <BlockDefinitionDialog key={key} doc={doc.id} request={d} />;
     case 'insert':
       return <InsertDialog key={key} doc={doc.id} request={d} />;
+    case 'layerlist':
+      return <LayerListDialog key={key} doc={doc.id} request={d} />;
     case 'imageattach':
       return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
     case 'xrefattach':

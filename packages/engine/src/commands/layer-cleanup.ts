@@ -7,8 +7,14 @@
 //
 // Both gather layers by picking an object on each ("Select object on layer to delete or
 // [Name/Undo]"; Undo takes the last one back) until Enter, then ask "Do you wish to continue?".
-// Name opens the Delete Layers or Merge Layers dialog in AutoCAD; here it asks for the name at
-// the command line, as -LAYDEL and -LAYMRG do (`?` lists the layers), until those dialogs come.
+// Name opens the Delete Layers or Merge Layers dialog (M5-06 part 3), and the target's Name the
+// Merge to Layer dialog, each listing only the layers the command can take; -LAYDEL and -LAYMRG
+// ask for the name at the command line (`?` lists the layers). AutoCAD's help does not say where
+// OK in Delete Layers or Merge Layers goes: it goes on to the warning (or the target) with the
+// layers chosen, as a drafter who named them expects; Cancel goes back to the pick prompt.
+// "Layers that cannot be deleted include the current layer, layer 0, locked layers, and
+// xref-dependent layers": Delete Layers leaves a locked layer out of its list, though a pick on
+// an object of one takes it (AutoCAD's help names no lock for picks).
 //
 // AutoCAD's help names no layer either refuses. Both purge what they take, so they refuse what
 // the Layer Properties Manager's Delete Layer refuses (layer 0, Defpoints, the current layer and
@@ -21,6 +27,7 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { LayerRecord } from '../model/types';
+import type { LayerListRequest } from './prompt';
 import { deleteLayersWithObjects, layerRemovalProblem, mergeLayers } from '../edit/layer-manager';
 
 /** DXF 70 bit 16: a layer that came in with an xref. */
@@ -59,9 +66,55 @@ async function* askLayerName(ctx: CommandContext): Asking<LayerRecord> {
   }
 }
 
+const byName = (x: LayerRecord, y: LayerRecord) =>
+  x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' });
+
+/**
+ * A layer list dialog of `layers` (M5-06 part 3): the layers chosen at OK, those of them the
+ * drawing still has; undefined at Cancel (or any other answer), or OK with none chosen.
+ */
+async function* askLayerList(
+  ctx: CommandContext,
+  title: LayerListRequest['title'],
+  layers: readonly LayerRecord[],
+  multiple: boolean,
+): Asking<LayerRecord[]> {
+  const a = yield ctx.prompt.dialog({
+    message: title,
+    escape: true,
+    dialog: {
+      type: 'layerlist',
+      title,
+      multiple,
+      layers: [...layers].sort(byName).map((l) => ({ handle: l.handle, name: l.name })),
+    },
+  });
+  if (a.kind !== 'dialog' || a.action !== 'ok') return undefined;
+  const chosen = (a.layers ?? []).flatMap((h) => {
+    const l = ctx.model.tables.layers.get(h);
+    return l ? [l] : [];
+  });
+  return chosen.length > 0 ? chosen : undefined;
+}
+
+/** The layers Delete Layers or Merge Layers offers: those a pick could take, not yet chosen. */
+function removableLayers(
+  ctx: CommandContext,
+  verb: 'delete' | 'merge',
+  chosen: readonly LayerRecord[],
+): LayerRecord[] {
+  return [...ctx.model.tables.layers.values()].filter(
+    (l) =>
+      !chosen.includes(l) &&
+      !(verb === 'delete' && l.locked) &&
+      layerRemovalProblem(ctx.model, l, verb === 'delete' ? 'deleted' : 'merged') === undefined,
+  );
+}
+
 /**
  * The layers to delete or merge: one per pick (or name) until Enter, each one LAYDEL or LAYMRG
- * cannot take refused as it is picked. Undefined at Esc.
+ * cannot take refused as it is picked; the layers chosen in the Delete Layers or Merge Layers
+ * dialog end the gathering. Undefined at Esc.
  */
 async function* gatherLayers(ctx: CommandContext, verb: 'delete' | 'merge'): Asking<LayerRecord[]> {
   const chosen: LayerRecord[] = [];
@@ -71,24 +124,32 @@ async function* gatherLayers(ctx: CommandContext, verb: 'delete' | 'merge'): Ask
       options: chosen.length > 0 ? ['Name', 'Undo'] : ['Name'],
       single: true,
     });
-    let layer: LayerRecord | undefined;
+    let taken: LayerRecord[] = [];
+    let done = false;
     if (a.kind === 'keyword' && a.keyword === 'Undo') {
       chosen.pop();
+    } else if (a.kind === 'keyword' && ctx.dash) {
+      const l = yield* askLayerName(ctx);
+      if (l) taken = [l];
     } else if (a.kind === 'keyword') {
-      layer = yield* askLayerName(ctx);
+      const title = verb === 'delete' ? 'Delete Layers' : 'Merge Layers';
+      const listed = yield* askLayerList(ctx, title, removableLayers(ctx, verb, chosen), true);
+      if (!listed) continue;
+      taken = listed;
+      done = true;
     } else if (a.kind === 'selection' && a.ids.length > 0) {
-      layer = layerOfObject(ctx, a.ids[0]!);
+      const l = layerOfObject(ctx, a.ids[0]!);
+      if (l) taken = [l];
     } else {
       return chosen;
     }
-    if (layer) {
+    for (const layer of taken) {
       const why = layerRemovalProblem(ctx.model, layer, verb === 'delete' ? 'deleted' : 'merged');
-      if (why) {
-        ctx.message(why);
-        continue;
-      }
-      if (!chosen.includes(layer)) chosen.push(layer);
+      if (why) ctx.message(why);
+      else if (!chosen.includes(layer)) chosen.push(layer);
     }
+    if (done && chosen.length > 0) return chosen;
+    if (taken.length > 0 && taken.every((l) => !chosen.includes(l))) continue;
     ctx.message(
       chosen.length > 0
         ? `Selected layers: ${chosen.map((l) => l.name).join(', ')}`
@@ -170,8 +231,15 @@ export function laymrgCommand(): CommandDef {
           options: ['Name'],
           single: true,
         });
-        if (a.kind === 'keyword') target = yield* askLayerName(ctx);
-        else if (a.kind === 'selection' && a.ids.length > 0) target = layerOfObject(ctx, a.ids[0]!);
+        if (a.kind === 'keyword' && ctx.dash) target = yield* askLayerName(ctx);
+        else if (a.kind === 'keyword') {
+          const targets = [...ctx.model.tables.layers.values()].filter(
+            (l) => !layers.includes(l) && ((l.flags ?? 0) & XREF_DEPENDENT) === 0,
+          );
+          target = (yield* askLayerList(ctx, 'Merge to Layer', targets, false))?.[0];
+          if (!target) continue;
+        } else if (a.kind === 'selection' && a.ids.length > 0)
+          target = layerOfObject(ctx, a.ids[0]!);
         else return;
         if (target && layers.includes(target)) {
           ctx.message(`Layer ${quoted(target.name)} is being merged; select another layer.`);

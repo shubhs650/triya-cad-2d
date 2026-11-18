@@ -3970,6 +3970,33 @@ button {
   color: #fff;
 }
 
+/* The layer tools' list dialogs (M5-06 part 3, LayerListDialog.tsx). */
+.cad-dialog.layer-list-dialog {
+  width: min(320px, calc(100vw - 32px));
+}
+
+.layer-list-dialog .layer-list-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.layer-list-dialog .layer-list {
+  height: 220px;
+  margin-top: 4px;
+}
+
+.layer-list-dialog .layer-list:focus-visible .layer-list-active {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+
+.layer-list-dialog .layer-list-empty {
+  margin: 4px 0 0;
+  color: var(--chrome-text-muted);
+}
+
 .dimstyle-list .dimstyle-overrides,
 .dimstyle-list .dimstyle-substyle {
   padding-left: 16px;

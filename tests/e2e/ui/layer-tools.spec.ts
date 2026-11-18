@@ -142,13 +142,19 @@ test('LAYMRG merges a layer picked into one named, and LAYERP puts back a lock',
   await type(page, '0', 'Command:');
   await expect(row('HATCH')).toBeVisible();
 
-  // LAYMRG: the line's layer, then the target by Name.
+  // LAYMRG: the line's layer, then the target by Name (M5-06 part 3: the Merge to Layer dialog).
   await type(page, 'LAYMRG', 'Select object on layer to merge or [Name]:');
   await click(0.45, 0.5);
   await expect(prompt(page)).toHaveText('Select object on layer to merge or [Name/Undo]:');
   await type(page, '', 'Select object on target layer or [Name]:');
-  await type(page, 'N', 'Enter layer name or [?]:');
-  await type(page, '0', 'Do you wish to continue? [Yes/No] <No>:');
+  await page.keyboard.type('N');
+  await page.keyboard.press('Enter');
+  const mergeTo = page.getByRole('dialog', { name: 'Merge to Layer' });
+  const targets = mergeTo.getByRole('listbox', { name: 'Target Layer:' });
+  await expect(targets.getByRole('option', { name: 'HATCH', exact: true })).toHaveCount(0);
+  await targets.getByRole('option', { name: '0', exact: true }).dblclick();
+  await expect(mergeTo).toHaveCount(0);
+  await expect(prompt(page)).toHaveText('Do you wish to continue? [Yes/No] <No>:');
   await shot('4-laymrg-warning.png');
   await type(page, 'Y', 'Command:');
   await expect(row('HATCH')).toHaveCount(0);
@@ -161,4 +167,92 @@ test('LAYMRG merges a layer picked into one named, and LAYERP puts back a lock',
   await expect(lock('0')).toHaveAttribute('aria-pressed', 'true');
   await type(page, 'LAYERP', 'Command:');
   await expect(lock('0')).toHaveAttribute('aria-pressed', 'false');
+});
+
+// M5-06 part 3: Name opens AutoCAD's Change to Layer and Delete Layers dialogs. LAYMCH moves a
+// line to a layer typed in Change to Layer's Current Layer box, which makes it; LAYDEL's Delete
+// Layers takes it and HATCH with Ctrl, and both go after AutoCAD's warning.
+test('Change to Layer makes a layer, and Delete Layers deletes the layers chosen', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Layers' })
+    .click();
+  const palette = page.getByRole('complementary', { name: 'Layers' });
+  await expect(palette).toBeVisible();
+  await expectDrawn(page, { timeout: 15_000 });
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const click = async (x: number, y: number) =>
+    page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+  const row = (layer: string) => palette.getByRole('rowheader', { name: layer, exact: true });
+
+  // A line on 0 in an empty part of the plan, running object snaps off.
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await page.keyboard.press('F3');
+  await type(page, 'CLAYER', /^Enter new value for CLAYER/);
+  await type(page, '0', 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await click(0.2, 0.5);
+  await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
+  await click(0.7, 0.5);
+  await type(page, '', 'Command:');
+
+  // LAYMCH: the line, then Name: Change to Layer opens on the current layer 0.
+  await type(page, 'LAYMCH', 'Select objects to be changed:');
+  await click(0.45, 0.5);
+  await type(page, '', 'Select object on destination layer or [Name]:');
+  await page.keyboard.type('N');
+  await page.keyboard.press('Enter');
+  const change = page.getByRole('dialog', { name: 'Change to Layer' });
+  const current = change.getByRole('textbox', { name: 'Current Layer:' });
+  await expect(current).toHaveValue('0');
+  await expect(current).toBeFocused();
+  const destinations = change.getByRole('listbox', { name: 'Destination Layer:' });
+  await expect(destinations.getByRole('option', { name: '0', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  // A click on a layer puts its name in the box; a name the drawing lacks selects none.
+  await destinations.getByRole('option', { name: 'HATCH', exact: true }).click();
+  await expect(current).toHaveValue('HATCH');
+  await current.fill('NEW-WALLS');
+  await expect(destinations.getByRole('option', { selected: true })).toHaveCount(0);
+  await shot('1-change-to-layer.png');
+  await change.getByRole('button', { name: 'OK' }).click();
+  await expect(change).toHaveCount(0);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(row('NEW-WALLS')).toBeVisible();
+
+  // LAYDEL: Name opens Delete Layers; NEW-WALLS, then HATCH with Ctrl.
+  await type(page, 'LAYDEL', 'Select object on layer to delete or [Name]:');
+  await page.keyboard.type('N');
+  await page.keyboard.press('Enter');
+  const del = page.getByRole('dialog', { name: 'Delete Layers' });
+  const list = del.getByRole('listbox', { name: 'Layers to Delete:' });
+  await expect(list).toHaveAttribute('aria-multiselectable', 'true');
+  // Not 0, which cannot be deleted, nor the current layer.
+  await expect(list.getByRole('option', { name: '0', exact: true })).toHaveCount(0);
+  await list.getByRole('option', { name: 'NEW-WALLS', exact: true }).click();
+  await list.getByRole('option', { name: 'HATCH', exact: true }).click({ modifiers: ['Control'] });
+  await expect(list.getByRole('option', { selected: true })).toHaveCount(2);
+  await shot('2-delete-layers.png');
+  await del.getByRole('button', { name: 'OK' }).click();
+  await expect(prompt(page)).toHaveText('Do you wish to continue? [Yes/No] <No>:');
+  await type(page, 'Y', 'Command:');
+  await expect(row('NEW-WALLS')).toHaveCount(0);
+  await expect(row('HATCH')).toHaveCount(0);
+  await shot('3-layers-deleted.png');
 });
