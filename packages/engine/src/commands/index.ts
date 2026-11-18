@@ -129,6 +129,7 @@ export {
   type PdfAttachRequest,
   type PdfAttachSettings,
 } from './pdf-attach';
+export { attributedBlocks, battmanCommand } from './battman';
 export {
   attdefCommand,
   attdefGeometry,

@@ -627,6 +627,43 @@ export type AttributePatch = { readonly handle: Handle } & Partial<
   >
 >;
 
+/**
+ * One attribute definition as the Block Attribute Manager lists it and its Edit Attribute dialog
+ * edits it (BATTMAN, M5-03 part 2): keyed by the ATTDEF's handle, `prompt` its own (empty for a
+ * constant one), `value` its default.
+ */
+export interface AttributeDefinitionEntry extends AttributeEntry {
+  /** DXF 280, shown in the Modes column (L). */
+  readonly lockPosition: boolean;
+  /** A multiline definition's boundary width (its MTEXT's DXF 41), 0 for none. */
+  readonly boundaryWidth?: number;
+}
+
+/** What the Edit Attribute dialog may change of one definition (absent: unchanged). */
+export type AttributeDefinitionPatch = AttributePatch &
+  Partial<Pick<AttributeDefinitionEntry, 'tag' | 'prompt' | 'flags' | 'boundaryWidth'>>;
+
+/**
+ * The Block Attribute Manager's state as Apply, OK, Sync, Select block or another block in its
+ * Block list closed it (BATTMAN, M5-03 part 2).
+ */
+export interface BattmanAnswer {
+  /** The block the changes are to. */
+  readonly block: Handle;
+  /** Its definitions, removed ones aside, in the order Move Up and Move Down left them. */
+  readonly order: readonly Handle[];
+  readonly removed: readonly Handle[];
+  readonly attributes: readonly AttributeDefinitionPatch[];
+  /** Block Attribute Settings' "Apply changes to existing references". */
+  readonly applyToExisting: boolean;
+  /** Sync: every reference given the definitions, whatever the setting. */
+  readonly sync?: boolean;
+  /** The block the dialog shows next, chosen in its Block list. */
+  readonly next?: Handle;
+  /** The definition selected in the list, selected again when the dialog reopens. */
+  readonly selected?: Handle;
+}
+
 /** A table record a dialog's list offers. */
 export interface NamedRecord {
   readonly handle: Handle;
@@ -658,6 +695,26 @@ export type DialogRequest =
        * The colour books the drawing uses, which the Properties tab's Select Color dialog
        * offers (M2-35 part 23); absent when it uses none.
        */
+      readonly colorBooks?: readonly ColorBook[];
+    }
+  | {
+      /** BATTMAN's Block Attribute Manager (M5-03 part 2). */
+      readonly type: 'battman';
+      /** The drawing's named blocks with attribute definitions, by name. */
+      readonly blocks: readonly NamedRecord[];
+      readonly block: Handle;
+      /** The block's definitions in block order. */
+      readonly attributes: readonly AttributeDefinitionEntry[];
+      readonly selected?: Handle;
+      /** References to the block in the drawing, and in the current space. */
+      readonly inDrawing: number;
+      readonly inSpace: number;
+      /** The current space as the dialog names it: "model space", or the layout's name. */
+      readonly space: string;
+      readonly styles: readonly NamedRecord[];
+      readonly layers: readonly NamedRecord[];
+      readonly linetypes: readonly NamedRecord[];
+      readonly plotStyles?: readonly NamedRecord[];
       readonly colorBooks?: readonly ColorBook[];
     }
   | {
@@ -998,6 +1055,8 @@ export type PromptAnswer =
        */
       readonly action: 'ok' | 'apply' | 'select' | 'mtext' | 'remove';
       readonly attributes?: readonly AttributePatch[];
+      /** The Block Attribute Manager's state (BATTMAN, M5-03 part 2). */
+      readonly battman?: BattmanAnswer;
       /** Edit Attribute Definition's fields. */
       readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
       /** Property Settings' checkboxes as OK closed it. */

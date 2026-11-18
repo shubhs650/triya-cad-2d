@@ -54,6 +54,8 @@ describe('palette search', () => {
       'ATTSYNC',
       // M5-01 part 1: blocks made and inserted at the command line, and BASE.
       'BASE',
+      // M5-03 part 2: the Block Attribute Manager.
+      'BATTMAN',
       // M5-02 part 1: the Block Editor.
       'BCLOSE',
       'BEDIT',
