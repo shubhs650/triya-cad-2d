@@ -32,22 +32,38 @@
 // M5-13: the rows are grid rows on the columns' widths (a table's rows can keep no layout while
 // hidden), and a row the search hides keeps its layout, so clearing the search lays out no cell
 // again; only the columns whose contents can overflow cut them (`cutLayerColumns`).
+// M5-07 part 5: the filter tree (LayerFilterTree.tsx) beside the list: All, All Used Layers and
+// the drawing's filters; the list shows the node selected (Invert filter: the other layers), the
+// search within it, and the line under the list counts them. New Property Filter (Alt+P) opens
+// Layer Filter Properties, New Group Filter (Alt+G) adds Group Filter1 named in place; layers
+// dragged onto a group filter join it, and the layer list menu's Remove From Group Filter takes
+// them out. Each is one LAYER undo step.
 import {
   Fragment,
   memo,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
   type RefObject,
 } from 'react';
-import { transparencyOf, type EngineEdit, type Handle, type LayerProps } from '@triya/engine';
+import {
+  isLayerFilter,
+  transparencyOf,
+  type EditResult,
+  type EngineEdit,
+  type Handle,
+  type LayerFilter,
+  type LayerProps,
+} from '@triya/engine';
 import { controllerOf } from './canvas/registry';
 import { inLayout as layoutShown, type DocumentStore, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
@@ -82,6 +98,23 @@ import {
   type LayerColumnSettings,
 } from './layer-columns';
 import { drafting } from './drafting';
+import { LayerFilterDialog } from './LayerFilterDialog';
+import {
+  EMPTY_DEFINITION,
+  drawingLayerFilters,
+  filterCountLine,
+  layerFilterSource,
+  layerFilterTree,
+  listedLayers,
+  nextFilterName,
+  type FilterChoice,
+} from './layer-filters';
+import {
+  LAYER_DRAG_TYPE,
+  LayerFilterMenu,
+  LayerFilterTree,
+  type LayerFilterAction,
+} from './LayerFilterTree';
 import { currentLayerStateName, layerStatesManager } from './layer-states';
 import { layerColorBooks, layerLinetypes, layerRows, type LayerRow } from './layers';
 import { SelectColorDialog } from './SelectColorDialog';
@@ -109,6 +142,14 @@ type Picking = {
 
 /** A name or a description being typed in place. */
 type Editing = { readonly handle: Handle; readonly field: 'name' | 'description' };
+
+/** Layer Filter Properties, for a new property filter or the one `filter` names. */
+type FilterDialog = {
+  readonly filter?: Handle;
+  readonly name: string;
+  readonly expression: string;
+  readonly parent?: Handle | undefined;
+};
 
 /** The rows `click` selects among `shown`, given what was selected and the anchor of a Shift range. */
 function selectionAfter(
@@ -145,6 +186,8 @@ interface RowActions {
   edit(e: Editing): void;
   commit(row: LayerRow, field: Editing['field'], value: string): void;
   cancelEdit(row: LayerRow): void;
+  /** A row dragged: the layers it carries (onto a group filter, M5-07 part 5). */
+  dragStart(e: DragEvent, row: LayerRow): void;
 }
 
 /** A name or a description typed in place: Enter or leaving the field keeps it, Esc does not. */
@@ -301,6 +344,9 @@ const LayerRowView = memo(function LayerRowView({
       data-current={row.current}
       aria-selected={selected}
       tabIndex={tabbable ? 0 : -1}
+      // A field typed in keeps its text selection: the row is not dragged while one is open.
+      draggable={editing === undefined}
+      onDragStart={(e) => act.current.dragStart(e, row)}
       onClick={(e) => act.current.rowClick(e, row)}
       onKeyDown={(e) => act.current.rowKey(e, row)}
     >
@@ -415,14 +461,57 @@ export function LayersPalette({
     [doc.opened, doc.id, doc.block, doc.revision, inLayout, lwUnits],
   );
   const sorted = useMemo(() => sortLayerRows(rows, columns.sort), [rows, columns.sort]);
+  // The filter tree (M5-07 part 5): the node chosen, Invert filter and the layers in use, which
+  // the engine is asked for while a node or the dialog may need them.
+  const [choice, setChoice] = useState<FilterChoice>('all');
+  const [invert, setInvert] = useState(false);
+  const [used, setUsed] = useState<ReadonlySet<Handle> | undefined>();
+  const [filterMenu, setFilterMenu] = useState<
+    { choice: FilterChoice; at: { x: number; y: number } } | undefined
+  >();
+  const [renamingFilter, setRenamingFilter] = useState<Handle | undefined>();
+  const [filterDialog, setFilterDialog] = useState<FilterDialog | undefined>();
+  const filterSource = useMemo(
+    () => layerFilterSource(doc.opened.init, engines.changesOf(doc.id)),
+    [doc.opened, doc.id, doc.revision],
+  );
+  const filters = useMemo(
+    () => drawingLayerFilters(doc.opened.init, engines.changesOf(doc.id)),
+    [doc.opened, doc.id, doc.revision],
+  );
+  const filterOf = (c: FilterChoice): LayerFilter | undefined =>
+    filters.find((f) => f.handle === c);
+  // A filter deleted (or undone away) leaves All chosen.
+  const chosen: FilterChoice =
+    choice === 'all' || choice === 'used' || filterOf(choice) ? choice : 'all';
+  const chosenFilter = filterOf(chosen);
+  const needsUsed = chosen !== 'all' || filterDialog !== undefined;
+  useEffect(() => {
+    if (!needsUsed) return;
+    let live = true;
+    void engines.layersInUse(doc.id).then((h) => {
+      if (live && h) setUsed(new Set(h));
+    });
+    return () => {
+      live = false;
+    };
+  }, [needsUsed, doc.id, doc.revision]);
+  const listed = useMemo(
+    () => listedLayers(filterSource, chosen, { invert, used }),
+    [filterSource, chosen, invert, used],
+  );
+  const inFilter = useMemo(
+    () => (listed ? sorted.filter((r) => listed.has(r.handle)) : sorted),
+    [sorted, listed],
+  );
   const layerState = useMemo(
     () => currentLayerStateName(doc.opened.init, engines.changesOf(doc.id)),
     [doc.opened, doc.id, doc.revision],
   );
   const needle = search.trim().toLowerCase();
   const shown = useMemo(
-    () => (needle ? sorted.filter((r) => r.name.toLowerCase().includes(needle)) : sorted),
-    [sorted, needle],
+    () => (needle ? inFilter.filter((r) => r.name.toLowerCase().includes(needle)) : inFilter),
+    [inFilter, needle],
   );
   const visible = useMemo(() => visibleLayerColumns(columns, inLayout), [columns, inLayout]);
   const shownColumns = sizing
@@ -530,7 +619,14 @@ export function LayersPalette({
     else if (a === 'delete') void deleteLayers();
     else if (a === 'description' && one) startEditing({ handle: one.handle, field: 'description' });
     else if (a === 'merge') setMerging(selectedRows);
-    else if (a === 'all') select(new Set(shown.map((r) => r.handle)));
+    else if (a === 'removeFromGroup' && chosenFilter?.filterType === 'group') {
+      const out = new Set(selectedRows.map((r) => r.handle));
+      void apply({
+        kind: 'layer-filter-edit',
+        filter: chosenFilter.handle,
+        layers: chosenFilter.layers.filter((h) => !out.has(h)),
+      });
+    } else if (a === 'all') select(new Set(shown.map((r) => r.handle)));
     else if (a === 'clear') select(new Set());
     else if (a === 'allButCurrent')
       select(new Set(shown.filter((r) => !r.current).map((r) => r.handle)));
@@ -613,6 +709,88 @@ export function LayersPalette({
     }
   };
 
+  /** A filter edit; the filter it added, if any, is chosen. */
+  const applyFilter = async (edit: EngineEdit): Promise<EditResult> => {
+    const result = await engines.edit(doc.id, edit);
+    if (!result.ok) return result;
+    setMessage(undefined);
+    store.edited(doc.id);
+    const added = result.change.objects?.added?.find(isLayerFilter);
+    if (added) setChoice(added.handle);
+    return result;
+  };
+
+  /** New Group Filter: Group Filter1 (nested in `parent`), named in place. */
+  const newGroupFilter = async (parent?: Handle) => {
+    const result = await applyFilter({
+      kind: 'layer-filter-new',
+      name: nextFilterName(filters, 'group'),
+      filterType: 'group',
+      ...(parent !== undefined && { parent }),
+    });
+    if (!result.ok) setMessage(result.message);
+    const added = result.ok ? result.change.objects?.added?.find(isLayerFilter) : undefined;
+    if (added) setRenamingFilter(added.handle);
+  };
+
+  const newPropertyFilter = (parent?: Handle) =>
+    setFilterDialog({
+      name: nextFilterName(filters, 'property'),
+      expression: EMPTY_DEFINITION,
+      parent,
+    });
+
+  /** The filter menu's items, and F2 and Delete in the tree, on node `c`. */
+  const onFilterAction = (a: LayerFilterAction, c: FilterChoice) => {
+    const f = filterOf(c);
+    if (a === 'newProperty') newPropertyFilter(f?.handle);
+    else if (a === 'newGroup' && f?.filterType !== 'property') void newGroupFilter(f?.handle);
+    else if (a === 'rename' && f) setRenamingFilter(f.handle);
+    else if (a === 'delete' && f) void apply({ kind: 'layer-filter-delete', filter: f.handle });
+    else if (a === 'properties' && f?.filterType === 'property')
+      setFilterDialog({
+        filter: f.handle,
+        name: f.name,
+        expression: f.expression,
+        parent: f.parent,
+      });
+  };
+
+  const renameFilter = async (filter: Handle, name: string | undefined) => {
+    setRenamingFilter(undefined);
+    const f = filterOf(filter);
+    if (f && name !== undefined && name !== f.name)
+      await apply({ kind: 'layer-filter-edit', filter, name });
+  };
+
+  /** Layers dropped on a group filter: those not in it yet join it. */
+  const dropLayers = async (filter: Handle, layers: Handle[]) => {
+    const f = filterOf(filter);
+    if (f?.filterType !== 'group') return;
+    const add = layers.filter((h) => !f.layers.includes(h));
+    if (add.length > 0)
+      await apply({ kind: 'layer-filter-edit', filter, layers: [...f.layers, ...add] });
+  };
+
+  /** Layer Filter Properties' OK: the filter made or changed, or why not. */
+  const saveFilter = async (name: string, expression: string): Promise<string | undefined> => {
+    const d = filterDialog;
+    if (!d) return undefined;
+    const result = await applyFilter(
+      d.filter !== undefined
+        ? { kind: 'layer-filter-edit', filter: d.filter, name, expression }
+        : {
+            kind: 'layer-filter-new',
+            name,
+            expression,
+            ...(d.parent !== undefined && { parent: d.parent }),
+          },
+    );
+    if (!result.ok) return result.message;
+    setFilterDialog(undefined);
+    return undefined;
+  };
+
   const onPaletteKey = (e: KeyboardEvent) => {
     // AutoCAD's manager: Alt+N New Layer, Alt+D Delete Layer, Alt+C Set Current, Alt+S Layer
     // States Manager; Ctrl+A all.
@@ -627,7 +805,11 @@ export function LayersPalette({
               ? setCurrent
               : k === 's'
                 ? () => layerStatesManager.show(doc.id)
-                : undefined;
+                : k === 'p'
+                  ? () => newPropertyFilter()
+                  : k === 'g'
+                    ? () => newGroupFilter()
+                    : undefined;
       if (run) {
         e.preventDefault();
         void run();
@@ -713,6 +895,11 @@ export function LayersPalette({
       setEditing(undefined);
       focusRow(row.handle);
     },
+    dragStart: (e, row) => {
+      const layers = selected.has(row.handle) ? [...selected] : [row.handle];
+      e.dataTransfer.setData(LAYER_DRAG_TYPE, JSON.stringify(layers));
+      e.dataTransfer.effectAllowed = 'copy';
+    },
   };
 
   /**
@@ -760,7 +947,7 @@ export function LayersPalette({
   // development build (M5-05 part 5).
   const rowViews = new Map<Handle, { props: RowProps; element: ReactElement }>();
   const firstShown = shown[0]?.handle;
-  const rowList = sorted.map((r) => {
+  const rowList = inFilter.map((r) => {
     const props: RowProps = {
       row: r,
       columns: visible,
@@ -797,6 +984,22 @@ export function LayersPalette({
         </button>
       </header>
       <div className="layer-tools" role="toolbar" aria-label="Layer tools">
+        <button
+          type="button"
+          title="New Property Filter (Alt+P)"
+          aria-keyshortcuts="Alt+P"
+          onClick={() => newPropertyFilter()}
+        >
+          New Property Filter
+        </button>
+        <button
+          type="button"
+          title="New Group Filter (Alt+G)"
+          aria-keyshortcuts="Alt+G"
+          onClick={() => void newGroupFilter()}
+        >
+          New Group Filter
+        </button>
         <button
           type="button"
           title="New Layer (Alt+N)"
@@ -852,79 +1055,127 @@ export function LayersPalette({
           {message}
         </p>
       )}
-      <div className="layer-table-wrap">
-        {needle && <style>{searchCss(needle)}</style>}
-        {frozen.size > 0 && <style>{frozenColumnsCss(frozen)}</style>}
-        {cutColumns.length > 0 && <style>{cutColumnsCss(cutColumns)}</style>}
-        <table
-          ref={tableRef}
-          className="layer-table"
-          aria-label="Layers of the drawing"
-          aria-multiselectable="true"
-          style={
-            {
-              width: tableWidth,
-              '--layer-columns': layerColumnTracks(shownColumns, visible),
-            } as CSSProperties
-          }
-        >
-          <thead>
-            <tr
-              onContextMenu={(e) => {
-                e.preventDefault();
-                const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-col]');
-                const column = (th?.dataset['col'] as LayerColumnKey | undefined) ?? 'name';
-                setColumnsMenu({ x: e.clientX, y: e.clientY, column });
-              }}
-            >
-              {visible.map((c) => {
-                const sorting = columns.sort.key === c.key;
-                return (
-                  <LayerColumnHeader
-                    key={c.key}
-                    columnKey={c.key}
-                    title={c.title}
-                    sort={
-                      sorting ? (columns.sort.descending ? 'descending' : 'ascending') : undefined
-                    }
-                    onSort={() =>
-                      onColumns({ ...columns, sort: sortAfterClick(columns.sort, c.key) })
-                    }
-                    onMenu={(at) => setColumnsMenu({ ...at, column: c.key })}
-                    onMove={(before) =>
-                      onColumns({
-                        ...columns,
-                        order: moveLayerColumnBefore(columns.order, c.key, before),
-                      })
-                    }
-                    onResize={(width, done) => {
-                      if (!done) {
-                        setSizing({ key: c.key, width });
-                        return;
-                      }
-                      setSizing(undefined);
-                      onColumns(withLayerColumnWidths(columns, { [c.key]: width }));
-                    }}
-                    onOptimize={() => sizeColumns('optimize', c.key)}
-                  />
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody
-            onContextMenu={(e) => {
-              const tr = (e.target as HTMLElement).closest<HTMLElement>('tr[data-handle]');
-              const row = tr && shown.find((r) => r.handle === tr.dataset.handle);
-              if (!row) return;
-              e.preventDefault();
-              openListMenu(row, { x: e.clientX, y: e.clientY });
+      <div className="layer-body">
+        {columns.treeCollapsed ? (
+          <button
+            type="button"
+            className="layer-filters-expand"
+            aria-label="Expand Layer Filter tree"
+            title="Expand Layer Filter tree"
+            aria-expanded="false"
+            onClick={() => {
+              const { treeCollapsed: _, ...rest } = columns;
+              onColumns(rest);
             }}
           >
-            {rowList}
-          </tbody>
-        </table>
-        {shown.length === 0 && <p className="empty">No layer matches “{search}”.</p>}
+            »
+          </button>
+        ) : (
+          <LayerFilterTree
+            tree={layerFilterTree(filters)}
+            choice={chosen}
+            invert={invert}
+            renaming={renamingFilter}
+            onChoose={(c) => {
+              setChoice(c);
+              setMessage(undefined);
+            }}
+            onInvert={setInvert}
+            onRename={(f, name) => void renameFilter(f, name)}
+            onMenu={(c, at) => {
+              setChoice(c);
+              setFilterMenu({ choice: c, at });
+            }}
+            onAction={onFilterAction}
+            onDropLayers={(f, layers) => void dropLayers(f, layers)}
+            onCollapse={() => onColumns({ ...columns, treeCollapsed: true })}
+          />
+        )}
+        <div className="layer-table-wrap">
+          {needle && <style>{searchCss(needle)}</style>}
+          {frozen.size > 0 && <style>{frozenColumnsCss(frozen)}</style>}
+          {cutColumns.length > 0 && <style>{cutColumnsCss(cutColumns)}</style>}
+          <table
+            ref={tableRef}
+            className="layer-table"
+            aria-label="Layers of the drawing"
+            aria-multiselectable="true"
+            style={
+              {
+                width: tableWidth,
+                '--layer-columns': layerColumnTracks(shownColumns, visible),
+              } as CSSProperties
+            }
+          >
+            <thead>
+              <tr
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-col]');
+                  const column = (th?.dataset['col'] as LayerColumnKey | undefined) ?? 'name';
+                  setColumnsMenu({ x: e.clientX, y: e.clientY, column });
+                }}
+              >
+                {visible.map((c) => {
+                  const sorting = columns.sort.key === c.key;
+                  return (
+                    <LayerColumnHeader
+                      key={c.key}
+                      columnKey={c.key}
+                      title={c.title}
+                      sort={
+                        sorting ? (columns.sort.descending ? 'descending' : 'ascending') : undefined
+                      }
+                      onSort={() =>
+                        onColumns({ ...columns, sort: sortAfterClick(columns.sort, c.key) })
+                      }
+                      onMenu={(at) => setColumnsMenu({ ...at, column: c.key })}
+                      onMove={(before) =>
+                        onColumns({
+                          ...columns,
+                          order: moveLayerColumnBefore(columns.order, c.key, before),
+                        })
+                      }
+                      onResize={(width, done) => {
+                        if (!done) {
+                          setSizing({ key: c.key, width });
+                          return;
+                        }
+                        setSizing(undefined);
+                        onColumns(withLayerColumnWidths(columns, { [c.key]: width }));
+                      }}
+                      onOptimize={() => sizeColumns('optimize', c.key)}
+                    />
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody
+              onContextMenu={(e) => {
+                const tr = (e.target as HTMLElement).closest<HTMLElement>('tr[data-handle]');
+                const row = tr && shown.find((r) => r.handle === tr.dataset.handle);
+                if (!row) return;
+                e.preventDefault();
+                openListMenu(row, { x: e.clientX, y: e.clientY });
+              }}
+            >
+              {rowList}
+            </tbody>
+          </table>
+          {shown.length === 0 && needle && <p className="empty">No layer matches “{search}”.</p>}
+        </div>
       </div>
+      <p className="layer-filter-count" aria-live="polite">
+        {filterCountLine(
+          chosen === 'all'
+            ? 'All'
+            : chosen === 'used'
+              ? 'All Used Layers'
+              : (chosenFilter?.name ?? ''),
+          shown.length,
+          rows.length,
+        )}
+      </p>
       {columnsMenu && (
         <LayerColumnsMenu
           at={columnsMenu}
@@ -943,8 +1194,31 @@ export function LayersPalette({
         <LayerListMenu
           at={listMenu}
           selected={selectedRows.length}
+          group={chosenFilter?.filterType === 'group'}
           onAction={onListAction}
           onClose={() => setListMenu(undefined)}
+        />
+      )}
+      {filterMenu && (
+        <LayerFilterMenu
+          at={filterMenu.at}
+          filter={filterOf(filterMenu.choice)}
+          onAction={(a) => onFilterAction(a, filterMenu.choice)}
+          onClose={() => setFilterMenu(undefined)}
+        />
+      )}
+      {filterDialog && (
+        <LayerFilterDialog
+          name={filterDialog.name}
+          expression={filterDialog.expression}
+          parent={filterDialog.parent}
+          source={filterSource}
+          rows={sorted}
+          used={used}
+          books={layerColorBooks(doc.opened.init, engines.changesOf(doc.id))}
+          linetypes={layerLinetypes(doc.opened.init, engines.changesOf(doc.id))}
+          onOk={saveFilter}
+          onCancel={() => setFilterDialog(undefined)}
         />
       )}
       {merging && (

@@ -9,6 +9,7 @@ import {
   type DocumentInit,
   type EditResult,
   type EngineEdit,
+  type Handle,
   type PaperView,
   type PurgeHealth,
 } from '@triya/engine';
@@ -35,6 +36,7 @@ export class EngineHost {
   readonly #pending = new Map<number, Pending>();
   readonly #blocks = new Map<number, PendingBlocks>();
   readonly #health = new Map<number, { resolve(h: PurgeHealth): void; reject(e: Error): void }>();
+  readonly #used = new Map<number, { resolve(h: Handle[]): void; reject(e: Error): void }>();
   readonly #commandListeners = new Set<(o: CommandOutput) => void>();
   #nextId = 1;
   #nextLink = 1;
@@ -145,6 +147,17 @@ export class EngineHost {
     });
   }
 
+  /** The layers objects are on (M5-07 part 5: the Layer Properties Manager's All Used Layers). */
+  layersInUse(): Promise<Handle[]> {
+    if (this.#disposed) return Promise.reject(new Error('engine host disposed'));
+    if (this.#session) return Promise.resolve(this.#session.layersInUse());
+    const id = this.#nextId++;
+    return new Promise((resolve, reject) => {
+      this.#used.set(id, { resolve, reject });
+      this.#worker!.postMessage({ type: 'layers-in-use', id });
+    });
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#worker?.terminate();
@@ -152,12 +165,14 @@ export class EngineHost {
       ...this.#pending.values(),
       ...this.#blocks.values(),
       ...this.#health.values(),
+      ...this.#used.values(),
     ]) {
       p.reject(new Error('engine host disposed'));
     }
     this.#pending.clear();
     this.#blocks.clear();
     this.#health.clear();
+    this.#used.clear();
     this.#commandListeners.clear();
   }
 
@@ -174,6 +189,13 @@ export class EngineHost {
       else health.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
       return;
     }
+    const used = m.id === undefined ? undefined : this.#used.get(m.id);
+    if (used) {
+      this.#used.delete(m.id!);
+      if (m.type === 'layers-in-use') used.resolve([...m.layers]);
+      else used.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
+      return;
+    }
     const blocks = m.id === undefined ? undefined : this.#blocks.get(m.id);
     if (blocks) {
       this.#blocks.delete(m.id!);
@@ -181,7 +203,13 @@ export class EngineHost {
       else blocks.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
       return;
     }
-    if (m.type === 'save-blocks' || m.type === 'save-views' || m.type === 'purge-health') return;
+    if (
+      m.type === 'save-blocks' ||
+      m.type === 'save-views' ||
+      m.type === 'purge-health' ||
+      m.type === 'layers-in-use'
+    )
+      return;
     const p = m.id === undefined ? undefined : this.#pending.get(m.id);
     if (m.id !== undefined) this.#pending.delete(m.id);
     if (m.type === 'result') p?.resolve(m.result);

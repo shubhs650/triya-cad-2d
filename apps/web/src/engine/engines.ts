@@ -13,6 +13,7 @@ import type {
   DocumentInit,
   EditResult,
   EngineEdit,
+  Handle,
   PaperView,
   PurgeHealth,
 } from '@triya/engine';
@@ -141,6 +142,15 @@ export class Engines {
   async purgeHealth(doc: number): Promise<PurgeHealth | undefined> {
     const engine = this.#engines.get(doc);
     return engine ? engine.purgeHealth() : undefined;
+  }
+
+  /**
+   * The layers objects are on (M5-07 part 5: the Layer Properties Manager's All Used Layers);
+   * undefined when the drawing is not open.
+   */
+  async layersInUse(doc: number): Promise<Handle[] | undefined> {
+    const engine = this.#engines.get(doc);
+    return engine ? engine.layersInUse() : undefined;
   }
 
   /** Applies an edit to a drawing and shows it on every canvas of that drawing. */
