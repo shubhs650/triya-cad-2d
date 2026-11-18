@@ -1053,7 +1053,8 @@ button {
   font: inherit;
 }
 
-.layer-table .toggle {
+.layer-table .toggle,
+.edit-layer-state-list .toggle {
   min-width: 64px;
   padding: 1px 6px;
   border: 1px solid var(--chrome-border);
@@ -1064,12 +1065,17 @@ button {
 
 .layer-table .toggle.on[aria-pressed='false'],
 .layer-table .toggle.frozen[aria-pressed='true'],
-.layer-table .toggle.locked[aria-pressed='true'] {
+.layer-table .toggle.locked[aria-pressed='true'],
+.edit-layer-state-list .toggle.on[aria-pressed='false'],
+.edit-layer-state-list .toggle.frozen[aria-pressed='true'],
+.edit-layer-state-list .toggle.locked[aria-pressed='true'],
+.edit-layer-state-list .toggle.newVpFrozen[aria-pressed='true'] {
   background: var(--chrome-border);
   color: var(--chrome-text-muted);
 }
 
-.layer-table .swatch {
+.layer-table .swatch,
+.edit-layer-state-list .swatch {
   display: inline-block;
   width: 10px;
   height: 10px;
@@ -1079,7 +1085,8 @@ button {
 }
 
 /* M5-05 part 2: a property cell is a button opening its dialog, drawn as the cell's text. */
-.layer-table .layer-cell {
+.layer-table .layer-cell,
+.edit-layer-state-list .layer-cell {
   padding: 0 2px;
   border: 1px solid transparent;
   border-radius: 3px;
@@ -1091,7 +1098,9 @@ button {
 }
 
 .layer-table .layer-cell:hover,
-.layer-table .layer-cell:focus-visible {
+.layer-table .layer-cell:focus-visible,
+.edit-layer-state-list .layer-cell:hover,
+.edit-layer-state-list .layer-cell:focus-visible {
   border-color: var(--chrome-border);
 }
 
@@ -5823,6 +5832,38 @@ button {
 
 .layer-states-message[role='alert'] {
   color: var(--danger-text);
+}
+
+/* Edit Layer State (M5-07 part 3): every column of each layer the state names, scrolled. */
+.cad-dialog.edit-layer-state {
+  max-width: min(1040px, calc(100vw - 32px));
+}
+
+.edit-layer-state-name {
+  margin: 0 0 6px;
+}
+
+.edit-layer-state-list {
+  height: 300px;
+}
+
+.edit-layer-state-list .toggle {
+  min-width: 0;
+}
+
+.edit-layer-state-body .layer-states-actions {
+  flex-direction: row;
+  margin-top: 6px;
+}
+
+.edit-layer-state-list tr.not-in-drawing th {
+  color: var(--chrome-text-muted);
+  font-style: italic;
+}
+
+.select-layers-to-add-list select {
+  width: 100%;
+  min-width: 240px;
 }
 
 @media (width < 700px) {

@@ -6,7 +6,8 @@
 // States Manager's New), the drawing saved as AC1032 DXF (DEC-047) and read back. The new state
 // reads back as saved, filed in the drawing's ACAD_LAYERSTATES, or in a new one the save makes
 // when the drawing had none; the states the drawing had keep every group as read. Then, on the
-// sample, its state is edited, renamed and deleted through the same round trip.
+// sample, its state is edited, renamed and deleted through the same round trip, and its layers
+// changed, removed and added as Edit Layer State does (M5-07 part 3).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CadObject, XRecord, type CadDocument } from '@node-projects/acad-ts';
@@ -15,6 +16,7 @@ import {
   LAYER_STATE_MASK,
   deleteLayerStateChange,
   editLayerStateChange,
+  layerStateEntry,
   layerStateNamed,
   layerStates,
   restoreLayerStateChange,
@@ -147,6 +149,52 @@ describe('sample_AC1032_ascii.dxf', () => {
     expect(layerStates(back.model).map((s) => [s.name, s.description, s.handle])).toEqual([
       ['Site', 'Moved', a.handle],
     ]);
+    expect(rawStates(back.doc).get('ACAD_VIEWS_view_custom')).toEqual(
+      before.get('ACAD_VIEWS_view_custom'),
+    );
+  });
+  it('saves the layers Edit Layer State changed, removed and added', () => {
+    const bytes = new Uint8Array(readFileSync(SAMPLE));
+    const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
+    apply(model, saveLayerStateChange(model, 'Plan'));
+    const saved = saveAc1032Dxf(readCadDocument(bytes), model);
+    const doc = readCadDocument(saved);
+    const m = DocumentModel.create(documentInit(doc));
+    const before = rawStates(doc);
+    const st = layerStateNamed(m, 'Plan')!;
+    const [first, second, ...rest] = st.layers;
+    const other = [...m.tables.linetypes.values()].find(
+      (l) => l.handle !== second!.linetype && !/^by/i.test(l.name),
+    )!;
+    // The first layer removed, then added back (at the end, with its settings now), the
+    // second changed in every setting the dialog edits.
+    const layers = [
+      {
+        ...second!,
+        on: !second!.on,
+        frozen: !second!.frozen,
+        locked: !second!.locked,
+        plot: !second!.plot,
+        newVpFrozen: !second!.newVpFrozen,
+        color: { kind: 'rgb' as const, r: 10, g: 20, b: 30 },
+        linetype: other.handle,
+        lineweight: 50,
+        transparency: { alpha: 128 },
+      },
+      ...rest,
+      layerStateEntry(m, m.tables.layers.get(first!.layer!)!),
+    ];
+    apply(m, editLayerStateChange(m, st.handle, { layers }));
+    const back = reopen(saved, m);
+    const plan = layerStateNamed(back.model, 'Plan')!;
+    expect(plan.handle).toBe(st.handle);
+    expect(shown(plan)).toEqual(shown(layerStateNamed(m, 'Plan')));
+    expect(plan.layers[0]).toMatchObject({
+      linetype: other.handle,
+      linetypeName: other.name,
+      lineweight: 50,
+    });
+    expect(plan.layers.at(-1)!.layer).toBe(first!.layer);
     expect(rawStates(back.doc).get('ACAD_VIEWS_view_custom')).toEqual(
       before.get('ACAD_VIEWS_view_custom'),
     );

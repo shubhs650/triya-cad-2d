@@ -1,0 +1,1 @@
+- M5-07 part 3 (#553): Edit Layer State. The Layer States Manager's Edit... lists the layers a layer state names with their settings, changes them in place, adds the drawing's other layers and removes layers, saved by OK as one undo step.

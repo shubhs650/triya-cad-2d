@@ -8,6 +8,7 @@ import {
   EngineSession,
   LAYER_STATE_MASK,
   layerStateDictionary,
+  layerStateEntry,
   layerStateMatches,
   layerStateNamed,
   layerStates,
@@ -318,5 +319,153 @@ describe('layer states in the Layer States Manager (M5-07 part 2)', () => {
     expect(s.model.objects.has(old)).toBe(false);
     await s.command({ kind: 'submit', text: 'U' });
     expect(stateOf(s, 'Plan')).toMatchObject({ handle: old, description: 'Mine' });
+  });
+});
+
+// M5-07 part 3: the Layer States Manager's Edit... (AutoCAD 2024 Help, "Edit Layer State Dialog
+// Box"): the layers a state names and their settings, changed, added ("Add layers to layer
+// state", the layers of the drawing it does not name) and removed ("Remove layers from layer
+// state"); OK saves them as one LAYERSTATE step.
+describe('Edit Layer State (M5-07 part 3)', () => {
+  it('adds, removes and changes the layers a state names, one LAYERSTATE step', async () => {
+    const s = new EngineSession(statesInit());
+    s.edit({ kind: 'layer-state-save', name: 'Plan' });
+    s.edit({ kind: 'layer-new', name: 'Later' });
+    const later = [...s.model.tables.layers.values()].find((l) => l.name === 'Later')!;
+    const st = stateOf(s, 'Plan');
+    const [zero, walls] = st.layers;
+    const layers = [
+      zero!,
+      {
+        ...walls!,
+        on: false,
+        frozen: true,
+        color: { kind: 'aci', index: 1 },
+        linetype: DASHED,
+        linetypeName: 'whatever',
+        lineweight: 35,
+        transparency: { alpha: 128 },
+      },
+      layerStateEntry(s.model, later),
+    ] as const;
+    const r = s.edit({ kind: 'layer-state-edit', state: st.handle, layers });
+    expect(r.ok).toBe(true);
+    expect(s.undoState.nextUndo).toBe('LAYERSTATE');
+    const now = stateOf(s, 'Plan');
+    expect(now.layers.map((l) => l.name)).toEqual(['0', 'WALLS', 'Later']);
+    // The linetype's name is the record's, whatever the caller said.
+    expect(now.layers[1]).toMatchObject({ linetype: DASHED, linetypeName: 'DASHED', on: false });
+    expect(now.layers[2]).toEqual({
+      layer: later.handle,
+      name: 'Later',
+      on: true,
+      frozen: false,
+      locked: false,
+      plot: true,
+      newVpFrozen: false,
+      vpFrozen: false,
+      color: later.color,
+      linetype: later.linetype,
+      linetypeName: 'Continuous',
+      lineweight: later.lineweight,
+      plotStyle: 'Color_7',
+      transparency: later.transparency,
+    });
+    // Restore sets what the edit says, and leaves the layer the state no longer names alone.
+    edited(s, LAYER_DOORS, { on: false });
+    s.edit({ kind: 'layer-state-restore', state: now.handle });
+    expect(layerOf(s, LAYER_WALLS)).toMatchObject({
+      on: false,
+      lineweight: 35,
+      linetype: DASHED,
+    });
+    expect(layerOf(s, LAYER_WALLS).color).toEqual({ kind: 'aci', index: 1 });
+    // WALLS is current: AutoCAD never freezes the current layer.
+    expect(layerOf(s, LAYER_WALLS).frozen).toBe(false);
+    expect(layerOf(s, LAYER_DOORS).on).toBe(false);
+    await s.command({ kind: 'submit', text: 'U' });
+    await s.command({ kind: 'submit', text: 'U' });
+    await s.command({ kind: 'submit', text: 'U' });
+    expect(stateOf(s, 'Plan').layers.map((l) => l.name)).toEqual(['0', 'WALLS', 'Doors']);
+  });
+
+  it('keeps a layer the drawing lacks by name, and changes nothing when nothing changed', () => {
+    const s = new EngineSession(statesInit());
+    const imported: LayerStateInit = {
+      name: 'From file',
+      description: '',
+      mask: LAYER_STATE_MASK.all,
+      paperSpace: false,
+      currentLayer: '0',
+      layers: [{ ...layerStateEntry(s.model, layerOf(s, LAYER_0)), name: 'Elsewhere' }],
+    };
+    s.edit({ kind: 'layer-state-import', state: imported });
+    const st = stateOf(s, 'From file');
+    expect(st.layers[0]).not.toHaveProperty('layer');
+    const r = s.edit({ kind: 'layer-state-edit', state: st.handle, layers: st.layers });
+    expect(r).toMatchObject({ ok: true });
+    expect(stateOf(s, 'From file')).toBe(st);
+    const off = s.edit({
+      kind: 'layer-state-edit',
+      state: st.handle,
+      layers: [{ ...st.layers[0]!, on: false }],
+    });
+    expect(off.ok).toBe(true);
+    expect(stateOf(s, 'From file').layers).toEqual([{ ...st.layers[0]!, on: false }]);
+  });
+
+  it('refuses layers listed twice, layers and linetypes the drawing lacks, and bad settings', () => {
+    const s = new EngineSession(statesInit());
+    s.edit({ kind: 'layer-state-save', name: 'Plan' });
+    const st = stateOf(s, 'Plan');
+    const [zero, walls] = st.layers as [LayerState['layers'][0], LayerState['layers'][0]];
+    const refused = (layers: readonly unknown[]) =>
+      s.edit({ kind: 'layer-state-edit', state: st.handle, layers } as never);
+    expect(refused([zero, { ...zero }])).toEqual({
+      ok: false,
+      message: 'Layer "0" is listed twice.',
+    });
+    expect(refused([walls, { ...walls, layer: undefined, name: 'walls' }])).toEqual({
+      ok: false,
+      message: 'Layer "walls" is listed twice.',
+    });
+    expect(refused([{ ...walls, layer: 'FFF' }])).toEqual({
+      ok: false,
+      message: 'Layer "WALLS" is not in the drawing.',
+    });
+    expect(refused([{ ...walls, color: { kind: 'byLayer' } }])).toEqual({
+      ok: false,
+      message: 'A layer’s color cannot be ByLayer or ByBlock.',
+    });
+    expect(refused([{ ...walls, linetype: 'FFF' }])).toEqual({
+      ok: false,
+      message: 'Linetype FFF is not in the drawing.',
+    });
+    expect(refused([{ ...walls, lineweight: 'ByLayer' }])).toEqual({
+      ok: false,
+      message: 'Invalid lineweight.',
+    });
+    expect(refused([{ ...walls, lineweight: 0.3 }])).toEqual({
+      ok: false,
+      message: 'Invalid lineweight.',
+    });
+    expect(refused([{ ...walls, transparency: 'ByBlock' }])).toEqual({
+      ok: false,
+      message: 'Invalid transparency.',
+    });
+    expect(refused([{ ...walls, name: '', layer: undefined }])).toEqual({
+      ok: false,
+      message: 'A layer in the state has no name.',
+    });
+    expect(stateOf(s, 'Plan')).toBe(st);
+  });
+
+  it('names a layer the state names by handle as the drawing names it now', () => {
+    const s = new EngineSession(statesInit());
+    s.edit({ kind: 'layer-state-save', name: 'Plan' });
+    edited(s, LAYER_DOORS, { name: 'Gates' });
+    const st = stateOf(s, 'Plan');
+    s.edit({ kind: 'layer-state-edit', state: st.handle, layers: st.layers });
+    expect(stateOf(s, 'Plan').layers.map((l) => l.name)).toEqual(['0', 'WALLS', 'Gates']);
   });
 });

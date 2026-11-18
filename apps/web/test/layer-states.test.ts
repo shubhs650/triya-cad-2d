@@ -16,7 +16,11 @@ import {
   allRestoreProperties,
   currentLayerStateName,
   drawingLayerStates,
+  editLayerStateRows,
+  entryKey,
   lasFileName,
+  layersToAdd,
+  withLayersAdded,
   layerStateRows,
   layerStateTables,
   layerStatesManager,
@@ -165,5 +169,64 @@ describe('layerStatesManager', () => {
     await second;
     expect(done).toBe(2);
     expect(layerStatesManager.get()).toBeUndefined();
+  });
+});
+
+// M5-07 part 3: Edit Layer State's rows, the layers "Add layers to layer state" offers and what
+// adding them puts in the state.
+describe('Edit Layer State', () => {
+  /** An entry naming a layer by name only, as a `.las` file's for a layer the drawing lacks. */
+  const byName = (l: LayerRecord, name: string): LayerStateLayer => {
+    const { layer: _layer, ...rest } = entry(l);
+    return { ...rest, name };
+  };
+  const tables = layerStateTables(
+    {
+      ...init,
+      tables: {
+        ...init.tables,
+        layers: [WALLS, DOORS, layer('12', 'layer10'), layer('13', 'Layer2'), layer('14', 'Gone')],
+      },
+    },
+    [],
+  );
+
+  it('shows each layer the state names with its settings, in LWUNITS', () => {
+    const rows = editLayerStateRows(
+      [
+        { ...entry(WALLS), lineweight: 0.35 * 100, transparency: { alpha: 128 } },
+        {
+          ...byName(DOORS, 'Elsewhere'),
+          on: false,
+          color: { kind: 'aci', index: 1 },
+        },
+      ],
+      tables,
+      'in',
+    );
+    expect(rows[0]).toMatchObject({
+      key: '10',
+      name: 'Walls',
+      lineweight: '0.014"',
+      transparency: 50,
+      plotStyle: 'Color_7',
+      linetype: 'Continuous',
+      inDrawing: true,
+    });
+    expect(rows[1]).toMatchObject({
+      key: 'name:ELSEWHERE',
+      on: false,
+      color: { label: 'red' },
+      inDrawing: false,
+    });
+  });
+
+  it('offers the layers the state does not name, by name, and adds them with their settings', () => {
+    const st = state('51', 'plan').layers;
+    const offered = layersToAdd([...st, byName(DOORS, 'GONE')], tables);
+    expect(offered.map((l) => l.name)).toEqual(['Layer2', 'layer10']);
+    const added = withLayersAdded(st, tables, offered);
+    expect(added.map(entryKey)).toEqual(['10', '11', '13', '12']);
+    expect(added[2]).toMatchObject({ layer: '13', name: 'Layer2', linetypeName: 'Continuous' });
   });
 });
