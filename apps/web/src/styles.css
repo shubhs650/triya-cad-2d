@@ -5623,3 +5623,79 @@ button {
   min-width: 16em;
   max-width: 100%;
 }
+
+/* BATTMAN's Block Attribute Manager (M5-03 part 2). */
+.cad-dialog.battman {
+  width: min(720px, calc(100vw - 32px));
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+.battman-list td,
+.battman-list th {
+  max-width: 140px;
+}
+
+.battman-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.battman-head .cad-dialog-field {
+  flex: 1;
+}
+
+.battman-body {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.battman-list-wrap {
+  flex: 1;
+  min-width: 0;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.battman-list tr.battman-duplicate td {
+  color: var(--danger-text);
+}
+
+.battman-list tr.battman-duplicate[aria-selected='true'] td {
+  color: #fff;
+}
+
+.battman-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.battman-found {
+  display: flex;
+  gap: 24px;
+  margin: 8px 0 0;
+}
+
+.cad-dialog.battman-edit {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.battman-edit-attribute {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+}
+
+.battman-settings-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 12px;
+}
+
+.battman-settings-all {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
