@@ -295,16 +295,10 @@ export async function expectInputsRead(page: Page): Promise<void> {
  * prompt not shown yet are held and replayed in order (M2-71): a fill made while the engine still
  * read the input before replaced that input's text, whose Enter was held, and export.spec.ts lost
  * a point and repeated LINE in CI. Specs never fill the command line themselves
- * (tests/lint/e2e-command-fill.test.ts); keys typed with `page.keyboard` need no wait. It also
- * waits until no dialog of the engine's is waiting on an answer (a prompt is shown).
+ * (tests/lint/e2e-command-fill.test.ts); keys typed with `page.keyboard` need no wait.
  */
 export async function enterCommand(page: Page, text: string): Promise<void> {
   await expectInputsRead(page);
-  // The prompt is empty while the running command waits on a dialog, and a line typed then is
-  // refused ("Invalid input."). A dialog just closed (Escape, OK) has answered, but the engine
-  // may not have read the answer yet: templates.spec.ts typed NEW right after DIMSTYLE's Escape,
-  // NEW was refused and the Select Template dialog never came (CI, 2026-11-18).
-  await expect(page.getByTestId('command-prompt')).not.toHaveText('');
   const input = page.getByLabel('Command', { exact: true });
   await input.fill(text);
   await input.press('Enter');

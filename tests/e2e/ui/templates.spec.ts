@@ -88,6 +88,10 @@ const ANSI = fileURLToPath(new URL('../../../assets/templates/triya-ansi.dxf', i
 
 test.describe('the user templates folder and Open with no template (M5-10 part 2)', () => {
   test.describe.configure({ timeout: 120_000 });
+  // Failed twice in CI on 2026-11-18 (the third NEW, after DIMSTYLE's Escape, never showed
+  // Select Template) and never in 30 local runs: keep a trace of a failure, which the ui shard
+  // uploads with test-results/, to find why.
+  test.use({ trace: 'retain-on-failure' });
 
   test('a template added in Settings is listed and opened; Open with no template', async ({
     page,
@@ -166,7 +170,6 @@ test.describe('the user templates folder and Open with no template (M5-10 part 2
     await enterCommand(page, 'DIMSTYLE');
     await expect(page.getByTestId('dimstyle-current')).toHaveText('ISO-25');
     await page.keyboard.press('Escape');
-    // enterCommand waits until the engine has read the dialog's answer (CI, 2026-11-18).
 
     // Imperial by keyboard: ArrowDown on the arrow opens the menu, then down to Imperial.
     await enterCommand(page, 'NEW');
