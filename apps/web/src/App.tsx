@@ -6,6 +6,7 @@ import type {
   ChangeSet,
   Clipboard,
   CommandInput,
+  CommandOutput,
   EditResult,
   EngineEdit,
   EntityId,
@@ -29,7 +30,12 @@ import {
   lassoPrompt,
   type FieldEvent,
 } from '@triya/engine';
-import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
+import {
+  decodeRaster,
+  type DrawnEntity,
+  type RefEditDisplay,
+  type ScreenRect,
+} from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   CanvasController,
@@ -349,7 +355,13 @@ engines.onCommand((doc, o) => {
   // The Quick Access Undo and Redo buttons and the undo toast follow the history (M2-23).
   if (o.type === 'undo') undoStates.set(doc, o.state, o.action);
   // REFEDIT (M5-02 part 3): the Edit Reference bar shows while a reference is edited in place.
-  if (o.type === 'refEdit') store.setRefEdit(doc, o.name);
+  if (o.type === 'refEdit') {
+    store.setRefEdit(doc, o.name);
+    const display = refEditDisplay(refEdits.get(doc), o);
+    if (display) refEdits.set(doc, display);
+    else refEdits.delete(doc);
+    for (const c of controllersOf(doc)) c.setRefEdit(display);
+  }
   if (o.type === 'selection') {
     selections.set(doc, o.ids);
     for (const c of controllersOf(doc)) c.setHighlight(o.ids);
@@ -473,6 +485,25 @@ async function clearAllLocalData(): Promise<ClearReport> {
 
 /** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
 const selections = new Map<number, readonly EntityId[]>();
+/** Each drawing's reference edited in place (M5-02 part 5), for canvases made during the edit. */
+const refEdits = new Map<number, RefEditDisplay>();
+
+/**
+ * The canvases' display of a reference edited in place (M5-02 part 5) after the engine's
+ * `refEdit` event: the block as it was comes with an edit's first event, the working set with
+ * every one; none once the edit ends.
+ */
+function refEditDisplay(
+  was: RefEditDisplay | undefined,
+  o: Extract<CommandOutput, { type: 'refEdit' }>,
+): RefEditDisplay | undefined {
+  if (o.name === undefined) return undefined;
+  if (o.held) {
+    const { block, path, order, entities } = o.held;
+    return { block, path, order, held: entities, working: o.working };
+  }
+  return was && { ...was, working: o.working };
+}
 /** Each drawing's grips as its engine last showed them (M2-06), for canvases made later. */
 const grips = new Map<
   number,
@@ -2630,6 +2661,8 @@ function ViewportCanvas({
     c.setPrompt(commandLines.get(id).prompt);
     const selected = selections.get(id);
     if (selected?.length) c.setHighlight(selected);
+    const editing = refEdits.get(id);
+    if (editing) c.setRefEdit(editing);
     const shown = grips.get(id);
     if (shown?.ids.length || shown?.groups?.length) c.setGrips(shown.ids, shown.hot, shown.groups);
     showCurrent(id, block, visibleRef.current);

@@ -116,6 +116,14 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'LAYLOCKFADECTL')).toEqual({ ok: true, value: -30 });
   });
 
+  it('keep XFADECTL, 50 at first, 0 to 90 (M5-02 part 5)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'XFADECTL')).toEqual({ ok: true, value: 50 });
+    systemVariableReply(d, 'XFADECTL', 70);
+    expect(d.get().xFade).toBe(70);
+    expect(systemVariableReply(d, 'XFADECTL')).toEqual({ ok: true, value: 70 });
+  });
+
   it('keep LWDEFAULT, 25 at first, and LWUNITS, millimetres at first (M5-08 part 3)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'LWDEFAULT')).toEqual({ ok: true, value: 25 });

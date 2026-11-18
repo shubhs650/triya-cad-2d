@@ -155,7 +155,7 @@ function setup() {
   };
   const bus = new PromptBus({ model, registry: builtinCommands(), view });
   const log: string[] = [];
-  const events: { name?: string; working: readonly number[] }[] = [];
+  const events: Extract<BusEvent, { type: 'refEdit' }>[] = [];
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);
     if (e.type === 'refEdit') events.push(e);
@@ -228,10 +228,52 @@ describe('REFEDIT', () => {
     );
     expect(t.log).toContain('4 objects in the working set.');
     expect(await t.name()).toMatch(/REFEDITNAME = "DOOR"/);
-    expect(t.events.at(-1)).toEqual({
+    expect(t.events.at(-1)).toMatchObject({
       type: 'refEdit',
       name: 'DOOR',
       working: ['34', '35', '36', '38'].map(t.id),
+    });
+  });
+
+  it('tells the canvas how the other references draw the block while it is edited (part 5)', async () => {
+    const t = setup();
+    const was = new Map(t.contents(DOOR).map((h) => [h, t.model.entity(t.id(h))]));
+    await t.refedit('line');
+    // The first event of the edit: the block as it was, for every reference but the one edited.
+    const first = t.events.at(-1)!;
+    expect(first.held).toEqual({
+      block: DOOR,
+      path: [t.id(DOOR_REF)],
+      order: ['34', '35', '36', '37', '38'].map(t.id),
+      entities: ['34', '35', '36', '38'].map((h) => was.get(h)),
+    });
+    // Later ones carry only the working set: a line drawn joins it.
+    await t.bus.script(['LINE', '0,0', '0,1', '']);
+    const drawn = t.events.at(-1)!;
+    expect(drawn.held).toBeUndefined();
+    expect(drawn.working).toHaveLength(5);
+    // U back past REFEDIT ends it; REDO resumes it, the block as it was sent again.
+    await t.bus.submit('U');
+    await t.bus.submit('U');
+    expect(t.events.at(-1)).toEqual({ type: 'refEdit', working: [] });
+    await t.bus.submit('REDO');
+    expect(t.events.at(-1)!.held?.order).toEqual(first.held!.order);
+    // Nested: the path runs from the reference picked to the one edited.
+    await t.bus.script(['REFCLOSE', 'D']);
+    await t.bus.submit('REFEDIT');
+    await t.pick('knob');
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      refedit: {
+        chosen: 1,
+        settings: (t.dialog() as Extract<DialogRequest, { type: 'refedit' }>).settings,
+      },
+    });
+    expect(t.events.at(-1)!.held).toMatchObject({
+      block: KNOB,
+      path: [DOOR_REF, '36'].map(t.id),
+      order: ['39', '3B'].map(t.id),
     });
   });
 
