@@ -95,6 +95,7 @@ import { battmanCommand } from './battman';
 import { xattachCommand } from './xref-attach';
 import { xbindCommand } from './xbind';
 import { linetypeCommand, ltscaleCommand } from './linetype';
+import { lweightCommand } from './lweight';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 import { ARRAY_COMMANDS } from './modify/array';
 
@@ -212,6 +213,7 @@ export function builtinCommands(): CommandRegistry {
     xbindCommand(),
     linetypeCommand(),
     ltscaleCommand(),
+    lweightCommand(),
     imageadjustCommand(),
     imageadjustDashCommand(),
     imagequalityCommand(),

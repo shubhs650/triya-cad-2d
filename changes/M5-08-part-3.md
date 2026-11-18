@@ -1,0 +1,1 @@
+- M5-08 part 3 (#531): LWEIGHT opens Lineweight Settings to pick the current lineweight, list lineweights in millimetres or inches, show lineweights, set what Default draws as and adjust how wide lineweights look on the Model tab, all kept with your settings; -LWEIGHT does the same at the command line, and plots draw Default at the width you chose.

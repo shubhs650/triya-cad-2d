@@ -123,6 +123,12 @@ export interface SystemVariable {
 /** PICKFIRST: objects picked at `Command:` are what the next command takes (noun-verb). */
 export const PICKFIRST = 'PICKFIRST';
 
+/** AutoCAD's lineweights, hundredths of a millimetre. */
+export const LINEWEIGHT_VALUES: readonly number[] = [
+  0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200,
+  211,
+];
+
 export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'ORTHOMODE', store: 'app', kind: 'switch' },
   { name: 'SNAPMODE', store: 'app', kind: 'switch' },
@@ -132,6 +138,11 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'POLARANG', store: 'app', kind: 'real', choices: [90, 45, 30, 22.5, 18, 15, 10, 5] },
   { name: 'APERTURE', store: 'app', kind: 'integer', min: 1, max: 50 },
   { name: 'LWDISPLAY', store: 'app', kind: 'switch' },
+  // M5-08 part 3 (AutoCAD 2024 Help, "LWDEFAULT", "LWUNITS"; both "Saved in: Registry"): what
+  // Default draws as, one of the lineweights (hundredths of a millimetre, initially 25), and
+  // whether lineweights are listed in millimetres (1, initially) or inches (0).
+  { name: 'LWDEFAULT', store: 'app', kind: 'integer', choices: LINEWEIGHT_VALUES },
+  { name: 'LWUNITS', store: 'app', kind: 'switch' },
   { name: 'TRANSPARENCYDISPLAY', store: 'app', kind: 'switch' },
   { name: 'PDFOSNAP', store: 'app', kind: 'switch' },
   // 1 (AutoCAD 2021+): a revision cloud shows its corners; 0: a grip at every arc's end.
@@ -565,12 +576,6 @@ const DISTANCE_VARIABLES = new Set([
  * whatever ANGDIR says is what the UNITS dialog's Direction shows).
  */
 const ANGLE_VARIABLES = new Set(['ANGBASE', 'CHAMFERD', 'SNAPANG', 'DIMJOGANG']);
-
-/** AutoCAD's lineweights, hundredths of a millimetre. */
-export const LINEWEIGHT_VALUES: readonly number[] = [
-  0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200,
-  211,
-];
 
 /** The variable a header entry is, from the value the drawing holds. */
 function headerVariable(key: string, value: HeaderValue): SystemVariable {

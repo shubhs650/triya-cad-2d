@@ -30,7 +30,7 @@ export interface PaintOptions {
 }
 
 /** AutoCAD's initial LWDEFAULT. */
-const LWDEFAULT = 25;
+export const LWDEFAULT_INITIAL = 25;
 
 /** LTYPE records are frozen and replaced on change, so a record keys its pattern. */
 const patterns = new WeakMap<LinetypeRecord, LinePattern>();
@@ -62,7 +62,7 @@ export interface PaintFunction {
 export function createPaint(o: PaintOptions = {}): PaintFunction & {
   readonly insertContext: InsertContextFunction;
 } {
-  const lwDefault = o.lwDefault ?? LWDEFAULT;
+  const lwDefault = o.lwDefault ?? LWDEFAULT_INITIAL;
   const paint = (e: Entity, model: DocumentModel, block?: BlockContext): Paint | undefined => {
     const layers = model.tables.layers;
     const src = { layers, lwDefault };

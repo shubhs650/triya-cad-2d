@@ -500,6 +500,10 @@ export class RenderSession {
       tessellate: this.renderer.tessellateContext,
       viewHeight: this.renderer.viewHeight,
       images: (h) => this.#images.get(h),
+      // Default plots at LWDEFAULT, as the screen draws it (M5-08 part 3).
+      ...(this.renderer.style.lineweightDefault !== undefined && {
+        lwDefault: this.renderer.style.lineweightDefault,
+      }),
       ...(request.paperspaceLast && { paperspaceLast: true }),
       ...(request.handles && { only: new Set(request.handles) }),
     });

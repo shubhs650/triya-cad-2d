@@ -72,6 +72,10 @@ describe('preferences', () => {
       fieldDisplay: true,
       // LAYLOCKFADECTL 50 (M5-06).
       layLockFade: 50,
+      // LWDEFAULT 25, LWUNITS 1 (millimetres) and Adjust Display Scale 1 (M5-08 part 3).
+      lwDefault: 25,
+      lwUnits: 1,
+      lwScale: 1,
       // M3-06 part 1: POLARMODE 0 and POLARADDANG "" (AutoCAD's initial values), and the
       // Drafting Settings dialog's Quick Properties tab: top right, 50 pixels, collapsed to 3 rows.
       polarMode: 0,
@@ -401,6 +405,16 @@ describe('preferences', () => {
     expect(normalizePreferences({ drafting: { qpmode: 2 } }).drafting.qpmode).toBe(2);
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
     expect(normalizePreferences('junk')).toEqual(DEFAULT_PREFERENCES);
+  });
+
+  it('keep LWDEFAULT as a lineweight, LWUNITS as 0 or 1, the display scale in its range (M5-08 part 3)', () => {
+    const lw = (drafting: unknown) => {
+      const d = normalizePreferences({ drafting }).drafting;
+      return [d.lwDefault, d.lwUnits, d.lwScale];
+    };
+    expect(lw({ lwDefault: 50, lwUnits: 0, lwScale: 2.5 })).toEqual([50, 0, 2.5]);
+    expect(lw({ lwDefault: 26, lwUnits: 2, lwScale: 3.5 })).toEqual([25, 1, 1]);
+    expect(lw({ lwDefault: -3, lwUnits: '0', lwScale: 0.1 })).toEqual([25, 1, 1]);
   });
 
   it('keep the grip colours as ACI 1 to 255, each on its own (M3-05 part 5)', () => {

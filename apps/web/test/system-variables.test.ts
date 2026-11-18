@@ -116,6 +116,16 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'LAYLOCKFADECTL')).toEqual({ ok: true, value: -30 });
   });
 
+  it('keep LWDEFAULT, 25 at first, and LWUNITS, millimetres at first (M5-08 part 3)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'LWDEFAULT')).toEqual({ ok: true, value: 25 });
+    expect(systemVariableReply(d, 'LWUNITS')).toEqual({ ok: true, value: 1 });
+    systemVariableReply(d, 'LWDEFAULT', 50);
+    systemVariableReply(d, 'LWUNITS', 0);
+    expect(d.get()).toMatchObject({ lwDefault: 50, lwUnits: 0 });
+    expect(systemVariableReply(d, 'LWUNITS')).toEqual({ ok: true, value: 0 });
+  });
+
   it('keep AUTOSNAP’s bits, POLAR and OTRACK being the status bar’s buttons (M2-59)', () => {
     // AutoCAD 2024 Help, "AUTOSNAP": 1 marker, 2 SnapTip, 4 magnet, 8 polar tracking, 16
     // object snap tracking, 32 tooltips for polar and object snap tracking; initially 63.
