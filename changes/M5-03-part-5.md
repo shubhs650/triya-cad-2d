@@ -1,0 +1,1 @@
+- M5-03 part 5 (#554): the Enhanced Attribute Editor's Text Options tab now has Boundary width for a multiline attribute, the longest a line of its text runs before wrapping (0 for no limit), as BATTMAN's Edit Attribute already had. This completes M5-03.

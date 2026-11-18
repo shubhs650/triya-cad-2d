@@ -4,7 +4,8 @@
 //   the block and the selected tag at the top, Select block beside them; tabs Attribute (Tag,
 //   Prompt, Value list and the Value field, with `...` opening the MTEXT editor on a multiline
 //   attribute), Text Options (Text Style, Justification, Height, Rotation, Annotative,
-//   Backwards, Upside down, Width Factor, Oblique Angle) and Properties (Layer, Linetype, Color,
+//   Backwards, Upside down, Width Factor, Oblique Angle, and a multiline attribute's Boundary
+//   width, M5-03 part 5) and Properties (Layer, Linetype, Color,
 //   Plot style, Lineweight; Color's "Select Color..." opens AutoCAD's Select Color dialog over
 //   it, with the drawing's colour books, M2-35 part 23); Apply, OK, Cancel. Justification keeps the insertion point (M2-27);
 //   a multiline attribute's lists the nine MTEXT attachments. Annotative is shown only
@@ -389,6 +390,7 @@ function patchOf(was: AttributeEntry, now: AttributeEntry): AttributePatch | und
     'halign',
     'valign',
     'attachment',
+    'boundaryWidth',
     'plotStyle',
   ] as const;
   const p: Record<string, unknown> = {};
@@ -615,19 +617,19 @@ function NumberInput({
 /**
  * The Text Options tab of the Enhanced Attribute Editor and of BATTMAN's Edit Attribute (M5-03
  * part 2): Text Style, Justification, Height, Rotation, Annotative (shown only, DEC-013), Width
- * Factor, Oblique Angle, Backwards, Upside down; with `boundaryWidth`, a multiline attribute's
- * Boundary width too.
+ * Factor, Oblique Angle, Backwards, Upside down; a multiline attribute's Boundary width too
+ * (BATTMAN since part 2, EATTEDIT since part 5): "the maximum length of the lines of text in a
+ * multiple-line attribute before wrapping", 0 for none (AutoCAD 2024 Help, "Enhanced Attribute
+ * Editor Dialog Box").
  */
 export function AttributeTextOptions({
   row,
   set,
   styles,
-  boundaryWidth,
 }: {
   row: AttributeEntry;
   set: (patch: Partial<AttributeEntry>) => void;
   styles: readonly NamedRecord[];
-  boundaryWidth?: { readonly value: number; readonly onChange: (v: number) => void } | undefined;
 }) {
   const num = (
     label: string,
@@ -725,11 +727,11 @@ export function AttributeTextOptions({
         />
         Upside down
       </label>
-      {boundaryWidth && row.multiline && (
+      {row.multiline && (
         <NumberInput
           label="Boundary width"
-          value={boundaryWidth.value}
-          onChange={boundaryWidth.onChange}
+          value={row.boundaryWidth ?? 0}
+          onChange={(v) => set({ boundaryWidth: v })}
           valid={(v) => v >= 0}
         />
       )}

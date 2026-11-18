@@ -596,6 +596,11 @@ export interface AttributeEntry {
   readonly valign: number;
   /** A multiline attribute's MTEXT attachment point, 1–9 (top left to bottom right). */
   readonly attachment?: number;
+  /**
+   * A multiline attribute's boundary width (its MTEXT's DXF 41), 0 for none: the Text Options
+   * tab's Boundary width (BATTMAN M5-03 part 2, EATTEDIT part 5). Absent for a single-line one.
+   */
+  readonly boundaryWidth?: number;
   readonly height: number;
   /** Radians, the WCS angle of the baseline. */
   readonly rotation: number;
@@ -636,6 +641,7 @@ export type AttributePatch = { readonly handle: Handle } & Partial<
     | 'halign'
     | 'valign'
     | 'attachment'
+    | 'boundaryWidth'
     | 'plotStyle'
   >
 >;
@@ -648,13 +654,11 @@ export type AttributePatch = { readonly handle: Handle } & Partial<
 export interface AttributeDefinitionEntry extends AttributeEntry {
   /** DXF 280, shown in the Modes column (L). */
   readonly lockPosition: boolean;
-  /** A multiline definition's boundary width (its MTEXT's DXF 41), 0 for none. */
-  readonly boundaryWidth?: number;
 }
 
 /** What the Edit Attribute dialog may change of one definition (absent: unchanged). */
 export type AttributeDefinitionPatch = AttributePatch &
-  Partial<Pick<AttributeDefinitionEntry, 'tag' | 'prompt' | 'flags' | 'boundaryWidth'>>;
+  Partial<Pick<AttributeDefinitionEntry, 'tag' | 'prompt' | 'flags'>>;
 
 /**
  * The Block Attribute Manager's state as Apply, OK, Sync, Select block or another block in its
