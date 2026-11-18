@@ -2272,9 +2272,12 @@ function DocumentCanvas({
   onMode: (m: CanvasMode) => void;
 }) {
   const [shown, setShown] = useState<readonly string[]>([doc.block]);
-  const editing = doc.blockEditor?.block;
+  // <Current Drawing> (M5-02 part 4) is model space: its canvas, and its view, stay.
+  const editing =
+    doc.blockEditor?.block === doc.opened.modelSpace ? undefined : doc.blockEditor?.block;
   useEffect(() => {
-    // A Block Editor's canvas goes when it closes (M5-02): the next BEDIT draws the block anew.
+    // A Block Editor's canvas goes when it closes (M5-02) or another block replaces it (part 4):
+    // the next BEDIT draws the block anew.
     const spaces = (s: readonly string[]) =>
       s.filter((b) => b === editing || !editorCanvases.has(b));
     if (editing !== undefined) editorCanvases.add(editing);
@@ -2624,6 +2627,9 @@ function LayoutTabs({ doc }: { doc: OpenDocument | undefined }) {
         <span className="block-editor-name">
           Block Editor: <strong>{doc.blockEditor.name}</strong>
         </span>
+        <button type="button" onClick={() => run('BEDIT')}>
+          Edit Block
+        </button>
         <button type="button" onClick={() => run('BSAVE')}>
           Save Block
         </button>
