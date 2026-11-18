@@ -59,6 +59,7 @@ import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { InsertDialog } from './InsertDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 import { LayerListDialog } from './LayerListDialog';
+import { XbindDialog } from './XbindDialog';
 import { LayerWalkDialog } from './LayerWalkDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
@@ -175,6 +176,8 @@ export function AttributeDialogs({
       return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
     case 'xrefattach':
       return <XrefAttachDialog key={key} doc={doc.id} request={d} files={xrefFiles} />;
+    case 'xbind':
+      return <XbindDialog key={key} doc={doc.id} request={d} />;
   }
 }
 
