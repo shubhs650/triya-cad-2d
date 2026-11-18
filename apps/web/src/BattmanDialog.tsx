@@ -617,17 +617,7 @@ function EditAttributeDialog({
             </fieldset>
           </div>
         )}
-        {tab === 'text' && (
-          <AttributeTextOptions
-            row={e}
-            set={set}
-            styles={request.styles}
-            boundaryWidth={{
-              value: e.boundaryWidth ?? 0,
-              onChange: (v) => set({ boundaryWidth: v }),
-            }}
-          />
-        )}
+        {tab === 'text' && <AttributeTextOptions row={e} set={set} styles={request.styles} />}
         {tab === 'properties' && (
           <AttributeProperties
             row={e}

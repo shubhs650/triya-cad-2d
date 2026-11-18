@@ -142,4 +142,38 @@ describe('title-block revision table (M2-12 scenario)', () => {
       expect((defBack.geom as AttdefGeometry).prompt).toBe('Description of revision 3');
     });
   });
+
+  // M5-03 part 5: EATTEDIT's Text Options Boundary width is the notes' MTEXT width (DXF 41 of
+  // the ATTRIB's embedded MTEXT); the save writes it and nothing else of the reference.
+  it("EATTEDIT's Boundary width on the multiline notes saves as DXF and reads back", async () => {
+    const bytes = new Uint8Array(readFileSync(FILE));
+    await withPinnedClock(async () => {
+      const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
+      const bus = new PromptBus({ model, registry: builtinCommands() });
+      const ref = titleBlock(model);
+      const notes = handleOf(ref, NOTES.tag);
+      await bus.submit('EATTEDIT');
+      await bus.answer({ kind: 'selection', ids: [ref.id] });
+      const d = (bus.prompt as DialogPrompt).dialog;
+      expect(d.type === 'eattedit' && d.attributes.find((a) => a.tag === NOTES.tag)).toMatchObject({
+        multiline: true,
+        boundaryWidth: 36,
+      });
+      await bus.answer({
+        kind: 'dialog',
+        action: 'ok',
+        attributes: [{ handle: notes, boundaryWidth: 52.5 }],
+      });
+      expect(bus.command).toBeUndefined();
+
+      const saved = saveAc1032Dxf(readCadDocument(bytes), model);
+      const back = titleBlock(DocumentModel.create(documentInit(readCadDocument(saved))));
+      const was = new Map((ref.geom as InsertGeometry).attributes.map((a) => [a.handle, a]));
+      for (const a of (back.geom as InsertGeometry).attributes) {
+        const before = was.get(a.handle)!;
+        if (a.handle !== notes) expect(a).toEqual(before);
+        else expect(a).toEqual({ ...before, mtext: { ...before.mtext!, width: 52.5 } });
+      }
+    });
+  });
 });

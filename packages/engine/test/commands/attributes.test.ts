@@ -379,6 +379,62 @@ describe('EATTEDIT', () => {
     expect(a).toMatchObject({ height: 2, style: NOTES_STYLE });
   });
 
+  // M5-03 part 5: AutoCAD 2024 Help, "Enhanced Attribute Editor Dialog Box", Text Options tab:
+  // "Boundary Width: Specifies the maximum length of the lines of text in a multiple-line
+  // attribute before wrapping to a new line. A value of 0.000 means that there is no
+  // restriction on the length of a line of text." Only a multiline attribute has one.
+  it("Text Options' Boundary width is a multiline attribute's MTEXT width; 0 for none", async () => {
+    const { bus, attr } = setup();
+    await bus.script(['EATTEDIT']);
+    await bus.pick({ x: 100, y: 0 });
+    const d = dialog(bus);
+    if (d.type !== 'eattedit') throw new Error('no dialog');
+    expect(d.attributes.map((a) => [a.tag, a.boundaryWidth])).toEqual([
+      ['TITLE', undefined],
+      ['REV', undefined],
+      ['NOTES', 0],
+      ['SECRET', undefined],
+    ]);
+    await bus.answer({
+      kind: 'dialog',
+      action: 'apply',
+      attributes: [
+        { handle: '63', boundaryWidth: 40 },
+        // A single-line attribute has no boundary: a width answered for one changes nothing.
+        { handle: '61', boundaryWidth: 25 },
+      ],
+    });
+    expect(attr('60', '63').mtext).toMatchObject({ width: 40, contents: 'Line one\\PLine two' });
+    expect(attr('60', '61')).not.toHaveProperty('mtext');
+    expect(attr('60', '61')).not.toHaveProperty('boundaryWidth');
+    const again = dialog(bus);
+    expect(again.type === 'eattedit' && again.attributes[2]!.boundaryWidth).toBe(40);
+    // A negative width is refused, as the dialog refuses one; 0 takes the boundary off.
+    await bus.answer({
+      kind: 'dialog',
+      action: 'apply',
+      attributes: [{ handle: '63', boundaryWidth: -5 }],
+    });
+    expect(attr('60', '63').mtext?.width).toBe(40);
+    await bus.answer({
+      kind: 'dialog',
+      action: 'apply',
+      attributes: [{ handle: '63', boundaryWidth: 0 }],
+    });
+    expect(attr('60', '63').mtext?.width).toBe(0);
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      attributes: [{ handle: '63', boundaryWidth: 12.5 }],
+    });
+    expect(attr('60', '63').mtext?.width).toBe(12.5);
+    expect(bus.command).toBeUndefined();
+    // The whole EATTEDIT is one undo step.
+    await bus.submit('U');
+    expect(attr('60', '63').mtext?.width).toBe(0);
+    expect(attr('60', '61').value).toBe('Pump house');
+  });
+
   it("the value's ... opens the MTEXT editor on a multiline attribute, then the dialog again", async () => {
     const { bus, attr } = setup();
     await bus.script(['EATTEDIT']);

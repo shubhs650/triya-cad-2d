@@ -128,7 +128,7 @@ export function attributeEntries(model: DocumentModel, g: InsertGeometry): Attri
       oblique: a.oblique,
       backward: a.backward,
       upsideDown: a.upsideDown,
-      ...(a.mtext && { attachment: a.mtext.attachment }),
+      ...(a.mtext && { attachment: a.mtext.attachment, boundaryWidth: a.mtext.width }),
       layer: a.layer,
       color: a.color,
       linetype: a.linetype,
@@ -180,7 +180,7 @@ export function definitionEntry(e: Entity, value: string): AttributeEntry {
     oblique: d.oblique,
     backward: d.backward,
     upsideDown: d.upsideDown,
-    ...(d.mtext && { attachment: d.mtext.attachment }),
+    ...(d.mtext && { attachment: d.mtext.attachment, boundaryWidth: d.mtext.width }),
     layer: e.layer,
     color: e.color,
     linetype: e.linetype,
@@ -500,6 +500,16 @@ export function patchAttribute(
     for (const k of MTEXT_PATCHED) if (k in changes) m[k] = changes[k];
     if (p.attachment !== undefined && p.attachment !== a.mtext.attachment) {
       m['attachment'] = p.attachment;
+    }
+    // Boundary width (M5-03 part 5): the MTEXT's defined width, 0 for none; AutoCAD's dialogs
+    // refuse a negative one. A single-line attribute has none to change.
+    if (
+      p.boundaryWidth !== undefined &&
+      Number.isFinite(p.boundaryWidth) &&
+      p.boundaryWidth >= 0 &&
+      p.boundaryWidth !== a.mtext.width
+    ) {
+      m['width'] = p.boundaryWidth;
     }
     if (Object.keys(m).length > 0) changes['mtext'] = { ...a.mtext, ...m };
   }

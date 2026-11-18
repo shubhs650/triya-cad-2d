@@ -63,7 +63,6 @@ export function definitionManagerEntry(e: Entity): AttributeDefinitionEntry {
     ...valueEntry(d),
     prompt: d.prompt,
     lockPosition: d.lockPosition === true,
-    ...(d.mtext && { boundaryWidth: d.mtext.width }),
   };
 }
 
@@ -127,9 +126,6 @@ function patched(
   }
   // A multiline default is both DXF 1 and the embedded MTEXT's contents (`attdefGeometry`).
   if (d.mtext && p.value !== undefined) geom = { ...geom, value: p.value };
-  if (geom.mtext && p.boundaryWidth !== undefined && p.boundaryWidth >= 0) {
-    geom = { ...geom, mtext: { ...geom.mtext, width: p.boundaryWidth } };
-  }
   const next = { geom, layer, color, linetype, lineweight, plotStyle };
   const was = {
     geom: e.geom,
