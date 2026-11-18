@@ -124,6 +124,7 @@ import { hoverRollover, rollovers } from './rollover';
 import { gripMenus } from './grip-menu';
 import { GripMenu } from './GripMenu';
 import { hatchPatternListReply, hatchPatternNames, hatchPatternReply } from './hatch-patterns';
+import { linetypeFileReply, linetypeFileSources, type LinetypeFiles } from './linetype-files';
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
@@ -486,6 +487,8 @@ function viewContext(id: number): ViewContext {
     // Properties' Pattern name (M2-35 part 3), from the library the canvases draw with.
     hatchPattern: (name, placements) => hatchPatternReply(patterns.sources(), name, placements),
     hatchPatternList: () => hatchPatternListReply(patterns.sources()),
+    // -LINETYPE's files (M5-08): the bundled set and the user's .lin files.
+    linetypeFile: (file) => linetypeFileReply(linetypeFiles.list(), file),
     // SETVAR's variables the app keeps (M2-42), and those of the drawing it tells (M2-59).
     sysvar: (name, value) =>
       (doc && drawingVariableReply(doc, name)) ?? systemVariableReply(drafting, name, value),
@@ -1042,6 +1045,20 @@ const plotStyles = new SupportFileStore(PLOT_STYLE_FILES, opfsSupportFiles(PLOT_
 void plotStyles.load();
 const linetypes = new SupportFileStore(LINETYPE_FILES, opfsSupportFiles(LINETYPE_FILES));
 void linetypes.load();
+/**
+ * The linetype loader's files (M5-08): the bundled set and the user's; a .lin file picked in the
+ * Load or Reload Linetypes dialog is kept with the user's, as Settings > Linetypes keeps one.
+ */
+const linetypeFiles: LinetypeFiles = {
+  list: () => linetypeFileSources(linetypes),
+  add: async (name, bytes) => {
+    await linetypes.add(name, bytes);
+    const s = linetypes.getSnapshot();
+    if (s.error && !s.files.some((f) => f.name.toLowerCase() === name.toLowerCase()))
+      return { error: s.error };
+    return { name };
+  },
+};
 const supportStores = [plotStyles, linetypes] as const;
 /** The plot style tables added in Settings, which the Plot dialog lists (M2-17 part 3). */
 const userPlotStyleTables = () => plotStyleTablesIn(plotStyles);
@@ -2001,6 +2018,7 @@ export function App() {
             columns={layerColumns}
             onColumns={(c) => preferences.update({ layerColumns: c })}
             onClose={() => setPalette(undefined)}
+            linetypeFiles={linetypeFiles}
           />
         )}
         {active && palette === 'health' && (
@@ -2108,6 +2126,7 @@ export function App() {
           supplied.changed();
         }}
         xrefFiles={xrefFiles}
+        linetypeFiles={linetypeFiles}
       />
       <PlotDialog
         doc={active}

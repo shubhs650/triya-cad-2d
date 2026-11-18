@@ -19,6 +19,7 @@ import type { ClipboardPicture } from '../../edit/picture';
 import type { SheetCells } from '../../edit/spreadsheet';
 import type { UndoView } from '../undo';
 import type { UnderlayLayersInfo } from '../../edit/underlay-layers';
+import type { LinetypeDefinition } from '../../edit/linetypes';
 import type { EnclosedSpace } from '../inquiry/quick';
 import type { TextFrame } from '../../edit/text-justify';
 
@@ -232,6 +233,13 @@ export type ViewRequest =
     }
   /** The pattern library's patterns, named and described as their files have them (-HATCH ?). */
   | { readonly op: 'hatchPatternList' }
+  /**
+   * A linetype file (M5-08: -LINETYPE, the Linetype Manager's Set): `file` as the app finds it
+   * among the bundled set and the user's .lin files, ignoring case, the extension optional; the
+   * bundled triya-iso.lin without one. Answered as `linetypeFile`, none when there is no such
+   * file.
+   */
+  | { readonly op: 'linetypeFile'; readonly file?: string }
   /**
    * A system variable the app keeps (SETVAR, M2-42: the drafting aids and the per-user settings
    * of `APP_VARIABLES`): set to `value` when one is given (already checked against the
@@ -521,6 +529,11 @@ export type ViewReply =
       readonly pattern?: PlacedPattern;
       /** What `hatchPatternList` found (M4-07). */
       readonly patterns?: readonly { readonly name: string; readonly description: string }[];
+      /** What `linetypeFile` read: the file's name as kept and its linetypes (M5-08). */
+      readonly linetypeFile?: {
+        readonly name: string;
+        readonly linetypes: readonly LinetypeDefinition[];
+      };
       /** What a `sysvar` variable holds (M2-42): a number, or text (DWGNAME, M2-59). */
       readonly value?: number | string;
       /**

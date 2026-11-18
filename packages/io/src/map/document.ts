@@ -62,8 +62,17 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
   };
   // The layers the unmapped objects are on, which no layer edit may take away (M5-06 part 2).
   const passthroughLayers = [...new Set(unmapped.flatMap((u) => (u.layer ? [u.layer] : [])))];
+  // And their linetypes, which the Linetype Manager may not delete (M5-08).
+  const passthroughLinetypes = [
+    ...new Set(unmapped.flatMap((u) => (u.linetype ? [u.linetype] : []))),
+  ];
   return {
-    init: { ...init, passthrough: PassthroughStore.of(doc, init).handles, passthroughLayers },
+    init: {
+      ...init,
+      passthrough: PassthroughStore.of(doc, init).handles,
+      passthroughLayers,
+      ...(passthroughLinetypes.length > 0 ? { passthroughLinetypes } : {}),
+    },
     unmapped,
   };
 }

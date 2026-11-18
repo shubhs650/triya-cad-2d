@@ -149,7 +149,7 @@ const APPEARANCE_REPEATS = 4;
  * Shapes and text in a complex linetype show as the gap they sit in.
  */
 export function linetypeDashes(
-  elements: readonly LinetypeElement[],
+  elements: readonly Pick<LinetypeElement, 'length'>[],
   width: number,
 ): number[] | undefined {
   const period = elements.reduce((sum, e) => sum + Math.abs(e.length), 0);

@@ -94,6 +94,7 @@ export * from './dimension-records';
 export * from './leader-breaks';
 export * from './center-marks';
 export * from './layer-states';
+export * from './linetypes';
 export * from './center-mark-grips';
 export * from './center-settings';
 export * from './pedit';

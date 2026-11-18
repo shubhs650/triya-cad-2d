@@ -133,6 +133,8 @@ export interface ViewContext {
   readonly hatchPattern?: (name: string, placements: readonly PatternPlacement[]) => ViewReply;
   /** -HATCH's `?` (M4-07): the library's patterns, described. */
   readonly hatchPatternList?: () => ViewReply;
+  /** -LINETYPE's file (M5-08): a .lin file of the bundled set or the user's, read. */
+  readonly linetypeFile?: (file: string | undefined) => ViewReply;
   /**
    * SETVAR (M2-42): a system variable the app keeps (the drafting aids, the per-user settings),
    * set to `value` when given, answered with its value.
@@ -180,6 +182,7 @@ export const NO_FILE = 'There is no drawing to save.';
 export const NO_CLIPBOARD = 'There is no Clipboard here.';
 export const NO_PALETTE = 'There are no palettes here.';
 export const NO_PATTERNS = 'There is no pattern library here.';
+export const NO_LINETYPES = 'There are no linetype files here.';
 export const NO_SETTINGS = 'There are no settings here.';
 export const NO_DIALOGS = 'There are no dialogs here.';
 export const NO_TABS = 'There are no tabs here.';
@@ -214,6 +217,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };
+  }
+  if (r.op === 'linetypeFile') {
+    return ctx.linetypeFile ? ctx.linetypeFile(r.file) : { ok: false, message: NO_LINETYPES };
   }
   if (r.op === 'hatchPatternList') {
     return ctx.hatchPatternList ? ctx.hatchPatternList() : { ok: false, message: NO_PATTERNS };
