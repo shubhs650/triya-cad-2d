@@ -4076,6 +4076,51 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* LAYWALK's LayerWalk dialog (M5-06 part 4, LayerWalkDialog.tsx). */
+.cad-dialog.layer-walk {
+  width: min(300px, calc(100vw - 32px));
+}
+
+.layer-walk .layer-walk-list {
+  height: 260px;
+  margin-top: 4px;
+}
+
+.layer-walk .layer-walk-list:focus-visible .layer-list-active {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+
+.layer-walk .layer-walk-hold {
+  display: inline-block;
+  width: 1ch;
+  margin-right: 4px;
+}
+
+.layer-walk .layer-walk-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.layer-walk .layer-walk-filter {
+  flex: 1;
+  min-width: 0;
+}
+
+.layer-walk .layer-walk-note {
+  margin: 8px 0 0;
+  color: var(--chrome-text-muted);
+}
+
+.layer-walk .layer-walk-restore {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-right: auto;
+}
+
 .dimstyle-list .dimstyle-overrides,
 .dimstyle-list .dimstyle-substyle {
   padding-left: 16px;

@@ -38,6 +38,7 @@ import type {
   InsertDialogRequest,
 } from './blocks';
 import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
+import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
 import type { XrefAttachAnswer, XrefAttachRequest } from './xref-attach';
 import type { XbindRequest } from './xbind';
 import type { TableCellFormatRequest } from './draw/table-data-format';
@@ -778,6 +779,8 @@ export type DialogRequest =
   | InsertDialogRequest
   /** IMAGEATTACH's Attach Image (M5-04 part 5). */
   | ImageAttachRequest
+  /** LAYWALK's LayerWalk (M5-06 part 4). */
+  | LayerWalkRequest
   | XrefAttachRequest
   /** XBIND's Xbind dialog (M5-04 part 7). */
   | XbindRequest
@@ -1058,6 +1061,8 @@ export type PromptAnswer =
       readonly layerName?: string;
       /** The Xbind dialog's Definitions to Bind as OK closed it (XBIND, M5-04 part 7). */
       readonly xbind?: readonly Handle[];
+      /** The LayerWalk dialog's settings, with its Purge or Save Layer State (M5-06 part 4). */
+      readonly laywalk?: LayerWalkAnswer;
     }
   | { readonly kind: 'enter' }
   /** Esc at a prompt that takes it (`escape`). */

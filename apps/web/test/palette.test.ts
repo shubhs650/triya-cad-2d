@@ -161,6 +161,7 @@ describe('palette search', () => {
       'LAYTHW',
       'LAYULK',
       'LAYUNISO',
+      'LAYWALK',
       'LENGTHEN',
       'LINE',
       'LIST',

@@ -256,3 +256,127 @@ test('Change to Layer makes a layer, and Delete Layers deletes the layers chosen
   await expect(row('HATCH')).toHaveCount(0);
   await shot('3-layers-deleted.png');
 });
+
+// M5-06 part 4: LAYWALK's LayerWalk dialog. Walking the list shows only the layers chosen (the
+// Layers palette shows the others turned off); a double-click holds a layer (Always Show); the
+// shortcut menu's Inspect counts; the wildcard filter narrows the list; Select Objects chooses
+// the layer of a line picked; Close with Restore on Exit puts every layer back, and with it
+// cleared keeps the walk, which U takes back as one step.
+test('LAYWALK shows the layers chosen and puts them back on exit', async ({ page }) => {
+  test.setTimeout(90_000);
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Layers' })
+    .click();
+  const palette = page.getByRole('complementary', { name: 'Layers' });
+  await expect(palette).toBeVisible();
+  await expectDrawn(page, { timeout: 15_000 });
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const click = async (x: number, y: number) =>
+    page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+  const on = (layer: string) => palette.getByRole('button', { name: `On ${layer}`, exact: true });
+
+  // A line on HATCH in an empty part of the plan, running object snaps off.
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await page.keyboard.press('F3');
+  await type(page, 'CLAYER', /^Enter new value for CLAYER/);
+  await type(page, 'HATCH', 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await click(0.2, 0.5);
+  await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
+  await click(0.7, 0.5);
+  await type(page, '', 'Command:');
+  await type(page, 'CLAYER', /^Enter new value for CLAYER/);
+  await type(page, '0', 'Command:');
+
+  await type(page, 'LAYWALK', 'LayerWalk:');
+  const walk = page.getByRole('dialog', { name: /^LayerWalk - Layers: \d+$/ });
+  await expect(walk).toBeVisible();
+  const list = walk.getByRole('listbox', { name: 'Layers' });
+  await expect(list).toBeFocused();
+  const option = (name: string) => list.getByRole('option', { name, exact: true });
+  // It opens on the layers that are on: nothing changes on screen.
+  await expect(option('HATCH')).toHaveAttribute('aria-selected', 'true');
+  await expect(option('0')).toHaveAttribute('aria-selected', 'true');
+  await shot('1-laywalk-opened.png');
+
+  // A click on HATCH shows only HATCH.
+  await option('HATCH').click();
+  await expect(on('0')).toHaveAttribute('aria-pressed', 'false');
+  await expect(on('HATCH')).toHaveAttribute('aria-pressed', 'true');
+  await shot('2-walking-hatch.png');
+  // The arrow keys walk the list; a double-click holds 0 (Always Show).
+  await list.focus();
+  await page.keyboard.press('Home');
+  await expect(option('0')).toHaveAttribute('aria-selected', 'true');
+  await expect(on('0')).toHaveAttribute('aria-pressed', 'true');
+  await expect(on('HATCH')).toHaveAttribute('aria-pressed', 'false');
+  await option('0').dblclick();
+  await expect(option('0 (Always Show)')).toBeVisible();
+  await option('HATCH').click();
+  await expect(on('0')).toHaveAttribute('aria-pressed', 'true');
+  await expect(on('HATCH')).toHaveAttribute('aria-pressed', 'true');
+
+  // The shortcut menu's Inspect counts the layers chosen and their objects.
+  await option('HATCH').click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Layer list' });
+  await expect(menu).toBeVisible();
+  await shot('3-shortcut-menu.png');
+  await menu.getByRole('menuitem', { name: 'Inspect' }).click();
+  await expect(walk.getByRole('status')).toHaveText(
+    /^Layers in drawing: \d+\. Layers selected: 1\. Objects on selected layers: \d+\.$/,
+  );
+
+  // The filter narrows the list to the layers matching it.
+  const filter = walk.getByRole('combobox', { name: 'Filter' });
+  await filter.fill('H*');
+  await filter.press('Enter');
+  await expect(walk.getByRole('checkbox', { name: 'Filter' })).toBeChecked();
+  await expect(list.getByRole('option')).toHaveCount(1);
+  await shot('4-filtered.png');
+  await walk.getByRole('checkbox', { name: 'Filter' }).uncheck();
+  await expect(option('0 (Always Show)')).toBeVisible();
+
+  // Select Objects: the line picked chooses its layer alone.
+  await option('HATCH').click();
+  await option('0 (Always Show)').click({ modifiers: ['Control'] });
+  await expect(list.getByRole('option', { selected: true })).toHaveCount(2);
+  await walk.getByRole('button', { name: 'Select Objects' }).click();
+  await expect(prompt(page)).toHaveText('Select objects:');
+  await click(0.45, 0.5);
+  await type(page, '', 'LayerWalk:');
+  await expect(option('HATCH')).toHaveAttribute('aria-selected', 'true');
+  await expect(option('0 (Always Show)')).toHaveAttribute('aria-selected', 'false');
+
+  // Close, Restore on Exit checked: every layer back on.
+  await option('HATCH').click();
+  await expect(on('0')).toHaveAttribute('aria-pressed', 'true');
+  await walk.getByRole('button', { name: 'Close' }).click();
+  await expect(walk).toHaveCount(0);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(on('0')).toHaveAttribute('aria-pressed', 'true');
+  await expect(on('HATCH')).toHaveAttribute('aria-pressed', 'true');
+
+  // Restore on Exit cleared: the walk stays, and U takes it back.
+  await type(page, 'LAYWALK', 'LayerWalk:');
+  await option('HATCH').click();
+  await expect(on('0')).toHaveAttribute('aria-pressed', 'false');
+  await walk.getByRole('checkbox', { name: 'Restore on Exit' }).uncheck();
+  await page.keyboard.press('Escape');
+  await expect(walk).toHaveCount(0);
+  await expect(on('0')).toHaveAttribute('aria-pressed', 'false');
+  await shot('5-kept-after-exit.png');
+  await type(page, 'U', 'Command:');
+  await expect(on('0')).toHaveAttribute('aria-pressed', 'true');
+});

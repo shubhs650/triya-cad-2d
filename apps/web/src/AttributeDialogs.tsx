@@ -60,6 +60,7 @@ import { InsertDialog } from './InsertDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 import { LayerListDialog } from './LayerListDialog';
 import { XbindDialog } from './XbindDialog';
+import { LayerWalkDialog } from './LayerWalkDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
 
@@ -167,6 +168,10 @@ export function AttributeDialogs({
       return <InsertDialog key={key} doc={doc.id} request={d} />;
     case 'layerlist':
       return <LayerListDialog key={key} doc={doc.id} request={d} />;
+    case 'laywalk':
+      // One key while LAYWALK runs: each walk step is a new request, and the dialog keeps its
+      // focus and list position through them (it remounts only after Select Objects).
+      return <LayerWalkDialog key="laywalk" doc={doc.id} request={d} />;
     case 'imageattach':
       return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
     case 'xrefattach':

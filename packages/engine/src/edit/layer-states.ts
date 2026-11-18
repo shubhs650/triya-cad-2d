@@ -153,6 +153,20 @@ export function saveLayerStateChange(
   name: string,
   options: { readonly description?: string; readonly mask?: number } = {},
 ): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  return saveLayerState(b, model, name, options) ?? b.build();
+}
+
+/**
+ * {@link saveLayerStateChange} into `b` (LAYWALK's Save Layer State builds in its command's edit,
+ * M5-06 part 4): undefined when saved, otherwise why not, with nothing built.
+ */
+export function saveLayerState(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  name: string,
+  options: { readonly description?: string; readonly mask?: number } = {},
+): string | undefined {
   const old = layerStateNamed(model, name);
   const why =
     nameProblem(model, name, old?.handle) ??
@@ -173,10 +187,9 @@ export function saveLayerStateChange(
     currentLayer: currentLayerName(model),
     layers: [...model.tables.layers.values()].map((l) => layerSettings(model, l)),
   };
-  const b = new ChangeSetBuilder(model);
   if (old) b.updateObject(old.handle, init);
   else addState(model, b, init);
-  return b.build();
+  return undefined;
 }
 
 /**

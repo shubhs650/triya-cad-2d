@@ -229,6 +229,19 @@ export function deleteLayersChange(
   model: DocumentModel,
   handles: readonly Handle[],
 ): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  return deleteLayers(b, model, handles) ?? b.build();
+}
+
+/**
+ * {@link deleteLayersChange} into `b` (LAYWALK's Purge builds in its command's edit, M5-06
+ * part 4): undefined when deleted, otherwise why not, with nothing built.
+ */
+export function deleteLayers(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  handles: readonly Handle[],
+): string | undefined {
   const layers = layersOf(model, handles);
   if (typeof layers === 'string') return layers;
   const used = layersInUse(model);
@@ -245,7 +258,6 @@ export function deleteLayersChange(
     if (why) return `Layer "${l.name}" was not deleted: ${why}.`;
   }
   const gone = new Set(layers.map((l) => l.handle));
-  const b = new ChangeSetBuilder(model);
   for (const e of model.entities()) {
     if (e.geom.kind !== 'VIEWPORT') continue;
     const kept = e.geom.frozenLayers.filter((h) => !gone.has(h));
@@ -255,7 +267,7 @@ export function deleteLayersChange(
   for (const h of gone) b.removeTableRecord('layers', h);
   // Layer states stop naming them (M5-07).
   dropLayersFromStates(b, gone);
-  return b.build();
+  return undefined;
 }
 
 /** `handle` made the current layer ($CLAYER): the change (empty when it is), or why not. */

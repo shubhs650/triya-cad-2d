@@ -74,6 +74,7 @@ import { underlayLayersCommand } from './underlay-layers';
 import { layerStateCommand } from './layer-states';
 import { layerToolCommands } from './layer-tools';
 import { laydelCommand, laymrgCommand } from './layer-cleanup';
+import { laywalkCommand } from './layer-walk';
 import { layerpCommand, layerpmodeCommand } from './layer-previous';
 import { XREF_COMMANDS } from './xref';
 import { xclipCommand } from './xclip';
@@ -183,6 +184,7 @@ export function builtinCommands(): CommandRegistry {
     ...layerToolCommands(),
     laydelCommand(),
     laymrgCommand(),
+    laywalkCommand(),
     layerpCommand(),
     layerpmodeCommand(),
     layerStateCommand(),
