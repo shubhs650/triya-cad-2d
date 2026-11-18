@@ -63,6 +63,24 @@ describe('AcadToTriya dynamic blocks', () => {
     expect(blocks.get(H(anonymous))?.dynamic).toEqual({ name: 'my-block' });
   });
 
+  it('reads the xdata whatever case its application is named in (M5-01 part 4)', () => {
+    // Application names are symbol names: an R14-era drawing upper-cases them, and AutoCAD
+    // still shows the block by its true name. So must Triya, or a block of the drawing pasted
+    // or written under a `*U` name (WBLOCK) reads back nameless.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const anonymous = record(doc, '*U3');
+    anonymous.createExtendedDictionary().addByKey('ACAD_ENHANCEDBLOCK', new CadDictionary());
+    xdata(doc, anonymous, 'ACDBDYNAMICBLOCKTRUENAME', [new ExtendedDataString('upper')]);
+    const state = record(doc, '*U4');
+    xdata(doc, state, 'ACDBBLOCKREPBTAG', [
+      new ExtendedDataInteger16(1),
+      new ExtendedDataHandle(anonymous.handle),
+    ]);
+    const blocks = new Map(documentInit(doc).blocks?.map((b) => [b.handle, b]));
+    expect(blocks.get(H(anonymous))?.dynamic).toEqual({ name: 'upper' });
+    expect(blocks.get(H(state))?.dynamicOf).toBe(H(anonymous));
+  });
+
   it('links an anonymous state to its dynamic block', () => {
     const { doc, dynamic, state } = drawing();
     const blocks = new Map(documentInit(doc).blocks?.map((b) => [b.handle, b]));

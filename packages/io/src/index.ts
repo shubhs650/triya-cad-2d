@@ -8,7 +8,7 @@ export { fidelityDwgConfiguration, fidelityDxfConfiguration, writeCadDocument } 
 export type { WriteOptions } from './write';
 export { ioApi } from './worker/api';
 export type { IoApi, IoProgress, OpenResult, ProgressCallback } from './worker/api';
-export { openInWorker, readInWorker, saveInWorker } from './worker/client';
+export { openInWorker, readInWorker, saveInWorker, writeBlockInWorker } from './worker/client';
 export type {
   AbortSignalLike,
   IoWorker,
@@ -48,6 +48,7 @@ export {
   type TriyaToAcadOptions,
 } from './export/export';
 export { saveDxf, saveSession, SAVE_VERSION } from './export/save';
+export { blankDrawing, writeBlockDrawing } from './export/write-block';
 export { WRITABLE_TYPES } from './export/entities';
 export { documentObjects, PassthroughStore } from './export/passthrough';
 export { documentInit, openDocument, type OpenedDocument } from './map/document';

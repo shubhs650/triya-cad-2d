@@ -259,6 +259,8 @@ describe('palette search', () => {
       // M4-10 part 1.
       'UPDATEFIELD',
       'VIEW',
+      // M5-01 part 4: the Write Block dialog.
+      'WBLOCK',
       'WIPEOUT',
       // M5-04 part 6: drawings attached and overlaid.
       'XATTACH',

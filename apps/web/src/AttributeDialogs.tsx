@@ -57,6 +57,7 @@ import { ToleranceDialog } from './ToleranceDialog';
 import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { InsertDialog } from './InsertDialog';
+import { WriteBlockDialog } from './WriteBlockDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 import { LayerListDialog } from './LayerListDialog';
 import { XbindDialog } from './XbindDialog';
@@ -166,6 +167,8 @@ export function AttributeDialogs({
       return <BlockDefinitionDialog key={key} doc={doc.id} request={d} />;
     case 'insert':
       return <InsertDialog key={key} doc={doc.id} request={d} />;
+    case 'wblock':
+      return <WriteBlockDialog key={key} doc={doc.id} request={d} />;
     case 'layerlist':
       return <LayerListDialog key={key} doc={doc.id} request={d} />;
     case 'laywalk':

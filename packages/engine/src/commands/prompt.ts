@@ -39,8 +39,9 @@ import type {
 } from './blocks';
 import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
 import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
-import type { XrefAttachAnswer, XrefAttachRequest } from './xref-attach';
+import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
 import type { XbindRequest } from './xbind';
+import type { XrefAttachAnswer, XrefAttachRequest } from './xref-attach';
 import type { TableCellFormatRequest } from './draw/table-data-format';
 import type { TableDataFormat } from '../edit/table-data';
 import type { GdtFrame } from '../edit/tolerance-frame';
@@ -784,6 +785,8 @@ export type DialogRequest =
   | XrefAttachRequest
   /** XBIND's Xbind dialog (M5-04 part 7). */
   | XbindRequest
+  /** WBLOCK's Write Block (M5-01 part 4). */
+  | WriteBlockRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
   | TableCellFormatRequest
   | ObjectGroupingRequest;
@@ -1050,6 +1053,8 @@ export type PromptAnswer =
        * part 6).
        */
       readonly xrefAttach?: XrefAttachAnswer;
+      /** The Write Block dialog's fields as OK (or a pick) closed it (WBLOCK, M5-01 part 4). */
+      readonly wblock?: WriteBlockAnswer;
       /** The Table Cell Format dialog's data format as OK closed it (M4-16). */
       readonly tableDataFormat?: TableDataFormat;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */
