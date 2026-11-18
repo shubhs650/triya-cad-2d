@@ -213,6 +213,49 @@ test("a multiline value's ... opens the MTEXT editor; the dialog comes back with
     .toBe('ALL DIMENSIONS IN MM\\PDO NOT SCALE\\PSEE ALSO OET-1002');
 });
 
+// M5-03 part 5: Text Options' Boundary width, shown for a multiline attribute only (AutoCAD 2024
+// Help, "Enhanced Attribute Editor Dialog Box"), writes its MTEXT's width.
+test("Text Options' Boundary width sets the multiline notes' width", async ({ page }) => {
+  test.setTimeout(120_000);
+  const at = await open(page);
+  await type(page, 'EATTEDIT', 'Select a block:');
+  const frame = at(FRAME.x, FRAME.y);
+  await page.mouse.click(frame.x, frame.y);
+  const dialog = page.getByRole('dialog', { name: 'Enhanced Attribute Editor' });
+  await expect(dialog).toBeVisible();
+  const list = dialog.getByRole('listbox', { name: 'Attributes' });
+  await list.getByRole('option').filter({ hasText: 'TITLE' }).first().click();
+  await dialog.getByRole('tab', { name: 'Text Options' }).click();
+  const width = dialog.getByRole('spinbutton', { name: 'Boundary width:' });
+  // A single-line attribute has no boundary.
+  await expect(dialog.getByRole('spinbutton', { name: 'Height:' })).toBeVisible();
+  await expect(width).toHaveCount(0);
+  await dialog.getByRole('tab', { name: 'Attribute' }).click();
+  await list.getByRole('option').filter({ hasText: 'NOTES' }).click();
+  await dialog.getByRole('tab', { name: 'Text Options' }).click();
+  await expect(width).toHaveValue('36');
+  await width.fill('52.5');
+  await page.screenshot({ path: test.info().outputPath('11-boundary-width.png') });
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+          for (const u of cs.entities?.updated ?? []) {
+            if (u.after.geom.kind !== 'INSERT') continue;
+            const a = (u.after.geom as InsertGeometry).attributes.find((x) => x.tag === 'NOTES');
+            if (a?.mtext) return a.mtext.width;
+          }
+        }
+        return null;
+      }),
+    )
+    .toBe(52.5);
+  await page.screenshot({ path: test.info().outputPath('12-boundary-width-after.png') });
+});
+
 test('ATTEDIT opens Edit Attributes; Esc in a dialog changes nothing', async ({ page }) => {
   test.setTimeout(120_000);
   const at = await open(page);
