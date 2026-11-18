@@ -26,10 +26,10 @@ const layoutTabs = (page: Page) =>
 const dialog = (page: Page) => page.getByRole('dialog', { name: 'Select Template' });
 const shots = process.env['TRIYA_SCREENSHOTS'];
 
-// M5-14: "Open with no template" failed twice in CI on 2026-11-18 (the third NEW, after
-// DIMSTYLE's Escape, never showed Select Template) and never in 30 local runs. Keep a trace of a
-// failure, which the ui shard uploads with test-results/, to find why. (`use({ trace })` must be
-// top-level: in a describe group it forces a new worker.)
+// M5-14: "Open with no template" failed twice in CI on 2026-11-18: the third NEW, typed while
+// DIMSTYLE's dialog was still closing after Escape, went to the dialog (enterCommand now waits for
+// it to close). A failure keeps its trace, which the ui shard uploads with test-results/.
+// (`use({ trace })` must be top-level: in a describe group it forces a new worker.)
 test.use({ trace: 'retain-on-failure' });
 
 test.describe('new drawings from templates', () => {
