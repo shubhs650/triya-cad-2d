@@ -27,6 +27,7 @@ import {
   xrefBringing,
 } from '../model/xref';
 import { eraseObjects } from './edit';
+import { dropLayersFromFilters } from './layer-filters';
 
 /** DXF 70 bit 16: a record that belongs to an xref. */
 const DEPENDENT_FLAG = 16;
@@ -118,11 +119,10 @@ export function detachXrefs(
   }
   // The layer states let go of the xrefs' layers: those the load brought in, named only now,
   // and the records that went.
-  dropLayersFromLayerStates(
-    b,
-    new Set([...candidates.keys()].filter((h) => !b.tableRecord(candidates.get(h)!, h))),
-    prefixes,
-  );
+  const went = new Set([...candidates.keys()].filter((h) => !b.tableRecord(candidates.get(h)!, h)));
+  dropLayersFromLayerStates(b, went, prefixes);
+  // And the group filters (M5-07 part 4), which name layers by handle only.
+  dropLayersFromFilters(b, went);
 }
 
 /**

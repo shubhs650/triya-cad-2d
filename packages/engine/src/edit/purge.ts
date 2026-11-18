@@ -43,6 +43,7 @@ import type {
 import { eraseObjects } from './edit';
 import { displayText } from './find-text';
 import { explodeGroup } from './groups';
+import { dropLayersFromFilters } from './layer-filters';
 import { dropLayersFromStates } from './layer-states';
 
 /** The kinds of named items, in -PURGE's order. */
@@ -656,6 +657,7 @@ export function purgeInto(
   }
   for (const h of layers) b.removeTableRecord('layers', h);
   dropLayersFromStates(b, layers);
+  dropLayersFromFilters(b, layers);
 }
 
 /**

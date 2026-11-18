@@ -57,6 +57,11 @@ import {
   type LayerProps,
 } from '../edit/layer-manager';
 import {
+  deleteLayerFilterChange,
+  editLayerFilterChange,
+  newLayerFilterChange,
+} from '../edit/layer-filters';
+import {
   deleteLayerStateChange,
   editLayerStateChange,
   importLayerStateChange,
@@ -131,6 +136,32 @@ export type NamedLayerStateEdit =
       /** Overwrite a state of the same name (M5-07 part 2). */
       readonly replace?: boolean;
     };
+
+/**
+ * The Layer Properties Manager's filters (M5-07 part 4): New Properties Filter and New Group
+ * Filter (at the top or nested in `parent`), Rename, a new definition or group layers, Delete
+ * (with the filters nested in it). One LAYER undo step each.
+ */
+export type LayerFilterEdit =
+  | {
+      readonly kind: 'layer-filter-new';
+      readonly name: string;
+      /** Property unless said. */
+      readonly filterType?: 'property' | 'group';
+      /** A property filter's definition, `parseLayerFilterExpression`'s form. */
+      readonly expression?: string;
+      /** A group filter's layers. */
+      readonly layers?: readonly Handle[];
+      readonly parent?: Handle;
+    }
+  | {
+      readonly kind: 'layer-filter-edit';
+      readonly filter: Handle;
+      readonly name?: string;
+      readonly expression?: string;
+      readonly layers?: readonly Handle[];
+    }
+  | { readonly kind: 'layer-filter-delete'; readonly filter: Handle };
 
 /**
  * Linetypes loaded from a .lin file outside the Linetype Manager (M5-08: the Layer Properties
@@ -280,6 +311,7 @@ export type EngineEdit =
   | LayerStateEdit
   | LayerTableEdit
   | NamedLayerStateEdit
+  | LayerFilterEdit
   | LinetypeLoadEdit
   | LayoutEdit
   | XrefLoadEdit
@@ -769,6 +801,12 @@ export class EngineSession {
       e.kind === 'layer-state-import'
     )
       return this.#layerStatesEdit(e);
+    if (
+      e.kind === 'layer-filter-new' ||
+      e.kind === 'layer-filter-edit' ||
+      e.kind === 'layer-filter-delete'
+    )
+      return this.#layerFiltersEdit(e);
     if (e.kind === 'linetype-load') return this.#linetypeLoad(e);
     if (e.kind === 'purge') return this.#purge(e);
     if (e.kind === 'aliases') {
@@ -999,6 +1037,17 @@ export class EngineSession {
   }
 
   /** A layer change applied as one LAYER step, as AutoCAD names the manager's; or refused. */
+  #layerFiltersEdit(e: LayerFilterEdit): EditResult {
+    const m = this.model;
+    const change =
+      e.kind === 'layer-filter-new'
+        ? newLayerFilterChange(m, e)
+        : e.kind === 'layer-filter-edit'
+          ? editLayerFilterChange(m, e.filter, e)
+          : deleteLayerFilterChange(m, e.filter);
+    return this.#layerStep(change);
+  }
+
   #layerStep(change: ChangeSet | string, label = 'LAYER'): EditResult {
     if (typeof change === 'string') return { ok: false, message: change };
     if (Object.keys(change).length === 0) return { ok: true, change };

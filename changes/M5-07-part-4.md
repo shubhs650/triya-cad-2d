@@ -1,0 +1,1 @@
+- M5-07 part 4 (#555): layer filters. Property and group filters, nested ones too, are read from and saved to the drawing's `ACLYDICTIONARY` as AutoCAD 2005+ keeps them, and the engine lists each filter's layers (or, inverted, the others) and creates, renames, redefines and deletes filters as one undo step.
