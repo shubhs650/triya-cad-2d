@@ -5607,6 +5607,26 @@ button {
   margin: 8px 0 0;
 }
 
+/* REFEDIT's Reference Edit (M5-02 part 3). */
+.refedit-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.refedit-dialog-tree {
+  height: 140px;
+}
+
+.refedit-dialog-nested,
+.refedit-dialog-settings {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .cad-dialog-choices {
   display: flex;
   flex-direction: column;

@@ -172,6 +172,10 @@ export function beditCommand(): CommandDef {
         ctx.message('** The Block Editor is already open **');
         return;
       }
+      if (ctx.refEdit.session) {
+        ctx.message('** BEDIT is not allowed while a reference is edited in place **');
+        return;
+      }
       yield* ctx.dash ? dashBedit(ctx) : beditDialog(ctx);
     },
   };

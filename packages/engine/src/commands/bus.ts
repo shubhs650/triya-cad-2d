@@ -35,7 +35,8 @@ import {
   type Lasso,
   type StepResult,
 } from '../selection/loop';
-import { onLockedLayers } from '../selection/rules';
+import { onLockedLayers, outsideMessage } from '../selection/rules';
+import { RefEdits } from './refedit-session';
 import type { Entity, EntityGeometry, TableCellLock } from '../model/types';
 import { hasEditableAttributes } from './modify/attributes';
 import { editContents, textEdited } from './draw/text';
@@ -193,6 +194,11 @@ export type BusEvent =
   | { readonly type: 'selection'; readonly ids: readonly EntityId[] }
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
   | { readonly type: 'commit'; readonly record: CommandRecord }
+  /**
+   * A reference edit in place (M5-02 part 3) started, ended or its working set changed: `name`
+   * is the block edited, absent when none is; objects not in `working` show faded.
+   */
+  | { readonly type: 'refEdit'; readonly name?: string; readonly working: readonly EntityId[] }
   /** The undo history changed (a step added, undone or redone, a mark, a group, Control). */
   | {
       readonly type: 'undo';
@@ -367,6 +373,8 @@ export class PromptBus {
    * edits made since BEDIT opened it or BSAVE last saved it, which BCLOSE's Discard takes back.
    */
   #blockEditor: { readonly block: Handle; changes: ChangeSet[] } | undefined;
+  /** The reference edited in place (REFEDIT, M5-02 part 3). */
+  readonly #refEdit: RefEdits;
   readonly #view: ViewHost;
   readonly #dimensions: DimensionRegenerator | undefined;
   readonly #hatchLines: HatchLinesOf | undefined;
@@ -420,7 +428,21 @@ export class PromptBus {
       apply(cs);
       this.#forget(cs);
       this.#blockEditor?.changes.push(cs);
+      this.#refEdit.applied(cs);
     };
+    this.#refEdit = new RefEdits({
+      model: this.#model,
+      apply: (cs) => this.#apply(cs),
+      record: (cs) => this.#changes.push(cs),
+      changed: () => {
+        const s = this.#refEdit.session;
+        this.#emit(
+          s
+            ? { type: 'refEdit', name: s.name, working: [...this.#refEdit.working] }
+            : { type: 'refEdit', working: [] },
+        );
+      },
+    });
     const shown = options.space ?? (() => modelSpaceOf(this.#model));
     // The Block Editor's block while it is open (and the block is there: an undo may take it).
     this.#space = () => {
@@ -442,6 +464,7 @@ export class PromptBus {
       onChange: (state, action) =>
         this.#emit(action ? { type: 'undo', state, action } : { type: 'undo', state }),
       onMessage: (line) => this.#log(line),
+      onReplay: (changes, undone) => this.#refEdit.replayed(changes, undone),
       // A view step undone or redone (M2-47 part 4): the canvas shows the view kept and answers
       // with the one it replaced. Not waited on: U is done once the drawing is.
       swapView: async (viewport, view) => {
@@ -1182,6 +1205,7 @@ export class PromptBus {
       get space() {
         return bus.#space();
       },
+      refEdit: this.#refEdit,
       blockEditor: {
         get block() {
           return bus.#blockEditor?.block;
@@ -1315,10 +1339,12 @@ export class PromptBus {
       let ids = pre;
       if (prompt.editable) {
         const locked = onLockedLayers(this.#model, pre);
-        ids = pre.filter((id) => !locked.has(id));
+        const outside = this.#outsideWorkingSet(pre);
+        ids = pre.filter((id) => !locked.has(id) && !outside.has(id));
         if (locked.size > 0) {
           this.#log(`${locked.size} ${locked.size === 1 ? 'was' : 'were'} on a locked layer.`);
         }
+        if (outside.size > 0) this.#log(outsideMessage(outside.size));
       }
       if (ids.length > 0) this.#previous = ids;
       this.#showSelection();
@@ -1354,9 +1380,21 @@ export class PromptBus {
         previous: () => this.#previous,
         pickadd: () => this.#pickadd,
         pickauto: () => this.#pickauto,
+        outsideWorkingSet: (ids) => this.#outsideWorkingSet(ids),
       },
       o,
     );
+  }
+
+  /**
+   * REFEDIT's Lock objects not in working set (M5-02 part 3): the objects of `ids` a command that
+   * edits may not take while a reference is edited in place.
+   */
+  #outsideWorkingSet(ids: readonly EntityId[]): Set<EntityId> {
+    const s = this.#refEdit.session;
+    if (!s?.lock) return new Set();
+    const working = this.#refEdit.working;
+    return new Set(ids.filter((id) => !working.has(id)));
   }
 
   /** Text at "Select objects": Enter ends it, then a command option, a mode or a point. */

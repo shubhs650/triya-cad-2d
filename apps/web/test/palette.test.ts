@@ -222,6 +222,10 @@ describe('palette search', () => {
       'RAY',
       'RECTANG',
       'REDO',
+      // M5-02 part 3: in-place reference editing.
+      'REFCLOSE',
+      'REFEDIT',
+      'REFSET',
       'REGEN',
       'REGENALL',
       'REVCLOUD',

@@ -126,6 +126,11 @@ export interface UndoStackOptions {
    * undefined when the viewport is gone. Without it a view step's undo changes no view.
    */
   readonly swapView?: (viewport: string, view: UndoView) => Promise<UndoView | undefined>;
+  /**
+   * A step's changes were undone (`undone`) or redone, after they were applied: REFEDIT's state
+   * follows its own steps (M5-02 part 3).
+   */
+  readonly onReplay?: (changes: readonly ChangeSet[], undone: boolean) => void;
 }
 
 /** What a view step is counted as against the memory bound: a few numbers and a name. */
@@ -159,6 +164,7 @@ export class UndoStack {
   readonly #onChange: ((state: UndoState, action?: UndoAction) => void) | undefined;
   readonly #onMessage: ((line: string) => void) | undefined;
   readonly #swapView: UndoStackOptions['swapView'];
+  readonly #onReplay: UndoStackOptions['onReplay'];
   #undo: Entry[] = [];
   #redo: Entry[][] = [];
   #group: { changes: ChangeSet[]; views: ViewSlot[]; bytes: number } | undefined;
@@ -174,6 +180,7 @@ export class UndoStack {
     this.#onChange = options.onChange;
     this.#onMessage = options.onMessage;
     this.#swapView = options.swapView;
+    this.#onReplay = options.onReplay;
   }
 
   get state(): UndoState {
@@ -459,6 +466,7 @@ export class UndoStack {
     } catch (err) {
       this.#fail(err);
     }
+    this.#onReplay?.(record.changes, true);
     this.#swapViews([...(record.views ?? [])].reverse());
   }
 
@@ -468,6 +476,7 @@ export class UndoStack {
     } catch (err) {
       this.#fail(err);
     }
+    this.#onReplay?.(e.record.changes, false);
     this.#swapViews(e.record.views ?? []);
     // A step redone is no longer the one the drafter's last zoom made: the next starts anew.
     delete e.combines;

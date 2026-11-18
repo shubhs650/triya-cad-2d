@@ -244,10 +244,15 @@ export function eraseObjects(
 // ── MOVE, ROTATE, SCALE, MIRROR ─────────────────────────────────────────────────────────────
 
 /** The objects that go with `ids`: clip boundaries with their viewports, hatches with their whole boundary. */
-function withPartners(b: ChangeSetBuilder, links: Links, ids: readonly EntityId[]): Entity[] {
+function withPartners(
+  b: ChangeSetBuilder,
+  links: Links,
+  ids: readonly EntityId[],
+  locked = false,
+): Entity[] {
   const set = new Map<Handle, Entity>();
   const add = (e: Entity | undefined) => {
-    if (e && !set.has(e.handle) && !isLocked(b, e)) set.set(e.handle, e);
+    if (e && !set.has(e.handle) && (locked || !isLocked(b, e))) set.set(e.handle, e);
   };
   for (const id of ids) add(b.entity(id));
   for (const e of [...set.values()]) {
@@ -283,11 +288,17 @@ export function transformObjects(
   model: DocumentModel,
   ids: readonly EntityId[],
   t: Similarity,
-  o: TransformOptions = {},
+  o: TransformOptions & {
+    /**
+     * Objects on locked layers are carried too: REFEDIT carries a block's contents in and out
+     * of the drawing whatever their layers (M5-02 part 3).
+     */
+    readonly locked?: boolean;
+  } = {},
 ): EditReport {
   const links = new Links(b, model);
   const refused = new Map<string, number>();
-  const candidates = withPartners(b, links, ids);
+  const candidates = withPartners(b, links, ids, o.locked);
   const moving: Entity[] = [];
   for (const e of candidates) {
     const problem = transformProblem(e.geom, t);
@@ -906,7 +917,7 @@ export function reshapeObject(
 const FIXED_FIELDS = new Set(['id', 'handle', 'owner', 'type']);
 
 /** The patch that turns `after` back into `before` (fields `after` added are taken off). */
-function patchBack(before: object, after: object): Record<string, unknown> {
+export function patchBack(before: object, after: object): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(after)) if (!(k in before)) out[k] = undefined;
   for (const [k, v] of Object.entries(before)) if (!FIXED_FIELDS.has(k)) out[k] = v;
