@@ -122,6 +122,14 @@ export {
   type ImageAttachSettings,
 } from './image-attach';
 export {
+  pdfattachCommand,
+  type PdfAttachAnswer,
+  type PdfAttachEntry,
+  type PdfAttachFile,
+  type PdfAttachRequest,
+  type PdfAttachSettings,
+} from './pdf-attach';
+export {
   laywalkCommand,
   type LayerWalkAnswer,
   type LayerWalkLayer,

@@ -4,7 +4,7 @@
 import type { PdfDefinition, UnderlaySnapPage } from '@triya/engine';
 import type { UnderlayRaster, UnderlayRequest } from '@triya/render';
 import { describe, expect, it } from 'vitest';
-import { PdfPages, fileKey, type PdfFile } from '../src/underlay/pages';
+import { PdfPages, fileKey, pageSizesOf, type PdfFile } from '../src/underlay/pages';
 
 const def = (handle: string, fileName: string, page = '1'): PdfDefinition => ({
   handle,
@@ -355,5 +355,28 @@ describe('PdfPages', () => {
     pages.add('plan.pdf', new Uint8Array([3]));
     await settle();
     expect(snaps).toEqual(['9A', '9A']);
+  });
+});
+
+describe('PDFATTACH page sizes (M5-04 part 8)', () => {
+  it('lists every page of a supplied file in page order, opened once', async () => {
+    const { open, opened } = fakePdf();
+    const pages = new PdfPages(open);
+    expect(await pages.pages('plan.pdf')).toBeUndefined();
+    pages.add('C:\\set\\Plan.PDF', new Uint8Array([1]));
+    const sizes = [
+      { width: 8.5, height: 11 },
+      { width: 11, height: 8.5 },
+    ];
+    expect(await pages.pages('plan.pdf')).toEqual(sizes);
+    expect(await pages.pages('..\\plan.pdf')).toEqual(sizes);
+    expect(opened).toHaveLength(1);
+    expect(await pageSizesOf(await open(new Uint8Array([2])))).toEqual(sizes);
+  });
+
+  it('answers undefined for a file pdf.js cannot read', async () => {
+    const pages = new PdfPages(() => Promise.reject(new Error('not a PDF')));
+    pages.add('bad.pdf', new Uint8Array([1]));
+    expect(await pages.pages('bad.pdf')).toBeUndefined();
   });
 });

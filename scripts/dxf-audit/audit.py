@@ -70,6 +70,10 @@ FIXTURE_SAVES = (
     # XBIND of the xref set's block and layers (M5-04 part 7,
     # packages/testkit/src/xref/xbind.test.ts).
     ("fixtures/xref/xref-parent.dxf", "xbind"),
+    # PDFATTACH on a drawing without underlays and on the underlay fixture (M5-04 part 8,
+    # packages/testkit/src/underlay/pdf-attach.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "pdfattach"),
+    ("fixtures/underlay/pdf-underlay.dxf", "pdfattach"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

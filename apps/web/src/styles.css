@@ -5392,3 +5392,13 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* M5-04 part 8: PDFATTACH's Attach PDF Underlay dialog. */
+.cad-dialog.pdf-attach-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.pdf-attach-pages select {
+  min-width: 16em;
+  max-width: 100%;
+}
