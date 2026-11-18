@@ -475,8 +475,16 @@ test('cell styles of the drafter’s own: Create New Cell Style, Cell Style and 
     'Create new cell style...',
     'Manage cell styles...',
   ]);
+  // OK applies the style, and the engine answers with the Table Style dialog's new request. The
+  // dialog is keyed by its request, so it mounts afresh: Modify... clicked before that opens on
+  // the old request and the remount closes it again (a CI failure on 2026-11-18). Wait for the
+  // Table Style dialog of the new request first.
+  const applied = await page
+    .getByRole('dialog', { name: 'Table Style', exact: true })
+    .elementHandle();
   await modify.getByRole('button', { name: 'OK' }).click();
   await expect(modify).toBeHidden();
+  await expect.poll(() => applied!.evaluate((el) => el.isConnected)).toBe(false);
   // Opened again: the rename kept, the table's row still on it.
   await dialog.getByRole('button', { name: 'Modify...' }).click();
   await expect(cellStyles.locator('option').nth(3)).toHaveText('Remarks');
