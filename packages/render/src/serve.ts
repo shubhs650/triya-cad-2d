@@ -114,6 +114,13 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'hitTest':
         port.postMessage({ type: 'reply', id: m.id, ids: r.hitTest(m.screen, m.aperture) });
         break;
+      case 'nestedHit':
+        port.postMessage({
+          type: 'nested',
+          id: m.id,
+          hit: r.nestedHit(m.screen, m.aperture, m.entity),
+        });
+        break;
       case 'select':
         port.postMessage({ type: 'reply', id: m.id, ids: r.select(m.query) });
         break;

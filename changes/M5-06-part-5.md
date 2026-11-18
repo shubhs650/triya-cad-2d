@@ -1,0 +1,1 @@
+- M5-06 part 5 (#521): the layer tools pick into blocks and xrefs. LAYOFF and LAYFRZ get AutoCAD's Block selection setting (Block, Entity, None) under Settings; LAYLCK, LAYULK, LAYMCUR, LAYISO, LAYDEL and LAYMRG take the layer of the object picked inside a block or xref. M5-06 is complete.

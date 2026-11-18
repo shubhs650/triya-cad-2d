@@ -85,6 +85,12 @@ export type ViewRequest =
    */
   | { readonly op: 'pick'; readonly point: Vec2 }
   /**
+   * What a pick at `point` hit inside the block reference `id` it took (M5-06 part 5: the layer
+   * tools' Block selection setting), as drawn: the reply's `nested`, or none where the pick
+   * comes near none of its contents.
+   */
+  | { readonly op: 'nested'; readonly point: Vec2; readonly id: EntityId }
+  /**
    * Selection cycling (M3-04 part 3, SELECTIONCYCLING 2): a pick at `point` found the overlapping
    * `candidates`, nearest first; the canvas shows AutoCAD's Selection list there and the reply's
    * `ids` hold the one chosen, none when the list was dismissed.
@@ -430,6 +436,17 @@ export type FileAction =
   | 'layerstates';
 
 /**
+ * The object a pick hit inside a block reference (M5-06 part 5), as AutoCAD's nested selection
+ * finds it: `path` holds the references from the one picked inward, then the object hit, which
+ * is the last reference itself when the pick hit one of its `attribute`s. A dimension, table or
+ * multileader inside a block is hit whole, not by the parts it is drawn with.
+ */
+export interface NestedPick {
+  readonly path: readonly EntityId[];
+  readonly attribute?: Handle;
+}
+
+/**
  * What WBLOCK writes as a new drawing (M5-01 part 4): the objects, whose base point goes to the
  * new drawing's origin, and the header variables it takes from the drawing (`$INSUNITS` the
  * dialog's Insert units).
@@ -451,6 +468,8 @@ export type ViewReply =
       readonly enclosed?: EnclosedSpace;
       /** What a `pick` or `select` took. */
       readonly ids?: readonly EntityId[];
+      /** What a `nested` pick hit. */
+      readonly nested?: NestedPick;
       /** What an `xref` request did, one line each (M5-04). */
       readonly messages?: readonly string[];
       /** What `textBox` measured. */

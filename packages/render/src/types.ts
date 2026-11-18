@@ -2,7 +2,16 @@
 // `Renderer`; only this package knows it is Canvas 2D underneath, so a WebGL renderer can
 // replace it behind the same interface (DEC-006).
 
-import type { Box, ChangeSet, DragMotion, EntityId, GroupGrip, Handle, Vec2 } from '@triya/engine';
+import type {
+  Box,
+  ChangeSet,
+  DragMotion,
+  EntityId,
+  GroupGrip,
+  Handle,
+  NestedPick,
+  Vec2,
+} from '@triya/engine';
 import type { GridSpec } from './grid';
 import type { TtfFont } from '@triya/text';
 import type { Affine } from './affine';
@@ -415,6 +424,15 @@ export interface Renderer {
   frame(): void;
   /** Entities within `aperture` CSS pixels of a screen point, nearest first. */
   hitTest(screen: { readonly x: number; readonly y: number }, aperture: number): EntityId[];
+  /**
+   * What a pick within `aperture` CSS pixels of a screen point hit inside the block reference
+   * `id` (M5-06 part 5), the nearest part's object; null where it comes near none of them.
+   */
+  nestedHit(
+    screen: { readonly x: number; readonly y: number },
+    aperture: number,
+    id: EntityId,
+  ): NestedPick | null;
   /**
    * The entities drawn in a rectangle of the canvas, model space through a layout's viewports
    * included, in handle order: the fidelity harness names them where a golden image differs

@@ -61,6 +61,7 @@ import {
   type DimStylePreview,
   type StylePreview,
   type EntityId,
+  type NestedPick,
   PREVIEW_AT_COMMAND,
   PREVIEW_SELECTING,
   type GroupGrip,
@@ -1407,6 +1408,17 @@ export class CanvasController {
       }
     }
     return this.#host.hitTest(screen, pickbox);
+  }
+
+  /**
+   * What a pick at a world point hit inside the block reference `id` (M5-06 part 5: the layer
+   * tools' nested picks), within the pickbox; undefined where it hit none of its contents.
+   */
+  pickNested(point: Vec2, id: EntityId): Promise<NestedPick | undefined> {
+    const v = this.#view;
+    if (!v) return Promise.resolve(undefined);
+    const screen = worldToScreen(v, this.#size.width, this.#size.height, point);
+    return this.#host.nestedHit(screen, this.#drafting.pickbox, id).then((h) => h ?? undefined);
   }
 
   /** Where a world point is shown, in window pixels (M3-04 part 3: the Selection list). */

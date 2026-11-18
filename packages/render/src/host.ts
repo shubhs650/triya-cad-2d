@@ -14,6 +14,7 @@ import type {
   ChangeSet,
   DragMotion,
   EntityId,
+  NestedPick,
   GroupGrip,
   MTextGeometry,
   EnclosedSpace,
@@ -280,6 +281,19 @@ export class RendererHost {
     return this.#request((id) => ({ type: 'hitTest', id, screen, aperture })).then((m) => [
       ...(m.type === 'reply' ? (m.ids ?? []) : []),
     ]);
+  }
+
+  /** What a pick hit inside the block reference `entity` (M5-06 part 5), or null. */
+  nestedHit(
+    screen: { readonly x: number; readonly y: number },
+    aperture: number,
+    entity: EntityId,
+  ): Promise<NestedPick | null> {
+    if (this.#session)
+      return Promise.resolve(this.#session.renderer.nestedHit(screen, aperture, entity));
+    return this.#request((id) => ({ type: 'nestedHit', id, screen, aperture, entity })).then((m) =>
+      m.type === 'nested' ? m.hit : null,
+    );
   }
 
   /** The entities a selection window takes (M2-03). */

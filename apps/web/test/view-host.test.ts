@@ -47,6 +47,8 @@ class Target implements ViewTarget {
   setMode = (m: CanvasMode) => void this.calls.push(`mode ${m}`);
   regen = () => void this.calls.push('regen');
   pick = (p: Vec2) => (this.calls.push(`pick ${p.x},${p.y}`), Promise.resolve([7]));
+  pickNested = (p: Vec2, id: number) =>
+    Promise.resolve(id === 7 && p.x === 1 ? { path: [7, 12], attribute: 'A1' } : undefined);
   selectWindow = (a: Vec2, b: Vec2, crossing: boolean) => (
     this.calls.push(`select ${a.x},${a.y} ${b.x},${b.y}${crossing ? ' crossing' : ''}`),
     Promise.resolve([7, 8])
@@ -351,6 +353,14 @@ describe('answerView', () => {
     expect(
       await answerView({ op: 'select', a: { x: 0, y: 0 }, b: { x: 5, y: 5 }, crossing: true }, ctx),
     ).toEqual({ ok: true, ids: [7, 8] });
+    // M5-06 part 5: what the pick hit inside the reference it took, nothing where it hit none.
+    expect(await answerView({ op: 'nested', point: { x: 1, y: 2 }, id: 7 }, ctx)).toEqual({
+      ok: true,
+      nested: { path: [7, 12], attribute: 'A1' },
+    });
+    expect(await answerView({ op: 'nested', point: { x: 3, y: 2 }, id: 7 }, ctx)).toEqual({
+      ok: true,
+    });
     expect(await answerView({ op: 'objects', ids: [7, 8] }, ctx)).toMatchObject({ ok: true });
     t.objectsKnown = false;
     expect(await answerView({ op: 'objects', ids: [9] }, ctx)).toEqual({

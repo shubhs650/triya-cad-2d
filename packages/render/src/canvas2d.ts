@@ -74,6 +74,7 @@ import {
   type Layout,
   type LayoutSheet,
   type Matrix2D,
+  type NestedPick,
   type NonGraphicalObject,
   type RasterVariables,
   type SortEntsTable,
@@ -1331,6 +1332,38 @@ export class Canvas2DRenderer implements Renderer {
       if (d <= r) hits.push({ id, d });
     }
     return hits.sort((a, b) => a.d - b.d).map((h) => h.id);
+  }
+
+  nestedHit(
+    screen: { readonly x: number; readonly y: number },
+    aperture: number,
+    id: EntityId,
+  ): NestedPick | null {
+    const e = this.#model.entity(id);
+    if (!e || e.geom.kind !== 'INSERT' || !this.#cache[id]) return null;
+    const p = screenToWorld(this.#view, this.#width, this.#height, screen);
+    const r = aperture / this.#view.scale;
+    // Expanded again with each part's owner, only for this pick: the scene cache keeps a
+    // reference's parts without them, as nothing else asks.
+    const x = expandInsert(e, this.#blockSource, { dashes: false, owners: true });
+    let best: { i: number; d: number } | undefined;
+    x.prims.forEach((prim, i) => {
+      if (prim.clip && !insideClips(prim.clip, p)) return;
+      let d = distanceTo(prim, p);
+      if (prim.kind !== 'infinite' && prim.kind !== 'point' && prim.text)
+        d = Math.min(d, distanceTo({ kind: 'fill', path: prim.text.greek, color: '' }, p));
+      if (d <= r && (!best || d < best.d)) best = { i, d };
+    });
+    const owner = best && x.owners?.[best.i];
+    if (!owner) return null;
+    const last = owner.path[owner.path.length - 1];
+    const attribute =
+      last !== undefined &&
+      owner.entity.id === last &&
+      owner.entity.handle !== this.#model.entity(last)?.handle
+        ? owner.entity.handle
+        : undefined;
+    return { path: owner.path, ...(attribute !== undefined && { attribute }) };
   }
 
   entitiesIn(rect: ScreenRect): DrawnEntity[] {
