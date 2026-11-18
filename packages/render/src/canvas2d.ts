@@ -1402,6 +1402,9 @@ export class Canvas2DRenderer implements Renderer {
 
   #cacheBlock(): void {
     this.#cache = [];
+    // A block made since the drawing opened (the Block Editor's, M5-02) comes with the changes
+    // the canvas is handed next: its entities are cached as they are applied.
+    if (!this.#model.hasBlock(this.#block)) return;
     for (const id of this.#model.blockEntities(this.#block)) this.#cacheEntity(id);
     if (this.#modelBlock)
       for (const id of this.#model.blockEntities(this.#modelBlock)) this.#cacheEntity(id);
@@ -1488,6 +1491,8 @@ export class Canvas2DRenderer implements Renderer {
       for (const o of this.#model.objects.values())
         if (isSortEnts(o)) this.#sortTables.set(o.block, o);
     }
+    // Not there yet (made since the drawing opened, M5-02): nothing to order, nothing kept.
+    if (!this.#model.hasBlock(block)) return [];
     const table = this.#sortTables.get(block);
     const ids = this.#model.blockEntities(block);
     const order = table
