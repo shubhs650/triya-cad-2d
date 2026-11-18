@@ -32,7 +32,7 @@ import type { ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
 import { applyToReplica } from '../model/replica';
-import type { Layout, LayoutPlot } from '../model/types';
+import type { LayerStateLayer, Layout, LayoutPlot } from '../model/types';
 import {
   xrefLoadChange,
   xrefLoadProblem,
@@ -122,6 +122,8 @@ export type NamedLayerStateEdit =
       readonly name?: string;
       readonly description?: string;
       readonly mask?: number;
+      /** Edit Layer State (M5-07 part 3): the layers the state names, with their settings. */
+      readonly layers?: readonly LayerStateLayer[];
     }
   | {
       readonly kind: 'layer-state-import';
@@ -990,6 +992,7 @@ export class EngineSession {
                   name: e.name,
                   description: e.description,
                   mask: e.mask,
+                  layers: e.layers,
                 })
               : importLayerStateChange(m, e.state, e.replace);
     return this.#layerStep(change, 'LAYERSTATE');

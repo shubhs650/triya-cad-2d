@@ -11,17 +11,24 @@
 import {
   LAYER_STATE_MASK,
   isLayerState,
+  layerStateEntry,
   layerStateMatches,
+  lineweightText,
+  transparencyValue,
   type ChangeSet,
   type DocumentInit,
   type Handle,
   type KeyedChanges,
+  type LayerRecord,
   type LayerState,
+  type LayerStateLayer,
   type LayerStateTables,
+  type LineweightUnits,
   type NonGraphicalObject,
   type TableName,
   type TableRecords,
 } from '@triya/engine';
+import { colorCell, compareNames } from './layers';
 
 /** A table as opened with `changes` applied in order, by handle. */
 function tableNow<K extends TableName>(
@@ -152,6 +159,90 @@ export function allRestoreProperties(mask: number, on: boolean): number {
 /** Export's file name: the state's, as AutoCAD offers it, without characters files refuse. */
 export function lasFileName(name: string): string {
   return `${name.replace(/[\\/:*?"<>|]/g, '_')}.las`;
+}
+
+// Edit Layer State (the manager's Edit..., M5-07 part 3; AutoCAD 2024 Help, "Edit Layer State
+// Dialog Box"): the layers the selected state names with the settings it restores (Name, On,
+// Freeze, Lock, Plot, Color, Linetype, Lineweight, Transparency, Plot Style, New VP Freeze);
+// "Add layers to layer state" offers the drawing's layers it does not name (Select Layers to Add
+// to Layer State), each added with its settings now; "Remove layers from layer state" takes the
+// selected rows out. OK saves the layers as one LAYERSTATE step, Cancel leaves the state.
+
+/** The key a state's entry is known by in the dialog: its layer, or its name (a `.las` file's). */
+export const entryKey = (e: LayerStateLayer): string => e.layer ?? `name:${e.name.toUpperCase()}`;
+
+/** One row of Edit Layer State. */
+export interface EditLayerStateRow {
+  readonly key: string;
+  readonly name: string;
+  readonly on: boolean;
+  readonly frozen: boolean;
+  readonly locked: boolean;
+  readonly plot: boolean;
+  readonly newVpFrozen: boolean;
+  readonly color: { readonly label: string; readonly css: string };
+  readonly linetype: string;
+  readonly lineweight: string;
+  /** AutoCAD's percentage, 0 (opaque) to 90. */
+  readonly transparency: number;
+  readonly plotStyle: string;
+  /** False for a layer the state names that the drawing does not have. */
+  readonly inDrawing: boolean;
+  readonly entry: LayerStateLayer;
+}
+
+export function editLayerStateRows(
+  entries: readonly LayerStateLayer[],
+  tables: LayerStateTables,
+  units: LineweightUnits,
+): EditLayerStateRow[] {
+  const names = new Set([...tables.tables.layers.values()].map((l) => l.name.toUpperCase()));
+  return entries.map((e) => {
+    const t = transparencyValue(e.transparency);
+    return {
+      key: entryKey(e),
+      name: e.name,
+      on: e.on,
+      frozen: e.frozen,
+      locked: e.locked,
+      plot: e.plot,
+      newVpFrozen: e.newVpFrozen,
+      color: colorCell(e.color),
+      linetype: e.linetypeName,
+      lineweight:
+        typeof e.lineweight === 'number' ? lineweightText(e.lineweight, units) : e.lineweight,
+      transparency: typeof t === 'number' ? t : 0,
+      plotStyle: e.plotStyle,
+      inDrawing:
+        (e.layer !== undefined && tables.tables.layers.has(e.layer)) ||
+        names.has(e.name.toUpperCase()),
+      entry: e,
+    };
+  });
+}
+
+/**
+ * Select Layers to Add to Layer State: the drawing's layers the state does not name (by layer,
+ * or by name for an entry without one), in the Layer Properties Manager's order.
+ */
+export function layersToAdd(
+  entries: readonly LayerStateLayer[],
+  tables: LayerStateTables,
+): LayerRecord[] {
+  const handles = new Set(entries.flatMap((e) => (e.layer === undefined ? [] : [e.layer])));
+  const names = new Set(entries.map((e) => e.name.toUpperCase()));
+  return [...tables.tables.layers.values()]
+    .filter((l) => !handles.has(l.handle) && !names.has(l.name.toUpperCase()))
+    .sort((a, b) => compareNames(a.name, b.name));
+}
+
+/** The layers added, each with its settings now, after the state's own. */
+export function withLayersAdded(
+  entries: readonly LayerStateLayer[],
+  tables: LayerStateTables,
+  added: readonly LayerRecord[],
+): LayerStateLayer[] {
+  return [...entries, ...added.map((l) => layerStateEntry(tables, l))];
 }
 
 /** The manager open, by drawing, and what LAYERSTATE waits for: the dialog to close. */

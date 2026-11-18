@@ -58,7 +58,7 @@ export interface LayerRow {
 /** AutoCAD names ACI 1–7 in the colour column; others show their number. */
 const ACI_NAMES = ['', 'red', 'yellow', 'green', 'cyan', 'blue', 'magenta', 'white'];
 
-function colorCell(c: Color): LayerRow['color'] {
+export function colorCell(c: Color): LayerRow['color'] {
   // A colour-book colour shows its name (DIC 7), a true colour its RGB, as AutoCAD's manager does.
   if (c.kind === 'rgb')
     return { label: c.colorName || `${c.r},${c.g},${c.b}`, css: rgbHex([c.r, c.g, c.b]) };
