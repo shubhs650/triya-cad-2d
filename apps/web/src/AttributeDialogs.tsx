@@ -57,6 +57,7 @@ import { ToleranceDialog } from './ToleranceDialog';
 import { InsertCellBlockDialog } from './InsertCellBlockDialog';
 import { BlockDefinitionDialog } from './BlockDefinitionDialog';
 import { InsertDialog } from './InsertDialog';
+import { BlockChangesNotSavedDialog, EditBlockDefinitionDialog } from './BlockEditorDialogs';
 import { WriteBlockDialog } from './WriteBlockDialog';
 import { TableCellFormatDialog } from './TableCellFormatDialog';
 import { LayerListDialog } from './LayerListDialog';
@@ -65,6 +66,7 @@ import { LinetypeManagerDialog } from './LinetypeManager';
 import type { LinetypeFiles } from './linetype-files';
 import { LayerWalkDialog } from './LayerWalkDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
+import { PdfAttachDialog, type PdfAttachFiles } from './PdfAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
 
 /** Where no app hands over linetype files (tests): no files, none kept. */
@@ -90,6 +92,7 @@ export function AttributeDialogs({
   onImageFile,
   xrefFiles,
   linetypeFiles,
+  pdfFiles,
 }: {
   doc: { id: number } | undefined;
   /** The open drawings (DIMSTYLE's Import... reads another one's styles). */
@@ -104,6 +107,8 @@ export function AttributeDialogs({
   xrefFiles?: XrefFiles;
   /** The linetype files LINETYPE's Load... reads (M5-08). */
   linetypeFiles?: LinetypeFiles;
+  /** The PDF files PDFATTACH's dialog reads and supplies (M5-04 part 8). */
+  pdfFiles?: PdfAttachFiles;
 }) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
@@ -180,6 +185,10 @@ export function AttributeDialogs({
       return <InsertDialog key={key} doc={doc.id} request={d} />;
     case 'wblock':
       return <WriteBlockDialog key={key} doc={doc.id} request={d} />;
+    case 'bedit':
+      return <EditBlockDefinitionDialog key={key} doc={doc.id} request={d} />;
+    case 'bclose':
+      return <BlockChangesNotSavedDialog key={key} doc={doc.id} request={d} />;
     case 'layerlist':
       return <LayerListDialog key={key} doc={doc.id} request={d} />;
     case 'laywalk':
@@ -188,6 +197,8 @@ export function AttributeDialogs({
       return <LayerWalkDialog key="laywalk" doc={doc.id} request={d} />;
     case 'imageattach':
       return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
+    case 'pdfattach':
+      return <PdfAttachDialog key={key} doc={doc.id} request={d} files={pdfFiles} />;
     case 'xrefattach':
       return <XrefAttachDialog key={key} doc={doc.id} request={d} files={xrefFiles} />;
     case 'xbind':

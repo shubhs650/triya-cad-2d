@@ -43,6 +43,7 @@ export * from './image-clip';
 export * from './clipboard';
 export * from './clipboard-data';
 export * from './picture';
+export * from './underlay-attach';
 export * from './draw-order';
 export * from './mleader';
 export * from './mleader-blocks';

@@ -3,7 +3,14 @@
 import type { ChangeSet, Layout } from '@triya/engine';
 import type { OpenResult } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { DocumentStore, layoutsOf, spacesOf, tabBlock, type OpenDocument } from '../src/documents';
+import {
+  DocumentStore,
+  inLayout,
+  layoutsOf,
+  spacesOf,
+  tabBlock,
+  type OpenDocument,
+} from '../src/documents';
 
 const opened = {} as OpenResult;
 
@@ -219,5 +226,32 @@ describe('tabBlock (M2-59 part 5)', () => {
     // A layout deleted since is not shown again.
     const removed: ChangeSet = { layouts: { removed: [layouts[1]!] } };
     expect(tabBlock(doc(), [removed], undefined)).toBe('1B');
+  });
+});
+
+// M5-02 part 1: BEDIT shows a block definition in the Block Editor; BCLOSE shows again the space
+// shown before. The editor works as model space does, and no tab is shown while it is open.
+describe('the Block Editor', () => {
+  it('shows the block, keeps the space it came from and goes back to it', () => {
+    const s = new DocumentStore();
+    s.startOpening('a.dxf');
+    const id = s.opened('a.dxf', { modelSpace: '1F' } as OpenResult, '1F');
+    const doc = () => s.getSnapshot().docs.find((d) => d.id === id)!;
+    s.showSpace(id, '58');
+    expect(inLayout(doc())).toBe(true);
+    s.openBlockEditor(id, '50', 'DOOR');
+    expect(doc().block).toBe('50');
+    expect(doc().blockEditor).toEqual({ block: '50', name: 'DOOR', from: '58' });
+    expect(inLayout(doc())).toBe(false);
+    // No tab is shown while it is open; the layout shown last stays the one before it.
+    s.showSpace(id, '1F');
+    expect(doc().block).toBe('50');
+    expect(doc().lastLayout).toBe('58');
+    s.closeBlockEditor(id);
+    expect(doc().block).toBe('58');
+    expect(doc().blockEditor).toBeUndefined();
+    // Closing a closed editor changes nothing.
+    s.closeBlockEditor(id);
+    expect(doc().block).toBe('58');
   });
 });

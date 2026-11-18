@@ -88,6 +88,16 @@ export interface UnderlayClient {
 
 type PageSize = { readonly width: number; readonly height: number };
 
+/**
+ * Every page's size in inches, as displayed, in page order: what PDFATTACH's Attach PDF Underlay
+ * dialog lists and places (M5-04 part 8).
+ */
+export async function pageSizesOf(pdf: PdfFile): Promise<PageSize[]> {
+  const sizes: PageSize[] = [];
+  for (let n = 1; n <= pdf.pageCount; n++) sizes.push(await pdf.pageSize(n));
+  return sizes;
+}
+
 /** A page drawn, under its request's `underlayKey` (the definition, with any layers off). */
 type Deliver = (page: string, raster: UnderlayRaster | undefined) => void;
 type DeliverSnap = (definition: string, page: UnderlaySnapPage | undefined) => void;
@@ -228,6 +238,21 @@ export class PdfPages {
       file.opened ??= this.#open(file.bytes);
       const pdf = await file.opened;
       return pdf.layers ? await pdf.layers() : [];
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The page sizes of the supplied file of this name (`pageSizesOf`); undefined without the file
+   * or when pdf.js cannot read it.
+   */
+  async pages(fileName: string): Promise<PageSize[] | undefined> {
+    const file = this.#files.get(fileKey(fileName));
+    if (!file) return undefined;
+    try {
+      file.opened ??= this.#open(file.bytes);
+      return await pageSizesOf(await file.opened);
     } catch {
       return undefined;
     }

@@ -151,6 +151,11 @@ export interface ViewContext {
    */
   readonly tab?: (name: string | undefined) => ViewReply;
   /**
+   * BEDIT and BCLOSE (M5-02): the app shows the Block Editor on the block definition `block`,
+   * or without one closes it.
+   */
+  readonly blockEditor?: (block: string | undefined, name: string | undefined) => ViewReply;
+  /**
    * -XREF Unload and Reload (M5-04): the app unloads or reloads the xrefs, as the palette does;
    * XATTACH's Attach (M5-04 part 6): it loads the xrefs just attached from the file picked.
    */
@@ -237,6 +242,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'tab') {
     return ctx.tab ? ctx.tab(r.name) : { ok: false, message: NO_TABS };
+  }
+  if (r.op === 'blockEditor') {
+    return ctx.blockEditor ? ctx.blockEditor(r.block, r.name) : { ok: false, message: NO_TABS };
   }
   if (r.op === 'underlayLayers') {
     return ctx.underlayLayers ? ctx.underlayLayers(r) : { ok: false, message: NO_DIALOGS };

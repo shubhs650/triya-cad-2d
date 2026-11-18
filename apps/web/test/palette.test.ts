@@ -49,9 +49,13 @@ describe('palette search', () => {
       'ATTEDIT',
       // M5-01 part 1: blocks made and inserted at the command line, and BASE.
       'BASE',
+      // M5-02 part 1: the Block Editor.
+      'BCLOSE',
+      'BEDIT',
       'BLOCK',
       'BREAK',
       'BREAKATPOINT',
+      'BSAVE',
       // M4-08: CENTERLINE and CENTERMARK; part 3 the commands that edit them.
       'CENTERDISASSOCIATE',
       'CENTERLINE',
@@ -192,6 +196,8 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      // M5-04 part 8: PDFATTACH.
+      'PDFATTACH',
       // M3-02 part 5: PEDIT.
       'PEDIT',
       // M3-01 part 3: PLINE, POLYGON and RECTANG.

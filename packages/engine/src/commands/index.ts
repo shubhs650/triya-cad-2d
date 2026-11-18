@@ -122,6 +122,14 @@ export {
   type ImageAttachSettings,
 } from './image-attach';
 export {
+  pdfattachCommand,
+  type PdfAttachAnswer,
+  type PdfAttachEntry,
+  type PdfAttachFile,
+  type PdfAttachRequest,
+  type PdfAttachSettings,
+} from './pdf-attach';
+export {
   laywalkCommand,
   type LayerWalkAnswer,
   type LayerWalkLayer,
@@ -173,6 +181,7 @@ export type {
   WriteBlockSource,
 } from './wblock';
 export { wblockCopy, wblockFileName } from './wblock';
+export type { BlockCloseRequest, BlockEditEntry, BlockEditRequest } from './block-editor';
 export type {
   HatchDialogAnswer,
   HatchDialogButton,

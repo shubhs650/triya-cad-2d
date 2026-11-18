@@ -44,7 +44,11 @@ export type AuditSaveKind =
   // LINETYPE's loads, reloads and deletes on ezdxf's colors.dxf (M5-08 part 1).
   | 'linetype'
   // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).
-  | 'wblock';
+  | 'wblock'
+  // A block edited in the Block Editor (BEDIT, ERASE, LINE, BSAVE, BCLOSE; M5-02 part 1).
+  | 'bedit'
+  // PDFATTACH on ezdxf's colors.dxf (no underlays) and the underlay fixture (M5-04 part 8).
+  | 'pdfattach';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version

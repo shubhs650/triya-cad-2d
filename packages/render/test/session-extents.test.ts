@@ -456,3 +456,37 @@ describe('RendererHost.textBox (M2-09)', () => {
     expect(session().textBox(text)).toBeUndefined();
   });
 });
+
+// M5-02 part 1: the Block Editor's canvas draws a block definition made since the drawing opened:
+// its renderer starts before the block is there, and takes it with the changes it is handed.
+describe('a block made since the drawing opened (the Block Editor, M5-02)', () => {
+  it('starts empty, then measures and draws the block once its changes come', () => {
+    const engine = drawing(entities, { textStyles: [style] });
+    let block = '';
+    const made = change(engine, (b) => {
+      block = b.addBlock({ name: 'DOOR', basePoint: { x: 0, y: 0 } }).handle;
+      b.addEntity({ owner: block, layer: '10', geom: line(5, 5, 25, 15) });
+    });
+    const layers: Recorded[] = [];
+    const s = new RenderSession({
+      document: { ...document, block },
+      surface: surface('visible'),
+      createLayer: () => {
+        const l = surface(layers.length === 0 ? 'scene' : 'transient');
+        layers.push(l);
+        return l;
+      },
+      style: STYLE_DARK,
+      requestIdle: () => {},
+    });
+    expect(s.extents()).toBeUndefined();
+    s.renderer.resize(100, 50, 1);
+    s.renderer.setView({ center: { x: 15, y: 10 }, scale: 2 });
+    s.frame();
+    s.apply(made, 1);
+    expect(s.extents()).toEqual({ minX: 5, minY: 5, maxX: 25, maxY: 15 });
+    layers[0]!.ctx.clear();
+    s.frame();
+    expect(layers[0]!.ctx.named('stroke')).toHaveLength(1);
+  });
+});

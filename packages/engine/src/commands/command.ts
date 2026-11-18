@@ -58,6 +58,8 @@ export interface CommandContext {
    * (the space the drafter draws in, as AutoCAD's current space; M2-02).
    */
   readonly space: Handle;
+  /** The Block Editor (BEDIT, BSAVE, BCLOSE; M5-02), which makes a block's definition `space`. */
+  readonly blockEditor: BlockEditorControl;
   readonly prompt: typeof prompts;
   /**
    * The drawing's undo history, for UNDO, U, REDO and OOPS. Undoing goes around `edit`: it is
@@ -118,6 +120,26 @@ export interface CommandContext {
   readonly spelling?: SpellService | undefined;
   /** The time, for the variables that tell it (DATE, CDATE; M2-59). */
   readonly clock: Clock;
+}
+
+/**
+ * The Block Editor's state (M5-02). While it is open, `space` is the block definition it shows;
+ * the edits made since it opened or was last saved can be taken back as it closes.
+ */
+export interface BlockEditorControl {
+  /** The BLOCK_RECORD shown, or undefined when the editor is closed. */
+  readonly block: Handle | undefined;
+  /** Edits made since BEDIT opened it or BSAVE last saved it. */
+  readonly unsaved: boolean;
+  /** Shows `block` for editing: the space commands draw in until it closes. */
+  open(block: Handle): void;
+  /** Keeps the edits made so far: a later Discard takes back only those made after. */
+  save(): void;
+  /**
+   * Closes the editor; with `discard`, takes back the edits made since the last save, in this
+   * command's undo step.
+   */
+  close(discard: boolean): void;
 }
 
 /** Where the engine reads the local date and time: injected, so tests fix it. */

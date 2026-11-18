@@ -43,6 +43,7 @@ KINDS = (
     "tablestyle",
     "block",
     "wblock",
+    "bedit",
 )
 # Saves of the thread-authored test drawings that are not corpus files (Rule 0), and of corpus
 # files edited by a testkit suite rather than the corpus suites, as
@@ -70,6 +71,10 @@ FIXTURE_SAVES = (
     # XBIND of the xref set's block and layers (M5-04 part 7,
     # packages/testkit/src/xref/xbind.test.ts).
     ("fixtures/xref/xref-parent.dxf", "xbind"),
+    # PDFATTACH on a drawing without underlays and on the underlay fixture (M5-04 part 8,
+    # packages/testkit/src/underlay/pdf-attach.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "pdfattach"),
+    ("fixtures/underlay/pdf-underlay.dxf", "pdfattach"),
     # LINETYPE's loads (text linetypes too), reload and delete on ezdxf's colors.dxf (M5-08
     # part 1, packages/testkit/src/layers/linetype-load.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "linetype"),

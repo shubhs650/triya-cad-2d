@@ -49,7 +49,7 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { EntityGeometry, UcsRecord, ViewportGeometry } from '../model/types';
 import type { EntityId } from '../model/entity-ids';
 import { viewportFrame } from '../layout/viewport';
-import { modelSpaceOf } from './bus';
+import { isPaperSpace } from './bus';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import { viewNameMatches } from './view/named-view';
@@ -57,8 +57,11 @@ import { drawingUnits, formatDistance } from './units';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
-/** True when commands draw in a layout's paper space, whose UCS is the $PUCS* one. */
-const inPaper = (ctx: CommandContext): boolean => ctx.space !== modelSpaceOf(ctx.model);
+/**
+ * True when commands draw in a layout's paper space, whose UCS is the $PUCS* one (the Block
+ * Editor's block works as model space does, M5-02).
+ */
+const inPaper = (ctx: CommandContext): boolean => isPaperSpace(ctx.model, ctx.space);
 
 /** The current UCS of the space the commands draw in. */
 export function currentUcs(ctx: CommandContext): PlanUcs {

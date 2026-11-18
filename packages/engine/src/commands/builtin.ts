@@ -59,6 +59,7 @@ import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { BLOCK_COMMANDS } from './blocks';
+import { BLOCK_EDITOR_COMMANDS } from './block-editor';
 import { wblockCommand } from './wblock';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
@@ -86,6 +87,7 @@ import {
   imagequalityCommand,
 } from './image';
 import { imageattachCommand } from './image-attach';
+import { pdfattachCommand } from './pdf-attach';
 import { xattachCommand } from './xref-attach';
 import { xbindCommand } from './xbind';
 import { linetypeCommand, ltscaleCommand } from './linetype';
@@ -171,6 +173,7 @@ export function builtinCommands(): CommandRegistry {
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
     ...BLOCK_COMMANDS.map((make) => make()),
+    ...BLOCK_EDITOR_COMMANDS.map((make) => make()),
     wblockCommand(),
     ...PALETTE_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
@@ -195,6 +198,7 @@ export function builtinCommands(): CommandRegistry {
     xclipCommand(),
     imageclipCommand(),
     imageattachCommand(),
+    pdfattachCommand(),
     xattachCommand(),
     xbindCommand(),
     linetypeCommand(),
