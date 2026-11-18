@@ -6,6 +6,10 @@
 // The overlay of the same file is reloaded from it. The commands are unit-tested in
 // packages/engine/test/commands/refedit-xref.test.ts; the file written is audited in
 // packages/testkit/src/xref/refedit-xref.test.ts.
+//
+// M5-02 part 7: the title block's LOGO (`xref-child-tb|LOGO`, at (250, 40) in the parent) is
+// picked through the attachment, chosen at -REFEDIT's nesting level, edited in place, and
+// REFCLOSE Save writes it to the LOGO block of the title block's file.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
@@ -38,17 +42,15 @@ async function shot(page: Page, name: string): Promise<void> {
   if (dir) await page.screenshot({ path: path.join(dir, `${name}.png`) });
 }
 
-/** The LINE entities of a DXF's ENTITIES section. */
-const lines = (dxf: string) => {
-  const entities = dxf.slice(
-    dxf.indexOf('ENTITIES'),
-    dxf.indexOf('ENDSEC', dxf.indexOf('ENTITIES')),
-  );
+/** The LINE entities of a DXF's `section` (ENTITIES or BLOCKS). */
+const lines = (dxf: string, section = 'ENTITIES') => {
+  const at = dxf.indexOf(`\n${section}`);
+  const entities = dxf.slice(at, dxf.indexOf('ENDSEC', at));
   return entities.match(/\n\s*0\r?\nLINE\r?\n/g)?.length ?? 0;
 };
 
-test("REFEDIT of an xref writes the edits to the xref's file", async ({ page }, info) => {
-  test.setTimeout(120_000);
+/** The parent open with the title block's file dropped, so its xrefs draw. */
+async function openParent(page: Page): Promise<void> {
   await page.goto(app.url);
   await openWithPicker(page, path.join(FIXTURES, 'xref-parent.dxf'));
   await expectShown(page, 'xref-parent.dxf');
@@ -58,6 +60,11 @@ test("REFEDIT of an xref writes the edits to the xref's file", async ({ page }, 
   await openWithDrop(page, CHILD);
   await expect.poll(() => ink(page), { timeout: 30_000 }).toBeGreaterThan(border + 3000);
   await expect(prompt(page)).toHaveText('Command:');
+}
+
+test("REFEDIT of an xref writes the edits to the xref's file", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await openParent(page);
   await shot(page, '1-before');
 
   // The attachment's frame, on its left side.
@@ -96,4 +103,52 @@ test("REFEDIT of an xref writes the edits to the xref's file", async ({ page }, 
   // The overlay of the same file shows the line too once it is reloaded from what was written.
   await page.waitForTimeout(1000);
   await shot(page, '3-saved');
+});
+
+test("REFEDIT of a block an xref brought in writes it to the xref's file", async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  await openParent(page);
+  await shot(page, 'part7-1-before');
+
+  // The logo's horizontal bar, through the attachment: Next goes to LOGO.
+  await enterCommand(page, '-REFEDIT');
+  await expect(prompt(page)).toHaveText('Select reference:');
+  await type(page, '256,40', 'Select nesting level [Ok/Next] <Next>:');
+  await expect(log(page)).toContainText('Nesting level: xref-child-tb');
+  await type(page, 'N', 'Select nesting level [Ok/Next] <Next>:');
+  await expect(log(page)).toContainText('Nesting level: xref-child-tb|LOGO');
+  await type(page, 'O', 'Enter object selection method [All/Nested] <All>:');
+  await type(page, '', 'Display attribute definitions [Yes/No] <No>:');
+  await type(page, '', 'Command:');
+  await expect(log(page)).toContainText('3 objects in the working set.');
+  await expect(page.getByRole('toolbar', { name: 'Edit Reference' })).toBeVisible();
+
+  // A diagonal across the logo.
+  await enterCommand(page, 'LINE');
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await type(page, '238,28', /^Specify next point/);
+  await type(page, '262,52', /^Specify next point/);
+  await type(page, '', 'Command:');
+  await shot(page, 'part7-2-editing');
+
+  await enterCommand(page, 'REFCLOSE');
+  await expect(prompt(page)).toHaveText('Enter option [Save/Discard reference changes] <Save>:');
+  const [download] = await Promise.all([page.waitForEvent('download'), type(page, '', 'Command:')]);
+  expect(download.suggestedFilename()).toBe('xref-child-tb.dxf');
+  const written = info.outputPath('xref-child-tb.dxf');
+  await download.saveAs(written);
+  const dxf = readFileSync(written, 'latin1');
+  const was = readFileSync(CHILD, 'latin1');
+  // The line is LOGO's: model space has the lines it had.
+  expect(lines(dxf, 'BLOCKS')).toBe(lines(was, 'BLOCKS') + 1);
+  expect(lines(dxf)).toBe(lines(was));
+  await expect(log(page)).toContainText(
+    'Xref "xref-child-tb" saved: reference edits to "xref-child-tb|LOGO" written to xref-child-tb.dxf.',
+  );
+  await expect(page.getByRole('toolbar', { name: 'Edit Reference' })).toBeHidden();
+  // The overlay's logo shows the line too once it is reloaded from what was written.
+  await page.waitForTimeout(1000);
+  await shot(page, 'part7-3-saved');
 });

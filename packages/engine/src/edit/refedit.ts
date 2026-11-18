@@ -20,7 +20,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { AttdefGeometry, Entity, InsertGeometry } from '../model/types';
 import { compose, invert, rotation, scaling, translation } from '../geom/transform';
-import { isXrefRecord } from '../model/xref';
+import { isXrefDependent, isXrefRecord, xrefBringing } from '../model/xref';
 import { ATTRIBUTE_CONSTANT } from './blocks';
 import { patchBack, transformObjects } from './edit';
 import { followedBy, similarity, type Similarity } from './similarity';
@@ -39,10 +39,10 @@ export function referencePlacement(model: DocumentModel, g: InsertGeometry): Sim
   if (!def || !record) return 'the block is missing';
   // An xref is edited in place and saved to its own file (M5-02 part 6), once loaded.
   if (isXrefRecord(record) && !def.xrefLoaded) return 'the external reference is not loaded';
-  // A block an xref brought in (`xref|name`) is defined in the xref's file, which only the
-  // edit of the xref itself writes.
-  if (record.name.includes('|'))
-    return 'a block of an external reference cannot be edited in place';
+  // A block an xref brought in (`xref|name`) is edited in place and saved to the xref's file
+  // (M5-02 part 7), while that xref is loaded.
+  if (isXrefDependent(record) && !isXrefRecord(record) && !xrefBringing(model, g.block))
+    return 'the external reference that brought the block in is not loaded';
   if (record.name.startsWith('*')) return 'an anonymous or dynamic block cannot be edited in place';
   if (g.array && (g.array.columns > 1 || g.array.rows > 1))
     return 'a MINSERT cannot be edited in place';

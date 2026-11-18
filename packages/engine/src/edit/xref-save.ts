@@ -17,6 +17,10 @@
 //   copy of the host's, as PASTECLIP brings another drawing's in.
 //
 // The host keeps the objects as the xref's content: nothing of it is saved with the host.
+//
+// A block the xref brought in (`xref|name`, M5-02 part 7) is written the same way into the
+// file's block of that name: AutoCAD edits "blocks nested in an xref" in place and saves them to
+// the referenced drawing (AutoCAD 2024 Help, "About Editing Referenced Drawings in Place").
 import { ChangeSetBuilder } from '../model/builder';
 import { isEmptyChangeSet, type ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
@@ -100,12 +104,15 @@ function forFile(
  * The write of xref `block`'s content in `host` (the working set carried back) to the xref's
  * file, whose drawing is `drawing` as it is now. `written` adds what earlier writes of this
  * session added to the file (`[host, file]`), which the block's own list may have lost to U.
+ * `target` is the block whose content is written: the xref's own (its model space in the file),
+ * or a block the xref brought in (the file's block it was loaded from).
  */
 export function xrefWrite(
   host: DocumentModel,
   block: Handle,
   drawing: DocumentInit,
   written: Iterable<readonly [Handle, Handle]> = [],
+  target: Handle = block,
 ): XrefWrite {
   const record = host.tables.blockRecords.get(block);
   const def = host.blocks.get(block);
@@ -139,14 +146,20 @@ export function xrefWrite(
       if (x !== undefined) known.set(r.handle, x);
     }
   }
+  // Where the content goes in the file: its model space, or the block `target` was loaded from.
+  const owner = target === block ? ms : known.get(target);
+  if (owner === undefined || !file.blocks.has(owner)) {
+    const name = host.tables.blockRecords.get(target)?.name ?? target;
+    throw new Error(`${record.name}: the drawing has no block ${name.slice(prefix.length)}.`);
+  }
   const inFile = (h: Handle) => {
     const x = known.get(h);
     const id = x === undefined ? undefined : file.ids.idOf(x);
-    return id !== undefined && file.entity(id)?.owner === ms ? id : undefined;
+    return id !== undefined && file.entity(id)?.owner === owner ? id : undefined;
   };
 
   // ── The content: what the file had, and what is new to it ─────────────────────────────────
-  const content = host.blockEntities(block).map((id) => host.entity(id)!);
+  const content = host.blockEntities(target).map((id) => host.entity(id)!);
   const fresh = new Set(content.filter((e) => inFile(e.handle) === undefined).map((e) => e.handle));
   const copied = copyToClipboard(
     host,
@@ -155,7 +168,7 @@ export function xrefWrite(
   ).clipboard;
   const clip = forFile(copied, prefix, insUnitsOf(file), fresh);
   const b = new ChangeSetBuilder(file);
-  const { report, map } = pasteKnown(b, file, clip, ms, known);
+  const { report, map } = pasteKnown(b, file, clip, owner, known);
 
   const all = new Map(known);
   for (const [h, x] of map) all.set(h, x);
@@ -164,7 +177,7 @@ export function xrefWrite(
     if (xid === undefined) continue;
     const x = b.entity(xid)!;
     const { id: _id, raw: _raw, ...init } = e;
-    const want: Record<string, unknown> = { ...renumber(init, all), id: xid, owner: ms };
+    const want: Record<string, unknown> = { ...renumber(init, all), id: xid, owner };
     // What the load left out of the host (the file's raw data, a reactor or dictionary of an
     // object the host never had) stays as the file has it.
     for (const [k, v] of Object.entries(x)) {
@@ -179,7 +192,7 @@ export function xrefWrite(
   const here = new Set(content.map((e) => e.handle));
   const hostOf = new Map<Handle, Handle>();
   for (const [h, x] of known) if (!hostOf.has(x)) hostOf.set(x, h);
-  for (const id of file.blockEntities(ms)) {
+  for (const id of file.blockEntities(owner)) {
     const h = hostOf.get(file.entity(id)!.handle);
     if (h !== undefined && host.ids.idOf(h) !== undefined && !here.has(h)) b.removeEntity(id);
   }
