@@ -166,6 +166,7 @@ test.describe('the user templates folder and Open with no template (M5-10 part 2
     await enterCommand(page, 'DIMSTYLE');
     await expect(page.getByTestId('dimstyle-current')).toHaveText('ISO-25');
     await page.keyboard.press('Escape');
+    // enterCommand waits until the engine has read the dialog's answer (CI, 2026-11-18).
 
     // Imperial by keyboard: ArrowDown on the arrow opens the menu, then down to Imperial.
     await enterCommand(page, 'NEW');

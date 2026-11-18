@@ -1,4 +1,4 @@
-// One test per corpus file for a check that sweeps the corpus (TESTING.md §2 "Corpus sweeps").
+// One test per corpus file for a check that sweeps the corpus (docs/TESTING.md §2.1.1).
 import { it } from 'vitest';
 
 /**

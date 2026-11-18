@@ -523,6 +523,8 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M5-12** LWUNITS in the remaining lineweight lists (Could; found by M5-08 part 5, #537): Dimension Style's DIMLWD/DIMLWE, Multileader Style's leader lineweight, Table Style's border lineweights, Edit Attributes' lineweight and LIST's "Lineweight" line still show millimetres whatever LWUNITS says (AutoCAD lists every lineweight in LWUNITS's units). **Acceptance:** unit test per list with LWUNITS 0; Playwright: the Dimension Style dialog's lineweight list in inches.
 
+- [ ] **M5-13** Layer manager: show every layer again faster after a search (Should; found by the CI-flake thread, 2026-11-18): clearing the search on the 200-layer bench drawing lays out and paints the 91 hidden rows at once, 38–49 ms on a dev machine but 103–106 ms on two loaded CI runs, past M5-05's 100 ms acceptance (`layer-columns.spec.ts` "filters 200 layers in under 100 ms", failed twice on 2026-11-18; the other steps measured 11–77 ms). The rows are already memoised and hidden by one style rule (M5-05 part 5); what is left is Chromium's style, layout and paint of 11 cells and 8 buttons per row. Make that cheaper (a lighter row: fewer boxes per row, no per-row button chrome until hovered or focused, or rows outside the list's view not laid out) without changing what the list's accessibility tree shows. **Acceptance:** the M5-05 test unchanged and its restore step under 60 ms in CI's ui shard over five runs.
+
 ---
 
 ## M6 — Layouts and plotting at depth
