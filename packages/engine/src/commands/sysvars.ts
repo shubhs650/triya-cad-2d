@@ -266,6 +266,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'PROJMODE', store: 'app', kind: 'integer', min: 0, max: 2 },
   { name: 'TRIMMODE', store: 'app', kind: 'switch' },
   { name: 'CHAMMODE', store: 'app', kind: 'switch' },
+  // M5-03 part 3 (AutoCAD 2024 Help, "AFLAGS", "Saved in: Not-saved", initially 16): the modes
+  // ATTDEF starts with, bits 1 Invisible, 2 Constant, 4 Verify, 8 Preset, 16 Lock position, 32
+  // Multiple lines; kept while the app runs, as OFFSETDIST and CHAMMODE are.
+  { name: 'AFLAGS', store: 'app', kind: 'integer', min: 0, max: 63 },
   { name: 'PEDITACCEPT', store: 'app', kind: 'switch' },
   // M4-09 part 3 (AutoCAD 2024 Help, both "Saved in: Registry"): TEXTALIGN's options.
   // TEXTALIGNMODE the point it aligns by, 0–8 TL to BR, 9 Left, 10 Center, 11 Right (9), and

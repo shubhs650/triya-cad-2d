@@ -5779,6 +5779,15 @@ button {
   width: min(480px, calc(100vw - 32px));
 }
 
+/* M5-03 part 3: Auto preview changes at the left of OK and Cancel, as AutoCAD places it. */
+.battman-edit-buttons {
+  align-items: center;
+}
+
+.battman-edit-buttons > label {
+  margin-right: auto;
+}
+
 .battman-edit-attribute {
   display: grid;
   grid-template-columns: auto 1fr;
