@@ -74,6 +74,9 @@ FIXTURE_SAVES = (
     # packages/testkit/src/underlay/pdf-attach.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "pdfattach"),
     ("fixtures/underlay/pdf-underlay.dxf", "pdfattach"),
+    # ATTDEF's definitions, a block of them and a reference (M5-03 part 1,
+    # packages/testkit/src/attributes/attdef.test.ts).
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "attdef"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

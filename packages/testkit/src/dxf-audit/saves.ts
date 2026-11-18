@@ -44,7 +44,9 @@ export type AuditSaveKind =
   // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).
   | 'wblock'
   // PDFATTACH on ezdxf's colors.dxf (no underlays) and the underlay fixture (M5-04 part 8).
-  | 'pdfattach';
+  | 'pdfattach'
+  // ATTDEF's definitions, a block of them and a reference on ezdxf's colors.dxf (M5-03 part 1).
+  | 'attdef';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version

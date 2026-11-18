@@ -41,7 +41,7 @@ import { askEditorText, fieldContextOf } from './field';
 import { drawingUnits, formatDistance } from '../units';
 
 /** AutoCAD's single line spacing: 5/3 of the text height (DXF 44 = 1 for MTEXT). */
-const LINE_PITCH = 5 / 3;
+export const LINE_PITCH = 5 / 3;
 
 /** The style TEXTSTYLE names, else Standard, else the first; undefined in a drawing with none. */
 export function currentTextStyle(model: DocumentModel): TextStyleRecord | undefined {
@@ -62,7 +62,7 @@ export function textSize(model: DocumentModel): number {
  * "Enter style name or [?]": a style of the drawing (any case), `?` lists them. Returns the
  * style, or undefined when the command was ended.
  */
-async function* askStyle(
+export async function* askStyle(
   ctx: CommandContext,
   current: TextStyleRecord,
 ): AsyncGenerator<Prompt, TextStyleRecord | undefined, PromptAnswer> {
@@ -91,7 +91,7 @@ async function* askStyle(
 const add = (p: Vec2, d: Vec2, k: number): Vec2 => ({ x: p.x + d.x * k, y: p.y + d.y * k });
 
 /** TEXT justifications: DXF 72 and 73, and how AutoCAD asks for the point. */
-const JUSTIFY: Readonly<
+export const JUSTIFY: Readonly<
   Record<string, { readonly h: number; readonly v: number; readonly ask: string }>
 > = {
   Left: { h: 0, v: 0, ask: 'Specify start point of text' },
@@ -110,10 +110,10 @@ const JUSTIFY: Readonly<
   BC: { h: 1, v: 1, ask: 'Specify bottom-center point of text' },
   BR: { h: 2, v: 1, ask: 'Specify bottom-right point of text' },
 };
-const JUSTIFY_NAMES = Object.keys(JUSTIFY);
+export const JUSTIFY_NAMES = Object.keys(JUSTIFY);
 
 /** The attachment number (1–9, top-left to bottom-right) a TEXT justification is closest to. */
-function attachmentOf(h: number, v: number): number {
+export function attachmentOf(h: number, v: number): number {
   const col = h === 1 || h === 4 ? 1 : h === 2 ? 2 : 0;
   const row = v === 3 ? 0 : v === 2 || h === 4 ? 1 : 2;
   return row * 3 + col + 1;
