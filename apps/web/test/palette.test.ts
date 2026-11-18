@@ -217,6 +217,8 @@ describe('palette search', () => {
       'PROPERTIES',
       'PROPERTIESCLOSE',
       'PUBLISH',
+      // M5-09 part 1: PURGE.
+      'PURGE',
       'QDIM',
       'QSAVE',
       'QSELECT',
