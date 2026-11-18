@@ -7,14 +7,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
-import {
-  DXF,
-  activeCanvas,
-  enterCommand,
-  expectShown,
-  openWithPicker,
-  worldAt,
-} from '../app/page';
+import { DXF, activeCanvas, enterCommand, expectShown, openWithPicker, worldAt } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };

@@ -33,7 +33,9 @@ const open = (bytes: Uint8Array) =>
  * xref's or a layout's, not dynamic, whose evaluation Triya leaves alone) holding an object on an
  * unlocked layer that no group holds.
  */
-function blockToEdit(model: DocumentModel): { name: string; handle: Handle; erased: Handle } | undefined {
+function blockToEdit(
+  model: DocumentModel,
+): { name: string; handle: Handle; erased: Handle } | undefined {
   const locked = new Set(
     [...model.tables.layers.values()].filter((l) => l.locked).map((l) => l.handle),
   );

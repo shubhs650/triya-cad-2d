@@ -71,7 +71,10 @@ const shownName = (ctx: CommandContext): string =>
   ctx.model.tables.blockRecords.get(ctx.blockEditor.block!)?.name ?? '';
 
 /** The block a reference selected first names (BEDIT on a selected block reference). */
-function selectedBlock(ctx: CommandContext, blocks: readonly BlockTableRecord[]): string | undefined {
+function selectedBlock(
+  ctx: CommandContext,
+  blocks: readonly BlockTableRecord[],
+): string | undefined {
   if (ctx.preselected.length !== 1) return undefined;
   const g = ctx.model.entity(ctx.preselected[0]!)?.geom;
   if (g?.kind !== 'INSERT') return undefined;

@@ -251,9 +251,7 @@ export class DocumentStore {
 
   /** Shows the Model tab or a layout tab of a document (not while its Block Editor is open). */
   showSpace(id: number, block: string): void {
-    this.#update(id, (d) =>
-      d.blockEditor ? d : { ...d, block, ...layoutShown(d.opened, block) },
-    );
+    this.#update(id, (d) => (d.blockEditor ? d : { ...d, block, ...layoutShown(d.opened, block) }));
   }
 
   /** BEDIT (M5-02): shows the block definition `block` in the Block Editor. */
