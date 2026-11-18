@@ -66,6 +66,9 @@ FIXTURE_SAVES = (
     # XATTACH of the xref set's files on a drawing without xrefs (M5-04 part 6,
     # packages/testkit/src/xref/xref-attach.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "xattach"),
+    # XBIND of the xref set's block and layers (M5-04 part 7,
+    # packages/testkit/src/xref/xbind.test.ts).
+    ("fixtures/xref/xref-parent.dxf", "xbind"),
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.

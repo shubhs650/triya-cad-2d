@@ -31,6 +31,7 @@ import { DocumentModel, type DocumentInit } from './document';
 import { isHandle, compareHandles, type Handle } from './handle';
 import type {
   BlockDefinition,
+  DimStyleRecord,
   BlockTableRecord,
   Entity,
   EntityInit,
@@ -82,6 +83,21 @@ const SHARED_NAMES: Partial<Record<TableName, ReadonlySet<string>>> = {
  * string under one of these keys is a handle of the xref and is renumbered; xdata is carried as
  * it is (its 1005 handles are application data).
  */
+/**
+ * The dimension variables that name a record (DXF 340–347): DIMTXSTY, the arrow blocks,
+ * linetypes. A DIMSTYLE's `vars` hold them by name, so `renumber` does not see them.
+ */
+export const DIMVAR_REFERENCES: readonly string[] = [
+  'DIMTXSTY',
+  'DIMLDRBLK',
+  'DIMBLK',
+  'DIMBLK1',
+  'DIMBLK2',
+  'DIMLTYPE',
+  'DIMLTEX1',
+  'DIMLTEX2',
+];
+
 export const HANDLE_KEYS: ReadonlySet<string> = new Set([
   'handle',
   'owner',
@@ -177,6 +193,22 @@ export function xrefLoadProblem(model: DocumentModel, block: Handle): string | u
   return undefined;
 }
 
+/** `style`'s DIMVARs with the references `DIMVAR_REFERENCES` names renumbered by `map`. */
+function renumberedDimVars(
+  style: DimStyleRecord,
+  map: ReadonlyMap<Handle, Handle>,
+): DimStyleRecord['vars'] {
+  const vars = { ...style.vars };
+  for (const name of DIMVAR_REFERENCES) {
+    const h = vars[name];
+    if (typeof h !== 'string' || !isHandle(h)) continue;
+    const to = map.get(h);
+    if (to === undefined) delete vars[name];
+    else vars[name] = to;
+  }
+  return vars;
+}
+
 /**
  * The ChangeSet that loads `drawing` (the xref's file, as the importer maps it) as the content
  * of the host's xref block `block`. Handles come from the host's allocator, in the xref's own
@@ -267,7 +299,11 @@ export function xrefLoadChange(
   for (const [table, list] of records) {
     if (list.length === 0) continue;
     const out = list.map(({ record, name, flags }) => {
-      const r = renumber(record, map) as SymbolTableRecord;
+      let r = renumber(record, map) as SymbolTableRecord;
+      // A dimension style's references are in its `vars` (M5-04 part 7: XBIND copies what they
+      // name): the host's handles of what the xref's name, none where nothing came in.
+      if (table === 'dimStyles')
+        r = { ...r, vars: renumberedDimVars(r as DimStyleRecord, map) } as DimStyleRecord;
       const { flags: _old, ...rest } = r;
       return createRecord({ ...rest, name, ...(flags ? { flags } : {}) });
     });

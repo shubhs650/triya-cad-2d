@@ -137,6 +137,17 @@ export * from './tolerance-frame';
 export { detachXrefs, xrefDetachChange, xrefDetachProblem } from './xrefs';
 export { bindXrefs, xrefBindChange, xrefBindProblem } from './xref-bind';
 export {
+  XBIND_TABLES,
+  xbindChange,
+  xbindDefinition,
+  xbindDefinitions,
+  xbindXrefs,
+  type XbindDefinition,
+  type XbindKind,
+  type XbindReport,
+  type XbindXref,
+} from './xbind';
+export {
   attachXref,
   xrefFileName,
   xrefNameFor,

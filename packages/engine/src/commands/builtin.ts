@@ -86,6 +86,7 @@ import {
 } from './image';
 import { imageattachCommand } from './image-attach';
 import { xattachCommand } from './xref-attach';
+import { xbindCommand } from './xbind';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 import { ARRAY_COMMANDS } from './modify/array';
 
@@ -192,6 +193,7 @@ export function builtinCommands(): CommandRegistry {
     imageclipCommand(),
     imageattachCommand(),
     xattachCommand(),
+    xbindCommand(),
     imageadjustCommand(),
     imageadjustDashCommand(),
     imagequalityCommand(),
