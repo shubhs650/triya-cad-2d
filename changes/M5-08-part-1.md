@@ -1,0 +1,1 @@
+- M5-08 part 1 (#524): LINETYPE opens the Linetype Manager and its Load or Reload Linetypes dialog (the bundled ISO set, new bundled gas and water text linetypes, and the user's .lin files), Delete refuses what AutoCAD's does, and OK is one undo step; -LINETYPE ?/Load/Set and an LTSCALE command; the Layer Properties Manager's Select Linetype can load linetypes too.

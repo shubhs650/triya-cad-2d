@@ -7,7 +7,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Color } from '@node-projects/acad-ts';
 import { mapEntities, mapSortEnts, mapTables, readCadDocument } from '@triya/io';
-import { aciRgb, dashPath, drawOrder, parseLin, patternLength, patternOf } from '@triya/render';
+import {
+  BUNDLED_LIN_FILES,
+  aciRgb,
+  dashPath,
+  drawOrder,
+  parseLin,
+  patternLength,
+  patternOf,
+} from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 
@@ -154,6 +162,27 @@ describe('bundled linetypes (assets/linetypes)', () => {
     for (const l of f.linetypes) {
       for (const e of l.elements) expect([24, 12, 6, 0, -3, -18]).toContain(e.length);
     }
+  });
+
+  it('reads triya-utilities.lin with no errors: text linetypes in the Standard style, upright', () => {
+    const f = parseLin(readFileSync(`${repo}assets/linetypes/triya-utilities.lin`, 'latin1'));
+    expect(f.errors).toEqual([]);
+    expect(f.warnings).toEqual([]);
+    expect(f.linetypes.map((l) => l.name)).toEqual(['TRIYA_GAS', 'TRIYA_WATER', 'TRIYA_HOT_WATER']);
+    for (const l of f.linetypes) {
+      const embed = l.elements[1]!.embed!;
+      expect(embed).toMatchObject({ kind: 'text', style: 'Standard', scale: 2.5 });
+      expect(embed.rotationMode).toBe('upright');
+      // A 12 mm dash and a 9 mm gap around the letters.
+      expect(l.elements[0]!.length).toBe(12);
+      expect(-l.elements[1]!.length - l.elements[2]!.length).toBe(9);
+    }
+  });
+
+  it('embeds the bundled files exactly as assets/linetypes has them (M5-08)', () => {
+    expect(BUNDLED_LIN_FILES.map((f) => f.name)).toEqual(['triya-iso.lin', 'triya-utilities.lin']);
+    for (const f of BUNDLED_LIN_FILES)
+      expect(f.source).toBe(readFileSync(`${repo}assets/linetypes/${f.name}`, 'latin1'));
   });
 });
 

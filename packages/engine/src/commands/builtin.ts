@@ -92,6 +92,7 @@ import { pdfattachCommand } from './pdf-attach';
 import { attdefCommand, attdispCommand } from './attdef';
 import { xattachCommand } from './xref-attach';
 import { xbindCommand } from './xbind';
+import { linetypeCommand, ltscaleCommand } from './linetype';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 import { ARRAY_COMMANDS } from './modify/array';
 
@@ -205,6 +206,8 @@ export function builtinCommands(): CommandRegistry {
     attdispCommand(),
     xattachCommand(),
     xbindCommand(),
+    linetypeCommand(),
+    ltscaleCommand(),
     imageadjustCommand(),
     imageadjustDashCommand(),
     imagequalityCommand(),

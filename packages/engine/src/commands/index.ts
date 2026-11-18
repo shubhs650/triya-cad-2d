@@ -154,6 +154,15 @@ export {
   type XrefAttachSettings,
 } from './xref-attach';
 export { xbindCommand, type XbindRequest } from './xbind';
+export {
+  BUNDLED_LINETYPE_FILE,
+  linetypeCommand,
+  linetypeRows,
+  ltscaleCommand,
+  type LinetypeAnswer,
+  type LinetypeRequest,
+  type LinetypeRow,
+} from './linetype';
 export { hatchCommand, hatchCommands } from './draw/hatchedit';
 export { fieldCommand, type FieldDialogRequest } from './draw/field';
 export { toleranceCommand, type ToleranceRequest } from './draw/tolerance';
