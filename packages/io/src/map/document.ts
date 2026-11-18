@@ -16,6 +16,7 @@ import {
 import { mapBlock } from './blocks';
 import { mapCodedObjects } from './coded';
 import { PassthroughStore } from '../export/passthrough';
+import { purgePinned } from '../export/purge';
 import { drawingFacts, type DrawingFacts } from '../health/facts';
 import { mapEntities, type UnmappedEntity } from './entities';
 import { mapGroups } from './groups';
@@ -72,6 +73,8 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
       passthrough: PassthroughStore.of(doc, init).handles,
       passthroughLayers,
       ...(passthroughLinetypes.length > 0 ? { passthroughLinetypes } : {}),
+      // What PURGE may never take (M5-09).
+      purgePinned: purgePinned(doc, init),
     },
     unmapped,
   };

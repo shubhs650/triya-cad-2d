@@ -33,9 +33,10 @@
 //
 // Not purged here: shapes kept as nameless STYLE records.
 
-import type { CadDocument, Entity as AcadEntity } from '@node-projects/acad-ts';
+import type { CadDocument } from '@node-projects/acad-ts';
 import {
   ACadVersion,
+  Entity as AcadEntity,
   AcdbPlaceHolder,
   AppId,
   BlockRecord,
@@ -61,6 +62,8 @@ import {
   VisualStyle,
   VPort,
   XRecordEntry,
+  XY,
+  XYZ,
   type TableEntry,
 } from '@node-projects/acad-ts';
 import type { DocumentInit, DocumentModel, Handle, TableName } from '@triya/engine';
@@ -250,6 +253,10 @@ const HANDLE_KEYS = new Set([
 /** Xdata group codes that hold a handle: 1003 a layer (acad-ts keeps its handle), 1005. */
 const XDATA_HANDLES = new Set([1003, 1005]);
 
+/** The handle an xdata value holds: hex text, or the number a 1003 layer keeps (mapXdata). */
+const xdataHandle = (v: unknown): Handle | undefined =>
+  typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'bigint' ? hex(v) : undefined;
+
 /**
  * acad-ts fields holding a bare handle rather than the object: an entity's or layer's plot style
  * name (DXF 390), a 3D solid's face materials, and the header's material and visual styles.
@@ -291,7 +298,7 @@ function modelRefers(v: unknown, handle: Handle, key = ''): boolean {
   if (v === null || typeof v !== 'object') return false;
   const o = v as Record<string, unknown>;
   if (typeof o.code === 'number' && 'value' in o && Object.keys(o).length === 2) {
-    return XDATA_HANDLES.has(o.code) && o.value === handle;
+    return XDATA_HANDLES.has(o.code) && xdataHandle(o.value) === handle;
   }
   for (const [k, x] of Object.entries(o)) {
     if (k === 'handle' || k === 'raw') continue;
@@ -300,21 +307,52 @@ function modelRefers(v: unknown, handle: Handle, key = ''): boolean {
   return false;
 }
 
+/** Adds every record handle a Triya model value refers to ({@link modelRefers}'s keys) to `out`. */
+function modelHandles(v: unknown, out: Set<Handle>, key = ''): void {
+  if (typeof v === 'string') {
+    if (HANDLE_KEYS.has(key)) out.add(v);
+    return;
+  }
+  if (Array.isArray(v)) {
+    for (const x of v) modelHandles(x, out, key);
+    return;
+  }
+  if (v === null || typeof v !== 'object') return;
+  const o = v as Record<string, unknown>;
+  if (typeof o.code === 'number' && 'value' in o && Object.keys(o).length === 2) {
+    if (XDATA_HANDLES.has(o.code) && xdataHandle(o.value) !== undefined)
+      out.add(xdataHandle(o.value)!);
+    return;
+  }
+  for (const [k, x] of Object.entries(o)) {
+    if (k === 'handle' || k === 'raw') continue;
+    modelHandles(x, out, k);
+  }
+}
+
 /** Every handle-bearing value of a Triya document (entities, records, blocks, layouts, objects). */
-function modelIndex(m: {
-  entities: Iterable<{ handle: Handle }>;
-  tables: Iterable<Iterable<{ handle: Handle }>>;
-  blocks: Iterable<{ handle: Handle }>;
-  layouts: Iterable<{ handle: Handle }>;
-  objects: Iterable<{ handle: Handle }>;
-}): Map<Handle, unknown[]> {
+function modelIndex(
+  m: {
+    entities: Iterable<{ handle: Handle }>;
+    tables: Iterable<Iterable<{ handle: Handle }>>;
+    blocks: Iterable<{ handle: Handle }>;
+    layouts: Iterable<{ handle: Handle }>;
+    objects: Iterable<{ handle: Handle }>;
+  },
+  attributes = false,
+): Map<Handle, unknown[]> {
   const out = new Map<Handle, unknown[]>();
   const add = (v: { handle: Handle }) => {
     const at = out.get(v.handle);
     if (at) at.push(v);
     else out.set(v.handle, [v]);
   };
-  for (const e of m.entities) add(e);
+  for (const e of m.entities) {
+    add(e);
+    // An INSERT's ATTRIBs and a multileader's, each under its own handle (purgePinned).
+    const g = (e as { geom?: { attributes?: readonly { handle?: Handle }[] } }).geom;
+    if (attributes) for (const a of g?.attributes ?? []) if (a.handle) add(a as { handle: Handle });
+  }
   for (const t of m.tables) for (const r of t) add(r);
   for (const b of m.blocks) add(b);
   for (const l of m.layouts) add(l);
@@ -331,6 +369,10 @@ function acadReferences(root: object, found: (target: CadObject | number) => voi
       found(v);
       return;
     }
+    // Points and point lists refer to nothing (the bulk of an object's fields).
+    if (v instanceof XYZ || v instanceof XY) return;
+    if (Array.isArray(v) && (typeof v[0] === 'number' || v[0] instanceof XYZ || v[0] instanceof XY))
+      return;
     if (seen.has(v)) return;
     seen.add(v);
     if (v instanceof ExtendedDataReference) {
@@ -375,6 +417,157 @@ const sameName = (a: unknown, name: string, handle: Handle) =>
   typeof a === 'string' && (a.toUpperCase() === name.toUpperCase() || a === handle);
 
 /**
+ * Why the save cannot purge the record `b` whatever refers to it (its kind, name or place in
+ * the file), or undefined. `ofDetached` says whether an xref-dependent name belongs to an xref
+ * the same save detaches.
+ */
+function recordProblem(
+  doc: CadDocument,
+  rules: TableRules,
+  b: { readonly name: string; readonly flags?: number },
+  acad: Named | undefined,
+  r12: boolean,
+  ofDetached: (name: string) => boolean,
+): string | undefined {
+  const flags = b.flags ?? 0;
+  if (!acad) return `the original is not a ${rules.what}`;
+  if (rules.fixed.some((n) => n.toUpperCase() === b.name.toUpperCase()))
+    return `${b.name} cannot be purged`;
+  if (b.name === '') return 'a nameless record (a shape file) cannot be purged';
+  if (acad instanceof VisualStyle && acad.internalFlag)
+    return 'an internal visual style (DXF 291) cannot be purged';
+  if (acad.owner instanceof CadDictionaryWithDefault && acad.owner.defaultEntry === acad)
+    return `it is the default of ${acad.owner.name || 'its dictionary'}`;
+  if ((flags & XREF_DEPENDENT) !== 0 && !ofDetached(b.name))
+    return `an xref-dependent ${rules.what} goes with its xref (XREF Detach)`;
+  if (acad instanceof VPort && doc.vPorts?.tryGetValue(VPort.defaultName) === acad)
+    return 'the first *Active viewport is the current one (VPORTS Join keeps it and changes its view)';
+  if (r12 && madeUp(doc, acad.handle))
+    return `the file states no handle for this ${rules.what} (acad-ts numbers it on reading, and the records after it would be renumbered)`;
+  return undefined;
+}
+
+const isR12 = (doc: CadDocument): boolean => {
+  const version = doc.header?.version;
+  return version !== undefined && version !== ACadVersion.Unknown && version <= ACadVersion.AC1009;
+};
+
+/**
+ * The records an edit of the drawing can never let the save purge (PURGE, M5-09): those
+ * {@link planPurge} refuses for what they are, the blocks holding an object Triya keeps without
+ * mapping (it cannot be erased), and those referred to where the Triya document does not show it
+ * (an object or field Triya does not map, the header beyond its name variables). Read once with
+ * the document, so the engine's PURGE only offers what a save can take. An over-cautious answer
+ * only keeps a record; a missing one would make the save refuse the change.
+ */
+export function purgePinned(doc: CadDocument, base: DocumentInit): Handle[] {
+  const pinned = new Set<Handle>();
+  const objects = documentObjects(doc);
+  const r12 = isR12(doc);
+  const byObject = new Map<CadObject, Handle>();
+  const byHandle = new Map<number, Handle>();
+  const tableOf = new Map<Handle, Purgeable>();
+  // The entities Triya maps (an INSERT's ATTRIBs too), by handle.
+  const entities = new Map<Handle, unknown>();
+  for (const e of base.entities ?? []) {
+    entities.set(e.handle, e);
+    const g = e.geom as { attributes?: readonly { handle?: Handle }[] };
+    for (const a of g.attributes ?? []) if (a.handle) entities.set(a.handle, a);
+  }
+  for (const table of Object.keys(TABLES) as Purgeable[]) {
+    const rules = TABLES[table];
+    for (const b of base.tables?.[table] ?? []) {
+      const o = objects.get(parseInt(b.handle, 16));
+      const acad = o instanceof rules.type ? o : undefined;
+      if (recordProblem(doc, rules, b, acad, r12, () => false) || !acad) {
+        pinned.add(b.handle);
+        continue;
+      }
+      // A block holding an object Triya keeps unmapped, which no edit can erase. A layout's
+      // block (model space's is the big one) never purges, so it is not looked through.
+      if (
+        acad instanceof BlockRecord &&
+        !LAYOUT_BLOCK.test(acad.name) &&
+        !acad.layout &&
+        [...acad.entities].some((e) => !entities.has(hex(e.handle)))
+      )
+        pinned.add(b.handle);
+      byObject.set(acad, b.handle);
+      byHandle.set(acad.handle, b.handle);
+      tableOf.set(b.handle, table);
+    }
+  }
+  // The model's objects by handle; entities only as needed (a referrer's owner), as indexing
+  // a 100k-entity drawing's would cost more than the rest.
+  const index = modelIndex({
+    entities: [],
+    tables: Object.values(base.tables ?? {}),
+    blocks: base.blocks ?? [],
+    layouts: base.layouts ?? [],
+    objects: base.objects ?? [],
+  });
+  for (const [h, e] of entities) if (!index.has(h)) index.set(h, [e]);
+  // What each model object refers to, gathered once per object asked about.
+  const refsOf = new Map<Handle, Set<Handle>>();
+  const refers = (h: Handle, target: Handle) => {
+    let refs = refsOf.get(h);
+    if (!refs) {
+      refs = new Set();
+      for (const v of index.get(h) ?? []) modelHandles(v, refs);
+      refsOf.set(h, refs);
+    }
+    return refs.has(target);
+  };
+  for (const o of objects.values()) {
+    if (o instanceof Table) continue;
+    const h = hex(o.handle);
+    // An entity Triya maps shows its references in the model, which the engine reads itself:
+    // walking every one would add most of a second to opening a 100k-entity drawing. The 1003
+    // layer handles of their xdata, which mapXdata keeps as numbers, count there too
+    // (`xdataHandle`). The public corpus purges and saves with no refusal (purge.corpus.test.ts).
+    if (o instanceof AcadEntity && entities.has(h)) continue;
+    acadReferences(o, (x) => {
+      const t = typeof x === 'number' ? byHandle.get(x) : byObject.get(x);
+      if (t === undefined || pinned.has(t) || h === t) return;
+      const acad = typeof x === 'number' ? objects.get(x) : x;
+      // The table or dictionary listing a record does not refer to it.
+      if (acad?.owner === o || refers(h, t)) return;
+      // A VERTEX, an ATTRIB's or a polyline's SEQEND is on its owner's layer as the save writes it.
+      const parent = o.owner;
+      if (
+        tableOf.get(t) === 'layers' &&
+        (parent instanceof Polyline || parent instanceof Insert) &&
+        refers(hex(parent.handle), t)
+      )
+        return;
+      pinned.add(t);
+    });
+  }
+  // A layer purged leaves the layer states that name it, a change a file older than R2000
+  // cannot save (layer-states.ts): there, a layer a state names stays.
+  const version = doc.header?.version;
+  if (version !== undefined && version !== ACadVersion.Unknown && version < ACadVersion.AC1015) {
+    for (const o of base.objects ?? []) {
+      if (o.type !== 'LAYER_STATE') continue;
+      for (const l of (o as { layers?: readonly { layer?: Handle }[] }).layers ?? [])
+        if (l.layer !== undefined) pinned.add(l.layer);
+    }
+  }
+  const header = new Map(base.header ?? []);
+  if (doc.header) {
+    acadReferences(doc.header, (x) => {
+      const t = typeof x === 'number' ? byHandle.get(x) : byObject.get(x);
+      if (t === undefined || pinned.has(t)) return;
+      const acad = (typeof x === 'number' ? objects.get(x) : x) as Named | undefined;
+      const table = tableOf.get(t)!;
+      const named = TABLES[table].header.some((n) => sameName(header.get(n), acad?.name ?? '', t));
+      if (!named) pinned.add(t);
+    });
+  }
+  return [...pinned];
+}
+
+/**
  * The records and blocks the model no longer has, and why any cannot go. `removedEntities` are
  * the originals of the entities the same save erases.
  */
@@ -387,9 +580,7 @@ export function planPurge(
 ): { plan: PurgePlan; problems: string[] } {
   const plan: PurgePlan = { removed: [] };
   const problems: string[] = [];
-  const version = doc.header?.version;
-  const r12 =
-    version !== undefined && version !== ACadVersion.Unknown && version <= ACadVersion.AC1009;
+  const r12 = isR12(doc);
   const targets: Target[] = [];
   // XREF Detach (M5-04): an xref's block goes, and with it the `xref|name` records the drawing
   // keeps of its symbols (VISRETAIN), as AutoCAD's detach takes them.
@@ -404,25 +595,8 @@ export function planPurge(
       if (after.has(b.handle)) continue;
       const out: string[] = [];
       const acad = resolve(r, b.handle, rules.type);
-      const flags = b.flags ?? 0;
-      if (!acad) out.push(`the original is not a ${rules.what}`);
-      else if (rules.fixed.some((n) => n.toUpperCase() === b.name.toUpperCase()))
-        out.push(`${b.name} cannot be purged`);
-      else if (b.name === '') out.push('a nameless record (a shape file) cannot be purged');
-      else if (acad instanceof VisualStyle && acad.internalFlag)
-        out.push('an internal visual style (DXF 291) cannot be purged');
-      else if (acad?.owner instanceof CadDictionaryWithDefault && acad.owner.defaultEntry === acad)
-        out.push(`it is the default of ${acad.owner.name || 'its dictionary'}`);
-      else if ((flags & XREF_DEPENDENT) !== 0 && !ofDetached(b.name))
-        out.push(`an xref-dependent ${rules.what} goes with its xref (XREF Detach)`);
-      else if (acad instanceof VPort && doc.vPorts?.tryGetValue(VPort.defaultName) === acad)
-        out.push(
-          'the first *Active viewport is the current one (VPORTS Join keeps it and changes its view)',
-        );
-      else if (r12 && acad && madeUp(doc, acad.handle))
-        out.push(
-          `the file states no handle for this ${rules.what} (acad-ts numbers it on reading, and the records after it would be renumbered)`,
-        );
+      const why = recordProblem(doc, rules, b, acad, r12, ofDetached);
+      if (why) out.push(why);
       if (acad && table === 'blockRecords')
         out.push(...blockProblems(acad as BlockRecord, b, base, model, removedEntities));
       if (out.length > 0) {
