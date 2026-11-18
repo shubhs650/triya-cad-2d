@@ -47,7 +47,9 @@ describe('linetypes loaded and saved (M5-08)', () => {
       view: { request: () => Promise.resolve({ ok: false, message: '' }) },
     });
     await manager(bus, { load: bundled, current: 'TRIYA_GAS', ltscale: 2 });
-    expect(model.tables.linetypes.size).toBe(3 + 17);
+    // 14 ISO, 3 utility and (part 2) 12 drafting linetypes: the drafting files' inch and
+    // millimetre twins share their names, so the second of each loads no more.
+    expect(model.tables.linetypes.size).toBe(3 + 17 + 12);
     const iso10 = named(model, 'TRIYA_ISO10')!;
     await manager(bus, {
       delete: [named(model, 'TRIYA_ISO15')!.handle],
