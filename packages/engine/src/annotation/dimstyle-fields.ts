@@ -17,6 +17,7 @@
 // were (SETVAR and -DIMSTYLE set them).
 import type { DimVarValue } from '../model/types';
 import { parseNumber } from '../commands/parse';
+import { lineweightText, type LineweightUnits } from '../commands/lweight';
 import { DIMVAR_DEFAULTS } from '../properties/dimension';
 import { DIMSTYLE_XDATA_DEFAULTS } from './dimstyle-xdata';
 
@@ -50,6 +51,11 @@ export interface DimStyleLists {
   readonly textStyles: readonly DimStyleOption[];
   readonly linetypes: readonly DimStyleOption[];
   readonly arrowheads: readonly DimStyleOption[];
+  /**
+   * The units LWUNITS lists lineweights in (M5-12), which the app knows and hands in with the
+   * engine's lists; millimetres when it does not say.
+   */
+  readonly lineweightUnits?: LineweightUnits;
 }
 
 export type DimStyleFieldValue = string | number | boolean;
@@ -146,9 +152,14 @@ function numberField(
 function choiceField(
   name: string,
   at: FieldBase,
-  options: readonly DimStyleOption[],
+  options: readonly DimStyleOption[] | ((l: DimStyleLists) => DimStyleOption[]),
   kind: 'choice' | 'radio' = 'choice',
 ): DimStyleField {
+  // A list's labels may follow the lists (the lineweights' units), never its values.
+  const values =
+    typeof options === 'function'
+      ? options({ textStyles: [], linetypes: [], arrowheads: [] })
+      : options;
   return {
     key: name,
     ...at,
@@ -157,7 +168,7 @@ function choiceField(
     vars: [name],
     get: (v) => String(num(v[name])),
     set: (value) =>
-      options.some((o) => o.value === String(value)) ? { [name]: Number(value) } : undefined,
+      values.some((o) => o.value === String(value)) ? { [name]: Number(value) } : undefined,
   };
 }
 
@@ -213,12 +224,14 @@ const LINEWEIGHTS = [
   0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200,
   211,
 ];
-const WEIGHT_OPTIONS = opts([
-  [-2, 'ByBlock'],
-  [-1, 'ByLayer'],
-  [-3, 'Default'],
-  ...LINEWEIGHTS.map((w) => [w, `${(w / 100).toFixed(2)} mm`] as const),
-]);
+/** ByBlock, ByLayer, Default and AutoCAD's lineweights, listed in LWUNITS' units (M5-12). */
+const weightOptions = (l: DimStyleLists): DimStyleOption[] =>
+  opts([
+    [-2, 'ByBlock'],
+    [-1, 'ByLayer'],
+    [-3, 'Default'],
+    ...LINEWEIGHTS.map((w) => [w, lineweightText(w, l.lineweightUnits)] as const),
+  ]);
 
 /** A reference DIMVAR chosen from one of the drawing's lists (`''`: the default). */
 function referenceField(
@@ -245,7 +258,7 @@ const extLines = { tab: 'lines', group: 'Extension lines' } as const;
 const LINES: DimStyleField[] = [
   colorField('DIMCLRD', { ...dimLines, label: 'Color' }),
   referenceField('DIMLTYPE', { ...dimLines, label: 'Linetype' }, (l) => l.linetypes),
-  choiceField('DIMLWD', { ...dimLines, label: 'Lineweight' }, WEIGHT_OPTIONS),
+  choiceField('DIMLWD', { ...dimLines, label: 'Lineweight' }, weightOptions),
   numberField('DIMDLE', { ...dimLines, label: 'Extend beyond ticks' }),
   numberField('DIMDLI', { ...dimLines, label: 'Baseline spacing' }),
   checkField('DIMSD1', { ...dimLines, label: 'Suppress: Dim line 1' }),
@@ -253,7 +266,7 @@ const LINES: DimStyleField[] = [
   colorField('DIMCLRE', { ...extLines, label: 'Color' }),
   referenceField('DIMLTEX1', { ...extLines, label: 'Linetype ext line 1' }, (l) => l.linetypes),
   referenceField('DIMLTEX2', { ...extLines, label: 'Linetype ext line 2' }, (l) => l.linetypes),
-  choiceField('DIMLWE', { ...extLines, label: 'Lineweight' }, WEIGHT_OPTIONS),
+  choiceField('DIMLWE', { ...extLines, label: 'Lineweight' }, weightOptions),
   checkField('DIMSE1', { ...extLines, label: 'Suppress: Ext line 1' }),
   checkField('DIMSE2', { ...extLines, label: 'Suppress: Ext line 2' }),
   numberField('DIMEXE', { ...extLines, label: 'Extend beyond dim lines' }),

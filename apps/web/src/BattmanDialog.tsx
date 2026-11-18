@@ -31,6 +31,7 @@ import type {
   Color,
   DialogRequest,
   Handle,
+  LineweightUnits,
   PromptAnswer,
 } from '@triya/engine';
 import { useState } from 'react';
@@ -48,6 +49,7 @@ import {
 } from './AttributeDialogs';
 import { SelectColorDialog } from './SelectColorDialog';
 import { engines } from './engine/registry';
+import { useLineweightUnits } from './lineweight-units';
 
 type Request = Extract<DialogRequest, { type: 'battman' }>;
 type Entry = AttributeDefinitionEntry;
@@ -167,7 +169,7 @@ const fixed = (v: number) => v.toFixed(4);
 const nameOf = (list: readonly { handle: string; name: string }[], h: string | null) =>
   h === null ? 'ByLayer' : (list.find((r) => r.handle === h)?.name ?? h);
 
-function cell(r: Request, e: Entry, c: BattmanColumn): string {
+function cell(r: Request, e: Entry, c: BattmanColumn, lwUnits: LineweightUnits): string {
   switch (c) {
     case 'tag':
       return e.tag;
@@ -204,7 +206,7 @@ function cell(r: Request, e: Entry, c: BattmanColumn): string {
     case 'color':
       return colorLabel(e.color);
     case 'lineweight':
-      return lineweightLabel(e.lineweight);
+      return lineweightLabel(e.lineweight, lwUnits);
     case 'plotStyle':
       return r.plotStyles ? nameOf(r.plotStyles, e.plotStyle) : 'ByColor';
   }
@@ -251,6 +253,7 @@ export function BattmanDialog({ doc, request }: { doc: number; request: Request 
   const [settings, setSettings] = useState(loadBattmanSettings);
   const [editing, setEditing] = useState<Entry | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const lwUnits = useLineweightUnits();
   const row = rows.find((r) => r.handle === selected);
   const index = row ? rows.indexOf(row) : -1;
   const original = new Map(request.attributes.map((a) => [a.handle, a]));
@@ -373,7 +376,7 @@ export function BattmanDialog({ doc, request }: { doc: number; request: Request 
                     }}
                   >
                     {columns.map((c) => (
-                      <td key={c}>{cell(request, r, c)}</td>
+                      <td key={c}>{cell(request, r, c, lwUnits)}</td>
                     ))}
                   </tr>
                 );

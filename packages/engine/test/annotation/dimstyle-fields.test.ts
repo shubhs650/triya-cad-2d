@@ -198,6 +198,32 @@ describe('Dimension style dialog fields (M4-03)', () => {
     expect(fieldOptions(field('DIMLWD'), LISTS, v)[0]).toEqual({ value: '-2', label: 'ByBlock' });
   });
 
+  // M5-12: AutoCAD lists every lineweight in LWUNITS' units (AutoCAD 2024 Help, "LWUNITS"); the
+  // app hands the dialog its units with the lists.
+  it('lists DIMLWD and DIMLWE in inches under LWUNITS 0, millimetres otherwise', () => {
+    const v = dialogVars({});
+    const labels = (key: string, lists: DimStyleLists) =>
+      fieldOptions(field(key), lists, v).map((o) => o.label);
+    const inches = { ...LISTS, lineweightUnits: 'in' } as const;
+    for (const key of ['DIMLWD', 'DIMLWE']) {
+      expect(labels(key, inches).slice(0, 5)).toEqual([
+        'ByBlock',
+        'ByLayer',
+        'Default',
+        '0.000"',
+        '0.002"',
+      ]);
+      expect(labels(key, inches)).toContain('0.010"');
+      expect(labels(key, inches)).not.toContain('0.25 mm');
+      expect(labels(key, LISTS)).toContain('0.25 mm');
+      expect(labels(key, { ...LISTS, lineweightUnits: 'mm' })).toContain('0.25 mm');
+    }
+    // The values stay hundredths of a millimetre whatever the labels say.
+    expect(fieldOptions(field('DIMLWD'), inches, v).find((o) => o.label === '0.010"')?.value).toBe(
+      '25',
+    );
+  });
+
   it('keeps a center mark’s size across None, Mark and Line', () => {
     let v = dialogVars({ DIMCEN: 0.09 });
     expect(field('DIMCEN.type').get(v)).toBe('mark');

@@ -67,7 +67,7 @@ export function nearestLineweight(hundredths: number): number {
 }
 
 /** LWUNITS as the app keeps it: millimetres unless it says 0. */
-async function unitsOf(ctx: CommandContext): Promise<LineweightUnits> {
+export async function lineweightUnitsOf(ctx: CommandContext): Promise<LineweightUnits> {
   const r = await ctx.view.request({ op: 'sysvar', name: LWUNITS });
   return r.ok && r.value === 0 ? 'in' : 'mm';
 }
@@ -101,7 +101,7 @@ export function lweightCommand(): CommandDef {
           setCurrent(ctx, a.lineweight);
         return;
       }
-      const units = await unitsOf(ctx);
+      const units = await lineweightUnitsOf(ctx);
       ctx.message(`Current lineweight: ${lineweightText(current, units)}`);
       for (;;) {
         const a = yield ctx.prompt.string({

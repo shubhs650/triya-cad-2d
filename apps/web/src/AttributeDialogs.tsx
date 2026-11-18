@@ -19,12 +19,14 @@
 // `\P` paragraph breaks are the area's line breaks.
 import {
   JUSTIFICATIONS,
+  lineweightText,
   type AttributeEntry,
   type AttributePatch,
   type Color,
   type DialogPrompt,
   type DialogRequest,
   type Lineweight,
+  type LineweightUnits,
   type LinetypeRef,
   type NamedRecord,
   type PromptAnswer,
@@ -35,6 +37,7 @@ import { engines } from './engine/registry';
 import { SelectColorDialog } from './SelectColorDialog';
 import { MatchPropDialog } from './MatchPropDialog';
 import { LineweightDialog } from './LineweightDialog';
+import { useLineweightUnits } from './lineweight-units';
 import { PointStyleDialog } from './PointStyleDialog';
 import { InspectionDialog } from './InspectionDialog';
 import { OverkillDialog } from './OverkillDialog';
@@ -350,8 +353,19 @@ const LINEWEIGHTS = [
   211,
 ];
 
-export const lineweightLabel = (w: Lineweight) =>
-  typeof w === 'number' ? `${(w / 100).toFixed(2)} mm` : w;
+/** A lineweight as AutoCAD lists it in LWUNITS' units (M5-12). */
+export const lineweightLabel = (w: Lineweight, units: LineweightUnits = 'mm'): string =>
+  lineweightText(w, units);
+
+/** The Properties tab's Lineweight list, in LWUNITS' units (M5-12). */
+export function attributeLineweightOptions(
+  units: LineweightUnits,
+): { value: string; label: string }[] {
+  return (['ByLayer', 'ByBlock', 'Default', ...LINEWEIGHTS] as Lineweight[]).map((w) => ({
+    value: String(w),
+    label: lineweightText(w, units),
+  }));
+}
 
 export const deg = (r: number) => Number(((r * 180) / Math.PI).toPrecision(10));
 const rad = (d: number) => (d * Math.PI) / 180;
@@ -731,6 +745,7 @@ export function AttributeProperties({
   plotStyles: readonly NamedRecord[] | undefined;
   onSelectColor: () => void;
 }) {
+  const lwUnits = useLineweightUnits();
   return (
     <div className="cad-dialog-grid">
       <label className="cad-dialog-field">
@@ -810,9 +825,9 @@ export function AttributeProperties({
             set({ lineweight: /^\d+$/.test(v) ? Number(v) : (v as Lineweight) });
           }}
         >
-          {(['ByLayer', 'ByBlock', 'Default', ...LINEWEIGHTS] as Lineweight[]).map((w) => (
-            <option key={String(w)} value={String(w)}>
-              {lineweightLabel(w)}
+          {attributeLineweightOptions(lwUnits).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
             </option>
           ))}
         </select>
