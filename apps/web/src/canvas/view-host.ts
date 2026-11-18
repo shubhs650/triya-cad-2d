@@ -174,6 +174,10 @@ export interface ViewContext {
   readonly drawingFile?: (file: string) => Promise<ViewReply>;
   /** WBLOCK (M5-01 part 4): the app writes the new drawing file and hands it over. */
   readonly writeBlock?: (r: Extract<ViewRequest, { op: 'writeBlock' }>) => Promise<ViewReply>;
+  /** REFCLOSE Save of an xref (M5-02 part 6): the xref's file read again (xref-files.ts). */
+  readonly xrefDrawing?: (block: Handle) => Promise<ViewReply>;
+  /** REFCLOSE Save of an xref (M5-02 part 6): the edits written to the xref's file. */
+  readonly writeXref?: (r: Extract<ViewRequest, { op: 'writeXref' }>) => Promise<ViewReply>;
   /** ULAYERS (M2-56 part 1): the Underlay Layers dialog, answered when it closes. */
   readonly underlayLayers?: (
     r: Extract<ViewRequest, { op: 'underlayLayers' }>,
@@ -223,6 +227,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'writeBlock') {
     return ctx.writeBlock ? ctx.writeBlock(r) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'xrefDrawing') {
+    return ctx.xrefDrawing ? ctx.xrefDrawing(r.block) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'writeXref') {
+    return ctx.writeXref ? ctx.writeXref(r) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };

@@ -52,6 +52,9 @@ export type AuditSaveKind =
   | 'attsync'
   // A block reference edited in place (-REFEDIT, ERASE, LINE, REFCLOSE Save; M5-02 part 3).
   | 'refedit'
+  // An xref edited in place and saved to its own file: the title block of the xref set as
+  // REFCLOSE writes it (M5-02 part 6).
+  | 'refedit-xref'
   // PDFATTACH on ezdxf's colors.dxf (no underlays) and the underlay fixture (M5-04 part 8).
   | 'pdfattach'
   // PDFCLIP and PDFADJUST on the underlay fixture (M5-04 part 9).

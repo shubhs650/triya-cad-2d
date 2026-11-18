@@ -153,6 +153,7 @@ import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { drawingFileReply, type HeldDrawing } from './block-files';
+import { writeXrefFile, xrefDrawingReply } from './xref-files';
 import { DesignCenterPalette } from './DesignCenterPalette';
 import { DESIGN_CENTER_DRAG, designCenterDrop, takeDesignCenterDrag } from './design-center';
 import { writeBlockFile } from './block-file-io';
@@ -592,6 +593,25 @@ function viewContext(id: number): ViewContext {
           message: `${r.file} was not written: ${e instanceof Error ? e.message : String(e)}`,
         };
       }
+    },
+    // REFCLOSE Save of an xref edited in place (M5-02 part 6): its file read again, and written
+    // with the edits as Save writes a drawing, in place or downloaded (xref-files.ts).
+    xrefDrawing: (block) => xrefDrawingReply(xrefSourceOf(id, block), openDrawing),
+    writeXref: async (r) => {
+      const source = xrefSourceOf(id, r.block);
+      if (!source)
+        return { ok: false, message: `${fileNameOf(r.file)} was not written: it is not at hand.` };
+      saveEnv ??= browserSave();
+      const env = saveEnv;
+      const w = await writeXrefFile(source, r.changes, {
+        write: (bytes, changes) => env.write(bytes, changes),
+        download: (name, bytes) => download(name, bytes, EXPORT_MEDIA.dxf),
+      });
+      xrefSources.set(fileKey(source.name), w.source);
+      // The other xrefs of the same file show what was written, as AutoCAD reloads them; the one
+      // edited shows it already (its content is the edit's, in the command's undo step).
+      if (w.reply.ok) void Promise.resolve().then(() => reloadOthers(id, r.block, source.name));
+      return w.reply;
     },
     // -XREF Unload and Reload (M5-04), as the References palette's buttons; XATTACH's load of
     // the xref it attached (M5-04 part 6).
@@ -1408,6 +1428,33 @@ const xrefFiles: XrefFiles = {
   },
   attach: (file) => xrefSources.set(fileKey(file.name), fromFile(file)),
 };
+
+/** The file that answered xref `block` of drawing `doc` this session, by its path's file name. */
+function xrefSourceOf(doc: number, block: string): Supplied | undefined {
+  const d = store.getSnapshot().docs.find((x) => x.id === doc);
+  const row = d && referencesOf(d.opened.init, engines.changesOf(doc), suppliedFiles);
+  const path = row?.find((r) => r.handle === block)?.path;
+  return path === undefined ? undefined : xrefSources.get(fileKey(fileNameOf(path)));
+}
+
+/**
+ * After REFCLOSE wrote the file `name` for xref `block` of drawing `doc` (M5-02 part 6): every
+ * other loaded xref of that file, in any open drawing, reloaded from it.
+ */
+async function reloadOthers(doc: number, block: string, name: string): Promise<void> {
+  for (const d of store.getSnapshot().docs) {
+    const blocks = referencesOf(d.opened.init, engines.changesOf(d.id), suppliedFiles)
+      .filter(
+        (r) =>
+          (r.kind === 'attach' || r.kind === 'overlay') &&
+          r.status === 'loaded' &&
+          fileKey(fileNameOf(r.path)) === fileKey(name) &&
+          !(d.id === doc && r.handle === block),
+      )
+      .map((r) => r.handle);
+    if (blocks.length > 0) await reloadXrefs(d.id, blocks).catch(() => []);
+  }
+}
 
 /** The name of xref `block` of drawing `doc`, for messages. */
 function xrefName(doc: number, block: string): string {

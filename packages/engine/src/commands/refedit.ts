@@ -435,9 +435,9 @@ async function writeXref(
   listed(w.added);
   byFile.set(s.block, new Map([...before, ...w.added]));
   const name = r.written?.file ?? file;
+  ctx.message(`Xref "${s.name}" saved: reference edits written to ${name}.`);
   if (r.written?.downloaded)
     ctx.message(`${name} was downloaded: put it in place of the xref's file to keep the edits.`);
-  ctx.message(`Xref "${s.name}" saved: reference edits written to ${name}.`);
 }
 
 /** The working set in the order it goes back: the objects carried out first, as the block had them. */
