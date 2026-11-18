@@ -69,6 +69,16 @@ Everything else: decide, document the decision in the PR, move on.
 - Never mark a task complete with failing, skipped, or `.only` tests. Never delete a test to make a build pass.
 - Keep `docs/` truthful: if you change behaviour, change the doc in the same PR.
 
+## Avoiding merge conflicts and flaky CI (2026-11-18)
+
+Three threads run at once, so every PR merges `main` into its branch several times. Git calls two edits a conflict when they touch the same line **or neighbouring lines**, even in different tasks. Of 59 such merges on 2026-11-17/18, 32 conflicted: 19 in `docs/ROADMAP.md` (always two neighbouring task lines), 5 in `testkit/src/dxf-audit/saves.ts`, 4 each in `audit.py`, `FILE_FIDELITY.md` and `COMMANDS.md`, 3 in `styles.css`. The alphabetical command list in `palette.test.ts`, edited by most PRs, had none.
+
+- **ROADMAP:** keep a blank line between task entries (`tests/ci/roadmap.test.ts` checks it). Edit only your own task's line. On a ROADMAP conflict take main's lines and re-apply your one edit.
+- **Lists everyone adds to** (`FIXTURE_SAVES`, `AuditSaveKind`, command registries, test lists, `COMMANDS.md`/`FILE_FIDELITY.md` rows, `styles.css`): insert in sorted order or beside the related entries, **never at the end** of the list or file, where every parallel PR adds too.
+- **Changelog:** a `changes/<task-id>.md` fragment, never `CHANGELOG.md`.
+- **Merge main early** (`git config rerere.enabled true`), and re-run the tests of what main changed before pushing: a green PR can still break after another PR lands (a linetype count test failed after #524 added linetypes).
+- **A test that passes on rerun is a bug, not luck.** Find the cause and fix it in the same PR or as a roadmap task. Never rerun-and-forget, raise a timeout without measuring, or loosen an assertion. Usual causes: a corpus-wide Vitest test near the 30 s timeout (split it per file, TESTING.md §2.1.1); a Playwright step that does not wait for the engine to read an answer (TESTING.md §7); a timing budget measured on a loaded CI runner.
+
 ## Commands you will use
 
 ```
