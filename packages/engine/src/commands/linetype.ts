@@ -7,7 +7,7 @@
 //     Linetypes dialog, reading the bundled set and the user's .lin files), Delete, Current and
 //     the details (Global scale factor LTSCALE, Current object scale CELTSCALE, Use paper space
 //     units for scaling PSLTSCALE). OK makes the changes as one LINETYPE undo step.
-//   - -LINETYPE: "Enter an option [?/Load/Set]". ? lists a file's linetypes, Load loads the
+//   - -LINETYPE: "Enter an option [?/Create/Load/Set]". ? lists a file's linetypes, Load loads the
 //     names typed (wild cards, commas) from a file, asking "Reload it?" for each one loaded
 //     already, Set makes one current (CELTYPE), loading it from the bundled file when the drawing
 //     lacks it. The file is asked for at the command line ("Enter name of linetype file"), the
