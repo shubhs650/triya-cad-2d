@@ -37,8 +37,12 @@ export function referencePlacement(model: DocumentModel, g: InsertGeometry): Sim
   const def = model.blocks.get(g.block);
   const record = model.tables.blockRecords.get(g.block);
   if (!def || !record) return 'the block is missing';
-  if (isXrefRecord(record) || record.name.includes('|'))
-    return 'an external reference cannot be edited in place yet';
+  // An xref is edited in place and saved to its own file (M5-02 part 6), once loaded.
+  if (isXrefRecord(record) && !def.xrefLoaded) return 'the external reference is not loaded';
+  // A block an xref brought in (`xref|name`) is defined in the xref's file, which only the
+  // edit of the xref itself writes.
+  if (record.name.includes('|'))
+    return 'a block of an external reference cannot be edited in place';
   if (record.name.startsWith('*')) return 'an anonymous or dynamic block cannot be edited in place';
   if (g.array && (g.array.columns > 1 || g.array.rows > 1))
     return 'a MINSERT cannot be edited in place';

@@ -1,0 +1,1 @@
+- M5-02 part 6 (#551): REFEDIT now edits an attached or overlaid xref in place, and REFCLOSE Save writes the edits back to the xref's own DXF file (in place where the browser allows, otherwise downloaded), keeping the file's handles for every object that was already there; other references to the same file reload with the edits.

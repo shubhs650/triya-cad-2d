@@ -75,6 +75,9 @@ FIXTURE_SAVES = (
     # XBIND of the xref set's block and layers (M5-04 part 7,
     # packages/testkit/src/xref/xbind.test.ts).
     ("fixtures/xref/xref-parent.dxf", "xbind"),
+    # The xref set's title block as REFCLOSE writes it after REFEDIT of its attachment (M5-02
+    # part 6, packages/testkit/src/xref/refedit-xref.test.ts).
+    ("fixtures/xref/xref-child-tb.dxf", "refedit-xref"),
     # PDFATTACH on a drawing without underlays and on the underlay fixture (M5-04 part 8,
     # packages/testkit/src/underlay/pdf-attach.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "pdfattach"),
