@@ -5796,3 +5796,49 @@ button {
   gap: 8px;
   margin-top: 8px;
 }
+
+/* M5-10: the start screen's New drawing / Templates… / Open drawing… and NEW's Select Template. */
+.start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.cad-dialog.select-template {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.select-template-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.select-template-list {
+  flex: 1 1 220px;
+  height: 160px;
+  min-width: 0;
+}
+
+.select-template-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.select-template-file {
+  opacity: 0.7;
+}
+
+.select-template-list:focus-visible .layer-list-active {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+
+.select-template-description {
+  flex: 1 1 160px;
+  min-height: 3em;
+  margin: 0;
+  overflow-wrap: anywhere;
+}

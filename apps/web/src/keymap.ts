@@ -35,6 +35,8 @@ export interface KeyAction {
 
 /** The actions that come with keys, in the order the Keyboard Shortcuts dialog lists them. */
 export const KEY_ACTIONS: readonly KeyAction[] = [
+  // M5-10: NEW (AutoCAD's Ctrl+N; a browser tab keeps it, the installed app's window hears it).
+  { id: 'file:new', label: 'New… (NEW)', group: 'File', keys: ['Ctrl+N'] },
   { id: 'file:open', label: 'Open…', group: 'File', keys: ['Ctrl+O'] },
   { id: 'file:save', label: 'Save', group: 'File', keys: ['Ctrl+S'] },
   { id: 'file:saveas', label: 'Save As…', group: 'File', keys: ['Ctrl+Shift+S'] },

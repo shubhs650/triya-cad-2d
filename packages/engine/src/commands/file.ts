@@ -39,6 +39,11 @@
 // it again with that window; Esc at the corners shows it again as it was.
 //
 // -EXPORT (M2-39 part 5) asks for the export at the command line instead: see export-script.ts.
+//
+// NEW and QNEW (M5-10): AutoCAD 2024 Help, "NEW": "Creates a new drawing" from the template chosen
+// in the Select Template dialog box; "QNEW": "Starts a new drawing from the default drawing
+// template file", opening Select Template when none is set. The new drawing is the app's (a tab of
+// its own), so each asks the app and ends; neither changes this drawing.
 import type { CommandContext, CommandDef, CommandGenerator } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { FileAction } from './view/host';
@@ -220,6 +225,8 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => fileCommand('SAVEAS', 'saveas'),
   () => fileCommand('CLOSE', 'close'),
   () => fileCommand('CLOSEALL', 'closeall'),
+  () => fileCommand('NEW', 'new'),
+  () => fileCommand('QNEW', 'qnew'),
   () => fileCommand('DRAWINGRECOVERY', 'recover'),
   () => plotCommand('PLOT'),
   () => plotCommand('PRINT'),

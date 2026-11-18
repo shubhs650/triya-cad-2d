@@ -29,6 +29,7 @@ import {
 import { closeOnDelete } from './local-data';
 import { normalizeWords } from './custom-dictionary';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
+import { DEFAULT_TEMPLATE_ID } from './templates';
 import { DEFAULT_TOOLTIP, tooltipAppearanceOf } from './tooltip-appearance';
 import { ALIAS_FILE_MAX } from './user-aliases';
 
@@ -144,6 +145,11 @@ export interface Preferences {
   readonly spellCheck: boolean;
   /** The Layer Properties Manager's columns and sort (M5-05 part 3, layer-columns.ts). */
   readonly layerColumns: LayerColumnSettings;
+  /**
+   * The template QNEW and the start screen's New drawing open (M5-10, templates.ts): its id, or
+   * '' for none, when QNEW opens the Select Template dialog as AutoCAD's does.
+   */
+  readonly defaultTemplate: string;
 }
 
 /** POLARANG's choices in AutoCAD's Drafting Settings, degrees. */
@@ -234,6 +240,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   customDictionary: [],
   spellCheck: true,
   layerColumns: DEFAULT_LAYER_COLUMNS,
+  defaultTemplate: DEFAULT_TEMPLATE_ID,
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -316,6 +323,10 @@ export function normalizePreferences(raw: unknown): Preferences {
     customDictionary: normalizeWords(raw['customDictionary']),
     spellCheck: bool(raw['spellCheck'], d.spellCheck),
     layerColumns: normalizeLayerColumns(raw['layerColumns']),
+    defaultTemplate:
+      typeof raw['defaultTemplate'] === 'string' && raw['defaultTemplate'].length <= 260
+        ? raw['defaultTemplate']
+        : d.defaultTemplate,
     drafting: {
       // OSMODE's 14 mode bits and OSNAP_OFF.
       osmode:

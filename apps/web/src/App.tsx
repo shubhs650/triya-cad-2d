@@ -84,6 +84,14 @@ import { ViewManager } from './ViewManager';
 import { viewManager } from './view-manager';
 import { layerStatesManager } from './layer-states';
 import { LayerStatesManager } from './LayerStatesManager';
+import { SelectTemplateDialog } from './SelectTemplateDialog';
+import {
+  BUNDLED_TEMPLATES,
+  newDrawingName,
+  selectTemplate,
+  templateById,
+  type DrawingTemplate,
+} from './templates';
 import { underlayLayersDialog } from './underlay-layers';
 import { UnderlayLayers } from './UnderlayLayers';
 import { exportFile } from './export-file';
@@ -837,6 +845,11 @@ async function fileCommand(
     queueMicrotask(() => void closeAll());
     return { ok: true };
   }
+  if (action === 'new' || action === 'qnew') {
+    // NEW and QNEW (M5-10): the new drawing opens in a tab of its own, so the command ends here.
+    queueMicrotask(() => (action === 'new' ? void selectNewDrawing() : quickNewDrawing()));
+    return { ok: true };
+  }
   if (await saveDoc(id, action)) {
     const doc = store.getSnapshot().docs.find((d) => d.id === id);
     return { ok: true, ...(doc && { file: doc.name }) };
@@ -1482,6 +1495,7 @@ async function open(
     readonly handle?: { readonly kind: string };
   },
   recovered?: Recovered,
+  options: { readonly untitled?: boolean } = {},
 ): Promise<void> {
   store.startOpening(file.name);
   // Its engine worker loads while the file is read (M4-22).
@@ -1493,7 +1507,7 @@ async function open(
     if (!opened.modelSpace) throw new Error('the drawing has no model space');
     const handle = file.handle?.kind === 'file' ? (file.handle as SaveHandle) : undefined;
     const saved = drawingFile(bytes, opened.summary, handle);
-    const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits);
+    const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits, options);
     // The drawing's authoritative document goes to its engine worker (M1-67).
     engines.start(id, opened.init, recovered?.changes);
     tellSessionVariables(id);
@@ -1541,6 +1555,33 @@ async function openRecent(key: string): Promise<void> {
   const r = await recent.open(key);
   if (!r.ok) store.fail(r.message);
   else void open({ name: r.handle.name, getFile: () => Promise.resolve(r.file), handle: r.handle });
+}
+
+/**
+ * A new drawing from `template` (NEW, QNEW; M5-10): the template's file opened as a drawing of
+ * its own, Drawing<n>.dxf, untitled, so its first save is a Save As and never touches the
+ * template.
+ */
+async function newDrawing(template: DrawingTemplate): Promise<void> {
+  const { docs, opening } = store.getSnapshot();
+  const name = newDrawingName([...docs.map((d) => d.name), ...opening]);
+  await open(
+    { name, getFile: async () => new Blob([(await template.load()) as Uint8Array<ArrayBuffer>]) },
+    undefined,
+    { untitled: true },
+  );
+}
+
+/** NEW: the Select Template dialog, then a new drawing from the template chosen. */
+async function selectNewDrawing(): Promise<void> {
+  const chosen = await selectTemplate.show();
+  if (chosen) await newDrawing(chosen);
+}
+
+/** QNEW: a new drawing from the default template, or NEW's dialog when none is set. */
+function quickNewDrawing(): void {
+  const t = templateById(preferences.get().defaultTemplate);
+  void (t ? newDrawing(t) : selectNewDrawing());
 }
 
 const fromFile = (f: File): Supplied => {
@@ -1717,6 +1758,10 @@ export function App() {
   useEffect(
     () =>
       onShortcuts({
+        'file:new': () => {
+          void selectNewDrawing();
+          return true;
+        },
         'file:open': () => {
           pick();
           return true;
@@ -1826,6 +1871,14 @@ export function App() {
         <span className="app-name">Triya CAD 2D</span>
         <span className="badge">v{__APP_VERSION__} beta</span>
         <OfflineStatus pwa={pwa} />
+        <button
+          type="button"
+          className="open-button"
+          title="New drawing from the default template (QNEW)"
+          onClick={quickNewDrawing}
+        >
+          New
+        </button>
         <button type="button" className="open-button" onClick={pick} aria-keyshortcuts="Control+O">
           Open
         </button>
@@ -2025,10 +2078,18 @@ export function App() {
           {state.docs.length === 0 && (
             <div className="start" data-testid="start">
               <h1>Triya CAD 2D</h1>
-              <p>Open a DWG or DXF drawing, or drop one anywhere on this window.</p>
-              <button type="button" onClick={pick}>
-                Open drawing…
-              </button>
+              <p>Start a new drawing, or open a DWG or DXF one (or drop it anywhere here).</p>
+              <div className="start-actions">
+                <button type="button" onClick={quickNewDrawing}>
+                  New drawing
+                </button>
+                <button type="button" onClick={() => void selectNewDrawing()}>
+                  Templates…
+                </button>
+                <button type="button" onClick={pick}>
+                  Open drawing…
+                </button>
+              </div>
               <RecentDrawings entries={recentFiles} onOpen={(key) => void openRecent(key)} />
               <p className="privacy">Drawings never leave this device.</p>
             </div>
@@ -2190,6 +2251,7 @@ export function App() {
         edited={(id) => store.edited(id)}
       />
       <LayerStatesManager doc={active} edited={(id) => store.edited(id)} />
+      <TemplateChooser />
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
@@ -2726,5 +2788,24 @@ function StatusBar({
         </>
       )}
     </footer>
+  );
+}
+
+/** NEW's Select Template dialog (M5-10), while NEW waits for it. */
+function TemplateChooser() {
+  const open = useSyncExternalStore(selectTemplate.subscribe, selectTemplate.isOpen);
+  const defaultId = useSyncExternalStore(
+    preferences.subscribe,
+    () => preferences.get().defaultTemplate,
+  );
+  if (!open) return null;
+  return (
+    <SelectTemplateDialog
+      templates={BUNDLED_TEMPLATES}
+      defaultId={defaultId}
+      onDefault={(id) => preferences.update({ defaultTemplate: id })}
+      onOpen={(t) => selectTemplate.close(t)}
+      onCancel={() => selectTemplate.close()}
+    />
   );
 }
