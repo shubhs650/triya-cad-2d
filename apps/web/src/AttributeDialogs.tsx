@@ -74,6 +74,7 @@ import { LinetypeManagerDialog } from './LinetypeManager';
 import type { LinetypeFiles } from './linetype-files';
 import { LayerWalkDialog } from './LayerWalkDialog';
 import { PurgeConfirmDialog, PurgeDialog } from './PurgeDialog';
+import { ImageAdjustDialog, type ImageAdjustPreview } from './ImageAdjustDialog';
 import { ImageAttachDialog } from './ImageAttachDialog';
 import { PdfAttachDialog, type PdfAttachFiles } from './PdfAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
@@ -100,6 +101,7 @@ export function AttributeDialogs({
   fonts,
   patternSources = [],
   onImageFile,
+  imageAdjust,
   xrefFiles,
   linetypeFiles,
   pdfFiles,
@@ -113,6 +115,8 @@ export function AttributeDialogs({
   patternSources?: readonly string[];
   /** An image file IMAGEATTACH attached (M5-04 part 5): the app's images serve it. */
   onImageFile?: (fileName: string, bytes: Uint8Array) => void;
+  /** The image files IMAGEADJUST's dialog previews (M5-04 part 10). */
+  imageAdjust?: ImageAdjustPreview;
   /** The drawing files XATTACH's dialog picks (M5-04 part 6): read, and kept to load from. */
   xrefFiles?: XrefFiles;
   /** The linetype files LINETYPE's Load... reads (M5-08). */
@@ -213,6 +217,8 @@ export function AttributeDialogs({
       return <PurgeDialog key="purge" doc={doc.id} request={d} />;
     case 'purgeconfirm':
       return <PurgeConfirmDialog key={key} doc={doc.id} request={d} />;
+    case 'imageadjust':
+      return <ImageAdjustDialog key={key} doc={doc.id} request={d} preview={imageAdjust} />;
     case 'imageattach':
       return <ImageAttachDialog key={key} doc={doc.id} request={d} onImageFile={onImageFile} />;
     case 'pdfattach':

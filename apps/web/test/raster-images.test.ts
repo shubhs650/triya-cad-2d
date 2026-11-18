@@ -199,3 +199,17 @@ describe('RasterImages with kept pictures (M2-54)', () => {
     expect(got).toEqual([5]);
   });
 });
+
+describe('RasterImages.pixels (M5-04 part 10)', () => {
+  it('hands the Image Adjust preview the decoded file, decoding it once', async () => {
+    const { decode, decoded } = fakeDecode();
+    const images = new RasterImages(decode);
+    expect(images.pixels('a.png')).toBeUndefined();
+    images.add('C:\\pics\\A.PNG', new Uint8Array([7]));
+    const first = await images.pixels('a.png');
+    const again = await images.pixels('A.png');
+    expect(first?.data[0]).toBe(7);
+    expect(again).toBe(first);
+    expect(decoded).toHaveLength(1);
+  });
+});

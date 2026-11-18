@@ -124,6 +124,17 @@ export class RasterImages {
     return this.#files.get(fileKey(fileName))?.bytes;
   }
 
+  /**
+   * The decoded pixels of the file of this name, decoded once whoever asks (the canvases, the
+   * Image Adjust dialog's preview); undefined when no such file was supplied.
+   */
+  pixels(fileName: string): Promise<RasterPixels> | undefined {
+    const file = this.#files.get(fileKey(fileName));
+    if (!file) return undefined;
+    file.decoded ??= this.#decode(file.bytes);
+    return file.decoded;
+  }
+
   /** A canvas of a drawing whose IMAGEDEFs `definitions` gives; served at once with what is here. */
   client(definitions: () => readonly ImageDefinition[], deliver: Deliver): ImageClient {
     const client: Client = { definitions, deliver };

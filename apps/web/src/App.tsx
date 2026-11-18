@@ -127,6 +127,7 @@ import {
 import { engines, nextEngineWorker } from './engine/registry';
 import { shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
+import type { ImageAdjustPreview } from './ImageAdjustDialog';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
 import {
   isPastedPictureName,
@@ -1089,6 +1090,12 @@ const images = new RasterImages((bytes) => decodeRaster(bytes), {
   kept: (name) => pastedPictures.get(name),
   found: () => supplied.changed(),
 });
+
+/** What IMAGEADJUST's Image Adjust dialog previews with (M5-04 part 10). */
+const imageAdjustPreview: ImageAdjustPreview = {
+  pixels: (fileName) => images.pixels(fileName),
+  background: () => canvasColours.model,
+};
 
 /**
  * The pasted pictures' files written beside a saved drawing, or offered to be (M2-72): the bytes
@@ -2297,6 +2304,7 @@ export function App() {
           images.add(name, bytes);
           supplied.changed();
         }}
+        imageAdjust={imageAdjustPreview}
         xrefFiles={xrefFiles}
         linetypeFiles={linetypeFiles}
         pdfFiles={pdfFiles}
