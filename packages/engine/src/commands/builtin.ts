@@ -88,6 +88,7 @@ import {
 } from './image';
 import { imageattachCommand } from './image-attach';
 import { pdfattachCommand } from './pdf-attach';
+import { attdefCommand, attdispCommand } from './attdef';
 import { xattachCommand } from './xref-attach';
 import { xbindCommand } from './xbind';
 import { INQUIRY_COMMANDS } from './inquiry/inquiry';
@@ -198,6 +199,8 @@ export function builtinCommands(): CommandRegistry {
     imageclipCommand(),
     imageattachCommand(),
     pdfattachCommand(),
+    attdefCommand(),
+    attdispCommand(),
     xattachCommand(),
     xbindCommand(),
     imageadjustCommand(),
