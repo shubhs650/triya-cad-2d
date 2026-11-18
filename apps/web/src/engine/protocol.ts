@@ -14,6 +14,7 @@ import type {
   EditResult,
   EngineEdit,
   PaperView,
+  PurgeHealth,
 } from '@triya/engine';
 
 export type EngineRequest =
@@ -25,6 +26,8 @@ export type EngineRequest =
   | { readonly type: 'save-blocks'; readonly id: number }
   /** The view each layout shown is saved in (M2-47 part 1). */
   | { readonly type: 'save-views'; readonly id: number; readonly layouts: readonly PaperView[] }
+  /** What the Health palette's purge card counts (M5-09 part 3). */
+  | { readonly type: 'purge-health'; readonly id: number }
   /** A render worker's end of a change channel (M2-62), transferred; `id` names the link. */
   | { readonly type: 'renderer'; readonly id: number; readonly port: MessagePort }
   /** The renderer linked as `id` is gone: stop posting to it. */
@@ -35,6 +38,7 @@ export type EngineReply =
   | { readonly type: 'command'; readonly output: CommandOutput }
   | { readonly type: 'save-blocks'; readonly id: number; readonly change?: ChangeSet }
   | { readonly type: 'save-views'; readonly id: number; readonly change?: ChangeSet }
+  | { readonly type: 'purge-health'; readonly id: number; readonly health: PurgeHealth }
   | { readonly type: 'error'; readonly message: string; readonly id?: number };
 
 /** One end of the channel, typed by shape: a Worker, a worker's `self` or a test double. */

@@ -232,7 +232,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | FLANGE (insert B16.5/B16.47 flange) | — | 2 | prompts NPS/class/type/view | |
 | WELDSYMBOL | — | 2 | builder dialog | |
 | COMPARE | — | 2 | | |
-| HEALTH (drawing health report) | — | 2 | | ~ (#105: the Health palette from the palette rail: drawing, missing fonts, font errors, references, hatch patterns, unknown objects, entities not drawn; #275: Dimensions, the stored blocks that differ from what the dimension engine draws, with ZOOM to each; no HEALTH command or fix buttons yet, M8-07) |
+| HEALTH (drawing health report) | — | 2 | | ~ (#105: the Health palette from the palette rail: drawing, missing fonts, font errors, references, hatch patterns, unknown objects, entities not drawn; #275: Dimensions, the stored blocks that differ from what the dimension engine draws, with ZOOM to each; M5-09 part 3: Unused items by category with Purge All (nested) and Purge..., Zero-length geometry and Empty text objects with Delete, each one PURGE undo step; no HEALTH command or the other fixes yet, M8-07) |
 | PDFREDLINE (open PDF → sheet) | — | 2 | start screen flow | |
 
 ## Excluded on purpose (do not implement)

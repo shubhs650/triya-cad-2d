@@ -64,6 +64,16 @@ import {
 } from '../edit/layer-states';
 import { layerPreviousOf } from '../commands/layer-previous';
 import { loadLinetypes, type LinetypeDefinition } from '../edit/linetypes';
+import {
+  emptyTextObjects,
+  purgeClosure,
+  purgeHealth,
+  purgeInto,
+  unusedItems,
+  zeroLengthObjects,
+  type PurgeHealth,
+} from '../edit/purge';
+import { eraseObjects } from '../edit/edit';
 
 /**
  * A layer's on, frozen and locked states (LAYER palette toggles, M1-23) and, from the Layer
@@ -249,8 +259,20 @@ export interface FieldEventEdit {
   readonly fileName?: string;
 }
 
+/**
+ * The Health palette's purge fixes (M5-09 part 3): every unused named item purged with what only
+ * they use (the Purge dialog's Purge All with Purge nested items; registered applications left to
+ * -PURGE), or the zero-length geometry or empty text PURGE deletes. One PURGE undo step each,
+ * refused when there is nothing to purge.
+ */
+export interface PurgeEdit {
+  readonly kind: 'purge';
+  readonly what: 'unused' | 'zero-length' | 'empty-text';
+}
+
 export type EngineEdit =
   | FieldEventEdit
+  | PurgeEdit
   | LayerStateEdit
   | LayerTableEdit
   | NamedLayerStateEdit
@@ -727,6 +749,7 @@ export class EngineSession {
     )
       return this.#layerStatesEdit(e);
     if (e.kind === 'linetype-load') return this.#linetypeLoad(e);
+    if (e.kind === 'purge') return this.#purge(e);
     if (e.kind === 'aliases') {
       this.#registry.setUserAliases(e.aliases);
       return { ok: true, change: {} };
@@ -884,6 +907,41 @@ export class EngineSession {
             ? mergeLayersChange(this.model, e.layers, e.target)
             : currentLayerChange(this.model, e.layer),
     );
+  }
+
+  /** What the Health palette's purge card counts (M5-09 part 3). */
+  purgeHealth(): PurgeHealth {
+    return purgeHealth(this.model);
+  }
+
+  #purge(e: PurgeEdit): EditResult {
+    const m = this.model;
+    const b = new ChangeSetBuilder(m);
+    if (e.what === 'unused') {
+      const unused = unusedItems(m);
+      if (unused.length === 0) return { ok: false, message: 'No unused named items found.' };
+      const items = purgeClosure(
+        m,
+        unused.map((i) => i.handle),
+        true,
+      );
+      purgeInto(b, m, items);
+    } else {
+      const ids = e.what === 'zero-length' ? zeroLengthObjects(m) : emptyTextObjects(m);
+      if (ids.length === 0)
+        return {
+          ok: false,
+          message:
+            e.what === 'zero-length'
+              ? 'No zero-length geometry found.'
+              : 'No empty text objects found.',
+        };
+      eraseObjects(b, m, ids);
+    }
+    const change = b.build();
+    m.apply(change);
+    this.#step('PURGE', change);
+    return { ok: true, change };
   }
 
   #linetypeLoad(e: LinetypeLoadEdit): EditResult {

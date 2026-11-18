@@ -512,7 +512,10 @@ function reasons(model: DocumentModel, users: Map<string, number>): string[] {
 
 /** What PURGE can take now, and what it cannot with why (the dialog's two views). */
 export function purgeState(model: DocumentModel): PurgeState {
-  const uses = collectUses(model);
+  return stateWith(model, collectUses(model));
+}
+
+function stateWith(model: DocumentModel, uses: Uses): PurgeState {
   const purgeable: PurgeItem[] = [];
   const inUse: InUseItem[] = [];
   for (const category of PURGE_CATEGORIES) {
@@ -549,7 +552,16 @@ export function purgeClosure(
   nested: boolean,
   kept: ReadonlySet<Handle> = new Set(),
 ): PurgeItem[] {
-  const uses = collectUses(model);
+  return closureWith(model, collectUses(model), chosen, nested, kept);
+}
+
+function closureWith(
+  model: DocumentModel,
+  uses: Uses,
+  chosen: readonly Handle[],
+  nested: boolean,
+  kept: ReadonlySet<Handle>,
+): PurgeItem[] {
   const all = PURGE_CATEGORIES.flatMap((c) => itemsOf(model, c)).filter(
     (i) => !fixedReason(model, i) && !kept.has(i.handle),
   );
@@ -644,6 +656,57 @@ export function purgeInto(
   }
   for (const h of layers) b.removeTableRecord('layers', h);
   dropLayersFromStates(b, layers);
+}
+
+/**
+ * What the Health palette counts (M5-09 part 3, PRD FR-Z4): the unused named items by category
+ * (registered applications left to -PURGE, as in the Purge dialog), how many more "Purge nested
+ * items" would take with them, and the zero-length geometry and empty text PURGE would delete.
+ */
+export interface PurgeHealth {
+  /** Categories with unused items, in the Purge dialog's order; none listed with 0. */
+  readonly unused: readonly {
+    readonly category: PurgeCategory;
+    readonly title: string;
+    readonly count: number;
+  }[];
+  /** Items in use only by the unused ones: they go with them. */
+  readonly nested: number;
+  readonly zeroLength: number;
+  readonly emptyText: number;
+}
+
+/** The unused named items the Health palette offers to purge (not registered applications). */
+export function unusedItems(model: DocumentModel): PurgeItem[] {
+  return purgeState(model).purgeable.filter((i) => i.category !== 'appIds');
+}
+
+export function purgeHealth(model: DocumentModel): PurgeHealth {
+  // One walk of the drawing for both: it is most of the cost (a quarter second at 100k objects).
+  const uses = collectUses(model);
+  const unused = stateWith(model, uses).purgeable.filter((i) => i.category !== 'appIds');
+  const counts = new Map<PurgeCategory, number>();
+  for (const i of unused) counts.set(i.category, (counts.get(i.category) ?? 0) + 1);
+  const all = unused.length
+    ? closureWith(
+        model,
+        uses,
+        unused.map((i) => i.handle),
+        true,
+        new Set(),
+      ).length
+    : 0;
+  const loose = looseObjects(model);
+  return {
+    unused: PURGE_CATEGORIES.filter((c) => counts.has(c)).map((category) => ({
+      category,
+      title: PURGE_RULES[category].title,
+      count: counts.get(category)!,
+    })),
+    nested: all - unused.length,
+    zeroLength: loose.filter(isZeroLength).length,
+    emptyText: loose.filter(isEmptyText).length,
+  };
 }
 
 // ── Unnamed objects ───────────────────────────────────────────────────────────────────────

@@ -3,8 +3,11 @@
 // layers go with AutoCAD's "Deleting layer" lines and a count, and a second run finds none.
 // M5-09 part 2: PURGE's Purge dialog on the same drawing: a layer checked and purged, the one
 // unused block with Confirm Purge, an item in use's Possible Reasons and Details, and Select Objects.
+// M5-09 part 3: the Health palette's purge cards on the same drawing: the unused items counted by
+// category, Purge All until none are left (one PURGE undo step each, undone with Ctrl+Z), a
+// zero-length line drawn and deleted, and Purge... opening the Purge dialog.
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { enterCommand, expectShown, openWithPicker } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
@@ -118,4 +121,62 @@ test('the Purge dialog purges checked items, confirms each, and finds what is in
     /\d+ found\./,
   );
   await shot('5-select-objects.png');
+});
+
+test('the Health palette counts what PURGE would take and fixes it in one click (M5-09)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const count = async (card: Locator) =>
+    Number(/\((\d+)\)/.exec(await card.locator('summary').innerText())?.[1]);
+
+  // A line from a point to itself: zero-length geometry.
+  await enterCommand(page, 'LINE');
+  await enterCommand(page, '5,5');
+  await enterCommand(page, '5,5');
+  await enterCommand(page, '');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Health' })
+    .click();
+  const palette = page.getByRole('complementary', { name: 'Health' });
+  const unused = palette.getByRole('group', { name: /^Unused items/ });
+  const table = unused.getByRole('table', { name: 'Unused items' });
+  await expect(table.getByRole('row', { name: /^Blocks/ })).toContainText('1');
+  await expect(table.getByRole('row', { name: /^Layers/ })).toBeVisible();
+  const before = await count(unused);
+  expect(before).toBeGreaterThan(9);
+  const zero = palette.getByRole('group', { name: /^Zero-length geometry/ });
+  await expect(zero.locator('summary')).toHaveText('Zero-length geometry (1)');
+  await page.mouse.move(300, 300);
+  await shot('1-health-purge-cards.png');
+
+  // Purge All: one click takes every unused item and what only they use; what that freed shows
+  // after it, for the next click.
+  const purgeAll = unused.getByRole('button', { name: 'Purge All' });
+  for (let i = 0; i < 5 && (await purgeAll.isVisible()); i++) {
+    const was = await count(unused);
+    await purgeAll.click();
+    await expect.poll(() => count(unused)).not.toBe(was);
+  }
+  await expect(unused).toContainText('None: every named item is in use.');
+  await expect(unused.locator('summary')).toHaveText('Unused items (0)');
+
+  await zero.getByRole('button', { name: 'Delete zero-length geometry' }).click();
+  await expect(zero.locator('summary')).toHaveText('Zero-length geometry (0)');
+  await shot('2-health-purged.png');
+
+  // Each fix is one PURGE undo step.
+  await page.keyboard.press('Control+z');
+  await expect(zero.locator('summary')).toHaveText('Zero-length geometry (1)');
+
+  // Purge... opens the Purge dialog to choose.
+  await unused.getByRole('button', { name: 'Purge…' }).click();
+  await expect(page.getByRole('dialog', { name: 'Purge', exact: true })).toBeVisible();
 });
