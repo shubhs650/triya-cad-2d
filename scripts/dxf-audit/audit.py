@@ -77,6 +77,9 @@ FIXTURE_SAVES = (
     # packages/testkit/src/underlay/pdf-attach.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "pdfattach"),
     ("fixtures/underlay/pdf-underlay.dxf", "pdfattach"),
+    # PDFCLIP and PDFADJUST on the underlay fixture (M5-04 part 9,
+    # packages/testkit/src/underlay/pdf-clip.test.ts).
+    ("fixtures/underlay/pdf-underlay.dxf", "pdfclip"),
     # ATTDEF's definitions, a block of them and a reference (M5-03 part 1,
     # packages/testkit/src/attributes/attdef.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "attdef"),
