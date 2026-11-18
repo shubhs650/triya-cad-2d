@@ -72,6 +72,7 @@ import { filterCommand } from './filter';
 import { selectSimilarCommand } from './select-similar';
 import { setvarCommand } from './setvar';
 import { PALETTE_COMMANDS } from './palettes';
+import { DESIGN_CENTER_COMMANDS } from './design-center';
 import { viewCommand } from './view/named-view';
 import { panCommand, regenCommand, zoomCommand } from './view/zoom';
 import { UNDO_COMMANDS } from './undo-commands';
@@ -187,6 +188,7 @@ export function builtinCommands(): CommandRegistry {
     attredefCommand(),
     wblockCommand(),
     ...PALETTE_COMMANDS.map((make) => make()),
+    ...DESIGN_CENTER_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),
     ...UNITS_COMMANDS.map((make) => make()),
     dimstyleCommand(),

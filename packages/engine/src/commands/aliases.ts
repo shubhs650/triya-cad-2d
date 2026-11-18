@@ -115,6 +115,8 @@ export const ALIASES: Readonly<Record<string, string>> = {
   IAD: 'IMAGEADJUST',
   ER: 'EXTERNALREFERENCES',
   ADC: 'ADCENTER',
+  DC: 'ADCENTER',
+  DCENTER: 'ADCENTER',
   // Layers and properties
   LA: 'LAYER',
   LAS: 'LAYERSTATE',

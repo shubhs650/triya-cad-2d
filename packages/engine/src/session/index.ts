@@ -6,6 +6,8 @@
 import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
+import type { DesignCenterDrop } from '../commands/design-center';
+import { isDesignCenterItem } from '../edit/design-center';
 import type { CommandPreview } from '../commands/command-preview';
 import { PICKFIRST } from '../commands/sysvars';
 import { GROUPDISPLAYMODE, PICKADD, PICKAUTO, PICKSTYLE } from '../selection/loop';
@@ -400,6 +402,11 @@ export type CommandInput =
    */
   | { readonly kind: 'property-editor'; readonly key: 'contents' | 'linetype' }
   /**
+   * DesignCenter (M5-11): items another drawing offers added to this one, and a block inserted,
+   * at a point (dragged onto the canvas) or by the Insert dialog (`PromptBus.designCenter`).
+   */
+  | { readonly kind: 'design-center'; readonly drop: DesignCenterDrop }
+  /**
    * The cursor rests on object `id` (M2-35 part 21, ROLLOVERTIPS): the engine answers with its
    * rollover tooltip (`rolloverSheet`), whether or not it is selected; the selection stays.
    */
@@ -652,6 +659,18 @@ export class EngineSession {
         return input.key === 'linetype'
           ? this.#bus.otherLinetype(this.#filter)
           : this.#bus.editContents(this.#filter);
+      case 'design-center': {
+        // Plain data from the app: what is not an item is left out.
+        const { items, insert } = input.drop;
+        const at = insert?.at;
+        const point = at && Number.isFinite(at.x) && Number.isFinite(at.y) ? at : undefined;
+        return this.#bus.designCenter({
+          items: (Array.isArray(items) ? items : []).filter(isDesignCenterItem),
+          ...(typeof insert?.block === 'string' && {
+            insert: { block: insert.block, ...(point && { at: { x: point.x, y: point.y } }) },
+          }),
+        });
+      }
       case 'property-vertex':
         this.#vertex = Math.max(0, Math.trunc(input.vertex));
         if (this.#properties) this.#sendSheet();
