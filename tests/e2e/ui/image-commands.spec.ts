@@ -103,8 +103,8 @@ test('IMAGECLIP clips an image, OFF and ON toggle it, IMAGEADJUST fades it, IMAG
   await type(page, 'ON', 'Command:');
   await poll(3, 3, isCanvas);
 
-  // IMAGEADJUST Fade 80: the red fades towards the canvas.
-  await type(page, 'IMAGEADJUST', 'Select image(s):');
+  // -IMAGEADJUST Fade 80: the red fades towards the canvas (IMAGEADJUST's dialog: image-adjust.spec.ts).
+  await type(page, '-IMAGEADJUST', 'Select image(s):');
   await click(0, 3);
   await type(page, '', 'Enter image adjust option [Contrast/Fade/Brightness] <Brightness>:');
   await type(page, 'F', 'Enter fade value (0-100) <0>:');

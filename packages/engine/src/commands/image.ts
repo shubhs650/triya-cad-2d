@@ -13,8 +13,11 @@
 //                    (Rectangular, Polygonal and Select polyline as XCLIP asks them; Invert clip
 //                    switches to Inside mode and back)
 //
-// IMAGEADJUST / -IMAGEADJUST (AutoCAD Help, "-IMAGEADJUST (Command)"), alias IAD:
+// IMAGEADJUST / -IMAGEADJUST (AutoCAD Help, "IMAGEADJUST (Command)", "Image Adjust Dialog Box",
+// "-IMAGEADJUST (Command)"), alias IAD:
 //   Select image(s):
+//   IMAGEADJUST on one image opens the Image Adjust dialog (`ImageAdjustRequest`: Brightness,
+//   Contrast and Fade 0–100, the Image Preview, Reset); on several, and -IMAGEADJUST always:
 //   Enter image adjust option [Contrast/Fade/Brightness] <Brightness>:
 //   Enter brightness value (0-100) <50>:
 //
@@ -27,14 +30,16 @@
 // Each command is one undo step; the save writes the IMAGE's DXF 14/71/280/290 and 281–283 and
 // RASTERVARIABLES 70/71 (io export/entities.ts, export/image-objects.ts).
 //
-// Ambiguity: AutoCAD's IMAGEADJUST opens the Image Adjust dialog where -IMAGEADJUST prompts; both
-// prompt here until the dialog is built (ROADMAP M5-04). With several images selected, the value
+// Ambiguity: AutoCAD's help names the dialog for IMAGEADJUST without saying what it does with
+// several images; the dialog shows one image's values and preview, so several are asked at the
+// command line as -IMAGEADJUST asks (M5-04 part 10). With several images selected, the value
 // offered is the first image's (AutoCAD's help does not say which it offers).
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type {
   Entity,
+  ImageDefinition,
   ImageFrame,
   ImageGeometry,
   NonGraphicalObject,
@@ -228,6 +233,61 @@ const ADJUSTMENTS = {
   Fade: 'fade',
 } as const;
 
+/** The values the Image Adjust dialog sets (DXF 281 / 282 / 283), 0–100. */
+export interface ImageAdjustSettings {
+  readonly brightness: number;
+  readonly contrast: number;
+  readonly fade: number;
+}
+
+/**
+ * IMAGEADJUST's Image Adjust dialog on one image: its values, and its IMAGEDEF's name and file,
+ * which the app previews it from (absent when the image has no definition).
+ */
+export interface ImageAdjustRequest extends ImageAdjustSettings {
+  readonly type: 'imageadjust';
+  readonly name?: string;
+  readonly file?: string;
+}
+
+/** A dialog value kept to a whole number 0–100, as the dialog's own fields keep it. */
+const percent = (v: number, was: number): number =>
+  Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : was;
+
+/** The Image Adjust dialog on `image`; OK sets what it changed as one undo step. */
+async function* adjustDialog(
+  ctx: CommandContext,
+  image: Entity & { geom: ImageGeometry },
+): Sub<void> {
+  const g = image.geom;
+  const def = g.definition === undefined ? undefined : ctx.model.objects.get(g.definition);
+  const file =
+    def?.type === 'IMAGEDEF'
+      ? { name: (def as ImageDefinition).name, file: (def as ImageDefinition).fileName }
+      : {};
+  const a = yield ctx.prompt.dialog({
+    message: 'Image Adjust',
+    dialog: {
+      type: 'imageadjust',
+      brightness: g.brightness,
+      contrast: g.contrast,
+      fade: g.fade,
+      ...file,
+    },
+  });
+  if (a.kind !== 'dialog' || a.action !== 'ok' || !a.imageAdjust) return;
+  const v = a.imageAdjust;
+  const next = {
+    brightness: percent(v.brightness, g.brightness),
+    contrast: percent(v.contrast, g.contrast),
+    fade: percent(v.fade, g.fade),
+  };
+  if (next.brightness === g.brightness && next.contrast === g.contrast && next.fade === g.fade) {
+    return;
+  }
+  ctx.edit((b) => b.updateEntity(image.id, { geom: { ...g, ...next } }));
+}
+
 function imageadjust(name: string): CommandDef {
   return {
     name,
@@ -243,6 +303,10 @@ function imageadjust(name: string): CommandDef {
         );
       }
       if (images.length === 0) return;
+      if (name === 'IMAGEADJUST' && images.length === 1) {
+        yield* adjustDialog(ctx, images[0]!);
+        return;
+      }
       const a = yield ctx.prompt.keyword({
         message: 'Enter image adjust option',
         options: ['Contrast', 'Fade', 'Brightness'],

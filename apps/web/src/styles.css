@@ -5327,6 +5327,68 @@ button {
   margin: 8px 0 0;
 }
 
+/* M5-04 part 10: IMAGEADJUST's Image Adjust dialog. */
+.cad-dialog.image-adjust-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.image-adjust-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.image-adjust-settings {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.image-adjust-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.image-adjust-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.image-adjust-value {
+  width: 4em;
+}
+
+.image-adjust-preview {
+  width: 160px;
+  height: 160px;
+  border: 1px solid var(--chrome-border);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.image-adjust-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* A small image shows its pixels, as the Attach Image dialog's preview does. */
+  image-rendering: pixelated;
+}
+
+.image-adjust-none {
+  padding: 8px;
+  text-align: center;
+  opacity: 0.7;
+  background: var(--chrome-bg);
+}
+
+.image-adjust-reset {
+  margin-inline-end: auto;
+}
+
 /* M5-04 part 5: IMAGEATTACH's Attach Image dialog. */
 .cad-dialog.image-attach-dialog {
   width: min(640px, calc(100vw - 32px));

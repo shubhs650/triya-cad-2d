@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   imageFrame,
+  type DialogRequest,
   type EntityGeometry,
   type ImageDefinition,
   type ImageGeometry,
@@ -354,15 +355,110 @@ describe('IMAGEADJUST', () => {
     expect(t.bus.promptText).toBe('Enter contrast value (0-100) <20>:');
     await t.bus.script(['80']);
     expect(t.geom('42').contrast).toBe(80);
-    await start('IAD');
+    await start('-IMAGEADJUST');
     await t.bus.script(['F']);
     expect(t.bus.promptText).toBe('Enter fade value (0-100) <35>:');
     await t.bus.script(['']);
     expect(t.geom('42').fade).toBe(35);
-    await start('IAD');
+    await start('-IMAGEADJUST');
     await t.bus.script(['F', '10']);
     expect(t.geom('42').fade).toBe(10);
     expect(t.geom('40').fade).toBe(0);
+  });
+});
+
+describe('IMAGEADJUST’s Image Adjust dialog (M5-04 part 10)', () => {
+  const dialogOf = (t: { bus: { prompt: unknown } }) => {
+    const p = t.bus.prompt as { kind: string; dialog?: DialogRequest };
+    expect(p.kind).toBe('dialog');
+    return p.dialog;
+  };
+  /** Starts `name` on image 42 alone, by a window around its insertion point. */
+  const start = async (t: ReturnType<typeof drawing>, name = 'IMAGEADJUST') => {
+    await t.bus.submit(name);
+    await t.bus.pick({ x: 295, y: 95 });
+    await t.bus.pick({ x: 305, y: 105 });
+    await t.bus.submit('');
+  };
+
+  it('opens on one image with its values and its file, and OK sets them as one undo step', async () => {
+    const t = drawing([image({ x: 300, y: 100 }, 0, { brightness: 40, contrast: 20, fade: 35 })]);
+    await start(t);
+    expect(dialogOf(t)).toEqual({
+      type: 'imageadjust',
+      brightness: 40,
+      contrast: 20,
+      fade: 35,
+      file: 'photo.png',
+      name: 'photo',
+    });
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      imageAdjust: { brightness: 75, contrast: 60, fade: 10 },
+    });
+    expect(t.bus.command).toBeUndefined();
+    expect(t.geom('42')).toMatchObject({ brightness: 75, contrast: 60, fade: 10 });
+    expect(t.geom('40')).toMatchObject({ brightness: 50, contrast: 50, fade: 0 });
+    await t.bus.script(['U']);
+    expect(t.geom('42')).toMatchObject({ brightness: 40, contrast: 20, fade: 35 });
+  });
+
+  it('takes whole numbers 0–100 only, and makes no step when nothing changed or on Cancel', async () => {
+    const t = drawing([image({ x: 300, y: 100 })]);
+    await start(t);
+    // Out of range and fractional values are kept to 0–100, whole (the dialog's own fields do).
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      imageAdjust: { brightness: 140, contrast: -5, fade: 12.6 },
+    });
+    expect(t.geom('42')).toMatchObject({ brightness: 100, contrast: 0, fade: 13 });
+    await start(t);
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      imageAdjust: { brightness: 100, contrast: 0, fade: 13 },
+    });
+    // IAD is IMAGEADJUST's alias, dialog and all.
+    await start(t, 'IAD');
+    await t.bus.answer({ kind: 'dialog', action: 'ok' });
+    await start(t);
+    await t.bus.cancel();
+    expect(t.bus.command).toBeUndefined();
+    // One step only: U takes back the first OK, and there is nothing further.
+    await t.bus.script(['U']);
+    expect(t.geom('42')).toMatchObject({ brightness: 50, contrast: 50, fade: 0 });
+  });
+
+  it('prompts as -IMAGEADJUST with several images selected', async () => {
+    const t = drawing();
+    await t.bus.submit('IMAGEADJUST');
+    await t.bus.pick({ x: 250, y: 120 });
+    await t.bus.pick({ x: 95, y: 95 });
+    await t.bus.submit('');
+    expect(t.bus.promptText).toBe(
+      'Enter image adjust option [Contrast/Fade/Brightness] <Brightness>:',
+    );
+  });
+
+  it('opens with no file for an image whose definition is missing', async () => {
+    const t = drawing([{ ...image({ x: 300, y: 100 }), definition: 'FF' } as EntityGeometry]);
+    await start(t);
+    expect(dialogOf(t)).toEqual({
+      type: 'imageadjust',
+      brightness: 50,
+      contrast: 50,
+      fade: 0,
+    });
+  });
+
+  it('-IMAGEADJUST prompts on one image', async () => {
+    const t = drawing([image({ x: 300, y: 100 })]);
+    await start(t, '-IMAGEADJUST');
+    expect(t.bus.promptText).toBe(
+      'Enter image adjust option [Contrast/Fade/Brightness] <Brightness>:',
+    );
   });
 });
 
@@ -424,9 +520,13 @@ describe('image commands, ending early', () => {
     await t.bus.script(['N', 'R']);
     await t.bus.cancel();
     expect(t.bus.command).toBeUndefined();
-    // Esc at each of IMAGEADJUST's prompts.
-    for (const steps of [[], ['B']]) {
-      await t.bus.submit('IMAGEADJUST');
+    // Esc at each of -IMAGEADJUST's prompts, and in IMAGEADJUST's dialog.
+    for (const [name, steps] of [
+      ['-IMAGEADJUST', []],
+      ['-IMAGEADJUST', ['B']],
+      ['IMAGEADJUST', []],
+    ] as const) {
+      await t.bus.submit(name);
       await t.bus.pick({ x: 105, y: 95 });
       await t.bus.pick({ x: 95, y: 105 });
       await t.bus.submit('');
@@ -447,9 +547,9 @@ describe('image commands, ending early', () => {
     expect(t.bus.command).toBeUndefined();
   });
 
-  it('IMAGEADJUST with the value an image has already is no change', async () => {
+  it('-IMAGEADJUST with the value an image has already is no change', async () => {
     const t = drawing();
-    await t.bus.submit('IMAGEADJUST');
+    await t.bus.submit('-IMAGEADJUST');
     await t.bus.pick({ x: 105, y: 95 });
     await t.bus.pick({ x: 95, y: 105 });
     await t.bus.submit('');

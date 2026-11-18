@@ -38,6 +38,7 @@ import type {
   InsertDialogRequest,
 } from './blocks';
 import type { ImageAttachAnswer, ImageAttachRequest } from './image-attach';
+import type { ImageAdjustRequest, ImageAdjustSettings } from './image';
 import type { PdfAttachAnswer, PdfAttachRequest } from './pdf-attach';
 import type { AttdefDefineAnswer, AttdefDefineRequest } from './attdef';
 import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
@@ -846,6 +847,8 @@ export type DialogRequest =
   | ImageAttachRequest
   /** PDFATTACH's Attach PDF Underlay (M5-04 part 8). */
   | PdfAttachRequest
+  /** IMAGEADJUST's Image Adjust (M5-04 part 10). */
+  | ImageAdjustRequest
   /** ATTDEF's Attribute Definition (M5-03 part 1). */
   | AttdefDefineRequest
   /** LAYWALK's LayerWalk (M5-06 part 4). */
@@ -1130,6 +1133,8 @@ export type PromptAnswer =
       readonly insert?: InsertDialogAnswer;
       /** The Attach Image dialog's file and fields as OK closed it (IMAGEATTACH, M5-04 part 5). */
       readonly imageAttach?: ImageAttachAnswer;
+      /** The Image Adjust dialog's values as OK closed it (IMAGEADJUST, M5-04 part 10). */
+      readonly imageAdjust?: ImageAdjustSettings;
       /** The Attach PDF Underlay dialog's file, pages and fields as OK closed it (PDFATTACH, M5-04 part 8). */
       readonly pdfAttach?: PdfAttachAnswer;
       /**
