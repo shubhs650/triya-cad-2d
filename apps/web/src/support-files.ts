@@ -38,6 +38,12 @@ export interface SupportKind {
   readonly folder: string;
   readonly accepts: (name: string) => boolean;
   readonly read: (name: string, bytes: Uint8Array) => Reading;
+  /**
+   * A fuller check made only when a file is added (a template is opened as a drawing, M5-10
+   * part 2): why the file cannot be used, or undefined when it can. Files kept by earlier visits
+   * passed it then, so a reload reads them with `read` alone.
+   */
+  readonly verify?: (name: string, bytes: Uint8Array) => Promise<string | undefined>;
 }
 
 export interface SupportFile {
@@ -211,6 +217,14 @@ export class SupportFileStore {
     if ('error' in r) {
       this.#update({ error: r.error });
       return;
+    }
+    if (this.#kind.verify) {
+      this.#update({ notice: `Checking ${name}…` });
+      const problem = await this.#kind.verify(name, bytes);
+      if (problem !== undefined) {
+        this.#update({ error: problem });
+        return;
+      }
     }
     const key = keyOf(name);
     const old = this.#entries.find((e) => e.key === key);

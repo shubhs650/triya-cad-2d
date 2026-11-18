@@ -5,11 +5,12 @@
 // and the start screen's New drawing open, AutoCAD's "Default Template File Name for QNEW"
 // (Options > Files > Template Settings).
 //
-// Left out (M5-10 part 2): the user's own templates (the templates folder) and Open's "Open with
-// no template - Imperial / Metric".
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+// Part 2: the user's own templates (Settings > Templates) listed after the bundled ones, and the
+// Open button's arrow, as AutoCAD's, offering Open, "Open with no template - Imperial" and "Open
+// with no template - Metric".
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Modal } from './AttributeDialogs';
-import type { DrawingTemplate } from './templates';
+import { NO_TEMPLATE, type DrawingTemplate } from './templates';
 
 export function SelectTemplateDialog({
   templates,
@@ -37,6 +38,10 @@ export function SelectTemplateDialog({
   const open = () => {
     if (template) onOpen(template);
   };
+  // The list may grow while the dialog is open (the user's templates read back from the device).
+  useEffect(() => {
+    if (picked >= templates.length) setPicked(Math.max(0, templates.length - 1));
+  }, [picked, templates.length]);
 
   const keys = (e: KeyboardEvent<HTMLUListElement>) => {
     const move = (i: number) => {
@@ -93,13 +98,125 @@ export function SelectTemplateDialog({
         Use as the default template (QNEW)
       </label>
       <div className="cad-dialog-buttons">
-        <button type="button" onClick={open} disabled={template === undefined}>
-          Open
-        </button>
+        <OpenButton template={template} onOpen={onOpen} />
         <button type="button" onClick={onCancel}>
           Cancel
         </button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Open, and its arrow's menu (AutoCAD's Select Template Open button): Open, "Open with no template
+ * - Imperial" and "Open with no template - Metric". The menu is keyboard-operable: Enter, Space
+ * or ArrowDown on the arrow opens it on its first item, arrow keys, Home and End move, Escape
+ * closes it (and only it) and Tab leaves it.
+ */
+function OpenButton({
+  template,
+  onOpen,
+}: {
+  template: DrawingTemplate | undefined;
+  onOpen: (t: DrawingTemplate) => void;
+}) {
+  const [shown, setShown] = useState(false);
+  const arrow = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+  const items = (): HTMLElement[] =>
+    Array.from(
+      menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
+    );
+  const focusItem = (to: number | 'first' | 'last') => {
+    const all = items();
+    const at = all.indexOf(document.activeElement as HTMLElement);
+    const i =
+      to === 'first' ? 0 : to === 'last' ? all.length - 1 : (at + to + all.length) % all.length;
+    all[i]?.focus();
+  };
+  useEffect(() => {
+    if (shown)
+      menu.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+  }, [shown]);
+  const close = (refocus: boolean) => {
+    setShown(false);
+    if (refocus) arrow.current?.focus();
+  };
+  const choose = (t: DrawingTemplate) => {
+    setShown(false);
+    onOpen(t);
+  };
+  return (
+    <span className="split-button">
+      <button type="button" onClick={() => template && onOpen(template)} disabled={!template}>
+        Open
+      </button>
+      <button
+        ref={arrow}
+        type="button"
+        className="split-button-arrow"
+        aria-label="Open options"
+        aria-haspopup="menu"
+        aria-expanded={shown}
+        aria-controls={shown ? menuId : undefined}
+        onClick={() => setShown(!shown)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setShown(true);
+          }
+        }}
+      >
+        ▾
+      </button>
+      {shown && (
+        <div
+          ref={menu}
+          id={menuId}
+          className="split-button-menu"
+          role="menu"
+          aria-label="Open options"
+          onBlur={(e) => {
+            if (
+              !e.currentTarget.contains(e.relatedTarget as Node | null) &&
+              e.relatedTarget !== arrow.current
+            )
+              setShown(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              // The menu closes, not the dialog.
+              e.preventDefault();
+              e.stopPropagation();
+              close(true);
+            } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              focusItem(e.key === 'ArrowDown' ? 1 : -1);
+            } else if (e.key === 'Home' || e.key === 'End') {
+              e.preventDefault();
+              focusItem(e.key === 'Home' ? 'first' : 'last');
+            } else if (e.key === 'Tab') {
+              close(false);
+            }
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!template}
+            onClick={() => template && choose(template)}
+          >
+            Open
+          </button>
+          <button type="button" role="menuitem" onClick={() => choose(NO_TEMPLATE.imperial)}>
+            Open with no template - Imperial
+          </button>
+          <button type="button" role="menuitem" onClick={() => choose(NO_TEMPLATE.metric)}>
+            Open with no template - Metric
+          </button>
+        </div>
+      )}
+    </span>
   );
 }

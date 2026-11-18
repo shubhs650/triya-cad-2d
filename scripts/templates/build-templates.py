@@ -3,9 +3,14 @@
 - assets/templates/triya-iso.dxf, "Triya ISO (mm)": millimetres, ISO-25 dimension styles,
   A4-A0 landscape layouts;
 - assets/templates/triya-ansi.dxf, "Triya ANSI (inch)": inches, decimal-inch dimension styles,
-  ANSI A-E landscape layouts.
+  ANSI A-E landscape layouts;
+- assets/templates/no-template-imperial.dxf and no-template-metric.dxf, the drawings the Select
+  Template dialog's "Open with no template - Imperial / Metric" opens (M5-10 part 2): layer 0,
+  the Standard text style and the units' default dimension style (Standard; ISO-25 for metric),
+  grid limits 12 x 9 in or 420 x 297 mm, and the layouts Layout1 and Layout2 on a letter or A4
+  sheet, as AutoCAD's own defaults set a drawing up.
 
-Both are authored for Triya (DEC-047: no Autodesk template is copied or asked for). Each has the
+All are authored for Triya (DEC-047: no Autodesk template is copied or asked for). Each has the
 layers, linetypes, text styles and dimension styles UI_SPEC.md §9 lists, and a layout per sheet
 size holding the sheet's border, one viewport at 1:1 on the VIEWPORT layer, the title block (a
 block of attribute definitions: TITLE, DWGNO, REV, SCALE, DATE, DRAWN, CHECKED, APPROVED,
@@ -394,14 +399,135 @@ def build(t: Template) -> None:
     layouts(doc, t)
     # Model space shows its limits.
     doc.set_modelspace_vport(height=t.limits[1], center=(t.limits[0] / 2, t.limits[1] / 2))
+    model_limits(doc, t.limits)
+    save(doc, t.file)
+
+
+@dataclass(frozen=True)
+class Blank:
+    """A drawing with no template (AutoCAD 2024 Help, "Select Template Dialog Box": Open with no
+    template - Imperial / Metric creates a drawing from the internal defaults of that system)."""
+
+    file: str
+    insunits: int
+    measurement: int
+    paper_units: str
+    media: str  # the layouts' canonical media name
+    paper: tuple[float, float]  # landscape, paper units
+    limits: tuple[float, float]
+    text_height: float
+    # The units' dimension variables: the Standard style's and the header's.
+    dimvars: dict
+    # The current dimension style when it is not Standard (metric's ISO-25, with dimvars).
+    dimstyle: str | None
+
+
+# AutoCAD's documented imperial initial values (AutoCAD 2024 Help, each DIM* system variable's
+# "Initial value ... (imperial)"); ezdxf starts a drawing with the metric ones.
+IMPERIAL_DIMVARS = dict(
+    dimasz=0.18,
+    dimcen=0.09,
+    dimdli=0.38,
+    dimexe=0.18,
+    dimexo=0.0625,
+    dimgap=0.09,
+    dimtxt=0.18,
+    dimtad=0,
+    dimtih=1,
+    dimtoh=1,
+    dimdec=4,
+    dimtdec=4,
+    dimzin=0,
+    dimtzin=0,
+    dimtofl=0,
+    dimatfit=3,
+    dimlunit=2,
+    dimdsep=ord("."),
+    dimaltf=25.4,
+    dimaltd=2,
+)
+
+
+BLANK_IMPERIAL = Blank(
+    file="no-template-imperial.dxf",
+    insunits=1,
+    measurement=0,
+    paper_units="inch",
+    media="ANSI_full_bleed_A_(11.00_x_8.50_Inches)",
+    paper=(11.0, 8.5),
+    limits=(12.0, 9.0),
+    text_height=0.2,
+    dimvars=IMPERIAL_DIMVARS,
+    dimstyle=None,
+)
+
+BLANK_METRIC = Blank(
+    file="no-template-metric.dxf",
+    insunits=4,
+    measurement=1,
+    paper_units="mm",
+    media="ISO_full_bleed_A4_(297.00_x_210.00_MM)",
+    paper=(297.0, 210.0),
+    # AutoCAD's metric LIMMAX initial value, an A3 sheet.
+    limits=(420.0, 297.0),
+    text_height=2.5,
+    dimvars=ISO.dimvars,
+    dimstyle="ISO-25",
+)
+
+
+def build_blank(b: Blank) -> None:
+    doc = ezdxf.new("R2018", units=b.insunits, setup=False)
+    h = doc.header
+    h["$INSUNITS"] = b.insunits
+    h["$MEASUREMENT"] = b.measurement
+    h["$LUNITS"] = 2
+    h["$LTSCALE"] = 1.0
+    h["$LIMMIN"] = (0.0, 0.0)
+    h["$LIMMAX"] = b.limits
+    h["$TEXTSTYLE"] = "Standard"
+    h["$TEXTSIZE"] = b.text_height
+    h["$CLAYER"] = "0"
+    h["$DIMASSOC"] = 2
+    h["$FILLETRAD"] = 0.0
+    standard = doc.dimstyles.get("Standard")
+    for key, value in b.dimvars.items():
+        standard.dxf.set(key, value)
+    if b.dimstyle:
+        doc.dimstyles.new(b.dimstyle, dxfattribs={**b.dimvars, "dimtxsty": "Standard"})
+    h["$DIMSTYLE"] = b.dimstyle or "Standard"
+    # The header keeps the current dimension style's values.
+    for key, value in {**b.dimvars, "dimscale": 1.0}.items():
+        h["$" + key.upper()] = value
+    # Layout1 as ezdxf makes it, and Layout2, both on the units' default sheet.
+    doc.layouts.new("Layout2")
+    for name in ("Layout1", "Layout2"):
+        sheet = doc.layouts.get(name)
+        sheet.page_setup(size=b.paper, units=b.paper_units, name=b.media, device="DWG To PDF.pc3")
+        sheet.main_viewport().dxf.layer = "0"
+    if doc.layers.has_entry("VIEWPORTS"):
+        doc.layers.remove("VIEWPORTS")
+    doc.set_modelspace_vport(height=b.limits[1], center=(b.limits[0] / 2, b.limits[1] / 2))
+    model_limits(doc, b.limits)
+    save(doc, b.file)
+
+
+def model_limits(doc, limits: tuple[float, float]) -> None:
+    """$LIMMIN/$LIMMAX: ezdxf writes them from model space's layout record when it saves."""
+    msp = doc.modelspace()
+    msp.dxf_layout.dxf.limmin = (0.0, 0.0)
+    msp.dxf_layout.dxf.limmax = limits
+
+
+def save(doc, file: str) -> None:
     auditor = doc.audit()
     if auditor.has_errors or auditor.has_fixes:
         auditor.print_error_report()
         auditor.print_fixed_errors()
-        raise SystemExit(f"{t.file}: ezdxf's audit reported findings")
+        raise SystemExit(f"{file}: ezdxf's audit reported findings")
     OUT.mkdir(parents=True, exist_ok=True)
-    doc.saveas(OUT / t.file)
-    print(f"wrote {OUT / t.file}")
+    doc.saveas(OUT / file)
+    print(f"wrote {OUT / file}")
 
 
 def pin_hash_seed() -> None:
@@ -421,6 +547,8 @@ def main() -> int:
     ezdxf.options.write_fixed_meta_data_for_testing = True
     for t in (ISO, ANSI):
         build(t)
+    for b in (BLANK_IMPERIAL, BLANK_METRIC):
+        build_blank(b)
     return 0
 
 
