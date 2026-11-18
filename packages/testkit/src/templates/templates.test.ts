@@ -35,6 +35,8 @@ interface Expected {
   readonly paperUnits: 'mm' | 'inches';
   readonly dimstyles: readonly (readonly [string, number])[];
   readonly dimtxt: number;
+  /** Model space's grid limits, $LIMMAX. */
+  readonly limits: readonly [number, number];
 }
 
 const TEMPLATES: readonly Expected[] = [
@@ -59,6 +61,7 @@ const TEMPLATES: readonly Expected[] = [
       ['ISO-25-50', 50],
     ],
     dimtxt: 2.5,
+    limits: [420, 297],
   },
   {
     path: 'assets/templates/triya-ansi.dxf',
@@ -81,6 +84,7 @@ const TEMPLATES: readonly Expected[] = [
       ['ANSI-DEC-16', 16],
     ],
     dimtxt: 0.125,
+    limits: [12, 9],
   },
 ];
 
@@ -151,6 +155,8 @@ describe.each(TEMPLATES)('the bundled template $path (M5-10)', (t) => {
     expect(model.header.get('$DIMSTYLE')).toBe(t.dimstyles[0]![0]);
     expect(model.header.get('$DIMTXT')).toBe(t.dimtxt);
     expect(model.header.get('$CLAYER')).toBe('0');
+    const limmax = model.header.get('$LIMMAX') as { x: number; y: number };
+    expect([limmax.x, limmax.y]).toEqual(t.limits);
   });
 
   it('has UI_SPEC §9’s layers, and the drafting linetypes of the bundled .lin file', () => {
@@ -276,5 +282,97 @@ describe.each(TEMPLATES)('the bundled template $path (M5-10)', (t) => {
       (r) => recordName(back, r.geom.block) === 'TRIYA-TITLE-BLOCK',
     )!;
     expect(filled.geom.attributes.find((a) => a.tag === 'TITLE')!.value).toBe('BRACKET ASSEMBLY');
+  });
+});
+
+/** The drawings "Open with no template - Imperial / Metric" opens (M5-10 part 2). */
+const BLANKS = [
+  {
+    path: 'assets/templates/no-template-imperial.dxf',
+    insunits: 1,
+    measurement: 0,
+    limits: [12, 9],
+    dimstyle: 'Standard',
+    dimtxt: 0.18,
+    paperUnits: 'inches',
+    paper: [11, 8.5],
+  },
+  {
+    path: 'assets/templates/no-template-metric.dxf',
+    insunits: 4,
+    measurement: 1,
+    limits: [420, 297],
+    dimstyle: 'ISO-25',
+    dimtxt: 2.5,
+    paperUnits: 'millimeters',
+    paper: [297, 210],
+  },
+] as const;
+
+describe.each(BLANKS)('the drawing with no template $path (M5-10 part 2)', (t) => {
+  const bytes = bytesOf(t.path);
+
+  it('is an AC1032 DXF set up with the units’ defaults and nothing else', () => {
+    expect(readCadDocument(bytes).header?.version).toBe(ACadVersion.AC1032);
+    const model = modelOf(bytes);
+    expect(model.header.get('$INSUNITS')).toBe(t.insunits);
+    expect(model.header.get('$MEASUREMENT')).toBe(t.measurement);
+    const limmax = model.header.get('$LIMMAX') as { x: number; y: number };
+    expect([limmax.x, limmax.y]).toEqual(t.limits);
+    expect(model.header.get('$DIMSTYLE')).toBe(t.dimstyle);
+    expect(model.header.get('$DIMTXT')).toBe(t.dimtxt);
+    expect(model.header.get('$CLAYER')).toBe('0');
+    // No drafting layers, linetypes, text styles or blocks of a template.
+    expect([...model.tables.layers.values()].map((l) => l.name)).toEqual(['0', 'Defpoints']);
+    expect([...model.tables.linetypes.values()].map((l) => l.name.toUpperCase())).toEqual([
+      'BYBLOCK',
+      'BYLAYER',
+      'CONTINUOUS',
+    ]);
+    const styles = [...model.tables.textStyles.values()].map((s) => [s.name, s.font]);
+    expect(styles).toEqual([['Standard', 'txt']]);
+    expect(SHX_EQUIVALENTS['txt']).toBe('oet-simplex');
+    const standard = [...model.tables.dimStyles.values()].find((s) => s.name === t.dimstyle)!;
+    expect(standard.vars.DIMTXT).toBe(t.dimtxt);
+    expect(model.blockEntities(modelSpaceOf(model))).toEqual([]);
+  });
+
+  it('has the layouts Layout1 and Layout2 on the units’ default sheet', () => {
+    const model = modelOf(bytes);
+    const sheets = model.layouts.filter((l) => l.name !== 'Model');
+    expect(sheets.map((l) => l.name)).toEqual(['Layout1', 'Layout2']);
+    const k = t.paperUnits === 'millimeters' ? 1 : 25.4;
+    for (const layout of sheets) {
+      expect(layout.plot!.paperUnits).toBe(t.paperUnits);
+      expect(layout.plot!.paperWidth / k).toBeCloseTo(t.paper[0], 6);
+      expect(layout.plot!.paperHeight / k).toBeCloseTo(t.paper[1], 6);
+    }
+  });
+
+  it('round-trips with no structural difference', () => {
+    const r = roundTrip(bytes);
+    expect(r.error).toBeUndefined();
+    expect(r.summary?.total ?? 0).toBe(0);
+    expect(r.status).toBe('clean');
+  });
+
+  it('makes a new drawing that is drawn in and saves', async () => {
+    writeAuditSave(t.path, 'template', () => bytes);
+    const model = modelOf(bytes);
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: { request: () => Promise.resolve({ ok: false, message: '' }) },
+    });
+    await bus.script(['LINE', '0,0', '10,5', '']);
+    await bus.script(['CIRCLE', '5,2.5', '1']);
+    expect(bus.command).toBeUndefined();
+
+    const out = saveAc1032Dxf(readCadDocument(bytes), model);
+    writeAuditSave(t.path, 'new', () => out);
+    const back = modelOf(out);
+    const drawn = back.blockEntities(modelSpaceOf(back)).map((id) => back.entity(id)!);
+    expect(drawn.map((e) => e.geom.kind)).toEqual(['LINE', 'CIRCLE']);
+    expect(back.header.get('$INSUNITS')).toBe(t.insunits);
   });
 });
