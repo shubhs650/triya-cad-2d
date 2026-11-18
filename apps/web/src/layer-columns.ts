@@ -76,6 +76,8 @@ export interface LayerColumnSettings {
   readonly widths: Readonly<Partial<Record<LayerColumnKey, number>>>;
   /** Freeze Column: this column and the ones before it do not scroll sideways. */
   readonly frozen?: LayerColumnKey;
+  /** The filter tree beside the list collapsed (M5-07 part 5), kept with the columns. */
+  readonly treeCollapsed?: true;
 }
 
 export const DEFAULT_LAYER_COLUMNS: LayerColumnSettings = {
@@ -124,7 +126,14 @@ export function normalizeLayerColumns(raw: unknown): LayerColumnSettings {
     for (const [k, v] of Object.entries(w))
       if (isKey(k) && typeof v === 'number' && Number.isFinite(v)) widths[k] = clampWidth(v);
   const frozen = isKey(r['frozen']) ? r['frozen'] : undefined;
-  return frozen ? { order, hidden, sort, widths, frozen } : { order, hidden, sort, widths };
+  return {
+    order,
+    hidden,
+    sort,
+    widths,
+    ...(frozen && { frozen }),
+    ...(r['treeCollapsed'] === true && { treeCollapsed: true as const }),
+  };
 }
 
 /** Column `key`'s width (px): the user's, or its default. */

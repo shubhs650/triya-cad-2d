@@ -945,6 +945,28 @@ button {
   border-right: 1px solid var(--chrome-border);
 }
 
+.layer-filters-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 0 6px;
+  border-bottom: 1px solid var(--chrome-border);
+  color: var(--chrome-text-muted);
+}
+
+.layer-filters-head button,
+.layer-filters-expand {
+  border: 0;
+  background: none;
+  color: inherit;
+}
+
+.layer-filters-expand {
+  align-self: flex-start;
+  padding: 2px 4px;
+  border-right: 1px solid var(--chrome-border);
+}
+
 .layer-filter-tree {
   flex: 1;
   min-height: 0;
@@ -1005,6 +1027,11 @@ button {
 
 .layer-filter-dialog {
   width: min(900px, 95vw);
+}
+
+/* A fieldset is as wide as its contents unless told otherwise: the grid scrolls inside it. */
+.layer-filter-dialog fieldset {
+  min-width: 0;
 }
 
 .layer-filter-name-field {

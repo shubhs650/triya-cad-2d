@@ -69,6 +69,7 @@ export function LayerFilterTree({
   onMenu,
   onAction,
   onDropLayers,
+  onCollapse,
 }: {
   tree: readonly LayerFilterNode[];
   choice: FilterChoice;
@@ -82,6 +83,8 @@ export function LayerFilterTree({
   onMenu: (c: FilterChoice, at: { x: number; y: number }) => void;
   onAction: (a: LayerFilterAction, c: FilterChoice) => void;
   onDropLayers: (filter: Handle, layers: Handle[]) => void;
+  /** Collapses the tree, leaving the list the palette's width. */
+  onCollapse: () => void;
 }) {
   const [closed, setClosed] = useState<ReadonlySet<FilterChoice>>(new Set());
   const [dropping, setDropping] = useState<Handle | undefined>();
@@ -153,6 +156,18 @@ export function LayerFilterTree({
 
   return (
     <div className="layer-filters">
+      <div className="layer-filters-head">
+        <span>Filters</span>
+        <button
+          type="button"
+          aria-label="Collapse Layer Filter tree"
+          title="Collapse Layer Filter tree"
+          aria-expanded="true"
+          onClick={onCollapse}
+        >
+          «
+        </button>
+      </div>
       <ul ref={ref} role="tree" aria-label="Layer filters" className="layer-filter-tree">
         {nodes.map((n) => {
           const group = n.filter?.filterType === 'group';

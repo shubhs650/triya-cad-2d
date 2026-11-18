@@ -298,7 +298,10 @@ test('sizes, freezes and moves columns from their headers (M5-05 part 5)', async
   // Sizing is not sorting.
   await expect(header(palette, 'Name')).toHaveAttribute('aria-sort', 'ascending');
 
-  // Dragging the Lock header onto On's moves Lock before On, without sorting by Lock.
+  // Dragging the Lock header onto On's moves Lock before On, without sorting by Lock. The filter
+  // tree (M5-07 part 5) is collapsed so that both headers are in view; the list keeps it so.
+  await palette.getByRole('button', { name: 'Collapse Layer Filter tree' }).click();
+  await expect(palette.getByRole('tree', { name: 'Layer filters' })).toBeHidden();
   await wrap.evaluate((w) => (w.scrollLeft = 0));
   const lock = await box(palette, 'Lock');
   const on = await box(palette, 'On');

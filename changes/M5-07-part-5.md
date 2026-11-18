@@ -1,0 +1,1 @@
+- M5-07 part 5 (#557): the layer filter tree. The Layer Properties Manager lists its layers by All, All Used Layers or one of the drawing's filters (Invert filter for the others), makes property filters in Layer Filter Properties and group filters that layers are dragged into, and renames and deletes them, each one undo step.

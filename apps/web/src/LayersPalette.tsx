@@ -1056,24 +1056,41 @@ export function LayersPalette({
         </p>
       )}
       <div className="layer-body">
-        <LayerFilterTree
-          tree={layerFilterTree(filters)}
-          choice={chosen}
-          invert={invert}
-          renaming={renamingFilter}
-          onChoose={(c) => {
-            setChoice(c);
-            setMessage(undefined);
-          }}
-          onInvert={setInvert}
-          onRename={(f, name) => void renameFilter(f, name)}
-          onMenu={(c, at) => {
-            setChoice(c);
-            setFilterMenu({ choice: c, at });
-          }}
-          onAction={onFilterAction}
-          onDropLayers={(f, layers) => void dropLayers(f, layers)}
-        />
+        {columns.treeCollapsed ? (
+          <button
+            type="button"
+            className="layer-filters-expand"
+            aria-label="Expand Layer Filter tree"
+            title="Expand Layer Filter tree"
+            aria-expanded="false"
+            onClick={() => {
+              const { treeCollapsed: _, ...rest } = columns;
+              onColumns(rest);
+            }}
+          >
+            »
+          </button>
+        ) : (
+          <LayerFilterTree
+            tree={layerFilterTree(filters)}
+            choice={chosen}
+            invert={invert}
+            renaming={renamingFilter}
+            onChoose={(c) => {
+              setChoice(c);
+              setMessage(undefined);
+            }}
+            onInvert={setInvert}
+            onRename={(f, name) => void renameFilter(f, name)}
+            onMenu={(c, at) => {
+              setChoice(c);
+              setFilterMenu({ choice: c, at });
+            }}
+            onAction={onFilterAction}
+            onDropLayers={(f, layers) => void dropLayers(f, layers)}
+            onCollapse={() => onColumns({ ...columns, treeCollapsed: true })}
+          />
+        )}
         <div className="layer-table-wrap">
           {needle && <style>{searchCss(needle)}</style>}
           {frozen.size > 0 && <style>{frozenColumnsCss(frozen)}</style>}
