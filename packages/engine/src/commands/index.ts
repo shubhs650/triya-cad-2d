@@ -193,6 +193,7 @@ export type {
 } from './wblock';
 export { wblockCopy, wblockFileName } from './wblock';
 export type { BlockCloseRequest, BlockEditEntry, BlockEditRequest } from './block-editor';
+export type { RefEditAnswer, RefEditEntry, RefEditRequest, RefEditSettings } from './refedit';
 export type {
   HatchDialogAnswer,
   HatchDialogButton,

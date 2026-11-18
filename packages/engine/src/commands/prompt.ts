@@ -43,6 +43,7 @@ import type { AttdefDefineAnswer, AttdefDefineRequest } from './attdef';
 import type { LayerWalkAnswer, LayerWalkRequest } from './layer-walk';
 import type { WriteBlockAnswer, WriteBlockRequest } from './wblock';
 import type { BlockCloseRequest, BlockEditRequest } from './block-editor';
+import type { RefEditAnswer, RefEditRequest } from './refedit';
 import type { XbindRequest } from './xbind';
 import type { LinetypeAnswer, LinetypeRequest } from './linetype';
 import type { XrefAttachAnswer, XrefAttachRequest } from './xref-attach';
@@ -858,6 +859,8 @@ export type DialogRequest =
   | BlockEditRequest
   /** BCLOSE's Block - Changes Not Saved (M5-02 part 1). */
   | BlockCloseRequest
+  /** REFEDIT's Reference Edit (M5-02 part 3). */
+  | RefEditRequest
   /** The Table Cell menu's Table Cell Format (Data Format..., M4-16). */
   | TableCellFormatRequest
   | ObjectGroupingRequest;
@@ -1139,6 +1142,8 @@ export type PromptAnswer =
       readonly bedit?: { readonly name: string };
       /** Block - Changes Not Saved's choice (BCLOSE, M5-02 part 1). */
       readonly bclose?: 'save' | 'discard';
+      /** The reference and settings the Reference Edit dialog's OK starts with (REFEDIT). */
+      readonly refedit?: RefEditAnswer;
       /** The Table Cell Format dialog's data format as OK closed it (M4-16). */
       readonly tableDataFormat?: TableDataFormat;
       /** The Object Selection Filters' list as Apply (or Add Selected Object) closed it. */

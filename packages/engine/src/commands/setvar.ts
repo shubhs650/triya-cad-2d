@@ -147,6 +147,8 @@ async function computed(
       return { value: isPaperSpace(ctx.model, ctx.space) ? 0 : 1 };
     case 'BLOCKEDITOR':
       return { value: ctx.blockEditor.block === undefined ? 0 : 1 };
+    case 'REFEDITNAME':
+      return { value: ctx.refEdit.session?.name ?? '' };
     case 'AREA':
       return { value: inquiryResults(ctx.model).area };
     case 'PERIMETER':

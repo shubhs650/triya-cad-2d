@@ -48,6 +48,7 @@ export * from './draw-order';
 export * from './mleader';
 export * from './mleader-blocks';
 export * from './arrowhead-blocks';
+export * from './refedit';
 export {
   writeDimensionBlock,
   type DimensionRegenerator,
