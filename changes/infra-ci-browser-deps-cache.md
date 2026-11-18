@@ -1,0 +1,1 @@
+- infra (#547): Playwright's browser packages (its extra fonts) install from a cache of their .deb files, keyed on runner image and Playwright version, instead of from an Ubuntu mirror that once took 4 min 22 s on CI's critical path; apt with retries remains the fallback.
