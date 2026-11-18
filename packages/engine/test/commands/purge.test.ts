@@ -559,6 +559,12 @@ describe('The Purge dialog', () => {
     await v.bus.script(['PURGE']);
     await answer(v.bus, { settings: noConfirm, run: 'checked', checked: [] });
     expect(dialog(v.bus).note).toBe('Nothing was purged.');
+    // A view change alone purges nothing; unnamed objects checked with none left say nothing.
+    await answer(v.bus, { view: 'inUse' });
+    expect(dialog(v.bus).view).toBe('inUse');
+    expect(dialog(v.bus).note).toBeUndefined();
+    await answer(t.bus, { run: 'checked', checked: [] });
+    expect(dialog(t.bus).note).toBe('Nothing was purged.');
   });
 
   it('confirms each item: Purge this item, Skip this item, Purge all items', async () => {
@@ -639,7 +645,14 @@ describe('The Purge dialog', () => {
     const walls = t.model.entityByHandle('21')!.id;
     expect(t.bus.selection).toEqual([walls]);
     expect(t.requests).toContainEqual({ op: 'objects', ids: [walls] });
-    // The next PURGE opens on the view it closed on, with its options.
+    // An item no object uses selects nothing, and the view stays.
+    const asked = t.requests.length;
+    await t.bus.script(['PURGE']);
+    await answer(t.bus, { view: 'inUse', details: DASHED }, 'select');
+    expect(t.bus.selection).toEqual([]);
+    expect(t.log.at(-1)).toBe('0 found.');
+    expect(t.requests.slice(asked).some((r) => r.op === 'objects')).toBe(false);
+    // The next PURGE opens on Purgeable Items, with the options it closed with.
     await t.bus.script(['PURGE']);
     expect(dialog(t.bus).view).toBe('purgeable');
     await answer(t.bus, { settings: { ...noConfirm, nested: true } }, 'ok');
