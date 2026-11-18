@@ -10,14 +10,17 @@
 //
 // M5-02 part 2: a name no block has makes a new, empty block, which opens in the editor.
 //
-// Left out (block-editor.ts says why): <Current Drawing>, and Help.
+// M5-02 part 4: <Current Drawing> heads the list (no preview of it), and Block - Changes Not Saved
+// names the block BEDIT opens next instead of closing ("Discard the changes and open X").
+//
+// Left out: Help.
 //
 // M5-02 part 3: REFEDIT's Reference Edit (AutoCAD Help, "Reference Edit Dialog Box"): the
 // Identify Reference tab (the Reference name tree, from the reference picked to the one nested
 // deepest under the pick, Preview, Path, and Automatically select all nested objects or Prompt to
 // select nested objects) and the Settings tab (Create unique layer, style, and block names,
 // Display attribute definitions for editing, Lock objects not in working set).
-import type { DialogRequest, PromptAnswer } from '@triya/engine';
+import { CURRENT_DRAWING, type DialogRequest, type PromptAnswer } from '@triya/engine';
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Modal } from './AttributeDialogs';
 import { StylePreview } from './StylePreview';
@@ -34,7 +37,17 @@ const PREVIEW = { width: 160, height: 120 };
 
 /** BEDIT's Edit Block Definition dialog. */
 export function EditBlockDefinitionDialog({ doc, request }: { doc: number; request: EditRequest }) {
-  const { blocks } = request;
+  // <Current Drawing> above the blocks (M5-02 part 4): the drawing itself, without a preview.
+  const blocks = useMemo(
+    () =>
+      request.currentDrawing === undefined
+        ? request.blocks
+        : [
+            { name: CURRENT_DRAWING, handle: request.currentDrawing, description: '' },
+            ...request.blocks,
+          ],
+    [request.blocks, request.currentDrawing],
+  );
   const [name, setName] = useState(request.name);
   const listId = useId();
   const nameId = useId();
@@ -42,7 +55,10 @@ export function EditBlockDefinitionDialog({ doc, request }: { doc: number; reque
   const picked = blocks.findIndex((b) => b.name.toUpperCase() === name.trim().toUpperCase());
   const block = picked >= 0 ? blocks[picked] : undefined;
   const preview = useMemo(
-    () => (block ? { kind: 'block' as const, block: block.handle } : undefined),
+    () =>
+      block && block.name !== CURRENT_DRAWING
+        ? { kind: 'block' as const, block: block.handle }
+        : undefined,
     [block],
   );
 
@@ -157,7 +173,9 @@ export function BlockChangesNotSavedDialog({
           Save the changes to {request.name}
         </button>
         <button type="button" onClick={() => choose('discard')}>
-          Discard the changes and close the Block Editor
+          {request.next === undefined
+            ? 'Discard the changes and close the Block Editor'
+            : `Discard the changes and open ${request.next}`}
         </button>
       </div>
       <div className="cad-dialog-buttons">

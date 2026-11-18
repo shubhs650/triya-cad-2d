@@ -19,14 +19,23 @@
 // point 0,0, the drawing's units) and opens it, as AutoCAD does ("Block to create or edit");
 // making it counts as an edit not saved, so BCLOSE's Discard takes the block away again and
 // BSAVE keeps it (AutoCAD keeps a new block only once it is saved).
-// Not yet (later M5-02 parts): <Current Drawing>, opening another block while the editor is
-// open, and the authoring palettes and parameters (dynamic block authoring is a PRD non-goal).
+//
+// M5-02 part 4: BEDIT inside the editor (AutoCAD's Block Editor tab, Open/Save panel, "Edit
+// Block") opens the dialog on the block shown; another block replaces it, asking first, when
+// there are edits not saved, whether to save or discard them (AutoCAD Help, "Block - Changes Not
+// Saved Dialog Box": shown when the editor closes "or you open another block definition");
+// Cancel there leaves the block shown open. The dialog offers <Current Drawing> above the
+// blocks: the drawing itself in the editor, its model space, where BASE sets INSBASE as it does
+// outside the editor and BCLOSE's Discard takes back every change made since. -BEDIT takes block
+// names only ("<Current Drawing>" is not one); AutoCAD's documentation names it for the dialog.
+// Not yet: the authoring palettes and parameters (dynamic block authoring is a PRD non-goal).
 // REFEDIT (M5-02 part 3, refedit.ts) edits a block in place instead; the two refuse each other.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { Handle } from '../model/handle';
 import type { BlockTableRecord } from '../model/types';
 import { blockNameProblem, blockNamed, defineBlock, insertableBlocks } from '../edit/blocks';
+import { modelSpaceOf } from './bus';
 import { wcmatch } from './modify/attributes';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -44,11 +53,19 @@ export interface BlockEditEntry {
 export interface BlockEditRequest {
   readonly type: 'bedit';
   readonly blocks: readonly BlockEditEntry[];
-  /** The block the list opens on. */
+  /** The block the list opens on (`CURRENT_DRAWING` for the drawing itself). */
   readonly name: string;
+  /**
+   * The drawing's model space, offered above the blocks as <Current Drawing> (M5-02 part 4):
+   * OK with `CURRENT_DRAWING` opens the drawing itself in the editor.
+   */
+  readonly currentDrawing?: Handle;
   /** Why the last OK opened nothing. */
   readonly note?: string;
 }
+
+/** The Edit Block Definition entry that opens the drawing itself (M5-02 part 4). */
+export const CURRENT_DRAWING = '<Current Drawing>';
 
 /**
  * BCLOSE's Block - Changes Not Saved question: answers `bclose` 'save' or 'discard'; Cancel
@@ -57,6 +74,11 @@ export interface BlockEditRequest {
 export interface BlockCloseRequest {
   readonly type: 'bclose';
   readonly name: string;
+  /**
+   * The block BEDIT opens next, when it asks before replacing the block shown (M5-02 part 4):
+   * Discard then opens it instead of closing the editor.
+   */
+  readonly next?: string;
 }
 
 /** The blocks the editor opens: named ones, not a layout's, an xref's or an xref's dependent. */
@@ -75,9 +97,17 @@ function editRefusal(ctx: CommandContext, name: string): string | undefined {
   return undefined;
 }
 
+/** The name the editor shows `block` by: <Current Drawing> for model space. */
+const editorName = (ctx: CommandContext, block: Handle): string =>
+  block === modelSpaceOf(ctx.model)
+    ? CURRENT_DRAWING
+    : (ctx.model.tables.blockRecords.get(block)?.name ?? '');
+
 /** The block the editor shows, by name, for messages. */
-const shownName = (ctx: CommandContext): string =>
-  ctx.model.tables.blockRecords.get(ctx.blockEditor.block!)?.name ?? '';
+const shownName = (ctx: CommandContext): string => editorName(ctx, ctx.blockEditor.block!);
+
+/** Whether `name` is <Current Drawing> (as the dialog answers it, any case). */
+const isCurrentDrawing = (name: string) => name.toUpperCase() === CURRENT_DRAWING.toUpperCase();
 
 /** The block a reference selected first names (BEDIT on a selected block reference). */
 function selectedBlock(
@@ -90,20 +120,43 @@ function selectedBlock(
   return blocks.find((r) => r.handle === g.block)?.name;
 }
 
-/** Shows the block named `name` in the Block Editor, making an empty one if there is none. */
-async function open(ctx: CommandContext, name: string): Promise<void> {
-  let r = blockNamed(ctx.model, name);
-  if (r) ctx.blockEditor.open(r.handle);
+/**
+ * Shows the block named `name` in the Block Editor (the drawing's model space for
+ * <Current Drawing>), making an empty block if there is none. Inside the editor, another block
+ * replaces the one shown, after asking about edits not saved (Cancel keeps the one shown).
+ */
+async function* open(ctx: CommandContext, name: string): Sub<void> {
+  const shown = ctx.blockEditor.block;
+  const target = isCurrentDrawing(name)
+    ? modelSpaceOf(ctx.model)
+    : blockNamed(ctx.model, name)?.handle;
+  if (shown !== undefined) {
+    // The block shown: the editor stays as it is.
+    if (target === shown) return;
+    let discard = false;
+    if (ctx.blockEditor.unsaved) {
+      const next = target === undefined ? name : editorName(ctx, target);
+      const a = yield ctx.prompt.dialog({
+        message: 'Block - Changes Not Saved',
+        escape: true,
+        dialog: { type: 'bclose', name: shownName(ctx), next },
+      });
+      if (a.kind !== 'dialog' || (a.bclose !== 'save' && a.bclose !== 'discard')) return;
+      discard = a.bclose === 'discard';
+    }
+    ctx.blockEditor.close(discard);
+  }
+  let block = target;
+  if (block !== undefined && ctx.model.hasBlock(block)) ctx.blockEditor.open(block);
   else {
-    let block = '';
+    // A new block (or one a Discard just took away: made again under the same name).
     const made = ctx.edit((b) => {
       block = defineBlock(b, ctx.model, { name, base: { x: 0, y: 0 }, ids: [] }).block;
     });
-    ctx.blockEditor.open(block, made);
-    r = ctx.model.tables.blockRecords.get(block)!;
+    ctx.blockEditor.open(block!, made);
   }
   // The app shows the block; without one (a script, a test) the engine draws in it all the same.
-  await ctx.view.request({ op: 'blockEditor', block: r.handle, name: r.name });
+  await ctx.view.request({ op: 'blockEditor', block: block!, name: editorName(ctx, block!) });
 }
 
 async function* listBlocks(ctx: CommandContext): Sub<void> {
@@ -130,14 +183,20 @@ async function* dashBedit(ctx: CommandContext): Sub<void> {
       ctx.message(refusal);
       continue;
     }
-    await open(ctx, name);
+    yield* open(ctx, name);
     return;
   }
 }
 
 async function* beditDialog(ctx: CommandContext): Sub<void> {
   const blocks = editableBlocks(ctx);
-  let name = selectedBlock(ctx, blocks) ?? blocks[0]?.name ?? '';
+  const shown = ctx.blockEditor.block;
+  const currentDrawing = modelSpaceOf(ctx.model);
+  let name =
+    selectedBlock(ctx, blocks) ??
+    (shown !== undefined ? editorName(ctx, shown) : undefined) ??
+    blocks[0]?.name ??
+    CURRENT_DRAWING;
   let note: string | undefined;
   for (;;) {
     const a = yield ctx.prompt.dialog({
@@ -150,14 +209,15 @@ async function* beditDialog(ctx: CommandContext): Sub<void> {
           description: ctx.model.blocks.get(r.handle)?.description ?? '',
         })),
         name,
+        currentDrawing,
         ...(note !== undefined && { note }),
       },
     });
     if (a.kind !== 'dialog' || a.action !== 'ok' || typeof a.bedit?.name !== 'string') return;
     name = a.bedit.name.trim();
-    note = editRefusal(ctx, name);
+    note = isCurrentDrawing(name) ? undefined : editRefusal(ctx, name);
     if (note) continue;
-    await open(ctx, name);
+    yield* open(ctx, name);
     return;
   }
 }
@@ -168,10 +228,6 @@ export function beditCommand(): CommandDef {
     dashVariant: true,
     usesSelection: 'before',
     async *run(ctx) {
-      if (ctx.blockEditor.block !== undefined) {
-        ctx.message('** The Block Editor is already open **');
-        return;
-      }
       if (ctx.refEdit.session) {
         ctx.message('** BEDIT is not allowed while a reference is edited in place **');
         return;

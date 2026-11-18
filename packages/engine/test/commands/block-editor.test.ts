@@ -22,7 +22,7 @@ import {
   type ViewReply,
   type ViewRequest,
 } from '../../src/index';
-import { MODEL_SPACE } from '../model/fixtures';
+import { MODEL_SPACE, sampleModel } from '../model/fixtures';
 import { setup } from './edit-harness';
 
 const B = '50';
@@ -134,8 +134,9 @@ describe('BEDIT', () => {
     expect(await t.variable('BLOCKEDITOR')).toMatch(/BLOCKEDITOR = 1 /);
     // TILEMODE: the editor works as model space does.
     expect(await t.variable('TILEMODE')).toContain('<1>');
+    // Inside the editor -BEDIT opens another block (M5-02 part 4).
     await t.bus.script(['-BEDIT']);
-    expect(t.log.at(-1)).toBe('** The Block Editor is already open **');
+    expect(t.bus.promptText).toBe('Enter block name or [?]:');
   });
 
   it('Enter at -BEDIT ends it', async () => {
@@ -321,5 +322,195 @@ describe('commands in the Block Editor', () => {
     await t.bus.script(['-BEDIT', 'B', 'BCLOSE']);
     const ref = t.model.entity(t.id('40'))!.geom as InsertGeometry;
     expect(ref.block).toBe(B);
+  });
+});
+
+// M5-02 part 4: BEDIT run inside the Block Editor opens another block (AutoCAD's Block Editor
+// "Edit Block" button and "Block - Changes Not Saved Dialog Box": shown when the editor closes
+// or another block opens with changes not saved), and the dialog's <Current Drawing>, which
+// opens the drawing itself in the editor (AutoCAD Help, "Edit Block Definition Dialog Box").
+describe('BEDIT inside the editor (M5-02 part 4)', () => {
+  /** The drawing with a second block, DOOR (one circle), saved, and the editor closed. */
+  async function twoBlocks() {
+    const t = await editor();
+    await t.bus.script(['-BEDIT', 'DOOR', 'CIRCLE', '0,0', '1', 'BSAVE', 'BCLOSE']);
+    const door = [...t.model.tables.blockRecords.values()].find((r) => r.name === 'DOOR')!;
+    return { ...t, door: door.handle };
+  }
+
+  it('opens Edit Block Definition on the block shown; another block opens at once when nothing is unsaved', async () => {
+    const t = await twoBlocks();
+    await t.bus.script(['-BEDIT', 'B', 'BEDIT']);
+    const d = t.dialog() as Extract<DialogRequest, { type: 'bedit' }>;
+    expect(d.type).toBe('bedit');
+    expect(d.name).toBe('B');
+    expect(d.blocks.map((b) => b.name)).toEqual(['B', 'DOOR']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: 'door' } });
+    expect(t.bus.promptText).toBe('Command:');
+    expect(t.editorRequests().at(-1)).toEqual({ op: 'blockEditor', block: t.door, name: 'DOOR' });
+    await t.bus.script(['LINE', '0,0', '0,3', '']);
+    expect(t.contents(t.door)).toHaveLength(2);
+    expect(t.contents()).toEqual(['51', '52']);
+  });
+
+  it('the block already shown keeps the editor as it is', async () => {
+    const t = await twoBlocks();
+    await t.bus.script(['-BEDIT', 'B', 'CIRCLE', '3,0', '1', 'BEDIT']);
+    const before = t.editorRequests().length;
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: 'B' } });
+    expect(t.dialog()).toBeUndefined();
+    expect(t.editorRequests()).toHaveLength(before);
+    // The edit is still not saved: BCLOSE asks.
+    await t.bus.submit('BCLOSE');
+    expect(t.dialog()).toEqual({ type: 'bclose', name: 'B' });
+  });
+
+  it('asks about edits not saved first: Discard takes them back and opens the other block', async () => {
+    const t = await twoBlocks();
+    await t.bus.script(['-BEDIT', 'B', 'CIRCLE', '3,0', '1', 'BEDIT']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: 'DOOR' } });
+    expect(t.dialog()).toEqual({ type: 'bclose', name: 'B', next: 'DOOR' });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bclose: 'discard' });
+    expect(t.contents()).toEqual(['51', '52']);
+    expect(t.editorRequests().at(-1)).toEqual({ op: 'blockEditor', block: t.door, name: 'DOOR' });
+    // Nothing is unsaved in DOOR: BCLOSE closes at once.
+    await t.bus.submit('BCLOSE');
+    expect(t.dialog()).toBeUndefined();
+    expect(await t.variable('BLOCKEDITOR')).toMatch(/BLOCKEDITOR = 0 /);
+    // The switch is one undo step: U puts the circle back in B.
+    await t.bus.submit('U');
+    expect(t.log.at(-1)).toBe('BEDIT');
+    expect(t.contents()).toHaveLength(3);
+  });
+
+  it('Save keeps the edits and opens the other block; Cancel leaves the block shown open', async () => {
+    const t = await twoBlocks();
+    await t.bus.script(['-BEDIT', 'B', 'CIRCLE', '3,0', '1', 'BEDIT']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: 'DOOR' } });
+    await t.bus.cancel();
+    expect(t.bus.promptText).toBe('Command:');
+    expect(t.editorRequests().at(-1)).toEqual({ op: 'blockEditor', block: B, name: 'B' });
+    await t.bus.submit('BEDIT');
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: 'DOOR' } });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bclose: 'save' });
+    expect(t.contents()).toHaveLength(3);
+    expect(t.editorRequests().at(-1)).toEqual({ op: 'blockEditor', block: t.door, name: 'DOOR' });
+    await t.bus.submit('BCLOSE');
+    expect(t.dialog()).toBeUndefined();
+    expect(t.contents()).toHaveLength(3);
+  });
+
+  it('-BEDIT inside the editor switches too, and a new name makes the block it opens', async () => {
+    const t = await twoBlocks();
+    await t.bus.script(['-BEDIT', 'B', 'CIRCLE', '3,0', '1', '-BEDIT', 'WINDOW']);
+    expect(t.dialog()).toEqual({ type: 'bclose', name: 'B', next: 'WINDOW' });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bclose: 'save' });
+    const w = [...t.model.tables.blockRecords.values()].find((r) => r.name === 'WINDOW')!;
+    expect(t.editorRequests().at(-1)).toEqual({
+      op: 'blockEditor',
+      block: w.handle,
+      name: 'WINDOW',
+    });
+    // The new block is not saved: discarding it takes it away, the editor closes.
+    await t.bus.submit('BCLOSE');
+    expect(t.dialog()).toEqual({ type: 'bclose', name: 'WINDOW' });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bclose: 'discard' });
+    expect([...t.model.tables.blockRecords.values()].some((r) => r.name === 'WINDOW')).toBe(false);
+    expect(t.contents()).toHaveLength(3);
+  });
+
+  it('a block made in the editor and taken back by Discard is made again, empty, to open', async () => {
+    const t = await editor();
+    await t.bus.script(['-BEDIT', 'B', 'BLOCK']);
+    const d = t.dialog() as Extract<DialogRequest, { type: 'block' }>;
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      block: { settings: { ...d.settings, name: 'PART', objectsOnScreen: true } },
+    });
+    await t.bus.answer({ kind: 'selection', ids: [t.id('51')] });
+    await t.bus.script(['-BEDIT', 'PART']);
+    expect(t.dialog()).toEqual({ type: 'bclose', name: 'B', next: 'PART' });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bclose: 'discard' });
+    const part = [...t.model.tables.blockRecords.values()].find((r) => r.name === 'PART')!;
+    expect(t.contents(part.handle)).toEqual([]);
+    expect(t.contents()).toEqual(['51', '52']);
+    expect(t.editorRequests().at(-1)).toEqual({
+      op: 'blockEditor',
+      block: part.handle,
+      name: 'PART',
+    });
+  });
+});
+
+describe('<Current Drawing> (M5-02 part 4)', () => {
+  it('is offered first; OK opens the drawing itself in the editor, where commands draw in model space', async () => {
+    const t = await editor();
+    await t.bus.submit('BEDIT');
+    const d = t.dialog() as Extract<DialogRequest, { type: 'bedit' }>;
+    expect(d.currentDrawing).toBe(MODEL_SPACE);
+    // The blocks themselves are listed as before.
+    expect(d.blocks.map((b) => b.name)).toEqual(['B']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: '<current drawing>' } });
+    expect(t.editorRequests()).toEqual([
+      { op: 'blockEditor', block: MODEL_SPACE, name: '<Current Drawing>' },
+    ]);
+    expect(await t.variable('BLOCKEDITOR')).toMatch(/BLOCKEDITOR = 1 /);
+    await t.bus.script(['LINE', '0,0', '0,3', '']);
+    expect(t.model.blockEntities(MODEL_SPACE)).toHaveLength(4);
+    expect(t.contents()).toEqual(['51', '52']);
+  });
+
+  it("BASE sets the drawing's INSBASE; BCLOSE asks about the drawing's changes, Discard takes them back", async () => {
+    const t = await editor();
+    await t.bus.submit('BEDIT');
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: '<Current Drawing>' } });
+    await t.bus.script(['BASE', '2,3', 'LINE', '0,0', '0,3', '']);
+    expect(t.model.header.get('$INSBASE')).toEqual({ x: 2, y: 3, z: 0 });
+    expect(t.model.blocks.get(MODEL_SPACE)!.basePoint).toEqual({ x: 0, y: 0 });
+    await t.bus.submit('BCLOSE');
+    expect(t.dialog()).toEqual({ type: 'bclose', name: '<Current Drawing>' });
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bclose: 'discard' });
+    expect(t.model.blockEntities(MODEL_SPACE)).toHaveLength(3);
+    expect(t.model.header.get('$INSBASE')).toBeUndefined();
+    expect(t.editorRequests().at(-1)).toEqual({ op: 'blockEditor' });
+  });
+
+  it('BSAVE says the drawing is kept; BEDIT from a block opens it and back', async () => {
+    const t = await editor();
+    await t.bus.script(['-BEDIT', 'B', 'BEDIT']);
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: '<Current Drawing>' } });
+    expect(t.editorRequests().at(-1)).toEqual({
+      op: 'blockEditor',
+      block: MODEL_SPACE,
+      name: '<Current Drawing>',
+    });
+    await t.bus.script(['CIRCLE', '9,9', '1', 'BSAVE']);
+    expect(t.log.at(-1)).toBe('Block "<Current Drawing>" saved.');
+    // The dialog opens on the drawing while it is shown.
+    await t.bus.submit('BEDIT');
+    expect((t.dialog() as Extract<DialogRequest, { type: 'bedit' }>).name).toBe(
+      '<Current Drawing>',
+    );
+    await t.bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: 'B' } });
+    expect(t.editorRequests().at(-1)).toEqual({ op: 'blockEditor', block: B, name: 'B' });
+  });
+
+  it('the dialog opens on it in a drawing without blocks', async () => {
+    const bus = new PromptBus({ model: sampleModel(), registry: builtinCommands() });
+    await bus.submit('BEDIT');
+    const d = (bus.prompt as { dialog?: DialogRequest }).dialog as Extract<
+      DialogRequest,
+      { type: 'bedit' }
+    >;
+    expect(d.blocks).toEqual([]);
+    expect(d.name).toBe('<Current Drawing>');
+  });
+
+  it('-BEDIT does not take it: it is not a block name', async () => {
+    const t = await editor();
+    await t.bus.script(['-BEDIT', '<Current Drawing>']);
+    expect(t.log.at(-1)).toBe('Invalid block name.');
+    expect(t.bus.promptText).toBe('Enter block name or [?]:');
   });
 });
