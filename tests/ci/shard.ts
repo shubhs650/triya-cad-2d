@@ -1,4 +1,4 @@
-// Duration-balanced Vitest sharding for CI (DEC-053, roadmap M2-58).
+// Duration-balanced Vitest sharding for CI (DEC-053, roadmap M2-58; DEC-075).
 //
 // CI splits `pnpm test` over several runners with `vitest run --shard=i/n`. Vitest's own sharding
 // orders files by a hash of their path and cuts the list into equal counts, which put 1 691 s of
@@ -8,14 +8,18 @@
 // the merged report (`pnpm test:merge`) then checks that all of them passed and applies the
 // coverage gates once, over the whole suite.
 //
-// Durations live in tests/ci/vitest-timings.json (seconds per file on a CI runner). A stale or
-// missing entry only makes the split less even; it can never drop or repeat a file. Refresh it
+// Durations live in tests/ci/vitest-timings.json (seconds per file on a CI runner). In CI each
+// shard also reads TRIYA_VITEST_TIMINGS, the durations of this repository's last green PR runs
+// that `detect hot-path changes` picked for the whole run (DEC-075), so files added since the
+// committed refresh are weighed by what they took rather than guessed. A stale or missing entry
+// only makes the split less even; it can never drop or repeat a file. Refresh the committed file
 // with `pnpm test:timings` (TESTING.md §1).
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { BaseSequencer, type TestSpecification } from 'vitest/node';
+import { balance, overlay, type Timings } from './balance.ts';
 
-export type Timings = Readonly<Record<string, number>>;
+export type { Timings };
 
 /** Startup cost every file pays (import and collection are not in its recorded duration). */
 const PER_FILE_S = 0.5;
@@ -39,24 +43,20 @@ export function balancedShards(
   timings: Timings,
   count: number,
 ): string[][] {
-  if (!Number.isInteger(count) || count < 1) throw new Error(`shard count ${count}`);
-  const unique = [...new Set(files)];
-  const order = unique
-    .map((file) => ({ file, weight: fileWeight(file, timings) }))
-    .sort((a, b) => b.weight - a.weight || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
-  const groups = Array.from({ length: count }, () => ({ files: [] as string[], load: 0 }));
-  for (const { file, weight } of order) {
-    let lightest = groups[0]!;
-    for (const g of groups) if (g.load < lightest.load) lightest = g;
-    lightest.files.push(file);
-    lightest.load += weight;
-  }
-  return groups.map((g) => g.files);
+  return balance(files, count, (file) => fileWeight(file, timings));
 }
 
-export function loadTimings(): Timings {
+/** The committed durations (tests/ci/vitest-timings.json). */
+export function committedTimings(): Timings {
   const file = path.join(import.meta.dirname, 'vitest-timings.json');
   return JSON.parse(readFileSync(file, 'utf8')) as Timings;
+}
+
+/** What the shards split by: the committed durations, overlaid with CI's fresh ones if any. */
+export function loadTimings(fresh = process.env['TRIYA_VITEST_TIMINGS']): Timings {
+  const measured =
+    fresh && existsSync(fresh) ? (JSON.parse(readFileSync(fresh, 'utf8')) as Timings) : undefined;
+  return overlay(committedTimings(), measured);
 }
 
 export default class BalancedSequencer extends BaseSequencer {

@@ -22,6 +22,8 @@ export default defineConfig({
     ['list'],
     ...(process.env['CI'] ? [['html', { open: 'never' }] as const] : []),
     ['./tests/e2e/fidelity/report.ts'],
+    // Per-file durations for CI's balanced UI shards (DEC-075); writes only with TRIYA_PW_TIMINGS.
+    ['./tests/e2e/timings-reporter.ts'],
   ],
   outputDir: 'test-results',
   projects: [suite('fidelity'), suite('offline'), suite('ui'), suite('perf'), suite('io')],

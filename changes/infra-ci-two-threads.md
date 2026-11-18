@@ -1,0 +1,1 @@
+- infra (#546): CI per PR cut for two task threads within 8 runners a run (DEC-075): four duration-balanced unit shards and duration-balanced UI shards, both split by the last green runs' timings; offline and perf queue behind lint on one runner; a parallel ezdxf audit; and new checks that every Vitest and UI file ran.

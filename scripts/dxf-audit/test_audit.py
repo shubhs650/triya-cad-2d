@@ -239,6 +239,33 @@ class EzdxfLimitationTest(unittest.TestCase):
             self.assertTrue(all(gate.ezdxf_limitation(path, x) is None for x in findings))
 
 
+def finding_per_name(path: Path) -> list[gate.Finding]:
+    """A picklable fake audit for the process pool: one finding naming the file."""
+    return [gate.Finding("audit", len(path.name), path.name)]
+
+
+class AuditAllTest(unittest.TestCase):
+    """DEC-075: the gate audits every save on a process pool first; the findings must not change."""
+
+    def test_parallel_findings_equal_one_at_a_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = [Path(tmp) / f"s{i}.dxf" for i in range(40)]
+            for p in paths:
+                p.write_text("")
+            results = gate.audit_all(paths + paths[:3], audit=finding_per_name, workers=3)
+            self.assertEqual(len(results), 40)
+            lookup = gate.cached(results, audit=lambda p: self.fail(f"audited again: {p}"))
+            for p in paths:
+                self.assertEqual(lookup(p), finding_per_name(p))
+                # The same file named another way is the same entry.
+                self.assertEqual(lookup(Path(tmp) / "." / p.name), finding_per_name(p))
+
+    def test_a_file_not_audited_ahead_is_audited_when_asked(self) -> None:
+        lookup = gate.cached({}, audit=finding_per_name)
+        self.assertEqual(lookup(Path("late.dxf")), finding_per_name(Path("late.dxf")))
+        self.assertEqual(gate.audit_all([], audit=finding_per_name), {})
+
+
 @unittest.skipUnless(importlib.util.find_spec("ezdxf"), "ezdxf not installed")
 class ViewCategoriesTest(unittest.TestCase):
     def test_reads_a_views_category_from_its_xrecord(self) -> None:
