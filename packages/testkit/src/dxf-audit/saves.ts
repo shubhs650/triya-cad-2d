@@ -63,6 +63,8 @@ export type AuditSaveKind =
   | 'attdef'
   // ATTREDEF of the title-block test drawing's block (M5-03 part 3).
   | 'attredef'
+  // Insert Field in ATTDEF's dialog and EATTEDIT on the title-block test drawing (M5-03 part 4).
+  | 'attfield'
   // A bundled template as it is, and a new drawing made from it, drawn in, its title block
   // filled in and saved (M5-10).
   | 'template'

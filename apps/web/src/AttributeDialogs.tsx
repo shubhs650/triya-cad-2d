@@ -81,6 +81,7 @@ import { ImageAdjustDialog, type ImageAdjustPreview } from './ImageAdjustDialog'
 import { ImageAttachDialog } from './ImageAttachDialog';
 import { PdfAttachDialog, type PdfAttachFiles } from './PdfAttachDialog';
 import { XrefAttachDialog, type XrefFiles } from './XrefAttachDialog';
+import { FieldValueInput, fieldValueShown } from './FieldValueInput';
 
 /** Where no app hands over linetype files (tests): no files, none kept. */
 const NO_LINETYPE_FILES: LinetypeFiles = {
@@ -497,7 +498,12 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
                   >
                     <td>{r.tag}</td>
                     <td>{r.prompt}</td>
-                    <td>{shownValue(r.value, r.multiline).replace(/\n/g, ' ¶ ')}</td>
+                    <td>
+                      {shownValue(fieldValueShown(r.value, r.fields), r.multiline).replace(
+                        /\n/g,
+                        ' ¶ ',
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -505,19 +511,24 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
             {row && (
               <label key={row.handle} className="cad-dialog-field eattedit-value">
                 <span>Value:</span>
-                {row.multiline ? (
-                  <textarea
-                    rows={3}
-                    defaultValue={shownValue(row.value, true)}
-                    onChange={(e) => set({ value: storedValue(e.target.value, true) })}
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    defaultValue={row.value}
-                    onChange={(e) => set({ value: storedValue(e.target.value, false) })}
-                  />
-                )}
+                {/* Its fields shown by their values; Insert Field and Edit Field open the Field
+                    dialog (M5-03 part 4), the engine applying the field as Apply does. */}
+                <FieldValueInput
+                  value={row.value}
+                  {...(row.fields && { fields: row.fields })}
+                  multiline={row.multiline}
+                  onChange={(value) => set({ value })}
+                  onField={(marked) => {
+                    const others = patches().filter((p) => p.handle !== row.handle);
+                    const own = patches().find((p) => p.handle === row.handle);
+                    answer(doc, {
+                      kind: 'dialog',
+                      action: 'field',
+                      target: row.handle,
+                      attributes: [...others, { ...own, handle: row.handle, value: marked }],
+                    });
+                  }}
+                />
                 {row.multiline && (
                   <button
                     type="button"
@@ -864,25 +875,13 @@ function EditAttributes({ doc, request }: { doc: number; request: Attedit }) {
           return (
             <label key={a.handle} className="cad-dialog-field">
               <span>{a.prompt}</span>
-              {a.multiline ? (
-                <textarea
-                  rows={2}
-                  defaultValue={shownValue(values[i]!, true)}
-                  onChange={(e) => {
-                    const v = storedValue(e.target.value, true);
-                    setValues((vs) => vs.map((x, k) => (k === i ? v : x)));
-                  }}
-                />
-              ) : (
-                <input
-                  type="text"
-                  defaultValue={values[i]}
-                  onChange={(e) => {
-                    const v = storedValue(e.target.value, false);
-                    setValues((vs) => vs.map((x, k) => (k === i ? v : x)));
-                  }}
-                />
-              )}
+              {/* A value's fields shown by their values, each edited whole (M5-03 part 4). */}
+              <FieldValueInput
+                value={values[i]!}
+                {...(a.fields && { fields: a.fields })}
+                multiline={a.multiline}
+                onChange={(v) => setValues((vs) => vs.map((x, k) => (k === i ? v : x)))}
+              />
             </label>
           );
         })}

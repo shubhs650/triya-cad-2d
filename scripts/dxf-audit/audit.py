@@ -91,6 +91,10 @@ FIXTURE_SAVES = (
     # ATTREDEF of the title-block test drawing's block from new objects (M5-03 part 3,
     # packages/testkit/src/attributes/attredef.test.ts).
     ("fixtures/attributes/title-block.dxf", "attredef"),
+    # Fields from Insert Field in ATTDEF's dialog (a block of the definition and a reference)
+    # and in EATTEDIT on the title-block test drawing (M5-03 part 4,
+    # packages/testkit/src/attributes/attribute-fields.test.ts).
+    ("fixtures/attributes/title-block.dxf", "attfield"),
     # LINETYPE's loads (text linetypes too), reload and delete on ezdxf's colors.dxf (M5-08
     # part 1, packages/testkit/src/layers/linetype-load.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "linetype"),

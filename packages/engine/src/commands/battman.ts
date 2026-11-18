@@ -50,11 +50,20 @@ import {
   type DefinitionChanges,
 } from '../edit/attribute-definitions';
 import type { CommandContext, CommandDef } from './command';
-import type { BattmanAnswer, DialogRequest, Prompt, PromptAnswer } from './prompt';
+import type {
+  AttributeDefinitionPatch,
+  BattmanAnswer,
+  BattmanResume,
+  DialogRequest,
+  Prompt,
+  PromptAnswer,
+} from './prompt';
+import { textWithFields, type FieldContext } from '../edit/fields';
+import { askMarkedField, fieldContextOf, fieldValuesOf } from './draw/field';
 import type { TextOutline } from './view/host';
 import { modelSpaceOf } from './bus';
-import { plotStyleChoices, records } from './modify/attributes';
-import type { AttdefGeometry } from '../model/types';
+import { plotStyleChoices, records, valueEntry } from './modify/attributes';
+import type { AttdefGeometry, DrawingField } from '../model/types';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -93,6 +102,7 @@ function request(
   blocks: readonly BlockTableRecord[],
   block: Handle,
   selected: Handle | undefined,
+  resume?: BattmanResume,
 ): DialogRequest {
   const attributes = definitionsOf(ctx.model, block).map(definitionManagerEntry);
   const refs = referencesTo(ctx.model, block);
@@ -105,6 +115,7 @@ function request(
     block,
     attributes,
     ...(keep && { selected }),
+    ...(resume && { resume }),
     inDrawing: refs.length,
     inSpace: refs.filter((id) => ctx.model.entity(id)!.owner === ctx.space).length,
     space: spaceName(ctx),
@@ -164,6 +175,32 @@ async function outlinesFor(
   return out;
 }
 
+/**
+ * The dialog's patches with each changed default the text it shows, and that default's fields
+ * (M5-03 part 4: the list and Edit Attribute hold a default's fields as codes); a default left
+ * as it was is not changed.
+ */
+async function resolved(
+  ctx: CommandContext,
+  block: Handle,
+  patches: readonly AttributeDefinitionPatch[],
+): Promise<Pick<DefinitionChanges, 'attributes' | 'fields'>> {
+  if (!patches.some((p) => p.value !== undefined)) return { attributes: patches };
+  const fc: FieldContext = { ...(await fieldContextOf(ctx)), space: block };
+  const defs = new Map(definitionsOf(ctx.model, block).map((e) => [e.handle, e]));
+  const fields = new Map<Handle, DrawingField | undefined>();
+  const attributes = patches.map((p) => {
+    const d = defs.get(p.handle)?.geom as AttdefGeometry | undefined;
+    if (!d || p.value === undefined) return p;
+    const { value, ...rest } = p;
+    if (value === valueEntry(d).value) return rest;
+    const t = textWithFields(value, fc, d.field);
+    fields.set(p.handle, t.field);
+    return { ...p, value: t.text };
+  });
+  return { attributes, fields };
+}
+
 /** Applies the dialog's changes to its block, then the references as the settings say. */
 async function apply(ctx: CommandContext, m: BattmanAnswer): Promise<void> {
   if (!ctx.model.hasBlock(m.block)) return;
@@ -174,7 +211,11 @@ async function apply(ctx: CommandContext, m: BattmanAnswer): Promise<void> {
     ctx.message('A block keeps at least one attribute definition.');
     removed = [];
   }
-  const changes: DefinitionChanges = { order: m.order, removed, attributes: m.attributes };
+  const changes: DefinitionChanges = {
+    order: m.order,
+    removed,
+    ...(await resolved(ctx, m.block, m.attributes)),
+  };
   const outlines = await outlinesFor(ctx, m);
   // Tried on a builder that is never applied first, so a dialog closed with nothing changed
   // makes no change set.
@@ -195,7 +236,11 @@ async function apply(ctx: CommandContext, m: BattmanAnswer): Promise<void> {
 async function preview(ctx: CommandContext, m: BattmanAnswer, out: ChangeSet[]): Promise<void> {
   if (!m.applyToExisting || !ctx.model.hasBlock(m.block)) return;
   const order = definitionsOf(ctx.model, m.block).map((e) => e.handle);
-  const changes: DefinitionChanges = { order, removed: [], attributes: m.attributes };
+  const changes: DefinitionChanges = {
+    order,
+    removed: [],
+    ...(await resolved(ctx, m.block, m.attributes)),
+  };
   if (!changeDefinitions(new ChangeSetBuilder(ctx.model), ctx.model, m.block, changes)) return;
   const outlines = await outlinesFor(ctx, m);
   out.push(ctx.edit((b) => changeDefinitions(b, ctx.model, m.block, changes, outlines, true)));
@@ -222,14 +267,29 @@ export function battmanCommand(): CommandDef {
         for (const cs of previewed.splice(0).reverse()) ctx.edit((b) => revertChanges(b, cs));
       };
       let shown: DialogRequest | undefined;
+      let resume: BattmanResume | undefined;
       try {
         for (;;) {
-          const dialog = shown ?? request(ctx, blocks, block, selected);
+          const dialog = shown ?? request(ctx, blocks, block, selected, resume);
           shown = undefined;
+          resume = undefined;
           const d = yield ctx.prompt.dialog({ message: 'Block Attribute Manager', dialog });
           takeBack();
           if (d.kind !== 'dialog') return;
           const m = d.battman;
+          if (d.action === 'field' && d.resume) {
+            // Edit Attribute's Insert Field or Edit Field (M5-03 part 4): the Field dialog, then
+            // the manager again as it stood, nothing applied, the Default holding the field.
+            const r: BattmanResume = d.resume;
+            const def = definitionsOf(ctx.model, block).find((e) => e.handle === r.editing.handle);
+            const fc: FieldContext = { ...(await fieldContextOf(ctx)), space: block };
+            const value: string = yield* askMarkedField(ctx, fc, r.editing.value);
+            const old = (def?.geom as AttdefGeometry | undefined)?.field;
+            const fields = fieldValuesOf(value, fc, old);
+            resume = { ...r, editing: { ...r.editing, value, fields } };
+            selected = r.selected;
+            continue;
+          }
           if (d.action === 'preview') {
             if (m) await preview(ctx, m, previewed);
             // The same request: the dialog keeps the changes it holds.

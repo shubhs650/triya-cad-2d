@@ -573,7 +573,17 @@ export interface AttributeEntry {
   readonly tag: string;
   /** The block's ATTDEF prompt for the tag, or the tag when the block has none. */
   readonly prompt: string;
+  /**
+   * The value; with `fields`, its fields as their codes (`%<\\AcVar Date>%`), as the editors
+   * hold them.
+   */
   readonly value: string;
+  /**
+   * What the value shows for each of its fields, by code (M5-03 part 4); present where the
+   * dialog edits the value with its fields (each one whole, as the editors do), absent where
+   * `value` is the text shown.
+   */
+  readonly fields?: Readonly<Record<string, string>>;
   readonly multiline: boolean;
   /** DXF 70: 1 invisible, 2 constant, 4 verify, 8 preset. */
   readonly flags: number;
@@ -667,6 +677,20 @@ export interface BattmanAnswer {
   readonly selected?: Handle;
 }
 
+/**
+ * The Block Attribute Manager as it stood when Edit Attribute's Insert Field or Edit Field
+ * opened the Field dialog (M5-03 part 4): its definitions and removals as it held them, not yet
+ * applied, and the definition Edit Attribute had open. The answer's `editing.value` marks the
+ * field's place as the editors do (`%<FIELD_INSERT>%`, `%<FIELD_EDIT code>%`); the manager opens
+ * again on the same, Edit Attribute showing the value with the field made there.
+ */
+export interface BattmanResume {
+  readonly rows: readonly AttributeDefinitionEntry[];
+  readonly removed: readonly Handle[];
+  readonly selected?: Handle;
+  readonly editing: AttributeDefinitionEntry;
+}
+
 /** A table record a dialog's list offers. */
 export interface NamedRecord {
   readonly handle: Handle;
@@ -709,6 +733,8 @@ export type DialogRequest =
       /** The block's definitions in block order. */
       readonly attributes: readonly AttributeDefinitionEntry[];
       readonly selected?: Handle;
+      /** The state Insert Field or Edit Field left (M5-03 part 4), the field made. */
+      readonly resume?: BattmanResume;
       /** References to the block in the drawing, and in the current space. */
       readonly inDrawing: number;
       readonly inSpace: number;
@@ -1060,12 +1086,16 @@ export type PromptAnswer =
       /**
        * OK closes the dialog with its changes; Apply makes them and keeps it open; Select block
        * makes them and picks another block; `mtext` makes them and opens the MTEXT editor on the
-       * multiline attribute `target` (the value's `...` button).
+       * multiline attribute `target` (the value's `...` button); `field` makes them and opens
+       * the Field dialog for the value of `target` (EATTEDIT), the Default of `resume.editing`
+       * (BATTMAN's Edit Attribute), whose value marks the field's place (M5-03 part 4).
        */
-      readonly action: 'ok' | 'apply' | 'select' | 'mtext' | 'remove' | 'preview';
+      readonly action: 'ok' | 'apply' | 'select' | 'mtext' | 'remove' | 'preview' | 'field';
       readonly attributes?: readonly AttributePatch[];
       /** The Block Attribute Manager's state (BATTMAN, M5-03 part 2). */
       readonly battman?: BattmanAnswer;
+      /** BATTMAN's state at Edit Attribute's Insert Field or Edit Field (M5-03 part 4). */
+      readonly resume?: BattmanResume;
       /** Edit Attribute Definition's fields. */
       readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
       /** Property Settings' checkboxes as OK closed it. */

@@ -34,7 +34,8 @@
 //   insertion point has one point); Align takes TEXTSIZE as its nominal height, as TEXT does.
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
-import type { AttdefGeometry, MTextGeometry, TextStyleRecord } from '../model/types';
+import type { AttdefGeometry, DrawingField, MTextGeometry, TextStyleRecord } from '../model/types';
+import { textWithFields, type FieldContext } from '../edit/fields';
 import { currentProps } from '../properties/current';
 import { toUcs, toWorld } from '../input/ucs';
 import type { CommandContext, CommandDef } from './command';
@@ -51,6 +52,7 @@ import {
   mtextEditorRequest,
   textSize,
 } from './draw/text';
+import { askEditorText, askMarkedField, fieldContextOf, fieldValuesOf } from './draw/field';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -108,15 +110,22 @@ export interface AttdefDefineRequest {
   readonly canAlignBelow: boolean;
   /** Why the last OK made nothing. */
   readonly note?: string;
+  /**
+   * What the Default shows for each field its value holds (field codes in place,
+   * `%<\\AcVar Date>%`), by code (M5-03 part 4).
+   */
+  readonly fields: Readonly<Record<string, string>>;
 }
 
 /**
  * The Attribute Definition dialog's answer: its fields, and the pick button that closed it
- * (`value` is the Default's `...`, the MTEXT editor on a multiline value), if one did.
+ * (`value` is the Default's `...`, the MTEXT editor on a multiline value; `field` the Default's
+ * Insert Field or Edit Field, the settings' value then marking the field's place as the editors
+ * do: `%<FIELD_INSERT>%`, `%<FIELD_EDIT code>%`), if one did.
  */
 export interface AttdefDefineAnswer {
   readonly settings: AttdefSettings;
-  readonly pick?: 'height' | 'rotation' | 'width' | 'value';
+  readonly pick?: 'height' | 'rotation' | 'width' | 'value' | 'field';
 }
 
 /** Where the last definition went, for the next one below it. */
@@ -203,7 +212,10 @@ interface NewAttdef {
   readonly modes: AttdefModes;
   readonly tag: string;
   readonly prompt: string;
+  /** The default as it shows, each field's value in place. */
   readonly value: string;
+  /** The default's fields (M5-03 part 4). */
+  readonly field?: DrawingField;
   readonly style: TextStyleRecord;
   readonly justify: string;
   readonly at: Vec2;
@@ -244,6 +256,7 @@ export function attdefGeometry(d: NewAttdef): AttdefGeometry {
     tag: d.tag.trim().toUpperCase(),
     prompt: m.constant ? '' : d.prompt,
     value: d.value,
+    ...(d.field && { field: d.field }),
     flags,
     ...(m.lockPosition && { lockPosition: true }),
     ...(mtext && { mtext }),
@@ -563,6 +576,11 @@ async function* pickField(
 ): Sub<AttdefSettings> {
   const ucs = currentUcs(ctx);
   const base = toWorld(ucs, s.point);
+  if (pick === 'field') {
+    // Insert Field or Edit Field on the Default (M5-03 part 4).
+    const fc: FieldContext = { ...(await fieldContextOf(ctx)), space: ctx.space };
+    return { ...s, value: yield* askMarkedField(ctx, fc, s.value) };
+  }
   if (pick === 'value') {
     const style = styleNamed(ctx.model, s.style) ?? currentTextStyle(ctx.model);
     if (!style) return s;
@@ -580,12 +598,18 @@ async function* pickField(
       lineSpacingStyle: 1,
       lineSpacing: 1,
     };
-    const a = yield ctx.prompt.string({
-      message: 'Enter default value',
-      spaces: true,
-      escape: true,
-      editor: mtextEditorRequest(ctx.model, g),
-    });
+    // The editor's Insert Field puts fields in the default too (M5-03 part 4).
+    const fc: FieldContext = { ...(await fieldContextOf(ctx)), space: ctx.space };
+    const a: PromptAnswer = yield* askEditorText(
+      ctx,
+      {
+        message: 'Enter default value',
+        spaces: true,
+        escape: true,
+        editor: { ...mtextEditorRequest(ctx.model, g), fields: fieldValuesOf(s.value, fc) },
+      },
+      ctx.space,
+    );
     return a.kind === 'string' ? { ...s, value: a.value } : s;
   }
   if (pick === 'rotation') {
@@ -611,6 +635,7 @@ async function* pickField(
 async function* attdefDialog(ctx: CommandContext): Sub<void> {
   let settings = initialSettings(ctx, await currentModes(ctx));
   let note: string | undefined;
+  const fc: FieldContext = { ...(await fieldContextOf(ctx)), space: ctx.space };
   for (;;) {
     const styles = [...ctx.model.tables.textStyles.values()]
       .map((s) => ({ name: s.name, height: s.height }))
@@ -623,6 +648,7 @@ async function* attdefDialog(ctx: CommandContext): Sub<void> {
         styles,
         canAlignBelow: lastAttdef.has(ctx.model),
         ...(note !== undefined && { note }),
+        fields: fieldValuesOf(settings.value, fc),
       },
     });
     note = undefined;
@@ -641,7 +667,15 @@ async function* attdefDialog(ctx: CommandContext): Sub<void> {
   await keepModes(ctx, modes);
   lastSettings.set(ctx.model, settings);
 
-  const attribute = { modes, tag: settings.tag, prompt: settings.prompt, value: settings.value };
+  // The default's field codes become its fields, shown by their values (M5-03 part 4).
+  const t = textWithFields(settings.value, fc);
+  const attribute = {
+    modes,
+    tag: settings.tag,
+    prompt: settings.prompt,
+    value: t.text,
+    ...(t.field && { field: t.field }),
+  };
   const last = settings.alignBelow ? lastAttdef.get(ctx.model) : undefined;
   const below = last && belowLast(ctx, last);
   if (below) {
