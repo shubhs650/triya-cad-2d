@@ -440,6 +440,58 @@ describe('EngineHost purgeHealth (M5-09 part 3)', () => {
   });
 });
 
+describe('EngineHost layersInUse (M5-07 part 5)', () => {
+  it('names the layers objects are on, in the worker or on the main thread, after edits', async () => {
+    const withSpare: DocumentInit = {
+      ...init,
+      tables: {
+        ...init.tables,
+        layers: [
+          ...(init.tables?.layers ?? []),
+          { ...init.tables!.layers![0]!, handle: '12', name: 'SPARE' },
+        ],
+      },
+    };
+    const line = {
+      handle: '30',
+      owner: '1F',
+      type: 'LINE',
+      layer: '12',
+      color: { kind: 'byLayer' },
+      linetype: 'ByLayer',
+      lineweight: 'ByLayer',
+      transparency: 'ByLayer',
+      ltScale: 1,
+      visible: true,
+      geom: { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 1, y: 1 } },
+    } as const;
+    const drawn: DocumentInit = {
+      ...withSpare,
+      layouts: [{ handle: '22', name: 'Model', tabOrder: 0, blockRecord: '1F' }],
+      entities: [line],
+    };
+    for (const host of [new EngineHost(drawn, inProcessWorker), new EngineHost(drawn)]) {
+      expect(await host.layersInUse()).toEqual(['12']);
+      // SPARE merged into WALLS: the answer follows the drawing.
+      expect((await host.edit({ kind: 'layer-merge', layers: ['12'], target: '11' })).ok).toBe(
+        true,
+      );
+      expect(await host.layersInUse()).toEqual(['11']);
+      host.dispose();
+    }
+  });
+
+  it('is undefined for a drawing not open', async () => {
+    const engines = new Engines(
+      (i) => new EngineHost(i),
+      () => [],
+    );
+    expect(await engines.layersInUse(7)).toBeUndefined();
+    engines.start(7, init);
+    expect(await engines.layersInUse(7)).toBeInstanceOf(Array);
+  });
+});
+
 describe('change sets straight to the render workers (M2-62)', () => {
   type Numbered = { seq: number; change: unknown };
   /** What a linked renderer hears on its port. */

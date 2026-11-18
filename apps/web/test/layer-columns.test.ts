@@ -88,6 +88,16 @@ describe('the manager’s columns (M5-05 part 3)', () => {
     expect(s.sort).toEqual({ key: 'color', descending: false });
   });
 
+  it('keeps the filter tree collapsed (M5-07 part 5)', () => {
+    expect(normalizeLayerColumns({ ...DEFAULT_LAYER_COLUMNS, treeCollapsed: true })).toEqual({
+      ...DEFAULT_LAYER_COLUMNS,
+      treeCollapsed: true,
+    });
+    expect(normalizeLayerColumns({ ...DEFAULT_LAYER_COLUMNS, treeCollapsed: 'yes' })).toEqual(
+      DEFAULT_LAYER_COLUMNS,
+    );
+  });
+
   it('falls back to the defaults for anything not valid', () => {
     expect(normalizeLayerColumns(undefined)).toEqual(DEFAULT_LAYER_COLUMNS);
     expect(normalizeLayerColumns({ order: 3, hidden: 'x', sort: { key: 'z' } })).toEqual(

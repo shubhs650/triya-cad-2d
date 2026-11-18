@@ -53,6 +53,7 @@ import {
   deleteLayersChange,
   mergeLayersChange,
   layerPropsChange,
+  layersInUse,
   newLayerChange,
   type LayerProps,
 } from '../edit/layer-manager';
@@ -971,6 +972,11 @@ export class EngineSession {
   /** What the Health palette's purge card counts (M5-09 part 3). */
   purgeHealth(): PurgeHealth {
     return purgeHealth(this.model);
+  }
+
+  /** The layers any object is on: the Layer Properties Manager's All Used Layers (M5-07 part 5). */
+  layersInUse(): Handle[] {
+    return [...layersInUse(this.model)];
   }
 
   #purge(e: PurgeEdit): EditResult {
