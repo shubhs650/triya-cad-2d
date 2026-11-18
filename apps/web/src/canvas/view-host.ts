@@ -135,6 +135,10 @@ export interface ViewContext {
   readonly hatchPatternList?: () => ViewReply;
   /** -LINETYPE's file (M5-08): a .lin file of the bundled set or the user's, read. */
   readonly linetypeFile?: (file: string | undefined) => ViewReply;
+  /** -LINETYPE Create (M5-08 part 4): a definition written to one of the user's .lin files. */
+  readonly linetypeCreate?: (
+    r: Extract<ViewRequest, { op: 'linetypeCreate' }>,
+  ) => Promise<ViewReply>;
   /**
    * SETVAR (M2-42): a system variable the app keeps (the drafting aids, the per-user settings),
    * set to `value` when given, answered with its value.
@@ -225,6 +229,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'linetypeFile') {
     return ctx.linetypeFile ? ctx.linetypeFile(r.file) : { ok: false, message: NO_LINETYPES };
+  }
+  if (r.op === 'linetypeCreate') {
+    return ctx.linetypeCreate ? ctx.linetypeCreate(r) : { ok: false, message: NO_LINETYPES };
   }
   if (r.op === 'hatchPatternList') {
     return ctx.hatchPatternList ? ctx.hatchPatternList() : { ok: false, message: NO_PATTERNS };

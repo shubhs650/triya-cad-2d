@@ -3,7 +3,8 @@
 // files' linetypes are loaded, a text one made current, one of them deleted again in a second
 // LINETYPE and another reloaded; the save writes the new LTYPE records (text elements on the
 // Standard STYLE, U= as DXF 74 bit 8) and $CELTYPE, and reads back as loaded. CI's ezdxf audit
-// reads the save (audit.py `FIXTURE_SAVES`, kind `linetype`).
+// reads the save (audit.py `FIXTURE_SAVES`, kind `linetype`). Part 4: a third LINETYPE renames
+// the current linetype in Details (CELTYPE follows) and describes another; both read back.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -57,12 +58,21 @@ describe('linetypes loaded and saved (M5-08)', () => {
     });
     expect(named(model, 'TRIYA_ISO15')).toBeUndefined();
     expect(named(model, 'TRIYA_ISO10')!.handle).toBe(iso10.handle);
+    const gasHandle = named(model, 'TRIYA_GAS')!.handle;
+    await manager(bus, {
+      edit: [
+        { handle: gasHandle, name: 'SITE_GAS', description: 'Site gas ----GAS----' },
+        { handle: iso10.handle, description: 'Renumbered ISO 02' },
+      ],
+      current: 'SITE_GAS',
+    });
 
     const out = saveAc1032Dxf(readCadDocument(corpus(PATH)), model);
     writeAuditSave(PATH, 'linetype', () => out);
     const back = new EngineSession(openDocument(readCadDocument(out)).init).model;
 
-    expect(back.header.get('$CELTYPE')).toBe('TRIYA_GAS');
+    expect(back.header.get('$CELTYPE')).toBe('SITE_GAS');
+    expect(named(back, 'TRIYA_GAS')).toBeUndefined();
     expect(back.header.get('$LTSCALE')).toBe(2);
     expect(named(back, 'TRIYA_ISO15')).toBeUndefined();
     const standard = [...back.tables.textStyles.values()].find((s) => s.name === 'Standard')!;
@@ -74,7 +84,8 @@ describe('linetypes loaded and saved (M5-08)', () => {
       expect(b!.patternLength).toBeCloseTo(l.patternLength, 9);
       expect(b!.elements.map((e) => e.length)).toEqual(l.elements.map((e) => e.length));
     }
-    const gas = named(back, 'TRIYA_GAS')!;
+    const gas = named(back, 'SITE_GAS')!;
+    expect(gas).toMatchObject({ handle: gasHandle, description: 'Site gas ----GAS----' });
     expect(gas.elements[1]).toMatchObject({
       shapeFlags: 2 | 8,
       style: standard.handle,
@@ -82,6 +93,6 @@ describe('linetypes loaded and saved (M5-08)', () => {
       scale: 2.5,
       offset: { x: 0, y: -1.25 },
     });
-    expect(named(back, 'TRIYA_ISO10')!.description).toBe('ISO 02 dashed');
+    expect(named(back, 'TRIYA_ISO10')!.description).toBe('Renumbered ISO 02');
   });
 });
