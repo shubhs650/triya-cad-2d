@@ -79,7 +79,8 @@ describe('image command saves (M5-04 part 4)', () => {
         await bus.submit('');
       }
       await bus.script(steps);
-      expect(bus.command, log.join('\n')).toBeUndefined();
+      // IMAGEADJUST on one image waits on its dialog, which the caller answers.
+      if (steps.length > 0) expect(bus.command, log.join('\n')).toBeUndefined();
     };
 
     const ga = a!.geom;
@@ -101,7 +102,15 @@ describe('image command saves (M5-04 part 4)', () => {
     await run('IMAGECLIP', [c!], ['D']);
     await run('IMAGEADJUST', [a!, b!], ['B', '80'], true);
     await run('-IMAGEADJUST', [b!], ['C', '30'], true);
-    await run('IMAGEADJUST', [a!], ['F', '25'], true);
+    // IMAGEADJUST on one image opens the Image Adjust dialog (M5-04 part 10): Fade 25 there.
+    await run('IMAGEADJUST', [a!], [], true);
+    const now = model.entity(a!.id)!.geom as ImageGeometry;
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      imageAdjust: { brightness: now.brightness, contrast: now.contrast, fade: 25 },
+    });
+    expect(bus.command, log.join('\n')).toBeUndefined();
     await bus.script(['IMAGEQUALITY', 'D', 'IMAGEFRAME', '2']);
     expect(raster(model)).toMatchObject({ frame: 2, quality: 'draft' });
 
