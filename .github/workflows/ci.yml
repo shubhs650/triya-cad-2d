@@ -284,7 +284,9 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - id: pw
-        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
       - id: pw-cache
         uses: actions/cache@v4
         with:
@@ -292,16 +294,17 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - if: steps.pw-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install chromium
-      # Chromium's system libraries come from apt. When the Ubuntu archive does not resolve (as
-      # from 2026-11-11, when only Playwright's extra fonts were missing from the image), the
-      # browser still runs if no library it links is missing; a missing one fails the job.
+      # Chromium's system packages (Playwright's extra fonts), from the cache of their .deb files
+      # when it has them, else from apt with retries; when the Ubuntu archive does not resolve (as
+      # from 2026-11-11), the browser still runs if no library it links is missing, and a missing
+      # one fails the job (scripts/ci-browser-deps.sh).
+      - id: apt-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pw-apt
+          key: pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
       - name: Install browser system dependencies
-        run: |
-          if pnpm exec playwright install-deps chromium; then exit 0; fi
-          echo "::warning::playwright install-deps failed; checking Chromium's libraries instead"
-          missing="$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
-            -exec ldd {} \; | grep 'not found' || true)"
-          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+        run: bash scripts/ci-browser-deps.sh
       - run: pnpm test:fidelity --shard=${{ matrix.shard }}/3
       # Kept before the UI suite runs: every Playwright run empties test-results/.
       - uses: actions/upload-artifact@v4
@@ -362,7 +365,9 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - id: pw
-        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
       - id: pw-cache
         uses: actions/cache@v4
         with:
@@ -370,16 +375,17 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - if: steps.pw-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install chromium
-      # Chromium's system libraries come from apt. When the Ubuntu archive does not resolve (as
-      # from 2026-11-11, when only Playwright's extra fonts were missing from the image), the
-      # browser still runs if no library it links is missing; a missing one fails the job.
+      # Chromium's system packages (Playwright's extra fonts), from the cache of their .deb files
+      # when it has them, else from apt with retries; when the Ubuntu archive does not resolve (as
+      # from 2026-11-11), the browser still runs if no library it links is missing, and a missing
+      # one fails the job (scripts/ci-browser-deps.sh).
+      - id: apt-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pw-apt
+          key: pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
       - name: Install browser system dependencies
-        run: |
-          if pnpm exec playwright install-deps chromium; then exit 0; fi
-          echo "::warning::playwright install-deps failed; checking Chromium's libraries instead"
-          missing="$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
-            -exec ldd {} \; | grep 'not found' || true)"
-          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+        run: bash scripts/ci-browser-deps.sh
       - run: pnpm build
       - run: pnpm test:offline
       # The io suite still runs after an offline failure so one red PR shows every broken gate.
@@ -450,7 +456,9 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - id: pw
-        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
       - id: pw-cache
         uses: actions/cache@v4
         with:
@@ -458,16 +466,17 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - if: steps.pw-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install chromium
-      # Chromium's system libraries come from apt. When the Ubuntu archive does not resolve (as
-      # from 2026-11-11, when only Playwright's extra fonts were missing from the image), the
-      # browser still runs if no library it links is missing; a missing one fails the job.
+      # Chromium's system packages (Playwright's extra fonts), from the cache of their .deb files
+      # when it has them, else from apt with retries; when the Ubuntu archive does not resolve (as
+      # from 2026-11-11), the browser still runs if no library it links is missing, and a missing
+      # one fails the job (scripts/ci-browser-deps.sh).
+      - id: apt-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pw-apt
+          key: pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
       - name: Install browser system dependencies
-        run: |
-          if pnpm exec playwright install-deps chromium; then exit 0; fi
-          echo "::warning::playwright install-deps failed; checking Chromium's libraries instead"
-          missing="$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
-            -exec ldd {} \; | grep 'not found' || true)"
-          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+        run: bash scripts/ci-browser-deps.sh
       - run: pnpm build
       - run: pnpm test:perf
       - uses: actions/upload-artifact@v4
