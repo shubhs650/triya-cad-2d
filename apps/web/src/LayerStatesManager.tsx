@@ -15,7 +15,8 @@
 //   - Restore restores the selected state and closes the dialog; Close closes it.
 //
 // Each change is one LAYERSTATE undo step at once, as AutoCAD's: Close does not take them back.
-// Edit... (the per-layer Edit Layer State dialog) comes in a later part.
+// Edit... opens Edit Layer State (M5-07 part 3, `EditLayerState.tsx`): the selected state's
+// layers and their settings, saved by its OK.
 import {
   useEffect,
   useMemo,
@@ -24,10 +25,17 @@ import {
   useSyncExternalStore,
   type KeyboardEvent,
 } from 'react';
-import { LAYER_STATE_MASK, type EngineEdit, type Handle } from '@triya/engine';
+import {
+  LAYER_STATE_MASK,
+  type EngineEdit,
+  type Handle,
+  type LayerStateLayer,
+} from '@triya/engine';
 import { LasError, parseLas, writeLas } from '@triya/io';
 import { Modal } from './AttributeDialogs';
 import type { OpenDocument } from './documents';
+import { drafting } from './drafting';
+import { EditLayerState } from './EditLayerState';
 import { engines } from './engine/registry';
 import {
   RESTORE_PROPERTIES,
@@ -40,6 +48,7 @@ import {
   withRestoreProperty,
   type LayerStateRow,
 } from './layer-states';
+import { layerColorBooks, layerLinetypes } from './layers';
 import { download } from './PlotDialog';
 
 export function LayerStatesManager({
@@ -75,6 +84,11 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
   const [creating, setCreating] = useState(false);
   const [asking, setAsking] = useState<Asking | undefined>();
   const [more, setMore] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editProblem, setEditProblem] = useState<string | undefined>();
+  const lwUnits = useSyncExternalStore(drafting.subscribe, () =>
+    drafting.get().lwUnits === 0 ? 'in' : 'mm',
+  );
   const [turnOffMissing, setTurnOffMissing] = useState(false);
   const [message, setMessage] = useState<{ text: string; problem: boolean } | undefined>();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -134,6 +148,24 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
     setRenaming(false);
     if (!selected || to === selected.name) return;
     await run({ kind: 'layer-state-edit', state: selected.handle, name: to });
+    focusRow(selected.handle);
+  };
+
+  const saveLayers = async (layers: LayerStateLayer[]) => {
+    if (!selected) return;
+    const r = await engines.edit(doc.id, {
+      kind: 'layer-state-edit',
+      state: selected.handle,
+      layers,
+    });
+    if (!r.ok) {
+      setEditProblem(r.message);
+      return;
+    }
+    setEditProblem(undefined);
+    setEditing(false);
+    edited(doc.id);
+    setMessage({ text: `Layer state "${selected.name}" edited.`, problem: false });
     focusRow(selected.handle);
   };
 
@@ -286,7 +318,15 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
           <button type="button" disabled={!selected} onClick={() => void update()}>
             Update
           </button>
-          <button type="button" disabled title="Edit Layer State comes in a later part">
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            disabled={!selected}
+            onClick={() => {
+              setEditProblem(undefined);
+              setEditing(true);
+            }}
+          >
             Edit...
           </button>
           <button type="button" disabled={!selected} onClick={() => setRenaming(true)}>
@@ -389,6 +429,22 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
           Close
         </button>
       </div>
+      {editing && selected && (
+        <EditLayerState
+          stateName={selected.name}
+          layers={selected.state.layers}
+          tables={tables}
+          linetypes={layerLinetypes(doc.opened.init, engines.changesOf(doc.id))}
+          books={layerColorBooks(doc.opened.init, engines.changesOf(doc.id))}
+          units={lwUnits}
+          problem={editProblem}
+          onOk={(layers) => void saveLayers(layers)}
+          onCancel={() => {
+            setEditing(false);
+            focusRow(selected.handle);
+          }}
+        />
+      )}
       {creating && (
         <NewLayerState
           existing={(name) => rows.find((r) => r.name.toUpperCase() === name.toUpperCase())?.name}
