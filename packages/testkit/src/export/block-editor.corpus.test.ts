@@ -136,3 +136,43 @@ describe('BCLOSE Discard on the public corpus (M5-02 part 1)', () => {
     },
   );
 });
+
+// M5-02 part 4: <Current Drawing> opens the drawing itself in the editor; what is drawn there and
+// the base point BASE moves, discarded when the editor switches to a block (BEDIT inside the
+// editor) and that block's edits discarded at BCLOSE, leave model space and $INSBASE exactly as
+// the file had them.
+describe('<Current Drawing> and BEDIT inside the editor on the public corpus (M5-02 part 4)', () => {
+  it.each(readable.map((f) => [f.path, f] as const))(
+    '%s keeps model space as the file had it',
+    async (_path, f) => {
+      const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
+      const model = open(bytes);
+      const space = [...model.tables.blockRecords.values()].find(
+        (r) => r.name.toUpperCase() === '*MODEL_SPACE',
+      )!.handle;
+      const before = model.blockEntities(space).map((id) => model.entity(id)!);
+      const base = model.header.get('$INSBASE');
+      const bus = new PromptBus({ model, registry: builtinCommands() });
+      await bus.submit('BEDIT');
+      await bus.answer({ kind: 'dialog', action: 'ok', bedit: { name: '<Current Drawing>' } });
+      await bus.script(['LINE', '0,0', '1,1', '', 'BASE', '1,1']);
+      expect(model.blockEntities(space), f.path).toHaveLength(before.length + 1);
+      const target = blockToEdit(model);
+      await bus.submit('BEDIT');
+      await bus.answer({
+        kind: 'dialog',
+        action: 'ok',
+        bedit: { name: target?.name ?? 'TRIYA-NEW-BLOCK' },
+      });
+      await bus.answer({ kind: 'dialog', action: 'ok', bclose: 'discard' });
+      await bus.script(['LINE', '0,0', '1,1', '', 'BCLOSE']);
+      await bus.answer({ kind: 'dialog', action: 'ok', bclose: 'discard' });
+      expect(bus.promptText, f.path).toBe('Command:');
+      expect(
+        model.blockEntities(space).map((id) => model.entity(id)!),
+        f.path,
+      ).toEqual(before);
+      expect(model.header.get('$INSBASE'), f.path).toEqual(base);
+    },
+  );
+});

@@ -34,7 +34,10 @@ async function type(page: Page, text: string, next: string | RegExp): Promise<vo
 /** Screenshots for the PR, taken when TRIYA_SCREENSHOTS names a folder. */
 async function shot(page: Page, name: string): Promise<void> {
   const dir = process.env['TRIYA_SCREENSHOTS'];
-  if (dir) await page.screenshot({ path: path.join(dir, `${name}.png`) });
+  if (!dir) return;
+  // A canvas drawn first waits for its fonts: give it a moment to show what it holds.
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: path.join(dir, `${name}.png`) });
 }
 
 /** What block DOOR holds now, by entity type, as the engine's edits left it. */
@@ -258,4 +261,90 @@ test('Open in block editor, a new block from BEDIT, and ATTSYNC', async ({ page 
   await expect(log).toContainText('ATTSYNC complete.');
   await expect.poll(() => syncedBy(page)).toEqual([30]);
   await shot(page, '7-after-attsync');
+});
+
+/** How many lines the engine's edits have added and not taken away again. */
+const linesDrawn = (page: Page) =>
+  page.evaluate(() => {
+    const held = new Set<string>();
+    for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+      for (const a of cs.entities?.added ?? [])
+        if (a.entity.geom.kind === 'LINE') held.add(a.entity.handle);
+      for (const r of cs.entities?.removed ?? []) held.delete(r.entity.handle);
+    }
+    return held.size;
+  });
+
+// M5-02 part 4: the Block Editor bar's Edit Block runs BEDIT inside the editor; the dialog offers
+// <Current Drawing> above the blocks; another block replaces the one shown after Block - Changes
+// Not Saved asks about its edits (Save, or Discard, which opens the other block); the drawing
+// itself opens in the editor on the Model canvas, where Discard takes back what was drawn.
+test('Edit Block switches blocks inside the editor, and <Current Drawing>', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, TITLE);
+  await expectShown(page, path.basename(TITLE));
+  await expect(prompt(page)).toHaveText('Command:');
+  const box = (await activeCanvas(page).boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  const bar = page.getByRole('toolbar', { name: 'Block Editor' });
+  const edit = page.getByRole('dialog', { name: 'Edit Block Definition' });
+  const ask = page.getByRole('dialog', { name: 'Block - Changes Not Saved' });
+
+  await enterCommand(page, '-BEDIT');
+  await type(page, 'TITLE-BLOCK', 'Command:');
+  await expect(bar).toContainText('Block Editor: TITLE-BLOCK');
+  await enterCommand(page, 'CIRCLE');
+  await expect(prompt(page)).toHaveText(/^Specify center point for circle/);
+  await type(page, '0,0', /^Specify radius of circle/);
+  await type(page, '5', 'Command:');
+
+  // Edit Block: the dialog opens on the block shown, <Current Drawing> above the blocks.
+  await bar.getByRole('button', { name: 'Edit Block' }).click();
+  await expect(edit).toBeVisible();
+  const options = edit.getByRole('option');
+  await expect(options.first()).toHaveText('<Current Drawing>');
+  await expect(edit.getByRole('option', { name: 'TITLE-BLOCK' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await edit.getByRole('option', { name: '<Current Drawing>' }).click();
+  await expect(edit.getByLabel('Block to create or edit')).toHaveValue('<Current Drawing>');
+  await shot(page, '8-edit-block-current-drawing');
+  await edit.getByRole('button', { name: 'OK' }).click();
+  await expect(ask).toBeVisible();
+  await expect(
+    ask.getByRole('button', { name: 'Discard the changes and open <Current Drawing>' }),
+  ).toBeVisible();
+  await shot(page, '9-changes-not-saved-switch');
+  await ask.getByRole('button', { name: 'Save the changes to TITLE-BLOCK' }).click();
+  await expect(ask).toBeHidden();
+
+  // The drawing itself in the editor: the Model canvas, under the Block Editor bar.
+  await expect(bar).toContainText('Block Editor: <Current Drawing>');
+  await expect(page.locator('canvas[data-active="true"][aria-label="Model"]')).toBeVisible();
+  await enterCommand(page, 'LINE');
+  await type(page, '0,0', /^Specify next point/);
+  await type(page, '100,50', /^Specify next point/);
+  await type(page, '', 'Command:');
+  await expect.poll(() => linesDrawn(page)).toBe(1);
+  await enterCommand(page, 'ZOOM');
+  await type(page, 'E', 'Command:');
+  await shot(page, '10-current-drawing-in-editor');
+
+  // Back to the title block: Discard takes the line back and opens it.
+  await bar.getByRole('button', { name: 'Edit Block' }).click();
+  await expect(edit.getByRole('option', { name: '<Current Drawing>' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await edit.getByRole('option', { name: 'TITLE-BLOCK' }).dblclick();
+  await ask.getByRole('button', { name: 'Discard the changes and open TITLE-BLOCK' }).click();
+  await expect(bar).toContainText('Block Editor: TITLE-BLOCK');
+  await expect(page.locator('canvas[data-active="true"][aria-label="Block Editor"]')).toBeVisible();
+  await expect.poll(() => linesDrawn(page)).toBe(0);
+  // Nothing unsaved in the title block now: closing asks nothing.
+  await bar.getByRole('button', { name: 'Close Block Editor' }).click();
+  await expect(bar).toBeHidden();
+  await expect(page.getByRole('tablist', { name: 'Model and layouts' })).toBeVisible();
 });

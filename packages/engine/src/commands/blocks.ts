@@ -77,7 +77,7 @@ import { INSUNITS_NAMES } from './drawing-units';
 import { definitionEntry, wcmatch } from './modify/attributes';
 import { currentUcs } from './ucs';
 import { drawingUnits, formatDistance, formatNumber } from './units';
-import { isPaperSpace } from './bus';
+import { isPaperSpace, modelSpaceOf } from './bus';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -1112,7 +1112,8 @@ export function baseCommand(): CommandDef {
     keepsSelection: true,
     async *run(ctx) {
       const editing = ctx.blockEditor.block;
-      if (editing !== undefined) {
+      // <Current Drawing> in the editor (M5-02 part 4) keeps the drawing's own base point.
+      if (editing !== undefined && editing !== modelSpaceOf(ctx.model)) {
         yield* blockBase(ctx, editing);
         return;
       }
