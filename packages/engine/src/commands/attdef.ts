@@ -20,9 +20,9 @@
 //
 // Settled for the common drafter expectation, where Help is silent (noted in the PR):
 // - Annotative is shown "N" and not offered: Triya makes no annotative objects (DEC-058);
-// - the modes are kept per drawing for the session (AutoCAD's AFLAGS, not saved), Lock position
-//   on at first as AutoCAD's initial AFLAGS 16; a constant attribute drops Verify and Preset,
-//   which AutoCAD's dialog greys for it;
+// - the modes start as AFLAGS says (the app keeps it while it runs, initially 16: Lock position
+//   on) and each definition, or -ATTDEF toggle, sets it; a constant attribute drops Verify and
+//   Preset, which AutoCAD's dialog greys for it;
 // - a tag is stored in capitals and may hold no spaces (AutoCAD's dialog refuses them);
 // - -ATTDEF's multiline value is typed with MTEXT's codes (`\P` a new line) and its boundary
 //   width asked after the rotation ("Specify boundary width <0.0000>:", 0 no wrapping); Align
@@ -138,7 +138,36 @@ const DEFAULT_MODES: AttdefModes = {
   multiline: false,
 };
 
-/** Per drawing: the modes, the dialog's last settings and the last definition made. */
+/**
+ * AFLAGS (M5-03 part 3; AutoCAD 2024 Help, "AFLAGS (System Variable)", "Saved in: Not-saved",
+ * initially 16): the modes ATTDEF and -ATTDEF start with, bits 1 Invisible, 2 Constant, 4 Verify,
+ * 8 Preset, 16 Lock position, 32 Multiple lines. The app keeps it while it runs; each ATTDEF
+ * and each -ATTDEF mode toggle sets it.
+ */
+export const AFLAGS = 'AFLAGS';
+const MODE_BITS: readonly [keyof AttdefModes, number][] = [
+  ['invisible', 1],
+  ['constant', 2],
+  ['verify', 4],
+  ['preset', 8],
+  ['lockPosition', 16],
+  ['multiline', 32],
+];
+
+/** The modes AFLAGS `flags` names. */
+export function aflagsModes(flags: number): AttdefModes {
+  return Object.fromEntries(MODE_BITS.map(([k, bit]) => [k, (flags & bit) !== 0])) as never;
+}
+
+/** AFLAGS for `m`. */
+export function aflagsOf(m: AttdefModes): number {
+  return MODE_BITS.reduce((f, [k, bit]) => (m[k] ? f | bit : f), 0);
+}
+
+/**
+ * Per drawing: the modes where the app keeps no AFLAGS (a front-end without system variables),
+ * the dialog's last settings and the last definition made.
+ */
 const lastModes = new WeakMap<object, AttdefModes>();
 const lastSettings = new WeakMap<object, AttdefSettings>();
 const lastAttdef = new WeakMap<object, LastAttdef>();
@@ -305,8 +334,21 @@ async function* tagName(ctx: CommandContext): Sub<string | undefined> {
   }
 }
 
+/** The modes AFLAGS names, or the drawing's last ones where the app keeps no AFLAGS. */
+async function currentModes(ctx: CommandContext): Promise<AttdefModes> {
+  const r = await ctx.view.request({ op: 'sysvar', name: AFLAGS });
+  if (r.ok && typeof r.value === 'number') return aflagsModes(r.value);
+  return lastModes.get(ctx.model) ?? DEFAULT_MODES;
+}
+
+/** Keeps `m` as AFLAGS, for the next ATTDEF. */
+async function keepModes(ctx: CommandContext, m: AttdefModes): Promise<void> {
+  lastModes.set(ctx.model, m);
+  await ctx.view.request({ op: 'sysvar', name: AFLAGS, value: aflagsOf(m) });
+}
+
 async function* dashAttdef(ctx: CommandContext): Sub<void> {
-  let modes = lastModes.get(ctx.model) ?? DEFAULT_MODES;
+  let modes = await currentModes(ctx);
   ctx.message(modesLine(modes));
   for (;;) {
     const a = yield ctx.prompt.keyword({
@@ -317,7 +359,7 @@ async function* dashAttdef(ctx: CommandContext): Sub<void> {
     if (a.kind === 'keyword') {
       const key = MODE_OPTIONS.find(([o]) => o === a.keyword)![1];
       modes = { ...modes, [key]: !modes[key] };
-      lastModes.set(ctx.model, modes);
+      await keepModes(ctx, modes);
       ctx.message(modesLine(modes));
       continue;
     }
@@ -469,12 +511,13 @@ function validSettings(s: unknown): s is AttdefSettings {
   );
 }
 
-function initialSettings(ctx: CommandContext): AttdefSettings {
+/** The dialog's fields as it opens: AFLAGS's modes, the last settings, a blank attribute. */
+function initialSettings(ctx: CommandContext, modes: AttdefModes): AttdefSettings {
   const last = lastSettings.get(ctx.model);
-  if (last) return { ...last, tag: '', prompt: '', value: '', alignBelow: false };
+  if (last) return { ...last, ...modes, tag: '', prompt: '', value: '', alignBelow: false };
   const style = currentTextStyle(ctx.model);
   return {
-    ...(lastModes.get(ctx.model) ?? DEFAULT_MODES),
+    ...modes,
     tag: '',
     prompt: '',
     value: '',
@@ -566,7 +609,7 @@ async function* pickField(
 }
 
 async function* attdefDialog(ctx: CommandContext): Sub<void> {
-  let settings = initialSettings(ctx);
+  let settings = initialSettings(ctx, await currentModes(ctx));
   let note: string | undefined;
   for (;;) {
     const styles = [...ctx.model.tables.textStyles.values()]
@@ -595,7 +638,7 @@ async function* attdefDialog(ctx: CommandContext): Sub<void> {
     break;
   }
   const modes = modesOf(settings);
-  lastModes.set(ctx.model, modes);
+  await keepModes(ctx, modes);
   lastSettings.set(ctx.model, settings);
 
   const attribute = { modes, tag: settings.tag, prompt: settings.prompt, value: settings.value };

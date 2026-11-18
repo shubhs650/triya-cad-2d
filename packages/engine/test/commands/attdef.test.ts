@@ -29,8 +29,8 @@ function setHeader(model: DocumentModel, name: string, value: number | string): 
   model.apply(b.build());
 }
 
-function drawing() {
-  const t = setup();
+function drawing(variables?: Map<string, number>) {
+  const t = setup([], variables ? { variables } : {});
   const attdefs = () =>
     t
       .space()
@@ -440,5 +440,47 @@ describe('ATTDISP', () => {
     expect(t.bus.promptText).toBe('Enter attribute visibility setting [Normal/ON/OFF] <Normal>:');
     await t.bus.submit('N');
     expect(t.bus.promptText).toBe('Command:');
+  });
+});
+
+describe('AFLAGS', () => {
+  it('gives ATTDEF and -ATTDEF their modes, and keeps the ones they end with (M5-03 part 3)', async () => {
+    // Invisible and Verify, as SETVAR or another session's ATTDEF left them.
+    const variables = new Map([['AFLAGS', 1 | 4]]);
+    const t = drawing(variables);
+    await t.bus.submit('-ATTDEF');
+    expect(t.log.at(-1)).toBe(
+      'Current attribute modes: Invisible=Y Constant=N Verify=Y Preset=N Lock position=N Annotative=N Multiple lines=N',
+    );
+    // Each toggle sets it.
+    await t.bus.script(['P', 'L']);
+    expect(variables.get('AFLAGS')).toBe(1 | 4 | 8 | 16);
+    await t.bus.cancel();
+
+    await t.bus.submit('ATTDEF');
+    expect(t.request().settings).toMatchObject({
+      invisible: true,
+      constant: false,
+      verify: true,
+      preset: true,
+      lockPosition: true,
+      multiline: false,
+    });
+    await t.close({ tag: 'A', invisible: false, multiline: true, pointOnScreen: false });
+    expect(t.attdefs()).toHaveLength(1);
+    expect(variables.get('AFLAGS')).toBe(4 | 8 | 16 | 32);
+
+    // Set at the command line, the next dialog opens on it, over its last settings.
+    await t.bus.script(['AFLAGS', '2']);
+    expect(variables.get('AFLAGS')).toBe(2);
+    await t.bus.submit('ATTDEF');
+    expect(t.request().settings).toMatchObject({
+      invisible: false,
+      constant: true,
+      verify: false,
+      preset: false,
+      lockPosition: false,
+      multiline: false,
+    });
   });
 });

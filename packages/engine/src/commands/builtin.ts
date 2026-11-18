@@ -62,6 +62,7 @@ import { BLOCK_COMMANDS } from './blocks';
 import { BLOCK_EDITOR_COMMANDS } from './block-editor';
 import { REFEDIT_COMMANDS } from './refedit';
 import { attsyncCommand } from './attsync';
+import { attredefCommand } from './attredef';
 import { wblockCommand } from './wblock';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
@@ -183,6 +184,7 @@ export function builtinCommands(): CommandRegistry {
     ...BLOCK_EDITOR_COMMANDS.map((make) => make()),
     ...REFEDIT_COMMANDS.map((make) => make()),
     attsyncCommand(),
+    attredefCommand(),
     wblockCommand(),
     ...PALETTE_COMMANDS.map((make) => make()),
     ...DRAFTING_SETTINGS_COMMANDS.map((make) => make()),

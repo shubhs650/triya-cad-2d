@@ -177,7 +177,7 @@ function polarAddAngReply(drafting: Drafting, value: string | undefined): ViewRe
 
 /**
  * The modify commands' options (M3-12): those AutoCAD keeps per user in `modifyOptions`, which
- * Settings stores, OFFSETDIST and CHAMMODE in `sessionOptions`, kept while the app runs.
+ * Settings stores, OFFSETDIST, CHAMMODE and AFLAGS in `sessionOptions`, kept while the app runs.
  */
 function optionReply(drafting: Drafting, name: string, value: number | undefined): ViewReply {
   const key = name in MODIFY_OPTIONS ? 'modifyOptions' : 'sessionOptions';

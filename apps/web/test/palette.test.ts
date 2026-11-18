@@ -50,6 +50,8 @@ describe('palette search', () => {
       'ATTDEF',
       'ATTDISP',
       'ATTEDIT',
+      // M5-03 part 3: a block redefined from objects, its references given the new attributes.
+      'ATTREDEF',
       // M5-02 part 2: references given their block's attributes.
       'ATTSYNC',
       // M5-01 part 1: blocks made and inserted at the command line, and BASE.
