@@ -63,6 +63,10 @@ FIXTURE_SAVES = (
     # packages/testkit/src/layers/layer-cleanup.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laymrg"),
+    # Layer filters added beside AutoCAD's own empty ACLYDICTIONARY, and to a drawing without one
+    # (M5-07 part 4, packages/testkit/src/export/layer-filters.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layerfilters"),
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "layerfilters"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
     # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,

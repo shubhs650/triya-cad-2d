@@ -33,6 +33,9 @@ export type AuditSaveKind =
   // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
   | 'laydel'
   | 'laymrg'
+  // Layer filters (property, group, nested) added to a drawing's ACLYDICTIONARY or a new one
+  // (M5-07 part 4).
+  | 'layerfilters'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).

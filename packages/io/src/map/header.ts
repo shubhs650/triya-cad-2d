@@ -24,6 +24,7 @@ import {
 } from '@node-projects/acad-ts';
 import type { DocumentMeta, HeaderValue } from '@triya/engine';
 import { colorNumber, hex } from './common';
+import { layerFiltersDictionary } from './layer-filters';
 import { layerStatesDictionary } from './layer-states';
 
 export interface MappedHeader {
@@ -106,18 +107,22 @@ function definitionDictionaries(doc: CadDocument): {
   pdfDictionary?: string;
   groupDictionary?: string;
   layerStateDictionary?: string;
+  layerFilterDictionary?: string;
 } {
   const images = namedDictionary(doc, CadDictionary.acadImageDict);
   const pdfs = namedDictionary(doc, CadDictionary.acadPdfDefinitions);
   // GROUP's new groups (M3-08); acad-ts makes ACAD_GROUP on read when a file has none.
   const groups = namedDictionary(doc, CadDictionary.acadGroup);
   const states = layerStatesDictionary(doc);
+  const filters = layerFiltersDictionary(doc);
   return {
     ...(images && { imageDictionary: hex(images.handle) }),
     ...(pdfs && { pdfDictionary: hex(pdfs.handle) }),
     ...(groups && { groupDictionary: hex(groups.handle) }),
     // New layer states (M5-07): the LAYER table's ACAD_LAYERSTATES.
     ...(states && { layerStateDictionary: hex(states.handle) }),
+    // New layer filters (M5-07 part 4): the LAYER table's ACLYDICTIONARY.
+    ...(filters && { layerFilterDictionary: hex(filters.handle) }),
   };
 }
 

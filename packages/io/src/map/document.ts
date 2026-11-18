@@ -30,6 +30,7 @@ import { mapSpatialFilters } from './xclip';
 import { mapTriyaArrays } from './triya-array';
 import { mapTriyaDims } from './triya-dims';
 import { mapTriyaCenterMarks } from './triya-centermarks';
+import { mapLayerFilters } from './layer-filters';
 import { mapLayerStates } from './layer-states';
 
 export function documentInit(doc: CadDocument): DocumentInit {
@@ -57,6 +58,7 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
       ...mapTriyaDims(doc),
       ...mapTriyaCenterMarks(doc),
       ...mapLayerStates(doc),
+      ...mapLayerFilters(doc),
     ],
     layouts: mapLayouts(doc),
     entities,

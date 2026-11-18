@@ -29,6 +29,7 @@ export { mapSortEnts } from './map/sortents';
 export { mapTriyaArrays, TRIYA_ARRAY } from './map/triya-array';
 export { mapTriyaDims, TRIYA_DIMBREAK, TRIYA_DIMINSPECT } from './map/triya-dims';
 export { mapTriyaCenterMarks, TRIYA_CENTERMARK } from './map/triya-centermarks';
+export { ACLYDICTIONARY, mapLayerFilters } from './map/layer-filters';
 export { ACAD_LAYERSTATES, mapLayerStates } from './map/layer-states';
 export { LasError, parseLas, writeLas } from './las';
 export { mapLayouts, mapPageSetups } from './map/layouts';
