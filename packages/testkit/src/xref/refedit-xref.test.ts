@@ -52,7 +52,7 @@ function load(session: EngineSession, name: string, bytes: Uint8Array): void {
  */
 function loadedParent() {
   const session = new EngineSession(initOf(bytesOf(XREF_PARENT)));
-  let child = bytesOf(XREF_CHILD);
+  let child: Uint8Array = bytesOf(XREF_CHILD);
   load(session, 'xref-child-tb', child);
   load(session, 'xref-child-ovl', child);
   load(session, 'xref-grandchild', bytesOf(XREF_GRANDCHILD));
