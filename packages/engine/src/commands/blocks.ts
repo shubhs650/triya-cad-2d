@@ -77,6 +77,7 @@ import { INSUNITS_NAMES } from './drawing-units';
 import { definitionEntry, wcmatch } from './modify/attributes';
 import { currentUcs } from './ucs';
 import { drawingUnits, formatDistance, formatNumber } from './units';
+import { loadPastedXrefs, xrefHandles } from './xref-attach';
 import { isPaperSpace, modelSpaceOf } from './bus';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -610,7 +611,7 @@ async function* fileBlock(
     ctx.message(!reply.ok ? reply.message : typed ? `File "${file}" not found.` : notFound);
     return false;
   }
-  return blockOfDrawing(ctx, name, reply.drawing.content);
+  return await blockOfDrawing(ctx, name, reply.drawing.content);
 }
 
 /** Why a drawing file cannot be block `name` (the Insert dialog's note). */
@@ -624,14 +625,22 @@ function drawingRefusal(ctx: CommandContext, name: string, content: Clipboard): 
   return undefined;
 }
 
-/** Block `name` made, or redefined, from a drawing's contents; false when it would hold itself. */
-function blockOfDrawing(ctx: CommandContext, name: string, content: Clipboard): boolean {
+/**
+ * Block `name` made, or redefined, from a drawing's contents; false when it would hold itself. The
+ * xrefs the drawing references come with it, attached and loaded as a paste's (M5-04 part 19).
+ */
+async function blockOfDrawing(
+  ctx: CommandContext,
+  name: string,
+  content: Clipboard,
+): Promise<boolean> {
   if (clipboardHoldsBlock(content, name)) {
     ctx.message(`Block "${name}" references itself.`);
     return false;
   }
   let refused: ReadonlyMap<string, number> = new Map();
   let redefined = false;
+  const xrefs = xrefHandles(ctx);
   ctx.edit((b) => {
     const made = blockFromClipboard(b, ctx.model, content, name);
     refused = made.refused;
@@ -639,6 +648,7 @@ function blockOfDrawing(ctx: CommandContext, name: string, content: Clipboard): 
   });
   if (redefined) ctx.message(`Block "${name}" redefined.`);
   for (const line of refusalMessages(refused, 'put in the block')) ctx.message(line);
+  await loadPastedXrefs(ctx, xrefs);
   return true;
 }
 
@@ -1010,7 +1020,7 @@ export async function* insertDialog(ctx: CommandContext, block?: string): Sub<vo
     picked = drawing && content ? { file: drawing.file, content } : undefined;
     note = picked ? drawingRefusal(ctx, settings.name.trim(), picked.content) : undefined;
     if (!note && picked && (drawing!.redefine || !insertableBlock(ctx, settings.name.trim()))) {
-      if (!blockOfDrawing(ctx, settings.name.trim(), picked.content)) return;
+      if (!(await blockOfDrawing(ctx, settings.name.trim(), picked.content))) return;
     }
     note ??= insertRefusal(ctx, settings.name.trim());
     const r = note ? undefined : blockNamed(ctx.model, settings.name.trim())!;

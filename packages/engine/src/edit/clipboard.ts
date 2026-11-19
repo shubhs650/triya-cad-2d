@@ -91,7 +91,9 @@ import {
   isXrefRecord,
   loadedXrefHandles,
   renumber,
+  xrefBringing,
 } from '../model/xref';
+import { adoptNestedXref, xrefOfFile } from './xref-attach';
 import {
   AnonymousNames,
   copyProblem,
@@ -247,8 +249,14 @@ function clipboardProblem(model: DocumentModel, e: Entity): string | undefined {
     }
   }
   if (g.kind === 'VIEWPORT') return 'a viewport cannot be pasted';
-  if (g.kind === 'INSERT' && isXrefRecord(model.tables.blockRecords.get(g.block))) {
-    return 'an external reference cannot be pasted yet';
+  // A reference to an xref another loaded xref brings in is that xref's content (a block of its
+  // file's): nothing of the drawing's names the nested xref, so no paste can attach it.
+  if (
+    g.kind === 'INSERT' &&
+    isXrefRecord(model.tables.blockRecords.get(g.block)) &&
+    xrefBringing(model, g.block)
+  ) {
+    return "a nested xref's reference cannot be pasted";
   }
   return copyProblem(e, moveBy({ x: 0, y: 0 }));
 }
@@ -546,6 +554,9 @@ export function copyToClipboard(
       const d = clipBlock(model, def, dynamic);
       blocks.set(h, d);
       references(d, pending, layers);
+      // An xref's content is its file's, which its load brought (M5-04 part 19): the Clipboard
+      // carries its record and path, and a paste into another drawing attaches the file again.
+      if (isXrefRecord(model.tables.blockRecords.get(h))) continue;
       for (const id of model.blockEntities(h)) take(model.entity(id)!, blockEntities);
     }
   }
@@ -701,10 +712,16 @@ function pasteInto(
       const anonymous =
         t === 'blockRecords' &&
         (name.startsWith('*') || (((r as BlockTableRecord).flags ?? 0) & ANONYMOUS) !== 0);
-      const existing = anonymous ? undefined : byName(model, t, name);
+      const xref = t === 'blockRecords' && isXrefRecord(r as BlockTableRecord);
+      const existing = anonymous
+        ? undefined
+        : (byName(model, t, name) ?? (xref ? sameFileXref(model, clip, r.handle) : undefined));
       if (existing !== undefined) {
         map.set(r.handle, existing);
         if (t === 'blockRecords') kept.add(r.handle);
+        // An xref a loaded xref brought in is the drawing's own once it references it, as
+        // XATTACH makes it (xref-attach.ts).
+        if (xref) adoptNestedXref(b, model, existing);
         continue;
       }
       if (BY_NAME_ONLY.has(t)) continue;
@@ -771,6 +788,9 @@ function pasteInto(
     let out = copy(r) as SymbolTableRecord;
     const name = blockNames.get(r.handle);
     if (name !== undefined) out = { ...out, name };
+    // A new xref waits for its file, as XATTACH's does: not resolved (DXF 70 bit 32) till loaded.
+    if (t === 'blockRecords' && isXrefRecord(out) && ((out.flags ?? 0) & XREF_RESOLVED) !== 0)
+      out = { ...out, flags: (out.flags ?? 0) & ~XREF_RESOLVED };
     if (t === 'dimStyles') {
       const vars = { ...(out as DimStyleRecord).vars };
       for (const v of DIMVAR_REFERENCES) {
@@ -844,6 +864,18 @@ function pasteInto(
   const ids = top.map((e) => e.id);
   if (t) transformObjects(b, model, ids, t);
   return { ids, refused: new Map(), unannotated: 0 };
+}
+
+/** BLOCK_RECORD DXF 70 bit 32: an xref (or xref-dependent record) resolved, its file loaded. */
+const XREF_RESOLVED = 32;
+
+/**
+ * The xref of `model` whose path names the file the Clipboard's xref `record` names (case aside),
+ * which a paste references as XATTACH attaches a file again through it (xref-attach.ts).
+ */
+function sameFileXref(model: DocumentModel, clip: Clipboard, record: Handle): Handle | undefined {
+  const path = clip.blocks.find((d) => d.handle === record)?.xrefPath;
+  return path === undefined ? undefined : xrefOfFile(model, path)?.handle;
 }
 
 /**
