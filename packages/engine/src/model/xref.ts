@@ -361,7 +361,11 @@ export function xrefLoadChange(
       // name): the host's handles of what the xref's name, none where nothing came in.
       if (table === 'dimStyles')
         r = { ...r, vars: renumberedDimVars(r as DimStyleRecord, map) } as DimStyleRecord;
-      const { flags: _old, unreconciled: _u, ...rest } = r as SymbolTableRecord & {
+      const {
+        flags: _old,
+        unreconciled: _u,
+        ...rest
+      } = r as SymbolTableRecord & {
         unreconciled?: true;
       };
       const flagged = table === 'layers' && isNew(name);
@@ -456,10 +460,7 @@ export function loadedXrefHandles(model: DocumentModel): Set<Handle> {
  */
 export function withoutXrefContent(model: DocumentModel): DocumentModel {
   const loaded = loadedXrefHandles(model);
-  if (
-    loaded.size === 0 &&
-    ![...model.blocks.values()].some((b) => b.xrefUnloaded || b.xrefLayers)
-  )
+  if (loaded.size === 0 && ![...model.blocks.values()].some((b) => b.xrefUnloaded || b.xrefLayers))
     return model;
   const keep = <T extends ObjectCommon>(m: ReadonlyMap<Handle, T>): T[] =>
     [...m.values()].filter((r) => !loaded.has(r.handle));

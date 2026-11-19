@@ -71,6 +71,9 @@ FIXTURE_SAVES = (
     # packages/testkit/src/layers/layer-cleanup.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laymrg"),
+    # Unreconciled new xref layers bound into the xref set's parent, AutoCAD's
+    # ADSK_XREC_LAYER_RECONCILED records (M5-19, packages/testkit/src/xref/layer-reconcile.test.ts).
+    ("fixtures/xref/xref-parent.dxf", "layer-reconcile"),
     # Layer filters added beside AutoCAD's own empty ACLYDICTIONARY, and to a drawing without one
     # (M5-07 part 4, packages/testkit/src/export/layer-filters.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layerfilters"),

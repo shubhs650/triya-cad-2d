@@ -414,7 +414,9 @@ describe('-LAYER', () => {
   });
 
   it('rEconcile reconciles the unreconciled layers named; ? lists them (M5-19)', async () => {
-    const t = setup({ layers: { [DOORS]: { unreconciled: true }, [NOTES]: { unreconciled: true } } });
+    const t = setup({
+      layers: { [DOORS]: { unreconciled: true }, [NOTES]: { unreconciled: true } },
+    });
     await t.bus.script(['-LAYER', 'E']);
     const prompt = 'Enter name list of layer(s) to reconcile or [?]:';
     expect(t.bus.promptText).toBe(prompt);

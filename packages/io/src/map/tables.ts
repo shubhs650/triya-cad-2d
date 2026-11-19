@@ -149,6 +149,23 @@ function viewportOverrides(l: Layer): LayerViewportOverride[] | undefined {
     : undefined;
 }
 
+/** The XRECORD key of a layer's reconciled state. */
+export const RECONCILED = 'ADSK_XREC_LAYER_RECONCILED';
+
+/**
+ * Whether a layer is an unreconciled new layer (M5-19, LAYEREVAL): AutoCAD files the state as
+ * the `ADSK_XREC_LAYER_RECONCILED` XRECORD of the layer's extension dictionary, one 290 that is 1
+ * once the layer is reconciled (every layer of ezdxf's AutoCAD-saved recover02.dxf, LAYEREVAL 1).
+ * A layer without the record is not flagged: recover02's DEFPOINTS, made in the drawing while
+ * only xref layers were evaluated, has none, and nor has any layer of the LAYEREVAL 0 files.
+ */
+function unreconciled(l: Layer): boolean {
+  const x = l.xDictionary?.getEntry(RECONCILED);
+  if (!(x instanceof XRecord)) return false;
+  const flag = x.entries.find((e) => e.code === 290);
+  return flag !== undefined && !flag.value;
+}
+
 /**
  * A layer's colour, a colour-book colour with its book and name: AutoCAD names it by the layer's
  * own 430, `BOOK$COLOR`, with no DBCOLOR (acadsharp's Layer_color_book; M2-35 part 19). A name
@@ -183,6 +200,7 @@ function layer(l: Layer): LayerRecord {
     ...(material ? { material } : {}),
     ...(description ? { description } : {}),
     ...(overrides ? { viewportOverrides: overrides } : {}),
+    ...(unreconciled(l) ? { unreconciled: true as const } : {}),
   };
 }
 

@@ -40,6 +40,8 @@ export type AuditSaveKind =
   // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
   | 'laydel'
   | 'laymrg'
+  // Unreconciled new xref layers bound into the xref set's parent (M5-19).
+  | 'layer-reconcile'
   // Layer filters (property, group, nested) added to a drawing's ACLYDICTIONARY or a new one
   // (M5-07 part 4).
   | 'layerfilters'
