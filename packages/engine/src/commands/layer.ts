@@ -4,8 +4,8 @@
 //   - LAYER opens the Layer Properties Manager, which is the app's Layers palette; LAYERCLOSE
 //     closes it. Neither deselects.
 //   - -LAYER: "Current layer:" then "Enter an option [?/Make/Set/New/Rename/ON/OFF/Color/Ltype/
-//     LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description]" again after
-//     each option, until Enter; PStyle only in a drawing with named plot styles ($PSTYLEMODE 0),
+//     LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description/Xref]" again
+//     after each option, until Enter; PStyle only in a drawing with named plot styles ($PSTYLEMODE 0),
 //     as Help says it is not available with color-dependent plot styles. Name lists are names or wild-card patterns separated by commas (WCMATCH, case
 //     ignored); an Enter at "or <select objects>" takes the layers of the objects selected, and
 //     one at "<current>" the current layer.
@@ -20,8 +20,8 @@
 //
 // PStyle (M5-18 part 2) asks "Enter plot style or [?] <Normal>" (a name of the drawing's
 // ACAD_PLOTSTYLENAME; ? lists them) and then Help's "Enter name list of layer(s) for plot style
-// current <current>". stAte is in layer-state-dash.ts. Left for later: stAte's Import and
-// EXport and Xref (xref layer overrides, VISRETAIN; M5-18 part 3) and rEconcile (layer
+// current <current>". stAte is in layer-state-dash.ts and Xref (resetting xref layer
+// overrides, M5-18 part 3) in layer-xref-dash.ts. Left for later: rEconcile (layer
 // notification, LAYEREVAL; M5-19). MATerial is not offered: Triya has no materials (#195).
 //
 // Ambiguities, settled for the common drafter expectation (Help gives no messages): a frozen
@@ -44,6 +44,7 @@ import { lineweightTyped } from './lweight';
 import { selectedLayers } from './nested-pick';
 import { viewRequest } from './view/zoom';
 import { layerStateOption } from './layer-state-dash';
+import { layerXrefOption } from './layer-xref-dash';
 import { namedPlotStyles } from '../properties/general';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -68,6 +69,7 @@ const OPTIONS = [
   'Unlock',
   'stAte',
   'Description',
+  'Xref',
 ];
 
 /** -LAYER's options in the drawing: PStyle only with named plot styles. */
@@ -501,6 +503,8 @@ function option(ctx: CommandContext, keyword: string): Sub<void> {
       return plotStyle(ctx);
     case 'stAte':
       return layerStateOption(ctx);
+    case 'Xref':
+      return layerXrefOption(ctx);
     case 'Freeze':
       return freeze(ctx);
     case 'Thaw':

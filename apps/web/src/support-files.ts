@@ -5,6 +5,7 @@
 // the next visit. The Plot dialog (M2-17 part 3) and the linetype loader (M5-08) look them up
 // by file name with `file`.
 import { parseLin, parsePlotStyleTable, type PlotStyleTable } from '@triya/render';
+import { LasError, parseLas } from '@triya/io';
 
 /** One kept file, by its name as dropped. */
 export interface StoredSupportFile {
@@ -147,6 +148,27 @@ export const LINETYPE_FILES: SupportKind = {
     return {
       summary: some(names),
       notice: `Added ${plural(names.length, 'linetype')} from ${name}: ${some(names)}.${skipped}`,
+    };
+  },
+};
+
+/**
+ * .las files (M5-18 part 3), AutoCAD's layer state files: -LAYER stAte Import finds one by name,
+ * as AutoCAD finds it in the support path, and EXport keeps the file it writes here too.
+ */
+export const LAYER_STATE_FILES: SupportKind = {
+  folder: 'layerstates',
+  accepts: (name) => /\.las$/i.test(name),
+  read: (name, bytes) => {
+    let names: string[];
+    try {
+      names = parseLas(new TextDecoder().decode(bytes)).map((s) => s.name);
+    } catch (e) {
+      return { error: `${name}: ${e instanceof LasError ? e.message : 'not a layer state file.'}` };
+    }
+    return {
+      summary: some(names),
+      notice: `Added ${plural(names.length, 'layer state')} from ${name}: ${some(names)}.`,
     };
   },
 };

@@ -155,6 +155,7 @@ import { openDrawing, openError } from './open';
 import { drawingFileReply, type HeldDrawing } from './block-files';
 import { pdfFileReply } from './pdf-files';
 import { writeXrefFile, xrefDrawingReply, xrefFileReply } from './xref-files';
+import { layerStateFileReply, writeLayerStateFile } from './layer-state-files';
 import { DesignCenterPalette } from './DesignCenterPalette';
 import { DESIGN_CENTER_DRAG, designCenterDrop, takeDesignCenterDrag } from './design-center';
 import { writeBlockFile } from './block-file-io';
@@ -191,6 +192,7 @@ import { coordinateText, editedHeader } from './coordinates';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
 import {
+  LAYER_STATE_FILES,
   LINETYPE_FILES,
   PLOT_STYLE_FILES,
   plotStyleTablesIn,
@@ -592,6 +594,14 @@ function viewContext(id: number): ViewContext {
     xrefFile: (file) => xrefFileByName(id, file),
     // -PDFATTACH (M5-04 part 13): a PDF named at the command line.
     pdfFile: pdfFileByName,
+    // -LAYER stAte Import and EXport (M5-18 part 3): a layer state file named at the command
+    // line, and the one written (layer-state-files.ts).
+    layerStateFile: (file) => layerStateFileByName(id, file),
+    writeLayerState: (r) =>
+      writeLayerStateFile(r, {
+        download: (name, bytes) => download(name, bytes, 'text/plain'),
+        keep: (name, bytes) => layerStateFiles.add(name, bytes),
+      }),
     // WBLOCK (M5-01 part 4): its new drawing, or the whole drawing as EXPORT's DXF, downloaded.
     writeBlock: async (r) => {
       try {
@@ -1162,7 +1172,16 @@ const linetypeFiles: LinetypeFiles = {
     return { name };
   },
 };
-const supportStores = [plotStyles, linetypes] as const;
+/**
+ * The user's layer state files (M5-18 part 3), which -LAYER stAte Import finds by name and
+ * EXport keeps what it writes in.
+ */
+const layerStateFiles = new SupportFileStore(
+  LAYER_STATE_FILES,
+  opfsSupportFiles(LAYER_STATE_FILES),
+);
+void layerStateFiles.load();
+const supportStores = [plotStyles, linetypes, layerStateFiles] as const;
 /**
  * The user's own templates (M5-10 part 2, Settings > Templates): .dxf files kept on this device,
  * each opened by an I/O worker as it is added. Not among `supportStores`: a .dxf dropped on the
@@ -1492,6 +1511,35 @@ function xrefFileByName(doc: number, file: string): Promise<ViewReply> {
       found: (s) => xrefSources.set(fileKey(s.name), s),
       ...(self && self.untitled !== true && { self: self.name }),
     },
+  );
+}
+
+/**
+ * -LAYER stAte Import's file named at the command line (M5-18 part 3), for drawing `doc`: found
+ * among the layer state files kept, the kept folders, the other drawings open (as saved) and the
+ * files that answered xrefs.
+ */
+function layerStateFileByName(doc: number, file: string): Promise<ViewReply> {
+  return layerStateFileReply(
+    file,
+    [
+      () =>
+        layerStateFiles.getSnapshot().files.flatMap((f) => {
+          const bytes = layerStateFiles.file(f.name);
+          return bytes
+            ? [{ name: f.name, getFile: () => Promise.resolve(new Blob([bytes.slice()])) }]
+            : [];
+        }),
+      () => referenceFiles.files(),
+      () =>
+        store.getSnapshot().docs.flatMap((d) => {
+          const bytes = d.file?.bytes;
+          if (d.id === doc || d.untitled === true || !bytes) return [];
+          return [{ name: d.name, getFile: () => Promise.resolve(new Blob([bytes.slice()])) }];
+        }),
+      () => [...xrefSources.values()],
+    ],
+    { open: openDrawing },
   );
 }
 
@@ -2295,6 +2343,7 @@ export function App() {
         fonts={fonts}
         plotStyles={plotStyles}
         linetypes={linetypes}
+        layerStates={layerStateFiles}
         templates={templates}
         deviceFonts={deviceFonts}
         open={settings}

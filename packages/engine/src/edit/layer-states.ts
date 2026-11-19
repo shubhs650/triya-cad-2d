@@ -22,7 +22,7 @@
 // (MSPACE, M6-02): a state saved here keeps it off and a restore leaves it alone.
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
-import type { DocumentModel } from '../model/document';
+import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
 import { aciOfTrueColor } from '../model/aci';
 import { LINEWEIGHTS } from '../properties/sheet';
@@ -208,6 +208,20 @@ export function importLayerStateChange(
   state: LayerStateInit,
   replace = false,
 ): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  return importLayerState(b, model, state, replace) ?? b.build();
+}
+
+/**
+ * {@link importLayerStateChange} into `b` (-LAYER stAte Import builds in its command's edit,
+ * M5-18 part 3): undefined when imported, otherwise why not, with nothing built.
+ */
+export function importLayerState(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  state: LayerStateInit,
+  replace = false,
+): string | undefined {
   const old = replace ? layerStateNamed(model, state.name) : undefined;
   const why =
     nameProblem(model, state.name, old?.handle) ??
@@ -218,7 +232,6 @@ export function importLayerStateChange(
   const linetypes = new Map(
     [...model.tables.linetypes.values()].map((l) => [upper(l.name), l.handle]),
   );
-  const b = new ChangeSetBuilder(model);
   if (old) b.removeObject(old.handle);
   addState(model, b, {
     ...state,
@@ -231,7 +244,37 @@ export function importLayerStateChange(
       return { ...(layer ? { layer } : {}), ...rest, ...(linetype ? { linetype } : {}) };
     }),
   });
-  return b.build();
+  return undefined;
+}
+
+/**
+ * `state` as a file holds it (-LAYER stAte EXport, M5-18 part 3; a drawing's states imported
+ * from it): its layers and linetypes by the names the drawing gives them now, no handles.
+ */
+export function fileLayerState(model: DocumentModel, state: LayerState): LayerStateInit {
+  return {
+    name: state.name,
+    description: state.description,
+    mask: state.mask,
+    paperSpace: state.paperSpace,
+    currentLayer: state.currentLayer,
+    layers: state.layers.map((e) => {
+      const { layer, linetype, ...rest } = e;
+      const l = layer === undefined ? undefined : model.tables.layers.get(layer);
+      const t = linetype === undefined ? undefined : model.tables.linetypes.get(linetype);
+      return { ...rest, name: l?.name ?? e.name, linetypeName: t?.name ?? e.linetypeName };
+    }),
+  };
+}
+
+/**
+ * The layer states another drawing holds, as a file holds them (-LAYER stAte Import of a DWG or
+ * DXF; AutoCAD 2024 Help: Import "loads ... layers states from a file (DWG, DWS, DWT)"): those
+ * the Layer States Manager lists, views' snapshots left out.
+ */
+export function drawingLayerStates(drawing: DocumentInit): LayerStateInit[] {
+  const model = DocumentModel.create(drawing);
+  return layerStates(model).map((s) => fileLayerState(model, s));
 }
 
 function stateOf(model: DocumentModel, handle: Handle): LayerState | string {
