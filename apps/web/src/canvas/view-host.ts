@@ -176,6 +176,12 @@ export interface ViewContext {
   readonly xrefFile?: (file: string) => Promise<ViewReply>;
   /** -PDFATTACH (M5-04 part 13): the PDF file of that name, with its pages' sizes. */
   readonly pdfFile?: (file: string) => Promise<ViewReply>;
+  /** -LAYER stAte Import (M5-18 part 3): a layer state file or drawing of that name. */
+  readonly layerStateFile?: (file: string) => Promise<ViewReply>;
+  /** -LAYER stAte EXport (M5-18 part 3): the app writes the `.las` file and hands it over. */
+  readonly writeLayerState?: (
+    r: Extract<ViewRequest, { op: 'writeLayerState' }>,
+  ) => Promise<ViewReply>;
   /** WBLOCK (M5-01 part 4): the app writes the new drawing file and hands it over. */
   readonly writeBlock?: (r: Extract<ViewRequest, { op: 'writeBlock' }>) => Promise<ViewReply>;
   /** REFCLOSE Save of an xref (M5-02 part 6): the xref's file read again (xref-files.ts). */
@@ -234,6 +240,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'pdfFile') {
     return ctx.pdfFile ? ctx.pdfFile(r.file) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'layerStateFile') {
+    return ctx.layerStateFile ? ctx.layerStateFile(r.file) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'writeLayerState') {
+    return ctx.writeLayerState ? ctx.writeLayerState(r) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'writeBlock') {
     return ctx.writeBlock ? ctx.writeBlock(r) : { ok: false, message: NO_FILE };

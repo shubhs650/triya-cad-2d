@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { BUNDLED_PLOT_STYLE_TABLES, writePlotStyleTable } from '@triya/render';
 import {
+  LAYER_STATE_FILES,
   LINETYPE_FILES,
   PLOT_STYLE_FILES,
   SupportFileStore,
@@ -192,6 +193,38 @@ describe('linetype file store', () => {
     const s = new SupportFileStore(LINETYPE_FILES, memory());
     await s.add('many.lin', enc(many));
     expect(listed(s)).toEqual([['many.lin', 'T1, T2, T3, T4, T5, T6, T7, T8 and 4 more']]);
+  });
+});
+
+describe('layer state file store (M5-18 part 3)', () => {
+  const las = (...names: string[]) =>
+    enc(
+      [
+        '0',
+        'LAYERSTATEDICTIONARY',
+        ...names.flatMap((n) => ['0', 'LAYERSTATE', '1', n, '91', '2047']),
+        '0',
+        'EOF',
+        '',
+      ].join('\r\n'),
+    );
+
+  it('keeps .las files and lists the states each holds', async () => {
+    expect(LAYER_STATE_FILES.accepts('Plan.LAS')).toBe(true);
+    expect(LAYER_STATE_FILES.accepts('plan.lin')).toBe(false);
+    const s = new SupportFileStore(LAYER_STATE_FILES, memory());
+    await s.add('plan.las', las('PLAN', 'ELEV'));
+    expect(s.getSnapshot().notice).toBe('Added 2 layer states from plan.las: PLAN, ELEV.');
+    expect(listed(s)).toEqual([['plan.las', 'PLAN, ELEV']]);
+  });
+
+  it('refuses a file that is not a layer state file', async () => {
+    const s = new SupportFileStore(LAYER_STATE_FILES, memory());
+    await s.add('notes.las', enc('hello'));
+    expect(s.getSnapshot().error).toBe('notes.las: Not a layer state file.');
+    await s.add('empty.las', las());
+    expect(s.getSnapshot().error).toBe('empty.las: The file holds no layer state.');
+    expect(listed(s)).toEqual([]);
   });
 });
 

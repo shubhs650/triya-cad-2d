@@ -17,6 +17,7 @@ import type {
 import type { Clipboard } from '../../edit/clipboard';
 import type { XrefAttachFile } from '../../edit/xref-attach';
 import type { PdfAttachPage } from '../../edit/underlay-attach';
+import type { LayerStateInit } from '../../edit/layer-states';
 import type { ChangeSet } from '../../model/changeset';
 import type { DocumentInit } from '../../model/document';
 import type { ClipboardPicture } from '../../edit/picture';
@@ -201,6 +202,18 @@ export type ViewRequest =
    * underlays. No `pdfFile` when none is found.
    */
   | { readonly op: 'pdfFile'; readonly file: string }
+  /**
+   * -LAYER stAte Import (M5-18 part 3): the layer state file or drawing `file` names (folders and
+   * the extension optional, any case: a `.las` first), which the app finds among its layer state
+   * files and the drawings it holds, answered as `layerStateFile`: a `.las` file's states, or a
+   * drawing's `drawing`. No `layerStateFile` when none is found.
+   */
+  | { readonly op: 'layerStateFile'; readonly file: string }
+  /**
+   * -LAYER stAte EXport (M5-18 part 3): the app writes `state` as the `.las` file `file` and
+   * hands it over (and keeps it among its layer state files); the reply's `file` is its name.
+   */
+  | { readonly op: 'writeLayerState'; readonly file: string; readonly state: LayerStateInit }
   /**
    * WBLOCK (M5-01 part 4): the app writes the new drawing file `file` (DXF, DEC-047) and hands it
    * over: `drawing`'s objects, or without it the whole drawing as Save would write it.
@@ -573,6 +586,15 @@ export type ViewReply =
       readonly pdfFile?: {
         readonly fileName: string;
         readonly pages: readonly PdfAttachPage[];
+      };
+      /**
+       * What a `layerStateFile` request found (M5-18 part 3): the file's name and, for a `.las`
+       * file, its layer states, or for a drawing the drawing.
+       */
+      readonly layerStateFile?: {
+        readonly name: string;
+        readonly states?: readonly LayerStateInit[];
+        readonly drawing?: DocumentInit;
       };
       /** What a `drawingFile` request read: the file's name and its model space (M5-01). */
       readonly drawing?: { readonly name: string; readonly content: Clipboard };
