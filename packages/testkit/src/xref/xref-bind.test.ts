@@ -387,7 +387,7 @@ describe('-XREF Bind (M5-04 part 2)', () => {
     const t = bus(model, 0);
     await t.bus.script(['-XREF']);
     expect(t.bus.promptText).toBe(
-      'Enter an option [?/Bind/Detach/Unload/Reload/Overlay/Attach] <Attach>:',
+      'Enter an option [?/Bind/Detach/Path/pathType/Unload/Reload/Overlay/Attach] <Attach>:',
     );
     await t.bus.script(['Bind', 'xref-*']);
     expect(t.bus.promptText).toBe('Command:');

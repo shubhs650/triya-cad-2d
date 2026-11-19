@@ -90,6 +90,9 @@ FIXTURE_SAVES = (
     # XBIND of the xref set's block and layers (M5-04 part 7,
     # packages/testkit/src/xref/xbind.test.ts).
     ("fixtures/xref/xref-parent.dxf", "xbind"),
+    # -XREF Path and Pathtype of the xref set's xrefs (M5-04 part 15,
+    # packages/testkit/src/xref/xref-path.test.ts).
+    ("fixtures/xref/xref-parent.dxf", "xref-path"),
     # A reference scaled differently in X and Y edited in place, a line and a circle drawn into
     # its block (M5-02 part 8, packages/testkit/src/export/refedit-scaled.corpus.test.ts).
     ("third-party/ezdxf/examples_dxf/colors.dxf", "refedit-scaled"),

@@ -100,6 +100,7 @@ import { textOf } from '../properties/multileader';
 import type { EntityType } from '../model/types';
 import { LAYERP, layerPreviousOf } from './layer-previous';
 import { designCenterCommand, type DesignCenterDrop } from './design-center';
+import { referencePathCommand, type ReferencePathEdit } from './reference-path';
 
 /**
  * What a double click on an object of each type runs (AutoCAD's DBLCLKEDIT; its CUI's
@@ -1026,6 +1027,19 @@ export class PromptBus {
         },
       };
       await this.#start(def, false, false);
+    });
+  }
+
+  /**
+   * The References palette's Saved Path, Browse... and Remove Path (M5-04 part 15,
+   * `referencePathCommand`): one XREF undo step the command line does not echo, with the loads
+   * of the xrefs given a new path. A running command is cancelled first, as a palette's edit
+   * cancels it.
+   */
+  referencePath(edits: readonly ReferencePathEdit[]): Promise<void> {
+    return this.#enqueue(async () => {
+      if (this.#stack.length > 0) await this.#cancel();
+      await this.#start(referencePathCommand(edits), false, false);
     });
   }
 

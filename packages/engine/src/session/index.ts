@@ -7,6 +7,7 @@ import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
 import type { DesignCenterDrop } from '../commands/design-center';
+import type { ReferencePathEdit } from '../commands/reference-path';
 import { isDesignCenterItem } from '../edit/design-center';
 import type { CommandPreview } from '../commands/command-preview';
 import { PICKFIRST } from '../commands/sysvars';
@@ -464,6 +465,12 @@ export type CommandInput =
    */
   | { readonly kind: 'design-center'; readonly drop: DesignCenterDrop }
   /**
+   * The References palette's Saved Path, Browse... and Remove Path (M5-04 part 15): the references
+   * given these saved paths, one XREF undo step with the loads it brings
+   * (`PromptBus.referencePath`).
+   */
+  | { readonly kind: 'reference-path'; readonly edits: readonly ReferencePathEdit[] }
+  /**
    * The cursor rests on object `id` (M2-35 part 21, ROLLOVERTIPS): the engine answers with its
    * rollover tooltip (`rolloverSheet`), whether or not it is selected; the selection stays.
    */
@@ -728,6 +735,13 @@ export class EngineSession {
           }),
         });
       }
+      case 'reference-path':
+        // Plain data from the app: what is not a handle and a path is left out.
+        return this.#bus.referencePath(
+          (Array.isArray(input.edits) ? input.edits : [])
+            .filter((e) => typeof e?.handle === 'string' && typeof e.path === 'string')
+            .map((e) => ({ handle: e.handle, path: e.path })),
+        );
       case 'property-vertex':
         this.#vertex = Math.max(0, Math.trunc(input.vertex));
         if (this.#properties) this.#sendSheet();
