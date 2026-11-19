@@ -440,7 +440,8 @@ export type DraftingToggle =
   | 'qp'
   | 'sc'
   | 'groups'
-  | 'groupBox';
+  | 'groupBox'
+  | 'underlaySnap';
 
 /**
  * The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). Their keys (F3, F7–F11,
@@ -459,6 +460,7 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:sc', label: 'Selection Cycling on/off' },
   { id: 'drafting:groups', label: 'Group Selection on/off' },
   { id: 'drafting:groupBox', label: 'Group Bounding Box on/off' },
+  { id: 'drafting:underlaySnap', label: 'Snap to Underlays on/off' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -541,6 +543,7 @@ export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): bo
   if (t === 'sc') return s.selectionCycling > 0;
   if (t === 'groups') return (s.pickStyle & 1) !== 0;
   if (t === 'groupBox') return s.groupDisplayMode === 2;
+  if (t === 'underlaySnap') return s.pdfOsnap;
   return s[t];
 }
 
@@ -610,6 +613,10 @@ export class Drafting {
       // with the group's one grip (GROUPDISPLAYMODE 2), or the grip alone (1).
       case 'groupBox':
         return this.#set({ ...s, groupDisplayMode: s.groupDisplayMode === 2 ? 1 : 2 });
+      // Snap to Underlays (M5-04 part 20; AutoCAD's Insert > Reference button, UOSNAP): object
+      // snapping to underlays' geometry, PDFOSNAP since Triya's underlays are all PDF.
+      case 'underlaySnap':
+        return this.#set({ ...s, pdfOsnap: !s.pdfOsnap });
       case 'snap':
       case 'otrack':
       case 'grid':

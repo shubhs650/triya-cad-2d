@@ -147,6 +147,11 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'LWUNITS', store: 'app', kind: 'switch' },
   { name: 'TRANSPARENCYDISPLAY', store: 'app', kind: 'switch' },
   { name: 'PDFOSNAP', store: 'app', kind: 'switch' },
+  // UOSNAP (M5-04 part 20; AutoCAD 2024 Help, "Saved in: Registry"): object snapping to every
+  // underlay kind's geometry, 0 off, 1 on (initially), 2 read back when DWF, PDF and DGN differ.
+  // Triya attaches PDF underlays only, so it is PDFOSNAP's value (apps/web system-variables.ts)
+  // and 2, which only reports, is refused as FRAME refuses 3. The Snap to Underlays toggle sets it.
+  { name: 'UOSNAP', store: 'app', kind: 'integer', min: 0, max: 1 },
   // 1 (AutoCAD 2021+): a revision cloud shows its corners; 0: a grip at every arc's end.
   { name: 'REVCLOUDGRIPS', store: 'app', kind: 'switch' },
   // Quick Properties (M2-35 part 16): QPMODE 0 off, 1 for all objects, 2 only for objects with

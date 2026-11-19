@@ -482,6 +482,23 @@ describe('SETVAR', () => {
     expect(systemVariable(model, 'rollovertips')).toMatchObject({ store: 'app', kind: 'integer' });
   });
 
+  it('asks the app for UOSNAP, the Snap to Underlays toggle, which is PDFOSNAP here (M5-04 part 20)', async () => {
+    // AutoCAD 2024 Help, UOSNAP: object snapping to the geometry of DWF, PDF and DGN underlays,
+    // 0 off for all, 1 on for all, 2 when the underlay kinds differ, initially 1. Triya attaches
+    // PDF underlays only, so it is PDFOSNAP's value and 2 is refused, as FRAME refuses 3.
+    const app = appHost({ UOSNAP: 1 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['UOSNAP']);
+    expect(s.bus.promptText).toBe('Enter new value for UOSNAP <1>:');
+    await s.bus.script(['2']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 1.');
+    await s.bus.script(['0']);
+    expect(app.values['UOSNAP']).toBe(0);
+    expect(s.bus.undo.state.undoable).toBe(0);
+    const model = DocumentModel.create(sampleInit());
+    expect(systemVariable(model, 'uosnap')).toMatchObject({ store: 'app', kind: 'integer' });
+  });
+
   it('asks the app for SELECTIONPREVIEW and PREVIEWFILTER, kept per user (M3-04 part 5)', async () => {
     // AutoCAD 2024 Help: SELECTIONPREVIEW bits 1 and 2, PREVIEWFILTER bits 1 to 32, both
     // initially 3 and saved in the registry.
