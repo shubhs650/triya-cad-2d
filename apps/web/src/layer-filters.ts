@@ -5,13 +5,16 @@
 //
 // The engine worker holds the drawing (M1-67), so the tree reads the filters, and the tables
 // they are evaluated on, from the drawing as opened plus every change applied since; the
-// expressions are the engine's own (`filteredLayers`, part 4, DEC-076).
+// expressions are the engine's own (`filteredLayers`, part 4, DEC-076). The filter menu's items
+// (part 6) are below `listedLayers`.
 import {
   filteredLayers,
   isLayerFilter,
   parseLayerFilterExpression,
   type ChangeSet,
   type DocumentInit,
+  type EngineEdit,
+  type FilterLayerSetting,
   type Handle,
   type LayerFilter,
   type LayerFilterExpression,
@@ -93,6 +96,124 @@ export function listedLayers(
       ...(options.used && { used: options.used }),
     }).map((l) => l.handle),
   );
+}
+
+// The filter menu (part 6; AutoCAD 2024 Help, "Layer Properties Manager", the tree view's
+// shortcut menu): Visibility, Lock, Viewport and Isolate Group act on every layer the node lists
+// (the engine's `layer-filter-set` and `layer-filter-isolate`), then the filters' own items.
+// Viewport and Isolate Group's Active Viewport Only act in the layout viewport made current,
+// which Triya cannot make yet (MSPACE, M6-02): they are greyed in a layout, and Active Viewport
+// Only in model space does what All Viewports does there, as AutoCAD's help says of both.
+
+export type LayerFilterAction =
+  | 'newProperty'
+  | 'newGroup'
+  | 'convert'
+  | 'rename'
+  | 'delete'
+  | 'properties'
+  | FilterLayerSetting
+  | 'vpFreeze'
+  | 'vpThaw'
+  | 'isolateAll'
+  | 'isolateActive';
+
+export interface FilterMenuEntry {
+  readonly label: string;
+  /** An item; absent on a submenu. */
+  readonly action?: LayerFilterAction;
+  /** A submenu's items. */
+  readonly items?: readonly { readonly action: LayerFilterAction; readonly label: string }[];
+  readonly separator?: boolean;
+}
+
+export const FILTER_MENU: readonly FilterMenuEntry[] = [
+  {
+    label: 'Visibility',
+    items: [
+      { action: 'on', label: 'On' },
+      { action: 'off', label: 'Off' },
+      { action: 'thawed', label: 'Thawed' },
+      { action: 'frozen', label: 'Frozen' },
+    ],
+  },
+  {
+    label: 'Lock',
+    items: [
+      { action: 'lock', label: 'Lock' },
+      { action: 'unlock', label: 'Unlock' },
+    ],
+  },
+  {
+    label: 'Viewport',
+    items: [
+      { action: 'vpFreeze', label: 'Freeze' },
+      { action: 'vpThaw', label: 'Thaw' },
+    ],
+  },
+  {
+    label: 'Isolate Group',
+    items: [
+      { action: 'isolateAll', label: 'All Viewports' },
+      { action: 'isolateActive', label: 'Active Viewport Only' },
+    ],
+  },
+  { action: 'newProperty', label: 'New Properties Filter...', separator: true },
+  { action: 'newGroup', label: 'New Group Filter' },
+  { action: 'convert', label: 'Convert to Group Filter' },
+  { action: 'rename', label: 'Rename', separator: true },
+  { action: 'delete', label: 'Delete' },
+  { action: 'properties', label: 'Properties...', separator: true },
+];
+
+/** What the menu's items depend on. */
+export interface FilterMenuContext {
+  /** The filter right-clicked; undefined for All and All Used Layers. */
+  readonly filter?: LayerFilter | undefined;
+  /** Its parent filter. */
+  readonly parent?: LayerFilter | undefined;
+  /** The block of the layout shown; undefined in model space. */
+  readonly space?: Handle | undefined;
+}
+
+const SETTINGS: ReadonlySet<LayerFilterAction> = new Set<FilterLayerSetting>([
+  'on',
+  'off',
+  'thawed',
+  'frozen',
+  'lock',
+  'unlock',
+]);
+const isSetting = (a: LayerFilterAction): a is FilterLayerSetting => SETTINGS.has(a);
+
+/** Whether the filter menu's item `a` can act on the node `ctx` describes. */
+export function filterMenuEnabled(a: LayerFilterAction, ctx: FilterMenuContext): boolean {
+  const { filter } = ctx;
+  if (isSetting(a) || a === 'isolateAll' || a === 'newProperty') return true;
+  if (a === 'vpFreeze' || a === 'vpThaw') return false;
+  if (a === 'isolateActive') return ctx.space === undefined;
+  if (a === 'newGroup') return filter?.filterType !== 'property';
+  if (a === 'properties') return filter?.filterType === 'property';
+  if (a === 'convert')
+    return filter?.filterType === 'property' && ctx.parent?.filterType !== 'property';
+  return filter !== undefined;
+}
+
+/** The engine edit item `a` sends for node `choice`, for the items that act on layers or convert. */
+export function filterMenuEdit(
+  a: LayerFilterAction,
+  choice: FilterChoice,
+  ctx: FilterMenuContext,
+): EngineEdit | undefined {
+  if (isSetting(a)) return { kind: 'layer-filter-set', node: choice, set: a };
+  if (a === 'isolateAll' || (a === 'isolateActive' && ctx.space === undefined))
+    return {
+      kind: 'layer-filter-isolate',
+      node: choice,
+      ...(ctx.space !== undefined && { space: ctx.space }),
+    };
+  if (a === 'convert' && ctx.filter) return { kind: 'layer-filter-convert', filter: choice };
+  return undefined;
 }
 
 /** The name AutoCAD gives a new filter: Properties Filter1 or Group Filter1, past those taken. */

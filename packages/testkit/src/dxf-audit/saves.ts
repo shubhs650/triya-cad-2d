@@ -36,6 +36,8 @@ export type AuditSaveKind =
   // Layer filters (property, group, nested) added to a drawing's ACLYDICTIONARY or a new one
   // (M5-07 part 4).
   | 'layerfilters'
+  // The filter menu's Convert to Group Filter and Isolate Group in a layout (M5-07 part 6).
+  | 'layerfilters-menu'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).
