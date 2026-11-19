@@ -83,6 +83,11 @@ export class DocumentModel {
   readonly passthroughLinetypes: ReadonlySet<Handle>;
   /** Records PURGE may never take (`DocumentInit.purgePinned`). */
   readonly purgePinned: ReadonlySet<Handle>;
+  /**
+   * The layouts the drawing had as it opened (M6-01). Every save starts from that file, which can
+   * make only one of its own layouts current (LAYOUT Delete of the current layout).
+   */
+  readonly openedLayouts: ReadonlySet<Handle>;
 
   readonly #header = new Map<string, HeaderValue>();
   readonly #tables = Object.fromEntries(TABLE_NAMES.map((t) => [t, new Map()])) as MutableTables;
@@ -127,6 +132,7 @@ export class DocumentModel {
       this.#layouts.push(deepFreeze({ ...l }));
     }
     this.#layouts.sort(byTabOrder);
+    this.openedLayouts = new Set(this.#layouts.map((l) => l.handle));
     for (const o of init.objects ?? []) {
       claim(o.handle, 'object handle');
       this.#objects.set(o.handle, createRecord(o));

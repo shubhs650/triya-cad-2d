@@ -572,6 +572,29 @@ describe('layout change sets (M1-97)', () => {
     expect(scene.ctx.named('rect')).toEqual([['rect', 10.5, 10.5, 179, 79]]);
   });
 
+  it('draws the sheet of a layout made after the renderer was, for its block (M6-01)', () => {
+    const { d, r, scene } = setup([], { block: '1000' });
+    r.frame();
+    // The block is no layout's yet: no sheet on the background.
+    expect(scene.ctx.named('fillRect')).toEqual([['fillRect', 0, 0, 200, 100]]);
+    // LAYOUT New: the block record is allocated first (1000), then the layout (1001).
+    const plot = {
+      ...PLOT,
+      paperWidth: 100,
+      paperHeight: 50,
+      margins: { left: 0, bottom: 0, right: 0, top: 0 },
+    };
+    const cs = change(d, (b) => b.addLayout({ name: 'Layout2', plot }));
+    expect(cs.layouts?.added?.[0]?.blockRecord).toBe('1000');
+    r.apply(cs);
+    scene.ctx.clear();
+    r.frame();
+    expect(scene.ctx.named('fillRect')).toEqual([
+      ['fillRect', 0, 0, 200, 100],
+      ['fillRect', 10, 40, 100, 50],
+    ]);
+  });
+
   it('measures lineweights by the paper units a page setup change gives the layout', () => {
     const { d, r, scene } = setup(
       [onPaper('30', viewport()), onPaper('31', line(0, 0, 10, 0), { lineweight: 100 })],

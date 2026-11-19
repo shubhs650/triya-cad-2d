@@ -117,6 +117,7 @@ import { shortcutMenu } from './shortcut-menu';
 import { AppClipboard, browserClipboardEnv, clipboardPicture } from './system-clipboard';
 import { SnapMenu } from './SnapMenu';
 import { ShortcutMenu } from './ShortcutMenu';
+import { LayoutTabs } from './LayoutTabs';
 import { DraftingToggles } from './DraftingToggles';
 import {
   DocumentStore,
@@ -357,6 +358,17 @@ function viewUnreconciled(doc: number): void {
   dockedPalette.set('layers');
 }
 
+/**
+ * The layout shown is gone (LAYOUT Delete, or LAYOUT New undone; M6-01): the Model tab shows, as
+ * LAYOUT Delete shows it for the layout it deletes.
+ */
+function showSpaceLeft(id: number): void {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  if (!doc || doc.blockEditor || doc.refEdit !== undefined) return;
+  const spaces = spacesOf(doc, engines.changesOf(id));
+  if (!spaces.some((s) => s.block === doc.block)) store.showSpace(id, doc.opened.modelSpace!);
+}
+
 /** The drawing waits at `Command:`: no command runs and no prompt or dialog is up. */
 function atCommand(doc: number): boolean {
   const line = commandLines.get(doc);
@@ -370,7 +382,10 @@ function atCommand(doc: number): boolean {
  */
 engines.onCommand((doc, o) => {
   commandLines.follow(doc, o);
-  if (o.type === 'change') store.edited(doc);
+  if (o.type === 'change') {
+    store.edited(doc);
+    showSpaceLeft(doc);
+  }
   // An insert alerts for unreconciled new layers (LAYERNOTIFY 32, M5-19 part 4), and -LAYER's
   // stAte Restore as it restores (LAYERNOTIFY 8, M5-25).
   if (o.type === 'commit') {
@@ -2673,7 +2688,12 @@ export function App() {
         )}
       </div>
 
-      <LayoutTabs doc={active} />
+      <LayoutTabs
+        doc={active}
+        onShow={(block) => active && store.showSpace(active.id, block)}
+        onFail={(message) => store.fail(message)}
+        onEdited={() => active && store.edited(active.id)}
+      />
       <TextEditor
         doc={active}
         fonts={fontState.files.map((f) => f.name)}
@@ -3125,80 +3145,6 @@ function ViewportCanvas({
         }
       }
     />
-  );
-}
-
-/**
- * Model, then the layouts in tab order (DXF 71). While the Block Editor is open (M5-02) its bar
- * takes their place, as AutoCAD's editor leaves no tab to switch to: the block's name, Save
- * Block (BSAVE) and Close Block Editor (BCLOSE). While a reference is edited in place (M5-02
- * part 3) the Edit Reference bar does, with the buttons of AutoCAD's Edit Reference panel: the
- * working set is in the space shown, so no other tab is offered either.
- */
-function LayoutTabs({ doc }: { doc: OpenDocument | undefined }) {
-  if (!doc) return <nav className="layout-tabs" aria-label="Layouts" />;
-  if (doc.refEdit !== undefined) {
-    const run = (name: string, option: string) => {
-      engines.command(doc.id, { kind: 'invoke', name });
-      engines.command(doc.id, { kind: 'submit', text: option });
-    };
-    return (
-      <div className="layout-tabs block-editor-bar" role="toolbar" aria-label="Edit Reference">
-        <span className="block-editor-name">
-          Editing reference: <strong>{doc.refEdit}</strong>
-        </span>
-        <button type="button" onClick={() => run('REFSET', 'Add')}>
-          Add to Working Set
-        </button>
-        <button type="button" onClick={() => run('REFSET', 'Remove')}>
-          Remove from Working Set
-        </button>
-        <button type="button" onClick={() => run('REFCLOSE', 'Discard')}>
-          Discard Changes
-        </button>
-        <button type="button" onClick={() => run('REFCLOSE', 'Save')}>
-          Save Changes
-        </button>
-      </div>
-    );
-  }
-  if (doc.blockEditor) {
-    const run = (name: string) => engines.command(doc.id, { kind: 'invoke', name });
-    return (
-      <div className="layout-tabs block-editor-bar" role="toolbar" aria-label="Block Editor">
-        <span className="block-editor-name">
-          Block Editor: <strong>{doc.blockEditor.name}</strong>
-        </span>
-        <button type="button" onClick={() => run('BEDIT')}>
-          Edit Block
-        </button>
-        <button type="button" onClick={() => run('BSAVE')}>
-          Save Block
-        </button>
-        <button type="button" onClick={() => run('BCLOSE')}>
-          Close Block Editor
-        </button>
-      </div>
-    );
-  }
-  const tabs = spacesOf(doc, engines.changesOf(doc.id));
-  return (
-    <nav className="layout-tabs" aria-label="Layouts">
-      <div role="tablist" aria-label="Model and layouts">
-        {tabs.map((t) => (
-          <button
-            key={t.block}
-            type="button"
-            role="tab"
-            className="layout-tab"
-            aria-selected={t.block === doc.block}
-            onClick={() => store.showSpace(doc.id, t.block)}
-          >
-            {t.name}
-          </button>
-        ))}
-      </div>
-    </nav>
   );
 }
 

@@ -1,0 +1,1 @@
+- M6-01 part 1 (#591): LAYOUT at the command line (New, Delete, Rename, Set, ?) and a layout tab's right-click menu (New Layout, Delete, Rename) with renaming in place on the tab; new, deleted and renamed layouts save to the DXF. A layout made after the drawing opened now shows its sheet.
