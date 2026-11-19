@@ -5,15 +5,24 @@
 // dictionary).
 import { describe, expect, it } from 'vitest';
 import {
+  DocumentModel,
+  PromptBus,
+  builtinCommands,
   clipBoundary,
   clipFrame,
+  compareHandles,
+  type Clipboard,
   type Entity,
   type EntityGeometry,
   type InsertGeometry,
   type SpatialFilter,
   type Vec2,
 } from '../../src/index';
-import { r6, setup } from './edit-harness';
+import { MODEL_SPACE, sampleInit } from '../model/fixtures';
+import { host, r6, setup } from './edit-harness';
+
+// Engine tests have no DOM or Node types: the global every runtime they run in has.
+declare function structuredClone<T>(value: T): T;
 
 /** Block "B" (record 50: a line 0,0–1,0 and a circle at 1,0 r 0.5) placed at `at`. */
 const ref = (
@@ -412,52 +421,52 @@ describe('XCLIP Invert clip (M5-04 part 11)', () => {
   });
 });
 
-describe('XCLIP carried by COPY, MIRROR and ARRAY (M5-16)', () => {
-  /** Where `f` clips the reference `e` in the drawing: its block polygon placed by `e`, sorted. */
-  const world = (e: Entity, f: SpatialFilter) => {
-    const g = e.geom as InsertGeometry;
-    const [c, s] = [Math.cos(g.rotation), Math.sin(g.rotation)];
-    return clipBoundary(f)!
-      .map((q) => {
-        const [x, y] = [g.scale.x * q.x, g.scale.y * q.y];
-        return [r6(g.position.x + c * x - s * y), r6(g.position.y + s * x + c * y)];
-      })
-      .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
-  };
-  const SQUARE = (dx: number, dy: number) =>
-    [
-      [199 + dx, 99 + dy],
-      [199 + dx, 101 + dy],
-      [201 + dx, 99 + dy],
-      [201 + dx, 101 + dy],
-    ].map(([x, y]) => [r6(x!), r6(y!)]);
-  /** `copy`'s filter is a filter of its own with `source`'s clip, filed in its own dictionaries. */
-  const expectCarried = (
-    t: ReturnType<typeof drawing>,
-    source: SpatialFilter,
-    copy: Entity,
-    sourceXdict: string | undefined,
-  ) => {
-    const f = t.clipOf(copy.handle)!;
-    expect(f).toBeDefined();
-    expect(f.handle).not.toBe(source.handle);
-    expect(copy.extDict).toBeDefined();
-    expect(copy.extDict).not.toBe(sourceXdict);
-    expect(f.owner).not.toBe(source.owner);
-    expect(f.owner).not.toBe(copy.extDict);
-    expect(f.reactors).toEqual([f.owner]);
-    const { handle: _h, owner: _o, reactors: _r, insert: _i, ...clip } = f;
-    const { handle: _sh, owner: _so, reactors: _sr, insert: _si, ...sourceClip } = source;
-    expect(clip).toEqual(sourceClip);
-    return f;
-  };
-  const clipped = async (o: Parameters<typeof setup>[1] = {}) => {
-    const t = drawing([], o);
-    await t.xclip(R41);
-    await t.bus.script(['', '', '199,99', '201,101']);
-    return t;
-  };
+/** Where `f` clips the reference `e` in the drawing: its block polygon placed by `e`, sorted. */
+const world = (e: Entity, f: SpatialFilter) => {
+  const g = e.geom as InsertGeometry;
+  const [c, s] = [Math.cos(g.rotation), Math.sin(g.rotation)];
+  return clipBoundary(f)!
+    .map((q) => {
+      const [x, y] = [g.scale.x * q.x, g.scale.y * q.y];
+      return [r6(g.position.x + c * x - s * y), r6(g.position.y + s * x + c * y)];
+    })
+    .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
+};
+const SQUARE = (dx: number, dy: number) =>
+  [
+    [199 + dx, 99 + dy],
+    [199 + dx, 101 + dy],
+    [201 + dx, 99 + dy],
+    [201 + dx, 101 + dy],
+  ].map(([x, y]) => [r6(x!), r6(y!)]);
+/** `copy`'s filter is a filter of its own with `source`'s clip, filed in its own dictionaries. */
+const expectCarried = (
+  t: { clipOf(h: string): SpatialFilter | undefined },
+  source: SpatialFilter,
+  copy: Entity,
+  sourceXdict: string | undefined,
+) => {
+  const f = t.clipOf(copy.handle)!;
+  expect(f).toBeDefined();
+  expect(f.handle).not.toBe(source.handle);
+  expect(copy.extDict).toBeDefined();
+  expect(copy.extDict).not.toBe(sourceXdict);
+  expect(f.owner).not.toBe(source.owner);
+  expect(f.owner).not.toBe(copy.extDict);
+  expect(f.reactors).toEqual([f.owner]);
+  const { handle: _h, owner: _o, reactors: _r, insert: _i, ...clip } = f;
+  const { handle: _sh, owner: _so, reactors: _sr, insert: _si, ...sourceClip } = source;
+  expect(clip).toEqual(sourceClip);
+  return f;
+};
+const clipped = async (o: Parameters<typeof setup>[1] = {}) => {
+  const t = drawing([], o);
+  await t.xclip(R41);
+  await t.bus.script(['', '', '199,99', '201,101']);
+  return t;
+};
 
+describe('XCLIP carried by COPY, MIRROR and ARRAY (M5-16)', () => {
   it('COPY gives each copy the clip, where the copy stands; U takes copies and clips away', async () => {
     const t = await clipped();
     const source = t.clipOf('41')!;
@@ -569,6 +578,152 @@ describe('XCLIP carried by COPY, MIRROR and ARRAY (M5-16)', () => {
     const inner = t.byHandle(f!.insert)!;
     expect(inner.owner).not.toBe(t.space()[0]!.owner);
     expectCarried(t, source, inner, xdict);
+  });
+});
+
+describe('XCLIP carried by COPYCLIP, CUTCLIP and PASTECLIP (M5-17)', () => {
+  /**
+   * The app's side: one Clipboard for every drawing, as the app's (it crosses between the
+   * drawings' engines by structured clone), and a bus on `model` that reaches it.
+   */
+  function app() {
+    let held: { from: number; content: Clipboard } | undefined;
+    const bus = (n: number, model: DocumentModel) =>
+      new PromptBus({
+        model,
+        registry: builtinCommands(),
+        view: {
+          request: (r) => {
+            if (r.op !== 'clipboard') return host(() => model).request(r);
+            if (r.content) held = { from: n, content: structuredClone(r.content) };
+            else if (held) {
+              const clipboard = structuredClone(held.content);
+              return Promise.resolve({ ok: true, clipboard, sameDrawing: held.from === n });
+            }
+            return Promise.resolve({ ok: true });
+          },
+        },
+      });
+    return { bus };
+  }
+  const filtersOf = (model: DocumentModel) =>
+    [...model.objects.values()].filter((o): o is SpatialFilter => o.type === 'SPATIAL_FILTER');
+  const inSpace = (model: DocumentModel) =>
+    model.blockEntities(MODEL_SPACE).map((id) => model.entity(id)!);
+  /**
+   * The clip of the reference `e` pasted into `model`: `source`'s, filed as a first clip is in
+   * dictionaries of the pasted reference's own, every handle new to `model` (`before`).
+   */
+  const expectPasted = (
+    model: DocumentModel,
+    source: SpatialFilter,
+    e: Entity,
+    before: ReadonlySet<string>,
+  ) => {
+    const f = filtersOf(model).find((o) => o.insert === e.handle)!;
+    expect(f).toBeDefined();
+    expect(e.extDict).toBeDefined();
+    expect(f.owner).not.toBe(e.extDict);
+    expect(f.reactors).toEqual([f.owner]);
+    for (const h of [f.handle, f.owner, e.extDict!]) {
+      expect(before.has(h), h).toBe(false);
+      expect(compareHandles(h, '40'), h).toBeGreaterThan(0);
+    }
+    const { handle: _h, owner: _o, reactors: _r, insert: _i, ...clip } = f;
+    const { handle: _sh, owner: _so, reactors: _sr, insert: _si, ...sourceClip } = source;
+    expect(clip).toEqual(sourceClip);
+    return f;
+  };
+  const handlesOf = (model: DocumentModel) =>
+    new Set([...model.objects.keys(), ...[...model.entities()].map((e) => e.handle)]);
+
+  it('pastes a clipped reference into the same drawing with a clip of its own, where it stands; U takes both away', async () => {
+    const t = await clipped();
+    const source = t.clipOf('41')!;
+    const bus = app().bus(1, t.model);
+    // COPYCLIP's base point is the origin without a renderer: the copy lands 10 above.
+    await bus.script(['COPYCLIP', 'L', '']);
+    const before = handlesOf(t.model);
+    await bus.script(['PASTECLIP', '0,10']);
+    expect(bus.command).toBeUndefined();
+    const pasted = t.space().at(-1)!;
+    expect(pasted.handle).not.toBe('41');
+    expect(pasted.geom.kind).toBe('INSERT');
+    const f = expectPasted(t.model, source, pasted, before);
+    expect(f.handle).not.toBe(source.handle);
+    expect(pasted.extDict).not.toBe(t.ref41().extDict);
+    expect(world(pasted, f)).toEqual(SQUARE(0, 10));
+    // The source keeps its own.
+    expect(t.clipOf('41')).toEqual(source);
+    await bus.script(['U']);
+    expect(t.filters()).toEqual([source]);
+  });
+
+  it('CUTCLIP and PASTECLIP carry an inverted clip turned off into another drawing, the block coming with it', async () => {
+    const t = drawing();
+    await t.xclip(R41);
+    await t.bus.script(['', 'I', '', '200.5,99.7', '201,100.2']);
+    await t.xclip(R41);
+    await t.bus.submit('OFF');
+    const source = t.clipOf('41')!;
+    const a = app();
+    const one = a.bus(1, t.model);
+    await one.script(['CUTCLIP', 'L', '']);
+    expect(t.ref41()).toBeUndefined();
+
+    // A drawing without block B: the block is pasted with the reference.
+    const target = DocumentModel.create(sampleInit());
+    const before = handlesOf(target);
+    const two = a.bus(2, target);
+    await two.script(['PASTECLIP', '0,0']);
+    expect(two.command).toBeUndefined();
+    const pasted = inSpace(target).at(-1)!;
+    expect(pasted.geom.kind).toBe('INSERT');
+    const f = expectPasted(target, source, pasted, before);
+    expect(f).toMatchObject({ enabled: false, inverted: source.inverted });
+    expect(f.boundary).toEqual(source.boundary);
+    expect(filtersOf(target)).toHaveLength(1);
+    // One paste, one undo step: the clip goes with the reference.
+    await two.script(['U']);
+    expect(filtersOf(target)).toEqual([]);
+  });
+
+  it("pastes the clip onto a reference to the other drawing's own block of the name", async () => {
+    const t = await clipped();
+    const source = t.clipOf('41')!;
+    const a = app();
+    await a.bus(1, t.model).script(['COPYCLIP', 'L', '']);
+    // Another harness drawing: it has a block B of its own, which the reference now shows.
+    const other = setup();
+    const before = handlesOf(other.model);
+    await a.bus(2, other.model).script(['PASTECLIP', '0,10']);
+    const pasted = other.space().at(-1)!;
+    expect((pasted.geom as InsertGeometry).block).toBe('50');
+    expect(world(pasted, expectPasted(other.model, source, pasted, before))).toEqual(SQUARE(0, 10));
+  });
+
+  it('keeps the clip of a reference nested in a copied block, in the block pasted', async () => {
+    const t = await clipped();
+    const source = t.clipOf('41')!;
+    await t.bus.script(['-BLOCK', 'C', '0,0']);
+    await t.bus.answer({ kind: 'selection', ids: [t.ref41().id] });
+    await t.bus.script(['-INSERT', 'C', '0,10', '1', '', '0']);
+    const a = app();
+    await a.bus(1, t.model).script(['COPYCLIP', 'L', '']);
+
+    const target = DocumentModel.create(sampleInit());
+    const before = handlesOf(target);
+    await a.bus(2, target).script(['PASTECLIP', '0,0']);
+    const c = [...target.tables.blockRecords.values()].find((r) => r.name === 'C')!;
+    const [nested] = target.blockEntities(c.handle).map((id) => target.entity(id)!);
+    expect(nested!.geom.kind).toBe('INSERT');
+    expectPasted(target, source, nested!, before);
+    expect(filtersOf(target)).toHaveLength(1);
+
+    // Pasted back into its own drawing, the reference shows the drawing's block C, clip and all:
+    // nothing new is clipped.
+    await a.bus(1, t.model).script(['PASTECLIP', '0,20']);
+    expect(t.filters()).toHaveLength(1);
   });
 });
 

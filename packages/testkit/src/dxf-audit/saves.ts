@@ -34,6 +34,9 @@ export type AuditSaveKind =
   | 'xclip-invert'
   // XCLIP carried by COPY, MIRROR and ARRAY on ezdxf's xclip.dxf (M5-16).
   | 'xclip-copy'
+  // XCLIP carried by COPYCLIP, CUTCLIP and PASTECLIP: xclip.dxf pasted into itself and into
+  // traces.dxf (M5-17).
+  | 'xclip-paste'
   // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
   | 'laydel'
   | 'laymrg'

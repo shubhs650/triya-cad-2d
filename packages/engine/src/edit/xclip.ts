@@ -19,6 +19,7 @@ import { applyPoint, invert, type Matrix2D } from '../geom/transform';
 import { insertMatrices } from '../input/osnap';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
+import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Entity, Matrix3x4, NonGraphicalObject, SpatialFilter } from '../model/types';
 import { clipFrame, invertedBoundary } from '../model/xclip';
@@ -167,25 +168,33 @@ export function copyClips(b: ChangeSetBuilder, copies: ReadonlyMap<Handle, Entit
   for (const o of b.objects()) if (isFilter(o) && copies.has(o.insert)) clips.set(o.insert, o);
   for (const [from, copy] of copies) {
     const f = clips.get(from);
-    const e = f && b.entity(copy.id);
-    if (!f || e?.geom.kind !== 'INSERT') continue;
-    const extDict = e.extDict ?? b.allocateHandle();
-    if (e.extDict === undefined) b.updateEntity(e.id, { extDict });
-    const {
-      handle: _handle,
-      owner: _owner,
-      reactors: _reactors,
-      xdata: _xdata,
-      extDict: _extDict,
-      raw: _raw,
-      ...clip
-    } = f;
-    const owner = b.allocateHandle();
-    b.addObject({ ...clip, owner, reactors: [owner], insert: e.handle } as Omit<
-      SpatialFilter,
-      'handle'
-    >);
+    if (f) fileClip(b, f, copy.id);
   }
+}
+
+/**
+ * Clips the reference `id` (a copy, or a paste's: M5-17) as `f` clips another, in a filter of its
+ * own filed as `copyClips` says. Nothing when `id` is not a block reference.
+ */
+export function fileClip(b: ChangeSetBuilder, f: SpatialFilter, id: EntityId): void {
+  const e = b.entity(id);
+  if (e?.geom.kind !== 'INSERT') return;
+  const extDict = e.extDict ?? b.allocateHandle();
+  if (e.extDict === undefined) b.updateEntity(e.id, { extDict });
+  const {
+    handle: _handle,
+    owner: _owner,
+    reactors: _reactors,
+    xdata: _xdata,
+    extDict: _extDict,
+    raw: _raw,
+    ...clip
+  } = f;
+  const owner = b.allocateHandle();
+  b.addObject({ ...clip, owner, reactors: [owner], insert: e.handle } as Omit<
+    SpatialFilter,
+    'handle'
+  >);
 }
 
 /** XCLIP ON and OFF: whether the clip hides what lies outside it. */
