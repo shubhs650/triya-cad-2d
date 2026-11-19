@@ -262,6 +262,8 @@ function ucs(u: UCS): UcsRecord {
 export const VIEW_INFO = 'ADSK_XREC_VTRVIEWINFO';
 /** That XRECORD's group for the view's category, `<None>` when it has none. */
 export const VIEW_CATEGORY_CODE = 300;
+/** That XRECORD's group for the name of the view's layer snapshot, a layer state (M5-07 part 7). */
+export const VIEW_LAYER_STATE_CODE = 302;
 const NO_CATEGORY = '<None>';
 
 /** The View Manager's Category (M2-70; sample_AC1032_ascii.dxf's `view_custom`). */
@@ -270,6 +272,17 @@ function viewCategory(v: View): string | undefined {
   if (!(x instanceof XRecord)) return undefined;
   const value = x.entries.find((e) => e.code === VIEW_CATEGORY_CODE)?.value;
   return typeof value === 'string' && value !== '' && value !== NO_CATEGORY ? value : undefined;
+}
+
+/**
+ * The layer state a view's layer snapshot is kept in (M5-07 part 7; sample_AC1032_ascii.dxf's
+ * `view_custom` names `ACAD_VIEWS_view_custom`): DXF 302 of the same XRECORD.
+ */
+function viewLayerState(v: View): string | undefined {
+  const x = v.xDictionary?.getEntry(VIEW_INFO);
+  if (!(x instanceof XRecord)) return undefined;
+  const value = x.entries.find((e) => e.code === VIEW_LAYER_STATE_CODE)?.value;
+  return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
 function view(v: View): ViewRecord {
@@ -295,12 +308,14 @@ function view(v: View): ViewRecord {
       })
     : undefined;
   const category = viewCategory(v);
+  const layerState = viewLayerState(v);
   return {
     ...base(v),
     ...params,
     width: v.width,
     ...(frame ? { ucs: frame } : {}),
     ...(category !== undefined && { category }),
+    ...(layerState !== undefined && { layerState }),
   };
 }
 

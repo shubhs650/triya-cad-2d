@@ -17,7 +17,13 @@
 // and asks for its new boundary at the command line (`editBoundary` in the engine's file.ts); the
 // window accepted with Enter becomes the view's, a VIEW undo step at once as New... is. Only a
 // view Set Current could restore can be edited: one of the space shown, looking straight down.
-// Update Layers waits (layer snapshots are layer states, M5-07); Preset Views are 3D.
+// Preset Views are 3D.
+//
+// Layer snapshots (M5-07 part 7): New View's Settings "Save layer snapshot with view" (checked to
+// start with, as in AutoCAD) saves the layers' settings with the view, Update Layers saves them
+// again for the selected view and the General row Layer snapshot (Yes, No) saves or drops them,
+// each a VIEW undo step at once. OK and Apply restore the layers' On and Freeze settings with the
+// view Set Current chose (the engine's `view-restore`, a VIEW undo step).
 //
 // Category (M2-70) is a General row, as Name is: a field offering `<None>` and the drawing's
 // categories, which takes a new one typed, changed on Enter or when it loses focus (a VIEW undo
@@ -133,7 +139,9 @@ function ManagerBody({
     const v = state.current ? byKey.get(state.current) : undefined;
     const now = controllerOf(doc.id, doc.block);
     const t = v && now && namedView(v, now.size);
-    if (now && t) now.show(t);
+    if (!now || !t) return;
+    now.show(t);
+    if (v.layerState !== undefined) void run({ kind: 'view-restore', name: v.name });
   };
 
   const run = async (edit: Parameters<typeof engines.edit>[1]): Promise<boolean> => {
@@ -168,6 +176,10 @@ function ManagerBody({
         current: state.current === state.selected ? key : state.current,
       });
     }
+  };
+
+  const snapshot = async (save: boolean) => {
+    if (selected) await run({ kind: 'view-layers', name: selected.name, save });
   };
 
   const recategorize = async (to: string) => {
@@ -299,6 +311,15 @@ function ManagerBody({
                       options={categories}
                       onRename={recategorize}
                     />
+                  ) : r.label === 'Layer snapshot' && selected ? (
+                    <select
+                      aria-label="Layer snapshot"
+                      value={r.value}
+                      onChange={(e) => void snapshot(e.currentTarget.value === 'Yes')}
+                    >
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
                   ) : (
                     r.value
                   )}
@@ -319,10 +340,20 @@ function ManagerBody({
           <button
             type="button"
             onClick={() =>
-              set({ creating: { name: '', category: NO_VIEW_CATEGORY, boundary: 'display' } })
+              set({
+                creating: {
+                  name: '',
+                  category: NO_VIEW_CATEGORY,
+                  boundary: 'display',
+                  layers: true,
+                },
+              })
             }
           >
             New...
+          </button>
+          <button type="button" disabled={!selected} onClick={() => void snapshot(true)}>
+            Update Layers
           </button>
           <button
             type="button"
@@ -364,8 +395,8 @@ function ManagerBody({
           onDefineWindow={(creating) =>
             viewManager.pickWindow(doc.id, doc.block, { ...state, creating })
           }
-          onSave={async (name, view, category) => {
-            if (!(await run({ kind: 'view', name, view, category }))) return;
+          onSave={async (name, view, category, layers) => {
+            if (!(await run({ kind: 'view', name, view, category, layers }))) return;
             set({
               creating: undefined,
               selected: `${view.paper ? 'layout' : 'model'}:${name.toUpperCase()}`,
@@ -456,7 +487,7 @@ function NewView({
   shown: ViewState | undefined;
   onChange: (v: NewViewState) => void;
   onDefineWindow: (v: NewViewState) => void;
-  onSave: (name: string, view: ViewState, category: string) => void;
+  onSave: (name: string, view: ViewState, category: string, layers: boolean) => void;
   onCancel: () => void;
 }) {
   const [problem, setProblem] = useState<string | undefined>();
@@ -473,7 +504,7 @@ function NewView({
     if (!v) return setProblem('There is no view to save.');
     const same = existing.find((e) => e.name.toUpperCase() === name.toUpperCase());
     if (same && replacing === undefined) return setReplacing(same.name);
-    onSave(name, v, value.category);
+    onSave(name, v, value.category, value.layers);
   };
   const w = value.window && pickedWindow(value.window, paper);
   return (
@@ -541,6 +572,17 @@ function NewView({
           <p className="new-view-window">{`Window: ${w.width.toFixed(4)} × ${w.height.toFixed(4)}`}</p>
         )}
       </fieldset>
+      <fieldset className="new-view-settings">
+        <legend>Settings</legend>
+        <label className="cad-dialog-check">
+          <input
+            type="checkbox"
+            checked={value.layers}
+            onChange={(e) => set({ layers: e.currentTarget.checked })}
+          />
+          Save layer snapshot with view
+        </label>
+      </fieldset>
       {problem && (
         <p role="alert" className="view-manager-message">
           {problem}
@@ -554,7 +596,7 @@ function NewView({
             autoFocus
             onClick={() => {
               const v = view();
-              if (v) onSave(value.name.trim(), v, value.category);
+              if (v) onSave(value.name.trim(), v, value.category, value.layers);
             }}
           >
             Yes

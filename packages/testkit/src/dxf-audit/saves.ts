@@ -45,6 +45,9 @@ export type AuditSaveKind =
   | 'layerfilters'
   // The filter menu's Convert to Group Filter and Isolate Group in a layout (M5-07 part 6).
   | 'layerfilters-menu'
+  // Views' layer snapshots: Update Layers, a rename and New View's on the AC1032 sample, a new
+  // view's on colors.dxf (M5-07 part 7).
+  | 'view-layers'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).

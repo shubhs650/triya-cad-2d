@@ -24,20 +24,21 @@ import {
   type CadObject,
   type TableEntry,
 } from '@node-projects/acad-ts';
-import type {
-  DocumentInit,
-  DocumentModel,
-  Handle,
-  SymbolTableRecord,
-  UcsFrame,
-  UcsRecord,
-  Vec2,
-  Vec3,
-  ViewParams,
-  ViewRecord,
-  VportRecord,
+import {
+  isLayerState,
+  type DocumentInit,
+  type DocumentModel,
+  type Handle,
+  type SymbolTableRecord,
+  type UcsFrame,
+  type UcsRecord,
+  type Vec2,
+  type Vec3,
+  type ViewParams,
+  type ViewRecord,
+  type VportRecord,
 } from '@triya/engine';
-import { VIEW_CATEGORY_CODE, VIEW_INFO } from '../map/tables';
+import { VIEW_CATEGORY_CODE, VIEW_INFO, VIEW_LAYER_STATE_CODE } from '../map/tables';
 import type { Resolver } from './entities';
 import { changes, planRecords, XREF_BITS, type RecordPlan } from './records';
 
@@ -240,6 +241,14 @@ export function planViews(
       if (changed('width') && !(Number.isFinite(a.width) && a.width > 0))
         out.push(`width ${a.width} is not more than 0`);
       if (changed('ucs') && a.ucs) out.push(...frameProblems(a.ucs, 'UCS '));
+      if (changed('layerState') && a.layerState !== undefined) {
+        // Restoring the view restores the state it names: one the drawing has (M5-07 part 7).
+        const key = a.layerState.toUpperCase();
+        const found = [...model.objects.values()].some(
+          (o) => isLayerState(o) && o.name.toUpperCase() === key,
+        );
+        if (!found) out.push(`its layer snapshot "${a.layerState}" is not a layer state`);
+      }
       out.push(...notStored(NOT_STORED.views, version, changed));
       return out;
     },
@@ -270,26 +279,47 @@ function writeViewParams(
 const NO_CATEGORY = '<None>';
 
 /**
- * Writes a view's category (M2-70) into DXF 300 of the `ADSK_XREC_VTRVIEWINFO` XRECORD in its
- * extension dictionary, the record AutoCAD keeps it in, rewriting only that group where the
- * view has the record (its layer snapshot, 302, and the rest stay as read). A view without one
- * is given one holding the category alone, and its extension dictionary if it has none, numbered
- * above every handle the engine gave out: AutoCAD 2024's DXF reference does not document the
- * record, and the other groups AutoCAD writes there (302 layer snapshot name, 330, 294) belong to
- * features Triya does not have. A view taken back to no category keeps its record, saying
- * `<None>` as AutoCAD's does; a view with neither stays without.
+ * Writes a view's category (M2-70) and layer snapshot (M5-07 part 7) into DXF 300 and 302 of the
+ * `ADSK_XREC_VTRVIEWINFO` XRECORD in its extension dictionary, the record AutoCAD keeps them in,
+ * rewriting only the group that changed where the view has the record (the rest, 330 and 294,
+ * stay as read). A view without one is given one holding the two, and its extension dictionary
+ * if it has none, numbered above every handle the engine gave out: AutoCAD 2024's DXF reference
+ * does not document the record, and its other groups belong to features Triya does not have. A
+ * view taken back to no category keeps its record, saying `<None>` as AutoCAD's does; a view
+ * whose layer snapshot goes loses its 302; a view with neither stays without.
  */
-function writeCategory(v: View, category: string | undefined, allocate: () => number): void {
+function writeViewInfo(
+  v: View,
+  a: ViewRecord,
+  changed: { readonly category: boolean; readonly layerState: boolean },
+  allocate: () => number,
+): void {
   const xdict = v.xDictionary;
   const info = xdict?.getEntry(VIEW_INFO);
   if (info instanceof XRecord) {
-    const value = category ?? NO_CATEGORY;
-    const entry = info.entries.find((e) => e.code === VIEW_CATEGORY_CODE);
-    if (entry) entry.value = value;
-    else info.createEntry(VIEW_CATEGORY_CODE, value);
+    const groups = info.entries.map((e) => ({ code: e.code, value: e.value as unknown }));
+    if (changed.category) {
+      const value = a.category ?? NO_CATEGORY;
+      const at = groups.findIndex((e) => e.code === VIEW_CATEGORY_CODE);
+      if (at >= 0) groups[at] = { code: VIEW_CATEGORY_CODE, value };
+      else groups.unshift({ code: VIEW_CATEGORY_CODE, value });
+    }
+    if (changed.layerState) {
+      const at = groups.findIndex((e) => e.code === VIEW_LAYER_STATE_CODE);
+      if (a.layerState === undefined) {
+        if (at >= 0) groups.splice(at, 1);
+      } else if (at >= 0) groups[at] = { code: VIEW_LAYER_STATE_CODE, value: a.layerState };
+      else {
+        // Where AutoCAD writes it: after the category.
+        const after = groups.findIndex((e) => e.code === VIEW_CATEGORY_CODE) + 1;
+        groups.splice(after, 0, { code: VIEW_LAYER_STATE_CODE, value: a.layerState });
+      }
+    }
+    info.clear();
+    for (const g of groups) info.createEntry(g.code, g.value);
     return;
   }
-  if (category === undefined) return;
+  if (a.category === undefined && a.layerState === undefined) return;
   let dict = xdict;
   if (!dict) {
     // As AutoCAD makes a record's extension dictionary: hard owner (280 = 1), keep existing (281 = 1).
@@ -301,7 +331,9 @@ function writeCategory(v: View, category: string | undefined, allocate: () => nu
   const x = new XRecord();
   x.handle = allocate();
   x.cloningFlags = DictionaryCloningFlags.KeepExisting;
-  x.createEntry(VIEW_CATEGORY_CODE, category);
+  // AutoCAD writes the category, `<None>` for none, before the layer snapshot.
+  x.createEntry(VIEW_CATEGORY_CODE, a.category ?? NO_CATEGORY);
+  if (a.layerState !== undefined) x.createEntry(VIEW_LAYER_STATE_CODE, a.layerState);
   dict.addByKey(VIEW_INFO, x);
   x.addReactor(dict);
   // Joining the view last registers the dictionary and what it holds with the drawing.
@@ -333,7 +365,8 @@ function writeView(
       v.ucsOrthographicType = a.ucs.orthographic as never;
     }
   }
-  if (changed('category')) writeCategory(v, a.category, allocate);
+  const info = { category: changed('category'), layerState: changed('layerState') };
+  if (info.category || info.layerState) writeViewInfo(v, a, info, allocate);
 }
 
 // ── VPORT ─────────────────────────────────────────────────────────────────────────────────────

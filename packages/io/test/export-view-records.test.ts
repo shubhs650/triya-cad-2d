@@ -332,6 +332,8 @@ describe('APPID, UCS, VIEW and VPORT records', () => {
       [update('views', 'PLAN', { lensLength: 0 }), /lens length/],
       [update('views', 'PLAN', { viewMode: 32 }), /view mode 32/],
       [update('views', 'PLAN', { renderMode: 7 }), /render mode 7/],
+      // A view's layer snapshot names a layer state of the drawing (M5-07 part 7).
+      [update('views', 'PLAN', { layerState: 'ACAD_VIEWS_PLAN' }), /not a layer state/],
       [
         update('views', 'PLAN', { ucs: { ...frontFrame, yAxis: { x: 1, y: 0, z: 0 } } }),
         /UCS axes/,
