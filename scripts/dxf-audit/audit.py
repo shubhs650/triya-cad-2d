@@ -90,6 +90,8 @@ FIXTURE_SAVES = (
     # XBIND of the xref set's block and layers (M5-04 part 7,
     # packages/testkit/src/xref/xbind.test.ts).
     ("fixtures/xref/xref-parent.dxf", "xbind"),
+    # XBIND of a block holding an image and a PDF underlay (M5-04 part 16, same test file).
+    ("fixtures/xref/xref-parent.dxf", "xbind-pictures"),
     # -XREF Path and Pathtype of the xref set's xrefs (M5-04 part 15,
     # packages/testkit/src/xref/xref-path.test.ts).
     ("fixtures/xref/xref-parent.dxf", "xref-path"),
