@@ -104,6 +104,7 @@ import {
   type LayerColumnSettings,
 } from './layer-columns';
 import { drafting } from './drafting';
+import { unreconciledView } from './layer-notice';
 import { LayerFilterDialog } from './LayerFilterDialog';
 import {
   EMPTY_DEFINITION,
@@ -476,6 +477,16 @@ export function LayersPalette({
   // the engine is asked for while a node or the dialog may need them.
   const [choice, setChoice] = useState<FilterChoice>('all');
   const [invert, setInvert] = useState(false);
+  // View Unreconciled New Layers (M5-19 part 4): the alert opens the manager on that node.
+  useEffect(() => {
+    const look = () => {
+      if (!unreconciledView.take(doc.id)) return;
+      setChoice(UNRECONCILED_NODE);
+      setInvert(false);
+    };
+    look();
+    return unreconciledView.subscribe(look);
+  }, [doc.id]);
   const [used, setUsed] = useState<ReadonlySet<Handle> | undefined>();
   const [filterMenu, setFilterMenu] = useState<
     { choice: FilterChoice; at: { x: number; y: number } } | undefined

@@ -92,7 +92,7 @@ function currentTable<K extends 'layers' | 'linetypes'>(
 }
 
 /** The LAYER table as opened with `changes` applied in order. */
-const currentLayers = (init: DocumentInit, changes: readonly ChangeSet[]): LayerRecord[] =>
+export const currentLayers = (init: DocumentInit, changes: readonly ChangeSet[]): LayerRecord[] =>
   currentTable(init.tables?.layers, changes, 'layers');
 
 /** AutoCAD's order of names: case aside, numbers by value (Layer2 before Layer10). */

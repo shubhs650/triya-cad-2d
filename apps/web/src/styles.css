@@ -1906,6 +1906,71 @@ button {
   color: var(--danger-text);
 }
 
+/* M5-19 part 4: the Unreconciled New Layers icon, its menu and its balloon. */
+.layer-notice {
+  position: relative;
+  display: inline-flex;
+}
+
+.layer-notice-icon {
+  display: inline-flex;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--accent);
+  background: none;
+}
+
+.layer-notice-icon:hover {
+  border-color: var(--chrome-border);
+}
+
+.layer-notice-menu,
+.layer-notice-balloon {
+  position: absolute;
+  /* The icon sits left of the drafting toggles: the balloon opens rightward, over them. */
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  color: var(--chrome-text);
+  background: var(--chrome-bg-raised);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}
+
+.layer-notice-menu button {
+  padding: 4px 12px;
+  white-space: nowrap;
+  border: none;
+  background: none;
+}
+
+.layer-notice-balloon {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(280px, calc(100vw - 32px));
+  padding: 8px 28px 8px 10px;
+}
+
+.layer-notice-balloon .close {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  border: none;
+  background: none;
+}
+
+.layer-notice-balloon .link {
+  align-self: flex-start;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  border: none;
+  background: none;
+}
+
 /* A canvas made only to picture a layout not shown yet (the document tab preview): drawn off
    screen at the drawing area's size, then thrown away. */
 .picture-stage {
