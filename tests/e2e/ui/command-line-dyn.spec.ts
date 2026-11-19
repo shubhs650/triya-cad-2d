@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
-import { DXF, activeCanvas, expectShown, openWithPicker, typeAtOnce } from '../app/page';
+import { DXF, activeCanvas, expectShown, openWithPicker, typeAtOnce, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -287,6 +287,83 @@ test('Dynamic Input: a second point typed ahead of its prompt stays relative (M2
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
   expect(await linesAdded(page)).toEqual([[5, 5, 15, 5]]);
+});
+
+// M5-22: drafting-settings.spec drew a segment typed as `@20<30` right after a click from the
+// point before the click. The engine had added the clicked segment but not yet shown the prompt
+// after it, so Dynamic Input still showed the prompt before and sent its rubber band's start as
+// what `@` counts from (M2-71). A click at a point prompt is now an input the keys typed after it
+// wait behind, as typed ones are: they reach the prompt it leads to. Here the engine's prompts
+// are held from the click on, so the keys are typed before it arrives, every time.
+test('Dynamic Input: a point typed right after a click counts from the clicked point (M5-22)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    const Base = window.Worker;
+    const w = window as unknown as { triyaHoldPrompts?: boolean; triyaRelease?: () => void };
+    window.Worker = class extends Base {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes('engine/worker')) return;
+        const add = this.addEventListener.bind(this) as Worker['addEventListener'];
+        // While held, the first prompt and everything after it wait, in order, for the release.
+        let queue: (() => void)[] | undefined;
+        w.triyaRelease = () => {
+          const q = queue ?? [];
+          queue = undefined;
+          w.triyaHoldPrompts = false;
+          for (const f of q) f();
+        };
+        this.addEventListener = ((type: string, listener: EventListener, o?: unknown) => {
+          if (type !== 'message') return add(type, listener, o as AddEventListenerOptions);
+          return add('message', (e) => {
+            const data = (e as MessageEvent).data as { type?: string; output?: { type?: string } };
+            const prompt = data?.type === 'command' && data.output?.type === 'prompt';
+            if (!queue && w.triyaHoldPrompts && prompt) queue = [];
+            if (queue) queue.push(() => listener.call(this, e));
+            else listener.call(this, e);
+          });
+        }) as Worker['addEventListener'];
+      }
+    };
+  });
+  await open(page);
+  await expect(prompt(page)).toHaveText('Command:');
+  await focusCommandLineOverDrawing(page);
+  // An empty part of the drawing, with POLAR off so that the click is where the cursor is.
+  await command(page, 'ZOOM');
+  await command(page, 'W');
+  await command(page, '999990,999960');
+  await command(page, '1000070,1000040');
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.keyboard.press('F10');
+  await command(page, 'LINE');
+  await command(page, '1000000,1000000');
+  await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
+  const view = await viewOf(page);
+  const p = view.at(1_000_010, 1_000_005);
+  await page.mouse.move(view.box.x + p.x, view.box.y + p.y);
+  await page.evaluate(() => {
+    (window as unknown as { triyaHoldPrompts: boolean }).triyaHoldPrompts = true;
+  });
+  await page.mouse.click(view.box.x + p.x, view.box.y + p.y);
+  await expect.poll(async () => (await linesAdded(page)).length).toBe(1);
+  const [, , x, y] = (await linesAdded(page))[0]!;
+  await page.keyboard.type('@20<30');
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => (window as unknown as { triyaRelease(): void }).triyaRelease());
+  await expect.poll(async () => (await linesAdded(page)).length).toBe(2);
+  const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+  expect((await linesAdded(page))[1]).toEqual([
+    x,
+    y,
+    r4(x! + 20 * Math.cos(Math.PI / 6)),
+    r4(y! + 10),
+  ]);
+  await expect(prompt(page)).toHaveText('Specify next point or [Close/Undo]:');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
 });
 
 test('Ctrl+K finds a command by name or alias and runs it', async ({ page }) => {

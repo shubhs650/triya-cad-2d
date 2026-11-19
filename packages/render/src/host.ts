@@ -273,15 +273,24 @@ export class RendererHost {
     else this.#post({ type: 'underlaySnap', definition, page: page ?? null });
   }
 
-  /** Entities within `aperture` CSS pixels of a screen point, nearest first. */
+  /**
+   * Entities within `aperture` CSS pixels of a screen point, nearest first; `view` is the view
+   * the point was taken in, which the worker may not have yet (M5-23).
+   */
   hitTest(
     screen: { readonly x: number; readonly y: number },
     aperture: number,
+    view?: ViewTransform,
   ): Promise<EntityId[]> {
-    if (this.#session) return Promise.resolve(this.#session.renderer.hitTest(screen, aperture));
-    return this.#request((id) => ({ type: 'hitTest', id, screen, aperture })).then((m) => [
-      ...(m.type === 'reply' ? (m.ids ?? []) : []),
-    ]);
+    if (this.#session)
+      return Promise.resolve(this.#session.renderer.hitTest(screen, aperture, view));
+    return this.#request((id) => ({
+      type: 'hitTest',
+      id,
+      screen,
+      aperture,
+      ...(view && { view }),
+    })).then((m) => [...(m.type === 'reply' ? (m.ids ?? []) : [])]);
   }
 
   /** What a pick hit inside the block reference `entity` (M5-06 part 5), or null. */
@@ -289,12 +298,18 @@ export class RendererHost {
     screen: { readonly x: number; readonly y: number },
     aperture: number,
     entity: EntityId,
+    view?: ViewTransform,
   ): Promise<NestedPick | null> {
     if (this.#session)
-      return Promise.resolve(this.#session.renderer.nestedHit(screen, aperture, entity));
-    return this.#request((id) => ({ type: 'nestedHit', id, screen, aperture, entity })).then((m) =>
-      m.type === 'nested' ? m.hit : null,
-    );
+      return Promise.resolve(this.#session.renderer.nestedHit(screen, aperture, entity, view));
+    return this.#request((id) => ({
+      type: 'nestedHit',
+      id,
+      screen,
+      aperture,
+      entity,
+      ...(view && { view }),
+    })).then((m) => (m.type === 'nested' ? m.hit : null));
   }
 
   /** The entities a selection window takes (M2-03). */

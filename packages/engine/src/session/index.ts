@@ -439,6 +439,11 @@ export type CommandInput =
       readonly dragged?: boolean;
       /** With `release`: the path the press was dragged along (M3-12 part 6, `freehand`). */
       readonly freehand?: readonly Vec2[];
+      /**
+       * Asks for a `read` output once the pick has been handled, as for `submit`: a point
+       * prompt's click is numbered, so keys typed after it wait for the prompt it leads to (M5-22).
+       */
+      readonly seq?: number;
     }
   /**
    * COMMANDPREVIEW (M3-12 part 6, `PromptBus.commandPreview`): what a pick (point) at `cursor`
@@ -712,8 +717,8 @@ export class EngineSession {
         return this.#bus.invoke(input.name);
       case 'layer-filter-select':
         return this.#bus.run(layerFilterSelectCommand(input.filter, input.replace));
-      case 'pick':
-        return this.#bus.pick(input.point, {
+      case 'pick': {
+        const done = this.#bus.pick(input.point, {
           ...(input.shift && { shift: true }),
           ...(input.release && { release: true }),
           ...(input.lasso && { lasso: input.lasso }),
@@ -725,6 +730,10 @@ export class EngineSession {
           ...(input.dragged && { dragged: true }),
           ...(input.freehand && { freehand: input.freehand }),
         });
+        const seq = input.seq;
+        if (seq === undefined) return done;
+        return done.finally(() => this.#emit({ type: 'read', seq }));
+      }
       case 'select-all':
         return this.#bus.selectAll();
       case 'double-click':

@@ -82,6 +82,26 @@ describe('EngineSession commands', () => {
     expect(out.some((o) => o.type === 'read')).toBe(false);
   });
 
+  it('says it has read a numbered pick once the prompt after the point is out (M5-22)', async () => {
+    const { s, out } = setup();
+    await s.command({ kind: 'submit', text: 'L' });
+    await s.command({ kind: 'pick', point: { x: 0, y: 0 }, seq: 5 });
+    expect(out.slice(-2).map((o) => o.type)).toEqual(['prompt', 'read']);
+    expect(out.at(-1)).toEqual({ type: 'read', seq: 5 });
+    // The next point's rubber band starts at the point picked, which `@` then counts from.
+    const next = out.at(-2);
+    expect(
+      next?.type === 'prompt' && next.prompt.kind === 'point' && next.prompt.rubberBand?.from,
+    ).toEqual({
+      x: 0,
+      y: 0,
+    });
+    // Unnumbered, as a pick at `Command:` or "Select objects" is, it is not reported.
+    out.length = 0;
+    await s.command({ kind: 'pick', point: { x: 10, y: 0 } });
+    expect(out.some((o) => o.type === 'read')).toBe(false);
+  });
+
   it('sends a prompt that cloning can carry, and answers command previews (M3-12 part 6)', async () => {
     const { s, out } = setup();
     await s.command({ kind: 'submit', text: 'L' });

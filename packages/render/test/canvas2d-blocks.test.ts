@@ -232,6 +232,15 @@ describe('inserts', () => {
     expect(r.nestedHit({ x: 80, y: 25 }, 2, id('20'))).toBeNull();
     // Not a block reference.
     expect(r.nestedHit({ x: 50, y: 5 }, 2, id('21'))).toBeNull();
+    // M5-23: under the view the pick was made in, which the renderer may not have yet: centred
+    // 3 units right, screen (25, 25) is world (5.5, 0), on B's line again.
+    const picked = { center: { x: 8, y: 0 }, scale: 10 };
+    expect(r.nestedHit({ x: 25, y: 25 }, 2, id('20'))).toBeNull();
+    expect(handles(r.nestedHit({ x: 25, y: 25 }, 2, id('20'), picked)?.path)).toEqual([
+      '20',
+      '52',
+      '50',
+    ]);
   });
 
   it('draws nothing for an invisible insert', () => {

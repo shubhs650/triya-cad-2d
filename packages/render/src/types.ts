@@ -446,16 +446,26 @@ export interface Renderer {
   setStyle(style: RenderStyle): void;
   /** Draws one frame. */
   frame(): void;
-  /** Entities within `aperture` CSS pixels of a screen point, nearest first. */
-  hitTest(screen: { readonly x: number; readonly y: number }, aperture: number): EntityId[];
+  /**
+   * Entities within `aperture` CSS pixels of a screen point, nearest first. `view` is the view
+   * the point was taken in, the view set when left out: a canvas sends its views with its frames,
+   * so a pick made just after a zoom names the view it was made in (M5-23).
+   */
+  hitTest(
+    screen: { readonly x: number; readonly y: number },
+    aperture: number,
+    view?: ViewTransform,
+  ): EntityId[];
   /**
    * What a pick within `aperture` CSS pixels of a screen point hit inside the block reference
    * `id` (M5-06 part 5), the nearest part's object; null where it comes near none of them.
+   * `view` as `hitTest`'s.
    */
   nestedHit(
     screen: { readonly x: number; readonly y: number },
     aperture: number,
     id: EntityId,
+    view?: ViewTransform,
   ): NestedPick | null;
   /**
    * The entities drawn in a rectangle of the canvas, model space through a layout's viewports
@@ -504,6 +514,8 @@ export interface Renderer {
 export interface SelectionPreview {
   /** The cursor, in CSS pixels from the canvas's top left (the pickbox's preview). */
   readonly screen?: { readonly x: number; readonly y: number };
+  /** The view `screen` was taken in (M5-23); the view set when left out. */
+  readonly view?: ViewTransform;
   /**
    * A selection window, polygon, fence or lasso being dragged, in world units (M3-04 part 6):
    * what it would take previews instead of the object under the pickbox.

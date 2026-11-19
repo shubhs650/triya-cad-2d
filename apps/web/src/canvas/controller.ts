@@ -246,6 +246,12 @@ export interface CanvasHooks {
        * prompt that takes a freehand path (TRIM's freehand fence, M3-12 part 6).
        */
       readonly freehand?: readonly Vec2[];
+      /**
+       * The point a point, distance or angle prompt asked for, as the drafting aids make it (not
+       * a pick at `Command:` or "Select objects"): what the drafter types next is for the
+       * prompt it leads to (M5-22).
+       */
+      readonly answer?: true;
     },
   ) => void;
   /**
@@ -1190,6 +1196,8 @@ export class CanvasController {
       on
         ? {
             screen,
+            // The view the cursor is over, which the render worker may not have yet (M5-23).
+            ...(this.#view && { view: this.#view }),
             aperture: d.pickbox,
             filter: d.previewFilter,
             groups: (d.pickStyle & 1) !== 0,
@@ -1240,7 +1248,7 @@ export class CanvasController {
     else {
       // What a pick there would find: the objects under the pickbox, as a click asks.
       void this.#host
-        .hitTest({ x: screen.offsetX, y: screen.offsetY }, this.#drafting.pickbox)
+        .hitTest({ x: screen.offsetX, y: screen.offsetY }, this.#drafting.pickbox, this.#view)
         .then(send, () => this.commandPreviewed(seq, undefined));
     }
   }
@@ -1323,7 +1331,7 @@ export class CanvasController {
       this.#hooks.onOverlap?.(undefined);
     };
     if (!screen) return hide();
-    void this.#host.hitTest(screen, this.#drafting.pickbox).then((ids) => {
+    void this.#host.hitTest(screen, this.#drafting.pickbox, this.#view).then((ids) => {
       if (asked !== this.#badgeAsked) return;
       if (ids.length < 2) return hide();
       const r = this.#canvas.getBoundingClientRect();
@@ -1400,7 +1408,12 @@ export class CanvasController {
     this.#requestFrame();
   }
 
-  /** The objects within the pickbox of a world point, nearest first (M2-03). */
+  /**
+   * The objects within the pickbox of a world point, nearest first (M2-03). The render worker
+   * is told the view the point is shown in with the pick: it gets the canvas's views with its
+   * frames, so just after a ZOOM or PAN, while a slow frame is drawn, it still holds the view
+   * before and took what was there before (M5-23).
+   */
   pick(point: Vec2): Promise<EntityId[]> {
     const v = this.#view;
     if (!v) return Promise.resolve([]);
@@ -1415,11 +1428,11 @@ export class CanvasController {
       this.#previewAgain();
       if (Math.hypot(screen.x - step.at.x, screen.y - step.at.y) <= pickbox) {
         return this.#host
-          .hitTest(step.at, pickbox)
+          .hitTest(step.at, pickbox, v)
           .then((ids) => (ids.length > 1 ? [ids[step.step % ids.length]!] : ids));
       }
     }
-    return this.#host.hitTest(screen, pickbox);
+    return this.#host.hitTest(screen, pickbox, v);
   }
 
   /**
@@ -1430,7 +1443,7 @@ export class CanvasController {
     const v = this.#view;
     if (!v) return Promise.resolve(undefined);
     const screen = worldToScreen(v, this.#size.width, this.#size.height, point);
-    return this.#host.nestedHit(screen, this.#drafting.pickbox, id).then((h) => h ?? undefined);
+    return this.#host.nestedHit(screen, this.#drafting.pickbox, id, v).then((h) => h ?? undefined);
   }
 
   /** Where a world point is shown, in window pixels (M3-04 part 3: the Selection list). */
@@ -2455,6 +2468,7 @@ export class CanvasController {
             shift,
             release: false,
             ...(e.ctrlKey && { ctrl: true }),
+            answer: true,
           });
           return;
         }

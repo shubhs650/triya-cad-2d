@@ -103,6 +103,8 @@ export type HostMessage =
       readonly id: number;
       readonly screen: { readonly x: number; readonly y: number };
       readonly aperture: number;
+      /** The view the point was taken in (M5-23); the worker's own when left out. */
+      readonly view?: ViewTransform;
     }
   /** What a pick hit inside a block reference (M5-06 part 5); the answer is a `nested`. */
   | {
@@ -111,6 +113,7 @@ export type HostMessage =
       readonly screen: { readonly x: number; readonly y: number };
       readonly aperture: number;
       readonly entity: EntityId;
+      readonly view?: ViewTransform;
     }
   /** The entities a selection window takes (M2-03); the answer is a `reply` with ids. */
   | { readonly type: 'select'; readonly id: number; readonly query: SelectQuery }
