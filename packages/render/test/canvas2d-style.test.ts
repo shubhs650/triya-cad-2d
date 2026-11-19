@@ -47,6 +47,10 @@ function setup(
     },
     style: DARK,
     requestIdle: () => {},
+    // A clock that never moves: a scene drawn slowly on a loaded machine (over the 16 ms budget)
+    // would make the next view-only change move the last bitmap instead of drawing (M1-44), and a
+    // test reading the draw calls after a pan would see none.
+    now: () => 0,
     ...(o.lwDefault === undefined ? {} : { paint: createPaint({ lwDefault: o.lwDefault }) }),
   });
   r.resize(100, 50, 1);
