@@ -1,0 +1,1 @@
+- M5-18 part 2 (#569): -LAYER's stAte saves, restores, edits, renames and deletes layer states at the command line, and PStyle sets a layer's named plot style.
