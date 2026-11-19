@@ -96,6 +96,7 @@ import {
   type PurgeHealth,
 } from '../edit/purge';
 import { eraseObjects } from '../edit/edit';
+import { layerFilterSelectCommand } from '../commands/layer-filter-select';
 
 /**
  * A layer's on, frozen and locked states (LAYER palette toggles, M1-23) and, from the Layer
@@ -405,6 +406,11 @@ export type CommandInput =
   | { readonly kind: 'cancel'; readonly seq?: number }
   | { readonly kind: 'invoke'; readonly name: string }
   /**
+   * The Layer Properties Manager's Select Layers on the group filter `filter` (M5-07 part 9):
+   * objects selected in the drawing add their layers to it, or with `replace` become its layers.
+   */
+  | { readonly kind: 'layer-filter-select'; readonly filter: Handle; readonly replace: boolean }
+  /**
    * A left click on the canvas (M2-03, `PromptBus.pick`): a pick or a selection window's corner
    * at `Command:` and "Select objects", the point at a point prompt; `release` ends a drag;
    * `missed`: the prompt's object snap override found nothing there (M2-04 part 2).
@@ -700,6 +706,8 @@ export class EngineSession {
       }
       case 'invoke':
         return this.#bus.invoke(input.name);
+      case 'layer-filter-select':
+        return this.#bus.run(layerFilterSelectCommand(input.filter, input.replace));
       case 'pick':
         return this.#bus.pick(input.point, {
           ...(input.shift && { shift: true }),

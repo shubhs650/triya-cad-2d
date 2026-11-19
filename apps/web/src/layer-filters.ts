@@ -17,6 +17,7 @@ import {
   xrefNodeLayers,
   xrefNodeNames,
   type ChangeSet,
+  type CommandInput,
   type DocumentInit,
   type EngineEdit,
   type FilterLayerSetting,
@@ -143,7 +144,9 @@ export type LayerFilterAction =
   | 'vpFreeze'
   | 'vpThaw'
   | 'isolateAll'
-  | 'isolateActive';
+  | 'isolateActive'
+  | 'selectAdd'
+  | 'selectReplace';
 
 export interface FilterMenuEntry {
   readonly label: string;
@@ -191,6 +194,13 @@ export const FILTER_MENU: readonly FilterMenuEntry[] = [
   { action: 'rename', label: 'Rename', separator: true },
   { action: 'delete', label: 'Delete' },
   { action: 'properties', label: 'Properties...', separator: true },
+  {
+    label: 'Select Layers',
+    items: [
+      { action: 'selectAdd', label: 'Add' },
+      { action: 'selectReplace', label: 'Replace' },
+    ],
+  },
 ];
 
 /** What the menu's items depend on. */
@@ -224,6 +234,7 @@ export function filterMenuEnabled(a: LayerFilterAction, ctx: FilterMenuContext):
   if (a === 'isolateActive') return ctx.space === undefined;
   if (a === 'newGroup') return ctx.xref !== true && filter?.filterType !== 'property';
   if (a === 'properties') return filter?.filterType === 'property';
+  if (a === 'selectAdd' || a === 'selectReplace') return filter?.filterType === 'group';
   if (a === 'convert')
     return filter?.filterType === 'property' && ctx.parent?.filterType !== 'property';
   return filter !== undefined;
@@ -244,6 +255,19 @@ export function filterMenuEdit(
     };
   if (a === 'convert' && ctx.filter) return { kind: 'layer-filter-convert', filter: choice };
   return undefined;
+}
+
+/**
+ * Select Layers' Add and Replace on a group filter (part 9): the engine asks for objects in the
+ * drawing, whose layers join the group or become its layers (`layer-filter-select`).
+ */
+export function filterMenuCommand(
+  a: LayerFilterAction,
+  ctx: FilterMenuContext,
+): CommandInput | undefined {
+  if ((a !== 'selectAdd' && a !== 'selectReplace') || ctx.filter?.filterType !== 'group')
+    return undefined;
+  return { kind: 'layer-filter-select', filter: ctx.filter.handle, replace: a === 'selectReplace' };
 }
 
 /** The name AutoCAD gives a new filter: Properties Filter1 or Group Filter1, past those taken. */

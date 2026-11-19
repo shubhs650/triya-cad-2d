@@ -21,6 +21,7 @@ import {
   filterCountLine,
   filterNodeName,
   filterMenuEdit,
+  filterMenuCommand,
   filterMenuEnabled,
   layerFilterSource,
   layerFilterTree,
@@ -234,6 +235,7 @@ describe('the filter menu (M5-07 part 6)', () => {
       'Rename',
       'Delete',
       'Properties...',
+      'Select Layers',
     ]);
     const sub = (label: string) =>
       FILTER_MENU.find((e) => e.label === label)!.items!.map((i) => i.label);
@@ -241,6 +243,7 @@ describe('the filter menu (M5-07 part 6)', () => {
     expect(sub('Lock')).toEqual(['Lock', 'Unlock']);
     expect(sub('Viewport')).toEqual(['Freeze', 'Thaw']);
     expect(sub('Isolate Group')).toEqual(['All Viewports', 'Active Viewport Only']);
+    expect(sub('Select Layers')).toEqual(['Add', 'Replace']);
   });
 
   it('greys what the node or the space shown cannot take', () => {
@@ -260,6 +263,28 @@ describe('the filter menu (M5-07 part 6)', () => {
     expect(on('newGroup', { filter: property })).toBe(false);
     expect(on('rename')).toBe(false);
     expect(on('properties', { filter: property })).toBe(true);
+    // Select Layers (part 9): a group filter's only.
+    for (const a of ['selectAdd', 'selectReplace'] as const) {
+      expect(on(a, { filter: group }), a).toBe(true);
+      expect(on(a, { filter: property }), a).toBe(false);
+      expect(on(a), a).toBe(false);
+    }
+  });
+
+  it('starts Select Layers in the drawing for a group filter (part 9)', () => {
+    expect(filterMenuCommand('selectAdd', { filter: group })).toEqual({
+      kind: 'layer-filter-select',
+      filter: '71',
+      replace: false,
+    });
+    expect(filterMenuCommand('selectReplace', { filter: group })).toEqual({
+      kind: 'layer-filter-select',
+      filter: '71',
+      replace: true,
+    });
+    expect(filterMenuCommand('selectAdd', { filter: property })).toBeUndefined();
+    expect(filterMenuCommand('rename', { filter: group })).toBeUndefined();
+    expect(filterMenuEdit('selectAdd', '71', { filter: group })).toBeUndefined();
   });
 
   it('sends the engine edit of each item that acts on the layers or converts', () => {

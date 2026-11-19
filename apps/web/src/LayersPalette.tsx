@@ -107,6 +107,7 @@ import {
   drawingXrefs,
   filterCountLine,
   filterNodeName,
+  filterMenuCommand,
   filterMenuEdit,
   layerFilterSource,
   layerFilterTree,
@@ -770,8 +771,12 @@ export function LayersPalette({
   const onFilterAction = (a: LayerFilterAction, c: FilterChoice) => {
     const f = filterOf(c);
     // Visibility, Lock, Isolate Group and Convert to Group Filter (part 6).
-    const edit = filterMenuEdit(a, c, filterMenuContext(c));
+    const ctx = filterMenuContext(c);
+    const edit = filterMenuEdit(a, c, ctx);
+    // Select Layers (part 9): the command line asks for objects; the manager stays open.
+    const command = filterMenuCommand(a, ctx);
     if (edit) void apply(edit);
+    else if (command) engines.command(doc.id, command);
     else if (a === 'newProperty') newPropertyFilter(f?.handle);
     else if (a === 'newGroup' && f?.filterType !== 'property') void newGroupFilter(f?.handle);
     else if (a === 'rename' && f) setRenamingFilter(f.handle);
