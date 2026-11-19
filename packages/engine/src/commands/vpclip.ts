@@ -216,7 +216,8 @@ export function vpclipCommand(): CommandDef {
         });
         const ids = (a as { ids?: readonly EntityId[] }).ids ?? [];
         if (ids.length === 0) return;
-        viewport = viewportOfPick(ctx, ctx.model.entity(ids[0]!));
+        // The first viewport among the objects taken (a window or ALL may take others too).
+        viewport = ids.map((i) => viewportOfPick(ctx, ctx.model.entity(i))).find((v) => v);
         if (!viewport) ctx.message('Object is not a viewport.');
       }
       const id = viewport.id;
