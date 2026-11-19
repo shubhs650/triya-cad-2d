@@ -33,7 +33,12 @@ test('layout tabs make, rename and delete layouts, as LAYOUT does', async ({ pag
 
   // The Model tab offers New Layout only.
   await tabs.nth(0).click({ button: 'right' });
-  await expect(menu.getByRole('menuitem')).toHaveText(['New Layout', 'Delete', 'Rename']);
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'New Layout',
+    'Delete',
+    'Rename',
+    'Move or Copy...',
+  ]);
   await expect(menu.getByRole('menuitem', { name: 'Delete' })).toBeDisabled();
   await expect(menu.getByRole('menuitem', { name: 'Rename' })).toBeDisabled();
   await menu.getByRole('menuitem', { name: 'New Layout' }).click();

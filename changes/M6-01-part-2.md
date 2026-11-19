@@ -1,0 +1,1 @@
+- M6-01 part 2 (#596): LAYOUT Copy at the command line, the layout tab menu's Move or Copy dialog (move a layout before another or to the end, or copy it there) and dragging layout tabs to reorder them. A copied layout keeps its page setup and everything on its sheet, viewports (clipped ones too) included, and saves to the DXF.

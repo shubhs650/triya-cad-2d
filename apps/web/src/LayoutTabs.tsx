@@ -12,18 +12,28 @@
 // permanently deleted." Rename, or a double-click on a layout tab, edits the name in place on the
 // tab: Enter or a click elsewhere renames it (one LAYOUT undo step), Esc keeps it. The Model tab
 // offers New Layout only.
-import { useEffect, useRef, useState } from 'react';
+//
+// M6-01 part 2: the menu's Move or Copy... opens AutoCAD's Move or Copy dialog ("Before layout:"
+// lists the layouts and "(move to end)"; "Create a copy" copies the layout there instead, as
+// LAYOUT Copy copies it, named "<name> (2)"). Dragging a layout tab onto another moves it before
+// that tab, or after it when dropped on the tab's right half; the Model tab stays first. Each is
+// one LAYOUT undo step (the session's layout edit, `placeLayout` and `copyLayout`).
+import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './AttributeDialogs';
 import { layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 
-type TabAction = 'new' | 'delete' | 'rename';
+type TabAction = 'new' | 'delete' | 'rename' | 'move';
 
 const ITEMS: readonly { action: TabAction; label: string; layout?: true }[] = [
   { action: 'new', label: 'New Layout' },
   { action: 'delete', label: 'Delete', layout: true },
   { action: 'rename', label: 'Rename', layout: true },
+  { action: 'move', label: 'Move or Copy...', layout: true },
 ];
+
+/** The drag data of a layout tab: its sheet block. */
+const TAB_DRAG = 'application/x-triya-layout';
 
 /** Runs LAYOUT with `answers` typed in turn. */
 function layoutCommand(doc: number, ...answers: string[]): void {
@@ -48,6 +58,8 @@ export function LayoutTabs({
   const [menu, setMenu] = useState<{ block: string; x: number; y: number }>();
   const [renaming, setRenaming] = useState<string>();
   const [deleting, setDeleting] = useState<string>();
+  const [moving, setMoving] = useState<string>();
+  const [dragging, setDragging] = useState<string>();
   if (!doc) return <nav className="layout-tabs" aria-label="Layouts" />;
   if (doc.refEdit !== undefined) {
     const run = (name: string, option: string) => {
@@ -114,7 +126,35 @@ export function LayoutTabs({
   const act = (action: TabAction, block: string) => {
     if (action === 'new') layoutCommand(doc.id, 'New', '');
     else if (action === 'delete') setDeleting(block);
+    else if (action === 'move') setMoving(block);
     else setRenaming(block);
+  };
+  /** The paper layouts in tab order, as the tabs show them. */
+  const sheets = tabs.filter((t) => t.block !== model);
+  /** `block`'s layout put at tab `at` among the layouts (1 first), or a copy of it put there. */
+  const place = async (block: string, at: number, copy: boolean) => {
+    const layout = layoutsOf(doc.opened.init, changes).find((l) => l.blockRecord === block);
+    if (!layout) return;
+    const r = await engines.edit(doc.id, {
+      kind: 'layout',
+      layout: layout.handle,
+      tabOrder: at,
+      ...(copy && { copy: true }),
+    });
+    if (!r.ok) onFail(r.message);
+    else {
+      if (r.messages) onFail(r.messages.join(' '));
+      if (Object.keys(r.change).length > 0) onEdited();
+    }
+  };
+  /** A tab dropped on `target`'s tab: before it, or after it on its right half. */
+  const drop = (target: string, after: boolean) => {
+    const from = dragging;
+    setDragging(undefined);
+    if (from === undefined || from === target || target === model) return;
+    const rest = sheets.filter((t) => t.block !== from);
+    const at = rest.findIndex((t) => t.block === target) + (after ? 2 : 1);
+    if (at > 0) void place(from, at, false);
   };
 
   return (
@@ -136,6 +176,23 @@ export function LayoutTabs({
               role="tab"
               className="layout-tab"
               aria-selected={t.block === doc.block}
+              draggable={t.block !== model}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(TAB_DRAG, t.block);
+                e.dataTransfer.effectAllowed = 'move';
+                setDragging(t.block);
+              }}
+              onDragEnd={() => setDragging(undefined)}
+              onDragOver={(e) => {
+                if (dragging === undefined || t.block === model) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                drop(t.block, e.clientX > r.left + r.width / 2);
+              }}
               onClick={() => onShow(t.block)}
               onDoubleClick={() => {
                 if (t.block !== model) setRenaming(t.block);
@@ -162,6 +219,24 @@ export function LayoutTabs({
           onClose={() => setMenu(undefined)}
         />
       )}
+      {moving !== undefined && (
+        <MoveOrCopyDialog
+          layout={moving}
+          sheets={sheets}
+          onDone={(r) => {
+            setMoving(undefined);
+            if (!r) return;
+            // Before a layout: its place once the moved one is out of the list (a copy leaves
+            // the list as it is); "(move to end)" past the last.
+            const rest = r.copy ? sheets : sheets.filter((t) => t.block !== moving);
+            const at =
+              r.before === undefined
+                ? sheets.length + 1
+                : rest.findIndex((t) => t.block === r.before) + 1;
+            if (at > 0) void place(moving, at, r.copy);
+          }}
+        />
+      )}
       {deleting !== undefined && (
         <Modal
           label="Delete Layout"
@@ -183,6 +258,84 @@ export function LayoutTabs({
     </nav>
   );
 }
+
+/**
+ * AutoCAD's Move or Copy dialog (AutoCAD 2024 Help, "Move or Copy Dialog Box"): "Before layout"
+ * lists the layouts and "(move to end)", the layout's own next tab picked; "Create a copy".
+ * `onDone` with the layout picked (undefined: the end) and the copy box, or undefined on Cancel.
+ */
+function MoveOrCopyDialog({
+  layout,
+  sheets,
+  onDone,
+}: {
+  layout: string;
+  sheets: readonly { readonly block: string; readonly name: string }[];
+  onDone: (r: { before: string | undefined; copy: boolean } | undefined) => void;
+}) {
+  const id = useId();
+  const items = [...sheets.map((t) => ({ block: t.block, name: t.name })), END];
+  const own = sheets.findIndex((t) => t.block === layout);
+  const [picked, setPicked] = useState(Math.min(own + 1, items.length - 1));
+  const [copy, setCopy] = useState(false);
+  const ok = () => onDone({ before: items[picked]!.block, copy });
+  return (
+    <Modal
+      label="Move or Copy"
+      className="layout-move"
+      onOk={ok}
+      onCancel={() => onDone(undefined)}
+    >
+      <label className="cad-dialog-field" htmlFor={`${id}-list`}>
+        <span>Before layout:</span>
+      </label>
+      <ul
+        id={`${id}-list`}
+        role="listbox"
+        aria-label="Before layout"
+        aria-activedescendant={`${id}-${picked}`}
+        className="dimstyle-list layout-move-list"
+        tabIndex={0}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            setPicked((p) => Math.max(0, Math.min(items.length - 1, p + step)));
+          }
+        }}
+      >
+        {items.map((t, i) => (
+          <li
+            key={t.block ?? 'end'}
+            id={`${id}-${i}`}
+            role="option"
+            aria-selected={i === picked}
+            className={i === picked ? 'layer-list-active' : undefined}
+            onClick={() => setPicked(i)}
+            onDoubleClick={() => onDone({ before: t.block, copy })}
+          >
+            {t.name}
+          </li>
+        ))}
+      </ul>
+      <label className="cad-dialog-check">
+        <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} />
+        Create a copy
+      </label>
+      <div className="cad-dialog-buttons">
+        <button type="button" onClick={ok}>
+          OK
+        </button>
+        <button type="button" onClick={() => onDone(undefined)}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const END = { block: undefined, name: '(move to end)' } as const;
 
 /** A layout's name edited in place on its tab: `onDone` with the name, or undefined on Esc. */
 function RenameField({
