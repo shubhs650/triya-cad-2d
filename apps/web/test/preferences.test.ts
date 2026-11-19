@@ -519,6 +519,11 @@ describe('preferences', () => {
     // PDFOSNAP is AutoCAD's per user too (M2-22).
     drafting.configure({ pdfOsnap: false });
     expect(m.saved.at(-1)?.drafting.pdfOsnap).toBe(false);
+    // So is the Snap to Underlays toggle that turns it (UOSNAP, M5-04 part 20).
+    drafting.toggle('underlaySnap');
+    expect(m.saved.at(-1)?.drafting.pdfOsnap).toBe(true);
+    drafting.toggle('underlaySnap');
+    expect(m.saved.at(-1)?.drafting.pdfOsnap).toBe(false);
     // REVCLOUDGRIPS too, a registry setting in AutoCAD (M2-42).
     drafting.configure({ revcloudGrips: false });
     expect(m.saved.at(-1)?.drafting.revcloudGrips).toBe(false);

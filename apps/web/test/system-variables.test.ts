@@ -301,6 +301,20 @@ describe('system variables the app keeps', () => {
     expect(d.get().groupDisplayMode).toBe(1);
   });
 
+  it('keep UOSNAP, one with PDFOSNAP, which the Snap to Underlays toggle switches (M5-04 part 20)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'UOSNAP')).toEqual({ ok: true, value: 1 });
+    expect(d.isOn('underlaySnap')).toBe(true);
+    expect(systemVariableReply(d, 'UOSNAP', 0)).toEqual({ ok: true, value: 0 });
+    expect(systemVariableReply(d, 'PDFOSNAP')).toEqual({ ok: true, value: 0 });
+    expect(d.isOn('underlaySnap')).toBe(false);
+    d.toggle('underlaySnap');
+    expect(d.get().pdfOsnap).toBe(true);
+    expect(systemVariableReply(d, 'UOSNAP')).toEqual({ ok: true, value: 1 });
+    systemVariableReply(d, 'PDFOSNAP', 0);
+    expect(systemVariableReply(d, 'UOSNAP')).toEqual({ ok: true, value: 0 });
+  });
+
   it('keep PICKBOX, PICKADD and PICKAUTO (M3-04 part 4)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'PICKBOX')).toEqual({ ok: true, value: 3 });
