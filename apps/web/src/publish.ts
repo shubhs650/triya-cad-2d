@@ -30,6 +30,7 @@ import {
   PLOT_PDF_OPTIONS,
   plotPage,
   type AppIdNames,
+  type PlotView,
   type PdfOptions,
   type PlotSettings,
   type PlotSpace,
@@ -170,6 +171,8 @@ export function sheetSpace(s: {
   readonly pageSetups?: readonly NamedPageSetup[] | undefined;
   /** The drawing's APPID records, to read "Plot transparency" (M6-04). */
   readonly appIds?: AppIdNames | undefined;
+  /** The space's named views, for the View plot area (M6-04 part 2). */
+  readonly views?: readonly PlotView[] | undefined;
 }): PlotSpace {
   const sheet = s.layout && !s.model ? layoutSheet(s.layout) : undefined;
   return {
@@ -182,6 +185,7 @@ export function sheetSpace(s: {
     userTables: s.userTables,
     pageSetups: s.pageSetups,
     pageSetupName: appliedPageSetupName(s.layout),
+    ...(s.views && { views: s.views }),
   };
 }
 

@@ -62,6 +62,8 @@ import {
   type NamedPageSetup,
   type NonGraphicalObject,
   type Vec2,
+  type ViewRecord,
+  PAPER_VIEW,
 } from '@triya/engine';
 import {
   PAPER_SIZES,
@@ -94,6 +96,7 @@ import {
   type PlotStyleTable,
   type RasterPixels,
 } from '@triya/render';
+import { namedViewBox } from './canvas/views';
 import { fileNameOf, type ReferenceRow } from './xrefs';
 
 /** What the Plot dialog plots from: the space shown and what it knows of it. */
@@ -122,6 +125,29 @@ export interface PlotSpace {
    * Name opens on and Apply to Layout writes.
    */
   readonly pageSetupName?: string | undefined;
+  /** The space's named plan views, which the View plot area plots (M6-04 part 2). */
+  readonly views?: readonly PlotView[] | undefined;
+}
+
+/** A named view the View plot area offers: its name and the window it shows. */
+export interface PlotView {
+  readonly name: string;
+  readonly box: Box;
+}
+
+/**
+ * The named views a space can plot (M6-04 part 2): model space's or, for a layout, the paper
+ * space views (VIEW flag 1), each a plan view's window. A 3D or twisted view is left out, as the
+ * canvas cannot show it either.
+ */
+export function plotViewsOf(views: readonly ViewRecord[], paper: boolean): PlotView[] {
+  const out: PlotView[] = [];
+  for (const v of views) {
+    if ((((v.flags ?? 0) & PAPER_VIEW) !== 0) !== paper) continue;
+    const box = namedViewBox(v);
+    if (box) out.push({ name: v.name, box });
+  }
+  return out;
 }
 
 /** What the Plot dialog opens with from a page setup (PLOTSETTINGS). */
@@ -162,6 +188,28 @@ function plotTransparencyOf(layout: Layout, appIds: AppIdNames): boolean {
   const values = layout.xdata?.find((x) => x.appId === app)?.values;
   const on = values?.find((v) => v.code === 1071)?.value;
   return typeof on === 'number' ? on !== 0 : typeof on === 'bigint' ? on !== 0n : false;
+}
+
+/**
+ * PLOTTRANSPARENCYOVERRIDE (M6-04 part 2; AutoCAD 2024 Help): 0 plots no object transparency, 1
+ * what the page setup or the Plot dialog says ("Plot transparency"), 2 always plots it. A user
+ * setting ("Saved in: User-settings"), so the app keeps it with the drafter's preferences and sets
+ * it here for every plot: the Plot dialog, -PLOT, PUBLISH and the PDF, SVG and PNG exports.
+ */
+export type PlotTransparencyOverride = 0 | 1 | 2;
+let transparencyOverride: PlotTransparencyOverride = 1;
+
+export function setPlotTransparencyOverride(v: PlotTransparencyOverride): void {
+  transparencyOverride = v;
+}
+
+export function plotTransparencyOverride(): PlotTransparencyOverride {
+  return transparencyOverride;
+}
+
+/** Whether a plot whose "Plot transparency" is `setting` plots object transparency. */
+function plotsTransparency(setting: boolean): boolean {
+  return transparencyOverride === 1 ? setting : transparencyOverride === 2;
 }
 
 /** The other DXF 70 flags the dialog reads and writes (part 4). */
@@ -233,7 +281,7 @@ export function withPageSetup(space: PlotSpace, name: string | undefined): PlotS
   };
 }
 
-export type PlotArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
+export type PlotArea = 'layout' | 'extents' | 'display' | 'limits' | 'view' | 'window';
 
 /** The layout's own paper (its page setup), offered first for a layout. */
 export const LAYOUT_PAPER = 'layout';
@@ -269,6 +317,8 @@ export interface PlotSettings {
   readonly orientation: 'portrait' | 'landscape';
   readonly upsideDown: boolean;
   readonly area: PlotArea;
+  /** The View plot area's named view (M6-04 part 2). */
+  readonly view?: string | undefined;
   /** The Window plot area, in the space's units, once one is picked. */
   readonly window?: Box | undefined;
   readonly fit: boolean;
@@ -397,11 +447,12 @@ function listedPaper(plot: LayoutPlot): string | undefined {
   return PAPER_SIZES.find((p) => near(p.width, w) && near(p.height, h))?.name;
 }
 
-/** DXF 74 plot types and the dialog's plot areas (View, 3, is not offered). */
+/** DXF 74 plot types and the dialog's plot areas. */
 const PLOT_TYPES: Readonly<Record<PlotArea, number>> = {
   display: 0,
   extents: 1,
   limits: 2,
+  view: 3,
   window: 4,
   layout: 5,
 };
@@ -432,8 +483,12 @@ function fromPageSetup(
   const window = w && windowBox(w.min, w.max);
   const area = (Object.keys(PLOT_TYPES) as PlotArea[]).find((a) => PLOT_TYPES[a] === plot.plotType);
   const areas = plotAreas(space);
-  if (area && areas.includes(area) && (area !== 'window' || window)) out.area = area;
+  // M6-04 part 2: View opens on the page setup's view while the space still has it.
+  const view = space.views?.find((v) => v.name.toUpperCase() === plot.viewName?.toUpperCase());
+  if (area && areas.includes(area) && (area !== 'window' || window) && (area !== 'view' || view))
+    out.area = area;
   if (window) out.window = window;
+  if (view) out.view = view.name;
   out.fit = (plot.flags & USE_STANDARD_SCALE) !== 0 && plot.standardScaleType === 0;
   const { numerator, denominator } = plot.scale;
   if (!space.sheet && numerator > 0 && denominator > 0) {
@@ -601,8 +656,17 @@ export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): Layo
 
   // M2-45: the Name the dialog shows is the page setup the layout then has applied (DXF 1).
   const pageSetupName = space.pageSetupName;
+  // M6-04 part 2: the View plot area names its view (DXF 6); another area names none.
+  const viewName = s.area === 'view' ? s.view : undefined;
 
-  const { window: _w, styleSheet: _t, standardScaleType: _s, pageSetupName: _n, ...rest } = base;
+  const {
+    window: _w,
+    styleSheet: _t,
+    standardScaleType: _s,
+    pageSetupName: _n,
+    viewName: _v,
+    ...rest
+  } = base;
   return {
     ...rest,
     ...paper,
@@ -612,6 +676,7 @@ export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): Layo
     ...(standardScaleType !== undefined && { standardScaleType }),
     plotType: PLOT_TYPES[s.area],
     ...(window && { window }),
+    ...(viewName !== undefined && { viewName }),
     flags,
     ...(styleSheet && { styleSheet }),
     ...(pageSetupName !== undefined && { pageSetupName }),
@@ -625,6 +690,7 @@ export function plotAreas(space: PlotSpace): PlotArea[] {
   if (space.extents) out.push('extents');
   if (space.display) out.push('display');
   if (space.limits && !space.sheet) out.push('limits');
+  if ((space.views?.length ?? 0) > 0) out.push('view');
   out.push('window');
   return out;
 }
@@ -657,6 +723,8 @@ export function plotAreaBox(settings: PlotSettings, space: PlotSpace): Box | und
       return space.display;
     case 'limits':
       return space.limits;
+    case 'view':
+      return space.views?.find((v) => v.name === settings.view)?.box;
     case 'window':
       return settings.window;
   }
@@ -762,7 +830,7 @@ function pageOptions(page: PlotSetup, settings: PlotSettings, space: PlotSpace):
     lineweightScale,
     nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
     area: page.clip,
-    transparency: settings.transparency,
+    transparency: plotsTransparency(settings.transparency),
   };
 }
 

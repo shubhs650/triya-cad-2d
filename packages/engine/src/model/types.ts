@@ -1869,6 +1869,11 @@ export interface LayoutPlot {
    * (M2-17 part 4); absent when the page setup stores none (all four 0).
    */
   readonly window?: { readonly min: Vec2; readonly max: Vec2 };
+  /**
+   * DXF 6: the named view the View plot area plots (M6-04 part 2), a VIEW record's name; absent
+   * when the page setup names none (AutoCAD writes '').
+   */
+  readonly viewName?: string;
   /** DXF 70 plot flags. */
   readonly flags: number;
   /** DXF 7: the plot style table's file name (M2-17 part 3); absent when it names none. */

@@ -47,7 +47,7 @@ import {
   xrefUnloadChange,
   xrefUnloadProblem,
 } from '../model/xref';
-import { isModelLayout, layoutNameProblem } from '../edit/layouts';
+import { isModelLayout, layoutNameProblem, withPlotTransparency } from '../edit/layouts';
 import { xrefDetachChange, xrefDetachProblem } from '../edit/xrefs';
 import { xrefBindChange, xrefBindProblem } from '../edit/xref-bind';
 import type { EntityId } from '../model/entity-ids';
@@ -220,6 +220,11 @@ export interface LayoutEdit {
   /** The tab's place among the layouts, 1 first; past the last puts it last. */
   readonly tabOrder?: number;
   readonly plot?: LayoutPlot;
+  /**
+   * The page setup's "Plot transparency" (M6-04 part 2), kept in the LAYOUT's PLOTTRANSPARENCY
+   * xdata as AutoCAD keeps it (`withPlotTransparency`).
+   */
+  readonly plotTransparency?: boolean;
 }
 
 /**
@@ -1212,9 +1217,13 @@ export class EngineSession {
     if (plotProblem) return { ok: false, message: `Invalid page setup: ${plotProblem}.` };
 
     const b = new ChangeSetBuilder(this.model);
-    const patch: { -readonly [K in 'name' | 'plot']?: Layout[K] } = {};
+    const patch: { -readonly [K in 'name' | 'plot' | 'xdata']?: Layout[K] } = {};
     if (e.name !== undefined && e.name !== layout.name) patch.name = e.name;
     if (e.plot !== undefined && !samePlot(e.plot, layout.plot)) patch.plot = e.plot;
+    if (e.plotTransparency !== undefined) {
+      const xdata = withPlotTransparency(b, this.model, layout, e.plotTransparency);
+      if (xdata) patch.xdata = xdata;
+    }
     if (Object.keys(patch).length > 0) b.updateLayout(layout.handle, patch);
     if (e.tabOrder !== undefined) {
       // The layouts in tab order with this one moved; then numbered 1 to N, as AutoCAD keeps
@@ -1245,6 +1254,8 @@ function plotProblemOf(p: LayoutPlot): string | undefined {
     return 'the margins leave no printable area';
   if (!(p.scale.numerator > 0 && p.scale.denominator > 0))
     return 'the plot scale must be greater than 0';
+  // DXF 74 = 3 plots the view DXF 6 names (M6-04 part 2).
+  if (p.plotType === 3 && !p.viewName) return 'the View plot area needs a view';
   return undefined;
 }
 

@@ -342,6 +342,40 @@ describe('-PLOT', () => {
     expect(scripts(asked)).toEqual([]);
   });
 
+  // M6-04 part 2: View plots a named view of the space ("Enter view name"), AutoCAD's order
+  // [Display/Extents/Limits/View/Window]; the page setup's view is the default.
+  it('plots a named view of the space, ? listing them', async () => {
+    const shown: PlotScriptSetup = {
+      ...MODEL,
+      areas: ['extents', 'display', 'limits', 'view', 'window'],
+      views: ['North elevation', 'Plan'],
+      settings: { ...MODEL.settings, area: 'view', view: 'Plan' },
+    };
+    const { bus, asked } = setup((r) =>
+      r.op === 'plotSetup' ? { ok: true, plotSetup: shown } : undefined,
+    );
+    await answer(bus, '-PLOT', 'Y', '', '', '', '', '', '');
+    expect(bus.promptText).toBe('Enter plot area [Display/Extents/Limits/View/Window] <View>:');
+    await bus.submit('V');
+    expect(bus.promptText).toBe('Enter view name or [?] <Plan>:');
+    await bus.submit('?');
+    expect(bus.history.slice(-2)).toEqual(['North elevation', 'Plan']);
+    await bus.submit('Section');
+    expect(bus.history).toContain('Cannot find view "Section".');
+    await bus.submit('north ELEVATION');
+    // The rest takes its defaults.
+    while (bus.command) await bus.submit('');
+    expect(scripts(asked).map((s) => [s.settings.area, s.settings.view])).toEqual([
+      ['view', 'North elevation'],
+    ]);
+  });
+
+  it('does not offer View in a space without named views', async () => {
+    const { bus } = setup();
+    await answer(bus, '-PLOT', 'Y', '', '', '', '', '', '');
+    expect(bus.promptText).toBe('Enter plot area [Display/Extents/Limits/Window] <Display>:');
+  });
+
   it('asks a layout its own options, in the page setup units', async () => {
     const { bus, asked } = setup();
     await answer(bus, '-PLOT', 'Y', 'Layout1', '');

@@ -110,6 +110,11 @@ export interface DraftingState {
    */
   readonly xFade: number;
   /**
+   * PLOTTRANSPARENCYOVERRIDE (M6-04 part 2): 0 plots no object transparency, 1 (initially) as the
+   * page setup or the Plot dialog says, 2 always. AutoCAD keeps it per user.
+   */
+  readonly plotTransparencyOverride: 0 | 1 | 2;
+  /**
    * LWDEFAULT (M5-08 part 3): what a Default lineweight draws as, hundredths of a millimetre, one
    * of AutoCAD's lineweights. AutoCAD keeps it per user, initially 25; Lineweight Settings sets it.
    */
@@ -495,6 +500,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   fieldDisplay: true,
   layLockFade: 50,
   xFade: 50,
+  plotTransparencyOverride: 1,
   lwDefault: 25,
   lwUnits: 1,
   lwScale: 1,

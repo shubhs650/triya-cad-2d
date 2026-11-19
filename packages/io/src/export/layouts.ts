@@ -26,8 +26,11 @@
 // layout moving to another block record; sheet block names changing other than by that swap
 // (blocks.ts), or a layout the same save adds made current; a named paper-space UCS (DXF 345 / 346,
 // $PUCSNAME, which Triya does not map) on a switch; any layout change before R2000, which
-// introduced layouts; values AutoCAD does not take; and xdata, reactor and extension dictionary
-// changes.
+// introduced layouts; values AutoCAD does not take; and reactor and extension dictionary changes.
+//
+// M6-04 part 2: a layout's xdata is written as any object's (xdata.ts), for "Plot transparency",
+// which AutoCAD keeps in the LAYOUT's PLOTTRANSPARENCY xdata; and the View plot area's view name
+// (DXF 6), which a DWG from R2004 on holds as a handle to the VIEW that acad-ts does not write.
 
 import {
   ACadVersion,
@@ -53,6 +56,8 @@ import type {
 } from '@triya/engine';
 import { entryRenameProblems, renameEntries } from './dictionary-entries';
 import { resolve, same, type Resolver } from './entities';
+import type { CadFormat } from '../read';
+import { writeXdata, xdataProblems } from './xdata';
 
 export interface LayoutsPlan {
   readonly updated: {
@@ -95,8 +100,8 @@ const INVALID_NAME = /[<>/\\":;?*|,=`]/;
 /** "Layout names can contain up to 255 characters." */
 const NAME_LENGTH = 255;
 
-/** Fields no writer handles yet. */
-const UNSUPPORTED = ['xdata', 'reactors', 'extDict'] as const;
+/** Fields no writer handles yet (xdata has its own, M6-04 part 2). */
+const UNSUPPORTED = ['reactors', 'extDict'] as const;
 
 const known = (v: ACadVersion | undefined): v is ACadVersion =>
   v !== undefined && v !== ACadVersion.Unknown;
@@ -193,6 +198,7 @@ export function planLayouts(
   base: DocumentInit,
   model: DocumentModel,
   r: Resolver,
+  format?: CadFormat,
 ): { plan: LayoutsPlan; problems: string[] } {
   const plan: { -readonly [K in keyof LayoutsPlan]: LayoutsPlan[K] } = {
     updated: [],
@@ -208,6 +214,7 @@ export function planLayouts(
     known(version) && version < ACadVersion.AC1015
       ? `${ACadVersion[version]} has no layouts (R2000 added them)`
       : undefined;
+  const handleViews = format === 'dwg' && known(version) && version >= ACadVersion.AC1018;
   const baseRecords = new Map((base.tables?.blockRecords ?? []).map((b) => [b.handle, b]));
   const baseHeader = new Map(base.header ?? []);
   // Names are unique without regard to case, among the layouts the drawing ends up with.
@@ -245,6 +252,8 @@ export function planLayouts(
         names,
         new Set(before.keys()),
         noLayouts,
+        r,
+        handleViews,
       );
       if (out.length > 0) problems.push(...out.map((p) => `${label}: ${p}`));
       else plan.added.push(a);
@@ -260,6 +269,7 @@ export function planLayouts(
     const space = spaceOf(b, baseRecords);
     if (b.blockRecord !== a.blockRecord) out.push('blockRecord: a layout keeps its block record');
     for (const k of UNSUPPORTED) if (!same(b[k], a[k])) out.push(`${k} changes`);
+    if (!same(b.xdata, a.xdata)) out.push(...xdataProblems(r, b.xdata, a.xdata));
     if (b.name !== a.name) out.push(...nameProblems(b, a, space, names, acad, model));
     if (b.tabOrder !== a.tabOrder) {
       tabsChange = true;
@@ -273,7 +283,7 @@ export function planLayouts(
         `flags: ${JSON.stringify(a.flags)} has bits other than 1 (PSLTSCALE) and 2 (LIMCHECK)`,
       );
     if (!same(b.limits, a.limits)) out.push(...limitsProblems(a.limits));
-    if (!same(b.plot, a.plot)) out.push(...plotProblems(b.plot, a.plot, space));
+    if (!same(b.plot, a.plot)) out.push(...plotProblems(b.plot, a.plot, space, handleViews));
     if (!same(b.space, a.space)) out.push(...spaceProblems(a.space));
     // On a switch, which layout the header states is planCurrent's to check.
     if (space === 'model' || (space === 'paper' && !switched.from)) {
@@ -412,6 +422,8 @@ function additionProblems(
   names: ReadonlyMap<string, number>,
   baseHandles: ReadonlySet<Handle>,
   noLayouts: string | undefined,
+  r: Resolver,
+  handleViews: boolean,
 ): string[] {
   if (noLayouts) return [noLayouts];
   const out: string[] = [];
@@ -438,6 +450,7 @@ function additionProblems(
   if (!Number.isInteger(a.tabOrder) || a.tabOrder < 1)
     out.push(`tabOrder: ${JSON.stringify(a.tabOrder)} is not a whole number of 1 or more`);
   for (const k of UNSUPPORTED) if (a[k] !== undefined) out.push(`${k} changes`);
+  if (a.xdata) out.push(...xdataProblems(r, undefined, a.xdata));
   if (!validFlags(a.flags))
     out.push(
       `flags: ${JSON.stringify(a.flags)} has bits other than 1 (PSLTSCALE) and 2 (LIMCHECK)`,
@@ -445,7 +458,7 @@ function additionProblems(
   if (!a.limits) out.push('a new layout needs its limits');
   else out.push(...limitsProblems(a.limits));
   if (!a.plot) out.push('a new layout needs its page setup');
-  else out.push(...plotProblems(undefined, a.plot, 'other'));
+  else out.push(...plotProblems(undefined, a.plot, 'other', handleViews));
   if (a.space) out.push(...spaceProblems(a.space));
   return out;
 }
@@ -489,6 +502,8 @@ function plotProblems(
   b: LayoutPlot | undefined,
   a: LayoutPlot | undefined,
   space: 'model' | 'paper' | 'other',
+  /** The save is a DWG from R2004 on, whose PLOTSETTINGS point at the plot view by handle. */
+  handleViews: boolean,
 ): string[] {
   if (!a) return ['plot: a layout keeps its page setup'];
   const out: string[] = [];
@@ -546,12 +561,24 @@ function plotProblems(
     else if (!(w.max.x > w.min.x || w.max.y > w.min.y))
       out.push('window: the upper right corner is not above or right of the lower left');
   }
-  if (changed('plotType') || (a.plotType === 4 && changed('window'))) {
+  if (changed('viewName') && a.viewName !== undefined) {
+    if (typeof a.viewName !== 'string')
+      out.push(`viewName: ${JSON.stringify(a.viewName)} is not text`);
+    else if (handleViews)
+      out.push(
+        'viewName: a DWG from R2004 names the plot view by a handle, which Triya does not write',
+      );
+  }
+  if (
+    changed('plotType') ||
+    (a.plotType === 3 && changed('viewName')) ||
+    (a.plotType === 4 && changed('window'))
+  ) {
     // DXF 74: 0 last screen display, 1 extents, 2 limits, 3 view, 4 window, 5 layout.
     const t = a.plotType;
     if (!(Number.isInteger(t) && t >= 0 && t <= 5))
       out.push(`plotType: ${JSON.stringify(t)} is not a whole number from 0 to 5`);
-    else if (t === 3) out.push('plotType: 3 (View) needs the view name, which Triya does not map');
+    else if (t === 3 && !a.viewName) out.push("plotType: 3 (View) needs the view's name (DXF 6)");
     else if (t === 4 && !a.window)
       out.push('plotType: 4 (Window) needs the window (DXF 48, 49, 140, 141)');
     else if (t === 5 && space === 'model')
@@ -646,6 +673,7 @@ export function writeLayouts(
     }
     if (changed('plot') && a.plot) writePlot(acad, b.plot, a.plot);
     if (changed('space') && a.space) writeSpace(acad, a.space);
+    if (changed('xdata')) writeXdata(r, acad, b.xdata, a.xdata);
   }
   // After the blocks (blocks.ts leaves the two names to this) and before PURGE, which takes the
   // block of a layout deleted once another was made current under the name it then has.
@@ -661,6 +689,7 @@ export function writeLayouts(
     acad.maxLimits = new XY(a.limits!.max.x, a.limits!.max.y);
     writePlot(acad, undefined, a.plot!);
     if (a.space) writeSpace(acad, a.space);
+    if (a.xdata) writeXdata(r, acad, undefined, a.xdata);
     // planLayouts refuses a new layout where ACAD_LAYOUT is missing (additionProblems).
     dict!.add(acad);
     r.created.set(a.handle, acad);
@@ -708,6 +737,7 @@ function writePlot(acad: AcadLayout, b: LayoutPlot | undefined, a: LayoutPlot): 
     acad.windowUpperLeftX = w.max.x;
     acad.windowUpperLeftY = w.max.y;
   }
+  if (changed('viewName')) acad.plotViewName = a.viewName ?? '';
   if (changed('flags')) acad.flags = a.flags as never;
   if (changed('styleSheet')) acad.styleSheet = a.styleSheet ?? '';
   // M2-45: '' for none, as AutoCAD writes it (a new LAYOUT's acad-ts default is 'none_device').

@@ -55,6 +55,7 @@ export function scriptSetup(
     devices: PLOT_DEVICES.map(({ id, name }) => ({ id, name })),
     papers: scriptPapers(space),
     areas: plotAreas(space),
+    views: (space.views ?? []).map((v) => v.name),
     tables: plotStyleTables(space),
     inches: space.inches === true,
     paper: space.sheet !== undefined,
