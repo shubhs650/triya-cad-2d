@@ -51,6 +51,8 @@ export interface LayerRow {
   };
   /** An xref-dependent layer (DXF 70 bit 16), which no object of the drawing can go on. */
   readonly xref?: true;
+  /** A new layer not yet reconciled (M5-19, LAYEREVAL): Unreconciled New Layers lists it. */
+  readonly unreconciled?: true;
   /** In a layout: of its viewports (not its own paper-space view), how many freeze the layer. */
   readonly vpFrozen?: { readonly frozen: number; readonly of: number };
 }
@@ -220,6 +222,7 @@ export function layerRows(
         transparency: l.transparency,
       },
       ...(((l.flags ?? 0) & 16) !== 0 && { xref: true as const }),
+      ...(l.unreconciled && { unreconciled: true as const }),
       ...(viewports && {
         vpFrozen: {
           frozen: viewports.filter((f) => f.includes(l.handle)).length,

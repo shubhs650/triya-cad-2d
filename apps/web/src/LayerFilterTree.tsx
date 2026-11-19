@@ -10,12 +10,20 @@
 // - A filter's name is renamed in place (F2, or a double-click on a group filter; a double-click
 //   on a property filter opens its properties); Enter keeps it, Esc does not, Delete deletes.
 // - Layers dragged from the list onto a group filter are put in it.
+// - While a layer is unreconciled, Unreconciled New Layers (M5-19 part 2) comes after All Used
+//   Layers; its menu is the Xref node's.
 // - When the drawing has xrefs, the Xref node comes after the filters, with a node for each xref
 //   (part 8); their menus offer Visibility, Lock and Isolate Group, not new filters.
 // - Keyboard: ↑/↓ move between the nodes shown, ← closes a node or goes to its parent, → opens
 //   it; the selected node is the tree's one focusable item.
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
-import { XREF_NODE, xrefNode, type Handle, type LayerFilter } from '@triya/engine';
+import {
+  UNRECONCILED_NODE,
+  XREF_NODE,
+  xrefNode,
+  type Handle,
+  type LayerFilter,
+} from '@triya/engine';
 import {
   FILTER_MENU,
   filterMenuEnabled,
@@ -44,6 +52,7 @@ interface Shown {
 function shownNodes(
   tree: readonly LayerFilterNode[],
   xrefs: readonly string[],
+  unreconciled: boolean,
   closed: ReadonlySet<FilterChoice>,
 ): Shown[] {
   const out: Shown[] = [{ choice: 'all', name: 'All', level: 1, hasChildren: true }];
@@ -55,6 +64,14 @@ function shownNodes(
     parent: 'all',
     hasChildren: false,
   });
+  if (unreconciled)
+    out.push({
+      choice: UNRECONCILED_NODE,
+      name: 'Unreconciled New Layers',
+      level: 2,
+      parent: 'all',
+      hasChildren: false,
+    });
   const walk = (nodes: readonly LayerFilterNode[], level: number, parent: FilterChoice) => {
     for (const n of nodes) {
       const h = n.filter.handle;
@@ -81,6 +98,7 @@ function shownNodes(
 export function LayerFilterTree({
   tree,
   xrefs,
+  unreconciled = false,
   choice,
   invert,
   renaming,
@@ -95,6 +113,8 @@ export function LayerFilterTree({
   tree: readonly LayerFilterNode[];
   /** The drawing's xrefs, by name: the Xref node's children. */
   xrefs: readonly string[];
+  /** Whether a layer is unreconciled: Unreconciled New Layers is shown. */
+  unreconciled?: boolean;
   choice: FilterChoice;
   invert: boolean;
   /** The filter whose name is being typed in place. */
@@ -112,7 +132,7 @@ export function LayerFilterTree({
   const [closed, setClosed] = useState<ReadonlySet<FilterChoice>>(new Set());
   const [dropping, setDropping] = useState<Handle | undefined>();
   const ref = useRef<HTMLUListElement>(null);
-  const nodes = shownNodes(tree, xrefs, closed);
+  const nodes = shownNodes(tree, xrefs, unreconciled, closed);
   // The selected node may be inside a closed one: then its nearest open ancestor takes the focus.
   const focusable = nodes.some((n) => n.choice === choice) ? choice : 'all';
   const focus = (c: FilterChoice) =>

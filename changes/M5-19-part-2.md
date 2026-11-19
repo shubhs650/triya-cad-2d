@@ -1,0 +1,1 @@
+- M5-19 part 2 (#583): the Layer Properties Manager shows Unreconciled New Layers while new layers an xref load flagged (LAYEREVAL) are unreconciled, and the layer list menu's Reconcile Layer reconciles the selected ones in one undo step; the node goes once none is left.
