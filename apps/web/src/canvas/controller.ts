@@ -456,6 +456,8 @@ export class CanvasController {
   #asked: Prompt | undefined;
   /** The renderer was last told a pickbox for the selection preview (M3-04 part 5). */
   #previewing = false;
+  /** A frame is being sent: what is told the renderer now goes with it, needing no other. */
+  #sending = false;
   /**
    * COMMANDPREVIEW (M3-12 part 6): the request the engine is answering (one at a time, the
    * latest cursor asked next), the cursor still to ask about, and whether a preview is drawn.
@@ -1605,8 +1607,7 @@ export class CanvasController {
     // worker that took the change from the engine (M2-62) has drawn it already, so this frame
     // only shows what it drew.
     if (this.#view && this.#size.width > 0) {
-      if (this.#view !== this.#sentView) this.#host.setView(this.#view);
-      this.#sentView = this.#view;
+      if (this.#view !== this.#sentView) this.#sendView(this.#view);
       this.#host.frame();
     }
   }
@@ -1995,9 +1996,37 @@ export class CanvasController {
     }
   }
 
+  /**
+   * Gives the renderer `view`, with the frame about to be sent. Until then the renderer has the
+   * view before, and what it found under the cursor meanwhile (the selection preview's pickbox,
+   * a rest's pick) it found under that one: a frame with raster images can keep the new view
+   * from it a while (M1-60), and image-attach.spec.ts saw an image lit up and named by a
+   * rollover tooltip by a cursor resting over nothing (M5-20). Both are read again here, after
+   * the view in the renderer's queue.
+   */
+  #sendView(view: ViewTransform): void {
+    const changed = view !== this.#sentView;
+    this.#host.setView(view);
+    this.#sentView = view;
+    if (!changed) return;
+    const hovered = this.#pointer && !this.#drag && this.#canvas.matches(':hover');
+    if (!hovered) return;
+    // A rest reported, or about to be, starts again: its tooltip goes and is asked again.
+    this.#rest.again();
+    // The pickbox shown lights up what is under it now; a wheel roll, which turned it off,
+    // leaves it off until the cursor moves.
+    if (!this.#previewing) return;
+    this.#sending = true;
+    try {
+      this.#previewAgain();
+    } finally {
+      this.#sending = false;
+    }
+  }
+
   #requestFrame(): void {
     // One frame per animation frame however many wheel or pointer events arrive.
-    if (this.#pending) return;
+    if (this.#pending || this.#sending) return;
     this.#pending = requestAnimationFrame(() => {
       this.#pending = 0;
       if (!this.#view) return;
@@ -2008,8 +2037,7 @@ export class CanvasController {
         this.#again = true;
         return;
       }
-      this.#host.setView(this.#view);
-      this.#sentView = this.#view;
+      this.#sendView(this.#view);
       this.#host.frame();
       this.#drawing = true;
       const canvas = this.#canvas;

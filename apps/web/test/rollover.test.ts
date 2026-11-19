@@ -60,6 +60,38 @@ describe('RestWatch', () => {
     expect(rests).toEqual([{ x: 10, y: 10 }, undefined]);
     vi.useRealTimers();
   });
+
+  // M5-20: a view landing under a still pointer leaves a tooltip for what was under it before.
+  it('starts a rest again where it was once the view changes under the still pointer', () => {
+    const { w, rests } = watch();
+    w.again();
+    vi.advanceTimersByTime(ROLLOVER_DELAY_MS);
+    expect(rests).toEqual([]);
+    // Reported: it ends and is reported again after the delay, at the same place.
+    w.move({ x: 10, y: 10 });
+    vi.advanceTimersByTime(ROLLOVER_DELAY_MS);
+    w.again();
+    expect(rests).toEqual([{ x: 10, y: 10 }, undefined]);
+    vi.advanceTimersByTime(ROLLOVER_DELAY_MS - 1);
+    expect(rests).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(rests.at(-1)).toEqual({ x: 10, y: 10 });
+    // About to be reported: it waits the whole delay again.
+    w.move({ x: 40, y: 10 });
+    vi.advanceTimersByTime(ROLLOVER_DELAY_MS - 1);
+    w.again();
+    vi.advanceTimersByTime(ROLLOVER_DELAY_MS - 1);
+    expect(rests.at(-1)).toBeUndefined();
+    vi.advanceTimersByTime(1);
+    expect(rests.at(-1)).toEqual({ x: 40, y: 10 });
+    // Ended (a wheel roll, a press): nothing starts.
+    w.cancel();
+    const n = rests.length;
+    w.again();
+    vi.advanceTimersByTime(ROLLOVER_DELAY_MS * 2);
+    expect(rests).toHaveLength(n);
+    vi.useRealTimers();
+  });
 });
 
 describe('rolloverPlacement', () => {
