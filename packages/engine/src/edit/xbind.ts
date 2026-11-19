@@ -16,9 +16,13 @@
 // copy is a new record (new handles above $HANDSEED) that the save writes, and what is not
 // xref-dependent (layer 0, Continuous, the drawing's own records) is the drawing's own. What a
 // paste cannot take (a nested xref's reference in a bound block, clipboard.ts `clipboardProblem`)
-// is left out of the bound block and counted. A block holding an image or a PDF underlay is not
-// bound: its definition would have to be filed apart from the xref's (left for a later part).
-// One undo step (XBIND).
+// is left out of the bound block and counted. An image or PDF underlay in a bound block (M5-04
+// part 16) shows a definition of the drawing's, as XREF Bind files one (xref-bind.ts
+// `fileDefinition`): the xref's own is its file's, kept in no dictionary of the drawing and gone
+// with the load, so the copy shows the drawing's definition of the same name and file, or a new
+// one filed in the drawing's ACAD_IMAGE_DICT or ACAD_PDFDEFINITIONS, under the bound name
+// (`xref$n$name`) when the drawing names another file so. An image whose file states no
+// boundary gets the whole image's, as Bind gives it. One undo step (XBIND).
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
@@ -26,11 +30,13 @@ import type { Handle } from '../model/handle';
 import type {
   BlockDefinition,
   BlockTableRecord,
+  ImageDefinition,
+  PdfDefinition,
   SymbolTableRecord,
   TableName,
   TextStyleRecord,
 } from '../model/types';
-import { isXrefRecord } from '../model/xref';
+import { isXrefRecord, loadedXrefHandles } from '../model/xref';
 import { copyToClipboard, pasteDefinitions, type Clipboard } from './clipboard';
 
 /** The five kinds of definition XBIND binds, as its dialog's tree names them. */
@@ -109,8 +115,6 @@ export function xbindDefinition(model: DocumentModel, h: Handle): XbindDefinitio
 export interface XbindReport {
   /** The definitions asked for, with the names their copies have. */
   readonly bound: readonly (XbindDefinition & { readonly boundName: string })[];
-  /** The definitions asked for that were not bound, with why. */
-  readonly refused: readonly { readonly name: string; readonly reason: string }[];
   /** Reason → how many objects of the bound blocks were left out. */
   readonly omitted: ReadonlyMap<string, number>;
 }
@@ -134,39 +138,20 @@ export function xbindDefinitions(
   model: DocumentModel,
   handles: readonly Handle[],
 ): XbindReport {
-  const refused: { name: string; reason: string }[] = [];
   const asked: XbindDefinition[] = [];
   for (const h of new Set(handles)) {
     const d = xbindDefinition(model, h);
     if (!d) continue;
     asked.push(d);
   }
-  let copy = copyToClipboard(
+  if (asked.length === 0) return { bound: [], omitted: new Map() };
+  const copy = copyToClipboard(
     model,
     [],
     { x: 0, y: 0 },
     undefined,
     asked.map((d) => d.handle),
   );
-  // A block whose content shows an image or an underlay is left out, with what names it.
-  if (copy.clipboard.objects?.length) {
-    const showing = blocksShowingDefinitions(copy.clipboard);
-    const keep = asked.filter((d) => {
-      if (d.kind !== 'Block' || !reaches(copy.clipboard, d.handle, showing)) return true;
-      refused.push({ name: d.name, reason: 'it holds an image or an underlay' });
-      return false;
-    });
-    asked.length = 0;
-    asked.push(...keep);
-    copy = copyToClipboard(
-      model,
-      [],
-      { x: 0, y: 0 },
-      undefined,
-      keep.map((d) => d.handle),
-    );
-  }
-  if (asked.length === 0) return { bound: [], refused, omitted: new Map() };
 
   // The copies' bound names, n the lowest free one per table.
   const names = new Map<TableName, Set<string>>();
@@ -215,40 +200,93 @@ export function xbindDefinitions(
     const kept = (flags ?? 0) & ~DEPENDENT_BITS;
     return { ...rest, ...(name !== undefined ? { name } : {}), ...(kept ? { flags: kept } : {}) };
   });
-  const clip: Clipboard = { ...copy.clipboard, tables, blocks };
-  pasteDefinitions(b, model, clip);
+  const { objects, known } = drawingDefinitions(b, model, copy.clipboard.objects ?? []);
+  const clip: Clipboard = {
+    ...copy.clipboard,
+    tables,
+    blocks,
+    blockEntities: copy.clipboard.blockEntities.map(withImageBoundary),
+    ...(objects.length > 0 ? { objects } : {}),
+  };
+  pasteDefinitions(b, model, clip, known);
 
   const bound = asked.map((d) => ({ ...d, boundName: renamed.get(d.handle) ?? d.name }));
-  return { bound, refused, omitted: copy.refused };
+  return { bound, omitted: copy.refused };
+}
+
+type Definition = ImageDefinition | PdfDefinition;
+
+/** Whether `name` is `symbol` of xref `xref`, or a bound name of it (`xref$n$symbol`), case aside. */
+function boundAs(name: string, xref: string, symbol: string): boolean {
+  const u = name.toUpperCase();
+  const s = symbol.toUpperCase();
+  if (u === s) return true;
+  const head = `${xref.toUpperCase()}$`;
+  if (!u.startsWith(head) || !u.endsWith(`$${s}`)) return false;
+  return /^\d+$/.test(u.slice(head.length, u.length - s.length - 1));
+}
+
+/**
+ * The image and PDF definitions the bound blocks show, as the drawing is to have them: `known`
+ * maps one (left on the Clipboard, the paste maps it) to the drawing's definition of its type and
+ * file named as it is or as an earlier XBIND of the xref named it (case aside); the others are
+ * pasted as new ones, renamed `xref$n$name` (the xref the load filed them under, n the lowest
+ * free) where the drawing has a definition of that name for another file, as XREF Bind names one
+ * (xref-bind.ts `fileDefinition`).
+ */
+function drawingDefinitions(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  defs: readonly Definition[],
+): { objects: Definition[]; known: Map<Handle, Handle> } {
+  const loaded = loadedXrefHandles(model);
+  const own = [...b.objects()].filter(
+    (o): o is Definition =>
+      (o.type === 'IMAGEDEF' || o.type === 'PDFDEFINITION') && !loaded.has(o.handle),
+  );
+  const known = new Map<Handle, Handle>();
+  const objects: Definition[] = [];
+  for (const o of defs) {
+    const same = own.filter((d) => d.type === o.type);
+    const xref = model.tables.blockRecords.get(o.owner)?.name ?? 'xref';
+    const match = same.find((d) => d.fileName === o.fileName && boundAs(d.name, xref, o.name));
+    if (match) {
+      known.set(o.handle, match.handle);
+      objects.push(o);
+      continue;
+    }
+    const names = new Set(same.map((d) => d.name.toUpperCase()));
+    let name = o.name;
+    if (names.has(name.toUpperCase())) {
+      let n = 0;
+      while (names.has(`${xref}$${n}$${o.name}`.toUpperCase())) n++;
+      name = `${xref}$${n}$${o.name}`;
+    }
+    const filed = { ...o, name };
+    own.push(filed);
+    objects.push(filed);
+  }
+  return { objects, known };
+}
+
+/**
+ * An unclipped image whose file states no boundary with AutoCAD's: the whole image, in pixel
+ * coordinates centred on pixels (edit/picture.ts), which the save writes (DXF 91 = 2), as XREF
+ * Bind gives it (xref-bind.ts).
+ */
+function withImageBoundary<T extends Clipboard['blockEntities'][number]>(e: T): T {
+  const g = e.geom;
+  if (g.kind !== 'IMAGE' || g.clipping || g.clip.type !== 'rectangle') return e;
+  if (g.clip.vertices.length === 2) return e;
+  const vertices = [
+    { x: -0.5, y: -0.5 },
+    { x: g.size.x - 0.5, y: g.size.y - 0.5 },
+  ];
+  return { ...e, geom: { ...g, clip: { ...g.clip, vertices } } };
 }
 
 function withoutDependentBits(r: SymbolTableRecord): SymbolTableRecord {
   const flags = (r.flags ?? 0) & ~DEPENDENT_BITS;
   const { flags: _flags, ...rest } = r;
   return flags !== 0 ? { ...rest, flags } : rest;
-}
-
-/** The blocks on the Clipboard whose own entities show an image's or underlay's definition. */
-function blocksShowingDefinitions(clip: Clipboard): Set<Handle> {
-  const out = new Set<Handle>();
-  for (const e of clip.blockEntities) {
-    if (e.geom.kind === 'IMAGE' || e.geom.kind === 'PDFUNDERLAY') out.add(e.owner);
-  }
-  return out;
-}
-
-/** Whether block `h` shows one of `showing`, itself or through the blocks it inserts. */
-function reaches(clip: Clipboard, h: Handle, showing: ReadonlySet<Handle>): boolean {
-  const seen = new Set<Handle>();
-  const queue = [h];
-  while (queue.length > 0) {
-    const at = queue.pop()!;
-    if (seen.has(at)) continue;
-    seen.add(at);
-    if (showing.has(at)) return true;
-    for (const e of clip.blockEntities) {
-      if (e.owner === at && e.geom.kind === 'INSERT') queue.push(e.geom.block);
-    }
-  }
-  return false;
 }

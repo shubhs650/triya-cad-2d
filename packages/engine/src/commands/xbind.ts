@@ -56,7 +56,6 @@ function bind(ctx: CommandContext, handles: readonly Handle[]): void {
   ctx.edit((b) => {
     report = xbindDefinitions(b, ctx.model, handles);
   });
-  for (const r of report!.refused) ctx.message(`"${r.name}" is not bound: ${r.reason}.`);
   for (const d of report!.bound)
     ctx.message(`${KIND_WORD[d.kind]} "${d.name}" bound as "${d.boundName}".`);
   for (const [reason, n] of report!.omitted)

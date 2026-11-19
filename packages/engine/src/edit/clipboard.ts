@@ -85,7 +85,13 @@ import {
   type Xdata,
 } from '../model/types';
 import { insUnitsOf, insUnitsScale } from '../model/units';
-import { DIMVAR_REFERENCES, HANDLE_KEYS, isXrefRecord, renumber } from '../model/xref';
+import {
+  DIMVAR_REFERENCES,
+  HANDLE_KEYS,
+  isXrefRecord,
+  loadedXrefHandles,
+  renumber,
+} from '../model/xref';
 import {
   AnonymousNames,
   copyProblem,
@@ -632,9 +638,16 @@ export function pasteObjects(
 /**
  * The Clipboard's definitions alone (its records, blocks and the objects they hold) pasted into
  * `model`, as PASTECLIP brings them in with the objects: XBIND's copies (M5-04 part 7, xbind.ts).
+ * `known` names what `model` holds already of what the Clipboard carries, as `pasteKnown`'s does
+ * (XBIND: the drawing's image and PDF definitions of the same file, M5-04 part 16).
  */
-export function pasteDefinitions(b: ChangeSetBuilder, model: DocumentModel, clip: Clipboard): void {
-  pasteInto(b, model, { ...clip, entities: [], groups: [] }, '0');
+export function pasteDefinitions(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  clip: Clipboard,
+  known?: ReadonlyMap<Handle, Handle>,
+): void {
+  pasteInto(b, model, { ...clip, entities: [], groups: [] }, '0', undefined, known);
 }
 
 /**
@@ -940,9 +953,12 @@ function pasteDefinition(
 ): void {
   const name = o.name.toUpperCase();
   let owner: Handle | undefined = model.meta[DEFINITIONS[o.type]];
+  // An xref's definitions are its file's, filed in no dictionary of the drawing and gone with its
+  // load (model/xref.ts): a pasted image showing one would be saved without it (M5-04 part 16).
+  const loaded = loadedXrefHandles(model);
   // As the change leaves them: a definition an earlier paste of the same change filed counts.
   for (const d of b.objects()) {
-    if (d.type !== o.type) continue;
+    if (d.type !== o.type || loaded.has(d.handle)) continue;
     if ((d as Definition).name.toUpperCase() === name) {
       map.set(o.handle, d.handle);
       return;

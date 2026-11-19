@@ -14,6 +14,7 @@ import {
   builtinCommands,
   xbindChange,
   xbindXrefs,
+  loadedXrefHandles,
   xrefLoadChange,
   type BusEvent,
   type DialogRequest,
@@ -22,6 +23,8 @@ import {
   type EntityGeometry,
   type ImageDefinition,
   type LayerRecord,
+  type NonGraphicalObject,
+  type PdfDefinition,
   type PromptAnswer,
   type TextStyleRecord,
 } from '../../src/index';
@@ -149,6 +152,124 @@ const handleOf = (model: DocumentModel, name: string): string =>
     .flatMap((x) => x.definitions)
     .find((d) => d.name === name)!.handle;
 
+/** The host's ACAD_IMAGE_DICT and ACAD_PDFDEFINITIONS. */
+const IMAGE_DICT = '3C';
+const PDF_DICT = '3D';
+
+const imageDef = (handle: string, name: string, fileName: string): ImageDefinition => ({
+  handle,
+  type: 'IMAGEDEF',
+  owner: 'C',
+  name,
+  fileName,
+  size: { x: 10, y: 10 },
+  pixelSize: { x: 1, y: 1 },
+  loaded: true,
+  units: 0,
+});
+
+const pdfDef = (handle: string, name: string, fileName: string): PdfDefinition => ({
+  handle,
+  type: 'PDFDEFINITION',
+  owner: 'C',
+  name,
+  fileName,
+  page: '1',
+});
+
+/**
+ * The host with PLAN loaded, PLAN's DOOR holding an image of stamp.png (its file stating no
+ * boundary) and an underlay of sheet.pdf; the host has its image and PDF dictionaries (`dicts`)
+ * and the definitions `own`.
+ */
+function withPictures(own: readonly NonGraphicalObject[] = [], dicts = true): DocumentModel {
+  const host = hostInit();
+  const model = DocumentModel.create({
+    ...host,
+    meta: {
+      ...host.meta!,
+      ...(dicts ? { imageDictionary: IMAGE_DICT, pdfDictionary: PDF_DICT } : {}),
+    },
+    objects: [
+      ...(host.objects ?? []),
+      ...(dicts
+        ? [
+            { handle: IMAGE_DICT, type: 'DICTIONARY', owner: 'C' },
+            { handle: PDF_DICT, type: 'DICTIONARY', owner: 'C' },
+          ]
+        : []),
+      ...own,
+    ],
+  });
+  const plan = planInit();
+  const image = {
+    kind: 'IMAGE',
+    definition: '50',
+    position: { x: 0, y: 0 },
+    u: { x: 1, y: 0 },
+    v: { x: 0, y: 1 },
+    size: { x: 10, y: 10 },
+    displayFlags: 7,
+    clipping: false,
+    brightness: 50,
+    contrast: 50,
+    fade: 0,
+    clip: { type: 'rectangle', vertices: [], inverted: false },
+  } as EntityGeometry;
+  const underlay = {
+    kind: 'PDFUNDERLAY',
+    definition: '52',
+    position: { x: 3, y: 0 },
+    scale: { x: 1, y: 1, z: 1 },
+    rotation: 0,
+    flags: 2,
+    contrast: 100,
+    fade: 0,
+    clip: [],
+  } as unknown as EntityGeometry;
+  model.apply(
+    xrefLoadChange(model, XREF, {
+      ...plan,
+      objects: [
+        ...(plan.objects ?? []),
+        imageDef('50', 'stamp', 'stamp.png'),
+        pdfDef('52', 'sheet', 'sheet.pdf'),
+      ],
+      entities: [
+        ...(plan.entities ?? []),
+        entityInit('51', image, { layer: '10', owner: '40' }),
+        entityInit('53', underlay, { layer: '10', owner: '40' }),
+      ],
+    }),
+  );
+  return model;
+}
+
+/** The one image or underlay of block `block`. */
+function pictureIn(model: DocumentModel, block: string, kind: 'IMAGE' | 'PDFUNDERLAY') {
+  const e = model
+    .blockEntities(block)
+    .map((id) => model.entity(id)!)
+    .find((x) => x.geom.kind === kind)!;
+  return e.geom as unknown as {
+    readonly definition?: string;
+    readonly clip: { readonly vertices: readonly { x: number; y: number }[] };
+  };
+}
+
+/** The image and PDF definitions of `model`. */
+const definitions = (model: DocumentModel): NonGraphicalObject[] =>
+  [...model.objects.values()].filter((o) => o.type === 'IMAGEDEF' || o.type === 'PDFDEFINITION');
+
+function busOn(model: DocumentModel) {
+  const log: string[] = [];
+  const bus = new PromptBus({ model, registry: builtinCommands() });
+  bus.on((e: BusEvent) => {
+    if (e.type === 'log') log.push(e.line);
+  });
+  return { bus, log };
+}
+
 describe('XBIND: the Xbind dialog', () => {
   it("lists each xref's dependent definitions by kind, the nested xref's own and none of anonymous ones", async () => {
     const t = drawing();
@@ -269,50 +390,72 @@ describe('XBIND: the Xbind dialog', () => {
     expect(bus.command).toBeUndefined();
   });
 
-  it('leaves out a block holding an image, saying why', () => {
-    // An image in DOOR, its definition one the xref's load brings.
-    const init = planInit();
-    const def: ImageDefinition = {
-      handle: '50',
-      type: 'IMAGEDEF',
-      owner: 'C',
-      name: 'stamp',
-      fileName: 'stamp.png',
-      size: { x: 10, y: 10 },
-      pixelSize: { x: 1, y: 1 },
-      loaded: true,
-      units: 0,
-    };
-    const image: EntityGeometry = {
-      kind: 'IMAGE',
-      definition: '50',
-      position: { x: 0, y: 0 },
-      u: { x: 1, y: 0 },
-      v: { x: 0, y: 1 },
-      size: { x: 10, y: 10 },
-      displayFlags: 7,
-      clipping: false,
-      brightness: 50,
-      contrast: 50,
-      fade: 0,
-      clip: { type: 'rectangle', vertices: [], inverted: false },
-    } as EntityGeometry;
-    const model = DocumentModel.create(hostInit());
-    model.apply(
-      xrefLoadChange(model, XREF, {
-        ...init,
-        objects: [...(init.objects ?? []), def],
-        entities: [...(init.entities ?? []), entityInit('51', image, { layer: '10', owner: '40' })],
-      }),
+  it("binds a block holding an image and an underlay: their definitions are filed as the drawing's", () => {
+    const model = withPictures();
+    // What the xref's load brought: its definitions, filed nowhere in the drawing.
+    const xrefDefs = definitions(model);
+    expect(xrefDefs.every((d) => loadedXrefHandles(model).has(d.handle))).toBe(true);
+    const { change, report } = xbindChange(model, [handleOf(model, 'PLAN|FRAME')]);
+    expect(report.bound.map((d) => d.boundName)).toEqual(['PLAN$0$FRAME']);
+    model.apply(change);
+    // The bound DOOR's image and underlay show new definitions of the same name and file, filed
+    // in the drawing's dictionaries; the xref keeps drawing with its own.
+    const door = blockNamed(model, 'PLAN$0$DOOR')!;
+    const image = pictureIn(model, door.handle, 'IMAGE');
+    const underlay = pictureIn(model, door.handle, 'PDFUNDERLAY');
+    const def = model.objects.get(image.definition!) as ImageDefinition;
+    const pdf = model.objects.get(underlay.definition!) as PdfDefinition;
+    expect(def).toMatchObject({ name: 'stamp', fileName: 'stamp.png', owner: IMAGE_DICT });
+    expect(pdf).toMatchObject({ name: 'sheet', fileName: 'sheet.pdf', owner: PDF_DICT });
+    expect(loadedXrefHandles(model).has(def.handle)).toBe(false);
+    expect(loadedXrefHandles(model).has(pdf.handle)).toBe(false);
+    expect(pictureIn(model, handleOf(model, 'PLAN|DOOR'), 'IMAGE').definition).toBe(
+      xrefDefs.find((d) => d.type === 'IMAGEDEF')!.handle,
     );
-    const { report } = xbindChange(model, [
-      handleOf(model, 'PLAN|FRAME'),
-      handleOf(model, 'PLAN|WALLS'),
+    for (const d of xrefDefs) expect(model.objects.get(d.handle)).toEqual(d);
+    // An image whose file states no boundary has the whole image's, as a bind gives it.
+    expect(image.clip.vertices).toEqual([
+      { x: -0.5, y: -0.5 },
+      { x: 9.5, y: 9.5 },
     ]);
-    expect(report.refused).toEqual([
-      { name: 'PLAN|FRAME', reason: 'it holds an image or an underlay' },
+  });
+
+  it("shows the drawing's definition of the same name and file; another file's name is the bound one", () => {
+    const model = withPictures([
+      { ...imageDef('3E', 'stamp', 'stamp.png'), owner: IMAGE_DICT },
+      { ...pdfDef('3F', 'sheet', 'other.pdf'), owner: PDF_DICT },
     ]);
-    expect(report.bound.map((d) => d.boundName)).toEqual(['PLAN$0$WALLS']);
+    const { change } = xbindChange(model, [handleOf(model, 'PLAN|DOOR')]);
+    model.apply(change);
+    const door = blockNamed(model, 'PLAN$0$DOOR')!;
+    expect(pictureIn(model, door.handle, 'IMAGE').definition).toBe('3E');
+    const pdf = model.objects.get(
+      pictureIn(model, door.handle, 'PDFUNDERLAY').definition!,
+    ) as PdfDefinition;
+    expect(pdf).toMatchObject({ name: 'PLAN$0$sheet', fileName: 'sheet.pdf', owner: PDF_DICT });
+    // Bound again: the definitions the first bind filed are the drawing's now.
+    const before = definitions(model).length;
+    model.apply(xbindChange(model, [handleOf(model, 'PLAN|DOOR')]).change);
+    const again = blockNamed(model, 'PLAN$1$DOOR')!;
+    expect(pictureIn(model, again.handle, 'IMAGE').definition).toBe('3E');
+    expect(pictureIn(model, again.handle, 'PDFUNDERLAY').definition).toBe(pdf.handle);
+    expect(definitions(model)).toHaveLength(before);
+  });
+
+  it('files a definition in a new dictionary when the drawing has none; one undo step', async () => {
+    const model = withPictures(undefined, false);
+    const t = busOn(model);
+    await t.bus.script(['-XBIND', 'B', 'PLAN|DOOR']);
+    expect(t.log).toContain('Block "PLAN|DOOR" bound as "PLAN$0$DOOR".');
+    const door = blockNamed(model, 'PLAN$0$DOOR')!;
+    const def = model.objects.get(pictureIn(model, door.handle, 'IMAGE').definition!)!;
+    // A handle of its own, which the save creates the ACAD_IMAGE_DICT under.
+    expect(def.owner).not.toBe(IMAGE_DICT);
+    expect(model.objects.has(def.owner)).toBe(false);
+    const count = definitions(model).length;
+    await t.bus.script(['U']);
+    expect(blockNamed(model, 'PLAN$0$DOOR')).toBeUndefined();
+    expect(definitions(model)).toHaveLength(count - 2);
   });
 });
 
