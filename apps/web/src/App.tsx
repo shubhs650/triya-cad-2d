@@ -2063,11 +2063,15 @@ interface LaunchParams {
   }[];
 }
 
-/** The outcome of dropping plot style tables or linetype files, while Settings is closed. */
+/**
+ * The outcome of dropping plot style tables, linetype files or layer state files, while Settings
+ * is closed (one state per `supportStores` entry, in its order).
+ */
 function SupportBanners() {
   const states = [
     useSyncExternalStore(plotStyles.subscribe, plotStyles.getSnapshot),
     useSyncExternalStore(linetypes.subscribe, linetypes.getSnapshot),
+    useSyncExternalStore(layerStateFiles.subscribe, layerStateFiles.getSnapshot),
   ];
   return supportStores.map((store, i) => {
     const { error, notice } = states[i]!;
