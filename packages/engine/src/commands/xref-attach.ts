@@ -27,7 +27,17 @@
 //   becomes the drawing's own (edit/xref-attach.ts);
 // - Esc at the insertion point leaves the xref attached with no reference, as AutoCAD's palette
 //   then lists it Unreferenced; Detach takes it out.
-// -XREF's Attach and Overlay options (a file named at the command line) are left for a later part.
+//
+// -XREF Attach and Overlay (M5-04 part 12; AutoCAD Help, "-XREF (Command)") ask at the command
+// line, as AutoCAD asks with FILEDIA 0 (Triya has no FILEDIA: the dash form is the one scripts
+// and typists use, and XATTACH is the dialog):
+//   Enter name of file to attach <last>:            (to overlay, for Overlay)
+// The app finds the file by name (`xrefFile`: folders, case and the extension aside) among the
+// drawings it holds, since a browser cannot open a path by itself; `~` opens the Attach External
+// Reference dialog instead, on Overlay for Overlay ("You can enter a tilde (~) to display a dialog
+// box"). A name may be in double quotes, as AutoCAD takes one with spaces. <last> is the file the
+// drawing last attached by name this session. The rest is XATTACH's: the same xref, load, prompts
+// and one undo step.
 import type { Vec2 } from '../geom/types';
 import type { BlockTableRecord } from '../model/types';
 import { insUnitsOf } from '../model/units';
@@ -41,8 +51,11 @@ import {
   type XrefAttachFile,
 } from '../edit/xref-attach';
 import type { CommandContext, CommandDef } from './command';
+import type { Prompt, PromptAnswer } from './prompt';
 import { insertBlock } from './blocks';
 import { currentUcs } from './ucs';
+
+type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
 /** The Attach External Reference dialog's Reference Type, Insertion point, Scale and Rotation. */
 export interface XrefAttachSettings {
@@ -87,6 +100,9 @@ export interface XrefAttachAnswer {
 
 /** The settings the dialog closed with last, per drawing. */
 const lastSettings = new WeakMap<object, XrefAttachSettings>();
+
+/** The file -XREF Attach or Overlay last attached, per drawing (<last>). */
+const lastFile = new WeakMap<object, string>();
 
 const DEFAULTS: XrefAttachSettings = {
   overlay: false,
@@ -184,47 +200,94 @@ async function xrefFor(
   return ctx.model.tables.blockRecords.get(block)!;
 }
 
+/** XATTACH's dialog, then the placing of what it attaches; with `overlay`, opened on Overlay. */
+async function* xattachDialog(ctx: CommandContext, overlay?: boolean): Sub<void> {
+  let settings: XrefAttachSettings = {
+    ...DEFAULTS,
+    ...lastSettings.get(ctx.model),
+    ...(overlay !== undefined && { overlay }),
+  };
+  let note: string | undefined;
+  for (;;) {
+    const a = yield ctx.prompt.dialog({
+      message: 'Attach External Reference',
+      dialog: {
+        type: 'xrefattach',
+        settings,
+        xrefs: xrefsOf(ctx),
+        units: insUnitsOf(ctx.model),
+        ...(note !== undefined && { note }),
+      },
+    });
+    if (a.kind !== 'dialog' || a.action !== 'ok') return;
+    const answer = a.xrefAttach;
+    if (!answer || !validSettings(answer.settings)) return;
+    settings = answer.settings;
+    note = problemOf(answer);
+    if (note) continue;
+    lastSettings.set(ctx.model, settings);
+    const r = await xrefFor(ctx, answer.file, settings.overlay);
+    const ucs = currentUcs(ctx);
+    const s = settings.scale;
+    const uniform = settings.uniformScale || r.scalable === false;
+    yield* insertBlock(ctx, r, {
+      explode: false,
+      uniform,
+      xref: true,
+      ...(!settings.pointOnScreen && { at: toWorld(ucs, settings.point) }),
+      ...(!settings.scaleOnScreen && {
+        scale: uniform ? { x: s.x, y: s.x, z: s.x } : { ...s },
+      }),
+      ...(!settings.rotationOnScreen && { rotation: ucs.angle + settings.rotation }),
+    });
+    return;
+  }
+}
+
+/** A name typed at "Enter name of file": spaces at its ends and enclosing double quotes gone. */
+function typedFileName(text: string): string {
+  const t = text.trim();
+  return t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1).trim() : t;
+}
+
+/**
+ * -XREF Attach (Overlay with `overlay`): the file named at the command line, found by the app,
+ * attached and placed as XATTACH attaches and places one; `~` is XATTACH's dialog.
+ */
+export async function* dashXrefAttach(ctx: CommandContext, overlay: boolean): Sub<void> {
+  const last = lastFile.get(ctx.model);
+  const a = yield ctx.prompt.string({
+    message: `Enter name of file to ${overlay ? 'overlay' : 'attach'}`,
+    spaces: true,
+    ...(last !== undefined && { default: { kind: 'string', value: last } }),
+  });
+  if (a.kind !== 'string') return;
+  const typed = typedFileName(a.value) || (last ?? '');
+  if (typed === '') return;
+  if (typed === '~') {
+    yield* xattachDialog(ctx, overlay);
+    return;
+  }
+  const reply = await ctx.view.request({ op: 'xrefFile', file: typed });
+  if (!reply.ok) {
+    ctx.message(reply.message);
+    return;
+  }
+  if (!reply.xrefFile || !validFile(reply.xrefFile)) {
+    ctx.message(`File "${typed}" not found.`);
+    return;
+  }
+  lastFile.set(ctx.model, reply.xrefFile.fileName);
+  const r = await xrefFor(ctx, reply.xrefFile, overlay);
+  yield* insertBlock(ctx, r, { explode: false, uniform: r.scalable === false, xref: true });
+}
+
 export function xattachCommand(): CommandDef {
   return {
     name: 'XATTACH',
     usesSelection: 'none',
     async *run(ctx) {
-      let settings: XrefAttachSettings = { ...DEFAULTS, ...lastSettings.get(ctx.model) };
-      let note: string | undefined;
-      for (;;) {
-        const a = yield ctx.prompt.dialog({
-          message: 'Attach External Reference',
-          dialog: {
-            type: 'xrefattach',
-            settings,
-            xrefs: xrefsOf(ctx),
-            units: insUnitsOf(ctx.model),
-            ...(note !== undefined && { note }),
-          },
-        });
-        if (a.kind !== 'dialog' || a.action !== 'ok') return;
-        const answer = a.xrefAttach;
-        if (!answer || !validSettings(answer.settings)) return;
-        settings = answer.settings;
-        note = problemOf(answer);
-        if (note) continue;
-        lastSettings.set(ctx.model, settings);
-        const r = await xrefFor(ctx, answer.file, settings.overlay);
-        const ucs = currentUcs(ctx);
-        const s = settings.scale;
-        const uniform = settings.uniformScale || r.scalable === false;
-        yield* insertBlock(ctx, r, {
-          explode: false,
-          uniform,
-          xref: true,
-          ...(!settings.pointOnScreen && { at: toWorld(ucs, settings.point) }),
-          ...(!settings.scaleOnScreen && {
-            scale: uniform ? { x: s.x, y: s.x, z: s.x } : { ...s },
-          }),
-          ...(!settings.rotationOnScreen && { rotation: ucs.angle + settings.rotation }),
-        });
-        return;
-      }
+      yield* xattachDialog(ctx);
     },
   };
 }

@@ -4,7 +4,7 @@
 //
 //   - XREF (XR) and EXTERNALREFERENCES (ER) open the External References palette, which is
 //     Triya's References palette; EXTERNALREFERENCESCLOSE closes it.
-//   - -XREF: "Enter an option [?/Bind/Detach/Unload/Reload]". `?` lists the xrefs whose names match
+//   - -XREF: "Enter an option [?/Bind/Detach/Unload/Reload/Overlay/Attach] <Attach>". `?` lists the xrefs whose names match
 //     "Enter xref(s) to list <*>", each with its saved path, then "Total Xref(s): N". Detach,
 //     Unload and Reload ask "Enter xref name(s) to detach" (to unload, to reload), names or
 //     wildcard patterns separated by commas. Bind ("Enter xref name(s) to bind") binds as
@@ -15,7 +15,8 @@
 // the palette's buttons do. Only xrefs the drawing attaches itself are detached or unloaded
 // (AutoCAD: "nested xrefs cannot be detached"); a nested one is reloaded with its own file.
 // Bind is one undo step too (`bindXrefs`, edit/xref-bind.ts); only loaded xrefs are bound.
-// Left for later parts of M5-04: Path, Overlay and Attach (AutoCAD's default option).
+// Overlay and Attach (M5-04 part 12, Attach the default as AutoCAD's) attach a file named at the
+// command line (`dashXrefAttach`, xref-attach.ts). Left for later parts of M5-04: Path.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { BlockTableRecord } from '../model/types';
@@ -24,6 +25,7 @@ import { detachXrefs } from '../edit/xrefs';
 import { bindXrefs, xrefBindProblem } from '../edit/xref-bind';
 import { wcmatch } from './modify/attributes';
 import { viewRequest } from './view/zoom';
+import { dashXrefAttach } from './xref-attach';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -77,11 +79,16 @@ function topLevel(ctx: CommandContext, named: readonly BlockTableRecord[], verb:
 async function* dashXref(ctx: CommandContext): Sub<void> {
   const a = yield ctx.prompt.keyword({
     message: 'Enter an option',
-    options: ['?', 'Bind', 'Detach', 'Unload', 'Reload'],
+    options: ['?', 'Bind', 'Detach', 'Unload', 'Reload', 'Overlay', 'Attach'],
+    default: { kind: 'keyword', keyword: 'Attach' },
   });
   if (a.kind !== 'keyword') return;
   if (a.keyword === '?') {
     yield* listXrefs(ctx);
+    return;
+  }
+  if (a.keyword === 'Attach' || a.keyword === 'Overlay') {
+    yield* dashXrefAttach(ctx, a.keyword === 'Overlay');
     return;
   }
   const verb = a.keyword.toLowerCase();

@@ -9,6 +9,10 @@
 // user once); otherwise (a file dropped without a handle, Firefox, Safari, writing refused) the
 // file is downloaded under its name, for the user to put in place of the old one. Either way the
 // session's later reads of the xref (XREF Reload, another REFEDIT) read what was written.
+//
+// -XREF Attach and Overlay (M5-04 part 12) name a file at the command line; a browser opens no
+// path by itself, so the app finds it by name among the drawings it holds (`xrefFileReply`): the
+// files that answered xrefs this session, the drawings open (as saved), then its kept folders.
 import type { ChangeSet, DocumentInit, ViewReply } from '@triya/engine';
 import type { SaveHandle } from './save';
 import type { ReferenceHandle } from './reference-files';
@@ -91,4 +95,57 @@ export async function writeXrefFile(
   }
   env.download(source.name, out);
   return { reply: { ok: true, written: { file: source.name, downloaded: true } }, source: written };
+}
+
+/** Somewhere the app holds drawing files: those it holds there, listed when asked. */
+export type XrefFilePlace = () => readonly XrefSource[] | Promise<readonly XrefSource[]>;
+
+export interface XrefFileEnv {
+  /** The file's INSUNITS (read with the I/O worker). */
+  units(file: Blob): Promise<number>;
+  /** The file found: the app keeps it, so the attach loads the xref from it. */
+  found(source: XrefSource): void;
+  /** The drawing's own file name, which it cannot reference. */
+  readonly self?: string;
+}
+
+const DRAWING = /\.(dxf|dwg)$/i;
+
+/**
+ * The reply to -XREF Attach's `xrefFile`: the drawing file `file` names (folders and enclosing
+ * quotes aside, any case; without an extension a .dxf or .dwg of that name), the first held in
+ * `places` in order, with its INSUNITS; no file when none is held.
+ */
+export async function xrefFileReply(
+  file: string,
+  places: readonly XrefFilePlace[],
+  env: XrefFileEnv,
+): Promise<ViewReply> {
+  const typed = (
+    file
+      .trim()
+      .replace(/^"(.*)"$/, '$1')
+      .split(/[\\/]/)
+      .pop() ?? ''
+  ).toUpperCase();
+  const matches = (name: string) =>
+    DRAWING.test(name) &&
+    (name.toUpperCase() === typed || name.replace(DRAWING, '').toUpperCase() === typed);
+  for (const place of places) {
+    const source = (await place()).find((s) => matches(s.name));
+    if (!source) continue;
+    if (env.self !== undefined && source.name.toUpperCase() === env.self.toUpperCase())
+      return {
+        ok: false,
+        message: `${source.name} is this drawing: a drawing cannot reference itself.`,
+      };
+    try {
+      const units = await env.units(await source.getFile());
+      env.found(source);
+      return { ok: true, xrefFile: { fileName: source.name, units } };
+    } catch (e) {
+      return { ok: false, message: `${source.name} could not be read: ${reason(e)}` };
+    }
+  }
+  return { ok: true };
 }

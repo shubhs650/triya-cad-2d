@@ -278,7 +278,9 @@ describe('-XREF (M5-04)', () => {
     const model = loadedParent().model;
     const t = bus(model);
     await t.bus.script(['-XREF']);
-    expect(t.bus.promptText).toBe('Enter an option [?/Bind/Detach/Unload/Reload]:');
+    expect(t.bus.promptText).toBe(
+      'Enter an option [?/Bind/Detach/Unload/Reload/Overlay/Attach] <Attach>:',
+    );
     await t.bus.script(['?', '']);
     const at = t.log.findIndex((l) => l.startsWith('Xref Name'));
     expect(t.log.slice(at + 2, at + 6)).toEqual([
