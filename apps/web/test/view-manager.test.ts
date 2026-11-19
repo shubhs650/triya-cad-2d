@@ -59,6 +59,7 @@ describe('viewRows', () => {
     expect(rows).toEqual([
       { group: 'General', label: 'Name', value: 'Front' },
       { group: 'General', label: 'Category', value: '<None>' },
+      { group: 'General', label: 'Layer snapshot', value: 'No' },
       { group: 'View', label: 'Center X', value: '11.0000' },
       { group: 'View', label: 'Center Y', value: '7.0000' },
       { group: 'View', label: 'Height', value: '20.0000' },
@@ -74,6 +75,15 @@ describe('viewRows', () => {
       group: 'General',
       label: 'Category',
       value: 'Elevations',
+    });
+  });
+
+  // M5-07 part 7: Layer snapshot, Yes when the view names its layer state.
+  it('says whether a view keeps a layer snapshot', () => {
+    expect(viewRows(view('Front', { layerState: 'ACAD_VIEWS_Front' }))[2]).toEqual({
+      group: 'General',
+      label: 'Layer snapshot',
+      value: 'Yes',
     });
   });
 
@@ -121,7 +131,7 @@ describe('viewManager', () => {
   const state: ManagerState = {
     selected: 'model:Front',
     current: undefined,
-    creating: { name: 'Detail', category: '<None>', boundary: 'window' },
+    creating: { name: 'Detail', category: '<None>', boundary: 'window', layers: true },
   };
 
   it('opens, and resolves when closed', async () => {

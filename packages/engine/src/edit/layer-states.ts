@@ -172,7 +172,13 @@ export function saveLayerState(
   b: ChangeSetBuilder,
   model: DocumentModel,
   name: string,
-  options: { readonly description?: string; readonly mask?: number } = {},
+  options: {
+    readonly description?: string;
+    readonly mask?: number;
+    /** A view's layer snapshot (M5-07 part 7): hidden from the manager, saved in a layout. */
+    readonly hidden?: boolean;
+    readonly paperSpace?: boolean;
+  } = {},
 ): string | undefined {
   const old = layerStateNamed(model, name);
   const why =
@@ -187,10 +193,11 @@ export function saveLayerState(
     // with its name, Update) keeps them, so a state restored and updated is still the one the
     // Layer Properties Manager names.
     mask:
-      options.mask === undefined
+      (options.mask === undefined
         ? (old?.mask ?? LAYER_STATE_MASK.all)
-        : (options.mask & LAYER_STATE_MASK.all) | ((old?.mask ?? 0) & ~LAYER_STATE_MASK.all),
-    paperSpace: false,
+        : (options.mask & LAYER_STATE_MASK.all) | ((old?.mask ?? 0) & ~LAYER_STATE_MASK.all)) |
+      (options.hidden ? LAYER_STATE_MASK.hidden : 0),
+    paperSpace: options.paperSpace ?? false,
     currentLayer: currentLayerName(model),
     layers: [...model.tables.layers.values()].map((l) => layerStateEntry(model, l)),
   };
@@ -404,6 +411,37 @@ export function restoreLayerStateChange(
   return b.build();
 }
 
+/**
+ * A view's layer snapshot restored with the view (M5-07 part 7): the On and Freeze settings of
+ * the layers the state names, into `b`, whatever the state's own mask says, the current layer
+ * left current and thawed and no state marked restored last. False when there is no such state.
+ */
+export function restoreLayerVisibility(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  handle: Handle,
+): boolean {
+  const s = stateOf(model, handle);
+  if (typeof s === 'string') return false;
+  const current = upper(currentLayerName(model));
+  const done = new Set<Handle>();
+  for (const e of s.layers) {
+    const l = layerOf(model, e);
+    if (!l || done.has(l.handle)) continue;
+    done.add(l.handle);
+    const patch: Record<string, unknown> = restorePatch(
+      model,
+      l,
+      e,
+      LAYER_STATE_MASK.on | LAYER_STATE_MASK.frozen,
+    );
+    // AutoCAD never freezes the current layer.
+    if (upper(l.name) === current && patch['frozen'] === true) delete patch['frozen'];
+    if (Object.keys(patch).length > 0) b.updateTableRecord('layers', l.handle, patch);
+  }
+  return true;
+}
+
 /** Delete: the state goes. */
 export function deleteLayerStateChange(model: DocumentModel, handle: Handle): ChangeSet | string {
   const s = stateOf(model, handle);
@@ -413,7 +451,11 @@ export function deleteLayerStateChange(model: DocumentModel, handle: Handle): Ch
   return b.build();
 }
 
-const LAYER_LINEWEIGHTS = new Set<unknown>(['Default', ...LINEWEIGHTS]);
+// Made on first use: VIEW's command module reaches this one (view layer snapshots) before
+// properties/sheet has run when the engine's index is loaded.
+let layerLineweights: ReadonlySet<unknown> | undefined;
+const LAYER_LINEWEIGHTS = (): ReadonlySet<unknown> =>
+  (layerLineweights ??= new Set<unknown>(['Default', ...LINEWEIGHTS]));
 
 /**
  * Edit Layer State's layers, checked and made consistent with the drawing: a layer named by
@@ -439,7 +481,7 @@ function editedLayers(
     const linetype = e.linetype === undefined ? undefined : model.tables.linetypes.get(e.linetype);
     if (e.linetype !== undefined && !linetype)
       return `Linetype ${e.linetype} is not in the drawing.`;
-    if (!LAYER_LINEWEIGHTS.has(e.lineweight)) return 'Invalid lineweight.';
+    if (!LAYER_LINEWEIGHTS().has(e.lineweight)) return 'Invalid lineweight.';
     const t = e.transparency;
     if (typeof t !== 'object' || !Number.isInteger(t.alpha) || t.alpha < 0 || t.alpha > 255)
       return 'Invalid transparency.';

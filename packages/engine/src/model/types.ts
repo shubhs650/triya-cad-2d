@@ -1464,6 +1464,12 @@ export interface ViewRecord extends SymbolTableRecord, ViewParams {
    * view's extension dictionary. Absent for `<None>`, which AutoCAD writes when it has none.
    */
   readonly category?: string;
+  /**
+   * The view's layer snapshot (M5-07 part 7): the name of the layer state, hidden from the Layer
+   * States Manager and named `ACAD_VIEWS_<view>`, that restoring the view restores. DXF 302 of the
+   * same XRECORD. Absent when the view was saved without one.
+   */
+  readonly layerState?: string;
 }
 
 export interface VportRecord extends SymbolTableRecord, ViewParams {

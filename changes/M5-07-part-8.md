@@ -1,0 +1,1 @@
+- M5-07 part 8 (#575): -VIEW sEttings Categorize and Layer snapshot file named views under a category and save or drop their layer snapshots from the command line, and the Layer Properties Manager's filter tree shows an Xref node with a node for each xref, listing the layers it brings, for Visibility, Lock and Isolate Group.

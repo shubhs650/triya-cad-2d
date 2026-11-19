@@ -19,16 +19,63 @@
 // Ambiguity, settled for the common drafter expectation: Help says the menu acts on "the layers
 // in the selected filter", so Invert filter, which only changes what the list shows, is not
 // applied. Each item is one LAYER undo step, as the manager's other edits.
+//
+// The Xref node (part 8; Help: the tree lists "Xref" when external references are attached,
+// with a node for each): each xref's node lists the xref-dependent layers it brings
+// (`xref|layer`, a nested xref's under its own name, as it is loaded as an xref of its own), the
+// Xref node every xref-dependent layer. The menu's Visibility, Lock and Isolate Group act on them
+// as on any node.
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
-import { isLayerFilter, type LayerFilter, type LayerRecord } from '../model/types';
+import {
+  isLayerFilter,
+  type BlockTableRecord,
+  type LayerFilter,
+  type LayerRecord,
+} from '../model/types';
+import { isXrefDependent, isXrefRecord } from '../model/xref';
 import { filteredLayers } from './layer-filters';
 import { layerPropsChange, layersInUse, type LayerProps } from './layer-manager';
 
-/** A node of the filter tree: All, All Used Layers or a filter's handle. */
+/**
+ * A node of the filter tree: All, All Used Layers, a filter's handle, the Xref node
+ * (`XREF_NODE`) or an xref's (`xrefNode(name)`). Handles are hexadecimal, so neither Xref
+ * spelling can be one.
+ */
 export type LayerFilterNode = 'all' | 'used' | Handle;
+
+/** The Xref node: every xref-dependent layer. */
+export const XREF_NODE = 'xref';
+
+const XREF_PREFIX = 'xref:';
+
+/** The node of the xref named `name`: the layers it brings. */
+export const xrefNode = (name: string): LayerFilterNode => `${XREF_PREFIX}${name}`;
+
+/** The names of the xrefs the Xref node lists, by name (case ignored). */
+export function xrefNodeNames(records: Iterable<BlockTableRecord>): string[] {
+  return [...records]
+    .filter((r) => isXrefRecord(r))
+    .map((r) => r.name)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+}
+
+/**
+ * The layers the Xref node or an xref's node lists, in `layers`' order; undefined when `node` is
+ * neither.
+ */
+export function xrefNodeLayers(
+  layers: Iterable<LayerRecord>,
+  node: LayerFilterNode,
+): LayerRecord[] | undefined {
+  const dependent = [...layers].filter(isXrefDependent);
+  if (node === XREF_NODE) return dependent;
+  if (!node.startsWith(XREF_PREFIX)) return undefined;
+  const prefix = `${node.slice(XREF_PREFIX.length)}|`.toUpperCase();
+  return dependent.filter((l) => l.name.toUpperCase().startsWith(prefix));
+}
 
 /** The Visibility and Lock items. */
 export type FilterLayerSetting = 'on' | 'off' | 'thawed' | 'frozen' | 'lock' | 'unlock';
@@ -49,6 +96,8 @@ export function filterNodeLayers(
 ): LayerRecord[] | string {
   const layers = [...model.tables.layers.values()];
   if (node === 'all') return layers;
+  const xref = xrefNodeLayers(layers, node);
+  if (xref) return xref;
   const used = layersInUse(model);
   if (node === 'used') return layers.filter((l) => used.has(l.handle));
   if (!isLayerFilter(model.objects.get(node))) return `No layer filter ${node}.`;
