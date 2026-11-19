@@ -149,6 +149,28 @@ describe('-LAYER stAte', () => {
     expect(t.lay(NOTES).color).toEqual({ kind: 'aci', index: 7 });
   });
 
+  // M5-25: LAYERNOTIFY 8 ("Displays new layer notification when you are restoring layer
+  // states") alerts after -LAYER's Restore as after the manager's: the bus tells the app.
+  it('Restore tells the app a layer state was restored, each time (LAYERNOTIFY 8)', async () => {
+    const t = setup();
+    const notified: string[] = [];
+    t.bus.on((e: BusEvent) => {
+      if (e.type === 'layerNotify') notified.push(e.event);
+    });
+    await t.bus.script(['-LAYER', 'A', 'S', 'PLAN', '', 'E', 'PLAN', 'C', '']);
+    expect(notified).toEqual([]);
+    await t.bus.script(['R', 'NONE']);
+    expect(notified).toEqual([]);
+    // Told as the restore is made, before -LAYER ends: the alert comes as the state is restored.
+    await t.bus.script(['R', 'PLAN']);
+    expect(notified).toEqual(['layer-state']);
+    expect(t.bus.prompt).toBeDefined();
+    // Restored again with nothing left to change, it is told again.
+    await t.bus.script(['R', 'PLAN', '', '']);
+    expect(notified).toEqual(['layer-state', 'layer-state']);
+    expect(t.bus.prompt).toBeUndefined();
+  });
+
   it('Edit changes the properties a state restores', async () => {
     const t = setup();
     await t.bus.script(['-LAYER', 'A', 'S', 'PLAN', '', 'E']);

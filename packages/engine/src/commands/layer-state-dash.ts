@@ -175,7 +175,11 @@ async function* save(ctx: CommandContext): Sub<void> {
 
 async function* restore(ctx: CommandContext): Sub<void> {
   const s = yield* stateAsked(ctx, 'restore');
-  if (s) commit(ctx, restoreLayerStateChange(ctx.model, s.handle));
+  if (!s) return;
+  const restored = restoreLayerStateChange(ctx.model, s.handle);
+  commit(ctx, restored);
+  // LAYERNOTIFY 8 alerts on a restore, as after the manager's Restore (M5-25).
+  if (typeof restored !== 'string') ctx.layerNotify('layer-state');
 }
 
 async function* edit(ctx: CommandContext): Sub<void> {

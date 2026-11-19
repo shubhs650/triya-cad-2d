@@ -3,7 +3,8 @@
 // block's file found brings TB-FRAME and TB-LOGO as new: the status bar shows the Unreconciled New
 // Layers icon and its balloon, whose View Unreconciled New Layers opens the Layer Properties
 // Manager on the Unreconciled New Layers node. With LAYERNOTIFY 1 PLOT asks first: No plots, Yes
-// shows the layers instead; with 8 a layer state restored alerts. Reconciled, the icon goes.
+// shows the layers instead; with 8 a layer state restored alerts, in the Layer States Manager or by
+// -LAYER's stAte Restore (M5-25). Reconciled, the icon goes.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { enterCommand, expectShown, openWithDrop, openWithPicker } from '../app/page';
@@ -114,6 +115,22 @@ test('alerts for unreconciled new layers: balloon, View, PLOT question (M5-19 pa
   await balloon.getByRole('button', { name: 'Close' }).click();
   await expect(balloon).toHaveCount(0);
   await expect(icon).toBeVisible();
+
+  // -LAYER's stAte Restore alerts too, as it restores (M5-25).
+  await enterCommand(page, '-LAYER');
+  await enterCommand(page, 'A');
+  await expect(prompt).toHaveText(/^Enter an option \[\?\/Save\/Restore\//);
+  await enterCommand(page, 'R');
+  await expect(prompt).toHaveText('Enter name of layer state to restore or [?]:');
+  await enterCommand(page, 'Mine');
+  await expect(balloon).toBeVisible();
+  await expect(balloon).toContainText('xref-child-tb|TB-FRAME, xref-child-tb|TB-LOGO.');
+  await shot('4-dash-layer-restore.png');
+  await enterCommand(page, '');
+  await enterCommand(page, '');
+  await expect(prompt).toHaveText('Command:');
+  await balloon.getByRole('button', { name: 'Close' }).click();
+  await expect(balloon).toHaveCount(0);
 
   // Reconciled, the alert is over.
   await enterCommand(page, '-LAYER');

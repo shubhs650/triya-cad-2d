@@ -371,11 +371,13 @@ function atCommand(doc: number): boolean {
 engines.onCommand((doc, o) => {
   commandLines.follow(doc, o);
   if (o.type === 'change') store.edited(doc);
-  // An insert alerts for unreconciled new layers (LAYERNOTIFY 32, M5-19 part 4).
+  // An insert alerts for unreconciled new layers (LAYERNOTIFY 32, M5-19 part 4), and -LAYER's
+  // stAte Restore as it restores (LAYERNOTIFY 8, M5-25).
   if (o.type === 'commit') {
     const event = layerNotifyEventOf(o.command);
     if (event) layerNotice(doc, event);
   }
+  if (o.type === 'layerNotify') layerNotice(doc, o.event);
   if (o.type === 'prompt' || o.type === 'idle' || o.type === 'waiting') {
     const prompt = commandLines.get(doc).prompt;
     for (const c of controllersOf(doc)) c.setPrompt(prompt);
