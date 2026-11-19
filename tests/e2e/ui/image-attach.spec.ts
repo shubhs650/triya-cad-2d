@@ -59,6 +59,9 @@ test('IMAGEATTACH attaches a picked file through the Attach Image dialog', async
   await type(page, '-2,-8', /^Specify opposite corner/);
   await type(page, '30,22', 'Command:');
   const v = await viewOf(page);
+  // viewOf leaves the cursor on the canvas, where a rollover tooltip can cover (21, 3): park it
+  // (seen on PR #571's CI; the tooltip named an image not under the cursor, M5-20).
+  await park(page);
   const colour = (x: number, y: number) => colourAt(page, v.at(x, y));
   const poll = (x: number, y: number, ok: (c: Rgb) => boolean) =>
     expect.poll(async () => ok(await colour(x, y)), { timeout: 30_000 }).toBe(true);
