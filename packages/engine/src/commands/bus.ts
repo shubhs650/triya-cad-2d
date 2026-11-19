@@ -89,6 +89,7 @@ import { gripInfoOf } from '../edit/array-grips';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
+import type { LayerNotifyEvent } from '../edit/layer-notify';
 import { distance } from '../geom/vec';
 import { wholeGroups } from '../edit/groups';
 import type { DragPreview } from './drag';
@@ -198,6 +199,11 @@ export type BusEvent =
   | { readonly type: 'selection'; readonly ids: readonly EntityId[] }
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
   | { readonly type: 'commit'; readonly record: CommandRecord }
+  /**
+   * An event LAYERNOTIFY can alert for happened inside a command (M5-25: -LAYER's stAte
+   * Restore), told as it happens; the app raises the alert when the drawing asks for it.
+   */
+  | { readonly type: 'layerNotify'; readonly event: LayerNotifyEvent }
   /**
    * A reference edit in place (M5-02 part 3) started, ended or its working set changed: `name`
    * is the block edited, absent when none is; objects not in `working` show faded (XFADECTL).
@@ -1374,6 +1380,7 @@ export class PromptBus {
         this.#emit({ type: 'preview', geometry });
       },
       message: (text) => this.#log(text),
+      layerNotify: (event) => this.#emit({ type: 'layerNotify', event }),
       view: { request: (r) => this.#hostRequest(r) },
       dimensions: this.#dimensions,
       hatchLines: this.#hatchLines,

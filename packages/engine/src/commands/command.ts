@@ -12,6 +12,7 @@ import type { Placement } from '../edit/refedit';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
+import type { LayerNotifyEvent } from '../edit/layer-notify';
 import { ALIASES } from './aliases';
 import type { ViewHost } from './view/host';
 import type { UndoStack } from './undo';
@@ -104,6 +105,11 @@ export interface CommandContext {
   preview(geometry: readonly EntityGeometry[]): void;
   /** A line on the command line ("1 found", "Invalid number of sides."). */
   message(text: string): void;
+  /**
+   * Tells the app an event LAYERNOTIFY can alert for happened in this command (M5-25): -LAYER's
+   * stAte Restore, which commits as LAYER, so its undo step cannot say it restored a state.
+   */
+  layerNotify(event: LayerNotifyEvent): void;
   /** The canvas of the space shown, for the view commands (ZOOM, PAN, REGEN, VIEW; M2-02). */
   readonly view: ViewHost;
   /**
