@@ -45,6 +45,7 @@ function setup(pattern: string, patterns?: Canvas2DRendererOptions['patterns']) 
   const d = drawing([entity('20', hatch(pattern))]);
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,

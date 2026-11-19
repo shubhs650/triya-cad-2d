@@ -57,6 +57,7 @@ const ROMANS = {
 function setup(fonts: FontSources) {
   const layers: Recorded[] = [];
   const s = new RenderSession({
+    now: () => 0,
     document: {
       init: drawingInit([text('20', '30', 0), text('21', '31', 20)], {
         textStyles: [style('30', 'testsans.ttf'), style('31', 'romans.shx')],

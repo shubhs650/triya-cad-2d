@@ -66,6 +66,7 @@ function setup(entities: EntityInit[], o: { style?: RenderStyle; block?: string 
   const d = drawing(entities, { blocks: [{ handle: B, name: 'B' }] });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: o.block ?? MODEL,

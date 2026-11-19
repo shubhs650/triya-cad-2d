@@ -49,6 +49,7 @@ type Layer = ReturnType<typeof surface>;
 function setup(fonts: FontSources | undefined = FONTS) {
   const layers: Layer[] = [];
   const s = new RenderSession({
+    now: () => 0,
     document,
     surface: surface('visible'),
     createLayer: () => {

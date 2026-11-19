@@ -50,6 +50,7 @@ function setup(
     change(d, (b) => b.updateTableRecord('layers', LAYER_RED, { locked: true }));
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: o.block ?? MODEL,

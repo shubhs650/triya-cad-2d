@@ -61,6 +61,7 @@ function setup(o: { nested?: boolean; style?: RenderStyle } = {}) {
   });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,
@@ -192,6 +193,7 @@ describe('a reference edited in place (M5-02 part 5)', () => {
     );
     const layers: ReturnType<typeof surface>[] = [];
     const r = new Canvas2DRenderer({
+      now: () => 0,
       model: d.model,
       index: d.index,
       block: MODEL,

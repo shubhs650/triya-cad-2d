@@ -47,6 +47,7 @@ function setup(extra: Omit<DrawingExtra, 'mlineStyles'> = {}) {
   const d = drawing([entity('20', mline)], { mlineStyles: [walls], ...extra });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,

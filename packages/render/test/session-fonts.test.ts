@@ -66,6 +66,7 @@ const STYLE_DARK = { background: '#000000', foreground: '#ffffff', showLineweigh
 function session(fonts?: FontSources) {
   const layers: Recorded[] = [];
   const s = new RenderSession({
+    now: () => 0,
     document,
     surface: surface('visible'),
     createLayer: () => {

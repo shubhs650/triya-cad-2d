@@ -74,6 +74,7 @@ function setup(entities: EntityInit[], extra: DrawingExtra = {}) {
   const d = drawing(entities, { layoutPlot: PLOT, ...extra });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: PAPER,

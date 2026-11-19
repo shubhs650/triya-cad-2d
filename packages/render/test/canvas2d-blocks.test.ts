@@ -35,6 +35,7 @@ function setup(entities: EntityInit[], objects: SortEntsTable[] = []) {
   });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,
