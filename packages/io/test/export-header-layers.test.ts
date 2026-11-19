@@ -232,8 +232,10 @@ describe('header variables', () => {
     'CENTERLTYPE',
     'CENTERLTSCALE',
     'CENTERLAYER',
+    // The PDF underlay frame (M5-04 part 17, DEC-077).
+    'PDFFRAME',
   ])(
-    'keeps %s for the session unless the drawing has a DICTIONARYVAR for it (M2-35, M4-07, M4-08)',
+    'keeps %s for the session unless the drawing has a DICTIONARYVAR for it (M2-35, M4-07, M4-08, M5-04)',
     (name) => {
       // DXF has no HEADER variable for CETRANSPARENCY or HPTRANSPARENCY (the one -HATCH
       // Transparency sets): a save writes them only into an existing AcDbVariableDictionary

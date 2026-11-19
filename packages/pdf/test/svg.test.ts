@@ -293,6 +293,22 @@ describe('plotSvg', () => {
     expect(s).not.toContain('opacity');
   });
 
+  it('strokes no frame round an underlay when PDFFRAME leaves it off the plot (M5-04 part 17)', () => {
+    const rasters = {
+      underlayRasters: () => ({ pixels, region: { minX: 1, minY: 0, maxX: 3, maxY: 2 }, page }),
+    };
+    const off = { ...underlay, frameOff: true as const };
+    const whole = svg([{ kind: 'fill', path: [], paint, underlay: off }], rasters);
+    expect(whole).toContain('<image ');
+    expect(whole).not.toContain('stroke=');
+    const clipped = { ...off, clipped: true };
+    const s = svg([{ kind: 'fill', path: square(15, 0, 10), paint, underlay: clipped }], rasters);
+    expect(s).toContain('<image ');
+    expect(s).not.toContain('stroke=');
+    const missing = svg([{ kind: 'fill', path: square(15, 0, 10), paint, underlay: clipped }]);
+    expect(missing).not.toContain('stroke=');
+  });
+
   it('plans the part of an underlay’s page a plot shows, at the plot’s resolution', () => {
     const item: PlotPathItem = { kind: 'fill', path: [], paint, underlay };
     const o = { toPaper: { a: 7.2, b: 0, c: 0, d: 7.2, e: 0, f: 0 } };

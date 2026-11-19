@@ -278,7 +278,7 @@ function geometryPrimitives(
     const label = name && ctx.text ? { name, text: ctx.text } : undefined;
     return imagePrimitives(g, paint, ctx.frames, label);
   }
-  if (g.kind === 'PDFUNDERLAY') return underlayPrimitives(g, paint);
+  if (g.kind === 'PDFUNDERLAY') return underlayPrimitives(g, paint, ctx.frames);
   if (g.kind === 'LWPOLYLINE' || g.kind === 'POLYLINE') {
     const widths = polylineWidths(g);
     if (widths) {

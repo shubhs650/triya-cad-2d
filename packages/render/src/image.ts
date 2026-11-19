@@ -37,9 +37,11 @@ import {
 export interface ImageFrames {
   readonly image: boolean;
   readonly wipeout: boolean;
+  /** PDFFRAME (M5-04 part 17): PDF underlay frames; shown when absent. */
+  readonly underlay?: boolean;
 }
 
-const FRAMES_ON: ImageFrames = { image: true, wipeout: true };
+const FRAMES_ON: ImageFrames = { image: true, wipeout: true, underlay: true };
 
 /** DXF 70 bit 1: show image; bit 8: transparency on. */
 const SHOW_IMAGE = 1;

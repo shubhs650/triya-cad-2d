@@ -44,6 +44,7 @@ export * from './clipboard';
 export * from './clipboard-data';
 export * from './picture';
 export * from './underlay-attach';
+export * from './pdf-frame';
 export * from './underlay-clip';
 export * from './draw-order';
 export * from './mleader';

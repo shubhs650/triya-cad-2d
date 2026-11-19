@@ -151,6 +151,8 @@ export interface PlotUnderlay {
   readonly monochrome: boolean;
   /** The PDF layers (optional content group names) plotted off (ULAYERS, M2-38 part 2). */
   readonly layersOff?: readonly string[];
+  /** PDFFRAME 0 or 2 (M5-04 part 17): no frame plotted; absent when PDFFRAME 1 plots it. */
+  readonly frameOff?: true;
 }
 
 /** A TrueType glyph placed in the drawing. */
@@ -446,10 +448,10 @@ function plotUnderlay(
   const form =
     bytes &&
     page.underlay(bytes, u.page, { contrast: u.contrast, monochrome: u.monochrome }, u.layersOff);
-  // The frame, as PDFFRAME's initial value 1 shows and plots it (the screen draws it too): the
+  // The frame, as PDFFRAME 1 shows and plots it (0 and 2 leave it off the plot, `frameOff`): the
   // boundary while clipping is on, else the page's edge, in the object's plot properties.
   const outline = (s: ReturnType<typeof pathSegments>) => {
-    if (s.length === 0) return;
+    if (s.length === 0 || u.frameOff) return;
     pen(cs, item.paint, plottedWeight(item.paint, o));
     cs.dash([]);
     emitSegments(cs, s);

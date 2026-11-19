@@ -376,6 +376,20 @@ describe('plotParts with a PDF underlay (M2-16 part 5)', () => {
     });
   });
 
+  it('plots the frame with PDFFRAME 1 only: 0 hides it and 2 shows it on screen alone (M5-04 part 17)', () => {
+    const frameOff = (value?: string) => {
+      const header: [string, string][] = value === undefined ? [] : [['PDFFRAME', value]];
+      const { model } = drawing([entity('70', geom())], { objects: [pdfDef], header });
+      const p = plotParts(model, MODEL, { resolver })[0]!;
+      if (p.kind !== 'fill') throw new Error('fill expected');
+      return p.underlay?.frameOff;
+    };
+    expect(frameOff()).toBeUndefined();
+    expect(frameOff('1')).toBeUndefined();
+    expect(frameOff('0')).toBe(true);
+    expect(frameOff('2')).toBe(true);
+  });
+
   it('names the PDF layers the underlay turns off, sorted, once each (M2-38 part 2)', () => {
     const { model } = drawing([entity('70', geom({ layersOff: ['Walls', 'Notes', 'Walls'] }))], {
       objects: [pdfDef],

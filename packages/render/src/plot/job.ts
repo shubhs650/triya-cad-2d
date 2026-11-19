@@ -150,6 +150,8 @@ export interface PlotUnderlayPart {
   readonly monochrome: boolean;
   /** The PDF layers the underlay turns off (ULAYERS, M2-38 part 2), plotted off. */
   readonly layersOff?: readonly string[];
+  /** PDFFRAME 0 or 2 (M5-04 part 17): the frame is left off the plot. */
+  readonly frameOff?: true;
 }
 
 /** A placed TrueType glyph (`PlacedGlyph`), its font reduced to what a PDF embeds. */
@@ -451,6 +453,7 @@ class Plotter {
           fade: u.fade,
           monochrome: u.monochrome,
           ...(u.layersOff && { layersOff: u.layersOff }),
+          ...(u.frameOff && { frameOff: true }),
         },
         ...common,
       };
