@@ -82,6 +82,7 @@ import { layerStateCommand } from './layer-states';
 import { layerToolCommands } from './layer-tools';
 import { laydelCommand, laymrgCommand } from './layer-cleanup';
 import { purgeCommand } from './purge';
+import { layoutCommand } from './layout';
 import { laywalkCommand } from './layer-walk';
 import { layerpCommand, layerpmodeCommand } from './layer-previous';
 import { XREF_COMMANDS } from './xref';
@@ -211,6 +212,7 @@ export function builtinCommands(): CommandRegistry {
     layerCommand(),
     layerCloseCommand(),
     layerStateCommand(),
+    layoutCommand(),
     ...XREF_COMMANDS.map((make) => make()),
     xclipCommand(),
     imageclipCommand(),

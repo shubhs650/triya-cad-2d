@@ -611,22 +611,22 @@ export class Canvas2DRenderer implements Renderer {
    * Model space and block definitions show lineweights as pixels; a layout's paper space as
    * paper millimetres at the zoom.
    */
-  readonly #paperSpace: boolean;
+  #paperSpace = false;
   /**
    * The layout whose block is shown (Model's or a sheet's); a change set that updates it
    * (renamed, new page setup or flags, M1-97) re-reads what follows from it.
    */
-  readonly #layoutHandle: Handle | undefined;
+  #layoutHandle: Handle | undefined;
   /** Paper drawing units per millimetre, from the layout's page setup (M1-18). */
   #paperUnitsPerMm = 1;
   /** The layout's PSLTSCALE (DXF 70 bit 1): viewport linetypes in paper units. */
   #psltscale = true;
   /** The block shown is model space: the Model tab, where MSLTSCALE applies (M1-63). */
-  readonly #modelTab: boolean;
+  #modelTab = false;
   /** The layout's sheet, when the block shown is a set-up layout. */
   #sheet: LayoutSheet | undefined;
   /** Model space, when the block shown is a layout whose viewports show it. */
-  readonly #modelBlock: Handle | undefined;
+  #modelBlock: Handle | undefined;
   /** The layout's model-space viewports in stacking order; undefined until first needed. */
   #viewports: readonly ViewportEntry[] | undefined;
   /**
@@ -760,6 +760,17 @@ export class Canvas2DRenderer implements Renderer {
     };
     this.#now = o.now ?? (() => performance.now());
     this.#requestIdle = o.requestIdle ?? ((cb) => setTimeout(cb, 50));
+    this.#identify();
+    this.#cacheBlock();
+  }
+
+  /**
+   * Which space the block shown is: model space, or a layout's sheet with its page setup. Read
+   * as the canvas is made, and again when the change set that makes its layout arrives (LAYOUT
+   * New, M6-01: a canvas made for a layout added since the drawing opened starts from the
+   * drawing as it opened, before the change log it is handed).
+   */
+  #identify(): void {
     const records = this.#model.tables.blockRecords;
     const isModel = (h: Handle) => records.get(h)?.name.toLowerCase() === '*model_space';
     const layout = this.#model.layouts.find((l) => l.blockRecord === this.#block);
@@ -770,7 +781,6 @@ export class Canvas2DRenderer implements Renderer {
     this.#modelBlock = this.#paperSpace
       ? [...records.values()].find((r) => isModel(r.handle))?.handle
       : undefined;
-    this.#cacheBlock();
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -1199,6 +1209,14 @@ export class Canvas2DRenderer implements Renderer {
 
   apply(cs: ChangeSet): void {
     const e = cs.entities;
+    // The layout of the block shown made (LAYOUT New, or its deletion undone; M6-01): its sheet
+    // and the viewports' model space follow from it now.
+    if (cs.layouts?.added?.some((l) => l.blockRecord === this.#block)) {
+      this.#identify();
+      this.#cacheBlock();
+      this.#viewports = undefined;
+      this.#sceneDirty = this.#contentDirty = true;
+    }
     // Grips sit on the objects' points, which the change may have moved.
     if (this.#grips) this.#transientDirty = true;
     for (const r of e?.removed ?? []) this.#forget(r.entity);
