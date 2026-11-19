@@ -654,6 +654,20 @@ export class PromptBus {
   }
 
   /**
+   * Starts a command the app's own UI made, not one in the registry (the Layer Properties
+   * Manager's Select Layers, M5-07 part 9): as `invoke` does, but Enter at `Command:` after it
+   * repeats what it repeated before, since the drafter never typed or picked it.
+   */
+  run(def: CommandDef): Promise<void> {
+    return this.#enqueue(async () => {
+      if (this.#stack.length > 0) await this.#cancel();
+      const last = this.#last;
+      await this.#start(def, false, false);
+      this.#last = last;
+    });
+  }
+
+  /**
    * A click on the canvas (M2-03). At "Select objects" or at `Command:` it picks, or starts or
    * ends a selection window, removing with `shift`; at a prompt for a point it is the point.
    * `release` ends a dragged window, or the `lasso` dragged from its first corner (M3-04 part

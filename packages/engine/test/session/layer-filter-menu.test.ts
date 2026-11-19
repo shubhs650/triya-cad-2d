@@ -11,6 +11,7 @@ import {
   layerFilterNamed,
   xrefNode,
   xrefNodeNames,
+  type CommandOutput,
   type DocumentInit,
   type Entity,
   type LayerFilter,
@@ -296,5 +297,88 @@ describe('the Xref node (M5-07 part 8)', () => {
     ok(s.edit({ kind: 'layer-filter-isolate', node: XREF_NODE }));
     expect(layerOf(s, LAYER_WALLS).on).toBe(false);
     expect(layerOf(s, '72').on).toBe(true);
+  });
+});
+
+// M5-07 part 9: a group filter's Select Layers (AutoCAD 2024 Help, "Layer Properties Manager",
+// the tree view's shortcut menu: "Add: Adds the layers of the selected objects to the group
+// filter", "Replace: Replaces the layers of the selected group filter with the layers of the
+// objects that are selected in the drawing"). The manager starts a "Select objects" prompt.
+describe('Select Layers (M5-07 part 9)', () => {
+  function setup() {
+    const s = withFilters();
+    const out: CommandOutput[] = [];
+    s.onCommand((o) => out.push(o));
+    const prompt = () => out.filter((o) => o.type === 'prompt' || o.type === 'idle').at(-1);
+    const logs = () => out.flatMap((o) => (o.type === 'log' ? [o.line] : []));
+    return { s, out, prompt, logs };
+  }
+  /** Objects selected: the circle on WALLS (21) and a line on 0 (20), by handle. */
+  const select = (s: EngineSession, ...handles: string[]) =>
+    s.command({
+      kind: 'answer',
+      answer: { kind: 'selection', ids: handles.map((h) => s.model.ids.idOf(h)!) },
+    });
+
+  it('Add asks for objects and adds their layers to the group, one LAYER step', async () => {
+    const { s, prompt, logs } = setup();
+    const g = filterOf(s, 'G').handle;
+    // An object on a locked layer counts: its layer is taken, the object is not edited.
+    ok(s.edit({ kind: 'layer', layer: LAYER_WALLS, locked: true }));
+    await s.command({ kind: 'layer-filter-select', filter: g, replace: false });
+    expect(prompt()).toMatchObject({ text: 'Select objects:' });
+    await select(s, '21', '20');
+    // Layer 0 is in the group already: only WALLS joins, after the group's own layers.
+    expect(filterOf(s, 'G').layers).toEqual([LAYER_0, LAYER_DOORS, LAYER_WALLS]);
+    expect(logs()).toContain('1 layer added to group filter "G".');
+    expect(s.undoState.nextUndo).toBe('LAYER');
+    // Enter at Command: does not repeat it (the manager started it, not the drafter).
+    await s.command({ kind: 'submit', text: '' });
+    expect(prompt()).not.toMatchObject({ text: 'Select objects:' });
+    await s.command({ kind: 'cancel' });
+    await undo(s);
+    expect(filterOf(s, 'G').layers).toEqual([LAYER_0, LAYER_DOORS]);
+  });
+
+  it('Replace makes the layers of the objects selected the group’s', async () => {
+    const { s, logs } = setup();
+    const g = filterOf(s, 'G').handle;
+    await s.command({ kind: 'layer-filter-select', filter: g, replace: true });
+    await select(s, '21');
+    expect(filterOf(s, 'G').layers).toEqual([LAYER_WALLS]);
+    expect(logs()).toContain('Group filter "G" now lists 1 layer.');
+  });
+
+  it('changes nothing when no object is selected, or on Esc', async () => {
+    const { s, out, prompt } = setup();
+    const g = filterOf(s, 'G').handle;
+    // A command running is cancelled first, as a menu's command is started.
+    await s.command({ kind: 'submit', text: 'LINE' });
+    await s.command({ kind: 'layer-filter-select', filter: g, replace: true });
+    expect(prompt()).toMatchObject({ text: 'Select objects:' });
+    await s.command({ kind: 'submit', text: '' });
+    await s.command({ kind: 'layer-filter-select', filter: g, replace: true });
+    await s.command({ kind: 'cancel' });
+    expect(filterOf(s, 'G').layers).toEqual([LAYER_0, LAYER_DOORS]);
+    expect(out.some((o) => o.type === 'change')).toBe(false);
+  });
+
+  it('refuses a property filter and a filter no longer in the drawing', async () => {
+    const { s, prompt, logs } = setup();
+    await s.command({
+      kind: 'layer-filter-select',
+      filter: filterOf(s, 'A').handle,
+      replace: false,
+    });
+    expect(logs()).toContain('A is a property filter: only a group filter takes layers.');
+    expect(prompt()).not.toMatchObject({ text: 'Select objects:' });
+    await s.command({ kind: 'layer-filter-select', filter: '999', replace: false });
+    expect(logs()).toContain('No layer filter 999.');
+    // Deleted while the drafter selects (the manager stays open).
+    const g = filterOf(s, 'G').handle;
+    await s.command({ kind: 'layer-filter-select', filter: g, replace: false });
+    ok(s.edit({ kind: 'layer-filter-delete', filter: g }));
+    await select(s, '21');
+    expect(logs().filter((l) => l === `No layer filter ${g}.`)).toHaveLength(1);
   });
 });
