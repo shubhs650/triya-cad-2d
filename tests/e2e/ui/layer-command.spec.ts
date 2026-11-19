@@ -15,7 +15,7 @@ test.afterAll(async () => {
 
 const prompt = (page: Page) => page.getByTestId('command-prompt');
 const OPTIONS =
-  'Enter an option [?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/Description]:';
+  'Enter an option [?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/stAte/Description]:';
 
 test('LA opens the Layer Properties Manager, -LAYER Make adds a layer, LAYERCLOSE closes it', async ({
   page,
