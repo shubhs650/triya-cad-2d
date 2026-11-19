@@ -269,13 +269,15 @@ function TabPreview({
   const spaces = spacesOf(doc, engines.changesOf(doc.id));
   const [pictures, setPictures] = useState<ReadonlyMap<string, ImageBitmap>>(new Map());
   const box = useRef<HTMLDivElement>(null);
-  // A tab near the right edge: the preview moves left so it stays in the window.
+  // A tab near the right edge: the preview moves left so it stays in the window. Its width is
+  // its content's (styles.css), not the room right of `left`, and each thumbnail keeps its slot
+  // as its picture comes in, so the preview never moves under a pointer resting on it (M5-15).
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     const width = el.getBoundingClientRect().width;
     el.style.left = `${Math.max(8, Math.min(left, innerWidth - 8 - width))}px`;
-  }, [left, pictures]);
+  }, [left, spaces.length]);
   useEffect(() => {
     let live = true;
     const taken = new Map<string, ImageBitmap>();
@@ -343,11 +345,11 @@ function Thumbnail({ bitmap, paper }: { bitmap: ImageBitmap | undefined; paper: 
     const c = canvas.current;
     // A bitmap can be handed over once; a closed one measures 0.
     if (!c || !bitmap || bitmap.width === 0) return;
+    // The bitmap is in device pixels, fitted inside THUMB: it shows inside the stand-in's slot
+    // (`object-fit: contain`), which keeps its size, so the preview doesn't reflow under the
+    // pointer as the pictures come in (M5-15).
     c.width = bitmap.width;
     c.height = bitmap.height;
-    // The bitmap is in device pixels; it shows at its CSS size.
-    c.style.width = `${bitmap.width / devicePixelRatio}px`;
-    c.style.height = `${bitmap.height / devicePixelRatio}px`;
     c.getContext('bitmaprenderer')?.transferFromImageBitmap(bitmap);
     c.dataset['drawn'] = 'true';
   }, [bitmap]);
