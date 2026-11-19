@@ -563,7 +563,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M6-03** Annotation scale UI: current scale display/selector, `ANNOALLVISIBLE`/`ANNOAUTOSCALE` display behaviours (view only), representation picking per viewport. **Acceptance:** annotative corpus tests.
 
-- [ ] **M6-04** Plot options parity: plot transparency, plot with plot styles, plot object lineweights, plot upside-down, plot stamp (off; non-goal), scale lineweights, paper-space last, hide paper-space objects, plot area window/view/limits, custom paper sizes, plot offset centre. **Acceptance:** option matrix PDF tests.
+- [~] (thread: Ship second M6 roadmap task) **M6-04** Plot options parity: plot transparency, plot with plot styles, plot object lineweights, plot upside-down, plot stamp (off; non-goal), scale lineweights, paper-space last, hide paper-space objects, plot area window/view/limits, custom paper sizes, plot offset centre. **Acceptance:** option matrix PDF tests.
 
 - [ ] **M6-05** PUBLISH dialog: sheet list, ordering, include/exclude, bookmarks, single/multi file, page labels. **Acceptance:** multi-layout PDF structure test.
 
