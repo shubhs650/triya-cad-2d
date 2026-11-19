@@ -18,22 +18,31 @@
 // rewrites the second string, keeping the first (AecObjects.dwg's layer 0 holds that one only)
 // and the layer's other applications; a cleared description keeps the entry with an empty
 // string, as AutoCAD's layers without one do.
+//
+// A layer's unreconciled state (M5-19) is the ADSK_XREC_LAYER_RECONCILED XRECORD of its
+// extension dictionary (map/tables.ts): a change rewrites its 290, 0 unreconciled and 1
+// reconciled, adding the dictionary and the record as AutoCAD makes them (280 1, the dictionary
+// hard owner) where the layer has none. A layer nobody flagged keeps having none.
 
 import {
   ACadVersion,
   AppId,
+  CadDictionary,
+  DictionaryCloningFlags,
   ExtendedData,
   ExtendedDataInteger32,
   ExtendedDataString,
   Layer,
   LineType,
   Material,
+  XRecord,
   type CadDocument,
   type CadObject,
 } from '@node-projects/acad-ts';
 import type { DocumentInit, DocumentModel, Handle, LayerRecord } from '@triya/engine';
 import { acadColor, acadLineweight, resolve, same, type Resolver } from './entities';
 import { changes, planRecords, type RecordPlan } from './records';
+import { RECONCILED } from '../map/tables';
 
 /** DXF 70 bits `frozen` and `locked` stand for; `flags` keeps the others. */
 const FROZEN = 1;
@@ -200,6 +209,32 @@ function writeDescription(doc: CadDocument, r: Resolver, l: Layer, a: LayerRecor
   l.extendedData.set(entry?.[0] ?? layerApp(doc, r, DESCRIPTION_APP), new ExtendedData(next));
 }
 
+/** Rewrites a layer's ADSK_XREC_LAYER_RECONCILED 290 from `unreconciled`. */
+function writeReconciled(r: Resolver, l: Layer, a: LayerRecord): void {
+  let dict = l.xDictionary;
+  if (!dict) {
+    dict = new CadDictionary();
+    dict.handle = r.allocate();
+    dict.hardOwnerFlag = true;
+    dict.clonningFlags = DictionaryCloningFlags.KeepExisting;
+    l.xDictionary = dict;
+  }
+  const found = dict.getEntry(RECONCILED);
+  let record: XRecord;
+  if (found instanceof XRecord) record = found;
+  else {
+    record = new XRecord();
+    record.handle = r.allocate();
+    record.cloningFlags = DictionaryCloningFlags.KeepExisting;
+    dict.addByKey(RECONCILED, record);
+    record.addReactor(dict);
+  }
+  const reconciled = a.unreconciled !== true;
+  const flag = record.entries.find((e) => e.code === 290);
+  if (flag) flag.value = reconciled;
+  else record.createEntry(290, reconciled);
+}
+
 /** Writes the fields of `a` that differ from `b` (every field when `b` is undefined). */
 function writeLayer(
   doc: CadDocument,
@@ -229,6 +264,7 @@ function writeLayer(
   if (changed('material')) l.material = a.material ? resolve(r, a.material, Material)! : null;
   if (changed('transparency')) writeTransparency(doc, r, l, a);
   if ((a.description ?? '') !== (b?.description ?? '')) writeDescription(doc, r, l, a);
+  if ((a.unreconciled ?? false) !== (b?.unreconciled ?? false)) writeReconciled(r, l, a);
 }
 
 /** Writes the planned layer changes onto `doc`; new layers join its LAYER table first. */

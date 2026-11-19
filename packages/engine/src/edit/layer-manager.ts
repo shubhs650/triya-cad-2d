@@ -38,6 +38,11 @@ export interface LayerProps {
   readonly description?: string;
   /** A named plot style (ACAD_PLOTSTYLENAME) of the drawing (-LAYER PStyle, M5-18 part 2). */
   readonly plotStyle?: Handle;
+  /**
+   * Reconciles an unreconciled new layer (M5-19, -LAYER rEconcile): it is no longer listed as
+   * new. A reconciled layer is left as it is.
+   */
+  readonly reconcile?: true;
 }
 
 /** DXF 70 bit 16: a record that came in with an xref. */
@@ -124,6 +129,7 @@ function patchOf(l: LayerRecord, p: LayerProps): Record<string, unknown> {
     out.transparency = p.transparency;
   if (p.description !== undefined && p.description !== (l.description ?? ''))
     out.description = p.description === '' ? undefined : p.description;
+  if (p.reconcile && l.unreconciled) out.unreconciled = undefined;
   return out;
 }
 
