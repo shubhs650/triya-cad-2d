@@ -11,23 +11,22 @@
 // M5-04 part 2: Bind…, on loaded xrefs the drawing attaches itself, opens the Bind Xrefs dialog
 // (Bind or Insert). M5-04 part 5: Attach Image... runs IMAGEATTACH. M5-04 part 6: Attach DWG...
 // runs XATTACH (AutoCAD's palette names its drawing attach so; a .dxf is picked as well as a
-// .dwg). M5-04 part 8: Attach PDF... runs PDFATTACH. Path comes with a later part.
+// .dwg). M5-04 part 8: Attach PDF... runs PDFATTACH. M5-04 part 14: Reload All References,
+// Open (the selected reference's file: a drawing in a tab of its own, an image or PDF in the
+// browser) and the details pane of the one reference selected, with Found At, Size and Date.
+// Path comes with a later part.
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { BindXrefsDialog } from './BindXrefsDialog';
-import type { ReferenceKind, ReferenceRow, ReferenceStatus } from './xrefs';
+import {
+  REFERENCE_KIND as KIND,
+  REFERENCE_STATUS as STATUS,
+  referenceDetails,
+  type FoundFile,
+  type ReferenceRow,
+} from './xrefs';
 
-const KIND: Record<ReferenceKind, string> = {
-  attach: 'Attach',
-  overlay: 'Overlay',
-  image: 'Image',
-  pdf: 'PDF underlay',
-};
-
-const STATUS: Record<ReferenceStatus, string> = {
-  loaded: 'Loaded',
-  'not-found': 'Not found',
-  unloaded: 'Unloaded',
-};
+/** The details pane's Date, in the user's locale as the browser formats it. */
+const formatDate = (ms: number) => new Date(ms).toLocaleString();
 
 export function ReferencesPalette({
   rows,
@@ -43,8 +42,17 @@ export function ReferencesPalette({
   onAttachImage,
   onAttachDrawing,
   onAttachPdf,
+  onReloadAll,
+  onOpen,
+  found,
   onClose,
 }: {
+  /** Reload All References: what it did, one line each. */
+  onReloadAll?: () => Promise<readonly string[]>;
+  /** Open: the reference's file opened; why not, or undefined. */
+  onOpen?: (row: ReferenceRow) => Promise<string | undefined>;
+  /** The details pane's Found At, Size and Date of a reference; undefined while not found. */
+  found?: (row: ReferenceRow) => Promise<FoundFile | undefined>;
   /** Attach DWG... (XATTACH, M5-04 part 6), as the palette's Attach menu offers it. */
   onAttachDrawing?: () => void;
   /** Attach Image... (IMAGEATTACH, M5-04 part 5), as the palette's Attach menu offers it. */
@@ -77,6 +85,8 @@ export function ReferencesPalette({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [said, setSaid] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
+  /** Counts the actions run here, after each of which the details are asked for again. */
+  const [ran, setRan] = useState(0);
   /** The xrefs the Bind Xrefs dialog binds, while it is open. */
   const [binding, setBinding] = useState<readonly ReferenceRow[]>();
   // A reference that goes (detached, or nested in one unloaded) is no longer selected.
@@ -94,6 +104,24 @@ export function ReferencesPalette({
   const topLevel = xrefs && picked.every((r) => r.depth === 0);
   // An xref is bound from what was loaded of it (AutoCAD: "the xref must be loaded").
   const loaded = topLevel && picked.every((r) => r.status === 'loaded');
+  // The details pane and Open are of one reference, whose file was found.
+  const one = picked.length === 1 ? picked[0] : undefined;
+  const [details, setDetails] = useState<{ row: ReferenceRow; found?: FoundFile }>();
+  useEffect(() => {
+    if (!one) return setDetails(undefined);
+    let current = true;
+    setDetails({ row: one });
+    void (found?.(one) ?? Promise.resolve(undefined))
+      .catch(() => undefined)
+      .then((f) => {
+        if (current) setDetails({ row: one, ...(f ? { found: f } : {}) });
+      });
+    return () => {
+      current = false;
+    };
+    // A row's handle, status and path say when what is shown of it changed, and an action run
+    // here may have read its file again. (`found` is a new function at every render of the app.)
+  }, [one?.handle, one?.status, one?.path, ran]);
   const select = (e: MouseEvent, handle: string) => {
     const add = e.ctrlKey || e.metaKey || e.shiftKey;
     setSelected((s) => {
@@ -110,6 +138,7 @@ export function ReferencesPalette({
       setSaid(await action());
     } finally {
       setBusy(false);
+      setRan((n) => n + 1);
     }
   };
   const take = (input: HTMLInputElement) => {
@@ -144,6 +173,16 @@ export function ReferencesPalette({
         {onAttachPdf && (
           <button type="button" onClick={onAttachPdf}>
             Attach PDF...
+          </button>
+        )}
+        {rows.length > 0 && onReloadAll && (
+          <button
+            type="button"
+            disabled={busy}
+            title="Reloads every referenced file the drawing finds; unloaded references stay unloaded"
+            onClick={() => void run(onReloadAll)}
+          >
+            Reload All References
           </button>
         )}
         {waiting > 0 && (
@@ -208,6 +247,19 @@ export function ReferencesPalette({
             onClick={() => setBinding(picked)}
           >
             Bind…
+          </button>
+          <button
+            type="button"
+            disabled={one?.status !== 'loaded' || busy || !onOpen}
+            title="Opens the selected reference's file: a drawing in a tab of its own"
+            onClick={() =>
+              void run(async () => {
+                const problem = await onOpen!(one!);
+                return problem ? [problem] : [];
+              })
+            }
+          >
+            Open
           </button>
         </div>
       )}
@@ -285,6 +337,19 @@ export function ReferencesPalette({
               </tbody>
             </table>
           </div>
+          {details && (
+            <section className="references-details" aria-label="Details">
+              <h3>Details</h3>
+              <dl>
+                {referenceDetails(details.row, details.found, formatDate).map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value || '—'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )}
         </>
       )}
     </aside>

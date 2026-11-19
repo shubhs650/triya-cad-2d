@@ -1742,6 +1742,36 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* The External References palette's details pane (M5-04 part 14): label and value rows. */
+.references-details {
+  margin: 6px 8px;
+}
+
+.references-details h3 {
+  margin: 0 0 4px;
+  font-size: inherit;
+}
+
+.references-details dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.references-details dl > div {
+  display: contents;
+}
+
+.references-details dt {
+  color: var(--chrome-text-muted);
+}
+
+.references-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* DesignCenter (M5-11): the drawings' tree above the content of the category picked. */
 .design-center-actions {
   display: flex;
