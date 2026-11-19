@@ -47,7 +47,17 @@ import {
   xrefUnloadChange,
   xrefUnloadProblem,
 } from '../model/xref';
-import { isModelLayout, layoutNameProblem, withPlotTransparency } from '../edit/layouts';
+import {
+  copyLayout,
+  copyLayoutName,
+  copyMessages,
+  isModelLayout,
+  LAYOUT_MAX,
+  layoutNameProblem,
+  paperLayouts,
+  placeLayout,
+  withPlotTransparency,
+} from '../edit/layouts';
 import { xrefDetachChange, xrefDetachProblem } from '../edit/xrefs';
 import { xrefBindChange, xrefBindProblem } from '../edit/xref-bind';
 import type { EntityId } from '../model/entity-ids';
@@ -219,6 +229,12 @@ export interface LayoutEdit {
   readonly name?: string;
   /** The tab's place among the layouts, 1 first; past the last puts it last. */
   readonly tabOrder?: number;
+  /**
+   * The Move or Copy dialog's "Create a copy" (M6-01 part 2): a copy of the layout is made
+   * instead (`copyLayout`), named `name` or LAYOUT Copy's default, at `tabOrder` or before the
+   * layout copied; the layout itself is left as it is.
+   */
+  readonly copy?: boolean;
   readonly plot?: LayoutPlot;
   /**
    * The page setup's "Plot transparency" (M6-04 part 2), kept in the LAYOUT's PLOTTRANSPARENCY
@@ -380,7 +396,12 @@ export type EngineEdit =
   | AliasEdit;
 
 export type EditResult =
-  | { readonly ok: true; readonly change: ChangeSet }
+  | {
+      readonly ok: true;
+      readonly change: ChangeSet;
+      /** What the edit left out, for the command line (a layout copy's objects not copied). */
+      readonly messages?: readonly string[];
+    }
   | { readonly ok: false; readonly message: string };
 
 /**
@@ -1204,6 +1225,7 @@ export class EngineSession {
     const layout = layouts.find((l) => l.handle === e.layout);
     if (!layout) return { ok: false, message: `No layout ${e.layout}.` };
     const model = isModelLayout(this.model, layout);
+    if (e.copy) return this.#layoutCopy(e, layout, model);
     if (model && ((e.name !== undefined && e.name !== layout.name) || e.tabOrder !== undefined))
       return { ok: false, message: 'The Model tab cannot be renamed or moved.' };
     if (e.name !== undefined && e.name !== layout.name) {
@@ -1225,22 +1247,32 @@ export class EngineSession {
       if (xdata) patch.xdata = xdata;
     }
     if (Object.keys(patch).length > 0) b.updateLayout(layout.handle, patch);
-    if (e.tabOrder !== undefined) {
-      // The layouts in tab order with this one moved; then numbered 1 to N, as AutoCAD keeps
-      // them (and the save requires, M1-75 part 20).
-      const sheets = layouts.filter((l) => l !== layout && !isModelLayout(this.model, l));
-      const at = Math.max(0, Math.min(sheets.length, e.tabOrder - 1));
-      sheets.splice(at, 0, layout);
-      sheets.forEach((l, i) => {
-        if (l.tabOrder !== i + 1) b.updateLayout(l.handle, { tabOrder: i + 1 });
-      });
-    }
+    if (e.tabOrder !== undefined) placeLayout(b, paperLayouts(this.model), layout, e.tabOrder);
     const change = b.build();
     if (Object.keys(change).length > 0) {
       this.model.apply(change);
       this.#step('LAYOUT', change);
     }
     return { ok: true, change };
+  }
+
+  /** A layout edit's "Create a copy": the copy made, one LAYOUT undo step. */
+  #layoutCopy(e: LayoutEdit, layout: Layout, model: boolean): EditResult {
+    if (model) return { ok: false, message: 'The Model tab cannot be copied.' };
+    if (paperLayouts(this.model).length >= LAYOUT_MAX)
+      return { ok: false, message: `A drawing can have ${LAYOUT_MAX} layouts at most.` };
+    const name = e.name ?? copyLayoutName(this.model, layout);
+    const problem = layoutNameProblem(this.model, name);
+    if (problem) return { ok: false, message: problem };
+    if (e.tabOrder !== undefined && !Number.isInteger(e.tabOrder))
+      return { ok: false, message: `Invalid tab position ${e.tabOrder}.` };
+    const b = new ChangeSetBuilder(this.model);
+    const copy = copyLayout(b, this.model, layout, name, e.tabOrder);
+    const change = b.build();
+    this.model.apply(change);
+    this.#step('LAYOUT', change);
+    const messages = copyMessages(copy);
+    return { ok: true, change, ...(messages.length > 0 && { messages }) };
   }
 }
 

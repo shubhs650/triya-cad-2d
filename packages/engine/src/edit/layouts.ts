@@ -20,8 +20,12 @@
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
-import type { HeaderValue, Layout, LayoutPlot, Xdata } from '../model/types';
+import type { EntityId } from '../model/entity-ids';
+import type { Entity, HeaderValue, Layout, LayoutPlot, Xdata } from '../model/types';
 import { metric } from './center-settings';
+import { blockDrawOrder, sortTableOf } from './draw-order';
+import { copiedProps, copyObjects, refusalMessages } from './edit';
+import { moveBy } from './similarity';
 
 /**
  * Characters AutoCAD refuses in a layout name (LAYOUT Rename: "Invalid layout name"), and its
@@ -105,6 +109,134 @@ export function newLayoutSetup(model: DocumentModel): {
 /** LAYOUT New: a layout named `name`, after the last tab. */
 export function addNewLayout(b: ChangeSetBuilder, model: DocumentModel, name: string): Layout {
   return b.addLayout({ name, ...newLayoutSetup(model) });
+}
+
+/**
+ * Puts `layout` at tab `at` (1 first; past the last puts it last) among `sheets` (the paper
+ * layouts in tab order, `layout` among them or not) and numbers the tabs 1 to N, as AutoCAD keeps
+ * them (and the save requires, M1-75 part 20): dragging a tab, the Move or Copy dialog.
+ */
+export function placeLayout(
+  b: ChangeSetBuilder,
+  sheets: readonly Layout[],
+  layout: Layout,
+  at: number,
+): void {
+  const order = sheets.filter((l) => l.handle !== layout.handle);
+  order.splice(Math.max(0, Math.min(order.length, at - 1)), 0, layout);
+  order.forEach((l, i) => {
+    if (l.tabOrder !== i + 1) b.updateLayout(l.handle, { tabOrder: i + 1 });
+  });
+}
+
+/**
+ * LAYOUT Copy's default name: "the name of the copied layout with an incremental number in
+ * parentheses" (AutoCAD 2024 Help), the lowest from 2 no layout has.
+ */
+export function copyLayoutName(model: DocumentModel, source: Layout): string {
+  let n = 2;
+  while (layoutNamed(model, `${source.name} (${n})`)) n++;
+  return `${source.name} (${n})`;
+}
+
+/** What a layout copy made, and what it left out. */
+export interface LayoutCopy {
+  readonly layout: Layout;
+  /** Reason → how many objects of the sheet it kept out (`copyObjects`'). */
+  readonly refused: ReadonlyMap<string, number>;
+  /** Copies of annotative objects made without their annotation scales. */
+  readonly unannotated: number;
+  /** Copied viewports whose source has layer overrides (VP Color and the rest) not copied. */
+  readonly withoutOverrides: number;
+}
+
+/**
+ * LAYOUT Copy (and the Move or Copy dialog's Create a copy): a new layout named `name` at tab
+ * `at` (LAYOUT Copy: the copied layout's own place, "The new tab is inserted before the copied
+ * layout tab"), with the copied layout's page setup, limits, flags, space and xdata and a copy of
+ * everything on its sheet in its draw order (the copies' new handles keep it, so no draw order
+ * table is needed). Its viewports keep their ids (DXF 69) and stacking (68): AutoCAD's files
+ * number each layout's viewports from 1 (sample_AC1032: every layout has 1 and 2). A clipped
+ * viewport comes with its boundary's copy. Layer overrides of the copied viewports are not copied
+ * yet: the save cannot write new ones until M6-02's VPLAYER writer (said so).
+ */
+export function copyLayout(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  source: Layout,
+  name: string,
+  at: number = paperLayouts(model).findIndex((l) => l.handle === source.handle) + 1,
+): LayoutCopy {
+  const setup = newLayoutSetup(model);
+  const layout = b.addLayout({
+    name,
+    ...(source.flags !== undefined && { flags: source.flags }),
+    limits: source.limits ?? setup.limits,
+    plot: source.plot ?? setup.plot,
+    ...(source.space && { space: source.space }),
+  });
+  if (source.xdata) b.updateLayout(layout.handle, { xdata: source.xdata });
+  placeLayout(b, paperLayouts(model), b.layout(layout.handle) ?? layout, at);
+
+  const order = blockDrawOrder(
+    model,
+    source.blockRecord,
+    sortTableOf(b, model, source.blockRecord),
+  ).map((o) => o.id);
+  // The layout's own paper-space viewport (69 = 1) is no object COPY takes: it is the sheet's
+  // view, copied as it is, first (it draws nothing, so its place in the draw order is moot).
+  const copies = new Map<Handle, Entity>();
+  const rest: EntityId[] = [];
+  for (const id of order) {
+    const e = model.entity(id)!;
+    if (e.geom.kind !== 'VIEWPORT' || e.geom.id !== 1) {
+      rest.push(id);
+      continue;
+    }
+    const geom = e.geom;
+    copies.set(
+      e.handle,
+      b.addEntity({ ...copiedProps(b, e, true), owner: layout.blockRecord, geom }),
+    );
+  }
+  const report = copyObjects(b, model, rest, moveBy({ x: 0, y: 0 }), {}, layout.blockRecord);
+  for (const [h, copy] of report.copies) copies.set(h, copy);
+  const overridden = new Set<Handle>();
+  for (const l of model.tables.layers.values())
+    for (const o of l.viewportOverrides ?? []) overridden.add(o.viewport);
+  let withoutOverrides = 0;
+  for (const [h, copy] of copies) {
+    const g = model.entityByHandle(h)?.geom;
+    if (g?.kind !== 'VIEWPORT' || copy.geom.kind !== 'VIEWPORT') continue;
+    const now = b.entity(copy.id)!.geom;
+    if (now.kind === 'VIEWPORT' && (now.id !== g.id || now.status !== g.status))
+      b.updateEntity(copy.id, { geom: { ...now, id: g.id, status: g.status } });
+    if (overridden.has(h)) withoutOverrides++;
+  }
+  return {
+    layout: b.layout(layout.handle) ?? layout,
+    refused: report.refused,
+    unannotated: report.unannotated,
+    withoutOverrides,
+  };
+}
+
+/** The command-line lines for what a layout copy left out. */
+export function copyMessages(c: LayoutCopy): string[] {
+  const out = refusalMessages(c.refused, 'copied');
+  if (c.unannotated > 0) {
+    const n = c.unannotated;
+    out.push(
+      `${n} ${n === 1 ? 'copy is' : 'copies are'} not annotative (annotative copies are not saved yet).`,
+    );
+  }
+  if (c.withoutOverrides > 0) {
+    const n = c.withoutOverrides;
+    out.push(
+      `${n} ${n === 1 ? 'viewport was' : 'viewports were'} copied without ${n === 1 ? 'its' : 'their'} layer overrides (not saved yet).`,
+    );
+  }
+  return out;
 }
 
 /**

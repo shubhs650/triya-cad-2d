@@ -6,6 +6,12 @@
 //   Enter layout to rename <Layout1>:                   (Rename: "The last current layout is
 //   Enter new layout name <Layout1>:                      used as the default")
 //   Enter layout to make current <Layout1>:             (Set)
+//   Enter name of layout to copy <Layout1>:             (Copy, part 2: "If you do not provide a
+//   Enter layout name for copy <Layout1 (2)>:             name, the new layout assumes the name
+//                                                         of the copied layout with an
+//                                                         incremental number in parentheses. The
+//                                                         new tab is inserted before the copied
+//                                                         layout tab.")
 // The layout tab's shortcut menu (New Layout, Delete) runs the same options. What making,
 // deleting and naming a layout does is edit/layouts.ts's; each is one LAYOUT undo step.
 //
@@ -13,13 +19,17 @@
 // prompts or messages): "current" is the layout shown, or on the Model tab the drawing's current
 // layout (the one on *Paper_Space); a name the drawing lacks says `No layout named "X".` and asks
 // again; an invalid or taken name says why and asks again; deleting the layout shown shows the
-// Model tab; ? lists the layout shown and every layout in tab order. Copy, Template and SAveas
-// are later parts of M6-01 and say so.
+// Model tab; ? lists the layout shown and every layout in tab order. Copy copies the layout shown
+// by default (as Delete) and says what it copied; objects it cannot copy are listed as COPY lists
+// them (`copyLayout`). Template and SAveas are later parts of M6-01 and say so.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { Layout } from '../model/types';
 import {
   addNewLayout,
+  copyLayout,
+  copyLayoutName,
+  copyMessages,
   currentSheetLayout,
   deleteLayout,
   deleteLayoutProblem,
@@ -99,6 +109,26 @@ async function* newLayout(ctx: CommandContext): Sub<void> {
   ctx.edit((b) => addNewLayout(b, ctx.model, name));
 }
 
+async function* copyAsked(ctx: CommandContext): Sub<void> {
+  if (paperLayouts(ctx.model).length >= LAYOUT_MAX) {
+    ctx.message(`A drawing can have ${LAYOUT_MAX} layouts at most.`);
+    return;
+  }
+  const source = yield* layoutAsked(ctx, 'Enter name of layout to copy', currentLayout(ctx));
+  if (!source) return;
+  const name = yield* nameAsked(
+    ctx,
+    'Enter layout name for copy',
+    copyLayoutName(ctx.model, source),
+  );
+  let lines: string[] = [];
+  ctx.edit((b) => {
+    lines = copyMessages(copyLayout(b, ctx.model, source, name));
+  });
+  for (const line of lines) ctx.message(line);
+  ctx.message(`Layout "${source.name}" copied to "${name}".`);
+}
+
 async function* deleteAsked(ctx: CommandContext): Sub<void> {
   const layout = yield* layoutAsked(ctx, 'Enter name of layout to delete', currentLayout(ctx));
   if (!layout) return;
@@ -170,6 +200,8 @@ export function layoutCommand(): CommandDef {
           list(ctx);
           return;
         case 'Copy':
+          yield* copyAsked(ctx);
+          return;
         case 'Template':
         case 'SAveas':
           ctx.message(`LAYOUT ${option} is not available yet.`);

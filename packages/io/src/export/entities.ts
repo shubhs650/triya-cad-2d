@@ -404,6 +404,9 @@ function propProblems(
   return out;
 }
 
+/** The block of a layout the save adds: `*Paper_Space` and a number (ChangeSetBuilder.addLayout). */
+const NEW_SHEET_BLOCK = /^\*paper_space\d+$/i;
+
 /** Why the change from `before` (undefined: a new entity) to `after` cannot be written. */
 export function entityProblems(r: Resolver, before: Entity | undefined, after: Entity): string[] {
   const what = `${after.type} ${after.handle}`;
@@ -416,10 +419,17 @@ export function entityProblems(r: Resolver, before: Entity | undefined, after: E
   if (after.geom.kind === 'INSERT' && after.geom.block === after.owner) {
     out.push(`${what}: a block inserted into itself`);
   }
-  // AutoCAD shows a viewport only in a layout's paper space.
+  // AutoCAD shows a viewport only in a layout's paper space. A layout the save adds (LAYOUT
+  // Copy's, M6-01 part 2) is linked to its new sheet block after the entities (writeLayouts):
+  // planLayouts checks that each new `*Paper_Space<n>` block is a new layout's.
   if (after.geom.kind === 'VIEWPORT' && (!before || before.owner !== after.owner)) {
     const block = resolve(r, after.owner, BlockRecord);
-    if (!block?.layout || block.name.toUpperCase() === BlockRecord.modelSpaceName.toUpperCase()) {
+    const newSheet =
+      block !== undefined && r.created.has(after.owner) && NEW_SHEET_BLOCK.test(block.name);
+    if (
+      (!block?.layout && !newSheet) ||
+      block!.name.toUpperCase() === BlockRecord.modelSpaceName.toUpperCase()
+    ) {
       out.push(`${what}: a viewport outside a layout's paper space`);
     }
   }
