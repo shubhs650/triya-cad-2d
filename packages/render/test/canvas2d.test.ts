@@ -24,7 +24,9 @@ function setup(entities = [entity('20', line(0, 0, 10, 0))], opts: { now?: () =>
     },
     style: DARK,
     requestIdle: (cb) => idle.push(cb),
-    ...(opts.now ? { now: opts.now } : {}),
+    // A clock that never moves unless a test brings its own (M5-24): a slow first scene on a
+    // loaded machine would otherwise make later frames move the bitmap or skip detail.
+    now: opts.now ?? (() => 0),
   });
   r.resize(100, 50, 1);
   r.setView({ center: { x: 5, y: 0 }, scale: 10 });

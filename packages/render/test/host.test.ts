@@ -621,6 +621,7 @@ describe('RenderSession', () => {
     const entities = [entity('20', line(0, 0, 10, 0))];
     const engine = drawing(entities);
     const s = new RenderSession({
+      now: () => 0,
       document: { init: drawingInit(entities), block: MODEL },
       surface: surface('v'),
       createLayer: () => surface('l'),
@@ -639,6 +640,7 @@ describe('RenderSession', () => {
   it('applies a layout change set that crossed a postMessage (M1-97)', () => {
     const engine = drawing([]);
     const s = new RenderSession({
+      now: () => 0,
       document: { init: drawingInit([]), block: PAPER },
       surface: surface('v'),
       createLayer: () => surface('l'),
@@ -651,6 +653,7 @@ describe('RenderSession', () => {
   it('applies a block definition change set that crossed a postMessage (M1-75)', () => {
     const engine = drawing([]);
     const s = new RenderSession({
+      now: () => 0,
       document: { init: drawingInit([]), block: MODEL },
       surface: surface('v'),
       createLayer: () => surface('l'),

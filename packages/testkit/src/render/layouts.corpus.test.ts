@@ -188,6 +188,7 @@ function drawLayout(
   const visible = recorder();
   const layers: ReturnType<typeof recorder>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model,
     index,
     block,

@@ -111,6 +111,7 @@ function setup(entities: EntityInit[]) {
   });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index,
     block: MODEL,

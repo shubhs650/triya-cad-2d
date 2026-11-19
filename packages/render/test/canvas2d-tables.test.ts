@@ -32,6 +32,7 @@ function setup(entities: EntityInit[], basePoint = { x: 0, y: 0 }) {
   const d = drawing(entities, { blocks: [{ handle: T1, name: '*T1', basePoint }] });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,

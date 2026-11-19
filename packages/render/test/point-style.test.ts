@@ -153,6 +153,7 @@ function setup(extra?: DrawingExtra) {
   const d = drawing([entity('20', point(0, 0))], extra);
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,
