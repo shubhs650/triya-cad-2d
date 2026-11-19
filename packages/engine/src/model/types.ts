@@ -2359,6 +2359,36 @@ export const isLayerFilter = (o: NonGraphicalObject | undefined): o is LayerFilt
   o?.type === 'LAYER_FILTER';
 
 /**
+ * A component of the DGN line styles AutoCAD imports from MicroStation (M5-09 part 5): an entry
+ * of the named-object dictionary's `ACAD_DGNLINESTYLECOMP` dictionary (`owner`), its entry name
+ * `name`. A linetype made from a DGN line style has a `DGNLSDEF` line style definition in its
+ * extension dictionary, which refers to the component drawing it; a compound refers to its parts,
+ * a point component to the stroke pattern and the symbols it places, a symbol to the anonymous
+ * block drawing it, each a hard pointer (DXF 340), which is all AutoCAD's DGN purge tool follows
+ * (keanw.com, "Purging unwanted DGN linestyle data", 2012–2014). Triya does not draw them (a
+ * linetype draws its own dashes) and keeps them as read; PURGE's "Orphaned data" removes those no
+ * linetype uses (`orphanedData`). Its links are not under handle keys: a component uses neither
+ * its linetypes nor, for PURGE's named items, its symbol blocks (anonymous, never listed).
+ */
+export interface DgnLinestyleComponent extends NonGraphicalObject {
+  readonly type: 'DGN_LS_COMPONENT';
+  /** Its entry name in `ACAD_DGNLINESTYLECOMP`. */
+  readonly name: string;
+  /** Its class, e.g. `AcDbLSStrokePatternComponent` (the CLASSES entry's C++ name). */
+  readonly className: string;
+  /** The linetypes whose line style definition (`DGNLSDEF`) refers to it. */
+  readonly usedBy: readonly Handle[];
+  /** The components it refers to (a compound's parts, a point component's stroke and symbols). */
+  readonly parts: readonly Handle[];
+  /** The block records it refers to (a symbol's anonymous block). */
+  readonly symbolBlocks: readonly Handle[];
+}
+
+export const isDgnLinestyleComponent = (
+  o: NonGraphicalObject | undefined,
+): o is DgnLinestyleComponent => o?.type === 'DGN_LS_COMPONENT';
+
+/**
  * One DXF group code of a `CodedObject`, as the save writes it. A handle code's value (DXF 5,
  * 105, 320–369, 390–399, 480, 481 and 1005: `isHandleCode`) is the handle.
  */
