@@ -6,8 +6,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   EngineSession,
+  XREF_NODE,
   filterNodeLayers,
   layerFilterNamed,
+  xrefNode,
+  xrefNodeNames,
   type DocumentInit,
   type Entity,
   type LayerFilter,
@@ -18,6 +21,7 @@ import {
   LAYER_WALLS,
   MODEL_SPACE,
   PAPER_SPACE,
+  blockRecord,
   entityInit,
   layer,
   sampleInit,
@@ -241,5 +245,56 @@ describe('the filter menu (M5-07 part 6)', () => {
       ok: false,
       message: 'A group filter cannot be nested in a property filter.',
     });
+  });
+});
+
+// M5-07 part 8: the Xref node (AutoCAD 2024 Help, "Layer Properties Manager": the tree lists
+// "Xref" with a node for each external reference attached, which lists the layers it brings).
+describe('the Xref node (M5-07 part 8)', () => {
+  /** The host with the xref PLAN (its layers PLAN|WALLS and PLAN|DOORS) and NEST (NEST|GRID). */
+  function xrefInit(): DocumentInit {
+    const init = menuInit();
+    const dependent = (h: string, name: string) => ({ ...layer(h, name), flags: 48 });
+    return {
+      ...init,
+      tables: {
+        ...init.tables,
+        layers: [
+          ...init.tables!.layers!,
+          dependent('70', 'PLAN|WALLS'),
+          dependent('71', 'plan|Doors'),
+          dependent('72', 'NEST|GRID'),
+        ],
+        blockRecords: [
+          ...init.tables!.blockRecords!,
+          { ...blockRecord('80', 'Plan'), flags: 4 },
+          { ...blockRecord('81', 'NEST'), flags: 8 },
+          blockRecord('82', 'DOOR'),
+        ],
+      },
+    };
+  }
+
+  it('names a node for each xref, by name, and lists the layers each brings', () => {
+    const s = new EngineSession(xrefInit());
+    expect(xrefNodeNames(s.model.tables.blockRecords.values())).toEqual(['NEST', 'Plan']);
+    expect(xrefNode('Plan')).toBe('xref:Plan');
+    const names = (n: string) => {
+      const r = filterNodeLayers(s.model, n);
+      return typeof r === 'string' ? r : r.map((l) => l.name);
+    };
+    expect(names(XREF_NODE)).toEqual(['PLAN|WALLS', 'plan|Doors', 'NEST|GRID']);
+    expect(names(xrefNode('Plan'))).toEqual(['PLAN|WALLS', 'plan|Doors']);
+    expect(names(xrefNode('NEST'))).toEqual(['NEST|GRID']);
+    expect(names(xrefNode('Gone'))).toEqual([]);
+  });
+
+  it('takes Visibility, Lock and Isolate Group like any node', () => {
+    const s = new EngineSession(xrefInit());
+    ok(s.edit({ kind: 'layer-filter-set', node: xrefNode('Plan'), set: 'off' }));
+    expect(['70', '71', '72'].map((h) => layerOf(s, h).on)).toEqual([false, false, true]);
+    ok(s.edit({ kind: 'layer-filter-isolate', node: XREF_NODE }));
+    expect(layerOf(s, LAYER_WALLS).on).toBe(false);
+    expect(layerOf(s, '72').on).toBe(true);
   });
 });

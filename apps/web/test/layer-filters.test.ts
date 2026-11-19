@@ -3,7 +3,13 @@
 // filter); new filters' names; and the Layer Filter Properties dialog's definition grid, written
 // to and read from a filter expression. M5-07 part 6: the filter menu's items, which are greyed
 // on which node, and the engine edit each sends.
-import type { ChangeSet, DocumentInit, LayerFilter, LayerRecord } from '@triya/engine';
+import type {
+  BlockTableRecord,
+  ChangeSet,
+  DocumentInit,
+  LayerFilter,
+  LayerRecord,
+} from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_DEFINITION,
@@ -11,7 +17,9 @@ import {
   FILTER_MENU,
   definitionRows,
   drawingLayerFilters,
+  drawingXrefs,
   filterCountLine,
+  filterNodeName,
   filterMenuEdit,
   filterMenuEnabled,
   layerFilterSource,
@@ -284,5 +292,66 @@ describe('the filter menu (M5-07 part 6)', () => {
     });
     expect(filterMenuEdit('rename', '70', { filter: property })).toBeUndefined();
     expect(filterMenuEdit('vpFreeze', '70', { filter: property, space: '58' })).toBeUndefined();
+  });
+});
+
+// M5-07 part 8: the Xref node, under All after the filters when the drawing has xrefs, and a
+// node for each xref listing the layers it brings.
+describe('the Xref node (M5-07 part 8)', () => {
+  const record = (handle: string, name: string, flags = 0) =>
+    ({ handle, name, flags, layout: '0', units: 0 }) as unknown as BlockTableRecord;
+  const PLAN = layer('20', 'Plan|Walls', { flags: 48 });
+  const GRID = layer('21', 'Grid|Axes', { flags: 48 });
+  const xrefInit: DocumentInit = {
+    ...init,
+    tables: {
+      ...init.tables,
+      layers: [ZERO, WALLS, PLAN, GRID],
+      blockRecords: [record('30', '*Model_Space'), record('31', 'Plan', 4), record('32', 'Door')],
+    },
+  };
+  const names = (s: ReadonlySet<string> | undefined) =>
+    s === undefined
+      ? 'every layer'
+      : [ZERO, WALLS, PLAN, GRID].filter((l) => s.has(l.handle)).map((l) => l.name);
+
+  it('names the drawing’s xrefs as the engine has them now', () => {
+    expect(drawingXrefs(init, [])).toEqual([]);
+    expect(drawingXrefs(xrefInit, [])).toEqual(['Plan']);
+    const changes: ChangeSet[] = [
+      { tables: { blockRecords: { added: [record('33', 'Grid', 8)] } } },
+    ];
+    expect(drawingXrefs(xrefInit, changes)).toEqual(['Grid', 'Plan']);
+  });
+
+  it('lists the xref-dependent layers under Xref, each xref’s under its node', () => {
+    const source = layerFilterSource(xrefInit, []);
+    expect(names(listedLayers(source, 'xref', { invert: false }))).toEqual([
+      'Plan|Walls',
+      'Grid|Axes',
+    ]);
+    expect(names(listedLayers(source, 'xref:Plan', { invert: false }))).toEqual(['Plan|Walls']);
+    expect(names(listedLayers(source, 'xref:Plan', { invert: true }))).toEqual([
+      '0',
+      'A-Walls',
+      'Grid|Axes',
+    ]);
+  });
+
+  it('names the node in the count line, and greys the new filter items on it', () => {
+    expect(filterNodeName('all', undefined)).toBe('All');
+    expect(filterNodeName('used', undefined)).toBe('All Used Layers');
+    expect(filterNodeName('xref', undefined)).toBe('Xref');
+    expect(filterNodeName('xref:Plan', undefined)).toBe('Plan');
+    expect(filterNodeName('61', filter('61', 'Arch'))).toBe('Arch');
+    expect(filterMenuEnabled('newProperty', { xref: true })).toBe(false);
+    expect(filterMenuEnabled('newGroup', { xref: true })).toBe(false);
+    expect(filterMenuEnabled('off', { xref: true })).toBe(true);
+    expect(filterMenuEnabled('isolateAll', { xref: true })).toBe(true);
+    expect(filterMenuEdit('lock', 'xref:Plan', { xref: true })).toEqual({
+      kind: 'layer-filter-set',
+      node: 'xref:Plan',
+      set: 'lock',
+    });
   });
 });

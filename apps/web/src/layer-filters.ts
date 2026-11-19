@@ -6,11 +6,16 @@
 // The engine worker holds the drawing (M1-67), so the tree reads the filters, and the tables
 // they are evaluated on, from the drawing as opened plus every change applied since; the
 // expressions are the engine's own (`filteredLayers`, part 4, DEC-076). The filter menu's items
-// (part 6) are below `listedLayers`.
+// (part 6) are below `listedLayers`. The Xref node (part 8) comes after the filters when the
+// drawing has xrefs, with a node for each listing the layers it brings (the engine's
+// `xrefNodeLayers`).
 import {
+  XREF_NODE,
   filteredLayers,
   isLayerFilter,
   parseLayerFilterExpression,
+  xrefNodeLayers,
+  xrefNodeNames,
   type ChangeSet,
   type DocumentInit,
   type EngineEdit,
@@ -21,7 +26,7 @@ import {
   type LayerFilterSource,
   type NonGraphicalObject,
 } from '@triya/engine';
-import { layerStateTables } from './layer-states';
+import { layerStateTables, tableNow } from './layer-states';
 
 /** The filters as the engine has them now: those opened with every change applied. */
 export function drawingLayerFilters(
@@ -71,8 +76,25 @@ export function layerFilterTree(filters: readonly LayerFilter[]): LayerFilterNod
   return under(undefined, new Set());
 }
 
-/** The node selected in the tree: All, All Used Layers or a filter. */
+/**
+ * The node selected in the tree: All, All Used Layers, a filter, the Xref node (`'xref'`) or an
+ * xref's (`'xref:<name>'`, the engine's `xrefNode`).
+ */
 export type FilterChoice = 'all' | 'used' | Handle;
+
+/** The names of the drawing's xrefs as the engine has them now, by name. */
+export function drawingXrefs(init: DocumentInit, changes: readonly ChangeSet[]): string[] {
+  return xrefNodeNames(tableNow(init, changes, 'blockRecords').values());
+}
+
+/** The node's name as the tree and the line under the list show it. */
+export function filterNodeName(choice: FilterChoice, filter: LayerFilter | undefined): string {
+  if (choice === 'all') return 'All';
+  if (choice === 'used') return 'All Used Layers';
+  if (choice === XREF_NODE) return 'Xref';
+  if (choice.startsWith(`${XREF_NODE}:`)) return choice.slice(XREF_NODE.length + 1);
+  return filter?.name ?? '';
+}
 
 /**
  * The layers node `choice` lists, undefined for every layer. All Used Layers lists the layers
@@ -88,6 +110,11 @@ export function listedLayers(
   if (choice === 'used') {
     const used = options.used ?? new Set<Handle>();
     return new Set(all.filter((h) => used.has(h) !== options.invert));
+  }
+  const xref = xrefNodeLayers(source.tables.layers.values(), choice);
+  if (xref) {
+    const listed = new Set(xref.map((l) => l.handle));
+    return new Set(all.filter((h) => listed.has(h) !== options.invert));
   }
   if (!isLayerFilter(source.objects.get(choice))) return undefined;
   return new Set(
@@ -174,6 +201,8 @@ export interface FilterMenuContext {
   readonly parent?: LayerFilter | undefined;
   /** The block of the layout shown; undefined in model space. */
   readonly space?: Handle | undefined;
+  /** The Xref node or an xref's, in which no filter can be made. */
+  readonly xref?: boolean;
 }
 
 const SETTINGS: ReadonlySet<LayerFilterAction> = new Set<FilterLayerSetting>([
@@ -189,10 +218,11 @@ const isSetting = (a: LayerFilterAction): a is FilterLayerSetting => SETTINGS.ha
 /** Whether the filter menu's item `a` can act on the node `ctx` describes. */
 export function filterMenuEnabled(a: LayerFilterAction, ctx: FilterMenuContext): boolean {
   const { filter } = ctx;
-  if (isSetting(a) || a === 'isolateAll' || a === 'newProperty') return true;
+  if (isSetting(a) || a === 'isolateAll') return true;
+  if (a === 'newProperty') return ctx.xref !== true;
   if (a === 'vpFreeze' || a === 'vpThaw') return false;
   if (a === 'isolateActive') return ctx.space === undefined;
-  if (a === 'newGroup') return filter?.filterType !== 'property';
+  if (a === 'newGroup') return ctx.xref !== true && filter?.filterType !== 'property';
   if (a === 'properties') return filter?.filterType === 'property';
   if (a === 'convert')
     return filter?.filterType === 'property' && ctx.parent?.filterType !== 'property';

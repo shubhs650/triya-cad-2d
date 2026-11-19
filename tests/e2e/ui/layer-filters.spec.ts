@@ -10,8 +10,13 @@
 // M5-07 part 6: the filter menu's submenus, by pointer and keyboard: Visibility Off and On and
 // Lock on a group's layers, Viewport greyed in model space, Isolate Group turning the other
 // layers off, Convert to Group Filter.
+// M5-07 part 8: the Xref node. xref-parent.dxf (packages/testkit/src/xref/fixture.ts) attaches
+// xref-child-tb.dxf and overlays it as xref-child-ovl, and keeps xref-child-tb|TB-LINES
+// (VISRETAIN); the Xref node lists a node for each xref, and dropping the title block's file
+// brings its layers, and its nested xref, in.
+import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, expectShown, openWithPicker } from '../app/page';
+import { DXF, expectShown, openWithDrop, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -225,4 +230,66 @@ test('the filter menu sets a filter’s layers, isolates them and converts (M5-0
   await item('Convert to Group Filter').click();
   await expect(node(page, 'Properties Filter1')).toHaveAttribute('data-filter-type', 'group');
   await expect(listed(page)).toHaveText(['HATCH']);
+});
+
+test('the Xref node lists each xref’s layers and takes the menu’s Visibility (M5-07 part 8)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const fixtures = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/xref');
+  const toggle = (title: string, layer: string) =>
+    palette(page).getByRole('button', { name: `${title} ${layer}`, exact: true });
+  const item = (name: string) => filterMenu(page).getByRole('menuitem', { name, exact: true });
+  await page.goto(app.url);
+  await openWithPicker(page, path.join(fixtures, 'xref-parent.dxf'));
+  await expectShown(page, 'xref-parent.dxf');
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Layers' })
+    .click();
+  await expect(palette(page)).toBeVisible();
+
+  // Before the files are found: the two xrefs, and the layer the host keeps of the title block.
+  await expect(tree(page).getByRole('treeitem')).toHaveText([
+    '▾All',
+    'All Used Layers',
+    '▾Xref',
+    'xref-child-ovl',
+    'xref-child-tb',
+  ]);
+  await node(page, 'xref-child-tb').click();
+  await expect(listed(page)).toHaveText(['xref-child-tb|TB-LINES']);
+
+  // The title block's file dropped: its layers, for both references, and its nested xref.
+  await openWithDrop(page, path.join(fixtures, 'xref-child-tb.dxf'));
+  await expect(node(page, 'xref-grandchild')).toBeVisible({ timeout: 30_000 });
+  await expect(listed(page)).toHaveText([
+    'xref-child-tb|TB-FRAME',
+    'xref-child-tb|TB-LINES',
+    'xref-child-tb|TB-LOGO',
+  ]);
+  await expect(count(page)).toContainText('xref-child-tb: 3 layers displayed of ');
+  await node(page, 'Xref').click();
+  // Every xref's (the grandchild's file is not found, so it brings none).
+  await expect(listed(page)).toHaveText(
+    ['ovl', 'tb'].flatMap((x) => ['FRAME', 'LINES', 'LOGO'].map((l) => `xref-child-${x}|TB-${l}`)),
+  );
+  await palette(page).getByLabel('Invert filter').check();
+  await expect(listed(page).filter({ hasText: '|' })).toHaveCount(0);
+  await palette(page).getByLabel('Invert filter').uncheck();
+
+  // The menu on an xref's node: no new filters in it; Visibility > Off turns its layers off.
+  await node(page, 'xref-child-ovl').click({ button: 'right' });
+  await expect(item('New Properties Filter...')).toBeDisabled();
+  await expect(item('New Group Filter')).toBeDisabled();
+  await expect(item('Rename')).toBeDisabled();
+  await item('Visibility').hover();
+  await shot('1-xref-node-menu.png');
+  await item('Off').click();
+  await expect(filterMenu(page)).toBeHidden();
+  await expect(toggle('On', 'xref-child-ovl|TB-FRAME')).toHaveAttribute('aria-pressed', 'false');
+  await node(page, 'xref-child-tb').click();
+  await expect(toggle('On', 'xref-child-tb|TB-FRAME')).toHaveAttribute('aria-pressed', 'true');
+  await shot('2-xref-node-layers.png');
 });
