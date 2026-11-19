@@ -151,6 +151,43 @@ function invertedBounds(model: DocumentModel, e: Entity, boundary: readonly Vec2
   return { minX: minX - dx, minY: minY - dy, maxX: maxX + dx, maxY: maxY + dy };
 }
 
+/**
+ * Gives each copy of a clipped reference the clip (M5-16; `copies` maps each copied object's
+ * handle to its copy), as AutoCAD's COPY, MIRROR and ARRAY clone a reference with its extension
+ * dictionary. The boundary and the inverse insert transform hold the clip in the block's
+ * coordinates, so the same fields clip the copy where it stands, mirrored with a mirrored block;
+ * the filter is a new one, filed as `setClip` files a first clip: the SPATIAL entry of a new
+ * ACAD_FILTER dictionary in the copy's extension dictionary (one another record of the copy
+ * already gave it, or a new one). Its xdata and extension dictionary are not carried: the save
+ * writes an inverted clip's ACAD_XREC_ROUNDTRIP record for a new filter itself.
+ */
+export function copyClips(b: ChangeSetBuilder, copies: ReadonlyMap<Handle, Entity>): void {
+  if (copies.size === 0) return;
+  const clips = new Map<Handle, SpatialFilter>();
+  for (const o of b.objects()) if (isFilter(o) && copies.has(o.insert)) clips.set(o.insert, o);
+  for (const [from, copy] of copies) {
+    const f = clips.get(from);
+    const e = f && b.entity(copy.id);
+    if (!f || e?.geom.kind !== 'INSERT') continue;
+    const extDict = e.extDict ?? b.allocateHandle();
+    if (e.extDict === undefined) b.updateEntity(e.id, { extDict });
+    const {
+      handle: _handle,
+      owner: _owner,
+      reactors: _reactors,
+      xdata: _xdata,
+      extDict: _extDict,
+      raw: _raw,
+      ...clip
+    } = f;
+    const owner = b.allocateHandle();
+    b.addObject({ ...clip, owner, reactors: [owner], insert: e.handle } as Omit<
+      SpatialFilter,
+      'handle'
+    >);
+  }
+}
+
 /** XCLIP ON and OFF: whether the clip hides what lies outside it. */
 export function setClipEnabled(b: ChangeSetBuilder, filter: SpatialFilter, enabled: boolean) {
   if (filter.enabled !== enabled) {

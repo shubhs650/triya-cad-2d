@@ -32,6 +32,8 @@ export type AuditSaveKind =
   | 'xclip'
   // XCLIP Invert clip on ezdxf's xclip.dxf: ACAD_XREC_ROUNDTRIP records (M5-04 part 11).
   | 'xclip-invert'
+  // XCLIP carried by COPY, MIRROR and ARRAY on ezdxf's xclip.dxf (M5-16).
+  | 'xclip-copy'
   // LAYDEL and LAYMRG of every layer they can take on a corpus file (M5-06 part 2).
   | 'laydel'
   | 'laymrg'

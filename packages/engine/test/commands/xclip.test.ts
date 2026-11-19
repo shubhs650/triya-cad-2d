@@ -33,12 +33,15 @@ const ref = (
  * The harness drawing with references 40 at 100,100 (scale 2, turned 90°) and 41 at 200,100,
  * and whatever `extra` adds (handles 42 on).
  */
-function drawing(extra: EntityGeometry[] = []) {
-  const t = setup([
-    ref({ x: 100, y: 100 }, { scale: 2, rotation: Math.PI / 2 }),
-    ref({ x: 200, y: 100 }),
-    ...extra,
-  ]);
+function drawing(extra: EntityGeometry[] = [], o: Parameters<typeof setup>[1] = {}) {
+  const t = setup(
+    [
+      ref({ x: 100, y: 100 }, { scale: 2, rotation: Math.PI / 2 }),
+      ref({ x: 200, y: 100 }),
+      ...extra,
+    ],
+    o,
+  );
   const filters = () =>
     [...t.model.objects.values()].filter((o): o is SpatialFilter => o.type === 'SPATIAL_FILTER');
   const clipOf = (h: string) => filters().find((f) => f.insert === h);
@@ -406,6 +409,166 @@ describe('XCLIP Invert clip (M5-04 part 11)', () => {
     await t.xclip(R41);
     await t.bus.submit('OFF');
     expect(t.clipOf('41')).toMatchObject({ enabled: false, inverted: [{ x: 200.5 }, { x: 201 }] });
+  });
+});
+
+describe('XCLIP carried by COPY, MIRROR and ARRAY (M5-16)', () => {
+  /** Where `f` clips the reference `e` in the drawing: its block polygon placed by `e`, sorted. */
+  const world = (e: Entity, f: SpatialFilter) => {
+    const g = e.geom as InsertGeometry;
+    const [c, s] = [Math.cos(g.rotation), Math.sin(g.rotation)];
+    return clipBoundary(f)!
+      .map((q) => {
+        const [x, y] = [g.scale.x * q.x, g.scale.y * q.y];
+        return [r6(g.position.x + c * x - s * y), r6(g.position.y + s * x + c * y)];
+      })
+      .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
+  };
+  const SQUARE = (dx: number, dy: number) =>
+    [
+      [199 + dx, 99 + dy],
+      [199 + dx, 101 + dy],
+      [201 + dx, 99 + dy],
+      [201 + dx, 101 + dy],
+    ].map(([x, y]) => [r6(x!), r6(y!)]);
+  /** `copy`'s filter is a filter of its own with `source`'s clip, filed in its own dictionaries. */
+  const expectCarried = (
+    t: ReturnType<typeof drawing>,
+    source: SpatialFilter,
+    copy: Entity,
+    sourceXdict: string | undefined,
+  ) => {
+    const f = t.clipOf(copy.handle)!;
+    expect(f).toBeDefined();
+    expect(f.handle).not.toBe(source.handle);
+    expect(copy.extDict).toBeDefined();
+    expect(copy.extDict).not.toBe(sourceXdict);
+    expect(f.owner).not.toBe(source.owner);
+    expect(f.owner).not.toBe(copy.extDict);
+    expect(f.reactors).toEqual([f.owner]);
+    const { handle: _h, owner: _o, reactors: _r, insert: _i, ...clip } = f;
+    const { handle: _sh, owner: _so, reactors: _sr, insert: _si, ...sourceClip } = source;
+    expect(clip).toEqual(sourceClip);
+    return f;
+  };
+  const clipped = async (o: Parameters<typeof setup>[1] = {}) => {
+    const t = drawing([], o);
+    await t.xclip(R41);
+    await t.bus.script(['', '', '199,99', '201,101']);
+    return t;
+  };
+
+  it('COPY gives each copy the clip, where the copy stands; U takes copies and clips away', async () => {
+    const t = await clipped();
+    const source = t.clipOf('41')!;
+    const xdict = t.ref41().extDict;
+    await t.bus.submit('COPY');
+    await t.windowSelect({ x: 195, y: 95 }, { x: 205, y: 105 });
+    await t.bus.script(['0,0', '0,10', '30,0', '']);
+    const copies = t.space().slice(-2);
+    expect(copies.map((e) => e.geom.kind)).toEqual(['INSERT', 'INSERT']);
+    const [a, b] = copies.map((e) => expectCarried(t, source, e, xdict));
+    expect(a!.owner).not.toBe(b!.owner);
+    expect(copies[0]!.extDict).not.toBe(copies[1]!.extDict);
+    expect(world(copies[0]!, a!)).toEqual(SQUARE(0, 10));
+    expect(world(copies[1]!, b!)).toEqual(SQUARE(30, 0));
+    // The source keeps its own.
+    expect(t.clipOf('41')).toEqual(source);
+    expect(t.filters()).toHaveLength(3);
+    await t.bus.script(['U']);
+    expect(t.filters()).toEqual([source]);
+    // COPY's own Undo takes the last copy's clip back with it.
+    await t.bus.submit('COPY');
+    await t.windowSelect({ x: 195, y: 95 }, { x: 205, y: 105 });
+    await t.bus.script(['0,0', '0,10', '0,20', 'U', '']);
+    expect(t.filters()).toHaveLength(2);
+    expect(world(t.space().at(-1)!, t.clipOf(t.space().at(-1)!.handle)!)).toEqual(SQUARE(0, 10));
+  });
+
+  it('COPY carries an inverted clip turned off as it is', async () => {
+    const t = drawing();
+    await t.xclip(R41);
+    await t.bus.script(['', 'I', '', '200.5,99.7', '201,100.2']);
+    await t.xclip(R41);
+    await t.bus.submit('OFF');
+    const source = t.clipOf('41')!;
+    await t.bus.submit('COPY');
+    await t.windowSelect({ x: 195, y: 95 }, { x: 205, y: 105 });
+    await t.bus.script(['0,0', '0,10', '']);
+    const f = expectCarried(t, source, t.space().at(-1)!, t.ref41().extDict);
+    expect(f).toMatchObject({ enabled: false, inverted: source.inverted });
+    expect(f.boundary).toEqual(source.boundary);
+  });
+
+  it('MIRROR mirrors the clip with the block, kept or in place of the source', async () => {
+    const t = await clipped();
+    const source = t.clipOf('41')!;
+    const xdict = t.ref41().extDict;
+    const mirrored = SQUARE(0, 0)
+      .map(([x, y]) => [r6(300 - x!), y!])
+      .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
+    await t.bus.submit('MIRROR');
+    await t.windowSelect({ x: 195, y: 95 }, { x: 205, y: 105 });
+    await t.bus.script(['150,0', '150,10', 'N']);
+    const copy = t.space().at(-1)!;
+    expect(world(copy, expectCarried(t, source, copy, xdict))).toEqual(mirrored);
+    expect(world(t.ref41(), t.clipOf('41')!)).toEqual(SQUARE(0, 0));
+
+    await t.bus.script(['U']);
+    await t.bus.submit('MIRROR');
+    await t.windowSelect({ x: 195, y: 95 }, { x: 205, y: 105 });
+    await t.bus.script(['150,0', '150,10', 'Y']);
+    expect(t.filters()).toHaveLength(1);
+    expect(world(t.ref41(), t.clipOf('41')!)).toEqual(mirrored);
+  });
+
+  it('ARRAY of separate objects gives every item the clip', async () => {
+    const t = await clipped({ variables: new Map([['ARRAYASSOCIATIVITY', 0]]) });
+    const source = t.clipOf('41')!;
+    const xdict = t.ref41().extDict;
+    await t.bus.submit('ARRAYRECT');
+    await t.windowSelect({ x: 195, y: 95 }, { x: 205, y: 105 });
+    await t.bus.script(['COU', '3', '1', 'S', '10', '10', '']);
+    const items = t.space().slice(-2);
+    expect(items.map((e) => e.geom.kind)).toEqual(['INSERT', 'INSERT']);
+    expect(world(items[0]!, expectCarried(t, source, items[0]!, xdict))).toEqual(SQUARE(10, 0));
+    expect(world(items[1]!, expectCarried(t, source, items[1]!, xdict))).toEqual(SQUARE(20, 0));
+    expect(t.filters()).toHaveLength(3);
+  });
+
+  it('-BLOCK keeps the clip of a reference it takes in, and EXPLODE of the new block brings it out', async () => {
+    const t = await clipped();
+    const source = t.clipOf('41')!;
+    const xdict = t.ref41().extDict;
+    await t.bus.script(['-BLOCK', 'C', '0,0']);
+    await t.bus.answer({ kind: 'selection', ids: [t.ref41().id] });
+    expect(t.ref41()).toBeUndefined();
+    const record = [...t.model.tables.blockRecords.values()].find((r) => r.name === 'C')!;
+    const [nested] = t.model.blockEntities(record.handle).map((id) => t.model.entity(id)!);
+    expectCarried(t, source, nested!, xdict);
+    expect(t.filters()).toHaveLength(1);
+
+    await t.bus.script(['-INSERT', 'C', '0,10', '1', '', '0']);
+    await t.bus.script(['EXPLODE', 'L', '']);
+    const out = t.space().at(-1)!;
+    expect(out.geom.kind).toBe('INSERT');
+    expect(world(out, expectCarried(t, source, out, xdict))).toEqual(SQUARE(0, 10));
+  });
+
+  it('an associative ARRAY keeps the clip on the source it takes into its block', async () => {
+    const t = await clipped();
+    const source = t.clipOf('41')!;
+    const xdict = t.ref41().extDict;
+    await t.bus.submit('ARRAYRECT');
+    await t.windowSelect({ x: 195, y: 95 }, { x: 205, y: 105 });
+    await t.bus.script(['COU', '3', '1', '']);
+    // The reference left the drawing for the array's source block, with its clip.
+    expect(t.ref41()).toBeUndefined();
+    const [f] = t.filters();
+    expect(t.filters()).toHaveLength(1);
+    const inner = t.byHandle(f!.insert)!;
+    expect(inner.owner).not.toBe(t.space()[0]!.owner);
+    expectCarried(t, source, inner, xdict);
   });
 });
 
