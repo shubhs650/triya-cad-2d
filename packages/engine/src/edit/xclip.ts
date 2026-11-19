@@ -8,6 +8,12 @@
 // of an ACAD_FILTER dictionary (the filter's `owner`) in the INSERT's extension dictionary. A
 // first clip gives the INSERT an extension dictionary when it has none and the dictionary a new
 // handle when there is none; a new boundary replaces the filter in the dictionary it was in.
+//
+// Invert clip (M5-04 part 11) keeps the boundary drawn as the filter's `inverted` and stores, as
+// AutoCAD does, the region that shows for a reader without inverted clips: the reference's extents
+// with the boundary, grown by a twentieth of their width and height on each side (as both inverted
+// clips of ezdxf's xclip.dxf are; AutoCAD's help does not say), the boundary cut out through a
+// slit. Text has no extents in the engine, so a block of text alone is bounded by the boundary.
 import type { Vec2 } from '../geom/types';
 import { applyPoint, invert, type Matrix2D } from '../geom/transform';
 import { insertMatrices } from '../input/osnap';
@@ -15,7 +21,8 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { Entity, Matrix3x4, NonGraphicalObject, SpatialFilter } from '../model/types';
-import { clipBoundary } from '../model/xclip';
+import { clipFrame, invertedBoundary } from '../model/xclip';
+import { blockExtentsOf } from './mleader';
 
 // prettier-ignore
 const IDENTITY: Matrix3x4 = [
@@ -84,9 +91,13 @@ export function setClip(
   model: DocumentModel,
   e: Entity,
   boundary: readonly Vec2[],
+  inverted = false,
 ): boolean {
   const inverseInsert = inverseInsertMatrix(model, e);
   if (!inverseInsert) return false;
+  const stored = inverted
+    ? invertedBoundary(boundary, invertedBounds(model, e, boundary))
+    : boundary;
   const old = clipOf(model, e.handle);
   const extDict = e.extDict ?? b.allocateHandle();
   if (e.extDict === undefined) b.updateEntity(e.id, { extDict });
@@ -99,7 +110,8 @@ export function setClip(
     owner,
     reactors: [owner],
     insert: e.handle,
-    boundary: boundary.map((p) => ({ x: p.x + 0, y: p.y + 0 })),
+    boundary: stored.map((p) => ({ x: p.x + 0, y: p.y + 0 })),
+    ...(inverted && { inverted: boundary.map((p) => ({ x: p.x + 0, y: p.y + 0 })) }),
     normal: { x: 0, y: 0, z: 1 },
     origin: { x: 0, y: 0, z: 0 },
     enabled: true,
@@ -111,6 +123,34 @@ export function setClip(
   return true;
 }
 
+/**
+ * The outer bounds of an inverted clip of `e` by `boundary`, in the reference's space: its block's
+ * extents where it stands, with the boundary, grown by a twentieth of their size on each side.
+ */
+function invertedBounds(model: DocumentModel, e: Entity, boundary: readonly Vec2[]) {
+  const points = [...boundary];
+  const m = placement(model, e);
+  const box = e.geom.kind === 'INSERT' ? blockExtentsOf(model, e.geom.block) : undefined;
+  if (m && box && e.geom.kind === 'INSERT') {
+    const base = model.blocks.get(e.geom.block)?.basePoint ?? { x: 0, y: 0 };
+    for (const x of [box.minX, box.maxX]) {
+      for (const y of [box.minY, box.maxY])
+        points.push(applyPoint(m, { x: x + base.x, y: y + base.y }));
+    }
+  }
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const [minX, maxX, minY, maxY] = [
+    Math.min(...xs),
+    Math.max(...xs),
+    Math.min(...ys),
+    Math.max(...ys),
+  ];
+  const dx = (maxX - minX) / 20;
+  const dy = (maxY - minY) / 20;
+  return { minX: minX - dx, minY: minY - dy, maxX: maxX + dx, maxY: maxY + dy };
+}
+
 /** XCLIP ON and OFF: whether the clip hides what lies outside it. */
 export function setClipEnabled(b: ChangeSetBuilder, filter: SpatialFilter, enabled: boolean) {
   if (filter.enabled !== enabled) {
@@ -120,15 +160,16 @@ export function setClipEnabled(b: ChangeSetBuilder, filter: SpatialFilter, enabl
 
 /**
  * Where the clip of `e` lies now, in the coordinates of the reference's space: the block's
- * boundary through the reference's present transform (the reference may have moved, turned or
- * been scaled since it was clipped). Undefined when the clip encloses nothing.
+ * boundary (an inverted clip's inner boundary) through the reference's present transform (the
+ * reference may have moved, turned or been scaled since it was clipped). Undefined when the
+ * clip encloses nothing.
  */
 export function clipOutline(
   model: DocumentModel,
   e: Entity,
   filter: SpatialFilter,
 ): Vec2[] | undefined {
-  const inBlock = clipBoundary(filter);
+  const inBlock = clipFrame(filter);
   const m = placement(model, e);
   if (!inBlock || !m) return undefined;
   return inBlock.map((p) => {

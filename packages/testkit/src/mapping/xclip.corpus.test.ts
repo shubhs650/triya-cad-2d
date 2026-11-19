@@ -50,6 +50,21 @@ describe('SPATIAL_FILTER mapping on the public corpus', () => {
     expect(mapped.size).toBeGreaterThanOrEqual(21);
   });
 
+  it("maps an inverted clip's inner boundary from its ACAD_XREC_ROUNDTRIP record (M5-04 part 11)", () => {
+    const filters = mapped.get('public/third-party/ezdxf/examples_dxf/xclip.dxf')!;
+    const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+    const inner = (insert: string) =>
+      filters.find((f) => f.insert === insert)?.inverted?.map((p) => [r4(p.x), r4(p.y)]);
+    // 809 "Inverted Clipping Path": a rectangle, its two corners as stored (drawing coordinates).
+    expect(inner('809')).toEqual([
+      [27.5658, 8.8384],
+      [31.0124, 11.3859],
+    ]);
+    // 822 "Inverted Concave Clipping Path": a U whose boundary AutoCAD stored without it.
+    expect(inner('822')).toHaveLength(8);
+    expect(filters.filter((f) => f.inverted)).toHaveLength(2);
+  });
+
   it('maps the ACadSharp DXF saves alike to their DWGs', () => {
     const pairs = [...mapped.keys()].flatMap((path) => {
       const m = /^(.*sample_AC\d{4})_(?:ascii|binary)\.dxf$/.exec(path);

@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clipBoundary,
+  clipFrame,
   type Entity,
   type EntityGeometry,
   type InsertGeometry,
@@ -75,7 +76,7 @@ describe('XCLIP New boundary', () => {
     await t.bus.submit('');
     expect(t.log).toContain('Outside mode - Objects outside boundary will be hidden.');
     expect(t.bus.promptText).toBe(
-      'Specify clipping boundary [Select polyline/Polygonal/Rectangular] <Rectangular>:',
+      'Specify clipping boundary or select invert option [Select polyline/Polygonal/Rectangular/Invert clip] <Rectangular>:',
     );
     await t.bus.submit('');
     expect(t.bus.promptText).toBe('Specify first corner:');
@@ -260,6 +261,151 @@ describe('XCLIP New boundary', () => {
       [200, 102],
       [198, 100],
     ]);
+  });
+});
+
+describe('XCLIP Invert clip (M5-04 part 11)', () => {
+  /** Inside a closed polygon (nonzero winding, as the renderer clips). */
+  const inside = (poly: readonly Vec2[], p: Vec2): boolean => {
+    let winding = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i]!;
+      const b = poly[(i + 1) % poly.length]!;
+      const side = (b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y);
+      if (a.y <= p.y) {
+        if (b.y > p.y && side > 0) winding++;
+      } else if (b.y <= p.y && side < 0) winding--;
+    }
+    return winding !== 0;
+  };
+
+  it('switches to Inside mode and back, then hides what lies inside the boundary', async () => {
+    const t = drawing();
+    await t.xclip(R41);
+    await t.bus.submit('N');
+    expect(t.bus.promptText).toBe(
+      'Specify clipping boundary or select invert option [Select polyline/Polygonal/Rectangular/Invert clip] <Rectangular>:',
+    );
+    await t.bus.submit('I');
+    expect(t.log.at(-1)).toBe('Inside mode - Objects inside boundary will be hidden.');
+    await t.bus.submit('I');
+    expect(t.log.at(-1)).toBe('Outside mode - Objects outside boundary will be hidden.');
+    await t.bus.submit('I');
+    expect(t.log.at(-1)).toBe('Inside mode - Objects inside boundary will be hidden.');
+    expect(t.bus.promptText).toBe(
+      'Specify clipping boundary or select invert option [Select polyline/Polygonal/Rectangular/Invert clip] <Rectangular>:',
+    );
+    await t.bus.script(['R', '200.5,99.7', '201,100.2']);
+    expect(t.bus.command).toBeUndefined();
+
+    const f = t.clipOf('41')!;
+    // The rectangle drawn, kept as its two corners for ACAD_INVERTEDCLIP_ROUNDTRIP.
+    expect(f.inverted).toEqual([
+      { x: 200.5, y: 99.7 },
+      { x: 201, y: 100.2 },
+    ]);
+    // The boundary is what shows for a reader without inverted clips, as AutoCAD stores it: the
+    // block's extents (200–201.5 × 99.5–100.5 with the boundary) grown by a twentieth on each
+    // side, the rectangle cut out through a slit from its lowest vertex to the bottom.
+    expect(f.boundary.map((p) => [r6(p.x), r6(p.y)])).toEqual([
+      [201, 99.45],
+      [201.575, 99.45],
+      [201.575, 100.55],
+      [199.925, 100.55],
+      [199.925, 99.45],
+      [201, 99.45],
+      [201, 99.7],
+      [200.5, 99.7],
+      [200.5, 100.2],
+      [201, 100.2],
+      [201, 99.7],
+    ]);
+    // In the block: the line runs 0–1 along y 0, the boundary covers 0.5–1 × −0.3–0.2.
+    const region = clipBoundary(f)!;
+    expect(inside(region, { x: 0.75, y: 0 })).toBe(false);
+    expect(inside(region, { x: 0.25, y: 0 })).toBe(true);
+    expect(inside(region, { x: 1.4, y: 0 })).toBe(true);
+    expect(clipFrame(f)!.map((p) => [r6(p.x), r6(p.y)])).toEqual([
+      [0.5, -0.3],
+      [1, -0.3],
+      [1, 0.2],
+      [0.5, 0.2],
+    ]);
+  });
+
+  it('inverts a polygon and a selected polyline too, and is one undo step', async () => {
+    const t = drawing([
+      {
+        kind: 'LWPOLYLINE',
+        closed: true,
+        vertices: [
+          { x: 100.5, y: 101 },
+          { x: 99, y: 102 },
+          { x: 99.5, y: 101 },
+        ].map((v) => ({ ...v, bulge: 0 })),
+      },
+    ]);
+    await t.xclip(R41);
+    await t.bus.script(['', 'I', 'P', '200.2,99.8', '201.2,99.8', '200.7,100.3', '']);
+    expect(t.clipOf('41')!.inverted).toEqual([
+      { x: 200.2, y: 99.8 },
+      { x: 201.2, y: 99.8 },
+      { x: 200.7, y: 100.3 },
+    ]);
+    expect(t.clipOf('41')!.boundary).toHaveLength(10);
+    await t.bus.script(['U']);
+    expect(t.clipOf('41')).toBeUndefined();
+    expect(t.ref41().extDict).toBeUndefined();
+
+    await t.xclip(R40);
+    await t.bus.script(['', 'I', 'S']);
+    await t.bus.pick({ x: 99.5, y: 101 });
+    const f = t.clipOf('40')!;
+    expect(f.inverted).toHaveLength(3);
+    expect(f.inverted![0]).toEqual({ x: 100.5, y: 101 });
+  });
+
+  it('replaces an inverted clip with an ordinary one, which keeps no inner boundary', async () => {
+    const t = drawing();
+    await t.xclip(R41);
+    await t.bus.script(['', 'I', '', '200.5,99.7', '201,100.2']);
+    const owner = t.clipOf('41')!.owner;
+    await t.xclip(R41);
+    await t.bus.script(['', 'Y', '', '199,99', '201,101']);
+    const f = t.clipOf('41')!;
+    expect(f.inverted).toBeUndefined();
+    expect(f.owner).toBe(owner);
+    expect(f.boundary).toEqual([
+      { x: 199, y: 99 },
+      { x: 201, y: 101 },
+    ]);
+  });
+
+  it('generates a polyline along the inner boundary, where the reference stands now', async () => {
+    const t = drawing();
+    await t.xclip(R41);
+    await t.bus.script(['', 'I', '', '200.5,99.7', '201,100.2']);
+    await t.bus.script(['MOVE', 'L', '', '0,0', '0,10']);
+    const before = t.space().length;
+    await t.xclip({ x: 200, y: 110 });
+    await t.bus.submit('P');
+    expect(t.space()).toHaveLength(before + 1);
+    const g = t.space().at(-1)!.geom as unknown as { vertices: { x: number; y: number }[] };
+    expect(g.vertices.map((v) => [r6(v.x), r6(v.y)])).toEqual([
+      [200.5, 109.7],
+      [201, 109.7],
+      [201, 110.2],
+      [200.5, 110.2],
+    ]);
+  });
+
+  it('turns an inverted clip off and on, keeping its inner boundary', async () => {
+    const t = drawing();
+    await t.xclip(R41);
+    await t.bus.script(['', 'I', '', '200.5,99.7', '201,100.2']);
+    await t.xclip(R41);
+    await t.bus.submit('OFF');
+    expect(t.clipOf('41')).toMatchObject({ enabled: false, inverted: [{ x: 200.5 }, { x: 201 }] });
   });
 });
 

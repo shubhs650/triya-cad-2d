@@ -3,15 +3,24 @@
 // 71 `displayBoundary`; it is the clipping on/off flag (XCLIP ON/OFF, ezdxf's
 // `is_clipping_enabled`), while the frame's display is the drawing's XCLIPFRAME. A filter
 // reached by another path (none in the corpus) stays unmapped, kept by passthrough.
+//
+// An inverted clip (AutoCAD 2015 and later, M5-04 part 11) keeps its inner boundary in the
+// filter's extension dictionary: the ACAD_XREC_ROUNDTRIP XRECORD's section 102
+// "ACAD_INVERTEDCLIP_ROUNDTRIP" lists it as 10s (two for a rectangle), and the section
+// "ACAD_INVERTEDCLIP_ROUNDTRIP_COMPARE" the boundary it was written with (ezdxf's xclip.dxf). A
+// record whose compare boundary no longer matches the filter's was left stale by a program that
+// knows no inverted clip and changed the boundary, so it is not read (the drafter expectation;
+// AutoCAD does not document the record).
 
 import {
   CadDictionary,
   Insert,
   SpatialFilter as AcadSpatialFilter,
+  XRecord,
   type CadDocument,
   type Matrix4,
 } from '@node-projects/acad-ts';
-import type { Matrix3x4, SpatialFilter } from '@triya/engine';
+import type { Matrix3x4, SpatialFilter, Vec2 } from '@triya/engine';
 import { common, hex, vec3 } from './common';
 
 /** The 3×4 a SPATIAL_FILTER stores (rows x, y, z of acad-ts's Matrix4), row-major. */
@@ -30,6 +39,49 @@ const rows = (m: Matrix4): Matrix3x4 => [
   m.m23,
 ];
 
+export const ACAD_XREC_ROUNDTRIP = 'ACAD_XREC_ROUNDTRIP';
+export const INVERTED_CLIP = 'ACAD_INVERTEDCLIP_ROUNDTRIP';
+export const INVERTED_CLIP_COMPARE = 'ACAD_INVERTEDCLIP_ROUNDTRIP_COMPARE';
+
+/** The 10s of each 102 section of a roundtrip XRECORD, by section name. */
+function sections(record: XRecord): Map<string, Vec2[]> {
+  const out = new Map<string, Vec2[]>();
+  let current: Vec2[] | undefined;
+  for (const e of record.entries) {
+    if (e.code === 102 && typeof e.value === 'string') {
+      current = [];
+      out.set(e.value.toUpperCase(), current);
+    } else if (e.code === 10 && current) {
+      const v = e.value as { x?: unknown; y?: unknown } | null;
+      if (typeof v?.x === 'number' && typeof v.y === 'number') current.push({ x: v.x, y: v.y });
+    }
+  }
+  return out;
+}
+
+/** An inverted clip's inner boundary, from the filter's ACAD_XREC_ROUNDTRIP record. */
+function invertedOf(o: AcadSpatialFilter): Vec2[] | undefined {
+  const own = o.xDictionary;
+  if (!own) return undefined;
+  const key = own.entryNames.find((k) => k.toUpperCase() === ACAD_XREC_ROUNDTRIP);
+  const record = key === undefined ? undefined : own.getEntry(key);
+  if (!(record instanceof XRecord)) return undefined;
+  const found = sections(record);
+  const inner = found.get(INVERTED_CLIP);
+  if (!inner || inner.length < 2) return undefined;
+  const compare = found.get(INVERTED_CLIP_COMPARE);
+  if (compare) {
+    const boundary = o.boundaryPoints;
+    const close = (a: number, b: number) =>
+      Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+    const same =
+      compare.length === boundary.length &&
+      compare.every((p, i) => close(p.x, boundary[i]!.x) && close(p.y, boundary[i]!.y));
+    if (!same) return undefined;
+  }
+  return inner;
+}
+
 /** The drawing's XCLIP filters, by handle. */
 export function mapSpatialFilters(doc: CadDocument): SpatialFilter[] {
   const out: SpatialFilter[] = [];
@@ -41,12 +93,14 @@ export function mapSpatialFilters(doc: CadDocument): SpatialFilter[] {
     const insert = xdict instanceof CadDictionary ? xdict.owner : undefined;
     if (!(dict instanceof CadDictionary) || !(insert instanceof Insert)) continue;
     if (insert.xDictionary !== xdict) continue;
+    const inverted = invertedOf(o);
     out.push({
       ...common(o),
       type: 'SPATIAL_FILTER',
       owner: hex(dict.handle),
       insert: hex(insert.handle),
       boundary: o.boundaryPoints.map((p) => ({ x: p.x, y: p.y })),
+      ...(inverted ? { inverted } : {}),
       normal: vec3(o.normal),
       origin: vec3(o.origin),
       enabled: o.displayBoundary,
