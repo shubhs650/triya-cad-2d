@@ -21,6 +21,7 @@ import { documentInit, exportDocument, readCadDocument } from '@triya/io';
 import { CadDictionary, XRecord } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
 import { withPinnedClock } from '../roundtrip/clock.ts';
+import { writeAuditSave } from '../dxf-audit/saves.ts';
 
 const file = fileURLToPath(
   new URL('../../../../corpus/public/self-authored/dgn-linestyles.dxf', import.meta.url),
@@ -37,6 +38,7 @@ const block = (m: DocumentModel, name: string) =>
   [...m.tables.blockRecords.values()].find((b) => b.name === name)?.handle;
 const save = (m: DocumentModel) =>
   withPinnedClock(() => exportDocument(readCadDocument(bytes), m, { format: 'dxf' }));
+const AUDIT_PATH = 'self-authored/dgn-linestyles.dxf';
 const OLD = ['DGN_OLD_COMPOUND', 'DGN_OLD_INTERNAL', 'DGN_OLD_STROKE', 'DGN_OLD_SYMBOL'];
 
 /** Purges the orphaned data of `m`. */
@@ -73,7 +75,9 @@ describe('Orphaned data (DGN linestyle data no linetype uses)', () => {
     const ring = block(m, '*U2')!;
     purgeOrphaned(m);
     expect(m.tables.blockRecords.has(ring)).toBe(false);
-    const back = open(save(m));
+    const written = save(m);
+    writeAuditSave(AUDIT_PATH, 'orphaned-data', () => written);
+    const back = open(written);
     expect(names(components(back))).toEqual(names(components(m)));
     expect(names(orphanedData(back))).toEqual([]);
     expect(block(back, '*U2')).toBeUndefined();
@@ -124,6 +128,7 @@ describe('Orphaned data (DGN linestyle data no linetype uses)', () => {
     purgeOrphaned(m);
     expect(components(m)).toEqual([]);
     const written = save(m);
+    writeAuditSave(AUDIT_PATH, 'orphaned-data-all', () => written);
     expect(components(open(written))).toEqual([]);
     const doc = readCadDocument(written);
     expect(doc.rootDictionary!.entryNames).not.toContain('ACAD_DGNLINESTYLECOMP');
