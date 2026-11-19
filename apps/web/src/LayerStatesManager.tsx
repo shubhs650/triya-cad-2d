@@ -37,6 +37,7 @@ import type { OpenDocument } from './documents';
 import { drafting } from './drafting';
 import { EditLayerState } from './EditLayerState';
 import { engines } from './engine/registry';
+import { alertLayers, layerNotices } from './layer-notice';
 import {
   RESTORE_PROPERTIES,
   allRestoreProperties,
@@ -177,6 +178,11 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
     if (!selected) return;
     if (await run({ kind: 'layer-state-restore', state: selected.handle, turnOffMissing })) {
       layerStatesManager.close();
+      // A layer state restored alerts for unreconciled new layers (LAYERNOTIFY 8, M5-19 part 4).
+      layerNotices.raise(
+        doc.id,
+        alertLayers(doc.opened.init, engines.changesOf(doc.id), 'layer-state'),
+      );
     }
   };
 

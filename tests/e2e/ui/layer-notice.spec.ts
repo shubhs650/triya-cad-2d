@@ -3,7 +3,7 @@
 // block's file found brings TB-FRAME and TB-LOGO as new: the status bar shows the Unreconciled New
 // Layers icon and its balloon, whose View Unreconciled New Layers opens the Layer Properties
 // Manager on the Unreconciled New Layers node. With LAYERNOTIFY 1 PLOT asks first: No plots, Yes
-// shows the layers instead. Reconciled, the icon goes.
+// shows the layers instead; with 8 a layer state restored alerts. Reconciled, the icon goes.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { enterCommand, expectShown, openWithDrop, openWithPicker } from '../app/page';
@@ -96,6 +96,24 @@ test('alerts for unreconciled new layers: balloon, View, PLOT question (M5-19 pa
   await expect(prompt).toHaveText('Command:');
   await expect(plotDialog).toHaveCount(0);
   await expect(node(page, 'Unreconciled New Layers')).toHaveAttribute('aria-selected', 'true');
+
+  // A layer state restored in the Layer States Manager alerts (LAYERNOTIFY 8).
+  await setvar('LAYERNOTIFY', '8');
+  await expect(balloon).toHaveCount(0);
+  const manager = page.getByRole('dialog', { name: 'Layer States Manager' });
+  await enterCommand(page, 'LAS');
+  await expect(manager).toBeVisible();
+  await manager.getByRole('button', { name: 'New...' }).click();
+  const create = page.getByRole('dialog', { name: 'New Layer State to Save' });
+  await create.getByLabel('New layer state name:').fill('Mine');
+  await create.getByRole('button', { name: 'OK' }).click();
+  await expect(create).toBeHidden();
+  await manager.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect(manager).toBeHidden();
+  await expect(balloon).toBeVisible();
+  await balloon.getByRole('button', { name: 'Close' }).click();
+  await expect(balloon).toHaveCount(0);
+  await expect(icon).toBeVisible();
 
   // Reconciled, the alert is over.
   await enterCommand(page, '-LAYER');
