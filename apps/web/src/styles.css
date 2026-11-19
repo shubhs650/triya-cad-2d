@@ -1010,6 +1010,36 @@ button {
   width: 100%;
 }
 
+.layer-filter-submenu-host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.layer-filter-submenu-host[data-separator='before'] {
+  margin-top: 4px;
+  border-top: 1px solid var(--chrome-border);
+  padding-top: 2px;
+}
+
+.layer-filter-submenu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.layer-filter-submenu-item[aria-expanded='true'] {
+  background: var(--chrome-hover, rgb(0 0 0 / 6%));
+}
+
+/* Inside its item rather than at the pointer as a top-level .snap-menu (fixed) is. */
+.snap-menu.layer-filter-submenu {
+  position: absolute;
+  top: -4px;
+  left: 100%;
+  min-width: 160px;
+}
+
 .layer-filter-invert {
   display: flex;
   align-items: center;

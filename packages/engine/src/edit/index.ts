@@ -97,6 +97,7 @@ export * from './assoc-array';
 export * from './dimension-records';
 export * from './leader-breaks';
 export * from './center-marks';
+export * from './layer-filter-menu';
 export * from './layer-filters';
 export * from './layer-states';
 export * from './linetypes';

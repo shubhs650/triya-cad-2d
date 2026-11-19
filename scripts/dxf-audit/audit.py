@@ -69,6 +69,9 @@ FIXTURE_SAVES = (
     # (M5-07 part 4, packages/testkit/src/export/layer-filters.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layerfilters"),
     ("third-party/ezdxf/examples_dxf/colors.dxf", "layerfilters"),
+    # The filter menu's Convert to Group Filter and Isolate Group in a layout's viewports (M5-07
+    # part 6, same test file).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layerfilters-menu"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
     # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,

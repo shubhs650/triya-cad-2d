@@ -1,15 +1,19 @@
 // M5-07 part 5: the Layer Properties Manager's filter tree, read from the drawing as opened plus
 // the changes applied since; the layers each node lists (All, All Used Layers, a filter, Invert
 // filter); new filters' names; and the Layer Filter Properties dialog's definition grid, written
-// to and read from a filter expression.
+// to and read from a filter expression. M5-07 part 6: the filter menu's items, which are greyed
+// on which node, and the engine edit each sends.
 import type { ChangeSet, DocumentInit, LayerFilter, LayerRecord } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_DEFINITION,
   definitionExpression,
+  FILTER_MENU,
   definitionRows,
   drawingLayerFilters,
   filterCountLine,
+  filterMenuEdit,
+  filterMenuEnabled,
   layerFilterSource,
   layerFilterTree,
   listedLayers,
@@ -202,5 +206,83 @@ describe('the Layer Filter Properties definition', () => {
     expect(definitionRows('FOO=="1"')).toBeUndefined();
     expect(definitionRows('ON=="maybe"')).toBeUndefined();
     expect(definitionRows('NAME==')).toBeUndefined();
+  });
+});
+
+describe('the filter menu (M5-07 part 6)', () => {
+  const property = filter('70', 'Doors', { expression: 'NAME=="D*"' });
+  const group = filter('71', 'G', { filterType: 'group', expression: '', layers: ['10'] });
+  const nested = filter('72', 'Red', { expression: 'COLOR=="1"', parent: '70' });
+
+  it('lists AutoCAD’s items: the submenus first, then the filters', () => {
+    expect(FILTER_MENU.map((e) => e.label)).toEqual([
+      'Visibility',
+      'Lock',
+      'Viewport',
+      'Isolate Group',
+      'New Properties Filter...',
+      'New Group Filter',
+      'Convert to Group Filter',
+      'Rename',
+      'Delete',
+      'Properties...',
+    ]);
+    const sub = (label: string) =>
+      FILTER_MENU.find((e) => e.label === label)!.items!.map((i) => i.label);
+    expect(sub('Visibility')).toEqual(['On', 'Off', 'Thawed', 'Frozen']);
+    expect(sub('Lock')).toEqual(['Lock', 'Unlock']);
+    expect(sub('Viewport')).toEqual(['Freeze', 'Thaw']);
+    expect(sub('Isolate Group')).toEqual(['All Viewports', 'Active Viewport Only']);
+  });
+
+  it('greys what the node or the space shown cannot take', () => {
+    const on = (a: Parameters<typeof filterMenuEnabled>[0], ctx = {}) => filterMenuEnabled(a, ctx);
+    for (const a of ['on', 'off', 'thawed', 'frozen', 'lock', 'unlock', 'isolateAll'] as const)
+      expect(on(a), a).toBe(true);
+    // No layout viewport can be made current yet (MSPACE, M6-02).
+    expect(on('vpFreeze', { space: '58' })).toBe(false);
+    expect(on('vpThaw')).toBe(false);
+    expect(on('isolateActive')).toBe(true);
+    expect(on('isolateActive', { space: '58' })).toBe(false);
+    expect(on('convert')).toBe(false);
+    expect(on('convert', { filter: group })).toBe(false);
+    expect(on('convert', { filter: property })).toBe(true);
+    // A group filter cannot be nested in a property filter.
+    expect(on('convert', { filter: nested, parent: property })).toBe(false);
+    expect(on('newGroup', { filter: property })).toBe(false);
+    expect(on('rename')).toBe(false);
+    expect(on('properties', { filter: property })).toBe(true);
+  });
+
+  it('sends the engine edit of each item that acts on the layers or converts', () => {
+    expect(filterMenuEdit('frozen', 'all', {})).toEqual({
+      kind: 'layer-filter-set',
+      node: 'all',
+      set: 'frozen',
+    });
+    expect(filterMenuEdit('unlock', '71', { filter: group })).toEqual({
+      kind: 'layer-filter-set',
+      node: '71',
+      set: 'unlock',
+    });
+    expect(filterMenuEdit('isolateAll', 'used', {})).toEqual({
+      kind: 'layer-filter-isolate',
+      node: 'used',
+    });
+    expect(filterMenuEdit('isolateAll', '70', { filter: property, space: '58' })).toEqual({
+      kind: 'layer-filter-isolate',
+      node: '70',
+      space: '58',
+    });
+    expect(filterMenuEdit('isolateActive', '70', { filter: property })).toEqual({
+      kind: 'layer-filter-isolate',
+      node: '70',
+    });
+    expect(filterMenuEdit('convert', '70', { filter: property })).toEqual({
+      kind: 'layer-filter-convert',
+      filter: '70',
+    });
+    expect(filterMenuEdit('rename', '70', { filter: property })).toBeUndefined();
+    expect(filterMenuEdit('vpFreeze', '70', { filter: property, space: '58' })).toBeUndefined();
   });
 });

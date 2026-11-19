@@ -7,17 +7,20 @@
 // property filter nested in it are added, the drawing saved as AC1032 DXF (DEC-047) and read back.
 // The filters read back as saved, in the drawing's ACLYDICTIONARY or one the save makes. On the
 // sample, the filters are then renamed, redefined, emptied of a deleted layer and deleted through
-// the same round trip.
+// the same round trip, and the filter menu's Convert to Group Filter (the record keeps its handle
+// and key, now an AcLyLayerGroup) and Isolate Group in a layout (the viewport's 341s) (part 6).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { CadDictionary } from '@node-projects/acad-ts';
 import { CadObject, XRecord, type CadDocument } from '@node-projects/acad-ts';
 import {
   DocumentModel,
+  convertLayerFilterChange,
   deleteLayerFilterChange,
   deleteLayersChange,
   editLayerFilterChange,
   filteredLayers,
+  isolateFilterChange,
   layerFilterNamed,
   layerFilters,
   newLayerChange,
@@ -76,6 +79,13 @@ function rawFilters(dict: CadDictionary | undefined): Map<string, string[]> {
 
 const topDictionary = (doc: CadDocument) =>
   doc.layers?.xDictionary?.getEntry(ACLYDICTIONARY) as CadDictionary | undefined;
+
+/** The layers frozen in viewport `handle` (DXF 341). */
+function viewportFrozen(model: DocumentModel, handle: string): readonly string[] {
+  const g = model.entityByHandle(handle)?.geom;
+  if (g?.kind !== 'VIEWPORT') throw new Error(`${handle} is not a viewport`);
+  return g.frozenLayers;
+}
 
 function reopen(bytes: Uint8Array, model: DocumentModel) {
   const saved = saveAc1032Dxf(readCadDocument(bytes), model);
@@ -179,6 +189,42 @@ describe('sample_AC1032_ascii.dxf', () => {
     );
     const last = reopen(back.saved, back.model);
     expect(layerFilters(last.model).map((f) => f.name)).toEqual(['Red']);
+  });
+});
+
+describe('the filter menu’s edits on sample_AC1032_ascii.dxf (M5-07 part 6)', () => {
+  it('saves Convert to Group Filter in the same record and Isolate Group in the viewports', () => {
+    const bytes = new Uint8Array(readFileSync(SAMPLE));
+    const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
+    addFilters(model);
+    const first = reopen(bytes, model);
+    const m = first.model;
+    const walls = layerFilterNamed(m, 'Walls')!;
+    const listed = filteredLayers(m, walls.handle).map((l) => l.handle);
+    apply(m, convertLayerFilterChange(m, walls.handle));
+    // Isolate Group in Layout1 (block 58): the layers not in Pair frozen in its viewport 245.
+    const pair = layerFilterNamed(m, 'Pair')!;
+    apply(m, isolateFilterChange(m, pair.handle, '58'));
+    const frozen = viewportFrozen(m, '245');
+    expect(frozen.length).toBe(m.tables.layers.size - pair.layers.length);
+    const back = reopen(first.saved, m);
+    writeAuditSave(SAMPLE_PATH, 'layerfilters-menu', () => back.saved);
+    expect(shown(back.model)).toEqual(shown(m));
+    expect(layerFilterNamed(back.model, 'Walls')).toMatchObject({
+      handle: walls.handle,
+      filterType: 'group',
+      expression: '',
+      layers: listed,
+    });
+    const raw = rawFilters(topDictionary(back.doc));
+    expect(raw.get('*A1')).toEqual([
+      '1=AcLyLayerGroup',
+      '90=1',
+      '300=Walls',
+      ...listed.map((h) => `330=${h.toLowerCase()}`),
+    ]);
+    expect(viewportFrozen(back.model, '245')).toEqual(frozen);
+    expect(viewportFrozen(back.model, '240')).toEqual([]);
   });
 });
 
