@@ -17,7 +17,9 @@ import {
   annotationScaleValue,
   calendarDate,
   dictionaryTwin,
+  FRAME_MEMBERS,
   formatValue,
+  frameValue,
   headerEntry,
   headerValue,
   julianDate,
@@ -48,6 +50,8 @@ async function read(
       return { value: wipeoutFrame(ctx.model) };
     case 'raster':
       return { value: imageFrame(ctx.model) };
+    case 'frame':
+      return { value: frameValue((await frameMembers(ctx)).map((m) => m.value)) };
     case 'app': {
       const r = await ctx.view.request({ op: 'sysvar', name: v.name });
       if (!r.ok) return { problem: r.message };
@@ -61,6 +65,25 @@ async function read(
       return { value: vportValue(vport, v.name) };
     }
   }
+}
+
+/**
+ * FRAME's members the drawing states, with their values: those holding 0, 1 or 2 (a file without
+ * `$DWFFRAME` reads it as '', which its save keeps out).
+ */
+async function frameMembers(
+  ctx: CommandContext,
+): Promise<{ readonly v: SystemVariable; readonly value: number }[]> {
+  const out: { v: SystemVariable; value: number }[] = [];
+  for (const name of FRAME_MEMBERS) {
+    const v = systemVariable(ctx.model, name);
+    if (!v) continue;
+    const r = await read(ctx, v);
+    if ('value' in r && (r.value === 0 || r.value === 1 || r.value === 2)) {
+      out.push({ v, value: r.value });
+    }
+  }
+  return out;
 }
 
 const noVport = (v: SystemVariable) => `The drawing has no current viewport to keep ${v.name} in.`;
@@ -225,6 +248,12 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
       return;
     case 'raster':
       setImageFrame(ctx, value as ImageFrame);
+      return;
+    case 'frame':
+      // Every member that differs, in the one undo step of the command (FRAME, or SETVAR).
+      for (const m of await frameMembers(ctx)) {
+        if (m.value !== value) await write(ctx, m.v, value);
+      }
       return;
     case 'app': {
       const r = await ctx.view.request(

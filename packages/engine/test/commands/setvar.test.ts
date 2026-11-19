@@ -13,6 +13,7 @@ import {
   REVCLOUDGRIPS,
   UNKNOWN_VARIABLE,
   builtinCommands,
+  imageFrame,
   insUnitsOf,
   pasteScale,
   pdfFrame,
@@ -273,6 +274,85 @@ describe('SETVAR', () => {
     expect(s.bus.promptText).toBe(
       'Enter mode [ON/OFF/Display but not plot] <Display but not plot>:',
     );
+  });
+
+  // M5-04 part 18 (AutoCAD 2024 Help, "FRAME (System Variable)"): "Controls the display of
+  // frames for all images, underlays, clipped xrefs, and wipeouts"; 0–2 as each of them, 3 "The
+  // individual setting varies", not saved.
+  it('FRAME sets every frame variable at once and reads 3 while they differ', async () => {
+    const init = withHeader(
+      [...HEADER, ['$XCLIPFRAME', 2], ['XCLIPFRAME', '2'], ['$DWFFRAME', 2], ['$DGNFRAME', 2]],
+      { ...sampleInit(), meta: { ...sampleInit().meta, rootDictionary: 'C' } },
+    );
+    const s = setup(init);
+    // Images, PDF underlays and wipeouts at AutoCAD's initial 1, clipped xrefs and DWF and DGN
+    // underlays at 2.
+    await s.bus.script(['FRAME']);
+    expect(s.bus.promptText).toBe('Enter new value for FRAME <3>:');
+    // 3 only tells that they differ; it is no setting of its own.
+    await s.bus.script(['3']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 2.');
+    await s.bus.script(['0']);
+    expect(imageFrame(s.model)).toBe(0);
+    expect(pdfFrame(s.model.header)).toBe(0);
+    expect(wipeoutFrame(s.model)).toBe(0);
+    expect(s.model.header.get('$XCLIPFRAME')).toBe(0);
+    expect(s.model.header.get('XCLIPFRAME')).toBe('0');
+    expect(s.model.header.get('$DWFFRAME')).toBe(0);
+    expect(s.model.header.get('$DGNFRAME')).toBe(0);
+    await s.bus.script(['FRAME']);
+    expect(s.bus.promptText).toBe('Enter new value for FRAME <0>:');
+    await s.bus.script(['']);
+    // One undo step puts every one back.
+    expect(s.bus.undo.state.nextUndo).toBe('FRAME');
+    await s.bus.script(['U']);
+    expect(imageFrame(s.model)).toBe(1);
+    expect(pdfFrame(s.model.header)).toBe(1);
+    expect(wipeoutFrame(s.model)).toBe(1);
+    expect(s.model.header.get('$XCLIPFRAME')).toBe(2);
+    expect(s.model.header.get('$DWFFRAME')).toBe(2);
+    // One of them set on its own: FRAME tells the value they share, or 3.
+    await s.bus.script(['SETVAR', 'FRAME', '2']);
+    await s.bus.script(['FRAME']);
+    expect(s.bus.promptText).toBe('Enter new value for FRAME <2>:');
+    await s.bus.script(['', 'IMAGEFRAME', '1', 'FRAME']);
+    expect(s.bus.promptText).toBe('Enter new value for FRAME <3>:');
+    await s.bus.script(['']);
+    // SETVAR ? lists it with the others.
+    const before = s.log.length;
+    await s.bus.script(['SETVAR', '?', '*FRAME']);
+    expect(s.log.slice(before).filter((l) => /^\w*FRAME /.test(l))).toEqual([
+      'DGNFRAME          2',
+      'DWFFRAME          2',
+      'FRAME             3',
+      'IMAGEFRAME        1',
+      'PDFFRAME          2',
+      'WIPEOUTFRAME      2',
+      'XCLIPFRAME        2',
+    ]);
+  });
+
+  it('FRAME leaves out the frame variables a drawing does not state', async () => {
+    // A file without $DWFFRAME reads it as ''; a save keeps it out (acad-ts's header writer).
+    const s = setup(withHeader([...HEADER, ['$DWFFRAME', ''], ['$XCLIPFRAME', 1]]));
+    await s.bus.script(['FRAME']);
+    expect(s.bus.promptText).toBe('Enter new value for FRAME <1>:');
+    // Already 1 everywhere: no edit, no undo step.
+    await s.bus.script(['1']);
+    expect(s.bus.undo.state.undoable).toBe(0);
+    await s.bus.script(['FRAME', '2']);
+    expect(s.model.header.get('$DWFFRAME')).toBe('');
+    expect(s.model.header.has('$DGNFRAME')).toBe(false);
+    expect(s.model.header.get('$XCLIPFRAME')).toBe(2);
+    expect(pdfFrame(s.model.header)).toBe(2);
+    // No named object dictionary to keep IMAGEFRAME and WIPEOUTFRAME in: they stay, as SETVAR
+    // of each says.
+    expect(s.log.slice(-2)).toEqual([
+      'The drawing has no named object dictionary to keep IMAGEFRAME in.',
+      'The drawing has no named object dictionary to keep WIPEOUTFRAME in.',
+    ]);
+    await s.bus.script(['FRAME']);
+    expect(s.bus.promptText).toBe('Enter new value for FRAME <3>:');
   });
 
   it('asks the app for the variables it keeps', async () => {

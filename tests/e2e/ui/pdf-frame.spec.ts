@@ -3,6 +3,7 @@
 // left edge is outlined at PDFFRAME's initial 1; 0 hides the outline, which comes back as the
 // selection's while the underlay is selected; 2 shows it again. Plots are unit-tested (render
 // plot/job.test.ts, pdf import.test.ts and svg.test.ts), the variable in engine setvar.test.ts.
+// M5-04 part 18: FRAME, which sets PDFFRAME with the other frame variables, does the same.
 // SHOTS=<dir> saves the PR's screenshots.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
@@ -44,10 +45,8 @@ type Rgb = readonly number[];
 const isCanvas = ([r, g, b]: Rgb) =>
   Math.abs(r! - 0x21) + Math.abs(g! - 0x28) + Math.abs(b! - 0x30) < 24;
 
-test('PDFFRAME 0 hides the underlay frame but for the selection, 2 shows it again', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
+/** The PDF underlay test drawing, its PDF dropped, zoomed to page 1; the frame's probe. */
+async function openUnderlay(page: Page) {
   await page.goto(app.url);
   await openWithPicker(page, DXF);
   await expectShown(page, 'pdf-underlay.dxf');
@@ -70,7 +69,14 @@ test('PDFFRAME 0 hides the underlay frame but for the selection, 2 shows it agai
   };
   const poll = (shown: boolean) =>
     expect.poll(framed, { timeout: 30_000, intervals: [250] }).toBe(shown);
+  return { v, edge, poll };
+}
 
+test('PDFFRAME 0 hides the underlay frame but for the selection, 2 shows it again', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { v, edge, poll } = await openUnderlay(page);
   await poll(true);
   // Under the resting cursor, the preview shows the frame at PDFFRAME 0 as the selection does.
   const inside = v.at(4, 5);
@@ -102,4 +108,30 @@ test('PDFFRAME 0 hides the underlay frame but for the selection, 2 shows it agai
   await type(page, 'PDFFRAME', 'Enter new value for PDFFRAME <0>:');
   await type(page, '2', 'Command:');
   await poll(true);
+});
+
+test('FRAME sets PDFFRAME with the other frame variables and reads 3 while they differ', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { poll } = await openUnderlay(page);
+  await poll(true);
+  await type(page, 'FRAME', /^Enter new value for FRAME <[0-3]>:$/);
+  await type(page, '0', 'Command:');
+  await poll(false);
+  await shot(page, '4-frame-0');
+  await type(page, 'FRAME', 'Enter new value for FRAME <0>:');
+  await type(page, '1', 'Command:');
+  await poll(true);
+  await shot(page, '5-frame-1');
+  // PDFFRAME alone set: the frame variables differ.
+  await type(page, 'PDFFRAME', 'Enter new value for PDFFRAME <1>:');
+  await type(page, '2', 'Command:');
+  await type(page, 'FRAME', 'Enter new value for FRAME <3>:');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  // One undo step takes FRAME 1 back with PDFFRAME's own first.
+  await type(page, 'U', 'Command:');
+  await type(page, 'U', 'Command:');
+  await poll(false);
 });

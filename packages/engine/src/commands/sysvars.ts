@@ -8,6 +8,7 @@
 //   drawing as AutoCAD saves it;
 // - an object: WIPEOUTFRAME, kept in the drawing's WIPEOUTVARIABLES (`wipeout.ts`), and
 //   IMAGEFRAME, in its RASTERVARIABLES (`image.ts`, M5-04 part 4);
+// - nowhere: FRAME (M5-04 part 18) is what the frame variables it sets hold (`FRAME_MEMBERS`);
 // - the app (`APP_VARIABLES`): the drafting aids of the status bar (ORTHOMODE, OSMODE, …) and
 //   the per-user settings AutoCAD keeps in the registry (APERTURE, REVCLOUDGRIPS, …). The
 //   command asks the app for them through the view host (`sysvar` requests): commands never
@@ -80,7 +81,7 @@ export type NameTable =
 export interface SystemVariable {
   /** AutoCAD's name, upper case, without the header's `$`. */
   readonly name: string;
-  readonly store: 'header' | 'wipeout' | 'raster' | 'app' | 'computed' | 'vport';
+  readonly store: 'header' | 'wipeout' | 'raster' | 'frame' | 'app' | 'computed' | 'vport';
   /** The header entry (`$LTSCALE`, `CETRANSPARENCY`) of a header variable. */
   readonly key?: string;
   readonly kind: VariableKind;
@@ -398,6 +399,39 @@ const IMAGEFRAME: SystemVariable = {
 };
 
 /**
+ * FRAME (AutoCAD 2024 Help, "FRAME (System Variable)"): "Controls the display of frames for all
+ * images, underlays, clipped xrefs, and wipeouts", 0–2 as each of them; it reads 3, "The
+ * individual setting varies", while they differ, and is not saved. The help does not say whether
+ * 3 may be set; it would change nothing, so Triya refuses it as it refuses 4.
+ */
+const FRAME: SystemVariable = {
+  name: 'FRAME',
+  store: 'frame',
+  kind: 'integer',
+  min: 0,
+  max: 2,
+};
+
+/**
+ * The variables FRAME sets, as its help lists them: images, the DWF, PDF and DGN underlays,
+ * clipped xrefs and wipeouts. One the drawing does not state (no `$DWFFRAME` in its header) is
+ * left out of both what FRAME reads and what it sets.
+ */
+export const FRAME_MEMBERS: readonly string[] = [
+  'IMAGEFRAME',
+  'DWFFRAME',
+  PDFFRAME,
+  'DGNFRAME',
+  'XCLIPFRAME',
+  'WIPEOUTFRAME',
+];
+
+/** FRAME's value from its members' (0–2 each): the one they share, else 3. */
+export function frameValue(members: readonly number[]): number {
+  return members.length > 0 && members.every((v) => v === members[0]) ? members[0]! : 3;
+}
+
+/**
  * The header variables DXF writes with an integer group code (62, 70, 280, 370, 380), as
  * acad-ts's header map has them; io's `sysvar-kinds.test.ts` keeps this list true. A number
  * the header holds for any other variable is a real.
@@ -666,7 +700,7 @@ function headerKey(model: VariableSource, name: string): string | undefined {
 
 /**
  * The system variable `name` names (any case), or undefined when Triya keeps none of that name:
- * the app's first, then WIPEOUTFRAME and IMAGEFRAME, then the drawing's header.
+ * the app's first, then WIPEOUTFRAME, IMAGEFRAME and FRAME, then the drawing's header.
  */
 export function systemVariable(model: VariableSource, name: string): SystemVariable | undefined {
   const n = name.trim().toUpperCase();
@@ -675,6 +709,7 @@ export function systemVariable(model: VariableSource, name: string): SystemVaria
   if (app) return app;
   if (n === WIPEOUTFRAME.name) return WIPEOUTFRAME;
   if (n === IMAGEFRAME.name) return IMAGEFRAME;
+  if (n === FRAME.name) return FRAME;
   const vport = VPORT_VARIABLES.find((v) => v.name === n);
   if (vport) return vport;
   const known = COMPUTED_VARIABLES.find((v) => v.name === n);
@@ -699,6 +734,7 @@ export function systemVariables(model: VariableSource): SystemVariable[] {
   }
   out.set(WIPEOUTFRAME.name, WIPEOUTFRAME);
   out.set(IMAGEFRAME.name, IMAGEFRAME);
+  out.set(FRAME.name, FRAME);
   for (const name of Object.keys(DICTIONARY_INITIAL)) {
     const v = systemVariable(model, name);
     if (v) out.set(v.name, v);
