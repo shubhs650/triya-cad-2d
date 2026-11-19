@@ -31,7 +31,12 @@
 // block's do, and the `xref|symbol` records the host kept of it (VISRETAIN) go with it; an
 // xref-dependent record of an xref that stays is still refused.
 //
-// Not purged here: shapes kept as nameless STYLE records.
+// Shape files (M5-09 part 4) are nameless STYLE records, which their table keeps under keys of
+// their own (acad-ts patch 0189 removes one by it). A complex linetype refers to the one it draws
+// shapes from (DXF 340), as any reference. A SHAPE entity names its shape, and in a DXF file not
+// its shape file (DXF reference, SHAPE: group 2 is the shape name), which only the file itself
+// tells and Triya does not read (no Autodesk assets): while a SHAPE stays whose file is not
+// known, every shape file of the drawing stays.
 
 import type { CadDocument } from '@node-projects/acad-ts';
 import {
@@ -54,6 +59,7 @@ import {
   MultiLeaderStyle,
   Polyline,
   Seqend,
+  Shape,
   Table,
   TableStyle,
   TextStyle,
@@ -435,7 +441,8 @@ function recordProblem(
   if (!acad) return `the original is not a ${rules.what}`;
   if (rules.fixed.some((n) => n.toUpperCase() === b.name.toUpperCase()))
     return `${b.name} cannot be purged`;
-  if (b.name === '') return 'a nameless record (a shape file) cannot be purged';
+  if (b.name === '' && !(acad instanceof TextStyle && acad.isShapeFile))
+    return 'only a shape file’s record has no name';
   if (acad instanceof VisualStyle && acad.internalFlag)
     return 'an internal visual style (DXF 291) cannot be purged';
   if (acad.owner instanceof CadDictionaryWithDefault && acad.owner.defaultEntry === acad)
@@ -448,6 +455,18 @@ function recordProblem(
     return `the file states no handle for this ${rules.what} (acad-ts numbers it on reading, and the records after it would be renumbered)`;
   return undefined;
 }
+
+/** A SHAPE whose shape file the drawing does not say (DXF names only the shape). */
+const unknownFile = (o: CadObject): boolean =>
+  o instanceof Shape && !(o.shapeStyle instanceof TextStyle && o.shapeStyle.isShapeFile);
+
+const isShapeFile = (o: CadObject | undefined): boolean => o instanceof TextStyle && o.isShapeFile;
+
+/** What a problem calls the record: a shape file by its file, as it has no name. */
+const label = (rules: TableRules, b: { readonly name: string }, acad: Named | undefined) =>
+  b.name === '' && acad instanceof TextStyle && acad.isShapeFile
+    ? `shape file ${acad.filename}`
+    : `${rules.what} ${b.name}`;
 
 const isR12 = (doc: CadDocument): boolean => {
   const version = doc.header?.version;
@@ -520,6 +539,9 @@ export function purgePinned(doc: CadDocument, base: DocumentInit): Handle[] {
     }
     return refs.has(target);
   };
+  // A SHAPE that does not say its file may draw from any of them.
+  if ([...objects.values()].some(unknownFile))
+    for (const [acad, h] of byObject) if (isShapeFile(acad)) pinned.add(h);
   for (const o of objects.values()) {
     if (o instanceof Table) continue;
     const h = hex(o.handle);
@@ -602,7 +624,7 @@ export function planPurge(
       if (acad && table === 'blockRecords')
         out.push(...blockProblems(acad as BlockRecord, b, base, model, removedEntities));
       if (out.length > 0) {
-        problems.push(...out.map((p) => `${rules.what} ${b.name} (${b.handle}): ${p}`));
+        problems.push(...out.map((p) => `${label(rules, b, acad)} (${b.handle}): ${p}`));
         continue;
       }
       targets.push({ table, handle: b.handle, name: b.name, acad: acad!, referrers: new Map() });
@@ -678,6 +700,10 @@ export function planPurge(
   for (const o of documentObjects(doc).values()) {
     if (o instanceof Table || goes(o)) continue;
     const h = hex(o.handle);
+    if (unknownFile(o))
+      for (const t of targets)
+        if (isShapeFile(t.acad) && !t.referrers.has(h))
+          t.referrers.set(h, `${o.objectName} ${h} may draw from it (a DXF SHAPE names no file)`);
     acadReferences(o, (x) => {
       const t = typeof x === 'number' ? byHandle.get(x) : byObject.get(x);
       // The table or dictionary listing a record does not refer to it.
@@ -719,7 +745,7 @@ export function planPurge(
     }
     const shown = refs.slice(0, 3);
     if (refs.length > 3) shown.push(`and ${refs.length - 3} more refer to it`);
-    problems.push(...shown.map((p) => `${rules.what} ${t.name} (${t.handle}): ${p}`));
+    problems.push(...shown.map((p) => `${label(rules, t, t.acad)} (${t.handle}): ${p}`));
   }
   return { plan, problems };
 }
@@ -758,7 +784,8 @@ function blockProblems(
  * acad-ts's table hands whatever it still lists as referring to a removed record to the table's
  * default record, so those listings (left by referrers that have since moved on, or gone) are
  * dropped first: nothing that stays refers to the record (planPurge). A record whose name repeats
- * (a VPORT tile after the first) is keyed by its handle as well.
+ * (a VPORT tile after the first) is keyed by its handle as well, a nameless one (a shape file) by
+ * a key of its own: each goes by the key its table lists it under.
  */
 export function writePurge(plan: PurgePlan): void {
   for (const acad of plan.removed) {
@@ -773,10 +800,13 @@ export function writePurge(plan: PurgePlan): void {
     }
     const table = owner as Table<TableEntry>;
     const entry = acad as TableEntry;
-    for (const referrer of [...table.getReferences(entry.name)])
-      table.removeReference(entry.name, referrer);
-    const key =
-      table.tryGetValue(entry.name) === entry ? entry.name : `${entry.handle}:${entry.name}`;
+    // A nameless record's referrers share the key '' with every other one's (a SHAPE of another
+    // shape file): its table leaves them all alone (acad-ts patch 0189), and planPurge has
+    // checked that nothing staying refers to this one.
+    if (entry.name !== '')
+      for (const referrer of [...table.getReferences(entry.name)])
+        table.removeReference(entry.name, referrer);
+    const key = table.keyOf(entry) ?? entry.name;
     if (table.remove(key) !== entry) {
       throw new Error(`${acad.objectName} ${acad.name}: acad-ts did not remove it from its table`);
     }

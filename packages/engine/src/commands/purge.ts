@@ -16,8 +16,9 @@
 // quote AutoCAD's message).
 //
 // What the categories hold and what never goes is `edit/purge.ts`. Detail and section view
-// styles are model documentation's (PRD non-goal 1), shape files and orphaned DGN linestyle data
-// stay as read (the save keeps them; post-launch work if drafters ask): those options say so.
+// styles are model documentation's (PRD non-goal 1); orphaned DGN linestyle data stays as read
+// (M5-09's next part): that option says so. Shape files (M5-09 part 4) are named by their file,
+// "Deleting shape file "ltypeshp.shx"." (the help quotes no message for them).
 //
 // PURGE without the dash opens the Purge dialog (M5-09 part 2; AutoCAD Help, "Purge Dialog
 // Box"), `PurgeRequest`:
@@ -420,12 +421,8 @@ export function purgeCommand(): CommandDef {
         purgeUnnamed(ctx, type);
         return;
       }
-      if (type === 'shapes' || type === 'orphaned') {
-        ctx.message(
-          type === 'shapes'
-            ? 'Shape files are kept as read: Triya does not purge them.'
-            : 'Orphaned data is kept as read: Triya does not purge it.',
-        );
+      if (type === 'orphaned') {
+        ctx.message('Orphaned data is kept as read: Triya does not purge it.');
         return;
       }
       if (!isCategory(type) && type !== 'all') {

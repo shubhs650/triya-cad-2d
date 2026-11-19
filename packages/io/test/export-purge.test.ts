@@ -5,6 +5,7 @@
 // Triya does not map. Drawings are authored in memory with acad-ts and saved once, so "the
 // file" is real bytes; the corpus-wide purge is in
 // packages/testkit/src/export/export-purge.corpus.test.ts.
+// M5-09 part 4: shape files, the nameless STYLE records a complex linetype draws shapes from.
 import {
   ACadVersion,
   AcdbPlaceHolder,
@@ -22,11 +23,15 @@ import {
   Layout,
   Line,
   LineType,
+  LineTypeSegment,
+  LineTypeShapeFlags,
   Material,
   MLine,
   MLineStyle,
   MLineVertex,
   MultiLeaderStyle,
+  Shape,
+  StyleFlags,
   TableStyle,
   TextStyle,
   UCS,
@@ -705,5 +710,107 @@ describe('TriyaToAcad PURGE of MLINE styles, materials, visual styles and plot s
         'dwg',
       ),
     ).toEqual([expect.stringMatching(/^visualStyles record [0-9A-F]+ changes$/)]);
+  });
+});
+
+describe('TriyaToAcad PURGE of shape files (M5-09 part 4)', () => {
+  /**
+   * Shape files ltypeshp.shx (the linetype TRACKS draws its shapes from) and spare.shx (nothing
+   * uses it), each a nameless STYLE record; `withShape` adds a SHAPE in model space, which a DXF
+   * file names by its shape alone.
+   */
+  function shapes(withShape = false, format: CadFormat = 'dxf'): Uint8Array {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const shapeFile = (font: string) => {
+      const s = new TextStyle();
+      s.styleFlags = StyleFlags.IsShape;
+      s.filename = font;
+      doc.textStyles!.add(s);
+      return s;
+    };
+    const ltypeshp = shapeFile('ltypeshp.shx');
+    shapeFile('spare.shx');
+    const tracks = new LineType('TRACKS');
+    doc.lineTypes!.add(tracks);
+    const dash = new LineTypeSegment();
+    dash.length = 0.15;
+    dash.shapeFlags = LineTypeShapeFlags.Shape;
+    dash.shapeNumber = 130;
+    dash.scale = 0.25;
+    dash.style = ltypeshp;
+    tracks.addSegment(dash);
+    const gap = new LineTypeSegment();
+    gap.length = -0.15;
+    tracks.addSegment(gap);
+    if (withShape) {
+      const shape = new Shape(ltypeshp);
+      shape.shapeName = 'TRACK1';
+      doc.entities!.add(shape);
+    }
+    return writeCadDocument(doc, { format });
+  }
+
+  const shapeFiles = (model: DocumentModel) =>
+    [...model.tables.textStyles.values()]
+      .filter((r) => ((r.flags ?? 0) & 1) !== 0)
+      .map((r) => r.font)
+      .sort();
+  const shapeFile = (model: DocumentModel, font: string) =>
+    [...model.tables.textStyles.values()].find((r) => r.font === font)!.handle;
+
+  it('drops an unused shape file and keeps the other, which the linetype still draws', () => {
+    const bytes = shapes();
+    const model = open(bytes);
+    expect(shapeFiles(model)).toEqual(['ltypeshp.shx', 'spare.shx']);
+    edit(model, (b) => b.removeTableRecord('textStyles', shapeFile(model, 'spare.shx')));
+    const back = saved(bytes, model, 'dxf');
+    expect(shapeFiles(back)).toEqual(['ltypeshp.shx']);
+    const tracks = named(back, 'linetypes', 'TRACKS') as unknown as {
+      elements: { style?: Handle }[];
+    };
+    expect(tracks.elements[0]!.style).toBe(shapeFile(back, 'ltypeshp.shx'));
+    expect(names(back, 'textStyles')).toEqual(['', 'STANDARD']);
+  });
+
+  it('drops a shape file with the linetype drawn with it, and refuses it alone', () => {
+    const bytes = shapes();
+    expect(
+      refused(
+        (b, model) => b.removeTableRecord('textStyles', shapeFile(model, 'ltypeshp.shx')),
+        bytes,
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /^shape file ltypeshp\.shx \([0-9A-F]+\): LTYPE [0-9A-F]+ refers to it$/,
+      ),
+    ]);
+    const model = open(bytes);
+    edit(model, (b) => {
+      b.removeTableRecord('linetypes', named(model, 'linetypes', 'TRACKS').handle);
+      b.removeTableRecord('textStyles', shapeFile(model, 'ltypeshp.shx'));
+    });
+    expect(shapeFiles(saved(bytes, model, 'dxf'))).toEqual(['spare.shx']);
+  });
+
+  it('keeps every shape file of a DXF file with a SHAPE, which names no file', () => {
+    const bytes = shapes(true);
+    const model = open(bytes);
+    expect(documentInit(readCadDocument(bytes)).purgePinned).toEqual(
+      expect.arrayContaining([shapeFile(model, 'ltypeshp.shx'), shapeFile(model, 'spare.shx')]),
+    );
+    expect(
+      refused(
+        (b, model) => b.removeTableRecord('textStyles', shapeFile(model, 'spare.shx')),
+        bytes,
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /^shape file spare\.shx \([0-9A-F]+\): SHAPE [0-9A-F]+ may draw from it/,
+      ),
+    ]);
+    // Without the SHAPE nothing pins spare.shx.
+    expect(documentInit(readCadDocument(shapes())).purgePinned).not.toContain(
+      shapeFile(open(shapes()), 'spare.shx'),
+    );
   });
 });

@@ -1,0 +1,28 @@
+diff --git a/src/Tables/Collections/Table.ts b/src/Tables/Collections/Table.ts
+index 6ae3bed..b976865 100644
+--- a/src/Tables/Collections/Table.ts
++++ b/src/Tables/Collections/Table.ts
+@@ -81,6 +81,12 @@ export abstract class Table<T extends TableEntry> extends CadObject implements I
+ 		return this._referenceHandler.getReferences(name.toUpperCase());
+ 	}
+ 
++	/** The key the table lists `item` under: its name, or a key of its own for a nameless entry. */
++	public keyOf(item: T): string | undefined {
++		for (const [key, entry] of this.entries) if (entry === item) return key;
++		return undefined;
++	}
++
+ 	public remove(key: string): T | null {
+ 		if (this.defaultEntries.some(d => d.toUpperCase() === key.toUpperCase())) {
+ 			return null;
+@@ -93,7 +99,9 @@ export abstract class Table<T extends TableEntry> extends CadObject implements I
+ 			item.owner = null;
+ 			this.onRemove?.(this, new CollectionChangedEventArgs(item));
+ 			item.onNameChanged = null;
+-			this.assignToDefault(item.name);
++			// Every nameless entry's referrers share the key '' (keepsEmptyName): which are this one's
++			// cannot be told, so none are handed to the default entry.
++			if (item.name || !item.keepsEmptyName) this.assignToDefault(item.name);
+ 			return item;
+ 		}
+ 

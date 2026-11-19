@@ -85,6 +85,7 @@ import {
   Polyline3D,
   PolygonMesh,
   Scale,
+  Shape,
   SmoothSurfaceType,
   Solid,
   TableEntity,
@@ -99,6 +100,7 @@ import {
   TextObjectContextData,
   TableStyle,
   StandardFlags,
+  StyleFlags,
   TextStyle,
   UscIconType,
   Vertex2D,
@@ -2951,5 +2953,33 @@ describe('acad-ts local patches', () => {
         expect(read.isDisplayFrameShown, `${format} binary ${binary}`).toBe(2);
       }
     }
+  });
+
+  it('0189 a nameless STYLE record leaves its table by its own key, other shape files keep their referrers', () => {
+    // Shape files are nameless STYLE records (keepsEmptyName, kept under keys of their own), and
+    // every one's referrers share the key ''. Unpatched, the table offered no key to remove one
+    // by, and removing one handed every nameless record's referrers (a SHAPE of another shape
+    // file) to Standard, a text style no SHAPE can draw from (PURGE of shape files, M5-09 part 4).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const shapeFile = (font: string) => {
+      const s = new TextStyle();
+      s.styleFlags = StyleFlags.IsShape;
+      s.filename = font;
+      doc.textStyles!.add(s);
+      return s;
+    };
+    const spare = shapeFile('spare.shx');
+    const used = shapeFile('used.shx');
+    const shape = new Shape(used);
+    doc.entities!.add(shape);
+    const key = doc.textStyles!.keyOf(spare);
+    expect(key).toBeDefined();
+    expect(doc.textStyles!.keyOf(used)).not.toBe(key);
+    expect(doc.textStyles!.remove(key!)).toBe(spare);
+    expect(shape.shapeStyle).toBe(used);
+    expect([...doc.textStyles!].includes(used)).toBe(true);
+    expect([...doc.textStyles!].includes(spare)).toBe(false);
+    // A named entry still hands its referrers to the default when it goes.
+    expect(doc.textStyles!.keyOf(doc.textStyles!.get('Standard'))).toBe('STANDARD');
   });
 });
