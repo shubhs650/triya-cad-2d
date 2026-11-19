@@ -6,6 +6,7 @@ import {
   DocumentModel,
   EngineSession,
   invertChangeSet,
+  plotTransparencyOf,
   type ChangeSet,
   type DocumentInit,
   type LayoutPlot,
@@ -100,6 +101,59 @@ describe('layout edits', () => {
     const r = s.edit({ kind: 'layout', layout: '1E', plot });
     expect(r.ok).toBe(true);
     expect(s.model.layouts[1]?.plot).toEqual(plot);
+  });
+
+  // M6-04 part 2: Apply to Layout keeps "Plot transparency" in the LAYOUT's PLOTTRANSPARENCY
+  // xdata (1071), as AutoCAD does, registering the application when the drawing has none.
+  it("keeps Plot transparency in the layout's PLOTTRANSPARENCY xdata", () => {
+    const s = new EngineSession(init());
+    const on = s.edit({ kind: 'layout', layout: '1E', plotTransparency: true });
+    if (!on.ok) throw new Error(on.message);
+    const app = [...s.model.tables.appIds.values()].find((a) => a.name === 'PLOTTRANSPARENCY');
+    expect(app).toBeDefined();
+    expect(on.change.tables?.appIds?.added?.map((a) => a.name)).toEqual(['PLOTTRANSPARENCY']);
+    expect(s.model.layouts[1]?.xdata).toEqual([
+      { appId: app!.handle, values: [{ code: 1071, value: 1 }] },
+    ]);
+    expect(plotTransparencyOf(s.model, s.model.layouts[1]!)).toBe(true);
+    // The same again changes nothing; off keeps the application with 0, as AutoCAD writes it.
+    const again = s.edit({ kind: 'layout', layout: '1E', plotTransparency: true });
+    expect(again.ok && Object.keys(again.change)).toEqual([]);
+    const off = s.edit({ kind: 'layout', layout: '1E', plotTransparency: false });
+    if (!off.ok) throw new Error(off.message);
+    expect(off.change.tables).toBeUndefined();
+    expect(s.model.layouts[1]?.xdata).toEqual([
+      { appId: app!.handle, values: [{ code: 1071, value: 0 }] },
+    ]);
+    expect(plotTransparencyOf(s.model, s.model.layouts[1]!)).toBe(false);
+    // A layout without the xdata is off already: nothing to write.
+    const none = s.edit({ kind: 'layout', layout: '2E', plotTransparency: false });
+    expect(none.ok && Object.keys(none.change)).toEqual([]);
+    // One undo step with the page setup it was applied with.
+    const both = s.edit({
+      kind: 'layout',
+      layout: '2E',
+      plot: { ...PLOT, plotType: 1 },
+      plotTransparency: true,
+    });
+    if (!both.ok) throw new Error(both.message);
+    expect(
+      both.change.layouts?.updated?.map((u) => [u.after.plot?.plotType, u.after.xdata]),
+    ).toEqual([[1, [{ appId: app!.handle, values: [{ code: 1071, value: 1 }] }]]]);
+  });
+
+  it('refuses a View plot area without a view', () => {
+    const s = new EngineSession(init());
+    expect(s.edit({ kind: 'layout', layout: '1E', plot: { ...PLOT, plotType: 3 } })).toEqual({
+      ok: false,
+      message: 'Invalid page setup: the View plot area needs a view.',
+    });
+    const r = s.edit({
+      kind: 'layout',
+      layout: '1E',
+      plot: { ...PLOT, plotType: 3, viewName: 'Title block' },
+    });
+    expect(r.ok).toBe(true);
   });
 
   it('is undone by its inverse change set, which a replica applies too', () => {

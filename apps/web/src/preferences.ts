@@ -88,6 +88,7 @@ export type DraftingPreferences = Pick<
   | 'fieldDisplay'
   | 'layLockFade'
   | 'xFade'
+  | 'plotTransparencyOverride'
   | 'lwDefault'
   | 'lwUnits'
   | 'lwScale'
@@ -199,6 +200,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     fieldDisplay: true,
     layLockFade: 50,
     xFade: 50,
+    plotTransparencyOverride: 1,
     lwDefault: 25,
     lwUnits: 1,
     lwScale: 1,
@@ -362,6 +364,11 @@ export function normalizePreferences(raw: unknown): Preferences {
       fieldDisplay: bool(k['fieldDisplay'], d.drafting.fieldDisplay),
       layLockFade: within(k['layLockFade'], { min: -90, max: 90 }, d.drafting.layLockFade),
       xFade: within(k['xFade'], { min: 0, max: 90 }, d.drafting.xFade),
+      plotTransparencyOverride: within(
+        k['plotTransparencyOverride'],
+        { min: 0, max: 2 },
+        d.drafting.plotTransparencyOverride,
+      ) as 0 | 1 | 2,
       // M5-08 part 3: one of AutoCAD's lineweights; mm or inches; the slider's range.
       lwDefault:
         typeof k['lwDefault'] === 'number' && LINEWEIGHTS.includes(k['lwDefault'])
@@ -518,6 +525,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     fieldDisplay: s.fieldDisplay,
     layLockFade: s.layLockFade,
     xFade: s.xFade,
+    plotTransparencyOverride: s.plotTransparencyOverride,
     lwDefault: s.lwDefault,
     lwUnits: s.lwUnits,
     lwScale: s.lwScale,

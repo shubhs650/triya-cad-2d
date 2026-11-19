@@ -19,7 +19,7 @@ import type { ViewportSize } from './canvas/navigate';
 import { modelTiles } from './canvas/views';
 
 /** A table's records as the change log leaves them, in the order the drawing lists them. */
-function records<K extends TableName>(
+export function drawingRecords<K extends TableName>(
   init: DocumentInit,
   changes: readonly ChangeSet[],
   table: K,
@@ -38,7 +38,7 @@ function records<K extends TableName>(
 
 /** The drawing's named views, model and paper space, as its engine has them now. */
 export function drawingViews(init: DocumentInit, changes: readonly ChangeSet[]): ViewRecord[] {
-  return records(init, changes, 'views');
+  return drawingRecords(init, changes, 'views');
 }
 
 /** What a Model tile's canvas shows. */
@@ -57,7 +57,7 @@ export function shownViewsChange(
   changes: readonly ChangeSet[],
   shown: ReadonlyMap<number, ShownView>,
 ): ChangeSet {
-  const tiles = modelTiles(records(init, changes, 'vports'));
+  const tiles = modelTiles(drawingRecords(init, changes, 'vports'));
   const out = [];
   for (const [i, { view, size }] of shown) {
     const vport = tiles[i]?.vport;

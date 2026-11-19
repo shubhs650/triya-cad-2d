@@ -75,6 +75,8 @@ describe('preferences', () => {
       layLockFade: 50,
       // XFADECTL 50 (M5-02 part 5).
       xFade: 50,
+      // PLOTTRANSPARENCYOVERRIDE 1, the page setup's (M6-04 part 2).
+      plotTransparencyOverride: 1,
       // LWDEFAULT 25, LWUNITS 1 (millimetres) and Adjust Display Scale 1 (M5-08 part 3).
       lwDefault: 25,
       lwUnits: 1,
@@ -420,6 +422,14 @@ describe('preferences', () => {
     expect(lw({ lwDefault: 50, lwUnits: 0, lwScale: 2.5 })).toEqual([50, 0, 2.5]);
     expect(lw({ lwDefault: 26, lwUnits: 2, lwScale: 3.5 })).toEqual([25, 1, 1]);
     expect(lw({ lwDefault: -3, lwUnits: '0', lwScale: 0.1 })).toEqual([25, 1, 1]);
+  });
+
+  it('keep PLOTTRANSPARENCYOVERRIDE 0, 1 or 2 (M6-04 part 2)', () => {
+    const o = (plotTransparencyOverride: unknown) =>
+      normalizePreferences({ drafting: { plotTransparencyOverride } }).drafting
+        .plotTransparencyOverride;
+    expect([o(0), o(1), o(2)]).toEqual([0, 1, 2]);
+    expect([o(3), o(-1), o('2'), o(1.5)]).toEqual([1, 1, 1, 1]);
   });
 
   it('keep XFADECTL from 0 to 90 (M5-02 part 5)', () => {
