@@ -1129,7 +1129,7 @@ export class Canvas2DRenderer implements Renderer {
       for (const id of taken) for (const p of previewObjects(this.#model, id, o)) out.add(p);
       return [...out].sort((a, b) => a - b);
     }
-    const hits = preview.screen ? this.hitTest(preview.screen, preview.aperture) : [];
+    const hits = preview.screen ? this.hitTest(preview.screen, preview.aperture, preview.view) : [];
     // Shift+Space (M3-04 part 7) steps through the overlapping objects; the one stepped to
     // shows whatever PREVIEWFILTER says, as the drafter asked for it.
     if (preview.cycle !== undefined && hits.length > 0) {
@@ -1424,9 +1424,13 @@ export class Canvas2DRenderer implements Renderer {
       : this.#style.background;
   }
 
-  hitTest(screen: { readonly x: number; readonly y: number }, aperture: number): EntityId[] {
-    const p = screenToWorld(this.#view, this.#width, this.#height, screen);
-    const r = aperture / this.#view.scale;
+  hitTest(
+    screen: { readonly x: number; readonly y: number },
+    aperture: number,
+    view: ViewTransform = this.#view,
+  ): EntityId[] {
+    const p = screenToWorld(view, this.#width, this.#height, screen);
+    const r = aperture / view.scale;
     const box: Box = { minX: p.x - r, minY: p.y - r, maxX: p.x + r, maxY: p.y + r };
     const hits: { id: EntityId; d: number }[] = [];
     for (const id of this.#index.query(this.#block, box)) {
@@ -1454,11 +1458,12 @@ export class Canvas2DRenderer implements Renderer {
     screen: { readonly x: number; readonly y: number },
     aperture: number,
     id: EntityId,
+    view: ViewTransform = this.#view,
   ): NestedPick | null {
     const e = this.#model.entity(id);
     if (!e || e.geom.kind !== 'INSERT' || !this.#cache[id]) return null;
-    const p = screenToWorld(this.#view, this.#width, this.#height, screen);
-    const r = aperture / this.#view.scale;
+    const p = screenToWorld(view, this.#width, this.#height, screen);
+    const r = aperture / view.scale;
     // Expanded again with each part's owner, only for this pick: the scene cache keeps a
     // reference's parts without them, as nothing else asks.
     const x = expandInsert(e, this.#blockSource, { dashes: false, owners: true });

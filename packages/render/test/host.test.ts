@@ -378,6 +378,27 @@ describe('RendererHost', () => {
     expect(await off.hitTest(at, 8)).toEqual(fromMain);
   });
 
+  // M5-23: the canvas sends its views with its frames, so a pick just after a zoom reaches the
+  // worker before the zoom's view does; the pick names the view it was made in.
+  it('tests a hit under the view the point was taken in, from either side alike (M5-23)', async () => {
+    const { engine, main, off } = hosts([
+      entity('20', line(0, 0, 10, 0)),
+      entity('21', line(0, 1, 10, 1)),
+    ]);
+    const handles = (ids: readonly number[]) => ids.map((id) => engine.model.ids.handleOf(id));
+    // The canvas's centre: on line 20 in the view held, on line 21 in the view picked in.
+    const at = { x: 50, y: 25 };
+    const picked = { center: { x: 5, y: 1 }, scale: 10 };
+    for (const h of [main, off]) {
+      h.resize(100, 50, 1);
+      h.setView({ center: { x: 5, y: 0 }, scale: 10 });
+      expect(handles(await h.hitTest(at, 2))).toEqual(['20']);
+      expect(handles(await h.hitTest(at, 2, picked))).toEqual(['21']);
+      // A pick that names no view, and a pick's view, leave the view held alone.
+      expect(handles(await h.hitTest(at, 2))).toEqual(['20']);
+    }
+  });
+
   it('answers object snaps from either side alike (M2-04)', async () => {
     const { main, off } = hosts([entity('20', line(0, 0, 10, 0)), entity('21', line(5, -5, 5, 5))]);
     const query = { point: { x: 5.2, y: 0.3 }, aperture: 1, modes: 1 | 32 }; // END | INT
