@@ -31,19 +31,28 @@
 //     not remove unnamed objects from blocks or locked layers": model space and layouts only, and
 //     an object on a locked layer stays. AutoCAD's help names lines, arcs, circles and polylines;
 //     a spline or ellipse with no extent is left (ambiguity: the help says "and so on").
+//   - "Orphaned data" (M5-09 part 5): "DGN linestyle data ... that's not used by any linetypes"
+//     (AutoCAD Help, "Purge Dialog Box"), the `ACAD_DGNLINESTYLECOMP` components no linetype's
+//     line style definition reaches, directly or through a compound or point component
+//     (`DgnLinestyleComponent`), with the anonymous blocks only their symbols draw, as AutoCAD's
+//     DGN purge tool takes them (keanw.com, 2013 update). A linetype purged leaves what only it
+//     used orphaned, for the next purge of orphaned data. What the file still refers to otherwise
+//     stays (`DocumentModel.purgePinned`).
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type {
-  BlockTableRecord,
-  Entity,
-  Group,
-  NonGraphicalObject,
-  SortEntsTable,
-  SymbolTableRecord,
-  TableName,
-  TextStyleRecord,
+import {
+  isDgnLinestyleComponent,
+  type BlockTableRecord,
+  type DgnLinestyleComponent,
+  type Entity,
+  type Group,
+  type NonGraphicalObject,
+  type SortEntsTable,
+  type SymbolTableRecord,
+  type TableName,
+  type TextStyleRecord,
 } from '../model/types';
 import { eraseObjects } from './edit';
 import { displayText } from './find-text';
@@ -697,6 +706,8 @@ export interface PurgeHealth {
   readonly nested: number;
   readonly zeroLength: number;
   readonly emptyText: number;
+  /** DGN linestyle components no linetype uses ("Orphaned data"). */
+  readonly orphaned: number;
 }
 
 /** The unused named items the Health palette offers to purge (not registered applications). */
@@ -729,7 +740,70 @@ export function purgeHealth(model: DocumentModel): PurgeHealth {
     nested: all - unused.length,
     zeroLength: loose.filter(isZeroLength).length,
     emptyText: loose.filter(isEmptyText).length,
+    orphaned: orphanedData(model).length,
   };
+}
+
+// ── Orphaned data ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The DGN linestyle components no linetype of the drawing uses, by name: those no line style
+ * definition of a linetype reaches through the components it refers to, nor the file needs
+ * otherwise (`purgePinned`).
+ */
+export function orphanedData(model: DocumentModel): DgnLinestyleComponent[] {
+  const components = new Map<Handle, DgnLinestyleComponent>();
+  for (const o of model.objects.values())
+    if (isDgnLinestyleComponent(o)) components.set(o.handle, o);
+  if (components.size === 0) return [];
+  const used = new Set<Handle>();
+  const queue = [...components.values()]
+    .filter(
+      (c) => model.purgePinned.has(c.handle) || c.usedBy.some((l) => model.tables.linetypes.has(l)),
+    )
+    .map((c) => c.handle);
+  while (queue.length > 0) {
+    const h = queue.pop()!;
+    if (used.has(h)) continue;
+    used.add(h);
+    for (const p of components.get(h)?.parts ?? []) if (!used.has(p)) queue.push(p);
+  }
+  return [...components.values()]
+    .filter((c) => !used.has(c.handle))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+/**
+ * Removes `orphaned` (from {@link orphanedData}) into `b`, with the anonymous blocks only their
+ * symbols draw: a block anything else uses (an insert, a component that stays, the file) stays.
+ */
+export function purgeOrphanedInto(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  orphaned: readonly DgnLinestyleComponent[],
+): void {
+  const going = new Set(orphaned.map((c) => c.handle));
+  const kept = new Set<Handle>();
+  for (const o of model.objects.values())
+    if (isDgnLinestyleComponent(o) && !going.has(o.handle))
+      for (const h of o.symbolBlocks) kept.add(h);
+  const uses = collectUses(model);
+  const blocks = new Set<Handle>();
+  for (const c of orphaned) {
+    b.removeObject(c.handle);
+    for (const h of c.symbolBlocks) {
+      const r = model.tables.blockRecords.get(h);
+      if (!r || !r.name.startsWith('*') || isLayoutBlock(r) || kept.has(h)) continue;
+      const users = [...(uses.get(h)?.keys() ?? [])].filter((u) => u !== `b:${h}`);
+      if (users.length === 0) blocks.add(h);
+    }
+  }
+  for (const h of blocks) {
+    eraseObjects(b, model, b.blockEntities(h));
+    for (const o of model.objects.values())
+      if (o.type === 'SORTENTSTABLE' && (o as SortEntsTable).block === h) b.removeObject(o.handle);
+    b.removeBlock(h);
+  }
 }
 
 // ── Unnamed objects ───────────────────────────────────────────────────────────────────────

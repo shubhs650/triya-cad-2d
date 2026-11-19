@@ -26,7 +26,7 @@ const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = readableFiles(manifest);
 const PER_FILE_BUDGET_MS = 30_000;
 /** Readable files that get the tables: all but the R1 and R2.5 ones, which have no text style. */
-const PASTED = 118;
+const PASTED = 119;
 
 type Table = Entity & { geom: TableGeometry };
 

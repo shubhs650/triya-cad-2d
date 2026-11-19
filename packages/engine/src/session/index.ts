@@ -88,9 +88,11 @@ import { layerPreviousOf } from '../commands/layer-previous';
 import { loadLinetypes, type LinetypeDefinition } from '../edit/linetypes';
 import {
   emptyTextObjects,
+  orphanedData,
   purgeClosure,
   purgeHealth,
   purgeInto,
+  purgeOrphanedInto,
   unusedItems,
   zeroLengthObjects,
   type PurgeHealth,
@@ -343,12 +345,12 @@ export interface FieldEventEdit {
 /**
  * The Health palette's purge fixes (M5-09 part 3): every unused named item purged with what only
  * they use (the Purge dialog's Purge All with Purge nested items; registered applications left to
- * -PURGE), or the zero-length geometry or empty text PURGE deletes. One PURGE undo step each,
- * refused when there is nothing to purge.
+ * -PURGE), or the zero-length geometry, empty text or orphaned data (M5-09 part 5) PURGE deletes.
+ * One PURGE undo step each, refused when there is nothing to purge.
  */
 export interface PurgeEdit {
   readonly kind: 'purge';
-  readonly what: 'unused' | 'zero-length' | 'empty-text';
+  readonly what: 'unused' | 'zero-length' | 'empty-text' | 'orphaned';
 }
 
 export type EngineEdit =
@@ -1084,6 +1086,10 @@ export class EngineSession {
         true,
       );
       purgeInto(b, m, items);
+    } else if (e.what === 'orphaned') {
+      const orphaned = orphanedData(m);
+      if (orphaned.length === 0) return { ok: false, message: 'No orphaned data found.' };
+      purgeOrphanedInto(b, m, orphaned);
     } else {
       const ids = e.what === 'zero-length' ? zeroLengthObjects(m) : emptyTextObjects(m);
       if (ids.length === 0)

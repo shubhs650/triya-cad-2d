@@ -68,6 +68,10 @@ export type AuditSaveKind =
   | 'xref-paste'
   // LINETYPE's loads, reloads and deletes on ezdxf's colors.dxf (M5-08 part 1).
   | 'linetype'
+  // PURGE's Orphaned data on dgn-linestyles.dxf: the orphaned components, then every component
+  // with the DGN linetypes, which takes the ACAD_DGNLINESTYLECOMP dictionary (M5-09 part 5).
+  | 'orphaned-data'
+  | 'orphaned-data-all'
   // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).
   | 'wblock'
   // A block edited in the Block Editor (BEDIT, ERASE, LINE, BSAVE, BCLOSE; M5-02 part 1).

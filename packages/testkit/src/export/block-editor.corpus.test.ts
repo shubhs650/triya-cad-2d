@@ -57,7 +57,7 @@ function blockToEdit(
 }
 
 /** Drawings with no block the test can edit. */
-const NO_BLOCK = 76;
+const NO_BLOCK = 77;
 
 describe('the Block Editor on the public corpus (M5-02 part 1)', () => {
   let edited = 0;

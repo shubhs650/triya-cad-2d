@@ -9,6 +9,9 @@
 // M5-09 part 4: shape files. ezdxf's text.dxf keeps ltypeshp.shx for complex linetypes nothing
 // draws with: the Purge dialog lists it in use under Shapes by its file, with the linetypes as its
 // Possible Reasons, and purging those linetypes with Purge nested items takes it too.
+// M5-09 part 5: Orphaned data on the self-authored dgn-linestyles.dxf, whose four OLD DGN
+// linestyle components no linetype uses: the Health palette counts them, the Purge dialog's
+// Orphaned data takes them, and -PURGE Orphaned data finds none left.
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { enterCommand, expectShown, openWithPicker } from '../app/page';
@@ -217,4 +220,48 @@ test('the Health palette counts what PURGE would take and fixes it in one click 
   // Purge... opens the Purge dialog to choose.
   await unused.getByRole('button', { name: 'Purge…' }).click();
   await expect(page.getByRole('dialog', { name: 'Purge', exact: true })).toBeVisible();
+});
+
+test('Orphaned data removes the DGN linestyle data no linetype uses (M5-09)', async ({ page }) => {
+  test.setTimeout(60_000);
+  const file = path.join(CORPUS, '../self-authored/dgn-linestyles.dxf');
+  await page.goto(app.url);
+  await openWithPicker(page, file);
+  await expectShown(page, path.basename(file));
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Health' })
+    .click();
+  const palette = page.getByRole('complementary', { name: 'Health' });
+  const orphaned = palette.getByRole('group', { name: /^Orphaned data/ });
+  await expect(orphaned.locator('summary')).toHaveText('Orphaned data (4)');
+  await expect(orphaned).toContainText('DGN linestyle data no linetype uses.');
+
+  await enterCommand(page, 'PURGE');
+  const purge = page.getByRole('dialog', { name: 'Purge', exact: true });
+  await expect(purge).toBeVisible();
+  const option = purge.getByRole('checkbox', { name: 'Orphaned data (4)' });
+  await expect(option).toBeEnabled();
+  await option.check();
+  await page.mouse.move(5, 5);
+  await shot('1-orphaned-data-option.png');
+  // Nothing named is checked: the unnamed option alone enables Purge Checked Items.
+  await purge.getByRole('button', { name: 'Purge Checked Items' }).click();
+  await expect(purge.getByRole('status')).toHaveText('4 orphaned data objects deleted.');
+  await expect(purge.getByRole('checkbox', { name: 'Orphaned data (0)' })).toBeChecked();
+  await purge.getByRole('button', { name: 'Close' }).click();
+  await expect(purge).toBeHidden();
+  await expect(orphaned.locator('summary')).toHaveText('Orphaned data (0)');
+  await shot('2-orphaned-data-purged.png');
+
+  await enterCommand(page, '-PURGE');
+  await enterCommand(page, 'O');
+  await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText(
+    'No orphaned data found.',
+  );
+  // One PURGE undo step brings it back.
+  await page.keyboard.press('Control+z');
+  await expect(orphaned.locator('summary')).toHaveText('Orphaned data (4)');
 });

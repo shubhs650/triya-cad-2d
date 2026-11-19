@@ -421,6 +421,7 @@ describe('EngineHost purgeHealth (M5-09 part 3)', () => {
         nested: 0,
         zeroLength: 1,
         emptyText: 0,
+        orphaned: 0,
       });
       expect((await host.edit({ kind: 'purge', what: 'unused' })).ok).toBe(true);
       expect((await host.edit({ kind: 'purge', what: 'zero-length' })).ok).toBe(true);

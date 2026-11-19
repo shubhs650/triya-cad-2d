@@ -64,6 +64,7 @@ import {
   TableStyle,
   TextStyle,
   UCS,
+  UnknownNonGraphicalObject,
   View,
   VisualStyle,
   VPort,
@@ -72,8 +73,15 @@ import {
   XYZ,
   type TableEntry,
 } from '@node-projects/acad-ts';
-import type { DocumentInit, DocumentModel, Handle, TableName } from '@triya/engine';
+import {
+  isDgnLinestyleComponent,
+  type DocumentInit,
+  type DocumentModel,
+  type Handle,
+  type TableName,
+} from '@triya/engine';
 import { hex } from '../map/common';
+import { dgnComponentsDictionary, dgnDefinitions } from '../map/dgn-linestyles';
 import { entryKey } from './dictionary-entries';
 import { resolve, type Resolver } from './entities';
 import { documentObjects } from './passthrough';
@@ -567,6 +575,9 @@ export function purgePinned(doc: CadDocument, base: DocumentInit): Handle[] {
       pinned.add(t);
     });
   }
+  // DGN linestyle components (M5-09 part 5) refer to each other, and the linetypes' line style
+  // definitions to them, which the model maps; anything else referring to one keeps it.
+  for (const h of dgnPinned(doc, base, objects)) pinned.add(h);
   // A layer purged leaves the layer states that name it, a change a file older than R2000
   // cannot save (layer-states.ts): there, a layer a state names stays.
   const version = doc.header?.version;
@@ -589,6 +600,45 @@ export function purgePinned(doc: CadDocument, base: DocumentInit): Handle[] {
     });
   }
   return [...pinned];
+}
+
+/**
+ * The DGN linestyle components something refers to besides their dictionary, each other and the
+ * linetypes' line style definitions: an object acad-ts maps, or one it keeps as its group codes
+ * (whose handle codes acadReferences does not see), the owner and reactor links left out.
+ */
+function dgnPinned(
+  doc: CadDocument,
+  base: DocumentInit,
+  objects: ReadonlyMap<number, CadObject>,
+): Handle[] {
+  const components = new Map(
+    (base.objects ?? [])
+      .filter(isDgnLinestyleComponent)
+      .map((c) => [Number.parseInt(c.handle, 16), c.handle] as const),
+  );
+  if (components.size === 0) return [];
+  const own = new Set<CadObject>([...dgnDefinitions(doc).values()]);
+  const dict = dgnComponentsDictionary(doc);
+  if (dict) own.add(dict);
+  const out = new Set<Handle>();
+  const found = (x: CadObject | number) => {
+    const h = components.get(typeof x === 'number' ? x : x.handle);
+    if (h !== undefined) out.add(h);
+  };
+  for (const o of objects.values()) {
+    if (o instanceof Table || own.has(o) || components.has(o.handle)) continue;
+    acadReferences(o, found);
+    if (o instanceof UnknownNonGraphicalObject) {
+      let inGroup = false;
+      for (const { code, value } of o.rawDxfCodes ?? []) {
+        if (code === 102) inGroup = String(value).startsWith('{');
+        else if (!inGroup && code !== 330 && isHandleCode(code) && typeof value === 'number')
+          found(value);
+      }
+    }
+  }
+  return [...out];
 }
 
 /**

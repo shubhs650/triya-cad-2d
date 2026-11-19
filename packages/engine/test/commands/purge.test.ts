@@ -7,12 +7,15 @@
 // items, unnamed objects, Possible Reasons, Details and Select Objects.
 // M5-09 part 4: shape files (nameless STYLE records, listed by their file) purge like the other
 // named items: in use while a complex linetype draws one of their shapes or the file needs them.
+// M5-09 part 5: Orphaned data, the DGN linestyle components no linetype uses, with the anonymous
+// blocks only their symbols draw.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   EngineSession,
   PromptBus,
   builtinCommands,
+  orphanedData,
   purgeClosure,
   purgeHealth,
   purgeState,
@@ -440,7 +443,7 @@ describe('-PURGE', () => {
   it('says what it does not purge', async () => {
     const t = setup();
     await t.bus.script(['-PURGE', 'O']);
-    expect(t.log).toContain('Orphaned data is kept as read: Triya does not purge it.');
+    expect(t.log).toContain('No orphaned data found.');
     await t.bus.script(['-PURGE', 'DE']);
     expect(t.log).toContain('No unreferenced detail view styles found.');
     await t.bus.script(['-PURGE', 'SE']);
@@ -560,6 +563,215 @@ describe('Shape files', () => {
     ]);
     await t.bus.script(['-PURGE', 'A', '', 'N']);
     expect(t.has(SPARE)).toBe(true);
+  });
+});
+
+// DGN linestyle data (M5-09 part 5): DGN_DASH and DGN_RAIL are used linetypes, DGN_UNUSED a
+// linetype nothing uses; the OLD components no linetype reaches.
+const DGN_DASH = '60';
+const DGN_RAIL = '61';
+const DGN_UNUSED = '62';
+const COMPONENTS = '63';
+const DASH_STROKE = '64';
+const RAIL_STROKE = '65';
+const RAIL_TIE = '66';
+const RAIL_POINTS = '67';
+const RAIL = '68';
+const UNUSED_STROKE = '69';
+const OLD_STROKE = '6A';
+const OLD_SYMBOL = '6B';
+const OLD_COMPOUND = '6C';
+const OLD_INTERNAL = '6D';
+const TIE_BLOCK = '6E';
+const RING_BLOCK = '6F';
+const SHARED_BLOCK = '70';
+
+const component = (
+  handle: string,
+  name: string,
+  className: string,
+  o: { usedBy?: string[]; parts?: string[]; symbolBlocks?: string[] } = {},
+) =>
+  ({
+    handle,
+    type: 'DGN_LS_COMPONENT',
+    owner: COMPONENTS,
+    name,
+    className: `AcDbLS${className}Component`,
+    usedBy: o.usedBy ?? [],
+    parts: o.parts ?? [],
+    symbolBlocks: o.symbolBlocks ?? [],
+  }) as NonGraphicalObject;
+
+function dgnInit(o: { pinned?: string[] } = {}): DocumentInit {
+  const init = purgeInit(o);
+  return {
+    ...init,
+    tables: {
+      ...init.tables,
+      linetypes: [
+        ...init.tables!.linetypes!,
+        linetype(DGN_DASH, 'DGN_DASH'),
+        linetype(DGN_RAIL, 'DGN_RAIL'),
+        linetype(DGN_UNUSED, 'DGN_UNUSED'),
+      ],
+      blockRecords: [
+        ...init.tables!.blockRecords!,
+        blockRecord(TIE_BLOCK, '*U1'),
+        blockRecord(RING_BLOCK, '*U2'),
+        blockRecord(SHARED_BLOCK, '*U3'),
+      ],
+    },
+    blocks: [
+      ...init.blocks!,
+      { handle: TIE_BLOCK, name: '*U1', basePoint: { x: 0, y: 0 } },
+      { handle: RING_BLOCK, name: '*U2', basePoint: { x: 0, y: 0 } },
+      { handle: SHARED_BLOCK, name: '*U3', basePoint: { x: 0, y: 0 } },
+    ],
+    objects: [
+      ...init.objects!,
+      component(DASH_STROKE, 'DGN_DASH_STROKE', 'StrokePattern', {
+        usedBy: [DGN_DASH, DGN_UNUSED],
+      }),
+      component(RAIL_STROKE, 'DGN_RAIL_STROKE', 'StrokePattern'),
+      component(RAIL_TIE, 'DGN_RAIL_TIE', 'Symbol', { symbolBlocks: [TIE_BLOCK] }),
+      component(RAIL_POINTS, 'DGN_RAIL_POINTS', 'Point', { parts: [RAIL_STROKE, RAIL_TIE] }),
+      component(RAIL, 'DGN_RAIL_COMPOUND', 'Compound', {
+        usedBy: [DGN_RAIL],
+        parts: [RAIL_STROKE, RAIL_POINTS],
+      }),
+      component(UNUSED_STROKE, 'DGN_UNUSED_STROKE', 'StrokePattern', { usedBy: [DGN_UNUSED] }),
+      component(OLD_STROKE, 'DGN_OLD_STROKE', 'StrokePattern'),
+      component(OLD_SYMBOL, 'DGN_OLD_SYMBOL', 'Symbol', {
+        symbolBlocks: [RING_BLOCK, SHARED_BLOCK],
+      }),
+      component(OLD_COMPOUND, 'DGN_OLD_COMPOUND', 'Compound', { parts: [OLD_STROKE, OLD_SYMBOL] }),
+      component(OLD_INTERNAL, 'DGN_OLD_INTERNAL', 'Internal'),
+    ],
+    entities: [
+      ...init.entities!,
+      entityInit('71', lineGeom(0, 0, 1, 0), { linetype: DGN_DASH }),
+      entityInit('72', lineGeom(0, 2, 1, 2), { linetype: DGN_RAIL }),
+      entityInit('73', lineGeom(0, -1, 0, 1), { owner: TIE_BLOCK }),
+      entityInit(
+        '74',
+        { kind: 'CIRCLE', center: { x: 0, y: 0 }, radius: 0.5 },
+        {
+          owner: RING_BLOCK,
+        },
+      ),
+      entityInit('75', lineGeom(0, 0, 1, 1), { owner: SHARED_BLOCK }),
+      // Something else draws *U3 too: it stays.
+      entityInit('76', {
+        kind: 'INSERT',
+        block: SHARED_BLOCK,
+        position: { x: 9, y: 9 },
+        scale: { x: 1, y: 1, z: 1 },
+        rotation: 0,
+        attributes: [],
+      } as unknown as EntityGeometry),
+    ],
+  };
+}
+
+function dgnSetup(o: { pinned?: string[] } = {}) {
+  const model = DocumentModel.create(dgnInit(o));
+  const bus = new PromptBus({ model, registry: builtinCommands() });
+  const log: string[] = [];
+  bus.on((e: BusEvent) => {
+    if (e.type === 'log') log.push(e.line);
+  });
+  const has = (h: string) => model.objects.has(h);
+  return { model, bus, log, has };
+}
+
+describe('Orphaned data', () => {
+  it('is the DGN linestyle data no linetype uses, through compounds and point components', () => {
+    const { model } = dgnSetup();
+    expect(names(orphanedData(model))).toEqual([
+      'DGN_OLD_COMPOUND',
+      'DGN_OLD_INTERNAL',
+      'DGN_OLD_STROKE',
+      'DGN_OLD_SYMBOL',
+    ]);
+    // The components are not named items, and do not keep a linetype in use.
+    expect(purgeState(model).purgeable.map((i) => i.name)).toContain('DGN_UNUSED');
+    expect(purgeHealth(model).orphaned).toBe(4);
+  });
+
+  it('keeps what the file needs otherwise', () => {
+    const { model } = dgnSetup({ pinned: [OLD_COMPOUND] });
+    expect(names(orphanedData(model))).toEqual(['DGN_OLD_INTERNAL']);
+  });
+
+  it('-PURGE Orphaned data removes it with the blocks only its symbols draw, one undo step', async () => {
+    const t = dgnSetup();
+    await t.bus.script(['-PURGE', 'O']);
+    expect(t.log).toContain('4 orphaned data objects deleted.');
+    for (const h of [OLD_COMPOUND, OLD_STROKE, OLD_SYMBOL, OLD_INTERNAL])
+      expect(t.has(h), h).toBe(false);
+    for (const h of [DASH_STROKE, RAIL, RAIL_POINTS, RAIL_STROKE, RAIL_TIE, UNUSED_STROKE])
+      expect(t.has(h), h).toBe(true);
+    // *U2 only drew the old symbol; *U3 is inserted too, and *U1 is the rail's.
+    expect(t.model.tables.blockRecords.has(RING_BLOCK)).toBe(false);
+    expect(t.model.blocks.has(RING_BLOCK)).toBe(false);
+    expect(t.model.entityByHandle('74')).toBeUndefined();
+    expect(t.model.tables.blockRecords.has(SHARED_BLOCK)).toBe(true);
+    expect(t.model.tables.blockRecords.has(TIE_BLOCK)).toBe(true);
+    expect(t.bus.undo.state.undoable).toBe(1);
+    await t.bus.script(['-PURGE', 'O']);
+    expect(t.log).toContain('No orphaned data found.');
+    await t.bus.script(['U']);
+    expect(t.has(OLD_COMPOUND)).toBe(true);
+    expect(t.model.tables.blockRecords.has(RING_BLOCK)).toBe(true);
+  });
+
+  it('a purged linetype leaves what only it used orphaned', async () => {
+    const t = dgnSetup();
+    await t.bus.script(['-PURGE', 'LT', 'DGN_UNUSED', 'N']);
+    expect(t.model.tables.linetypes.has(DGN_UNUSED)).toBe(false);
+    // DGN_DASH still uses its stroke.
+    expect(names(orphanedData(t.model))).toEqual([
+      'DGN_OLD_COMPOUND',
+      'DGN_OLD_INTERNAL',
+      'DGN_OLD_STROKE',
+      'DGN_OLD_SYMBOL',
+      'DGN_UNUSED_STROKE',
+    ]);
+  });
+
+  it('the Purge dialog counts it and purges it when checked, after the named items', async () => {
+    const t = dgnSetup();
+    await t.bus.script(['PURGE']);
+    const p = t.bus.prompt;
+    if (p?.kind !== 'dialog' || p.dialog.type !== 'purge') throw new Error('no Purge dialog');
+    expect(p.dialog.orphaned).toBe(4);
+    const settings = { ...p.dialog.settings, confirm: false, orphaned: true };
+    await t.bus.answer({
+      kind: 'dialog',
+      action: 'apply',
+      purge: { settings, view: 'purgeable', run: 'checked', checked: [DGN_UNUSED] },
+    } as PromptAnswer);
+    expect(t.has(UNUSED_STROKE)).toBe(false);
+    expect(t.has(OLD_COMPOUND)).toBe(false);
+    const after = t.bus.prompt;
+    if (after?.kind !== 'dialog' || after.dialog.type !== 'purge') throw new Error('closed');
+    expect(after.dialog.note).toBe('1 item purged. 5 orphaned data objects deleted.');
+    expect(after.dialog.orphaned).toBe(0);
+    // The option is remembered for the next PURGE.
+    expect(after.dialog.settings.orphaned).toBe(true);
+  });
+
+  it('the Health palette fix removes it as one PURGE step', () => {
+    const s = new EngineSession(dgnInit());
+    expect(s.purgeHealth().orphaned).toBe(4);
+    expect(s.edit({ kind: 'purge', what: 'orphaned' }).ok).toBe(true);
+    expect(s.purgeHealth().orphaned).toBe(0);
+    expect(s.undoState.undoList).toEqual(['PURGE']);
+    expect(s.edit({ kind: 'purge', what: 'orphaned' })).toEqual({
+      ok: false,
+      message: 'No orphaned data found.',
+    });
   });
 });
 

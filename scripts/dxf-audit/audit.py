@@ -74,6 +74,11 @@ FIXTURE_SAVES = (
     # Unreconciled new xref layers bound into the xref set's parent, AutoCAD's
     # ADSK_XREC_LAYER_RECONCILED records (M5-19, packages/testkit/src/xref/layer-reconcile.test.ts).
     ("fixtures/xref/xref-parent.dxf", "layer-reconcile"),
+    # PURGE's Orphaned data: the orphaned DGN linestyle components, then all of them with the DGN
+    # linetypes and the dictionary (M5-09 part 5,
+    # packages/testkit/src/purge/orphaned-data.corpus.test.ts).
+    ("self-authored/dgn-linestyles.dxf", "orphaned-data"),
+    ("self-authored/dgn-linestyles.dxf", "orphaned-data-all"),
     # Layer filters added beside AutoCAD's own empty ACLYDICTIONARY, and to a drawing without one
     # (M5-07 part 4, packages/testkit/src/export/layer-filters.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layerfilters"),

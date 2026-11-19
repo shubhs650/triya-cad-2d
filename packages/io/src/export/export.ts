@@ -62,6 +62,7 @@ import { newSpatialFilterDictionaries, planSpatialFilters, writeSpatialFilters }
 import { newTriyaArrayDictionaries, planTriyaArrays, writeTriyaArrays } from './triya-arrays';
 import { newTriyaDimDictionaries, planTriyaDims, writeTriyaDims } from './triya-dims';
 import { planLayerFilters, writeLayerFilters } from './layer-filters';
+import { planDgnLinestyles, writeDgnLinestyles } from './dgn-linestyles';
 import { planLayerStates, writeLayerStates } from './layer-states';
 import {
   newTriyaCenterMarkDictionaries,
@@ -197,7 +198,7 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   // coded-objects.ts) and so do associative arrays' records (triya-arrays.ts) and dimensions'
   // breaks and inspection data (triya-dims.ts) and center marks' records (triya-centermarks.ts,
   // M4-08 part 2, DEC-066), and layer states and filters (layer-states.ts, layer-filters.ts,
-  // M5-07).
+  // M5-07), and DGN linestyle components (dgn-linestyles.ts, M5-09 part 5).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'GROUP' &&
@@ -210,6 +211,7 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
     o.type !== 'TRIYA_CENTERMARK' &&
     o.type !== 'LAYER_STATE' &&
     o.type !== 'LAYER_FILTER' &&
+    o.type !== 'DGN_LS_COMPONENT' &&
     !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
@@ -538,6 +540,7 @@ export function triyaToAcad(
   const layers = planLayers(original, base, model, r);
   const layerStates = planLayerStates(original, base, model, r);
   const layerFilters = planLayerFilters(original, base, model, r);
+  const dgnLinestyles = planDgnLinestyles(original, base, model, r);
   // After the text styles and linetypes they may name.
   const mleaderStyles = planMLeaderStyles(original, base, model, r, format);
   const tableStyles = planTableStyles(original, base, model, r, format);
@@ -605,6 +608,7 @@ export function triyaToAcad(
     ...layers.problems,
     ...layerStates.problems,
     ...layerFilters.problems,
+    ...dgnLinestyles.problems,
     ...mleaderStyles.problems,
     ...tableStyles.problems,
     ...mlineStyles.problems,
@@ -714,6 +718,7 @@ export function triyaToAcad(
   writeHeader(original, header.changes);
   // Last: nothing written above may still refer to what goes.
   writePurge(purge.plan);
+  writeDgnLinestyles(original, dgnLinestyles.plan);
   // New objects are allocated above $HANDSEED; the seed written back covers every handle the
   // engine handed out, used or not, as AutoCAD skips handles of cancelled objects, and every
   // held child the save numbered.
