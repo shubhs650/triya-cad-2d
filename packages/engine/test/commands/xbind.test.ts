@@ -333,7 +333,7 @@ describe('XBIND: the Xbind dialog', () => {
     expect(t.model.blocks.get(door.handle)?.basePoint).toEqual({ x: 1, y: 1 });
     expect(t.log).toContain('Block "PLAN|FRAME" bound as "PLAN$0$FRAME".');
     expect(t.log).toContain(
-      '1 object(s) left out of the bound block(s): an external reference cannot be pasted yet.',
+      "1 object(s) left out of the bound block(s): a nested xref's reference cannot be pasted.",
     );
   });
 

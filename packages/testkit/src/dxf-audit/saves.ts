@@ -61,6 +61,9 @@ export type AuditSaveKind =
   | 'xbind-pictures'
   // -XREF Path and Pathtype of the xref set's xrefs (M5-04 part 15).
   | 'xref-path'
+  // PASTECLIP of the xref set's references into ezdxf's colors.dxf: the xrefs attached there
+  // (M5-04 part 19).
+  | 'xref-paste'
   // LINETYPE's loads, reloads and deletes on ezdxf's colors.dxf (M5-08 part 1).
   | 'linetype'
   // WBLOCK's new drawing of each corpus file's model space (M5-01 part 4).

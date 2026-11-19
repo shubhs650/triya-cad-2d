@@ -19,6 +19,10 @@
 // spreadsheet's cells (its HTML table or CSV as `cells`, its tab-separated rows as `text`), which
 // PASTECLIP pastes as a table (M4-06, paste-table.ts).
 //
+// A reference to an xref pastes into the same drawing as a reference to the same xref; into
+// another drawing it attaches the xref's file there (its path, type and units the source's), which
+// the app loads in the paste's undo step, as XATTACH's (M5-04 part 19, edit/clipboard.ts).
+//
 // Objects from another drawing are scaled by the ratio of the two drawings' INSUNITS (M2-32).
 // Where one of the two is unitless, AutoCAD scales nothing; Triya asks first what units the
 // unitless drawing is in (PRD FR-F9: "insert scales by unit ratio with prompt when unitless";
@@ -47,6 +51,7 @@ import type { CommandContext, CommandDef } from '../command';
 import { currentProps } from '../../properties/current';
 import { insUnitsOf } from '../../model/units';
 import type { Prompt, PromptAnswer } from '../prompt';
+import { loadPastedXrefs, xrefHandles } from '../xref-attach';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -363,7 +368,9 @@ export function pasteClipCommand(): CommandDef {
       if (!paste) return;
       const at = yield* insertionPoint(ctx, paste.clip, paste.units);
       if (!at) return;
+      const before = xrefHandles(ctx);
       ctx.edit((b) => pasteObjects(b, ctx.model, paste.clip, ctx.space, at, paste.units));
+      await loadPastedXrefs(ctx, before);
     },
   };
 }
@@ -380,7 +387,9 @@ export function pasteBlockCommand(): CommandDef {
       const at = yield* insertionPoint(ctx, paste.clip, paste.units);
       if (!at) return;
       const props = currentProps(ctx.model);
+      const before = xrefHandles(ctx);
       ctx.edit((b) => pasteAsBlock(b, ctx.model, paste.clip, ctx.space, props, at, paste.units));
+      await loadPastedXrefs(ctx, before);
     },
   };
 }
@@ -399,7 +408,9 @@ export function pasteOrigCommand(): CommandDef {
       const paste = yield* pasteUnits(ctx, found.clipboard, false);
       if (!paste) return;
       const { clip, units } = paste;
+      const before = xrefHandles(ctx);
       ctx.edit((b) => pasteObjects(b, ctx.model, clip, ctx.space, clip.base, units));
+      await loadPastedXrefs(ctx, before);
     },
   };
 }

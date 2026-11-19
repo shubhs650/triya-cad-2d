@@ -11,9 +11,13 @@
 // drawings open, and `~` at Overlay's file name opens the dialog on Overlay (engine side in
 // packages/engine/test/commands/xref-dash-attach.test.ts, the app's lookup in
 // apps/web/test/xref-files.test.ts).
+// M5-04 part 19: COPYCLIP of an xref reference and PASTECLIP into another open drawing attaches
+// the xref there, loaded from the file the app already holds (engine side in
+// packages/engine/test/commands/xref-paste.test.ts, the save in
+// packages/testkit/src/xref/xref-paste.test.ts).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { expectShown, ink, openWithPicker } from '../app/page';
+import { DXF, expectShown, ink, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 const ROOT = path.join(import.meta.dirname, '../../../packages/testkit/fixtures');
@@ -184,4 +188,68 @@ test('-XREF Attach attaches a drawing open in another tab, named at the command 
     'File "elevation" not found.',
   );
   await expect(prompt(page)).toHaveText('Command:');
+});
+
+test('PASTECLIP of an xref reference into another drawing attaches the xref there, loaded', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, GRANDCHILD);
+  await expectShown(page, 'xref-grandchild.dxf');
+  await openWithPicker(page, HOST);
+  await expectShown(page, 'raster-images.dxf');
+  await type(page, '-XREF', /^Enter an option/);
+  await type(page, 'A', 'Enter name of file to attach:');
+  await type(page, 'xref-grandchild', /^Specify insertion point or \[Scale\/X\/Y\/Z\/Rotate\]/);
+  await park(page);
+  await type(page, '60,20', /^Enter X scale factor/);
+  await type(page, '', /^Enter Y scale factor/);
+  await type(page, '', /^Specify rotation angle/);
+  await type(page, '', 'Command:');
+  // The reference, the last object drawn, copied.
+  await type(page, 'COPYCLIP', /^Select objects/);
+  await type(page, 'L', /^Select objects/);
+  await type(page, '', 'Command:');
+
+  // Pasted far from the other drawing's own objects, in a view of that spot.
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, 'W', /^Specify first corner/);
+  await type(page, '960,960', /^Specify opposite corner/);
+  await type(page, '1100,1040', 'Command:');
+  await page.waitForTimeout(500);
+  const before = await ink(page);
+  await shot(page, '1-before-paste');
+  await page.keyboard.type('PASTECLIP');
+  await page.keyboard.press('Enter');
+  // Between a unitless drawing and one with units, Enter keeps the objects' size (M3-09).
+  await expect(prompt(page)).toHaveText(/^(Specify insertion point|The objects come from)/);
+  if ((await prompt(page).textContent())?.startsWith('The objects')) {
+    await type(page, '', /^Specify insertion point/);
+  }
+  await park(page);
+  await type(page, '1010,980', 'Command:');
+  await expect.poll(() => ink(page), { timeout: 30_000 }).toBeGreaterThan(before + 300);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  await expect(log).toContainText('Attach Xref "xref-grandchild": xref-grandchild.dxf');
+  await expect(log).toContainText('"xref-grandchild" loaded.');
+  await shot(page, '2-pasted-xref');
+
+  await type(page, 'XREF', 'Command:');
+  await expect.poll(() => rows(page)).toContainEqual(expect.stringMatching(/^xref-grandchild \|/));
+  const row = (await rows(page)).find((r) => r.startsWith('xref-grandchild'))!;
+  expect(row).toContain('Loaded');
+  expect(row).toContain('Attach');
+  await shot(page, '3-references-palette');
+
+  // One undo step takes the reference and the xref back.
+  await park(page);
+  await type(page, 'U', 'Command:');
+  await expect.poll(() => ink(page), { timeout: 30_000 }).toBeLessThan(before + 100);
+  await expect
+    .poll(() => rows(page))
+    .not.toContainEqual(expect.stringMatching(/^xref-grandchild \|/));
 });
