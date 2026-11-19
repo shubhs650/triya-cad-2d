@@ -150,6 +150,7 @@ describe('the renderer with text bounds', () => {
     });
     const scene = surface('scene');
     const r = new Canvas2DRenderer({
+      now: () => 0,
       model,
       index,
       block: MODEL,

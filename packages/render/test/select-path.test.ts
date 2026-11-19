@@ -137,6 +137,7 @@ describe('Canvas2DRenderer.select with a polygon or fence', () => {
       entity('23', line(20, 0, 21, 0)),
     ]);
     const r = new Canvas2DRenderer({
+      now: () => 0,
       model: d.model,
       index: d.index,
       block: MODEL,

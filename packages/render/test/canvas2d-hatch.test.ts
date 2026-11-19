@@ -65,6 +65,7 @@ function setup(geom: HatchGeometry, scale = 10) {
   const d = drawing([entity('20', geom)]);
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,

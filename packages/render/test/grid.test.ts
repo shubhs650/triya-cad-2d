@@ -69,6 +69,7 @@ describe('a turned grid', () => {
     const d = drawing([]);
     const layers: ReturnType<typeof surface>[] = [];
     const r = new Canvas2DRenderer({
+      now: () => 0,
       model: d.model,
       index: d.index,
       block: MODEL,
@@ -144,6 +145,7 @@ describe('Canvas2DRenderer grid', () => {
     const layers: ReturnType<typeof surface>[] = [];
     const style = { background: '#000000', foreground: '#ffffff', showLineweights: false };
     const r = new Canvas2DRenderer({
+      now: () => 0,
       model: d.model,
       index: d.index,
       block: MODEL,
@@ -182,6 +184,7 @@ describe('Canvas2DRenderer grid', () => {
     const layers: ReturnType<typeof surface>[] = [];
     const style = { background: '#000000', foreground: '#ffffff', showLineweights: false };
     const r = new Canvas2DRenderer({
+      now: () => 0,
       model: d.model,
       index: d.index,
       block: MODEL,

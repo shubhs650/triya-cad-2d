@@ -56,6 +56,7 @@ function setup() {
   ]);
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,
@@ -187,6 +188,7 @@ describe('an associative array redrawn as its grip is dragged (M3-05 part 7)', (
     const record = assocArrayOf(d.model.objects.values(), array)!;
     const layers: ReturnType<typeof surface>[] = [];
     const r = new Canvas2DRenderer({
+      now: () => 0,
       model: d.model,
       index: SpatialIndex.build(d.model, { tol: toleranceForSize(1000) }),
       block: MODEL,

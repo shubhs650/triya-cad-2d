@@ -79,6 +79,7 @@ function setup(
   const d = drawing(entities, { layoutPlot: PLOT, ...o.extra });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: o.block ?? PAPER,
@@ -142,6 +143,7 @@ describe('layout sheet', () => {
     const d = drawing([]);
     const layers: ReturnType<typeof surface>[] = [];
     const r = new Canvas2DRenderer({
+      now: () => 0,
       model: d.model,
       index: d.index,
       block: PAPER,

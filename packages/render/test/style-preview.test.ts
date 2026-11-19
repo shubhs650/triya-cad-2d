@@ -59,6 +59,7 @@ type Layer = ReturnType<typeof surface>;
 function setup() {
   const layers: Layer[] = [];
   const s = new RenderSession({
+    now: () => 0,
     document,
     surface: surface('visible'),
     createLayer: () => {

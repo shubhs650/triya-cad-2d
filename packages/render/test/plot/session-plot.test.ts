@@ -37,6 +37,7 @@ const text = (handle: string, y: number): EntityInit =>
 
 function session() {
   return new RenderSession({
+    now: () => 0,
     document: {
       init: drawingInit(
         [

@@ -66,6 +66,7 @@ function setup(entities: EntityInit[], fonts: TextFonts | null = fontBook(), fon
   });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,

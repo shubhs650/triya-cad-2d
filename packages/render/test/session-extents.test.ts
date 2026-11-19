@@ -68,6 +68,7 @@ const STYLE_DARK = { background: '#000000', foreground: '#ffffff', showLineweigh
 
 function session(fonts?: FontSources): RenderSession {
   return new RenderSession({
+    now: () => 0,
     document,
     surface: surface('visible'),
     createLayer: () => surface('layer'),
@@ -105,6 +106,7 @@ describe('the render session measures its space (M1-35 part 2)', () => {
 
   it('takes in an unclipped PDF underlay page once the app supplies it (M1-20)', () => {
     const s = new RenderSession({
+      now: () => 0,
       document: {
         init: drawingInit([
           entity('20', line(0, 0, 10, 0)),
@@ -146,6 +148,7 @@ describe('the render session measures its space (M1-35 part 2)', () => {
 
   it('takes a page size read from the PDF before any page of it is drawn (M2-68)', () => {
     const s = new RenderSession({
+      now: () => 0,
       document: {
         init: drawingInit([
           entity('20', line(0, 0, 10, 0)),
@@ -183,6 +186,7 @@ describe('the render session measures its space (M1-35 part 2)', () => {
 
   it('takes the page size from a raster of the page with layers turned off too (M2-38)', () => {
     const s = new RenderSession({
+      now: () => 0,
       document: {
         init: drawingInit([
           entity('20', line(0, 0, 10, 0)),
@@ -235,6 +239,7 @@ describe('the render session measures its space (M1-35 part 2)', () => {
     });
     const withDim = (fonts?: FontSources) =>
       new RenderSession({
+        now: () => 0,
         document: {
           init: drawingInit([entities[0]!, dim], {
             textStyles: [style],
@@ -260,6 +265,7 @@ describe('the render session measures its space (M1-35 part 2)', () => {
 
   it('has no extents for a space with nothing of known extent', () => {
     const empty = new RenderSession({
+      now: () => 0,
       document: { init: drawingInit([]), block: MODEL, tol: toleranceForSize(1000) },
       surface: surface('visible'),
       createLayer: () => surface('layer'),
@@ -469,6 +475,7 @@ describe('a block made since the drawing opened (the Block Editor, M5-02)', () =
     });
     const layers: Recorded[] = [];
     const s = new RenderSession({
+      now: () => 0,
       document: { ...document, block },
       surface: surface('visible'),
       createLayer: () => {

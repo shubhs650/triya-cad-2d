@@ -51,6 +51,7 @@ function setup(
   const layers: (ReturnType<typeof surface> & { name: string })[] = [];
   const asked: UnderlayRequest[] = [];
   const r = new Canvas2DRenderer({
+    now: () => 0,
     model: d.model,
     index: d.index,
     block: MODEL,
