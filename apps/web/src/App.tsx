@@ -153,6 +153,7 @@ import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { drawingFileReply, type HeldDrawing } from './block-files';
+import { pdfFileReply } from './pdf-files';
 import { writeXrefFile, xrefDrawingReply, xrefFileReply } from './xref-files';
 import { DesignCenterPalette } from './DesignCenterPalette';
 import { DESIGN_CENTER_DRAG, designCenterDrop, takeDesignCenterDrag } from './design-center';
@@ -583,6 +584,8 @@ function viewContext(id: number): ViewContext {
     drawingFile: (file) => drawingFileReply(file, heldDrawings()),
     // -XREF Attach and Overlay (M5-04 part 12): a drawing named at the command line.
     xrefFile: (file) => xrefFileByName(id, file),
+    // -PDFATTACH (M5-04 part 13): a PDF named at the command line.
+    pdfFile: pdfFileByName,
     // WBLOCK (M5-01 part 4): its new drawing, or the whole drawing as EXPORT's DXF, downloaded.
     writeBlock: async (r) => {
       try {
@@ -1421,6 +1424,22 @@ const pdfFiles: PdfAttachFiles = {
     supplied.changed();
   },
 };
+
+/**
+ * -PDFATTACH's file named at the command line (M5-04 part 13): found among the PDFs supplied this
+ * session, then the kept folders; one found in a folder is supplied as a dropped one is, so its
+ * underlays draw at once.
+ */
+function pdfFileByName(file: string): Promise<ViewReply> {
+  return pdfFileReply(file, [() => pdfPages.files(), () => referenceFiles.files()], {
+    pages: pdfFiles.read,
+    found: (name, bytes) => {
+      if (pdfPages.has(name)) return;
+      pdfPages.add(name, bytes);
+      supplied.changed();
+    },
+  });
+}
 
 /** A drawing file's INSUNITS, unitless when it states none. */
 async function drawingUnits(file: Blob): Promise<number> {

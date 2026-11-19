@@ -16,6 +16,7 @@ import type {
 } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 import type { XrefAttachFile } from '../../edit/xref-attach';
+import type { PdfAttachPage } from '../../edit/underlay-attach';
 import type { ChangeSet } from '../../model/changeset';
 import type { DocumentInit } from '../../model/document';
 import type { ClipboardPicture } from '../../edit/picture';
@@ -193,6 +194,13 @@ export type ViewRequest =
    * loads it into the xref attached (`xref` action `attach`). No `xrefFile` when none is found.
    */
   | { readonly op: 'xrefFile'; readonly file: string }
+  /**
+   * -PDFATTACH (M5-04 part 13): the PDF file `file` (folders and the extension optional, any
+   * case), which the app finds among the PDFs supplied this session and its kept folders,
+   * answered as `pdfFile` with every page's size; the app then serves the file to the drawing's
+   * underlays. No `pdfFile` when none is found.
+   */
+  | { readonly op: 'pdfFile'; readonly file: string }
   /**
    * WBLOCK (M5-01 part 4): the app writes the new drawing file `file` (DXF, DEC-047) and hands it
    * over: `drawing`'s objects, or without it the whole drawing as Save would write it.
@@ -561,6 +569,11 @@ export type ViewReply =
       readonly written?: { readonly file: string; readonly downloaded: boolean };
       /** What an `xrefFile` request found: the file's name and INSUNITS (M5-04 part 12). */
       readonly xrefFile?: XrefAttachFile;
+      /** What a `pdfFile` request found: the file's name and its pages' sizes (M5-04 part 13). */
+      readonly pdfFile?: {
+        readonly fileName: string;
+        readonly pages: readonly PdfAttachPage[];
+      };
       /** What a `drawingFile` request read: the file's name and its model space (M5-01). */
       readonly drawing?: { readonly name: string; readonly content: Clipboard };
       /** What a `clipboard` read found; absent when the Clipboard is empty. */
