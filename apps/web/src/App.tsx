@@ -29,7 +29,9 @@ import {
   LAYEREVALCTL,
   REVCLOUDGRIPS,
   lassoPrompt,
+  layerNotifyEventOf,
   type FieldEvent,
+  type LayerNotifyEvent,
 } from '@triya/engine';
 import {
   decodeRaster,
@@ -208,6 +210,8 @@ import { openPdf } from './underlay/pdfjs';
 import { PlotPreview } from './PlotPreview';
 import { AliasEditor } from './AliasEditor';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
+import { LayerNoticeTray, PlotNoticeDialog } from './LayerNotice';
+import { alertLayers, layerNotices, plotNotice, unreconciledView } from './layer-notice';
 import { aliasesOf, applyAliasFile } from './user-aliases';
 import { applyKeyOverrides, onShortcuts } from './shortcuts';
 import {
@@ -337,6 +341,22 @@ addEventListener('offline', () => pwa.setOnline(false));
 addEventListener('beforeinstallprompt', (e) => pwa.offerInstall(e as unknown as InstallPromptLike));
 addEventListener('appinstalled', () => pwa.installed());
 
+/**
+ * The Unreconciled New Layers alert (M5-19 part 4) after `event` in drawing `doc`, when its
+ * LAYERNOTIFY asks for one and a layer is unreconciled: the status bar's icon and balloon.
+ */
+function layerNotice(doc: number, event: LayerNotifyEvent): void {
+  const d = store.getSnapshot().docs.find((x) => x.id === doc);
+  if (d) layerNotices.raise(doc, alertLayers(d.opened.init, engines.changesOf(doc), event));
+}
+
+/** View Unreconciled New Layers: the Layer Properties Manager on the Unreconciled New Layers node. */
+function viewUnreconciled(doc: number): void {
+  layerNotices.closeBalloon(doc);
+  unreconciledView.request(doc);
+  dockedPalette.set('layers');
+}
+
 /** The drawing waits at `Command:`: no command runs and no prompt or dialog is up. */
 function atCommand(doc: number): boolean {
   const line = commandLines.get(doc);
@@ -351,6 +371,11 @@ function atCommand(doc: number): boolean {
 engines.onCommand((doc, o) => {
   commandLines.follow(doc, o);
   if (o.type === 'change') store.edited(doc);
+  // An insert alerts for unreconciled new layers (LAYERNOTIFY 32, M5-19 part 4).
+  if (o.type === 'commit') {
+    const event = layerNotifyEventOf(o.command);
+    if (event) layerNotice(doc, event);
+  }
   if (o.type === 'prompt' || o.type === 'idle' || o.type === 'waiting') {
     const prompt = commandLines.get(doc).prompt;
     for (const c of controllersOf(doc)) c.setPrompt(prompt);
@@ -779,6 +804,7 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
     );
     if (r.ok) {
       store.saved(id, r.name, r.file, edits);
+      layerNotice(id, 'save');
       const handle = r.file.handle;
       if (handle) void recent.add(handle as RecentHandle).then(() => pictureForRecent(id));
       // The pictures pasted from other apps go beside it, or are offered to (M2-72).
@@ -823,6 +849,7 @@ async function closeDoc(id: number): Promise<boolean> {
   if (previewMode.get()?.doc === id) previewMode.close();
   lastPlotSettings.forget(id);
   pictureFiles.forget(id);
+  layerNotices.forget(id);
   store.close(id);
   engines.stop(id);
   commandLines.forget(id);
@@ -885,6 +912,14 @@ async function fileCommand(
       : { ok: false, message: 'There are no drawings to recover.' };
   }
   if (action === 'plot') {
+    // With unreconciled new layers PLOT asks first (LAYERNOTIFY 1, M5-19 part 4): Yes shows them
+    // in the Layer Properties Manager instead of plotting.
+    const d = store.getSnapshot().docs.find((x) => x.id === id);
+    const layers = d && !resume ? alertLayers(d.opened.init, engines.changesOf(id), 'plot') : [];
+    if (layers.length > 0 && (await plotNotice.ask(layers))) {
+      viewUnreconciled(id);
+      return { ok: true };
+    }
     // PLOT and PRINT (M2-17): the Plot dialog plots the space shown; PLOT waits for it, and
     // asks for a window's corners when it closes on Window< (part 2), then shows it again as it
     // closed, with the window when one was picked (part 3).
@@ -1844,6 +1879,8 @@ async function loadXrefs(
     await Promise.all(controllersOf(doc).map((c) => c.flush()));
     // An xref shows another file: the drawing itself has no new changes to save.
     store.edited(doc, false);
+    // An xref attached or reloaded alerts for unreconciled new layers (LAYERNOTIFY 4).
+    layerNotice(doc, 'xref');
   } catch (e) {
     store.failed(name, openError(name, e));
     throw e;
@@ -1899,6 +1936,8 @@ async function open(
     tellSessionVariables(id);
     tellAliases(id);
     void fieldEvent(id, 'open', dwgName(file.name));
+    // A drawing opened with unreconciled new layers alerts for them (LAYERNOTIFY 2).
+    layerNotice(id, 'open');
     // The Properties palette, docked, showed the drawing before its engine started (M2-21).
     if (dockedPalette.get() === 'properties' && store.getSnapshot().active === id)
       engines.command(id, { kind: 'properties', open: true });
@@ -2685,6 +2724,7 @@ export function App() {
       <TemplateChooser />
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />
+      <PlotNoticeDialog />
       <SnapMenu />
       <ShortcutMenu />
       <GripMenu />
@@ -3206,6 +3246,7 @@ function StatusBar({
     <footer className="status-bar">
       <span className="coords" data-testid="coords" ref={coords} />
       <span className="spacer" />
+      {doc && <LayerNoticeTray doc={doc} onView={() => viewUnreconciled(doc.id)} />}
       {doc && missingReferences > 0 && (
         // AutoCAD's tray icon and balloon: "Some xrefs could not be found".
         <button type="button" className="references-alert" onClick={onReferences}>
