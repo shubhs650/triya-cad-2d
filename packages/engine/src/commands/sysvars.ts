@@ -36,6 +36,7 @@ import { OSNAP_OFF } from '../input/osnap';
 import { CETRANSPARENCY } from '../properties/current';
 import { FIELDEVAL, FIELDEVAL_INITIAL } from '../edit/field-eval';
 import { CENTER_VARIABLES, isCenterLength } from '../edit/center-settings';
+import { PDFFRAME, PDFFRAME_INITIAL } from '../edit/pdf-frame';
 
 export type VariableKind =
   /** A whole number, `min`–`max` when bounded. */
@@ -500,6 +501,9 @@ const DICTIONARY_VARIABLES: Readonly<
   // M4-10 part 3 (AutoCAD 2024 Help, "FIELDEVAL"): when fields update, bits 1 open, 2 save,
   // 4 plot, 8 eTransmit, 16 regeneration; "Saved in: Drawing", initially 31 (edit/field-eval.ts).
   [FIELDEVAL]: { kind: 'integer', min: 0, max: 31 },
+  // M5-04 part 17 (AutoCAD 2024 Help, "PDFFRAME"): the PDF underlay frame, 0 hidden, 1 shown
+  // and plotted, 2 shown but not plotted; "Saved in: Drawing", initially 1 (edit/pdf-frame.ts).
+  [PDFFRAME]: { kind: 'integer', min: 0, max: 2 },
 };
 
 /**
@@ -509,6 +513,7 @@ const DICTIONARY_VARIABLES: Readonly<
 const DICTIONARY_INITIAL: Readonly<Record<string, string | ((m: VariableSource) => string)>> = {
   [FIELDEVAL]: String(FIELDEVAL_INITIAL),
   ...CENTER_VARIABLES,
+  [PDFFRAME]: String(PDFFRAME_INITIAL),
 };
 
 /** Bounds AutoCAD 2024's system variable reference gives (those a wrong value would break). */

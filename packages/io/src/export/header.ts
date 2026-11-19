@@ -54,8 +54,8 @@ const VOLATILE_HEADER = new Set([
 /**
  * Variables Triya keeps for the session where the drawing has nowhere to save them (M2-35):
  * CETRANSPARENCY, the transparency new objects take, HPTRANSPARENCY, the one new hatches take
- * (M4-07), FIELDEVAL, when fields update (M4-10 part 3), and the CENTER* variables new center
- * marks take (M4-08 part 3) have no HEADER variable in DXF. A
+ * (M4-07), FIELDEVAL, when fields update (M4-10 part 3), the CENTER* variables new center
+ * marks take (M4-08 part 3) and PDFFRAME (M5-04 part 17) have no HEADER variable in DXF. A
  * save writes each into the drawing's DICTIONARYVAR of that name when it has one, and otherwise
  * leaves the file as it was rather than make a variable-dictionary entry AutoCAD may not read.
  */
@@ -71,6 +71,9 @@ const SESSION_ONLY = new Set([
   'CENTERLTYPE',
   'CENTERLTSCALE',
   'CENTERLAYER',
+  // PDFFRAME, the PDF underlay frame (M5-04 part 17, DEC-077): DXF has $DWFFRAME and $DGNFRAME
+  // but no header variable for it.
+  'PDFFRAME',
 ]);
 
 /**

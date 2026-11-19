@@ -11,7 +11,7 @@ import {
   type UnderlayRaster,
   type UnderlayRequest,
 } from '../src/index';
-import { drawing, entity, MODEL, surface, type Call, type FakeContext } from './fixtures';
+import { change, drawing, entity, MODEL, surface, type Call, type FakeContext } from './fixtures';
 
 const DARK: RenderStyle = { background: '#000000', foreground: '#ffffff', showLineweights: false };
 
@@ -42,8 +42,12 @@ const PAGE: UnderlayRaster = {
 function setup(
   geoms: { handle: string; geom: EntityGeometry }[],
   rasters: Record<string, UnderlayRaster> = {},
+  header: [string, string][] = [],
 ) {
-  const d = drawing(geoms.map((g) => entity(g.handle, g.geom)));
+  const d = drawing(
+    geoms.map((g) => entity(g.handle, g.geom)),
+    { header },
+  );
   const layers: (ReturnType<typeof surface> & { name: string })[] = [];
   const asked: UnderlayRequest[] = [];
   const r = new Canvas2DRenderer({
@@ -72,7 +76,7 @@ function setup(
     r.frame();
     return scene;
   };
-  return { r, layers, asked, redraw, rasters, model: d.model };
+  return { r, d, layers, asked, redraw, rasters, model: d.model };
 }
 
 function transformAt(c: FakeContext, name: string, n = 0): Call | undefined {
@@ -231,5 +235,90 @@ describe('underlays', () => {
     expect(handles(r.select(window))).toEqual(['20']);
     expect(handles(r.select(crossing))).toEqual(['20']);
     expect(r.select({ ...window, box: { ...window.box, maxX: 17 } })).toEqual([]);
+  });
+  describe('PDFFRAME (M5-04 part 17)', () => {
+    const clipped = underlay({
+      flags: 3,
+      clip: [
+        { x: 0, y: 0 },
+        { x: 4, y: 2 },
+      ],
+    });
+    // The underlay's own strokes: the selection's are in its colour, #4da3ff.
+    const frames = (c: FakeContext) =>
+      c.calls.filter((k) => k[0] === 'stroke' && k[1] !== '#4da3ff');
+    const strokeStyles = (c: FakeContext) => c.named('stroke').map((k) => k[1]);
+    /** The path the selection's first stroke strokes: its lineTo calls since its beginPath. */
+    const selectionPath = (c: FakeContext) => {
+      const at = c.calls.findIndex((k) => k[0] === 'stroke' && k[1] === '#4da3ff');
+      const from = c.calls
+        .slice(0, at)
+        .map((k) => k[0])
+        .lastIndexOf('beginPath');
+      return c.calls.slice(from, at).filter((k) => k[0] === 'moveTo' || k[0] === 'lineTo');
+    };
+
+    it('outlines the page with PDFFRAME 1 and 2, and not with 0', () => {
+      for (const [value, outlined] of [
+        [undefined, 1],
+        ['1', 1],
+        ['2', 1],
+        ['0', 0],
+      ] as const) {
+        const header: [string, string][] = value === undefined ? [] : [['PDFFRAME', value]];
+        const c = setup([{ handle: '20', geom: underlay() }], { '9A': PAGE }, header).redraw();
+        expect(c.named('drawImage'), value).toHaveLength(1);
+        expect(c.named('stroke'), value).toHaveLength(outlined);
+      }
+    });
+
+    it('hides the boundary of a clipped underlay whose page is not drawn with PDFFRAME 0', () => {
+      const shown = setup([{ handle: '20', geom: clipped }], {}, [['PDFFRAME', '2']]).redraw();
+      expect(shown.named('stroke')).toHaveLength(1);
+      const hidden = setup([{ handle: '20', geom: clipped }], {}, [['PDFFRAME', '0']]);
+      const c = hidden.redraw();
+      expect(c.named('stroke')).toEqual([]);
+      // Nothing to draw, but it can still be picked by its boundary.
+      expect(hidden.r.hitTest({ x: 80, y: 60 }, 2)).toHaveLength(1);
+    });
+
+    it('draws the frame again, or hides it, when PDFFRAME changes', () => {
+      const { r, d, redraw } = setup([{ handle: '20', geom: underlay() }], { '9A': PAGE });
+      expect(redraw().named('stroke')).toHaveLength(1);
+      r.apply(change(d, (b) => b.setHeader('PDFFRAME', '0')));
+      expect(redraw().named('stroke')).toEqual([]);
+      r.apply(change(d, (b) => b.setHeader('PDFFRAME', '2')));
+      expect(redraw().named('stroke')).toHaveLength(1);
+    });
+
+    it('shows the frame of a selected or previewed underlay as the selection with PDFFRAME 0', () => {
+      // "The frame is temporarily displayed during selection preview or object selection."
+      const { r, model, redraw, layers } = setup(
+        [{ handle: '20', geom: underlay() }],
+        {
+          '9A': PAGE,
+        },
+        [['PDFFRAME', '0']],
+      );
+      const id = model.ids.idOf('20')!;
+      r.setHighlight([id]);
+      const c = redraw();
+      expect(frames(c)).toEqual([]);
+      expect(strokeStyles(c)).toEqual(['#4da3ff', '#4da3ff']);
+      // The page's outline, 8 × 4 at world (10, 20): four corners.
+      expect(selectionPath(c)).toHaveLength(4);
+      r.setHighlight([]);
+      const transient = layers[1]!.ctx;
+      transient.clear();
+      r.setSelectionPreview({
+        screen: { x: 80, y: 50 },
+        aperture: 3,
+        filter: 3,
+        groups: true,
+      });
+      r.frame();
+      expect(strokeStyles(transient)).toContain('#4da3ff');
+      expect(selectionPath(transient)).toHaveLength(4);
+    });
   });
 });

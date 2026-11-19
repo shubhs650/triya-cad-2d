@@ -21,7 +21,7 @@
 //   extent and the plot area, at the plot's resolution), after its contrast and monochrome, an
 //   image in its frame clipped to its boundary, faded as the PDF plot fades it (opacity), then
 //   its frame stroked as PDFFRAME 1 plots it: the boundary while clipping is on, else the page's
-//   edge (M2-39). Pixels and not vectors: SVG has no form XObject to copy the page's content
+//   edge (M2-39); none when PDFFRAME leaves it off the plot (`frameOff`, M5-04 part 17). Pixels and not vectors: SVG has no form XObject to copy the page's content
 //   into, and turning a PDF's content (fonts, shadings, images) into SVG is a PDF renderer's
 //   work, which pdf.js no longer does (its SVG back end went in v4). A page the plot cannot read
 //   plots as the PDF plot plots it: the boundary while clipping is on, else nothing.
@@ -413,7 +413,7 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
     const um = compose(m, u.frame);
     if (!raster || !invertible(um) || raster.pixels.width * raster.pixels.height === 0) {
       // Without its page: the boundary while clipping is on, else nothing (see the header).
-      if (!u.clipped || segments.length === 0) return undefined;
+      if (!u.clipped || segments.length === 0 || u.frameOff) return undefined;
       return {
         markup: `<path d="${pathData(segments)}" ${stroke(item.paint)}${alpha}/>`,
         box: segmentsBox(segments),
@@ -444,9 +444,9 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
       const clip = def(`c${ids.size}`, (id) => `<clipPath id="${id}"><path d="${d}"/></clipPath>`);
       shown = `<g clip-path="url(#${clip})">${faded}</g>`;
     }
-    // The frame after the page, unfaded, as the PDF plot strokes it.
+    // The frame after the page, unfaded, as the PDF plot strokes it (none with `frameOff`).
     return {
-      markup: `${shown}\n<path d="${pathData(frame)}" ${stroke(item.paint)}/>`,
+      markup: u.frameOff ? shown : `${shown}\n<path d="${pathData(frame)}" ${stroke(item.paint)}/>`,
       box: segmentsBox(frame),
       area: true,
     };

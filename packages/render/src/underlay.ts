@@ -13,6 +13,7 @@
 // from the raster it has and asks for nothing new.
 
 import type { Box, UnderlayGeometry, Vec2 } from '@triya/engine';
+import type { ImageFrames } from './image';
 import type { Paint } from './tessellate';
 import {
   PATH_L,
@@ -106,17 +107,23 @@ export function pagePath(f: PrimitiveFrame, page: UnderlayRaster['page']): numbe
  * A PDFUNDERLAY: one fill carrying its page, clipped to its boundary while clipping is on. An
  * underlay turned off (DXF 280 bit 2 clear) draws nothing; AutoCAD's help does not say whether
  * its frame stays (ambiguity noted, M1-20). Without a definition there is no page to show, so a
- * clipped one draws its boundary and an unclipped one nothing.
+ * clipped one draws its boundary and an unclipped one nothing. With PDFFRAME off (`frames`,
+ * M5-04 part 17) the boundary or page is not outlined.
  */
-export function underlayPrimitives(g: UnderlayGeometry, paint: Paint): RenderPrimitive[] {
+export function underlayPrimitives(
+  g: UnderlayGeometry,
+  paint: Paint,
+  frames?: ImageFrames,
+): RenderPrimitive[] {
   if ((g.flags & UNDERLAY_ON) === 0) return [];
   if (!(g.scale.x !== 0 && g.scale.y !== 0)) return [];
   const f = underlayFrame(g);
   const clip = (g.flags & UNDERLAY_CLIPPING) !== 0 ? boundary(g) : undefined;
   const path = clip ? underlayRing(f, clip) : [];
   const lineweight = paint.lineweight === undefined ? {} : { lineweight: paint.lineweight };
+  const framed = frames?.underlay !== false;
   if (!g.definition)
-    return clip ? [{ kind: 'stroke', path, color: paint.color, ...lineweight }] : [];
+    return clip && framed ? [{ kind: 'stroke', path, color: paint.color, ...lineweight }] : [];
   const layersOff = layerSet(g.layersOff);
   return [
     {
@@ -133,6 +140,7 @@ export function underlayPrimitives(g: UnderlayGeometry, paint: Paint): RenderPri
         monochrome: (g.flags & UNDERLAY_MONOCHROME) !== 0,
         adjustColors: (g.flags & UNDERLAY_ADJUST_COLORS) !== 0,
         ...(layersOff.length > 0 ? { layersOff } : {}),
+        ...(framed ? {} : { frameOff: true as const }),
       },
     },
   ];

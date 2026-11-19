@@ -278,6 +278,11 @@ export interface UnderlayFill {
    * raster is asked for and kept apart from the plain page's (`underlayKey`).
    */
   readonly layersOff?: readonly string[];
+  /**
+   * PDFFRAME 0, or 2 in a plot (M5-04 part 17): the boundary or page is not outlined; absent
+   * when it is. It stays the underlay's outline for picking and the selection's highlight.
+   */
+  readonly frameOff?: true;
 }
 
 /**
