@@ -159,7 +159,7 @@ test('Reload All References reloads every file; Details says where each was foun
   await expect(detail(page, 'Reference Name')).toHaveText('xref-child-tb');
   await expect(detail(page, 'Status')).toHaveText('Loaded');
   await expect(detail(page, 'Type')).toHaveText('Attach');
-  await expect(detail(page, 'Saved Path')).toHaveText('.\\xref-child-tb.dxf');
+  await expect(detail(page, 'Saved Path').getByRole('textbox')).toHaveValue('.\\xref-child-tb.dxf');
   // Dropped alone, a file is found at its name: the browser tells of no folder.
   await expect(detail(page, 'Found At')).toHaveText('xref-child-tb.dxf');
   await expect(detail(page, 'Size')).toHaveText(/^\d[\d,]* KB$/);
@@ -223,6 +223,67 @@ test("Open opens a reference's file: an image in a browser tab, an xref in a dra
     page.getByRole('tablist', { name: 'Open drawings' }).getByRole('tab', { name: /grandchild/ }),
   ).toHaveCount(1);
   await shot(page, '6-open-xref');
+});
+
+test("Saved Path, Browse and Remove Path change a reference's path and reload it", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const full = await loadedParent(page);
+  const said = page.getByRole('list', { name: 'What was done' }).getByRole('listitem');
+  const savedPath = detail(page, 'Saved Path').getByRole('textbox');
+
+  // M5-04 part 15: the overlay pointed at the grandchild's file, typed in place: it is reloaded
+  // from it, its title block and the grandchild it brought gone.
+  await row(page, 'xref-child-ovl').click();
+  await expect(savedPath).toHaveValue('.\\xref-child-tb.dxf');
+  await savedPath.fill('C:\\Sheets\\xref-grandchild.dxf');
+  await savedPath.press('Enter');
+  await expect(said).toHaveText([
+    '"xref-child-ovl" now has the saved path C:\\Sheets\\xref-grandchild.dxf',
+  ]);
+  await expect
+    .poll(() => statuses(page), { timeout: 30_000 })
+    .toEqual([
+      'xref-child-tb | Loaded',
+      'xref-grandchild | Loaded',
+      'xref-stamp | Loaded',
+      'xref-child-ovl | Loaded',
+    ]);
+  await expect(savedPath).toHaveValue('C:\\Sheets\\xref-grandchild.dxf');
+  await expect.poll(() => ink(page), { timeout: 15_000 }).toBeLessThan(full - 1500);
+  await shot(page, '7-saved-path');
+
+  // One undo step: U brings the old path back, with the title block it showed.
+  await enterCommand(page, 'U');
+  await expect.poll(() => statuses(page), { timeout: 30_000 }).toContain('xref-child-ovl | Loaded');
+  await row(page, 'xref-child-ovl').click();
+  await expect(savedPath).toHaveValue('.\\xref-child-tb.dxf');
+  await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(full - 300);
+
+  // Browse... picks the file: its name is the saved path, and the xref loads from it.
+  await page
+    .getByRole('region', { name: 'Details' })
+    .getByLabel('Reference file')
+    .setInputFiles(path.join(FIXTURES, 'xref-grandchild.dxf'));
+  await expect(said).toHaveText(['"xref-child-ovl" now has the saved path xref-grandchild.dxf']);
+  await expect(savedPath).toHaveValue('xref-grandchild.dxf');
+  await expect.poll(() => statuses(page), { timeout: 30_000 }).toContain('xref-child-ovl | Loaded');
+
+  // Remove Path keeps the file name alone; Escape in the box puts the saved path back.
+  await row(page, 'xref-child-tb').click();
+  await savedPath.fill('elsewhere.dxf');
+  await savedPath.press('Escape');
+  await expect(savedPath).toHaveValue('.\\xref-child-tb.dxf');
+  await button(page, 'Remove Path').click();
+  await expect(said).toHaveText(['"xref-child-tb" now has the saved path xref-child-tb.dxf']);
+  await expect(savedPath).toHaveValue('xref-child-tb.dxf');
+  await expect(button(page, 'Remove Path')).toBeDisabled();
+  await expect.poll(() => statuses(page), { timeout: 30_000 }).toContain('xref-child-tb | Loaded');
+  // A nested reference's path is its xref file's: shown, not edited.
+  await row(page, 'xref-stamp').click();
+  await expect(detail(page, 'Saved Path')).toHaveText('.\\xref-stamp.png');
+  await expect(detail(page, 'Saved Path').getByRole('textbox')).toHaveCount(0);
 });
 
 test('-XREF lists, unloads and detaches by name', async ({ page }) => {

@@ -145,6 +145,13 @@ export { detachXrefs, xrefDetachChange, xrefDetachProblem } from './xrefs';
 export { bindXrefs, xrefBindChange, xrefBindProblem } from './xref-bind';
 export { xrefWrite, contentHandles, type XrefWrite } from './xref-save';
 export {
+  referencePath,
+  referencePathProblem,
+  setReferencePath,
+  typedPath,
+  withoutFolder,
+} from './reference-path';
+export {
   XBIND_TABLES,
   xbindChange,
   xbindDefinition,

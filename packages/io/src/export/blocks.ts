@@ -10,7 +10,8 @@
 // (PURGE), xref and layout blocks (M1-21), except the sheet block of a layout the same save adds
 // (LAYOUT New, layouts.ts) and a new xref (XATTACH, M5-04 part 6: its BLOCK's DXF 70 bit 4, or 4
 // and 8 for an overlay, and DXF 1 path; its content is the xref's file's and never saved), and
-// changes to a dynamic block's links. A new block may be dynamic,
+// changes to a dynamic block's links. An xref's new path (-XREF Path and Pathtype, the References
+// palette's Saved Path, M5-04 part 15) is its BLOCK's DXF 1, never empty. A new block may be dynamic,
 // or a state of a dynamic block, when the file will say so (M2-32 part 4: PASTECLIP). The two sheet blocks that
 // swap names when another layout is made current are renamed by layouts.ts, which checks the swap.
 
@@ -81,6 +82,8 @@ export interface BlockPlan {
   readonly bound: BlockRecord[];
   /** New xrefs (XATTACH): their BLOCK's path (DXF 1). */
   readonly attached: { readonly acad: BlockRecord; readonly path: string }[];
+  /** Xrefs given another path (-XREF Path and Pathtype, M5-04 part 15): their BLOCK's DXF 1. */
+  readonly repathed: { readonly acad: BlockRecord; readonly path: string }[];
 }
 
 /**
@@ -158,6 +161,7 @@ export function planBlocks(
     swapping,
     bound: [],
     attached: [],
+    repathed: [],
   };
   const problems = [...records.problems];
   const baseDefs = new Map((base.blocks ?? []).map((d) => [d.handle, d]));
@@ -173,13 +177,18 @@ export function planBlocks(
     const unbound = bound(was.get(h), record) && a.xrefPath === undefined;
     // A new xref's path is its BLOCK's DXF 1 (XATTACH); its record says it is an xref.
     const attached = !b && isNewXref(record) && a.xrefPath !== undefined;
+    // An xref's new path (-XREF Path, M5-04 part 15): only the BLOCK's DXF 1 changes, never to
+    // nothing (a bind takes the path away, and a block without one is no xref).
+    const repathed =
+      b?.xrefPath !== undefined && a.xrefPath !== undefined && a.xrefPath !== b.xrefPath;
+    if (repathed && a.xrefPath.trim() === '') out.push("an xref's BLOCK names its file (DXF 1)");
     const rest = (d: BlockDefinition | undefined) =>
       Object.fromEntries(
         Object.entries(d ?? {}).filter(
           ([k]) =>
             !WRITTEN.has(k) &&
             !k.startsWith('dynamic') &&
-            !((unbound || attached) && k === 'xrefPath'),
+            !((unbound || attached || repathed) && k === 'xrefPath'),
         ),
       );
     if (!same(rest(b), rest(a)))
@@ -196,11 +205,12 @@ export function planBlocks(
       continue;
     }
     const described = b ? b.description !== a.description : a.description !== undefined;
-    if (!moved && !described && !unbound) continue;
+    if (!moved && !described && !unbound && !repathed) continue;
     const acad = resolve(r, h, BlockRecord);
     if (!acad) continue; // the record's own problem says why
     if (unbound && b?.xrefPath !== undefined) plan.bound.push(acad);
     if (attached) plan.attached.push({ acad, path: a.xrefPath! });
+    if (repathed) plan.repathed.push({ acad, path: a.xrefPath! });
     if (moved) (b ? plan.moved : plan.added).push({ acad, basePoint: a.basePoint });
     if (described) plan.described.push({ acad, description: a.description ?? null });
   }
@@ -361,4 +371,6 @@ export function writeBlocks(doc: CadDocument, r: Resolver, plan: BlockPlan): voi
   for (const acad of plan.bound) acad.blockEntity.xRefPath = null;
   // Attached: the record's flags (made with it) are its BLOCK's; the path is its DXF 1.
   for (const { acad, path } of plan.attached) acad.blockEntity.xRefPath = path;
+  // Repathed: the BLOCK's DXF 1 alone.
+  for (const { acad, path } of plan.repathed) acad.blockEntity.xRefPath = path;
 }

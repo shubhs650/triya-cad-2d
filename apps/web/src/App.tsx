@@ -218,6 +218,7 @@ import {
   fileNameOf,
   loadXrefFiles,
   missingFileNames,
+  pathChangeLines,
   pendingXrefs,
   rasterMimeType,
   referencesOf,
@@ -225,6 +226,7 @@ import {
   type FileSource,
   type FoundFile,
   type PendingXref,
+  type ReferencePathChange,
   type ReferenceRow,
   type SuppliedFiles,
 } from './xrefs';
@@ -1714,6 +1716,29 @@ async function detachXrefs(doc: number, blocks: readonly string[]): Promise<stri
   return undefined;
 }
 
+/**
+ * The References palette's Saved Path, Browse... and Remove Path (M5-04 part 15): one XREF undo
+ * step in the engine (`reference-path`), with the loads of the xrefs given a new path. A file
+ * Browse... picked joins the files found first, so the xref loads from it (its `xref` attach
+ * request) and an image or PDF draws from it. One line each.
+ */
+function changeReferencePaths(
+  doc: number,
+  changes: readonly ReferencePathChange[],
+  file?: File,
+): Promise<string[]> {
+  const d = store.getSnapshot().docs.find((x) => x.id === doc);
+  if (!d || changes.length === 0) return Promise.resolve([]);
+  const rows = referencesOf(d.opened.init, engines.changesOf(doc), suppliedFiles);
+  if (file) {
+    const source = fromFile(file);
+    if (isPdfFile(file.name) || isRasterFile(file.name)) supply([source], 'drop');
+    else xrefSources.set(fileKey(file.name), source);
+  }
+  engines.command(doc, { kind: 'reference-path', edits: changes });
+  return Promise.resolve(pathChangeLines(changes, rows));
+}
+
 /** XREF Bind (M5-04 part 2) from the References palette: one XREF undo step. */
 async function bindXrefs(
   doc: number,
@@ -2498,6 +2523,7 @@ export function App() {
             onAttachPdf={() => engines.command(active.id, { kind: 'invoke', name: 'PDFATTACH' })}
             onReloadAll={() => reloadAllReferences(active.id)}
             onOpen={(row) => openReference(active.id, row)}
+            onPaths={(changes, file) => changeReferencePaths(active.id, changes, file)}
             found={(row) => referenceFound(active.id, row)}
             onBind={(rows, insert) =>
               bindXrefs(
