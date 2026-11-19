@@ -184,6 +184,19 @@ describe('plotting a PDF underlay', () => {
     expect(refused.content).not.toContain('Do');
     expect(refused.xobjects.size).toBe(0);
   });
+
+  it('strokes no frame when PDFFRAME leaves it off the plot (M5-04 part 17)', () => {
+    const ring = [0, 10, 20, 1, 60, 20, 1, 60, 60, 4];
+    const off = { frameOff: true } as const;
+    const page = plot([item(underlay(off))]);
+    expect(page.content).toContain('/Fm1 Do');
+    expect(page.content).not.toMatch(/\nS\n/);
+    const clipped = plot([item(underlay({ ...off, clipped: true }), ring)]);
+    expect(clipped.content).toContain('/Fm1 Do');
+    expect(clipped.content).not.toMatch(/\nS\n/);
+    const missing = plot([item(underlay({ ...off, clipped: true, fileName: 'gone.pdf' }), ring)]);
+    expect(missing.content).not.toMatch(/\nS\n/);
+  });
 });
 
 /** The plot's PDF layers: each OCG's name, and whether the plot shows it (`/D`). */

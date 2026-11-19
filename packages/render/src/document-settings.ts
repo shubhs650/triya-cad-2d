@@ -2,6 +2,7 @@
 // and WIPEOUTFRAME) and a model seen with a viewport's layers, shared by the canvas renderer and
 // the plot job (M2-17) so a plot paints what the screen shows.
 
+import { pdfFrame } from '@triya/engine';
 import type {
   DocumentModel,
   Handle,
@@ -28,9 +29,10 @@ export function attributeMode(model: DocumentModel): number | undefined {
 }
 
 /**
- * IMAGEFRAME and WIPEOUTFRAME from the drawing's objects; on when the drawing has none. A plot
- * leaves out frames that are "displayed but not plotted" (WIPEOUTFRAME 2, M2-24 part 2;
- * IMAGEFRAME 2, M5-04 part 4), which the screen draws.
+ * IMAGEFRAME and WIPEOUTFRAME from the drawing's objects; on when the drawing has none; PDFFRAME
+ * from its header (a DICTIONARYVAR, M5-04 part 17). A plot leaves out frames that are
+ * "displayed but not plotted" (WIPEOUTFRAME 2, M2-24 part 2; IMAGEFRAME 2, M5-04 part 4;
+ * PDFFRAME 2), which the screen draws.
  */
 export function imageFrames(model: DocumentModel, use: 'screen' | 'plot' = 'screen'): ImageFrames {
   let image = true;
@@ -41,7 +43,8 @@ export function imageFrames(model: DocumentModel, use: 'screen' | 'plot' = 'scre
     if (o.type === 'RASTERVARIABLES') image = shown;
     else wipeout = shown;
   }
-  return { image, wipeout };
+  const pdf = pdfFrame(model.header);
+  return { image, wipeout, underlay: use === 'plot' ? pdf === 1 : pdf !== 0 };
 }
 
 /**

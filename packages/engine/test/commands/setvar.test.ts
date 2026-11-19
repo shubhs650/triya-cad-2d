@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   EngineSession,
+  PDFFRAME,
   PICKFIRST,
   PromptBus,
   REVCLOUDGRIPS,
@@ -14,6 +15,7 @@ import {
   builtinCommands,
   insUnitsOf,
   pasteScale,
+  pdfFrame,
   standardMLeaderStyle,
   systemVariable,
   wipeoutFrame,
@@ -230,6 +232,32 @@ describe('SETVAR', () => {
     expect(s.model.header.get('FIELDEVAL')).toBe('3');
     await s.bus.script(['FIELDEVAL']);
     expect(s.bus.promptText).toBe('Enter new value for FIELDEVAL <3>:');
+  });
+
+  it('knows PDFFRAME in a drawing without it, AutoCAD’s initial 1 (M5-04 part 17)', async () => {
+    const s = setup(withHeader(HEADER));
+    expect(pdfFrame(s.model.header)).toBe(1);
+    await s.bus.script(['PDFFRAME']);
+    expect(s.bus.promptText).toBe('Enter new value for PDFFRAME <1>:');
+    await s.bus.script(['3']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 2.');
+    // Kept as FIELDEVAL is, a DICTIONARYVAR's text (DEC-077).
+    await s.bus.script(['2']);
+    expect(s.model.header.get(PDFFRAME)).toBe('2');
+    expect(pdfFrame(s.model.header)).toBe(2);
+    await s.bus.script(['PDFFRAME']);
+    expect(s.bus.promptText).toBe('Enter new value for PDFFRAME <2>:');
+    await s.bus.script(['0']);
+    expect(pdfFrame(s.model.header)).toBe(0);
+    await s.bus.script(['U']);
+    expect(pdfFrame(s.model.header)).toBe(2);
+  });
+
+  it('reads PDFFRAME as 1 when the drawing holds what it cannot be', () => {
+    for (const v of ['', 'x', '3', '-1', '1.5'])
+      expect(pdfFrame(new Map([[PDFFRAME, v]])), v).toBe(1);
+    expect(pdfFrame(new Map([[PDFFRAME, 0]]))).toBe(0);
+    expect(pdfFrame(new Map([[PDFFRAME, ' 2 ']]))).toBe(2);
   });
 
   it('sets WIPEOUTFRAME in the drawing’s WIPEOUTVARIABLES', async () => {

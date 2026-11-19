@@ -32,6 +32,7 @@
 
 import {
   applyPoint,
+  PDFFRAME,
   arrayGripPreview,
   movedTableGrip,
   tableGridLines,
@@ -1243,7 +1244,11 @@ export class Canvas2DRenderer implements Renderer {
         if (entry?.blocks && [...changed].some((b) => entry.blocks!.has(b))) this.#cacheEntity(id);
       });
     }
-    const frames = touchesFrames(cs.objects) || touchesImageNames(cs.objects);
+    // PDFFRAME (M5-04 part 17) is a DICTIONARYVAR, a header entry of its own name.
+    const frames =
+      touchesFrames(cs.objects) ||
+      touchesImageNames(cs.objects) ||
+      cs.header?.some((h) => h.name === PDFFRAME);
     if (frames) {
       this.#tessellate.frames = imageFrames(this.#model);
       this.#imageQuality = imageQuality(this.#model);
@@ -1262,8 +1267,8 @@ export class Canvas2DRenderer implements Renderer {
     const layout = cs.layouts?.updated?.find((l) => l.after.handle === this.#layoutHandle)?.after;
     if (layout) this.#readLayout(layout);
     // A layer, linetype, text style, LTSCALE, FILLMODE or ATTMODE change can restyle or hide any
-    // entity, a multiline style change redraws its multilines (M3-14), and an IMAGEFRAME or
-    // WIPEOUTFRAME change reframes every image: re-resolve the whole block.
+    // entity, a multiline style change redraws its multilines (M3-14), and an IMAGEFRAME,
+    // WIPEOUTFRAME or PDFFRAME change reframes every image or underlay: re-resolve the whole block.
     if (
       frames ||
       clips ||
@@ -2058,7 +2063,11 @@ export class Canvas2DRenderer implements Renderer {
           ctx.lineTo(seg.x2 - ox, seg.y2 - oy);
         } else {
           const runs = prim.text?.greek;
-          buildPath(ctx, runs && runs.length > 0 ? runs : (prim.continuous ?? prim.path), ox, oy);
+          // An unclipped underlay by its page (`#selectable`): PDFFRAME 0 shows the frame while
+          // the underlay is selected or previewed (M5-04 part 17).
+          const shape = prim.kind === 'fill' && prim.underlay ? this.#selectable(prim) : prim;
+          if (!shape || shape.kind === 'point' || shape.kind === 'infinite') continue;
+          buildPath(ctx, runs && runs.length > 0 ? runs : (shape.continuous ?? shape.path), ox, oy);
         }
       }
     }
@@ -2742,8 +2751,8 @@ export class Canvas2DRenderer implements Renderer {
   /**
    * A PDF underlay (M1-20): what of its page the view needs is noted for `#askForPages`; the
    * page raster the app has is drawn through world ∘ frame, clipped to the boundary or the
-   * page, and the boundary (or page) outlined in the entity's colour, as PDFFRAME's initial
-   * value 1 shows it. Leaves the canvas transform at identity.
+   * page, and the boundary (or page) outlined in the entity's colour unless PDFFRAME hides it
+   * (`frameOff`, M5-04 part 17). Leaves the canvas transform at identity.
    */
   #drawUnderlay(
     ctx: Canvas2D,
@@ -2796,6 +2805,10 @@ export class Canvas2DRenderer implements Renderer {
       ctx.drawImage(this.#page(px, u).image, 0, 0);
       ctx.restore();
       ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    }
+    if (u.frameOff) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      return;
     }
     ctx.beginPath();
     buildPath(ctx, path, ox, oy);
