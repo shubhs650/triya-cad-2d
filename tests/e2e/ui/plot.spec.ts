@@ -24,6 +24,7 @@ import {
   activeCanvas,
   enterCommand,
   expectDrawn,
+  expectInputsRead,
   expectShown,
   ink,
   openWithDrop,
@@ -579,6 +580,58 @@ test('Plot transparency, Hide paperspace objects and a custom paper size (M6-04)
   await expect(d.getByLabel('Hide paperspace objects')).toBeChecked();
   const paper = await d.getByLabel('Paper size').locator('option:checked').textContent();
   expect(paper).toMatch(/^Layout paper \(500 × 200 mm\)/);
+  // M6-04 part 2: Plot transparency was kept in the LAYOUT's PLOTTRANSPARENCY xdata.
+  await expect(d.getByLabel('Plot transparency')).toBeChecked();
+});
+
+// M6-04 part 2: What to plot lists View once the space has a named view; Apply to Layout writes
+// it (DXF 74 = 3 and the view's name in DXF 6), and the dialog opens on it again.
+test('the View plot area plots a named view and Apply to Layout keeps it (M6-04 part 2)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, VIEWPORTS);
+  await expectShown(page, path.basename(VIEWPORTS));
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  const area = d.getByLabel('What to plot');
+  await expect(area.locator('option')).toHaveText(['Extents', 'Display', 'Limits', 'Window']);
+  await d.getByRole('button', { name: 'Cancel' }).click();
+  await expect(d).toBeHidden();
+
+  for (const typed of ['-VIEW', 'W', 'East half', '50,0', '100,50'])
+    await enterCommand(page, typed);
+  await expectInputsRead(page);
+  await expect(prompt(page)).toHaveText('Command:');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  await expect(area.locator('option')).toHaveText([
+    'Extents',
+    'Display',
+    'Limits',
+    'View',
+    'Window',
+  ]);
+  await area.selectOption('view');
+  await expect(d.getByLabel('View', { exact: true })).toHaveValue('East half');
+  await page.screenshot({ path: test.info().outputPath('plot-view-area.png') });
+  await d.getByRole('button', { name: 'Apply to Layout' }).click();
+  await expect(d.getByRole('status')).toHaveText('Applied to the Model page setup.');
+  type Dev = { triyaDev: { layouts(): { name: string; plot?: Record<string, unknown> }[] } };
+  const plot = await page.evaluate(
+    () => (window as unknown as Dev).triyaDev.layouts().find((l) => l.name === 'Model')!.plot!,
+  );
+  expect(plot).toMatchObject({ plotType: 3, viewName: 'East half' });
+  await expect(area).toHaveValue('view');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'OK' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  const pdf = await readPdf(download);
+  expect(pdf.paths).toBeGreaterThan(0);
 });
 
 test('-PLOT plots at the command line without the dialog (part 5)', async ({ page }) => {
