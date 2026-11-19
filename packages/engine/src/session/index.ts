@@ -1001,7 +1001,8 @@ export class EngineSession {
     if (problem) return { ok: false, message: problem };
     let change: ChangeSet;
     try {
-      change = xrefLoadChange(this.model, e.block, e.drawing);
+      // XATTACH's load evaluates every layer of the xref as new (M5-19).
+      change = xrefLoadChange(this.model, e.block, e.drawing, { attach: this.#bus.attaching });
       this.model.apply(change);
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };

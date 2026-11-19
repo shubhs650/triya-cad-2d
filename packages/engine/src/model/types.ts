@@ -1361,6 +1361,14 @@ export interface LayerRecord extends SymbolTableRecord {
    * dictionary. Absent when the layer has none.
    */
   readonly viewportOverrides?: readonly LayerViewportOverride[];
+  /**
+   * A new layer nobody has reviewed yet (M5-19, LAYEREVAL): one an xref load brought in since
+   * the layer list was last evaluated, until the drafter reconciles it (-LAYER rEconcile). Not a DXF
+   * group: AutoCAD files it as the `ADSK_XREC_LAYER_RECONCILED` XRECORD of the layer's extension
+   * dictionary, 290 0 here and 290 1 once reconciled. Absent when the layer is reconciled or the
+   * file has no record for it.
+   */
+  readonly unreconciled?: true;
 }
 
 /** What one viewport shows a layer with instead of its own values (M1-62). */
@@ -1779,6 +1787,13 @@ export interface BlockDefinition extends ObjectCommon {
    * leaves it out and the drawing opens with the xref waiting for its file again.
    */
   readonly xrefUnloaded?: true;
+  /**
+   * Set while the xref waits to be loaded again after a reload or a new path (M5-19): the layers
+   * the last load brought in, by upper-case name, true for those still unreconciled. The next
+   * load evaluates the xref's layers against it (LAYEREVAL): a layer it does not name is new.
+   * Session state, never saved, as `xrefLoaded`.
+   */
+  readonly xrefLayers?: Readonly<Record<string, boolean>>;
 }
 
 export interface Layout extends ObjectCommon {

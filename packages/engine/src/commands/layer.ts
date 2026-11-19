@@ -4,7 +4,7 @@
 //   - LAYER opens the Layer Properties Manager, which is the app's Layers palette; LAYERCLOSE
 //     closes it. Neither deselects.
 //   - -LAYER: "Current layer:" then "Enter an option [?/Make/Set/New/Rename/ON/OFF/Color/Ltype/
-//     LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description/Xref]" again
+//     LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description/rEconcile/Xref]" again
 //     after each option, until Enter; PStyle only in a drawing with named plot styles ($PSTYLEMODE 0),
 //     as Help says it is not available with color-dependent plot styles. Name lists are names or wild-card patterns separated by commas (WCMATCH, case
 //     ignored); an Enter at "or <select objects>" takes the layers of the objects selected, and
@@ -21,8 +21,14 @@
 // PStyle (M5-18 part 2) asks "Enter plot style or [?] <Normal>" (a name of the drawing's
 // ACAD_PLOTSTYLENAME; ? lists them) and then Help's "Enter name list of layer(s) for plot style
 // current <current>". stAte is in layer-state-dash.ts and Xref (resetting xref layer
-// overrides, M5-18 part 3) in layer-xref-dash.ts. Left for later: rEconcile (layer
-// notification, LAYEREVAL; M5-19). MATerial is not offered: Triya has no materials (#195).
+// overrides, M5-18 part 3) in layer-xref-dash.ts. MATerial is not offered: Triya has no
+// materials (#195).
+//
+// rEconcile (M5-19; Help: "Sets the unreconciled property of an unreconciled layer", ? "Lists
+// all unreconciled layers") asks "Enter name list of layer(s) to reconcile or [?]"; the layers
+// named that an xref load flagged as new (LAYEREVAL, model/xref.ts) are reconciled. Help gives
+// no messages: ? lists the unreconciled layers' names one per line (or says there are none) and
+// asks again; a list naming only reconciled layers says so.
 //
 // Ambiguities, settled for the common drafter expectation (Help gives no messages): a frozen
 // layer at Make or Set says `Cannot make frozen layer "X" current.`; ? lists each layer's name,
@@ -69,6 +75,7 @@ const OPTIONS = [
   'Unlock',
   'stAte',
   'Description',
+  'rEconcile',
   'Xref',
 ];
 
@@ -462,6 +469,32 @@ async function* describe(ctx: CommandContext): Sub<void> {
   apply(ctx, override ? layers : layers.filter((l) => !l.description), { description: text });
 }
 
+/** rEconcile: the unreconciled layers named are reconciled; ? lists them. */
+async function* reconcile(ctx: CommandContext): Sub<void> {
+  for (;;) {
+    const a = yield ctx.prompt.string({
+      message: 'Enter name list of layer(s) to reconcile or',
+      options: ['?'],
+    });
+    if (a.kind === 'keyword') {
+      const names = layersOf(ctx)
+        .filter((l) => l.unreconciled)
+        .map((l) => l.name)
+        .sort((x, y) => x.localeCompare(y));
+      if (names.length === 0) ctx.message('No unreconciled layers found.');
+      for (const n of names) ctx.message(n);
+      continue;
+    }
+    const text = typed(a);
+    if (text === '') return;
+    const found = matching(ctx, text);
+    const layers = found.filter((l) => l.unreconciled);
+    if (found.length > 0 && layers.length === 0) ctx.message('No unreconciled layers matched.');
+    apply(ctx, layers, { reconcile: true });
+    return;
+  }
+}
+
 /** "Enter name list of layer(s) to <verb>" setting `props` on the layers named. */
 async function* flags(
   ctx: CommandContext,
@@ -503,6 +536,8 @@ function option(ctx: CommandContext, keyword: string): Sub<void> {
       return plotStyle(ctx);
     case 'stAte':
       return layerStateOption(ctx);
+    case 'rEconcile':
+      return reconcile(ctx);
     case 'Xref':
       return layerXrefOption(ctx);
     case 'Freeze':

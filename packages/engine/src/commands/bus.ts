@@ -954,6 +954,11 @@ export class PromptBus {
     if (this.#history.length > logged) this.#showPrompt();
   }
 
+  /** Whether the command running waits on the app loading the xrefs it attached (XATTACH). */
+  get attaching(): boolean {
+    return this.#stack.at(-1)?.attaching === true;
+  }
+
   /**
    * An xref load the app applied to the drawing (the session's `xref-load`, M1-21) while the
    * command asks it to load the xrefs the command attached (XATTACH's `xref` request, M5-04 part
@@ -962,7 +967,7 @@ export class PromptBus {
    * left alone: false.
    */
   joinLoad(change: ChangeSet): boolean {
-    if (!this.#stack.at(-1)?.attaching) return false;
+    if (!this.attaching) return false;
     this.#changes.push(change);
     return true;
   }

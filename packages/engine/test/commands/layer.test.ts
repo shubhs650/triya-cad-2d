@@ -28,10 +28,10 @@ const CONTINUOUS = '14';
 const DASHED = '15';
 
 const OPTIONS =
-  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/stAte/Description/Xref]';
+  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/stAte/Description/rEconcile/Xref]';
 /** In a drawing with named plot styles ($PSTYLEMODE 0). */
 const NAMED_OPTIONS =
-  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description/Xref]';
+  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description/rEconcile/Xref]';
 const NORMAL = '80';
 const HEAVY = '81';
 const LIGHT = '82';
@@ -411,6 +411,34 @@ describe('-LAYER', () => {
     expect(t.lay(NOTES).description).toBe('Old notes');
     await t.bus.script(['D', 'Annotations', 'NOTES', 'Y']);
     expect(t.lay(NOTES).description).toBe('Annotations');
+  });
+
+  it('rEconcile reconciles the unreconciled layers named; ? lists them (M5-19)', async () => {
+    const t = setup({ layers: { [DOORS]: { unreconciled: true }, [NOTES]: { unreconciled: true } } });
+    await t.bus.script(['-LAYER', 'E']);
+    const prompt = 'Enter name list of layer(s) to reconcile or [?]:';
+    expect(t.bus.promptText).toBe(prompt);
+    await t.bus.script(['?']);
+    expect(t.log.slice(-2)).toEqual(['DOORS', 'NOTES']);
+    expect(t.bus.promptText).toBe(prompt);
+    await t.bus.script(['D*']);
+    expect(t.lay(DOORS).unreconciled).toBeUndefined();
+    expect(t.lay(NOTES).unreconciled).toBe(true);
+    expect(t.bus.promptText).toBe(`Enter an option ${OPTIONS}:`);
+    await t.bus.script(['E', 'WALLS']);
+    expect(t.log.at(-1)).toBe('No unreconciled layers matched.');
+    await t.bus.script(['E', 'X*']);
+    expect(t.log.at(-1)).toBe('No matching layer names found.');
+    await t.bus.script(['E', '', 'E', '*']);
+    expect(t.lay(NOTES).unreconciled).toBeUndefined();
+    await t.bus.script(['E', '?']);
+    expect(t.log.at(-1)).toBe('No unreconciled layers found.');
+    await t.bus.script(['', '']);
+    expect(t.bus.prompt).toBeUndefined();
+    // The whole command is one LAYER undo step, which brings both back.
+    expect(t.bus.undo.state.undoable).toBe(1);
+    await t.bus.script(['U']);
+    expect([t.lay(DOORS).unreconciled, t.lay(NOTES).unreconciled]).toEqual([true, true]);
   });
 
   it('Enter at a prompt leaves the option, changing nothing', async () => {
