@@ -241,7 +241,7 @@ interface Renderer {
   setTransient(primitives: RenderPrimitive[]): void; // rubber-band, grips, osnap markers
   setStyle(style: RenderStyle): void;                // theme, plot-preview, selection colours, LWT on/off
   frame(): void;                                     // draw one frame
-  hitTest(screenPt, aperture): EntityId[];           // delegated to engine's R-tree via mirror
+  hitTest(screenPt, aperture, view?): EntityId[];    // delegated to engine's R-tree via mirror; view = the one screenPt was taken in (M5-23)
   entitiesIn(screenRect): DrawnEntity[];             // handle + type drawn there (fidelity triage, M1-106)
 }
 ```

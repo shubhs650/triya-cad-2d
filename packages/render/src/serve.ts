@@ -112,13 +112,13 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         session.setUnderlaySnap(m.definition, m.page ?? undefined);
         break;
       case 'hitTest':
-        port.postMessage({ type: 'reply', id: m.id, ids: r.hitTest(m.screen, m.aperture) });
+        port.postMessage({ type: 'reply', id: m.id, ids: r.hitTest(m.screen, m.aperture, m.view) });
         break;
       case 'nestedHit':
         port.postMessage({
           type: 'nested',
           id: m.id,
-          hit: r.nestedHit(m.screen, m.aperture, m.entity),
+          hit: r.nestedHit(m.screen, m.aperture, m.entity, m.view),
         });
         break;
       case 'select':

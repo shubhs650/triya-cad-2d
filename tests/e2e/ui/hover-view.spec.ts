@@ -131,12 +131,13 @@ test('the selection preview and rollover tooltip follow a view that lands late (
   await hold(page);
   await zoomCentre(page, 80, 50);
   await zoomCentre(page, 80, 25);
-  // The cursor comes to rest at the centre: under the worker's view A the line is there.
+  // The cursor comes to rest at the centre: under the worker's view A the line is there, but
+  // the pickbox and the rest's pick are tested under view B, which they were made in (M5-23).
   await page.mouse.move(centre.x - 30, centre.y - 30);
   await page.mouse.move(centre.x, centre.y, { steps: 4 });
-  await expect(tip).toBeVisible();
-  await expect(tip).toContainText('Line');
-  // The frame is drawn and view B reaches the worker: nothing is under the cursor.
+  await page.waitForTimeout(800);
+  await expect(tip).toBeHidden();
+  // The frame is drawn and view B reaches the worker: still nothing is under the cursor.
   await release(page);
   await expectDrawn(page, { timeout: 15_000 });
   await expect(tip).toBeHidden();
@@ -156,4 +157,48 @@ test('the selection preview and rollover tooltip follow a view that lands late (
   await expect(tip).toBeVisible();
   await expect(tip).toContainText('Line');
   await expect.poll(() => lit(page, centre), { timeout: 5_000 }).toBeGreaterThan(0);
+});
+
+// M5-23: a click at a selection prompt right after a zoom takes what lies under it in the new
+// view. The engine's pick turns the click into a world point, the canvas turns that into screen
+// pixels by its new view and asks the render worker what is there; while a frame is in flight
+// the worker still holds the view from before the zoom, so it looked in the wrong place.
+test('a pick right after a zoom takes the object under it in the new view (M5-23)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await holdFrames(page);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  const history = page.getByRole('log', { name: 'Recent command lines' });
+
+  // View A centred on (80, 50), a line across its middle.
+  await zoomCentre(page, 80, 50);
+  await type(page, 'L', 'Specify first point:');
+  await type(page, '1000060,1000050', 'Specify next point or [Undo]:');
+  await type(page, '1000100,1000050', 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+  await expectDrawn(page, { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y - 40);
+
+  // A frame held in flight, then the zoom to view B (centred 80, 25): the worker keeps view A.
+  await hold(page);
+  await zoomCentre(page, 80, 50);
+  await zoomCentre(page, 80, 25);
+  await type(page, 'ERASE', /^Select objects/);
+  // In view B the line runs a quarter of the canvas's height above the centre; in view A that
+  // point is 25 units above the line, over nothing.
+  const line = { x: box.x + box.width / 2, y: box.y + box.height / 2 - (box.height * 25) / 100 };
+  await page.mouse.move(line.x - 30, line.y - 30);
+  await page.mouse.move(line.x, line.y, { steps: 4 });
+  await page.mouse.click(line.x, line.y);
+  await expect(history).toContainText('Select objects: 1 found');
+  await expect(prompt(page)).toHaveText(/^Select objects/);
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await release(page);
+  await expectDrawn(page, { timeout: 15_000 });
 });
