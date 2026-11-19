@@ -369,14 +369,61 @@ describe('the Xref node (M5-07 part 8)', () => {
     expect(filterNodeName('xref', undefined)).toBe('Xref');
     expect(filterNodeName('xref:Plan', undefined)).toBe('Plan');
     expect(filterNodeName('61', filter('61', 'Arch'))).toBe('Arch');
-    expect(filterMenuEnabled('newProperty', { xref: true })).toBe(false);
-    expect(filterMenuEnabled('newGroup', { xref: true })).toBe(false);
-    expect(filterMenuEnabled('off', { xref: true })).toBe(true);
-    expect(filterMenuEnabled('isolateAll', { xref: true })).toBe(true);
-    expect(filterMenuEdit('lock', 'xref:Plan', { xref: true })).toEqual({
+    expect(filterMenuEnabled('newProperty', { predefined: true })).toBe(false);
+    expect(filterMenuEnabled('newGroup', { predefined: true })).toBe(false);
+    expect(filterMenuEnabled('off', { predefined: true })).toBe(true);
+    expect(filterMenuEnabled('isolateAll', { predefined: true })).toBe(true);
+    expect(filterMenuEdit('lock', 'xref:Plan', { predefined: true })).toEqual({
       kind: 'layer-filter-set',
       node: 'xref:Plan',
       set: 'lock',
+    });
+  });
+});
+
+// M5-19 part 2: the Unreconciled New Layers node lists the layers an evaluation found new and
+// nobody has reconciled; no filter can be made in it.
+describe('the Unreconciled New Layers node (M5-19 part 2)', () => {
+  const NEW = layer('22', 'Plan|Grid', { flags: 48, unreconciled: true });
+  const unreconciledInit: DocumentInit = {
+    ...init,
+    tables: { ...init.tables, layers: [ZERO, WALLS, NEW] },
+  };
+  const names = (s: ReadonlySet<string> | undefined) =>
+    s === undefined
+      ? 'every layer'
+      : [ZERO, WALLS, NEW].filter((l) => s.has(l.handle)).map((l) => l.name);
+
+  it('lists the unreconciled layers, the others inverted', () => {
+    const source = layerFilterSource(unreconciledInit, []);
+    expect(names(listedLayers(source, 'unreconciled', { invert: false }))).toEqual(['Plan|Grid']);
+    expect(names(listedLayers(source, 'unreconciled', { invert: true }))).toEqual(['0', 'A-Walls']);
+    // Reconciled since: none.
+    const reconciled: ChangeSet[] = [
+      {
+        tables: {
+          layers: {
+            updated: [{ handle: '22', before: NEW, after: { ...NEW, unreconciled: undefined } }],
+          },
+        },
+      } as unknown as ChangeSet,
+    ];
+    expect(
+      names(
+        listedLayers(layerFilterSource(unreconciledInit, reconciled), 'unreconciled', {
+          invert: false,
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('names the node, and greys the new filter items on it', () => {
+    expect(filterNodeName('unreconciled', undefined)).toBe('Unreconciled New Layers');
+    expect(filterMenuEnabled('newProperty', { predefined: true })).toBe(false);
+    expect(filterMenuEdit('off', 'unreconciled', { predefined: true })).toEqual({
+      kind: 'layer-filter-set',
+      node: 'unreconciled',
+      set: 'off',
     });
   });
 });

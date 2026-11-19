@@ -8,12 +8,15 @@
 // expressions are the engine's own (`filteredLayers`, part 4, DEC-076). The filter menu's items
 // (part 6) are below `listedLayers`. The Xref node (part 8) comes after the filters when the
 // drawing has xrefs, with a node for each listing the layers it brings (the engine's
-// `xrefNodeLayers`).
+// `xrefNodeLayers`). Unreconciled New Layers (M5-19 part 2) comes after All Used Layers while a
+// layer is unreconciled (the engine's `UNRECONCILED_NODE`).
 import {
+  UNRECONCILED_NODE,
   XREF_NODE,
   filteredLayers,
   isLayerFilter,
   parseLayerFilterExpression,
+  unreconciledLayers,
   xrefNodeLayers,
   xrefNodeNames,
   type ChangeSet,
@@ -78,8 +81,9 @@ export function layerFilterTree(filters: readonly LayerFilter[]): LayerFilterNod
 }
 
 /**
- * The node selected in the tree: All, All Used Layers, a filter, the Xref node (`'xref'`) or an
- * xref's (`'xref:<name>'`, the engine's `xrefNode`).
+ * The node selected in the tree: All, All Used Layers, a filter, Unreconciled New Layers
+ * (`'unreconciled'`), the Xref node (`'xref'`) or an xref's (`'xref:<name>'`, the engine's
+ * `xrefNode`).
  */
 export type FilterChoice = 'all' | 'used' | Handle;
 
@@ -92,6 +96,7 @@ export function drawingXrefs(init: DocumentInit, changes: readonly ChangeSet[]):
 export function filterNodeName(choice: FilterChoice, filter: LayerFilter | undefined): string {
   if (choice === 'all') return 'All';
   if (choice === 'used') return 'All Used Layers';
+  if (choice === UNRECONCILED_NODE) return 'Unreconciled New Layers';
   if (choice === XREF_NODE) return 'Xref';
   if (choice.startsWith(`${XREF_NODE}:`)) return choice.slice(XREF_NODE.length + 1);
   return filter?.name ?? '';
@@ -112,9 +117,12 @@ export function listedLayers(
     const used = options.used ?? new Set<Handle>();
     return new Set(all.filter((h) => used.has(h) !== options.invert));
   }
-  const xref = xrefNodeLayers(source.tables.layers.values(), choice);
-  if (xref) {
-    const listed = new Set(xref.map((l) => l.handle));
+  const predefined =
+    choice === UNRECONCILED_NODE
+      ? unreconciledLayers(source.tables.layers.values())
+      : xrefNodeLayers(source.tables.layers.values(), choice);
+  if (predefined) {
+    const listed = new Set(predefined.map((l) => l.handle));
     return new Set(all.filter((h) => listed.has(h) !== options.invert));
   }
   if (!isLayerFilter(source.objects.get(choice))) return undefined;
@@ -211,8 +219,11 @@ export interface FilterMenuContext {
   readonly parent?: LayerFilter | undefined;
   /** The block of the layout shown; undefined in model space. */
   readonly space?: Handle | undefined;
-  /** The Xref node or an xref's, in which no filter can be made. */
-  readonly xref?: boolean;
+  /**
+   * A node the drawing makes for itself, in which no filter can be made: Unreconciled New
+   * Layers, the Xref node or an xref's.
+   */
+  readonly predefined?: boolean;
 }
 
 const SETTINGS: ReadonlySet<LayerFilterAction> = new Set<FilterLayerSetting>([
@@ -229,10 +240,10 @@ const isSetting = (a: LayerFilterAction): a is FilterLayerSetting => SETTINGS.ha
 export function filterMenuEnabled(a: LayerFilterAction, ctx: FilterMenuContext): boolean {
   const { filter } = ctx;
   if (isSetting(a) || a === 'isolateAll') return true;
-  if (a === 'newProperty') return ctx.xref !== true;
+  if (a === 'newProperty') return ctx.predefined !== true;
   if (a === 'vpFreeze' || a === 'vpThaw') return false;
   if (a === 'isolateActive') return ctx.space === undefined;
-  if (a === 'newGroup') return ctx.xref !== true && filter?.filterType !== 'property';
+  if (a === 'newGroup') return ctx.predefined !== true && filter?.filterType !== 'property';
   if (a === 'properties') return filter?.filterType === 'property';
   if (a === 'selectAdd' || a === 'selectReplace') return filter?.filterType === 'group';
   if (a === 'convert')
