@@ -107,6 +107,8 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   },
   // AutoCAD's Group Bounding Box button (Home > Groups) has no default key (M3-13).
   { id: 'drafting:groupBox', label: 'Group Bounding Box on/off', group: 'Drafting', keys: [] },
+  // AutoCAD's Snap to Underlays button (Insert > Reference) has none either (M5-04 part 20).
+  { id: 'drafting:underlaySnap', label: 'Snap to Underlays on/off', group: 'Drafting', keys: [] },
   // AutoCAD's temporary override keys (M3-06 part 5): each has a left-hand and a right-hand key.
   ...(
     [

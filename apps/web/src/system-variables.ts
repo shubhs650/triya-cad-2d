@@ -1,8 +1,8 @@
 // The system variables the app keeps (M2-42, the engine's `APP_VARIABLES`): SETVAR, or a
 // variable's name typed at `Command:`, asks for them through the view host. They are the status
 // bar's drafting aids (ORTHOMODE, SNAPMODE, GRIDMODE, OSMODE, POLARANG, LWDISPLAY,
-// TRANSPARENCYDISPLAY) and the per-user settings (APERTURE, PDFOSNAP, REVCLOUDGRIPS, QPMODE,
-// QPLOCATION), so a value
+// TRANSPARENCYDISPLAY) and the per-user settings (APERTURE, PDFOSNAP and UOSNAP, REVCLOUDGRIPS,
+// QPMODE, QPLOCATION), so a value
 // set here is the one the status bar shows and Settings stores, as AutoCAD's F8 and ORTHOMODE
 // are one setting. The engine has checked a value against the variable's range already.
 // M2-59 adds the rest of AutoCAD's registry settings Triya has: AUTOSNAP (its POLAR and OTRACK
@@ -58,6 +58,8 @@ const VALUES: Readonly<
   POLARANG: { get: (s) => s.polarAngle, set: (polarAngle) => ({ polarAngle }) },
   APERTURE: { get: (s) => s.aperture, set: (aperture) => ({ aperture }) },
   PDFOSNAP: { get: (s) => bit(s.pdfOsnap), set: (v) => ({ pdfOsnap: v === 1 }) },
+  // UOSNAP sets the snapping of every underlay kind; Triya's are PDF underlays only (M5-04 part 20).
+  UOSNAP: { get: (s) => bit(s.pdfOsnap), set: (v) => ({ pdfOsnap: v === 1 }) },
   REVCLOUDGRIPS: { get: (s) => bit(s.revcloudGrips), set: (v) => ({ revcloudGrips: v === 1 }) },
   QPMODE: { get: (s) => s.qpmode, set: (qpmode) => ({ qpmode }) },
   QPLOCATION: { get: (s) => s.qpLocation, set: (v) => ({ qpLocation: v === 1 ? 1 : 0 }) },
