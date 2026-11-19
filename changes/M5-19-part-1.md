@@ -1,0 +1,1 @@
+- M5-19 part 1 (#581): new layers an xref load brings in are flagged as unreconciled when LAYEREVAL is 1 or 2 (all of them for XATTACH, those new since the last load for a reload), -LAYER rEconcile accepts them, and the state is read from and saved to AutoCAD's `ADSK_XREC_LAYER_RECONCILED` layer records; SETVAR LAYEREVAL works in any drawing.
