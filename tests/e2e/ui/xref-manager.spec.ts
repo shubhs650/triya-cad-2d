@@ -139,6 +139,92 @@ test('detaches an xref from the palette, and U brings it back', async ({ page })
   await expect.poll(() => statuses(page)).toContain('xref-child-ovl | Loaded');
 });
 
+/** The details pane's value of `label`. */
+const detail = (page: Page, label: string) =>
+  page
+    .getByRole('region', { name: 'Details' })
+    .locator('dl > div')
+    .filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) })
+    .locator('dd');
+
+test('Reload All References reloads every file; Details says where each was found', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await loadedParent(page);
+  const references = page.getByRole('complementary', { name: 'References' });
+
+  // M5-04 part 14: the details pane of the one reference selected.
+  await row(page, 'xref-child-tb').click();
+  await expect(detail(page, 'Reference Name')).toHaveText('xref-child-tb');
+  await expect(detail(page, 'Status')).toHaveText('Loaded');
+  await expect(detail(page, 'Type')).toHaveText('Attach');
+  await expect(detail(page, 'Saved Path')).toHaveText('.\\xref-child-tb.dxf');
+  // Dropped alone, a file is found at its name: the browser tells of no folder.
+  await expect(detail(page, 'Found At')).toHaveText('xref-child-tb.dxf');
+  await expect(detail(page, 'Size')).toHaveText(/^\d[\d,]* KB$/);
+  await expect(detail(page, 'Date')).not.toHaveText('—');
+  await row(page, 'xref-stamp').click();
+  await expect(detail(page, 'Type')).toHaveText('Image');
+  await expect(detail(page, 'Found At')).toHaveText('xref-stamp.png');
+  await expect(detail(page, 'Size')).toHaveText('1 KB');
+  // Several selected: no details.
+  await row(page, 'xref-child-tb').click({ modifiers: ['Control'] });
+  await expect(references.getByRole('region', { name: 'Details' })).toHaveCount(0);
+
+  // Unloaded on purpose, an xref stays unloaded.
+  await row(page, 'xref-child-ovl').click();
+  await button(page, 'Unload').click();
+  await expect.poll(() => statuses(page)).toContain('xref-child-ovl | Unloaded');
+  await references.getByRole('button', { name: 'Reload All References' }).click();
+  await expect(page.getByRole('list', { name: 'What was done' }).getByRole('listitem')).toHaveText(
+    ['Xref "xref-child-tb" has been reloaded.', 'Image "xref-stamp.png" has been reloaded.'],
+    { timeout: 30_000 },
+  );
+  await expect
+    .poll(() => statuses(page), { timeout: 30_000 })
+    .toEqual([
+      'xref-child-tb | Loaded',
+      'xref-grandchild | Loaded',
+      'xref-stamp | Loaded',
+      'xref-child-ovl | Unloaded',
+    ]);
+  await row(page, 'xref-child-tb').click();
+  await expect(detail(page, 'Found At')).toHaveText('xref-child-tb.dxf');
+  await shot(page, '5-reload-all-details');
+});
+
+test("Open opens a reference's file: an image in a browser tab, an xref in a drawing tab", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await loadedParent(page);
+  // Not found or not selected: nothing to open.
+  await expect(button(page, 'Open')).toBeDisabled();
+
+  await row(page, 'xref-stamp').click();
+  const popup = page.waitForEvent('popup');
+  await button(page, 'Open').click();
+  expect((await popup).url()).toMatch(/^blob:/);
+
+  // A nested xref's drawing opens in a tab of its own, and Open again shows that tab.
+  await row(page, 'xref-grandchild').click();
+  await button(page, 'Open').click();
+  await expectShown(page, 'xref-grandchild.dxf');
+  await page
+    .getByRole('tablist', { name: 'Open drawings' })
+    .getByRole('tab', { name: 'xref-parent.dxf' })
+    .click();
+  await expectShown(page, 'xref-parent.dxf');
+  await row(page, 'xref-grandchild').click();
+  await button(page, 'Open').click();
+  await expectShown(page, 'xref-grandchild.dxf');
+  await expect(
+    page.getByRole('tablist', { name: 'Open drawings' }).getByRole('tab', { name: /grandchild/ }),
+  ).toHaveCount(1);
+  await shot(page, '6-open-xref');
+});
+
 test('-XREF lists, unloads and detaches by name', async ({ page }) => {
   test.setTimeout(120_000);
   await loadedParent(page);

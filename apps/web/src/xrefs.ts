@@ -239,10 +239,109 @@ export function missingFileNames(rows: readonly ReferenceRow[]): string[] {
   return [...out.values()];
 }
 
+// ── Reload All References and the details pane (M5-04 part 14) ─────────────────────────────
+
+/** The palette's names of the reference types, as AutoCAD's Type column gives them. */
+export const REFERENCE_KIND: Readonly<Record<ReferenceKind, string>> = {
+  attach: 'Attach',
+  overlay: 'Overlay',
+  image: 'Image',
+  pdf: 'PDF underlay',
+};
+
+/** The palette's names of the statuses. */
+export const REFERENCE_STATUS: Readonly<Record<ReferenceStatus, string>> = {
+  loaded: 'Loaded',
+  'not-found': 'Not found',
+  unloaded: 'Unloaded',
+};
+
+/**
+ * What the palette's Reload All References reloads: the xrefs the drawing attaches itself (a
+ * nested one comes back with the xref that brings it in) and the image and PDF files, each file
+ * once. AutoCAD's Help says only that it "reloads all referenced files"; whether an xref
+ * unloaded on purpose comes back is not said, so Triya leaves unloaded references unloaded, as
+ * a drafter who unloaded one to lighten the drawing expects.
+ */
+export function reloadAllTargets(rows: readonly ReferenceRow[]): {
+  readonly xrefs: string[];
+  readonly files: string[];
+} {
+  const xrefs: string[] = [];
+  const files = new Map<string, string>();
+  for (const r of rows) {
+    if (r.status === 'unloaded') continue;
+    if (r.kind === 'attach' || r.kind === 'overlay') {
+      if (r.depth === 0 && !xrefs.includes(r.handle)) xrefs.push(r.handle);
+    } else {
+      const key = fileNameOf(r.path).toLowerCase();
+      if (key && !files.has(key)) files.set(key, r.path);
+    }
+  }
+  return { xrefs, files: [...files.values()] };
+}
+
+/** A file size as Windows lists it, and AutoCAD's details pane after it: kilobytes rounded up. */
+export function formatFileSize(bytes: number): string {
+  return `${Math.ceil(bytes / 1024).toLocaleString('en-US')} KB`;
+}
+
+const RASTER_TYPES: Readonly<Record<string, string>> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+};
+
+/** The media type an image file opens in a browser tab with (the palette's Open). */
+export function rasterMimeType(fileName: string): string {
+  const ext = /\.([^.]+)$/.exec(fileName)?.[1]?.toLowerCase() ?? '';
+  return RASTER_TYPES[ext] ?? 'application/octet-stream';
+}
+
+/** Where the file of a reference was found, and what the browser says of it. */
+export interface FoundFile {
+  /** The folder path it was found at (`sheets/xrefs/tb.dxf`), or how it came. */
+  readonly foundAt: string;
+  readonly size: number;
+  /** Last modified, ms since 1970; unknown for a file only this device keeps. */
+  readonly modified?: number;
+}
+
+/**
+ * The details pane of the External References palette for one reference, in AutoCAD's order:
+ * Reference Name, Status, Size, Type, Date, Saved Path and Found At. Size, Date and Found At are
+ * empty while the file is not found.
+ */
+export function referenceDetails(
+  row: ReferenceRow,
+  found: FoundFile | undefined,
+  formatDate: (ms: number) => string,
+): [string, string][] {
+  return [
+    ['Reference Name', row.name],
+    ['Status', REFERENCE_STATUS[row.status]],
+    ['Size', found ? formatFileSize(found.size) : ''],
+    ['Type', REFERENCE_KIND[row.kind]],
+    ['Date', found?.modified !== undefined ? formatDate(found.modified) : ''],
+    ['Saved Path', row.path],
+    ['Found At', found?.foundAt ?? ''],
+  ];
+}
+
 /** A file the user supplied: dropped, picked, or found in a folder; read only when used. */
 export interface FileSource {
   readonly name: string;
   getFile(): Promise<Blob>;
+  /**
+   * Where it was found, for the References palette's Found At (M5-04 part 14): its path in the
+   * folder dropped or picked, starting with the folder's name; a file dropped or picked alone
+   * has no folder the browser tells of, and is found at its name.
+   */
+  readonly foundAt?: string;
 }
 
 /**
