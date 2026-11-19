@@ -29,6 +29,8 @@ import {
   paperMm,
   plotPage,
   plotPdf,
+  plotTransparencyOverride,
+  setPlotTransparencyOverride,
   type PlotSettings,
   type PlotSpace,
 } from '../src/plot';
@@ -231,6 +233,37 @@ describe('the Plot options matrix (M6-04)', () => {
     expect(w.clip).toEqual([0, 0, 25, 25]);
     // The whole line is drawn, clipped: its start lies left of the window.
     expect(w.strokes[0]!.start).toEqual([-25, 0]);
+  });
+
+  // M6-04 part 2: View plots the named view's window (its centre, width and height).
+  it('Plot area: View plots the named view’s window', async () => {
+    const at = { ...modelDefaults, fit: false, center: false, scale: { mm: 1, units: 2 } };
+    const views = [{ name: 'East half', box: { minX: 50, minY: 0, maxX: 100, maxY: 50 } }];
+    const p = await plotted({ ...model, views }, { ...at, area: 'view', view: 'East half' });
+    expect(p.clip).toEqual([0, 0, 25, 25]);
+    expect(p.strokes[0]!.start).toEqual([-25, 0]);
+    // A view the space does not have plots nothing.
+    expect(() => plotPage({ ...at, area: 'view', view: 'Gone' }, { ...model, views })).toThrow(
+      /nothing to plot/,
+    );
+  });
+
+  // PLOTTRANSPARENCYOVERRIDE (AutoCAD 2024 Help): 0 never plots transparency, 1 as the page
+  // setup or the dialog says, 2 always.
+  it('PLOTTRANSPARENCYOVERRIDE: 0 never, 1 the setting’s, 2 always', async () => {
+    const opacity = async (override: 0 | 1 | 2, transparency: boolean) => {
+      setPlotTransparencyOverride(override);
+      try {
+        return (await plotted(model, { ...modelDefaults, transparency })).strokes[0]!.opacity;
+      } finally {
+        setPlotTransparencyOverride(1);
+      }
+    };
+    expect(await opacity(0, true)).toBe(1);
+    expect(await opacity(1, true)).toBeCloseTo(0.498, 3);
+    expect(await opacity(1, false)).toBe(1);
+    expect(await opacity(2, false)).toBeCloseTo(0.498, 3);
+    expect(plotTransparencyOverride()).toBe(1);
   });
 
   it('Plot offset: from the paper’s corner, or centred', async () => {

@@ -119,7 +119,14 @@ import { ROLLOVER_DELAY_MS, type RestAt } from '../rollover';
 import { RestWatch } from './rest';
 import { areaPreviewed, pathArea, previewsSelection, windowArea } from '../selection-preview';
 import { layoutsOf } from '../documents';
-import { appliedPageSetupName, pageSetupOf, pageSetupsOf, type PlotSpace } from '../plot';
+import {
+  appliedPageSetupName,
+  pageSetupOf,
+  pageSetupsOf,
+  plotViewsOf,
+  type PlotSpace,
+} from '../plot';
+import { drawingRecords, drawingViews } from '../saved-views';
 import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
@@ -697,11 +704,9 @@ export class CanvasController {
           }
         : undefined;
     // Model space's page setup is the Model layout's (in its paper units too, part 4).
-    const setup =
-      layout ??
-      layoutsOf(this.#opened.init, this.#hooks.changes?.() ?? []).find(
-        (l) => l.blockRecord === this.block,
-      );
+    const changes = this.#hooks.changes?.() ?? [];
+    const init = this.#opened.init;
+    const setup = layout ?? layoutsOf(init, changes).find((l) => l.blockRecord === this.block);
     return {
       name: layout?.name ?? 'Model',
       sheet: sheet && { paper: sheet.paper, unitsPerMm: sheet.unitsPerMm },
@@ -710,9 +715,11 @@ export class CanvasController {
       display,
       limits: this.#limits(),
       namedPlotStyles: this.#header.get('$PSTYLEMODE') === 0,
-      pageSetup: pageSetupOf(setup, this.#opened.init.tables?.appIds),
-      pageSetups: pageSetupsOf(this.#opened.init.objects, layout === undefined),
+      // The applications as edited: Apply to Layout may have registered PLOTTRANSPARENCY.
+      pageSetup: pageSetupOf(setup, drawingRecords(init, changes, 'appIds')),
+      pageSetups: pageSetupsOf(init.objects, layout === undefined),
       pageSetupName: appliedPageSetupName(setup),
+      views: plotViewsOf(drawingViews(init, changes), layout !== undefined),
     };
   }
 

@@ -193,6 +193,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // XFADECTL (M5-02 part 5; AutoCAD 2024 Help, "Saved in: Registry"): while a reference is edited
   // in place, objects not in the working set drawn faded by this percentage, 0 to 90, initially 50.
   { name: 'XFADECTL', store: 'app', kind: 'integer', min: 0, max: 90 },
+  // PLOTTRANSPARENCYOVERRIDE (M6-04 part 2; AutoCAD 2024 Help, "Saved in: User-settings"): 0
+  // plots no object transparency, 1 (initially) as the page setup or the Plot dialog says, 2
+  // always plots it.
+  { name: 'PLOTTRANSPARENCYOVERRIDE', store: 'app', kind: 'integer', min: 0, max: 2 },
   // BINDTYPE (M5-04 part 2; AutoCAD 2024 Help, "Saved in: Not-saved"): how -XREF Bind binds an
   // xref, 0 (initially) as Bind (`xref$0$name`), 1 as Insert (the names without the xref's).
   { name: 'BINDTYPE', store: 'app', kind: 'integer', min: 0, max: 1 },

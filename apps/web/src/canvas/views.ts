@@ -101,17 +101,28 @@ const sameView = (a: ViewTransform, b: ViewTransform): boolean =>
  * transform cannot express, so it is not restorable yet.
  */
 export function namedView(view: ViewRecord, size: ViewportSize): ViewTransform | undefined {
+  const box = namedViewBox(view);
+  if (!box) return undefined;
+  const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+  return { center, scale: fitView(box, size.width, size.height, 0).scale };
+}
+
+/**
+ * The window a named plan view shows, in world units (its centre is in display coordinates, from
+ * the target); undefined for a 3D or twisted view, or one without a size. The View plot area
+ * plots it (M6-04 part 2).
+ */
+export function namedViewBox(view: ViewRecord): Box | undefined {
   if (!isPlan(view.direction, view.twist)) return undefined;
   if (!(view.width > 0) || !(view.height > 0)) return undefined;
   const cx = view.center.x + view.target.x;
   const cy = view.center.y + view.target.y;
-  const box = {
+  return {
     minX: cx - view.width / 2,
     minY: cy - view.height / 2,
     maxX: cx + view.width / 2,
     maxY: cy + view.height / 2,
   };
-  return { center: { x: cx, y: cy }, scale: fitView(box, size.width, size.height, 0).scale };
 }
 
 /**

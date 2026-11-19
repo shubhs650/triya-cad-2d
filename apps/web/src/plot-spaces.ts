@@ -5,7 +5,8 @@ import type { PlotStyleTable } from '@triya/render';
 import { controllerOf } from './canvas/registry';
 import { layoutsOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
-import { pageSetupsOf, type PlotSpace } from './plot';
+import { pageSetupsOf, plotViewsOf, type PlotSpace } from './plot';
+import { drawingRecords, drawingViews } from './saved-views';
 import { sheetSpace } from './publish';
 
 export async function plotSpaceOf(
@@ -19,15 +20,18 @@ export async function plotSpaceOf(
   const active = controllerOf(doc.id, doc.block);
   if (!active) return undefined;
   const here = await active.plotSpace();
-  const layouts = layoutsOf(doc.opened.init, engines.changesOf(doc.id));
+  const changes = engines.changesOf(doc.id);
+  const layouts = layoutsOf(doc.opened.init, changes);
+  const model = block === doc.opened.modelSpace;
   return sheetSpace({
     name,
     layout: layouts.find((l) => l.blockRecord === block),
-    model: block === doc.opened.modelSpace,
+    model,
     extents: doc.opened.extents[block],
     namedPlotStyles: here.namedPlotStyles ?? false,
     userTables,
-    pageSetups: pageSetupsOf(doc.opened.init.objects, block === doc.opened.modelSpace),
-    appIds: doc.opened.init.tables?.appIds,
+    pageSetups: pageSetupsOf(doc.opened.init.objects, model),
+    appIds: drawingRecords(doc.opened.init, changes, 'appIds'),
+    views: plotViewsOf(drawingViews(doc.opened.init, changes), !model),
   });
 }

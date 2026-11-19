@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, bundledPlotStyleTable, type PlotPart } from '@triya/render';
-import type { Layout, LayoutPlot } from '@triya/engine';
+import type { Layout, LayoutPlot, ViewRecord } from '@triya/engine';
 import { parseTtf } from '@triya/text';
 import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
 import {
@@ -27,6 +27,7 @@ import {
   plotPreview,
   plotSvgFile,
   plotTable,
+  plotViewsOf,
   SVG_UNDERLAY_DPI,
   underlayRasters,
   windowBox,
@@ -382,6 +383,90 @@ describe('the Window plot area (part 2)', () => {
   it('has nothing to plot before a window is picked', () => {
     const s = { ...defaultPlotSettings(model), area: 'window' as const };
     expect(() => plotPage(s, model)).toThrow(/nothing to plot/);
+  });
+});
+
+describe('the View plot area (M6-04 part 2)', () => {
+  const views = [
+    { name: 'Plan', box: { minX: 0, minY: 0, maxX: 200, maxY: 100 } },
+    { name: 'Detail', box: { minX: 10, minY: 10, maxX: 20, maxY: 15 } },
+  ];
+
+  it('is offered, before Window, while the space has named views', () => {
+    expect(plotAreas(model)).not.toContain('view');
+    expect(plotAreas({ ...model, views })).toEqual([
+      'extents',
+      'display',
+      'limits',
+      'view',
+      'window',
+    ]);
+  });
+
+  it('plots the view’s window, fitted as any other area', () => {
+    const s = { ...defaultPlotSettings(model), area: 'view' as const, view: 'Plan' };
+    // 200 × 100 fitted to A4 landscape (297 × 210): 297 / 200 mm per unit.
+    expect(plotPage(s, { ...model, views }).scale).toBeCloseTo(297 / 200, 9);
+  });
+
+  it('lists the space’s plan views by their windows, model or paper space’s', () => {
+    const view = (name: string, flags: number, extra: object = {}) =>
+      ({
+        handle: name,
+        name,
+        flags,
+        center: { x: 10, y: 5 },
+        height: 10,
+        width: 40,
+        direction: { x: 0, y: 0, z: 1 },
+        target: { x: 100, y: 0, z: 0 },
+        twist: 0,
+        ...extra,
+      }) as unknown as ViewRecord;
+    const all = [
+      view('Plan', 0),
+      view('Sheet', 1),
+      view('Iso', 0, { direction: { x: 1, y: 1, z: 1 } }),
+      view('Empty', 0, { width: 0 }),
+    ];
+    // The centre is from the target, as a plan view's display coordinates are.
+    expect(plotViewsOf(all, false)).toEqual([
+      { name: 'Plan', box: { minX: 90, minY: 0, maxX: 130, maxY: 10 } },
+    ]);
+    expect(plotViewsOf(all, true).map((v) => v.name)).toEqual(['Sheet']);
+  });
+
+  it('opens on the page setup’s view, and Apply to Layout writes it as DXF 74 = 3 and 6', () => {
+    const plot: LayoutPlot = {
+      paperSize: 'ISO_full_bleed_A4_(297.00_x_210.00_MM)',
+      paperWidth: 297,
+      paperHeight: 210,
+      margins: { left: 0, bottom: 0, right: 0, top: 0 },
+      paperUnits: 'millimeters',
+      rotation: 0,
+      origin: { x: 0, y: 0 },
+      scale: { numerator: 1, denominator: 1 },
+      standardScaleType: 0,
+      plotType: 3,
+      viewName: 'Detail',
+      flags: 11952,
+    };
+    const space: PlotSpace = {
+      ...model,
+      views,
+      pageSetup: pageSetupOf({ handle: '22', plot } as Layout),
+    };
+    const s = defaultPlotSettings(space);
+    expect(s).toMatchObject({ area: 'view', view: 'Detail' });
+    expect(appliedPageSetup(s, space)).toEqual(plot);
+    // Another area drops the view's name; another view is written by its name.
+    expect(appliedPageSetup({ ...s, area: 'extents' }, space)).not.toHaveProperty('viewName');
+    expect(appliedPageSetup({ ...s, view: 'Plan' }, space)).toMatchObject({
+      plotType: 3,
+      viewName: 'Plan',
+    });
+    // A view the space does not have (deleted since) leaves the dialog's own area.
+    expect(defaultPlotSettings({ ...space, views: [views[0]!] }).area).toBe('display');
   });
 });
 

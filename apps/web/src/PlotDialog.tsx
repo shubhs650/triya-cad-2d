@@ -36,6 +36,11 @@
 // M6-04: Plot options add "Plot transparency" and, for a layout, "Hide paperspace objects", in
 // AutoCAD's order; Paper size lists "Custom size" last, with its width and height in millimetres
 // (AutoCAD defines one in its plotter's configuration, which Triya's plotters have none of).
+//
+// M6-04 part 2: What to plot lists View while the space has named plan views, with a View list
+// beside it as AutoCAD's dialog has; Apply to Layout writes the view's name (DXF 6) and "Plot
+// transparency" into the LAYOUT's PLOTTRANSPARENCY xdata. With PLOTTRANSPARENCYOVERRIDE 0 or 2
+// a note says the option is overridden (the checkbox is still what Apply to Layout writes).
 import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -62,6 +67,7 @@ import {
   plotFile,
   plotPage,
   plotStyleTables,
+  plotTransparencyOverride,
   type PlotArea,
   type PlotSettings,
   type PlotSpace,
@@ -137,6 +143,7 @@ const AREA_LABELS: Record<PlotArea, string> = {
   extents: 'Extents',
   display: 'Display',
   limits: 'Limits',
+  view: 'View',
   window: 'Window',
 };
 
@@ -305,7 +312,13 @@ function PlotBody({
     }
     setBusy(true);
     try {
-      const result = await engines.edit(doc, { kind: 'layout', layout, plot });
+      // M6-04 part 2: "Plot transparency" goes into the LAYOUT's PLOTTRANSPARENCY xdata.
+      const result = await engines.edit(doc, {
+        kind: 'layout',
+        layout,
+        plot,
+        plotTransparency: s.transparency,
+      });
       if (!result.ok) throw new Error(result.message);
       if (Object.keys(result.change).length > 0) {
         await Promise.all(controllersOf(doc).map((c) => c.flush()));
@@ -764,6 +777,8 @@ function PlotForm({
               const area = e.currentTarget.value as PlotArea;
               // Window before one is picked goes straight to picking it, as in AutoCAD.
               if (area === 'window' && !s.window) pickWindow();
+              // View opens on the first view until one is chosen, as AutoCAD lists them.
+              else if (area === 'view') set({ area, view: s.view ?? space.views?.[0]?.name });
               else set({ area });
             }}
           >
@@ -774,6 +789,22 @@ function PlotForm({
             ))}
           </select>
         </label>
+        {s.area === 'view' && (
+          <label className="cad-dialog-field">
+            <span>View:</span>
+            <select
+              aria-label="View"
+              value={s.view ?? ''}
+              onChange={(e) => set({ view: e.currentTarget.value })}
+            >
+              {(space.views ?? []).map((v) => (
+                <option key={v.name} value={v.name}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {s.area === 'window' && (
           <button type="button" className="plot-window-button" onClick={pickWindow}>
             Window&lt;
@@ -872,6 +903,13 @@ function PlotForm({
           checked={s.transparency}
           onChange={(transparency) => set({ transparency })}
         />
+        {plotTransparencyOverride() !== 1 && (
+          <p className="plot-note">
+            {plotTransparencyOverride() === 0
+              ? 'PLOTTRANSPARENCYOVERRIDE is 0: no transparency is plotted.'
+              : 'PLOTTRANSPARENCYOVERRIDE is 2: transparency is always plotted.'}
+          </p>
+        )}
         <Check
           label="Plot with plot styles"
           checked={s.plotStyles}

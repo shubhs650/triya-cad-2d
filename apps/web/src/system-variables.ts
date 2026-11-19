@@ -137,6 +137,11 @@ const VALUES: Readonly<
   LAYLOCKFADECTL: { get: (s) => s.layLockFade, set: (layLockFade) => ({ layLockFade }) },
   // M5-02 part 5: the fading of what is not in REFEDIT's working set (`RenderStyle.xFade`).
   XFADECTL: { get: (s) => s.xFade, set: (xFade) => ({ xFade }) },
+  // M6-04 part 2: every plot follows it (`setPlotTransparencyOverride`; the engine checked 0–2).
+  PLOTTRANSPARENCYOVERRIDE: {
+    get: (s) => s.plotTransparencyOverride,
+    set: (v) => ({ plotTransparencyOverride: v as 0 | 1 | 2 }),
+  },
   // M5-08 part 3: what Default draws as (the canvas's `RenderStyle.lineweightDefault`) and the
   // units lineweights are listed in; Lineweight Settings sets both.
   LWDEFAULT: { get: (s) => s.lwDefault, set: (lwDefault) => ({ lwDefault }) },

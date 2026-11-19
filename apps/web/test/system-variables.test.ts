@@ -118,6 +118,14 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'LAYLOCKFADECTL')).toEqual({ ok: true, value: -30 });
   });
 
+  it('keep PLOTTRANSPARENCYOVERRIDE, 1 at first (M6-04 part 2)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'PLOTTRANSPARENCYOVERRIDE')).toEqual({ ok: true, value: 1 });
+    systemVariableReply(d, 'PLOTTRANSPARENCYOVERRIDE', 2);
+    expect(d.get().plotTransparencyOverride).toBe(2);
+    expect(systemVariableReply(d, 'PLOTTRANSPARENCYOVERRIDE')).toEqual({ ok: true, value: 2 });
+  });
+
   it('keep XFADECTL, 50 at first, 0 to 90 (M5-02 part 5)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'XFADECTL')).toEqual({ ok: true, value: 50 });

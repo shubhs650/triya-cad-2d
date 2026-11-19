@@ -83,6 +83,7 @@ import {
   plotFileName,
   plotPage,
   missingUnderlaysNote,
+  setPlotTransparencyOverride,
   windowBox,
   type UnderlayPageSource,
 } from './plot';
@@ -442,7 +443,10 @@ engines.onCommand((doc, o) => {
 });
 
 // Every canvas applies the status bar's drafting aids as they change (M2-04).
+// PLOTTRANSPARENCYOVERRIDE (M6-04 part 2): every plot follows the drafter's setting.
+setPlotTransparencyOverride(drafting.get().plotTransparencyOverride);
 drafting.subscribe(() => {
+  setPlotTransparencyOverride(drafting.get().plotTransparencyOverride);
   for (const c of allControllers()) c.setDrafting(drafting.get());
 });
 
