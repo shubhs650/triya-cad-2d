@@ -47,6 +47,7 @@ import {
   xrefUnloadChange,
   xrefUnloadProblem,
 } from '../model/xref';
+import { isModelLayout, layoutNameProblem } from '../edit/layouts';
 import { xrefDetachChange, xrefDetachProblem } from '../edit/xrefs';
 import { xrefBindChange, xrefBindProblem } from '../edit/xref-bind';
 import type { EntityId } from '../model/entity-ids';
@@ -372,13 +373,6 @@ export type EngineEdit =
   | ViewTableEdit
   | SessionVariableEdit
   | AliasEdit;
-
-/**
- * Characters AutoCAD refuses in a layout name (LAYOUT Rename: "Invalid layout name"), and its
- * 255-character limit; the save checks the same (M1-75 part 20).
- */
-const LAYOUT_NAME_INVALID = /[<>/\\":;?*|,=`]/;
-const LAYOUT_NAME_MAX = 255;
 
 export type EditResult =
   | { readonly ok: true; readonly change: ChangeSet }
@@ -1204,21 +1198,13 @@ export class EngineSession {
     const layouts = this.model.layouts;
     const layout = layouts.find((l) => l.handle === e.layout);
     if (!layout) return { ok: false, message: `No layout ${e.layout}.` };
-    const model = this.#isModel(layout);
+    const model = isModelLayout(this.model, layout);
     if (model && ((e.name !== undefined && e.name !== layout.name) || e.tabOrder !== undefined))
       return { ok: false, message: 'The Model tab cannot be renamed or moved.' };
     if (e.name !== undefined && e.name !== layout.name) {
-      if (
-        e.name.trim() === '' ||
-        e.name.length > LAYOUT_NAME_MAX ||
-        LAYOUT_NAME_INVALID.test(e.name)
-      )
-        return { ok: false, message: 'Invalid layout name.' };
       // Names are case-insensitive (Layout1 and LAYOUT1 are one layout).
-      const taken = layouts.some(
-        (l) => l !== layout && l.name.toUpperCase() === e.name!.toUpperCase(),
-      );
-      if (taken) return { ok: false, message: `A layout named "${e.name}" already exists.` };
+      const problem = layoutNameProblem(this.model, e.name, layout);
+      if (problem) return { ok: false, message: problem };
     }
     if (e.tabOrder !== undefined && !Number.isInteger(e.tabOrder))
       return { ok: false, message: `Invalid tab position ${e.tabOrder}.` };
@@ -1233,7 +1219,7 @@ export class EngineSession {
     if (e.tabOrder !== undefined) {
       // The layouts in tab order with this one moved; then numbered 1 to N, as AutoCAD keeps
       // them (and the save requires, M1-75 part 20).
-      const sheets = layouts.filter((l) => l !== layout && !this.#isModel(l));
+      const sheets = layouts.filter((l) => l !== layout && !isModelLayout(this.model, l));
       const at = Math.max(0, Math.min(sheets.length, e.tabOrder - 1));
       sheets.splice(at, 0, layout);
       sheets.forEach((l, i) => {
@@ -1246,11 +1232,6 @@ export class EngineSession {
       this.#step('LAYOUT', change);
     }
     return { ok: true, change };
-  }
-
-  #isModel(layout: Layout): boolean {
-    const record = this.model.tables.blockRecords.get(layout.blockRecord);
-    return record?.name.toUpperCase() === '*MODEL_SPACE';
   }
 }
 

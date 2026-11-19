@@ -177,6 +177,8 @@ describe('palette search', () => {
       'LAYMRG',
       'LAYOFF',
       'LAYON',
+      // M6-01 part 1: LAYOUT.
+      'LAYOUT',
       'LAYTHW',
       'LAYULK',
       'LAYUNISO',

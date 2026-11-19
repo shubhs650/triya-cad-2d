@@ -275,6 +275,8 @@ describe('completions', () => {
       { name: 'LAYMRG' },
       { name: 'LAYOFF' },
       { name: 'LAYON' },
+      // M6-01 part 1: LAYOUT (LO).
+      { name: 'LAYOUT' },
       { name: 'LAYTHW' },
       { name: 'LAYULK' },
       { name: 'LAYUNISO' },

@@ -642,6 +642,15 @@ button {
   border-color: var(--chrome-border);
 }
 
+/* A layout's name edited in place on its tab (M6-01). */
+.layout-tab-rename {
+  width: 14ch;
+  font: inherit;
+  color: inherit;
+  background: var(--chrome-bg-raised);
+  border-color: var(--chrome-border);
+}
+
 /* Settings (M1-50): a modal dialog over the shell. */
 .settings {
   width: min(480px, calc(100vw - 32px));
