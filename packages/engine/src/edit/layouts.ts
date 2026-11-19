@@ -19,7 +19,8 @@
 //     drafter expectation): Triya empties and resets the same layout, which saves as a rename.
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
-import type { HeaderValue, Layout, LayoutPlot } from '../model/types';
+import type { Handle } from '../model/handle';
+import type { HeaderValue, Layout, LayoutPlot, Xdata } from '../model/types';
 import { metric } from './center-settings';
 
 /**
@@ -164,4 +165,47 @@ function resetLayout(b: ChangeSetBuilder, model: DocumentModel, layout: Layout):
     b.setHeader('$PLIMMIN', { ...limits.min });
     b.setHeader('$PLIMMAX', { ...limits.max });
   }
+}
+
+/**
+ * The application whose xdata on a LAYOUT holds the page setup's "Plot transparency" (M6-04): AutoCAD
+ * keeps it there (1071 1 on, 0 off; ezdxf documents the layout), not in the PLOTSETTINGS flags.
+ */
+export const PLOT_TRANSPARENCY_APP = 'PLOTTRANSPARENCY';
+
+const plotTransparencyApp = (model: DocumentModel): Handle | undefined =>
+  [...model.tables.appIds.values()].find((a) => a.name.toUpperCase() === PLOT_TRANSPARENCY_APP)
+    ?.handle;
+
+/** A layout's "Plot transparency": its PLOTTRANSPARENCY xdata's first 1071 value, non-zero. */
+export function plotTransparencyOf(model: DocumentModel, layout: Layout): boolean {
+  const app = plotTransparencyApp(model);
+  const values = app === undefined ? undefined : layout.xdata?.find((x) => x.appId === app)?.values;
+  const on = values?.find((v) => v.code === 1071)?.value;
+  return typeof on === 'bigint' ? on !== 0n : typeof on === 'number' && on !== 0;
+}
+
+/**
+ * The layout's xdata with "Plot transparency" set to `on` (M6-04 part 2, Apply to Layout),
+ * registering PLOTTRANSPARENCY when the drawing has no such application; undefined when it is so
+ * already (a layout without the xdata is off). Off keeps the application with 0, as AutoCAD writes.
+ */
+export function withPlotTransparency(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  layout: Layout,
+  on: boolean,
+): Xdata | undefined {
+  if (plotTransparencyOf(model, layout) === on) return undefined;
+  let app = plotTransparencyApp(model);
+  const apps = layout.xdata ?? [];
+  const i = app === undefined ? -1 : apps.findIndex((a) => a.appId === app);
+  if (!on && i < 0) return undefined;
+  app ??= b.addTableRecord('appIds', { name: PLOT_TRANSPARENCY_APP, flags: 0 }).handle;
+  const value = { code: 1071, value: on ? 1 : 0 } as const;
+  if (i < 0) return [...apps, { appId: app, values: [value] }];
+  const old = apps[i]!.values;
+  const at = old.findIndex((v) => v.code === 1071);
+  const values = at < 0 ? [value, ...old] : old.map((v, j) => (j === at ? value : v));
+  return apps.map((a, j) => (j === i ? { appId: app, values } : a));
 }

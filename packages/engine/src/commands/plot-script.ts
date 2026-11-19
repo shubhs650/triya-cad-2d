@@ -17,7 +17,9 @@
 // - "Enter a page setup name" (part 6) takes a named page setup of the space's kind (model
 //   space's, or the layouts'), case aside, or Enter for the space's own; the defaults that follow
 //   are that page setup's. A name it lacks is reported and asked again (AutoCAD's help is silent).
-// - The View plot area is not offered (M6-04 part 2), as the dialog does not offer it.
+// - The View plot area (M6-04 part 2) is offered while the space has named views, as the dialog's
+//   What to plot lists View then; "Enter view name" takes one of them, case aside, "?" lists
+//   them, and a name the space lacks is reported and asked again (AutoCAD's help is silent).
 // - Shade plot and "Hide paperspace objects" are 3D settings: every answer is taken and the 2D
 //   plot is the same, as AutoCAD's own is for 2D objects. "Hide paperspace objects" defaults to
 //   the page setup's flag 8 and is kept, as the Plot dialog keeps it (M6-04).
@@ -43,10 +45,18 @@ const AREA_KEYWORDS: Readonly<Record<PlotScriptArea, string>> = {
   extents: 'Extents',
   layout: 'Layout',
   limits: 'Limits',
+  view: 'View',
   window: 'Window',
 };
 /** AutoCAD's order: [Display/Extents/Limits/View/Window], a layout's Layout in place of Limits. */
-const AREA_ORDER: readonly PlotScriptArea[] = ['display', 'extents', 'layout', 'limits', 'window'];
+const AREA_ORDER: readonly PlotScriptArea[] = [
+  'display',
+  'extents',
+  'layout',
+  'limits',
+  'view',
+  'window',
+];
 
 const SHADE_PLOT = [
   'As displayed',
@@ -163,7 +173,10 @@ async function* plotArea(
   settings: PlotScriptSettings,
 ): Step<PlotScriptSettings | undefined> {
   let s = settings;
-  const areas = AREA_ORDER.filter((a) => setup.areas.includes(a));
+  const views = setup.views ?? [];
+  const areas = AREA_ORDER.filter(
+    (a) => setup.areas.includes(a) && (a !== 'view' || views.length > 0),
+  );
   const area = yield ctx.prompt.keyword({
     message: 'Enter plot area',
     options: areas.map((a) => AREA_KEYWORDS[a]),
@@ -172,6 +185,17 @@ async function* plotArea(
   if (area.kind !== 'keyword') return undefined;
   const chosen = areas.find((a) => AREA_KEYWORDS[a] === area.keyword)!;
   s = { ...s, area: chosen };
+  if (chosen === 'view') {
+    const view = yield* pickName(
+      ctx,
+      'Enter view name',
+      views,
+      s.view ?? views[0]!,
+      (typed) => `Cannot find view "${typed}".`,
+    );
+    if (view === undefined) return undefined;
+    s = { ...s, view };
+  }
   if (chosen === 'window') {
     const w = s.window;
     const lower = yield ctx.prompt.point({

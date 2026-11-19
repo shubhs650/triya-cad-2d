@@ -379,7 +379,7 @@ export type TextPiece =
   | { readonly kind: 'line'; readonly start: Vec2; readonly end: Vec2; readonly color?: Color };
 
 /** -PLOT's plot areas (AutoCAD's View is not offered: M6-04). */
-export type PlotScriptArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
+export type PlotScriptArea = 'layout' | 'extents' | 'display' | 'limits' | 'view' | 'window';
 
 /**
  * What -PLOT sets, as the Plot dialog's settings hold it: millimetres of paper throughout (the
@@ -392,6 +392,8 @@ export interface PlotScriptSettings {
   readonly upsideDown: boolean;
   readonly area: PlotScriptArea;
   readonly window?: Box | undefined;
+  /** The named view the View plot area plots (M6-04 part 2). */
+  readonly view?: string | undefined;
   readonly fit: boolean;
   /** `mm` millimetres of paper = `units` drawing units. */
   readonly scale: { readonly mm: number; readonly units: number };
@@ -423,6 +425,8 @@ export interface PlotScriptSetup {
   readonly devices: readonly PlotScriptChoice[];
   readonly papers: readonly PlotScriptChoice[];
   readonly areas: readonly PlotScriptArea[];
+  /** The space's named views the View plot area can plot (M6-04 part 2), by name. */
+  readonly views?: readonly string[];
   /** The plot style tables the device has for the drawing (CTBs, or STBs). */
   readonly tables: readonly string[];
   /** The space's page setup is in inches: the prompts show inches. */
