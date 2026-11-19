@@ -46,6 +46,8 @@ function plotOf(l: PlotSettings): LayoutPlot {
     ...(((l.flags as number) & 16) !== 0 && { standardScaleType: l.scaledFit as number }),
     plotType: l.plotType as number,
     ...(window && { window }),
+    // M6-04 part 2: the View plot area's view (acad-ts reads a DXF without 6 as '').
+    ...(l.plotViewName && { viewName: l.plotViewName }),
     flags: l.flags as number,
     // M2-17 part 3: the Plot dialog opens on it.
     ...(l.styleSheet && { styleSheet: l.styleSheet }),

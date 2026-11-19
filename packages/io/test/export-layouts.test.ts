@@ -287,8 +287,16 @@ describe('LAYOUT objects', () => {
     expect(update('Layout1', (m) => ({ blockRecord: layout(m, 'Layout2').blockRecord }))).toEqual([
       expect.stringMatching(/blockRecord: a layout keeps its block record/),
     ]);
-    expect(update('Layout1', () => ({ xdata: [] }))).toEqual([
-      expect.stringMatching(/xdata changes/),
+    // Layout xdata is written (M6-04 part 2), its applications registered as for any object's.
+    expect(
+      update('Layout1', () => ({
+        xdata: [{ appId: 'FFFF0', values: [{ code: 1071, value: 1 }] }],
+      })),
+    ).toEqual([
+      expect.stringMatching(/application FFFF0 is not a registered application \(APPID\)/),
+    ]);
+    expect(update('Layout1', () => ({ reactors: ['1'] }))).toEqual([
+      expect.stringMatching(/reactors changes/),
     ]);
     expect(update('Layout1', () => ({ plot: undefined }) as unknown as Partial<Layout>)).toEqual([
       expect.stringMatching(/plot: a layout keeps its page setup/),
@@ -321,7 +329,7 @@ describe('LAYOUT objects', () => {
     ]);
     // Plot area View and Window name a view (DXF 6) and a window (48, 49, 140, 141).
     expect(plot('Layout1', { plotType: 3 })).toEqual([
-      expect.stringMatching(/plotType: 3 \(View\) needs the view name, which Triya does not map/),
+      expect.stringMatching(/plotType: 3 \(View\) needs the view's name \(DXF 6\)/),
     ]);
     expect(plot('Layout1', { plotType: 4 })).toEqual([
       expect.stringMatching(/plotType: 4 \(Window\) needs the window \(DXF 48, 49, 140, 141\)/),
@@ -440,6 +448,104 @@ describe('LAYOUT objects', () => {
       expect(
         documentInit(cleared).layouts!.find((l) => l.name === 'Layout1')!.plot,
       ).not.toHaveProperty('pageSetupName');
+    },
+  );
+
+  // M6-04 part 2: the Plot dialog's "What to plot" View names a view of the space (DXF 74 = 3 with
+  // the view's name in DXF 6). DXF and R2000 DWG keep the name as text; a DWG from R2004 on points
+  // at the VIEW by a handle acad-ts does not read or write, so that save is refused.
+  it.each([
+    [ACadVersion.AC1032, 'dxf'],
+    [ACadVersion.AC1018, 'dxf'],
+    [ACadVersion.AC1015, 'dwg'],
+  ] as const)('writes the View plot area with its view name (%s %s)', (version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    edit(model, (b) => {
+      b.updateLayout(layout(model, 'Layout1').handle, {
+        plot: { ...plotOf(model, 'Layout1'), plotType: 3, viewName: 'Title block' },
+      });
+    });
+    const doc = saved(bytes, model, format);
+    expect(doc.layouts!.get('Layout1')!.plotViewName).toBe('Title block');
+    const back = documentInit(doc).layouts!;
+    expect(back.map(comparable)).toEqual(model.layouts.map(comparable));
+    // A layout plotting no view maps no name (acad-ts reads DXF 6 as '').
+    expect(back.find((l) => l.name === 'Layout2')!.plot).not.toHaveProperty('viewName');
+    // Another plot area drops the name, as AutoCAD keeps only the area's own values.
+    const again = writeCadDocument(doc, { format });
+    const model2 = open(again);
+    edit(model2, (b) => {
+      const { viewName: _, ...plot } = plotOf(model2, 'Layout1');
+      b.updateLayout(layout(model2, 'Layout1').handle, { plot: { ...plot, plotType: 5 } });
+    });
+    expect(saved(again, model2, format).layouts!.get('Layout1')!.plotViewName).toBe('');
+  });
+
+  it('refuses a View plot area a DWG from R2004 cannot name, and a view name that is not text', () => {
+    const view = (m: DocumentModel) =>
+      ({ plot: { ...plotOf(m, 'Layout1'), plotType: 3, viewName: 'Title block' } }) as const;
+    const bytes = drawing(ACadVersion.AC1018, 'dwg');
+    const model = open(bytes);
+    edit(model, (b) => b.updateLayout(layout(model, 'Layout1').handle, view(model)));
+    expect(refusal(() => exportDocument(readCadDocument(bytes), model, { format: 'dwg' }))).toEqual(
+      [
+        expect.stringMatching(
+          /viewName: a DWG from R2004 names the plot view by a handle, which Triya does not write/,
+        ),
+      ],
+    );
+    // The same drawing saved as DXF (DEC-047) takes it.
+    expect(refusal(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' }))).toEqual(
+      [],
+    );
+    expect(
+      refused((b, m) =>
+        b.updateLayout(layout(m, 'Layout1').handle, {
+          plot: { ...plotOf(m, 'Layout1'), plotType: 3, viewName: 7 as never },
+        }),
+      ),
+    ).toEqual([expect.stringMatching(/viewName: 7 is not text/)]);
+    expect(
+      refused((b, m) =>
+        b.updateLayout(layout(m, 'Layout1').handle, {
+          plot: { ...plotOf(m, 'Layout1'), plotType: 3, viewName: '' },
+        }),
+      ),
+    ).toEqual([expect.stringMatching(/plotType: 3 \(View\) needs the view's name \(DXF 6\)/)]);
+  });
+
+  // M6-04 part 2: Apply to Layout keeps "Plot transparency" in the LAYOUT's PLOTTRANSPARENCY xdata
+  // (1071), as AutoCAD does, registering the application in the same save when the drawing lacks it.
+  it.each(['dxf', 'dwg'] as const)(
+    'writes the layout xdata Plot transparency keeps, with its new APPID (%s)',
+    (format) => {
+      const bytes = drawing(ACadVersion.AC1032, format);
+      const model = open(bytes);
+      edit(model, (b) => {
+        const app = b.addTableRecord('appIds', { name: 'PLOTTRANSPARENCY', flags: 0 }).handle;
+        b.updateLayout(layout(model, 'Layout1').handle, {
+          xdata: [{ appId: app, values: [{ code: 1071, value: 1 }] }],
+        });
+      });
+      const doc = saved(bytes, model, format);
+      const back = documentInit(doc).layouts!;
+      expect(back.map(comparable)).toEqual(model.layouts.map(comparable));
+      const acad = doc.layouts!.get('Layout1')!;
+      const apps = [...acad.extendedData];
+      expect(apps.map(([app]) => app.name)).toEqual(['PLOTTRANSPARENCY']);
+      expect(apps[0]![1].records.map((r) => r.rawValue)).toEqual([1]);
+      // Turned off again: the application stays with 0.
+      const again = writeCadDocument(doc, { format });
+      const model2 = open(again);
+      const l1 = layout(model2, 'Layout1');
+      edit(model2, (b) =>
+        b.updateLayout(l1.handle, {
+          xdata: [{ appId: l1.xdata![0]!.appId, values: [{ code: 1071, value: 0 }] }],
+        }),
+      );
+      const off = documentInit(saved(again, model2, format)).layouts!;
+      expect(off.find((l) => l.name === 'Layout1')!.xdata).toEqual(layout(model2, 'Layout1').xdata);
     },
   );
 
