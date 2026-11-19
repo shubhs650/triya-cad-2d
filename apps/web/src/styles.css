@@ -229,6 +229,9 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  /* Its content's width, whatever its left: a fixed box's own would be the room right of it,
+     which the right-edge clamp in DocTabs.tsx then changed on every picture (M5-15). */
+  width: max-content;
   max-width: min(720px, calc(100vw - 16px));
   padding: 6px;
   background: var(--chrome-bg-raised);
@@ -258,7 +261,8 @@ button {
   border-color: var(--accent);
 }
 
-/* A space not opened yet has no picture: its canvas colour or a white sheet stands in. */
+/* A space not opened yet has no picture: its canvas colour or a white sheet stands in. The
+   picture, when it comes, is fitted inside the same slot (M5-15). */
 .tab-preview .thumbnail {
   width: 160px;
   height: 110px;
