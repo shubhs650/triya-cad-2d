@@ -14,9 +14,12 @@
 // xref-child-tb.dxf and overlays it as xref-child-ovl, and keeps xref-child-tb|TB-LINES
 // (VISRETAIN); the Xref node lists a node for each xref, and dropping the title block's file
 // brings its layers, and its nested xref, in.
+// M5-07 part 9: a group filter's Select Layers: Add and Replace ask for objects on the command
+// line while the manager stays open, and the layers of those selected join the group or become
+// its layers.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, expectShown, openWithDrop, openWithPicker } from '../app/page';
+import { DXF, enterCommand, expectShown, openWithDrop, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -292,4 +295,69 @@ test('the Xref node lists each xref’s layers and takes the menu’s Visibility
   await node(page, 'xref-child-tb').click();
   await expect(toggle('On', 'xref-child-tb|TB-FRAME')).toHaveAttribute('aria-pressed', 'true');
   await shot('2-xref-node-layers.png');
+});
+
+test('Select Layers adds or replaces a group’s layers with those of objects selected (M5-07 part 9)', async ({
+  page,
+}) => {
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const item = (name: string) => filterMenu(page).getByRole('menuitem', { name, exact: true });
+  const prompt = page.getByTestId('command-prompt');
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, 'clockwise_arcs_hatch.dxf');
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Layers' })
+    .click();
+  await expect(palette(page)).toBeVisible();
+
+  // A group filter holding Defpoints, which no object is on.
+  await palette(page).getByRole('button', { name: 'New Group Filter' }).click();
+  await expect(
+    tree(page).getByRole('textbox', { name: 'Name of filter Group Filter1' }),
+  ).toBeFocused();
+  await page.keyboard.type('Picked');
+  await page.keyboard.press('Enter');
+  await node(page, 'All').click();
+  await listed(page).filter({ hasText: 'Defpoints' }).dragTo(node(page, 'Picked'));
+  await node(page, 'Picked').click();
+  await expect(listed(page)).toHaveText(['Defpoints']);
+
+  // Only a group filter offers it.
+  await node(page, 'All').click({ button: 'right' });
+  await expect(item('Select Layers')).toBeDisabled();
+  await page.keyboard.press('Escape');
+
+  // Add: the command line asks for objects; every object's layer joins Defpoints.
+  await node(page, 'Picked').click({ button: 'right' });
+  await item('Select Layers').hover();
+  await expect(
+    filterMenu(page).getByRole('menu', { name: 'Select Layers' }).getByRole('menuitem'),
+  ).toHaveText(['Add', 'Replace']);
+  await shot('1-select-layers-menu.png');
+  await item('Add').click();
+  await expect(prompt).toHaveText('Select objects:');
+  await expect(palette(page)).toBeVisible();
+  await enterCommand(page, 'ALL');
+  await expect(prompt).toHaveText('Select objects:');
+  await shot('2-objects-selected.png');
+  await enterCommand(page, '');
+  await expect(prompt).toHaveText('Command:');
+  await expect(listed(page)).toContainText(['Defpoints', 'HATCH']);
+  const added = await listed(page).count();
+  expect(added).toBeGreaterThan(1);
+  await shot('3-layers-added.png');
+
+  // Replace: the group lists only the layers of the objects selected.
+  await node(page, 'Picked').click({ button: 'right' });
+  await item('Select Layers').hover();
+  await item('Replace').click();
+  await expect(prompt).toHaveText('Select objects:');
+  await enterCommand(page, 'ALL');
+  await enterCommand(page, '');
+  await expect(prompt).toHaveText('Command:');
+  await expect(listed(page)).toHaveCount(added - 1);
+  await expect(listed(page)).not.toContainText(['Defpoints']);
+  await expect(listed(page)).toContainText(['HATCH']);
 });

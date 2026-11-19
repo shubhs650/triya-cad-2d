@@ -1,0 +1,1 @@
+- M5-07 part 9 (#576): a group filter's Select Layers. Right-clicking a group filter in the Layer Properties Manager offers Select Layers > Add and Replace: the command line asks for objects while the manager stays open, and the layers of the objects selected join the group, or become its only layers, as one undo step. This completes M5-07; its viewport items move to M6-02.
