@@ -53,6 +53,7 @@ describe('preferences', () => {
       aperture: 10,
       pdfOsnap: true,
       revcloudGrips: true,
+      layerEvalCtl: true,
       // QPMODE −1 (off, all objects once on) and QPLOCATION 0 (by the cursor): AutoCAD's initial.
       qpmode: -1,
       qpLocation: 0,
@@ -366,6 +367,7 @@ describe('preferences', () => {
         otrack: 'no',
         pdfOsnap: false,
         revcloudGrips: false,
+        layerEvalCtl: false,
         qpmode: 7,
         qpLocation: 1,
         autosnap: 255,
@@ -393,6 +395,7 @@ describe('preferences', () => {
       gripSize: 255,
       pdfOsnap: false,
       revcloudGrips: false,
+      layerEvalCtl: false,
       // QPMODE −2 to 2 only; QPLOCATION 0 or 1.
       qpLocation: 1,
       pickfirst: false,
@@ -527,6 +530,9 @@ describe('preferences', () => {
     // REVCLOUDGRIPS too, a registry setting in AutoCAD (M2-42).
     drafting.configure({ revcloudGrips: false });
     expect(m.saved.at(-1)?.drafting.revcloudGrips).toBe(false);
+    // LAYEREVALCTL, a user setting in AutoCAD (M5-19 part 3).
+    drafting.configure({ layerEvalCtl: false });
+    expect(m.saved.at(-1)?.drafting.layerEvalCtl).toBe(false);
     // QPMODE and QPLOCATION are kept in the registry in AutoCAD (M2-35 part 16).
     drafting.toggle('qp');
     expect(m.saved.at(-1)?.drafting.qpmode).toBe(1);
