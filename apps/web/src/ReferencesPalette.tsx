@@ -14,16 +14,29 @@
 // .dwg). M5-04 part 8: Attach PDF... runs PDFATTACH. M5-04 part 14: Reload All References,
 // Open (the selected reference's file: a drawing in a tab of its own, an image or PDF in the
 // browser) and the details pane of the one reference selected, with Found At, Size and Date.
-// Path comes with a later part.
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+// M5-04 part 15: the details pane's Saved Path is edited in place, or a file picked with its
+// Browse button, as AutoCAD's "To Change the Path of a DWG Reference" says, and Remove Path (of
+// AutoCAD's Change Path Type) keeps the file names alone; the drawing's own references only.
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { BindXrefsDialog } from './BindXrefsDialog';
 import {
   REFERENCE_KIND as KIND,
   REFERENCE_STATUS as STATUS,
+  pathEditable,
   referenceDetails,
+  removePathChanges,
   type FoundFile,
+  type ReferencePathChange,
   type ReferenceRow,
 } from './xrefs';
+
+/** What Browse... picks for each type of reference. */
+const ACCEPT: Readonly<Record<ReferenceRow['kind'], string>> = {
+  attach: '.dwg,.dxf',
+  overlay: '.dwg,.dxf',
+  image: '.bmp,.jpg,.jpeg,.png,.tif,.tiff,.gif',
+  pdf: '.pdf',
+};
 
 /** The details pane's Date, in the user's locale as the browser formats it. */
 const formatDate = (ms: number) => new Date(ms).toLocaleString();
@@ -45,8 +58,14 @@ export function ReferencesPalette({
   onReloadAll,
   onOpen,
   found,
+  onPaths,
   onClose,
 }: {
+  /**
+   * Saved Path, Browse... and Remove Path: the references given these paths (and the file Browse...
+   * picked, which then answers its reference); what was done, one line each.
+   */
+  onPaths?: (changes: readonly ReferencePathChange[], file?: File) => Promise<readonly string[]>;
   /** Reload All References: what it did, one line each. */
   onReloadAll?: () => Promise<readonly string[]>;
   /** Open: the reference's file opened; why not, or undefined. */
@@ -81,6 +100,7 @@ export function ReferencesPalette({
 }) {
   const files = useRef<HTMLInputElement>(null);
   const folder = useRef<HTMLInputElement>(null);
+  const browse = useRef<HTMLInputElement>(null);
   const missing = rows.filter((r) => r.status === 'not-found').length;
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [said, setSaid] = useState<readonly string[]>([]);
@@ -122,6 +142,26 @@ export function ReferencesPalette({
     // A row's handle, status and path say when what is shown of it changed, and an action run
     // here may have read its file again. (`found` is a new function at every render of the app.)
   }, [one?.handle, one?.status, one?.path, ran]);
+  /** The Saved Path being typed, while it differs from the reference's. */
+  const [draft, setDraft] = useState<string>();
+  useEffect(() => setDraft(undefined), [one?.handle, one?.path]);
+  const removing = removePathChanges(picked);
+  const commitPath = () => {
+    const row = one;
+    const path = draft?.trim();
+    setDraft(undefined);
+    // An empty path names no file: the saved one stays.
+    if (!row || !onPaths || !path || path === row.path) return;
+    void run(() => onPaths([{ handle: row.handle, path }]));
+  };
+  const pathKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') commitPath();
+    else if (e.key === 'Escape') {
+      // Back to the saved path; the palette stays open.
+      e.stopPropagation();
+      setDraft(undefined);
+    }
+  };
   const select = (e: MouseEvent, handle: string) => {
     const add = e.ctrlKey || e.metaKey || e.shiftKey;
     setSelected((s) => {
@@ -261,6 +301,14 @@ export function ReferencesPalette({
           >
             Open
           </button>
+          <button
+            type="button"
+            disabled={removing.length === 0 || busy || !onPaths}
+            title="Change Path Type: keeps only the file names of the selected references. Triya finds files by name, so it makes no absolute or relative path"
+            onClick={() => void run(() => onPaths!(removing))}
+          >
+            Remove Path
+          </button>
         </div>
       )}
       {binding && (
@@ -344,7 +392,48 @@ export function ReferencesPalette({
                 {referenceDetails(details.row, details.found, formatDate).map(([label, value]) => (
                   <div key={label}>
                     <dt>{label}</dt>
-                    <dd>{value || '—'}</dd>
+                    {label === 'Saved Path' && onPaths && pathEditable(details.row) ? (
+                      <dd className="saved-path">
+                        <input
+                          type="text"
+                          aria-label="Saved Path"
+                          value={draft ?? value}
+                          disabled={busy}
+                          spellCheck={false}
+                          onChange={(e) => setDraft(e.currentTarget.value)}
+                          onKeyDown={pathKey}
+                          onBlur={commitPath}
+                        />
+                        <button
+                          type="button"
+                          aria-label="Browse for the file"
+                          title="Picks the file the reference shows: its name becomes the saved path"
+                          disabled={busy}
+                          onClick={() => browse.current?.click()}
+                        >
+                          …
+                        </button>
+                        <input
+                          ref={browse}
+                          type="file"
+                          hidden
+                          aria-label="Reference file"
+                          accept={ACCEPT[details.row.kind]}
+                          onChange={(e) => {
+                            const input = e.currentTarget;
+                            const file = input.files?.[0];
+                            input.value = '';
+                            const row = details.row;
+                            if (file && onPaths)
+                              void run(() =>
+                                onPaths([{ handle: row.handle, path: file.name }], file),
+                              );
+                          }}
+                        />
+                      </dd>
+                    ) : (
+                      <dd>{value || '—'}</dd>
+                    )}
                   </div>
                 ))}
               </dl>

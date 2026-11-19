@@ -281,6 +281,51 @@ export function reloadAllTargets(rows: readonly ReferenceRow[]): {
   return { xrefs, files: [...files.values()] };
 }
 
+// ── Saved Path (M5-04 part 15) ──────────────────────────────────────────────────────────────
+
+/** A reference and the saved path it is to have (the engine's `reference-path` input). */
+export interface ReferencePathChange {
+  readonly handle: string;
+  readonly path: string;
+}
+
+/**
+ * Whether the palette may change a reference's saved path: the drawing's own references only. A
+ * nested xref's, or an image's or PDF's an xref brought in, is saved in that xref's file, so
+ * AutoCAD's palette greys it.
+ */
+export const pathEditable = (row: ReferenceRow): boolean => row.depth === 0;
+
+/**
+ * Change Path Type > Remove Path on the references selected: each of the drawing's own with a
+ * folder in its saved path keeps its file name alone (REFPATHTYPE 0). AutoCAD's Make Absolute and
+ * Make Relative need the folder a file is in, which a browser never tells.
+ */
+export function removePathChanges(rows: readonly ReferenceRow[]): ReferencePathChange[] {
+  const out: ReferencePathChange[] = [];
+  for (const r of rows) {
+    const name = fileNameOf(r.path);
+    if (pathEditable(r) && name !== r.path && !out.some((c) => c.handle === r.handle))
+      out.push({ handle: r.handle, path: name });
+  }
+  return out;
+}
+
+/**
+ * What the palette says of the paths it asked for, one line each. The engine refuses only what the
+ * palette never asks (a nested reference's path, an empty one), and the loads they bring say
+ * their own lines on the command line.
+ */
+export function pathChangeLines(
+  changes: readonly ReferencePathChange[],
+  rows: readonly ReferenceRow[],
+): string[] {
+  return changes.map((c) => {
+    const name = rows.find((r) => r.handle === c.handle)?.name ?? c.handle;
+    return `"${name}" now has the saved path ${c.path}`;
+  });
+}
+
 /** A file size as Windows lists it, and AutoCAD's details pane after it: kilobytes rounded up. */
 export function formatFileSize(bytes: number): string {
   return `${Math.ceil(bytes / 1024).toLocaleString('en-US')} KB`;

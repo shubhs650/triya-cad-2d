@@ -13,11 +13,14 @@ import {
   formatFileSize,
   loadXrefFiles,
   missingFileNames,
+  pathChangeLines,
+  pathEditable,
   pendingXrefs,
   rasterMimeType,
   referenceDetails,
   referencesOf,
   reloadAllTargets,
+  removePathChanges,
   xrefsAnsweredBy,
   type PendingXref,
   type ReferenceRow,
@@ -336,6 +339,40 @@ describe('reloadAllTargets (M5-04 part 14)', () => {
       ref('site', 'pdf', 'not-found'),
     ];
     expect(reloadAllTargets(rows)).toEqual({ xrefs: [], files: ['site.pdf'] });
+  });
+});
+
+describe('Saved Path (M5-04 part 15)', () => {
+  it("changes only the drawing's own references' paths", () => {
+    expect(pathEditable(ref('tb', 'attach', 'loaded'))).toBe(true);
+    expect(pathEditable(ref('stamp', 'image', 'loaded', 1))).toBe(false);
+  });
+
+  it('Remove Path keeps the file name alone, of the references with a folder', () => {
+    const rows = [
+      ref('tb', 'attach', 'loaded', 0, 'C:\\work\\tb.dxf'),
+      ref('grid', 'attach', 'loaded', 1, '.\\grid.dxf'),
+      ref('logo', 'image', 'not-found', 0, '..\\img/logo.png'),
+      ref('site', 'pdf', 'loaded'),
+      ref('tb', 'attach', 'loaded', 0, 'C:\\work\\tb.dxf'),
+    ];
+    expect(removePathChanges(rows)).toEqual([
+      { handle: 'H-tb-0', path: 'tb.dxf' },
+      { handle: 'H-logo-0', path: 'logo.png' },
+    ]);
+  });
+
+  it('says what each reference was given', () => {
+    const rows = [ref('tb', 'attach', 'loaded', 0, 'C:\\tb.dxf'), ref('logo', 'image', 'loaded')];
+    expect(
+      pathChangeLines(
+        [
+          { handle: 'H-tb-0', path: 'tb.dxf' },
+          { handle: 'H-logo-0', path: 'D:\\logo.png' },
+        ],
+        rows,
+      ),
+    ).toEqual(['"tb" now has the saved path tb.dxf', '"logo" now has the saved path D:\\logo.png']);
   });
 });
 

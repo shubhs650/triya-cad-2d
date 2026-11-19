@@ -1772,6 +1772,18 @@ button {
   overflow-wrap: anywhere;
 }
 
+/* Its Saved Path, edited in place, with the Browse button beside it (M5-04 part 15). */
+.references-details dd.saved-path {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.references-details dd.saved-path input[type='text'] {
+  flex: 1;
+  min-width: 0;
+}
+
 /* DesignCenter (M5-11): the drawings' tree above the content of the category picked. */
 .design-center-actions {
   display: flex;
