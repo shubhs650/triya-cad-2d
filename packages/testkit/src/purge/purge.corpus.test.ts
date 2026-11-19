@@ -79,7 +79,8 @@ describe('PURGE on the public corpus', () => {
   );
 
   it('purges something of the common categories somewhere in the corpus', () => {
-    for (const c of ['blocks', 'layers', 'linetypes', 'textStyles', 'appIds'] as const)
+    // Shape files: ezdxf's text.dxf keeps an unused ltypeshp.shx (M5-09 part 4).
+    for (const c of ['blocks', 'layers', 'linetypes', 'shapes', 'textStyles', 'appIds'] as const)
       expect(purgedPer.get(c) ?? 0, c).toBeGreaterThan(0);
   });
 });

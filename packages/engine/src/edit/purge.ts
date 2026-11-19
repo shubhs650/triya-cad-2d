@@ -5,8 +5,12 @@
 //   - Named items: block definitions, dimension styles, groups, layers, linetypes, materials,
 //     multileader styles, plot styles, text styles, MLINE styles, table styles, visual styles and
 //     registered applications (-PURGE Regapps). AutoCAD's detail and section view styles belong
-//     to model documentation, which Triya does not have (PRD non-goal 1); shapes kept as nameless
-//     STYLE records stay (the save cannot purge them, purge.ts in @triya/io).
+//     to model documentation, which Triya does not have (PRD non-goal 1).
+//   - Shape files (-PURGE SHapes, the dialog's Shapes): the nameless STYLE records of a drawing's
+//     shape files, listed by their file (DXF 3), as the record has no name. One is in use while a
+//     complex linetype draws one of its shapes (DXF 340). A SHAPE entity names its shape, and in
+//     a DXF file not its file, which only the shape file itself tells: the reader keeps every
+//     shape file of a drawing with such a SHAPE (`purgePinned`, purge.ts in @triya/io).
 //   - An item is purgeable when nothing that stays refers to it: an object in model space, a
 //     layout or a block definition, another record (a layer's linetype, a dimension style's text
 //     style), an object (a multileader style's block, a layer state's linetype), xdata (a
@@ -39,6 +43,7 @@ import type {
   SortEntsTable,
   SymbolTableRecord,
   TableName,
+  TextStyleRecord,
 } from '../model/types';
 import { eraseObjects } from './edit';
 import { displayText } from './find-text';
@@ -56,6 +61,7 @@ export type PurgeCategory =
   | 'materials'
   | 'mleaderStyles'
   | 'plotStyles'
+  | 'shapes'
   | 'textStyles'
   | 'mlineStyles'
   | 'tableStyles'
@@ -71,6 +77,7 @@ export const PURGE_CATEGORIES: readonly PurgeCategory[] = [
   'materials',
   'mleaderStyles',
   'plotStyles',
+  'shapes',
   'textStyles',
   'mlineStyles',
   'tableStyles',
@@ -148,6 +155,14 @@ export const PURGE_RULES: Readonly<Record<PurgeCategory, CategoryRules>> = {
     title: 'Plot Styles',
     table: 'plotStyles',
     fixed: ['Normal'],
+    header: [],
+  },
+  shapes: {
+    one: 'shape file',
+    many: 'shape files',
+    title: 'Shapes',
+    table: 'textStyles',
+    fixed: [],
     header: [],
   },
   textStyles: {
@@ -374,6 +389,10 @@ function listedBlock(model: DocumentModel, r: BlockTableRecord): boolean {
 
 const isGroup = (o: NonGraphicalObject): o is Group => o.type === 'GROUP';
 
+/** DXF 70 bit 1 of a STYLE record: a shape file's, which has no name. */
+const SHAPE_FILE = 1;
+const isShapeFile = (r: SymbolTableRecord) => ((r.flags ?? 0) & SHAPE_FILE) !== 0;
+
 /** Every item of the category PURGE lists, by name. */
 function itemsOf(model: DocumentModel, category: PurgeCategory): PurgeItem[] {
   const rules = PURGE_RULES[category];
@@ -384,7 +403,10 @@ function itemsOf(model: DocumentModel, category: PurgeCategory): PurgeItem[] {
   } else {
     for (const r of model.tables[rules.table!].values()) {
       if (category === 'blocks' && !listedBlock(model, r as BlockTableRecord)) continue;
-      out.push({ category, handle: r.handle, name: r.name });
+      // A shape file's record shares the STYLE table with the text styles: it has no name.
+      if (rules.table === 'textStyles' && isShapeFile(r) !== (category === 'shapes')) continue;
+      const name = category === 'shapes' ? (r as TextStyleRecord).font : r.name;
+      out.push({ category, handle: r.handle, name });
     }
   }
   return out.sort((a, b) =>
@@ -397,7 +419,6 @@ function fixedReason(model: DocumentModel, item: PurgeItem): string | undefined 
   const rules = PURGE_RULES[item.category];
   if (rules.fixed.some((n) => upper(n) === upper(item.name)))
     return `${item.name} is a default ${rules.one} and cannot be purged.`;
-  if (item.name === '') return 'A nameless record (a shape file) cannot be purged.';
   if (rules.table) {
     const r = model.tables[rules.table].get(item.handle) as SymbolTableRecord | undefined;
     if (((r?.flags ?? 0) & XREF_DEPENDENT) !== 0)

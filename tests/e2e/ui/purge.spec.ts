@@ -6,6 +6,9 @@
 // M5-09 part 3: the Health palette's purge cards on the same drawing: the unused items counted by
 // category, Purge All until none are left (one PURGE undo step each, undone with Ctrl+Z), a
 // zero-length line drawn and deleted, and Purge... opening the Purge dialog.
+// M5-09 part 4: shape files. ezdxf's text.dxf keeps ltypeshp.shx for complex linetypes nothing
+// draws with: the Purge dialog lists it in use under Shapes by its file, with the linetypes as its
+// Possible Reasons, and purging those linetypes with Purge nested items takes it too.
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { enterCommand, expectShown, openWithPicker } from '../app/page';
@@ -121,6 +124,41 @@ test('the Purge dialog purges checked items, confirms each, and finds what is in
     /\d+ found\./,
   );
   await shot('5-select-objects.png');
+});
+
+test('the Purge dialog lists a shape file by its file, in use, and purges it nested (M5-09)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.goto(app.url);
+  await openWithPicker(page, path.join(CORPUS, 'ezdxf/examples_dxf/text.dxf'));
+  await expectShown(page, 'text.dxf');
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+
+  await enterCommand(page, 'PURGE');
+  const purge = page.getByRole('dialog', { name: 'Purge', exact: true });
+  await expect(purge).toBeVisible();
+  // In use: the complex linetypes nothing draws with draw its shapes.
+  await purge.getByRole('tab', { name: 'Find Non-Purgeable Items' }).click();
+  const inUse = purge.getByRole('tree', { name: 'Named Items In Use' });
+  await inUse.getByRole('treeitem', { name: 'Shapes (1)' }).dblclick();
+  await inUse.getByRole('treeitem', { name: 'ltypeshp.shx', exact: true }).click();
+  await expect(purge.getByTestId('purge-reasons')).toContainText('The linetype "ZIGZAG" uses it.');
+  await shot('1-shape-file-in-use.png');
+
+  // Purging those linetypes with nested items takes the shape file with them.
+  await purge.getByRole('tab', { name: 'Purgeable Items', exact: true }).click();
+  const tree = purge.getByRole('tree', { name: 'Named Items Not Used' });
+  await expect(tree.getByRole('treeitem', { name: 'Shapes (0)' })).toBeVisible();
+  await purge.getByRole('checkbox', { name: 'Confirm each item to be purged' }).uncheck();
+  await purge.getByRole('checkbox', { name: 'Purge nested items' }).check();
+  await tree.getByRole('checkbox', { name: /^Linetypes \(\d+\)$/ }).check();
+  await purge.getByRole('button', { name: 'Purge Checked Items' }).click();
+  await expect(purge.getByRole('status')).toHaveText(/^\d+ items purged\.$/);
+  await purge.getByRole('tab', { name: 'Find Non-Purgeable Items' }).click();
+  await expect(inUse.getByRole('treeitem', { name: 'Shapes (0)' })).toBeVisible();
+  await expect(inUse.getByRole('treeitem', { name: 'ltypeshp.shx', exact: true })).toHaveCount(0);
+  await shot('2-shape-file-purged.png');
 });
 
 test('the Health palette counts what PURGE would take and fixes it in one click (M5-09)', async ({
