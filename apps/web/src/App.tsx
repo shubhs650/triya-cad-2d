@@ -2958,6 +2958,10 @@ function ViewportCanvas({
       },
       onError: (e) => store.failed(name, openError(name, e)),
       onPick: (point, o) => {
+        // A point prompt's click is numbered as typed input is, so the keys typed after it wait
+        // for the prompt it leads to: Dynamic Input then reads them for that prompt, whose
+        // rubber band starts at the point clicked (M5-22), not for the one the click answered.
+        const seq = o.answer ? commandLines.send(id) : undefined;
         const pick = (p: Vec2, r?: Omit<PickedPoint, 'point'>): CommandInput => ({
           kind: 'pick',
           point: p,
@@ -2970,6 +2974,7 @@ function ViewportCanvas({
           ...(o.lasso && { lasso: o.lasso }),
           ...(o.dragged && { dragged: true }),
           ...(o.freehand && { freehand: o.freehand }),
+          ...(seq !== undefined && { seq }),
         });
         engines.command(
           id,
