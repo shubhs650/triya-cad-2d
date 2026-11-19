@@ -172,6 +172,8 @@ export interface ViewContext {
    * and the files given for xrefs, its model space answered as `drawing`; none found, no drawing.
    */
   readonly drawingFile?: (file: string) => Promise<ViewReply>;
+  /** -XREF Attach and Overlay (M5-04 part 12): the drawing file of that name, with its units. */
+  readonly xrefFile?: (file: string) => Promise<ViewReply>;
   /** WBLOCK (M5-01 part 4): the app writes the new drawing file and hands it over. */
   readonly writeBlock?: (r: Extract<ViewRequest, { op: 'writeBlock' }>) => Promise<ViewReply>;
   /** REFCLOSE Save of an xref (M5-02 part 6): the xref's file read again (xref-files.ts). */
@@ -224,6 +226,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'drawingFile') {
     return ctx.drawingFile ? ctx.drawingFile(r.file) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'xrefFile') {
+    return ctx.xrefFile ? ctx.xrefFile(r.file) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'writeBlock') {
     return ctx.writeBlock ? ctx.writeBlock(r) : { ok: false, message: NO_FILE };
