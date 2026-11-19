@@ -3109,6 +3109,13 @@ button {
   font: inherit;
 }
 
+/* M6-04: a custom paper's width and height under the Paper size list. */
+.plot-custom-paper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .plot-orientation {
   display: flex;
   gap: 12px;

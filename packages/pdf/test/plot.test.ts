@@ -94,6 +94,20 @@ describe('plotItems', () => {
     expect(page.alphas.get('GSa250')).toBe(0.25);
   });
 
+  it('plots every object opaque with "Plot transparency" off (M6-04)', () => {
+    const square = [PATH_M, 0, 0, PATH_L, 1, 0, PATH_L, 1, 1, PATH_Z];
+    const items: PlotItem[] = [
+      { kind: 'fill', path: square, paint, evenOdd: false, opacity: 0.25 },
+      { kind: 'stroke', path: line(0, 0, 1, 0), paint, opacity: 0.5 },
+    ];
+    const off = ops(items, { transparency: false });
+    expect(off.lines.filter((l) => l.endsWith(' gs'))).toEqual(['/GSa1000 gs']);
+    expect([...off.page.alphas.values()]).toEqual([1]);
+    // On, or left out, plots the object's transparency as before.
+    expect(ops(items, { transparency: true }).page.alphas.get('GSa250')).toBe(0.25);
+    expect(ops(items).page.alphas.get('GSa500')).toBe(0.5);
+  });
+
   it('dashes a plot style linetype, each subpath on its own when adaptive', () => {
     const lt = { kind: 'plot', index: 1, adaptive: false, patternSize: 0.5 } as const;
     const path = [...line(0, 0, 72, 0), ...line(0, 10, 36, 10)];

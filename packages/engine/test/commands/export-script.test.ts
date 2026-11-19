@@ -48,6 +48,7 @@ const MODEL: PlotScriptSetup = {
     lineweights: true,
     scaleLineweights: false,
     paperspaceLast: false,
+    hidePaperspace: false,
   },
 };
 

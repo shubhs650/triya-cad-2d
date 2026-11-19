@@ -34,6 +34,19 @@
 // on a named page setup's paper (`withPageSetup`), as AutoCAD's does, without the layout changing
 // until it is applied.
 //
+// M6-04 (plot options parity, AutoCAD 2024 help "Plot Dialog Box" and "PLOTTRANSPARENCYOVERRIDE"):
+// - "Plot transparency" plots object transparency; off, objects plot opaque. AutoCAD keeps it in
+//   the LAYOUT's `PLOTTRANSPARENCY` xdata (1071 1 on; ezdxf documents the layout), not in DXF 70,
+//   and its page setups have it off: a layout without the xdata opens with it off.
+// - "Hide paperspace objects" (DXF 70 flag 8, layouts only) removes hidden lines of 3D objects in
+//   paper space. Triya draws 2D (3D is excluded), where AutoCAD's own plot is the same either way:
+//   it is read, shown and written, and the plot does not change.
+// - A custom paper size (AutoCAD's plotter configuration's Custom Paper Sizes): any width and
+//   height in millimetres up to 5080 (200 inches, the largest page PDF readers take), written by
+//   Apply to Layout as a paper of that size (`UserDefinedMetric_(W_x_H_MM)`, edge to edge), which
+//   the dialog opens again as the page setup's own paper.
+// - Plot stamp is a PRD non-goal (§2 item 8): the dialog has no "Plot stamp on".
+//
 // M2-39: an SVG or PNG plot draws a PDF underlay's page, as the PDF plot copies it: pdf.js draws
 // the part of the page the plot shows (`underlayRasterPlan`) at the plot's resolution (the PNG's,
 // or `SVG_UNDERLAY_DPI` for an SVG) with the layers it turns off hidden, and the screen's
@@ -121,6 +134,8 @@ export interface PageSetup {
   readonly layout?: Handle | undefined;
   /** The whole page setup: paper, area, scale, offset (part 4). */
   readonly plot?: LayoutPlot | undefined;
+  /** "Plot transparency" (M6-04): the LAYOUT's `PLOTTRANSPARENCY` xdata says 1. */
+  readonly transparency?: boolean;
 }
 
 /** The DXF 70 flags of a page setup that the dialog's plot options show. */
@@ -130,7 +145,24 @@ export const PAGE_SETUP_FLAGS = {
   LINEWEIGHTS: 128,
   /** ObjectARX's drawViewportsFirst. */
   PAPERSPACE_LAST: 512,
+  /** ObjectARX's plotHidden (M6-04). */
+  HIDE_PAPERSPACE: 8,
 } as const;
+
+/** The application whose xdata on a LAYOUT holds "Plot transparency" (M6-04). */
+export const PLOT_TRANSPARENCY_APP = 'PLOTTRANSPARENCY';
+
+/** The APPID records a drawing has, to name the applications of xdata. */
+export type AppIdNames = readonly { readonly handle: Handle; readonly name: string }[];
+
+/** A LAYOUT's "Plot transparency": its `PLOTTRANSPARENCY` xdata's first 1071 value, non-zero. */
+function plotTransparencyOf(layout: Layout, appIds: AppIdNames): boolean {
+  const app = appIds.find((a) => a.name.toUpperCase() === PLOT_TRANSPARENCY_APP)?.handle;
+  if (app === undefined) return false;
+  const values = layout.xdata?.find((x) => x.appId === app)?.values;
+  const on = values?.find((v) => v.code === 1071)?.value;
+  return typeof on === 'number' ? on !== 0 : typeof on === 'bigint' ? on !== 0n : false;
+}
 
 /** The other DXF 70 flags the dialog reads and writes (part 4). */
 const PLOT_CENTERED = 4;
@@ -141,11 +173,24 @@ export function appliedPageSetupName(layout: Layout | undefined): string | undef
   return layout?.plot?.pageSetupName;
 }
 
-/** A LAYOUT's page setup, as the dialog reads it. */
-export function pageSetupOf(layout: Layout | undefined): PageSetup | undefined {
+/**
+ * A LAYOUT's page setup, as the dialog reads it; `appIds` names the drawing's applications, to
+ * read "Plot transparency" from its xdata (M6-04).
+ */
+export function pageSetupOf(
+  layout: Layout | undefined,
+  appIds: AppIdNames = [],
+): PageSetup | undefined {
   const plot = layout?.plot;
   if (!plot) return undefined;
-  return { styleSheet: plot.styleSheet ?? '', flags: plot.flags, layout: layout.handle, plot };
+  const transparency = plotTransparencyOf(layout, appIds);
+  return {
+    styleSheet: plot.styleSheet ?? '',
+    flags: plot.flags,
+    layout: layout.handle,
+    plot,
+    ...(transparency && { transparency }),
+  };
 }
 
 /**
@@ -193,6 +238,12 @@ export type PlotArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
 /** The layout's own paper (its page setup), offered first for a layout. */
 export const LAYOUT_PAPER = 'layout';
 
+/** A paper of the size the settings' `customPaper` gives (M6-04). */
+export const CUSTOM_PAPER = 'custom';
+
+/** The longest side of a custom paper, millimetres: 200 inches, the largest PDF page readers take. */
+export const MAX_PAPER_MM = 5080;
+
 /** The plotters (AutoCAD's Printer/plotter Name list). */
 export type PlotDevice = 'pdf' | 'svg' | 'png';
 
@@ -211,8 +262,10 @@ export interface PlotSettings {
   readonly dpi: number;
   /** What an SVG or PNG plot lies on: a white sheet, or nothing (transparent). */
   readonly background: 'white' | 'none';
-  /** A `PAPER_SIZES` name, or `LAYOUT_PAPER`. */
+  /** A `PAPER_SIZES` name, `LAYOUT_PAPER`, or `CUSTOM_PAPER`. */
   readonly paper: string;
+  /** The custom paper's size in millimetres, either way round (M6-04). */
+  readonly customPaper?: { readonly width: number; readonly height: number } | undefined;
   readonly orientation: 'portrait' | 'landscape';
   readonly upsideDown: boolean;
   readonly area: PlotArea;
@@ -230,6 +283,10 @@ export interface PlotSettings {
   readonly plotStyles: boolean;
   readonly paperspaceLast: boolean;
   readonly scaleLineweights: boolean;
+  /** "Plot transparency" (M6-04). */
+  readonly transparency: boolean;
+  /** "Hide paperspace objects" (M6-04, layouts): kept and written; a 2D plot is the same. */
+  readonly hidePaperspace: boolean;
 }
 
 /** The standard scales the dialog lists, `[label, mm, units]`. */
@@ -391,7 +448,8 @@ function fromPageSetup(
 export function defaultPlotSettings(space: PlotSpace): PlotSettings {
   const setup = space.pageSetup;
   const flag = (bit: number, otherwise: boolean) => (setup ? (setup.flags & bit) !== 0 : otherwise);
-  const { PLOT_STYLES, LINEWEIGHTS, SCALE_LINEWEIGHTS, PAPERSPACE_LAST } = PAGE_SETUP_FLAGS;
+  const { PLOT_STYLES, LINEWEIGHTS, SCALE_LINEWEIGHTS, PAPERSPACE_LAST, HIDE_PAPERSPACE } =
+    PAGE_SETUP_FLAGS;
   const common = {
     device: 'pdf' as const,
     dpi: 150,
@@ -405,6 +463,8 @@ export function defaultPlotSettings(space: PlotSpace): PlotSettings {
     // Layouts only: model space has no paper space, nor a page setup scale to scale against.
     paperspaceLast: space.sheet !== undefined && flag(PAPERSPACE_LAST, false),
     scaleLineweights: space.sheet !== undefined && flag(SCALE_LINEWEIGHTS, false),
+    transparency: setup?.transparency === true,
+    hidePaperspace: space.sheet !== undefined && flag(HIDE_PAPERSPACE, false),
   };
   const settings = plainDefaults(space, common);
   const plot = space.pageSetup?.plot;
@@ -466,7 +526,8 @@ export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): Layo
   const base = space.pageSetup?.plot;
   if (!base) throw new Error('This space has no page setup to apply the settings to.');
   const s = settings;
-  const { PLOT_STYLES, LINEWEIGHTS, SCALE_LINEWEIGHTS, PAPERSPACE_LAST } = PAGE_SETUP_FLAGS;
+  const { PLOT_STYLES, LINEWEIGHTS, SCALE_LINEWEIGHTS, PAPERSPACE_LAST, HIDE_PAPERSPACE } =
+    PAGE_SETUP_FLAGS;
   // The paper as the device feeds it.
   let paper = {
     paperSize: base.paperSize,
@@ -480,6 +541,17 @@ export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): Layo
       paperSize: mediaName(listed),
       paperWidth: listed.width,
       paperHeight: listed.height,
+      margins: { left: 0, bottom: 0, right: 0, top: 0 },
+    };
+  }
+  const custom = s.paper === CUSTOM_PAPER ? customPaperMm(s) : undefined;
+  if (custom) {
+    // Fed as given; the orientation turns it as for any paper.
+    const n = (v: number) => v.toFixed(2);
+    paper = {
+      paperSize: `UserDefinedMetric_(${n(custom.width)}_x_${n(custom.height)}_MM)`,
+      paperWidth: custom.width,
+      paperHeight: custom.height,
       margins: { left: 0, bottom: 0, right: 0, top: 0 },
     };
   }
@@ -509,6 +581,7 @@ export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): Layo
   if (space.sheet) {
     flags = setFlag(flags, SCALE_LINEWEIGHTS, s.scaleLineweights);
     flags = setFlag(flags, PAPERSPACE_LAST, s.paperspaceLast);
+    flags = setFlag(flags, HIDE_PAPERSPACE, s.hidePaperspace);
   }
 
   // A layout's Layout area: its sheet moves by the offset (layoutSheet places it by DXF 46/47).
@@ -564,6 +637,10 @@ export function paperMm(
   if (settings.paper === LAYOUT_PAPER) {
     const p = layoutPaper(space);
     if (p) return p;
+  }
+  if (settings.paper === CUSTOM_PAPER) {
+    const p = settings.customPaper;
+    if (p) return { width: p.width, height: p.height };
   }
   const p = PAPER_SIZES.find((s) => s.name === settings.paper) ?? PAPER_SIZES[4]!;
   return { width: p.width, height: p.height };
@@ -638,8 +715,18 @@ export function plotPreview(settings: PlotSettings, space: PlotSpace): PlotPrevi
   return { width: page.width, height: page.height, area, offPaper };
 }
 
+/** The custom paper's size, when it is one a plot can have (M6-04). */
+function customPaperMm(settings: PlotSettings): { width: number; height: number } | undefined {
+  const p = settings.customPaper;
+  const ok = (v: number) => v >= 1 && v <= MAX_PAPER_MM;
+  return p && ok(p.width) && ok(p.height) ? { width: p.width, height: p.height } : undefined;
+}
+
 /** Where the plot goes on the page; throws a message the dialog shows. */
 export function plotPage(settings: PlotSettings, space: PlotSpace): PlotSetup {
+  if (settings.paper === CUSTOM_PAPER && !customPaperMm(settings)) {
+    throw new Error(`The custom paper size must be between 1 and ${MAX_PAPER_MM} mm each way.`);
+  }
   const area = plotAreaBox(settings, space);
   if (!area) throw new Error('There is nothing to plot in this plot area.');
   const scale = settings.fit ? 'fit' : settings.scale.mm / settings.scale.units;
@@ -675,6 +762,7 @@ function pageOptions(page: PlotSetup, settings: PlotSettings, space: PlotSpace):
     lineweightScale,
     nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
     area: page.clip,
+    transparency: settings.transparency,
   };
 }
 

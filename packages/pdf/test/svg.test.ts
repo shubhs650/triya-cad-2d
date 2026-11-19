@@ -275,6 +275,21 @@ describe('plotSvg', () => {
     expect(s).toContain('<path d="M5 50L45 50L45 30L5 30Z" fill="none" stroke="#ff0000"');
   });
 
+  it('plots objects opaque with "Plot transparency" off, an underlay keeping its fade (M6-04)', () => {
+    const items: PlotItem[] = [
+      { kind: 'stroke', path: line(0, 0, 1, 0), paint, opacity: 0.4 },
+      { kind: 'fill', path: [], paint, underlay: { ...underlay, fade: 25 }, opacity: 0.8 },
+    ];
+    const rasters = {
+      underlayRasters: () => ({ pixels, region: { minX: 1, minY: 0, maxX: 3, maxY: 2 }, page }),
+    };
+    const off = svg(items, { ...rasters, transparency: false });
+    expect(off).not.toContain('opacity="0.4"');
+    // The underlay's own fade is not object transparency: three quarters kept.
+    expect(off).toContain('<g opacity="0.75"><image ');
+    expect(svg(items, rasters)).toContain('opacity="0.4"');
+  });
+
   it('clips an underlay’s pixels to its boundary and frames the boundary', () => {
     const s = svg(
       [

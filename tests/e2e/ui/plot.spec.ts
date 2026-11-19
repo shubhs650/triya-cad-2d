@@ -516,6 +516,71 @@ test('model space opens on its page setup, and Apply to Layout saves the setting
   await expect(d.getByLabel('Fit to paper')).toBeChecked();
 });
 
+// M6-04: the plot options AutoCAD's dialog has that the dialog lacked, and a custom paper size.
+test('Plot transparency, Hide paperspace objects and a custom paper size (M6-04)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, VIEWPORTS);
+  await expectShown(page, path.basename(VIEWPORTS));
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d.getByRole('heading')).toHaveText('Plot - Model');
+  // Off, as AutoCAD's page setups have it; Hide paperspace objects is a layout's option.
+  await expect(d.getByLabel('Plot transparency')).not.toBeChecked();
+  await expect(d.getByLabel('Hide paperspace objects')).toHaveCount(0);
+  await expect(d.getByLabel('Plot stamp on')).toHaveCount(0);
+  await d.getByRole('button', { name: 'Cancel' }).click();
+  await expect(d).toBeHidden();
+
+  const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
+  await tabs.nth(1).click();
+  await expect(page.getByTestId('space')).toHaveText('PAPER');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  await expect(d.getByRole('heading')).toHaveText('Plot - Layout1');
+  // viewports.dxf's Layout1 flags (672) leave flag 8 off.
+  const hide = d.getByLabel('Hide paperspace objects');
+  await expect(hide).not.toBeChecked();
+  await hide.check();
+  await d.getByLabel('Plot transparency').check();
+  await d.getByLabel('Paper size').selectOption('custom');
+  await d.getByLabel('Width (mm):').fill('500');
+  await d.getByLabel('Height (mm):').fill('200');
+  await d.getByRole('radio', { name: 'Landscape' }).check();
+  await d.getByRole('button', { name: 'Apply to Layout' }).click();
+  await expect(d.getByRole('status')).toHaveText('Applied to the Layout1 page setup.');
+  type Dev = { triyaDev: { layouts(): { name: string; plot?: Record<string, unknown> }[] } };
+  const plot = await page.evaluate(
+    () => (window as unknown as Dev).triyaDev.layouts().find((l) => l.name === 'Layout1')!.plot!,
+  );
+  expect(plot).toMatchObject({
+    paperSize: 'UserDefinedMetric_(500.00_x_200.00_MM)',
+    paperWidth: 500,
+    paperHeight: 200,
+  });
+  expect((plot.flags as number) & 8).toBe(8);
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'OK' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  const pdf = await readPdf(download);
+  expect(pdf.width).toBeCloseTo(500, 2);
+  expect(pdf.height).toBeCloseTo(200, 2);
+  expect(pdf.paths).toBeGreaterThan(0);
+
+  // PLOT again opens on the page setup as applied: its paper as the layout's own, flag 8 on.
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  await expect(d.getByLabel('Hide paperspace objects')).toBeChecked();
+  const paper = await d.getByLabel('Paper size').locator('option:checked').textContent();
+  expect(paper).toMatch(/^Layout paper \(500 × 200 mm\)/);
+});
+
 test('-PLOT plots at the command line without the dialog (part 5)', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto(app.url);

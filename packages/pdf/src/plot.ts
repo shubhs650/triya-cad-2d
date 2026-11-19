@@ -13,7 +13,9 @@
 //   (the nearest that keeps a point). Ours; AutoCAD's help does not describe the shapes.
 // - A plot style linetype replaces the object's (its continuous path dashed with the style's
 //   pattern, `linetypes.ts`); "Use object linetype" keeps the dashes tessellation made.
-// - Object transparency plots as PDF constant alpha (the "Plot transparency" option).
+// - Object transparency plots as PDF constant alpha while "Plot transparency" is on (M6-04;
+//   `transparency`); off, every object plots opaque. A PDF underlay's fade is its own setting,
+//   not object transparency, and plots either way (ours: AutoCAD's help names objects only).
 // - A plot style's fill style fills an object's filled areas with its pattern (`fills.ts`) in
 //   the object's plot colour; gradient fills and raster images paint their own colours.
 // - A POINT (PDMODE 0) plots as a dot, an XLINE or RAY as the part of it on the plot area.
@@ -200,6 +202,11 @@ export interface PlotPageOptions {
   /** "Convert all text to geometry": TrueType text plots as filled outlines, not as text. */
   readonly textAsGeometry?: boolean;
   /**
+   * "Plot transparency" (M6-04): objects plot with their transparency (`PlotItem.opacity`); off,
+   * opaque. On when absent.
+   */
+  readonly transparency?: boolean;
+  /**
    * "Include layer information" (M2-60): each item's drawing layer (`PlotItem.layer`) is a PDF
    * layer, an optional content group a viewer turns on and off. Off when absent.
    */
@@ -233,6 +240,10 @@ const JOINS: Record<PlotPaint['joinStyle'], LineJoin> = {
  * clicked: Triya's choice, AutoCAD documents none.
  */
 export const LINK_MARGIN = 2;
+
+/** The opacity an item plots with: its transparency while the plot plots transparency. */
+export const opacityOf = (item: PlotItem, o: PlotPageOptions): number =>
+  o.transparency === false ? 1 : (item.opacity ?? 1);
 
 /** Draws `items` in order on `page`. */
 export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPageOptions): void {
@@ -272,7 +283,7 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
       }
     }
     if (links && item.link) linkBounds(links, item, o);
-    cs.graphicsState(page.alpha(item.opacity ?? 1));
+    cs.graphicsState(page.alpha(opacityOf(item, o)));
     if (item.kind === 'point') {
       plotPoint(cs, item, o);
       continue;
@@ -471,7 +482,7 @@ function plotUnderlay(
     emitSegments(cs, segments);
     cs.clip();
   }
-  cs.graphicsState(page.alpha((item.opacity ?? 1) * keep));
+  cs.graphicsState(page.alpha(opacityOf(item, o) * keep));
   // Ten decimals: a page's thousands of points ride on this matrix.
   cs.transform(m, pdfReal).xobject(form.name);
   cs.restore();

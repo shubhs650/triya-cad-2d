@@ -34,6 +34,7 @@ import {
   compose,
   infiniteStroke,
   invertible,
+  opacityOf,
   plottedWeight,
   POINT_MIN_MM,
   styleDashes,
@@ -356,8 +357,8 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
       : '';
 
   const place = (item: PlotItem): Omit<Placed, 'layer' | 'clip'> | undefined => {
-    const alpha =
-      item.opacity !== undefined && item.opacity < 1 ? ` opacity="${num6(item.opacity)}"` : '';
+    const opacity = opacityOf(item, o);
+    const alpha = opacity < 1 ? ` opacity="${num6(opacity)}"` : '';
     if (item.kind === 'point') {
       const x = m.a * item.x + m.c * item.y + m.e;
       const y = m.b * item.x + m.d * item.y + m.f;
@@ -431,7 +432,7 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
       e: r.minX,
       f: r.maxY,
     });
-    const keep = (1 - Math.min(100, Math.max(0, u.fade)) / 100) * (item.opacity ?? 1);
+    const keep = (1 - Math.min(100, Math.max(0, u.fade)) / 100) * opacityOf(item, o);
     const image = `<image width="${px.width}" height="${px.height}" preserveAspectRatio="none" transform="${matrix(im)}" xlink:href="data:image/png;base64,${base64(encodePng(px))}"/>`;
     const faded = keep < 1 ? `<g opacity="${num6(keep)}">${image}</g>` : image;
     const { width: pw, height: ph } = raster.page;

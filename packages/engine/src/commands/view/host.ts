@@ -404,6 +404,8 @@ export interface PlotScriptSettings {
   readonly lineweights: boolean;
   readonly scaleLineweights: boolean;
   readonly paperspaceLast: boolean;
+  /** "Hide paperspace objects" (M6-04; a layout's DXF 70 flag 8). */
+  readonly hidePaperspace: boolean;
 }
 
 /** A name -PLOT accepts and shows (`name`) for one of the app's ids. */
