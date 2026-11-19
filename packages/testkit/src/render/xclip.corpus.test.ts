@@ -3,10 +3,12 @@
 // the filter's inverse insert transform undoes, so its clip in the drawing is the boundary as
 // stored: an independent check of the clip's placement through the reference's own transform,
 // on AutoCAD's files (ACadSharp's samples insert their block at 1/25.4) and ezdxf's xclip.dxf
-// (rectangular, polygonal and inverted clips, one with XCLIP OFF).
+// (rectangular, polygonal and inverted clips, one with XCLIP OFF). An inverted clip (M5-04 part
+// 11) draws inside the region cut out around its inner boundary (`clipBoundary`), which its
+// stored boundary need not be (AutoCAD left the concave one's inner boundary out of it).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { InsertGeometry, SpatialFilter, Vec2 } from '@triya/engine';
+import { clipBoundary, type InsertGeometry, type SpatialFilter, type Vec2 } from '@triya/engine';
 import { readCadDocument } from '@triya/io';
 import { defaultPaint, expandInsert, insertClips, type BlockSource } from '@triya/render';
 import { describe, expect, it } from 'vitest';
@@ -39,9 +41,15 @@ function expected(f: SpatialFilter, g: InsertGeometry, base: Vec2): number[] {
   const m = f.inverseInsert;
   const c = Math.cos(g.rotation);
   const s = Math.sin(g.rotation);
-  return stored(f).flatMap((p) => {
-    const bx = m[0]! * p.x + m[1]! * p.y + m[3]! - base.x;
-    const by = m[4]! * p.x + m[5]! * p.y + m[7]! - base.y;
+  const inBlock = f.inverted
+    ? clipBoundary(f)!
+    : stored(f).map((p) => ({
+        x: m[0]! * p.x + m[1]! * p.y + m[3]!,
+        y: m[4]! * p.x + m[5]! * p.y + m[7]!,
+      }));
+  return inBlock.flatMap((p) => {
+    const bx = p.x - base.x;
+    const by = p.y - base.y;
     const sx = g.scale.x * bx;
     const sy = g.scale.y * by;
     return [g.position.x + c * sx - s * sy, g.position.y + s * sx + c * sy];

@@ -2070,6 +2070,14 @@ export interface SpatialFilter extends NonGraphicalObject {
    * block's extents as one polygon joined by a zero-width slit.
    */
   readonly boundary: readonly Vec2[];
+  /**
+   * Invert clip (AutoCAD 2015 and later; XCLIP's Invert clip, M5-04 part 11): the boundary the
+   * drafter drew, whose inside is hidden, in `boundary`'s coordinates (two points for the
+   * rectangle on those corners). AutoCAD keeps it in the ACAD_INVERTEDCLIP_ROUNDTRIP section of
+   * the ACAD_XREC_ROUNDTRIP XRECORD in the filter's extension dictionary, and `boundary` then
+   * holds what shows for a reader that knows no inverted clip (`invertedBoundary`).
+   */
+  readonly inverted?: readonly Vec2[];
   /** DXF 210 and 11: the boundary's plane. */
   readonly normal: Vec3;
   readonly origin: Vec3;

@@ -195,6 +195,72 @@ describe('XCLIP', () => {
   });
 });
 
+describe('XCLIP Invert clip (M5-04 part 11)', () => {
+  // The line 0,0–10,0 with the rectangle 4–6 × −1–1 cut out of it; the stored bounds 1–9 × −2–2.
+  const inverted = () =>
+    filterOf('60', '20', {
+      boundary: [
+        { x: 4, y: -2 },
+        { x: 9, y: -2 },
+        { x: 9, y: 2 },
+        { x: 1, y: 2 },
+        { x: 1, y: -2 },
+        { x: 4, y: -2 },
+        { x: 4, y: -1 },
+        { x: 4, y: 1 },
+        { x: 6, y: 1 },
+        { x: 6, y: -1 },
+        { x: 4, y: -1 },
+      ],
+      inverted: [
+        { x: 4, y: -1 },
+        { x: 6, y: 1 },
+      ],
+    });
+
+  it('hides what lies inside the boundary and frames only the boundary', () => {
+    const { redraw } = setup([lineInB, entity('20', insertOf(B))], [inverted()]);
+    const c = redraw();
+    expect(only(c.calls, ['save', 'clip', 'restore', 'stroke'])).toEqual([
+      ['save'],
+      ['clip', 'nonzero'],
+      ['stroke', '#ffffff', 1],
+      ['restore'],
+      ['stroke', '#ffffff', 1],
+    ]);
+    // The frame is the rectangle (4, −1)–(6, 1) alone, (−1, −1)–(1, 1) about the view centre.
+    const restoreAt = c.calls.findIndex((k) => k[0] === 'restore');
+    const frame = c.calls.slice(restoreAt).filter((k) => k[0] === 'moveTo' || k[0] === 'lineTo');
+    expect(frame.slice(0, 4)).toEqual([
+      ['moveTo', -1, -1],
+      ['lineTo', 1, -1],
+      ['lineTo', 1, 1],
+      ['lineTo', -1, 1],
+    ]);
+  });
+
+  it('picks the part around the boundary, even beyond the bounds stored, and misses the part inside', () => {
+    const long = entity('50', line(-20, 0, 30, 0), { owner: B });
+    const { r } = setup([long, entity('20', insertOf(B))], [inverted()], [['$XCLIPFRAME', 0]]);
+    // Screen x = 50 + 10 · (world x − 5): world 5 is hidden, 2 shows, 9.5 (beyond 9) shows.
+    expect(r.hitTest({ x: 50, y: 25 }, 3)).toEqual([]);
+    expect(r.hitTest({ x: 20, y: 25 }, 3)).toHaveLength(1);
+    expect(r.hitTest({ x: 95, y: 25 }, 3)).toHaveLength(1);
+  });
+
+  it('draws the region through insertClips, the frame its own outline', () => {
+    const { d } = setup([lineInB, entity('20', insertOf(B))], [inverted()]);
+    const clip = insertClips(d.model)('20')!;
+    expect(clip.outline).toEqual([
+      { x: 4, y: -1 },
+      { x: 6, y: -1 },
+      { x: 6, y: 1 },
+      { x: 4, y: 1 },
+    ]);
+    expect(clip.boundary.length).toBe(11);
+  });
+});
+
 describe('expandInsert with XCLIP', () => {
   const src = (d: ReturnType<typeof drawing>) => ({
     model: d.model,

@@ -18,8 +18,16 @@
 // filter on one reference, a filter left behind by its erased reference, a changed INSERT or
 // owner, xdata, reactor and extension dictionary changes, a new boundary on a filter with an
 // extension dictionary (AutoCAD keeps an inverted clip's inner boundary there, in an
-// ACAD_XREC_ROUNDTRIP record the save does not map), and values AutoCAD cannot hold (a boundary
-// that encloses nothing, matrices that are not 12 finite numbers, an inverse that is singular).
+// ACAD_XREC_ROUNDTRIP record the boundary would leave stale), an existing filter turned inverted
+// or back (XCLIP makes a new filter for a new boundary), and values AutoCAD cannot hold (a
+// boundary that encloses nothing, matrices that are not 12 finite numbers, an inverse that is
+// singular).
+//
+// Invert clip (M5-04 part 11): a new inverted filter gets an extension dictionary (hard owner,
+// keep existing) holding an ACAD_XREC_ROUNDTRIP XRECORD (keep existing, its dictionary its
+// reactor) whose 102 section "ACAD_INVERTEDCLIP_ROUNDTRIP" lists the inner boundary as 10s and
+// "ACAD_INVERTEDCLIP_ROUNDTRIP_COMPARE" the filter's boundary, as AutoCAD writes them (ezdxf's
+// xclip.dxf, map/xclip.ts). The save allocates both handles.
 
 import {
   ACadVersion,
@@ -28,6 +36,7 @@ import {
   Insert,
   Matrix4,
   SpatialFilter as AcadSpatialFilter,
+  XRecord,
   XY,
   XYZ,
   type CadDocument,
@@ -35,6 +44,7 @@ import {
 } from '@node-projects/acad-ts';
 import {
   clipBoundary,
+  clipFrame,
   type DocumentInit,
   type DocumentModel,
   type Entity,
@@ -44,6 +54,7 @@ import {
   type NonGraphicalObject,
   type SpatialFilter,
 } from '@triya/engine';
+import { ACAD_XREC_ROUNDTRIP, INVERTED_CLIP, INVERTED_CLIP_COMPARE } from '../map/xclip';
 import { resolve, same, type Resolver } from './entities';
 
 /** The extension dictionary entry AutoCAD keeps a reference's filters under, and the clip's. */
@@ -54,7 +65,14 @@ const isFilter = (o: NonGraphicalObject | undefined): o is SpatialFilter =>
   o?.type === 'SPATIAL_FILTER';
 
 /** The fields that make up the clip's shape: a filter with an extension dictionary keeps them. */
-const SHAPE = ['boundary', 'normal', 'origin', 'inverseInsert', 'boundaryTransform'] as const;
+const SHAPE = [
+  'boundary',
+  'inverted',
+  'normal',
+  'origin',
+  'inverseInsert',
+  'boundaryTransform',
+] as const;
 
 export interface SpatialFiltersPlan {
   readonly updated: {
@@ -146,6 +164,8 @@ export function planSpatialFilters(
         out.push(
           "a new boundary on a clip with an extension dictionary (an inverted clip's ACAD_XREC_ROUNDTRIP record would go stale)",
         );
+      } else if (!same(b.inverted, a.inverted)) {
+        out.push('Invert clip changes (XCLIP makes a new filter for a new boundary)');
       }
     } else {
       // AutoCAD Release 14 introduced XCLIP (and the SPATIAL_FILTER object).
@@ -277,6 +297,11 @@ function valueProblems(b: SpatialFilter | undefined, a: SpatialFilter): string[]
     if (!points.every((p) => finite(p?.x, p?.y))) out.push('boundary: a point that is not finite');
     else if (!clipBoundary(a)) out.push('boundary: encloses nothing');
   }
+  if (changed('inverted') && a.inverted !== undefined) {
+    const points = Array.isArray(a.inverted) ? a.inverted : [];
+    if (!points.every((p) => finite(p?.x, p?.y))) out.push('inverted: a point that is not finite');
+    else if (!clipFrame(a) || !clipBoundary(a)) out.push('inverted: encloses nothing');
+  }
   for (const k of ['normal', 'origin'] as const) {
     const v = a[k];
     if (changed(k) && !finite(v?.x, v?.y, v?.z)) out.push(`${k}: not a finite point`);
@@ -359,5 +384,23 @@ export function writeSpatialFilters(r: Resolver, plan: SpatialFiltersPlan): void
     d.addByKey(SPATIAL, acad);
     if (after.reactors?.length) acad.addReactor(d);
     fill(acad, undefined, after);
+    if (after.inverted) writeInverted(r, acad, after);
   }
+}
+
+/** A new inverted filter's ACAD_XREC_ROUNDTRIP record, in an extension dictionary of its own. */
+function writeInverted(r: Resolver, acad: AcadSpatialFilter, after: SpatialFilter): void {
+  const own = dictionary(r.allocate());
+  acad.xDictionary = own;
+  const record = new XRecord();
+  record.handle = r.allocate();
+  record.cloningFlags = DictionaryCloningFlags.KeepExisting;
+  const points = (name: string, of: readonly { x: number; y: number }[]) => {
+    record.createEntry(102, name);
+    for (const p of of) record.createEntry(10, new XYZ(p.x, p.y, 0));
+  };
+  points(INVERTED_CLIP, after.inverted!);
+  points(INVERTED_CLIP_COMPARE, after.boundary);
+  own.addByKey(ACAD_XREC_ROUNDTRIP, record);
+  record.addReactor(own);
 }
