@@ -1032,7 +1032,8 @@ button {
   background: var(--chrome-hover, rgb(0 0 0 / 6%));
 }
 
-.layer-filter-submenu {
+/* Inside its item rather than at the pointer as a top-level .snap-menu (fixed) is. */
+.snap-menu.layer-filter-submenu {
   position: absolute;
   top: -4px;
   left: 100%;

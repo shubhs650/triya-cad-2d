@@ -337,7 +337,8 @@ export function LayerFilterMenu({
   return (
     <div
       ref={ref}
-      className="snap-menu layer-list-menu"
+      // Not .layer-list-menu, whose scrolling would clip the submenus.
+      className="snap-menu layer-filter-menu"
       role="menu"
       aria-label="Layer filter"
       style={{
