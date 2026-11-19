@@ -1,0 +1,1 @@
+- M5-18 part 3 (#572): -LAYER's stAte imports layer states from a .las file or another drawing found by name and exports one as a .las file, and -LAYER's Xref resets the drawing's changes to an xref's layers to the xref's own settings; Settings lists your layer state files.
