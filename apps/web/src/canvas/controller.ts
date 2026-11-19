@@ -246,6 +246,12 @@ export interface CanvasHooks {
        * prompt that takes a freehand path (TRIM's freehand fence, M3-12 part 6).
        */
       readonly freehand?: readonly Vec2[];
+      /**
+       * The point a point, distance or angle prompt asked for, as the drafting aids make it (not
+       * a pick at `Command:` or "Select objects"): what the drafter types next is for the
+       * prompt it leads to (M5-22).
+       */
+      readonly answer?: true;
     },
   ) => void;
   /**
@@ -2455,6 +2461,7 @@ export class CanvasController {
             shift,
             release: false,
             ...(e.ctrlKey && { ctrl: true }),
+            answer: true,
           });
           return;
         }
