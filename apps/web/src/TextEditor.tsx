@@ -415,6 +415,10 @@ function TextLine({
       typed.current = left;
       caret.current = text.length;
       setParts(left);
+      // Keys held while the engine read an input were typed outside the editor, and holding
+      // them gave the command line the focus (M5-21): the keys after them are the editor's too,
+      // or an Enter typed next would end TEXT at the command line with this line unplaced.
+      if (!closed.current) input.current?.focus();
       return true;
     });
   }, []);
@@ -429,16 +433,27 @@ function TextLine({
         keep();
         return;
       }
-      // Placing TEXT: the line typed so far is placed before the click reaches the engine,
-      // which starts the next line at the click.
-      if (e.button === 0 && e.target.closest('.drawing-canvas') && typed.current.length > 0) {
+      if (e.button !== 0 || !e.target.closest('.drawing-canvas')) return;
+      // Placing TEXT, the click moves the line editor, which keeps the keyboard as AutoCAD's
+      // does (M5-21): the keys typed next are the next line's. The press would take the focus
+      // from it (the canvas takes none, so the page would have it).
+      document.addEventListener('mousedown', keepFocus, { capture: true, once: true });
+      // The line typed so far is placed before the click reaches the engine, which starts the
+      // next line at the click.
+      if (typed.current.length > 0) {
         answer(doc, { kind: 'string', value: lineValue(typed.current) });
         typed.current = [];
         setParts([]);
       }
     };
+    const keepFocus = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest('.drawing-canvas')) e.preventDefault();
+    };
     document.addEventListener('pointerdown', onDown, true);
-    return () => document.removeEventListener('pointerdown', onDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('mousedown', keepFocus, true);
+    };
   }, []);
   return (
     <>
