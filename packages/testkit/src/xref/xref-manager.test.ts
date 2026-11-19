@@ -279,7 +279,7 @@ describe('-XREF (M5-04)', () => {
     const t = bus(model);
     await t.bus.script(['-XREF']);
     expect(t.bus.promptText).toBe(
-      'Enter an option [?/Bind/Detach/Unload/Reload/Overlay/Attach] <Attach>:',
+      'Enter an option [?/Bind/Detach/Path/pathType/Unload/Reload/Overlay/Attach] <Attach>:',
     );
     await t.bus.script(['?', '']);
     const at = t.log.findIndex((l) => l.startsWith('Xref Name'));

@@ -172,6 +172,11 @@ export {
   type XrefAttachRequest,
   type XrefAttachSettings,
 } from './xref-attach';
+export {
+  changeReferencePaths,
+  referencePathCommand,
+  type ReferencePathEdit,
+} from './reference-path';
 export { xbindCommand, type XbindRequest } from './xbind';
 export {
   BUNDLED_LINETYPE_FILE,

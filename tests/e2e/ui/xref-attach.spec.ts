@@ -156,7 +156,7 @@ test('-XREF Attach attaches a drawing open in another tab, named at the command 
   await type(
     page,
     '-XREF',
-    'Enter an option [?/Bind/Detach/Unload/Reload/Overlay/Attach] <Attach>:',
+    'Enter an option [?/Bind/Detach/Path/pathType/Unload/Reload/Overlay/Attach] <Attach>:',
   );
   await type(page, '', 'Enter name of file to attach:');
   await shot(page, '1-dash-xref-attach');

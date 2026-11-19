@@ -82,7 +82,7 @@ describe('-XREF Attach and Overlay (M5-04 part 12)', () => {
     const t = drawing();
     await t.bus.script(['-XREF']);
     expect(t.bus.promptText).toBe(
-      'Enter an option [?/Bind/Detach/Unload/Reload/Overlay/Attach] <Attach>:',
+      'Enter an option [?/Bind/Detach/Path/pathType/Unload/Reload/Overlay/Attach] <Attach>:',
     );
     await t.bus.script(['']);
     expect(t.bus.promptText).toBe('Enter name of file to attach:');
