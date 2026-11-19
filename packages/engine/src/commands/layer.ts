@@ -4,8 +4,9 @@
 //   - LAYER opens the Layer Properties Manager, which is the app's Layers palette; LAYERCLOSE
 //     closes it. Neither deselects.
 //   - -LAYER: "Current layer:" then "Enter an option [?/Make/Set/New/Rename/ON/OFF/Color/Ltype/
-//     LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/Description]" again after each option,
-//     until Enter. Name lists are names or wild-card patterns separated by commas (WCMATCH, case
+//     LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description]" again after
+//     each option, until Enter; PStyle only in a drawing with named plot styles ($PSTYLEMODE 0),
+//     as Help says it is not available with color-dependent plot styles. Name lists are names or wild-card patterns separated by commas (WCMATCH, case
 //     ignored); an Enter at "or <select objects>" takes the layers of the objects selected, and
 //     one at "<current>" the current layer.
 //
@@ -17,9 +18,11 @@
 // current layer is never frozen and is turned off only after a Yes. The whole command is one
 // LAYER undo step (the bus's record of the command), none when nothing changed.
 //
-// Left for later parts of M5-18: stAte (the Layer States Manager's actions; M5-07), PStyle
-// (named plot styles), rEconcile (layer notification, LAYEREVAL) and Xref (xref layer
-// overrides, VISRETAIN). MATerial is not offered: Triya has no materials (issue #195).
+// PStyle (M5-18 part 2) asks "Enter plot style or [?] <Normal>" (a name of the drawing's
+// ACAD_PLOTSTYLENAME; ? lists them) and then Help's "Enter name list of layer(s) for plot style
+// current <current>". stAte is in layer-state-dash.ts. Left for later: stAte's Import and
+// EXport and Xref (xref layer overrides, VISRETAIN; M5-18 part 3) and rEconcile (layer
+// notification, LAYEREVAL; M5-19). MATerial is not offered: Triya has no materials (#195).
 //
 // Ambiguities, settled for the common drafter expectation (Help gives no messages): a frozen
 // layer at Make or Set says `Cannot make frozen layer "X" current.`; ? lists each layer's name,
@@ -40,6 +43,8 @@ import { wcmatch } from './modify/attributes';
 import { lineweightTyped } from './lweight';
 import { selectedLayers } from './nested-pick';
 import { viewRequest } from './view/zoom';
+import { layerStateOption } from './layer-state-dash';
+import { namedPlotStyles } from '../properties/general';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -56,12 +61,18 @@ const OPTIONS = [
   'LWeight',
   'TRansparency',
   'Plot',
+  'PStyle',
   'Freeze',
   'Thaw',
   'LOck',
   'Unlock',
+  'stAte',
   'Description',
 ];
+
+/** -LAYER's options in the drawing: PStyle only with named plot styles. */
+const optionsOf = (ctx: CommandContext) =>
+  namedPlotStyles(ctx.model) ? OPTIONS : OPTIONS.filter((o) => o !== 'PStyle');
 
 const COLOR_NAMES = ['red', 'yellow', 'green', 'cyan', 'blue', 'magenta', 'white'];
 const quoted = (s: string) => `"${s}"`;
@@ -405,6 +416,39 @@ async function* plot(ctx: CommandContext): Sub<void> {
   apply(ctx, layers, { plot: plots });
 }
 
+/** "Enter plot style or [?] <Normal>": a named plot style of the drawing, ? listing them. */
+async function* plotStyle(ctx: CommandContext): Sub<void> {
+  const styles = [...ctx.model.tables.plotStyles.values()].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  let a: PromptAnswer;
+  for (;;) {
+    a = yield ctx.prompt.string({
+      message: 'Enter plot style or',
+      options: ['?'],
+      defaultLabel: 'Normal',
+    });
+    if (a.kind !== 'keyword') break;
+    const pattern =
+      typed(
+        yield ctx.prompt.string({
+          message: 'Enter plot style(s) to list',
+          default: { kind: 'string', value: '*' },
+        }),
+      ) || '*';
+    for (const s of styles) if (wcmatch(s.name, pattern)) ctx.message(s.name);
+  }
+  const name = typed(a) || 'Normal';
+  const style = styles.find((s) => upper(s.name) === upper(name));
+  if (!style) {
+    ctx.message(`Cannot find plot style ${quoted(name)}.`);
+    return;
+  }
+  // Help's own prompt, "current" and all.
+  const message = 'Enter name list of layer(s) for plot style current';
+  apply(ctx, yield* nameList(ctx, message, 'current'), { plotStyle: style.handle });
+}
+
 async function* describe(ctx: CommandContext): Sub<void> {
   const text = typed(yield ctx.prompt.string({ message: 'Enter layer description', spaces: true }));
   const message = 'Enter name list of layer(s) to apply description';
@@ -453,6 +497,10 @@ function option(ctx: CommandContext, keyword: string): Sub<void> {
       return transparency(ctx);
     case 'Plot':
       return plot(ctx);
+    case 'PStyle':
+      return plotStyle(ctx);
+    case 'stAte':
+      return layerStateOption(ctx);
     case 'Freeze':
       return freeze(ctx);
     case 'Thaw':
@@ -480,7 +528,7 @@ export function layerCommand(): CommandDef {
       const cur = current(ctx);
       if (cur) ctx.message(`Current layer:  ${quoted(cur.name)}`);
       for (;;) {
-        const a = yield ctx.prompt.keyword({ message: 'Enter an option', options: OPTIONS });
+        const a = yield ctx.prompt.keyword({ message: 'Enter an option', options: optionsOf(ctx) });
         if (a.kind !== 'keyword') return;
         yield* option(ctx, a.keyword);
       }
