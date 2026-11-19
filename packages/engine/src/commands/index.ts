@@ -94,6 +94,7 @@ export {
   viewportFit,
   type ViewportArrangement,
 } from './mview';
+export { polygonalBoundary, vpclipCommand } from './vpclip';
 export { UCS_ICON, currentUcs, objectUcs, ucsCommand, ucsIconCommand } from './ucs';
 export { setvarCommand, variableCommand, UNKNOWN_VARIABLE } from './setvar';
 export * from './sysvars';

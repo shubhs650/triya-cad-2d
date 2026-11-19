@@ -183,6 +183,14 @@ export {
   xclipProblem,
 } from './xclip';
 export {
+  NOT_A_CLIP_OBJECT,
+  viewportClipFrame,
+  clipObjectProblem,
+  clipViewport,
+  clipsViewport,
+  deleteViewportClip,
+} from './viewport-clip';
+export {
   currentLayerChange,
   deleteLayersChange,
   mergeLayersChange,
