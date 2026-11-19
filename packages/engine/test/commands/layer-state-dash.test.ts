@@ -8,6 +8,10 @@ import {
   builtinCommands,
   layerStates,
   type BusEvent,
+  type DocumentInit,
+  type LayerStateInit,
+  type ViewReply,
+  type ViewRequest,
 } from '../../src/index';
 import { layer, linetype, sampleInit } from '../model/fixtures';
 import { host } from './edit-harness';
@@ -24,14 +28,14 @@ const NAMES: Record<string, string> = {
   [NOTES]: 'NOTES',
 };
 
-const STATE_OPTIONS = 'Enter an option [?/Save/Restore/Edit/Name/Delete]:';
+const STATE_OPTIONS = 'Enter an option [?/Save/Restore/Edit/Name/Delete/Import/EXport]:';
 const PROPERTIES =
   'Enter states to change [On/Frozen/Lock/Plot/Newvpfreeze/Color/lineType/lineWeight/TRansparency/plotStyle]:';
 const ALL =
   'Layer properties to restore: On, Frozen, Lock, Plot, New VP Freeze, Color, Linetype, Lineweight, Transparency, Plot Style';
 
 /** Four layers (0, WALLS, DOORS, NOTES), WALLS current; no layer states. */
-function setup() {
+function setup(files?: (r: ViewRequest) => ViewReply | undefined) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
@@ -42,7 +46,16 @@ function setup() {
       layers: HANDLES.map((h) => layer(h, NAMES[h]!)),
     },
   });
-  const bus = new PromptBus({ model, registry: builtinCommands(), view: host(() => model) });
+  const base = host(() => model);
+  const requests: ViewRequest[] = [];
+  const view = {
+    request: (r: ViewRequest): Promise<ViewReply> => {
+      requests.push(r);
+      const reply = files?.(r);
+      return reply ? Promise.resolve(reply) : base.request(r);
+    },
+  };
+  const bus = new PromptBus({ model, registry: builtinCommands(), view });
   const log: string[] = [];
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);
@@ -50,7 +63,7 @@ function setup() {
   const lay = (h: string) => model.tables.layers.get(h)!;
   const states = () => layerStates(model);
   const state = (name: string) => states().find((s) => s.name === name);
-  return { model, bus, log, lay, states, state };
+  return { model, bus, log, lay, states, state, requests };
 }
 
 describe('-LAYER stAte', () => {
@@ -59,7 +72,9 @@ describe('-LAYER stAte', () => {
     await t.bus.script(['-LAYER', 'A']);
     expect(t.bus.promptText).toBe(STATE_OPTIONS);
     await t.bus.script(['']);
-    expect(t.bus.promptText).toMatch(/^Enter an option \[\?\/Make\/.*\/stAte\/Description\]:$/);
+    expect(t.bus.promptText).toMatch(
+      /^Enter an option \[\?\/Make\/.*\/stAte\/Description\/Xref\]:$/,
+    );
     await t.bus.script(['STATE', '?', '']);
     expect(t.log.at(-1)).toBe('No matching layer states found.');
     expect(t.bus.promptText).toBe(STATE_OPTIONS);
@@ -169,5 +184,154 @@ describe('-LAYER stAte', () => {
     expect(t.states().map((s) => s.name)).toEqual(['GROUND']);
     await t.bus.script(['D', 'ELEV']);
     expect(t.log.at(-1)).toBe('Cannot find layer state "ELEV".');
+  });
+});
+
+/** A `.las` file's state: WALLS off and red, a layer GONE the drawing lacks. */
+const FILE_STATE: LayerStateInit = {
+  name: 'PLAN',
+  description: 'From the file',
+  mask: LAYER_STATE_MASK.all | LAYER_STATE_MASK.lastRestored,
+  paperSpace: false,
+  currentLayer: 'DOORS',
+  layers: ['WALLS', 'GONE'].map((name) => ({
+    name,
+    on: false,
+    frozen: false,
+    locked: false,
+    plot: true,
+    newVpFrozen: false,
+    vpFrozen: false,
+    color: { kind: 'aci', index: 1 } as const,
+    linetypeName: 'CONTINUOUS',
+    lineweight: 'Default',
+    plotStyle: 'Color_1',
+    transparency: { alpha: 255 },
+  })),
+};
+
+/** Another drawing holding a state ELEV (layer 0 off), which a DWG or DXF import reads. */
+async function drawingWithState(): Promise<DocumentInit> {
+  const t = setup();
+  await t.bus.script(['-LAYER', 'OFF', '0', 'A', 'S', 'ELEV', '', '', '']);
+  const m = t.model;
+  return {
+    meta: m.meta,
+    handSeed: m.handSeed,
+    header: m.header,
+    tables: Object.fromEntries(
+      Object.entries(m.tables).map(([k, v]) => [k, [...v.values()]]),
+    ) as NonNullable<DocumentInit['tables']>,
+    blocks: [...m.blocks.values()],
+    layouts: [...m.layouts],
+    objects: [...m.objects.values()],
+  };
+}
+
+describe('-LAYER stAte Import and EXport (M5-18 part 3)', () => {
+  it('Import reads every state of a .las file the app finds by name', async () => {
+    const t = setup((r) =>
+      r.op === 'layerStateFile' && r.file === 'plan.las'
+        ? { ok: true, layerStateFile: { name: 'plan.las', states: [FILE_STATE] } }
+        : r.op === 'layerStateFile'
+          ? { ok: true }
+          : undefined,
+    );
+    await t.bus.script(['-LAYER', 'A', 'I']);
+    expect(t.bus.promptText).toBe('Enter file name to import:');
+    await t.bus.script(['"nowhere.las"']);
+    expect(t.log.at(-1)).toBe('File "nowhere.las" not found.');
+    await t.bus.script(['I', '']);
+    expect(t.bus.promptText).toBe(STATE_OPTIONS);
+    await t.bus.script(['I', 'plan.las']);
+    expect(t.log.at(-1)).toBe('Layer state "PLAN" imported.');
+    const plan = t.state('PLAN')!;
+    expect(plan.description).toBe('From the file');
+    // Layers by name: WALLS is the drawing's, GONE stays a name; the file's own mark is dropped.
+    expect(plan.layers.map((e) => [e.name, e.layer])).toEqual([
+      ['WALLS', WALLS],
+      ['GONE', undefined],
+    ]);
+    expect(plan.mask & LAYER_STATE_MASK.lastRestored).toBe(0);
+    expect(t.requests.filter((r) => r.op === 'layerStateFile').map((r) => r.file)).toEqual([
+      'nowhere.las',
+      'plan.las',
+    ]);
+    // A state of the same name asks first: No keeps it, Yes replaces it.
+    await t.bus.script(['I', 'plan.las']);
+    expect(t.bus.promptText).toBe('Layer state "PLAN" already exists. Overwrite it? <N>:');
+    await t.bus.script(['']);
+    expect(t.states()).toHaveLength(1);
+    await t.bus.script(['R', 'PLAN', 'I', 'plan.las', 'Y']);
+    expect(t.states()).toHaveLength(1);
+    expect(t.state('PLAN')!.mask & LAYER_STATE_MASK.lastRestored).toBe(0);
+    await t.bus.script(['', '']);
+    expect(t.bus.undo.state.undoable).toBe(1);
+  });
+
+  it('Import of a drawing reads the states it holds; a bad file or name is said', async () => {
+    const drawing = await drawingWithState();
+    const bad = { ...FILE_STATE, name: 'A<B' };
+    const t = setup((r) => {
+      if (r.op !== 'layerStateFile') return undefined;
+      if (r.file === 'site') return { ok: true, layerStateFile: { name: 'site.dxf', drawing } };
+      if (r.file === 'empty.dxf')
+        return { ok: true, layerStateFile: { name: 'empty.dxf', states: [] } };
+      if (r.file === 'bad.las')
+        return { ok: true, layerStateFile: { name: 'bad.las', states: [bad] } };
+      return { ok: false, message: 'broken.las could not be read: no LAYERSTATEDICTIONARY' };
+    });
+    await t.bus.script(['-LAYER', 'A', 'I', 'site']);
+    expect(t.log.at(-1)).toBe('Layer state "ELEV" imported.');
+    const elev = t.state('ELEV')!;
+    expect(elev.layers.find((e) => e.name === '0')!.on).toBe(false);
+    expect(elev.layers.find((e) => e.name === '0')!.layer).toBe(L0);
+    await t.bus.script(['I', 'empty.dxf']);
+    expect(t.log.at(-1)).toBe('empty.dxf holds no layer state.');
+    await t.bus.script(['I', 'bad.las']);
+    expect(t.log.at(-1)).toBe('Invalid layer state name.');
+    await t.bus.script(['I', 'broken.las']);
+    expect(t.log.at(-1)).toBe('broken.las could not be read: no LAYERSTATEDICTIONARY');
+    expect(t.states().map((s) => s.name)).toEqual(['ELEV']);
+  });
+
+  it('EXport hands the app a state with its layers and linetypes by name', async () => {
+    let fail = false;
+    const t = setup((r) =>
+      r.op !== 'writeLayerState'
+        ? undefined
+        : fail
+          ? { ok: false, message: 'PLAN.las was not written: disk full' }
+          : { ok: true, file: r.file },
+    );
+    await t.bus.script(['-LAYER', 'A', 'S', 'PLAN', '', 'EX']);
+    expect(t.bus.promptText).toBe('Enter name of layer state to export or [?]:');
+    await t.bus.script(['NONE']);
+    expect(t.log.at(-1)).toBe('Cannot find layer state "NONE".');
+    await t.bus.script(['EX', 'plan']);
+    // The state's name (a layer state name holds no character a file name cannot).
+    expect(t.bus.promptText).toBe('Enter file name <PLAN.las>:');
+    await t.bus.script(['']);
+    expect(t.log.at(-1)).toBe('Layer state "PLAN" exported to PLAN.las.');
+    const w = t.requests.find((r) => r.op === 'writeLayerState');
+    expect(w).toMatchObject({ op: 'writeLayerState', file: 'PLAN.las' });
+    const state = (w as Extract<ViewRequest, { op: 'writeLayerState' }>).state;
+    expect(state.name).toBe('PLAN');
+    expect(state.currentLayer).toBe('WALLS');
+    expect(state.layers.map((e) => [e.name, e.linetypeName, e.layer, e.linetype])).toEqual([
+      ['0', 'Continuous', undefined, undefined],
+      ['WALLS', 'Continuous', undefined, undefined],
+      ['DOORS', 'Continuous', undefined, undefined],
+      ['NOTES', 'Continuous', undefined, undefined],
+    ]);
+    // A name typed without .las gets it; a failed write is said.
+    await t.bus.script(['EX', 'PLAN', '"my plan"']);
+    expect(t.log.at(-1)).toBe('Layer state "PLAN" exported to my plan.las.');
+    fail = true;
+    await t.bus.script(['EX', 'PLAN', 'a.LAS']);
+    expect(t.log.at(-1)).toBe('PLAN.las was not written: disk full');
+    // Exports change nothing in the drawing: the command's one step is the Save.
+    await t.bus.script(['', '']);
+    expect(t.bus.undo.state.undoable).toBe(1);
   });
 });

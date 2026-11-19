@@ -28,10 +28,10 @@ const CONTINUOUS = '14';
 const DASHED = '15';
 
 const OPTIONS =
-  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/stAte/Description]';
+  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/stAte/Description/Xref]';
 /** In a drawing with named plot styles ($PSTYLEMODE 0). */
 const NAMED_OPTIONS =
-  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description]';
+  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description/Xref]';
 const NORMAL = '80';
 const HEAVY = '81';
 const LIGHT = '82';

@@ -39,6 +39,7 @@ export function Settings({
   fonts,
   plotStyles,
   linetypes,
+  layerStates,
   templates,
   deviceFonts,
   open,
@@ -57,6 +58,8 @@ export function Settings({
   fonts: FontStore;
   plotStyles: SupportFileStore;
   linetypes: SupportFileStore;
+  /** The user's layer state files (M5-18 part 3), which -LAYER stAte Import finds by name. */
+  layerStates: SupportFileStore;
   /** The user's drawing templates (M5-10 part 2). */
   templates: SupportFileStore;
   deviceFonts: DeviceFonts;
@@ -64,7 +67,7 @@ export function Settings({
   onClose: () => void;
   onAdd: (files: Iterable<File>) => void;
   onAddFonts: (files: Iterable<File>) => void;
-  /** Plot style tables and linetype files, each to its store. */
+  /** Plot style tables, linetype files and layer state files, each to its store. */
   onAddFiles: (files: Iterable<File>) => void;
   /** Drawing templates, each opened to check it before it is kept. */
   onAddTemplates: (files: Iterable<File>) => void;
@@ -216,6 +219,17 @@ export function Settings({
         accept=".lin"
         testId="linetype-picker"
         store={linetypes}
+        onAdd={onAddFiles}
+      />
+      <SupportFiles
+        title="Layer states"
+        about="Your .las layer state files, which -LAYER's stAte Import finds by name, as AutoCAD finds them in its support path. stAte EXport keeps the files it writes here too. They stay on this device. You can also drop them on the window."
+        empty="No layer state files added."
+        listLabel="Layer state files"
+        button="Add layer state files…"
+        accept=".las"
+        testId="layer-state-picker"
+        store={layerStates}
         onAdd={onAddFiles}
       />
       <SupportFiles

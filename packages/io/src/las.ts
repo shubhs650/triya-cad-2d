@@ -4,7 +4,7 @@
 // with the layer state's name in 1, each layer by name (8) and its linetype by name (6) and plot
 // style in 2; `0 EOF` ends it. AutoCAD exports one state per file; a file holding more imports
 // them all.
-import type { LayerState, LayerStateInit, LayerStateTables } from '@triya/engine';
+import type { LayerStateInit, LayerStateTables } from '@triya/engine';
 import { layerEntryValues, layerStateFields, type Group } from './map/layer-states';
 
 /** Why a file is not a layer state file. */
@@ -68,7 +68,7 @@ export function parseLas(text: string): LayerStateInit[] {
  */
 export function writeLas(
   model: { readonly tables: Pick<LayerStateTables['tables'], 'layers' | 'linetypes'> },
-  state: LayerState,
+  state: LayerStateInit,
 ): string {
   const g: [number, string | number][] = [
     [0, DICTIONARY],
