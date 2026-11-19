@@ -35,6 +35,7 @@ import type {
   BlockTableRecord,
   Entity,
   EntityInit,
+  HeaderValue,
   LayerState,
   NonGraphicalObject,
   ObjectCommon,
@@ -214,6 +215,27 @@ function renumberedDimVars(
   return vars;
 }
 
+/**
+ * LAYEREVALCTL (M5-19 part 3; AutoCAD 2024 Help, "LAYEREVALCTL": "Saved in: User-settings",
+ * initially 1; 0 "Disables the evaluation and notification of new layers", "a global off (but not
+ * a global on)"): a per-user setting the app puts in each drawing's header for the session, as
+ * REVCLOUDGRIPS, 0 only (no entry is 1). A save never writes it.
+ */
+export const LAYEREVALCTL = 'LAYEREVALCTL';
+
+/**
+ * How the drawing evaluates layers for new ones (M5-19; AutoCAD 2024 Help, "LAYEREVAL"): 0
+ * none, 1 the layers xref loads bring in, 2 those and the layers added to the drawing itself;
+ * always 0 while LAYEREVALCTL is 0.
+ */
+export function layerEvaluation(model: {
+  readonly header: ReadonlyMap<string, HeaderValue>;
+}): number {
+  if (model.header.get(LAYEREVALCTL) === 0) return 0;
+  const evaluate = Number(model.header.get('LAYEREVAL') ?? 0);
+  return evaluate === 1 || evaluate === 2 ? evaluate : 0;
+}
+
 /** How a load evaluates the xref's layers for new ones (M5-19). */
 export interface XrefLoadOptions {
   /** XATTACH's own load: every layer the xref brings in is new. */
@@ -236,8 +258,7 @@ function newLayerTest(
   prefix: string,
   options: XrefLoadOptions,
 ): (name: string) => boolean {
-  const evaluate = Number(model.header.get('LAYEREVAL') ?? 0);
-  if (!(evaluate >= 1)) return () => false;
+  if (layerEvaluation(model) === 0) return () => false;
   if (options.attach) return () => true;
   const last = def.xrefLayers;
   if (last) return (name) => last[name.toUpperCase()] ?? true;

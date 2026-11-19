@@ -61,6 +61,8 @@ const VALUES: Readonly<
   // UOSNAP sets the snapping of every underlay kind; Triya's are PDF underlays only (M5-04 part 20).
   UOSNAP: { get: (s) => bit(s.pdfOsnap), set: (v) => ({ pdfOsnap: v === 1 }) },
   REVCLOUDGRIPS: { get: (s) => bit(s.revcloudGrips), set: (v) => ({ revcloudGrips: v === 1 }) },
+  // M5-19 part 3: whether new layers are evaluated at all, each drawing's engine told it.
+  LAYEREVALCTL: { get: (s) => bit(s.layerEvalCtl), set: (v) => ({ layerEvalCtl: v === 1 }) },
   QPMODE: { get: (s) => s.qpmode, set: (qpmode) => ({ qpmode }) },
   QPLOCATION: { get: (s) => s.qpLocation, set: (v) => ({ qpLocation: v === 1 ? 1 : 0 }) },
   AUTOSNAP: {

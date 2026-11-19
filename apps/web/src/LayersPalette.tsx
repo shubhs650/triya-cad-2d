@@ -500,8 +500,10 @@ export function LayersPalette({
   // An xref's node goes with the xref (detached), the Xref node with the last of them.
   const xrefChoice = (c: FilterChoice) =>
     (c === XREF_NODE && xrefs.length > 0) || xrefs.some((n) => xrefNode(n) === c);
-  // Unreconciled New Layers goes once the last of its layers is reconciled (M5-19 part 2).
-  const unreconciled = rows.some((r) => r.unreconciled);
+  // Unreconciled New Layers goes once the last of its layers is reconciled (M5-19 part 2), and
+  // while LAYEREVALCTL is 0 (part 3; Help: no Unreconciled Layer filter is shown then).
+  const evaluating = useSyncExternalStore(drafting.subscribe, () => drafting.get().layerEvalCtl);
+  const unreconciled = evaluating && rows.some((r) => r.unreconciled);
   const unreconciledChoice = (c: FilterChoice) => c === UNRECONCILED_NODE && unreconciled;
   const chosen: FilterChoice =
     choice === 'all' ||
@@ -1237,7 +1239,7 @@ export function LayersPalette({
           at={listMenu}
           selected={selectedRows.length}
           group={chosenFilter?.filterType === 'group'}
-          reconcile={reconcilable(selectedRows)}
+          reconcile={evaluating && reconcilable(selectedRows)}
           onAction={onListAction}
           onClose={() => setListMenu(undefined)}
         />

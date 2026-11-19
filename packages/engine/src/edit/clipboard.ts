@@ -89,6 +89,7 @@ import {
   DIMVAR_REFERENCES,
   HANDLE_KEYS,
   isXrefRecord,
+  layerEvaluation,
   loadedXrefHandles,
   renumber,
   xrefBringing,
@@ -333,8 +334,9 @@ function clipRecord(
   // Its extension dictionary, for what makes the block dynamic (the dictionary is a new one).
   if (dynamic && dynamic.tree.length > 0) return { ...out, extDict: r.extDict! };
   if (table === 'layers') {
-    // A layer's viewport overrides name viewports of the source's layouts.
-    const { viewportOverrides: _v, ...layer } = out as LayerRecord;
+    // A layer's viewport overrides name viewports of the source's layouts; whether it is
+    // unreconciled (M5-19) says nothing of the drawing it is pasted into (`pasteInto` decides).
+    const { viewportOverrides: _v, unreconciled: _u, ...layer } = out as LayerRecord;
     return layer;
   }
   if (table === 'tableStyles') {
@@ -635,7 +637,10 @@ export function pasteObjects(
   at: Vec2,
   units?: number,
 ): EditReport {
-  const report = pasteInto(b, model, clip, owner, pastePlacement(model, clip, at, units));
+  const report = pasteInto(b, model, clip, owner, {
+    t: pastePlacement(model, clip, at, units),
+    evaluate: true,
+  });
   // A group copied whole is pasted as a new unnamed group (M3-13); the pasted objects are in
   // the Clipboard's order.
   const index = new Map(clip.entities.map((e, i) => [e.handle, i]));
@@ -650,15 +655,17 @@ export function pasteObjects(
  * The Clipboard's definitions alone (its records, blocks and the objects they hold) pasted into
  * `model`, as PASTECLIP brings them in with the objects: XBIND's copies (M5-04 part 7, xbind.ts).
  * `known` names what `model` holds already of what the Clipboard carries, as `pasteKnown`'s does
- * (XBIND: the drawing's image and PDF definitions of the same file, M5-04 part 16).
+ * (XBIND: the drawing's image and PDF definitions of the same file, M5-04 part 16). `evaluate`:
+ * the layers it adds are new to the drawing (DesignCenter's, M5-19 part 3), not an xref's bound.
  */
 export function pasteDefinitions(
   b: ChangeSetBuilder,
   model: DocumentModel,
   clip: Clipboard,
   known?: ReadonlyMap<Handle, Handle>,
+  evaluate = false,
 ): void {
-  pasteInto(b, model, { ...clip, entities: [], groups: [] }, '0', undefined, known);
+  pasteInto(b, model, { ...clip, entities: [], groups: [] }, '0', { known, evaluate });
 }
 
 /**
@@ -676,20 +683,36 @@ export function pasteKnown(
   known: ReadonlyMap<Handle, Handle>,
 ): { readonly report: EditReport; readonly map: ReadonlyMap<Handle, Handle> } {
   const map = new Map<Handle, Handle>();
-  const report = pasteInto(b, model, clip, owner, undefined, known, map);
+  const report = pasteInto(b, model, clip, owner, { known, map });
   return { report, map };
 }
 
-/** The Clipboard's objects pasted into `owner`, carried by `t` (left where they are without). */
+/** How `pasteInto` pastes. */
+interface PasteOptions {
+  /** What carries the objects (left where they are without). */
+  readonly t?: Similarity | undefined;
+  /** What `model` holds already of what the Clipboard carries (`pasteKnown`). */
+  readonly known?: ReadonlyMap<Handle, Handle> | undefined;
+  /** Filled with the handle each source handle was given. */
+  readonly map?: Map<Handle, Handle>;
+  /**
+   * The paste adds layers to the drawing as another drawing's (M5-19 part 3): under LAYEREVAL 2
+   * they are unreconciled new layers. Not an xref's bound (XBIND) nor REFCLOSE's write.
+   */
+  readonly evaluate?: boolean;
+}
+
+/** The Clipboard's objects pasted into `owner`, as `options` says. */
 function pasteInto(
   b: ChangeSetBuilder,
   model: DocumentModel,
   clip: Clipboard,
   owner: Handle,
-  t?: Similarity,
-  known?: ReadonlyMap<Handle, Handle>,
-  map = new Map<Handle, Handle>(),
+  options: PasteOptions = {},
 ): EditReport {
+  const { t, known, map = new Map<Handle, Handle>() } = options;
+  // AutoCAD 2024 Help, "LAYEREVAL": 2 "Detects when new layers have been added in the drawing".
+  const fresh = options.evaluate === true && layerEvaluation(model) === 2;
   const added: [TableName, ObjectCommon][] = [];
   /** Named blocks the target has already: their contents are the target's. */
   const kept = new Set<Handle>();
@@ -802,6 +825,7 @@ function pasteInto(
       }
       out = { ...out, vars } as DimStyleRecord;
     }
+    if (t === 'layers' && fresh) out = { ...out, unreconciled: true } as LayerRecord;
     b.adoptTableRecord(t, out as never);
   }
   for (const d of clip.blocks) {
@@ -1030,7 +1054,7 @@ export function pasteAsBlock(
     basePoint: clip.base,
     ...(blockUnits !== 0 ? { units: blockUnits } : {}),
   });
-  pasteInto(b, model, clip, def.handle);
+  pasteInto(b, model, clip, def.handle, { evaluate: true });
   const k = pasteScale(model, clip, units);
   const ref = b.addEntity({
     owner,
@@ -1110,6 +1134,6 @@ export function blockFromClipboard(
       ...(units !== 0 ? { units } : {}),
     }).handle;
   }
-  const report = pasteInto(b, model, clip, block);
+  const report = pasteInto(b, model, clip, block, { evaluate: true });
   return { ...report, block, redefined: existing !== undefined };
 }

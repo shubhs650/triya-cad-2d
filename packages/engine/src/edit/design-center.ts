@@ -156,7 +156,8 @@ export function addDesignCenterItem(
     return importDimStyles(b, model, item.content).added.length > 0;
   }
   if (hasDesignCenterItem(model, item.category, item.name)) return false;
-  pasteDefinitions(b, model, item.content);
+  // A layer it adds is new to the drawing (M5-19 part 3, LAYEREVAL 2).
+  pasteDefinitions(b, model, item.content, undefined, true);
   return true;
 }
 

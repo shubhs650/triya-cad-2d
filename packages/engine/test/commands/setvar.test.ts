@@ -10,6 +10,7 @@ import {
   PDFFRAME,
   PICKFIRST,
   PromptBus,
+  LAYEREVALCTL,
   REVCLOUDGRIPS,
   UNKNOWN_VARIABLE,
   builtinCommands,
@@ -262,6 +263,16 @@ describe('SETVAR', () => {
     expect(s.log.at(-1)).toBe('Value must be between 0 and 2.');
     await s.bus.script(['1']);
     expect(s.model.header.get('LAYEREVAL')).toBe('1');
+  });
+
+  it('knows LAYERNOTIFY in a drawing without it, AutoCAD’s initial 0 (M5-19 part 3)', async () => {
+    const s = setup(withHeader(HEADER));
+    await s.bus.script(['LAYERNOTIFY']);
+    expect(s.bus.promptText).toBe('Enter new value for LAYERNOTIFY <0>:');
+    await s.bus.script(['64']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 63.');
+    await s.bus.script(['36']);
+    expect(s.model.header.get('LAYERNOTIFY')).toBe('36');
   });
 
   it('reads PDFFRAME as 1 when the drawing holds what it cannot be', () => {
@@ -854,10 +865,11 @@ describe('AcDbVariableDictionary variables (M2-59 part 4)', () => {
     expect(s.log.at(-1)).toBe('Value must be between 0 and 2.');
     await s.bus.script(['2']);
     expect(s.model.header.get('LAYEREVAL')).toBe('2');
-    await s.bus.script(['LAYERNOTIFY', '16']);
-    expect(s.log.at(-1)).toBe('Value must be between 0 and 15.');
-    await s.bus.script(['15']);
-    expect(s.model.header.get('LAYERNOTIFY')).toBe('15');
+    // AutoCAD 2024's bits run to 32, Insert (M5-19 part 3).
+    await s.bus.script(['LAYERNOTIFY', '64']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 63.');
+    await s.bus.script(['63']);
+    expect(s.model.header.get('LAYERNOTIFY')).toBe('63');
     await s.bus.script(['HIDETEXT', '0']);
     expect(s.model.header.get('HIDETEXT')).toBe('0');
     await s.bus.script(['LIGHTINGUNITS', '1.5']);
@@ -1193,5 +1205,36 @@ describe('REVCLOUDGRIPS', () => {
     // 1, AutoCAD's initial value, is no entry.
     session.edit({ kind: 'sysvar', name: REVCLOUDGRIPS, value: 1 });
     expect(session.model.header.has(REVCLOUDGRIPS)).toBe(false);
+  });
+});
+
+// M5-19 part 3 (AutoCAD 2024 Help, "LAYEREVALCTL": "Saved in: User-settings", initially 1; 0
+// "Disables the evaluation and notification of new layers"): the app tells each drawing.
+describe('LAYEREVALCTL', () => {
+  it('is a session setting of each drawing, never an undo step', () => {
+    const session = new EngineSession(sampleInit());
+    expect(session.edit({ kind: 'sysvar', name: LAYEREVALCTL, value: 0 })).toMatchObject({
+      ok: true,
+    });
+    expect(session.model.header.get(LAYEREVALCTL)).toBe(0);
+    expect(session.undoState.undoable).toBe(0);
+    expect(session.edit({ kind: 'sysvar', name: LAYEREVALCTL, value: 0 })).toEqual({
+      ok: true,
+      change: {},
+    });
+    // 1, AutoCAD's initial value, is no entry.
+    session.edit({ kind: 'sysvar', name: LAYEREVALCTL, value: 1 });
+    expect(session.model.header.has(LAYEREVALCTL)).toBe(false);
+  });
+
+  it('is a variable the app keeps', async () => {
+    const app = appHost({ LAYEREVALCTL: 1 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['LAYEREVALCTL']);
+    expect(s.bus.promptText).toBe('Enter new value for LAYEREVALCTL <1>:');
+    await s.bus.script(['2']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 1.');
+    await s.bus.script(['0']);
+    expect(app.values['LAYEREVALCTL']).toBe(0);
   });
 });

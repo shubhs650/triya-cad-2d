@@ -76,6 +76,7 @@ export type DraftingPreferences = Pick<
   | 'aperture'
   | 'pdfOsnap'
   | 'revcloudGrips'
+  | 'layerEvalCtl'
   | 'qpmode'
   | 'qpLocation'
   | 'autosnap'
@@ -186,6 +187,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     aperture: 10,
     pdfOsnap: true,
     revcloudGrips: true,
+    layerEvalCtl: true,
     qpmode: -1,
     qpLocation: 0,
     autosnap: AUTOSNAP_KEPT,
@@ -346,6 +348,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       gripColors: gripColors(k['gripColors']),
       pdfOsnap: bool(k['pdfOsnap'], d.drafting.pdfOsnap),
       revcloudGrips: bool(k['revcloudGrips'], d.drafting.revcloudGrips),
+      layerEvalCtl: bool(k['layerEvalCtl'], d.drafting.layerEvalCtl),
       qpmode: within(k['qpmode'], { min: -2, max: 2 }, d.drafting.qpmode),
       qpLocation: within(k['qpLocation'], { min: 0, max: 1 }, d.drafting.qpLocation) as 0 | 1,
       // AUTOSNAP's bits but POLAR's and OTRACK's, which are kept as their toggles (M2-59).
@@ -503,6 +506,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     aperture: s.aperture,
     pdfOsnap: s.pdfOsnap,
     revcloudGrips: s.revcloudGrips,
+    layerEvalCtl: s.layerEvalCtl,
     qpmode: s.qpmode,
     qpLocation: s.qpLocation,
     autosnap: s.autosnap,
