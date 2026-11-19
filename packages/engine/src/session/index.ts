@@ -58,6 +58,13 @@ import {
   type LayerProps,
 } from '../edit/layer-manager';
 import {
+  convertLayerFilterChange,
+  filterLayersChange,
+  isolateFilterChange,
+  type FilterLayerSetting,
+  type LayerFilterNode,
+} from '../edit/layer-filter-menu';
+import {
   deleteLayerFilterChange,
   editLayerFilterChange,
   newLayerFilterChange,
@@ -141,7 +148,8 @@ export type NamedLayerStateEdit =
 /**
  * The Layer Properties Manager's filters (M5-07 part 4): New Properties Filter and New Group
  * Filter (at the top or nested in `parent`), Rename, a new definition or group layers, Delete
- * (with the filters nested in it). One LAYER undo step each.
+ * (with the filters nested in it); the filter menu's Visibility, Lock, Isolate Group and Convert
+ * to Group Filter (part 6). One LAYER undo step each.
  */
 export type LayerFilterEdit =
   | {
@@ -162,7 +170,21 @@ export type LayerFilterEdit =
       readonly expression?: string;
       readonly layers?: readonly Handle[];
     }
-  | { readonly kind: 'layer-filter-delete'; readonly filter: Handle };
+  | { readonly kind: 'layer-filter-delete'; readonly filter: Handle }
+  /** The filter menu's Visibility and Lock on every layer `node` lists (M5-07 part 6). */
+  | {
+      readonly kind: 'layer-filter-set';
+      readonly node: LayerFilterNode;
+      readonly set: FilterLayerSetting;
+    }
+  /** Isolate Group: in model space, or the layout whose block is `space` (its viewports). */
+  | {
+      readonly kind: 'layer-filter-isolate';
+      readonly node: LayerFilterNode;
+      readonly space?: Handle;
+    }
+  /** Convert to Group Filter. */
+  | { readonly kind: 'layer-filter-convert'; readonly filter: Handle };
 
 /**
  * Linetypes loaded from a .lin file outside the Linetype Manager (M5-08: the Layer Properties
@@ -805,7 +827,10 @@ export class EngineSession {
     if (
       e.kind === 'layer-filter-new' ||
       e.kind === 'layer-filter-edit' ||
-      e.kind === 'layer-filter-delete'
+      e.kind === 'layer-filter-delete' ||
+      e.kind === 'layer-filter-set' ||
+      e.kind === 'layer-filter-isolate' ||
+      e.kind === 'layer-filter-convert'
     )
       return this.#layerFiltersEdit(e);
     if (e.kind === 'linetype-load') return this.#linetypeLoad(e);
@@ -1050,7 +1075,13 @@ export class EngineSession {
         ? newLayerFilterChange(m, e)
         : e.kind === 'layer-filter-edit'
           ? editLayerFilterChange(m, e.filter, e)
-          : deleteLayerFilterChange(m, e.filter);
+          : e.kind === 'layer-filter-set'
+            ? filterLayersChange(m, e.node, e.set)
+            : e.kind === 'layer-filter-isolate'
+              ? isolateFilterChange(m, e.node, e.space)
+              : e.kind === 'layer-filter-convert'
+                ? convertLayerFilterChange(m, e.filter)
+                : deleteLayerFilterChange(m, e.filter);
     return this.#layerStep(change);
   }
 

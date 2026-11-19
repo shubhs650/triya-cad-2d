@@ -7,6 +7,9 @@
 //   previews its layers, OK makes Properties Filter1 and lists them; Properties... reopens it.
 // - New Group Filter makes Group Filter1 named in place; a layer dragged onto it joins it, Remove
 //   From Group Filter takes it out; Rename and Delete in the filter menu.
+// M5-07 part 6: the filter menu's submenus, by pointer and keyboard: Visibility Off and On and
+// Lock on a group's layers, Viewport greyed in model space, Isolate Group turning the other
+// layers off, Convert to Group Filter.
 import { expect, test, type Page } from '@playwright/test';
 import { DXF, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
@@ -132,4 +135,94 @@ test('lists layers by filter: used, property, group, inverted (M5-07 part 5)', a
   await expect(filterMenu(page).getByRole('menuitem', { name: 'Rename' })).toBeDisabled();
   await expect(filterMenu(page).getByRole('menuitem', { name: 'Delete' })).toBeDisabled();
   await page.keyboard.press('Escape');
+});
+
+test('the filter menu sets a filter’s layers, isolates them and converts (M5-07 part 6)', async ({
+  page,
+}) => {
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const toggle = (title: string, layer: string) =>
+    palette(page).getByRole('button', { name: `${title} ${layer}`, exact: true });
+  const item = (name: string) => filterMenu(page).getByRole('menuitem', { name, exact: true });
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, 'clockwise_arcs_hatch.dxf');
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Layers' })
+    .click();
+  await expect(palette(page)).toBeVisible();
+
+  // A group filter holding HATCH.
+  await palette(page).getByRole('button', { name: 'New Group Filter' }).click();
+  await expect(
+    tree(page).getByRole('textbox', { name: 'Name of filter Group Filter1' }),
+  ).toBeFocused();
+  await page.keyboard.type('Pair');
+  await page.keyboard.press('Enter');
+  await node(page, 'All').click();
+  await listed(page).filter({ hasText: 'HATCH' }).dragTo(node(page, 'Pair'));
+  await node(page, 'Pair').click();
+  await expect(listed(page)).toHaveText(['HATCH']);
+
+  // Visibility > Off by pointer: the submenu opens on hover.
+  await node(page, 'Pair').click({ button: 'right' });
+  await item('Visibility').hover();
+  await expect(item('Visibility')).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    filterMenu(page).getByRole('menu', { name: 'Visibility' }).getByRole('menuitem'),
+  ).toHaveText(['On', 'Off', 'Thawed', 'Frozen']);
+  // Viewport needs a layout viewport made current: greyed in model space.
+  await expect(item('Viewport')).toBeDisabled();
+  await shot('1-visibility-submenu.png');
+  await item('Off').click();
+  await expect(filterMenu(page)).toBeHidden();
+  await expect(toggle('On', 'HATCH')).toHaveAttribute('aria-pressed', 'false');
+
+  // Visibility > On, then Lock > Lock, from the keyboard: ↓ moves, → opens, Enter chooses.
+  await node(page, 'Pair').click({ button: 'right' });
+  await expect(item('Visibility')).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(item('On')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(toggle('On', 'HATCH')).toHaveAttribute('aria-pressed', 'true');
+  await node(page, 'Pair').click({ button: 'right' });
+  await expect(item('Visibility')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(item('Lock')).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  // ← closes the submenu, back on its item; → opens it again.
+  await page.keyboard.press('ArrowLeft');
+  await expect(item('Lock')).toBeFocused();
+  await expect(item('Lock')).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('ArrowRight');
+  await expect(
+    filterMenu(page).getByRole('menu', { name: 'Lock' }).getByRole('menuitem').first(),
+  ).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(toggle('Lock', 'HATCH')).toHaveAttribute('aria-pressed', 'true');
+
+  // Isolate Group > All Viewports in model space: the layers not in Pair are turned off.
+  await node(page, 'Pair').click({ button: 'right' });
+  await item('Isolate Group').hover();
+  await expect(item('Active Viewport Only')).toBeEnabled();
+  await item('All Viewports').click();
+  await node(page, 'All').click();
+  await expect(toggle('On', '0')).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle('On', 'Defpoints')).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle('On', 'HATCH')).toHaveAttribute('aria-pressed', 'true');
+  await shot('2-isolated.png');
+
+  // Convert to Group Filter: a property filter listing HATCH becomes a group holding it.
+  await palette(page).getByRole('button', { name: 'New Property Filter' }).click();
+  await dialog(page).getByLabel('Name in row 1').fill('H*');
+  await dialog(page).getByRole('button', { name: 'OK' }).click();
+  await expect(node(page, 'Properties Filter1')).toHaveAttribute('data-filter-type', 'property');
+  await node(page, 'Pair').click({ button: 'right' });
+  await expect(item('Convert to Group Filter')).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await node(page, 'Properties Filter1').click({ button: 'right' });
+  await item('Convert to Group Filter').click();
+  await expect(node(page, 'Properties Filter1')).toHaveAttribute('data-filter-type', 'group');
+  await expect(listed(page)).toHaveText(['HATCH']);
 });

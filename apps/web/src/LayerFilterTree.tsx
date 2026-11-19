@@ -2,10 +2,11 @@
 // Manager"): All, and under it All Used Layers and the drawing's filters, each nested filter under
 // its parent. Selecting a node lists its layers; "Invert filter" lists the others.
 // - A right-click on a node (Shift+F10 or the menu key on the focused one) opens the filter menu:
-//   New Properties Filter..., New Group Filter, Rename, Delete, Properties... (a property filter's
-//   Layer Filter Properties). On a filter the new one is nested in it; a group filter cannot be
-//   nested in a property filter, so New Group Filter is greyed there. All and All Used Layers
-//   cannot be renamed or deleted.
+//   Visibility, Lock, Viewport and Isolate Group on the node's layers (part 6), New Properties
+//   Filter..., New Group Filter, Convert to Group Filter (part 6), Rename, Delete, Properties... (a
+//   property filter's Layer Filter Properties). On a filter the new one is nested in it; a group
+//   filter cannot be nested in a property filter, so New Group Filter is greyed there. All and
+//   All Used Layers cannot be renamed or deleted.
 // - A filter's name is renamed in place (F2, or a double-click on a group filter; a double-click
 //   on a property filter opens its properties); Enter keeps it, Esc does not, Delete deletes.
 // - Layers dragged from the list onto a group filter are put in it.
@@ -13,12 +14,20 @@
 //   it; the selected node is the tree's one focusable item.
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import type { Handle, LayerFilter } from '@triya/engine';
-import type { FilterChoice, LayerFilterNode } from './layer-filters';
+import {
+  FILTER_MENU,
+  filterMenuEnabled,
+  type FilterChoice,
+  type FilterMenuContext,
+  type FilterMenuEntry,
+  type LayerFilterAction,
+  type LayerFilterNode,
+} from './layer-filters';
 
 /** The data type a drag of layer rows carries: their handles as JSON. */
 export const LAYER_DRAG_TYPE = 'application/x-triya-layers';
 
-export type LayerFilterAction = 'newProperty' | 'newGroup' | 'rename' | 'delete' | 'properties';
+export type { LayerFilterAction };
 
 /** One node as the tree shows it. */
 interface Shown {
@@ -278,41 +287,26 @@ function RenameField({
   );
 }
 
-interface MenuItem {
-  readonly action: LayerFilterAction;
-  readonly label: string;
-  readonly separator?: boolean;
-}
-
-const MENU: readonly MenuItem[] = [
-  { action: 'newProperty', label: 'New Properties Filter...' },
-  { action: 'newGroup', label: 'New Group Filter' },
-  { action: 'rename', label: 'Rename', separator: true },
-  { action: 'delete', label: 'Delete' },
-  { action: 'properties', label: 'Properties...', separator: true },
-];
-
-/** Whether the filter menu's item `a` can act on node `filter` (undefined: All or All Used). */
-export function filterMenuEnabled(a: LayerFilterAction, filter: LayerFilter | undefined): boolean {
-  if (a === 'newProperty') return true;
-  if (a === 'newGroup') return filter?.filterType !== 'property';
-  if (a === 'properties') return filter?.filterType === 'property';
-  return filter !== undefined;
-}
-
+/**
+ * The filter menu (part 6 adds Visibility, Lock, Viewport, Isolate Group and Convert to Group
+ * Filter): a submenu opens on hover, a click, → or Enter, and closes on ← or Esc; ↑/↓ move
+ * within the menu that has the focus.
+ */
 export function LayerFilterMenu({
   at,
-  filter,
+  context,
   onAction,
   onClose,
 }: {
   at: { readonly x: number; readonly y: number };
-  /** The filter right-clicked; undefined for All and All Used Layers. */
-  filter: LayerFilter | undefined;
+  context: FilterMenuContext;
   onAction: (a: LayerFilterAction) => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState<string | undefined>();
+  /** A submenu opened from the keyboard takes the focus once it is shown. */
+  const focusOpened = useRef(false);
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
     const onDown = (e: PointerEvent) => {
@@ -321,49 +315,136 @@ export function LayerFilterMenu({
     window.addEventListener('pointerdown', onDown);
     return () => window.removeEventListener('pointerdown', onDown);
   }, [onClose]);
+  useEffect(() => {
+    if (!focusOpened.current || open === undefined) return;
+    focusOpened.current = false;
+    ref.current
+      ?.querySelector<HTMLElement>(
+        `[data-submenu="${CSS.escape(open)}"] [role="menuitem"]:not(:disabled)`,
+      )
+      ?.focus();
+  }, [open]);
+  const enabled = (e: FilterMenuEntry) =>
+    e.items
+      ? e.items.some((i) => filterMenuEnabled(i.action, context))
+      : filterMenuEnabled(e.action!, context);
+  const choose = (a: LayerFilterAction) => {
+    onClose();
+    onAction(a);
+  };
+  const parentOf = (label: string) =>
+    ref.current?.querySelector<HTMLElement>(`[data-opens="${CSS.escape(label)}"]`);
   return (
     <div
       ref={ref}
-      className="snap-menu layer-list-menu"
+      // Not .layer-list-menu, whose scrolling would clip the submenus.
+      className="snap-menu layer-filter-menu"
       role="menu"
       aria-label="Layer filter"
       style={{
-        left: Math.min(at.x, window.innerWidth - 260),
-        top: Math.min(at.y, Math.max(0, window.innerHeight - MENU.length * 28 - 40)),
+        left: Math.min(at.x, window.innerWidth - 420),
+        top: Math.min(at.y, Math.max(0, window.innerHeight - FILTER_MENU.length * 28 - 40)),
       }}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={(e) => {
         e.stopPropagation();
+        const active = document.activeElement as HTMLElement | null;
+        const menu = active?.closest<HTMLElement>('[role="menu"]') ?? ref.current;
+        const sub = menu?.dataset['submenu'];
         const list = [
-          ...(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []),
-        ];
-        const i = list.indexOf(document.activeElement as HTMLElement);
-        if (e.key === 'Escape') {
+          ...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []),
+        ].filter((el) => el.closest('[role="menu"]') === menu);
+        const i = active ? list.indexOf(active) : -1;
+        const opens = active?.dataset['opens'];
+        if (e.key === 'Escape' || (e.key === 'ArrowLeft' && sub !== undefined)) {
           e.preventDefault();
-          onClose();
+          if (sub === undefined) onClose();
+          else {
+            setOpen(undefined);
+            parentOf(sub)?.focus();
+          }
         } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           e.preventDefault();
           const step = e.key === 'ArrowDown' ? 1 : list.length - 1;
           list[(i + step) % list.length]?.focus();
+        } else if (
+          opens !== undefined &&
+          (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ')
+        ) {
+          e.preventDefault();
+          focusOpened.current = true;
+          setOpen(opens);
         }
       }}
     >
-      {MENU.map((it) => (
-        <button
-          key={it.action}
-          type="button"
-          role="menuitem"
-          className="snap-menu-item"
-          data-separator={it.separator ? 'before' : undefined}
-          disabled={!filterMenuEnabled(it.action, filter)}
-          onClick={() => {
-            onClose();
-            onAction(it.action);
-          }}
-        >
-          {it.label}
-        </button>
-      ))}
+      {FILTER_MENU.map((entry) => {
+        const separator = entry.separator ? 'before' : undefined;
+        if (!entry.items)
+          return (
+            <button
+              key={entry.label}
+              type="button"
+              role="menuitem"
+              className="snap-menu-item"
+              data-separator={separator}
+              disabled={!enabled(entry)}
+              onPointerEnter={() => setOpen(undefined)}
+              onClick={() => choose(entry.action!)}
+            >
+              {entry.label}
+            </button>
+          );
+        const shown = open === entry.label;
+        return (
+          <div
+            key={entry.label}
+            role="none"
+            className="layer-filter-submenu-host"
+            data-separator={separator}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="snap-menu-item layer-filter-submenu-item"
+              aria-haspopup="menu"
+              aria-expanded={shown}
+              data-opens={entry.label}
+              disabled={!enabled(entry)}
+              onPointerEnter={() => setOpen(entry.label)}
+              onClick={() => {
+                // Enter and Space open it from the keyboard handler, with the focus moved in.
+                if (open !== entry.label) setOpen(entry.label);
+              }}
+            >
+              {entry.label}
+              <span aria-hidden className="layer-filter-submenu-arrow">
+                ▸
+              </span>
+            </button>
+            {shown && (
+              <div
+                className="snap-menu layer-filter-submenu"
+                role="menu"
+                aria-label={entry.label}
+                data-submenu={entry.label}
+              >
+                {entry.items.map((it) => (
+                  <button
+                    key={it.action}
+                    type="button"
+                    role="menuitem"
+                    className="snap-menu-item"
+                    disabled={!filterMenuEnabled(it.action, context)}
+                    onClick={() => choose(it.action)}
+                  >
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

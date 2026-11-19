@@ -103,11 +103,13 @@ import {
   EMPTY_DEFINITION,
   drawingLayerFilters,
   filterCountLine,
+  filterMenuEdit,
   layerFilterSource,
   layerFilterTree,
   listedLayers,
   nextFilterName,
   type FilterChoice,
+  type FilterMenuContext,
 } from './layer-filters';
 import {
   LAYER_DRAG_TYPE,
@@ -740,10 +742,23 @@ export function LayersPalette({
       parent,
     });
 
+  /** What the filter menu's items on node `c` depend on (part 6). */
+  const filterMenuContext = (c: FilterChoice): FilterMenuContext => {
+    const filter = filterOf(c);
+    return {
+      filter,
+      parent: filter?.parent === undefined ? undefined : filterOf(filter.parent),
+      space: inLayout ? doc.block : undefined,
+    };
+  };
+
   /** The filter menu's items, and F2 and Delete in the tree, on node `c`. */
   const onFilterAction = (a: LayerFilterAction, c: FilterChoice) => {
     const f = filterOf(c);
-    if (a === 'newProperty') newPropertyFilter(f?.handle);
+    // Visibility, Lock, Isolate Group and Convert to Group Filter (part 6).
+    const edit = filterMenuEdit(a, c, filterMenuContext(c));
+    if (edit) void apply(edit);
+    else if (a === 'newProperty') newPropertyFilter(f?.handle);
     else if (a === 'newGroup' && f?.filterType !== 'property') void newGroupFilter(f?.handle);
     else if (a === 'rename' && f) setRenamingFilter(f.handle);
     else if (a === 'delete' && f) void apply({ kind: 'layer-filter-delete', filter: f.handle });
@@ -1202,7 +1217,7 @@ export function LayersPalette({
       {filterMenu && (
         <LayerFilterMenu
           at={filterMenu.at}
-          filter={filterOf(filterMenu.choice)}
+          context={filterMenuContext(filterMenu.choice)}
           onAction={(a) => onFilterAction(a, filterMenu.choice)}
           onClose={() => setFilterMenu(undefined)}
         />
