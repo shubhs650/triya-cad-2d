@@ -74,6 +74,9 @@ const SESSION_ONLY = new Set([
   // PDFFRAME, the PDF underlay frame (M5-04 part 17, DEC-077): DXF has $DWFFRAME and $DGNFRAME
   // but no header variable for it.
   'PDFFRAME',
+  // LAYEREVAL, whether xref loads flag new layers (M5-19): AutoCAD files it in the variable
+  // dictionary, which a drawing made elsewhere may not have; kept as PDFFRAME is (DEC-077).
+  'LAYEREVAL',
 ]);
 
 /**

@@ -214,6 +214,54 @@ function renumberedDimVars(
   return vars;
 }
 
+/** How a load evaluates the xref's layers for new ones (M5-19). */
+export interface XrefLoadOptions {
+  /** XATTACH's own load: every layer the xref brings in is new. */
+  readonly attach?: boolean;
+}
+
+/**
+ * Which layers a load of xref `def` brings in as unreconciled (M5-19; AutoCAD 2024 Help,
+ * "LAYEREVAL": 1 evaluates new xref layers, 2 new layers in the drawing too, 0 none). A layer is
+ * new when the layer list last evaluated did not have it: XATTACH's load has no list, so all of
+ * its layers are new; a reload or a new path compares with the layers the last load brought in
+ * (`xrefLayers`), each keeping its own state; another load with the drawing's own records of the
+ * xref's layers (`name|layer`, VISRETAIN) compares with those, which the load keeps as they are.
+ * A drawing opened with no record of them (a Triya save keeps none) takes the layers as they
+ * come for the list, as nothing says which of them are new.
+ */
+function newLayerTest(
+  model: DocumentModel,
+  def: BlockDefinition,
+  prefix: string,
+  options: XrefLoadOptions,
+): (name: string) => boolean {
+  const evaluate = Number(model.header.get('LAYEREVAL') ?? 0);
+  if (!(evaluate >= 1)) return () => false;
+  if (options.attach) return () => true;
+  const last = def.xrefLayers;
+  if (last) return (name) => last[name.toUpperCase()] ?? true;
+  const upper = prefix.toUpperCase();
+  const recorded = [...model.tables.layers.values()].some((l) =>
+    l.name.toUpperCase().startsWith(upper),
+  );
+  return () => recorded;
+}
+
+/**
+ * Remembers, into `b`, the layers xref `block`'s load brought in (`xrefLayers`), before a
+ * reload or a new path takes them out: the next load evaluates the xref's layers against them.
+ */
+export function rememberXrefLayers(b: ChangeSetBuilder, model: DocumentModel, block: Handle): void {
+  const def = model.blocks.get(block);
+  if (!def?.xrefLoaded) return;
+  const loaded = new Set(def.xrefLoaded);
+  const layers: Record<string, boolean> = {};
+  for (const l of model.tables.layers.values())
+    if (loaded.has(l.handle)) layers[l.name.toUpperCase()] = l.unreconciled === true;
+  b.updateBlock(block, { xrefLayers: layers });
+}
+
 /**
  * The ChangeSet that loads `drawing` (the xref's file, as the importer maps it) as the content
  * of the host's xref block `block`. Handles come from the host's allocator, in the xref's own
@@ -224,6 +272,7 @@ export function xrefLoadChange(
   model: DocumentModel,
   block: Handle,
   drawing: DocumentInit,
+  options: XrefLoadOptions = {},
 ): ChangeSet {
   const problem = xrefLoadProblem(model, block);
   if (problem) throw new Error(problem);
@@ -302,6 +351,7 @@ export function xrefLoadChange(
   }
 
   // ── The change set ────────────────────────────────────────────────────────────────────────
+  const isNew = newLayerTest(model, xrefDef, prefix, options);
   const tables: { [K in TableName]?: KeyedChanges<TableRecords[K]> } = {};
   for (const [table, list] of records) {
     if (list.length === 0) continue;
@@ -311,8 +361,20 @@ export function xrefLoadChange(
       // name): the host's handles of what the xref's name, none where nothing came in.
       if (table === 'dimStyles')
         r = { ...r, vars: renumberedDimVars(r as DimStyleRecord, map) } as DimStyleRecord;
-      const { flags: _old, ...rest } = r;
-      return createRecord({ ...rest, name, ...(flags ? { flags } : {}) });
+      const {
+        flags: _old,
+        unreconciled: _u,
+        ...rest
+      } = r as SymbolTableRecord & {
+        unreconciled?: true;
+      };
+      const flagged = table === 'layers' && isNew(name);
+      return createRecord({
+        ...rest,
+        name,
+        ...(flags ? { flags } : {}),
+        ...(flagged ? { unreconciled: true } : {}),
+      });
     });
     (tables as Record<string, KeyedChanges<ObjectCommon>>)[table] = { added: out };
   }
@@ -369,8 +431,9 @@ export function xrefLoadChange(
       ? { x: insBase.x, y: insBase.y }
       : xrefDef.basePoint;
   const moved = basePoint.x !== xrefDef.basePoint.x || basePoint.y !== xrefDef.basePoint.y;
+  const { xrefLayers: _baseline, ...waiting } = xrefDef;
   const after = deepFreeze({
-    ...xrefDef,
+    ...waiting,
     ...(moved ? { basePoint } : {}),
     xrefLoaded: added,
     xrefHandles: pairs,
@@ -397,15 +460,16 @@ export function loadedXrefHandles(model: DocumentModel): Set<Handle> {
  */
 export function withoutXrefContent(model: DocumentModel): DocumentModel {
   const loaded = loadedXrefHandles(model);
-  if (loaded.size === 0 && ![...model.blocks.values()].some((b) => b.xrefUnloaded)) return model;
+  if (loaded.size === 0 && ![...model.blocks.values()].some((b) => b.xrefUnloaded || b.xrefLayers))
+    return model;
   const keep = <T extends ObjectCommon>(m: ReadonlyMap<Handle, T>): T[] =>
     [...m.values()].filter((r) => !loaded.has(r.handle));
   const tables = Object.fromEntries(
     Object.entries(model.tables).map(([k, m]) => [k, keep(m as ReadonlyMap<Handle, ObjectCommon>)]),
   ) as NonNullable<DocumentInit['tables']>;
   const blocks = keep(model.blocks).map((b) => {
-    if (!b.xrefLoaded && !b.xrefUnloaded) return b;
-    const { xrefLoaded: _l, xrefUnloaded: _u, xrefHandles: _h, ...rest } = b;
+    if (!b.xrefLoaded && !b.xrefUnloaded && !b.xrefLayers) return b;
+    const { xrefLoaded: _l, xrefUnloaded: _u, xrefHandles: _h, xrefLayers: _x, ...rest } = b;
     return rest;
   });
   const entities: EntityInit[] = [];
@@ -631,6 +695,7 @@ export function xrefUnloadChange(model: DocumentModel, block: Handle, reload = f
   const problem = xrefUnloadProblem(model, block, reload);
   if (problem) throw new Error(problem);
   const b = new ChangeSetBuilder(model);
+  if (reload) rememberXrefLayers(b, model, block);
   removeXrefContent(b, model, [block]);
   const def = model.blocks.get(block)!;
   const unloaded = reload ? undefined : true;

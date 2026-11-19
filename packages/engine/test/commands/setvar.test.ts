@@ -254,6 +254,16 @@ describe('SETVAR', () => {
     expect(pdfFrame(s.model.header)).toBe(2);
   });
 
+  it('knows LAYEREVAL in a drawing without it, AutoCAD’s initial 0 (M5-19)', async () => {
+    const s = setup(withHeader(HEADER));
+    await s.bus.script(['LAYEREVAL']);
+    expect(s.bus.promptText).toBe('Enter new value for LAYEREVAL <0>:');
+    await s.bus.script(['3']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 2.');
+    await s.bus.script(['1']);
+    expect(s.model.header.get('LAYEREVAL')).toBe('1');
+  });
+
   it('reads PDFFRAME as 1 when the drawing holds what it cannot be', () => {
     for (const v of ['', 'x', '3', '-1', '1.5'])
       expect(pdfFrame(new Map([[PDFFRAME, v]])), v).toBe(1);

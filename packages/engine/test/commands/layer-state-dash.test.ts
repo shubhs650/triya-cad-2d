@@ -73,7 +73,7 @@ describe('-LAYER stAte', () => {
     expect(t.bus.promptText).toBe(STATE_OPTIONS);
     await t.bus.script(['']);
     expect(t.bus.promptText).toMatch(
-      /^Enter an option \[\?\/Make\/.*\/stAte\/Description\/Xref\]:$/,
+      /^Enter an option \[\?\/Make\/.*\/stAte\/Description\/rEconcile\/Xref\]:$/,
     );
     await t.bus.script(['STATE', '?', '']);
     expect(t.log.at(-1)).toBe('No matching layer states found.');

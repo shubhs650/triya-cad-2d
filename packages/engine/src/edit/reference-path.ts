@@ -20,7 +20,7 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { ImageDefinition, PdfDefinition } from '../model/types';
-import { isXrefRecord, removeXrefContent, xrefBringing } from '../model/xref';
+import { isXrefRecord, rememberXrefLayers, removeXrefContent, xrefBringing } from '../model/xref';
 import { xrefFileName } from './xref-attach';
 
 /** The path a reference has with Pathtype None (REFPATHTYPE 0): its file name. */
@@ -85,6 +85,9 @@ export function setReferencePath(
     b.updateObject(handle, { fileName: path } as Partial<ImageDefinition>);
     return;
   }
-  if (def.xrefLoaded) removeXrefContent(b, model, [handle]);
+  if (def.xrefLoaded) {
+    rememberXrefLayers(b, model, handle);
+    removeXrefContent(b, model, [handle]);
+  }
   b.updateBlock(handle, { xrefPath: path, xrefLoaded: undefined, xrefHandles: undefined });
 }

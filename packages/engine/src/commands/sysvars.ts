@@ -553,6 +553,9 @@ const DICTIONARY_INITIAL: Readonly<Record<string, string | ((m: VariableSource) 
   [FIELDEVAL]: String(FIELDEVAL_INITIAL),
   ...CENTER_VARIABLES,
   [PDFFRAME]: String(PDFFRAME_INITIAL),
+  // M5-19 (AutoCAD 2024 Help, "LAYEREVAL"): whether loads flag new layers as unreconciled, 0
+  // none, 1 an xref's, 2 the drawing's too; "Saved in: Drawing", initially 0 (model/xref.ts).
+  LAYEREVAL: '0',
 };
 
 /** Bounds AutoCAD 2024's system variable reference gives (those a wrong value would break). */
