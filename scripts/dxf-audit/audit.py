@@ -63,6 +63,10 @@ FIXTURE_SAVES = (
     ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip-invert"),
     # XCLIP carried by COPY, MIRROR and ARRAY on ezdxf's xclip.dxf (M5-16).
     ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip-copy"),
+    # XCLIP carried by COPYCLIP, CUTCLIP and PASTECLIP: xclip.dxf pasted into itself and into
+    # traces.dxf (M5-17, packages/testkit/src/xref/xclip-paste.test.ts).
+    ("third-party/ezdxf/examples_dxf/xclip.dxf", "xclip-paste"),
+    ("self-authored/traces.dxf", "xclip-paste"),
     # LAYDEL and LAYMRG of every layer they can take on ACadSharp's AC1032 sample (M5-06 part 2,
     # packages/testkit/src/layers/layer-cleanup.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "laydel"),

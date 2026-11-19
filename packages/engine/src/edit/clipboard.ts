@@ -18,7 +18,10 @@
 // A pasted object is a copy (edit.ts): no reactors, extension dictionary or annotation scales, so
 // no associativity or group membership, except that a hatch pasted with its whole boundary stays
 // associative with the boundary's copies, and a group copied whole is pasted as a new unnamed
-// group of the pasted objects (M3-13), as COPY makes one. Materials and plot style names are kept by name only
+// group of the pasted objects (M3-13), as COPY makes one, and a clipped block reference keeps its
+// XCLIP (M5-17), as AutoCAD's deep clone takes the reference's extension dictionary: a filter of
+// its own, filed as COPY's copy's is (xclip.ts `fileClip`), at the top or in a pasted block.
+// Materials and plot style names are kept by name only
 // in Triya (types.ts `TableRecords`), so a pasted object keeps one only where the target has it.
 //
 // An image or PDF underlay brings its definition, the IMAGEDEF or PDFDEFINITION naming its file
@@ -74,6 +77,7 @@ import {
   type NonGraphicalObject,
   type ObjectCommon,
   type PdfDefinition,
+  type SpatialFilter,
   type SymbolTableRecord,
   type TableName,
   type TableRecords,
@@ -90,6 +94,7 @@ import {
   type EditReport,
 } from './edit';
 import { followedBy, moveBy, scaleAbout, type Similarity } from './similarity';
+import { fileClip } from './xclip';
 
 /** The definitions the Clipboard carries, by table, as the source holds them. */
 export type ClipboardTables = { readonly [K in TableName]?: readonly TableRecords[K][] };
@@ -123,6 +128,12 @@ export interface Clipboard {
    * order: a paste makes each a new unnamed group of the pasted objects, as a copy does.
    */
   readonly groups?: readonly (readonly Handle[])[];
+  /**
+   * The clips of the references copied, at the top or in the blocks (M5-17): each SPATIAL_FILTER
+   * as the source holds it, naming its reference by the source's handle (`insert`). A paste
+   * gives the pasted reference a filter of its own with the same fields (xclip.ts `fileClip`).
+   */
+  readonly clips?: readonly SpatialFilter[];
 }
 
 export interface ClipboardCopy {
@@ -468,6 +479,11 @@ export function copyToClipboard(
   const objects = new Map<Handle, Definition>();
   const coded: CodedObject[] = [];
   const byOwner = codedByOwner(model);
+  const filters = new Map<Handle, SpatialFilter>();
+  for (const o of model.objects.values()) {
+    if (o.type === 'SPATIAL_FILTER') filters.set((o as SpatialFilter).insert, o as SpatialFilter);
+  }
+  const clips: SpatialFilter[] = [];
   const pending: Handle[] = [];
   const carry = (tree: readonly CodedObject[]): void => {
     coded.push(...tree);
@@ -489,6 +505,9 @@ export function copyToClipboard(
     }
     into.push(c);
     references(c, pending, layers);
+    // Its clip, which AutoCAD's deep clone takes with the reference's extension dictionary.
+    const clip = filters.get(e.handle);
+    if (clip) clips.push(common(model, clip));
   };
   for (const e of sorted) take(e, entities);
   // Records asked for by themselves (M4-03 part 3: dimension styles imported from a drawing),
@@ -538,6 +557,7 @@ export function copyToClipboard(
       ...(objects.size > 0 ? { objects: [...objects.values()] } : {}),
       ...(coded.length > 0 ? { coded: coded.map((o) => common(model, o)) } : {}),
       ...(groups.length > 0 ? { groups } : {}),
+      ...(clips.length > 0 ? { clips } : {}),
     },
     refused,
     unannotated,
@@ -769,12 +789,25 @@ function pasteInto(
     return { ...e, color, geom: { ...g, attributes } };
   };
   const pasted: Entity[] = [];
-  for (const e of contents) pasted.push(b.adoptEntity(colored(copyEntity(e, copy))));
+  /** Each pasted object by the handle it had in the source. */
+  const copies = new Map<Handle, Entity>();
+  for (const e of contents) {
+    const entity = b.adoptEntity(colored(copyEntity(e, copy)));
+    pasted.push(entity);
+    copies.set(e.handle, entity);
+  }
   const top: Entity[] = [];
   for (const e of clip.entities) {
     const entity = b.adoptEntity({ ...colored(copyEntity(e, copy)), owner });
     pasted.push(entity);
+    copies.set(e.handle, entity);
     top.push(entity);
+  }
+  // A clipped reference pasted keeps its clip (M5-17), in the block's coordinates, so it clips
+  // the reference wherever the paste puts it; a kept block's references are the target's own.
+  for (const f of clip.clips ?? []) {
+    const e = copies.get(f.insert);
+    if (e) fileClip(b, f, e.id);
   }
   // A hatch pasted with its whole boundary stays associative with the boundary's copies.
   const source = new Map([...contents, ...clip.entities].map((e) => [map.get(e.handle)!, e]));
