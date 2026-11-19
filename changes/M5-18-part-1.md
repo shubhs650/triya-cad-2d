@@ -1,0 +1,1 @@
+- M5-18 part 1 (#567): LAYER (LA) opens the Layer Properties Manager and LAYERCLOSE closes it; -LAYER changes layers at the command line with AutoCAD's ?, Make, Set, New, Rename, ON, OFF, Color, Ltype, LWeight, TRansparency, Plot, Freeze, Thaw, LOck, Unlock and Description options, as one undo step.
