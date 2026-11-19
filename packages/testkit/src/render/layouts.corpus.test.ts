@@ -53,6 +53,8 @@ const LIMITS_DIFFER: Record<string, string> = {
   'public/self-authored/traces.dxf | Layout1': EZDXF,
   // M1-111: so does multileaders.dxf.
   'public/self-authored/multileaders.dxf | Layout1': EZDXF,
+  // M5-09 part 5: so does dgn-linestyles.dxf.
+  'public/self-authored/dgn-linestyles.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/examples_dxf/caret_encoding.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/examples_dxf/circle_radius_le_0.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/examples_dxf/clockwise_arcs_hatch.dxf | Layout1': EZDXF,

@@ -86,7 +86,7 @@ async function refedit(b: PromptBus, reference: Entity): Promise<void> {
 }
 
 /** Readable drawings with no reference the test can edit (as refedit.corpus.test.ts's). */
-const NO_REFERENCE = 87;
+const NO_REFERENCE = 88;
 /** Drawings whose edited block has circles or arcs, which ellipses stand in for. */
 const WITH_STAND_INS = 27;
 

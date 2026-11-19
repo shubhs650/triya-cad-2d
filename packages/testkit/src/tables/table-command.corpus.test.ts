@@ -37,7 +37,7 @@ const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = readableFiles(manifest);
 const PER_FILE_BUDGET_MS = 30_000;
 /** Readable files that get a table. */
-const MADE = 118;
+const MADE = 119;
 /** DWG files from R2010 (their tables are only checked to read back as drawn). */
 const DWG_2010 = 17;
 /** R1 and R2.5 drawings, which have no text style. */

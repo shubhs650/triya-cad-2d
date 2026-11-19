@@ -4,8 +4,8 @@
 //   it holds, and the items, each with a check box (checking a type or All Items checks what it
 //   holds); Preview of the item clicked (a block's drawing); Options "Confirm each item to be
 //   purged" and "Purge nested items"; Purge Unnamed Objects "Zero-length geometry", "Empty text
-//   objects" and "Orphaned data" (unavailable: Triya keeps it as read, M5-09's next part);
-//   Purge Checked Items and Purge All. What a purge did shows at the lower left.
+//   objects" and "Orphaned data" (the DGN linestyle data no linetype uses, M5-09 part 5), each
+//   with how many it would take; Purge Checked Items and Purge All. What a purge did shows at the lower left.
 // - Find Non-Purgeable Items: "Named Items In Use", Preview, Possible Reasons and Details of the
 //   item clicked, and Select Objects, which closes the dialog with the objects using the item
 //   selected and zoomed to.
@@ -264,18 +264,17 @@ export function PurgeDialog({ doc, request }: { doc: number; request: Request })
     }
     setChecked(next);
   };
-  const option = (key: keyof PurgeSettings, label: string, disabled = false) => (
+  const option = (key: keyof PurgeSettings, label: string) => (
     <label className="purge-check">
       <input
         type="checkbox"
         checked={settings[key]}
-        disabled={disabled}
         onChange={(e) => setSettings({ ...settings, [key]: e.currentTarget.checked })}
       />
       {label}
     </label>
   );
-  const unnamed = settings.zeroLength || settings.emptyText;
+  const unnamed = settings.zeroLength || settings.emptyText || settings.orphaned;
 
   return (
     <Modal label="Purge" className="purge-dialog" onOk={close} onCancel={close}>
@@ -331,7 +330,7 @@ export function PurgeDialog({ doc, request }: { doc: number; request: Request })
                 <legend>Purge Unnamed Objects</legend>
                 {option('zeroLength', `Zero-length geometry (${request.zeroLength})`)}
                 {option('emptyText', `Empty text objects (${request.emptyText})`)}
-                {option('orphaned', 'Orphaned data', true)}
+                {option('orphaned', `Orphaned data (${request.orphaned})`)}
               </fieldset>
             </>
           ) : (

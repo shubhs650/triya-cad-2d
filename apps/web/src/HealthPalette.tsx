@@ -14,8 +14,9 @@
 // ... one-click fixes"): what PURGE would take, asked of the drawing's engine again after every
 // edit while the palette is open. Unused items: their counts by category, Purge All (each unused
 // item and what only they use, as the Purge dialog's Purge All with Purge nested items) and
-// Purge... (the Purge dialog, to choose); zero-length geometry and empty text: Delete. Each fix
-// is one PURGE undo step; registered applications are left to -PURGE, as in the dialog.
+// Purge... (the Purge dialog, to choose); zero-length geometry, empty text and orphaned data (the
+// DGN linestyle data no linetype uses, M5-09 part 5): Delete. Each fix is one PURGE undo step;
+// registered applications are left to -PURGE, as in the dialog.
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { DimensionMismatch, DrawingDimensionHealth } from '@triya/dims';
 import type { PurgeEdit, PurgeHealth } from '@triya/engine';
@@ -393,6 +394,26 @@ function PurgeCards({ doc, store }: { doc: OpenDocument; store: DocumentStore })
                 disabled={busy}
                 aria-label="Delete empty text objects"
                 onClick={() => void fix('empty-text')}
+              >
+                Delete
+              </button>
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Card id="orphaned-data" title="Orphaned data" count={health.orphaned}>
+        {health.orphaned === 0 ? (
+          <p className="empty">None.</p>
+        ) : (
+          <>
+            <p className="hint">DGN linestyle data no linetype uses.</p>
+            <div className="health-fixes">
+              <button
+                type="button"
+                disabled={busy}
+                aria-label="Delete orphaned data"
+                onClick={() => void fix('orphaned')}
               >
                 Delete
               </button>
