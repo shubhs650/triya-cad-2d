@@ -90,6 +90,10 @@ FIXTURE_SAVES = (
     # on colors.dxf (M5-07 part 7, packages/testkit/src/export/view-layer-snapshots.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "view-layers"),
     ("third-party/ezdxf/examples_dxf/colors.dxf", "view-layers"),
+    # MVIEW's viewports in the sample's current layout and in colors.dxf's, which has none (M6-02
+    # part 1, packages/testkit/src/export/export-mview.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "mview"),
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "mview"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
     # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,

@@ -206,6 +206,8 @@ describe('palette search', () => {
       'MOVE',
       'MREDO',
       'MTEXT',
+      // M6-02 part 1: MVIEW (MV).
+      'MVIEW',
       // M5-10: NEW and QNEW.
       'NEW',
       'OFFSET',

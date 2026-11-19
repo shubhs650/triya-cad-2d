@@ -1,0 +1,1 @@
+- M6-02 part 1 (#593): MVIEW (MV) makes layout viewports from two corners, Fit (the printable area), or 2, 3 and 4 arranged as AutoCAD arranges them, each showing model space's extents; ON and OFF show and hide the viewports picked and Lock locks their views; saved as AC1032 DXF and audited by ezdxf.

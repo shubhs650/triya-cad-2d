@@ -136,6 +136,7 @@ export const ALIASES: Readonly<Record<string, string>> = {
   R: 'REDRAW',
   V: 'VIEW',
   MS: 'MSPACE',
+  MV: 'MVIEW',
   PS: 'PSPACE',
   LO: 'LAYOUT',
   DS: 'DSETTINGS',
