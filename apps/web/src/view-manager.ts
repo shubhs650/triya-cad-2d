@@ -2,7 +2,8 @@
 // while VIEW asks for the New View dialog's window at the command line. AutoCAD 2024 Help, "View
 // Manager Dialog Box": a Views tree of Current, Model Views and Layout Views (Preset Views are 3D
 // orthographic ones, which a 2D canvas does not show), the selected view's properties, and Set
-// Current, New..., Update Layers, Edit Boundaries... and Delete. "New View / Shot Properties
+// Current, New..., Update Layers, Edit Boundaries... and Delete; Layer snapshot is a General
+// row (M5-07 part 7). "New View / Shot Properties
 // Dialog Box": View name and Boundary (Current display, or Define window, which hides the dialogs
 // for two corners at the command line).
 import { NO_VIEW_CATEGORY, type Vec2, type ViewRecord, type ViewState } from '@triya/engine';
@@ -81,6 +82,8 @@ export function viewRows(v: ViewRecord): ViewRow[] {
   const rows: ViewRow[] = [
     { group: 'General', label: 'Name', value: v.name },
     { group: 'General', label: 'Category', value: v.category ?? NO_VIEW_CATEGORY },
+    // M5-07 part 7: whether the view keeps its layers' visibility (`layerState`).
+    { group: 'General', label: 'Layer snapshot', value: v.layerState === undefined ? 'No' : 'Yes' },
     ...extentRows(center, v.height, v.width),
     {
       group: 'View',
@@ -137,6 +140,8 @@ export interface NewViewState {
   /** View category (M2-70), as typed: `<None>` for none. */
   readonly category: string;
   readonly boundary: 'display' | 'window';
+  /** Settings' "Save layer snapshot with view" (M5-07 part 7), checked to start with. */
+  readonly layers: boolean;
   /** The corners Define window picked. */
   readonly window?: { readonly a: Vec2; readonly b: Vec2 };
 }
