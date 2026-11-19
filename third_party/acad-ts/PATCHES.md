@@ -3440,3 +3440,20 @@ BLOCK_RECORD group 281 (DWG R2007+ "block scaling") is 1 when the block's refere
 RASTERVARIABLES group 70 (DWG BS) holds IMAGEFRAME, which AutoCAD sets to 0 (frames off), 1 (displayed and plotted) or 2 (displayed but not plotted). `RasterVariables.isDisplayFrameShown` is a boolean, so a drawing with IMAGEFRAME 2 reads as `true` and is written back as 1, and its frames start plotting. This makes the property the number stored, read and written unchanged by the DWG reader, the DWG writer and the DXF writer (the DXF reader converts by the property's type already), matching the WipeoutVariables change for WIPEOUTFRAME. Callers that tested the property for truth keep working for 0 and 1.
 
 </details>
+
+### 0189 — A nameless STYLE record (a shape file) cannot be removed from its table, and removing one moves the others' referrers
+
+- **File:** `third_party/acad-ts-patches/0189-table-nameless-entry-key-and-remove.patch`
+- **Touches:** `src/Tables/Collections/Table.ts`
+- **Symptom:** Shape files are STYLE records with no name, which the table keeps under keys of their own (`keepsEmptyName`), so `Table.remove(name)` could not reach one: PURGE of shape files (M5-09 part 4) had no key to remove it by. And every nameless entry's referrers share the reference key `''`, so removing one handed the referrers of all of them (a SHAPE drawing from another shape file) to the default entry, Standard, a text style no SHAPE can draw from.
+- **Fix:** `Table.keyOf(entry)` gives the key the table lists an entry under (its name, or the nameless entry's own key, or a repeated VPORT name's handle key), and `remove` hands a nameless entry's referrers to the default entry only when it has a name.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0189 a nameless STYLE record leaves its table by its own key, other shape files keep their referrers"; `export-purge.test.ts` "TriyaToAcad PURGE of shape files (M5-09 part 4)" saves the purge.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Let a nameless table entry be removed, and keep the other nameless entries' references
+
+A shape file's STYLE record has an empty name, and the table keeps each under a key no name can have, so `Table.remove(key)` cannot be called for one: its key is private. This adds `Table.keyOf(entry)`, the key the table lists an entry under. All nameless entries register their references under the same name key `''`, so `remove` also handed every nameless entry's referrers (SHAPE entities of other shape files) to the table's default entry when any one of them was removed; it now reassigns referrers only for a named entry. Named entries behave as before.
+
+</details>

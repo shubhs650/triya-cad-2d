@@ -5,6 +5,8 @@
 // M5-09 part 2: PURGE's Purge dialog ("Purge Dialog Box"): Purgeable Items and Find
 // Non-Purgeable Items, Purge Checked Items and Purge All, Confirm Purge for each item, nested
 // items, unnamed objects, Possible Reasons, Details and Select Objects.
+// M5-09 part 4: shape files (nameless STYLE records, listed by their file) purge like the other
+// named items: in use while a complex linetype draws one of their shapes or the file needs them.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
@@ -437,8 +439,6 @@ describe('-PURGE', () => {
 
   it('says what it does not purge', async () => {
     const t = setup();
-    await t.bus.script(['-PURGE', 'SH']);
-    expect(t.log).toContain('Shape files are kept as read: Triya does not purge them.');
     await t.bus.script(['-PURGE', 'O']);
     expect(t.log).toContain('Orphaned data is kept as read: Triya does not purge it.');
     await t.bus.script(['-PURGE', 'DE']);
@@ -453,6 +453,113 @@ describe('-PURGE', () => {
     await t.bus.script(['-PURGE', 'ST', '', 'N']);
     expect(t.log).toContain('No unreferenced text styles found.');
     expect(t.model.tables.textStyles.has(NOTE)).toBe(true);
+  });
+});
+
+// Shape files and a complex linetype drawing one of their shapes (M5-09 part 4).
+const LTYPESHP = '50';
+const SPARE = '51';
+const TRACKS = '52';
+
+const shapeFile = (handle: string, font: string) =>
+  ({ ...record(handle, ''), flags: 1, font, height: 0, widthFactor: 1 }) as never;
+
+function shapesSetup(o: { pinned?: string[] } = {}) {
+  const t = setup(o);
+  const init = purgeInit(o);
+  const model = DocumentModel.create({
+    ...init,
+    tables: {
+      ...init.tables,
+      textStyles: [
+        ...init.tables!.textStyles!,
+        shapeFile(LTYPESHP, 'ltypeshp.shx'),
+        shapeFile(SPARE, 'C:\\Shapes\\spare.shx'),
+      ],
+      linetypes: [
+        ...init.tables!.linetypes!,
+        {
+          ...linetype(TRACKS, 'TRACKS'),
+          patternLength: 0.3,
+          elements: [
+            {
+              length: 0.15,
+              shapeFlags: 4,
+              shapeNumber: 130,
+              style: LTYPESHP,
+              offset: { x: -0.075, y: 0 },
+              rotation: 0,
+              scale: 0.25,
+            },
+            {
+              length: 0.15,
+              shapeFlags: 0,
+              shapeNumber: 0,
+              offset: { x: 0, y: 0 },
+              rotation: 0,
+              scale: 1,
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const bus = new PromptBus({ model, registry: builtinCommands() });
+  const log: string[] = [];
+  bus.on((e: BusEvent) => {
+    if (e.type === 'log') log.push(e.line);
+  });
+  return { ...t, model, bus, log, has: (h: string) => model.tables.textStyles.has(h) };
+}
+
+describe('Shape files', () => {
+  it('are listed by their file, in use while a linetype draws one of their shapes', () => {
+    const { model } = shapesSetup();
+    const s = purgeState(model);
+    expect(names(s.purgeable.filter((i) => i.category === 'shapes'))).toEqual([
+      'C:\\Shapes\\spare.shx',
+    ]);
+    expect(s.inUse.find((i) => i.handle === LTYPESHP)).toEqual({
+      category: 'shapes',
+      handle: LTYPESHP,
+      name: 'ltypeshp.shx',
+      reasons: ['The linetype "TRACKS" uses it.'],
+    });
+    // They are not text styles.
+    expect(
+      [...s.purgeable, ...s.inUse].filter((i) => i.category === 'textStyles').map((i) => i.handle),
+    ).toEqual(expect.not.arrayContaining([LTYPESHP, SPARE]));
+    // Purging the linetype with nested items takes the shape file it alone used.
+    expect(names(purgeClosure(model, [TRACKS], true))).toEqual(['TRACKS', 'ltypeshp.shx']);
+    expect(names(purgeClosure(model, [TRACKS], false))).toEqual(['TRACKS']);
+  });
+
+  it('-PURGE SHapes purges the unused ones by file name, one undo step', async () => {
+    const t = shapesSetup();
+    await t.bus.script(['-PURGE', 'SH', '*spare*', 'N']);
+    expect(t.log).toContain('Deleting shape file "C:\\Shapes\\spare.shx".');
+    expect(t.log).toContain('1 shape file deleted.');
+    expect(t.has(SPARE)).toBe(false);
+    expect(t.has(LTYPESHP)).toBe(true);
+    await t.bus.script(['-PURGE', 'SH', '', 'N']);
+    expect(t.log).toContain('No unreferenced shape files found.');
+    await t.bus.script(['U']);
+    expect(t.has(SPARE)).toBe(true);
+    // Once the linetype goes, its shape file goes on the next run (one level per run).
+    await t.bus.script(['-PURGE', 'LT', 'TRACKS', 'N']);
+    await t.bus.script(['-PURGE', 'SH', '', 'Y', 'N', 'Y']);
+    expect(t.log.some((l) => l.includes('Purge shape file "ltypeshp.shx"?'))).toBe(true);
+    expect(t.has(LTYPESHP)).toBe(false);
+    expect(t.has(SPARE)).toBe(true);
+  });
+
+  it('stay while the file needs them (a SHAPE names a shape, not its file)', async () => {
+    const t = shapesSetup({ pinned: [SPARE] });
+    expect(purgeState(t.model).inUse.find((i) => i.handle === SPARE)?.reasons).toEqual([
+      'Objects Triya keeps without editing them use it, or the file needs it.',
+    ]);
+    await t.bus.script(['-PURGE', 'A', '', 'N']);
+    expect(t.has(SPARE)).toBe(true);
   });
 });
 
