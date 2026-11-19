@@ -7,7 +7,7 @@
 // (export/export-text-edit.corpus.test.ts).
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, MTextGeometry, TextGeometry } from '@triya/engine';
-import { DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { DXF, activeCanvas, expectInputsRead, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -117,6 +117,67 @@ test('TEXT moves to a click elsewhere; a double click edits a TEXT in place', as
     .poll(() => texts(page))
     .toEqual([
       ['TEXT', 'Edited', 20, 60],
+      ['TEXT', 'Moved', 20, 30],
+    ]);
+});
+
+// M5-21: the test above lost "Moved" on a loaded CI runner. The click elsewhere answers "First"
+// and the engine reads it a moment later; keys typed meanwhile are held and then typed into the
+// line editor (M4-20), but the click had taken the keyboard from the editor, and holding them
+// had given it to the command line, so the Enter after them went there: it ended TEXT, and
+// "Moved" was never placed. Here the engine worker's replies come late, as on a slow runner, and
+// the Enter is pressed once the engine has read "First".
+test("keys typed after a click elsewhere stay in TEXT's line editor (M5-21)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    const Base = window.Worker;
+    const w = window as unknown as { triyaEngineDelay?: number };
+    window.Worker = class extends Base {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes('engine/worker')) return;
+        const add = this.addEventListener.bind(this) as Worker['addEventListener'];
+        let last = 0;
+        // Each reply is handled `triyaEngineDelay` ms after it came, in the order they came.
+        this.addEventListener = ((type: string, listener: EventListener, o?: unknown) => {
+          if (type !== 'message') return add(type, listener, o as AddEventListenerOptions);
+          return add('message', (e) => {
+            const at = Math.max(performance.now() + (w.triyaEngineDelay ?? 0), last);
+            last = at;
+            setTimeout(() => listener.call(this, e), at - performance.now());
+          });
+        }) as Worker['addEventListener'];
+      }
+    };
+  });
+  const at = await open(page);
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '1000020,1000060', 'Specify height <2.5000>:');
+  await type(page, '5', 'Specify rotation angle of text <0.00>:');
+  await type(page, '', 'Enter text:');
+  const line = page.getByRole('textbox', { name: 'Text' });
+  await line.pressSequentially('First');
+  await page.evaluate(() => {
+    (window as unknown as { triyaEngineDelay: number }).triyaEngineDelay = 600;
+  });
+  const there = at(20, 30);
+  await page.mouse.click(there.x, there.y);
+  // The editor keeps the keyboard through the click.
+  await expect(line).toBeFocused();
+  // Keys typed outside it (here with nothing focused) while the engine reads "First" are held,
+  // then typed into it, and the keys after them go to it too.
+  await line.evaluate((el) => el.blur());
+  await expect(page.locator('[data-reading="true"]')).toHaveCount(1);
+  await page.keyboard.type('Moved');
+  await expectInputsRead(page);
+  await expect(line).toHaveValue('Moved');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(() => texts(page))
+    .toEqual([
+      ['TEXT', 'First', 20, 60],
       ['TEXT', 'Moved', 20, 30],
     ]);
 });
