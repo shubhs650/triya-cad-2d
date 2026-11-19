@@ -17,6 +17,8 @@ import type { ViewportGeometry } from '../model/types';
 
 /** DXF 90 bit 17: the viewport is turned off (MVIEW OFF). */
 export const VIEWPORT_OFF = 0x20000;
+/** DXF 90 bit 15: the viewport's view is locked (MVIEW Lock; Display locked). */
+export const VIEWPORT_LOCKED = 0x4000;
 /** DXF 90 bit 16: the viewport is clipped by the entity in 340 instead of its rectangle. */
 export const VIEWPORT_NON_RECT_CLIP = 0x10000;
 
