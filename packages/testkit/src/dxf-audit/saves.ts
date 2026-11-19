@@ -53,6 +53,9 @@ export type AuditSaveKind =
   | 'xattach'
   // XBIND of the xref set's block and layers (M5-04 part 7).
   | 'xbind'
+  // XBIND of a block holding an image and a PDF underlay, their definitions filed as the
+  // drawing's (M5-04 part 16).
+  | 'xbind-pictures'
   // -XREF Path and Pathtype of the xref set's xrefs (M5-04 part 15).
   | 'xref-path'
   // LINETYPE's loads, reloads and deletes on ezdxf's colors.dxf (M5-08 part 1).
