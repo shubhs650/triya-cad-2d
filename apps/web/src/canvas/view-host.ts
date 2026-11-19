@@ -174,6 +174,8 @@ export interface ViewContext {
   readonly drawingFile?: (file: string) => Promise<ViewReply>;
   /** -XREF Attach and Overlay (M5-04 part 12): the drawing file of that name, with its units. */
   readonly xrefFile?: (file: string) => Promise<ViewReply>;
+  /** -PDFATTACH (M5-04 part 13): the PDF file of that name, with its pages' sizes. */
+  readonly pdfFile?: (file: string) => Promise<ViewReply>;
   /** WBLOCK (M5-01 part 4): the app writes the new drawing file and hands it over. */
   readonly writeBlock?: (r: Extract<ViewRequest, { op: 'writeBlock' }>) => Promise<ViewReply>;
   /** REFCLOSE Save of an xref (M5-02 part 6): the xref's file read again (xref-files.ts). */
@@ -229,6 +231,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'xrefFile') {
     return ctx.xrefFile ? ctx.xrefFile(r.file) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'pdfFile') {
+    return ctx.pdfFile ? ctx.pdfFile(r.file) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'writeBlock') {
     return ctx.writeBlock ? ctx.writeBlock(r) : { ok: false, message: NO_FILE };

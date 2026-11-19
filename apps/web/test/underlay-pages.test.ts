@@ -95,6 +95,18 @@ describe('PdfPages', () => {
     expect(pages.has('other.pdf')).toBe(false);
   });
 
+  it('lists the files supplied, by the name each came with (-PDFATTACH, M5-04 part 13)', async () => {
+    const pages = new PdfPages(fakePdf().open);
+    expect(pages.files()).toEqual([]);
+    pages.add('Plan.PDF', new Uint8Array([1]));
+    pages.add('site.pdf', new Uint8Array([2, 3]));
+    // A file of the same name replaces the one before.
+    pages.add('plan.pdf', new Uint8Array([4]));
+    const files = pages.files();
+    expect(files.map((f) => f.name)).toEqual(['plan.pdf', 'site.pdf']);
+    expect([...new Uint8Array(await (await files[0]!.getFile()).arrayBuffer())]).toEqual([4]);
+  });
+
   it('draws the region asked for at its scale, the page clamped, and delivers it', async () => {
     const pdf = fakePdf();
     const pages = new PdfPages(pdf.open);

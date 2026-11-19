@@ -8,7 +8,7 @@
 // packages/testkit/src/underlay/pdf-attach.test.ts. SHOTS=<dir> saves the PR's screenshots.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { colourAt, expectShown, openWithPicker, viewOf } from '../app/page';
+import { colourAt, expectShown, openWithDrop, openWithPicker, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 
 const FIXTURES = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
@@ -110,4 +110,61 @@ test('PDFATTACH attaches a picked PDF page through the Attach PDF Underlay dialo
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toBeHidden();
   await expect(prompt(page)).toHaveText('Command:');
+});
+
+// M5-04 part 13: -PDFATTACH attaches a page of a PDF named at the command line, found among the
+// PDFs supplied this session (here the drawing's own, dropped); ? lists the file's pages. The
+// engine side is unit-tested in packages/engine/test/commands/pdf-dash-attach.test.ts, the app's
+// lookup in apps/web/test/pdf-files.test.ts.
+test('-PDFATTACH attaches a page of a PDF named at the command line', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, 'pdf-underlay.dxf');
+  await openWithDrop(page, PDF);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, 'W', /^Specify first corner/);
+  await type(page, '-2,-2', /^Specify opposite corner/);
+  await type(page, '42,14', 'Command:');
+  const v = await viewOf(page);
+  const colour = (x: number, y: number) => colourAt(page, v.at(x, y));
+  const poll = (x: number, y: number, ok: (c: Rgb) => boolean) =>
+    expect.poll(async () => ok(await colour(x, y)), { timeout: 30_000 }).toBe(true);
+  // The drop supplied the file: the drawing's own page 1 draws its red square.
+  await poll(2, 2, isRed);
+  await poll(32, 2, notRed);
+  const history = page.getByRole('log', { name: 'Recent command lines' });
+
+  // A file the app does not hold is not found.
+  await type(page, '-PDFATTACH', 'Path to PDF file to attach:');
+  await type(page, 'elevation', 'Command:');
+  await expect(history).toContainText('File "elevation" not found.');
+
+  await type(page, '-PDFATTACH', 'Path to PDF file to attach:');
+  await type(page, 'PDF-UNDERLAY', 'Enter page number or [?] <1>:');
+  await type(page, '?', 'Enter page(s) to list <*>:');
+  await type(page, '', 'Enter page number or [?] <1>:');
+  // A unitless drawing: a page's size in its inches.
+  await expect(history).toContainText('Page 2: 11.0000 x 8.5000');
+  await expect(history).toContainText('Total page(s): 2');
+  await shot(page, '1-dash-pdfattach-pages');
+  await type(page, '3', 'Enter page number or [?] <1>:');
+  await expect(history).toContainText('Invalid page number.');
+  await type(page, '1', 'Specify insertion point:');
+  await park(page);
+  await type(page, '30,0', 'Specify scale factor <1.0000>:');
+  await type(page, '', 'Specify rotation <0>:');
+  await type(page, '', 'Command:');
+
+  // Page 1 at 30,0, scale 1: its red square at (31, 1)–(33, 3).
+  await poll(32, 2, isRed);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await shot(page, '2-dash-pdfattach-attached');
+
+  // The file attached is the default next time; U takes the page back.
+  await type(page, '-PDFATTACH', 'Path to PDF file to attach <pdf-underlay.pdf>:');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  await type(page, 'U', 'Command:');
+  await poll(32, 2, notRed);
 });

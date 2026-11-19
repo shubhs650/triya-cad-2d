@@ -26,6 +26,7 @@
 // user's disk and the Missing References panel are M1-21.
 import type { Box, PdfDefinition, UnderlaySnapPage } from '@triya/engine';
 import type { PlotPdfPage } from '../plot';
+import type { FileSource } from '../xrefs';
 import {
   underlayKey,
   type RasterPixels,
@@ -141,6 +142,8 @@ export class PdfPages {
   readonly #files = new Map<
     string,
     {
+      /** The name it was supplied with. */
+      readonly name: string;
       readonly bytes: Uint8Array;
       opened?: Promise<PdfFile>;
       /** Page geometry by page number. */
@@ -170,7 +173,7 @@ export class PdfPages {
    */
   add(name: string, bytes: Uint8Array): void {
     const key = fileKey(name);
-    this.#files.set(key, { bytes, snaps: new Map() });
+    this.#files.set(key, { name, bytes, snaps: new Map() });
     for (const [k, c] of this.#cache) {
       if (k.startsWith(`${key}#`)) {
         this.#cache.delete(k);
@@ -256,6 +259,17 @@ export class PdfPages {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * The files supplied, by the name each came with (its folder aside): where -PDFATTACH looks
+   * first for a file named at the command line (M5-04 part 13).
+   */
+  files(): FileSource[] {
+    return [...this.#files.values()].map((f) => ({
+      name: f.name.split(/[\\/]/).pop() ?? f.name,
+      getFile: () => Promise.resolve(new Blob([f.bytes.slice()])),
+    }));
   }
 
   /** Whether a file of this name was supplied. */

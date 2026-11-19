@@ -20,6 +20,22 @@
 //   so none hides another;
 // - the insertion point prompt has no default (as -PDFATTACH's), so Enter asks again;
 // - the scale prompt's Unit option is left out (INSUNITS sets the units a page is sized in).
+//
+// -PDFATTACH (M5-04 part 13; AutoCAD Help, "-PDFATTACH (Command)") asks at the command line:
+//   Path to PDF file to attach <last>:
+//   Enter page number or [?] <1>:              (? asks "Enter page(s) to list <*>")
+//   Specify insertion point:
+//   Specify scale factor <1.0000>:
+//   Specify rotation <0>:
+// A browser opens no path by itself, so the app finds the file by name (`pdfFile`: folders, case
+// and the extension aside) among the PDFs supplied this session and its kept folders, and serves
+// it to the drawing's underlays; `~` opens the Attach PDF Underlay dialog instead (AutoCAD's
+// Select PDF File dialog picks the file there). A name in double quotes is taken whole; <last>
+// is the file the drawing last attached so this session. Settled for the common drafter
+// expectation (AutoCAD's help lists the pages "in a separate text window" without saying how):
+// "?" lists each page with its size in drawing units at scale 1, as the dialog's page list
+// shows it, then "Total page(s): N"; the list takes page numbers, ranges (2-5) and wildcards
+// by commas; a page the file does not have says "Invalid page number." and asks again.
 import type { Vec2 } from '../geom/types';
 import type { PdfDefinition } from '../model/types';
 import {
@@ -36,6 +52,7 @@ import { toWorld } from '../input/ucs';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import { currentUcs } from './ucs';
+import { wcmatch } from './modify/attributes';
 import { drawingUnits, formatDistance } from './units';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -90,6 +107,9 @@ export interface PdfAttachAnswer {
 
 /** The settings the dialog closed with last, per drawing. */
 const lastSettings = new WeakMap<object, PdfAttachSettings>();
+
+/** The file -PDFATTACH last attached, per drawing (<last>). */
+const lastFile = new WeakMap<object, string>();
 
 const DEFAULTS: PdfAttachSettings = {
   pointOnScreen: true,
@@ -243,39 +263,144 @@ async function* place(ctx: CommandContext, f: PdfAttachFile, s: PdfAttachSetting
   });
 }
 
+/** PDFATTACH's dialog, then the placing of what it attaches. */
+async function* pdfAttachDialog(ctx: CommandContext): Sub<void> {
+  let settings: PdfAttachSettings = { ...DEFAULTS, ...lastSettings.get(ctx.model) };
+  let note: string | undefined;
+  for (;;) {
+    const a = yield ctx.prompt.dialog({
+      message: 'Attach PDF Underlay',
+      dialog: {
+        type: 'pdfattach',
+        settings,
+        pdfs: pdfsOf(ctx),
+        units: insUnitsOf(ctx.model),
+        unitsPerInch: underlayScaleFor(ctx.model, 1),
+        ...(note !== undefined && { note }),
+      },
+    });
+    if (a.kind !== 'dialog' || a.action !== 'ok') return;
+    const answer = a.pdfAttach;
+    if (!validSettings(answer?.settings)) return;
+    settings = answer.settings;
+    note =
+      fileProblem(answer.file) ??
+      (!settings.scaleOnScreen && !(settings.scale > 0)
+        ? 'Value must be positive and nonzero.'
+        : undefined);
+    if (note) continue;
+    lastSettings.set(ctx.model, settings);
+    yield* place(ctx, answer.file, settings);
+    return;
+  }
+}
+
+/** A name typed at "Path to PDF file to attach": spaces at its ends and enclosing quotes gone. */
+function typedFileName(text: string): string {
+  const t = text.trim();
+  return t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1).trim() : t;
+}
+
+/** The pages "Enter page(s) to list" names: numbers, ranges (2-5) and wildcards, by commas. */
+function listed(pages: readonly PdfAttachPage[], text: string): PdfAttachPage[] {
+  const items = (text.trim() || '*').split(',').map((i) => i.trim());
+  return pages.filter((p) =>
+    items.some((item) => {
+      const range = /^(\d+)\s*-\s*(\d+)$/.exec(item);
+      if (!range) return wcmatch(p.page, item);
+      const n = Number(p.page);
+      return n >= Number(range[1]) && n <= Number(range[2]);
+    }),
+  );
+}
+
+/** "Enter page number or [?] <1>": the page chosen, `?` listing pages first; undefined on Esc. */
+async function* askPage(
+  ctx: CommandContext,
+  pages: readonly PdfAttachPage[],
+): Sub<PdfAttachPage | undefined> {
+  const units = drawingUnits(ctx.model.header);
+  const k = underlayScaleFor(ctx.model, 1);
+  for (;;) {
+    const a = yield ctx.prompt.integer({
+      message: 'Enter page number or',
+      options: ['?'],
+      default: { kind: 'number', value: 1 },
+    });
+    if (a.kind === 'keyword' && a.keyword === '?') {
+      const l = yield ctx.prompt.string({
+        message: 'Enter page(s) to list',
+        default: { kind: 'string', value: '*' },
+      });
+      if (l.kind !== 'string') return undefined;
+      const shown = listed(pages, l.value);
+      if (shown.length === 0) ctx.message('No matching pages found.');
+      for (const p of shown) {
+        const w = formatDistance(p.width * k, units);
+        ctx.message(`Page ${p.page}: ${w} x ${formatDistance(p.height * k, units)}`);
+      }
+      if (shown.length > 0) ctx.message(`Total page(s): ${shown.length}`);
+      continue;
+    }
+    const n = a.kind === 'enter' ? 1 : a.kind === 'number' ? a.value : undefined;
+    if (n === undefined) return undefined;
+    const page = pages.find((p) => p.page === String(n));
+    if (page) return page;
+    ctx.message('Invalid page number.');
+  }
+}
+
+/**
+ * -PDFATTACH: the file named at the command line, found by the app, one page of it attached
+ * with its insertion point, scale and rotation asked; `~` is PDFATTACH's dialog.
+ */
+async function* dashPdfAttach(ctx: CommandContext): Sub<void> {
+  const last = lastFile.get(ctx.model);
+  const a = yield ctx.prompt.string({
+    message: 'Path to PDF file to attach',
+    spaces: true,
+    ...(last !== undefined && { default: { kind: 'string', value: last } }),
+  });
+  if (a.kind !== 'string') return;
+  const typed = typedFileName(a.value) || (last ?? '');
+  if (typed === '') return;
+  if (typed === '~') {
+    yield* pdfAttachDialog(ctx);
+    return;
+  }
+  const reply = await ctx.view.request({ op: 'pdfFile', file: typed });
+  if (!reply.ok) {
+    ctx.message(reply.message);
+    return;
+  }
+  const file = reply.pdfFile;
+  if (!file) {
+    ctx.message(`File "${typed}" not found.`);
+    return;
+  }
+  if (fileProblem(file)) {
+    ctx.message(`${file.fileName} is not a PDF file Triya can attach.`);
+    return;
+  }
+  lastFile.set(ctx.model, file.fileName);
+  const page = yield* askPage(ctx, file.pages);
+  if (!page) return;
+  yield* place(
+    ctx,
+    { fileName: file.fileName, pages: [page] },
+    { ...DEFAULTS, scaleOnScreen: true, rotationOnScreen: true },
+  );
+}
+
+/** PDFATTACH and -PDFATTACH. */
 export function pdfattachCommand(): CommandDef {
   return {
     name: 'PDFATTACH',
+    dashVariant: true,
     usesSelection: 'none',
     async *run(ctx) {
-      let settings: PdfAttachSettings = { ...DEFAULTS, ...lastSettings.get(ctx.model) };
-      let note: string | undefined;
-      for (;;) {
-        const a = yield ctx.prompt.dialog({
-          message: 'Attach PDF Underlay',
-          dialog: {
-            type: 'pdfattach',
-            settings,
-            pdfs: pdfsOf(ctx),
-            units: insUnitsOf(ctx.model),
-            unitsPerInch: underlayScaleFor(ctx.model, 1),
-            ...(note !== undefined && { note }),
-          },
-        });
-        if (a.kind !== 'dialog' || a.action !== 'ok') return;
-        const answer = a.pdfAttach;
-        if (!validSettings(answer?.settings)) return;
-        settings = answer.settings;
-        note =
-          fileProblem(answer.file) ??
-          (!settings.scaleOnScreen && !(settings.scale > 0)
-            ? 'Value must be positive and nonzero.'
-            : undefined);
-        if (note) continue;
-        lastSettings.set(ctx.model, settings);
-        yield* place(ctx, answer.file, settings);
-        return;
-      }
+      if (ctx.dash) yield* dashPdfAttach(ctx);
+      else yield* pdfAttachDialog(ctx);
     },
   };
 }
