@@ -67,6 +67,7 @@ export * from './table-data';
 export * from './table-locks';
 export * from './spreadsheet';
 export * from './named-view';
+export * from './view-layers';
 export { offsetCurveOf, offsetGeometry, offsetSide } from './offset';
 export {
   cutParams,

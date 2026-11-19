@@ -5,7 +5,10 @@
 // corner shows them again as they were). -VIEW runs the command-line prompts: Delete, Restore,
 // Save and Window are the 2D ones (Orthographic and sEttings are 3D and UCS).
 // Save and Window write the view into the drawing's VIEW table (M2-29), an undo step the save
-// keeps, as AutoCAD's do; Delete removes views from it.
+// keeps, as AutoCAD's do; Delete removes views from it, with their layer snapshots. Restore
+// restores a view's layer snapshot with it (M5-07 part 7, `restoreViewLayers`). Save and Window
+// keep no snapshot: AutoCAD 2024 Help's -VIEW Save says nothing of one (its sEttings' Layer
+// snapshot, which sets it, is a later task), so a view saved again keeps the one it had.
 //   Enter an option [?/Delete/Restore/Save/Window]:
 // (AutoCAD 2024 Help, "-VIEW (Command)"). Saving under a name the drawing has replaces that view:
 // the Help says nothing of asking first, and the View Manager's New asks only because a dialog
@@ -13,6 +16,7 @@
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { saveNamedView, validViewName, type ViewExtent } from '../../edit/named-view';
+import { dropViewLayers, restoreViewLayers } from '../../edit/view-layers';
 import { isPaperSpace } from '../bus';
 import { viewRequest } from './zoom';
 import { windowDialog } from '../file';
@@ -74,7 +78,10 @@ async function* deleteViews(ctx: CommandContext): CommandGenerator {
   );
   if (found.length === 0) return ctx.message('No matching views found.');
   ctx.edit((b) => {
-    for (const v of found) b.removeTableRecord('views', v.handle);
+    for (const v of found) {
+      dropViewLayers(b, ctx.model, v);
+      b.removeTableRecord('views', v.handle);
+    }
   });
 }
 
@@ -98,7 +105,13 @@ export function viewCommand(): CommandDef {
       if (a.keyword === 'Delete') return yield* deleteViews(ctx);
       if (a.keyword === 'Restore') {
         const name = yield* viewName(ctx, 'Enter view name to restore');
-        if (name) await viewRequest(ctx, { op: 'restore', name });
+        if (!name) return;
+        const r = await viewRequest(ctx, { op: 'restore', name });
+        // The view's layer snapshot comes back with it (M5-07 part 7).
+        const key = name.toUpperCase();
+        const view = [...ctx.model.tables.views.values()].find((v) => v.name.toUpperCase() === key);
+        if (r.ok && view?.layerState !== undefined)
+          ctx.edit((b) => restoreViewLayers(b, ctx.model, view));
         return;
       }
       const name = yield* viewName(ctx, 'Enter view name to save');

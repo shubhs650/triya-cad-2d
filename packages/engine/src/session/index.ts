@@ -25,11 +25,17 @@ import {
   viewCategoryProblem,
   type PaperView,
 } from '../edit/named-view';
+import {
+  dropViewLayers,
+  renameViewLayers,
+  restoreViewLayers,
+  saveViewLayers,
+} from '../edit/view-layers';
 import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
 import type { Lasso } from '../selection/loop';
 import { ChangeSetBuilder } from '../model/builder';
-import type { ChangeSet } from '../model/changeset';
+import { isEmptyChangeSet, type ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
 import { applyToReplica } from '../model/replica';
@@ -261,6 +267,11 @@ export interface NamedViewEdit {
   readonly view: ViewState;
   /** New View's View category (M2-70); '' or `<None>` for none, kept as it was when absent. */
   readonly category?: string;
+  /**
+   * New View's "Save layer snapshot with view" (M5-07 part 7): true saves the layers' settings
+   * now as the view's snapshot, false saves it without one; absent keeps what the view had.
+   */
+  readonly layers?: boolean;
 }
 
 /**
@@ -271,7 +282,17 @@ export type ViewTableEdit =
   | { readonly kind: 'view-delete'; readonly name: string }
   | { readonly kind: 'view-rename'; readonly name: string; readonly newName: string }
   /** The Category row (M2-70): '' or `<None>` takes the category off. */
-  | { readonly kind: 'view-category'; readonly name: string; readonly category: string };
+  | { readonly kind: 'view-category'; readonly name: string; readonly category: string }
+  /**
+   * Update Layers and the Layer snapshot row (M5-07 part 7): `save` saves the layers' settings
+   * now as the view's snapshot, otherwise the view's snapshot goes.
+   */
+  | { readonly kind: 'view-layers'; readonly name: string; readonly save: boolean }
+  /**
+   * The View Manager's OK and Apply with a view set current (M5-07 part 7): the layers as the
+   * view's snapshot has them, once the app shows the view; nothing when it has none.
+   */
+  | { readonly kind: 'view-restore'; readonly name: string };
 
 /**
  * A per-user system variable the app keeps that the drawing's engine follows: REVCLOUDGRIPS
@@ -819,7 +840,13 @@ export class EngineSession {
     if (e.kind === 'xref-detach') return this.#xrefDetach(e);
     if (e.kind === 'xref-bind') return this.#xrefBind(e);
     if (e.kind === 'view') return this.#viewEdit(e);
-    if (e.kind === 'view-delete' || e.kind === 'view-rename' || e.kind === 'view-category')
+    if (
+      e.kind === 'view-delete' ||
+      e.kind === 'view-rename' ||
+      e.kind === 'view-category' ||
+      e.kind === 'view-layers' ||
+      e.kind === 'view-restore'
+    )
       return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     if (e.kind === 'fields') return this.#fieldEvent(e);
@@ -862,7 +889,14 @@ export class EngineSession {
     const problem = viewCategoryProblem(e.category && viewCategory(e.category));
     if (problem) return { ok: false, message: problem };
     const b = new ChangeSetBuilder(this.model);
-    saveNamedView(b, this.model, name, e.view, e.category);
+    const view = saveNamedView(b, this.model, name, e.view, e.category);
+    if (e.layers === true) {
+      const why = saveViewLayers(b, this.model, view);
+      if (why) return { ok: false, message: why };
+    } else if (e.layers === false) {
+      const before = this.model.tables.views.get(view.handle);
+      if (before) dropViewLayers(b, this.model, before);
+    }
     const change = b.build();
     this.model.apply(change);
     this.#step('VIEW', change);
@@ -875,8 +909,17 @@ export class EngineSession {
     const view = named(e.name);
     if (!view) return { ok: false, message: `Cannot find view "${e.name.trim()}".` };
     const b = new ChangeSetBuilder(this.model);
-    if (e.kind === 'view-delete') b.removeTableRecord('views', view.handle);
-    else if (e.kind === 'view-category') {
+    if (e.kind === 'view-delete') {
+      dropViewLayers(b, this.model, view);
+      b.removeTableRecord('views', view.handle);
+    } else if (e.kind === 'view-layers') {
+      if (e.save) {
+        const why = saveViewLayers(b, this.model, view);
+        if (why) return { ok: false, message: why };
+      } else dropViewLayers(b, this.model, view);
+    } else if (e.kind === 'view-restore') {
+      restoreViewLayers(b, this.model, view);
+    } else if (e.kind === 'view-category') {
       const category = viewCategory(e.category);
       const problem = viewCategoryProblem(category);
       if (problem) return { ok: false, message: problem };
@@ -890,9 +933,11 @@ export class EngineSession {
         return { ok: false, message: `A view named "${other.name}" already exists.` };
       }
       if (name === view.name) return { ok: true, change: {} };
+      renameViewLayers(b, this.model, view, name);
       b.updateTableRecord('views', view.handle, { name });
     }
     const change = b.build();
+    if (isEmptyChangeSet(change)) return { ok: true, change };
     this.model.apply(change);
     this.#step('VIEW', change);
     return { ok: true, change };
