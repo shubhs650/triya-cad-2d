@@ -17,7 +17,7 @@
 // - "Enter a page setup name" (part 6) takes a named page setup of the space's kind (model
 //   space's, or the layouts'), case aside, or Enter for the space's own; the defaults that follow
 //   are that page setup's. A name it lacks is reported and asked again (AutoCAD's help is silent).
-// - The View plot area is not offered (M6-04), as the dialog does not offer it.
+// - The View plot area is not offered (M6-04 part 2), as the dialog does not offer it.
 // - Shade plot and "Hide paperspace objects" are 3D settings: every answer is taken and the 2D
 //   plot is the same, as AutoCAD's own is for 2D objects. "Hide paperspace objects" defaults to
 //   the page setup's flag 8 and is kept, as the Plot dialog keeps it (M6-04).
