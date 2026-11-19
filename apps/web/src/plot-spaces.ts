@@ -28,5 +28,6 @@ export async function plotSpaceOf(
     namedPlotStyles: here.namedPlotStyles ?? false,
     userTables,
     pageSetups: pageSetupsOf(doc.opened.init.objects, block === doc.opened.modelSpace),
+    appIds: doc.opened.init.tables?.appIds,
   });
 }

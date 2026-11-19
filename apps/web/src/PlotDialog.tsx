@@ -32,6 +32,10 @@
 // M2-45: Name opens on the named page setup the layout has applied (its LAYOUT's DXF 1), with the
 // layout's own settings; Apply to Layout writes the Name shown as the one applied ("<None>" none).
 // A name the drawing has no page setup of (deleted since) is listed too: it is what is applied.
+//
+// M6-04: Plot options add "Plot transparency" and, for a layout, "Hide paperspace objects", in
+// AutoCAD's order; Paper size lists "Custom size" last, with its width and height in millimetres
+// (AutoCAD defines one in its plotter's configuration, which Triya's plotters have none of).
 import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -41,7 +45,9 @@ import { engines } from './engine/registry';
 import { rasterSize, type PlotStyleTable } from '@triya/render';
 import { lastPlotSettings, previewMode, plotRequest, previewOf } from './plot-preview';
 import {
+  CUSTOM_PAPER,
   LAYOUT_PAPER,
+  MAX_PAPER_MM,
   appliedPageSetup,
   PLOT_DEVICES,
   PLOT_SCALES,
@@ -639,6 +645,7 @@ function PlotForm({
   // The page setup's own paper: a layout's, or one model space's page setup states that the
   // list lacks (part 4).
   const layoutPaper = ownPaperLabel(space);
+  const custom = s.customPaper ?? { width: paper.width, height: paper.height };
   return (
     <div className="plot-form">
       <Group label="Printer/plotter">
@@ -714,7 +721,14 @@ function PlotForm({
         <select
           aria-label="Paper size"
           value={s.paper}
-          onChange={(e) => set({ paper: e.currentTarget.value })}
+          onChange={(e) => {
+            const chosen = e.currentTarget.value;
+            // A custom size starts as the paper chosen before it.
+            set({
+              paper: chosen,
+              ...(chosen === CUSTOM_PAPER && !s.customPaper && { customPaper: custom }),
+            });
+          }}
         >
           {layoutPaper && <option value={LAYOUT_PAPER}>{layoutPaper}</option>}
           {PAPER_SIZES.map((p) => (
@@ -722,7 +736,23 @@ function PlotForm({
               {`${p.name} (${p.width} × ${p.height} mm)`}
             </option>
           ))}
+          <option value={CUSTOM_PAPER}>Custom size</option>
         </select>
+        {s.paper === CUSTOM_PAPER && (
+          <div className="plot-custom-paper">
+            <NumberField
+              label="Width (mm):"
+              value={s.customPaper?.width ?? 0}
+              onChange={(width) => set({ customPaper: { ...(s.customPaper ?? custom), width } })}
+            />
+            <NumberField
+              label="Height (mm):"
+              value={s.customPaper?.height ?? 0}
+              onChange={(height) => set({ customPaper: { ...(s.customPaper ?? custom), height } })}
+            />
+            <p className="plot-note">{`1 to ${MAX_PAPER_MM} mm each way.`}</p>
+          </div>
+        )}
       </Group>
       <Group label="Plot area">
         <label className="cad-dialog-field">
@@ -838,6 +868,11 @@ function PlotForm({
           onChange={(lineweights) => set({ lineweights })}
         />
         <Check
+          label="Plot transparency"
+          checked={s.transparency}
+          onChange={(transparency) => set({ transparency })}
+        />
+        <Check
           label="Plot with plot styles"
           checked={s.plotStyles}
           onChange={(plotStyles) => set({ plotStyles, ...(plotStyles && { lineweights: true }) })}
@@ -847,6 +882,13 @@ function PlotForm({
             label="Plot paperspace last"
             checked={s.paperspaceLast}
             onChange={(paperspaceLast) => set({ paperspaceLast })}
+          />
+        )}
+        {layout && (
+          <Check
+            label="Hide paperspace objects"
+            checked={s.hidePaperspace}
+            onChange={(hidePaperspace) => set({ hidePaperspace })}
           />
         )}
       </Group>

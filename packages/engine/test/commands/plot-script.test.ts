@@ -46,6 +46,7 @@ const MODEL: PlotScriptSetup = {
     lineweights: true,
     scaleLineweights: false,
     paperspaceLast: false,
+    hidePaperspace: false,
   },
 };
 
@@ -66,6 +67,7 @@ const LAYOUT: PlotScriptSetup = {
     center: false,
     offset: { x: 0, y: 0 },
     paperspaceLast: true,
+    hidePaperspace: true,
   },
 };
 
@@ -357,7 +359,8 @@ describe('-PLOT', () => {
       ['Scale lineweights with plot scale? [Yes/No] <No>:', 'Y'],
       // Flag 512 (paperspace last) is set, so paper space is not plotted first.
       ['Plot paper space first? [Yes/No] <No>:', 'Y'],
-      ['Hide paperspace objects? [Yes/No] <No>:', ''],
+      // M6-04: flag 8 (Hide paperspace objects) is set, and the answer is kept.
+      ['Hide paperspace objects? [Yes/No] <Yes>:', 'N'],
       ['Enter file name <plan-Layout1.pdf>:', ''],
       ['Save changes to page setup? [Yes/No] <No>:', ''],
       ['Proceed with plot? [Yes/No] <Yes>:', ''],
@@ -374,6 +377,7 @@ describe('-PLOT', () => {
       table: '',
       scaleLineweights: true,
       paperspaceLast: false,
+      hidePaperspace: false,
     });
   });
 
