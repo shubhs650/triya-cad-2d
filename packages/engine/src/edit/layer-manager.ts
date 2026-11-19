@@ -130,6 +130,20 @@ export function layerPropsChange(
   handles: readonly Handle[],
   props: LayerProps,
 ): ChangeSet | string {
+  const b = new ChangeSetBuilder(model);
+  return setLayerProps(b, model, handles, props) ?? b.build();
+}
+
+/**
+ * {@link layerPropsChange} into `b` (-LAYER builds in its command's edit, M5-18): undefined
+ * when set, otherwise why not, with nothing built.
+ */
+export function setLayerProps(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  handles: readonly Handle[],
+  props: LayerProps,
+): string | undefined {
   const layers = layersOf(model, handles);
   if (typeof layers === 'string') return layers;
   const problem = propsProblem(model, props);
@@ -151,14 +165,13 @@ export function layerPropsChange(
       if (isCurrent(model, l)) rename = props.name;
     }
   }
-  const b = new ChangeSetBuilder(model);
   for (const l of layers) {
     const patch = patchOf(l, props);
     if (Object.keys(patch).length > 0) b.updateTableRecord('layers', l.handle, patch);
   }
   // $CLAYER names the current layer, so it follows a rename.
   if (rename !== undefined) b.setHeader('$CLAYER', rename);
-  return b.build();
+  return undefined;
 }
 
 /** AutoCAD's name for a new layer: Layer1, Layer2, …, the first no layer has. */
@@ -184,12 +197,14 @@ export function newLayerChange(
 /**
  * `newLayerChange` into a builder (LAYMCH's Change to Layer makes the layer typed and moves the
  * objects to it in one step): the new layer, or why it cannot be made, with nothing added.
+ * `own` replaces the properties taken from `like` (-LAYER's Make and New, M5-18).
  */
 export function newLayer(
   b: ChangeSetBuilder,
   model: DocumentModel,
   like: Handle | undefined,
   name: string,
+  own?: Pick<LayerRecord, 'color' | 'linetype' | 'lineweight' | 'transparency'>,
 ): LayerRecord | string {
   const why = nameProblem(model, name);
   if (why) return why;
@@ -210,6 +225,7 @@ export function newLayer(
     frozen: isXref(base) ? false : base.frozen,
     locked: base.locked,
     ...(base.plotStyle !== undefined && { plotStyle: base.plotStyle }),
+    ...own,
   });
 }
 

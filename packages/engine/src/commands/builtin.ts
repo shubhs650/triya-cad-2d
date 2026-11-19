@@ -77,6 +77,7 @@ import { viewCommand } from './view/named-view';
 import { panCommand, regenCommand, zoomCommand } from './view/zoom';
 import { UNDO_COMMANDS } from './undo-commands';
 import { underlayLayersCommand } from './underlay-layers';
+import { layerCloseCommand, layerCommand } from './layer';
 import { layerStateCommand } from './layer-states';
 import { layerToolCommands } from './layer-tools';
 import { laydelCommand, laymrgCommand } from './layer-cleanup';
@@ -207,6 +208,8 @@ export function builtinCommands(): CommandRegistry {
     laywalkCommand(),
     layerpCommand(),
     layerpmodeCommand(),
+    layerCommand(),
+    layerCloseCommand(),
     layerStateCommand(),
     ...XREF_COMMANDS.map((make) => make()),
     xclipCommand(),

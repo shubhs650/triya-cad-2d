@@ -262,6 +262,8 @@ describe('completions', () => {
       { name: 'LINE', alias: 'L' },
       { name: 'LAYCUR' },
       { name: 'LAYDEL' },
+      { name: 'LAYER' },
+      { name: 'LAYERCLOSE' },
       { name: 'LAYERP' },
       { name: 'LAYERPMODE' },
       { name: 'LAYERSTATE' },

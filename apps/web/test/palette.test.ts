@@ -163,6 +163,9 @@ describe('palette search', () => {
       'LAYCUR',
       // M5-06 part 2: LAYDEL, LAYERP, LAYERPMODE and LAYMRG.
       'LAYDEL',
+      // M5-18: LAYER (and -LAYER) and LAYERCLOSE.
+      'LAYER',
+      'LAYERCLOSE',
       'LAYERP',
       'LAYERPMODE',
       'LAYERSTATE',
