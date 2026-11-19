@@ -169,4 +169,65 @@ test.describe('document tabs', () => {
     await expect(layoutTab('Layout1')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('space')).toHaveText('PAPER');
   });
+
+  // M5-15: the preview used to reflow as each picture came in (a stand-in's 160 x 110 slot took
+  // the picture's own size, and the right-edge clamp moved the preview 8 px left per picture),
+  // so the thumbnail under a resting pointer slid away from it: the pointer left the preview and
+  // the drawing went back, while the test's next look still expected the layout.
+  test('keeps a thumbnail under the resting pointer while the pictures come in', async ({
+    page,
+  }) => {
+    // Render workers made while `triyaHoldRender` is set keep their replies until it is
+    // cleared: the layouts not shown yet are pictured only after the pointer rests.
+    await page.addInitScript(() => {
+      const w = window as unknown as { triyaHoldRender?: boolean; triyaRelease?: () => void };
+      const held: (() => void)[] = [];
+      w.triyaRelease = () => {
+        w.triyaHoldRender = false;
+        for (const f of held.splice(0)) f();
+      };
+      const Base = window.Worker;
+      window.Worker = class extends Base {
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super(url, options);
+          if (!w.triyaHoldRender || !String(url).includes('render')) return;
+          const add = this.addEventListener.bind(this) as Worker['addEventListener'];
+          this.addEventListener = ((type: string, listener: EventListener, o?: unknown) => {
+            if (type !== 'message') return add(type, listener, o as AddEventListenerOptions);
+            return add('message', (e) => {
+              if (w.triyaHoldRender) held.push(() => listener.call(this, e));
+              else listener.call(this, e);
+            });
+          }) as Worker['addEventListener'];
+        }
+      };
+    });
+    await openBoth(page);
+    await docTabs(page).first().click();
+    await expectShown(page, DXF_NAME);
+    await page.evaluate(() => {
+      (window as unknown as { triyaHoldRender: boolean }).triyaHoldRender = true;
+    });
+
+    await docTabs(page).nth(1).hover();
+    const dwg = page.getByRole('group', { name: `${DWG_NAME} preview` });
+    const layout2 = dwg.getByRole('button', { name: 'Layout2' });
+    const thumbs = dwg.locator('canvas.thumbnail');
+    // Model's thumbnail is its canvas's last frame; the layouts wait for their pictures.
+    await expect(thumbs.first()).toHaveAttribute('data-drawn', 'true');
+    await expect(thumbs.nth(1)).not.toHaveAttribute('data-drawn', 'true');
+    const before = (await layout2.boundingBox())!;
+    // Near the thumbnail's lower edge, where a preview that shrinks leaves the pointer behind.
+    await layout2.hover({ position: { x: before.width / 2, y: before.height - 6 } });
+    await expect(page.getByTestId('space')).toHaveText('PAPER');
+
+    await page.evaluate(() => (window as unknown as { triyaRelease: () => void }).triyaRelease());
+    for (let i = 1; i < 4; i++) {
+      await expect(thumbs.nth(i)).toHaveAttribute('data-drawn', 'true', { timeout: 30_000 });
+    }
+    expect(await layout2.boundingBox()).toEqual(before);
+    await expect(dwg).toBeVisible();
+    await expect(page.getByTestId('space')).toHaveText('PAPER');
+    await expect(docTabs(page).nth(1)).toHaveAttribute('aria-selected', 'true');
+  });
 });
