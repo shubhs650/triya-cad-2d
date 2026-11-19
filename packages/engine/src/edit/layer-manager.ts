@@ -36,6 +36,8 @@ export interface LayerProps {
   readonly transparency?: Transparency;
   /** '' takes the description off. */
   readonly description?: string;
+  /** A named plot style (ACAD_PLOTSTYLENAME) of the drawing (-LAYER PStyle, M5-18 part 2). */
+  readonly plotStyle?: Handle;
 }
 
 /** DXF 70 bit 16: a record that came in with an xref. */
@@ -82,6 +84,8 @@ function propsProblem(model: DocumentModel, p: LayerProps): string | undefined {
     return 'Invalid color.';
   if (p.linetype !== undefined && !model.tables.linetypes.has(p.linetype))
     return `No linetype ${p.linetype}.`;
+  if (p.plotStyle !== undefined && !model.tables.plotStyles.has(p.plotStyle))
+    return `No plot style ${p.plotStyle}.`;
   const w = p.lineweight;
   if (
     w !== undefined &&
@@ -104,8 +108,17 @@ const sameTransparency = (a: Transparency, b: Transparency) =>
 /** The fields of `p` that change `l`, as a record patch. */
 function patchOf(l: LayerRecord, p: LayerProps): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of ['name', 'on', 'frozen', 'locked', 'plot', 'linetype', 'lineweight'] as const)
-    if (p[k] !== undefined && p[k] !== l[k]) out[k] = p[k];
+  const keys = [
+    'name',
+    'on',
+    'frozen',
+    'locked',
+    'plot',
+    'linetype',
+    'lineweight',
+    'plotStyle',
+  ] as const;
+  for (const k of keys) if (p[k] !== undefined && p[k] !== l[k]) out[k] = p[k];
   if (p.color && !sameColor(p.color, l.color)) out.color = p.color;
   if (p.transparency && !sameTransparency(p.transparency, l.transparency))
     out.transparency = p.transparency;

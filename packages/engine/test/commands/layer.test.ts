@@ -10,7 +10,7 @@ import {
   type LayerRecord,
   type ViewRequest,
 } from '../../src/index';
-import { entityInit, layer, linetype, lineGeom, sampleInit } from '../model/fixtures';
+import { entityInit, layer, linetype, lineGeom, record, sampleInit } from '../model/fixtures';
 import { host } from './edit-harness';
 
 const L0 = '10';
@@ -28,19 +28,34 @@ const CONTINUOUS = '14';
 const DASHED = '15';
 
 const OPTIONS =
-  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/Description]';
+  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/Freeze/Thaw/LOck/Unlock/stAte/Description]';
+/** In a drawing with named plot styles ($PSTYLEMODE 0). */
+const NAMED_OPTIONS =
+  '[?/Make/Set/New/Rename/ON/OFF/Color/Ltype/LWeight/TRansparency/Plot/PStyle/Freeze/Thaw/LOck/Unlock/stAte/Description]';
+const NORMAL = '80';
+const HEAVY = '81';
+const LIGHT = '82';
 
 /**
  * Four layers, each holding one line from x 0 to 10: 0 at y 0, WALLS at y 10, DOORS at y 20 and
  * NOTES at y 30. WALLS is current. The drawing has the Continuous and DASHED linetypes.
  */
-function setup(o: { layers?: Partial<Record<string, Partial<LayerRecord>>> } = {}) {
+function setup(
+  o: { layers?: Partial<Record<string, Partial<LayerRecord>>>; namedPlotStyles?: boolean } = {},
+) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
-    header: new Map([...(init.header ?? []), ['$CLAYER', 'WALLS']]),
+    header: new Map([
+      ...(init.header ?? []),
+      ['$CLAYER', 'WALLS'],
+      ['$PSTYLEMODE', o.namedPlotStyles ? 0 : 1],
+    ]),
     tables: {
       ...init.tables,
+      plotStyles: o.namedPlotStyles
+        ? [record(NORMAL, 'Normal'), record(HEAVY, 'Heavy'), record(LIGHT, 'Light')]
+        : [],
       linetypes: [linetype(CONTINUOUS, 'Continuous'), linetype(DASHED, 'DASHED')],
       layers: HANDLES.map((h) => ({ ...layer(h, NAMES[h]!), ...o.layers?.[h] })),
     },
@@ -435,6 +450,39 @@ describe('-LAYER', () => {
         expect.stringMatching(/^"NOTES" +On +30 +"Continuous" +0\.25mm +0 +No plot$/),
       ]),
     );
+  });
+
+  it('PStyle sets a named plot style, offered only with named plot styles', async () => {
+    const t = setup({ namedPlotStyles: true });
+    await t.bus.script(['-LAYER']);
+    expect(t.bus.promptText).toBe(`Enter an option ${NAMED_OPTIONS}:`);
+    await t.bus.script(['PS']);
+    expect(t.bus.promptText).toBe('Enter plot style or [?] <Normal>:');
+    await t.bus.script(['?']);
+    expect(t.bus.promptText).toBe('Enter plot style(s) to list <*>:');
+    await t.bus.script(['h*']);
+    expect(t.log.at(-1)).toBe('Heavy');
+    await t.bus.script(['?', '']);
+    expect(t.log.slice(-3)).toEqual(['Heavy', 'Light', 'Normal']);
+    await t.bus.script(['heavy']);
+    expect(t.bus.promptText).toBe('Enter name list of layer(s) for plot style current <WALLS>:');
+    await t.bus.script(['DOORS,NOTES']);
+    expect(t.lay(DOORS).plotStyle).toBe(HEAVY);
+    expect(t.lay(NOTES).plotStyle).toBe(HEAVY);
+    // Enter takes Normal, and the current layer.
+    await t.bus.script(['PS', '', '']);
+    expect(t.lay(WALLS).plotStyle).toBe(NORMAL);
+    await t.bus.script(['PS', 'Missing']);
+    expect(t.log.at(-1)).toBe('Cannot find plot style "Missing".');
+    await t.bus.script(['']);
+    expect(t.bus.undo.state.undoable).toBe(1);
+    await t.bus.script(['U']);
+    expect(t.lay(DOORS).plotStyle).toBeUndefined();
+
+    // A colour-dependent drawing has no PStyle.
+    const c = setup();
+    await c.bus.script(['-LAYER', 'PS']);
+    expect(c.bus.promptText).toBe(`Enter an option ${OPTIONS}:`);
   });
 
   it('an option that changes nothing is no undo step', async () => {
