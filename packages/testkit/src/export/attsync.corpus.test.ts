@@ -84,7 +84,7 @@ function blockToSync(
 }
 
 /** Drawings with no block ATTSYNC can take. */
-const NO_ATTRIBUTE_BLOCK = 96;
+const NO_ATTRIBUTE_BLOCK = 97;
 
 describe('a new block and ATTSYNC on the public corpus (M5-02 part 2)', () => {
   let synced = 0;

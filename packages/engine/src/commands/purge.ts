@@ -16,8 +16,9 @@
 // quote AutoCAD's message).
 //
 // What the categories hold and what never goes is `edit/purge.ts`. Detail and section view
-// styles are model documentation's (PRD non-goal 1); orphaned DGN linestyle data stays as read
-// (M5-09's next part): that option says so. Shape files (M5-09 part 4) are named by their file,
+// styles are model documentation's (PRD non-goal 1). Orphaned data (M5-09 part 5) removes the DGN
+// linestyle data no linetype uses (`orphanedData`), worded as the other unnamed objects are, "4
+// orphaned data objects deleted." or "No orphaned data found.". Shape files (M5-09 part 4) are named by their file,
 // "Deleting shape file "ltypeshp.shx"." (the help quotes no message for them).
 //
 // PURGE without the dash opens the Purge dialog (M5-09 part 2; AutoCAD Help, "Purge Dialog
@@ -26,7 +27,7 @@
 //     items to check; Preview; Options "Confirm each item to be purged" (the Confirm Purge dialog,
 //     `PurgeConfirmRequest`: Purge this item, Purge all items, Skip this item) and "Purge nested
 //     items"; Purge Unnamed Objects "Zero-length geometry", "Empty text objects" and "Orphaned
-//     data"; Purge Checked Items and Purge All.
+//     data" (each with how many it would take); Purge Checked Items and Purge All.
 //   - Find Non-Purgeable Items: "Named Items In Use", with each item's Possible Reasons, its
 //     Details ("the object's size, location, and the total number of those objects in your
 //     drawing": the objects using it, the spaces they are in and the extents of those in the
@@ -38,8 +39,7 @@
 // Settled for the common drafter expectation (noted in the PR): the help says Purge Nested Items
 // works "only when you select ... All Items or Blocks in the tree view" or Purge All; Triya applies
 // it to every purge, so a checked block's layers go with it. Registered applications are left to
-// -PURGE, as the help's note says. Orphaned data stays as read (the option is shown unavailable):
-// the DGN linestyle data the reader keeps is M5-09's next part. Esc in Confirm Purge skips the
+// -PURGE, as the help's note says. Esc in Confirm Purge skips the
 // item, as the dialog's close button does in a task dialog. Unnamed objects are not confirmed.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
@@ -49,8 +49,10 @@ import {
   PURGE_RULES,
   emptyTextObjects,
   objectsUsing,
+  orphanedData,
   purgeClosure,
   purgeInto,
+  purgeOrphanedInto,
   purgeState,
   zeroLengthObjects,
   type PurgeCategory,
@@ -138,6 +140,14 @@ async function* purgeNamed(
   }
 }
 
+/** The orphaned DGN linestyle data removed: what it did, undefined when there was none. */
+function purgeOrphaned(ctx: CommandContext): string | undefined {
+  const orphaned = orphanedData(ctx.model);
+  if (orphaned.length === 0) return undefined;
+  ctx.edit((b) => purgeOrphanedInto(b, ctx.model, orphaned));
+  return `${orphaned.length} orphaned data object${orphaned.length === 1 ? '' : 's'} deleted.`;
+}
+
 /** Zero-length geometry or empty text objects deleted. */
 function purgeUnnamed(ctx: CommandContext, what: 'zero' | 'empty'): void {
   const ids = what === 'zero' ? zeroLengthObjects(ctx.model) : emptyTextObjects(ctx.model);
@@ -199,9 +209,10 @@ export interface PurgeRequest {
   readonly purgeable: readonly PurgeItem[];
   /** Named Items In Use. */
   readonly inUse: readonly PurgeInUseRow[];
-  /** How many zero-length and empty text objects a purge would delete. */
+  /** How many zero-length and empty text objects, and orphaned data objects, a purge would delete. */
   readonly zeroLength: number;
   readonly emptyText: number;
+  readonly orphaned: number;
   readonly settings: PurgeSettings;
   /** The item in use whose Details were asked for. */
   readonly details?: PurgeDetails;
@@ -304,6 +315,10 @@ async function* purgeFromDialog(
     ctx.edit((b) => eraseObjects(b, ctx.model, found));
     said.push(`${found.length} ${label} object${found.length === 1 ? '' : 's'} deleted.`);
   }
+  if (settings.orphaned) {
+    const done = purgeOrphaned(ctx);
+    if (done) said.push(done);
+  }
   const note = said.length > 0 ? said.join(' ') : 'Nothing was purged.';
   if (said.length > 0) ctx.message(note);
   return note;
@@ -364,6 +379,7 @@ async function* purgeDialog(
         inUse: listed(state.inUse),
         zeroLength: zeroLengthObjects(ctx.model).length,
         emptyText: emptyTextObjects(ctx.model).length,
+        orphaned: orphanedData(ctx.model).length,
         settings: memory.settings,
         ...(shown && { details: shown }),
         ...(note !== undefined && { note }),
@@ -373,7 +389,7 @@ async function* purgeDialog(
     shown = undefined;
     if (a.kind !== 'dialog') return;
     const answer: PurgeAnswer = a.purge ?? {};
-    if (answer.settings) memory.settings = { ...answer.settings, orphaned: false };
+    if (answer.settings) memory.settings = answer.settings;
     if (answer.view) view = answer.view;
     if (a.action === 'ok') return;
     if (a.action === 'select' && answer.details !== undefined) {
@@ -422,7 +438,7 @@ export function purgeCommand(): CommandDef {
         return;
       }
       if (type === 'orphaned') {
-        ctx.message('Orphaned data is kept as read: Triya does not purge it.');
+        ctx.message(purgeOrphaned(ctx) ?? 'No orphaned data found.');
         return;
       }
       if (!isCategory(type) && type !== 'all') {

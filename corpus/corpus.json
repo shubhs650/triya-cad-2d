@@ -3447,6 +3447,30 @@
       "knownIssues": []
     },
     {
+      "path": "public/self-authored/dgn-linestyles.dxf",
+      "version": "AC1032",
+      "format": "dxf-ascii",
+      "source": "self-authored",
+      "license": "MIT",
+      "sha256": "0bb085178761a2fa1afeefeef37302777e6364df802887a980cddca654619316",
+      "tags": [
+        "blocks",
+        "dgn-linestyles",
+        "dxf-ascii",
+        "linetypes",
+        "r2018"
+      ],
+      "references": [],
+      "tolerance": {
+        "pixelMismatch": 2,
+        "ssim": 0.95
+      },
+      "fonts": [
+        "txt"
+      ],
+      "knownIssues": []
+    },
+    {
       "path": "public/self-authored/viewport-overrides.dxf",
       "version": "AC1032",
       "format": "dxf-ascii",

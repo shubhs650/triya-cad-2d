@@ -66,7 +66,7 @@ function referenceToEdit(model: DocumentModel): Target | undefined {
 }
 
 /** Drawings with no reference the test can edit. */
-const NO_REFERENCE = 88;
+const NO_REFERENCE = 89;
 
 const bus = (model: DocumentModel) =>
   new PromptBus({
