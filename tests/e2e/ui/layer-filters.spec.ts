@@ -17,6 +17,9 @@
 // M5-07 part 9: a group filter's Select Layers: Add and Replace ask for objects on the command
 // line while the manager stays open, and the layers of those selected join the group or become
 // its layers.
+// M5-19 part 2: the Unreconciled New Layers node. With LAYEREVAL 1, the title block's file found
+// brings TB-FRAME and TB-LOGO as new (the host keeps only xref-child-tb|TB-LINES); the node lists
+// them until the layer list's Reconcile Layer reconciles them, and goes once none is left.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { DXF, enterCommand, expectShown, openWithDrop, openWithPicker } from '../app/page';
@@ -295,6 +298,66 @@ test('the Xref node lists each xref’s layers and takes the menu’s Visibility
   await node(page, 'xref-child-tb').click();
   await expect(toggle('On', 'xref-child-tb|TB-FRAME')).toHaveAttribute('aria-pressed', 'true');
   await shot('2-xref-node-layers.png');
+});
+
+test('Unreconciled New Layers lists new xref layers until Reconcile Layer (M5-19 part 2)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const fixtures = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/xref');
+  const prompt = page.getByTestId('command-prompt');
+  const listMenu = page.getByRole('menu', { name: 'Layer list' });
+  const reconcile = listMenu.getByRole('menuitem', { name: 'Reconcile Layer' });
+  const row = (name: string) => listed(page).filter({ hasText: name });
+  await page.goto(app.url);
+  await openWithPicker(page, path.join(fixtures, 'xref-parent.dxf'));
+  await expectShown(page, 'xref-parent.dxf');
+  await enterCommand(page, 'LAYEREVAL');
+  await expect(prompt).toHaveText('Enter new value for LAYEREVAL <0>:');
+  await enterCommand(page, '1');
+  await expect(prompt).toHaveText('Command:');
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Layers' })
+    .click();
+  await expect(palette(page)).toBeVisible();
+  await expect(node(page, 'Unreconciled New Layers')).toHaveCount(0);
+
+  // The title block's file found: its layers the host had no record of are new.
+  await openWithDrop(page, path.join(fixtures, 'xref-child-tb.dxf'));
+  await expect(node(page, 'Unreconciled New Layers')).toBeVisible({ timeout: 30_000 });
+  await node(page, 'Unreconciled New Layers').click();
+  await expect(listed(page)).toHaveText(['xref-child-tb|TB-FRAME', 'xref-child-tb|TB-LOGO']);
+  await expect(count(page)).toContainText('Unreconciled New Layers: 2 layers displayed of ');
+
+  // Reconcile Layer on one of them: it leaves the node.
+  await row('xref-child-tb|TB-FRAME').click({ button: 'right' });
+  await expect(reconcile).toBeEnabled();
+  await shot('1-reconcile-layer.png');
+  await reconcile.click();
+  await expect(listMenu).toBeHidden();
+  await expect(listed(page)).toHaveText(['xref-child-tb|TB-LOGO']);
+
+  // A reconciled layer's menu has no Reconcile Layer.
+  await node(page, 'All').click();
+  await row('xref-child-tb|TB-LINES').click({ button: 'right' });
+  await expect(listMenu).toBeVisible();
+  await expect(reconcile).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(listMenu).toBeHidden();
+
+  // The last one reconciled: the node goes, All is shown.
+  await node(page, 'Unreconciled New Layers').click();
+  await row('xref-child-tb|TB-LOGO').click({ button: 'right' });
+  await reconcile.click();
+  await expect(node(page, 'Unreconciled New Layers')).toHaveCount(0);
+  await expect(node(page, 'All')).toHaveAttribute('aria-selected', 'true');
+  await shot('2-all-reconciled.png');
+
+  // U undoes it: the node is back.
+  await enterCommand(page, 'U');
+  await expect(node(page, 'Unreconciled New Layers')).toBeVisible();
 });
 
 test('Select Layers adds or replaces a group’s layers with those of objects selected (M5-07 part 9)', async ({

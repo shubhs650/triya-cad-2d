@@ -10,6 +10,10 @@
 //   are purged (one LAYER undo step).
 // - With a group filter selected in the filter tree (M5-07 part 5), Remove From Group Filter takes
 //   the selected layers out of it (one LAYER step).
+// - Reconcile Layer (M5-19 part 2; Help: "Removes new layers from the unreconciled layers filter.
+//   Available only when an unreconciled layer is selected") reconciles the selected layers that
+//   are unreconciled, one LAYER step. Triya shows it only then, so the menu otherwise keeps the
+//   items it had.
 import { useEffect, useRef, useState } from 'react';
 import type { Handle } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
@@ -23,6 +27,7 @@ export type LayerListAction =
   | 'description'
   | 'merge'
   | 'removeFromGroup'
+  | 'reconcile'
   | 'all'
   | 'clear'
   | 'allButCurrent'
@@ -36,6 +41,8 @@ interface Item {
   readonly needs?: 'one' | 'any';
   /** Shown only with a group filter selected. */
   readonly group?: true;
+  /** Shown only with an unreconciled layer selected. */
+  readonly reconcile?: true;
 }
 
 const ITEMS: readonly Item[] = [
@@ -46,6 +53,7 @@ const ITEMS: readonly Item[] = [
   { action: 'description', label: 'Change Description', needs: 'one' },
   { action: 'merge', label: 'Merge Selected Layer(s) to...', needs: 'any', separator: true },
   { action: 'removeFromGroup', label: 'Remove From Group Filter', needs: 'any', group: true },
+  { action: 'reconcile', label: 'Reconcile Layer', needs: 'any', reconcile: true },
   { action: 'all', label: 'Select All', separator: true },
   { action: 'clear', label: 'Clear All' },
   { action: 'allButCurrent', label: 'Select All but Current' },
@@ -56,6 +64,7 @@ export function LayerListMenu({
   at,
   selected,
   group = false,
+  reconcile = false,
   onAction,
   onClose,
 }: {
@@ -64,6 +73,8 @@ export function LayerListMenu({
   selected: number;
   /** Whether a group filter is selected in the filter tree. */
   group?: boolean;
+  /** Whether an unreconciled layer is selected (`reconcilable`). */
+  reconcile?: boolean;
   onAction: (a: LayerListAction) => void;
   onClose: () => void;
 }) {
@@ -103,7 +114,7 @@ export function LayerListMenu({
         }
       }}
     >
-      {ITEMS.filter((it) => group || !it.group).map((it) => (
+      {ITEMS.filter((it) => (group || !it.group) && (reconcile || !it.reconcile)).map((it) => (
         <button
           key={it.action}
           type="button"
@@ -124,6 +135,10 @@ export function LayerListMenu({
     </div>
   );
 }
+
+/** Whether Reconcile Layer is offered for the layers `selected`: one of them is unreconciled. */
+export const reconcilable = (selected: readonly LayerRow[]): boolean =>
+  selected.some((r) => r.unreconciled === true);
 
 /** The layers a merge may go into: those not merged, and none of an xref's. */
 export function mergeTargets(rows: readonly LayerRow[], merged: ReadonlySet<Handle>): LayerRow[] {

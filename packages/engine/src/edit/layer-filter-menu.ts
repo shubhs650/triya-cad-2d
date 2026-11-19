@@ -25,6 +25,11 @@
 // (`xref|layer`, a nested xref's under its own name, as it is loaded as an xref of its own), the
 // Xref node every xref-dependent layer. The menu's Visibility, Lock and Isolate Group act on them
 // as on any node.
+//
+// The Unreconciled New Layers node (M5-19 part 2; Help, "Layer Properties Manager": the filter
+// lists the new layers an evaluation of the layer list found and nobody has reconciled yet,
+// LAYEREVAL) lists the unreconciled layers. It is there only while one is; the menu acts on its
+// layers as on the Xref node's.
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
@@ -40,9 +45,9 @@ import { filteredLayers } from './layer-filters';
 import { layerPropsChange, layersInUse, type LayerProps } from './layer-manager';
 
 /**
- * A node of the filter tree: All, All Used Layers, a filter's handle, the Xref node
- * (`XREF_NODE`) or an xref's (`xrefNode(name)`). Handles are hexadecimal, so neither Xref
- * spelling can be one.
+ * A node of the filter tree: All, All Used Layers, a filter's handle, Unreconciled New Layers
+ * (`UNRECONCILED_NODE`), the Xref node (`XREF_NODE`) or an xref's (`xrefNode(name)`). Handles
+ * are hexadecimal, so none of these spellings can be one.
  */
 export type LayerFilterNode = 'all' | 'used' | Handle;
 
@@ -53,6 +58,14 @@ const XREF_PREFIX = 'xref:';
 
 /** The node of the xref named `name`: the layers it brings. */
 export const xrefNode = (name: string): LayerFilterNode => `${XREF_PREFIX}${name}`;
+
+/** The Unreconciled New Layers node: every unreconciled layer. */
+export const UNRECONCILED_NODE = 'unreconciled';
+
+/** The unreconciled layers of `layers`, in its order. */
+export function unreconciledLayers(layers: Iterable<LayerRecord>): LayerRecord[] {
+  return [...layers].filter((l) => l.unreconciled === true);
+}
 
 /** The names of the xrefs the Xref node lists, by name (case ignored). */
 export function xrefNodeNames(records: Iterable<BlockTableRecord>): string[] {
@@ -96,6 +109,7 @@ export function filterNodeLayers(
 ): LayerRecord[] | string {
   const layers = [...model.tables.layers.values()];
   if (node === 'all') return layers;
+  if (node === UNRECONCILED_NODE) return unreconciledLayers(layers);
   const xref = xrefNodeLayers(layers, node);
   if (xref) return xref;
   const used = layersInUse(model);

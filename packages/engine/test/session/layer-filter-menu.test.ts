@@ -6,9 +6,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   EngineSession,
+  UNRECONCILED_NODE,
   XREF_NODE,
   filterNodeLayers,
   layerFilterNamed,
+  unreconciledLayers,
   xrefNode,
   xrefNodeNames,
   type CommandOutput,
@@ -297,6 +299,68 @@ describe('the Xref node (M5-07 part 8)', () => {
     ok(s.edit({ kind: 'layer-filter-isolate', node: XREF_NODE }));
     expect(layerOf(s, LAYER_WALLS).on).toBe(false);
     expect(layerOf(s, '72').on).toBe(true);
+  });
+});
+
+// M5-19 part 2: the Unreconciled New Layers node (AutoCAD 2024 Help, "Layer Properties Manager":
+// the filter lists the new layers not yet reconciled; the layer list's Reconcile Layer "Removes
+// new layers from the unreconciled layers filter"). The manager's Reconcile Layer is the `layer`
+// edit with `reconcile`, one LAYER step as -LAYER rEconcile's.
+describe('the Unreconciled New Layers node (M5-19 part 2)', () => {
+  /** The host with the xref PLAN's layers, PLAN|DOORS and PLAN|GRID new since the last load. */
+  function unreconciledInit(): DocumentInit {
+    const init = menuInit();
+    const dependent = (h: string, name: string, unreconciled = false) => ({
+      ...layer(h, name),
+      flags: 48,
+      ...(unreconciled && { unreconciled: true as const }),
+    });
+    return {
+      ...init,
+      tables: {
+        ...init.tables,
+        layers: [
+          ...init.tables!.layers!,
+          dependent('70', 'PLAN|WALLS'),
+          dependent('71', 'PLAN|DOORS', true),
+          dependent('72', 'PLAN|GRID', true),
+        ],
+        blockRecords: [...init.tables!.blockRecords!, { ...blockRecord('80', 'Plan'), flags: 4 }],
+      },
+    };
+  }
+  const names = (s: EngineSession) => {
+    const r = filterNodeLayers(s.model, UNRECONCILED_NODE);
+    return typeof r === 'string' ? r : r.map((l) => l.name);
+  };
+
+  it('lists the unreconciled layers, in the table’s order; none in a drawing without', () => {
+    expect(UNRECONCILED_NODE).toBe('unreconciled');
+    const s = new EngineSession(unreconciledInit());
+    expect(names(s)).toEqual(['PLAN|DOORS', 'PLAN|GRID']);
+    expect(unreconciledLayers(s.model.tables.layers.values()).map((l) => l.handle)).toEqual([
+      '71',
+      '72',
+    ]);
+    expect(names(new EngineSession(menuInit()))).toEqual([]);
+  });
+
+  it('takes Visibility like any node', () => {
+    const s = new EngineSession(unreconciledInit());
+    ok(s.edit({ kind: 'layer-filter-set', node: UNRECONCILED_NODE, set: 'off' }));
+    expect(['70', '71', '72'].map((h) => layerOf(s, h).on)).toEqual([true, false, false]);
+  });
+
+  it('Reconcile Layer takes the layers selected out of it, one LAYER step that U undoes', async () => {
+    const s = new EngineSession(unreconciledInit());
+    // A reconciled layer among those selected is left as it is.
+    ok(s.edit({ kind: 'layer', layer: ['70', '71'], reconcile: true }));
+    expect(names(s)).toEqual(['PLAN|GRID']);
+    expect(layerOf(s, '70').unreconciled).toBeUndefined();
+    await undo(s);
+    expect(names(s)).toEqual(['PLAN|DOORS', 'PLAN|GRID']);
+    ok(s.edit({ kind: 'layer', layer: ['71', '72'], reconcile: true }));
+    expect(names(s)).toEqual([]);
   });
 });
 

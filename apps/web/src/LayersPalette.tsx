@@ -38,6 +38,8 @@
 // Layer Filter Properties, New Group Filter (Alt+G) adds Group Filter1 named in place; layers
 // dragged onto a group filter join it, and the layer list menu's Remove From Group Filter takes
 // them out. Each is one LAYER undo step.
+// M5-19 part 2: while a layer is unreconciled the tree shows Unreconciled New Layers, and the layer
+// list menu's Reconcile Layer reconciles the unreconciled layers selected (one LAYER step).
 import {
   Fragment,
   memo,
@@ -56,6 +58,7 @@ import {
   type RefObject,
 } from 'react';
 import {
+  UNRECONCILED_NODE,
   XREF_NODE,
   isLayerFilter,
   transparencyOf,
@@ -79,6 +82,7 @@ import {
   LayerListMenu,
   MergeToLayerDialog,
   mergeTargets,
+  reconcilable,
   type LayerListAction,
 } from './LayerListMenu';
 import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from './LayerDialogs';
@@ -496,8 +500,15 @@ export function LayersPalette({
   // An xref's node goes with the xref (detached), the Xref node with the last of them.
   const xrefChoice = (c: FilterChoice) =>
     (c === XREF_NODE && xrefs.length > 0) || xrefs.some((n) => xrefNode(n) === c);
+  // Unreconciled New Layers goes once the last of its layers is reconciled (M5-19 part 2).
+  const unreconciled = rows.some((r) => r.unreconciled);
+  const unreconciledChoice = (c: FilterChoice) => c === UNRECONCILED_NODE && unreconciled;
   const chosen: FilterChoice =
-    choice === 'all' || choice === 'used' || filterOf(choice) || xrefChoice(choice)
+    choice === 'all' ||
+    choice === 'used' ||
+    filterOf(choice) ||
+    xrefChoice(choice) ||
+    unreconciledChoice(choice)
       ? choice
       : 'all';
   const chosenFilter = filterOf(chosen);
@@ -642,6 +653,9 @@ export function LayersPalette({
         filter: chosenFilter.handle,
         layers: chosenFilter.layers.filter((h) => !out.has(h)),
       });
+    } else if (a === 'reconcile') {
+      const layers = selectedRows.filter((r) => r.unreconciled).map((r) => r.handle);
+      if (layers.length > 0) void apply({ kind: 'layer', layer: layers, reconcile: true });
     } else if (a === 'all') select(new Set(shown.map((r) => r.handle)));
     else if (a === 'clear') select(new Set());
     else if (a === 'allButCurrent')
@@ -763,7 +777,7 @@ export function LayersPalette({
       filter,
       parent: filter?.parent === undefined ? undefined : filterOf(filter.parent),
       space: inLayout ? doc.block : undefined,
-      xref: xrefChoice(c),
+      predefined: xrefChoice(c) || unreconciledChoice(c),
     };
   };
 
@@ -1108,6 +1122,7 @@ export function LayersPalette({
           <LayerFilterTree
             tree={layerFilterTree(filters)}
             xrefs={xrefs}
+            unreconciled={unreconciled}
             choice={chosen}
             invert={invert}
             renaming={renamingFilter}
@@ -1222,6 +1237,7 @@ export function LayersPalette({
           at={listMenu}
           selected={selectedRows.length}
           group={chosenFilter?.filterType === 'group'}
+          reconcile={reconcilable(selectedRows)}
           onAction={onListAction}
           onClose={() => setListMenu(undefined)}
         />
