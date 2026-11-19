@@ -10,10 +10,12 @@
 // - A filter's name is renamed in place (F2, or a double-click on a group filter; a double-click
 //   on a property filter opens its properties); Enter keeps it, Esc does not, Delete deletes.
 // - Layers dragged from the list onto a group filter are put in it.
+// - When the drawing has xrefs, the Xref node comes after the filters, with a node for each xref
+//   (part 8); their menus offer Visibility, Lock and Isolate Group, not new filters.
 // - Keyboard: ↑/↓ move between the nodes shown, ← closes a node or goes to its parent, → opens
 //   it; the selected node is the tree's one focusable item.
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
-import type { Handle, LayerFilter } from '@triya/engine';
+import { XREF_NODE, xrefNode, type Handle, type LayerFilter } from '@triya/engine';
 import {
   FILTER_MENU,
   filterMenuEnabled,
@@ -39,7 +41,11 @@ interface Shown {
   readonly hasChildren: boolean;
 }
 
-function shownNodes(tree: readonly LayerFilterNode[], closed: ReadonlySet<FilterChoice>): Shown[] {
+function shownNodes(
+  tree: readonly LayerFilterNode[],
+  xrefs: readonly string[],
+  closed: ReadonlySet<FilterChoice>,
+): Shown[] {
   const out: Shown[] = [{ choice: 'all', name: 'All', level: 1, hasChildren: true }];
   if (closed.has('all')) return out;
   out.push({
@@ -64,11 +70,17 @@ function shownNodes(tree: readonly LayerFilterNode[], closed: ReadonlySet<Filter
     }
   };
   walk(tree, 2, 'all');
+  if (xrefs.length === 0) return out;
+  out.push({ choice: XREF_NODE, name: 'Xref', level: 2, parent: 'all', hasChildren: true });
+  if (closed.has(XREF_NODE)) return out;
+  for (const name of xrefs)
+    out.push({ choice: xrefNode(name), name, level: 3, parent: XREF_NODE, hasChildren: false });
   return out;
 }
 
 export function LayerFilterTree({
   tree,
+  xrefs,
   choice,
   invert,
   renaming,
@@ -81,6 +93,8 @@ export function LayerFilterTree({
   onCollapse,
 }: {
   tree: readonly LayerFilterNode[];
+  /** The drawing's xrefs, by name: the Xref node's children. */
+  xrefs: readonly string[];
   choice: FilterChoice;
   invert: boolean;
   /** The filter whose name is being typed in place. */
@@ -98,7 +112,7 @@ export function LayerFilterTree({
   const [closed, setClosed] = useState<ReadonlySet<FilterChoice>>(new Set());
   const [dropping, setDropping] = useState<Handle | undefined>();
   const ref = useRef<HTMLUListElement>(null);
-  const nodes = shownNodes(tree, closed);
+  const nodes = shownNodes(tree, xrefs, closed);
   // The selected node may be inside a closed one: then its nearest open ancestor takes the focus.
   const focusable = nodes.some((n) => n.choice === choice) ? choice : 'all';
   const focus = (c: FilterChoice) =>

@@ -186,6 +186,40 @@ describe('-VIEW and a layer snapshot', () => {
     expect(walls(model).on).toBe(false);
   });
 
+  it('sEttings Layer snapshot saves the layers now with the views named, or drops theirs (M5-07 part 8)', async () => {
+    const { bus, model } = setup();
+    // A second view, saved by -VIEW Window without a snapshot.
+    await bus.script(['-VIEW', 'W', 'Back', '0,0', '10,5']);
+    expect(viewNamed(model, 'Back')?.layerState).toBeUndefined();
+    await bus.script(['-VIEW', 'E', 'L']);
+    expect(bus.promptText).toBe('Enter view name(s) to change or [?]:');
+    await bus.submit('*');
+    expect(bus.promptText).toBe('Save current layer settings with view(s)? [Yes/No] <Yes>:');
+    await bus.submit('');
+    // Both now keep WALLS off, as it is: Front's state overwritten, Back's new.
+    expect(
+      statesOf(model)
+        .map((s) => s.name)
+        .sort(),
+    ).toEqual(['ACAD_VIEWS_Back', 'ACAD_VIEWS_Front']);
+    for (const s of statesOf(model)) {
+      expect(s.mask).toBe(VIEW_LAYER_STATE_MASK);
+      expect(s.layers.find((l) => l.name === 'WALLS')?.on).toBe(false);
+    }
+    expect(viewNamed(model, 'Back')?.layerState).toBe('ACAD_VIEWS_Back');
+    expect(bus.undo.state.nextUndo).toBe('VIEW');
+    // No drops the snapshot of the views named, with its hidden state.
+    await bus.script(['-VIEW', 'E', 'L', 'front', 'N']);
+    expect(viewNamed(model, 'Front')?.layerState).toBeUndefined();
+    expect(statesOf(model).map((s) => s.name)).toEqual(['ACAD_VIEWS_Back']);
+    await bus.script(['-VIEW', 'E', 'L', 'zz']);
+    expect(bus.history.at(-1)).toBe('No matching views found.');
+    // Undo puts Front's back as it was.
+    await bus.script(['U', 'U']);
+    expect(viewNamed(model, 'Front')?.layerState).toBe('ACAD_VIEWS_Front');
+    expect(statesOf(model).map((s) => s.name)).toEqual(['ACAD_VIEWS_Front']);
+  });
+
   it('Delete deletes the snapshot with the view', async () => {
     const { bus, model } = setup();
     await bus.script(['-VIEW', 'D', 'F*']);

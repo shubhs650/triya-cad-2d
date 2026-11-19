@@ -31,7 +31,7 @@ import {
 import { colorCell, compareNames } from './layers';
 
 /** A table as opened with `changes` applied in order, by handle. */
-function tableNow<K extends TableName>(
+export function tableNow<K extends TableName>(
   init: DocumentInit,
   changes: readonly ChangeSet[],
   table: K,

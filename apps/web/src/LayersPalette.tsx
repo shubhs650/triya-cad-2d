@@ -56,8 +56,10 @@ import {
   type RefObject,
 } from 'react';
 import {
+  XREF_NODE,
   isLayerFilter,
   transparencyOf,
+  xrefNode,
   type EditResult,
   type EngineEdit,
   type Handle,
@@ -102,7 +104,9 @@ import { LayerFilterDialog } from './LayerFilterDialog';
 import {
   EMPTY_DEFINITION,
   drawingLayerFilters,
+  drawingXrefs,
   filterCountLine,
+  filterNodeName,
   filterMenuEdit,
   layerFilterSource,
   layerFilterTree,
@@ -484,8 +488,17 @@ export function LayersPalette({
   const filterOf = (c: FilterChoice): LayerFilter | undefined =>
     filters.find((f) => f.handle === c);
   // A filter deleted (or undone away) leaves All chosen.
+  const xrefs = useMemo(
+    () => drawingXrefs(doc.opened.init, engines.changesOf(doc.id)),
+    [doc.opened, doc.id, doc.revision],
+  );
+  // An xref's node goes with the xref (detached), the Xref node with the last of them.
+  const xrefChoice = (c: FilterChoice) =>
+    (c === XREF_NODE && xrefs.length > 0) || xrefs.some((n) => xrefNode(n) === c);
   const chosen: FilterChoice =
-    choice === 'all' || choice === 'used' || filterOf(choice) ? choice : 'all';
+    choice === 'all' || choice === 'used' || filterOf(choice) || xrefChoice(choice)
+      ? choice
+      : 'all';
   const chosenFilter = filterOf(chosen);
   const needsUsed = chosen !== 'all' || filterDialog !== undefined;
   useEffect(() => {
@@ -749,6 +762,7 @@ export function LayersPalette({
       filter,
       parent: filter?.parent === undefined ? undefined : filterOf(filter.parent),
       space: inLayout ? doc.block : undefined,
+      xref: xrefChoice(c),
     };
   };
 
@@ -1088,6 +1102,7 @@ export function LayersPalette({
         ) : (
           <LayerFilterTree
             tree={layerFilterTree(filters)}
+            xrefs={xrefs}
             choice={chosen}
             invert={invert}
             renaming={renamingFilter}
@@ -1181,15 +1196,7 @@ export function LayersPalette({
         </div>
       </div>
       <p className="layer-filter-count" aria-live="polite">
-        {filterCountLine(
-          chosen === 'all'
-            ? 'All'
-            : chosen === 'used'
-              ? 'All Used Layers'
-              : (chosenFilter?.name ?? ''),
-          shown.length,
-          rows.length,
-        )}
+        {filterCountLine(filterNodeName(chosen, chosenFilter), shown.length, rows.length)}
       </p>
       {columnsMenu && (
         <LayerColumnsMenu
