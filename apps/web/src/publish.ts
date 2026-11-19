@@ -29,6 +29,7 @@ import {
   pageSetupOf,
   PLOT_PDF_OPTIONS,
   plotPage,
+  type AppIdNames,
   type PdfOptions,
   type PlotSettings,
   type PlotSpace,
@@ -167,6 +168,8 @@ export function sheetSpace(s: {
   readonly userTables?: ReadonlyMap<string, PlotStyleTable> | undefined;
   /** The drawing's named page setups of the space's kind (part 6). */
   readonly pageSetups?: readonly NamedPageSetup[] | undefined;
+  /** The drawing's APPID records, to read "Plot transparency" (M6-04). */
+  readonly appIds?: AppIdNames | undefined;
 }): PlotSpace {
   const sheet = s.layout && !s.model ? layoutSheet(s.layout) : undefined;
   return {
@@ -175,7 +178,7 @@ export function sheetSpace(s: {
     inches: s.layout?.plot?.paperUnits === 'inches',
     extents: s.extents,
     namedPlotStyles: s.namedPlotStyles ?? false,
-    pageSetup: pageSetupOf(s.layout),
+    pageSetup: pageSetupOf(s.layout, s.appIds),
     userTables: s.userTables,
     pageSetups: s.pageSetups,
     pageSetupName: appliedPageSetupName(s.layout),

@@ -710,7 +710,7 @@ export class CanvasController {
       display,
       limits: this.#limits(),
       namedPlotStyles: this.#header.get('$PSTYLEMODE') === 0,
-      pageSetup: pageSetupOf(setup),
+      pageSetup: pageSetupOf(setup, this.#opened.init.tables?.appIds),
       pageSetups: pageSetupsOf(this.#opened.init.objects, layout === undefined),
       pageSetupName: appliedPageSetupName(setup),
     };
