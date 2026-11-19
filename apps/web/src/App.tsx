@@ -153,7 +153,7 @@ import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { drawingFileReply, type HeldDrawing } from './block-files';
-import { writeXrefFile, xrefDrawingReply } from './xref-files';
+import { writeXrefFile, xrefDrawingReply, xrefFileReply } from './xref-files';
 import { DesignCenterPalette } from './DesignCenterPalette';
 import { DESIGN_CENTER_DRAG, designCenterDrop, takeDesignCenterDrag } from './design-center';
 import { writeBlockFile } from './block-file-io';
@@ -581,6 +581,8 @@ function viewContext(id: number): ViewContext {
       }),
     // -INSERT name=file (M5-01 part 4): a drawing open, or a file given for xrefs.
     drawingFile: (file) => drawingFileReply(file, heldDrawings()),
+    // -XREF Attach and Overlay (M5-04 part 12): a drawing named at the command line.
+    xrefFile: (file) => xrefFileByName(id, file),
     // WBLOCK (M5-01 part 4): its new drawing, or the whole drawing as EXPORT's DXF, downloaded.
     writeBlock: async (r) => {
       try {
@@ -1420,14 +1422,46 @@ const pdfFiles: PdfAttachFiles = {
   },
 };
 
+/** A drawing file's INSUNITS, unitless when it states none. */
+async function drawingUnits(file: Blob): Promise<number> {
+  const opened = await openDrawing(file);
+  const units = new Map(opened.init.header ?? []).get('$INSUNITS');
+  return typeof units === 'number' && Number.isInteger(units) && units >= 0 ? units : 0;
+}
+
 const xrefFiles: XrefFiles = {
-  units: async (file) => {
-    const opened = await openDrawing(file);
-    const units = new Map(opened.init.header ?? []).get('$INSUNITS');
-    return typeof units === 'number' && Number.isInteger(units) && units >= 0 ? units : 0;
-  },
+  units: drawingUnits,
   attach: (file) => xrefSources.set(fileKey(file.name), fromFile(file)),
 };
+
+/**
+ * -XREF Attach and Overlay's file named at the command line (M5-04 part 12), for drawing `doc`:
+ * found among the files that answered xrefs, the other drawings open (their files as opened, as
+ * AutoCAD reads an xref's saved file, so not an untitled one) and the kept folders. The one found
+ * joins `xrefSources`, so the attach loads the xref from it, and Reload reads it again.
+ */
+function xrefFileByName(doc: number, file: string): Promise<ViewReply> {
+  const docs = () => store.getSnapshot().docs;
+  const self = docs().find((d) => d.id === doc);
+  return xrefFileReply(
+    file,
+    [
+      () => [...xrefSources.values()],
+      () =>
+        docs().flatMap((d) => {
+          const bytes = d.file?.bytes;
+          if (d.id === doc || d.untitled === true || !bytes) return [];
+          return [{ name: d.name, getFile: () => Promise.resolve(new Blob([bytes.slice()])) }];
+        }),
+      () => referenceFiles.files(),
+    ],
+    {
+      units: drawingUnits,
+      found: (s) => xrefSources.set(fileKey(s.name), s),
+      ...(self && self.untitled !== true && { self: self.name }),
+    },
+  );
+}
 
 /** The file that answered xref `block` of drawing `doc` this session, by its path's file name. */
 function xrefSourceOf(doc: number, block: string): Supplied | undefined {

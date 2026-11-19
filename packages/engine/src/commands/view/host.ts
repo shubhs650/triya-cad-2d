@@ -15,6 +15,7 @@ import type {
   TextGeometry,
 } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
+import type { XrefAttachFile } from '../../edit/xref-attach';
 import type { ChangeSet } from '../../model/changeset';
 import type { DocumentInit } from '../../model/document';
 import type { ClipboardPicture } from '../../edit/picture';
@@ -185,6 +186,13 @@ export type ViewRequest =
    * xrefs, answered as `drawing`: its model space as a block's contents (`drawingContent`).
    */
   | { readonly op: 'drawingFile'; readonly file: string }
+  /**
+   * -XREF Attach and Overlay (M5-04 part 12): the drawing file `file` (folders and the extension
+   * optional, any case), which the app finds among the files that answered xrefs, the drawings
+   * open (as saved) and its kept folders, answered as `xrefFile` with its INSUNITS; the app then
+   * loads it into the xref attached (`xref` action `attach`). No `xrefFile` when none is found.
+   */
+  | { readonly op: 'xrefFile'; readonly file: string }
   /**
    * WBLOCK (M5-01 part 4): the app writes the new drawing file `file` (DXF, DEC-047) and hands it
    * over: `drawing`'s objects, or without it the whole drawing as Save would write it.
@@ -551,6 +559,8 @@ export type ViewReply =
        * browser lets the app read but not write, M5-02 part 6).
        */
       readonly written?: { readonly file: string; readonly downloaded: boolean };
+      /** What an `xrefFile` request found: the file's name and INSUNITS (M5-04 part 12). */
+      readonly xrefFile?: XrefAttachFile;
       /** What a `drawingFile` request read: the file's name and its model space (M5-01). */
       readonly drawing?: { readonly name: string; readonly content: Clipboard };
       /** What a `clipboard` read found; absent when the Clipboard is empty. */

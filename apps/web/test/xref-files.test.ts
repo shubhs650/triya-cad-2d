@@ -2,9 +2,11 @@
 // (`xrefDrawing`) and written with the engine's change as Save writes a drawing: in place where
 // the browser lets the app write its handle, else downloaded under its name; later reads of the
 // xref read what was written.
+// M5-04 part 12: -XREF Attach and Overlay's file named at the command line (`xrefFile`), found by
+// name among the places the app holds drawings, in order, with its INSUNITS.
 import type { ChangeSet, DocumentInit } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { writeXrefFile, xrefDrawingReply, type XrefSource } from '../src/xref-files';
+import { writeXrefFile, xrefDrawingReply, xrefFileReply, type XrefSource } from '../src/xref-files';
 
 const CHANGES: readonly ChangeSet[] = [{ header: [] }];
 const INIT = { handSeed: '60' } as unknown as DocumentInit;
@@ -101,5 +103,68 @@ describe('writeXrefFile', () => {
       env(),
     );
     expect(r.reply).toEqual({ ok: false, message: 'plan.dxf was not written: gone' });
+  });
+});
+
+describe('xrefFileReply', () => {
+  const source = (name: string, text = name): XrefSource => ({
+    name,
+    getFile: () => Promise.resolve(new Blob([text])),
+  });
+  /** INSUNITS: the file's length, as a stand-in for reading its header. */
+  const lookup = (file: string, places: XrefSource[][], self?: string) => {
+    const found: string[] = [];
+    const read: number[] = [];
+    const reply = xrefFileReply(
+      file,
+      places.map((p, i) => () => {
+        read.push(i);
+        return Promise.resolve(p);
+      }),
+      {
+        units: async (blob) => (await blob.text()).length,
+        found: (s) => found.push(s.name),
+        ...(self !== undefined && { self }),
+      },
+    );
+    return { reply, found, read };
+  };
+
+  it('finds a drawing by name, folders, case and the extension aside, in the first place holding it', async () => {
+    const t = lookup('C:\\work\\PLAN', [[source('plan.png')], [source('plan.dxf', 'abc')], []]);
+    expect(await t.reply).toEqual({ ok: true, xrefFile: { fileName: 'plan.dxf', units: 3 } });
+    expect(t.found).toEqual(['plan.dxf']);
+    // Places after the one that held it are not read.
+    expect(t.read).toEqual([0, 1]);
+  });
+
+  it('takes the extension typed: plan.dwg is not plan.dxf', async () => {
+    const places = [[source('plan.dxf')], [source('plan.dwg', 'x')]];
+    expect(await lookup('plan.dwg', places).reply).toEqual({
+      ok: true,
+      xrefFile: { fileName: 'plan.dwg', units: 1 },
+    });
+    expect(await lookup('"plan.dxf"', places).reply).toMatchObject({ ok: true });
+  });
+
+  it('answers no file when none is held, and why one cannot be read', async () => {
+    const none = lookup('elevation', [[source('plan.dxf')], [source('elevation.pdf')]]);
+    expect(await none.reply).toEqual({ ok: true });
+    expect(none.found).toEqual([]);
+    const broken = xrefFileReply('plan', [() => [source('plan.dxf')]], {
+      units: () => Promise.reject(new Error('not a drawing')),
+      found: () => {},
+    });
+    expect(await broken).toEqual({
+      ok: false,
+      message: 'plan.dxf could not be read: not a drawing',
+    });
+  });
+
+  it('refuses the drawing itself', async () => {
+    expect(await lookup('host', [[source('Host.dxf')]], 'host.dxf').reply).toEqual({
+      ok: false,
+      message: 'Host.dxf is this drawing: a drawing cannot reference itself.',
+    });
   });
 });

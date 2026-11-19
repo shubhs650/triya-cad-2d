@@ -7,6 +7,10 @@
 // opens the same dialog. The engine side is unit-tested in
 // packages/engine/test/commands/xref-attach.test.ts and the save in
 // packages/testkit/src/xref/xref-attach.test.ts. SHOTS=<dir> saves the PR's screenshots.
+// M5-04 part 12: -XREF Attach attaches a drawing named at the command line, found among the
+// drawings open, and `~` at Overlay's file name opens the dialog on Overlay (engine side in
+// packages/engine/test/commands/xref-dash-attach.test.ts, the app's lookup in
+// apps/web/test/xref-files.test.ts).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { expectShown, ink, openWithPicker } from '../app/page';
@@ -118,5 +122,66 @@ test('XATTACH overlays a picked drawing through the Attach External Reference di
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+});
+
+test('-XREF Attach attaches a drawing open in another tab, named at the command line', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, GRANDCHILD);
+  await expectShown(page, 'xref-grandchild.dxf');
+  await openWithPicker(page, HOST);
+  await expectShown(page, 'raster-images.dxf');
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, 'W', /^Specify first corner/);
+  await type(page, '-10,-10', /^Specify opposite corner/);
+  await type(page, '100,60', 'Command:');
+  await page.waitForTimeout(500);
+  const before = await ink(page);
+
+  // ~ at the file name opens the Attach External Reference dialog, on Overlay for Overlay.
+  await type(page, '-XREF', /^Enter an option/);
+  await type(page, 'O', 'Enter name of file to overlay:');
+  await page.keyboard.type('~');
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Attach External Reference' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('radio', { name: 'Overlay' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+
+  await type(
+    page,
+    '-XREF',
+    'Enter an option [?/Bind/Detach/Unload/Reload/Overlay/Attach] <Attach>:',
+  );
+  await type(page, '', 'Enter name of file to attach:');
+  await shot(page, '1-dash-xref-attach');
+  await type(page, 'xref-grandchild', /^Specify insertion point or \[Scale\/X\/Y\/Z\/Rotate\]/);
+  await park(page);
+  await type(page, '60,20', /^Enter X scale factor/);
+  await type(page, '', /^Enter Y scale factor/);
+  await type(page, '', /^Specify rotation angle/);
+  await type(page, '', 'Command:');
+  await expect.poll(() => ink(page), { timeout: 30_000 }).toBeGreaterThan(before + 300);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await shot(page, '2-dash-xref-attached');
+
+  await type(page, 'XREF', 'Command:');
+  await expect.poll(() => rows(page)).toContainEqual(expect.stringMatching(/^xref-grandchild \|/));
+  const row = (await rows(page)).find((r) => r.startsWith('xref-grandchild'))!;
+  expect(row).toContain('Loaded');
+  expect(row).toContain('Attach');
+
+  // A file the app does not hold is not found; Enter alone attaches the last again.
+  await type(page, '-XREF', /^Enter an option/);
+  await type(page, 'A', 'Enter name of file to attach <xref-grandchild.dxf>:');
+  await type(page, 'elevation', 'Command:');
+  await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText(
+    'File "elevation" not found.',
+  );
   await expect(prompt(page)).toHaveText('Command:');
 });
