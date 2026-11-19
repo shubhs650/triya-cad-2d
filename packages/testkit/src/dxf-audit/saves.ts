@@ -50,6 +50,9 @@ export type AuditSaveKind =
   // Views' layer snapshots: Update Layers, a rename and New View's on the AC1032 sample, a new
   // view's on colors.dxf (M5-07 part 7).
   | 'view-layers'
+  // MVIEW's viewports (4 by Fit, one from corners, one off, one locked) in the AC1032 sample's
+  // current layout and in colors.dxf's, which has none (M6-02 part 1).
+  | 'mview'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).

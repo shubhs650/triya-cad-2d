@@ -52,6 +52,7 @@ import { tablestyleCommand } from './tablestyle';
 import { mleaderstyleCommand } from './mleaderstyle';
 import { dashDimstyleCommand } from './dimstyle-dash';
 import { SNAP_GRID_COMMANDS } from './snap-grid';
+import { mviewCommand } from './mview';
 import { UCS_COMMANDS } from './ucs';
 import { changeCommand, chpropCommand } from './modify/chprop';
 import { matchpropCommand } from './modify/matchprop';
@@ -200,6 +201,7 @@ export function builtinCommands(): CommandRegistry {
     dashDimstyleCommand(),
     ...SNAP_GRID_COMMANDS.map((make) => make()),
     ...UCS_COMMANDS.map((make) => make()),
+    mviewCommand(),
     underlayLayersCommand(),
     ...layerToolCommands(),
     laydelCommand(),

@@ -86,6 +86,14 @@ export { viewCommand, viewNameMatches } from './view/named-view';
 export { selectCommand } from './select';
 export { selectSimilarCommand } from './select-similar';
 export { filterCommand } from './filter';
+export {
+  FLOATING_VIEWPORT_FLAGS,
+  mviewCommand,
+  newViewportGeometry,
+  viewportArrangement,
+  viewportFit,
+  type ViewportArrangement,
+} from './mview';
 export { UCS_ICON, currentUcs, objectUcs, ucsCommand, ucsIconCommand } from './ucs';
 export { setvarCommand, variableCommand, UNKNOWN_VARIABLE } from './setvar';
 export * from './sysvars';
