@@ -56,8 +56,10 @@ test('PDFFRAME 0 hides the underlay frame but for the selection, 2 shows it agai
   await type(page, 'Z', /^Specify corner of window/);
   await type(page, '-1,-1', 'Specify opposite corner:');
   await type(page, '10,12', 'Command:');
-  await park(page);
   const v = await viewOf(page);
+  // viewOf leaves the cursor on the canvas, inside page 1: once the page's size is known the
+  // selection preview outlines the underlay under it, PDFFRAME or not (CI run 44463018807).
+  await park(page);
   // The page's left edge, where page 1 has no content: the frame, a pixel wide, lies within a
   // pixel of world x 0 whichever way it rounds.
   const edge = v.at(0, 6);
@@ -69,6 +71,18 @@ test('PDFFRAME 0 hides the underlay frame but for the selection, 2 shows it agai
   const poll = (shown: boolean) =>
     expect.poll(framed, { timeout: 30_000, intervals: [250] }).toBe(shown);
 
+  await poll(true);
+  // Under the resting cursor, the preview shows the frame at PDFFRAME 0 as the selection does.
+  const inside = v.at(4, 5);
+  await page.mouse.move(v.box.x + inside.x, v.box.y + inside.y);
+  await page.mouse.move(v.box.x + inside.x + 1, v.box.y + inside.y);
+  await type(page, 'PDFFRAME', 'Enter new value for PDFFRAME <1>:');
+  await type(page, '0', 'Command:');
+  await poll(true);
+  await park(page);
+  await poll(false);
+  await type(page, 'PDFFRAME', 'Enter new value for PDFFRAME <0>:');
+  await type(page, '1', 'Command:');
   await poll(true);
   await shot(page, '1-pdfframe-1');
 
