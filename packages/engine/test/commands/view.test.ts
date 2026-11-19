@@ -259,7 +259,7 @@ describe('VIEW', () => {
   it('lists views matching the pattern', async () => {
     const { bus } = setup(undefined, views);
     await bus.submit('-VIEW');
-    expect(bus.promptText).toBe('Enter an option [?/Delete/Restore/Save/Window]:');
+    expect(bus.promptText).toBe('Enter an option [?/Delete/Restore/Save/sEttings/Window]:');
     await bus.script(['?', '']);
     expect(bus.history.slice(-4)).toEqual([
       'Saved views:',
@@ -325,6 +325,59 @@ describe('VIEW', () => {
     await bus.script(['-V', 'W', 'Flat', '0,0', '10,0']);
     expect(bus.history.at(-1)).toBe('The window has no area.');
     expect(viewsOf(model)).toHaveLength(1);
+  });
+
+  it('sEttings Categorize files the views a pattern names under a category (M5-07 part 8)', async () => {
+    const { bus, model } = setup();
+    for (const n of ['Front', 'Back', 'Detail A']) await bus.script(['-V', 'S', n]);
+    await bus.script(['-VIEW', 'E']);
+    expect(bus.promptText).toBe('Enter an option [Categorize/Layer snapshot]:');
+    await bus.submit('C');
+    expect(bus.promptText).toBe('Enter view name(s) to categorize or [?]:');
+    await bus.submit('?');
+    expect(bus.history.slice(-4)).toEqual(['Saved views:', '  Front', '  Back', '  Detail A']);
+    expect(bus.promptText).toBe('Enter view name(s) to categorize or [?]:');
+    await bus.submit('f*,back');
+    expect(bus.promptText).toBe('Enter category name or [?]:');
+    await bus.submit('Elevations');
+    const categories = () => [...model.tables.views.values()].map((v) => [v.name, v.category]);
+    expect(categories()).toEqual([
+      ['Front', 'Elevations'],
+      ['Back', 'Elevations'],
+      ['Detail A', undefined],
+    ]);
+    expect(bus.undo.state.nextUndo).toBe('VIEW');
+    // ? lists the categories the drawing's views have; <None> takes a view's off.
+    await bus.script(['-VIEW', 'E', 'C', 'Detail A', '?']);
+    expect(bus.history.slice(-2)).toEqual(['View categories:', '  Elevations']);
+    await bus.submit('Details');
+    await bus.script(['-VIEW', 'E', 'C', 'back', '<none>']);
+    expect(categories()).toEqual([
+      ['Front', 'Elevations'],
+      ['Back', undefined],
+      ['Detail A', 'Details'],
+    ]);
+    await bus.script(['-VIEW', 'E', 'C', 'zz']);
+    expect(bus.history.at(-1)).toBe('No matching views found.');
+    await bus.script(['-VIEW', 'E', 'C', 'Front', 'x'.repeat(256)]);
+    expect(bus.history.at(-1)).toBe('A view category is at most 255 characters.');
+    expect(bus.promptText).toBe('Enter category name or [?]:');
+  });
+
+  it('sEttings lists no views or categories when there are none, and Esc ends it', async () => {
+    const { bus, model } = setup();
+    await bus.script(['-VIEW', 'E', 'C', '?']);
+    expect(bus.history.at(-1)).toBe('No matching views found.');
+    await bus.cancel();
+    await bus.script(['-V', 'S', 'Front', '-VIEW', 'E', 'C', 'Front', '?']);
+    expect(bus.history.at(-1)).toBe('No view categories.');
+    await bus.cancel();
+    await bus.script(['-VIEW', 'E', 'L', 'Front']);
+    await bus.cancel();
+    expect([...model.tables.views.values()].map((v) => [v.category, v.layerState])).toEqual([
+      [undefined, undefined],
+    ]);
+    expect(bus.promptText).toBe('Command:');
   });
 
   it('deletes the views a pattern names', async () => {
