@@ -40,6 +40,7 @@ import { copyGroups } from './groups';
 import { isAssocArray, isCenterMark, isDimBreak, isDimInspect } from '../model/types';
 import { carryDimensionRecords, copyDimensionRecords } from './dimension-records';
 import { copyCenterMarks, redrawCenterMark } from './center-marks';
+import { copyClips } from './xclip';
 import { centerMarkGripEdit } from './center-mark-grips';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry, type StretchOptions } from './stretch';
@@ -687,6 +688,8 @@ export function copyObjects(
   }
   // A copy of an associative array is an array of its own (M3-11).
   copyAssocArrays(b, model, copies, names);
+  // A copy of a clipped reference is clipped alike (M5-16), after the array records' dictionaries.
+  copyClips(b, copies);
   // A copy of a dimension keeps its breaks and inspection data (M4-02 part 4).
   copyDimensionRecords(b, copies, t);
   // A copy of a center mark draws from a block of its own (M4-08).

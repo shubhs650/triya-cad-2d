@@ -13,7 +13,7 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { Group, NonGraphicalObject } from '../model/types';
+import type { Group, NonGraphicalObject, SpatialFilter } from '../model/types';
 
 const isGroup = (o: NonGraphicalObject | undefined): o is Group => o?.type === 'GROUP';
 
@@ -275,13 +275,22 @@ export function copyGroups(
 
 /**
  * Takes copies back (COPY's, a grip mode's or ARRAY's Undo) with the groups their copying made:
- * a group a copy lists in its reactors is one made of copies.
+ * a group a copy lists in its reactors is one made of copies. A copied reference's clip goes with
+ * it (M5-16), as ERASE takes one.
  */
 export function removeCopies(b: ChangeSetBuilder, ids: readonly EntityId[]): void {
+  const gone = new Set<Handle>();
   for (const id of ids) {
     const e = b.entity(id);
     if (!e) continue;
     for (const r of e.reactors ?? []) if (isGroup(b.object(r))) b.removeObject(r);
+    gone.add(e.handle);
     b.removeEntity(id);
+  }
+  if (gone.size === 0) return;
+  for (const o of [...b.objects()]) {
+    if (o.type === 'SPATIAL_FILTER' && gone.has((o as SpatialFilter).insert)) {
+      b.removeObject(o.handle);
+    }
   }
 }
