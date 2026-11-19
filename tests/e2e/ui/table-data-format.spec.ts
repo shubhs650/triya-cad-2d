@@ -104,6 +104,16 @@ test('Data Format... gives the cells selected a data type', async ({ page }) => 
   const menu = page.getByRole('menu', { name: 'Table cell options' });
   await menu.getByRole('menuitem', { name: 'Data Format...' }).click();
   const dialog = page.getByRole('dialog', { name: 'Table Cell Format' });
+  /**
+   * Waits for the Table Cell Format dialog's OK to end TABLECELL. The dialog is modal and stays
+   * open until the engine's reply closes it, which comes after the change the `made` polls see:
+   * a click or double click sent before then reaches an inert page, or a command that is ending
+   * (CI run 44441148463 lost the double click into the empty Currency cell, 'Command:' for 5 s).
+   */
+  const closed = async () => {
+    await expect(dialog).toBeHidden();
+    await expect(prompt(page)).toHaveText('Command:');
+  };
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel('Data type:')).toHaveValue('4');
   await expect(dialog.getByLabel('Preview')).toHaveText('1200');
@@ -144,6 +154,7 @@ test('Data Format... gives the cells selected a data type', async ({ page }) => 
   await dialog.getByLabel('Precision:').selectOption({ label: '0.0' });
   await expect(dialog.getByLabel('Preview')).toHaveText('12.5');
   await dialog.getByRole('button', { name: 'OK' }).click();
+  await closed();
   await expect
     .poll(async () => (await made(page))?.cells.map((r) => r[1]))
     .toEqual(['', 'Flow', '12.5', '8.0', '']);
@@ -157,6 +168,7 @@ test('Data Format... gives the cells selected a data type', async ({ page }) => 
   await dialog.getByLabel('Format:').selectOption({ label: 'Uppercase' });
   await expect(dialog.getByLabel('Preview')).toHaveText('MARK');
   await dialog.getByRole('button', { name: 'OK' }).click();
+  await closed();
   await expect.poll(async () => (await made(page))?.formats[1]?.[0]).toBe('%tc1');
 
   // A number typed into the empty Currency cell is shown in its format.
@@ -198,7 +210,7 @@ test('Data Format... gives the cells selected a data type', async ({ page }) => 
   await expect(more).toBeHidden();
   await expect(dialog.getByLabel('Preview')).toHaveText('$1,200.00');
   await dialog.getByRole('button', { name: 'OK' }).click();
-  await expect(dialog).toBeHidden();
+  await closed();
   await expect
     .poll(async () => (await made(page))?.cells.map((r) => r[2]))
     .toEqual(['', 'Cost', '$1,200.00', '$950.50', '$75.00']);
@@ -220,7 +232,7 @@ test('Data Format... gives the cells selected a data type', async ({ page }) => 
   await dialog.getByLabel('Y', { exact: true }).check();
   await shot('5-point-coordinates.png');
   await dialog.getByRole('button', { name: 'OK' }).click();
-  await expect(dialog).toBeHidden();
+  await closed();
   await page.mouse.dblclick(cell(4, 1).x, cell(4, 1).y);
   await expect(prompt(page)).toHaveText('Enter text:');
   await page.keyboard.type('3,4,5');
