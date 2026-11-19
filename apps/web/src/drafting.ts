@@ -51,6 +51,12 @@ export interface DraftingState {
    */
   readonly revcloudGrips: boolean;
   /**
+   * LAYEREVALCTL (M5-19 part 3): new layers are evaluated as each drawing's LAYEREVAL says (1,
+   * AutoCAD's initial value), or not at all (0), and the Layer Properties Manager shows no
+   * Unreconciled New Layers. AutoCAD keeps it per user; each drawing's engine is told it.
+   */
+  readonly layerEvalCtl: boolean;
+  /**
    * QPMODE (M2-35 part 16): Quick Properties shows for a selection while it is above 0, for all
    * objects (1) or only those with quick properties of their own (2). AutoCAD keeps it per user,
    * initially −1: a negative value is off and keeps the mode the QP button turns back on.
@@ -477,6 +483,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   aperture: 10,
   pdfOsnap: true,
   revcloudGrips: true,
+  layerEvalCtl: true,
   qpmode: -1,
   qpLocation: 0,
   autosnap: AUTOSNAP_KEPT,

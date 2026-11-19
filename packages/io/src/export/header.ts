@@ -23,6 +23,7 @@ import {
   type CadSystemVariable,
 } from '@node-projects/acad-ts';
 import {
+  LAYEREVALCTL,
   REVCLOUDGRIPS,
   type DocumentInit,
   type DocumentModel,
@@ -77,13 +78,16 @@ const SESSION_ONLY = new Set([
   // LAYEREVAL, whether xref loads flag new layers (M5-19): AutoCAD files it in the variable
   // dictionary, which a drawing made elsewhere may not have; kept as PDFFRAME is (DEC-077).
   'LAYEREVAL',
+  // LAYERNOTIFY, when new layers are noticed (M5-19 part 3): as LAYEREVAL.
+  'LAYERNOTIFY',
 ]);
 
 /**
  * Per-user settings the app puts in each drawing's header for the session (M2-42): REVCLOUDGRIPS,
- * which AutoCAD keeps in the registry. A save never writes them.
+ * which AutoCAD keeps in the registry, and LAYEREVALCTL (M5-19 part 3), a user setting. A save
+ * never writes them.
  */
-const NEVER_SAVED = new Set([REVCLOUDGRIPS]);
+const NEVER_SAVED = new Set([REVCLOUDGRIPS, LAYEREVALCTL]);
 
 /**
  * Variables a save sets itself: the version and code page follow the format written, the seed

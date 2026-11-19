@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   EngineSession,
+  LAYEREVALCTL,
   withoutXrefContent,
   xrefLoadChange,
   type DocumentInit,
@@ -89,6 +90,14 @@ describe('xrefLoadChange: unreconciled new layers (M5-19)', () => {
       // Layer 0 is the host's own.
       expect(unreconciled(model)).toEqual(['CHILD|ROOF', 'CHILD|WALLS']);
     }
+  });
+
+  it('flags nothing while LAYEREVALCTL is 0, whatever LAYEREVAL says (M5-19 part 3)', () => {
+    const s = new EngineSession(hostInit('2'));
+    expect(s.edit({ kind: 'sysvar', name: LAYEREVALCTL, value: 0 }).ok).toBe(true);
+    s.model.apply(xrefLoadChange(s.model, XREF, childInit(), { attach: true }));
+    expect(loadedLayers(s.model)).toEqual(['CHILD|WALLS', 'CHILD|ROOF']);
+    expect(unreconciled(s.model)).toEqual([]);
   });
 
   it('takes the layers of a drawing opened with no record of them as the baseline', () => {

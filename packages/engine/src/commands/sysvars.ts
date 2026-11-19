@@ -290,6 +290,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // and HATCHEDIT open the Hatch and Gradient and Hatch Edit dialogs: 0 not (HATCH's seTtings
   // still does), 1 always, 2 when the ribbon is closed (2; Triya has no ribbon until M7-01).
   { name: 'HPDLGMODE', store: 'app', kind: 'integer', min: 0, max: 2 },
+  // M5-19 part 3 (AutoCAD 2024 Help, "LAYEREVALCTL", Saved in: User-settings, initially 1): 0
+  // turns the evaluation of new layers off whatever LAYEREVAL says (model/xref.ts
+  // `layerEvaluation`); the app tells each drawing's engine.
+  { name: 'LAYEREVALCTL', store: 'app', kind: 'switch' },
 ];
 
 /**
@@ -522,7 +526,9 @@ const DICTIONARY_VARIABLES: Readonly<
   HIDETEXT: { kind: 'switch' },
   DIMASSOC: { kind: 'integer', min: 0, max: 2 },
   LAYEREVAL: { kind: 'integer', min: 0, max: 2 },
-  LAYERNOTIFY: { kind: 'integer', min: 0, max: 15 },
+  // AutoCAD 2024 Help, "LAYERNOTIFY": when new layers are noticed, bits 1 plot, 2 open, 4 xref
+  // load, reload or attach, 8 layer state restore, 16 save, 32 insert (M5-19 part 3).
+  LAYERNOTIFY: { kind: 'integer', min: 0, max: 63 },
   LIGHTINGUNITS: { kind: 'integer', min: 0, max: 2 },
   XCLIPFRAME: { kind: 'integer', min: 0, max: 2 },
   INDEXCTL: { kind: 'integer', min: 0, max: 3 },
@@ -556,6 +562,8 @@ const DICTIONARY_INITIAL: Readonly<Record<string, string | ((m: VariableSource) 
   // M5-19 (AutoCAD 2024 Help, "LAYEREVAL"): whether loads flag new layers as unreconciled, 0
   // none, 1 an xref's, 2 the drawing's too; "Saved in: Drawing", initially 0 (model/xref.ts).
   LAYEREVAL: '0',
+  // M5-19 part 3 (AutoCAD 2024 Help, "LAYERNOTIFY"): "Saved in: Drawing", initially 0.
+  LAYERNOTIFY: '0',
 };
 
 /** Bounds AutoCAD 2024's system variable reference gives (those a wrong value would break). */

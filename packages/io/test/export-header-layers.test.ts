@@ -23,6 +23,7 @@ import {
   ChangeSetBuilder,
   DocumentModel,
   INTEGER_HEADER_VARIABLES,
+  LAYEREVALCTL,
   REVCLOUDGRIPS,
   type HeaderValue,
   type LayerRecord,
@@ -234,6 +235,9 @@ describe('header variables', () => {
     'CENTERLAYER',
     // The PDF underlay frame (M5-04 part 17, DEC-077).
     'PDFFRAME',
+    // Whether new layers are evaluated and noticed (M5-19).
+    'LAYEREVAL',
+    'LAYERNOTIFY',
   ])(
     'keeps %s for the session unless the drawing has a DICTIONARYVAR for it (M2-35, M4-07, M4-08, M5-04)',
     (name) => {
@@ -264,17 +268,21 @@ describe('header variables', () => {
     },
   );
 
-  it('never saves REVCLOUDGRIPS, a per-user setting the app keeps in the header (M2-42)', () => {
-    const bytes = drawing();
-    const { model } = open(bytes);
-    edit(model, (b) => {
-      b.setHeader(REVCLOUDGRIPS, 0);
-      b.setHeader('$MIRRTEXT', true);
-    });
-    const back = new Map(saved(bytes, model, 'dxf').header);
-    expect(back.has(REVCLOUDGRIPS)).toBe(false);
-    expect(back.get('$MIRRTEXT')).toBe(true);
-  });
+  // REVCLOUDGRIPS (M2-42) and LAYEREVALCTL (M5-19 part 3).
+  it.each([REVCLOUDGRIPS, LAYEREVALCTL])(
+    'never saves %s, a per-user setting the app keeps in the header',
+    (name) => {
+      const bytes = drawing();
+      const { model } = open(bytes);
+      edit(model, (b) => {
+        b.setHeader(name, 0);
+        b.setHeader('$MIRRTEXT', true);
+      });
+      const back = new Map(saved(bytes, model, 'dxf').header);
+      expect(back.has(name)).toBe(false);
+      expect(back.get('$MIRRTEXT')).toBe(true);
+    },
+  );
 
   it('knows each header variable SETVAR takes as an integer as acad-ts writes it (M2-42)', () => {
     // DXF integer group codes: 62 (colour), 70, 280, 370 (lineweight), 380 (plot style type).

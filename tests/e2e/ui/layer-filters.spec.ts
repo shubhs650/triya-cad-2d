@@ -20,6 +20,7 @@
 // M5-19 part 2: the Unreconciled New Layers node. With LAYEREVAL 1, the title block's file found
 // brings TB-FRAME and TB-LOGO as new (the host keeps only xref-child-tb|TB-LINES); the node lists
 // them until the layer list's Reconcile Layer reconciles them, and goes once none is left.
+// M5-19 part 3: LAYEREVALCTL 0 hides the node and Reconcile Layer.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { DXF, enterCommand, expectShown, openWithDrop, openWithPicker } from '../app/page';
@@ -300,7 +301,7 @@ test('the Xref node lists each xref’s layers and takes the menu’s Visibility
   await shot('2-xref-node-layers.png');
 });
 
-test('Unreconciled New Layers lists new xref layers until Reconcile Layer (M5-19 part 2)', async ({
+test('Unreconciled New Layers lists new xref layers until Reconcile Layer (M5-19 parts 2, 3)', async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -357,6 +358,21 @@ test('Unreconciled New Layers lists new xref layers until Reconcile Layer (M5-19
 
   // U undoes it: the node is back.
   await enterCommand(page, 'U');
+  await expect(node(page, 'Unreconciled New Layers')).toBeVisible();
+
+  // LAYEREVALCTL 0 (part 3): no node and no Reconcile Layer while it is off; 1 brings them back.
+  await enterCommand(page, 'LAYEREVALCTL');
+  await expect(prompt).toHaveText('Enter new value for LAYEREVALCTL <1>:');
+  await enterCommand(page, '0');
+  await expect(node(page, 'Unreconciled New Layers')).toHaveCount(0);
+  await row('xref-child-tb|TB-LOGO').click({ button: 'right' });
+  await expect(listMenu).toBeVisible();
+  await expect(reconcile).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(listMenu).toBeHidden();
+  await enterCommand(page, 'LAYEREVALCTL');
+  await expect(prompt).toHaveText('Enter new value for LAYEREVALCTL <0>:');
+  await enterCommand(page, '1');
   await expect(node(page, 'Unreconciled New Layers')).toBeVisible();
 });
 
