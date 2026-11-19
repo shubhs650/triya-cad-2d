@@ -10,12 +10,17 @@ import type {
 import { describe, expect, it } from 'vitest';
 import {
   fileNameOf,
+  formatFileSize,
   loadXrefFiles,
   missingFileNames,
   pendingXrefs,
+  rasterMimeType,
+  referenceDetails,
   referencesOf,
+  reloadAllTargets,
   xrefsAnsweredBy,
   type PendingXref,
+  type ReferenceRow,
 } from '../src/xrefs';
 
 const record = (handle: string, name: string, flags = 0): BlockTableRecord => ({
@@ -296,5 +301,97 @@ describe('loadXrefFiles (M1-21)', () => {
     );
     expect(tries).toBe(1);
     expect(used.size).toBe(1);
+  });
+});
+
+const ref = (
+  name: string,
+  kind: ReferenceRow['kind'],
+  status: ReferenceRow['status'],
+  depth = 0,
+  path = `${name}.${kind === 'image' ? 'png' : kind === 'pdf' ? 'pdf' : 'dxf'}`,
+): ReferenceRow => ({ handle: `H-${name}-${depth}`, kind, name, path, status, depth });
+
+describe('reloadAllTargets (M5-04 part 14)', () => {
+  it("reloads the drawing's own xrefs and every image and PDF file, each once", () => {
+    const rows = [
+      ref('tb', 'attach', 'loaded'),
+      ref('grid', 'attach', 'loaded', 1),
+      ref('logo', 'image', 'loaded', 1, '.\\img\\logo.png'),
+      ref('ovl', 'overlay', 'not-found'),
+      ref('site', 'pdf', 'loaded'),
+      ref('logo-2', 'image', 'loaded', 0, 'LOGO.PNG'),
+    ];
+    expect(reloadAllTargets(rows)).toEqual({
+      // A nested xref is reloaded with the xref that brings it in.
+      xrefs: ['H-tb-0', 'H-ovl-0'],
+      files: ['.\\img\\logo.png', 'site.pdf'],
+    });
+  });
+
+  it('leaves unloaded references unloaded, as they were unloaded on purpose', () => {
+    const rows = [
+      ref('tb', 'attach', 'unloaded'),
+      ref('logo', 'image', 'unloaded'),
+      ref('site', 'pdf', 'not-found'),
+    ];
+    expect(reloadAllTargets(rows)).toEqual({ xrefs: [], files: ['site.pdf'] });
+  });
+});
+
+describe('formatFileSize (M5-04 part 14)', () => {
+  it('gives kilobytes rounded up, as Windows lists file sizes', () => {
+    expect(formatFileSize(0)).toBe('0 KB');
+    expect(formatFileSize(1)).toBe('1 KB');
+    expect(formatFileSize(1024)).toBe('1 KB');
+    expect(formatFileSize(1025)).toBe('2 KB');
+    expect(formatFileSize(5_000_000)).toBe('4,883 KB');
+  });
+});
+
+describe('referenceDetails (M5-04 part 14)', () => {
+  const date = (ms: number) => `@${ms}`;
+  it("lists AutoCAD's details of a reference whose file was found", () => {
+    const row = ref('tb', 'attach', 'loaded', 0, '.\\xrefs\\tb.dxf');
+    expect(
+      referenceDetails(row, { foundAt: 'sheets/xrefs/tb.dxf', size: 2048, modified: 7 }, date),
+    ).toEqual([
+      ['Reference Name', 'tb'],
+      ['Status', 'Loaded'],
+      ['Size', '2 KB'],
+      ['Type', 'Attach'],
+      ['Date', '@7'],
+      ['Saved Path', '.\\xrefs\\tb.dxf'],
+      ['Found At', 'sheets/xrefs/tb.dxf'],
+    ]);
+  });
+
+  it('leaves Size, Date and Found At empty for a file not found', () => {
+    const row = ref('site', 'pdf', 'not-found');
+    expect(referenceDetails(row, undefined, date)).toEqual([
+      ['Reference Name', 'site'],
+      ['Status', 'Not found'],
+      ['Size', ''],
+      ['Type', 'PDF underlay'],
+      ['Date', ''],
+      ['Saved Path', 'site.pdf'],
+      ['Found At', ''],
+    ]);
+  });
+
+  it('gives no Date for a file whose time the browser does not know', () => {
+    const row = ref('photo', 'image', 'loaded');
+    const details = referenceDetails(row, { foundAt: 'Kept on this device', size: 10 }, date);
+    expect(details).toContainEqual(['Date', '']);
+    expect(details).toContainEqual(['Found At', 'Kept on this device']);
+  });
+});
+
+describe('rasterMimeType (M5-04 part 14)', () => {
+  it('names the type an image file opens in a browser tab with', () => {
+    expect(rasterMimeType('Logo.PNG')).toBe('image/png');
+    expect(rasterMimeType('site.jpeg')).toBe('image/jpeg');
+    expect(rasterMimeType('scan.tif')).toBe('image/tiff');
+    expect(rasterMimeType('noext')).toBe('application/octet-stream');
   });
 });

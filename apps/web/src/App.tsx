@@ -219,9 +219,13 @@ import {
   loadXrefFiles,
   missingFileNames,
   pendingXrefs,
+  rasterMimeType,
   referencesOf,
+  reloadAllTargets,
   type FileSource,
+  type FoundFile,
   type PendingXref,
+  type ReferenceRow,
   type SuppliedFiles,
 } from './xrefs';
 
@@ -1350,6 +1354,7 @@ async function supplyNow(sources: readonly Supplied[], mode: 'drop' | 'reference
       const bytes = new Uint8Array(await (await s.getFile()).arrayBuffer());
       if (pdf) pdfPages.add(s.name, bytes);
       else images.add(s.name, bytes);
+      shownSources.set(key, s);
       added = true;
       if (s.handle) keep.push(s.handle);
     } catch {
@@ -1394,6 +1399,12 @@ function heldDrawings(): HeldDrawing[] {
     })),
   ];
 }
+
+/**
+ * The image and PDF files supplied this session, by name (M5-04 part 14): the References
+ * palette's Found At, and Reload All References reads them again.
+ */
+const shownSources = new Map<string, Supplied>();
 
 /**
  * The drawing files that answered xrefs this session, by name: XREF Reload reads them again (a
@@ -1572,13 +1583,10 @@ async function loadFromSources(
   loaded: (name: string) => string,
 ): Promise<string[]> {
   const out: string[] = [];
-  const waiting = waitingXrefs().find((w) => w.doc === doc)?.xrefs ?? [];
-  const sources = new Set<Supplied>();
-  for (const x of waiting) {
-    const s = xrefSources.get(fileKey(fileNameOf(x.path)));
-    if (s) sources.add(s);
-  }
-  supply([...sources], 'references');
+  // Every file that answered an xref: the nested xrefs a load brings in wait for theirs only
+  // once it is done (a grandchild that only the reloaded xref brings, M5-04 part 14). A file
+  // is read only when an xref waits for it.
+  supply([...xrefSources.values()], 'references');
   await referenceQueue;
   await resolveKept();
   await referenceQueue;
@@ -1593,6 +1601,109 @@ async function loadFromSources(
     );
   }
   return out;
+}
+
+/**
+ * The References palette's Found At, Size and Date of `row` of drawing `doc` (M5-04 part 14):
+ * the file this session found it in, or for a picture pasted from another app the copy this
+ * device keeps. Undefined while the reference is not found.
+ */
+async function referenceFound(doc: number, row: ReferenceRow): Promise<FoundFile | undefined> {
+  if (row.status === 'not-found') return undefined;
+  const xref = row.kind === 'attach' || row.kind === 'overlay';
+  const source = xref ? xrefSourceOf(doc, row.handle) : shownSources.get(fileKey(row.path));
+  if (source) {
+    const file = await source.getFile();
+    return {
+      foundAt: source.foundAt ?? source.name,
+      size: file.size,
+      ...(file instanceof File ? { modified: file.lastModified } : {}),
+    };
+  }
+  // Read by an attach dialog (no folder the browser tells of), or a pasted picture's copy.
+  const held = row.kind === 'image' ? images.bytes(row.path) : pdfPages.bytes(row.path);
+  if (!held) return undefined;
+  const name = fileNameOf(row.path);
+  return {
+    foundAt: isPastedPictureName(row.path) ? 'Kept on this device' : name,
+    size: held.byteLength,
+  };
+}
+
+/**
+ * Reload All References (M5-04 part 14): the drawing's own xrefs reloaded from their files (and
+ * with them the xrefs they bring in), and every image and PDF file read again; the references
+ * still not found looked for in the kept folders. Unloaded ones stay unloaded
+ * (`reloadAllTargets`). One line each.
+ */
+async function reloadAllReferences(doc: number): Promise<string[]> {
+  const d = store.getSnapshot().docs.find((x) => x.id === doc);
+  if (!d) return [];
+  const rows = referencesOf(d.opened.init, engines.changesOf(doc), suppliedFiles);
+  const targets = reloadAllTargets(rows);
+  const out = targets.xrefs.length > 0 ? await reloadXrefs(doc, targets.xrefs) : [];
+  let read = false;
+  const missing: string[] = [];
+  for (const path of targets.files) {
+    const name = fileNameOf(path);
+    const what = isPdfFile(name) ? `PDF "${name}"` : `Image "${name}"`;
+    const source = shownSources.get(fileKey(path));
+    if (!source) {
+      // A file an attach dialog read, or a pasted picture's this device keeps, has nowhere to be
+      // read again from; one not found is looked for.
+      if (!(isPdfFile(name) ? pdfPages.has(path) : images.has(path))) missing.push(name);
+      continue;
+    }
+    try {
+      const bytes = new Uint8Array(await (await source.getFile()).arrayBuffer());
+      if (isPdfFile(name)) pdfPages.add(source.name, bytes);
+      else images.add(source.name, bytes);
+      read = true;
+      out.push(`${what} has been reloaded.`);
+    } catch {
+      out.push(`${what} could not be read again: drop its file on the window.`);
+    }
+  }
+  if (read) supplied.changed();
+  if (missing.length > 0) {
+    await resolveKept();
+    await referenceQueue;
+    for (const name of missing) {
+      const what = isPdfFile(name) ? `PDF "${name}"` : `Image "${name}"`;
+      out.push(
+        shownSources.has(fileKey(name))
+          ? `${what} has been reloaded.`
+          : `${what} not found: drop its file, or the folder that holds it, on the window.`,
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * The References palette's Open (M5-04 part 14), as AutoCAD's opens a reference's file in the
+ * application of its type: an xref's drawing in a tab of its own (the tab it has, when open
+ * already), an image or PDF in a browser tab. Why not, or undefined.
+ */
+async function openReference(doc: number, row: ReferenceRow): Promise<string | undefined> {
+  const name = fileNameOf(row.path);
+  if (row.kind === 'image' || row.kind === 'pdf') {
+    const bytes = row.kind === 'image' ? images.bytes(row.path) : pdfPages.bytes(row.path);
+    if (!bytes) return `"${name}" not found: drop its file on the window.`;
+    const type = row.kind === 'pdf' ? 'application/pdf' : rasterMimeType(name);
+    const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type }));
+    // Synchronously within the click, so the browser lets the tab open.
+    const tab = window.open(url, '_blank');
+    // The new tab has read it by then; a blocked one never will.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return tab ? undefined : `The browser did not open "${name}": allow pop-ups for Triya.`;
+  }
+  const source = xrefSourceOf(doc, row.handle);
+  if (!source) return `"${name}" not found: drop its file on the window.`;
+  const already = store.getSnapshot().docs.find((d) => fileKey(d.name) === fileKey(source.name));
+  if (already) store.activate(already.id);
+  else await open(source);
+  return undefined;
 }
 
 /** XREF Detach (M5-04) from the References palette: one XREF undo step. */
@@ -1785,7 +1896,13 @@ function quickNewDrawing(): void {
 
 const fromFile = (f: File): Supplied => {
   const handle = droppedHandles.get(f);
-  return { name: f.name, getFile: () => Promise.resolve(f), ...(handle ? { handle } : {}) };
+  return {
+    name: f.name,
+    getFile: () => Promise.resolve(f),
+    // A file of a folder picked in the References palette knows its path in the folder.
+    foundAt: f.webkitRelativePath || f.name,
+    ...(handle ? { handle } : {}),
+  };
 };
 
 /**
@@ -2379,6 +2496,9 @@ export function App() {
             }
             onAttachDrawing={() => engines.command(active.id, { kind: 'invoke', name: 'XATTACH' })}
             onAttachPdf={() => engines.command(active.id, { kind: 'invoke', name: 'PDFATTACH' })}
+            onReloadAll={() => reloadAllReferences(active.id)}
+            onOpen={(row) => openReference(active.id, row)}
+            found={(row) => referenceFound(active.id, row)}
             onBind={(rows, insert) =>
               bindXrefs(
                 active.id,

@@ -69,6 +69,14 @@ describe('filesInFolder (M1-21)', () => {
     ]);
     expect(await names(filesInFolder(dir))).toEqual(['tb.dxf', 'grid.dxf', 'logo.png']);
   });
+
+  it('says where in the folder each file was found (M5-04 part 14, Found At)', async () => {
+    const dir = folder('sheets', [fileHandle('tb.dxf'), folder('xrefs', [fileHandle('grid.dxf')])]);
+    expect((await filesInFolder(dir)).map((f) => f.foundAt)).toEqual([
+      'sheets/tb.dxf',
+      'sheets/xrefs/grid.dxf',
+    ]);
+  });
 });
 
 describe('ReferenceFiles (M1-21)', () => {

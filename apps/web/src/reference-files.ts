@@ -53,14 +53,15 @@ const MAX_FOLDERS = 32;
 export async function filesInFolder(dir: DirectoryHandle): Promise<FileSource[]> {
   const out: FileSource[] = [];
   let budget = MAX_ENTRIES;
-  const walk = async (d: DirectoryHandle, depth: number): Promise<void> => {
+  const walk = async (d: DirectoryHandle, depth: number, at: string): Promise<void> => {
     for await (const h of d.values()) {
       if (--budget < 0) return;
-      if (h.kind === 'file') out.push({ name: h.name, getFile: () => h.getFile() });
-      else if (depth < MAX_DEPTH) await walk(h, depth + 1);
+      if (h.kind === 'file')
+        out.push({ name: h.name, getFile: () => h.getFile(), foundAt: `${at}/${h.name}` });
+      else if (depth < MAX_DEPTH) await walk(h, depth + 1, `${at}/${h.name}`);
     }
   };
-  await walk(dir, 1);
+  await walk(dir, 1, dir.name);
   return out;
 }
 
@@ -88,7 +89,12 @@ export async function filesInEntry(dir: FileSystemDirectoryEntry): Promise<FileS
       if (--budget < 0) return;
       if (e.isFile) {
         const f = e as FileSystemFileEntry;
-        out.push({ name: f.name, getFile: () => new Promise((ok, fail) => f.file(ok, fail)) });
+        out.push({
+          name: f.name,
+          getFile: () => new Promise((ok, fail) => f.file(ok, fail)),
+          // An entry's full path starts at the root of what was dropped: `/sheets/tb.dxf`.
+          foundAt: f.fullPath.replace(/^\//, ''),
+        });
       } else if (depth < MAX_DEPTH) await walk(e as FileSystemDirectoryEntry, depth + 1);
     }
   };
