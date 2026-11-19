@@ -41,7 +41,7 @@
 import type { Vec2 } from '../geom/types';
 import type { BlockTableRecord } from '../model/types';
 import { insUnitsOf } from '../model/units';
-import { XREF_OVERLAY_FLAG, xrefBringing } from '../model/xref';
+import { XREF_OVERLAY_FLAG, isXrefRecord, xrefBringing } from '../model/xref';
 import { toWorld } from '../input/ucs';
 import {
   adoptNestedXref,
@@ -190,14 +190,50 @@ async function xrefFor(
   ctx.edit((b) => {
     block = attachXref(b, ctx.model, file, overlay);
   });
-  const r = ctx.model.tables.blockRecords.get(block)!;
-  ctx.message(
-    `${overlay ? 'Overlay' : 'Attach'} Xref "${r.name}": ${ctx.model.blocks.get(block)!.xrefPath}`,
-  );
-  const reply = await ctx.view.request({ op: 'xref', action: 'attach', blocks: [block] });
+  await loadAttached(ctx, [block]);
+  return ctx.model.tables.blockRecords.get(block)!;
+}
+
+/** The handles of the drawing's xrefs. */
+export function xrefHandles(ctx: CommandContext): Set<string> {
+  const out = new Set<string>();
+  for (const r of ctx.model.tables.blockRecords.values()) if (isXrefRecord(r)) out.add(r.handle);
+  return out;
+}
+
+/**
+ * The xrefs the command just made, `blocks`, each said as AutoCAD says an attached one ("Attach
+ * Xref "name": path", "Overlay Xref …" for an overlay) and loaded by the app from the file its
+ * path names (the `xref` request, action `attach`): the loads join the command's undo step. The
+ * app's line for each follows: loaded, or not found.
+ */
+export async function loadAttached(ctx: CommandContext, blocks: readonly string[]): Promise<void> {
+  if (blocks.length === 0) return;
+  for (const block of blocks) {
+    const r = ctx.model.tables.blockRecords.get(block)!;
+    const overlay = ((r.flags ?? 0) & XREF_OVERLAY_FLAG) !== 0;
+    ctx.message(
+      `${overlay ? 'Overlay' : 'Attach'} Xref "${r.name}": ${ctx.model.blocks.get(block)!.xrefPath}`,
+    );
+  }
+  const reply = await ctx.view.request({ op: 'xref', action: 'attach', blocks });
   if (!reply.ok) ctx.message(reply.message);
   else for (const m of reply.messages ?? []) ctx.message(m);
-  return ctx.model.tables.blockRecords.get(block)!;
+}
+
+/**
+ * The xrefs a paste (or a drawing inserted as a block) brought into the drawing, those it did not
+ * have before (`before`, `xrefHandles`), loaded as XATTACH loads the one it attaches (M5-04 part
+ * 19): AutoCAD's paste of an xref reference into another drawing attaches its file there.
+ */
+export async function loadPastedXrefs(
+  ctx: CommandContext,
+  before: ReadonlySet<string>,
+): Promise<void> {
+  await loadAttached(
+    ctx,
+    [...xrefHandles(ctx)].filter((h) => !before.has(h)),
+  );
 }
 
 /** XATTACH's dialog, then the placing of what it attaches; with `overlay`, opened on Overlay. */

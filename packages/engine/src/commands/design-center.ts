@@ -21,6 +21,7 @@ import {
 } from '../edit/design-center';
 import { insertBlock, insertDialog, insertRefusal } from './blocks';
 import { currentUcs } from './ucs';
+import { loadPastedXrefs, xrefHandles } from './xref-attach';
 import { viewRequest } from './view/zoom';
 
 /** What DesignCenter asks of a drawing: items to add and, maybe, a block to insert. */
@@ -50,6 +51,7 @@ export function designCenterCommand(drop: DesignCenterDrop): CommandDef {
     async *run(ctx): AsyncGenerator<Prompt, void, PromptAnswer> {
       const added = new Map<string, string[]>();
       const ignored: string[] = [];
+      const xrefs = xrefHandles(ctx);
       for (const item of drop.items) {
         // A duplicate makes no edit, so a drop of duplicates alone makes no undo step.
         let done = false;
@@ -66,6 +68,8 @@ export function designCenterCommand(drop: DesignCenterDrop): CommandDef {
       if (ignored.length > 0) {
         ctx.message(`Duplicate definitions ignored: ${ignored.join(', ')}.`);
       }
+      // A block holding an xref's reference attaches the xref, loaded as a paste's (M5-04 part 19).
+      await loadPastedXrefs(ctx, xrefs);
       const insert = drop.insert;
       if (!insert) return;
       if (insert.at === undefined) return yield* insertDialog(ctx, insert.block);
