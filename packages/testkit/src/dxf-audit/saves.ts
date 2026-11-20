@@ -56,6 +56,9 @@ export type AuditSaveKind =
   // MVIEW's viewports (4 by Fit, one from corners, one off, one locked) in the AC1032 sample's
   // current layout and in colors.dxf's, which has none (M6-02 part 1).
   | 'mview'
+  // MVIEW Object and Polygonal, VPCLIP with a polygon and VPCLIP Delete: clipped viewports and
+  // their boundaries in the AC1032 sample and text_in_viewports.dxf (M6-02 part 2).
+  | 'vpclip'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).

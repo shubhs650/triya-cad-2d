@@ -98,6 +98,10 @@ FIXTURE_SAVES = (
     # part 1, packages/testkit/src/export/export-mview.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "mview"),
     ("third-party/ezdxf/examples_dxf/colors.dxf", "mview"),
+    # MVIEW Object and Polygonal, VPCLIP and VPCLIP Delete (M6-02 part 2,
+    # packages/testkit/src/export/export-vpclip.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "vpclip"),
+    ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "vpclip"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
     # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,

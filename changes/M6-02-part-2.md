@@ -1,0 +1,1 @@
+- M6-02 part 2 (#595): MVIEW Object and Polygonal make layout viewports clipped by a closed object or a polygon of lines and arcs, and VPCLIP clips a viewport (keeping its scale) or deletes its clip; saved as AC1032 DXF with the boundary and its reactor, audited by ezdxf.
