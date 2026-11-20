@@ -1,0 +1,1 @@
+- M6-01 part 3b (#599): PAGESETUP and the layout tab menu's Page Setup Manager... open the Page Setup Manager: make named page setups (from nothing, the last plot, the layout's own or another named one), modify them with the Plot dialog's settings, rename, delete, set one current for the layout, and import them from another DXF, all saved with the drawing.
