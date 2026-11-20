@@ -81,6 +81,18 @@ describe('drafting aids', () => {
     ]);
   });
 
+  it('Annotation Visibility turns ANNOALLVISIBLE, AutoScale ANNOAUTOSCALE by its sign (M6-03)', () => {
+    const d = new Drafting();
+    // AutoCAD's initial ANNOALLVISIBLE 1 (shown: every annotative object) and ANNOAUTOSCALE −4.
+    expect([d.isOn('annoVisible'), d.isOn('annoAutoScale')]).toEqual([true, false]);
+    expect(d.get().annoAutoScale).toBe(-4);
+    d.toggle('annoVisible');
+    d.toggle('annoAutoScale');
+    expect([d.get().annoAllVisible, d.get().annoAutoScale]).toEqual([false, 4]);
+    d.toggle('annoAutoScale');
+    expect([d.isOn('annoAutoScale'), d.get().annoAutoScale]).toEqual([false, -4]);
+  });
+
   it('SC (Ctrl+W) turns SELECTIONCYCLING on as 2, off by its sign (M3-04 part 3)', () => {
     const d = new Drafting();
     expect(d.isOn('sc')).toBe(false);

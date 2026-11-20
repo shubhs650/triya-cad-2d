@@ -88,6 +88,7 @@ export type DraftingPreferences = Pick<
   | 'fieldDisplay'
   | 'layLockFade'
   | 'xFade'
+  | 'annoAutoScale'
   | 'plotTransparencyOverride'
   | 'lwDefault'
   | 'lwUnits'
@@ -200,6 +201,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     fieldDisplay: true,
     layLockFade: 50,
     xFade: 50,
+    annoAutoScale: -4,
     plotTransparencyOverride: 1,
     lwDefault: 25,
     lwUnits: 1,
@@ -364,6 +366,10 @@ export function normalizePreferences(raw: unknown): Preferences {
       fieldDisplay: bool(k['fieldDisplay'], d.drafting.fieldDisplay),
       layLockFade: within(k['layLockFade'], { min: -90, max: 90 }, d.drafting.layLockFade),
       xFade: within(k['xFade'], { min: 0, max: 90 }, d.drafting.xFade),
+      // M6-03: ANNOAUTOSCALE is −4 to 4 but 0.
+      annoAutoScale:
+        within(k['annoAutoScale'], { min: -4, max: 4 }, d.drafting.annoAutoScale) ||
+        d.drafting.annoAutoScale,
       plotTransparencyOverride: within(
         k['plotTransparencyOverride'],
         { min: 0, max: 2 },
@@ -525,6 +531,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     fieldDisplay: s.fieldDisplay,
     layLockFade: s.layLockFade,
     xFade: s.xFade,
+    annoAutoScale: s.annoAutoScale,
     plotTransparencyOverride: s.plotTransparencyOverride,
     lwDefault: s.lwDefault,
     lwUnits: s.lwUnits,

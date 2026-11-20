@@ -35,6 +35,18 @@ export interface DraftingState {
   readonly lwt: boolean | undefined;
   /** TRANSPARENCYDISPLAY. */
   readonly tpy: boolean;
+  /**
+   * ANNOALLVISIBLE (M6-03): every annotative object shown (AutoCAD's initial 1), or on the Model
+   * tab only those supporting the current annotation scale. AutoCAD saves it in the drawing, but
+   * no DXF says where, so Triya keeps it per session; the status bar's Annotation Visibility.
+   */
+  readonly annoAllVisible: boolean;
+  /**
+   * ANNOAUTOSCALE (M6-03): −4 to 4 but 0, AutoCAD's initial −4; positive is on, the status bar's
+   * AutoScale, turned by its sign. AutoCAD keeps it per user. While on, AutoCAD adds a new
+   * annotation scale to annotative objects; Triya never does (DEC-013) and says so.
+   */
+  readonly annoAutoScale: number;
   /** AUTOSNAPSIZE: half the AutoSnap marker's size, CSS pixels (M2-20). */
   readonly markerSize: number;
   /** APERTURE: how near an object must be to the cursor to be snapped to, CSS pixels. */
@@ -448,6 +460,8 @@ export type DraftingToggle =
   | 'grid'
   | 'lwt'
   | 'tpy'
+  | 'annoVisible'
+  | 'annoAutoScale'
   | 'qp'
   | 'sc'
   | 'groups'
@@ -467,6 +481,8 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:otrack', label: 'Object Snap Tracking on/off' },
   { id: 'drafting:lwt', label: 'Show/Hide Lineweight' },
   { id: 'drafting:tpy', label: 'Show/Hide Transparency' },
+  { id: 'drafting:annoVisible', label: 'Annotation Visibility on/off' },
+  { id: 'drafting:annoAutoScale', label: 'Annotation AutoScale on/off' },
   { id: 'drafting:qp', label: 'Quick Properties on/off' },
   { id: 'drafting:sc', label: 'Selection Cycling on/off' },
   { id: 'drafting:groups', label: 'Group Selection on/off' },
@@ -484,6 +500,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   grid: false,
   lwt: undefined,
   tpy: true,
+  annoAllVisible: true,
+  annoAutoScale: -4,
   markerSize: 5,
   aperture: 10,
   pdfOsnap: true,
@@ -557,6 +575,8 @@ export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): bo
   if (t === 'groups') return (s.pickStyle & 1) !== 0;
   if (t === 'groupBox') return s.groupDisplayMode === 2;
   if (t === 'underlaySnap') return s.pdfOsnap;
+  if (t === 'annoVisible') return s.annoAllVisible;
+  if (t === 'annoAutoScale') return s.annoAutoScale > 0;
   return s[t];
 }
 
@@ -630,6 +650,12 @@ export class Drafting {
       // snapping to underlays' geometry, PDFOSNAP since Triya's underlays are all PDF.
       case 'underlaySnap':
         return this.#set({ ...s, pdfOsnap: !s.pdfOsnap });
+      // The status bar's Annotation Visibility and AutoScale (M6-03): ANNOALLVISIBLE, and
+      // ANNOAUTOSCALE's sign, which keeps its value for when it is turned on again.
+      case 'annoVisible':
+        return this.#set({ ...s, annoAllVisible: !s.annoAllVisible });
+      case 'annoAutoScale':
+        return this.#set({ ...s, annoAutoScale: -s.annoAutoScale });
       case 'snap':
       case 'otrack':
       case 'grid':

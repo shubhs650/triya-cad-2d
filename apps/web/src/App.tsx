@@ -70,6 +70,7 @@ import { cyclingBadge } from './cycling-badge';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
+import { AnnotationScaleControls } from './AnnotationScale';
 import { AttributeDialogs } from './AttributeDialogs';
 import type { XrefFiles } from './XrefAttachDialog';
 import type { PdfAttachFiles } from './PdfAttachDialog';
@@ -3242,6 +3243,7 @@ function StatusBar({
           <span className="space" data-testid="space">
             {inPaperSpace(doc) ? 'PAPER' : 'MODEL'}
           </span>
+          <AnnotationScaleControls doc={doc} header={header} />
         </>
       )}
     </footer>

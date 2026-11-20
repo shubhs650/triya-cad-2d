@@ -75,6 +75,8 @@ describe('preferences', () => {
       layLockFade: 50,
       // XFADECTL 50 (M5-02 part 5).
       xFade: 50,
+      // ANNOAUTOSCALE −4, off (M6-03).
+      annoAutoScale: -4,
       // PLOTTRANSPARENCYOVERRIDE 1, the page setup's (M6-04 part 2).
       plotTransparencyOverride: 1,
       // LWDEFAULT 25, LWUNITS 1 (millimetres) and Adjust Display Scale 1 (M5-08 part 3).
@@ -430,6 +432,13 @@ describe('preferences', () => {
         .plotTransparencyOverride;
     expect([o(0), o(1), o(2)]).toEqual([0, 1, 2]);
     expect([o(3), o(-1), o('2'), o(1.5)]).toEqual([1, 1, 1, 1]);
+  });
+
+  it('keep ANNOAUTOSCALE from −4 to 4 but 0 (M6-03)', () => {
+    const a = (annoAutoScale: unknown) =>
+      normalizePreferences({ drafting: { annoAutoScale } }).drafting.annoAutoScale;
+    expect([a(-4), a(-1), a(1), a(4)]).toEqual([-4, -1, 1, 4]);
+    expect([a(0), a(5), a(-5), a(1.5), a('2')]).toEqual([-4, -4, -4, -4, -4]);
   });
 
   it('keep XFADECTL from 0 to 90 (M5-02 part 5)', () => {

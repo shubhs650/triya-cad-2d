@@ -33,6 +33,7 @@ import { drawingUnits } from './units';
 import { currentVport, snapGridOf, snapGridPatch, snapGridProblem } from '../edit/snap-grid';
 import type { VportRecord } from '../model/types';
 import { inquiryResults } from './inquiry/inquiry';
+import { ANNOAUTOSCALE, ANNOAUTOSCALE_NOTICE } from '../annotation/annotation-scale';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -219,6 +220,19 @@ async function showTab(ctx: CommandContext, name: string, value: VariableValue):
   if (!r.ok) ctx.message(r.message);
 }
 
+/**
+ * A changed CANNOSCALE while ANNOAUTOSCALE is on (positive), M6-03: AutoCAD would add the new
+ * scale to annotative objects, which is annotative creation (DEC-013), so Triya says it does not.
+ * Nothing is said where no app keeps ANNOAUTOSCALE (scripts, tests).
+ */
+async function annoAutoScaleNotice(ctx: CommandContext): Promise<void> {
+  const v = systemVariable(ctx.model, ANNOAUTOSCALE);
+  const r = v && (await read(ctx, v));
+  if (r && 'value' in r && typeof r.value === 'number' && r.value > 0) {
+    ctx.message(ANNOAUTOSCALE_NOTICE);
+  }
+}
+
 /** Sets a variable to a value `parseValue` took. */
 async function write(ctx: CommandContext, v: SystemVariable, value: VariableValue): Promise<void> {
   switch (v.store) {
@@ -241,6 +255,7 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
         key === 'CANNOSCALE' ? annotationScaleValue(ctx.model, String(next)) : undefined;
       if (ratio !== undefined && entries.length > 0) entries.push(['CANNOSCALEVALUE', ratio]);
       if (entries.length > 0) ctx.edit((b) => entries.forEach(([k, e]) => b.setHeader(k, e)));
+      if (key === 'CANNOSCALE' && entries.length > 0) await annoAutoScaleNotice(ctx);
       return;
     }
     case 'wipeout':

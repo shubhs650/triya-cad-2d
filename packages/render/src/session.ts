@@ -372,6 +372,8 @@ export class RenderSession {
       tol: this.#tol,
       ...(model !== undefined && model !== this.renderer.pickBlock && { modelSpace: model }),
       underlays: (h) => this.#underlaySnaps.get(h),
+      // What the canvas hides although its layer shows it (ANNOALLVISIBLE 0, M6-03).
+      hidden: (e) => this.renderer.hides(e),
     };
   }
 
@@ -497,7 +499,8 @@ export class RenderSession {
    * object per font, so the parts cross a worker boundary and a PDF embeds each font once.
    */
   plot(request: PlotRequest = {}): PlotPart[] {
-    const parts = plotParts(this.model, request.block ?? this.#block, {
+    const block = request.block ?? this.#block;
+    const parts = plotParts(this.model, block, {
       resolver: new PlotResolver(request.table),
       tessellate: this.renderer.tessellateContext,
       viewHeight: this.renderer.viewHeight,
@@ -508,6 +511,8 @@ export class RenderSession {
       }),
       ...(request.paperspaceLast && { paperspaceLast: true }),
       ...(request.handles && { only: new Set(request.handles) }),
+      // The space shown plots as it shows (ANNOALLVISIBLE 0 on the Model tab, M6-03).
+      ...(block === this.#block && { hidden: (e: Entity) => this.renderer.hides(e) }),
     });
     const fonts = new Map<object, { readonly bytes?: Uint8Array }>();
     const slim = (font: { readonly bytes?: Uint8Array }) => {

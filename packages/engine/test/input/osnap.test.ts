@@ -474,6 +474,19 @@ describe('what is snapped to', () => {
     expect(snap([e(LINE, { visible: false })], at(97, 1), OSNAP.END)).toEqual([]);
   });
 
+  it('skips the objects the space shown hides (ANNOALLVISIBLE 0, M6-03)', () => {
+    const line = e(LINE);
+    const src = source([line]);
+    const hit = (hidden?: (x: { handle: string }) => boolean) =>
+      osnap(
+        { ...src, ...(hidden && { hidden }) },
+        { point: at(97, 1), aperture: 5, modes: OSNAP.END },
+      );
+    expect(hit()).toHaveLength(1);
+    expect(hit((x) => x.handle === line.handle)).toEqual([]);
+    expect(hit((x) => x.handle !== line.handle)).toHaveLength(1);
+  });
+
   it('takes only objects within the aperture', () => {
     expect(snap([e(LINE)], at(50, 6), OSNAP.END)).toEqual([]);
     expect(snap([e(LINE)], at(50, 4), OSNAP.END)).toHaveLength(1);
