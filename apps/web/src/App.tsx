@@ -106,6 +106,8 @@ import {
   type DrawingTemplate,
 } from './templates';
 import { underlayLayersDialog } from './underlay-layers';
+import { insertLayoutsDialog, layoutFileReply } from './layout-template-files';
+import { InsertLayoutsDialog } from './InsertLayoutsDialog';
 import { UnderlayLayers } from './UnderlayLayers';
 import { exportFile } from './export-file';
 import { commandLines, variableNames } from './command-line';
@@ -640,6 +642,9 @@ function viewContext(id: number): ViewContext {
       }),
     // -INSERT name=file (M5-01 part 4): a drawing open, or a file given for xrefs.
     drawingFile: (file) => drawingFileReply(file, heldDrawings()),
+    // LAYOUT Template (M6-01 part 4): the Insert Layout(s) dialog, or a drawing named.
+    layoutFile: (file) =>
+      file === undefined ? insertLayoutsDialog.show(id) : layoutFileReply(file, heldDrawings()),
     // -XREF Attach and Overlay (M5-04 part 12): a drawing named at the command line.
     xrefFile: (file) => xrefFileByName(id, file),
     // -PDFATTACH (M5-04 part 13): a PDF named at the command line.
@@ -2764,6 +2769,7 @@ export function App() {
       />
       <TemplateChooser />
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
+      <InsertLayoutsDialog doc={active?.id} />
       <SaveChanges prompt={saveChanges} />
       <PlotNoticeDialog />
       <SnapMenu />

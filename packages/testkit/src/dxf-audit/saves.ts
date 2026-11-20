@@ -56,6 +56,10 @@ export type AuditSaveKind =
   // LAYOUT Copy of every layout of the AC1032 sample and of text_in_viewports.dxf (a clipped
   // viewport copied with its boundary; M6-01 part 2).
   | 'layout-copy'
+  // LAYOUT Template of every layout of the AC1032 sample and of text_in_viewports.dxf into
+  // colors.dxf, and LAYOUT SAveas's new drawing of their first layout (M6-01 part 4).
+  | 'layout-template'
+  | 'layout-saveas'
   // MVIEW's viewports (4 by Fit, one from corners, one off, one locked) in the AC1032 sample's
   // current layout and in colors.dxf's, which has none (M6-02 part 1).
   | 'mview'

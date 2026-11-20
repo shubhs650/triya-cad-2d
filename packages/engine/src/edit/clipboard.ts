@@ -239,7 +239,7 @@ const isDefinition = (o: NonGraphicalObject | undefined): o is Definition =>
   o !== undefined && Object.hasOwn(DEFINITIONS, o.type);
 
 /** Why `e` cannot go on the Clipboard, or undefined. */
-function clipboardProblem(model: DocumentModel, e: Entity): string | undefined {
+function clipboardProblem(model: DocumentModel, e: Entity, viewports: boolean): string | undefined {
   const g = e.geom;
   if ((g.kind === 'IMAGE' || g.kind === 'PDFUNDERLAY') && g.definition !== undefined) {
     // The save writes no image without the IMAGEDEF naming its file (export entities.ts).
@@ -249,7 +249,8 @@ function clipboardProblem(model: DocumentModel, e: Entity): string | undefined {
         : 'an underlay whose definition is missing cannot be pasted';
     }
   }
-  if (g.kind === 'VIEWPORT') return 'a viewport cannot be pasted';
+  // A layout's viewports go with its sheet (LAYOUT Template, M6-01 part 4), never by themselves.
+  if (g.kind === 'VIEWPORT') return viewports ? undefined : 'a viewport cannot be pasted';
   // A reference to an xref another loaded xref brings in is that xref's content (a block of its
   // file's): nothing of the drawing's names the nested xref, so no paste can attach it.
   if (
@@ -462,6 +463,7 @@ function count(map: Map<string, number>, reason: string): void {
  * COPYCLIP: `ids` and the definitions they use, `base` the point a paste puts at its insertion
  * point. Objects the Clipboard cannot carry are left out, counted by reason. `alsoRecords` (table
  * records' handles) are carried as well, with what they name, though no object uses them.
+ * `options.viewports`: viewports are carried too (a layout's sheet, layout-templates.ts).
  */
 export function copyToClipboard(
   model: DocumentModel,
@@ -469,6 +471,7 @@ export function copyToClipboard(
   base: Vec2,
   extents?: Box,
   alsoRecords: readonly Handle[] = [],
+  options: { readonly viewports?: boolean } = {},
 ): ClipboardCopy {
   const refused = new Map<string, number>();
   let unannotated = 0;
@@ -506,7 +509,7 @@ export function copyToClipboard(
     codedReferences(model, tree, pending);
   };
   const take = (e: Entity, into: EntityInit[]): void => {
-    const problem = clipboardProblem(model, e);
+    const problem = clipboardProblem(model, e, options.viewports === true);
     if (problem) {
       count(refused, problem);
       return;

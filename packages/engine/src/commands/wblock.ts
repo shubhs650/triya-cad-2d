@@ -111,13 +111,19 @@ export function wblockFileName(typed: string): string {
   return `${name === '' ? 'new block' : name}.dxf`;
 }
 
-/** The new drawing: `copy`'s objects with the drawing's units settings, in `units`. */
-function blockDrawing(ctx: CommandContext, copy: ClipboardCopy, units: number): BlockDrawing {
+/** The drawing's units settings, which a new drawing written from it keeps (LAYOUT SAveas too). */
+export function carriedHeader(model: DocumentModel): Record<string, HeaderValue> {
   const header: Record<string, HeaderValue> = {};
   for (const key of CARRIED_HEADER) {
-    const v = ctx.model.header.get(key);
+    const v = model.header.get(key);
     if (v !== undefined) header[key] = v;
   }
+  return header;
+}
+
+/** The new drawing: `copy`'s objects with the drawing's units settings, in `units`. */
+function blockDrawing(ctx: CommandContext, copy: ClipboardCopy, units: number): BlockDrawing {
+  const header = carriedHeader(ctx.model);
   header['$INSUNITS'] = units;
   header['$INSBASE'] = { x: 0, y: 0, z: 0 };
   return { content: copy.clipboard, header };

@@ -177,6 +177,8 @@ export interface ViewContext {
    * and the files given for xrefs, its model space answered as `drawing`; none found, no drawing.
    */
   readonly drawingFile?: (file: string) => Promise<ViewReply>;
+  /** LAYOUT Template (M6-01 part 4): the dialogs without `file`, else the drawing of that name. */
+  readonly layoutFile?: (file?: string) => Promise<ViewReply>;
   /** -XREF Attach and Overlay (M5-04 part 12): the drawing file of that name, with its units. */
   readonly xrefFile?: (file: string) => Promise<ViewReply>;
   /** -PDFATTACH (M5-04 part 13): the PDF file of that name, with its pages' sizes. */
@@ -239,6 +241,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'drawingFile') {
     return ctx.drawingFile ? ctx.drawingFile(r.file) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'layoutFile') {
+    return ctx.layoutFile ? ctx.layoutFile(r.file) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'xrefFile') {
     return ctx.xrefFile ? ctx.xrefFile(r.file) : { ok: false, message: NO_FILE };

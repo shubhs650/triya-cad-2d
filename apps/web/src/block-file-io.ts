@@ -11,9 +11,12 @@ export async function browsedDrawing(file: Blob): Promise<Clipboard> {
   return drawingContent(await drawingFileModel(file)).clipboard;
 }
 
-/** WBLOCK's new drawing as an AC1032 DXF, written by a fresh I/O worker. */
+/** WBLOCK's (and LAYOUT SAveas's) new drawing as an AC1032 DXF, written by a fresh I/O worker. */
 export function writeBlockFile(drawing: BlockDrawing): Promise<Uint8Array> {
-  return writeBlockInWorker(drawing.content, drawing.header, {
-    createWorker: () => new IoWorker(),
-  });
+  return writeBlockInWorker(
+    drawing.content,
+    drawing.header,
+    { createWorker: () => new IoWorker() },
+    drawing.layout,
+  );
 }
