@@ -69,6 +69,9 @@ export type AuditSaveKind =
   // ZOOM and PAN in each of the AC1032 sample's unlocked floating viewports: their own view centre
   // and height changed (M6-02 part 4).
   | 'viewport-view'
+  // VPLAYER Color, LWeight, TRansparency, Freeze, Vpvisdflt and Newfrz in every floating viewport
+  // of the AC1032 sample, text_in_viewports.dxf and viewport-overrides.dxf (M6-02 part 5).
+  | 'vplayer'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).

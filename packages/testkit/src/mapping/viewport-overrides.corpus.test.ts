@@ -3,7 +3,8 @@
 // scripts/corpus/viewport-overrides.py; DEC-047, no AutoCAD sample). Its four Layout1 viewports
 // show one view: plain, with overrides on WALLS and PIPING, clipped by a closed LWPOLYLINE, and
 // clipped by a CIRCLE. The overrides are the `ADSK_XREC_LAYER_*_OVR` XRECORDs of each layer's
-// extension dictionary; a save keeps them as read, through edits to the layer's own values.
+// extension dictionary; a save keeps them as read, through edits to the layer's own values, and
+// writes them as VPLAYER changes them (M6-02 part 5).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -110,16 +111,72 @@ describe('viewport layer overrides (M1-62)', () => {
     });
   });
 
-  // No command edits overrides yet (VPLAYER and the Layer Properties Manager's VP columns are
-  // M5 work); DEC-047: the writer comes with the command that first needs it.
-  it('refuses a save that changes the overrides', () => {
+  // VPLAYER and MVIEW LAyer edit them (M6-02 part 5): the save rewrites the records whose
+  // property changed, makes the dictionary and records a layer lacks and removes one left empty.
+  it('saves changed overrides: removed, added to a layer without any, and changed', () => {
+    withPinnedClock(() => {
+      const model = open();
+      const { plain, overrides } = viewports(model);
+      const walls = layer(model, 'WALLS');
+      const piping = layer(model, 'PIPING');
+      const grid = layer(model, 'GRID');
+      const b = new ChangeSetBuilder(model);
+      // WALLS keeps only its lineweight; the colour and transparency records go.
+      b.updateTableRecord('layers', walls.handle, {
+        viewportOverrides: [{ viewport: overrides.handle, lineweight: 70 }],
+      });
+      b.updateTableRecord('layers', piping.handle, {
+        viewportOverrides: [
+          { ...piping.viewportOverrides![0]!, color: { kind: 'aci', index: 5 } },
+          { viewport: plain.handle, transparency: { alpha: 76 } },
+        ],
+      });
+      b.updateTableRecord('layers', grid.handle, {
+        viewportOverrides: [
+          {
+            viewport: plain.handle,
+            color: { kind: 'rgb', r: 1, g: 2, b: 3 },
+            lineweight: 'Default',
+          },
+        ],
+      });
+      model.apply(b.build());
+      const original = readCadDocument(bytes);
+      const reopened = readCadDocument(
+        exportDocument(readCadDocument(bytes), model, { format: 'dxf' }),
+      );
+      const back = DocumentModel.create(documentInit(reopened));
+      for (const name of ['WALLS', 'PIPING', 'GRID'])
+        expect(layer(back, name).viewportOverrides, name).toEqual(
+          layer(model, name).viewportOverrides,
+        );
+      const walls2 = reopened.layers!.get('WALLS')!;
+      expect(walls2.xDictionary!.entryNames.map((n) => n.toUpperCase()).sort()).toEqual([
+        'ADSK_XREC_LAYER_LINEWT_OVR',
+      ]);
+      // Only the layers edited differ.
+      const ignoreHandles = new Set(
+        [walls, piping, grid].map((l) => Number.parseInt(l.handle, 16)),
+      );
+      const left = structuralDiff(original, reopened, { ignoreHandles }).differences.filter(
+        (d) => !/XRECORD|DICTIONARY/.test(JSON.stringify(d)),
+      );
+      expect(left).toEqual([]);
+    });
+  });
+
+  it('refuses a ByLayer override colour', () => {
     const model = open();
     const walls = layer(model, 'WALLS');
     const b = new ChangeSetBuilder(model);
-    b.updateTableRecord('layers', walls.handle, { viewportOverrides: [] });
+    b.updateTableRecord('layers', walls.handle, {
+      viewportOverrides: [
+        { viewport: walls.viewportOverrides![0]!.viewport, color: { kind: 'byLayer' } },
+      ],
+    });
     model.apply(b.build());
     expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
-      /WALLS .*viewport layer overrides change/,
+      /WALLS .*a viewport override colour cannot be byLayer/,
     );
   });
 

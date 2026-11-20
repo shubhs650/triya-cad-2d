@@ -1,0 +1,178 @@
+// Layer visibility and property overrides in layout viewports (M6-02 part 5: VPLAYER, MVIEW
+// LAyer). AutoCAD 2024 Help, "VPLAYER (Command)": a layer can be frozen in some viewports and
+// thawed in others (the VIEWPORT's frozen layers, DXF 341), and shown in a viewport with another
+// colour, linetype, lineweight or transparency than its own (the layer's `viewportOverrides`,
+// AutoCAD's ADSK_XREC_LAYER_*_OVR XRECORDs, which `layout/viewport-layers.ts` applies). A layer's
+// viewport visibility default (DXF 70 bit 2, "frozen by default in new viewports") is what a new
+// viewport and VPLAYER Reset give it.
+//
+// Each function writes into the builder only what changes, so an edit that changes nothing
+// builds an empty change set.
+import type { ChangeSetBuilder } from '../model/builder';
+import type { DocumentModel } from '../model/document';
+import type { Handle } from '../model/handle';
+import type {
+  Color,
+  Entity,
+  LayerViewportOverride,
+  Lineweight,
+  Transparency,
+  ViewportGeometry,
+} from '../model/types';
+
+/** DXF 70 bit 2 of a LAYER: "Layer is frozen by default in new viewports". */
+export const NEW_VP_FROZEN = 2;
+
+/** The properties a viewport can override (VPLAYER Color, Ltype, LWeight, TRansparency). */
+export interface ViewportOverrideProps {
+  readonly color?: Color;
+  readonly linetype?: Handle;
+  readonly lineweight?: Lineweight;
+  readonly transparency?: Transparency;
+}
+
+type ViewportEntity = Entity & { geom: ViewportGeometry };
+
+const viewportOf = (model: DocumentModel, h: Handle): ViewportEntity | undefined => {
+  const e = model.entityByHandle(h);
+  return e?.geom.kind === 'VIEWPORT' ? (e as ViewportEntity) : undefined;
+};
+
+/** Whether two override entries hold the same values. */
+const sameOverride = (a: LayerViewportOverride, b: LayerViewportOverride): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
+
+/** The layer's override list after `edit` maps each entry (undefined drops it), if it changed. */
+function rewrite(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  layer: Handle,
+  next: (list: readonly LayerViewportOverride[]) => LayerViewportOverride[],
+): void {
+  const l = model.tables.layers.get(layer);
+  if (!l) return;
+  const before = l.viewportOverrides ?? [];
+  const after = next(before);
+  if (after.length === before.length && after.every((o, i) => sameOverride(o, before[i]!))) return;
+  b.updateTableRecord('layers', layer, {
+    viewportOverrides: after.length > 0 ? after : undefined,
+  });
+}
+
+/**
+ * `props` overriding each of `layers` in each of `viewports`, beside what each viewport already
+ * overrides (VPLAYER Color, Ltype, LWeight and TRansparency, one property at a time).
+ */
+export function setViewportOverrides(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  layers: readonly Handle[],
+  viewports: readonly Handle[],
+  props: ViewportOverrideProps,
+): void {
+  for (const layer of layers) {
+    rewrite(b, model, layer, (list) => {
+      const out = [...list];
+      for (const viewport of viewports) {
+        const at = out.findIndex((o) => o.viewport === viewport);
+        // The viewport first, as the reader builds an entry.
+        const merged = { viewport, ...(at >= 0 ? out[at] : {}), ...props };
+        if (at >= 0) out[at] = merged;
+        else out.push(merged);
+      }
+      return out;
+    });
+  }
+}
+
+/**
+ * Every property override of `viewports` removed, of `layers` or of every layer (MVIEW LAyer:
+ * "Reset viewport layer property overrides back to global properties").
+ */
+export function removeViewportOverrides(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  viewports: readonly Handle[],
+  layers: readonly Handle[] = [...model.tables.layers.keys()],
+): void {
+  const gone = new Set(viewports);
+  for (const layer of layers)
+    rewrite(b, model, layer, (list) => list.filter((o) => !gone.has(o.viewport)));
+}
+
+/** `layers` frozen (or thawed) in each of `viewports`: their DXF 341 lists. */
+export function freezeInViewports(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  layers: readonly Handle[],
+  viewports: readonly Handle[],
+  frozen: boolean,
+): void {
+  for (const h of viewports) {
+    const vp = viewportOf(model, h);
+    if (!vp) continue;
+    const g = (b.entity(vp.id)?.geom ?? vp.geom) as ViewportGeometry;
+    const has = new Set(g.frozenLayers);
+    const next = frozen
+      ? [...g.frozenLayers, ...layers.filter((l) => !has.has(l))]
+      : g.frozenLayers.filter((l) => !layers.includes(l));
+    if (next.length !== g.frozenLayers.length)
+      b.updateEntity(vp.id, { geom: { ...g, frozenLayers: next } });
+  }
+}
+
+/** Whether `layer` is frozen in new viewports (VPLAYER Vpvisdflt, the LPM's New VP Freeze). */
+export const newViewportFrozen = (model: DocumentModel, layer: Handle): boolean =>
+  ((model.tables.layers.get(layer)?.flags ?? 0) & NEW_VP_FROZEN) !== 0;
+
+/** The layers a new viewport starts frozen in, in table order. */
+export const newViewportFrozenLayers = (model: DocumentModel): Handle[] =>
+  [...model.tables.layers.keys()].filter((h) => newViewportFrozen(model, h));
+
+/**
+ * VPLAYER Reset: `layers` frozen or thawed in `viewports` as their viewport visibility default
+ * says (Help: "Sets the visibility of layers in specified viewports to their current default
+ * setting").
+ */
+export function resetInViewports(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  layers: readonly Handle[],
+  viewports: readonly Handle[],
+): void {
+  const frozen = layers.filter((l) => newViewportFrozen(model, l));
+  const thawed = layers.filter((l) => !newViewportFrozen(model, l));
+  freezeInViewports(b, model, frozen, viewports, true);
+  freezeInViewports(b, model, thawed, viewports, false);
+}
+
+/** VPLAYER Vpvisdflt: `layers` frozen (or thawed) by default in new viewports. */
+export function setNewViewportFrozen(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  layers: readonly Handle[],
+  frozen: boolean,
+): void {
+  for (const h of layers) {
+    const l = model.tables.layers.get(h);
+    if (!l) continue;
+    const flags = l.flags ?? 0;
+    const next = frozen ? flags | NEW_VP_FROZEN : flags & ~NEW_VP_FROZEN;
+    if (next !== flags) b.updateTableRecord('layers', h, { flags: next });
+  }
+}
+
+/** Every layout's floating viewports (not a sheet's own, 69 = 1), in layout tab order. */
+export function layoutViewports(model: DocumentModel): ViewportEntity[] {
+  const out: ViewportEntity[] = [];
+  const layouts = [...model.layouts].sort((a, b) => (a.tabOrder ?? 0) - (b.tabOrder ?? 0));
+  for (const layout of layouts) {
+    if (model.tables.blockRecords.get(layout.blockRecord)?.name.toUpperCase() === '*MODEL_SPACE')
+      continue;
+    for (const id of model.blockEntities(layout.blockRecord)) {
+      const e = model.entity(id);
+      if (e?.geom.kind === 'VIEWPORT' && e.geom.id !== 1) out.push(e as ViewportEntity);
+    }
+  }
+  return out;
+}

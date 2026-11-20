@@ -39,7 +39,7 @@
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { Handle } from '../model/handle';
-import type { Color, LayerRecord, Lineweight } from '../model/types';
+import type { Color, LayerRecord, LinetypeRecord, Lineweight } from '../model/types';
 import { ChangeSetBuilder } from '../model/builder';
 import { isEmptyChangeSet } from '../model/changeset';
 import { newLayer, setLayerProps, type LayerProps } from '../edit/layer-manager';
@@ -86,7 +86,7 @@ const optionsOf = (ctx: CommandContext) =>
 const COLOR_NAMES = ['red', 'yellow', 'green', 'cyan', 'blue', 'magenta', 'white'];
 const quoted = (s: string) => `"${s}"`;
 const upper = (s: string) => s.toUpperCase();
-const NO_MATCH = 'No matching layer names found.';
+export const NO_MATCH = 'No matching layer names found.';
 
 const layersOf = (ctx: CommandContext) => [...ctx.model.tables.layers.values()];
 
@@ -95,13 +95,13 @@ function named(ctx: CommandContext, name: string): LayerRecord | undefined {
   return layersOf(ctx).find((l) => upper(l.name) === key);
 }
 
-function current(ctx: CommandContext): LayerRecord | undefined {
+export function current(ctx: CommandContext): LayerRecord | undefined {
   const c = ctx.model.header.get('$CLAYER');
   return typeof c === 'string' ? named(ctx, c) : undefined;
 }
 
 /** A colour as -LAYER names it: "1 (red)", "30", "10,20,30" or "BOOK$COLOR". */
-function colorLabel(c: Color): string {
+export function colorLabel(c: Color): string {
   if (c.kind === 'aci') {
     const name = COLOR_NAMES[c.index - 1];
     return name ? `${c.index} (${name})` : String(c.index);
@@ -111,7 +111,7 @@ function colorLabel(c: Color): string {
   return c.kind === 'byLayer' ? 'BYLAYER' : 'BYBLOCK';
 }
 
-const lineweightLabel = (w: Lineweight) =>
+export const lineweightLabel = (w: Lineweight) =>
   typeof w === 'number' ? `${(w / 100).toFixed(2)}mm` : String(w);
 
 /** `props` set on `layers` in one edit, or why not (said); nothing built when nothing changes. */
@@ -129,10 +129,10 @@ function apply(ctx: CommandContext, layers: readonly LayerRecord[], props: Layer
 }
 
 /** What was typed, trimmed; '' for Enter (Esc never reaches a command: the bus ends it). */
-const typed = (a: PromptAnswer): string => (a.kind === 'string' ? a.value.trim() : '');
+export const typed = (a: PromptAnswer): string => (a.kind === 'string' ? a.value.trim() : '');
 
 /** The layers a name list (names or patterns, comma separated) matches; said when none. */
-function matching(ctx: CommandContext, list: string): LayerRecord[] {
+export function matching(ctx: CommandContext, list: string): LayerRecord[] {
   const found = layersOf(ctx).filter((l) => wcmatch(l.name, list));
   if (found.length === 0) ctx.message(NO_MATCH);
   return found;
@@ -212,9 +212,13 @@ function makeCurrent(ctx: CommandContext, layer: LayerRecord): void {
 
 /**
  * A new layer as -LAYER makes it, into `b`: color 7, Continuous, Default lineweight, opaque,
- * otherwise as layer 0 (on, thawed, unlocked, plotted unless layer 0 is not). Why not, else.
+ * otherwise as layer 0 (on, thawed, unlocked, plotted unless layer 0 is not); why not, else.
  */
-function makeLayer(ctx: CommandContext, b: ChangeSetBuilder, name: string): string | undefined {
+export function makeLayer(
+  ctx: CommandContext,
+  b: ChangeSetBuilder,
+  name: string,
+): LayerRecord | string {
   const continuous = [...ctx.model.tables.linetypes.values()].find(
     (t) => upper(t.name) === 'CONTINUOUS',
   );
@@ -225,12 +229,14 @@ function makeLayer(ctx: CommandContext, b: ChangeSetBuilder, name: string): stri
     lineweight: 'Default',
     transparency: { alpha: 255 },
   });
-  return typeof made === 'string' ? made : undefined;
+  return made;
 }
 
 /** Why -LAYER cannot make a layer named `name`, or undefined. */
-const makeProblem = (ctx: CommandContext, name: string) =>
-  makeLayer(ctx, new ChangeSetBuilder(ctx.model), name);
+export function makeProblem(ctx: CommandContext, name: string): string | undefined {
+  const made = makeLayer(ctx, new ChangeSetBuilder(ctx.model), name);
+  return typeof made === 'string' ? made : undefined;
+}
 
 async function* make(ctx: CommandContext): Sub<void> {
   const cur = current(ctx);
@@ -337,8 +343,11 @@ async function* freeze(ctx: CommandContext): Sub<void> {
 }
 
 /** "New color [Truecolor/COlorbook]": the colour's choice value, and whether typed negative. */
-async function* colorAsked(ctx: CommandContext): Sub<{ value?: string; off: boolean }> {
-  const a = yield ctx.prompt.string({ message: 'New color', options: ['Truecolor', 'COlorbook'] });
+export async function* colorAsked(
+  ctx: CommandContext,
+  message = 'New color',
+): Sub<{ value?: string; off: boolean }> {
+  const a = yield ctx.prompt.string({ message, options: ['Truecolor', 'COlorbook'] });
   if (a.kind === 'keyword' && a.keyword === 'COlorbook') {
     const value = yield* bookColor(ctx);
     return { ...(value !== undefined && { value }), off: false };
@@ -366,12 +375,16 @@ async function* color(ctx: CommandContext): Sub<void> {
   apply(ctx, layers, { color: c, on: !off });
 }
 
-async function* ltype(ctx: CommandContext): Sub<void> {
+/** "Enter a loaded linetype name or [?] <Continuous>": the linetype, or undefined (said). */
+export async function* linetypeAsked(
+  ctx: CommandContext,
+  message = 'Enter a loaded linetype name or',
+): Sub<LinetypeRecord | undefined> {
   const linetypes = [...ctx.model.tables.linetypes.values()];
   let a: PromptAnswer;
   for (;;) {
     a = yield ctx.prompt.string({
-      message: 'Enter a loaded linetype name or',
+      message,
       options: ['?'],
       defaultLabel: 'Continuous',
     });
@@ -383,8 +396,14 @@ async function* ltype(ctx: CommandContext): Sub<void> {
   const t = linetypes.find((x) => upper(x.name) === upper(name));
   if (!t) {
     ctx.message(`Linetype ${quoted(name)} is not loaded.  Use the LINETYPE command to load it.`);
-    return;
+    return undefined;
   }
+  return t;
+}
+
+async function* ltype(ctx: CommandContext): Sub<void> {
+  const t = yield* linetypeAsked(ctx);
+  if (!t) return;
   const message = `Enter name list of layer(s) for linetype ${quoted(t.name)}`;
   apply(ctx, yield* nameList(ctx, message, 'current'), { linetype: t.handle });
 }
