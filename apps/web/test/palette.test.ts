@@ -216,6 +216,8 @@ describe('palette search', () => {
       'OSNAP',
       // M3-02 part 6: OVERKILL and SPLINEDIT.
       'OVERKILL',
+      // M6-01 part 3: PAGESETUP, the Page Setup Manager.
+      'PAGESETUP',
       'PAN',
       'PASTEBLOCK',
       'PASTECLIP',

@@ -522,6 +522,11 @@ export type FileAction =
   | 'views'
   /** LAYERSTATE (M5-07 part 2): the Layer States Manager dialog. */
   | 'layerstates'
+  /**
+   * PAGESETUP (M6-01 part 3): the Page Setup Manager, which may ask for a window as `plot` does
+   * (its Page Setup dialog's Window<).
+   */
+  | 'pagesetup'
   /** NEW (M5-10): the Select Template dialog; a new drawing from the template chosen. */
   | 'new'
   /** QNEW (M5-10): a new drawing from the default template, or NEW's dialog without one. */

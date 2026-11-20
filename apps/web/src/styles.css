@@ -3070,6 +3070,88 @@ button {
   min-width: 140px;
 }
 
+/* M6-01 part 3: the Page Setup Manager, its list and buttons side by side, as AutoCAD's. */
+.cad-dialog.page-setup-manager {
+  width: min(480px, calc(100vw - 32px));
+  max-width: min(480px, calc(100vw - 32px));
+}
+
+.page-setup-list,
+.page-setup-details {
+  margin: 8px 0 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+.page-setup-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.page-setup-rows ul {
+  height: 160px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.page-setup-rows li {
+  padding: 2px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.page-setup-rows li[aria-selected='true'] {
+  background: var(--chrome-hover);
+  outline: 1px solid var(--chrome-border);
+}
+
+.page-setup-rows li input {
+  width: 100%;
+  font: inherit;
+}
+
+.page-setup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.page-setup-details dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  margin: 0;
+}
+
+.page-setup-details dd {
+  margin: 0;
+}
+
+.new-page-setup-start select {
+  width: 100%;
+}
+
+.import-page-setups table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.import-page-setups th,
+.import-page-setups td {
+  padding: 2px 6px;
+  text-align: left;
+  font-weight: normal;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
 /* M2-17: the Plot dialog, AutoCAD's groups in two columns (one on a narrow window). */
 .cad-dialog.plot-dialog {
   width: min(640px, calc(100vw - 32px));
