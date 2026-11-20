@@ -40,11 +40,13 @@ class Target implements ViewTarget {
     this.viewport = h;
     this.calls.push(`viewport ${h ?? 'none'}`);
   };
-  zoomExtents = () => void this.calls.push('extents');
+  zoomExtents: () => void | Promise<void> = () => void this.calls.push('extents');
   zoomAll = () => void this.calls.push('all');
   zoomPrevious = () => (this.calls.push('previous'), this.previous);
   zoomScale = (f: number) => void this.calls.push(`scale ${f}`);
   zoomLimits = (f: number) => void this.calls.push(`limits ${f}`);
+  zoomPaper = (f: number) => void this.calls.push(`paper ${f}`);
+  viewportView: { center: Vec2; height: number; width: number } | undefined;
   zoomWindow = (a: Vec2, b: Vec2) => void this.calls.push(`window ${a.x},${a.y} ${b.x},${b.y}`);
   zoomCenter = (c: Vec2, h: number) => void this.calls.push(`center ${c.x},${c.y} ${h}`);
   panWorld = (by: Vec2) => void this.calls.push(`pan ${by.x},${by.y}`);
@@ -588,6 +590,28 @@ describe('answerView', () => {
     expect(t.calls).toEqual(['outlines 1', 'outlines 1']);
   });
 
+  it("answers a current layout viewport's own view, and waits for its ZOOM Extents (M6-02 part 4)", async () => {
+    const t = new Target(true);
+    t.viewport = '5A';
+    t.viewportView = { center: { x: 3, y: 4 }, height: 30, width: 40 };
+    const { ctx } = context(t);
+    // VIEWCTR and VIEWSIZE in MSPACE are the viewport's, not the canvas's.
+    expect(now(answerView({ op: 'get' }, ctx))).toMatchObject({
+      view: { center: { x: 3, y: 4 }, height: 30, width: 40, paper: false },
+    });
+    // Its ZOOM Extents measures model space first: the reply follows the zoom.
+    let zoomed = false;
+    t.zoomExtents = () =>
+      Promise.resolve().then(() => {
+        zoomed = true;
+        t.viewportView = { center: { x: 0, y: 0 }, height: 10, width: 40 / 3 };
+      });
+    const r = answerView({ op: 'extents' }, ctx);
+    expect(r).toBeInstanceOf(Promise);
+    expect(await r).toMatchObject({ ok: true, view: { height: 10 } });
+    expect(zoomed).toBe(true);
+  });
+
   it('answers the view as VIEWSIZE and width, whether paper space shows, and SCREENSIZE', () => {
     const t = new Target(true);
     expect(answerView({ op: 'get' }, context(t).ctx)).toEqual({
@@ -656,7 +680,7 @@ describe('answerView', () => {
       'previous',
       'scale 2',
       'limits 3',
-      'limits 4',
+      'paper 4',
       'window 0,0 5,5',
       'center 1,1 9',
       'pan 2,-1',

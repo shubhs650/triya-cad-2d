@@ -514,11 +514,12 @@ export class RendererHost {
 
   /**
    * ZOOM Extents of the space drawn, text bounded by its glyphs (M1-35 part 2), measured
-   * after everything sent so far; undefined when nothing drawn has a known extent.
+   * after everything sent so far; undefined when nothing drawn has a known extent. `block` is
+   * another space's (model space's, for a layout viewport made current, M6-02 part 4).
    */
-  extents(): Promise<Box | undefined> {
-    if (this.#session) return Promise.resolve(this.#session.extents());
-    return this.#request((id) => ({ type: 'extents', id })).then((m) =>
+  extents(block?: Handle): Promise<Box | undefined> {
+    if (this.#session) return Promise.resolve(this.#session.extents(block));
+    return this.#request((id) => ({ type: 'extents', id, ...(block && { block }) })).then((m) =>
       m.type === 'extents' && m.box ? m.box : undefined,
     );
   }
