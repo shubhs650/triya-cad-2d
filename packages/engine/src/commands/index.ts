@@ -95,6 +95,7 @@ export {
   type ViewportArrangement,
 } from './mview';
 export { polygonalBoundary, vpclipCommand } from './vpclip';
+export { vplayerCommand } from './vplayer';
 export {
   IN_PAPER_SPACE,
   NOT_IN_MODEL_TAB,

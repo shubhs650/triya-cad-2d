@@ -307,6 +307,8 @@ describe('palette search', () => {
       'VIEW',
       // M6-02 part 2: a layout viewport clipped by an object or a polygon.
       'VPCLIP',
+      // M6-02 part 5: layers frozen and overridden in layout viewports.
+      'VPLAYER',
       // M5-01 part 4: the Write Block dialog.
       'WBLOCK',
       'WIPEOUT',

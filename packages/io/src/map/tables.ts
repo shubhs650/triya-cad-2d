@@ -88,14 +88,14 @@ function layerDescription(l: Layer): string | undefined {
  * viewport (335) and the value. Names and codes as AutoCAD writes them and ezdxf reads them
  * (`ezdxf.entities.layer.load_layer_overrides`); the transparency key is `_ALPHA_OVR`.
  */
-const OVERRIDES = [
+export const OVERRIDES = [
   ['ADSK_XREC_LAYER_COLOR_OVR', 420, 'color'],
   ['ADSK_XREC_LAYER_LINETYPE_OVR', 343, 'linetype'],
   ['ADSK_XREC_LAYER_LINEWT_OVR', 91, 'lineweight'],
   ['ADSK_XREC_LAYER_ALPHA_OVR', 440, 'transparency'],
 ] as const;
 /** The viewport's group in each override. */
-const OVERRIDE_VIEWPORT = 335;
+export const OVERRIDE_VIEWPORT = 335;
 
 /** A pointer group's value: acad-ts keeps a number from DXF, an object once resolved. */
 function pointer(v: unknown): string | undefined {
