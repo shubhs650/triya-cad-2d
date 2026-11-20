@@ -62,6 +62,8 @@ export interface CommandContext {
   readonly space: Handle;
   /** The Block Editor (BEDIT, BSAVE, BCLOSE; M5-02), which makes a block's definition `space`. */
   readonly blockEditor: BlockEditorControl;
+  /** The layout viewport worked in (MSPACE, PSPACE; M6-02 part 3), which makes model space `space`. */
+  readonly viewport: ViewportControl;
   /** The reference edited in place (REFEDIT, REFSET, REFCLOSE; M5-02 part 3). */
   readonly refEdit: RefEditControl;
   readonly prompt: typeof prompts;
@@ -129,6 +131,21 @@ export interface CommandContext {
   readonly spelling?: SpellService | undefined;
   /** The time, for the variables that tell it (DATE, CDATE; M2-59). */
   readonly clock: Clock;
+}
+
+/**
+ * The floating viewport of the layout shown that commands work in (M6-02 part 3). While one is
+ * current, `space` is model space; the tab shown stays the layout (`sheet`).
+ */
+export interface ViewportControl {
+  /** The VIEWPORT made current (MSPACE), or undefined in paper space and on the Model tab. */
+  readonly current: Handle | undefined;
+  /** The tab shown: model space, or the layout's paper space block. */
+  readonly sheet: Handle;
+  /** The viewport last current in the layout shown (MSPACE's), if one has been. */
+  readonly last: Handle | undefined;
+  /** Makes `viewport` current, or none (PSPACE), and tells the canvas. Deselects. */
+  set(viewport: Handle | undefined): Promise<void>;
 }
 
 /**

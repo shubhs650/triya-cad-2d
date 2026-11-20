@@ -122,7 +122,7 @@ import { LayoutTabs } from './LayoutTabs';
 import { DraftingToggles } from './DraftingToggles';
 import {
   DocumentStore,
-  inLayout,
+  inPaperSpace,
   isDirty,
   layoutsOf,
   spacesOf,
@@ -3051,6 +3051,7 @@ function ViewportCanvas({
         );
       },
       onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
+      onViewport: (viewport) => store.setViewport(id, block, viewport),
       // COMMANDPREVIEW (M3-12 part 6): the engine works out what a pick here would do.
       onCommandPreview: (q) =>
         engines.command(id, {
@@ -3176,7 +3177,7 @@ function StatusBar({
   );
   const lwdisplay = header.get('$LWDISPLAY');
   // A layout's coordinates are in its paper space's UCS (M3-06 part 7).
-  const paper = doc !== undefined && inLayout(doc);
+  const paper = doc !== undefined && inPaperSpace(doc);
   // The drawing's units or decimal, as Settings has it (M2-20, coordinates.ts).
   const display = useSyncExternalStore(preferences.subscribe, preferences.get).coordinates;
   // LWT shows the drawing's LWDISPLAY until the drafter turns it (M2-04 part 2).
@@ -3214,7 +3215,7 @@ function StatusBar({
         <>
           <span className="version">{doc.opened.summary.version}</span>
           <span className="space" data-testid="space">
-            {inLayout(doc) ? 'PAPER' : 'MODEL'}
+            {inPaperSpace(doc) ? 'PAPER' : 'MODEL'}
           </span>
         </>
       )}

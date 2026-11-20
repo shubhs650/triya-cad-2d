@@ -366,9 +366,10 @@ export class RenderSession {
     return {
       model: this.model,
       index: this.index,
-      block: this.#block,
+      // Model space alone while a viewport is current (MSPACE, M6-02 part 3).
+      block: this.renderer.pickBlock,
       tol: this.#tol,
-      ...(model !== undefined && { modelSpace: model }),
+      ...(model !== undefined && model !== this.renderer.pickBlock && { modelSpace: model }),
       underlays: (h) => this.#underlaySnaps.get(h),
     };
   }

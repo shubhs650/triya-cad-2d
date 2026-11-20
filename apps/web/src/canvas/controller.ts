@@ -45,6 +45,9 @@ import RenderWorker from '@triya/render/worker?worker';
 import {
   IDENTITY,
   MAX_ACQUIRED,
+  viewportTransform,
+  workableViewport,
+  type ViewportGeometry,
   constrainCursor,
   dragMotion,
   layoutSheet,
@@ -93,6 +96,7 @@ import {
   RendererHost,
   fitView,
   gripHalfSize,
+  modelViewOf,
   screenToWorld,
   tessellate,
   transformPrimitive,
@@ -282,6 +286,8 @@ export interface CanvasHooks {
    * edit the object there (TEXTEDIT on a text, AutoCAD's DBLCLKEDIT).
    */
   readonly onDoubleClick?: (p: Vec2) => void;
+  /** The layout viewport worked in changed (MSPACE, PSPACE; M6-02 part 3): the status bar's. */
+  readonly onViewport?: (handle: Handle | undefined) => void;
   /**
    * A tap of Ctrl at a prompt that `ctrlCycles` (M3-05): the hot multi-functional grip's next
    * function, as AutoCAD's Ctrl cycles them.
@@ -409,6 +415,8 @@ export class CanvasController {
   #listeners = new AbortController();
   #size: ViewportSize = { width: 0, height: 0 };
   #view: ViewTransform | undefined;
+  /** The floating viewport made current (MSPACE, M6-02 part 3), and its geometry now. */
+  #current: { readonly handle: Handle; geom: ViewportGeometry } | undefined;
   /** The view last given to the renderer; a new renderer has none (M2-62). */
   #sentView: ViewTransform | undefined;
   #pending = 0;
@@ -778,14 +786,16 @@ export class CanvasController {
 
   /** ZOOM Window from the command: the box between two world points fills the window. */
   zoomWindow(a: Vec2, b: Vec2): void {
-    const v = windowView(a, b, this.#size);
+    // In a viewport made current the sheet moves (until a viewport's own view is zoomed, M6-02).
+    const v = windowView(this.#toSheet(a), this.#toSheet(b), this.#size);
     if (v) this.#go(v);
   }
 
   /** ZOOM Center: `center` in the middle with `height` world units from top to bottom. */
   zoomCenter(center: Vec2, height: number): void {
-    if (height > 0 && this.#size.height > 0)
-      this.#go({ center, scale: this.#size.height / height });
+    const h = height * this.#sheetScale();
+    if (h > 0 && this.#size.height > 0)
+      this.#go({ center: this.#toSheet(center), scale: this.#size.height / h });
   }
 
   /**
@@ -800,8 +810,10 @@ export class CanvasController {
   /** -PAN: moves the drawing by `by` world units. */
   panWorld(by: Vec2): void {
     const v = this.#view;
+    const k = this.#sheetScale();
     if (v) {
-      this.#go({ scale: v.scale, center: { x: v.center.x - by.x, y: v.center.y - by.y } }, 'PAN');
+      const center = { x: v.center.x - by.x * k, y: v.center.y - by.y * k };
+      this.#go({ scale: v.scale, center }, 'PAN');
     }
   }
 
@@ -822,8 +834,57 @@ export class CanvasController {
     return { center: old.center, height: height / old.scale };
   }
 
+  /** The view the cursor works in: model space's through a viewport made current (MSPACE). */
   get view(): ViewTransform | undefined {
-    return this.#view;
+    return this.#pointerView();
+  }
+
+  /** The layout viewport made current (MSPACE, M6-02 part 3), if any. */
+  get viewport(): Handle | undefined {
+    return this.#current?.handle;
+  }
+
+  /**
+   * MSPACE and PSPACE (M6-02 part 3): the layout is worked in through the floating viewport
+   * `handle` (its geometry as it is now), or on paper again. The cursor's points, snaps, picks
+   * and windows are model space's while one is current; the sheet stays where it is.
+   */
+  setViewport(handle: Handle | undefined, geometry: ViewportGeometry | undefined): void {
+    this.#current =
+      handle !== undefined && geometry && this.#layout ? { handle, geom: geometry } : undefined;
+    this.#host.setActiveViewport(this.#current?.handle);
+    this.#canvas.dataset['viewport'] = this.#current?.handle ?? '';
+    this.#hooks.onViewport?.(this.#current?.handle);
+    this.#hits = [];
+    this.#hit = undefined;
+    this.#acquired = [];
+    if (this.#prompt) this.#requestSnap();
+    this.#track();
+    if (this.#view && this.#size.width > 0) this.#host.frame();
+  }
+
+  /**
+   * The view the cursor's points are taken in: model space as the current viewport shows it
+   * while one is (MSPACE), else the view shown.
+   */
+  #pointerView(): ViewTransform | undefined {
+    const v = this.#view;
+    const c = this.#current;
+    return v && c ? modelViewOf(v, c.geom) : v;
+  }
+
+  /** A point of the cursor's space where the sheet shows it (itself on paper). */
+  #toSheet(p: Vec2): Vec2 {
+    const c = this.#current;
+    if (!c) return p;
+    const t = viewportTransform(c.geom);
+    return { x: t.a * p.x + t.e, y: t.d * p.y + t.f };
+  }
+
+  /** Sheet units per unit of the cursor's space (1 on paper). */
+  #sheetScale(): number {
+    const c = this.#current;
+    return c ? viewportTransform(c.geom).a : 1;
   }
 
   /** True once the canvas shows a view; false if none comes within `ms` (a hidden tab). */
@@ -904,7 +965,7 @@ export class CanvasController {
 
   /** What the view shows, in drawing units; undefined before it has a size. */
   #viewBox(): Box | undefined {
-    const v = this.#view;
+    const v = this.#pointerView();
     const { width, height } = this.#size;
     if (!v || !(width > 0) || !(height > 0)) return undefined;
     const a = screenToWorld(v, width, height, { x: 0, y: 0 });
@@ -959,7 +1020,7 @@ export class CanvasController {
   #drawQuick(): void {
     const prims: RenderPrimitive[] = [];
     const labels: { at: Vec2; text: string; kind: string }[] = [];
-    const v = this.#view;
+    const v = this.#pointerView();
     if (this.#quick && v) {
       const px = this.#px();
       const color = this.#ui().autotrack;
@@ -1204,7 +1265,7 @@ export class CanvasController {
         ? {
             screen,
             // The view the cursor is over, which the render worker may not have yet (M5-23).
-            ...(this.#view && { view: this.#view }),
+            ...(this.#view && { view: this.#pointerView()! }),
             aperture: d.pickbox,
             filter: d.previewFilter,
             groups: (d.pickStyle & 1) !== 0,
@@ -1255,7 +1316,11 @@ export class CanvasController {
     else {
       // What a pick there would find: the objects under the pickbox, as a click asks.
       void this.#host
-        .hitTest({ x: screen.offsetX, y: screen.offsetY }, this.#drafting.pickbox, this.#view)
+        .hitTest(
+          { x: screen.offsetX, y: screen.offsetY },
+          this.#drafting.pickbox,
+          this.#pointerView(),
+        )
         .then(send, () => this.commandPreviewed(seq, undefined));
     }
   }
@@ -1338,7 +1403,7 @@ export class CanvasController {
       this.#hooks.onOverlap?.(undefined);
     };
     if (!screen) return hide();
-    void this.#host.hitTest(screen, this.#drafting.pickbox, this.#view).then((ids) => {
+    void this.#host.hitTest(screen, this.#drafting.pickbox, this.#pointerView()).then((ids) => {
       if (asked !== this.#badgeAsked) return;
       if (ids.length < 2) return hide();
       const r = this.#canvas.getBoundingClientRect();
@@ -1422,7 +1487,7 @@ export class CanvasController {
    * before and took what was there before (M5-23).
    */
   pick(point: Vec2): Promise<EntityId[]> {
-    const v = this.#view;
+    const v = this.#pointerView();
     if (!v) return Promise.resolve([]);
     const screen = worldToScreen(v, this.#size.width, this.#size.height, point);
     // PICKBOX (M3-04 part 4): the pickbox's half size in CSS pixels, AutoCAD's initial 3.
@@ -1447,7 +1512,7 @@ export class CanvasController {
    * tools' nested picks), within the pickbox; undefined where it hit none of its contents.
    */
   pickNested(point: Vec2, id: EntityId): Promise<NestedPick | undefined> {
-    const v = this.#view;
+    const v = this.#pointerView();
     if (!v) return Promise.resolve(undefined);
     const screen = worldToScreen(v, this.#size.width, this.#size.height, point);
     return this.#host.nestedHit(screen, this.#drafting.pickbox, id, v).then((h) => h ?? undefined);
@@ -1455,7 +1520,7 @@ export class CanvasController {
 
   /** Where a world point is shown, in window pixels (M3-04 part 3: the Selection list). */
   clientOf(point: Vec2): Vec2 | undefined {
-    const v = this.#view;
+    const v = this.#pointerView();
     if (!v) return undefined;
     const s = worldToScreen(v, this.#size.width, this.#size.height, point);
     const r = this.#canvas.getBoundingClientRect();
@@ -1467,7 +1532,7 @@ export class CanvasController {
    * item dragged from DesignCenter was dropped).
    */
   worldOfClient(client: Vec2): Vec2 | undefined {
-    const v = this.#view;
+    const v = this.#pointerView();
     if (!v) return undefined;
     const r = this.#canvas.getBoundingClientRect();
     const x = client.x - r.left;
@@ -1488,8 +1553,11 @@ export class CanvasController {
 
   /** ZOOM Object: the objects' extents fill the window; false when none has a known extent. */
   async zoomObjects(ids: readonly EntityId[]): Promise<boolean> {
-    const box = await this.#host.boundsOf(ids);
-    if (!box || !(this.#size.width > 0)) return false;
+    const found = await this.#host.boundsOf(ids);
+    if (!found || !(this.#size.width > 0)) return false;
+    const a = this.#toSheet({ x: found.minX, y: found.minY });
+    const b = this.#toSheet({ x: found.maxX, y: found.maxY });
+    const box = { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
     const fit = fitView(box, this.#size.width, this.#size.height, 0);
     // A single point keeps the magnification and centres on it.
     const flat = box.maxX === box.minX && box.maxY === box.minY;
@@ -1606,6 +1674,7 @@ export class CanvasController {
     )
       this.#images?.resend();
     this.#measure();
+    this.#followViewport(change);
     // The layout renamed or given a new page setup or limits (M1-97): its sheet frames ZOOM
     // Extents and All from now on, and the canvas takes its new name.
     const layout = this.#layout;
@@ -1630,6 +1699,24 @@ export class CanvasController {
       if (this.#view !== this.#sentView) this.#sendView(this.#view);
       this.#host.frame();
     }
+  }
+
+  /**
+   * The current viewport moved, resized or zoomed by a change (an undo, M6-02 part 3): the
+   * cursor follows its view; erased or turned off, the layout is worked in on paper again, as
+   * the engine works in it (`floatingViewport`).
+   */
+  #followViewport(change: ChangeSet): void {
+    const c = this.#current;
+    if (!c) return;
+    if (change.entities?.removed?.some((r) => r.entity.handle === c.handle)) {
+      this.setViewport(undefined, undefined);
+      return;
+    }
+    const after = change.entities?.updated?.find((u) => u.after.handle === c.handle)?.after;
+    if (after?.geom.kind !== 'VIEWPORT') return;
+    if (workableViewport(after.geom)) c.geom = after.geom;
+    else this.setViewport(undefined, undefined);
   }
 
   /** Resolves once the renderer has handled everything sent to it so far. */
@@ -1892,7 +1979,8 @@ export class CanvasController {
 
   /** The current UCS of the space shown: model space's, or the layout's paper space's. */
   #ucs(): PlanUcs {
-    return ucsOf(this.#header, this.#layout !== undefined);
+    // Model space's UCS while a layout viewport is current (MSPACE, M6-02 part 3).
+    return ucsOf(this.#header, this.#layout !== undefined && !this.#current);
   }
 
   /**
@@ -2083,9 +2171,10 @@ export class CanvasController {
   }
 
   #world(e: { offsetX: number; offsetY: number }): Point | undefined {
-    if (!this.#view) return undefined;
+    const v = this.#pointerView();
+    if (!v) return undefined;
     const { width, height } = this.#size;
-    return screenToWorld(this.#view, width, height, { x: e.offsetX, y: e.offsetY });
+    return screenToWorld(v, width, height, { x: e.offsetX, y: e.offsetY });
   }
 
   /** The ZOOM Window rubber band from the first corner to the cursor. */
@@ -2284,7 +2373,7 @@ export class CanvasController {
     ring.forEach((q, i) => outline.push(i === 0 ? PATH_M : PATH_L, q.x, q.y));
     let edge = outline;
     if (crossing) {
-      const step = DASH_PX / (this.#view?.scale ?? 1);
+      const step = DASH_PX / (this.#pointerView()?.scale ?? 1);
       edge = [];
       for (let i = 0; i + 1 < ring.length; i++) {
         const { x: x0, y: y0 } = ring[i]!;
@@ -2330,7 +2419,7 @@ export class CanvasController {
       PATH_Z,
     ];
     let edge = outline;
-    const scale = this.#view?.scale ?? 1;
+    const scale = this.#pointerView()?.scale ?? 1;
     if (crossing) {
       // Dashes of DASH_PX on and off along each side, in world units at this zoom.
       const step = DASH_PX / scale;
@@ -2727,7 +2816,7 @@ export class CanvasController {
 
   /** One CSS pixel in drawing units at the current zoom. */
   #px(): number {
-    return 1 / (this.#view?.scale ?? 1);
+    return 1 / (this.#pointerView()?.scale ?? 1);
   }
 
   /** The point the cursor is measured from: a rubber band's start (not a window's corner). */

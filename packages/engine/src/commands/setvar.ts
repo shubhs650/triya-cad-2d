@@ -167,7 +167,7 @@ async function computed(
     case 'CTAB':
       return { value: shownLayout(ctx)?.name ?? 'Model' };
     case 'TILEMODE':
-      return { value: isPaperSpace(ctx.model, ctx.space) ? 0 : 1 };
+      return { value: isPaperSpace(ctx.model, ctx.viewport.sheet) ? 0 : 1 };
     case 'BLOCKEDITOR':
       return { value: ctx.blockEditor.block === undefined ? 0 : 1 };
     case 'REFEDITNAME':
@@ -194,9 +194,9 @@ async function computed(
   }
 }
 
-/** The layout of the space commands draw in: the tab shown. */
+/** The layout of the tab shown (a layout's, while one of its viewports is current too). */
 function shownLayout(ctx: CommandContext) {
-  return ctx.model.layouts.find((l) => l.blockRecord === ctx.space);
+  return ctx.model.layouts.find((l) => l.blockRecord === ctx.viewport.sheet);
 }
 
 /**
@@ -211,7 +211,7 @@ async function showTab(ctx: CommandContext, name: string, value: VariableValue):
     if (value === shown) return;
     request = { name: String(value) };
   } else {
-    const onModel = ctx.space === modelSpaceOf(ctx.model);
+    const onModel = ctx.viewport.sheet === modelSpaceOf(ctx.model);
     if ((value === 1) === onModel) return;
     request = value === 1 ? { name: model?.name ?? 'Model' } : {};
   }

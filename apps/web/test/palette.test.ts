@@ -205,6 +205,7 @@ describe('palette search', () => {
       'MLEADERSTYLE',
       'MOVE',
       'MREDO',
+      'MSPACE',
       'MTEXT',
       // M6-02 part 1: MVIEW (MV).
       'MVIEW',
@@ -235,6 +236,7 @@ describe('palette search', () => {
       'PRINT',
       'PROPERTIES',
       'PROPERTIESCLOSE',
+      'PSPACE',
       'PUBLISH',
       // M5-09 part 1: PURGE.
       'PURGE',

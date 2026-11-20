@@ -77,6 +77,13 @@ import {
   type SelectionTake,
   type SelectionWindow,
 } from './prompt';
+import {
+  floatingViewport,
+  insideViewport,
+  paperPointOf,
+  viewportAt,
+  type FloatingViewport,
+} from '../layout/current-viewport';
 import { NO_VIEW, waitsOnApp, type ViewHost, type ViewReply, type ViewRequest } from './view/host';
 import { drawingUnits, type DrawingUnits } from './units';
 import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
@@ -397,6 +404,16 @@ export class PromptBus {
   readonly #registry: CommandRegistry;
   readonly #apply: (change: ChangeSet) => void;
   readonly #space: () => Handle;
+  /** The tab shown: model space or a layout's paper space, whatever viewport is current. */
+  readonly #sheet: () => Handle;
+  /**
+   * The floating viewport made current in each layout (MSPACE, M6-02 part 3), by the layout's
+   * paper-space block: commands work in model space through it while its layout is shown. A
+   * layout shown again is worked in as it was left, as AutoCAD's are.
+   */
+  readonly #viewports = new Map<Handle, Handle>();
+  /** The viewport last current in each layout, which MSPACE makes current again. */
+  readonly #lastViewports = new Map<Handle, Handle>();
   /**
    * The Block Editor (M5-02): the block definition it shows, which commands draw in, and the
    * edits made since BEDIT opened it or BSAVE last saved it, which BCLOSE's Discard takes back.
@@ -491,10 +508,13 @@ export class PromptBus {
       },
     });
     const shown = options.space ?? (() => modelSpaceOf(this.#model));
-    // The Block Editor's block while it is open (and the block is there: an undo may take it).
+    this.#sheet = shown;
+    // The Block Editor's block while it is open (and the block is there: an undo may take it);
+    // model space while a layout viewport is current (MSPACE, M6-02 part 3).
     this.#space = () => {
       const b = this.#blockEditor?.block;
-      return b !== undefined && this.#model.hasBlock(b) ? b : shown();
+      if (b !== undefined && this.#model.hasBlock(b)) return b;
+      return this.#currentViewport() ? modelSpaceOf(this.#model) : shown();
     };
     this.#view = options.view ?? NO_VIEW;
     this.#dimensions = options.dimensions;
@@ -801,13 +821,25 @@ export class PromptBus {
     return this.#enqueue(async () => {
       const top = this.#stack.at(-1);
       if (top && !top.def.keepsSelection && !top.def.yieldsToDoubleClick) return;
+      // A double click in another viewport makes it current; on the sheet outside every
+      // viewport, paper space (M6-02 part 3).
+      if (await this.#doubleClickViewport(point)) return;
       const r = await this.#view.request({ op: 'pick', point });
       const ids = r.ok ? (r.ids ?? []) : [];
       // Inside an empty table cell nothing drawn is under the cursor: the cell's table is.
       const id =
         ids.find((i) => doubleClickCommand(this.#model.entity(i), this.#model) !== undefined) ??
         tableCellUnder(this.#model, this.#space(), point, 0)?.id;
-      if (id === undefined) return;
+      if (id === undefined) {
+        // On nothing of the layout's paper space but inside a viewport: model space in it.
+        const sheet = this.#sheet();
+        const vp =
+          top || !isPaperSpace(this.#model, this.#space())
+            ? undefined
+            : viewportAt(this.#model, sheet, point);
+        if (vp) await this.#setViewport(vp.handle);
+        return;
+      }
       const found = this.#registry.resolve(
         doubleClickCommand(this.#model.entity(id), this.#model)!,
       );
@@ -878,6 +910,56 @@ export class PromptBus {
 
   get pickadd(): number {
     return this.#pickadd;
+  }
+
+  /**
+   * The floating viewport of the layout shown that commands work in (MSPACE, M6-02 part 3), while
+   * it is there and on: an undo or erase that takes it puts the layout back in paper space.
+   */
+  #currentViewport(): FloatingViewport | undefined {
+    if (this.#blockEditor) return undefined;
+    const sheet = this.#sheet();
+    return floatingViewport(this.#model, sheet, this.#viewports.get(sheet));
+  }
+
+  /**
+   * Makes `viewport` (of the layout shown) current, or, undefined, puts the layout in paper
+   * space (MSPACE and PSPACE, M6-02 part 3), and tells the canvas. What was selected was
+   * selected in the other space, so it is deselected (M2-03).
+   */
+  async #setViewport(viewport: Handle | undefined): Promise<void> {
+    const sheet = this.#sheet();
+    if (viewport === this.#currentViewport()?.handle) return;
+    if (viewport === undefined) this.#viewports.delete(sheet);
+    else {
+      this.#viewports.set(sheet, viewport);
+      this.#lastViewports.set(sheet, viewport);
+    }
+    if (this.#idle.ids.length > 0) {
+      this.#idle.clear();
+      this.#showSelection();
+    }
+    const vp = floatingViewport(this.#model, sheet, viewport);
+    await this.#view.request({
+      op: 'viewport',
+      viewport: viewport ?? null,
+      ...(vp && { geometry: vp.geom }),
+    });
+  }
+
+  /**
+   * A double click while a viewport is current (M6-02 part 3): outside it, makes the viewport
+   * there current, or puts the layout in paper space when there is none (AutoCAD: "switch to
+   * paper space by double-clicking an area of paper space in the layout"). True when it did;
+   * inside the current viewport the double click edits what it is on, as anywhere.
+   */
+  async #doubleClickViewport(point: Vec2): Promise<boolean> {
+    const current = this.#currentViewport();
+    if (!current || this.#stack.length > 0) return false;
+    const paper = paperPointOf(current.geom, point);
+    if (insideViewport(current.geom, paper)) return false;
+    await this.#setViewport(viewportAt(this.#model, this.#sheet(), paper)?.handle);
+    return true;
   }
 
   /** Deselects what was picked at `Command:` (another space shown, M2-03). */
@@ -1326,6 +1408,18 @@ export class PromptBus {
         return bus.#space();
       },
       refEdit: this.#refEdit,
+      viewport: {
+        get current() {
+          return bus.#currentViewport()?.handle;
+        },
+        get sheet() {
+          return bus.#sheet();
+        },
+        get last() {
+          return bus.#lastViewports.get(bus.#sheet());
+        },
+        set: (viewport) => this.#setViewport(viewport),
+      },
       blockEditor: {
         get block() {
           return bus.#blockEditor?.block;
