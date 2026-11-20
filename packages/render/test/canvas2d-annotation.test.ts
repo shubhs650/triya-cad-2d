@@ -114,26 +114,37 @@ describe('ANNOALLVISIBLE on the Model tab (M6-03)', () => {
   });
 });
 
-describe('snaps under ANNOALLVISIBLE 0 (M6-03)', () => {
-  it('skip the annotative objects the Model tab hides', () => {
-    const init = drawingInit([BOTH, ONE_TO_ONE], { header: [['CANNOSCALE', '1:50']] });
-    const session = (allVisible: boolean) =>
-      new RenderSession({
-        now: () => 0,
-        document: {
-          init: { ...init, meta: { ...init.meta, annotationScales: SCALES } },
-          block: MODEL,
-          tol: toleranceForSize(1000),
-        },
-        surface: surface('visible'),
-        createLayer: () => surface('layer'),
-        style: { ...STYLE, annotationAllVisible: allVisible },
-        requestIdle: () => {},
-      });
+describe('snaps and plots under ANNOALLVISIBLE 0 (M6-03)', () => {
+  const init = drawingInit([BOTH, ONE_TO_ONE], { header: [['CANNOSCALE', '1:50']] });
+  const session = (allVisible: boolean) =>
+    new RenderSession({
+      now: () => 0,
+      document: {
+        init: { ...init, meta: { ...init.meta, annotationScales: SCALES } },
+        block: MODEL,
+        tol: toleranceForSize(1000),
+      },
+      surface: surface('visible'),
+      createLayer: () => surface('layer'),
+      style: { ...STYLE, annotationAllVisible: allVisible },
+      requestIdle: () => {},
+    });
+
+  it('snaps skip the annotative objects the Model tab hides', () => {
     // The end of A2 (y = 2) and of A1 (y = 0).
     const at = (s: RenderSession, y: number) =>
       s.snap({ point: { x: 10, y }, aperture: 0.5, modes: OSNAP.END }).length;
     expect([at(session(true), 2), at(session(true), 0)]).toEqual([1, 1]);
     expect([at(session(false), 2), at(session(false), 0)]).toEqual([0, 1]);
+  });
+
+  it('a plot of the Model tab leaves them out, as the screen does', () => {
+    const ys = (s: RenderSession) =>
+      s
+        .plot()
+        .flatMap((p) => (p.kind === 'stroke' ? [p.path[2]] : []))
+        .sort();
+    expect(ys(session(true))).toEqual([0, 2]);
+    expect(ys(session(false))).toEqual([0]);
   });
 });
