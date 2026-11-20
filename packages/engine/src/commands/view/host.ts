@@ -13,6 +13,7 @@ import type {
   HeaderValue,
   MTextGeometry,
   TextGeometry,
+  ViewportGeometry,
 } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 import type { XrefAttachFile } from '../../edit/xref-attach';
@@ -324,7 +325,17 @@ export type ViewRequest =
    * (Model or a layout, as the drawing spells it), or without one the layout tab last shown
    * (TILEMODE 0, AutoCAD's "last active layout tab"). No edit: a tab shown is no undo step.
    */
-  | { readonly op: 'tab'; readonly name?: string };
+  | { readonly op: 'tab'; readonly name?: string }
+  /**
+   * MSPACE and PSPACE (M6-02 part 3): the layout shown is worked in through its floating
+   * viewport `viewport` (model space), or in its paper space again (null). No edit: as in
+   * AutoCAD, the viewport made current is no undo step. `geometry` is the viewport's as it is now.
+   */
+  | {
+      readonly op: 'viewport';
+      readonly viewport: Handle | null;
+      readonly geometry?: ViewportGeometry;
+    };
 
 /** Where a hatch's pattern lies: its angle, its scale and the point its lines start from. */
 export interface PatternPlacement {

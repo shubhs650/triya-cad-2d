@@ -20,6 +20,11 @@ export interface OpenDocument {
   readonly blockEditor?: { readonly block: string; readonly name: string; readonly from: string };
   /** The block a reference edit in place (REFEDIT, M5-02 part 3) is editing, while one is. */
   readonly refEdit?: string;
+  /**
+   * The floating viewport worked in (MSPACE, M6-02 part 3), by the layout's block: the status
+   * bar says MODEL and the coordinates are model space's while the layout shown has one.
+   */
+  readonly viewports?: Readonly<Record<string, string>>;
   /** The layout tab shown last (TILEMODE 0 shows it again, M2-59 part 5), if any has been. */
   readonly lastLayout?: string;
   /** Edits applied by the drawing's engine so far (M1-67): chrome that mirrors it re-reads. */
@@ -69,6 +74,11 @@ export function tabBlock(
 /** Whether the space shown is a layout's paper space (not model space, not the Block Editor). */
 export const inLayout = (doc: Pick<OpenDocument, 'opened' | 'block' | 'blockEditor'>): boolean =>
   doc.blockEditor === undefined && doc.block !== doc.opened.modelSpace;
+
+/** Whether the drafter works in paper space: a layout shown with no viewport made current. */
+export const inPaperSpace = (
+  doc: Pick<OpenDocument, 'opened' | 'block' | 'blockEditor' | 'viewports'>,
+): boolean => inLayout(doc) && doc.viewports?.[doc.block] === undefined;
 
 /** `block` as the layout tab shown last, when it is a layout's. */
 const layoutShown = (opened: OpenResult, block: string) =>
@@ -276,6 +286,15 @@ export class DocumentStore {
         ? d
         : { ...d, block, ...layoutShown(d.opened, block) },
     );
+  }
+
+  /** MSPACE and PSPACE (M6-02 part 3): the viewport worked in on the layout `block`, or none. */
+  setViewport(id: number, block: string, viewport: string | undefined): void {
+    this.#update(id, (d) => {
+      if (d.viewports?.[block] === viewport) return d;
+      const { [block]: _was, ...rest } = d.viewports ?? {};
+      return { ...d, viewports: viewport === undefined ? rest : { ...rest, [block]: viewport } };
+    });
   }
 
   /** REFEDIT and REFCLOSE (M5-02 part 3): the block edited in place, or none. */

@@ -1,0 +1,1 @@
+- M6-02 part 3 (#598): MSPACE and PSPACE, and a double click into and out of a layout viewport: while a viewport is current, the drafter draws, snaps, selects and edits model space through it on the layout, its frame drawn bold and the status bar saying MODEL.

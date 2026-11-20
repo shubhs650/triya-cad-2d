@@ -25,6 +25,7 @@ import type {
   ViewReply,
   ViewRequest,
   ViewState,
+  ViewportGeometry,
 } from '@triya/engine';
 import type { ViewTransform } from '@triya/render';
 import type { CanvasMode } from './controller';
@@ -35,6 +36,10 @@ export interface ViewTarget {
   readonly view: ViewTransform | undefined;
   readonly size: ViewportSize;
   readonly isLayout: boolean;
+  /** The layout viewport made current (MSPACE, M6-02 part 3): `view` is model space's then. */
+  readonly viewport: Handle | undefined;
+  /** MSPACE and PSPACE: the viewport to work through, or none (paper space). */
+  setViewport(handle: Handle | undefined, geometry: ViewportGeometry | undefined): void;
   readonly mode: CanvasMode;
   zoomExtents(): void;
   zoomAll(): void;
@@ -217,7 +222,7 @@ export function stateOf(t: ViewTarget): ViewState | undefined {
     center: v.center,
     height: t.size.height / v.scale,
     width: t.size.width / v.scale,
-    paper: t.isLayout,
+    paper: t.isLayout && t.viewport === undefined,
   };
 }
 
@@ -360,6 +365,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       return done();
     case 'realtime':
       t.setMode(r.mode);
+      return done();
+    case 'viewport':
+      t.setViewport(r.viewport ?? undefined, r.geometry);
       return done();
     case 'regen':
       for (const c of r.all ? ctx.all() : [t]) c.regen();
