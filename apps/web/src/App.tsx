@@ -3104,6 +3104,10 @@ function ViewportCanvas({
           viewport: viewportKey(block, index),
           view,
         }),
+      // ZOOM and PAN in a layout viewport made current change its own view, a drawing edit and
+      // an undo step (M6-02 part 4).
+      onViewportView: (viewport, view, label, join) =>
+        engines.edit(id, { kind: 'viewport-view', viewport, view, label, ...(join && { join }) }),
       onSnapMenu: (at) => snapMenu.open(id, at),
       // A plain right-click (M3-05 part 5): the prompt's shortcut menu, the grip modes' options.
       onShortcutMenu: (at) => {

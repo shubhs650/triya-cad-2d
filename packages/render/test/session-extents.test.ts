@@ -22,7 +22,7 @@ import {
   type WorkerMessage,
 } from '../src/index';
 import simplex from '../../../assets/fonts/oet-simplex.json';
-import { change, drawing, drawingInit, entity, line, MODEL, surface } from './fixtures';
+import { change, drawing, drawingInit, entity, line, MODEL, PAPER, surface } from './fixtures';
 
 type Recorded = ReturnType<typeof surface>;
 
@@ -387,6 +387,30 @@ describe('RendererHost.extents (M1-35 part 2)', () => {
     for (const h of [main, off]) {
       h.setUnderlayPage('9A', { width: 8.5, height: 11 });
       expect(await h.extents()).toEqual({ minX: 0, minY: 0, maxX: 37, maxY: 22 });
+    }
+  });
+
+  it("measures another space when asked: model space's from a layout (M6-02 part 4)", async () => {
+    // ZOOM Extents in a layout viewport made current fits model space, not the sheet.
+    const init = drawingInit([
+      entity('20', line(0, 0, 10, 0)),
+      entity('23', line(-5, 5, 300, 200), { owner: PAPER }),
+    ]);
+    const doc = { init, block: PAPER, tol: toleranceForSize(1000) };
+    const main = new RendererHost({
+      canvas: canvas(),
+      document: doc,
+      mode: 'main',
+      createLayer: () => surface('layer'),
+    });
+    const off = new RendererHost({
+      canvas: canvas(),
+      document: doc,
+      createWorker: inProcessWorker,
+    });
+    for (const h of [main, off]) {
+      expect(await h.extents()).toEqual({ minX: -5, minY: 5, maxX: 300, maxY: 200 });
+      expect(await h.extents(MODEL)).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
     }
   });
 

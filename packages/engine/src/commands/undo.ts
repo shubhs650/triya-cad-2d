@@ -224,7 +224,16 @@ export class UndoStack {
    */
   push(
     record: CommandRecord,
-    options: { readonly erases?: boolean; readonly layer?: boolean } = {},
+    options: {
+      readonly erases?: boolean;
+      readonly layer?: boolean;
+      /**
+       * A ZOOM or PAN that changed the drawing (a layout viewport's own view, M6-02 part 4): it
+       * joins the ZOOM/PAN step before it as a view step does, and `join` (the rest of one wheel
+       * roll or drag) joins it even with UNDO Control Combine off.
+       */
+      readonly view?: 'combine' | 'join';
+    } = {},
   ): void {
     if (options.erases) this.#erased = erasedBy(record.changes);
     const changes = record.changes.filter((c) => !isEmptyChangeSet(c));
@@ -235,6 +244,19 @@ export class UndoStack {
     if (this.#group) {
       this.#group.changes.push(...changes);
       this.#group.bytes += bytes;
+      this.#bytes += bytes;
+    } else if (
+      options.view !== undefined &&
+      (options.view === 'join' || this.#settings.combineZoomPan) &&
+      last?.kind === 'record' &&
+      last.combines === 'view'
+    ) {
+      last.record = {
+        ...last.record,
+        label: record.command,
+        changes: [...last.record.changes, ...changes],
+        bytes: last.record.bytes + bytes,
+      };
       this.#bytes += bytes;
     } else if (
       options.layer === true &&
@@ -252,7 +274,7 @@ export class UndoStack {
     } else {
       this.#pushRecord(
         { label: record.command, changes, bytes },
-        options.layer === true ? 'layer' : undefined,
+        options.view !== undefined ? 'view' : options.layer === true ? 'layer' : undefined,
       );
     }
     this.#trim();

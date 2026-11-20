@@ -38,14 +38,22 @@ export interface ViewTarget {
   readonly isLayout: boolean;
   /** The layout viewport made current (MSPACE, M6-02 part 3): `view` is model space's then. */
   readonly viewport: Handle | undefined;
+  /**
+   * That viewport's own view (M6-02 part 4), what VIEWCTR and VIEWSIZE give in it and what ZOOM
+   * Center starts from.
+   */
+  readonly viewportView?: { center: Vec2; height: number; width: number } | undefined;
   /** MSPACE and PSPACE: the viewport to work through, or none (paper space). */
   setViewport(handle: Handle | undefined, geometry: ViewportGeometry | undefined): void;
   readonly mode: CanvasMode;
-  zoomExtents(): void;
-  zoomAll(): void;
+  /** Settles once a layout viewport made current, which measures model space first, has zoomed. */
+  zoomExtents(): void | Promise<void>;
+  zoomAll(): void | Promise<void>;
   zoomPrevious(): boolean;
   zoomScale(factor: number): void;
   zoomLimits(factor: number): void;
+  /** ZOOM nXP (M6-02 part 4): a current layout viewport's scale; on paper, as `zoomLimits`. */
+  zoomPaper(factor: number): void;
   zoomWindow(a: Vec2, b: Vec2): void;
   zoomCenter(center: Vec2, height: number): void;
   panWorld(by: Vec2): void;
@@ -220,6 +228,9 @@ export const NO_TABS = 'There are no tabs here.';
 export function stateOf(t: ViewTarget): ViewState | undefined {
   const v = t.view;
   if (!v || !(t.size.width > 0) || !(t.size.height > 0)) return undefined;
+  // In a layout viewport made current, its own view (M6-02 part 4).
+  const own = t.viewportView;
+  if (own) return { ...own, paper: false };
   return {
     center: v.center,
     height: t.size.height / v.scale,
@@ -338,11 +349,11 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
         screen: { width: t.size.width, height: t.size.height },
       };
     case 'extents':
-      t.zoomExtents();
-      return done();
-    case 'all':
-      t.zoomAll();
-      return done();
+    case 'all': {
+      // A layout viewport made current measures model space first (M6-02 part 4).
+      const zoomed = r.op === 'all' ? t.zoomAll() : t.zoomExtents();
+      return zoomed ? zoomed.then(done) : done();
+    }
     case 'previous':
       return t.zoomPrevious() ? done() : { ok: false, message: 'No previous view saved.' };
     case 'scale':
@@ -350,10 +361,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       // nXP is relative to paper space units: in a layout's paper space those are its own
       // units, so it scales as n against the layout's limits. Model space shown on its own tab
       // has no paper space to measure against; AutoCAD documents nXP for layout viewports only,
-      // so we refuse it there rather than guess (a floating viewport's MSPACE comes later).
+      // so we refuse it there rather than guess. In a layout viewport made current it sets the
+      // viewport's scale (M6-02 part 4).
       else if (r.relativeTo === 'paper' && !t.isLayout) {
         return { ok: false, message: 'nXP needs paper space: use it in a layout, or nX here.' };
-      } else t.zoomLimits(r.factor);
+      } else if (r.relativeTo === 'paper') t.zoomPaper(r.factor);
+      else t.zoomLimits(r.factor);
       return done();
     case 'window':
       t.zoomWindow(r.a, r.b);
