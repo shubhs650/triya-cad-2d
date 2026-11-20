@@ -262,6 +262,11 @@ export class ChangeSetBuilder {
     return this.#table(table).get(handle) as TableRecords[K] | undefined;
   }
 
+  /** The table's records as this change leaves them so far. */
+  tableRecords<K extends TableName>(table: K): IterableIterator<TableRecords[K]> {
+    return this.#table(table).values() as IterableIterator<TableRecords[K]>;
+  }
+
   // ── Entities ────────────────────────────────────────────────────────────────────────────
 
   addEntity(draft: NewEntity): Entity {

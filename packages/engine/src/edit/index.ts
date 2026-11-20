@@ -110,6 +110,7 @@ export * from './center-settings';
 export * from './pedit';
 export * from './splinedit';
 export * from './overkill';
+export * from './page-setups';
 export * from './groups';
 export * from './snap-grid';
 export * from './mleader-align';

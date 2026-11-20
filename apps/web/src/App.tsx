@@ -93,6 +93,7 @@ import { ExportDialog, exportDialog } from './ExportDialog';
 import { ViewManager } from './ViewManager';
 import { viewManager } from './view-manager';
 import { layerStatesManager } from './layer-states';
+import { PageSetupManager, pageSetupManager } from './PageSetupManager';
 import { LayerStatesManager } from './LayerStatesManager';
 import { SelectTemplateDialog } from './SelectTemplateDialog';
 import {
@@ -968,6 +969,15 @@ async function fileCommand(
     return pick
       ? { ok: true, pickWindow: true, ...(pick.boundary && { boundary: pick.boundary }) }
       : { ok: true };
+  }
+  if (action === 'pagesetup') {
+    // PAGESETUP (M6-01 part 3): the Page Setup Manager, waited for as PLOT waits for its dialog,
+    // with the corners asked for when its Page Setup dialog's Window< wants them.
+    const pickWindow = await pageSetupManager.show(id, {
+      window: window && windowBox(window.a, window.b),
+      resume: resume === true,
+    });
+    return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
   }
   if (action === 'layerstates') {
     // LAYERSTATE (M5-07 part 2): the Layer States Manager, waited for until it closes.
@@ -2747,6 +2757,11 @@ export function App() {
         edited={(id) => store.edited(id)}
       />
       <LayerStatesManager doc={active} edited={(id) => store.edited(id)} />
+      <PageSetupManager
+        doc={active}
+        userTables={userPlotStyleTables}
+        edited={(id) => store.edited(id)}
+      />
       <TemplateChooser />
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />

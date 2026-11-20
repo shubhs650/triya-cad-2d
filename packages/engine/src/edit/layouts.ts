@@ -21,7 +21,7 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { EntityId } from '../model/entity-ids';
-import type { Entity, HeaderValue, Layout, LayoutPlot, Xdata } from '../model/types';
+import type { Entity, HeaderValue, Layout, LayoutPlot, ObjectCommon, Xdata } from '../model/types';
 import { metric } from './center-settings';
 import { blockDrawOrder, sortTableOf } from './draw-order';
 import { copiedProps, copyObjects, refusalMessages } from './edit';
@@ -305,31 +305,53 @@ function resetLayout(b: ChangeSetBuilder, model: DocumentModel, layout: Layout):
  */
 export const PLOT_TRANSPARENCY_APP = 'PLOTTRANSPARENCY';
 
-const plotTransparencyApp = (model: DocumentModel): Handle | undefined =>
-  [...model.tables.appIds.values()].find((a) => a.name.toUpperCase() === PLOT_TRANSPARENCY_APP)
-    ?.handle;
+const isPlotTransparencyApp = (a: { readonly name: string }): boolean =>
+  a.name.toUpperCase() === PLOT_TRANSPARENCY_APP;
 
-/** A layout's "Plot transparency": its PLOTTRANSPARENCY xdata's first 1071 value, non-zero. */
-export function plotTransparencyOf(model: DocumentModel, layout: Layout): boolean {
-  const app = plotTransparencyApp(model);
-  const values = app === undefined ? undefined : layout.xdata?.find((x) => x.appId === app)?.values;
+/** The 1071 value of `app`'s xdata on `x`, non-zero. */
+function transparencyIn(app: Handle | undefined, x: Pick<ObjectCommon, 'xdata'>): boolean {
+  const values = app === undefined ? undefined : x.xdata?.find((d) => d.appId === app)?.values;
   const on = values?.find((v) => v.code === 1071)?.value;
   return typeof on === 'bigint' ? on !== 0n : typeof on === 'number' && on !== 0;
+}
+
+/**
+ * A layout's "Plot transparency" (or a named page setup's, M6-01 part 3): its PLOTTRANSPARENCY
+ * xdata's first 1071 value, non-zero.
+ */
+export function plotTransparencyOf(
+  model: DocumentModel,
+  layout: Pick<ObjectCommon, 'xdata'>,
+): boolean {
+  return transparencyIn(
+    [...model.tables.appIds.values()].find(isPlotTransparencyApp)?.handle,
+    layout,
+  );
+}
+
+/**
+ * The same, with the applications as change `b` leaves the drawing so far: a page setup made in
+ * it may name the application it registers (M6-01 part 3, New then Set Current).
+ */
+export function plotTransparencyIn(b: ChangeSetBuilder, x: Pick<ObjectCommon, 'xdata'>): boolean {
+  return transparencyIn([...b.tableRecords('appIds')].find(isPlotTransparencyApp)?.handle, x);
 }
 
 /**
  * The layout's xdata with "Plot transparency" set to `on` (M6-04 part 2, Apply to Layout),
  * registering PLOTTRANSPARENCY when the drawing has no such application; undefined when it is so
  * already (a layout without the xdata is off). Off keeps the application with 0, as AutoCAD writes.
+ * The application is looked for as `b` leaves the drawing, so that one change set registers it
+ * once.
  */
 export function withPlotTransparency(
   b: ChangeSetBuilder,
-  model: DocumentModel,
-  layout: Layout,
+  _model: DocumentModel,
+  layout: Pick<ObjectCommon, 'xdata'>,
   on: boolean,
 ): Xdata | undefined {
-  if (plotTransparencyOf(model, layout) === on) return undefined;
-  let app = plotTransparencyApp(model);
+  let app = [...b.tableRecords('appIds')].find(isPlotTransparencyApp)?.handle;
+  if (transparencyIn(app, layout) === on) return undefined;
   const apps = layout.xdata ?? [];
   const i = app === undefined ? -1 : apps.findIndex((a) => a.appId === app);
   if (!on && i < 0) return undefined;
