@@ -301,6 +301,8 @@ describe('palette search', () => {
       // M4-10 part 1.
       'UPDATEFIELD',
       'VIEW',
+      // M6-02 part 2: a layout viewport clipped by an object or a polygon.
+      'VPCLIP',
       // M5-01 part 4: the Write Block dialog.
       'WBLOCK',
       'WIPEOUT',

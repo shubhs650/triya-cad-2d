@@ -1,19 +1,24 @@
 // M6-02 part 1: MVIEW makes, shows, hides and locks layout viewports, on AutoCAD 2024's prompts
-// (AutoCAD 2024 Help, "MVIEW (Command)").
+// (AutoCAD 2024 Help, "MVIEW (Command)"). Part 2: MVIEW Object and Polygonal make clipped
+// viewports, and VPCLIP clips one or makes it rectangular again ("VPCLIP (Command)").
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   FLOATING_VIEWPORT_FLAGS,
+  NOT_A_CLIP_OBJECT,
   PAPER_VIEWPORT_FLAGS,
   PromptBus,
   VIEWPORT_LOCKED,
+  VIEWPORT_NON_RECT_CLIP,
   VIEWPORT_OFF,
   builtinCommands,
   viewportArrangement,
   viewportFit,
   type BusEvent,
   type Entity,
+  type EntityGeometry,
   type LayoutPlot,
+  type LwPolylineGeometry,
   type ViewHost,
   type ViewReply,
   type ViewRequest,
@@ -71,8 +76,8 @@ const viewport = (over: Partial<ViewportGeometry> = {}): ViewportGeometry => ({
 interface Options {
   /** The page setup of Layout1; none, and the layout has no printable area. */
   plot?: LayoutPlot | null;
-  /** Entities of paper space beside the sample's line 24. */
-  paper?: [string, ViewportGeometry][];
+  /** Entities of paper space beside the sample's line 24 (with their reactors). */
+  paper?: [string, EntityGeometry, string[]?][];
   /** What the canvas answers `bounds` and `get` with; by default nothing (the engine's own). */
   answer?: (r: ViewRequest) => ViewReply | undefined;
   /** The space shown; Layout1's paper space by default. */
@@ -108,7 +113,9 @@ function drawing(o: Options = {}) {
     ],
     entities: [
       ...(init.entities ?? []).filter((e) => !o.empty || e.owner !== MODEL_SPACE),
-      ...(o.paper ?? []).map(([h, g]) => entityInit(h, g, { owner: PAPER_SPACE, layer: LAYER_0 })),
+      ...(o.paper ?? []).map(([h, g, reactors]) =>
+        entityInit(h, g, { owner: PAPER_SPACE, layer: LAYER_0, ...(reactors && { reactors }) }),
+      ),
     ],
   });
   const requests: ViewRequest[] = [];
@@ -158,7 +165,17 @@ describe('MVIEW', () => {
     });
     await t.bus.script(['MV']);
     expect(t.bus.prompt?.message).toBe('Specify corner of viewport or');
-    expect(t.bus.prompt?.options).toEqual(['ON', 'OFF', 'Fit', 'Lock', '2', '3', '4']);
+    expect(t.bus.prompt?.options).toEqual([
+      'ON',
+      'OFF',
+      'Fit',
+      'Lock',
+      'Object',
+      'Polygonal',
+      '2',
+      '3',
+      '4',
+    ]);
     expect(t.bus.prompt?.default).toEqual({ kind: 'keyword', keyword: 'Fit' });
     await t.bus.script(['110,60']);
     expect(t.bus.prompt?.message).toBe('Specify opposite corner');
@@ -361,6 +378,276 @@ describe('MVIEW', () => {
     await t.bus.script(['MVIEW', 'L', 'OFF']);
     await t.bus.answer({ kind: 'selection', ids: [id] });
     expect(t.viewports()[0]!.geom.flags).toBe(FLOATING_VIEWPORT_FLAGS);
+  });
+});
+
+/** A closed square polyline of paper space, from (x, y), `size` on a side. */
+const square = (x: number, y: number, size: number, w = size): LwPolylineGeometry => ({
+  kind: 'LWPOLYLINE',
+  closed: true,
+  vertices: [
+    { x, y, bulge: 0 },
+    { x: x + w, y, bulge: 0 },
+    { x: x + w, y: y + size, bulge: 0 },
+    { x, y: y + size, bulge: 0 },
+  ],
+});
+
+const CLIPPED_FLAGS = FLOATING_VIEWPORT_FLAGS | VIEWPORT_NON_RECT_CLIP;
+
+describe('MVIEW Object and Polygonal', () => {
+  const extents = (r: ViewRequest): ViewReply | undefined =>
+    r.op === 'bounds' ? { ok: true, box: { minX: 0, minY: 0, maxX: 20, maxY: 10 } } : undefined;
+
+  it('makes a viewport clipped by a closed object, framed by its box', async () => {
+    const open = { ...square(0, 0, 10), closed: false };
+    const t = drawing({
+      answer: extents,
+      paper: [
+        ['60', viewport({ id: 2, status: 1 })],
+        ['62', { kind: 'CIRCLE', center: { x: 200, y: 100 }, radius: 20 }],
+        ['63', open],
+      ],
+    });
+    const id = (h: string) => t.model.ids.idOf(h)!;
+    await t.bus.script(['MVIEW', 'O']);
+    expect(t.bus.prompt?.message).toBe('Select object to clip viewport');
+    await t.bus.answer({ kind: 'selection', ids: [id('63')] });
+    expect(t.log).toContain(NOT_A_CLIP_OBJECT);
+    expect(t.bus.prompt?.message).toBe('Select object to clip viewport');
+    await t.bus.answer({ kind: 'selection', ids: [id('62')] });
+    expect(t.bus.command).toBeUndefined();
+    const vp = t.viewports()[1]!;
+    expect(vp.geom).toMatchObject({
+      id: 3,
+      status: 2,
+      flags: CLIPPED_FLAGS,
+      clipBoundary: '62',
+      center: { x: 200, y: 100 },
+      width: 40,
+      height: 40,
+      // 20 × 10 fits a 40 × 40 frame by its width.
+      viewCenter: { x: 10, y: 5 },
+      viewHeight: 20,
+    });
+    expect(t.model.entityByHandle('62')!.reactors).toEqual([vp.handle]);
+    expect(t.bus.undo.state.nextUndo).toBe('MVIEW');
+    await t.bus.script(['U']);
+    expect(t.viewports()).toHaveLength(1);
+    expect(t.model.entityByHandle('62')!.reactors).toBeUndefined();
+  });
+
+  it('refuses an object that clips another viewport, or none at all', async () => {
+    const t = drawing({
+      paper: [
+        ['60', viewport({ id: 2, flags: CLIPPED_FLAGS, clipBoundary: '62' })],
+        ['62', square(80, 80, 40), ['60']],
+      ],
+    });
+    await t.bus.script(['MVIEW', 'O']);
+    await t.bus.answer({ kind: 'selection', ids: [t.model.ids.idOf('62')!] });
+    expect(t.log).toContain('Object already clips another viewport.');
+    await t.bus.answer({ kind: 'selection', ids: [] });
+    expect(t.bus.command).toBeUndefined();
+    expect(t.viewports()).toHaveLength(1);
+  });
+
+  it('draws a polygon of lines and arcs, made first, and clips a new viewport with it', async () => {
+    const t = drawing({ answer: extents });
+    await t.bus.script(['MVIEW', 'P']);
+    expect(t.bus.prompt?.message).toBe('Specify start point');
+    await t.bus.script(['10,10']);
+    expect(t.bus.prompt?.message).toBe('Specify next point or');
+    expect(t.bus.prompt?.options).toEqual(['Arc', 'Length', 'Undo']);
+    // Undo with no segment, and Enter before any segment, are no polygon yet.
+    await t.bus.script(['U']);
+    expect(t.log).toContain('All segments already undone.');
+    await t.bus.script(['50,10']);
+    expect(t.bus.prompt?.options).toEqual(['Arc', 'Close', 'Length', 'Undo']);
+    // One segment encloses nothing: Enter (Close) asks again.
+    await t.bus.script(['']);
+    expect(t.log).toContain('The boundary must enclose an area.');
+    // An arc on from (50,10) heading east to (50,50): a half circle about (50,30).
+    await t.bus.script(['A']);
+    expect(t.bus.prompt?.message).toMatch(/^Specify endpoint of arc/);
+    expect(t.bus.prompt?.options).toContain('CLose');
+    await t.bus.script(['50,50', 'L', '30,50', 'U', 'L']);
+    expect(t.bus.prompt?.message).toBe('Specify length of line');
+    // On west along the last segment.
+    await t.bus.script(['40', 'C']);
+    expect(t.bus.command).toBeUndefined();
+
+    const [sheet, vp] = t.viewports();
+    expect(sheet!.geom.id).toBe(1);
+    const pl = t.model.entityByHandle(vp!.geom.clipBoundary!)!;
+    expect(pl.owner).toBe(PAPER_SPACE);
+    expect(pl.layer).toBe(LAYER_WALLS);
+    // The polygon is made before the viewport it clips, after the layout's own viewport.
+    expect(parseInt(sheet!.handle, 16)).toBeLessThan(parseInt(pl.handle, 16));
+    expect(parseInt(pl.handle, 16)).toBeLessThan(parseInt(vp!.handle, 16));
+    expect(pl.reactors).toEqual([vp!.handle]);
+    const g = pl.geom as LwPolylineGeometry;
+    expect(g.closed).toBe(true);
+    const corners = [
+      [10, 10],
+      [50, 10],
+      [50, 50],
+      [10, 50],
+    ];
+    expect(g.vertices).toHaveLength(4);
+    g.vertices.forEach((v, i) => {
+      expect(v.x).toBeCloseTo(corners[i]![0]!);
+      expect(v.y).toBeCloseTo(corners[i]![1]!);
+    });
+    expect(g.vertices[1]!.bulge).toBeCloseTo(1);
+    expect(vp!.geom.flags).toBe(CLIPPED_FLAGS);
+    expect(vp!.geom.center.x).toBeCloseTo(40);
+    expect(vp!.geom.center.y).toBeCloseTo(30);
+    expect(vp!.geom.width).toBeCloseTo(60);
+    expect(vp!.geom.height).toBeCloseTo(40);
+    await t.bus.script(['U']);
+    expect(t.viewports()).toEqual([]);
+    expect(t.model.entityByHandle(pl.handle)).toBeUndefined();
+  });
+
+  it('closes a polygon with an arc, and makes nothing when ended before a segment', async () => {
+    const t = drawing({ paper: [['60', viewport({ id: 2 })]] });
+    await t.bus.script(['MVIEW', 'P', '0,0', '']);
+    expect(t.bus.command).toBeUndefined();
+    await t.bus.script(['MVIEW', 'P', '0,0', '40,0', '40,40', 'A', 'CL']);
+    expect(t.bus.command).toBeUndefined();
+    const vp = t.viewports()[1]!.geom;
+    const g = t.model.entityByHandle(vp.clipBoundary!)!.geom as LwPolylineGeometry;
+    // The arc from (40,40) heading north back to (0,0) bulges out to the upper left.
+    expect(g.vertices).toHaveLength(3);
+    expect(g.vertices[2]!.bulge).not.toBe(0);
+    expect(vp.width).toBeGreaterThan(40);
+  });
+
+  it('refuses an arc back that cannot be drawn, and a polygon of two vertices', async () => {
+    const t = drawing({ paper: [['60', viewport({ id: 2 })]] });
+    // Straight on from (10,0) is away from the start: no arc reaches it.
+    await t.bus.script(['MVIEW', 'P', '0,0', '10,0', 'A', 'CL']);
+    expect(t.log).toContain('*Invalid*');
+    // An arc out and an arc back enclose an area but have two vertices, which AutoCAD refuses.
+    await t.bus.script(['L', 'U', 'A', '10,10', 'CL']);
+    expect(t.log).toContain('The boundary must enclose an area.');
+    expect(t.bus.prompt?.message).toMatch(/^Specify endpoint of arc/);
+    await t.bus.cancel();
+    expect(t.viewports()).toHaveLength(1);
+  });
+});
+
+describe('VPCLIP', () => {
+  const clipped = (over: Partial<ViewportGeometry> = {}) =>
+    viewport({ id: 2, flags: CLIPPED_FLAGS, clipBoundary: '63', ...over });
+
+  it('is refused outside a layout’s paper space', async () => {
+    const t = drawing({ space: MODEL_SPACE });
+    await t.bus.script(['VPCLIP']);
+    expect(t.log).toContain('** Command not allowed in Model Tab **');
+    expect(t.bus.command).toBeUndefined();
+  });
+
+  it('clips a viewport with an object, keeping its scale and model space on the sheet', async () => {
+    const t = drawing({
+      paper: [
+        ['61', viewport({ id: 2 })],
+        ['63', square(90, 90, 30, 40)],
+      ],
+    });
+    const id = (h: string) => t.model.ids.idOf(h)!;
+    await t.bus.script(['VPCLIP']);
+    expect(t.bus.prompt?.message).toBe('Select viewport to clip');
+    await t.bus.answer({ kind: 'selection', ids: [id('63')] });
+    expect(t.log).toContain('Object is not a viewport.');
+    await t.bus.answer({ kind: 'selection', ids: [id('61')] });
+    expect(t.bus.prompt?.message).toBe('Select clipping object or');
+    expect(t.bus.prompt?.options).toEqual(['Polygonal']);
+    expect(t.bus.prompt?.defaultLabel).toBe('Polygonal');
+    // The viewport itself is no clipping object.
+    await t.bus.answer({ kind: 'selection', ids: [id('61')] });
+    expect(t.log).toContain(NOT_A_CLIP_OBJECT);
+    await t.bus.answer({ kind: 'selection', ids: [id('63')] });
+    expect(t.bus.command).toBeUndefined();
+    const g = t.viewports()[0]!.geom;
+    // 1:1 (view height 30 in a 30 high frame): the frame moves by (10, 5), so does the view.
+    expect(g).toMatchObject({
+      flags: CLIPPED_FLAGS,
+      clipBoundary: '63',
+      center: { x: 110, y: 105 },
+      width: 40,
+      height: 30,
+      viewCenter: { x: 10, y: 5 },
+      viewHeight: 30,
+    });
+    expect(t.model.entityByHandle('63')!.reactors).toEqual(['61']);
+    expect(t.bus.undo.state.nextUndo).toBe('VPCLIP');
+  });
+
+  it('picks a clipped viewport by its boundary and deletes the clip', async () => {
+    const t = drawing({
+      paper: [
+        ['61', clipped()],
+        ['63', square(80, 85, 30, 40), ['61']],
+      ],
+    });
+    await t.bus.script(['VPCLIP']);
+    await t.bus.answer({ kind: 'selection', ids: [t.model.ids.idOf('63')!] });
+    expect(t.bus.prompt?.options).toEqual(['Polygonal', 'Delete']);
+    await t.bus.script(['D']);
+    expect(t.bus.command).toBeUndefined();
+    const g = t.viewports()[0]!.geom;
+    expect(g.flags).toBe(FLOATING_VIEWPORT_FLAGS);
+    expect(g.clipBoundary).toBeUndefined();
+    expect(g.center).toEqual({ x: 100, y: 100 });
+    // AutoCAD erases the boundary with the clip.
+    expect(t.model.entityByHandle('63')).toBeUndefined();
+    await t.bus.script(['U']);
+    expect(t.viewports()[0]!.geom.clipBoundary).toBe('63');
+    expect(t.model.entityByHandle('63')!.reactors).toEqual(['61']);
+  });
+
+  it('replaces a clip with a polygon drawn, erasing the old boundary', async () => {
+    const t = drawing({
+      paper: [
+        // 1:2 (view height 60 in a 30 high frame).
+        ['61', clipped({ viewHeight: 60 })],
+        ['63', square(80, 85, 30, 40), ['61']],
+      ],
+    });
+    await t.bus.script(['VPCLIP']);
+    await t.bus.answer({ kind: 'selection', ids: [t.model.ids.idOf('61')!] });
+    await t.bus.script(['', '100,100', '140,100', '120,130', '']);
+    expect(t.bus.command).toBeUndefined();
+    expect(t.model.entityByHandle('63')).toBeUndefined();
+    const g = t.viewports()[0]!.geom;
+    const pl = t.model.entityByHandle(g.clipBoundary!)!;
+    expect(pl.layer).toBe(LAYER_WALLS);
+    expect(pl.reactors).toEqual(['61']);
+    expect(g).toMatchObject({
+      flags: CLIPPED_FLAGS,
+      center: { x: 120, y: 115 },
+      width: 40,
+      height: 30,
+      // The frame's centre moved by (20, 15) on the sheet: (40, 30) in model space at 1:2.
+      viewCenter: { x: 40, y: 30 },
+      viewHeight: 60,
+    });
+  });
+
+  it('ends at Enter for a viewport, and at Esc while the polygon is drawn', async () => {
+    const t = drawing({ paper: [['61', viewport({ id: 2 })]] });
+    await t.bus.script(['VPCLIP']);
+    await t.bus.answer({ kind: 'selection', ids: [] });
+    expect(t.bus.command).toBeUndefined();
+    await t.bus.script(['VPCLIP']);
+    await t.bus.answer({ kind: 'selection', ids: [t.model.ids.idOf('61')!] });
+    await t.bus.script(['P', '0,0', '10,0', 'A']);
+    await t.bus.cancel();
+    expect(t.bus.command).toBeUndefined();
+    expect(t.viewports()[0]!.geom.flags).toBe(FLOATING_VIEWPORT_FLAGS);
+    expect(t.model.blockEntities(PAPER_SPACE)).toHaveLength(2);
   });
 });
 

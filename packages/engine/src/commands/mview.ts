@@ -10,24 +10,32 @@
 //     3:         Enter viewport arrangement [Horizontal/Vertical/Above/Below/Left/Right] <Right>:
 //                then the area as for 2
 //     4:         Specify first corner or [Fit] <Fit>:  Specify opposite corner:
+//     Object:    Select object to clip viewport:          a viewport clipped by the object
+//     Polygonal: Specify start point:  Specify next point or [Arc/Length/Undo]:  ...
+//                                                          a viewport clipped by the polygon
 // A new viewport shows model space's extents (AutoCAD zooms each new viewport to them) and goes
-// on the current layer. AutoCAD's other options wait for later parts of M6-02: Object and
-// Polygonal (non-rectangular viewports, with VPCLIP), Restore (VPORTS' configurations), NEw and
-// NAmed (the Viewports dialog) and LAyer (with VPLAYER); Shadeplot is 3D (excluded).
+// on the current layer. Object and Polygonal (M6-02 part 2) make a non-rectangular viewport
+// framed by the object's or the polygon's box and clipped by it, as VPCLIP clips one
+// (`vpclip.ts`, `edit/viewport-clip.ts`); the polygon is a closed polyline made first, as
+// AutoCAD makes it. AutoCAD's other options wait for later parts of M6-02: Restore (VPORTS'
+// configurations), NEw and NAmed (the Viewports dialog) and LAyer (with VPLAYER); Shadeplot is
+// 3D (excluded).
 // Outside a layout's paper space AutoCAD refuses MVIEW ("** Command not allowed in Model Tab **").
 import { unionBox, type Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { blockExtentsOf } from '../edit/mleader';
 import { PAPER_VIEWPORT_FLAGS } from '../edit/named-view';
+import { viewportClipFrame, clipObjectProblem, clipViewport } from '../edit/viewport-clip';
 import { layoutSheet } from '../layout/sheet';
 import { VIEWPORT_LOCKED, VIEWPORT_OFF } from '../layout/viewport';
-import type { Entity, ViewportGeometry } from '../model/types';
+import type { Entity, LwPolylineGeometry, ViewportGeometry } from '../model/types';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import { currentLayer } from '../properties/current';
 import { isPaperSpace, modelSpaceOf } from './bus';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
+import { addBoundary, polygonProblem, polygonalBoundary } from './vpclip';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -222,8 +230,18 @@ async function* area(ctx: CommandContext, first?: Vec2): Sub<Box | undefined> {
   }
 }
 
-/** Makes viewports with `frames` in the space shown, each showing model space's extents. */
-async function addViewports(ctx: CommandContext, frames: readonly Box[]): Promise<void> {
+/** What clips a new viewport: an object of the space shown, or a polygon to make first. */
+type NewClip = { readonly id: EntityId } | { readonly polygon: LwPolylineGeometry };
+
+/**
+ * Makes viewports with `frames` in the space shown, each showing model space's extents; the one
+ * viewport framed by `clip`'s box is clipped by it (Object, Polygonal).
+ */
+async function addViewports(
+  ctx: CommandContext,
+  frames: readonly Box[],
+  clip?: NewClip,
+): Promise<void> {
   const space = ctx.space;
   const extents = await modelExtents(ctx);
   const all = [...ctx.model.entities()].filter((e) => e.geom.kind === 'VIEWPORT');
@@ -253,17 +271,21 @@ async function addViewports(ctx: CommandContext, frames: readonly Box[]): Promis
         geom: newViewportGeometry(sheet, view, 1, status, PAPER_VIEWPORT_FLAGS),
       });
     }
+    // The polygon is made before the viewport it clips, as AutoCAD makes it (its handle is the
+    // lower: text_in_viewports.dxf).
+    const boundary = clip && ('id' in clip ? clip.id : addBoundary(ctx, b, clip.polygon));
     for (const frame of frames) {
       // Nothing in model space to show: the viewport shows it 1:1 about the frame.
       const view = (extents && viewportFit(frame, extents)) ?? {
         center: { x: (frame.minX + frame.maxX) / 2, y: (frame.minY + frame.maxY) / 2 },
         height: frame.maxY - frame.minY,
       };
-      b.addEntity({
+      const vp = b.addEntity({
         owner: space,
         layer,
         geom: newViewportGeometry(frame, view, id++, current ? ++status : 0),
       });
+      if (boundary !== undefined) clipViewport(b, ctx.model, vp.id, boundary);
     }
   });
 }
@@ -330,6 +352,22 @@ async function* lock(ctx: CommandContext): Sub<void> {
   });
 }
 
+/** Object: "Select object to clip viewport:" until an object that clips one is picked. */
+async function* clipObject(ctx: CommandContext): Sub<EntityId | undefined> {
+  for (;;) {
+    const a = yield ctx.prompt.selection({
+      message: 'Select object to clip viewport',
+      single: true,
+    });
+    const ids = (a as { ids: readonly EntityId[] }).ids;
+    if (ids.length === 0) return undefined;
+    const e = ctx.model.entity(ids[0]!)!;
+    const problem = clipObjectProblem(ctx.model, e, ctx.space);
+    if (!problem) return e.id;
+    ctx.message(problem);
+  }
+}
+
 export function mviewCommand(): CommandDef {
   return {
     name: 'MVIEW',
@@ -341,7 +379,7 @@ export function mviewCommand(): CommandDef {
       }
       const a = yield ctx.prompt.point({
         message: 'Specify corner of viewport or',
-        options: ['ON', 'OFF', 'Fit', 'Lock', '2', '3', '4'],
+        options: ['ON', 'OFF', 'Fit', 'Lock', 'Object', 'Polygonal', '2', '3', '4'],
         default: { kind: 'keyword', keyword: 'Fit' },
       });
       if (a.kind !== 'keyword') {
@@ -357,6 +395,19 @@ export function mviewCommand(): CommandDef {
         case 'Lock':
           yield* lock(ctx);
           return;
+        case 'Object': {
+          const id = yield* clipObject(ctx);
+          if (id !== undefined) {
+            const frame = viewportClipFrame(ctx.model.entity(id)!.geom)!;
+            await addViewports(ctx, [frame], { id });
+          }
+          return;
+        }
+        case 'Polygonal': {
+          const polygon = yield* polygonalBoundary(ctx, polygonProblem);
+          if (polygon) await addViewports(ctx, [viewportClipFrame(polygon)!], { polygon });
+          return;
+        }
         case 'Fit': {
           const frame = await fit(ctx);
           if (frame) await addViewports(ctx, [frame]);
