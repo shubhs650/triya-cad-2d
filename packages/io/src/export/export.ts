@@ -70,6 +70,7 @@ import {
   writeTriyaCenterMarks,
 } from './triya-centermarks';
 import { planLayouts, writeLayouts } from './layouts';
+import { planPageSetups, writePageSetups } from './page-setups';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
 import {
@@ -198,7 +199,8 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   // coded-objects.ts) and so do associative arrays' records (triya-arrays.ts) and dimensions'
   // breaks and inspection data (triya-dims.ts) and center marks' records (triya-centermarks.ts,
   // M4-08 part 2, DEC-066), and layer states and filters (layer-states.ts, layer-filters.ts,
-  // M5-07), and DGN linestyle components (dgn-linestyles.ts, M5-09 part 5).
+  // M5-07), and DGN linestyle components (dgn-linestyles.ts, M5-09 part 5), and named page setups
+  // (page-setups.ts, M6-01 part 3).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'GROUP' &&
@@ -212,6 +214,7 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
     o.type !== 'LAYER_STATE' &&
     o.type !== 'LAYER_FILTER' &&
     o.type !== 'DGN_LS_COMPONENT' &&
+    o.type !== 'PLOTSETTINGS' &&
     !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
@@ -519,6 +522,7 @@ export function triyaToAcad(
   const textStyles = planTextStyles(original, base, model, r);
   const linetypes = planLinetypes(original, base, model, r);
   const layouts = planLayouts(original, base, model, r, format);
+  const pageSetups = planPageSetups(original, base, model, r, format);
   const drawOrder = planDrawOrder(original, base, model, r);
   // Before the entities, which a new block holds and INSERTs, dimensions and tables name, and
   // before the styles: a dimension style's arrows, a multileader style's content and a table
@@ -615,6 +619,7 @@ export function triyaToAcad(
     ...Object.values(views).flatMap((v) => v.problems),
     ...imageObjects.problems,
     ...layouts.problems,
+    ...pageSetups.problems,
     ...blocks.problems,
     ...groups.problems,
     ...dimAssocs.problems,
@@ -661,6 +666,7 @@ export function triyaToAcad(
   writeImageObjects(original, imageObjects.plan);
   // After the blocks: a new layout's block record is in its table.
   writeLayouts(original, r, layouts.plan);
+  writePageSetups(original, r, pageSetups.plan);
   writeGroups(groups.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only

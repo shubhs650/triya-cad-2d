@@ -108,6 +108,7 @@ function definitionDictionaries(doc: CadDocument): {
   groupDictionary?: string;
   layerStateDictionary?: string;
   layerFilterDictionary?: string;
+  plotSettingsDictionary?: string;
 } {
   const images = namedDictionary(doc, CadDictionary.acadImageDict);
   const pdfs = namedDictionary(doc, CadDictionary.acadPdfDefinitions);
@@ -115,6 +116,7 @@ function definitionDictionaries(doc: CadDocument): {
   const groups = namedDictionary(doc, CadDictionary.acadGroup);
   const states = layerStatesDictionary(doc);
   const filters = layerFiltersDictionary(doc);
+  const plotSettings = namedDictionary(doc, CadDictionary.acadPlotSettings);
   return {
     ...(images && { imageDictionary: hex(images.handle) }),
     ...(pdfs && { pdfDictionary: hex(pdfs.handle) }),
@@ -123,6 +125,8 @@ function definitionDictionaries(doc: CadDocument): {
     ...(states && { layerStateDictionary: hex(states.handle) }),
     // New layer filters (M5-07 part 4): the LAYER table's ACLYDICTIONARY.
     ...(filters && { layerFilterDictionary: hex(filters.handle) }),
+    // New named page setups (M6-01 part 3): ACAD_PLOTSETTINGS, which acad-ts makes on read.
+    ...(plotSettings && { plotSettingsDictionary: hex(plotSettings.handle) }),
   };
 }
 

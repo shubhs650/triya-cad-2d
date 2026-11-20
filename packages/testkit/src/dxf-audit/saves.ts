@@ -50,6 +50,9 @@ export type AuditSaveKind =
   // Views' layer snapshots: Update Layers, a rename and New View's on the AC1032 sample, a new
   // view's on colors.dxf (M5-07 part 7).
   | 'view-layers'
+  // Named page setups added, set current, modified, renamed and deleted on the AC1032 sample and
+  // on images.dxf, which has one of its own (M6-01 part 3).
+  | 'page-setups'
   // LAYOUT Copy of every layout of the AC1032 sample and of text_in_viewports.dxf (a clipped
   // viewport copied with its boundary; M6-01 part 2).
   | 'layout-copy'

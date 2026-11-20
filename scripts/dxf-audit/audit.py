@@ -90,6 +90,10 @@ FIXTURE_SAVES = (
     # on colors.dxf (M5-07 part 7, packages/testkit/src/export/view-layer-snapshots.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "view-layers"),
     ("third-party/ezdxf/examples_dxf/colors.dxf", "view-layers"),
+    # Named page setups added, set current, modified, renamed and deleted on the sample and on the
+    # page setups test drawing's own (M6-01 part 3, export-page-setups.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "page-setups"),
+    ("fixtures/page-setups/page-setups.dxf", "page-setups"),
     # LAYOUT Copy of every layout of the sample and of text_in_viewports.dxf, a clipped viewport
     # copied with its boundary (M6-01 part 2, export-layout-copy.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layout-copy"),

@@ -58,6 +58,16 @@ import {
   placeLayout,
   withPlotTransparency,
 } from '../edit/layouts';
+import {
+  addPageSetup,
+  changePageSetup,
+  currentPageSetupPatch,
+  deletePageSetup,
+  isNamedPageSetup,
+  pageSetupPlotProblem,
+  setCurrentProblem,
+  type PageSetupInit,
+} from '../edit/page-setups';
 import { xrefDetachChange, xrefDetachProblem } from '../edit/xrefs';
 import { xrefBindChange, xrefBindProblem } from '../edit/xref-bind';
 import type { EntityId } from '../model/entity-ids';
@@ -244,6 +254,33 @@ export interface LayoutEdit {
 }
 
 /**
+ * The Page Setup Manager (PAGESETUP, M6-01 part 3) on the drawing's named page setups: New (or
+ * Import's, over the one of its name when `replace`), Modify and Rename, Delete, and Set Current
+ * for a layout. One PAGESETUP undo step each.
+ */
+export type PageSetupEdit =
+  | {
+      readonly kind: 'page-setup-new';
+      readonly setup: PageSetupInit;
+      readonly replace?: boolean;
+    }
+  | {
+      readonly kind: 'page-setup-import';
+      readonly setups: readonly PageSetupInit[];
+      /** Redefine a page setup of the same name, as Import asks. */
+      readonly replace?: boolean;
+    }
+  | {
+      readonly kind: 'page-setup-edit';
+      readonly setup: Handle;
+      readonly name?: string;
+      readonly plot?: LayoutPlot;
+      readonly plotTransparency?: boolean;
+    }
+  | { readonly kind: 'page-setup-delete'; readonly setup: Handle }
+  | { readonly kind: 'page-setup-current'; readonly setup: Handle; readonly layout: Handle };
+
+/**
  * An xref's drawing found (M1-21): its file as the importer maps it, loaded as the content of
  * the host's xref block (`xrefLoadChange`). Not an undoable edit in AutoCAD either: loading
  * changes what the drawing shows, not the drawing. The load XATTACH asks for while it runs is
@@ -386,6 +423,7 @@ export type EngineEdit =
   | LayerFilterEdit
   | LinetypeLoadEdit
   | LayoutEdit
+  | PageSetupEdit
   | XrefLoadEdit
   | XrefUnloadEdit
   | XrefDetachEdit
@@ -915,6 +953,14 @@ export class EngineSession {
       e.kind === 'layer-filter-convert'
     )
       return this.#layerFiltersEdit(e);
+    if (
+      e.kind === 'page-setup-new' ||
+      e.kind === 'page-setup-import' ||
+      e.kind === 'page-setup-edit' ||
+      e.kind === 'page-setup-delete' ||
+      e.kind === 'page-setup-current'
+    )
+      return this.#pageSetupEdit(e);
     if (e.kind === 'linetype-load') return this.#linetypeLoad(e);
     if (e.kind === 'purge') return this.#purge(e);
     if (e.kind === 'aliases') {
@@ -1235,7 +1281,7 @@ export class EngineSession {
     }
     if (e.tabOrder !== undefined && !Number.isInteger(e.tabOrder))
       return { ok: false, message: `Invalid tab position ${e.tabOrder}.` };
-    const plotProblem = e.plot && plotProblemOf(e.plot);
+    const plotProblem = e.plot && pageSetupPlotProblem(e.plot);
     if (plotProblem) return { ok: false, message: `Invalid page setup: ${plotProblem}.` };
 
     const b = new ChangeSetBuilder(this.model);
@@ -1253,6 +1299,54 @@ export class EngineSession {
       this.model.apply(change);
       this.#step('LAYOUT', change);
     }
+    return { ok: true, change };
+  }
+
+  /** The Page Setup Manager's edits (M6-01 part 3): one PAGESETUP undo step each. */
+  #pageSetupEdit(e: PageSetupEdit): EditResult {
+    const m = this.model;
+    const b = new ChangeSetBuilder(m);
+    const page = (h: Handle) => {
+      const o = m.objects.get(h);
+      return isNamedPageSetup(o) ? o : undefined;
+    };
+    if (e.kind === 'page-setup-new') {
+      const made = addPageSetup(b, m, e.setup, e.replace === true);
+      if (typeof made === 'string') return { ok: false, message: made };
+    } else if (e.kind === 'page-setup-import') {
+      const names = new Set<string>();
+      for (const setup of e.setups) {
+        const key = setup.name.trim().toUpperCase();
+        if (names.has(key)) return { ok: false, message: `"${setup.name}" is listed twice.` };
+        names.add(key);
+        const made = addPageSetup(b, m, setup, e.replace === true);
+        if (typeof made === 'string') return { ok: false, message: made };
+      }
+    } else if (e.kind === 'page-setup-current') {
+      const p = page(e.setup);
+      const layout = m.layouts.find((l) => l.handle === e.layout);
+      if (!p || !layout) return { ok: false, message: 'Page setup not found.' };
+      const problem = setCurrentProblem(m, layout, p, isModelLayout(m, layout));
+      if (problem) return { ok: false, message: problem };
+      const patch = currentPageSetupPatch(b, m, layout, p);
+      if (Object.keys(patch).length > 0) b.updateLayout(layout.handle, patch);
+    } else {
+      const p = page(e.setup);
+      if (!p) return { ok: false, message: 'Page setup not found.' };
+      if (e.kind === 'page-setup-delete') deletePageSetup(b, p);
+      else {
+        const done = changePageSetup(b, m, p, {
+          ...(e.name !== undefined && { name: e.name }),
+          ...(e.plot !== undefined && { plot: e.plot }),
+          ...(e.plotTransparency !== undefined && { plotTransparency: e.plotTransparency }),
+        });
+        if (typeof done === 'string') return { ok: false, message: done };
+      }
+    }
+    const change = b.build();
+    if (isEmptyChangeSet(change)) return { ok: true, change };
+    m.apply(change);
+    this.#step('PAGESETUP', change);
     return { ok: true, change };
   }
 
@@ -1274,21 +1368,6 @@ export class EngineSession {
     const messages = copyMessages(copy);
     return { ok: true, change, ...(messages.length > 0 && { messages }) };
   }
-}
-
-/** Why a page setup cannot be a layout's, or undefined (PAGESETUP takes no such values). */
-function plotProblemOf(p: LayoutPlot): string | undefined {
-  if (!(p.paperWidth > 0 && p.paperHeight > 0)) return 'the paper size must be greater than 0';
-  const m = p.margins;
-  if ([m.left, m.bottom, m.right, m.top].some((v) => !(v >= 0)))
-    return 'margins cannot be negative';
-  if (m.left + m.right >= p.paperWidth || m.bottom + m.top >= p.paperHeight)
-    return 'the margins leave no printable area';
-  if (!(p.scale.numerator > 0 && p.scale.denominator > 0))
-    return 'the plot scale must be greater than 0';
-  // DXF 74 = 3 plots the view DXF 6 names (M6-04 part 2).
-  if (p.plotType === 3 && !p.viewName) return 'the View plot area needs a view';
-  return undefined;
 }
 
 function samePlot(a: LayoutPlot, b: LayoutPlot | undefined): boolean {
