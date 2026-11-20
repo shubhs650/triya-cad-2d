@@ -56,6 +56,7 @@ import { mviewCommand } from './mview';
 import { mspaceCommand, pspaceCommand } from './mspace';
 import { vpclipCommand } from './vpclip';
 import { vplayerCommand } from './vplayer';
+import { layvpiCommand } from './layvpi';
 import { UCS_COMMANDS } from './ucs';
 import { changeCommand, chpropCommand } from './modify/chprop';
 import { matchpropCommand } from './modify/matchprop';
@@ -210,6 +211,7 @@ export function builtinCommands(): CommandRegistry {
     pspaceCommand(),
     vpclipCommand(),
     vplayerCommand(),
+    layvpiCommand(),
     underlayLayersCommand(),
     ...layerToolCommands(),
     laydelCommand(),

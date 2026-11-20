@@ -96,6 +96,7 @@ export {
 } from './mview';
 export { polygonalBoundary, vpclipCommand } from './vpclip';
 export { vplayerCommand } from './vplayer';
+export { layvpiCommand } from './layvpi';
 export {
   IN_PAPER_SPACE,
   NOT_IN_MODEL_TAB,

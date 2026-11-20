@@ -1,0 +1,1 @@
+- M6-02 part 6 (#PR): LAYVPI isolates the layer of each object picked in the current layout viewport, freezing it in every other viewport of all layouts or the current one, with Undo and Settings.
