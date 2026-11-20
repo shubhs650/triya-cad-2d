@@ -280,6 +280,7 @@ describe('completions', () => {
       { name: 'LAYTHW' },
       { name: 'LAYULK' },
       { name: 'LAYUNISO' },
+      { name: 'LAYVPI' },
       { name: 'LAYWALK' },
       { name: 'LENGTHEN' },
       // M5-08: LINETYPE and LTSCALE.
