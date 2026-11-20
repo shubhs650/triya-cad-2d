@@ -716,7 +716,7 @@ test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) 
   await expect(rows.first()).toHaveAccessibleName('sample_AC1018-Model');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    d.getByRole('button', { name: 'Publish' }).click(),
+    d.getByRole('button', { name: 'Publish', exact: true }).click(),
   ]);
   await expect(d).toBeHidden();
   expect(download.suggestedFilename()).toBe('sample_AC1018.pdf');
@@ -748,7 +748,7 @@ test('PUBLISH to PNG writes a PNG a sheet into one ZIP at the resolution chosen 
   await resolution.selectOption('96');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    d.getByRole('button', { name: 'Publish' }).click(),
+    d.getByRole('button', { name: 'Publish', exact: true }).click(),
   ]);
   await expect(d).toBeHidden();
   expect(download.suggestedFilename()).toBe('sample_AC1018.zip');
@@ -1168,7 +1168,7 @@ test('PUBLISH takes the sheets of every open drawing, a named page setup each, a
   await d.getByLabel('Save publish log').check();
   const downloads: Download[] = [];
   page.on('download', (x) => downloads.push(x));
-  await d.getByRole('button', { name: 'Publish' }).click();
+  await d.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(d).toBeHidden({ timeout: 60_000 });
   await expect.poll(() => downloads.length).toBe(2);
   const pdfFile = downloads.find((x) => x.suggestedFilename() === 'page-setups.pdf')!;
@@ -1250,7 +1250,7 @@ test('Add Sheets publishes a drawing that is not open, and <Default: …> names 
   await d.getByLabel('Save publish log').check();
   const downloads: Download[] = [];
   page.on('download', (x) => downloads.push(x));
-  await d.getByRole('button', { name: 'Publish' }).click();
+  await d.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(d).toBeHidden({ timeout: 90_000 });
   await expect.poll(() => downloads.length).toBe(2);
   const published = downloads.find((x) => x.suggestedFilename() === 'page-setups.pdf')!;

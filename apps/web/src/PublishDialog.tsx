@@ -30,8 +30,18 @@
 // in a new browser tab: the tab opens on the Publish click (a tab opened when the publish ends,
 // seconds later, is a pop-up the browser blocks) and shows the file when it is written, in the
 // browser's own PDF viewer (an <embed>) or as a picture, titled with the file's name.
+//
+// M6-05: "Include when adding sheets" (Model tab, Layout tabs; kept for the session, as AutoCAD
+// keeps it between publishes) decides which spaces the list opens with and which Load All Open
+// Drawings and Add Sheets add. Rename Sheet (the button, F2 or a double-click on the name) names
+// the selected sheet in place: Enter keeps the name, Esc leaves it. Publish Options... (AutoCAD's
+// Publish Options dialog, its General PDF options) sets the PDF's Type, a single-sheet file a
+// sheet or one multi-sheet file, and the multi-sheet file's name; PDF Options... is Save As
+// PDF's dialog (PdfOptions.tsx: layers, hyperlinks, bookmarks, text as geometry). The sheet list
+// keeps them all.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { download, downloadPdf } from './PlotDialog';
+import { Group, download, downloadPdf } from './PlotDialog';
+import { PdfOptionsDialog } from './PdfOptions';
 import { controllerOf } from './canvas/registry';
 import type { OpenResult } from '@triya/io';
 import { layoutsOf, spacesOf, type OpenDocument } from './documents';
@@ -39,32 +49,41 @@ import { engines } from './engine/registry';
 import { drawingObjects } from './saved-views';
 import type { PlotStyleTable } from '@triya/render';
 import {
+  PLOT_PDF_OPTIONS,
   PNG_RESOLUTIONS,
   appliedPageSetupName,
   defaultPlotSettings,
   pageSetupsOf,
   plotFile,
   withPageSetup,
+  type PdfOptions,
   type UnderlayPageSource,
 } from './plot';
 import { plotSpaceOf } from './plot-spaces';
 import { plotRequest } from './plot-preview';
 import {
   DEFAULT_PAGE_SETUP,
+  INCLUDE_ALL,
+  PUBLISH_FILE_TYPES,
   PUBLISH_TO,
   defaultPageSetup,
   drawingNamed,
   movedSheet,
+  multiSheetFileName,
   publishFileName,
   publishLog,
   publishLogName,
   publishPdf,
+  publishPdfFiles,
   publishSheetFiles,
   publishSheets,
   publishedDownload,
+  renamedSheet,
   withOpenDrawings,
+  type IncludeWhenAdding,
   type PlottedSheet,
   type PublishDevice,
+  type PublishFileType,
   type PublishFailure,
   type PublishSheet,
   type PublishSpace,
@@ -98,6 +117,9 @@ export const publishDialog = (() => {
     close: () => set(undefined),
   };
 })();
+
+/** Include when adding sheets (M6-05): kept for the session, every open of the dialog. */
+let includeWhenAdding: IncludeWhenAdding = INCLUDE_ALL;
 
 /** The PDF file a PDF underlay names (M2-16 part 5): its pages plot as the Plot dialog's do. */
 type UnderlayFile = (fileName: string) => Uint8Array | undefined;
@@ -186,9 +208,18 @@ function PublishBody({
   const picker = useRef<HTMLInputElement>(null);
   const listPicker = useRef<HTMLInputElement>(null);
   const ask = useRef<HTMLDialogElement>(null);
+  const [include, setInclude] = useState(includeWhenAdding);
   const [sheets, setSheets] = useState<PublishSheet[]>(() =>
-    publishSheets(doc.name, publishSpaces(doc, engines.changesOf(doc.id)), doc.id),
+    publishSheets(doc.name, publishSpaces(doc, engines.changesOf(doc.id)), doc.id, include),
   );
+  /** The sheet being renamed and the name typed (M6-05). */
+  const [renaming, setRenaming] = useState<{ readonly at: number; readonly name: string }>();
+  /** Set once Enter or Esc ends a rename, so the blur of the box going away does nothing. */
+  const renameEnded = useRef(false);
+  const [fileType, setFileType] = useState<PublishFileType>('multi');
+  const [fileName, setFileName] = useState('');
+  const [pdfOptions, setPdfOptions] = useState<PdfOptions>(PLOT_PDF_OPTIONS);
+  const [options, setOptions] = useState<'publish' | 'pdf'>();
   const [added, setAdded] = useState<readonly AddedDrawing[]>([]);
   const nextKey = useRef(-1);
   const [selected, setSelected] = useState<number>();
@@ -274,7 +305,7 @@ function PublishBody({
         drawing = listed(a.key, a.name, a, publishSpaces(a, []));
       }
       // A loaded list's sheets of this drawing are found in it (part 3), then the rest added.
-      list = withOpenDrawings(withDrawingFound(list, drawing), [drawing]);
+      list = withOpenDrawings(withDrawingFound(list, drawing), [drawing], include);
     }
     setAdded(more);
     setSheets(list);
@@ -291,13 +322,46 @@ function PublishBody({
           drawing: d.name,
           spaces: publishSpaces(d, engines.changesOf(d.id)),
         })),
+        include,
       ),
     );
   };
 
+  const includeChanged = (p: Partial<IncludeWhenAdding>) => {
+    includeWhenAdding = { ...include, ...p };
+    setInclude(includeWhenAdding);
+  };
+
+  /** Rename Sheet: the name typed kept (Enter, or leaving the box), or why it is refused. */
+  const rename = () => {
+    if (!renaming || renameEnded.current) return;
+    const out = renamedSheet(sheets, renaming.at, renaming.name);
+    if (typeof out === 'string') {
+      setError(out);
+      return;
+    }
+    setError(undefined);
+    setSheets(out);
+    renameEnded.current = true;
+    setRenaming(undefined);
+  };
+  const startRename = (i: number | undefined) => {
+    if (busy || i === undefined || !sheets[i]) return;
+    renameEnded.current = false;
+    setRenaming({ at: i, name: sheets[i].sheet });
+  };
+
   /** Save Sheet List (part 3): the list as a DSD file. */
   const saveList = () => {
-    const text = writeSheetList(sheets, { device, dpi, viewFile, log });
+    const text = writeSheetList(sheets, {
+      device,
+      dpi,
+      viewFile,
+      log,
+      fileType,
+      fileName,
+      pdf: pdfOptions,
+    });
     download(sheetListName(doc.name), new TextEncoder().encode(text), 'text/plain');
   };
 
@@ -315,6 +379,9 @@ function PublishBody({
       if (options.dpi) setDpi(options.dpi);
       if (options.viewFile !== undefined) setViewFile(options.viewFile);
       if (options.log !== undefined) setLog(options.log);
+      if (options.fileType) setFileType(options.fileType);
+      if (options.fileName !== undefined) setFileName(options.fileName);
+      if (options.pdf) setPdfOptions(options.pdf);
       setStatus(new Map());
       if (sheets.length === 0) {
         setSheets(list);
@@ -438,15 +505,24 @@ function PublishBody({
     failed: readonly PublishFailure[];
     view?: ViewedFile;
   }> => {
-    if (device === 'pdf') {
-      const result = publishPdf(plotted, doc.name.replace(/\.[^.]+$/, ''), underlayFile);
+    if (device === 'pdf' && fileType === 'multi') {
+      const name = multiSheetFileName(fileName, doc.name);
+      const result = publishPdf(plotted, name.replace(/\.pdf$/i, ''), underlayFile, pdfOptions);
       if (!result.bytes) return { published: false, failed: result.failed };
-      downloadPdf(publishFileName(doc.name), result.bytes);
+      downloadPdf(name, result.bytes);
       return {
         published: true,
         failed: result.failed,
-        view: { name: publishFileName(doc.name), bytes: result.bytes, type: 'application/pdf' },
+        view: { name, bytes: result.bytes, type: 'application/pdf' },
       };
+    }
+    if (device === 'pdf') {
+      // Single-sheet files (M6-05): a PDF a sheet, one as itself and several in one ZIP.
+      const { files, failed } = publishPdfFiles(plotted, underlayFile, pdfOptions);
+      const file = publishedDownload(files, publishFileName(doc.name, 'zip'));
+      if (!file) return { published: false, failed };
+      download(file.name, file.bytes, file.type);
+      return { published: true, failed, ...(file.type !== 'application/zip' && { view: file }) };
     }
     const { files, failed } = await publishSheetFiles(
       plotted,
@@ -509,6 +585,16 @@ function PublishBody({
           </select>
         </label>
       )}
+      <div className="publish-tools">
+        <button type="button" disabled={busy} onClick={() => setOptions('publish')}>
+          Publish Options…
+        </button>
+        {device === 'pdf' && (
+          <button type="button" disabled={busy} onClick={() => setOptions('pdf')}>
+            PDF Options…
+          </button>
+        )}
+      </div>
       <div className="publish-tools" role="toolbar" aria-label="Sheet list">
         {background && (
           <>
@@ -554,6 +640,13 @@ function PublishBody({
         <button type="button" onClick={remove} disabled={busy || selected === undefined}>
           Remove Sheets
         </button>
+        <button
+          type="button"
+          onClick={() => startRename(selected)}
+          disabled={busy || selected === undefined}
+        >
+          Rename Sheet
+        </button>
         <button type="button" onClick={() => move(-1)} disabled={busy || !selected}>
           Move Sheet Up
         </button>
@@ -584,19 +677,50 @@ function PublishBody({
                 onClick={() => setSelected(i)}
                 // Tabbing into the row's check or page setup selects it too (keyboard use).
                 onFocus={() => setSelected(i)}
+                onKeyDown={(e) => {
+                  if (e.key === 'F2' && renaming === undefined) {
+                    e.preventDefault();
+                    startRename(i);
+                  }
+                }}
               >
-                <td>
-                  <label className="cad-dialog-check">
+                <td onDoubleClick={() => startRename(i)}>
+                  {renaming?.at === i ? (
                     <input
-                      type="checkbox"
-                      checked={s.include}
-                      onChange={(e) => {
-                        const include = e.currentTarget.checked;
-                        setSheets(sheets.map((t, j) => (j === i ? { ...t, include } : t)));
+                      type="text"
+                      aria-label="Sheet name"
+                      className="publish-rename"
+                      value={renaming.name}
+                      autoFocus
+                      onFocus={(e) => e.currentTarget.select()}
+                      onChange={(e) => setRenaming({ at: i, name: e.currentTarget.value })}
+                      onBlur={rename}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          rename();
+                        } else if (e.key === 'Escape') {
+                          // Esc leaves the name as it was and the dialog up.
+                          e.preventDefault();
+                          renameEnded.current = true;
+                          setRenaming(undefined);
+                          setError(undefined);
+                        }
                       }}
                     />
-                    {s.sheet}
-                  </label>
+                  ) : (
+                    <label className="cad-dialog-check">
+                      <input
+                        type="checkbox"
+                        checked={s.include}
+                        onChange={(e) => {
+                          const include = e.currentTarget.checked;
+                          setSheets(sheets.map((t, j) => (j === i ? { ...t, include } : t)));
+                        }}
+                      />
+                      {s.sheet}
+                    </label>
+                  )}
                 </td>
                 <td>
                   {setups.length === 0 ? (
@@ -631,6 +755,18 @@ function PublishBody({
           })}
         </tbody>
       </table>
+      <Group label="Include when adding sheets">
+        <Check
+          label="Model tab"
+          checked={include.model}
+          onChange={(model) => includeChanged({ model })}
+        />
+        <Check
+          label="Layout tabs"
+          checked={include.layouts}
+          onChange={(layouts) => includeChanged({ layouts })}
+        />
+      </Group>
       <Check label="Save publish log" checked={log} onChange={setLog} />
       <Check label="Open in viewer when done" checked={viewFile} onChange={setViewFile} />
       {error && (
@@ -650,6 +786,28 @@ function PublishBody({
           Cancel
         </button>
       </div>
+      {options === 'pdf' && (
+        <PdfOptionsDialog
+          value={pdfOptions}
+          onOk={(v) => {
+            setPdfOptions(v);
+            setOptions(undefined);
+          }}
+          onCancel={() => setOptions(undefined)}
+        />
+      )}
+      {options === 'publish' && (
+        <PublishOptionsDialog
+          value={{ fileType, fileName }}
+          drawing={doc.name}
+          onOk={(v) => {
+            setFileType(v.fileType);
+            setFileName(v.fileName);
+            setOptions(undefined);
+          }}
+          onCancel={() => setOptions(undefined)}
+        />
+      )}
       <dialog
         ref={ask}
         className="cad-dialog"
@@ -675,6 +833,88 @@ function PublishBody({
           </button>
         </div>
       </dialog>
+    </dialog>
+  );
+}
+
+/**
+ * Publish Options (M6-05; AutoCAD 2024 Help, "Publish Options Dialog Box"): its General DWF/PDF
+ * options that a PDF publish uses, Type (Single-sheet file, Multi-sheet file) and the multi-sheet
+ * file's name. AutoCAD's Naming "Prompt for name" is the browser's download, its output location
+ * the browser's downloads folder; its DWF and 3D DWF choices have no Triya plotter, and layer
+ * information is the PDF Options' Include layer information.
+ */
+function PublishOptionsDialog({
+  value,
+  drawing,
+  onOk,
+  onCancel,
+}: {
+  value: { readonly fileType: PublishFileType; readonly fileName: string };
+  drawing: string;
+  onOk: (v: { fileType: PublishFileType; fileName: string }) => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [fileType, setFileType] = useState(value.fileType);
+  const [fileName, setFileName] = useState(value.fileName);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+    return () => d?.close();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="cad-dialog"
+      aria-label="Publish Options"
+      onCancel={(e) => {
+        // Esc closes this dialog only, leaving the Publish dialog up.
+        e.preventDefault();
+        e.stopPropagation();
+        onCancel();
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <h2 className="cad-dialog-title">Publish Options</h2>
+      <Group label="General PDF options">
+        <label className="cad-dialog-field">
+          <span>Type:</span>
+          <select
+            aria-label="Type"
+            value={fileType}
+            onChange={(e) => setFileType(e.currentTarget.value as PublishFileType)}
+          >
+            {PUBLISH_FILE_TYPES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="cad-dialog-field">
+          <span>Multi-sheet file name:</span>
+          <input
+            type="text"
+            aria-label="Multi-sheet file name"
+            value={fileName}
+            placeholder={publishFileName(drawing)}
+            disabled={fileType !== 'multi'}
+            onChange={(e) => setFileName(e.currentTarget.value)}
+          />
+        </label>
+      </Group>
+      <p className="export-note">
+        A single-sheet file is named after its sheet; several download as one ZIP.
+      </p>
+      <div className="cad-dialog-buttons">
+        <button type="button" onClick={() => onOk({ fileType, fileName: fileName.trim() })}>
+          OK
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </dialog>
   );
 }

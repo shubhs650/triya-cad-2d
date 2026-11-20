@@ -130,7 +130,7 @@ test('Save Sheet List and Load Sheet List keep the list; Add Sheets finds a draw
   // Published alone, that sheet fails as not found, and the viewer tab opened for it closes.
   await d.getByRole('checkbox', { name: 'page-setups-Layout1' }).uncheck();
   const opening = page.waitForEvent('popup');
-  await d.getByRole('button', { name: 'Publish' }).click();
+  await d.getByRole('button', { name: 'Publish', exact: true }).click();
   const viewer = await opening;
   await expect(d.getByRole('alert')).toHaveText('No sheet could be published.');
   await expect(statusOf(page, 'sample_AC1018-Model')).toHaveText('Drawing file not found.');
@@ -168,7 +168,7 @@ test('Open in viewer when done opens the published file in a new tab (M2-45 part
   const downloads: Download[] = [];
   page.on('download', (x) => downloads.push(x));
   const opening = page.waitForEvent('popup');
-  await d.getByRole('button', { name: 'Publish' }).click();
+  await d.getByRole('button', { name: 'Publish', exact: true }).click();
   const viewer = await opening;
   await expect(d).toBeHidden({ timeout: 60_000 });
   await expect(viewer).toHaveTitle('page-setups-Layout1.png');
@@ -184,7 +184,7 @@ test('Open in viewer when done opens the published file in a new tab (M2-45 part
   await again.getByRole('checkbox', { name: 'page-setups-Model' }).uncheck();
   await again.getByLabel('Open in viewer when done').check();
   const pdfViewer = page.waitForEvent('popup');
-  await again.getByRole('button', { name: 'Publish' }).click();
+  await again.getByRole('button', { name: 'Publish', exact: true }).click();
   const tab = await pdfViewer;
   await expect(again).toBeHidden({ timeout: 60_000 });
   await expect.poll(() => downloads.length).toBe(2);

@@ -89,6 +89,51 @@ describe('writeSheetList', () => {
       { drawing: 'plan.dxf', layout: 'Layout2', include: true },
     ]);
   });
+
+  // M6-05: a renamed sheet keeps its name, and the PDF's Publish Options and PDF Options are
+  // kept: AutoCAD's [PdfOptions] keys, its IncludeLayer, and Triya's file type and name.
+  it('keeps renamed sheets, the file type and name, and the PDF options (M6-05)', () => {
+    const sheets = publishSheets(plan.drawing, plan.spaces, plan.doc).map((s, i) =>
+      i === 1 ? { ...s, sheet: 'A-101 Ground floor' } : s,
+    );
+    const options = {
+      ...OPTIONS,
+      fileType: 'single',
+      fileName: 'Job 12 issue',
+      pdf: { layers: true, hyperlinks: true, bookmarks: false, textAsGeometry: true },
+    } as const;
+    const text = writeSheetList(sheets, options);
+    const lines = text.split('\r\n');
+    expect(lines).toContain('[DWF6Sheet:A-101 Ground floor]');
+    const at = lines.indexOf('[PdfOptions]');
+    expect(lines.slice(at, at + 4)).toEqual([
+      '[PdfOptions]',
+      'IncludeHyperlinks=TRUE',
+      'CreateBookmarks=FALSE',
+      'ConvertTextToGeometry=TRUE',
+    ]);
+    expect(lines).toContain('IncludeLayer=TRUE');
+    expect(lines).toContain('FileType=Single-sheet file');
+    expect(lines).toContain('FileName=Job 12 issue');
+    const read = readSheetList(text);
+    expect(read.options).toEqual(options);
+    expect(read.entries[1]).toEqual({
+      drawing: 'plan.dxf',
+      layout: 'Layout1',
+      sheet: 'A-101 Ground floor',
+      include: true,
+    });
+    // The list finds the sheet under its name, as a drawing not found does too.
+    const [model, renamed] = listedSheets(read.entries, [plan]);
+    expect([model!.sheet, renamed!.sheet, renamed!.block]).toEqual([
+      'plan-Model',
+      'A-101 Ground floor',
+      '58',
+    ]);
+    const missing = listedSheets(read.entries, []);
+    expect(missing[1]!.sheet).toBe('A-101 Ground floor');
+    expect(withDrawingFound(missing, plan)[1]!.sheet).toBe('A-101 Ground floor');
+  });
 });
 
 describe('readSheetList', () => {
@@ -141,7 +186,10 @@ describe('readSheetList', () => {
     const read = readSheetList(
       '[DWF6Sheet:x]\nLayout=Model\nDWG=a.dxf\n[Triya]\nPublishTo=Plotter\nResolution=abc\n',
     );
-    expect(read.entries).toEqual([{ drawing: 'a.dxf', layout: 'Model', include: true }]);
+    // The section names the sheet (M6-05: a sheet renamed keeps its name).
+    expect(read.entries).toEqual([
+      { drawing: 'a.dxf', layout: 'Model', include: true, sheet: 'x' },
+    ]);
     expect(read.options).toEqual({});
   });
 
