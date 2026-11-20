@@ -371,6 +371,8 @@ export class RenderSession {
       tol: this.#tol,
       ...(model !== undefined && model !== this.renderer.pickBlock && { modelSpace: model }),
       underlays: (h) => this.#underlaySnaps.get(h),
+      // What the canvas hides although its layer shows it (ANNOALLVISIBLE 0, M6-03).
+      hidden: (e) => this.renderer.hides(e),
     };
   }
 

@@ -487,6 +487,25 @@ describe('SETVAR', () => {
     expect(s.bus.undo.state.undoable).toBe(0);
   });
 
+  it('asks the app for ANNOALLVISIBLE and ANNOAUTOSCALE, the annotation scale display settings (M6-03)', async () => {
+    // AutoCAD 2024 Help: ANNOALLVISIBLE 0 shows only the annotative objects that support the
+    // current annotation scale, 1 (initially) all of them; ANNOAUTOSCALE −4 to 4, not 0, adds
+    // the scale to annotative objects when it changes while positive (initially −4).
+    const app = appHost({ ANNOALLVISIBLE: 1, ANNOAUTOSCALE: -4 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['ANNOALLVISIBLE']);
+    expect(s.bus.promptText).toBe('Enter new value for ANNOALLVISIBLE <1>:');
+    await s.bus.script(['0']);
+    expect(app.values['ANNOALLVISIBLE']).toBe(0);
+    await s.bus.script(['ANNOAUTOSCALE', '0']);
+    expect(s.log.at(-1)).toBe('Value must be one of -4, -3, -2, -1, 1, 2, 3, 4.');
+    await s.bus.script(['5']);
+    expect(s.log.at(-1)).toBe('Value must be one of -4, -3, -2, -1, 1, 2, 3, 4.');
+    await s.bus.script(['2']);
+    expect(app.values['ANNOAUTOSCALE']).toBe(2);
+    expect(s.bus.undo.state.undoable).toBe(0);
+  });
+
   it('asks the app for ROLLOVERTIPS, the rollover tooltips AutoCAD keeps per user (M2-35 part 21)', async () => {
     // AutoCAD 2024 Help, ROLLOVERTIPS: "Controls the display of rollover tooltips in the
     // application", 0 off, 1 on, initially 1, saved in the registry.
@@ -851,6 +870,28 @@ describe('AcDbVariableDictionary variables (M2-59 part 4)', () => {
     await s.bus.script(['U']);
     expect(s.model.header.get('CANNOSCALE')).toBe('1:50');
     expect(s.model.header.get('CANNOSCALEVALUE')).toBe(0.02);
+  });
+
+  it('adds no scale to annotative objects when CANNOSCALE changes with ANNOAUTOSCALE on, and says so (M6-03, DEC-013)', async () => {
+    const app = appHost({ ANNOAUTOSCALE: 4 });
+    const s = setup(dictionaryInit(), app.view);
+    await s.bus.script(['CANNOSCALE', '1:50']);
+    expect(s.model.header.get('CANNOSCALE')).toBe('1:50');
+    expect(s.log.at(-1)).toBe(
+      'Triya does not add annotation scales to objects: annotative objects keep the scales they have.',
+    );
+    // Off (negative): nothing said; the same scale again changes nothing and says nothing.
+    app.values['ANNOAUTOSCALE'] = -4;
+    const said = s.log.length;
+    await s.bus.script(['CANNOSCALE', '1:1']);
+    app.values['ANNOAUTOSCALE'] = 4;
+    await s.bus.script(['CANNOSCALE', '1:1']);
+    expect(s.log.slice(said).filter((l) => l.startsWith('Triya does not add'))).toEqual([]);
+    // Where no app answers (scripts), CANNOSCALE is set without a word.
+    const quiet = setup(dictionaryInit());
+    await quiet.bus.script(['CANNOSCALE', '1:50']);
+    expect(quiet.model.header.get('CANNOSCALE')).toBe('1:50');
+    expect(quiet.log.filter((l) => l.startsWith('Triya does not add'))).toEqual([]);
   });
 
   it('shows and takes the numeric ones as numbers, kept as the text AutoCAD writes', async () => {

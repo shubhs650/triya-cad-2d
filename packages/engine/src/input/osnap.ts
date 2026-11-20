@@ -140,6 +140,11 @@ export interface OsnapSource {
   readonly modelSpace?: Handle;
   /** A PDFDEFINITION's page geometry, once the app has read it from the PDF (M2-22). */
   readonly underlays?: (definition: Handle) => UnderlaySnapPage | undefined;
+  /**
+   * Objects of the space shown that the canvas hides although their layer shows them: the
+   * annotative objects ANNOALLVISIBLE 0 hides on the Model tab (M6-03).
+   */
+  readonly hidden?: (e: Entity) => boolean;
 }
 
 export interface OsnapQuery {
@@ -623,7 +628,7 @@ function collect(src: OsnapSource, q: OsnapQuery, area?: Box): Parts {
         ctx.frozen = undefined;
       }
     }
-    if (!shown(src.model, e)) continue;
+    if (!shown(src.model, e) || src.hidden?.(e)) continue;
     let near: boolean | undefined;
     const b = src.index.bounds(id);
     if (b?.kind === 'box') near = boxDistance(b.box, q.point) <= r;
