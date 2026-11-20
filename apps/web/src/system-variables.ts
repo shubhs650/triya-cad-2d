@@ -35,6 +35,8 @@ const TOGGLES: Readonly<Record<string, DraftingToggle>> = {
   GRIDMODE: 'grid',
   LWDISPLAY: 'lwt',
   TRANSPARENCYDISPLAY: 'tpy',
+  // M6-03: the status bar's Annotation Visibility.
+  ANNOALLVISIBLE: 'annoVisible',
 };
 
 /** A grip colour variable (M3-05 part 5): one of the drafting state's grip colours. */
@@ -137,6 +139,8 @@ const VALUES: Readonly<
   LAYLOCKFADECTL: { get: (s) => s.layLockFade, set: (layLockFade) => ({ layLockFade }) },
   // M5-02 part 5: the fading of what is not in REFEDIT's working set (`RenderStyle.xFade`).
   XFADECTL: { get: (s) => s.xFade, set: (xFade) => ({ xFade }) },
+  // M6-03: AutoScale is ANNOAUTOSCALE's sign (the engine has checked −4 to 4 but 0).
+  ANNOAUTOSCALE: { get: (s) => s.annoAutoScale, set: (annoAutoScale) => ({ annoAutoScale }) },
   // M6-04 part 2: every plot follows it (`setPlotTransparencyOverride`; the engine checked 0–2).
   PLOTTRANSPARENCYOVERRIDE: {
     get: (s) => s.plotTransparencyOverride,

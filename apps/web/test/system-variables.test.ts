@@ -110,6 +110,17 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'FIELDDISPLAY')).toEqual({ ok: true, value: 0 });
   });
 
+  it('keep ANNOALLVISIBLE, 1 at first, and ANNOAUTOSCALE, −4 at first (M6-03)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'ANNOALLVISIBLE')).toEqual({ ok: true, value: 1 });
+    systemVariableReply(d, 'ANNOALLVISIBLE', 0);
+    expect(d.get().annoAllVisible).toBe(false);
+    expect(systemVariableReply(d, 'ANNOAUTOSCALE')).toEqual({ ok: true, value: -4 });
+    systemVariableReply(d, 'ANNOAUTOSCALE', 2);
+    expect(d.isOn('annoAutoScale')).toBe(true);
+    expect(systemVariableReply(d, 'ANNOAUTOSCALE')).toEqual({ ok: true, value: 2 });
+  });
+
   it('keep LAYLOCKFADECTL, 50 at first, which LAYISO sets (M5-06)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'LAYLOCKFADECTL')).toEqual({ ok: true, value: 50 });

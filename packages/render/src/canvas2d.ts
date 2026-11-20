@@ -31,6 +31,7 @@
 // both first, then to the renderer (the order `SpatialIndex.apply` already requires).
 
 import {
+  annotationHidden,
   applyPoint,
   PDFFRAME,
   arrayGripPreview,
@@ -813,7 +814,10 @@ export class Canvas2DRenderer implements Renderer {
 
   setStyle(style: RenderStyle): void {
     const lwDefault = this.#style.lineweightDefault;
+    const allVisible = this.#style.annotationAllVisible !== false;
     this.#style = style;
+    // ANNOALLVISIBLE turned (M6-03): the annotative objects it hides or shows are cached again.
+    if (this.#modelTab && (style.annotationAllVisible !== false) !== allVisible) this.#cacheBlock();
     // LWDEFAULT changed (M5-08 part 3): Default lineweights are resolved with the paint, at
     // cache time, so every object is resolved again, as for a layer change.
     if (
@@ -1405,7 +1409,11 @@ export class Canvas2DRenderer implements Renderer {
       cs.tables?.linetypes ||
       cs.tables?.textStyles ||
       cs.tables?.mlineStyles ||
-      cs.header?.some((h) => PAINT_HEADER.has(h.name))
+      cs.header?.some((h) => PAINT_HEADER.has(h.name)) ||
+      // A new annotation scale (M6-03) shows or hides annotative objects under ANNOALLVISIBLE 0.
+      (this.#modelTab &&
+        this.#style.annotationAllVisible === false &&
+        cs.header?.some((h) => h.name === 'CANNOSCALE'))
     )
       this.#cacheBlock();
     this.#sceneDirty = this.#contentDirty = true;
@@ -1700,7 +1708,21 @@ export class Canvas2DRenderer implements Renderer {
   #cacheEntity(id: EntityId): void {
     const e = this.#model.entity(id);
     if (!e) return;
-    this.#cache[id] = this.#entryOf(e, id, this.#model, this.#blockSource);
+    // Hidden by ANNOALLVISIBLE 0 (M6-03): drawn, picked and windowed as an object on a layer off.
+    this.#cache[id] = this.hides(e)
+      ? undefined
+      : this.#entryOf(e, id, this.#model, this.#blockSource);
+  }
+
+  /**
+   * Whether the canvas hides `e`, an object of the space shown, although its layer shows it: on
+   * the Model tab, an annotative object not supporting the current annotation scale while
+   * ANNOALLVISIBLE is 0 (M6-03). Snaps skip what it hides (`OsnapSource.hidden`).
+   */
+  hides(e: Entity): boolean {
+    return (
+      this.#modelTab && annotationHidden(this.#model, e, this.#style.annotationAllVisible !== false)
+    );
   }
 
   /**

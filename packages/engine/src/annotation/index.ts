@@ -1,3 +1,4 @@
+export * from './annotation-scale';
 export * from './multileader';
 export * from './leader';
 export * from './parts';

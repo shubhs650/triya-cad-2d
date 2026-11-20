@@ -159,6 +159,13 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // QPLOCATION 0 by the cursor, 1 static.
   { name: 'QPMODE', store: 'app', kind: 'integer', min: -2, max: 2 },
   { name: 'QPLOCATION', store: 'app', kind: 'integer', min: 0, max: 1 },
+  // M6-03 (AutoCAD 2024 Help): ANNOALLVISIBLE shows every annotative object (1, initially) or
+  // only those supporting the current annotation scale (0); AutoCAD saves it in the drawing but
+  // no DXF states where (no header variable, no DICTIONARYVAR in the corpus or ezdxf), so Triya
+  // keeps it per session. ANNOAUTOSCALE (registry, initially −4) is kept per user: positive
+  // would add the scale to annotative objects when it changes, which Triya never does (DEC-013).
+  { name: 'ANNOALLVISIBLE', store: 'app', kind: 'switch' },
+  { name: 'ANNOAUTOSCALE', store: 'app', kind: 'integer', choices: [-4, -3, -2, -1, 1, 2, 3, 4] },
   // ROLLOVERTIPS (M2-35 part 21; AutoCAD 2024 Help): rollover tooltips on (1, initially) or off.
   { name: 'ROLLOVERTIPS', store: 'app', kind: 'integer', min: 0, max: 1 },
   // M2-59 (AutoCAD 2024 Help, each variable's page): AUTOSNAP's bits are 1 the marker, 2 the

@@ -200,6 +200,11 @@ export interface PlotSource {
    * system clipboard, M2-32 part 5); every object when absent.
    */
   readonly only?: ReadonlySet<Handle>;
+  /**
+   * Objects of the space plotted that the screen hides although their layer shows them (the
+   * annotative objects ANNOALLVISIBLE 0 hides on the Model tab, M6-03): not plotted either.
+   */
+  readonly hidden?: (e: Entity) => boolean;
 }
 
 /** What an INSERT hands down for plotting: the display context and the colour it resolved. */
@@ -708,7 +713,7 @@ export function plotParts(model: DocumentModel, block: Handle, src: PlotSource):
   const paper: PlotPart[] = [];
   for (const id of plotter.order(block)) {
     const e = model.entity(id);
-    if (!e || (src.only && !src.only.has(e.handle))) continue;
+    if (!e || (src.only && !src.only.has(e.handle)) || src.hidden?.(e)) continue;
     if (layout && msp !== undefined && e.geom.kind === 'VIEWPORT' && viewportShowsModel(e.geom))
       viewports.push(e);
     plotter.entityParts(e, model, layout ? paper : out);

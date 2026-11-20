@@ -75,6 +75,12 @@ export interface RenderStyle {
    * of their text. AutoCAD's initial value is 1, so absent shows it.
    */
   readonly showFields?: boolean;
+  /**
+   * ANNOALLVISIBLE (M6-03): every annotative object shown; false shows on the Model tab only
+   * those supporting the current annotation scale (CANNOSCALE), as AutoCAD's 0. AutoCAD's
+   * initial value is 1, so absent shows them all.
+   */
+  readonly annotationAllVisible?: boolean;
   /** The selection highlight's colour (M2-03, UI_SPEC.md §6), a CSS colour; a blue by default. */
   readonly selection?: string;
   /** GRID on (M2-04 part 2): the grid drawn under the drawing; absent draws none. */
