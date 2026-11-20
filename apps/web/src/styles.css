@@ -5831,6 +5831,17 @@ button {
   max-width: 100%;
 }
 
+/* LAYOUT Template's Insert Layout(s) (M6-01 part 4): the list under its label. */
+.insert-layouts-names {
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: 8px;
+}
+
+.insert-layouts-names > select {
+  min-width: 20em;
+}
+
 .insert-dialog-unit {
   margin: 0;
 }

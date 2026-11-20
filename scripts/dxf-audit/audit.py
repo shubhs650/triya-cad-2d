@@ -98,6 +98,12 @@ FIXTURE_SAVES = (
     # copied with its boundary (M6-01 part 2, export-layout-copy.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layout-copy"),
     ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "layout-copy"),
+    # LAYOUT Template of their layouts into colors.dxf, and SAveas's new drawing of the first
+    # (M6-01 part 4, export-layout-template.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layout-template"),
+    ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "layout-template"),
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layout-saveas"),
+    ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "layout-saveas"),
     # MVIEW's viewports in the sample's current layout and in colors.dxf's, which has none (M6-02
     # part 1, packages/testkit/src/export/export-mview.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "mview"),

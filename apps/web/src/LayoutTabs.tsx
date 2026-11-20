@@ -21,16 +21,20 @@
 //
 // M6-01 part 3: the menu's Page Setup Manager... (the Model tab's too) shows the tab's space and
 // runs PAGESETUP on it.
+//
+// M6-01 part 4: the menu's From Template... (the Model tab's too) runs LAYOUT Template, whose
+// Insert Layout(s) dialog picks a drawing file and the layouts it inserts.
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './AttributeDialogs';
 import { layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { whenRegistered } from './canvas/registry';
 import { engines } from './engine/registry';
 
-type TabAction = 'new' | 'delete' | 'rename' | 'move' | 'pagesetup';
+type TabAction = 'new' | 'template' | 'delete' | 'rename' | 'move' | 'pagesetup';
 
 const ITEMS: readonly { action: TabAction; label: string; layout?: true }[] = [
   { action: 'new', label: 'New Layout' },
+  { action: 'template', label: 'From Template...' },
   { action: 'delete', label: 'Delete', layout: true },
   { action: 'rename', label: 'Rename', layout: true },
   { action: 'move', label: 'Move or Copy...', layout: true },
@@ -130,6 +134,8 @@ export function LayoutTabs({
   };
   const act = (action: TabAction, block: string) => {
     if (action === 'new') layoutCommand(doc.id, 'New', '');
+    // LAYOUT Template's Insert Layout(s) dialog (M6-01 part 4).
+    else if (action === 'template') layoutCommand(doc.id, 'Template', '');
     else if (action === 'delete') setDeleting(block);
     else if (action === 'move') setMoving(block);
     else if (action === 'pagesetup') {

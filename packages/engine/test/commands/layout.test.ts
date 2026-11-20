@@ -263,14 +263,16 @@ describe('LAYOUT', () => {
     expect(t.bus.undo.state.undoable).toBe(0);
   });
 
-  it('? lists the layout shown and every layout; Template and SAveas are not there yet', async () => {
+  it('? lists the layout shown and every layout; Template and SAveas say why the app cannot', async () => {
     const t = setup(init(), SHEET2);
     await t.bus.script(['LAYOUT', '?']);
     expect(t.log.slice(-4)).toEqual(['Active Layout: Layout2', 'Model', 'Layout1', 'Layout2']);
-    await t.bus.script(['LAYOUT', 'T']);
-    expect(t.log.at(-1)).toBe('LAYOUT Template is not available yet.');
-    await t.bus.script(['LAYOUT', 'SA']);
-    expect(t.log.at(-1)).toBe('LAYOUT SAveas is not available yet.');
+    // The view host here answers nothing but tabs (layout-template.test.ts has the rest).
+    await t.bus.script(['LAYOUT', 'T', '']);
+    expect(t.log.at(-1)).toBe('no');
+    await t.bus.script(['LAYOUT', 'SA', '', '']);
+    expect(t.log.at(-1)).toBe('no');
+    expect(t.bus.command).toBeUndefined();
   });
 
   it('New refuses a 256th layout', async () => {

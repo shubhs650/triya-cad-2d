@@ -21,10 +21,30 @@
 // again; an invalid or taken name says why and asks again; deleting the layout shown shows the
 // Model tab; ? lists the layout shown and every layout in tab order. Copy copies the layout shown
 // by default (as Delete) and says what it copied; objects it cannot copy are listed as COPY lists
-// them (`copyLayout`). Template and SAveas are later parts of M6-01 and say so.
+// them (`copyLayout`).
+//
+// Template and SAveas (M6-01 part 4, edit/layout-templates.ts) ask at the command line, as AutoCAD
+// asks with FILEDIA 0 (Triya has no FILEDIA; the browser opens no path by itself):
+//   Enter name of template file <~>:        Enter or ~: the Select Template From File and
+//                                            Insert Layout(s) dialogs (the app's)
+//   Enter layout name(s) or [?] <first>:    a file named: its layouts, by name (commas between
+//                                            names, * all of them), found as -INSERT finds a file
+//   Enter layout to save to template <layout shown>:
+//   Enter template file name <layout.dxf>:  written as WBLOCK writes its new drawing (DXF, DEC-047)
+// The layouts inserted go after the last tab, in one LAYOUT undo step, and are not shown.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { Layout } from '../model/types';
+import type { Clipboard } from '../edit/clipboard';
+import {
+  insertLayoutTemplate,
+  layoutTemplate,
+  templateLayoutName,
+  templateMessages,
+  type LayoutTemplateCopy,
+} from '../edit/layout-templates';
+import { insUnitsOf } from '../model/units';
+import { carriedHeader } from './wblock';
 import {
   addNewLayout,
   copyLayout,
@@ -173,6 +193,141 @@ function list(ctx: CommandContext): void {
   for (const l of ctx.model.layouts) ctx.message(l.name);
 }
 
+/** A file name as typed: without the quotes that keep its spaces. */
+const unquoted = (s: string): string =>
+  s
+    .trim()
+    .replace(/^"(.*)"$/, '$1')
+    .trim();
+
+/** The layouts of the file the drafter picks or names, and the file's name; none: cancelled. */
+async function* templateFile(
+  ctx: CommandContext,
+): Sub<{ name: string; layouts: readonly LayoutTemplateCopy[]; picked: boolean } | undefined> {
+  for (;;) {
+    const a = yield ctx.prompt.string({
+      message: 'Enter name of template file',
+      defaultLabel: '~',
+      spaces: true,
+    });
+    if (a.kind !== 'string' && a.kind !== 'enter') return undefined;
+    const file = a.kind === 'string' ? unquoted(a.value) : '';
+    const dialog = file === '' || file === '~';
+    const r = await ctx.view.request(dialog ? { op: 'layoutFile' } : { op: 'layoutFile', file });
+    if (!r.ok) {
+      ctx.message(r.message);
+      return undefined;
+    }
+    if (r.layoutFile) return { ...r.layoutFile, picked: dialog };
+    if (dialog) return undefined;
+    ctx.message(`Cannot find the file "${file}".`);
+  }
+}
+
+/** The layouts named among `layouts` (commas between names, * all), asked again while unknown. */
+async function* layoutsPicked(
+  ctx: CommandContext,
+  file: string,
+  layouts: readonly LayoutTemplateCopy[],
+): Sub<LayoutTemplateCopy[] | undefined> {
+  for (;;) {
+    const a = yield ctx.prompt.string({
+      message: 'Enter layout name(s) or [?]',
+      spaces: true,
+      default: { kind: 'string', value: layouts[0]!.template.name },
+    });
+    if (a.kind !== 'string' && a.kind !== 'enter') return undefined;
+    const typed = a.kind === 'string' ? a.value.trim() : '';
+    if (typed === '?') {
+      for (const l of layouts) ctx.message(l.template.name);
+      continue;
+    }
+    if (typed === '*') return [...layouts];
+    const names = (typed || layouts[0]!.template.name).split(',').map((n) => n.trim());
+    const picked: LayoutTemplateCopy[] = [];
+    const missing = names.find((n) => {
+      const l = layouts.find((x) => x.template.name.toUpperCase() === n.toUpperCase());
+      if (l && !picked.includes(l)) picked.push(l);
+      return n !== '' && !l;
+    });
+    if (missing === undefined && picked.length > 0) return picked;
+    ctx.message(`No layout named "${missing ?? ''}" in ${file}.`);
+  }
+}
+
+async function* template(ctx: CommandContext): Sub<void> {
+  const file = yield* templateFile(ctx);
+  if (!file) return;
+  if (file.layouts.length === 0) {
+    ctx.message(`${file.name} has no layouts.`);
+    return;
+  }
+  const picked = file.picked
+    ? [...file.layouts]
+    : yield* layoutsPicked(ctx, file.name, file.layouts);
+  if (!picked || picked.length === 0) return;
+  if (paperLayouts(ctx.model).length + picked.length > LAYOUT_MAX) {
+    ctx.message(`A drawing can have ${LAYOUT_MAX} layouts at most.`);
+    return;
+  }
+  const taken = new Set<string>();
+  const names: string[] = [];
+  ctx.edit((b) => {
+    for (const c of picked) {
+      const name = templateLayoutName(ctx.model, c.template.name, taken);
+      taken.add(name.toUpperCase());
+      names.push(name);
+      insertLayoutTemplate(b, ctx.model, c.template, name);
+    }
+  });
+  for (const line of templateMessages(picked, 'inserted')) ctx.message(line);
+  const n = names.length;
+  ctx.message(`Inserted ${n} layout${n === 1 ? '' : 's'} from ${file.name}: ${names.join(', ')}.`);
+}
+
+/** Nothing: the model space of SAveas's new drawing. */
+const NOTHING: Clipboard = {
+  base: { x: 0, y: 0 },
+  entities: [],
+  blockEntities: [],
+  tables: {},
+  blocks: [],
+};
+
+/** The file SAveas writes: DXF (DEC-047) whatever extension was typed. */
+const templateFileName = (typed: string): string =>
+  `${unquoted(typed)
+    .replace(/\.(dxf|dwg|dwt)$/i, '')
+    .trim()}.dxf`;
+
+async function* saveAs(ctx: CommandContext): Sub<void> {
+  const layout = yield* layoutAsked(ctx, 'Enter layout to save to template', currentLayout(ctx));
+  if (!layout) return;
+  const fallback = templateFileName(layout.name);
+  const a = yield ctx.prompt.string({
+    message: 'Enter template file name',
+    spaces: true,
+    default: { kind: 'string', value: fallback },
+  });
+  if (a.kind !== 'string' && a.kind !== 'enter') return;
+  const typed = a.kind === 'string' ? unquoted(a.value) : '';
+  const file = typed === '' ? fallback : templateFileName(typed);
+  const copy = layoutTemplate(ctx.model, layout);
+  const header = carriedHeader(ctx.model);
+  header['$INSUNITS'] = insUnitsOf(ctx.model);
+  const reply = await ctx.view.request({
+    op: 'writeBlock',
+    file,
+    drawing: { content: NOTHING, header, layout: copy.template },
+  });
+  if (!reply.ok) {
+    ctx.message(reply.message);
+    return;
+  }
+  for (const line of templateMessages([copy], 'written')) ctx.message(line);
+  ctx.message(`Wrote ${reply.file ?? file}.`);
+}
+
 export function layoutCommand(): CommandDef {
   return {
     name: 'LAYOUT',
@@ -203,8 +358,10 @@ export function layoutCommand(): CommandDef {
           yield* copyAsked(ctx);
           return;
         case 'Template':
+          yield* template(ctx);
+          return;
         case 'SAveas':
-          ctx.message(`LAYOUT ${option} is not available yet.`);
+          yield* saveAs(ctx);
           return;
       }
     },
