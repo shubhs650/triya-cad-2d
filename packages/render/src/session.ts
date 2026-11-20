@@ -266,10 +266,11 @@ export class RenderSession {
   /**
    * ZOOM Extents of the space drawn (M1-35 part 2), from the spatial index as it stands: text
    * counts by its glyphs in the fonts loaded now, and edits are followed. Undefined when
-   * nothing in it has a known extent.
+   * nothing in it has a known extent. `block` measures another space of the drawing instead
+   * (model space's, ZOOM Extents in a layout viewport made current, M6-02 part 4).
    */
-  extents(): Box | undefined {
-    return this.index.drawnExtents(this.#block);
+  extents(block: Handle = this.#block): Box | undefined {
+    return this.index.drawnExtents(block);
   }
 
   /**

@@ -45,9 +45,13 @@ import RenderWorker from '@triya/render/worker?worker';
 import {
   IDENTITY,
   MAX_ACQUIRED,
+  viewportLocked,
   viewportTransform,
+  viewportViewOf,
+  withViewportView,
   workableViewport,
   type ViewportGeometry,
+  type ViewportView,
   constrainCursor,
   dragMotion,
   layoutSheet,
@@ -178,6 +182,14 @@ import {
   scaleView,
   windowView,
 } from './views';
+import {
+  ViewportHistories,
+  frameOnCanvas,
+  frameView,
+  sameViewportView,
+  viewportViewFrom,
+  type FrameOnCanvas,
+} from './viewport-zoom';
 
 /** Two middle-button presses this close in time and place are a double click. */
 const DOUBLE_CLICK_MS = 500;
@@ -329,6 +341,17 @@ export interface CanvasHooks {
    * restored (VIEW). `before` is the view left, for the drawing's undo history.
    */
   readonly onViewStep?: (label: 'ZOOM' | 'PAN' | 'VIEW', before: UndoView) => void;
+  /**
+   * A ZOOM or PAN in the layout viewport made current changed its own view (M6-02 part 4): the
+   * drawing's edit, resolved once the engine has answered. `join` is the rest of one wheel roll
+   * or drag, one undo step with its start.
+   */
+  readonly onViewportView?: (
+    viewport: Handle,
+    view: ViewportView,
+    label: 'ZOOM' | 'PAN',
+    join: boolean,
+  ) => Promise<unknown> | void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
   readonly patterns?: () => readonly string[];
   /**
@@ -416,7 +439,14 @@ export class CanvasController {
   #size: ViewportSize = { width: 0, height: 0 };
   #view: ViewTransform | undefined;
   /** The floating viewport made current (MSPACE, M6-02 part 3), and its geometry now. */
-  #current: { readonly handle: Handle; geom: ViewportGeometry } | undefined;
+  #current: CurrentViewport | undefined;
+  /** ZOOM Previous of each layout viewport's own view (M6-02 part 4). */
+  readonly #viewportHistory = new ViewportHistories();
+  /**
+   * Viewport view edits sent and not answered yet: the view the canvas gave the current viewport
+   * stands over the one a change set brings meanwhile, so a roll of the wheel goes on from it.
+   */
+  #viewportEdits = 0;
   /** The view last given to the renderer; a new renderer has none (M2-62). */
   #sentView: ViewTransform | undefined;
   #pending = 0;
@@ -748,14 +778,16 @@ export class CanvasController {
    * and zooms again to the measured extents once they come, unless the view has moved since
    * (M2-37).
    */
-  zoomExtents(): void {
+  zoomExtents(): void | Promise<void> {
+    if (this.#zoomable()) return this.#viewportExtents(false);
     const view = () => extentsView(this.#extents() ?? this.#paper(), this.#size);
     this.#go(view());
     this.#againOnceMeasured(view);
   }
 
   /** ZOOM All: the limits or the extents, whichever reaches further. */
-  zoomAll(): void {
+  zoomAll(): void | Promise<void> {
+    if (this.#zoomable()) return this.#viewportExtents(true);
     const view = () => allView(this.#limits(), this.#extents(), this.#size);
     this.#go(view());
     this.#againOnceMeasured(view);
@@ -772,11 +804,42 @@ export class CanvasController {
 
   /** ZOOM Scale nX, about the view's centre. */
   zoomScale(factor: number): void {
-    if (this.#view) this.#go(scaleView(this.#view, factor));
+    const z = this.#zoomable();
+    if (z) this.#goViewport(z, scaleView(frameView(z.c.geom, z.frame.size), factor), 'ZOOM');
+    else if (this.#view) this.#go(scaleView(this.#view, factor));
+  }
+
+  /**
+   * ZOOM nXP: in the layout viewport made current, n paper units to the model unit, its scale on
+   * the sheet (AutoCAD 2024 Help, "ZOOM (Command)": "nXP ... relative to the paper space units");
+   * on paper, n relative to the layout's limits.
+   */
+  zoomPaper(factor: number): void {
+    const z = this.#zoomable();
+    if (!z) return this.zoomLimits(factor);
+    if (!(factor > 0) || !Number.isFinite(factor)) return;
+    const height = Math.abs(z.c.geom.height) / factor;
+    const center = viewportViewOf(z.c.geom).center;
+    this.#goViewport(z, { center, scale: z.frame.size.height / height }, 'ZOOM');
   }
 
   /** ZOOM Previous: back to the view before the last zoom or pan; false with none left. */
   zoomPrevious(): boolean {
+    const z = this.#zoomable();
+    if (z) {
+      // Each viewport steps back through its own views.
+      const was = this.#viewportHistory.previous(z.c.handle);
+      if (was)
+        this.#goViewport(
+          z,
+          { center: was.center, scale: z.frame.size.height / was.height },
+          'ZOOM',
+          {
+            previous: true,
+          },
+        );
+      return was !== undefined;
+    }
     const v = this.#history.previous();
     if (v) {
       this.#step('ZOOM');
@@ -787,13 +850,24 @@ export class CanvasController {
 
   /** ZOOM Window from the command: the box between two world points fills the window. */
   zoomWindow(a: Vec2, b: Vec2): void {
-    // In a viewport made current the sheet moves (until a viewport's own view is zoomed, M6-02).
+    const z = this.#zoomable();
+    if (z) {
+      const w = windowView(a, b, z.frame.size);
+      if (w) this.#goViewport(z, w, 'ZOOM');
+      return;
+    }
+    // A display-locked viewport made current keeps its view: the sheet moves (AutoCAD's).
     const v = windowView(this.#toSheet(a), this.#toSheet(b), this.#size);
     if (v) this.#go(v);
   }
 
   /** ZOOM Center: `center` in the middle with `height` world units from top to bottom. */
   zoomCenter(center: Vec2, height: number): void {
+    const z = this.#zoomable();
+    if (z) {
+      if (height > 0) this.#goViewport(z, { center, scale: z.frame.size.height / height }, 'ZOOM');
+      return;
+    }
     const h = height * this.#sheetScale();
     if (h > 0 && this.#size.height > 0)
       this.#go({ center: this.#toSheet(center), scale: this.#size.height / h });
@@ -804,12 +878,29 @@ export class CanvasController {
    * centre; the extents stand in for limits a space does not have.
    */
   zoomLimits(factor: number): void {
+    const z = this.#zoomable();
+    if (z) {
+      const ms = this.#opened.modelSpace;
+      const limits =
+        this.#modelLimits() ?? (ms === undefined ? undefined : this.#opened.extents[ms]);
+      const now = frameView(z.c.geom, z.frame.size);
+      const w = limitsView(limits, z.frame.size, factor, now);
+      if (w) this.#goViewport(z, w, 'ZOOM');
+      return;
+    }
     const v = limitsView(this.#limits() ?? this.#extents(), this.#size, factor, this.#view);
     if (v) this.#go(v);
   }
 
   /** -PAN: moves the drawing by `by` world units. */
   panWorld(by: Vec2): void {
+    const z = this.#zoomable();
+    if (z) {
+      const now = frameView(z.c.geom, z.frame.size);
+      const center = { x: now.center.x - by.x, y: now.center.y - by.y };
+      this.#goViewport(z, { center, scale: now.scale }, 'PAN');
+      return;
+    }
     const v = this.#view;
     const k = this.#sheetScale();
     if (v) {
@@ -843,6 +934,17 @@ export class CanvasController {
   /** The layout viewport made current (MSPACE, M6-02 part 3), if any. */
   get viewport(): Handle | undefined {
     return this.#current?.handle;
+  }
+
+  /**
+   * The current layout viewport's own view, model space at its frame's middle and the model units
+   * from its bottom to its top (VIEWCTR and VIEWSIZE in MSPACE; M6-02 part 4), if one is current.
+   */
+  get viewportView(): { center: Vec2; height: number; width: number } | undefined {
+    const g = this.#current?.geom;
+    if (!g) return undefined;
+    const v = viewportViewOf(g);
+    return { ...v, width: (v.height * Math.abs(g.width)) / Math.abs(g.height) };
   }
 
   /**
@@ -886,6 +988,56 @@ export class CanvasController {
   #sheetScale(): number {
     const c = this.#current;
     return c ? viewportTransform(c.geom).a : 1;
+  }
+
+  /**
+   * The layout viewport made current whose own view ZOOM, PAN, the wheel and real-time
+   * navigation change (M6-02 part 4), with its frame on the canvas: none on paper, nor for a
+   * viewport whose display is locked, where they move the sheet as AutoCAD's do.
+   */
+  #zoomable(): { readonly c: CurrentViewport; readonly frame: FrameOnCanvas } | undefined {
+    const c = this.#current;
+    const v = this.#view;
+    if (!c || !v || viewportLocked(c.geom)) return undefined;
+    const frame = frameOnCanvas(c.geom, v, this.#size);
+    return frame.size.width > 0 && frame.size.height > 0 ? { c, frame } : undefined;
+  }
+
+  /**
+   * The current viewport shows `view` of its frame as its own view (M6-02 part 4): the drawing's
+   * edit, a ZOOM or PAN undo step, and the view left kept for ZOOM Previous unless `join` (the
+   * rest of a wheel roll or drag) or `previous` (ZOOM Previous itself).
+   */
+  #goViewport(
+    z: { readonly c: CurrentViewport; readonly frame: FrameOnCanvas },
+    view: ViewTransform,
+    label: 'ZOOM' | 'PAN',
+    o: { readonly join?: boolean; readonly previous?: boolean } = {},
+  ): void {
+    const { c, frame } = z;
+    const next = viewportViewFrom(view, frame.size);
+    const was = viewportViewOf(c.geom);
+    if (!(next.height > 0) || !Number.isFinite(next.height) || sameViewportView(next, was)) return;
+    if (!o.join && !o.previous) this.#viewportHistory.push(c.handle, was);
+    c.geom = withViewportView(c.geom, next);
+    const sent = this.#hooks.onViewportView?.(c.handle, next, label, o.join === true);
+    if (sent) {
+      this.#viewportEdits++;
+      const done = () => void this.#viewportEdits--;
+      void sent.then(done, done);
+    }
+    // The cursor is over another model point now: its coordinates and rubber band follow.
+    if (this.#view) this.#setView(this.#view);
+  }
+
+  /** ZOOM Extents or All in the current viewport: model space's, as the renderer measures it. */
+  async #viewportExtents(all: boolean): Promise<void> {
+    const box = await this.#host.extents(this.#opened.modelSpace);
+    const z = this.#zoomable();
+    if (!z) return;
+    const size = z.frame.size;
+    const view = all ? allView(this.#modelLimits(), box, size) : extentsView(box, size);
+    this.#goViewport(z, view, 'ZOOM');
   }
 
   /** True once the canvas shows a view; false if none comes within `ms` (a hidden tab). */
@@ -1556,6 +1708,14 @@ export class CanvasController {
   async zoomObjects(ids: readonly EntityId[]): Promise<boolean> {
     const found = await this.#host.boundsOf(ids);
     if (!found || !(this.#size.width > 0)) return false;
+    const z = this.#zoomable();
+    if (z) {
+      const fit = fitView(found, z.frame.size.width, z.frame.size.height, 0);
+      const flat = found.maxX === found.minX && found.maxY === found.minY;
+      const now = frameView(z.c.geom, z.frame.size);
+      this.#goViewport(z, flat ? { ...fit, scale: now.scale } : fit, 'ZOOM');
+      return true;
+    }
     const a = this.#toSheet({ x: found.minX, y: found.minY });
     const b = this.#toSheet({ x: found.maxX, y: found.maxY });
     const box = { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
@@ -1716,8 +1876,12 @@ export class CanvasController {
     }
     const after = change.entities?.updated?.find((u) => u.after.handle === c.handle)?.after;
     if (after?.geom.kind !== 'VIEWPORT') return;
-    if (workableViewport(after.geom)) c.geom = after.geom;
-    else this.setViewport(undefined, undefined);
+    if (!workableViewport(after.geom)) return this.setViewport(undefined, undefined);
+    // While the canvas's own view edits are on their way, its view is the newest.
+    c.geom =
+      this.#viewportEdits > 0
+        ? { ...after.geom, viewCenter: c.geom.viewCenter, viewHeight: c.geom.viewHeight }
+        : after.geom;
   }
 
   /** Resolves once the renderer has handled everything sent to it so far. */
@@ -1881,6 +2045,11 @@ export class CanvasController {
       const l = this.#layout.limits;
       return l ? { minX: l.min.x, minY: l.min.y, maxX: l.max.x, maxY: l.max.y } : this.#paper();
     }
+    return this.#modelLimits();
+  }
+
+  /** Model space's limits: the header's LIMMIN and LIMMAX. */
+  #modelLimits(): Box | undefined {
     const min = this.#header.get('$LIMMIN');
     const max = this.#header.get('$LIMMAX');
     if (typeof min !== 'object' || typeof max !== 'object') return undefined;
@@ -2493,6 +2662,19 @@ export class CanvasController {
         // The wheel zooms the viewport under the cursor, which becomes current (as a press
         // would), so the navigation bar then acts on the viewport just zoomed.
         this.#activate();
+        const factor = wheelFactor(e.deltaY, e.deltaMode);
+        const z = this.#zoomable();
+        if (z) {
+          // The current layout viewport's own view zooms about the model point under the
+          // cursor; a roll is one step, as on the sheet.
+          const join = e.timeStamp - this.#lastWheel <= WHEEL_GESTURE_MS;
+          this.#lastWheel = e.timeStamp;
+          const at = { x: e.offsetX - z.frame.left, y: e.offsetY - z.frame.top };
+          const now = frameView(z.c.geom, z.frame.size);
+          this.#goViewport(z, zoomAt(now, z.frame.size, at, factor), 'ZOOM', { join });
+          this.#hooks.onCursor(this.#world(e));
+          return;
+        }
         // One roll is one ZOOM Previous view and one undo step, which UNDO Control Combine
         // joins to the zooms and pans next to it (M2-47 part 4).
         if (e.timeStamp - this.#lastWheel > WHEEL_GESTURE_MS) {
@@ -2500,7 +2682,6 @@ export class CanvasController {
           this.#step('ZOOM');
         }
         this.#lastWheel = e.timeStamp;
-        const factor = wheelFactor(e.deltaY, e.deltaMode);
         this.#setView(zoomAt(this.#view, this.#size, { x: e.offsetX, y: e.offsetY }, factor));
         this.#hooks.onCursor(this.#world(e));
       },
@@ -2588,17 +2769,24 @@ export class CanvasController {
         const drag = this.#drag;
         if (drag && drag.pointer === e.pointerId && this.#view) {
           // A press that never moves the view is no undo step.
+          const join = drag.moved;
+          const z = this.#zoomable();
           if (!drag.moved && (e.clientX !== drag.x || e.clientY !== drag.y)) {
             drag.moved = true;
-            this.#step(drag.zoom ? 'ZOOM' : 'PAN');
+            if (!z) this.#step(drag.zoom ? 'ZOOM' : 'PAN');
           }
           const factor = realtimeZoomFactor(e.clientY - drag.y, this.#size.height);
+          const dx = e.clientX - drag.x;
+          const dy = e.clientY - drag.y;
+          if (z) {
+            // The current layout viewport's own view: one ZOOM or PAN step per drag.
+            const now = frameView(z.c.geom, z.frame.size);
+            const next = drag.zoom ? scaleView(now, factor) : panBy(now, dx, dy);
+            if (dx !== 0 || dy !== 0)
+              this.#goViewport(z, next, drag.zoom ? 'ZOOM' : 'PAN', { join });
+          }
           // Real-time ZOOM is about the window's centre, as AutoCAD's.
-          this.#setView(
-            drag.zoom
-              ? scaleView(this.#view, factor)
-              : panBy(this.#view, e.clientX - drag.x, e.clientY - drag.y),
-          );
+          else this.#setView(drag.zoom ? scaleView(this.#view, factor) : panBy(this.#view, dx, dy));
           drag.x = e.clientX;
           drag.y = e.clientY;
         }
@@ -3127,7 +3315,8 @@ export class CanvasController {
   }
 
   #startDrag(e: PointerEvent): void {
-    if (this.#view) this.#history.push(this.#view);
+    // The current layout viewport's drag keeps its own ZOOM Previous view at its first move.
+    if (this.#view && !this.#zoomable()) this.#history.push(this.#view);
     this.#drag = {
       pointer: e.pointerId,
       zoom: e.button === 0 && this.#mode === 'zoom',
@@ -3173,4 +3362,10 @@ function ucsIconSvg(angle: number, world: boolean): string {
     `<text x="${c - 11}" y="${c - tip + 6}" fill="currentColor" stroke="none" font-size="10">Y</text>` +
     `</g></svg>`
   );
+}
+
+/** The floating viewport made current (MSPACE) and its geometry as the canvas has it now. */
+interface CurrentViewport {
+  readonly handle: Handle;
+  geom: ViewportGeometry;
 }

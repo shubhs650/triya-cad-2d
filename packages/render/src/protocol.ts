@@ -176,8 +176,11 @@ export type HostMessage =
   | { readonly type: 'drawnAt'; readonly id: number; readonly seq: number }
   /** What plotting a space draws (M2-17); the answer is a `plot`. */
   | { readonly type: 'plot'; readonly id: number; readonly request: PlotRequest }
-  /** ZOOM Extents of the space drawn, as measured after everything before (M1-35 part 2). */
-  | { readonly type: 'extents'; readonly id: number }
+  /**
+   * ZOOM Extents of the space drawn, as measured after everything before (M1-35 part 2); with
+   * `block`, another space's (model space's, for a layout viewport made current, M6-02 part 4).
+   */
+  | { readonly type: 'extents'; readonly id: number; readonly block?: Handle }
   /** The last frame drawn, fitted inside width × height (M1-22 tab hover preview). */
   | {
       readonly type: 'thumbnail';

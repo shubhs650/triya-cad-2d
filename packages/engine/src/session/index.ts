@@ -35,6 +35,7 @@ import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
 import type { Lasso } from '../selection/loop';
 import { ChangeSetBuilder } from '../model/builder';
+import { viewportViewProblem, withViewportView, type ViewportView } from '../layout/viewport-view';
 import { isEmptyChangeSet, type ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -281,6 +282,20 @@ export type PageSetupEdit =
   | { readonly kind: 'page-setup-current'; readonly setup: Handle; readonly layout: Handle };
 
 /**
+ * ZOOM, PAN, the wheel or a real-time drag in the layout viewport made current (M6-02 part 4):
+ * the viewport shows `view` of model space (`withViewportView`), its frame kept. A ZOOM or PAN
+ * undo step joining the ones next to it (UNDO Control Combine), or with `join` the step before
+ * whatever the setting (the rest of one wheel roll or drag). Refused for a locked viewport.
+ */
+export interface ViewportViewEdit {
+  readonly kind: 'viewport-view';
+  readonly viewport: Handle;
+  readonly view: ViewportView;
+  readonly label: 'ZOOM' | 'PAN';
+  readonly join?: boolean;
+}
+
+/**
  * An xref's drawing found (M1-21): its file as the importer maps it, loaded as the content of
  * the host's xref block (`xrefLoadChange`). Not an undoable edit in AutoCAD either: loading
  * changes what the drawing shows, not the drawing. The load XATTACH asks for while it runs is
@@ -430,6 +445,7 @@ export type EngineEdit =
   | XrefBindEdit
   | NamedViewEdit
   | ViewTableEdit
+  | ViewportViewEdit
   | SessionVariableEdit
   | AliasEdit;
 
@@ -927,6 +943,7 @@ export class EngineSession {
       e.kind === 'view-restore'
     )
       return this.#viewTableEdit(e);
+    if (e.kind === 'viewport-view') return this.#viewportView(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     if (e.kind === 'fields') return this.#fieldEvent(e);
     if (
@@ -987,6 +1004,27 @@ export class EngineSession {
     const change = b.build();
     this.model.apply(change);
     this.#step('VIEW', change);
+    return { ok: true, change };
+  }
+
+  #viewportView(e: ViewportViewEdit): EditResult {
+    const id = this.model.ids.idOf(e.viewport);
+    const g = id === undefined ? undefined : this.model.entity(id)?.geom;
+    if (id === undefined || g?.kind !== 'VIEWPORT')
+      return { ok: false, message: `No viewport ${e.viewport}.` };
+    const problem = viewportViewProblem(g, e.view);
+    if (problem) return { ok: false, message: problem };
+    const after = withViewportView(g, e.view);
+    if (after.viewHeight === g.viewHeight && sameVec(after.viewCenter, g.viewCenter))
+      return { ok: true, change: {} };
+    const b = new ChangeSetBuilder(this.model);
+    b.updateEntity(id, { geom: after });
+    const change = b.build();
+    this.model.apply(change);
+    this.#bus.undo.push(
+      { command: e.label, changes: [change] },
+      { view: e.join ? 'join' : 'combine' },
+    );
     return { ok: true, change };
   }
 
@@ -1373,3 +1411,5 @@ export class EngineSession {
 function samePlot(a: LayoutPlot, b: LayoutPlot | undefined): boolean {
   return b !== undefined && JSON.stringify(a) === JSON.stringify(b);
 }
+
+const sameVec = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;

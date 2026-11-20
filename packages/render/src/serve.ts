@@ -195,7 +195,7 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         port.postMessage({ type: 'plot', id: m.id, parts: session.plot(m.request) });
         break;
       case 'extents':
-        port.postMessage({ type: 'extents', id: m.id, box: session.extents() ?? null });
+        port.postMessage({ type: 'extents', id: m.id, box: session.extents(m.block) ?? null });
         break;
       case 'dimStylePreview':
       case 'stylePreview': {
