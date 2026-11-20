@@ -82,7 +82,7 @@ function previewCommand(): CommandDef {
  */
 export async function* windowDialog(
   ctx: CommandContext,
-  action: 'plot' | 'export' | 'exportpdf' | 'views' | 'pagesetup',
+  action: 'plot' | 'export' | 'exportpdf' | 'views',
 ): CommandGenerator {
   let window: { a: Vec2; b: Vec2 } | undefined;
   let resume = false;
@@ -100,7 +100,7 @@ export async function* windowDialog(
       window = yield* editBoundary(ctx, reply.boundary);
       continue;
     }
-    if (action === 'plot' || action === 'pagesetup') ctx.message('Specify window for printing');
+    if (action === 'plot') ctx.message('Specify window for printing');
     const first = yield ctx.prompt.point({ message: 'Specify first corner', escape: true });
     if (first.kind !== 'point') continue;
     const a = first.point;
@@ -219,22 +219,6 @@ function plotCommand(name: string): CommandDef {
   };
 }
 
-/**
- * PAGESETUP (M6-01 part 3): AutoCAD 2024 Help, "PAGESETUP": "Controls the page layout, plotting
- * device, paper size, and other settings for each new layout", through the Page Setup Manager,
- * which is the app's; its Page Setup dialog's Window< asks for the corners as PLOT's does.
- */
-function pageSetupCommand(): CommandDef {
-  return {
-    name: 'PAGESETUP',
-    usesSelection: 'none',
-    keepsSelection: true,
-    async *run(ctx): CommandGenerator {
-      return yield* windowDialog(ctx, 'pagesetup');
-    },
-  };
-}
-
 export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => fileCommand('QSAVE', 'qsave'),
   () => fileCommand('SAVE', 'saveas'),
@@ -246,7 +230,6 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => fileCommand('DRAWINGRECOVERY', 'recover'),
   () => plotCommand('PLOT'),
   () => plotCommand('PRINT'),
-  pageSetupCommand,
   () => fileCommand('PUBLISH', 'publish'),
   previewCommand,
   () => exportCommand('EXPORT', 'export'),

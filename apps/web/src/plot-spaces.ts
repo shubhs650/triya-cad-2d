@@ -6,7 +6,7 @@ import { controllerOf } from './canvas/registry';
 import { layoutsOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { pageSetupsOf, plotViewsOf, type PlotSpace } from './plot';
-import { drawingObjects, drawingRecords, drawingViews } from './saved-views';
+import { drawingRecords, drawingViews } from './saved-views';
 import { sheetSpace } from './publish';
 
 export async function plotSpaceOf(
@@ -30,7 +30,7 @@ export async function plotSpaceOf(
     extents: doc.opened.extents[block],
     namedPlotStyles: here.namedPlotStyles ?? false,
     userTables,
-    pageSetups: pageSetupsOf(drawingObjects(doc.opened.init, changes), model),
+    pageSetups: pageSetupsOf(doc.opened.init.objects, model),
     appIds: drawingRecords(doc.opened.init, changes, 'appIds'),
     views: plotViewsOf(drawingViews(doc.opened.init, changes), !model),
   });

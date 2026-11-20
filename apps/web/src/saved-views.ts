@@ -9,7 +9,6 @@ import {
   type ChangeSet,
   type DocumentInit,
   type Handle,
-  type NonGraphicalObject,
   type PaperView,
   type TableName,
   type TableRecords,
@@ -18,24 +17,6 @@ import {
 import type { ViewTransform } from '@triya/render';
 import type { ViewportSize } from './canvas/navigate';
 import { modelTiles } from './canvas/views';
-
-/**
- * The drawing's objects as the change log leaves them (M6-01 part 3: the named page setups the
- * Page Setup Manager adds, changes and deletes), in the order the drawing lists them.
- */
-export function drawingObjects(
-  init: DocumentInit,
-  changes: readonly ChangeSet[],
-): NonGraphicalObject[] {
-  const now = new Map<Handle, NonGraphicalObject>((init.objects ?? []).map((o) => [o.handle, o]));
-  for (const cs of changes) {
-    const c = cs.objects;
-    for (const o of c?.removed ?? []) now.delete(o.handle);
-    for (const { after } of c?.updated ?? []) now.set(after.handle, after);
-    for (const o of c?.added ?? []) now.set(o.handle, o);
-  }
-  return [...now.values()];
-}
 
 /** A table's records as the change log leaves them, in the order the drawing lists them. */
 export function drawingRecords<K extends TableName>(

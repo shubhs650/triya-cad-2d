@@ -18,23 +18,18 @@
 // LAYOUT Copy copies it, named "<name> (2)"). Dragging a layout tab onto another moves it before
 // that tab, or after it when dropped on the tab's right half; the Model tab stays first. Each is
 // one LAYOUT undo step (the session's layout edit, `placeLayout` and `copyLayout`).
-//
-// M6-01 part 3: the menu's Page Setup Manager... (the Model tab's too) shows the tab's space and
-// runs PAGESETUP on it.
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './AttributeDialogs';
 import { layoutsOf, spacesOf, type OpenDocument } from './documents';
-import { whenRegistered } from './canvas/registry';
 import { engines } from './engine/registry';
 
-type TabAction = 'new' | 'delete' | 'rename' | 'move' | 'pagesetup';
+type TabAction = 'new' | 'delete' | 'rename' | 'move';
 
 const ITEMS: readonly { action: TabAction; label: string; layout?: true }[] = [
   { action: 'new', label: 'New Layout' },
   { action: 'delete', label: 'Delete', layout: true },
   { action: 'rename', label: 'Rename', layout: true },
   { action: 'move', label: 'Move or Copy...', layout: true },
-  { action: 'pagesetup', label: 'Page Setup Manager...' },
 ];
 
 /** The drag data of a layout tab: its sheet block. */
@@ -132,14 +127,7 @@ export function LayoutTabs({
     if (action === 'new') layoutCommand(doc.id, 'New', '');
     else if (action === 'delete') setDeleting(block);
     else if (action === 'move') setMoving(block);
-    else if (action === 'pagesetup') {
-      // M6-01 part 3: the tab's space shown, then PAGESETUP opens the manager on it.
-      onShow(block);
-      // Once the space's canvas exists: the manager reads the space from it.
-      void whenRegistered(doc.id, block).then(() =>
-        engines.command(doc.id, { kind: 'invoke', name: 'PAGESETUP' }),
-      );
-    } else setRenaming(block);
+    else setRenaming(block);
   };
   /** The paper layouts in tab order, as the tabs show them. */
   const sheets = tabs.filter((t) => t.block !== model);

@@ -45,8 +45,6 @@ describe('the file commands', () => {
     ['PLOT', 'plot'],
     ['PRINT', 'plot'],
     ['PUBLISH', 'publish'],
-    // M6-01 part 3: the Page Setup Manager.
-    ['PAGESETUP', 'pagesetup'],
     ['PREVIEW', 'preview'],
     ['EXPORT', 'export'],
     ['EXP', 'export'],
@@ -98,27 +96,6 @@ describe('the file commands', () => {
         action: 'plot',
         resume: true,
         window: { a: { x: 10, y: 20 }, b: { x: 110, y: 5 } },
-      },
-    ]);
-    expect(bus.command).toBeUndefined();
-  });
-
-  it("asks PAGESETUP's window at the command line when its Page Setup dialog wants one", async () => {
-    let n = 0;
-    const { bus, asked } = setup((r) =>
-      r.op === 'file' && n++ === 0 ? { ok: true, pickWindow: true } : { ok: true },
-    );
-    await bus.submit('PAGESETUP');
-    expect(bus.history).toContain('Specify window for printing');
-    await bus.submit('0,0');
-    await bus.submit('50,40');
-    expect(asked).toEqual([
-      { op: 'file', action: 'pagesetup' },
-      {
-        op: 'file',
-        action: 'pagesetup',
-        resume: true,
-        window: { a: { x: 0, y: 0 }, b: { x: 50, y: 40 } },
       },
     ]);
     expect(bus.command).toBeUndefined();

@@ -61,7 +61,6 @@ import {
   type LayoutPlot,
   type NamedPageSetup,
   type NonGraphicalObject,
-  type ObjectCommon,
   type Vec2,
   type ViewRecord,
   PAPER_VIEW,
@@ -182,14 +181,8 @@ export const PLOT_TRANSPARENCY_APP = 'PLOTTRANSPARENCY';
 /** The APPID records a drawing has, to name the applications of xdata. */
 export type AppIdNames = readonly { readonly handle: Handle; readonly name: string }[];
 
-/**
- * A LAYOUT's "Plot transparency" (or a named page setup's, M6-01 part 3): its `PLOTTRANSPARENCY`
- * xdata's first 1071 value, non-zero.
- */
-export function plotTransparencyOf(
-  layout: Pick<ObjectCommon, 'xdata'>,
-  appIds: AppIdNames,
-): boolean {
+/** A LAYOUT's "Plot transparency": its `PLOTTRANSPARENCY` xdata's first 1071 value, non-zero. */
+function plotTransparencyOf(layout: Layout, appIds: AppIdNames): boolean {
   const app = appIds.find((a) => a.name.toUpperCase() === PLOT_TRANSPARENCY_APP)?.handle;
   if (app === undefined) return false;
   const values = layout.xdata?.find((x) => x.appId === app)?.values;
@@ -268,21 +261,11 @@ export function pageSetupsOf(
  * Undefined `name` (AutoCAD's "<None>") is the space's own settings under no name, even when its
  * layout has one applied (M2-45). Throws for a name it lacks.
  */
-export function withPageSetup(
-  space: PlotSpace,
-  name: string | undefined,
-  /** The drawing's applications, to read the page setup's "Plot transparency" (M6-01 part 3). */
-  appIds?: AppIdNames,
-): PlotSpace {
+export function withPageSetup(space: PlotSpace, name: string | undefined): PlotSpace {
   if (name === undefined) return { ...space, pageSetupName: undefined };
   const named = space.pageSetups?.find((p) => p.name.toUpperCase() === name.toUpperCase());
   if (!named) throw new Error(`Page setup "${name}" not found.`);
-  const transparency = appIds !== undefined && plotTransparencyOf(named, appIds);
-  return { ...withPlot(space, named.plot, transparency), pageSetupName: named.name };
-}
-
-/** The space as page setup settings `plot` plot it, a layout's sheet on its paper. */
-function withPlot(space: PlotSpace, plot: LayoutPlot, transparency: boolean): PlotSpace {
+  const plot = named.plot;
   const sheet = space.sheet && plotSheet(plot);
   return {
     ...space,
@@ -293,44 +276,9 @@ function withPlot(space: PlotSpace, plot: LayoutPlot, transparency: boolean): Pl
       flags: plot.flags,
       layout: space.pageSetup?.layout,
       plot,
-      ...(transparency && { transparency }),
     },
-    pageSetupName: undefined,
+    pageSetupName: named.name,
   };
-}
-
-/**
- * New Page Setup's "<None>" (M6-01 part 3): the Page Setup dialog's own settings on the space's
- * paper, as a page setup starts without one to start with: a layout's Layout area at 1:1, model
- * space's Display fitted to the paper and centred, with plot styles and lineweights, no plot
- * style table, no offset, the paper as the space's page setup feeds it. Throws without one.
- */
-export function newPageSetupSpace(space: PlotSpace): PlotSpace {
-  const base = space.pageSetup?.plot;
-  if (!base) throw new Error('This space has no page setup to start from.');
-  const model = space.sheet === undefined;
-  const MODEL_TYPE = 1024;
-  const {
-    window: _w,
-    styleSheet: _t,
-    viewName: _v,
-    pageSetupName: _n,
-    standardScaleType: _s,
-    ...rest
-  } = base;
-  const plot: LayoutPlot = {
-    ...rest,
-    origin: { x: 0, y: 0 },
-    scale: { numerator: 1, denominator: 1 },
-    plotType: model ? 0 : 5,
-    // 32 plot with plot styles, 128 lineweights; a layout's 512 paperspace last; model space's
-    // fitted (16, DXF 75 0) and centred (4).
-    flags: model
-      ? (base.flags & MODEL_TYPE) | 32 | 128 | USE_STANDARD_SCALE | PLOT_CENTERED
-      : 32 | 128 | 512,
-    ...(model && { standardScaleType: 0 }),
-  };
-  return withPlot(space, plot, false);
 }
 
 export type PlotArea = 'layout' | 'extents' | 'display' | 'limits' | 'view' | 'window';

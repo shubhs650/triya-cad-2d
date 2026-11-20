@@ -635,7 +635,7 @@ function PartialPreview({ s, space }: { s: PlotSettings; space: PlotSpace }) {
   );
 }
 
-export function PlotForm({
+function PlotForm({
   s,
   space,
   set,

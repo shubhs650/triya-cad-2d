@@ -31,14 +31,13 @@ test('layout tabs make, rename and delete layouts, as LAYOUT does', async ({ pag
   await expect(tabs).toHaveText(['Model', 'Layout1', 'Layout2', 'MyLayout']);
   const menu = page.getByRole('menu', { name: 'Layout tab' });
 
-  // The Model tab offers New Layout and the Page Setup Manager only.
+  // The Model tab offers New Layout only.
   await tabs.nth(0).click({ button: 'right' });
   await expect(menu.getByRole('menuitem')).toHaveText([
     'New Layout',
     'Delete',
     'Rename',
     'Move or Copy...',
-    'Page Setup Manager...',
   ]);
   await expect(menu.getByRole('menuitem', { name: 'Delete' })).toBeDisabled();
   await expect(menu.getByRole('menuitem', { name: 'Rename' })).toBeDisabled();
