@@ -625,11 +625,19 @@ function applyStretch(
 
 // ── COPY ────────────────────────────────────────────────────────────────────────────────────
 
-/** Why `e` cannot be copied, beyond what keeps it from moving. */
-export function copyProblem(e: Entity, t: Similarity): string | undefined {
+/**
+ * Why `e` cannot be copied, beyond what keeps it from moving. `copied`: the handles copied with
+ * it, where a clipped viewport's boundary must be (M6-01 part 2), as AutoCAD's deep clone takes
+ * the boundary along.
+ */
+export function copyProblem(
+  e: Entity,
+  t: Similarity,
+  copied?: ReadonlySet<Handle>,
+): string | undefined {
   const g = e.geom;
   if (g.kind === 'REGION') return 'a region cannot be copied';
-  if (g.kind === 'VIEWPORT' && g.clipBoundary !== undefined) {
+  if (g.kind === 'VIEWPORT' && g.clipBoundary !== undefined && !copied?.has(g.clipBoundary)) {
     return 'a clipped viewport cannot be copied';
   }
   return transformProblem(g, t);
@@ -646,14 +654,22 @@ export function copyObjects(
   into?: Handle,
   /** The anonymous block names taken so far in this edit (EXPLODE copies out of many blocks). */
   names: AnonymousNames = new AnonymousNames(model),
-): EditReport {
+): EditReport & { readonly copies: ReadonlyMap<Handle, Entity> } {
   const refused = new Map<string, number>();
   const copies = new Map<Handle, Entity>();
+  const copied = new Set(ids.flatMap((id) => b.entity(id)?.handle ?? []));
   let unannotated = 0;
   for (const id of ids) {
     const e = b.entity(id);
     if (!e) continue;
-    const problem = copyProblem(e, t);
+    let problem = copyProblem(e, t, copied);
+    // A boundary left behind leaves its viewport behind too.
+    const clip = e.geom.kind === 'VIEWPORT' ? e.geom.clipBoundary : undefined;
+    const clipId = clip === undefined ? undefined : model.ids.idOf(clip);
+    const boundary = clipId === undefined ? undefined : b.entity(clipId);
+    if (!problem && boundary && copyProblem(boundary, t, copied)) {
+      problem = 'a clipped viewport cannot be copied';
+    }
     if (problem) {
       count(refused, problem);
       continue;
@@ -686,6 +702,15 @@ export function copyObjects(
       b.updateEntity(s.id, { reactors: [...(s.reactors ?? []), copy.handle] });
     }
   }
+  // A clipped viewport's copy is clipped by its boundary's copy, which lists it as its reactor.
+  for (const copy of copies.values()) {
+    const g = copy.geom;
+    if (g.kind !== 'VIEWPORT' || g.clipBoundary === undefined) continue;
+    const boundary = copies.get(g.clipBoundary)!;
+    b.updateEntity(copy.id, { geom: { ...g, clipBoundary: boundary.handle } });
+    const s = b.entity(boundary.id)!;
+    b.updateEntity(s.id, { reactors: [...(s.reactors ?? []), copy.handle] });
+  }
   // A copy of an associative array is an array of its own (M3-11).
   copyAssocArrays(b, model, copies, names);
   // A copy of a clipped reference is clipped alike (M5-16), after the array records' dictionaries.
@@ -702,6 +727,7 @@ export function copyObjects(
     refused,
     unannotated,
     regenerate: scaledDimensions(made, t),
+    copies,
   };
 }
 
