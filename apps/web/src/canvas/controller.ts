@@ -126,7 +126,7 @@ import {
   plotViewsOf,
   type PlotSpace,
 } from '../plot';
-import { drawingRecords, drawingViews } from '../saved-views';
+import { drawingObjects, drawingRecords, drawingViews } from '../saved-views';
 import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
@@ -717,7 +717,8 @@ export class CanvasController {
       namedPlotStyles: this.#header.get('$PSTYLEMODE') === 0,
       // The applications as edited: Apply to Layout may have registered PLOTTRANSPARENCY.
       pageSetup: pageSetupOf(setup, drawingRecords(init, changes, 'appIds')),
-      pageSetups: pageSetupsOf(init.objects, layout === undefined),
+      // As edited: the Page Setup Manager adds, changes and deletes them (M6-01 part 3).
+      pageSetups: pageSetupsOf(drawingObjects(init, changes), layout === undefined),
       pageSetupName: appliedPageSetupName(setup),
       views: plotViewsOf(drawingViews(init, changes), layout !== undefined),
     };

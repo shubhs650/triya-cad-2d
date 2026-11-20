@@ -36,6 +36,7 @@ import { controllerOf } from './canvas/registry';
 import type { OpenResult } from '@triya/io';
 import { layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
+import { drawingObjects } from './saved-views';
 import type { PlotStyleTable } from '@triya/render';
 import {
   PNG_RESOLUTIONS,
@@ -215,8 +216,13 @@ function PublishBody({
   /** The named page setups a sheet may plot with: its drawing's, of its kind. */
   const setupsOf = (s: PublishSheet) => {
     const o = openedOf(s);
+    // An open drawing's as edited (M6-01 part 3: the Page Setup Manager's).
+    const d = drawingOf(s);
     return o && s.missing === undefined
-      ? pageSetupsOf(o.init.objects, s.block === o.modelSpace)
+      ? pageSetupsOf(
+          d ? drawingObjects(o.init, engines.changesOf(d.id)) : o.init.objects,
+          s.block === o.modelSpace,
+        )
       : [];
   };
   /** A drawing open or added, as a loaded sheet list finds its sheets in it (part 3). */
