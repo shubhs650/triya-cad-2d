@@ -90,6 +90,10 @@ FIXTURE_SAVES = (
     # on colors.dxf (M5-07 part 7, packages/testkit/src/export/view-layer-snapshots.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "view-layers"),
     ("third-party/ezdxf/examples_dxf/colors.dxf", "view-layers"),
+    # LAYOUT Copy of every layout of the sample and of text_in_viewports.dxf, a clipped viewport
+    # copied with its boundary (M6-01 part 2, export-layout-copy.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "layout-copy"),
+    ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "layout-copy"),
     # MVIEW's viewports in the sample's current layout and in colors.dxf's, which has none (M6-02
     # part 1, packages/testkit/src/export/export-mview.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "mview"),

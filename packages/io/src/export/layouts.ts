@@ -250,7 +250,7 @@ export function planLayouts(
         baseRecords,
         model,
         names,
-        new Set(before.keys()),
+        before,
         noLayouts,
         r,
         handleViews,
@@ -420,12 +420,21 @@ function additionProblems(
   baseRecords: ReadonlyMap<Handle, BlockTableRecord>,
   model: DocumentModel,
   names: ReadonlyMap<string, number>,
-  baseHandles: ReadonlySet<Handle>,
+  /** The layouts as the drawing was read. */
+  base: ReadonlyMap<Handle, Layout>,
   noLayouts: string | undefined,
   r: Resolver,
   handleViews: boolean,
 ): string[] {
   if (noLayouts) return [noLayouts];
+  const baseHandles = new Set(base.keys());
+  // A copy's page setup and limits (LAYOUT Copy, M6-01 part 2) are a paper layout's as the
+  // drawing was read: written as the drawing holds them, they are checked only where they differ
+  // (a page setup ezdxf leaves at 0 x 0, a standard scale DXF 75 names).
+  const like = [...base.values()].filter(
+    (l) => baseRecords.get(l.blockRecord)?.name.toUpperCase() !== '*MODEL_SPACE',
+  );
+  const plotLike = like.find((l) => same(l.plot, a.plot))?.plot;
   const out: string[] = [];
   if (doc.getCadObject(Number.parseInt(a.handle, 16))) out.push('the handle is already used');
   if (!layoutDictionary(doc)) out.push('the drawing has no ACAD_LAYOUT dictionary to list it in');
@@ -456,9 +465,13 @@ function additionProblems(
       `flags: ${JSON.stringify(a.flags)} has bits other than 1 (PSLTSCALE) and 2 (LIMCHECK)`,
     );
   if (!a.limits) out.push('a new layout needs its limits');
-  else out.push(...limitsProblems(a.limits));
+  else if (!like.some((l) => same(l.limits, a.limits))) out.push(...limitsProblems(a.limits));
   if (!a.plot) out.push('a new layout needs its page setup');
-  else out.push(...plotProblems(undefined, a.plot, 'other', handleViews));
+  else out.push(...plotProblems(plotLike, a.plot, 'other', handleViews));
+  if (plotLike && handleViews && a.plot?.viewName)
+    out.push(
+      'viewName: a DWG from R2004 names the plot view by a handle, which Triya does not write',
+    );
   if (a.space) out.push(...spaceProblems(a.space));
   return out;
 }

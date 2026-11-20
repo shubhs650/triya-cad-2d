@@ -50,6 +50,9 @@ export type AuditSaveKind =
   // Views' layer snapshots: Update Layers, a rename and New View's on the AC1032 sample, a new
   // view's on colors.dxf (M5-07 part 7).
   | 'view-layers'
+  // LAYOUT Copy of every layout of the AC1032 sample and of text_in_viewports.dxf (a clipped
+  // viewport copied with its boundary; M6-01 part 2).
+  | 'layout-copy'
   // MVIEW's viewports (4 by Fit, one from corners, one off, one locked) in the AC1032 sample's
   // current layout and in colors.dxf's, which has none (M6-02 part 1).
   | 'mview'
