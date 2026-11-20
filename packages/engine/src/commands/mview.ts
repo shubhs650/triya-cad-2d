@@ -18,8 +18,11 @@
 // framed by the object's or the polygon's box and clipped by it, as VPCLIP clips one
 // (`vpclip.ts`, `edit/viewport-clip.ts`); the polygon is a closed polyline made first, as
 // AutoCAD makes it. AutoCAD's other options wait for later parts of M6-02: Restore (VPORTS'
-// configurations), NEw and NAmed (the Viewports dialog) and LAyer (with VPLAYER); Shadeplot is
-// 3D (excluded).
+// configurations) and NEw and NAmed (the Viewports dialog); Shadeplot is 3D (excluded).
+//     LAyer:     Reset viewport layer property overrides back to global properties [Yes/No] <Yes>:
+//                Select viewports:                         their layer overrides removed
+// LAyer (M6-02 part 5) removes the colour, linetype, lineweight and transparency overrides
+// VPLAYER or the Layer Properties Manager gave layers in the viewports picked; VP Freeze stays.
 // Outside a layout's paper space AutoCAD refuses MVIEW ("** Command not allowed in Model Tab **").
 import { unionBox, type Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
@@ -32,6 +35,7 @@ import type { Entity, LwPolylineGeometry, ViewportGeometry } from '../model/type
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import { currentLayer } from '../properties/current';
+import { newViewportFrozenLayers, removeViewportOverrides } from '../edit/viewport-layer-edits';
 import { isPaperSpace, modelSpaceOf } from './bus';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
@@ -280,10 +284,13 @@ async function addViewports(
         center: { x: (frame.minX + frame.maxX) / 2, y: (frame.minY + frame.maxY) / 2 },
         height: frame.maxY - frame.minY,
       };
+      // Layers frozen by default in new viewports (VPLAYER Vpvisdflt, DXF 70 bit 2) are frozen
+      // in it, as AutoCAD's new viewports have them.
+      const geom = newViewportGeometry(frame, view, id++, current ? ++status : 0);
       const vp = b.addEntity({
         owner: space,
         layer,
-        geom: newViewportGeometry(frame, view, id++, current ? ++status : 0),
+        geom: { ...geom, frozenLayers: newViewportFrozenLayers(ctx.model) },
       });
       if (boundary !== undefined) clipViewport(b, ctx.model, vp.id, boundary);
     }
@@ -297,8 +304,8 @@ const zeroLayer = (ctx: CommandContext): Handle | undefined =>
  * "Select objects:" for ON, OFF and Lock: the floating viewports of the space shown among the
  * objects picked (a layout's own paper-space viewport is never one).
  */
-async function* viewportsPicked(ctx: CommandContext): Sub<EntityId[]> {
-  const a = yield ctx.prompt.selection({ message: 'Select objects', editable: true });
+async function* viewportsPicked(ctx: CommandContext, message = 'Select objects'): Sub<EntityId[]> {
+  const a = yield ctx.prompt.selection({ message, editable: true });
   return (a as { ids: readonly EntityId[] }).ids.filter((id) => {
     const e = ctx.model.entity(id);
     const g = viewportOf(e);
@@ -352,6 +359,20 @@ async function* lock(ctx: CommandContext): Sub<void> {
   });
 }
 
+/** LAyer: the layer property overrides of the viewports picked removed, after a Yes. */
+async function* resetLayers(ctx: CommandContext): Sub<void> {
+  const a = yield ctx.prompt.keyword({
+    message: 'Reset viewport layer property overrides back to global properties',
+    options: ['Yes', 'No'],
+    default: { kind: 'keyword', keyword: 'Yes' },
+  });
+  if (a.kind === 'keyword' && a.keyword === 'No') return;
+  const ids = yield* viewportsPicked(ctx, 'Select viewports');
+  if (ids.length === 0) return;
+  const handles = ids.map((id) => ctx.model.entity(id)!.handle);
+  ctx.edit((b) => removeViewportOverrides(b, ctx.model, handles));
+}
+
 /** Object: "Select object to clip viewport:" until an object that clips one is picked. */
 async function* clipObject(ctx: CommandContext): Sub<EntityId | undefined> {
   for (;;) {
@@ -382,7 +403,7 @@ export function mviewCommand(): CommandDef {
       }
       const a = yield ctx.prompt.point({
         message: 'Specify corner of viewport or',
-        options: ['ON', 'OFF', 'Fit', 'Lock', 'Object', 'Polygonal', '2', '3', '4'],
+        options: ['ON', 'OFF', 'Fit', 'Lock', 'Object', 'Polygonal', 'LAyer', '2', '3', '4'],
         default: { kind: 'keyword', keyword: 'Fit' },
       });
       if (a.kind !== 'keyword') {
@@ -397,6 +418,9 @@ export function mviewCommand(): CommandDef {
           return;
         case 'Lock':
           yield* lock(ctx);
+          return;
+        case 'LAyer':
+          yield* resetLayers(ctx);
           return;
         case 'Object': {
           const id = yield* clipObject(ctx);

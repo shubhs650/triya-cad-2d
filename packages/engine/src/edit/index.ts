@@ -192,6 +192,7 @@ export {
   clipsViewport,
   deleteViewportClip,
 } from './viewport-clip';
+export * from './viewport-layer-edits';
 export {
   currentLayerChange,
   deleteLayersChange,

@@ -10,8 +10,13 @@
 // the entry as read; the save rewrites it from `transparency`, registering the application
 // when the drawing has none, as AutoCAD does.
 //
-// A layer's viewport overrides (M1-62) are XRECORDs of its extension dictionary, kept as read;
-// a save refuses to change them and to remove a viewport they name.
+// A layer's viewport overrides (M1-62) are XRECORDs of its extension dictionary, one per
+// property (ADSK_XREC_LAYER_COLOR_OVR, _LINETYPE_OVR, _LINEWT_OVR, _ALPHA_OVR), each holding a
+// `102 {ADSK_LYR_…_OVERRIDE` group per viewport: the viewport (335) and the value. A change
+// (VPLAYER, MVIEW LAyer; M6-02 part 5) rewrites the records whose property changed, as AutoCAD
+// files them (viewport-overrides.dxf; ezdxf `store_layer_overrides`), adding the dictionary and
+// a record where the layer has none (280 1, the dictionary hard owner, as for RECONCILED) and
+// removing a record left with no viewport. A save refuses to remove a viewport they name.
 //
 // A layer's description (M1-104) is xdata too: `AcAecLayerStandard`, an empty 1000 string and
 // then the text, on every layer AutoCAD has shown in the Layer Properties Manager. The save
@@ -35,14 +40,22 @@ import {
   Layer,
   LineType,
   Material,
+  Viewport,
   XRecord,
   type CadDocument,
   type CadObject,
 } from '@node-projects/acad-ts';
-import type { DocumentInit, DocumentModel, Handle, LayerRecord } from '@triya/engine';
+import type {
+  Color,
+  DocumentInit,
+  DocumentModel,
+  Handle,
+  LayerRecord,
+  LayerViewportOverride,
+} from '@triya/engine';
 import { acadColor, acadLineweight, resolve, same, type Resolver } from './entities';
 import { changes, planRecords, type RecordPlan } from './records';
-import { RECONCILED } from '../map/tables';
+import { OVERRIDES, OVERRIDE_VIEWPORT, RECONCILED } from '../map/tables';
 
 /** DXF 70 bits `frozen` and `locked` stand for; `flags` keeps the others. */
 const FROZEN = 1;
@@ -122,9 +135,7 @@ function layerProblems(
   // AcAecLayerStandard APPID but no layer's entry), so an R12 file has nowhere AutoCAD reads one.
   if (descriptionChanged && version !== undefined && version <= ACadVersion.AC1009)
     out.push('an R12 layer does not store its description');
-  // No command edits them yet: the writer comes with VPLAYER and the Layer Properties
-  // Manager's VP columns (M6-02, M5-05), as DEC-047 has missing writers wait for their command.
-  if (changed('viewportOverrides')) out.push('viewport layer overrides change');
+  if (changed('viewportOverrides')) out.push(...overrideProblems(r, version, a));
   if (changed('color') && (a.color.kind === 'byLayer' || a.color.kind === 'byBlock'))
     out.push(`a layer colour cannot be ${a.color.kind}`);
   if (changed('linetype') && !resolve(r, a.linetype, LineType))
@@ -154,6 +165,31 @@ function layerProblems(
               : a[k] !== undefined;
       if (lost) out.push(`an R12 layer does not store its ${k}`);
     }
+  }
+  return out;
+}
+
+/** Why the save cannot write a layer's viewport overrides as `a` has them. */
+function overrideProblems(r: Resolver, version: ACadVersion | undefined, a: LayerRecord): string[] {
+  const list = a.viewportOverrides ?? [];
+  // An R12 file has no extension dictionaries, where AutoCAD files the overrides.
+  if (version !== undefined && version <= ACadVersion.AC1009 && list.length > 0)
+    return ['an R12 layer does not store viewport overrides'];
+  const out: string[] = [];
+  for (const o of list) {
+    if (!resolve(r, o.viewport, Viewport)) out.push(`viewport ${o.viewport} does not exist`);
+    if (o.color && o.color.kind !== 'aci' && o.color.kind !== 'rgb')
+      out.push(`a viewport override colour cannot be ${o.color.kind}`);
+    if (o.linetype !== undefined && !resolve(r, o.linetype, LineType))
+      out.push(`linetype ${o.linetype} does not exist`);
+    if (o.lineweight === 'ByLayer' || o.lineweight === 'ByBlock')
+      out.push(`a viewport override lineweight cannot be ${o.lineweight}`);
+    const t = o.transparency;
+    if (
+      t !== undefined &&
+      (typeof t !== 'object' || !Number.isInteger(t.alpha) || t.alpha < 0 || t.alpha > 255)
+    )
+      out.push('a viewport override transparency must be an alpha from 0 to 255');
   }
   return out;
 }
@@ -211,6 +247,79 @@ function writeDescription(doc: CadDocument, r: Resolver, l: Layer, a: LayerRecor
 
 /** Rewrites a layer's ADSK_XREC_LAYER_RECONCILED 290 from `unreconciled`. */
 function writeReconciled(r: Resolver, l: Layer, a: LayerRecord): void {
+  const found = l.xDictionary?.getEntry(RECONCILED);
+  const record = found instanceof XRecord ? found : newRecord(r, l, RECONCILED);
+  const reconciled = a.unreconciled !== true;
+  const flag = record.entries.find((e) => e.code === 290);
+  if (flag) flag.value = reconciled;
+  else record.createEntry(290, reconciled);
+}
+
+/** The `102 {…` group name of each override record (viewport-overrides.dxf). */
+const OVERRIDE_GROUPS: Record<string, string> = {
+  ADSK_XREC_LAYER_COLOR_OVR: '{ADSK_LYR_COLOR_OVERRIDE',
+  ADSK_XREC_LAYER_LINETYPE_OVR: '{ADSK_LYR_LINETYPE_OVERRIDE',
+  ADSK_XREC_LAYER_LINEWT_OVR: '{ADSK_LYR_LINEWT_OVERRIDE',
+  ADSK_XREC_LAYER_ALPHA_OVR: '{ADSK_LYR_ALPHA_OVERRIDE',
+};
+
+/**
+ * An AcCmEntityColor as one signed 32-bit group (420): 0xC3 and the ACI, or 0xC2 and the RGB
+ * (`rawColor` in map/tables.ts reads it).
+ */
+const rawColor = (c: Color): number =>
+  c.kind === 'aci'
+    ? 0xc3000000 | c.index | 0
+    : c.kind === 'rgb'
+      ? 0xc2000000 | (c.r << 16) | (c.g << 8) | c.b | 0
+      : 0;
+
+/** One override's value for the record holding `field`, as AutoCAD files it. */
+function overrideValue(r: Resolver, o: LayerViewportOverride, field: string): unknown {
+  if (field === 'color') return o.color && rawColor(o.color);
+  if (field === 'linetype') return o.linetype && resolve(r, o.linetype, LineType);
+  if (field === 'lineweight')
+    return o.lineweight === undefined ? undefined : acadLineweight(o.lineweight);
+  const t = o.transparency;
+  return typeof t === 'object' ? BY_ALPHA | t.alpha : undefined;
+}
+
+/** The overrides of `l` holding `field`, compared between before and after. */
+const holding = (l: LayerRecord | undefined, field: string) =>
+  JSON.stringify(
+    (l?.viewportOverrides ?? []).flatMap((o) => {
+      const v = (o as unknown as Record<string, unknown>)[field];
+      return v === undefined ? [] : [[o.viewport, v]];
+    }),
+  );
+
+/** Rewrites the override XRECORDs whose property changed between `b` and `a`. */
+function writeOverrides(r: Resolver, l: Layer, b: LayerRecord | undefined, a: LayerRecord): void {
+  for (const [name, code, field] of OVERRIDES) {
+    if (holding(b, field) === holding(a, field)) continue;
+    const list = (a.viewportOverrides ?? []).filter(
+      (o) => (o as unknown as Record<string, unknown>)[field] !== undefined,
+    );
+    const dict = l.xDictionary;
+    const found = dict?.getEntry(name);
+    if (list.length === 0) {
+      if (found) dict!.remove(name);
+      continue;
+    }
+    const record = found instanceof XRecord ? found : newRecord(r, l, name);
+    record.clear();
+    for (const o of list) {
+      record.createEntry(102, OVERRIDE_GROUPS[name]);
+      const vp = resolve(r, o.viewport, Viewport);
+      record.createEntry(OVERRIDE_VIEWPORT, vp ?? Number.parseInt(o.viewport, 16));
+      record.createEntry(code, overrideValue(r, o, field));
+      record.createEntry(102, '}');
+    }
+  }
+}
+
+/** The layer's extension dictionary, made where it has none (as AutoCAD makes it). */
+function extensionDictionary(r: Resolver, l: Layer): CadDictionary {
   let dict = l.xDictionary;
   if (!dict) {
     dict = new CadDictionary();
@@ -219,20 +328,18 @@ function writeReconciled(r: Resolver, l: Layer, a: LayerRecord): void {
     dict.clonningFlags = DictionaryCloningFlags.KeepExisting;
     l.xDictionary = dict;
   }
-  const found = dict.getEntry(RECONCILED);
-  let record: XRecord;
-  if (found instanceof XRecord) record = found;
-  else {
-    record = new XRecord();
-    record.handle = r.allocate();
-    record.cloningFlags = DictionaryCloningFlags.KeepExisting;
-    dict.addByKey(RECONCILED, record);
-    record.addReactor(dict);
-  }
-  const reconciled = a.unreconciled !== true;
-  const flag = record.entries.find((e) => e.code === 290);
-  if (flag) flag.value = reconciled;
-  else record.createEntry(290, reconciled);
+  return dict;
+}
+
+/** A new XRECORD `name` in the layer's extension dictionary (280 1, the dictionary its owner). */
+function newRecord(r: Resolver, l: Layer, name: string): XRecord {
+  const dict = extensionDictionary(r, l);
+  const record = new XRecord();
+  record.handle = r.allocate();
+  record.cloningFlags = DictionaryCloningFlags.KeepExisting;
+  dict.addByKey(name, record);
+  record.addReactor(dict);
+  return record;
 }
 
 /** Writes the fields of `a` that differ from `b` (every field when `b` is undefined). */
@@ -265,6 +372,7 @@ function writeLayer(
   if (changed('transparency')) writeTransparency(doc, r, l, a);
   if ((a.description ?? '') !== (b?.description ?? '')) writeDescription(doc, r, l, a);
   if ((a.unreconciled ?? false) !== (b?.unreconciled ?? false)) writeReconciled(r, l, a);
+  if (changed('viewportOverrides')) writeOverrides(r, l, b, a);
 }
 
 /** Writes the planned layer changes onto `doc`; new layers join its LAYER table first. */

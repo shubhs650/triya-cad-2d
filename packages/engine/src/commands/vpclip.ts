@@ -188,7 +188,10 @@ type ViewportEntity = Entity & { geom: ViewportGeometry };
  * The floating viewport of the space shown that `e` is, or whose clipping boundary it is
  * (AutoCAD picks a clipped viewport by its boundary); undefined for anything else.
  */
-function viewportOfPick(ctx: CommandContext, e: Entity | undefined): ViewportEntity | undefined {
+export function viewportOfPick(
+  ctx: CommandContext,
+  e: Entity | undefined,
+): ViewportEntity | undefined {
   const floating = (v: Entity | undefined): v is ViewportEntity =>
     v?.geom.kind === 'VIEWPORT' && v.geom.id !== 1 && v.owner === ctx.space;
   if (floating(e)) return e;
