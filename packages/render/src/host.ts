@@ -14,6 +14,7 @@ import type {
   ChangeSet,
   DragMotion,
   EntityId,
+  Handle,
   NestedPick,
   GroupGrip,
   MTextGeometry,
@@ -324,6 +325,12 @@ export class RendererHost {
   setHighlight(ids: readonly EntityId[]): void {
     if (this.#session) this.#session.renderer.setHighlight(ids);
     else this.#post({ type: 'highlight', ids });
+  }
+
+  /** The layout viewport made current (MSPACE, M6-02 part 3); undefined, paper space. */
+  setActiveViewport(handle: Handle | undefined): void {
+    if (this.#session) this.#session.renderer.setActiveViewport(handle);
+    else this.#post({ type: 'active-viewport', handle: handle ?? null });
   }
 
   /** The reference edited in place (M5-02 part 5); undefined, none. */

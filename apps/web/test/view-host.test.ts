@@ -34,7 +34,12 @@ class Target implements ViewTarget {
   size = { width: 800, height: 400 };
   mode: CanvasMode = 'none';
   previous = true;
+  viewport: string | undefined;
   constructor(readonly isLayout = false) {}
+  setViewport = (h: string | undefined) => {
+    this.viewport = h;
+    this.calls.push(`viewport ${h ?? 'none'}`);
+  };
   zoomExtents = () => void this.calls.push('extents');
   zoomAll = () => void this.calls.push('all');
   zoomPrevious = () => (this.calls.push('previous'), this.previous);
@@ -192,6 +197,20 @@ describe('answerView', () => {
       message: NO_CANVAS,
     });
     expect(now(answerView(r, ctx))).toEqual({ ok: false, message: NO_CANVAS });
+  });
+
+  it('works in a layout through the viewport MSPACE makes current, model space’s view (M6-02 part 3)', () => {
+    const shown = new Target(true);
+    const { ctx } = context(shown);
+    const r: ViewRequest = { op: 'viewport', viewport: '5A' };
+    expect(now(answerView(r, ctx))).toMatchObject({ ok: true, view: { paper: false } });
+    expect(shown.viewport).toBe('5A');
+    // VIEWSIZE and VIEWCTR are model space's then; paper space's again after PSPACE.
+    expect(now(answerView({ op: 'get' }, ctx))).toMatchObject({ view: { paper: false } });
+    expect(now(answerView({ op: 'viewport', viewport: null }, ctx))).toMatchObject({
+      view: { paper: true },
+    });
+    expect(shown.calls).toEqual(['viewport 5A', 'viewport none']);
   });
 
   it('shows a glance at a view in the space shown, as a swap does (M2-47 part 5)', () => {

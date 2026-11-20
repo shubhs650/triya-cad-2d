@@ -12,7 +12,9 @@ import type {
   Handle,
   NestedPick,
   Vec2,
+  ViewportGeometry,
 } from '@triya/engine';
+import { viewportTransform } from '@triya/engine';
 import type { GridSpec } from './grid';
 import type { TtfFont } from '@triya/text';
 import type { Affine } from './affine';
@@ -481,6 +483,12 @@ export interface Renderer {
   /** The entities to draw selected (M2-03): highlighted over the scene; none clears it. */
   setHighlight(ids: readonly EntityId[]): void;
   /**
+   * The layout viewport made current (MSPACE, M6-02 part 3), by handle; undefined, paper space.
+   * While it is, picks, windows and snaps take model space's objects, and the selection, grips
+   * and previews are drawn through the viewport, clipped to it; its frame is drawn bold.
+   */
+  setActiveViewport(handle: Handle | undefined): void;
+  /**
    * The reference edited in place (REFEDIT, M5-02 part 5): the working set drawn in full and the
    * rest faded (XFADECTL), the other references to its block drawing it whole; undefined, none.
    */
@@ -550,6 +558,20 @@ export interface SelectQuery {
   readonly kind: 'window' | 'crossing' | 'fence';
   readonly box: Box;
   readonly polygon?: readonly { readonly x: number; readonly y: number }[];
+}
+
+/**
+ * The view of model space a layout viewport shows when the sheet is shown in `view` (MSPACE,
+ * M6-02 part 3): a point of model space is at the screen point its sheet point is at. The
+ * viewport must be one the cursor can work through (`workableViewport`: plan, no twist), whose
+ * model → paper map is a scale and a move.
+ */
+export function modelViewOf(view: ViewTransform, vp: ViewportGeometry): ViewTransform {
+  const t = viewportTransform(vp);
+  return {
+    center: { x: (view.center.x - t.e) / t.a, y: (view.center.y - t.f) / t.d },
+    scale: view.scale * t.a,
+  };
 }
 
 /** The world box a view shows on a viewport of the given CSS size. */

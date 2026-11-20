@@ -372,6 +372,9 @@ export function mviewCommand(): CommandDef {
   return {
     name: 'MVIEW',
     async *run(ctx) {
+      // Viewports are paper space's objects: from a viewport made current, AutoCAD's MVIEW and
+      // VPCLIP work in paper space, which the layout stays in (M6-02 part 3).
+      if (ctx.viewport.current !== undefined) await ctx.viewport.set(undefined);
       // The Block Editor works in a block definition, as in model space.
       if (!isPaperSpace(ctx.model, ctx.space)) {
         ctx.message('** Command not allowed in Model Tab **');

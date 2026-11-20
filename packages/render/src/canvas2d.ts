@@ -362,6 +362,8 @@ const GRID_MAJOR_MIX = 0.24;
 const GRID_DOT_MIX = 0.6;
 /** The selection highlight (M2-03): colour, glow width and alpha, and dash, in CSS pixels. */
 const SELECTION_COLOR = '#4da3ff';
+/** The current viewport's frame (MSPACE, M6-02 part 3), CSS pixels wide. */
+const ACTIVE_VIEWPORT_PX = 3;
 const SELECTION_GLOW_PX = 5;
 const SELECTION_GLOW_ALPHA = 0.35;
 const SELECTION_DASH = [4, 3];
@@ -627,6 +629,11 @@ export class Canvas2DRenderer implements Renderer {
   #sheet: LayoutSheet | undefined;
   /** Model space, when the block shown is a layout whose viewports show it. */
   #modelBlock: Handle | undefined;
+  /**
+   * The floating viewport made current (MSPACE, M6-02 part 3): picks, windows, snaps and what
+   * is drawn over the scene (selection, grips, previews) are model space's, through it.
+   */
+  #active: Handle | undefined;
   /** The layout's model-space viewports in stacking order; undefined until first needed. */
   #viewports: readonly ViewportEntry[] | undefined;
   /**
@@ -849,6 +856,110 @@ export class Canvas2DRenderer implements Renderer {
     this.#transientDirty = true;
   }
 
+  setActiveViewport(handle: Handle | undefined): void {
+    if (handle === this.#active) return;
+    this.#active = handle;
+    // The selection is drawn with the scene, the current viewport's bold frame with the rest.
+    this.#sceneDirty = this.#transientDirty = true;
+  }
+
+  /** The current viewport (MSPACE), while it shows model space. */
+  #activeViewport(): ViewportEntry | undefined {
+    const h = this.#active;
+    return h === undefined ? undefined : this.#viewportList().find((v) => v.handle === h);
+  }
+
+  /** The block picks and windows take objects of: model space while a viewport is current. */
+  #pickBlock(): Handle {
+    return this.#activeViewport() ? this.#modelBlock! : this.#block;
+  }
+
+  /** The block picks, windows and snaps take objects of (`#pickBlock`). */
+  get pickBlock(): Handle {
+    return this.#pickBlock();
+  }
+
+  /**
+   * The frame what is drawn over the scene is drawn in: model space's through the current
+   * viewport, clipped to it on `ctx` (restore it after), else the view's.
+   */
+  #overlayFrame(ctx: Canvas2D, view: DrawFrame = this.#viewFrame()): DrawFrame {
+    const vp = this.#activeViewport();
+    if (!vp) return view;
+    const through = this.#throughViewport(vp, view);
+    if (!through) {
+      // The frame is out of view: nothing of model space shows.
+      this.#clipTo(ctx, vp, view, { x: 0, y: 0, w: 0, h: 0 });
+      return view;
+    }
+    this.#clipTo(ctx, vp, view, through.clip);
+    return through.frame;
+  }
+
+  /** Clips `ctx` to the viewport's frame (device rectangle `rect`) and its clip outline. */
+  #clipTo(
+    ctx: Canvas2D,
+    vp: ViewportEntry,
+    view: DrawFrame,
+    rect: { x: number; y: number; w: number; h: number },
+  ): void {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.beginPath();
+    ctx.rect(rect.x, rect.y, rect.w, rect.h);
+    ctx.clip();
+    if (vp.clip) {
+      // The clip entity's outline, from paper coordinates to the device as the sheet is drawn.
+      ctx.setTransform(view.m.a, view.m.b, view.m.c, view.m.d, view.m.e, view.m.f);
+      ctx.beginPath();
+      for (const path of vp.clip) buildPath(ctx, path, view.ox, view.oy);
+      ctx.clip('evenodd');
+    }
+  }
+
+  /**
+   * The current viewport's frame drawn bold (AutoCAD outlines the viewport made current with a
+   * heavier border), in the foreground colour, on the transient layer.
+   */
+  #drawActiveFrame(ctx: Canvas2D): void {
+    const vp = this.#activeViewport();
+    if (!vp) return;
+    const view = this.#viewFrame();
+    const { m } = view;
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    ctx.beginPath();
+    if (vp.clip) for (const path of vp.clip) buildPath(ctx, path, view.ox, view.oy);
+    else {
+      const f = viewportFrame(vp.geom);
+      buildPath(
+        ctx,
+        [
+          PATH_M,
+          f.minX,
+          f.minY,
+          PATH_L,
+          f.maxX,
+          f.minY,
+          PATH_L,
+          f.maxX,
+          f.maxY,
+          PATH_L,
+          f.minX,
+          f.maxY,
+          PATH_Z,
+        ],
+        view.ox,
+        view.oy,
+      );
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = this.#style.foreground;
+    ctx.lineWidth = ACTIVE_VIEWPORT_PX * this.#dpr;
+    ctx.stroke();
+  }
+
   setHighlight(ids: readonly EntityId[]): void {
     if (ids.length === 0 && this.#highlight.size === 0) return;
     this.#highlight = new Set(ids);
@@ -993,7 +1104,7 @@ export class Canvas2DRenderer implements Renderer {
         id: ADDING,
         handle: '',
         type: a.geom.kind,
-        owner: this.#block,
+        owner: this.#pickBlock(),
         layer: a.layer,
         color: { kind: 'byLayer' },
         linetype: 'ByLayer',
@@ -1020,7 +1131,7 @@ export class Canvas2DRenderer implements Renderer {
         id: ADDING,
         handle: '',
         type: shape.geom.kind,
-        owner: this.#block,
+        owner: this.#pickBlock(),
         ...shape.props,
         visible: true,
         geom: unblocked(shape.geom),
@@ -1131,7 +1242,7 @@ export class Canvas2DRenderer implements Renderer {
 
   /** What `preview` lights up: the object under the pickbox, or what its area would take. */
   #previewOf(preview: SelectionPreview): EntityId[] {
-    const o = { filter: preview.filter, groups: preview.groups, space: this.#block };
+    const o = { filter: preview.filter, groups: preview.groups, space: this.#pickBlock() };
     if (preview.area) {
       const taken = this.select(preview.area);
       if (preview.limit !== undefined && taken.length > preview.limit) return [];
@@ -1176,7 +1287,7 @@ export class Canvas2DRenderer implements Renderer {
         : (p) => primCrosses(p, query.box);
     const all = query.kind === 'window' ? 'every' : 'some';
     const out: EntityId[] = [];
-    for (const id of this.#index.query(this.#block, query.box)) {
+    for (const id of this.#index.query(this.#pickBlock(), query.box)) {
       const prims = this.#cache[id]?.prims.map((p) => this.#selectable(p));
       // Nothing drawn (a layer off or frozen): nothing to take.
       if (!prims || prims.length === 0) continue;
@@ -1317,8 +1428,9 @@ export class Canvas2DRenderer implements Renderer {
       t.ctx.setTransform(1, 0, 0, 1, 0, 0);
       t.ctx.clearRect(0, 0, t.canvas.width, t.canvas.height);
       const drag = this.#drag;
+      const overlay = this.#overlayFrame(t.ctx);
       if (drag) {
-        const view = this.#viewFrame();
+        const view = overlay;
         if (drag.faded.length > 0) {
           this.#drawPrimitives(t.ctx, drag.faded, false, { ...view, alpha: COMMAND_PREVIEW_FADE });
         }
@@ -1335,10 +1447,13 @@ export class Canvas2DRenderer implements Renderer {
         t.ctx,
         [{ prims: this.#transient, size: Infinity, x: 0, y: 0 }],
         false,
-        this.#viewFrame(),
+        overlay,
       );
-      if (this.#previewed.length > 0) this.#drawPreview(t.ctx);
-      if (this.#grips) this.#drawGrips(t.ctx);
+      if (this.#previewed.length > 0) this.#drawPreview(t.ctx, overlay);
+      if (this.#grips) this.#drawGrips(t.ctx, overlay);
+      // `#overlayFrame` clipped to the current viewport.
+      if (this.#activeViewport()) t.ctx.restore();
+      this.#drawActiveFrame(t.ctx);
       this.#transientDirty = false;
     }
     const out = this.#surface.ctx;
@@ -1451,7 +1566,7 @@ export class Canvas2DRenderer implements Renderer {
     const r = aperture / view.scale;
     const box: Box = { minX: p.x - r, minY: p.y - r, maxX: p.x + r, maxY: p.y + r };
     const hits: { id: EntityId; d: number }[] = [];
-    for (const id of this.#index.query(this.#block, box)) {
+    for (const id of this.#index.query(this.#pickBlock(), box)) {
       const entry = this.#cache[id];
       if (!entry) continue;
       let d = Infinity;
@@ -1776,9 +1891,9 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   /** The grips of the objects grips show on, as device-pixel squares. */
-  #drawGrips(ctx: Canvas2D): void {
+  #drawGrips(ctx: Canvas2D, frame: DrawFrame): void {
     const grips = this.#grips!;
-    const { ox, oy, m } = this.#viewFrame();
+    const { ox, oy, m } = frame;
     const half = Math.max(1, Math.round(gripHalfSize(this.#style.gripSize) * this.#dpr));
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
@@ -2007,7 +2122,10 @@ export class Canvas2DRenderer implements Renderer {
       reduced,
       annotation === undefined ? view : { ...view, linetypeScale: annotation },
     );
-    this.#drawHighlight(ctx, view);
+    // While a viewport is current its model space's objects are selected, drawn through it.
+    const overlay = this.#overlayFrame(ctx, view);
+    this.#drawHighlight(ctx, overlay);
+    if (this.#activeViewport()) ctx.restore();
     this.#askForPages();
   }
 
@@ -2036,8 +2154,8 @@ export class Canvas2DRenderer implements Renderer {
    * the pickbox as the selection's glow, then a solid line `PREVIEW_LINE_PX` wide, in the
    * selection colour, on the transient layer, so moving the cursor never redraws the scene.
    */
-  #drawPreview(ctx: Canvas2D): void {
-    if (!this.#outline(ctx, this.#viewFrame(), this.#previewed)) return;
+  #drawPreview(ctx: Canvas2D, frame: DrawFrame): void {
+    if (!this.#outline(ctx, frame, this.#previewed)) return;
     const px = this.#dpr;
     ctx.strokeStyle = this.#style.selection ?? SELECTION_COLOR;
     ctx.globalAlpha = SELECTION_GLOW_ALPHA;
@@ -2062,7 +2180,7 @@ export class Canvas2DRenderer implements Renderer {
       const entry = this.#cache[id];
       // In a layout the cache holds model space too (for its viewports); only the space shown
       // is selected in.
-      if (!entry || this.#model.entity(id)?.owner !== this.#block) continue;
+      if (!entry || this.#model.entity(id)?.owner !== this.#pickBlock()) continue;
       const r = entry.size / 2;
       if (
         Number.isFinite(entry.size) &&
@@ -2254,7 +2372,6 @@ export class Canvas2DRenderer implements Renderer {
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
 
-  /** One viewport's view of model space, clipped to its frame. */
   /**
    * The UCS icon of a viewport (M3-06 part 8; AutoCAD 2024 Help, "UCSICON"): with its UCSICON bit
    * (DXF 90 bit 32) on, the X and Y arrows of the UCS it shows (its own with UCSVP on, else model
@@ -2356,7 +2473,16 @@ export class Canvas2DRenderer implements Renderer {
     ctx.restore();
   }
 
-  #drawViewport(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame, reduced: boolean): void {
+  /**
+   * Model space as the viewport shows it in `view`: the frame entities are drawn in (model
+   * coordinates about the model point at the frame centre, the box of model space under the
+   * visible part of the frame) and the device rectangle the frame clips to; undefined while the
+   * frame is out of view.
+   */
+  #throughViewport(
+    vp: ViewportEntry,
+    view: DrawFrame,
+  ): { frame: DrawFrame; clip: { x: number; y: number; w: number; h: number } } | undefined {
     const frame = viewportFrame(vp.geom);
     const shown = {
       minX: Math.max(frame.minX, view.box.minX),
@@ -2364,7 +2490,7 @@ export class Canvas2DRenderer implements Renderer {
       maxX: Math.min(frame.maxX, view.box.maxX),
       maxY: Math.min(frame.maxY, view.box.maxY),
     };
-    if (shown.minX >= shown.maxX || shown.minY >= shown.maxY) return;
+    if (shown.minX >= shown.maxX || shown.minY >= shown.maxY) return undefined;
     const toModel = invert(vp.toPaper);
     // The model box under the visible part of the frame (a rotated view's corners spread it).
     const corners = [
@@ -2382,14 +2508,6 @@ export class Canvas2DRenderer implements Renderer {
       maxX: Math.max(...corners.map((p) => p.x)),
       maxY: Math.max(...corners.map((p) => p.y)),
     };
-    const shownLayers = vp.layers;
-    const entries = this.#visibleEntries(
-      this.#modelBlock!,
-      box,
-      shownLayers ? (id, entry) => this.#overriddenEntry(vp, shownLayers, id, entry) : undefined,
-    );
-    if (entries.length === 0) return;
-    this.#sceneEntries += entries.length;
     // Model coordinates are taken about the model point at the frame centre.
     const o = {
       x: toModel.a * vp.geom.center.x + toModel.c * vp.geom.center.y + toModel.e,
@@ -2405,30 +2523,36 @@ export class Canvas2DRenderer implements Renderer {
       e: view.m.e + k * (vp.geom.center.x - view.ox),
       f: view.m.f - k * (vp.geom.center.y - view.oy),
     };
-    const clip = this.#deviceRect(shown, view);
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.beginPath();
-    ctx.rect(clip.x, clip.y, clip.w, clip.h);
-    ctx.clip();
-    if (vp.clip) {
-      // The clip entity's outline, from paper coordinates to the device as the sheet is drawn.
-      ctx.setTransform(view.m.a, view.m.b, view.m.c, view.m.d, view.m.e, view.m.f);
-      ctx.beginPath();
-      for (const path of vp.clip) buildPath(ctx, path, view.ox, view.oy);
-      ctx.clip('evenodd');
-    }
     const vs = viewportScale(vp.geom);
-    this.#drawPrimitives(ctx, entries, reduced, {
-      ox: o.x,
-      oy: o.y,
-      m,
-      scale: view.scale * vs,
-      box,
-      // PSLTSCALE 1: "the dash lengths of a line in a viewport … the same as … in paper space".
-      linetypeScale: this.#psltscale ? 1 / vs : 1,
-      ...(vp.frozen ? { frozen: vp.frozen } : {}),
-    });
+    return {
+      frame: {
+        ox: o.x,
+        oy: o.y,
+        m,
+        scale: view.scale * vs,
+        box,
+        // PSLTSCALE 1: "the dash lengths of a line in a viewport … the same as … in paper space".
+        linetypeScale: this.#psltscale ? 1 / vs : 1,
+        ...(vp.frozen ? { frozen: vp.frozen } : {}),
+      },
+      clip: this.#deviceRect(shown, view),
+    };
+  }
+
+  /** One viewport's view of model space, clipped to its frame. */
+  #drawViewport(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame, reduced: boolean): void {
+    const through = this.#throughViewport(vp, view);
+    if (!through) return;
+    const shownLayers = vp.layers;
+    const entries = this.#visibleEntries(
+      this.#modelBlock!,
+      through.frame.box,
+      shownLayers ? (id, entry) => this.#overriddenEntry(vp, shownLayers, id, entry) : undefined,
+    );
+    if (entries.length === 0) return;
+    this.#sceneEntries += entries.length;
+    this.#clipTo(ctx, vp, view, through.clip);
+    this.#drawPrimitives(ctx, entries, reduced, through.frame);
     ctx.restore();
   }
 

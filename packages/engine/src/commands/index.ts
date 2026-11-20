@@ -95,6 +95,13 @@ export {
   type ViewportArrangement,
 } from './mview';
 export { polygonalBoundary, vpclipCommand } from './vpclip';
+export {
+  IN_PAPER_SPACE,
+  NOT_IN_MODEL_TAB,
+  NO_VIEWPORTS,
+  mspaceCommand,
+  pspaceCommand,
+} from './mspace';
 export { UCS_ICON, currentUcs, objectUcs, ucsCommand, ucsIconCommand } from './ucs';
 export { setvarCommand, variableCommand, UNKNOWN_VARIABLE } from './setvar';
 export * from './sysvars';
