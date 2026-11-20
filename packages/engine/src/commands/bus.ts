@@ -670,7 +670,9 @@ export class PromptBus {
    */
   invoke(name: string): Promise<void> {
     return this.#enqueue(async () => {
-      const found = this.#registry.resolve(name);
+      // A system variable's name too, as typed at `Command:` (the status bar's annotation
+      // scale sets CANNOSCALE so, M6-03).
+      const found = this.#registry.resolve(name) ?? this.#variable(name);
       if (!found) return this.#log(`Unknown command "${name.toUpperCase()}".  Press F1 for help.`);
       if (this.#stack.length === 1 && found.def.transparent) return this.#transparent(`'${name}`);
       if (this.#stack.length > 0) await this.#cancel();

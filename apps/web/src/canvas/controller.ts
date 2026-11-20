@@ -1123,6 +1123,7 @@ export class CanvasController {
       before.grid !== state.grid ||
       before.lwt !== state.lwt ||
       before.tpy !== state.tpy ||
+      before.annoAllVisible !== state.annoAllVisible ||
       before.fieldDisplay !== state.fieldDisplay ||
       before.layLockFade !== state.layLockFade ||
       before.xFade !== state.xFade ||
@@ -1928,6 +1929,8 @@ export class CanvasController {
       lineweightScale: d.lwScale,
       selection: c.selection,
       ...(!d.tpy && { showTransparency: false }),
+      // ANNOALLVISIBLE 0 (M6-03): the Model tab hides annotative objects not at its scale.
+      ...(!d.annoAllVisible && { annotationAllVisible: false }),
       // FIELDDISPLAY (M4-10 part 3): the fields' grey background.
       ...(!d.fieldDisplay && { showFields: false }),
       // LAYLOCKFADECTL (M5-06): how faded objects on locked layers are drawn.

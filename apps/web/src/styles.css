@@ -2354,6 +2354,12 @@ button {
   box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
 }
 
+/* M6-03: the drawing's annotation scales, a long list, scroll above the status bar. */
+.annotation-scale-menu {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
 .osnap-menu-item {
   display: flex;
   align-items: center;

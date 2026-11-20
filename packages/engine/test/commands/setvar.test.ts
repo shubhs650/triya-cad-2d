@@ -872,6 +872,20 @@ describe('AcDbVariableDictionary variables (M2-59 part 4)', () => {
     expect(s.model.header.get('CANNOSCALEVALUE')).toBe(0.02);
   });
 
+  it('takes CANNOSCALE invoked by name, as the status bar sets it (M6-03)', async () => {
+    const s = setup(dictionaryInit());
+    await s.bus.invoke('CANNOSCALE');
+    expect(s.bus.promptText).toBe('Enter new value for CANNOSCALE <"1:1">:');
+    await s.bus.script(['1:50']);
+    expect(s.model.header.get('CANNOSCALE')).toBe('1:50');
+    // Transparently inside a command, which goes on.
+    await s.bus.script(['LINE']);
+    await s.bus.invoke('CANNOSCALE');
+    await s.bus.script(['1:1']);
+    expect(s.model.header.get('CANNOSCALE')).toBe('1:1');
+    expect(s.bus.promptText).toMatch(/^Specify first point/);
+  });
+
   it('adds no scale to annotative objects when CANNOSCALE changes with ANNOAUTOSCALE on, and says so (M6-03, DEC-013)', async () => {
     const app = appHost({ ANNOAUTOSCALE: 4 });
     const s = setup(dictionaryInit(), app.view);
