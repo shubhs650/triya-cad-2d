@@ -103,6 +103,7 @@ export * from './layer-filter-menu';
 export * from './layer-filters';
 export * from './layer-notify';
 export * from './layer-states';
+export * from './layout-templates';
 export * from './layouts';
 export * from './linetypes';
 export * from './center-mark-grips';

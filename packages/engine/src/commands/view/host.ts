@@ -16,6 +16,7 @@ import type {
   ViewportGeometry,
 } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
+import type { LayoutTemplate, LayoutTemplateCopy } from '../../edit/layout-templates';
 import type { XrefAttachFile } from '../../edit/xref-attach';
 import type { PdfAttachPage } from '../../edit/underlay-attach';
 import type { LayerStateInit } from '../../edit/layer-states';
@@ -189,6 +190,13 @@ export type ViewRequest =
    * xrefs, answered as `drawing`: its model space as a block's contents (`drawingContent`).
    */
   | { readonly op: 'drawingFile'; readonly file: string }
+  /**
+   * LAYOUT Template (M6-01 part 4): without `file`, the app's Select Template From File and
+   * Insert Layout(s) dialogs, answered as `layoutFile` with the layouts picked (none: cancelled);
+   * with `file`, the drawing it names (found as `drawingFile` finds one), answered as `layoutFile`
+   * with every layout it has (no `layoutFile` when none is found).
+   */
+  | { readonly op: 'layoutFile'; readonly file?: string }
   /**
    * -XREF Attach and Overlay (M5-04 part 12): the drawing file `file` (folders and the extension
    * optional, any case), which the app finds among the files that answered xrefs, the drawings
@@ -551,6 +559,8 @@ export interface NestedPick {
 export interface BlockDrawing {
   readonly content: Clipboard;
   readonly header: Readonly<Record<string, HeaderValue>>;
+  /** LAYOUT SAveas (M6-01 part 4): the layout the new drawing has, in its blank layout's place. */
+  readonly layout?: LayoutTemplate;
 }
 
 export type ViewReply =
@@ -620,6 +630,11 @@ export type ViewReply =
       };
       /** What a `drawingFile` request read: the file's name and its model space (M5-01). */
       readonly drawing?: { readonly name: string; readonly content: Clipboard };
+      /** What a `layoutFile` request read: the file's name and its layouts, in tab order. */
+      readonly layoutFile?: {
+        readonly name: string;
+        readonly layouts: readonly LayoutTemplateCopy[];
+      };
       /** What a `clipboard` read found; absent when the Clipboard is empty. */
       readonly clipboard?: Clipboard;
       /** The Clipboard's objects were copied from this drawing (PASTEORIG refuses them). */

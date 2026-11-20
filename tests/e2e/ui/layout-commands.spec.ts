@@ -35,6 +35,7 @@ test('layout tabs make, rename and delete layouts, as LAYOUT does', async ({ pag
   await tabs.nth(0).click({ button: 'right' });
   await expect(menu.getByRole('menuitem')).toHaveText([
     'New Layout',
+    'From Template...',
     'Delete',
     'Rename',
     'Move or Copy...',
