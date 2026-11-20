@@ -12,15 +12,23 @@
 // Resolution and Save publish log under `[Triya]`; a reader that does not know them skips them.
 // AutoCAD reading Triya's lists is not verified (DEC-047: compatibility welcome, not required).
 //
+// M6-05: a sheet's name is its section's (a renamed sheet keeps its name); a PDF publish's PDF
+// Options go under AutoCAD's `[PdfOptions]` (IncludeHyperlinks, CreateBookmarks,
+// ConvertTextToGeometry) and `IncludeLayer` under `[SheetSet Properties]`, and Publish Options'
+// Type and multi-sheet file name under `[Triya]` (AutoCAD keeps its Type as a number in `[Target]`
+// with a full path, which Triya does not read).
+//
 // A sheet whose drawing is not open stays listed with Status "Drawing file not found" (AutoCAD
 // lists such a sheet with that warning) and does not publish; Add Sheets with that drawing finds
 // it. A layout the drawing lacks is "Layout not found".
-import { PNG_RESOLUTIONS } from './plot';
+import { PLOT_PDF_OPTIONS, PNG_RESOLUTIONS, type PdfOptions } from './plot';
 import {
+  PUBLISH_FILE_TYPES,
   PUBLISH_TO,
   drawingNamed,
   publishSheets,
   type PublishDevice,
+  type PublishFileType,
   type PublishSheet,
   type PublishSpace,
 } from './publish';
@@ -34,6 +42,8 @@ export interface SheetListEntry {
   /** The named page setup it plots with; absent for its own. */
   readonly pageSetup?: string;
   readonly include: boolean;
+  /** The sheet's name when renamed (M6-05); absent when it is `<drawing>-<layout>`. */
+  readonly sheet?: string;
 }
 
 /** The publish options a list keeps. */
@@ -44,6 +54,12 @@ export interface SheetListOptions {
   readonly viewFile: boolean;
   /** Save publish log. */
   readonly log: boolean;
+  /** Publish Options' Type for a PDF (M6-05). */
+  readonly fileType?: PublishFileType;
+  /** Publish Options' multi-sheet file name (M6-05); empty names it after the drawing. */
+  readonly fileName?: string;
+  /** The PDF Options (M6-05). */
+  readonly pdf?: PdfOptions;
 }
 
 /** A drawing whose sheets a list may name: one open, or one Add Sheets read. */
@@ -98,11 +114,27 @@ export function writeSheetList(sheets: readonly PublishSheet[], options: SheetLi
     'NoOfCopies=1',
     'PlotStampOn=FALSE',
     `ViewFile=${bool(options.viewFile)}`,
+  );
+  const pdf = options.pdf;
+  if (pdf) {
+    lines.push(
+      `IncludeLayer=${bool(pdf.layers)}`,
+      '[PdfOptions]',
+      `IncludeHyperlinks=${bool(pdf.hyperlinks)}`,
+      `CreateBookmarks=${bool(pdf.bookmarks)}`,
+      `ConvertTextToGeometry=${bool(pdf.textAsGeometry)}`,
+    );
+  }
+  lines.push(
     '[Triya]',
     `PublishTo=${PUBLISH_TO.find((d) => d.id === options.device)!.name}`,
     `Resolution=${options.dpi}`,
     `SavePublishLog=${bool(options.log)}`,
   );
+  if (options.fileType) {
+    lines.push(`FileType=${PUBLISH_FILE_TYPES.find((t) => t.id === options.fileType)!.name}`);
+  }
+  if (options.fileName !== undefined) lines.push(`FileName=${options.fileName}`);
   return `${lines.join('\r\n')}\r\n`;
 }
 
@@ -132,6 +164,10 @@ const flag = (v: string | undefined) =>
         ? false
         : undefined;
 
+/** Whether a sheet's name is its own, not `<drawing>-<layout>` (any case). */
+const renamed = (sheet: string, drawing: string, layout: string) =>
+  sheet !== '' && sheet.toLowerCase() !== `${baseName(drawing)}-${layout}`.toLowerCase();
+
 /** A path's file name, whether `\` or `/` separates it. */
 const fileName = (path: string) => path.trim().split(/[\\/]/).at(-1) ?? '';
 
@@ -145,20 +181,34 @@ export function readSheetList(text: string): {
 } {
   const entries: SheetListEntry[] = [];
   const options: { -readonly [K in keyof SheetListOptions]?: SheetListOptions[K] } = {};
+  /** The PDF options the list names; the rest stay a plot's. */
+  const pdf: { -readonly [K in keyof PdfOptions]?: PdfOptions[K] } = {};
   for (const { name, keys } of sections(text)) {
     if (/^DWF6Sheet:/i.test(name)) {
       const drawing = fileName(keys.get('dwg') ?? keys.get('originalsheetpath') ?? '');
       if (!drawing) throw new Error(`The sheet ${name.slice(10)} names no drawing.`);
       const setup = (keys.get('setup') ?? '').split('|')[0]!.trim();
+      const layout = (keys.get('layout') ?? 'Model').trim() || 'Model';
+      const sheet = name.slice(10).trim();
       entries.push({
         drawing,
-        layout: (keys.get('layout') ?? 'Model').trim() || 'Model',
+        layout,
         ...(setup !== '' && { pageSetup: setup }),
         include: flag(keys.get('include')) ?? true,
+        ...(renamed(sheet, drawing, layout) && { sheet }),
       });
     } else if (/^SheetSet Properties$/i.test(name)) {
       const view = flag(keys.get('viewfile'));
       if (view !== undefined) options.viewFile = view;
+      const layers = flag(keys.get('includelayer'));
+      if (layers !== undefined) pdf.layers = layers;
+    } else if (/^PdfOptions$/i.test(name)) {
+      const links = flag(keys.get('includehyperlinks'));
+      if (links !== undefined) pdf.hyperlinks = links;
+      const marks = flag(keys.get('createbookmarks'));
+      if (marks !== undefined) pdf.bookmarks = marks;
+      const geometry = flag(keys.get('converttexttogeometry'));
+      if (geometry !== undefined) pdf.textAsGeometry = geometry;
     } else if (/^Triya$/i.test(name)) {
       const to = keys.get('publishto')?.trim().toLowerCase();
       const device = PUBLISH_TO.find((d) => d.name.toLowerCase() === to);
@@ -167,8 +217,14 @@ export function readSheetList(text: string): {
       if (PNG_RESOLUTIONS.includes(dpi)) options.dpi = dpi;
       const log = flag(keys.get('savepublishlog'));
       if (log !== undefined) options.log = log;
+      const type = keys.get('filetype')?.trim().toLowerCase();
+      const fileType = PUBLISH_FILE_TYPES.find((t) => t.name.toLowerCase() === type);
+      if (fileType) options.fileType = fileType.id;
+      const file = keys.get('filename');
+      if (file !== undefined) options.fileName = file.trim();
     }
   }
+  if (Object.keys(pdf).length > 0) options.pdf = { ...PLOT_PDF_OPTIONS, ...pdf };
   if (entries.length === 0) throw new Error('The file lists no sheets.');
   return { entries, options };
 }
@@ -178,7 +234,7 @@ function missingSheet(e: SheetListEntry, drawing: string, missing: string): Publ
   return {
     doc: 0,
     drawing,
-    sheet: `${baseName(drawing)}-${e.layout}`,
+    sheet: e.sheet ?? `${baseName(drawing)}-${e.layout}`,
     name: e.layout,
     block: '',
     include: e.include,
@@ -195,7 +251,12 @@ function sheetOf(e: SheetListEntry, d: ListedDrawing): PublishSheet {
   const sheet = publishSheets(d.drawing, [space], d.doc)[0]!;
   // A page setup the drawing lacks (or has for the other kind of space) plots as its own.
   const setup = e.pageSetup !== undefined && d.pageSetups(space.block).includes(e.pageSetup);
-  return { ...sheet, include: e.include, ...(setup && { pageSetup: e.pageSetup }) };
+  return {
+    ...sheet,
+    include: e.include,
+    ...(e.sheet !== undefined && { sheet: e.sheet }),
+    ...(setup && { pageSetup: e.pageSetup }),
+  };
 }
 
 /** The list's sheets, each in the drawing open or added under its file name; once each. */
@@ -230,6 +291,7 @@ export function withDrawingFound(
             drawing: s.drawing,
             layout: s.name,
             include: s.include,
+            ...(renamed(s.sheet, s.drawing, s.name) && { sheet: s.sheet }),
             ...(s.pageSetup !== undefined && { pageSetup: s.pageSetup }),
           },
           d,

@@ -17,6 +17,11 @@
 // M2-45 part 2: Add Sheets lists the sheets of a drawing that is not open (the dialog opens it for
 // the publish and closes it after, as AutoCAD loads it), and Page Setup's own entry names the
 // page setup the sheet's layout has applied, "<Default: A3 Monochrome>", as AutoCAD's does.
+// M6-05: "Include When Adding Sheets" (Model tab, Layout tabs) decides which spaces a drawing's
+// sheets are listed for; Rename Sheet names a sheet (its bookmark, and its file when it publishes
+// alone); Publish Options' Type writes the PDF sheets as one multi-sheet file, under the name
+// given, or as a single-sheet file each named after its sheet (several in one ZIP, as the SVG
+// and PNG files go), with the PDF Options' bookmarks, links, layers and text.
 
 import { layoutSheet, type Box, type Layout, type NamedPageSetup } from '@triya/engine';
 import { PdfDocument, zipFiles, type ArchiveFile } from '@triya/pdf';
@@ -92,22 +97,41 @@ export function drawingNamed(
 
 const baseName = (drawing: string) => drawing.replace(/\.[^.]+$/, '');
 
-/** The drawing's sheets as the Publish dialog lists them, every one included. */
+/**
+ * "Include When Adding Sheets" (M6-05; AutoCAD 2024 Help, "Publish Dialog Box"): whether a
+ * drawing's model space and its layouts are listed when its sheets are added.
+ */
+export interface IncludeWhenAdding {
+  readonly model: boolean;
+  readonly layouts: boolean;
+}
+
+export const INCLUDE_ALL: IncludeWhenAdding = { model: true, layouts: true };
+
+/**
+ * The drawing's sheets as the Publish dialog lists them, every one included, for the spaces
+ * Include When Adding Sheets asks for (model space is the space named Model, a name no layout
+ * may take).
+ */
 export function publishSheets(
   drawing: string,
   spaces: readonly PublishSpace[],
   doc = 0,
+  include: IncludeWhenAdding = INCLUDE_ALL,
 ): PublishSheet[] {
   const base = baseName(drawing);
-  return spaces.map(({ name, block, applied }) => ({
-    doc,
-    drawing,
-    sheet: `${base}-${name}`,
-    name,
-    block,
-    include: true,
-    ...(applied !== undefined && { applied }),
-  }));
+  const wanted = (name: string) => (name === 'Model' ? include.model : include.layouts);
+  return spaces
+    .filter((s) => wanted(s.name))
+    .map(({ name, block, applied }) => ({
+      doc,
+      drawing,
+      sheet: `${base}-${name}`,
+      name,
+      block,
+      include: true,
+      ...(applied !== undefined && { applied }),
+    }));
 }
 
 /**
@@ -121,10 +145,13 @@ export function withOpenDrawings(
     readonly drawing: string;
     readonly spaces: readonly PublishSpace[];
   }[],
+  include: IncludeWhenAdding = INCLUDE_ALL,
 ): PublishSheet[] {
   const listed = new Set(sheets.map((s) => `${s.doc}:${s.block}`));
   const added = drawings.flatMap((d) =>
-    publishSheets(d.drawing, d.spaces, d.doc).filter((s) => !listed.has(`${s.doc}:${s.block}`)),
+    publishSheets(d.drawing, d.spaces, d.doc, include).filter(
+      (s) => !listed.has(`${s.doc}:${s.block}`),
+    ),
   );
   return [...sheets, ...added];
 }
@@ -137,6 +164,40 @@ export function movedSheet<T>(sheets: readonly T[], i: number, by: -1 | 1): T[] 
   [out[i], out[j]] = [out[j]!, out[i]!];
   return out;
 }
+
+/** Characters a sheet name may not hold: a file name's, and a DSD section's brackets. */
+const SHEET_NAME_REFUSED = /[\\/:*?"<>|[\]]/;
+
+/**
+ * Rename Sheet (M6-05): the list with sheet `i` named `name` (trimmed), or why the name is
+ * refused. A sheet name is its PDF bookmark, its file's name when it publishes alone and its
+ * section of a saved sheet list, so it is unique (any case) and a file name.
+ */
+export function renamedSheet(
+  sheets: readonly PublishSheet[],
+  i: number,
+  name: string,
+): PublishSheet[] | string {
+  const n = name.trim();
+  if (n === '') return 'A sheet name cannot be empty.';
+  if (SHEET_NAME_REFUSED.test(n)) return 'A sheet name cannot contain \\ / : * ? " < > | [ or ].';
+  const lower = n.toLowerCase();
+  if (sheets.some((s, j) => j !== i && s.sheet.toLowerCase() === lower)) {
+    return `A sheet named ${n} is listed already.`;
+  }
+  return sheets.map((s, j) => (j === i ? { ...s, sheet: n } : s));
+}
+
+/** Publish Options' Type for a PDF (M6-05): a file a sheet, or one file of every sheet. */
+export type PublishFileType = 'single' | 'multi';
+
+export const PUBLISH_FILE_TYPES: readonly {
+  readonly id: PublishFileType;
+  readonly name: string;
+}[] = [
+  { id: 'single', name: 'Single-sheet file' },
+  { id: 'multi', name: 'Multi-sheet file' },
+];
 
 /** Publish to: the formats a publish writes (part 4). */
 export type PublishDevice = 'pdf' | 'svg' | 'png';
@@ -152,6 +213,16 @@ const safe = (name: string) => name.replace(/[\\/:*?"<>|]/g, '_');
 /** The published PDF's file name, or the ZIP's of several SVG or PNG sheets (`ext` "zip"). */
 export function publishFileName(drawing: string, ext = 'pdf'): string {
   return safe(`${baseName(drawing)}.${ext}`);
+}
+
+/**
+ * The multi-sheet PDF's file name (M6-05, Publish Options' "Multi-sheet file name"): the name
+ * given, `.pdf` added when it lacks one, else the drawing's.
+ */
+export function multiSheetFileName(name: string, drawing: string): string {
+  const n = name.trim();
+  if (n === '') return publishFileName(drawing);
+  return safe(/\.pdf$/i.test(n) ? n : `${n}.pdf`);
 }
 
 /**
@@ -219,6 +290,26 @@ export function publishPdf(
     }
   }
   return { bytes: pages > 0 ? doc.bytes() : undefined, failed };
+}
+
+/**
+ * The sheets as single-sheet PDFs (M6-05): a one-page PDF a sheet, titled and named after it,
+ * labelled with its layout and bookmarked with its name as the multi-sheet file's pages are; a
+ * sheet that cannot plot is left out and reported.
+ */
+export function publishPdfFiles(
+  sheets: readonly PlottedSheet[],
+  underlayFile?: (fileName: string) => Uint8Array | undefined,
+  pdf: PdfOptions = PLOT_PDF_OPTIONS,
+): { files: ArchiveFile[]; failed: PublishFailure[] } {
+  const files: ArchiveFile[] = [];
+  const failed: PublishFailure[] = [];
+  for (const s of sheets) {
+    const { bytes, failed: f } = publishPdf([s], s.sheet, underlayFile, pdf);
+    if (bytes) files.push({ name: safe(`${s.sheet}.pdf`), bytes });
+    failed.push(...f);
+  }
+  return { files, failed };
 }
 
 /** A sheet plotted for a publish: its parts and the space (with its page setup) they are of. */
