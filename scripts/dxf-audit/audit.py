@@ -106,6 +106,9 @@ FIXTURE_SAVES = (
     # packages/testkit/src/export/export-vpclip.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "vpclip"),
     ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "vpclip"),
+    # ZOOM and PAN in the sample's unlocked floating viewports: their own views (M6-02 part 4,
+    # packages/testkit/src/export/export-viewport-view.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "viewport-view"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
     # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,
