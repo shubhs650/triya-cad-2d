@@ -32,6 +32,7 @@
 // which AutoCAD keeps in the LAYOUT's PLOTTRANSPARENCY xdata; and the View plot area's view name
 // (DXF 6), which a DWG from R2004 on holds as a handle to the VIEW that acad-ts does not write.
 
+import type { PlotSettings } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   BlockRecord,
@@ -510,13 +511,21 @@ function limitsProblems(l: Layout['limits']): string[] {
   return [];
 }
 
-/** What PAGESETUP does not take, in the page setup fields that change. */
-function plotProblems(
+/**
+ * What PAGESETUP does not take, in the page setup fields that change (a layout's, or a named page
+ * setup's: page-setups.ts, M6-01 part 3).
+ */
+export function plotProblems(
   b: LayoutPlot | undefined,
   a: LayoutPlot | undefined,
   space: 'model' | 'paper' | 'other',
   /** The save is a DWG from R2004 on, whose PLOTSETTINGS point at the plot view by handle. */
   handleViews: boolean,
+  /**
+   * A page setup of the drawing as read has this standard scale (DXF 75) with this scale: a new
+   * named page setup made from it may keep both (M6-01 part 3).
+   */
+  scaleKnown = false,
 ): string[] {
   if (!a) return ['plot: a layout keeps its page setup'];
   const out: string[] = [];
@@ -555,6 +564,7 @@ function plotProblems(
       out.push('scale: each value is a number more than 0');
     // Fit to paper (16 with DXF 75 = 0) keeps the scale it fitted in 142 / 143, as AutoCAD does.
     else if (
+      !scaleKnown &&
       Number.isInteger(a.flags) &&
       (a.flags & STANDARD_SCALE) !== 0 &&
       a.standardScaleType !== 0
@@ -720,7 +730,8 @@ function writeSpace(acad: AcadLayout, s: LayoutSpace): void {
   acad.yAxis = xyz(s.ucs.yAxis);
 }
 
-function writePlot(acad: AcadLayout, b: LayoutPlot | undefined, a: LayoutPlot): void {
+/** A page setup's changed fields onto a LAYOUT or a named page setup's PLOTSETTINGS. */
+export function writePlot(acad: PlotSettings, b: LayoutPlot | undefined, a: LayoutPlot): void {
   const changed = (k: keyof LayoutPlot) => !b || !same(b[k], a[k]);
   if (changed('paperSize')) acad.paperSize = a.paperSize;
   if (changed('paperWidth')) acad.paperWidth = a.paperWidth;

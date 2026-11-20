@@ -1,0 +1,1 @@
+- M6-01 part 3a (#597): named page setups are made, changed, renamed, deleted, set current on a layout and imported from another drawing in the engine, and saved to the drawing's `ACAD_PLOTSETTINGS` with each layout's applied one; every corpus drawing round-trips them. The Page Setup Manager (PAGESETUP) that drives them follows in part 3b.
