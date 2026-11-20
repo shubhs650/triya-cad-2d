@@ -151,6 +151,16 @@ describe('named page setups', () => {
     expect(pageSetupNamed(s.model, 'A3 Monochrome')?.plot).toEqual(A3);
   });
 
+  it('renames the page setup a layout has applied there too', () => {
+    const s = new EngineSession(init());
+    s.edit({ kind: 'page-setup-current', setup: 'A1', layout: '1E' });
+    const r = s.edit({ kind: 'page-setup-edit', setup: 'A1', name: 'Sheet A3' });
+    if (!r.ok) throw new Error(r.message);
+    expect(s.model.layouts[1]?.plot?.pageSetupName).toBe('Sheet A3');
+    // One step with the rename.
+    expect(r.change.layouts?.updated).toHaveLength(1);
+  });
+
   it('deletes a page setup; a layout that names it keeps its settings', () => {
     const s = new EngineSession(init());
     s.edit({ kind: 'page-setup-current', setup: 'A1', layout: '1E' });

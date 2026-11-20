@@ -190,8 +190,8 @@ export function writePageSetups(
   const renamed = plan.updated.filter(({ before, after }) => before.name !== after.name);
   renameEntries(renamed.map(({ acad, after }) => ({ acad, name: after.name })));
   for (const { acad, before: b, after: a } of plan.updated) {
-    if (b.name !== a.name) acad.pageName = a.name;
     if (!same(b.plot, a.plot)) writePlot(acad, b.plot, a.plot);
+    if (b.name !== a.name) acad.pageName = a.name;
     if (!same(b.xdata, a.xdata)) writeXdata(r, acad, b.xdata, a.xdata);
   }
   if (plan.added.length === 0) return;
@@ -201,11 +201,12 @@ export function writePageSetups(
     const acad = new PlotSettings(a.name);
     // acad-ts keeps a non-zero handle it has not seen, so the page setup keeps Triya's handle.
     acad.handle = handle(a.handle);
-    acad.pageName = a.name;
     // No plotter: Triya does not map DXF 2 (its plotters are the Plot dialog's own).
     acad.systemPrinterName = 'none_device';
     // Every field written (acad-ts's defaults: no style sheet, no view, DXF 75 0).
     writePlot(acad, undefined, a.plot);
+    // DXF 1 is its name (after the plot, which writes a layout's applied name there).
+    acad.pageName = a.name;
     if (a.xdata) writeXdata(r, acad, undefined, a.xdata);
     dict.add(acad);
     acad.addReactor(dict);

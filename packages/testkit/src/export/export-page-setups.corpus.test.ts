@@ -172,8 +172,14 @@ describe('named page setups saved on the public corpus', () => {
             a.localeCompare(b),
           ),
         );
-        // What Triya does not map of the drawing's own page setups stays as read.
+        // Each named page setup's DXF 1 is its name, as its dictionary entry is.
         const doc = readCadDocument(second.bytes);
+        for (const p of namedPageSetups(second.model))
+          expect(
+            (doc.getCadObject(Number.parseInt(p.handle, 16)) as PlotSettings).pageName,
+            path,
+          ).toBe(p.name);
+        // What Triya does not map of the drawing's own page setups stays as read.
         for (const p of had) {
           const o = doc.getCadObject(Number.parseInt(p.handle, 16));
           expect(o, path).toBeInstanceOf(PlotSettings);

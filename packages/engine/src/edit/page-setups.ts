@@ -186,10 +186,22 @@ export function changePageSetup(
     if (xdata) out.xdata = xdata;
   }
   if (Object.keys(out).length === 0) return page;
+  // A layout that has it applied names it by its new name (LAYOUT DXF 1 is the name).
+  if (out.name !== undefined) {
+    const was = upper(page.name);
+    for (const l of model.layouts) {
+      const plot = b.layout(l.handle)?.plot;
+      if (plot?.pageSetupName !== undefined && upper(plot.pageSetupName) === was)
+        b.updateLayout(l.handle, { plot: { ...plot, pageSetupName: out.name } });
+    }
+  }
   return b.updateObject(page.handle, out) as NamedPageSetup;
 }
 
-/** The list's Delete: the page setup goes; a layout that names it keeps its settings. */
+/**
+ * The list's Delete: the page setup goes; a layout that has it applied keeps its settings and the
+ * name (the Plot dialog lists a name the drawing no longer has, M2-45).
+ */
 export function deletePageSetup(b: ChangeSetBuilder, page: NamedPageSetup): void {
   b.removeObject(page.handle);
 }
