@@ -2137,10 +2137,8 @@ export class CanvasController {
     if (!this.#layout && this.block !== this.#opened.modelSpace) return undefined;
     return this.#layout
       ? paperSpaceView(paperSpaceViewport(this.#opened.init.entities, this.block), this.#size)
-      : savedModelView(
-          this.#hooks.tile ? this.#hooks.tile.vport : activeVport(this.#opened.init.tables?.vports),
-          this.#size,
-        );
+      : // As edited: -VPORTS writes the view each new tile starts with (M6-02 part 10).
+        savedModelView(this.#vport(), this.#size);
   }
 
   /** The extents, and a layout's sheet with anything drawn off it. */

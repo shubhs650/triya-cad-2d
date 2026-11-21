@@ -201,6 +201,28 @@ describe('answerView', () => {
     expect(now(answerView(r, ctx))).toEqual({ ok: false, message: NO_CANVAS });
   });
 
+  it('answers every Model tile’s view and the current tile for -VPORTS (M6-02 part 10)', () => {
+    const left = new Target();
+    const right = new Target();
+    right.view = { center: { x: 1, y: 2 }, scale: 2 };
+    right.size = { width: 400, height: 400 };
+    const { ctx } = context(right);
+    const tiled = { ...ctx, tiles: () => ({ targets: [left, right, undefined], current: 1 }) };
+    expect(now(answerView({ op: 'tiles' }, tiled))).toEqual({
+      ok: true,
+      tiles: {
+        views: [
+          { center: { x: 10, y: 20 }, height: 100, width: 200, paper: false },
+          { center: { x: 1, y: 2 }, height: 200, width: 200, paper: false },
+          null,
+        ],
+        current: 1,
+      },
+    });
+    // Not on the Model tab: no tiles to answer.
+    expect(now(answerView({ op: 'tiles' }, ctx))).toEqual({ ok: false, message: NO_CANVAS });
+  });
+
   it('works in a layout through the viewport MSPACE makes current, model space’s view (M6-02 part 3)', () => {
     const shown = new Target(true);
     const { ctx } = context(shown);

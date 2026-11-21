@@ -172,6 +172,7 @@ describe('MVIEW', () => {
       'Lock',
       'Object',
       'Polygonal',
+      'Restore',
       'LAyer',
       '2',
       '3',

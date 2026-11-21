@@ -136,7 +136,7 @@ import {
   type OpenDocument,
 } from './documents';
 import { engines, nextEngineWorker } from './engine/registry';
-import { shownPaperViews, shownViewsChange } from './saved-views';
+import { drawingRecords, shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
 import type { ImageAdjustPreview } from './ImageAdjustDialog';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
@@ -594,6 +594,15 @@ function viewContext(id: number): ViewContext {
   return {
     target,
     all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
+    tiles: () => {
+      if (!doc || doc.block !== doc.opened.modelSpace) return undefined;
+      const tiles = new Map(tilesOf(doc.id, doc.block));
+      const count = tiles.size === 0 ? 0 : Math.max(...tiles.keys()) + 1;
+      return {
+        targets: Array.from({ length: count }, (_, i) => tiles.get(i)),
+        current: currentTile(doc.id, doc.block),
+      };
+    },
     views: () => (doc && target ? namedViewsOf(doc, engines.changesOf(doc.id), target.size) : []),
     viewport: (key) => {
       const at = key.lastIndexOf(':');
@@ -2919,10 +2928,27 @@ function SpaceCanvas({
   onMode: (m: CanvasMode) => void;
 }) {
   const { id, opened } = doc;
-  const tiles = useMemo(
-    () => (block === opened.modelSpace ? modelTiles(opened.init.tables?.vports) : [undefined]),
-    [block, opened],
+  // Model space's tiles as the drawing has them now: -VPORTS rearranges them (M6-02 part 10),
+  // and U puts them back. Every edit gives a new `doc`; the canvases are made again only when
+  // the tiles themselves (their records and corners) change, not for a grid or UCS setting the
+  // `*Active` record also holds.
+  const placed = useMemo(
+    () =>
+      block === opened.modelSpace
+        ? modelTiles(drawingRecords(opened.init, engines.changesOf(id), 'vports'))
+        : [undefined],
+    [block, opened, id, doc],
   );
+  const placement = placed
+    .map((t) => (t ? `${t.vport?.handle}:${Object.values(t.rect).join(',')}` : ''))
+    .join(';');
+  const tiles = useMemo(() => placed, [placement]);
+  // A new arrangement opens on its first tile, the current viewport (DXF reference, VPORT).
+  const shownPlacement = useRef(placement);
+  if (shownPlacement.current !== placement) {
+    shownPlacement.current = placement;
+    setCurrentTile(id, block, 0);
+  }
   const tiled = tiles.length > 1;
   // Runs after the viewports' own effects, so every controller exists by now.
   useEffect(() => {

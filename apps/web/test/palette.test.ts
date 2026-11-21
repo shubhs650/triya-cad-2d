@@ -31,6 +31,8 @@ describe('palette search', () => {
       '-TABLE',
       // M3-09: the Drawing Units questions at the command line.
       '-UNITS',
+      // M6-02 part 10: model space's viewport configurations.
+      '-VPORTS',
       // M5-11: DesignCenter.
       'ADCCLOSE',
       'ADCENTER',

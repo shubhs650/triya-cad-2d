@@ -74,6 +74,11 @@ export type ViewRequest =
   | { readonly op: 'realtime'; readonly mode: 'pan' | 'zoom' | 'none' }
   | { readonly op: 'regen'; readonly all: boolean }
   | { readonly op: 'views' }
+  /**
+   * -VPORTS (M6-02 part 10): what each of model space's tiled viewports shows, in the order the
+   * engine's `modelTiles` places them, and which one is current. Answered on the Model tab only.
+   */
+  | { readonly op: 'tiles' }
   | { readonly op: 'restore'; readonly name: string }
   /**
    * A view step undone or redone (M2-47 part 4): `viewport`, the front-end's name for one canvas
@@ -574,6 +579,11 @@ export type ViewReply =
       /** The canvas's size in CSS pixels, which `get` answers (SCREENSIZE, M2-59). */
       readonly screen?: { readonly width: number; readonly height: number };
       readonly views?: readonly NamedViewInfo[];
+      /** What a `tiles` request found: each tile's view (null before it shows one). */
+      readonly tiles?: {
+        readonly views: readonly (ViewState | null)[];
+        readonly current: number;
+      };
       /** What an `enclosed` request found; absent where the point is in no enclosed space. */
       readonly enclosed?: EnclosedSpace;
       /** What a `pick` or `select` took. */
