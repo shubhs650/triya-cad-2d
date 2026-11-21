@@ -216,6 +216,10 @@ export interface ViewContext {
   readonly xrefDrawing?: (block: Handle) => Promise<ViewReply>;
   /** REFCLOSE Save of an xref (M5-02 part 6): the edits written to the xref's file. */
   readonly writeXref?: (r: Extract<ViewRequest, { op: 'writeXref' }>) => Promise<ViewReply>;
+  /** VPORTS (M6-02 part 11): the Viewports dialog, answered when it closes. */
+  readonly viewportsDialog?: (
+    r: Extract<ViewRequest, { op: 'viewportsDialog' }>,
+  ) => ViewReply | Promise<ViewReply>;
   /** ULAYERS (M2-56 part 1): the Underlay Layers dialog, answered when it closes. */
   readonly underlayLayers?: (
     r: Extract<ViewRequest, { op: 'underlayLayers' }>,
@@ -321,6 +325,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'underlayLayers') {
     return ctx.underlayLayers ? ctx.underlayLayers(r) : { ok: false, message: NO_DIALOGS };
+  }
+  if (r.op === 'viewportsDialog') {
+    return ctx.viewportsDialog ? ctx.viewportsDialog(r) : { ok: false, message: NO_DIALOGS };
   }
   if (r.op === 'clipboard') {
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };
