@@ -250,11 +250,14 @@ describe('the filter menu (M5-07 part 6)', () => {
     const on = (a: Parameters<typeof filterMenuEnabled>[0], ctx = {}) => filterMenuEnabled(a, ctx);
     for (const a of ['on', 'off', 'thawed', 'frozen', 'lock', 'unlock', 'isolateAll'] as const)
       expect(on(a), a).toBe(true);
-    // No layout viewport can be made current yet (MSPACE, M6-02).
+    // Viewport and Active Viewport Only act in the layout viewport made current (M6-02 part 8).
     expect(on('vpFreeze', { space: '58' })).toBe(false);
     expect(on('vpThaw')).toBe(false);
+    expect(on('vpFreeze', { space: '58', viewport: '61' })).toBe(true);
+    expect(on('vpThaw', { space: '58', viewport: '61' })).toBe(true);
     expect(on('isolateActive')).toBe(true);
     expect(on('isolateActive', { space: '58' })).toBe(false);
+    expect(on('isolateActive', { space: '58', viewport: '61' })).toBe(true);
     expect(on('convert')).toBe(false);
     expect(on('convert', { filter: group })).toBe(false);
     expect(on('convert', { filter: property })).toBe(true);
@@ -317,6 +320,32 @@ describe('the filter menu (M5-07 part 6)', () => {
     });
     expect(filterMenuEdit('rename', '70', { filter: property })).toBeUndefined();
     expect(filterMenuEdit('vpFreeze', '70', { filter: property, space: '58' })).toBeUndefined();
+    // M6-02 part 8: in the layout viewport made current.
+    const current = { filter: property, space: '58', viewport: '61' };
+    expect(filterMenuEdit('vpFreeze', '70', current)).toEqual({
+      kind: 'layer-filter-viewport',
+      node: '70',
+      viewport: '61',
+      frozen: true,
+    });
+    expect(filterMenuEdit('vpThaw', 'all', current)).toEqual({
+      kind: 'layer-filter-viewport',
+      node: 'all',
+      viewport: '61',
+      frozen: false,
+    });
+    expect(filterMenuEdit('isolateActive', '70', current)).toEqual({
+      kind: 'layer-filter-isolate',
+      node: '70',
+      space: '58',
+      viewport: '61',
+    });
+    // All Viewports stays every viewport of the layout.
+    expect(filterMenuEdit('isolateAll', '70', current)).toEqual({
+      kind: 'layer-filter-isolate',
+      node: '70',
+      space: '58',
+    });
   });
 });
 

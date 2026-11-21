@@ -184,6 +184,78 @@ describe('layerRows', () => {
     ]);
     expect(layerRows(init, [])[0]!.vpFrozen).toBeUndefined();
   });
+
+  it('counts the viewports as the changes left them (VPLAYER, the VP Freeze cells)', () => {
+    const before = init.entities![1]!;
+    const after = { ...before, geom: { ...before.geom, frozenLayers: ['11', '10'] } };
+    const cs = { entities: { updated: [{ before, after }] } } as unknown as ChangeSet;
+    const rows = layerRows(init, [cs], '1B');
+    expect(rows.find((r) => r.name === '0')!.vpFrozen).toEqual({ frozen: 1, of: 2 });
+  });
+});
+
+// M6-02 part 8: with a layout viewport made current, each row has that viewport's VP Freeze and
+// its VP Color, VP Linetype, VP Lineweight and VP Transparency, the layer's own value where the
+// viewport overrides nothing.
+describe('the VP cells of the viewport made current (M6-02 part 8)', () => {
+  const overridden: DocumentInit = {
+    ...init,
+    tables: {
+      ...init.tables,
+      layers: init.tables!.layers!.map((l) =>
+        l.handle === '12'
+          ? {
+              ...l,
+              viewportOverrides: [
+                { viewport: '31', color: { kind: 'aci', index: 3 }, transparency: { alpha: 128 } },
+                { viewport: '32', lineweight: 25 },
+              ],
+            }
+          : l,
+      ),
+    },
+  };
+  const vp = (rows: ReturnType<typeof layerRows>, name: string) =>
+    rows.find((r) => r.name === name)!.vp!;
+
+  it("gives each row the viewport's freeze and overrides, marking what is overridden", () => {
+    const rows = layerRows(overridden, [], '1B', 'mm', '31');
+    expect(vp(rows, 'Walls')).toMatchObject({
+      viewport: '31',
+      frozen: false,
+      color: { label: 'green' },
+      linetype: 'DASHED',
+      lineweight: '0.50 mm',
+      transparency: '50',
+      overridden: { color: true, transparency: true },
+    });
+    expect(vp(rows, 'Walls').value.color).toEqual({ kind: 'aci', index: 3 });
+    expect(vp(rows, 'doors')).toMatchObject({ frozen: true, overridden: {} });
+    expect(vp(layerRows(overridden, [], '1B', 'mm', '32'), 'Walls')).toMatchObject({
+      frozen: true,
+      color: { label: 'red' },
+      lineweight: '0.25 mm',
+      overridden: { lineweight: true },
+    });
+  });
+
+  it('has no VP cells in paper space or on the Model tab', () => {
+    expect(layerRows(overridden, [], '1B')[0]!.vp).toBeUndefined();
+    expect(layerRows(overridden, [], undefined, 'mm', '31')[0]!.vp).toBeUndefined();
+  });
+
+  it('follows a change to the layer table and to the viewport', () => {
+    const walls = overridden.tables!.layers!.find((l) => l.handle === '12')!;
+    const cs = {
+      tables: {
+        layers: { updated: [{ before: walls, after: { ...walls, viewportOverrides: undefined } }] },
+      },
+    } as unknown as ChangeSet;
+    expect(vp(layerRows(overridden, [cs], '1B', 'mm', '31'), 'Walls')).toMatchObject({
+      color: { label: 'red' },
+      overridden: {},
+    });
+  });
 });
 
 describe('the property cells (M5-05 part 2)', () => {

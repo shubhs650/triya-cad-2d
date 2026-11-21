@@ -95,7 +95,11 @@ test('REFEDIT edits a block in place; Save Changes and Discard Changes close the
 
   await enterCommand(page, 'REFEDIT');
   await expect(prompt(page)).toHaveText('Select reference:');
-  await type(page, p(60, 10), 'Select reference:');
+  // The pick opens the dialog, whose prompt (Reference Edit:) replaces "Select reference:" as soon
+  // as the engine reads it: wait for the dialog, not for the prompt before it (a race that failed
+  // whenever the engine answered before the first prompt check).
+  await page.keyboard.type(p(60, 10));
+  await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog', { name: 'Reference Edit' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('treeitem', { name: 'DOOR' })).toHaveAttribute(

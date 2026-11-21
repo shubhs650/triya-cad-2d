@@ -64,6 +64,14 @@ describe('the manager’s columns (M5-05 part 3)', () => {
       'Description',
     ]);
     expect(keys(true)).toContain('VP Freeze');
+    // M6-02 part 8: the viewport override columns, after Description, in a layout only.
+    expect(keys(true).slice(-5)).toEqual([
+      'Description',
+      'VP Color',
+      'VP Linetype',
+      'VP Lineweight',
+      'VP Transparency',
+    ]);
   });
 
   it('hides the columns the user hid, never Name', () => {
@@ -82,8 +90,18 @@ describe('the manager’s columns (M5-05 part 3)', () => {
     expect(s.order.filter((k) => order.includes(k))).toEqual(order);
     expect(s.order).toHaveLength(LAYER_COLUMNS.length);
     expect(new Set(s.order).size).toBe(LAYER_COLUMNS.length);
-    // On follows Name as it does by default; Linetype follows Color.
-    expect(s.order.slice(0, 4)).toEqual(['description', 'name', 'on', 'frozen']);
+    // On follows Name as it does by default; Linetype follows Color; the VP columns (M6-02
+    // part 8) follow Description, wherever the user put it.
+    expect(s.order.slice(0, 8)).toEqual([
+      'description',
+      'vpColor',
+      'vpLinetype',
+      'vpLineweight',
+      'vpTransparency',
+      'name',
+      'on',
+      'frozen',
+    ]);
     expect(s.order.indexOf('linetype')).toBe(s.order.indexOf('color') + 1);
     expect(s.sort).toEqual({ key: 'color', descending: false });
   });
@@ -109,7 +127,7 @@ describe('the manager’s columns (M5-05 part 3)', () => {
     const order = DEFAULT_LAYER_COLUMNS.order;
     expect(moveLayerColumn(order, 'name', -1).slice(0, 2)).toEqual(['name', 'status']);
     expect(moveLayerColumn(order, 'status', -1)).toEqual(order);
-    expect(moveLayerColumn(order, 'description', 1)).toEqual(order);
+    expect(moveLayerColumn(order, order.at(-1)!, 1)).toEqual(order);
     expect(moveLayerColumn(order, 'on', 1).slice(2, 4)).toEqual(['frozen', 'on']);
   });
 });
