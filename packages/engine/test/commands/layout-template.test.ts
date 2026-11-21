@@ -83,12 +83,13 @@ const square = (x: number, y: number, size: number): EntityGeometry => ({
 });
 
 const TITLE = '50';
+const NOTES = '52';
 const SHEET2 = '30';
 
 /**
  * The template drawing: Layout1 an A3 sheet (plot transparency on) holding its paper viewport, a
  * title line on a layer TITLE only it has, a viewport (id 4) freezing WALLS with a VP Color
- * override, and one clipped by a square (id 5); a draw order table draws the line last.
+ * override, and one clipped by a square (id 5) with a VP Transparency override of NOTES; a draw order table draws the line last.
  * "Sheet B" is a second, empty layout.
  */
 function templateInit(): DocumentInit {
@@ -104,6 +105,11 @@ function templateInit(): DocumentInit {
           viewportOverrides: [{ viewport: '41', color: { kind: 'aci', index: 1 } }],
         },
         layer(TITLE, 'TITLE'),
+        // A layer no object of the sheet is on, overridden in the clipped viewport.
+        {
+          ...layer(NOTES, 'NOTES'),
+          viewportOverrides: [{ viewport: '43', transparency: { alpha: 128 } }],
+        },
       ],
       appIds: [{ handle: '55', name: 'PLOTTRANSPARENCY', flags: 0 }],
       blockRecords: [...(base.tables?.blockRecords ?? []), blockRecord(SHEET2, '*Paper_Space0')],
@@ -189,7 +195,6 @@ describe('layout templates', () => {
     );
     expect(copy.refused.size).toBe(0);
     expect(copy.template.plotTransparency).toBe(true);
-    expect(copy.template.withOverrides).toBe(1);
     // Draw order: the line, sorted by 70, is drawn last.
     expect(copy.template.content.entities.map((e) => e.handle)).toEqual([
       '40',
@@ -235,8 +240,16 @@ describe('layout templates', () => {
     // The clipped viewport is clipped by the square's copy.
     expect(vps[2]!.clipBoundary).toBe(sheet[2]!.handle);
     expect(sheet[2]!.reactors).toEqual([sheet[3]!.handle]);
-    // The WALLS override is not carried.
-    expect(target.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toBeUndefined();
+    // The overrides come with the viewports (M6-02 part 18): onto the target's own WALLS, and
+    // onto NOTES, which the target lacked and the override brought along.
+    expect(target.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toEqual([
+      { viewport: sheet[1]!.handle, color: { kind: 'aci', index: 1 } },
+    ]);
+    const notes = [...target.tables.layers.values()].find((l) => l.name === 'NOTES')!;
+    expect(notes.handle).not.toBe(NOTES);
+    expect(notes.viewportOverrides).toEqual([
+      { viewport: sheet[3]!.handle, transparency: { alpha: 128 } },
+    ]);
   });
 
   it('a page setup of no paper or limits of no rectangle take the units’ own sheet', () => {
@@ -333,10 +346,7 @@ describe('LAYOUT Template', () => {
     expect(t.requests).toEqual([{ op: 'layoutFile' }]);
     expect(t.bus.command).toBeUndefined();
     expect(t.names()).toEqual(['0:Model', '1:Layout1', '2:Layout1 (2)', '3:Sheet B']);
-    expect(t.log.slice(-2)).toEqual([
-      '1 viewport was inserted without its layer overrides (not saved yet).',
-      'Inserted 2 layouts from title blocks.dxf: Layout1 (2), Sheet B.',
-    ]);
+    expect(t.log.at(-1)).toBe('Inserted 2 layouts from title blocks.dxf: Layout1 (2), Sheet B.');
     expect(t.bus.undo.state.nextUndo).toBe('LAYOUT');
     await t.bus.script(['U']);
     expect(t.names()).toEqual(['0:Model', '1:Layout1']);

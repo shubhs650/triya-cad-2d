@@ -97,7 +97,7 @@ export function planLayers(
     make: (a) => new Layer(a.name),
     // AutoCAD: "The name of layer 0 cannot be changed"; an xref's layers are renamed in it.
     fixedNames: [Layer.defaultName],
-    problems: (b, a) => layerProblems(r, doc.header?.version, b, a),
+    problems: (b, a) => layerProblems(r, model, doc.header?.version, b, a),
   });
   // The overrides stay in the layer's XRECORDs as read, so a viewport the save removes would
   // leave them naming a handle the file no longer has.
@@ -115,6 +115,7 @@ export function planLayers(
 
 function layerProblems(
   r: Resolver,
+  model: DocumentModel,
   version: ACadVersion | undefined,
   b: LayerRecord | undefined,
   a: LayerRecord,
@@ -137,7 +138,7 @@ function layerProblems(
   // AcAecLayerStandard APPID but no layer's entry), so an R12 file has nowhere AutoCAD reads one.
   if (descriptionChanged && version !== undefined && version <= ACadVersion.AC1009)
     out.push('an R12 layer does not store its description');
-  if (changed('viewportOverrides')) out.push(...overrideProblems(r, version, a));
+  if (changed('viewportOverrides')) out.push(...overrideProblems(r, model, version, a));
   if (changed('color') && (a.color.kind === 'byLayer' || a.color.kind === 'byBlock'))
     out.push(`a layer colour cannot be ${a.color.kind}`);
   if (changed('linetype') && !resolve(r, a.linetype, LineType))
@@ -172,14 +173,23 @@ function layerProblems(
 }
 
 /** Why the save cannot write a layer's viewport overrides as `a` has them. */
-function overrideProblems(r: Resolver, version: ACadVersion | undefined, a: LayerRecord): string[] {
+function overrideProblems(
+  r: Resolver,
+  model: DocumentModel,
+  version: ACadVersion | undefined,
+  a: LayerRecord,
+): string[] {
   const list = a.viewportOverrides ?? [];
   // An R12 file has no extension dictionaries, where AutoCAD files the overrides.
   if (version !== undefined && version <= ACadVersion.AC1009 && list.length > 0)
     return ['an R12 layer does not store viewport overrides'];
   const out: string[] = [];
   for (const o of list) {
-    if (!resolve(r, o.viewport, Viewport)) out.push(`viewport ${o.viewport} does not exist`);
+    // A viewport the same save adds (COPY, LAYOUT Copy or Template, M6-02 part 18) is written
+    // before the overrides are (`writeLayerOverrides`).
+    const added = r.store.original(o.viewport) === undefined && isViewport(model, o.viewport);
+    if (!added && !resolve(r, o.viewport, Viewport))
+      out.push(`viewport ${o.viewport} does not exist`);
     if (o.color && o.color.kind !== 'aci' && o.color.kind !== 'rgb')
       out.push(`a viewport override colour cannot be ${o.color.kind}`);
     if (o.linetype !== undefined && !resolve(r, o.linetype, LineType))
@@ -351,6 +361,12 @@ function newRecord(r: Resolver, l: Layer, name: string): XRecord {
   return record;
 }
 
+/** Whether `model` has a VIEWPORT entity of handle `h`. */
+function isViewport(model: DocumentModel, h: Handle): boolean {
+  const id = model.ids.idOf(h);
+  return id !== undefined && model.entity(id)?.geom.kind === 'VIEWPORT';
+}
+
 /** Writes the fields of `a` that differ from `b` (every field when `b` is undefined). */
 function writeLayer(
   doc: CadDocument,
@@ -381,7 +397,6 @@ function writeLayer(
   if (changed('transparency')) writeTransparency(doc, r, l, a);
   if ((a.description ?? '') !== (b?.description ?? '')) writeDescription(doc, r, l, a);
   if ((a.unreconciled ?? false) !== (b?.unreconciled ?? false)) writeReconciled(r, l, a);
-  if (changed('viewportOverrides')) writeOverrides(r, l, b, a);
 }
 
 /** Writes the planned layer changes onto `doc`; new layers join its LAYER table first. */
@@ -392,4 +407,16 @@ export function writeLayers(doc: CadDocument, r: Resolver, plan: LayerPlan): voi
     writeLayer(doc, r, acad, undefined, after);
   }
   for (const { acad, before, after } of plan.updated) writeLayer(doc, r, acad, before, after);
+}
+
+/**
+ * Writes the planned layers' viewport overrides, once the entities the save adds exist: an
+ * override may name a viewport the same save adds (M6-02 part 18: a copied viewport's).
+ */
+export function writeLayerOverrides(r: Resolver, plan: LayerPlan): void {
+  for (const { acad, after } of plan.added)
+    if (after.viewportOverrides !== undefined) writeOverrides(r, acad, undefined, after);
+  for (const { acad, before, after } of plan.updated)
+    if (!same(before.viewportOverrides, after.viewportOverrides))
+      writeOverrides(r, acad, before, after);
 }

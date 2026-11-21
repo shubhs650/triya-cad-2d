@@ -16,6 +16,7 @@
 //   whole boundary stay associative with the copies, and a copy of a whole group, left in its
 //   space, is a new unnamed group of the copies (M3-13). Copies of annotative objects are not
 //   annotative (a new annotative object is DEC-013's, not saved yet).
+import { copyViewportOverrides, dropViewportOverrides } from './viewport-override-links';
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
@@ -173,21 +174,17 @@ export function eraseObjects(
   ids: readonly EntityId[],
 ): EditReport {
   const links = new Links(b, model);
-  const refused = new Map<string, number>();
-  // A layer's viewport overrides name the viewport; Triya cannot rewrite them yet (M1-62).
-  const overridden = new Set<Handle>();
-  for (const l of model.tables.layers.values()) {
-    for (const o of l.viewportOverrides ?? []) overridden.add(o.viewport);
-  }
   const erased: Entity[] = [];
   for (const id of ids) {
     const e = b.entity(id);
-    if (!e) continue;
-    if (overridden.has(e.handle))
-      count(refused, 'a viewport with layer overrides cannot be erased yet');
-    else erased.push(e);
+    if (e) erased.push(e);
   }
   const gone = new Set(erased.map((e) => e.handle));
+  // The layer overrides naming an erased viewport go with it (M6-02 part 18).
+  dropViewportOverrides(
+    b,
+    new Set(erased.filter((e) => e.geom.kind === 'VIEWPORT').map((e) => e.handle)),
+  );
   // An XCLIP goes with its reference, and so does an associative array's record; a path
   // array whose path goes keeps its items where they are (M3-11).
   for (const o of model.objects.values()) {
@@ -241,7 +238,7 @@ export function eraseObjects(
     }
   }
   for (const e of erased) b.removeEntity(e.id);
-  return { ids: erased.map((e) => e.id), refused, unannotated: 0 };
+  return { ids: erased.map((e) => e.id), refused: new Map(), unannotated: 0 };
 }
 
 // ── MOVE, ROTATE, SCALE, MIRROR ─────────────────────────────────────────────────────────────
@@ -727,6 +724,15 @@ export function copyObjects(
       if (g?.kind === 'VIEWPORT') clipTurnedViewport(b, model, copy.id, g, t);
     }
   }
+  // A viewport's copy shows its layers as the original does (M6-02 part 18).
+  copyViewportOverrides(
+    b,
+    new Map(
+      [...copies]
+        .filter(([, copy]) => copy.geom.kind === 'VIEWPORT')
+        .map(([h, copy]) => [h, copy.handle]),
+    ),
+  );
   // A copy of an associative array is an array of its own (M3-11).
   copyAssocArrays(b, model, copies, names);
   // A copy of a clipped reference is clipped alike (M5-16), after the array records' dictionaries.

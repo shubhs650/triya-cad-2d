@@ -8,6 +8,7 @@ import {
   VIEWPORT_NON_RECT_CLIP,
   builtinCommands,
   copyObjects,
+  eraseObjects,
   moveBy,
   type BusEvent,
   type DocumentInit,
@@ -449,11 +450,7 @@ describe('LAYOUT Copy', () => {
   it('copies page setup, flags, viewports (ids and stacking kept) and a clipped viewport with its boundary', async () => {
     const t = setup(viewportsInit(), SHEET2);
     await t.bus.script(['LAYOUT', 'C', '', 'Copy']);
-    // The floating viewport's VP Color override is not copied, and says so.
-    expect(t.log.slice(-2)).toEqual([
-      '1 viewport was copied without its layer overrides (not saved yet).',
-      'Layout "Layout2" copied to "Copy".',
-    ]);
+    expect(t.log.at(-1)).toBe('Layout "Layout2" copied to "Copy".');
     const copy = t.named('Copy')!;
     const source = t.named('Layout2')!;
     expect(copy.plot).toEqual(PLOT);
@@ -484,7 +481,15 @@ describe('LAYOUT Copy', () => {
     expect(boundary.reactors).toEqual([clipped.handle]);
     // The source's boundary still names only its own viewport.
     expect(t.model.entityByHandle('42')!.reactors).toEqual(['43']);
-    expect(t.model.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toHaveLength(1);
+    // The floating viewport's VP Color override comes with its copy (M6-02 part 18).
+    expect(t.model.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toEqual([
+      { viewport: '41', color: { kind: 'aci', index: 1 } },
+      { viewport: vps[1]!.handle, color: { kind: 'aci', index: 1 } },
+    ]);
+    await t.bus.script(['U']);
+    expect(t.model.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toEqual([
+      { viewport: '41', color: { kind: 'aci', index: 1 } },
+    ]);
   });
 
   it('copies the sheet in its draw order', async () => {
@@ -521,9 +526,7 @@ describe('LAYOUT Copy', () => {
     // Before Layout1.
     let r = s.edit({ kind: 'layout', layout: handle('Layout2'), copy: true, tabOrder: 1 });
     expect(r.ok).toBe(true);
-    expect(r.ok && r.messages).toEqual([
-      '1 viewport was copied without its layer overrides (not saved yet).',
-    ]);
+    expect(r.ok && r.messages).toBeUndefined();
     expect(layouts()).toEqual(['0:Model', '1:Layout2 (2)', '2:Layout1', '3:Layout2']);
     // At the end, named.
     r = s.edit({ kind: 'layout', layout: handle('Layout1'), copy: true, tabOrder: 9, name: 'End' });
@@ -563,5 +566,61 @@ describe('LAYOUT Copy', () => {
     expect((vp.geom as ViewportGeometry).clipBoundary).toBe(boundary.handle);
     expect(boundary.reactors).toEqual([vp.handle]);
     expect((vp.geom as ViewportGeometry).center).toEqual({ x: 240, y: 80 });
+  });
+
+  // M6-02 part 18: a viewport's layer overrides go and come with it.
+  it('COPY of a viewport with layer overrides gives the copy the same overrides', () => {
+    const model = DocumentModel.create(viewportsInit());
+    const b = new ChangeSetBuilder(model);
+    const r = copyObjects(b, model, [model.ids.idOf('41')!], moveBy({ x: 100, y: 0 }));
+    const copy = r.copies.get('41')!.handle;
+    model.apply(b.build());
+    expect(model.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toEqual([
+      { viewport: '41', color: { kind: 'aci', index: 1 } },
+      { viewport: copy, color: { kind: 'aci', index: 1 } },
+    ]);
+  });
+
+  it('ERASE of a viewport with layer overrides erases it and drops the overrides naming it', async () => {
+    const t = setup(viewportsInit(), SHEET2);
+    const b = new ChangeSetBuilder(t.model);
+    const r = eraseObjects(b, t.model, [t.model.ids.idOf('41')!, t.model.ids.idOf('40')!]);
+    expect([...r.refused]).toEqual([]);
+    t.model.apply(b.build());
+    expect(t.model.entityByHandle('41')).toBeUndefined();
+    expect(t.model.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toBeUndefined();
+  });
+
+  it('Delete of a layout with an overridden viewport drops its overrides; U brings them back', async () => {
+    const t = setup(viewportsInit());
+    await t.bus.script(['LAYOUT', 'D', 'Layout2']);
+    expect(t.log.at(-1)).toBe('Layout "Layout2" deleted.');
+    expect(t.model.entityByHandle('41')).toBeUndefined();
+    expect(t.model.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toBeUndefined();
+    await t.bus.script(['U']);
+    expect(t.model.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toEqual([
+      { viewport: '41', color: { kind: 'aci', index: 1 } },
+    ]);
+  });
+
+  it('Delete of the only layout, emptied, drops its viewports’ overrides', async () => {
+    const start = viewportsInit();
+    const t = setup(
+      {
+        ...start,
+        layouts: start.layouts!.filter((l) => l.name !== 'Layout1'),
+        tables: {
+          ...start.tables,
+          blockRecords: start.tables!.blockRecords!.filter((r) => r.handle !== SHEET1),
+        },
+        blocks: start.blocks!.filter((b) => b.handle !== SHEET1),
+        entities: start.entities!.filter((e) => e.owner !== SHEET1),
+      },
+      SHEET2,
+    );
+    await t.bus.script(['LAYOUT', 'D', 'Layout2']);
+    expect(t.log.at(-1)).toBe('Layout "Layout2" deleted.');
+    expect(t.model.blockEntities(SHEET2)).toEqual([]);
+    expect(t.model.tables.layers.get(LAYER_WALLS)!.viewportOverrides).toBeUndefined();
   });
 });

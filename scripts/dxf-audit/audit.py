@@ -121,6 +121,9 @@ FIXTURE_SAVES = (
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "vplayer"),
     ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "vplayer"),
     ("self-authored/viewport-overrides.dxf", "vplayer"),
+    # Its layouts copied and the overridden viewports erased: the ADSK_XREC_LAYER_*_OVR records
+    # name the copies alone (M6-02 part 18, export-viewport-override-links.corpus.test.ts).
+    ("self-authored/viewport-overrides.dxf", "vp-override-links"),
     # VPLAYER PStyle and VP Plot Style on the named-plot-style test drawing: the
     # ADSK_XREC_LAYER_PLOTSTYLE_OVR record rewritten and made (M6-07, DEC-078,
     # packages/testkit/src/plot/vp-plot-style.test.ts).

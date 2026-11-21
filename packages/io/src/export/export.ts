@@ -71,7 +71,7 @@ import {
 } from './triya-centermarks';
 import { planLayouts, writeLayouts } from './layouts';
 import { planPageSetups, writePageSetups } from './page-setups';
-import { planLayers, writeLayers } from './layers';
+import { planLayers, writeLayerOverrides, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
 import {
   planMaterials,
@@ -707,6 +707,8 @@ export function triyaToAcad(
     writeEntity(r, e, undefined, after);
     if (r12 && e instanceof Viewport) addR12View(original, e);
   }
+  // After the entities: an override may name a viewport the same save adds (M6-02 part 18).
+  writeLayerOverrides(r, layers.plan);
   // A new table's AutoCAD 2008 data (M4-28), and an edited one's (M4-30), after its rows and
   // cells are written.
   const tableStyleOf = (h: string) => model.tables.tableStyles.get(h);

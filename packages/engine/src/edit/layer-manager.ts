@@ -441,15 +441,6 @@ export function deleteLayersWithObjects(
     const l = model.tables.layers.get(sheet.layer)!;
     return `Layer "${l.name}" holds a layout's paper-space view and cannot be deleted.`;
   }
-  // A layer's viewport overrides name their viewport, which cannot be erased yet (M1-62).
-  const overridden = new Set<Handle>();
-  for (const l of model.tables.layers.values())
-    for (const o of l.viewportOverrides ?? []) overridden.add(o.viewport);
-  const kept = on.find((e) => overridden.has(e.handle));
-  if (kept) {
-    const l = model.tables.layers.get(kept.layer)!;
-    return `Layer "${l.name}" holds a viewport with layer overrides, which cannot be erased yet.`;
-  }
   eraseObjects(
     b,
     model,

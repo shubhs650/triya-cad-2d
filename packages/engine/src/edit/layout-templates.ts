@@ -19,7 +19,9 @@
 // - a name the drawing has already takes LAYOUT Copy's next free "Name (2)";
 // - a page setup plotting a named view the drawing lacks plots the layout instead, and a standard
 //   scale comes as the custom scale of the same ratio (`settingsIn`);
-// - the viewports' layer overrides are not carried (their writer is M6-02's VPLAYER), said so.
+// - the viewports' layer overrides come with them (M6-02 part 18), onto the target's layers of
+//   the same names; a linetype or plot style the target lacks by name comes along as COPYCLIP
+//   brings one, and a plot style override is dropped in a drawing plotting by colour.
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -45,10 +47,8 @@ export interface LayoutTemplate {
   readonly space?: Layout['space'];
   /** The page setup's "Plot transparency" (the layout's PLOTTRANSPARENCY xdata, M6-04). */
   readonly plotTransparency: boolean;
-  /** Everything on its sheet, its viewports with it, in its draw order. */
+  /** Everything on its sheet, its viewports and their layer overrides with it, in its draw order. */
   readonly content: Clipboard;
-  /** How many of its viewports have layer overrides, which are not carried. */
-  readonly withOverrides: number;
 }
 
 /** A template taken from a drawing, and what it left out. */
@@ -93,12 +93,6 @@ export function layoutTemplate(model: DocumentModel, layout: Layout): LayoutTemp
   const entities = [...copy.clipboard.entities].sort(
     (a, b) => (rank.get(a.handle) ?? 0) - (rank.get(b.handle) ?? 0),
   );
-  const carried = new Set(entities.map((e) => e.handle));
-  let withOverrides = 0;
-  const overridden = new Set<Handle>();
-  for (const l of model.tables.layers.values())
-    for (const o of l.viewportOverrides ?? []) overridden.add(o.viewport);
-  for (const h of overridden) if (carried.has(h)) withOverrides++;
   return {
     template: {
       name: layout.name,
@@ -108,7 +102,6 @@ export function layoutTemplate(model: DocumentModel, layout: Layout): LayoutTemp
       ...(layout.space && { space: layout.space }),
       plotTransparency: plotTransparencyOf(model, layout),
       content: { ...copy.clipboard, entities },
-      withOverrides,
     },
     refused: copy.refused,
     unannotated: copy.unannotated,
@@ -143,23 +136,15 @@ export function templateMessages(
 ): string[] {
   const refused = new Map<string, number>();
   let unannotated = 0;
-  let withOverrides = 0;
   for (const c of copies) {
     for (const [reason, n] of c.refused) refused.set(reason, (refused.get(reason) ?? 0) + n);
     unannotated += c.unannotated;
-    withOverrides += c.template.withOverrides;
   }
   const out = refusalMessages(refused, verb);
   if (unannotated > 0) {
     const n = unannotated;
     out.push(
       `${n} ${n === 1 ? 'object is' : 'objects are'} not annotative (annotative copies are not saved yet).`,
-    );
-  }
-  if (withOverrides > 0) {
-    const n = withOverrides;
-    out.push(
-      `${n} ${n === 1 ? 'viewport was' : 'viewports were'} ${verb} without ${n === 1 ? 'its' : 'their'} layer overrides (not saved yet).`,
     );
   }
   return out;

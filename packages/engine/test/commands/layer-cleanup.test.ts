@@ -293,7 +293,7 @@ describe('the layers LAYDEL and LAYMRG gather', () => {
     expect(t.bus.promptText).toBe('Select object on layer to delete or [Name]:');
   });
 
-  it("refuses LAYDEL of a layer holding a layout's own view or a viewport with layer overrides", async () => {
+  it("refuses LAYDEL of a layer holding a layout's own view", async () => {
     const t = setup();
     const vp = t.model.entityByHandle(VIEWPORT)!;
     const sheet = new ChangeSetBuilder(t.model);
@@ -305,8 +305,15 @@ describe('the layers LAYDEL and LAYMRG gather', () => {
     expect(t.log).toContain(
       'Layer "NOTES" holds a layout\'s paper-space view and cannot be deleted.',
     );
+    expect(t.model.tables.layers.has(NOTES)).toBe(true);
+  });
+
+  // M6-02 part 18: the viewport goes, and so do the layer overrides naming it.
+  it('LAYDEL of a layer holding a viewport with layer overrides drops the overrides with it', async () => {
+    const t = setup();
+    const vp = t.model.entityByHandle(VIEWPORT)!;
     const overrides = new ChangeSetBuilder(t.model);
-    overrides.updateEntity(vp.id, { geom: vp.geom });
+    overrides.updateEntity(vp.id, { layer: NOTES });
     overrides.updateTableRecord('layers', DOORS, {
       viewportOverrides: [{ viewport: VIEWPORT, color: { kind: 'aci', index: 1 } }],
     });
@@ -314,11 +321,38 @@ describe('the layers LAYDEL and LAYMRG gather', () => {
     await t.bus.script(['LAYDEL']);
     await t.bus.pick(t.on(NOTES));
     await t.bus.script(['', 'Y']);
-    expect(t.log.at(-1)).toBe(
-      'Layer "NOTES" holds a viewport with layer overrides, which cannot be erased yet.',
-    );
-    expect(t.model.tables.layers.has(NOTES)).toBe(true);
-    expect(t.bus.undo.state.undoable).toBe(0);
+    expect(t.log).toContain('Deleting layer "NOTES".');
+    expect(t.has(VIEWPORT)).toBe(false);
+    expect(t.model.tables.layers.has(NOTES)).toBe(false);
+    expect(t.model.tables.layers.get(DOORS)!.viewportOverrides).toBeUndefined();
+    await t.bus.script(['U']);
+    expect(t.has(VIEWPORT)).toBe(true);
+    expect(t.model.tables.layers.get(DOORS)!.viewportOverrides).toEqual([
+      { viewport: VIEWPORT, color: { kind: 'aci', index: 1 } },
+    ]);
+  });
+
+  it('LAYMRG of an overridden layer moves its objects; the target keeps its own overrides', async () => {
+    const t = setup();
+    const overrides = new ChangeSetBuilder(t.model);
+    overrides.updateTableRecord('layers', DOORS, {
+      viewportOverrides: [{ viewport: VIEWPORT, color: { kind: 'aci', index: 1 } }],
+    });
+    overrides.updateTableRecord('layers', WALLS, {
+      viewportOverrides: [{ viewport: VIEWPORT, lineweight: 50 }],
+    });
+    t.model.apply(overrides.build());
+    await t.bus.script(['LAYMRG']);
+    await t.bus.pick(t.on(DOORS));
+    await t.bus.script(['']);
+    await t.bus.pick(t.on(WALLS));
+    await t.bus.script(['Y']);
+    expect(t.model.tables.layers.has(DOORS)).toBe(false);
+    expect(t.layerOf('32')).toBe(WALLS);
+    // AutoCAD 2024 Help, "LAYMRG": the objects "take on the properties of the target layer".
+    expect(t.model.tables.layers.get(WALLS)!.viewportOverrides).toEqual([
+      { viewport: VIEWPORT, lineweight: 50 },
+    ]);
   });
 });
 
