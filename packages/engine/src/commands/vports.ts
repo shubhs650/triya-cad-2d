@@ -1,9 +1,10 @@
 // -VPORTS (M6-02 part 10): model space's tiled viewports and their named configurations, on
 // AutoCAD's prompts (AutoCAD 2024 Help, "-VPORTS - Model Space Viewports"):
-//   Enter an option [Save/Restore/Delete/SIngle/?/2/3/4/Toggle/MOde] <3>:
+//   Enter an option [Save/Restore/Delete/Join/SIngle/?/2/3/4/Toggle/MOde] <3>:
 //     Save:     Enter name for new viewport configuration or [?]:
 //     Restore:  Enter name of viewport configuration to restore or [?]:
 //     Delete:   Enter name(s) of viewport configurations to delete <none>:
+//     Join:     Select dominant viewport <current viewport>:  Select viewport to join:
 //     SIngle:   one viewport showing the current viewport's view
 //     ?:        Enter name(s) of viewport configuration(s) to list <*>:
 //     2:        Enter a configuration option [Horizontal/Vertical] <Vertical>:
@@ -17,14 +18,16 @@
 // what each tile shows now (the canvases' views, `tiles` request), Restore puts a named one in
 // place of the current one, and the new viewports of SIngle, 2, 3, 4 and Toggle start with the
 // current viewport's view (the Viewports dialog's 2D setup). Each is one undo step. Help gives
-// no messages and no prompt for MOde; those here are chosen for the common expectation. Join,
-// which takes a click in each of two tiles, is a later part (the canvas does not yet say which
-// tile a pick fell in); in a layout -VPORTS is MVIEW (AutoCAD 2024 Help, "-VPORTS - Layout
-// Viewports"), whose prompts it shows.
+// no messages and no prompt for MOde; those here are chosen for the common expectation. Join
+// (M6-02 part 13) takes a click in each of two tiles, the canvas saying which tile it fell in
+// (`PointPrompt.viewport`), and makes one viewport of the two with the dominant one's view and
+// settings ("The resulting viewport inherits the view of the dominant viewport"). In a layout
+// -VPORTS is MVIEW (AutoCAD 2024 Help, "-VPORTS - Layout Viewports"), whose prompts it shows.
 import type { Box } from '../geom/bounds';
 import {
   configurationLines,
   configurationTiles,
+  recordView,
   configurationsMatching,
   deleteConfiguration,
   viewInTile,
@@ -47,6 +50,11 @@ export const NO_MODEL_VIEWPORT = 'The drawing has no model viewport to arrange.'
 export const VPORTS_IN_BLOCK_EDITOR = '** Command not allowed in the Block Editor **';
 export const NO_MATCHING_CONFIGURATIONS = 'No matching viewport configurations found.';
 export const INVALID_CONFIGURATION_NAME = 'Invalid viewport configuration name.';
+// Join's messages; Help gives none, so these are chosen.
+export const JOIN_ONE_VIEWPORT = 'There is only one viewport to join.';
+export const JOIN_PICK_VIEWPORT = 'Click inside a viewport.';
+export const JOIN_ITSELF = 'A viewport cannot be joined to itself.';
+export const JOIN_NOT_RECTANGLE = 'The selected viewports do not form a rectangle.';
 
 type Mode = 'Display' | 'Current viewport';
 
@@ -139,10 +147,88 @@ function divided(
   return mode === 'Display' ? pieces : [...pieces, ...tiles.slice(1)];
 }
 
+/** Corners this close (fractions of the screen) are the same edge. */
+const EDGE_SLACK = 1e-6;
+
+/**
+ * The rectangle two tiles make together, if they share a whole edge (side by side with the same
+ * bottom and top, or one above the other with the same left and right); undefined otherwise.
+ */
+export function joinedCorners(a: Box, b: Box): Box | undefined {
+  const same = (x: number, y: number) => Math.abs(x - y) <= EDGE_SLACK;
+  const across =
+    same(a.minY, b.minY) && same(a.maxY, b.maxY) && (same(a.maxX, b.minX) || same(b.maxX, a.minX));
+  const stacked =
+    same(a.minX, b.minX) && same(a.maxX, b.maxX) && (same(a.maxY, b.minY) || same(b.maxY, a.minY));
+  if (!across && !stacked) return undefined;
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY),
+  };
+}
+
+/**
+ * A tile clicked at a prompt asking for one; `fallback` at Enter. A typed point says nothing of
+ * which viewport, so the prompt is asked again, as is one answered with `refuse`.
+ */
+async function* pickTile(
+  ctx: CommandContext,
+  message: string,
+  count: number,
+  fallback?: number,
+  refuse?: number,
+): Sub<number | undefined> {
+  for (;;) {
+    const a = yield ctx.prompt.point({
+      message,
+      viewport: true,
+      ...(fallback !== undefined && { defaultLabel: 'current viewport' }),
+    });
+    if (a.kind === 'enter' && fallback !== undefined) return fallback;
+    if (a.kind !== 'point') return undefined;
+    if (a.tile === undefined || a.tile < 0 || a.tile >= count) ctx.message(JOIN_PICK_VIEWPORT);
+    else if (a.tile === refuse) ctx.message(JOIN_ITSELF);
+    else return a.tile;
+  }
+}
+
+/**
+ * Join: the dominant tile (the current one at Enter) and another sharing a whole edge with it
+ * become one viewport over both, with the dominant one's settings and view (VIEWSIZE kept), first
+ * in the configuration and so current, as the viewport just made is in AutoCAD.
+ */
+async function* join(ctx: CommandContext, state: State): Sub<void> {
+  const r = await ctx.view.request({ op: 'tiles' });
+  const live = r.ok ? r.tiles : undefined;
+  const tiles = configurationTiles(
+    ctx.model.tables.vports.values(),
+    ACTIVE_VPORT,
+    live?.views.map((v) => v && { center: v.center, height: v.height, width: v.width }),
+  );
+  if (tiles.length < 2) return ctx.message(JOIN_ONE_VIEWPORT);
+  const current = live && tiles[live.current] ? live.current : 0;
+  const d = yield* pickTile(ctx, 'Select dominant viewport', tiles.length, current);
+  if (d === undefined) return;
+  const j = yield* pickTile(ctx, 'Select viewport to join', tiles.length, undefined, d);
+  if (j === undefined) return;
+  const dominant = tiles[d]!;
+  const corners = joinedCorners(dominant.corners, tiles[j]!.corners);
+  if (!corners) return ctx.message(JOIN_NOT_RECTANGLE);
+  const view = dominant.view ?? recordView(dominant.source);
+  const merged: ConfigTile = {
+    source: dominant.source,
+    corners,
+    view: viewInTile(view, dominant.corners, corners),
+  };
+  arrange(ctx, [merged, ...tiles.filter((_, i) => i !== d && i !== j)], state);
+}
+
 async function* modelOptions(ctx: CommandContext, state: State): Sub<void> {
   const a = yield ctx.prompt.keyword({
     message: 'Enter an option',
-    options: ['Save', 'Restore', 'Delete', 'SIngle', '?', '2', '3', '4', 'Toggle', 'MOde'],
+    options: ['Save', 'Restore', 'Delete', 'Join', 'SIngle', '?', '2', '3', '4', 'Toggle', 'MOde'],
     default: { kind: 'keyword', keyword: '3' },
   });
   if (a.kind !== 'keyword') return;
@@ -215,6 +301,8 @@ async function* modelOptions(ctx: CommandContext, state: State): Sub<void> {
       if (found.some((c) => c.name.toUpperCase() === key)) state.current = undefined;
       return;
     }
+    case 'Join':
+      return yield* join(ctx, state);
     case 'SIngle':
     case 'Toggle': {
       const tiles = await liveTiles(ctx);

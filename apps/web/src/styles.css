@@ -2015,6 +2015,13 @@ button {
   cursor: var(--crosshair, crosshair);
 }
 
+/* M6-02 part 13: an arrow outside the viewport worked in (a tile not current, the sheet beyond
+   the current layout viewport), as AutoCAD's cursor is; PAN and ZOOM keep theirs. */
+.drawing-canvas[data-outside='true'][data-mode='none'],
+.drawing-canvas[data-outside='true']:not([data-mode]) {
+  cursor: default;
+}
+
 /* The command line (M2-02, UI_SPEC.md §5): AutoCAD's docked command window, two history lines
    over the prompt line, set in a monospace face as AutoCAD's is. */
 .command-line {

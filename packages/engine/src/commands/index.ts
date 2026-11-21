@@ -96,10 +96,15 @@ export {
 } from './mview';
 export {
   INVALID_CONFIGURATION_NAME,
+  JOIN_ITSELF,
+  JOIN_NOT_RECTANGLE,
+  JOIN_ONE_VIEWPORT,
+  JOIN_PICK_VIEWPORT,
   NO_MATCHING_CONFIGURATIONS,
   NO_MODEL_VIEWPORT,
   VPORTS_IN_BLOCK_EDITOR,
   dashVportsCommand,
+  joinedCorners,
   type VportsState,
 } from './vports';
 export { modelViews, vportsCommand, vportsCommands } from './vports-dialog';

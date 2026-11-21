@@ -730,6 +730,8 @@ export class PromptBus {
       readonly dragged?: boolean;
       /** With `release`: the path a press was dragged along (M3-12 part 6, `freehand`). */
       readonly freehand?: readonly Vec2[];
+      /** The tiled model viewport clicked in (M6-02 part 13), for a prompt that asks one. */
+      readonly tile?: number;
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
@@ -797,12 +799,15 @@ export class PromptBus {
           if (!o.freehand || p?.kind !== 'point' || !p.rubberBand?.freehand) return undefined;
           return this.#direct({ kind: 'point', point, freehand: o.freehand });
         }
+        const p = this.prompt;
+        const tile = p?.kind === 'point' && p.viewport ? o.tile : undefined;
         return this.#direct({
           kind: 'point',
           point,
           ...(o.shift && { shift: true as const }),
           ...(o.deferred && { deferred: o.deferred }),
           ...(o.ctrl && { ctrl: true as const }),
+          ...(tile !== undefined && { tile }),
         });
       }
       if (!this.#pickfirstOn) return;

@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   INVALID_CONFIGURATION_NAME,
+  JOIN_ITSELF,
+  JOIN_NOT_RECTANGLE,
+  JOIN_ONE_VIEWPORT,
+  JOIN_PICK_VIEWPORT,
   NO_MATCHING_CONFIGURATIONS,
   NO_MODEL_VIEWPORT,
   PromptBus,
@@ -136,6 +140,7 @@ describe('-VPORTS on the Model tab', () => {
       'Save',
       'Restore',
       'Delete',
+      'Join',
       'SIngle',
       '?',
       '2',
@@ -356,6 +361,124 @@ describe('-VPORTS on the Model tab', () => {
       '  0.0000,0.0000 1.0000,0.5000',
       '  0.0000,0.5000 1.0000,1.0000',
     ]);
+  });
+
+  describe('Join (M6-02 part 13)', () => {
+    // Three tiles: a large one on the left (current), two stacked on the right.
+    const THREE: VportRecord[] = [
+      vport('29', '*Active', { upperRight: { x: 0.5, y: 1 }, center: { x: 5, y: 5 } }),
+      vport('2A', '*Active', {
+        lowerLeft: { x: 0.5, y: 0.5 },
+        center: { x: 50, y: 50 },
+        snapSpacing: { x: 2, y: 2 },
+      }),
+      vport('2B', '*Active', { lowerLeft: { x: 0.5, y: 0 }, upperRight: { x: 1, y: 0.5 } }),
+    ];
+
+    it('asks for the dominant viewport with the current one as the default, then the other', async () => {
+      const t = drawing({ vports: TILED, tiles: { views: [null, null], current: 1 } });
+      await t.bus.script(['-VPORTS', 'J']);
+      expect(t.bus.prompt?.message).toBe('Select dominant viewport');
+      expect(t.bus.prompt?.defaultLabel).toBe('current viewport');
+      expect(t.bus.prompt?.kind === 'point' && t.bus.prompt.viewport).toBe(true);
+      await t.bus.script(['']);
+      expect(t.bus.prompt?.message).toBe('Select viewport to join');
+      expect(t.bus.prompt?.kind === 'point' && t.bus.prompt.viewport).toBe(true);
+    });
+
+    it('joins two tiles into one showing the dominant (current) one’s view', async () => {
+      // The right tile is current and dominant; the left one is clicked to join it.
+      const t = drawing({
+        vports: TILED,
+        tiles: { views: [live(5, 5, 10, 10), live(60, 40, 20, 20)], current: 1 },
+      });
+      await t.bus.script(['-VPORTS', 'J', '']);
+      await t.bus.pick({ x: 3, y: 3 }, { tile: 0 });
+      expect(t.bus.command).toBeUndefined();
+      const tiles = t.active();
+      expect(tiles).toHaveLength(1);
+      // The first record keeps its handle, the current viewport; the dominant's settings.
+      expect(tiles[0]!.handle).toBe('29');
+      expect(t.corners(tiles[0]!)).toEqual([0, 0, 1, 1]);
+      expect(tiles[0]!.center).toEqual({ x: 60, y: 40 });
+      expect(tiles[0]!.height).toBe(20);
+      // VIEWSIZE kept: twice as wide a viewport shows twice as wide a view.
+      expect(tiles[0]!.aspectRatio).toBe(2);
+      expect(tiles[0]!.snapSpacing).toEqual({ x: 2, y: 2 });
+      // The named configurations are left alone.
+      expect(t.records().filter((v) => v.name !== '*Active')).toHaveLength(2);
+      expect(t.bus.undo.state.nextUndo).toBe('-VPORTS');
+      await t.bus.script(['U']);
+      expect(t.active().map(t.corners)).toEqual([
+        [0, 0, 0.5, 1],
+        [0.5, 0, 1, 1],
+      ]);
+    });
+
+    it('takes the dominant viewport clicked, and the joined one becomes current', async () => {
+      const t = drawing({
+        vports: THREE,
+        tiles: {
+          views: [live(5, 5, 10, 10), live(50, 50, 10, 10), live(0, 0, 10, 10)],
+          current: 0,
+        },
+      });
+      await t.bus.script(['-VPORTS', 'J']);
+      // A click in the lower right tile, which is not current, picks it as the dominant one.
+      await t.bus.pick({ x: 1, y: 1 }, { tile: 2 });
+      await t.bus.pick({ x: 50, y: 50 }, { tile: 1 });
+      expect(t.bus.command).toBeUndefined();
+      const tiles = t.active();
+      expect(tiles.map(t.corners)).toEqual([
+        [0.5, 0, 1, 1],
+        [0, 0, 0.5, 1],
+      ]);
+      expect(tiles[0]!.center).toEqual({ x: 0, y: 0 });
+      expect(tiles[0]!.snapSpacing).toEqual({ x: 5, y: 5 });
+      expect(tiles[1]!.center).toEqual({ x: 5, y: 5 });
+    });
+
+    it('refuses two tiles that do not make a rectangle, changing nothing', async () => {
+      const t = drawing({ vports: THREE });
+      await t.bus.script(['-VPORTS', 'J', '']);
+      await t.bus.pick({ x: 50, y: 50 }, { tile: 1 });
+      expect(t.log).toContain(JOIN_NOT_RECTANGLE);
+      expect(t.bus.command).toBeUndefined();
+      expect(t.active()).toHaveLength(3);
+      expect(t.bus.undo.state.nextUndo).toBeUndefined();
+    });
+
+    it('asks again for a click outside every viewport or on the dominant one', async () => {
+      const t = drawing({ vports: TILED });
+      await t.bus.script(['-VPORTS', 'J']);
+      // A typed point says nothing of which viewport.
+      await t.bus.script(['3,3']);
+      expect(t.log).toContain(JOIN_PICK_VIEWPORT);
+      expect(t.bus.prompt?.message).toBe('Select dominant viewport');
+      await t.bus.pick({ x: 3, y: 3 }, { tile: 0 });
+      await t.bus.pick({ x: 4, y: 4 }, { tile: 0 });
+      expect(t.log).toContain(JOIN_ITSELF);
+      expect(t.bus.prompt?.message).toBe('Select viewport to join');
+      await t.bus.pick({ x: 4, y: 4 }, { tile: 1 });
+      expect(t.active()).toHaveLength(1);
+    });
+
+    it('says so with a single viewport', async () => {
+      const t = drawing();
+      await t.bus.script(['-VPORTS', 'J']);
+      expect(t.log).toContain(JOIN_ONE_VIEWPORT);
+      expect(t.bus.command).toBeUndefined();
+    });
+
+    it('takes no tile from a click at a prompt that does not ask for a viewport', async () => {
+      const t = drawing({ vports: TILED });
+      await t.bus.script(['-VPORTS', 'J', '']);
+      // Esc ends it; a LINE's point picked with a tile is a plain point.
+      await t.bus.cancel();
+      await t.bus.script(['LINE']);
+      await t.bus.pick({ x: 1, y: 1 }, { tile: 1 });
+      expect(t.bus.prompt?.message).toBe('Specify next point or');
+    });
   });
 
   it('says so when the drawing has no model viewport', async () => {

@@ -3118,6 +3118,8 @@ function ViewportCanvas({
           ...(o.lasso && { lasso: o.lasso }),
           ...(o.dragged && { dragged: true }),
           ...(o.freehand && { freehand: o.freehand }),
+          // Which tiled viewport the click fell in, for -VPORTS Join's prompts (M6-02 part 13).
+          ...(tile && { tile: index }),
           ...(seq !== undefined && { seq }),
         });
         engines.command(

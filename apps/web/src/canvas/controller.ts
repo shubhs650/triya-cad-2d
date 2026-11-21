@@ -466,6 +466,14 @@ export class CanvasController {
   /** ZOOM Previous of the view of the viewport maximized, apart from its own. */
   #maximizedHistory = new ViewportHistories();
   /**
+   * The cursor is outside the viewport worked in (M6-02 part 13): over a tiled viewport that is
+   * not current, or off the current layout viewport's frame. It is an arrow there, with no
+   * object snap, tracking, rubber band or preview, as AutoCAD shows it (AutoCAD 2024 Help, "To
+   * Make a Model Viewport Current": in the current viewport "the cursor is displayed as
+   * crosshairs instead of an arrow").
+   */
+  #outside = false;
+  /**
    * Viewport view edits sent and not answered yet: the view the canvas gave the current viewport
    * stands over the one a change set brings meanwhile, so a roll of the wheel goes on from it.
    */
@@ -1015,6 +1023,7 @@ export class CanvasController {
     this.#hits = [];
     this.#hit = undefined;
     this.#acquired = [];
+    this.#leftWork(this.#isOutside());
     // The grid is model space's through the viewport, paper space's on the sheet (M6-02 part 9).
     if (this.#drafting.grid && (before === undefined) !== (this.#current === undefined)) {
       this.#host.setStyle(this.#style());
@@ -2050,6 +2059,10 @@ export class CanvasController {
     this.#host.dispose();
     this.canvas.remove();
     this.#tip.remove();
+    // A tile's container outlives its canvas when -VPORTS rearranges the tiles (M6-02 part 13):
+    // its quick measure labels and UCS icon go with the canvas, not left on the new one.
+    this.#quickLabels.remove();
+    this.#ucsIcon.remove();
   }
 
   #createHost(): RendererHost {
@@ -2824,7 +2837,9 @@ export class CanvasController {
         this.#rest.cancel();
         // A press in a viewport that is not current makes it current; AutoCAD takes the
         // left-button click that does so for nothing else.
-        if (this.#activate() && e.button === 0) return;
+        // At a prompt for a viewport (-VPORTS Join) the click answers instead (M6-02 part 13).
+        const picksTile = e.button === 0 && this.#picksViewport();
+        if (!picksTile && this.#activate() && e.button === 0) return;
         if (e.button === 0 && this.#viewportPress(e)) return;
         if (e.button === 1) {
           // No autoscroll or paste on middle click.
@@ -2872,9 +2887,10 @@ export class CanvasController {
             });
             return;
           }
-          // At a point prompt the click gives the point the drafting aids make of it.
+          // At a point prompt the click gives the point the drafting aids make of it; outside the
+          // viewport worked in, which it switches from, the point clicked.
           this.#ctrl = e.ctrlKey;
-          this.#hooks.onPick?.(this.#pointAt(world), {
+          this.#hooks.onPick?.(this.#outside ? world : this.#pointAt(world), {
             shift,
             release: false,
             ...(e.ctrlKey && { ctrl: true }),
@@ -2925,13 +2941,16 @@ export class CanvasController {
         this.#pointer = { offsetX: e.offsetX, offsetY: e.offsetY };
         this.#ctrl = e.ctrlKey;
         this.#shift = e.shiftKey;
+        this.#leftWork(this.#isOutside());
+        const outside = this.#outside;
         // A rest is the cursor alone: not while a button is held, a window, PAN or ZOOM goes on.
-        if (e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none') {
+        if (e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none' && !outside) {
           this.#rest.move({ x: e.clientX, y: e.clientY, offsetX: e.offsetX, offsetY: e.offsetY });
         } else this.#rest.cancel();
         const press = this.#press;
         const world = this.#world(e);
-        const resting = e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none';
+        const resting =
+          e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none' && !outside;
         this.#hoverGrip(resting ? world : undefined);
         this.#hoverPreview(resting ? { x: e.offsetX, y: e.offsetY } : undefined);
         this.#hoverLock(resting ? world : undefined);
@@ -3018,6 +3037,7 @@ export class CanvasController {
         this.#commandPreview(undefined);
         this.#hoverLock(undefined);
         this.#pointer = undefined;
+        this.#leftWork(false);
         this.#hit = undefined;
         this.#hits = [];
         this.#cycle = 0;
@@ -3227,11 +3247,11 @@ export class CanvasController {
       return;
     }
     const world = this.#pointer && this.#world(this.#pointer);
-    if (!world || !this.#precise()) return;
+    if (!world || !this.#precise() || this.#outside) return;
     this.#snapping = true;
     void this.#snapAt(world).then((hits) => {
       this.#snapping = false;
-      const at = this.#pointer && this.#world(this.#pointer);
+      const at = this.#pointer && !this.#outside ? this.#world(this.#pointer) : undefined;
       // An answer for where the cursor was a moment ago still shows; it is replaced next.
       const points = at && this.#prompt ? hits.filter((h) => !h.track) : [];
       // Tab's choice stays while the same points are under the aperture.
@@ -3373,10 +3393,11 @@ export class CanvasController {
    */
   #track(): void {
     const world = this.#pointer && this.#mode === 'none' ? this.#world(this.#pointer) : undefined;
-    if (!world || !this.#precise()) {
+    if (!world || !this.#precise() || this.#outside) {
       this.#overlay = [];
       this.#tip.hidden = true;
-      this.#rubberBand(world);
+      // Outside the viewport worked in the cursor is an arrow, with no rubber band to it.
+      this.#rubberBand(this.#outside ? undefined : world);
       if (world) this.#hooks.onCursor(world);
       return;
     }
@@ -3451,7 +3472,53 @@ export class CanvasController {
     const tile = this.#hooks.tile;
     if (!tile || tile.isCurrent()) return false;
     tile.activate();
+    this.#leftWork(this.#isOutside());
+    if (this.#prompt && this.#mode === 'none') {
+      this.#requestSnap();
+      this.#track();
+    }
     return true;
+  }
+
+  /** The prompt waiting asks for a model viewport to be clicked (-VPORTS Join). */
+  #picksViewport(): boolean {
+    const p = this.#asked;
+    return p?.kind === 'point' && p.viewport === true;
+  }
+
+  /**
+   * Whether the cursor is outside the viewport worked in (`#outside`): a tile not current but at
+   * a prompt for a viewport, where every tile takes the click; the sheet beyond the current
+   * layout viewport's frame unless a window's corner is being placed, which may lie beyond it
+   * (M6-02 part 9).
+   */
+  #isOutside(): boolean {
+    const p = this.#pointer;
+    if (!p) return false;
+    const tile = this.#hooks.tile;
+    if (tile) return !tile.isCurrent() && !this.#picksViewport();
+    const c = this.#current;
+    const view = this.#view;
+    if (!c || this.#maximized || !view || this.#corner || this.#press || this.#drag) return false;
+    const asked = this.#asked;
+    if (asked?.kind === 'point' && asked.rubberBand?.box) return false;
+    const { width, height } = this.#size;
+    const paper = screenToWorld(view, width, height, { x: p.offsetX, y: p.offsetY });
+    const g = c.geom;
+    return (
+      Math.abs(paper.x - g.center.x) > g.width / 2 || Math.abs(paper.y - g.center.y) > g.height / 2
+    );
+  }
+
+  /** Records whether the cursor is outside the viewport worked in, for the arrow (styles.css). */
+  #leftWork(outside: boolean): void {
+    this.#outside = outside;
+    const v = String(outside);
+    if (this.#canvas.dataset['outside'] !== v) this.#canvas.dataset['outside'] = v;
+    if (outside) {
+      this.#hit = undefined;
+      this.#hits = [];
+    }
   }
 
   #startDrag(e: PointerEvent): void {

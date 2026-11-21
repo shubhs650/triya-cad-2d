@@ -7,6 +7,8 @@
 // 40 units high. No public corpus file saves more than one `*Active` VPORT.
 // M6-02 part 10: -VPORTS divides the current viewport, goes back to one, and saves and restores a
 // named configuration; the canvases follow, each new viewport starting on the current view.
+// M6-02 part 13: -VPORTS Join takes a click in each of two viewports, the canvas saying which one
+// it fell in, and the cursor is an arrow over a viewport that is not current.
 import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { activeCanvas, enterCommand, expectShown, openWithPicker, worldAt } from '../app/page';
@@ -186,5 +188,81 @@ test.describe('tiled model-space viewports', () => {
     // U puts the single viewport back.
     await enterCommand(page, 'U');
     await expect(tiles(page)).toHaveCount(1);
+  });
+
+  test('-VPORTS Join makes one viewport of two clicked; an arrow over one not current (M6-02 part 13)', async ({
+    page,
+  }) => {
+    const file = test.info().outputPath('join-viewports.dxf');
+    writeFileSync(file, SINGLE);
+    await page.goto(app.url);
+    await openWithPicker(page, file);
+    await expectShown(page, 'join-viewports.dxf');
+    await enterCommand(page, '-VPORTS');
+    await enterCommand(page, '2');
+    await enterCommand(page, '');
+    await expect(tiles(page)).toHaveCount(2);
+    const [left, right] = [
+      (await tiles(page).nth(0).boundingBox())!,
+      (await tiles(page).nth(1).boundingBox())!,
+    ];
+    const inLeft = { x: left.x + left.width / 2, y: left.y + left.height / 2 };
+    const inRight = { x: right.x + right.width / 2, y: right.y + right.height / 2 };
+    // The right viewport shows the extents, centred at (52.5, 0); the left one the origin.
+    await page.mouse.click(inRight.x, inRight.y);
+    await expect(tiles(page).nth(1)).toHaveAttribute('data-active', 'true');
+    await page
+      .getByRole('toolbar', { name: 'Navigation' })
+      .getByRole('button', { name: 'Zoom Extents', exact: true })
+      .click();
+    await page.mouse.click(inLeft.x, inLeft.y);
+    await expect(tiles(page).nth(0)).toHaveAttribute('data-active', 'true');
+
+    // Crosshairs over the current viewport, an arrow over the other.
+    const cursor = (i: number) =>
+      tiles(page)
+        .nth(i)
+        .evaluate((c) => getComputedStyle(c).cursor);
+    await page.mouse.move(inRight.x, inRight.y);
+    await expect(tiles(page).nth(1)).toHaveAttribute('data-outside', 'true');
+    expect(await cursor(1)).toBe('default');
+    await page.mouse.move(inLeft.x, inLeft.y);
+    await expect(tiles(page).nth(0)).toHaveAttribute('data-outside', 'false');
+    expect(await cursor(0)).toContain('url(');
+    if (process.env['TRIYA_SCREENSHOTS']) {
+      for (const i of [0, 1]) await expect(tiles(page).nth(i)).toHaveAttribute('data-drawn', /.+/);
+      await page.screenshot({ path: `${process.env['TRIYA_SCREENSHOTS']}/1-before-join.png` });
+    }
+
+    // Join: the right viewport clicked as the dominant one (not made current by it), the left
+    // one joined to it; one viewport over both, on the right one's view.
+    const prompt = page.getByTestId('command-prompt');
+    await enterCommand(page, '-VPORTS');
+    await enterCommand(page, 'J');
+    await expect(prompt).toHaveText(/^Select dominant viewport <current viewport>/);
+    // Every viewport takes the click at this prompt: crosshairs over the other one too.
+    await page.mouse.move(inRight.x, inRight.y);
+    await expect(tiles(page).nth(1)).toHaveAttribute('data-outside', 'false');
+    await page.mouse.click(inRight.x, inRight.y);
+    await expect(prompt).toHaveText(/^Select viewport to join/);
+    await expect(tiles(page).nth(0)).toHaveAttribute('data-active', 'true');
+    await page.mouse.click(inLeft.x, inLeft.y);
+    await expect(prompt).toHaveText('Command:');
+    await expect(tiles(page)).toHaveCount(1);
+    // The canvases made again leave no UCS icon of theirs behind.
+    await expect(page.locator('.space-canvas:not([hidden])').getByTestId('ucs-icon')).toHaveCount(
+      1,
+    );
+    const v = await view(page);
+    expect(v.box.width).toBeGreaterThan(left.width * 1.8);
+    expect(Math.abs(v.c.x - 52.5)).toBeLessThan(2 * v.u + 0.5);
+    if (process.env['TRIYA_SCREENSHOTS']) {
+      await expect(tiles(page).nth(0)).toHaveAttribute('data-drawn', /.+/);
+      await page.screenshot({ path: `${process.env['TRIYA_SCREENSHOTS']}/2-after-join.png` });
+    }
+
+    // U puts the two back.
+    await enterCommand(page, 'U');
+    await expect(tiles(page)).toHaveCount(2);
   });
 });
