@@ -671,10 +671,9 @@ button {
 }
 
 .ribbon-item.ribbon-control {
-  width: 100%;
-  min-width: 132px;
-  max-width: 160px;
-  gap: 4px;
+  /* A fixed width, so a long value never widens the ribbon (it ends in an ellipsis). */
+  width: 100px;
+  gap: 3px;
   padding: 0 2px 0 3px;
   background: var(--chrome-bg);
   border-color: var(--chrome-border);
@@ -682,8 +681,6 @@ button {
 
 .ribbon-item.ribbon-control.icon {
   width: auto;
-  min-width: 0;
-  max-width: none;
   padding: 0 2px;
 }
 
@@ -730,11 +727,12 @@ button {
 }
 
 .ribbon-stack .ribbon-item.ribbon-control {
-  max-width: none;
+  width: 100%;
 }
 
 .ribbon-tools {
   flex: none;
+  column-gap: 1px;
   padding: 0;
 }
 
