@@ -578,6 +578,11 @@ export type CommandInput =
       /** With `release`: the path the press was dragged along (M3-12 part 6, `freehand`). */
       readonly freehand?: readonly Vec2[];
       /**
+       * The tiled model viewport the click fell in, counted as `modelTiles` lists them (M6-02
+       * part 13): a prompt asking for a viewport (-VPORTS Join) answers with it.
+       */
+      readonly tile?: number;
+      /**
        * Asks for a `read` output once the pick has been handled, as for `submit`: a point
        * prompt's click is numbered, so keys typed after it wait for the prompt it leads to (M5-22).
        */
@@ -873,6 +878,7 @@ export class EngineSession {
           ...(input.gripFunction && { gripFunction: input.gripFunction }),
           ...(input.dragged && { dragged: true }),
           ...(input.freehand && { freehand: input.freehand }),
+          ...(input.tile !== undefined && { tile: input.tile }),
         });
         const seq = input.seq;
         if (seq === undefined) return done;

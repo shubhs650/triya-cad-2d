@@ -5,6 +5,9 @@
 // Viewport Current": "click inside its border"); a double click in another viewport is the
 // switch alone, and a click on the sheet between them does nothing. The grid shows through the
 // viewport worked in.
+// M6-02 part 13: the cursor is crosshairs only inside the viewport worked in, an arrow on the
+// sheet beyond it (AutoCAD 2024 Help, "To Make a Model Viewport Current"), except while a
+// selection window's other corner is placed, which may lie beyond the frame.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
@@ -106,4 +109,66 @@ test('a click in another layout viewport makes it current, inside a command too'
   const mid = v.at(205, 146);
   await page.mouse.move(v.box.x + mid.x, v.box.y + mid.y);
   await page.screenshot({ path: test.info().outputPath('viewport-grid.png') });
+});
+
+test('the cursor is an arrow off the current layout viewport, crosshairs inside it', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  await page
+    .getByRole('tablist', { name: 'Model and layouts' })
+    .getByRole('tab', { name: 'Layout1' })
+    .click();
+  await expect(activeCanvas(page)).toHaveAttribute('aria-label', 'Layout Layout1');
+  await expectDrawn(page, { timeout: 15_000 });
+  const v = await viewOf(page);
+  const move = async (h: keyof typeof CENTRES, dx = 0, dy = 0) => {
+    const p = v.at(CENTRES[h].x + dx, CENTRES[h].y + dy);
+    await page.mouse.move(v.box.x + p.x, v.box.y + p.y);
+  };
+  const outside = () => activeCanvas(page).getAttribute('data-outside');
+  const cursor = () => activeCanvas(page).evaluate((c) => getComputedStyle(c).cursor);
+
+  // In paper space the whole sheet is worked in.
+  await move('44');
+  await expect.poll(outside).not.toBe('true');
+  const tl = v.at(CENTRES['43'].x, CENTRES['43'].y);
+  await page.mouse.dblclick(v.box.x + tl.x, v.box.y + tl.y);
+  await expect.poll(() => viewport(page)).toBe('43');
+
+  // Inside the current viewport: crosshairs. Over another viewport or the sheet: an arrow.
+  await move('43', 5, 5);
+  await expect.poll(outside).toBe('false');
+  expect(await cursor()).toContain('url(');
+  await move('44');
+  await expect.poll(outside).toBe('true');
+  expect(await cursor()).toBe('default');
+  await move('43', 0, -70);
+  await expect.poll(outside).toBe('true');
+
+  // Inside LINE too, back to crosshairs on coming back in.
+  await enterCommand(page, 'LINE');
+  await expect(prompt(page)).toHaveText(/^Specify first point/);
+  await move('43', 5, 5);
+  await expect.poll(outside).toBe('false');
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(prompt(page)).toHaveText(/^Specify next point/);
+  await move('46');
+  await expect.poll(outside).toBe('true');
+  expect(await cursor()).toBe('default');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // A selection window begun in the viewport keeps the crosshairs beyond its frame.
+  await move('43', 30, 30);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(prompt(page)).toHaveText(/corner/i);
+  await move('44');
+  await expect.poll(outside).toBe('false');
+  await page.keyboard.press('Escape');
 });

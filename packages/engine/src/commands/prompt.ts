@@ -346,6 +346,12 @@ export interface PointPrompt extends PromptBase {
    * `pickbox`, so a click answers with its own point and Shift.
    */
   readonly quick?: { readonly loops: readonly (readonly Vec2[])[] };
+  /**
+   * A model viewport is picked (-VPORTS Join, M6-02 part 13): a click in any tiled viewport
+   * answers, the one clicked made current by it or not, and the answer says which (`tile`,
+   * counted as `modelTiles` lists them). A point typed answers with no `tile`.
+   */
+  readonly viewport?: true;
 }
 
 /** A distance: a number, or two points (one when `base` is given). */
@@ -1039,6 +1045,8 @@ export type PromptAnswer =
        * prompt that takes it (`rubberBand.freehand`, M3-12 part 6).
        */
       readonly freehand?: readonly Vec2[];
+      /** The tiled model viewport clicked in, at a prompt that asks for one (`viewport`). */
+      readonly tile?: number;
     }
   | {
       readonly kind: 'distance';
