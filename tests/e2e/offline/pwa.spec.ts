@@ -22,6 +22,8 @@ import {
   inkWeight,
   openWithDrop,
   openWithPicker,
+  openOptions,
+  optionsTab,
 } from '../app/page';
 import { CORPUS } from '../app/server';
 import { DIST, serveBuild, type StaticApp } from '../app/static';
@@ -174,11 +176,11 @@ test('drops fonts and a CTB, edits, saves and plots a PDF with no connection', a
     page.locator('.banner', { hasText: 'Added color-dependent plot style table office.ctb.' }),
   ).toBeVisible();
   // All three are kept on the device.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Files');
   const fonts = settings.getByRole('list', { name: 'Font files' });
   await expect(fonts).toContainText('Arial.TTF');
   await expect(fonts).toContainText('my-shapes.shx');
+  await optionsTab(settings, 'Plot and Publish');
   await expect(settings.getByRole('list', { name: 'Plot style tables' })).toContainText(
     'office.ctb',
   );
@@ -337,8 +339,7 @@ test('Clear all local data unregisters the service worker and deletes its caches
   // The reload after clearing is a first visit, which would install the worker again: with a
   // worker script that fails to run, what is left afterwards is only what the clearing left.
   app.override('/sw.js', "throw new Error('no worker this time');");
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'System');
   await settings.getByRole('button', { name: 'Clear all local data…' }).click();
   await Promise.all([
     page.waitForEvent('load'),

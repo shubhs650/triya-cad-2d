@@ -563,6 +563,8 @@ export type FileAction =
   | 'views'
   /** LAYERSTATE (M5-07 part 2): the Layer States Manager dialog. */
   | 'layerstates'
+  /** OPTIONS (M7-04): the Options dialog, answered when it closes. */
+  | 'options'
   /**
    * PAGESETUP (M6-01 part 3): the Page Setup Manager, which may ask for a window as `plot` does
    * (its Page Setup dialog's Window<).

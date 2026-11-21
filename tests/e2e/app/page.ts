@@ -324,6 +324,36 @@ export async function enterCommand(page: Page, text: string): Promise<void> {
   await input.press('Enter');
 }
 
+/** The Options dialog's tabs (M7-04, apps/web/src/options-dialog.ts). */
+export type OptionsTab =
+  | 'Files'
+  | 'Display'
+  | 'Open and Save'
+  | 'Plot and Publish'
+  | 'System'
+  | 'User Preferences'
+  | 'Drafting'
+  | 'Selection';
+
+/** Shows `tab` of the open Options dialog `options`. */
+export async function optionsTab(options: Locator, tab: OptionsTab): Promise<void> {
+  const t = options.getByRole('tab', { name: tab, exact: true });
+  await t.click();
+  await expect(t).toHaveAttribute('aria-selected', 'true');
+}
+
+/**
+ * Opens the Options dialog (OPTIONS) with the title bar's Settings button, on `tab` (it opens on
+ * the tab shown last, as AutoCAD's does), and returns it.
+ */
+export async function openOptions(page: Page, tab: OptionsTab): Promise<Locator> {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const options = page.getByRole('dialog', { name: 'Options' });
+  await expect(options).toBeVisible();
+  await optionsTab(options, tab);
+  return options;
+}
+
 /**
  * Turns GRID off in the viewport worked in, when the drawing was saved with it on (M6-02 part 19:
  * each viewport keeps its own GRIDMODE, so sample_AC1032_ascii.dxf opens with model space's grid

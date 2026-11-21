@@ -96,6 +96,7 @@ import { ExportDialog, exportDialog } from './ExportDialog';
 import { ViewManager } from './ViewManager';
 import { viewManager } from './view-manager';
 import { layerStatesManager } from './layer-states';
+import { optionsDialog } from './options-dialog';
 import { PageSetupManager, pageSetupManager } from './PageSetupManager';
 import { LayerStatesManager } from './LayerStatesManager';
 import { SelectTemplateDialog } from './SelectTemplateDialog';
@@ -1012,6 +1013,11 @@ async function fileCommand(
       resume: resume === true,
     });
     return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
+  }
+  if (action === 'options') {
+    // OPTIONS (M7-04): the Options dialog, waited for until it closes.
+    await optionsDialog.show();
+    return { ok: true };
   }
   if (action === 'layerstates') {
     // LAYERSTATE (M5-07 part 2): the Layer States Manager, waited for until it closes.
@@ -2207,7 +2213,7 @@ export function App() {
   // Properties' Pattern name offers the library the canvases draw with (M2-35 part 3).
   const patternNames = useMemo(() => hatchPatternNames(patterns.sources()), [patternState]);
   const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
-  const [settings, setSettings] = useState(false);
+  const settings = useSyncExternalStore(optionsDialog.subscribe, optionsDialog.get).open;
   const [aliasEditor, setAliasEditor] = useState(false);
   const [shortcutEditor, setShortcutEditor] = useState(false);
   const { aliasFile, keys: keyOverrides } = useSyncExternalStore(
@@ -2442,7 +2448,7 @@ export function App() {
           Report issue
         </a>
         <InstallButton pwa={pwa} />
-        <button type="button" className="settings-button" onClick={() => setSettings(true)}>
+        <button type="button" className="settings-button" onClick={() => void optionsDialog.show()}>
           Settings
         </button>
       </header>
@@ -2458,7 +2464,7 @@ export function App() {
         templates={templates}
         deviceFonts={deviceFonts}
         open={settings}
-        onClose={() => setSettings(false)}
+        onClose={() => optionsDialog.close()}
         onAdd={addPatterns}
         onAddFonts={addFonts}
         onAddFiles={addSupportFiles}
@@ -2798,7 +2804,7 @@ export function App() {
         variables={variables}
         lines={commandLines}
         cursor={() => lastCursor}
-        onSettings={() => setSettings(true)}
+        onSettings={() => void optionsDialog.show()}
         onEditAliases={() => setAliasEditor(true)}
         onEditShortcuts={() => setShortcutEditor(true)}
         recent={recentFiles}

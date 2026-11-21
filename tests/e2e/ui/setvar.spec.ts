@@ -15,6 +15,8 @@ import {
   expectShown,
   openWithPicker,
   viewOf,
+  openOptions,
+  optionsTab,
 } from '../app/page';
 import { startApp } from '../app/server';
 
@@ -337,16 +339,16 @@ test('AUTOSNAP, DYNMODE, PICKFIRST and SCREENSIZE', async ({ page }) => {
   await shot('1-setvar-values.png');
 
   // Settings shows what SETVAR set: AutoSnap tooltip off, the rest of AUTOSNAP's bits on.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Drafting');
   await expect(settings.getByLabel('Display AutoSnap tooltip')).not.toBeChecked();
   await expect(settings.getByLabel('Marker', { exact: true })).toBeChecked();
   await expect(settings.getByLabel('Magnet')).toBeChecked();
   await expect(settings.getByLabel('Display AutoTrack tooltip')).toBeChecked();
-  await expect(settings.getByLabel('Noun/verb selection (PICKFIRST)')).toBeChecked();
   await settings.getByLabel('Display AutoSnap tooltip').scrollIntoViewIfNeeded();
   await shot('2-settings-autosnap.png');
   await settings.getByLabel('Display AutoSnap tooltip').check();
+  await optionsTab(settings, 'Selection');
+  await expect(settings.getByLabel('Noun/verb selection (PICKFIRST)')).toBeChecked();
   await page.keyboard.press('Escape');
   await expect(settings).toBeHidden();
   await type(page, 'AUTOSNAP', 'Enter new value for AUTOSNAP <47>:');
@@ -412,8 +414,7 @@ test('GRIPSIZE draws and picks grips at its size, and Settings shows it', async 
   await expect(prompt(page)).toHaveText('Command:');
 
   // Settings' Grip size is GRIPSIZE: it shows 15, and set there SETVAR reads it back.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Selection');
   const grip = settings.getByLabel('Grip size');
   await expect(grip).toHaveValue('15');
   await grip.scrollIntoViewIfNeeded();

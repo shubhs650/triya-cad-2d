@@ -15,6 +15,7 @@ import {
   inkWeight,
   openWithDrop,
   openWithPicker,
+  openOptions,
 } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
@@ -80,8 +81,7 @@ test('a dropped TrueType file draws the style that names it, and stays after a r
   await openDrawing(page);
   await expect.poll(() => inkWeight(page), { timeout: 30_000 }).toBeGreaterThan(standIn + FILLED);
 
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Files');
   await expect(settings.getByRole('list', { name: 'Font files' })).toContainText('Arial.TTF');
   await settings.getByRole('button', { name: 'Remove Arial.TTF' }).click();
   await expect(settings.getByText('No font files added.')).toBeVisible();
@@ -99,8 +99,7 @@ test('Settings adds font files with its picker and refuses a file that is not a 
   await page.goto(app.url);
   const standIn = await openDrawing(page);
 
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Files');
   await expect(settings.getByText('No font files added.')).toBeVisible();
   const pick = async (file: string) => {
     const chooser = page.waitForEvent('filechooser');

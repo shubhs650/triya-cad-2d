@@ -216,6 +216,8 @@ describe('palette search', () => {
       'NEW',
       'OFFSET',
       'OOPS',
+      // M7-04: OPTIONS, the Options dialog.
+      'OPTIONS',
       'OSNAP',
       // M3-02 part 6: OVERKILL and SPLINEDIT.
       'OVERKILL',

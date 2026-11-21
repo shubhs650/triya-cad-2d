@@ -8,7 +8,15 @@
 import { copyFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { activeCanvas, colourAt, expectShown, openWithDrop, openWithPicker } from '../app/page';
+import {
+  activeCanvas,
+  colourAt,
+  expectShown,
+  openOptions,
+  openWithDrop,
+  openWithPicker,
+  optionsTab,
+} from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
 
@@ -31,13 +39,9 @@ const MONOCHROME_CTB = path.join(
 const LIN = '*FENCE2,Fence ----0----\nA,.25,-.1,["O",STANDARD,S=.1,R=0,X=-.03,Y=-.05],-.1\n';
 const NAME = path.basename(DXF32);
 const prompt = (page: Page) => page.getByTestId('command-prompt');
-const settingsDialog = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
-
-async function openSettings(page: Page) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(settingsDialog(page)).toBeVisible();
-  return settingsDialog(page);
-}
+const settingsDialog = (page: Page) => page.getByRole('dialog', { name: 'Options' });
+/** The Options dialog (M7-04), opened with the title bar's Settings button on `tab`. */
+const openSettings = openOptions;
 
 /** Every record of every IndexedDB database, every OPFS file and every cache, by name. */
 function localData(page: Page): Promise<{ records: string[]; files: string[]; caches: string[] }> {
@@ -101,7 +105,7 @@ test('Clear all local data leaves IndexedDB and the private file system empty', 
   await expect(
     page.locator('.banner', { hasText: 'Added 1 linetype from fences.lin: FENCE2.' }),
   ).toBeVisible();
-  const settings = await openSettings(page);
+  const settings = await openSettings(page, 'Display');
   await settings.getByLabel('Color theme').selectOption('dark');
   await page.keyboard.press('Escape');
 
@@ -131,7 +135,7 @@ test('Clear all local data leaves IndexedDB and the private file system empty', 
     'plotstyles/office.ctb',
   ]);
 
-  await openSettings(page);
+  await openSettings(page, 'System');
   await settingsDialog(page).getByRole('button', { name: 'Clear all local data…' }).click();
   await expect(
     settingsDialog(page).getByRole('group', { name: 'Clear all local data' }),
@@ -146,11 +150,13 @@ test('Clear all local data leaves IndexedDB and the private file system empty', 
   await expect(page.locator('html')).not.toHaveAttribute('data-theme', /./);
   // The stores the new page opens again are empty.
   await expect.poll(() => localData(page)).toEqual({ records: [], files: [], caches: [] });
-  const fresh = await openSettings(page);
+  const fresh = await openSettings(page, 'Files');
   await expect(fresh.getByText('No pattern files added.')).toBeVisible();
   await expect(fresh.getByText('No font files added.')).toBeVisible();
-  await expect(fresh.getByText('No plot style tables added.')).toBeVisible();
   await expect(fresh.getByText('No linetype files added.')).toBeVisible();
+  await optionsTab(fresh, 'Plot and Publish');
+  await expect(fresh.getByText('No plot style tables added.')).toBeVisible();
+  await optionsTab(fresh, 'Display');
   await expect(fresh.getByLabel('Color theme')).toHaveValue('system');
 });
 
@@ -158,10 +164,11 @@ test('settings are kept between sessions and apply to the canvas and status bar'
   page,
 }) => {
   await page.goto(app.url);
-  const settings = await openSettings(page);
+  const settings = await openSettings(page, 'Display');
   await settings.getByLabel('Color theme').selectOption('dark');
   await settings.getByLabel('Model space background').fill('#ffffff');
   await settings.getByLabel('Coordinates').selectOption('decimal');
+  await optionsTab(settings, 'Drafting');
   await settings.getByLabel('Midpoint').check();
   await settings.getByLabel('Polar increment angle').selectOption('45');
   await settings.getByLabel('Dynamic Input (F12)').uncheck();
@@ -173,9 +180,10 @@ test('settings are kept between sessions and apply to the canvas and status bar'
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.getByTitle('Dynamic Input (F12)')).toHaveAttribute('aria-pressed', 'false');
-  const again = await openSettings(page);
+  const again = await openSettings(page, 'Display');
   await expect(again.getByLabel('Model space background')).toHaveValue('#ffffff');
   await expect(again.getByLabel('Coordinates')).toHaveValue('decimal');
+  await optionsTab(again, 'Drafting');
   await expect(again.getByLabel('Midpoint')).toBeChecked();
   await expect(again.getByLabel('Polar increment angle')).toHaveValue('45');
   await page.keyboard.press('Escape');
@@ -190,7 +198,11 @@ test('settings are kept between sessions and apply to the canvas and status bar'
   await page.screenshot({ path: test.info().outputPath('dark-chrome-white-canvas.png') });
 
   // Restoring the defaults puts the dark model canvas back.
-  await (await openSettings(page)).getByRole('button', { name: 'Restore default colors' }).click();
+  await (
+    await openSettings(page, 'Display')
+  )
+    .getByRole('button', { name: 'Restore default colors' })
+    .click();
   await page.keyboard.press('Escape');
   await expect
     .poll(async () => (await colourAt(page, { x: 3, y: box.height - 3 })).slice(0, 3))
@@ -207,7 +219,7 @@ test('plot style tables and linetype files are added in Settings, listed, refuse
   const lin = test.info().outputPath('fences.lin');
   writeFileSync(lin, LIN);
   await page.goto(app.url);
-  const settings = await openSettings(page);
+  const settings = await openSettings(page, 'Plot and Publish');
   await page.getByTestId('plot-style-picker').setInputFiles([ctb]);
   const tables = settings.getByRole('list', { name: 'Plot style tables' });
   await expect(tables).toContainText('Office.ctb');
@@ -217,10 +229,12 @@ test('plot style tables and linetype files are added in Settings, listed, refuse
   await expect(settings.getByRole('alert')).toHaveText(
     'wrong.stb holds a color-dependent plot style table, so its name must end in .ctb.',
   );
+  await optionsTab(settings, 'Files');
   await page.getByTestId('linetype-picker').setInputFiles([lin]);
   await expect(settings.getByRole('list', { name: 'Linetype files' })).toContainText(
     'fences.linFENCE2',
   );
+  await optionsTab(settings, 'Plot and Publish');
   await settings.getByRole('heading', { name: 'Plot style tables' }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: test.info().outputPath('support-files.png') });
 
@@ -229,9 +243,10 @@ test('plot style tables and linetype files are added in Settings, listed, refuse
     .poll(async () => (await localData(page)).files.sort())
     .toEqual(['linetypes/fences.lin', 'plotstyles/Office.ctb']);
   await page.reload();
-  const again = await openSettings(page);
-  await expect(again.getByRole('list', { name: 'Plot style tables' })).toContainText('Office.ctb');
+  const again = await openSettings(page, 'Files');
   await expect(again.getByRole('list', { name: 'Linetype files' })).toContainText('fences.lin');
+  await optionsTab(again, 'Plot and Publish');
+  await expect(again.getByRole('list', { name: 'Plot style tables' })).toContainText('Office.ctb');
   await again.getByRole('button', { name: 'Remove Office.ctb' }).click();
   await expect(again.getByText('No plot style tables added.')).toBeVisible();
   // The list changes at once; the private file system's deletion finishes a moment later.
@@ -239,7 +254,9 @@ test('plot style tables and linetype files are added in Settings, listed, refuse
     .poll(async () => (await localData(page)).files.sort())
     .toEqual(['linetypes/fences.lin']);
   await page.reload();
-  await expect((await openSettings(page)).getByText('No plot style tables added.')).toBeVisible();
+  await expect(
+    (await openSettings(page, 'Plot and Publish')).getByText('No plot style tables added.'),
+  ).toBeVisible();
 });
 
 test('the crosshairs take their colour, and the tooltip and ruler follow the dark theme', async ({
@@ -251,7 +268,7 @@ test('the crosshairs take their colour, and the tooltip and ruler follow the dar
   const cursor = () => activeCanvas(page).evaluate((c) => getComputedStyle(c).cursor);
   // Automatic: white crosshairs on the dark model canvas.
   await expect.poll(cursor).toContain('%23ffffff');
-  const settings = await openSettings(page);
+  const settings = await openSettings(page, 'Display');
   await settings.getByLabel('Crosshairs: Automatic').uncheck();
   await settings.getByLabel('Crosshairs', { exact: true }).fill('#ff0000');
   await settings.getByLabel('Color theme').selectOption('dark');
@@ -272,7 +289,7 @@ test('the crosshairs take their colour, and the tooltip and ruler follow the dar
   expect(vars).toEqual(['#3a3523', '#e6e8eb']);
   // Kept between visits.
   await page.reload();
-  const again = await openSettings(page);
+  const again = await openSettings(page, 'Display');
   await expect(again.getByLabel('Crosshairs: Automatic')).not.toBeChecked();
   await expect(again.getByLabel('Crosshairs', { exact: true })).toHaveValue('#ff0000');
 });

@@ -73,6 +73,21 @@ describe('the file commands', () => {
     );
   });
 
+  it('OPTIONS (OP) opens the Options dialog, transparently inside another command (M7-04)', async () => {
+    const { bus, asked, model } = setup(() => ({ ok: true }));
+    const version = model.version;
+    await bus.submit('OP');
+    expect(asked).toEqual([{ op: 'file', action: 'options' }]);
+    expect(bus.command).toBeUndefined();
+    await bus.submit('LINE');
+    await bus.submit("'OPTIONS");
+    expect(asked).toHaveLength(2);
+    expect(bus.promptText).toBe('Specify first point:');
+    await bus.cancel();
+    expect(model.version).toBe(version);
+    expect(bus.undo.state.undoable).toBe(0);
+  });
+
   it('reports what the app could not do', async () => {
     const { bus } = setup(() => ({ ok: false, message: 'Save cancelled.' }));
     await bus.submit('QSAVE');
