@@ -239,4 +239,20 @@ describe('acad-ts local patches (corpus-backed, part 3)', () => {
       expect(back.getCadObject(h), h.toString(16)).toBeTruthy();
     }
   });
+
+  it('0190 a dictionary entry read keeps its key when its object has a name of its own', () => {
+    // AutoCAD files each SCALE in ACAD_SCALELIST under a key (A0, A1, …) that orders the scale
+    // list; the SCALE's own name (300) is "1:1". The reader filed it under its name, so the list
+    // lost its order and every save renamed the entries.
+    for (const raw of [
+      readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1032_ascii.dxf')),
+      readDwgRaw('third-party/acadsharp/sample_AC1032.dwg'),
+    ]) {
+      const scales = raw.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadScaleList)!;
+      expect(scales.entryNames.slice(0, 3)).toEqual(['A0', 'A1', 'A2']);
+      expect(scales.getEntry<CadDictionary>('A1')!.name).toBe('1:2');
+      const text = new TextDecoder().decode(writeDxf(raw, false, new DxfWriterConfiguration()));
+      expect(text).toMatch(/\n {2}3\nA0\n350\nB7\n/);
+    }
+  });
 });

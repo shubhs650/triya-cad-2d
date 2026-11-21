@@ -137,6 +137,12 @@ export {
 } from './vpmax';
 export { layvpiCommand } from './layvpi';
 export {
+  METRIC_SCALE_LIST,
+  commitScaleList,
+  editedList,
+  scalelisteditCommand,
+} from './scalelistedit';
+export {
   IN_PAPER_SPACE,
   NOT_IN_MODEL_TAB,
   NO_VIEWPORTS,

@@ -7,7 +7,13 @@
 // CANNOSCALEVALUE is the new scale's.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { DocumentModel, PromptBus, builtinCommands, type HeaderValue } from '@triya/engine';
+import {
+  DocumentModel,
+  PromptBus,
+  annotationScales,
+  builtinCommands,
+  type HeaderValue,
+} from '@triya/engine';
 import { documentInit, mapHeader, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { loadManifest, readableFiles } from '../corpus/manifest.ts';
@@ -47,15 +53,12 @@ describe('AcDbVariableDictionary variables set by SETVAR save and read back', ()
           want.set(name, kept);
         };
         const scale = another(
-          (model.meta.annotationScales ?? []).map((s) => s.name),
+          annotationScales(model).map((s) => s.name),
           header.get('CANNOSCALE'),
         );
         if (scale !== undefined) {
           set('CANNOSCALE', scale);
-          want.set(
-            'CANNOSCALEVALUE',
-            model.meta.annotationScales!.find((s) => s.name === scale)!.value,
-          );
+          want.set('CANNOSCALEVALUE', annotationScales(model).find((s) => s.name === scale)!.value);
           if (scale !== header.get('CANNOSCALE')) scales++;
         }
         for (const [name, table] of [

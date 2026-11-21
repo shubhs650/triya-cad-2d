@@ -11,7 +11,7 @@ import {
   dimStyleXdataVars,
   dimVars,
   linetypeRef,
-  type AnnotationScale,
+  isDrawingScale,
   type AnnotationTables,
   type Color,
   type DimVarValue,
@@ -234,9 +234,12 @@ export function dimStyle(
   };
 }
 
-/** What `dimensionParts` reads of the drawing beyond its tables: its annotation scales. */
+/**
+ * What `dimensionParts` reads of the drawing beyond its tables: its objects, among them the
+ * SCALEs of its scale list (M6-02 part 21).
+ */
 export type DimensionTables = AnnotationTables & {
-  readonly meta?: { readonly annotationScales?: readonly AnnotationScale[] };
+  readonly objects?: ReadonlyMap<Handle, { readonly type: string }>;
 };
 
 /**
@@ -253,6 +256,8 @@ export function annotationScaleOf(
   const reps = e.annotative?.representations ?? [];
   const rep = reps.find((r) => r.isDefault) ?? reps[0];
   if (rep?.scale === undefined) return undefined;
-  const value = model.meta?.annotationScales?.find((s) => s.handle === rep.scale)?.value;
-  return value !== undefined && value > 0 ? 1 / value : undefined;
+  const s = model.objects?.get(rep.scale);
+  if (!isDrawingScale(s)) return undefined;
+  const value = s.paperUnits / s.drawingUnits;
+  return value > 0 && Number.isFinite(value) ? 1 / value : undefined;
 }

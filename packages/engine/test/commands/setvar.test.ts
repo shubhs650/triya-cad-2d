@@ -781,6 +781,19 @@ describe('angle variables (M2-35 part 24)', () => {
   });
 });
 
+/** SCALE objects of a scale list (M6-02 part 21), `value` paper units to one drawing unit. */
+const scaleObjects = (scales: readonly { name: string; value: number }[]) =>
+  scales.map((s, i) => ({
+    type: 'SCALE' as const,
+    handle: (0xa00 + i).toString(16).toUpperCase(),
+    owner: '9F0',
+    key: `A${i}`,
+    name: s.name,
+    paperUnits: s.value,
+    drawingUnits: 1,
+    unitScale: false,
+  }));
+
 describe('AcDbVariableDictionary variables (M2-59 part 4)', () => {
   const tableStyle = (handle: string, name: string): TableStyleRecord => ({
     handle,
@@ -812,14 +825,14 @@ describe('AcDbVariableDictionary variables (M2-59 part 4)', () => {
     ]);
     return {
       ...init,
-      meta: {
-        ...init.meta,
-        annotationScales: [
+      objects: [
+        ...(init.objects ?? []),
+        ...scaleObjects([
           { name: '1:1', value: 1 },
           { name: '1:50', value: 0.02 },
           { name: '1/4" = 1\'-0"', value: 1 / 48 },
-        ],
-      },
+        ]),
+      ],
       tables: {
         ...init.tables,
         mleaderStyles: [

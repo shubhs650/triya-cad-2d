@@ -2543,14 +2543,16 @@ export interface DocumentMeta {
    */
   readonly keptEntryNames?: { readonly mleaderStyles?: readonly string[] };
   /**
-   * The drawing's annotation scales (the `ACAD_SCALELIST` dictionary's SCALEs, M2-59 part 4):
-   * each one's name and value, paper units per drawing unit (0.02 for 1:50), which CANNOSCALE
-   * names and CANNOSCALEVALUE is. Scales with no valid ratio are left out.
+   * The `ACAD_SCALELIST` dictionary's handle (M6-02 part 21), which SCALELISTEDIT files new
+   * scales in: known even while it holds none (acad-ts makes it on read when a file has none).
    */
-  readonly annotationScales?: readonly AnnotationScale[];
+  readonly scaleListDictionary?: Handle;
 }
 
-/** An annotation scale of the drawing's scale list. */
+/**
+ * An annotation scale of the drawing's scale list as CANNOSCALE and the scale menus read it
+ * (`annotationScales`, from the SCALE objects).
+ */
 export interface AnnotationScale {
   readonly name: string;
   /** Paper units per drawing unit (`CANNOSCALEVALUE`). */
@@ -2558,3 +2560,30 @@ export interface AnnotationScale {
   /** The SCALE object's handle, which an annotative object's representations name (DXF 340). */
   readonly handle?: Handle;
 }
+
+/**
+ * A SCALE of the drawing's scale list (its `ACAD_SCALELIST` dictionary; M2-59 part 4 read them,
+ * M6-02 part 21 maps them so SCALELISTEDIT can edit them). The list is in the order of the
+ * entries' keys (A0, A1, …, B0, …), as AutoCAD's sorted dictionary lists them.
+ */
+export interface DrawingScale extends NonGraphicalObject {
+  readonly type: 'SCALE';
+  /** Its `ACAD_SCALELIST` entry name (A0, A1, …), which orders the list. */
+  readonly key: string;
+  /** DXF 300: the name the scale list shows, such as `1:50` or `1/4" = 1'-0"`. */
+  readonly name: string;
+  /** DXF 140. */
+  readonly paperUnits: number;
+  /** DXF 141. */
+  readonly drawingUnits: number;
+  /** DXF 290: the list's unit scale (AutoCAD's own 1:1). */
+  readonly unitScale: boolean;
+  /**
+   * Something the drawing holds and Triya does not map names it (an annotative object's context
+   * data, read or kept as read): SCALELISTEDIT may not delete it or change its ratio.
+   */
+  readonly referenced?: boolean;
+}
+
+export const isDrawingScale = (o: { type: string } | undefined): o is DrawingScale =>
+  o?.type === 'SCALE';

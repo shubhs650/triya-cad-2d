@@ -8,7 +8,13 @@
 // over the whole drawing, and leave every other object as ANNOALLVISIBLE 1 draws it.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ChangeSetBuilder, type DocumentModel, type Entity, type Handle } from '@triya/engine';
+import {
+  ChangeSetBuilder,
+  annotationScales,
+  type DocumentModel,
+  type Entity,
+  type Handle,
+} from '@triya/engine';
 import { readCadDocument } from '@triya/io';
 import { Canvas2DRenderer, type Canvas2D, type Surface } from '@triya/render';
 import { expect } from 'vitest';
@@ -53,7 +59,7 @@ eachCorpusFile(
     if (annotative.length === 0) return;
     files++;
     objects += annotative.length;
-    const scales = model.meta.annotationScales ?? [];
+    const scales = annotationScales(model);
     const named = new Set(
       annotative.flatMap((e) => e.annotative!.representations.map((r) => r.scale)),
     );

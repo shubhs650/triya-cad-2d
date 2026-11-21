@@ -20,6 +20,22 @@ const SCALES = [
   { name: '1:100', value: 0.01, handle: '12E' },
 ];
 
+/** SCALE objects of a scale list (M6-02 part 21), `value` paper units to one drawing unit. */
+const scaleObjects = (
+  scales: readonly { name: string; value: number; handle?: string }[],
+  first = 0xa00,
+) =>
+  scales.map((s, i) => ({
+    type: 'SCALE' as const,
+    handle: s.handle ?? (first + i).toString(16).toUpperCase(),
+    owner: '9F0',
+    key: `A${i}`,
+    name: s.name,
+    paperUnits: s.value,
+    drawingUnits: 1,
+    unitScale: false,
+  }));
+
 function init(cannoscale: string | undefined, entities: EntityInit[] = []): DocumentInit {
   const base = sampleInit();
   return {
@@ -28,7 +44,7 @@ function init(cannoscale: string | undefined, entities: EntityInit[] = []): Docu
       ...(base.header ?? []),
       ...(cannoscale === undefined ? [] : [['CANNOSCALE', cannoscale] as const]),
     ]),
-    meta: { ...base.meta, annotationScales: SCALES },
+    objects: [...(base.objects ?? []), ...scaleObjects(SCALES)],
     entities: [...(base.entities ?? []), ...entities],
   };
 }

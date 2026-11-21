@@ -25,8 +25,9 @@ import {
   View,
   XYZ,
 } from '@node-projects/acad-ts';
+import { DocumentModel, annotationScales } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { mapHeader, mapTables } from '../src/index';
+import { documentInit, mapHeader, mapTables } from '../src/index';
 import { aciOfTrueColor, mapColor, mapEntityColor, mapLineweight } from '../src/map/common';
 import { DIMVARS } from '../src/map/dimvars';
 
@@ -497,7 +498,7 @@ describe('mapHeader', () => {
     }
     // With each SCALE's handle, which annotative objects' representations name (M4-01).
     const handleOf = (name: string) => handles.get(name)!;
-    expect(mapHeader(doc).meta.annotationScales).toEqual([
+    expect(annotationScales(DocumentModel.create(documentInit(doc)))).toEqual([
       { name: '1:1', value: 1, handle: handleOf('1:1') },
       { name: '1:50', value: 0.02, handle: handleOf('1:50') },
     ]);

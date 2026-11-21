@@ -21,6 +21,7 @@
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { currentAnnotationScale } from '../annotation/annotation-scale';
+import { annotationScales } from '../annotation/scale-list';
 import { isPaperView, namedViewWindow, type ViewExtent } from '../edit/named-view';
 import { layoutSheet } from '../layout/sheet';
 import type { DocumentModel } from '../model/document';
@@ -62,8 +63,8 @@ export const DEFAULT_VIEWPORT_SCALES: readonly ViewportScale[] = [
 ].map(([name, value]) => ({ name: name as string, value: value as number }));
 
 /** The drawing's scale list (its ACAD_SCALELIST), else AutoCAD's default one. */
-export function viewportScales(model: Pick<DocumentModel, 'meta'>): readonly ViewportScale[] {
-  const own = (model.meta.annotationScales ?? []).filter((s) => s.value > 0);
+export function viewportScales(model: Pick<DocumentModel, 'objects'>): readonly ViewportScale[] {
+  const own = annotationScales(model);
   return own.length > 0 ? own : DEFAULT_VIEWPORT_SCALES;
 }
 

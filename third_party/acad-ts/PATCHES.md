@@ -3457,3 +3457,20 @@ RASTERVARIABLES group 70 (DWG BS) holds IMAGEFRAME, which AutoCAD sets to 0 (fra
 A shape file's STYLE record has an empty name, and the table keeps each under a key no name can have, so `Table.remove(key)` cannot be called for one: its key is private. This adds `Table.keyOf(entry)`, the key the table lists an entry under. All nameless entries register their references under the same name key `''`, so `remove` also handed every nameless entry's referrers (SHAPE entities of other shape files) to the table's default entry when any one of them was removed; it now reassigns referrers only for a named entry. Named entries behave as before.
 
 </details>
+
+### 0190 — a dictionary entry read keeps its key when its object has a name of its own
+
+- **File:** `third_party/acad-ts-patches/0190-dictionary-entries-keep-their-keys.patch`
+- **Touches:** `src/IO/Templates/CadDictionaryTemplate.ts`
+- **Symptom:** The reader filed each dictionary entry under its object's name when the object had one, not under the key the file lists it by. AutoCAD files the SCALEs of ACAD_SCALELIST under keys A0, A1, … that order the scale list, while each SCALE is named by its DXF 300 ("1:1"), so the list read back keyed "1:1", "1:2", … (its order lost) and every save renamed the drawing's scale list entries. Found by SCALELISTEDIT (M6-02 part 21), whose Move Up and Move Down change the keys.
+- **Fix:** `CadDictionaryTemplate._build` adds each entry with `addByKey(key, entry)`; an object without a name still takes the key as its name, as before.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-3.corpus.test.ts` → "0190 a dictionary entry read keeps its key when its object has a name of its own" (the ACadSharp AC1032 sample, DXF and DWG); `export-scale-list.corpus.test.ts` saves edited scale lists.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep a dictionary entry's key when its object has its own name
+
+`CadDictionaryTemplate` built each dictionary with `dictionary.Add(entry)`, which files the entry under `entry.Name`. Objects that read a name of their own, such as a SCALE (group code 300, "1:1"), therefore lost the key the file lists them under: ACAD_SCALELIST's entries are keyed A0, A1, … by AutoCAD, which orders the scale list, and they came back keyed by scale name, so writing the document renamed every entry. This adds each entry under the key read, `AddByKey(key, entry)`; an entry without a name still takes the key as its name.
+
+</details>

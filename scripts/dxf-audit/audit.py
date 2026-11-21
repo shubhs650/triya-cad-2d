@@ -132,6 +132,11 @@ FIXTURE_SAVES = (
     # and removed (M6-02 part 10, packages/testkit/src/export/export-vports.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "vports"),
     ("third-party/ezdxf/examples_dxf/colors.dxf", "vports"),
+    # -SCALELISTEDIT and the Edit Drawing Scales dialog's OK: ACAD_SCALELIST's SCALEs added,
+    # rekeyed, changed and removed (M6-02 part 21, export-scale-list.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "scalelist"),
+    ("third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dxf", "scalelist"),
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "scalelist"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
     # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,

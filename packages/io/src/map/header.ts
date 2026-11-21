@@ -93,7 +93,6 @@ export function mapHeader(doc: CadDocument): MappedHeader {
       ...(doc.rootDictionary && { rootDictionary: hex(doc.rootDictionary.handle) }),
       ...definitionDictionaries(doc),
       ...keptEntryNames(doc),
-      ...annotationScales(doc),
     },
   };
 }
@@ -109,6 +108,7 @@ function definitionDictionaries(doc: CadDocument): {
   layerStateDictionary?: string;
   layerFilterDictionary?: string;
   plotSettingsDictionary?: string;
+  scaleListDictionary?: string;
 } {
   const images = namedDictionary(doc, CadDictionary.acadImageDict);
   const pdfs = namedDictionary(doc, CadDictionary.acadPdfDefinitions);
@@ -117,6 +117,7 @@ function definitionDictionaries(doc: CadDocument): {
   const states = layerStatesDictionary(doc);
   const filters = layerFiltersDictionary(doc);
   const plotSettings = namedDictionary(doc, CadDictionary.acadPlotSettings);
+  const scales = namedDictionary(doc, CadDictionary.acadScaleList);
   return {
     ...(images && { imageDictionary: hex(images.handle) }),
     ...(pdfs && { pdfDictionary: hex(pdfs.handle) }),
@@ -127,6 +128,8 @@ function definitionDictionaries(doc: CadDocument): {
     ...(filters && { layerFilterDictionary: hex(filters.handle) }),
     // New named page setups (M6-01 part 3): ACAD_PLOTSETTINGS, which acad-ts makes on read.
     ...(plotSettings && { plotSettingsDictionary: hex(plotSettings.handle) }),
+    // New scales (SCALELISTEDIT, M6-02 part 21): ACAD_SCALELIST, which acad-ts makes on read.
+    ...(scales && { scaleListDictionary: hex(scales.handle) }),
   };
 }
 
@@ -158,22 +161,6 @@ export function annotationScaleValue(doc: CadDocument, scale: HeaderValue): numb
     return s.paperUnits > 0 && s.drawingUnits > 0 ? s.paperUnits / s.drawingUnits : undefined;
   }
   return undefined;
-}
-
-/**
- * The ACAD_SCALELIST scales with a valid ratio (M2-59 part 4): what SETVAR's CANNOSCALE may name,
- * with the CANNOSCALEVALUE each gives.
- */
-function annotationScales(doc: CadDocument): Pick<DocumentMeta, 'annotationScales'> {
-  const out: { name: string; value: number; handle?: string }[] = [];
-  for (const s of namedDictionary(doc, CadDictionary.acadScaleList) ?? []) {
-    if (!(s instanceof Scale) || !s.name) continue;
-    const value = annotationScaleValue(doc, s.name);
-    // The SCALE's handle: what an annotative object's representations name (M4-01).
-    if (value !== undefined && !out.some((o) => o.name === s.name))
-      out.push({ name: s.name, value, ...(s.handle ? { handle: hex(s.handle) } : {}) });
-  }
-  return out.length > 0 ? { annotationScales: out } : {};
 }
 
 /**
