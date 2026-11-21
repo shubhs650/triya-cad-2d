@@ -20,11 +20,11 @@ export type LayerColumnKey =
   | 'linetype'
   | 'lineweight'
   | 'transparency'
+  | 'description'
   | 'vpColor'
   | 'vpLinetype'
   | 'vpLineweight'
-  | 'vpTransparency'
-  | 'description';
+  | 'vpTransparency';
 
 export interface LayerColumn {
   readonly key: LayerColumnKey;
@@ -57,13 +57,13 @@ export const LAYER_COLUMNS: readonly LayerColumn[] = [
   { key: 'linetype', title: 'Linetype', width: 130 },
   { key: 'lineweight', title: 'Lineweight', width: 110, fits: true },
   { key: 'transparency', title: 'Transparency', width: 110, fits: true },
+  { key: 'description', title: 'Description', width: 200 },
   // M6-02 part 8: the viewport made current's overrides (AutoCAD's VP Plot Style is left out,
   // as Triya does not plot by named plot style).
   { key: 'vpColor', title: 'VP Color', layoutOnly: true, width: 110 },
   { key: 'vpLinetype', title: 'VP Linetype', layoutOnly: true, width: 130 },
   { key: 'vpLineweight', title: 'VP Lineweight', layoutOnly: true, width: 110, fits: true },
   { key: 'vpTransparency', title: 'VP Transparency', layoutOnly: true, width: 120, fits: true },
-  { key: 'description', title: 'Description', width: 200 },
 ];
 
 const COLUMN = new Map(LAYER_COLUMNS.map((c) => [c.key, c]));

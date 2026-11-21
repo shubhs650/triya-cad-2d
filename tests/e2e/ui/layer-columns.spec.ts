@@ -121,10 +121,10 @@ test('Customize Layer Columns orders and hides columns from the keyboard (M5-05)
   // Move Up gives the moved column the focus back once the list re-renders: wait for that
   // before focusing Linetype, or the late refocus takes the Space (seen in CI on #506).
   await expect(dialog.getByRole('checkbox', { name: 'Description' })).toBeFocused();
-  await dialog.getByRole('checkbox', { name: 'Linetype' }).focus();
-  await expect(dialog.getByRole('checkbox', { name: 'Linetype' })).toBeFocused();
+  await dialog.getByRole('checkbox', { name: 'Linetype', exact: true }).focus();
+  await expect(dialog.getByRole('checkbox', { name: 'Linetype', exact: true })).toBeFocused();
   await page.keyboard.press('Space');
-  await expect(dialog.getByRole('checkbox', { name: 'Linetype' })).not.toBeChecked();
+  await expect(dialog.getByRole('checkbox', { name: 'Linetype', exact: true })).not.toBeChecked();
   await page.keyboard.press('Enter');
   await expect(dialog).toBeHidden();
 
