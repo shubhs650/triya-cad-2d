@@ -581,7 +581,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M7-02** All tabs/panels per `UI_SPEC.md` with Fluent icons, tooltips with command names/aliases/F-keys, hover/press animations, contextual tabs (Hatch, MText, Table, Block Editor, Xref). **Acceptance:** snapshot tests per breakpoint. *Added from M2-36 (#287):* Fluent icons on the Quick Access Undo and Redo split buttons.
 
-- [ ] **M7-03** Dockable palette stack: Properties, Layers, Blocks/Library, References, Constraints, Compare, Health, Command history; docking/floating/auto-hide; slide-over < 1366. **Acceptance:** layout persistence test.
+- [~] (thread: Build the dockable palette stack) **M7-03** Dockable palette stack: Properties, Layers, Blocks/Library, References, Constraints, Compare, Health, Command history; docking/floating/auto-hide; slide-over < 1366. **Acceptance:** layout persistence test.
 
 - [ ] **M7-04** Dialog parity set: OPTIONS (display/open-save/plot/user prefs/drafting/selection), DRAFTINGSETTINGS, all style managers, INSERT, BLOCK, XREF, LINETYPE, UNITS, PAGESETUP, PLOT, PUBLISH. **Acceptance:** each dialog has a Playwright smoke test.
 
