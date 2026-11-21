@@ -57,6 +57,30 @@ export function viewCategoryProblem(category: string | undefined): string | unde
     : undefined;
 }
 
+/** Whether the view is paper space's (VIEW flag 1). */
+export const isPaperView = (view: ViewRecord): boolean => ((view.flags ?? 0) & PAPER_VIEW) !== 0;
+
+/**
+ * The window a named plan view shows, in world units: its centre (DXF 10, display coordinates,
+ * so plus the target) and its width and height (M6-02 part 14). Undefined for a 3D or twisted
+ * view, which a plan view cannot show, and for one without a size.
+ */
+export function namedViewWindow(view: ViewRecord): ViewExtent | undefined {
+  const d = view.direction;
+  const len = Math.hypot(d.x, d.y, d.z);
+  const plan =
+    d.z > 0 &&
+    Math.abs(d.x) <= 1e-9 * len &&
+    Math.abs(d.y) <= 1e-9 * len &&
+    Math.abs(view.twist) <= 1e-12;
+  if (!plan || !(view.width > 0) || !(view.height > 0)) return undefined;
+  return {
+    center: { x: view.center.x + view.target.x, y: view.center.y + view.target.y },
+    width: view.width,
+    height: view.height,
+  };
+}
+
 /** The view `extent` as a VIEW record looking straight down at it (AutoCAD's defaults). */
 function viewFields(extent: ViewExtent, paper: boolean): Omit<ViewRecord, 'handle' | 'name'> {
   return {

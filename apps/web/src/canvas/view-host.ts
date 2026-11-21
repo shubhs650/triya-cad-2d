@@ -65,6 +65,11 @@ export interface ViewTarget {
   zoomCenter(center: Vec2, height: number): void;
   panWorld(by: Vec2): void;
   show(view: ViewTransform): void;
+  /**
+   * A model view restored in the layout viewport made current (M6-02 part 12): `box` fills it.
+   * False when no viewport whose view can change is current.
+   */
+  showInViewport(box: { minX: number; minY: number; maxX: number; maxY: number }): boolean;
   setMode(mode: CanvasMode): void;
   regen(): void;
   /**
@@ -432,6 +437,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
         })),
       };
     case 'restore': {
+      // A model view into the layout viewport made current (-VIEW Restore, M6-02 part 14).
+      if (r.window && t.viewport !== undefined) {
+        return t.showInViewport(r.window)
+          ? done()
+          : { ok: false, message: 'The viewport is display locked: its view cannot change.' };
+      }
       const found = ctx.views().find((v) => v.name.toUpperCase() === r.name.toUpperCase());
       if (!found) return { ok: false, message: `Cannot find view "${r.name}".` };
       if (!found.view) {

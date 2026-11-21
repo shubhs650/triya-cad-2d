@@ -15,7 +15,9 @@
 // New... opens New View / Shot Properties: View name and Boundary, Current display or Define
 // window. Define window hides both dialogs and VIEW asks for the corners at the command line, then
 // shows them again with that window (as PLOT's Window< does). A name the drawing has asks whether
-// to replace that view first.
+// to replace that view first. With a layout viewport made current, New View saves a model view:
+// the viewport's own view, or a window picked through it, its layer snapshot keeping VP Freeze
+// there (M6-02 part 14; it was saved as a layout view with model space's numbers before).
 //
 // Edit Boundaries... (part 5) hides the dialog in the same way and VIEW shows the selected view
 // and asks for its new boundary at the command line (`editBoundary` in the engine's file.ts); the
@@ -404,7 +406,7 @@ function ManagerBody({
       {shownOnce && state.creating && (
         <NewView
           value={state.creating}
-          paper={inLayout}
+          paper={inLayout && viewport === undefined}
           existing={views}
           categories={categories}
           shown={shown}
@@ -413,7 +415,10 @@ function ManagerBody({
             viewManager.pickWindow(doc.id, doc.block, { ...state, creating })
           }
           onSave={async (name, view, category, layers) => {
-            if (!(await run({ kind: 'view', name, view, category, layers }))) return;
+            // From the layout viewport made current, a model view (M6-02 part 14) whose layer
+            // snapshot keeps VP Freeze there.
+            const from = !view.paper && inViewport;
+            if (!(await run({ kind: 'view', name, view, category, layers, ...from }))) return;
             set({
               creating: undefined,
               selected: `${view.paper ? 'layout' : 'model'}:${name.toUpperCase()}`,
