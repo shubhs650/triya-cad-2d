@@ -1,0 +1,14 @@
+diff --git a/src/IO/Templates/CadDictionaryTemplate.ts b/src/IO/Templates/CadDictionaryTemplate.ts
+index 6c282c4..f6253b2 100644
+--- a/src/IO/Templates/CadDictionaryTemplate.ts
++++ b/src/IO/Templates/CadDictionaryTemplate.ts
+@@ -40,7 +40,8 @@ export class CadDictionaryTemplate extends CadTemplateT<CadDictionary> implement
+ 				}
+ 
+ 				try {
+-					this.cadObject.add(entry);
++					// Under its entry name: an object with a name of its own (a SCALE's 300) keeps it.
++					this.cadObject.addByKey(key, entry);
+ 				} catch (ex: unknown) {
+ 					builder.notify(`Error when trying to add the entry ${entry.name} to ${this.cadObject.name}|${this.cadObject.handle}`, NotificationType.Error, ex instanceof Error ? ex : null);
+ 				}

@@ -59,6 +59,7 @@ import { vpclipCommand } from './vpclip';
 import { vpmaxCommand, vpminCommand } from './vpmax';
 import { vplayerCommand } from './vplayer';
 import { layvpiCommand } from './layvpi';
+import { scalelisteditCommand } from './scalelistedit';
 import { UCS_COMMANDS } from './ucs';
 import { changeCommand, chpropCommand } from './modify/chprop';
 import { matchpropCommand } from './modify/matchprop';
@@ -217,6 +218,7 @@ export function builtinCommands(): CommandRegistry {
     vpminCommand(),
     vplayerCommand(),
     layvpiCommand(),
+    scalelisteditCommand(),
     underlayLayersCommand(),
     ...layerToolCommands(),
     laydelCommand(),

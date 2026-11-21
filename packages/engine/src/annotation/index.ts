@@ -15,3 +15,4 @@ export * from './linear-jog';
 export * from './dimstyle-xdata';
 export * from './dimstyle-family';
 export * from './dimstyle-compare';
+export * from './scale-list';

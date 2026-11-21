@@ -78,6 +78,10 @@ export type AuditSaveKind =
   // -VPORTS 3, 4 and SIngle on model space's tiles, named configurations saved, restored and
   // deleted: VPORT records in the AC1032 sample and colors.dxf (M6-02 part 10).
   | 'vports'
+  // -SCALELISTEDIT Reset, Add and Delete and the dialog's reorder, rename and new ratio: SCALEs
+  // added, rekeyed, changed and removed in the AC1032 sample, a dynamic block sample and
+  // colors.dxf (M6-02 part 21).
+  | 'scalelist'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).

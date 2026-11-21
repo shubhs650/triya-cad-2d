@@ -28,13 +28,9 @@ import {
   type DocumentInit,
   type DocumentModel,
   type HeaderValue,
+  annotationScaleNamed,
 } from '@triya/engine';
-import {
-  annotationScaleValue,
-  headerVariableValue,
-  isHandleCode,
-  namedDictionary,
-} from '../map/header';
+import { headerVariableValue, isHandleCode, namedDictionary } from '../map/header';
 import type { CadFormat } from '../read';
 import { same } from './entities';
 
@@ -467,12 +463,13 @@ export function planHeader(
         `header variable ${name}: it names ${value}, which the save renames ${renamed.get(was)}`,
       );
   }
-  // CANNOSCALEVALUE is not stored: it is the CANNOSCALE scale's ratio, so it must follow it.
+  // CANNOSCALEVALUE is not stored: it is the CANNOSCALE scale's ratio, so it must follow it, as
+  // the scale list the save writes holds it (SCALELISTEDIT may change the ratio, M6-02 part 21).
   const scale = model.header.get(DictionaryVariable.currentAnnotationScale);
   const ratio = model.header.get('CANNOSCALEVALUE');
   if (
     !same(before.get('CANNOSCALEVALUE'), ratio) &&
-    !same(scale === undefined ? undefined : annotationScaleValue(doc, scale), ratio)
+    !same(typeof scale === 'string' ? annotationScaleNamed(model, scale)?.value : undefined, ratio)
   ) {
     problems.push(`header variable CANNOSCALEVALUE: it is the ratio of the CANNOSCALE scale`);
   }

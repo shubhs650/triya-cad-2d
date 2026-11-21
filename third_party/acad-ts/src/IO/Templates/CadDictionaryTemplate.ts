@@ -40,7 +40,8 @@ export class CadDictionaryTemplate extends CadTemplateT<CadDictionary> implement
 				}
 
 				try {
-					this.cadObject.add(entry);
+					// Under its entry name: an object with a name of its own (a SCALE's 300) keeps it.
+					this.cadObject.addByKey(key, entry);
 				} catch (ex: unknown) {
 					builder.notify(`Error when trying to add the entry ${entry.name} to ${this.cadObject.name}|${this.cadObject.handle}`, NotificationType.Error, ex instanceof Error ? ex : null);
 				}

@@ -1483,19 +1483,35 @@ describe('jog lines of linear and aligned dimensions (M4-01)', () => {
   });
 });
 
+/** SCALE objects of a scale list (M6-02 part 21), `value` paper units to one drawing unit. */
+const scaleObjects = (
+  scales: readonly { name: string; value: number; handle?: string }[],
+  first = 0xa00,
+) =>
+  scales.map((s, i) => ({
+    type: 'SCALE' as const,
+    handle: s.handle ?? (first + i).toString(16).toUpperCase(),
+    owner: '9F0',
+    key: `A${i}`,
+    name: s.name,
+    paperUnits: s.value,
+    drawingUnits: 1,
+    unitScale: false,
+  }));
+
 describe('annotative dimensions (M4-01)', () => {
   const SCALE_1_2 = '51';
   const annotativeModel = (vars: DimStyleRecord['vars'] = { ...ISO, DIMSCALE: 3 }) => {
     const init = initOf(vars);
     return DocumentModel.create({
       ...init,
-      meta: {
-        ...init.meta,
-        annotationScales: [
+      objects: [
+        ...(init.objects ?? []),
+        ...scaleObjects([
           { name: '1:1', value: 1, handle: '50' },
           { name: '1:2', value: 0.5, handle: SCALE_1_2 },
-        ],
-      },
+        ]),
+      ],
     });
   };
   const at = (scale: string, isDefault = true) => ({

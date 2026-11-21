@@ -21,6 +21,22 @@ const SCALES = [
   { name: '1:1', value: 1, handle: 'B7' },
   { name: '1:50', value: 0.02, handle: '12D' },
 ];
+/** SCALE objects of a scale list (M6-02 part 21), `value` paper units to one drawing unit. */
+const scaleObjects = (
+  scales: readonly { name: string; value: number; handle?: string }[],
+  first = 0xa00,
+) =>
+  scales.map((s, i) => ({
+    type: 'SCALE' as const,
+    handle: s.handle ?? (first + i).toString(16).toUpperCase(),
+    owner: '9F0',
+    key: `A${i}`,
+    name: s.name,
+    paperUnits: s.value,
+    drawingUnits: 1,
+    unitScale: false,
+  }));
+
 const EVERYWHERE = { minX: -100, minY: -100, maxX: 100, maxY: 100 };
 
 /** An annotative line at height `y` supporting the scales `scales` name. */
@@ -41,7 +57,10 @@ function setup(
   o: { allVisible?: boolean; block?: string; cannoscale?: string } = {},
 ) {
   const init = drawingInit(entities, { header: [['CANNOSCALE', o.cannoscale ?? '1:50']] });
-  const model = DocumentModel.create({ ...init, meta: { ...init.meta, annotationScales: SCALES } });
+  const model = DocumentModel.create({
+    ...init,
+    objects: [...(init.objects ?? []), ...scaleObjects(SCALES)],
+  });
   const d = { model, index: SpatialIndex.build(model, { tol: toleranceForSize(1000) }) };
   const r = new Canvas2DRenderer({
     now: () => 0,
@@ -120,7 +139,7 @@ describe('snaps and plots under ANNOALLVISIBLE 0 (M6-03)', () => {
     new RenderSession({
       now: () => 0,
       document: {
-        init: { ...init, meta: { ...init.meta, annotationScales: SCALES } },
+        init: { ...init, objects: [...(init.objects ?? []), ...scaleObjects(SCALES)] },
         block: MODEL,
         tol: toleranceForSize(1000),
       },

@@ -7,10 +7,38 @@
 // undo step, CANNOSCALEVALUE following, saved in the drawing's DICTIONARYVAR. In a layout the
 // controls are not shown: a layout viewport's own annotation scale and the representation an
 // object draws at are M1-63's, post-launch (PRD FR-A6, DEC-047).
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  annotationScales,
+  isDrawingScale,
+  type AnnotationScale,
+  type ChangeSet,
+  type DrawingScale,
+  type Handle,
+  type NonGraphicalObject,
+} from '@triya/engine';
 import { drafting } from './drafting';
 import { inLayout, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
+
+/**
+ * The drawing's scale list as its edits left it (SCALELISTEDIT, M6-02 part 21): the SCALEs it
+ * opened with, then each change set's, as `editedHeader` replays the header.
+ */
+export function editedScaleList(
+  opened: readonly NonGraphicalObject[] | undefined,
+  changes: readonly ChangeSet[],
+): AnnotationScale[] {
+  const objects = new Map<Handle, DrawingScale>();
+  for (const o of opened ?? []) if (isDrawingScale(o)) objects.set(o.handle, o);
+  for (const cs of changes) {
+    for (const o of cs.objects?.removed ?? []) objects.delete(o.handle);
+    for (const o of cs.objects?.added ?? []) if (isDrawingScale(o)) objects.set(o.handle, o);
+    for (const { after } of cs.objects?.updated ?? [])
+      if (isDrawingScale(after)) objects.set(after.handle, after);
+  }
+  return annotationScales({ objects });
+}
 
 /** Sets CANNOSCALE as typed at `Command:` (transparently while a command runs). */
 function setAnnotationScale(doc: number, name: string): void {
@@ -29,7 +57,10 @@ export function AnnotationScaleControls({
   const state = useSyncExternalStore(drafting.subscribe, drafting.get);
   const [menu, setMenu] = useState(false);
   const close = useCallback(() => setMenu(false), []);
-  const scales = doc.opened.init.meta.annotationScales ?? [];
+  const scales = useMemo(
+    () => editedScaleList(doc.opened.init.objects, engines.changesOf(doc.id)),
+    [doc],
+  );
   // A drawing with no scale list (before AutoCAD 2008) has no annotation scale to show.
   if (inLayout(doc) || scales.length === 0) return null;
   const current = header.get('CANNOSCALE');

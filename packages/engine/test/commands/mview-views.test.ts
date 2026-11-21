@@ -105,11 +105,27 @@ interface Options {
   answer?: (r: ViewRequest) => ViewReply | undefined;
 }
 
+/** SCALE objects of a scale list (M6-02 part 21), `value` paper units to one drawing unit. */
+const scaleObjects = (
+  scales: readonly { name: string; value: number; handle?: string }[],
+  first = 0xa00,
+) =>
+  scales.map((s, i) => ({
+    type: 'SCALE' as const,
+    handle: s.handle ?? (first + i).toString(16).toUpperCase(),
+    owner: '9F0',
+    key: `A${i}`,
+    name: s.name,
+    paperUnits: s.value,
+    drawingUnits: 1,
+    unitScale: false,
+  }));
+
 function drawing(o: Options = {}) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
-    meta: { ...init.meta!, ...(o.scales && { annotationScales: o.scales }) },
+    objects: [...(init.objects ?? []), ...scaleObjects(o.scales ?? [])],
     header: new Map([
       ...(init.header ?? []),
       ...((o.annotationScale ? [['CANNOSCALE', o.annotationScale]] : []) as [string, never][]),

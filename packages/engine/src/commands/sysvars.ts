@@ -33,6 +33,7 @@ import {
 import { parseAngleValue, parseDistance } from './parse';
 import type { DocumentModel } from '../model/document';
 import type { HeaderValue } from '../model/types';
+import { annotationScaleNamed, annotationScales } from '../annotation/scale-list';
 import { OSNAP_OFF } from '../input/osnap';
 import { CETRANSPARENCY } from '../properties/current';
 import { FIELDEVAL, FIELDEVAL_INITIAL } from '../edit/field-eval';
@@ -73,7 +74,7 @@ export type NameTable =
   | 'mlineStyles'
   | 'mleaderStyles'
   | 'tableStyles'
-  /** Not a table: the drawing's scale list (`meta.annotationScales`). */
+  /** Not a table: the drawing's scale list (`annotationScales`). */
   | 'annotationScales'
   /** Not a table: the drawing's layouts, Model among them (CTAB). */
   | 'layouts';
@@ -866,7 +867,7 @@ function recordName(model: DocumentModel, table: NameTable, typed: string): stri
   const key = typed.toUpperCase();
   const records =
     table === 'annotationScales'
-      ? (model.meta.annotationScales ?? [])
+      ? annotationScales(model)
       : table === 'layouts'
         ? model.layouts
         : model.tables[table].values();
@@ -891,7 +892,7 @@ const TABLE_WORDS: Readonly<Record<NameTable, string>> = {
 
 /** CANNOSCALEVALUE for a CANNOSCALE of `name`: the scale's value, when the drawing has it. */
 export function annotationScaleValue(model: DocumentModel, name: string): number | undefined {
-  return model.meta.annotationScales?.find((s) => s.name === name)?.value;
+  return annotationScaleNamed(model, name)?.value;
 }
 
 /** Typed text as a value of `v` (not a point: a point prompt parses those). */

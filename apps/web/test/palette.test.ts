@@ -265,6 +265,8 @@ describe('palette search', () => {
       'SAVE',
       'SAVEAS',
       'SCALE',
+      // M6-02 part 21: the drawing's scale list.
+      'SCALELISTEDIT',
       'SCALETEXT',
       'SELECT',
       'SELECTSIMILAR',

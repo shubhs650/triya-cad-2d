@@ -5,7 +5,7 @@
 // reopen of every readable corpus file.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { DocumentModel, type HeaderValue } from '@triya/engine';
+import { DocumentModel, annotationScales, type HeaderValue } from '@triya/engine';
 import { documentInit, exportDocument, mapHeader, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { loadManifest, readableFiles } from '../corpus/manifest.ts';
@@ -133,7 +133,7 @@ describe('MSLTSCALE and CANNOSCALE on the public corpus (M1-63)', () => {
       }
       files++;
       const want = statedScales(bytes);
-      const got = mapHeader(doc).meta.annotationScales ?? [];
+      const got = annotationScales(DocumentModel.create(documentInit(doc)));
       scales += got.length;
       const same =
         want.length === got.length &&

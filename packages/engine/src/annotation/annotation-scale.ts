@@ -1,7 +1,7 @@
 // M6-03: the current annotation scale and the annotative objects that support it.
 //
 // CANNOSCALE names one of the drawing's annotation scales (a SCALE of its ACAD_SCALELIST,
-// M2-59 part 4), and an annotative object supports the scales its representations name (the
+// M2-59 part 4; scale-list.ts), and an annotative object supports the scales its representations name (the
 // context data objects' DXF 340, M1-75 part 37). ANNOALLVISIBLE 0 hides the annotative objects
 // that do not support the current scale (AutoCAD 2024 Help, "ANNOALLVISIBLE (System
 // Variable)": 0 "Only annotative objects that support the current annotation scale are
@@ -10,6 +10,7 @@
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { AnnotationScale, Entity } from '../model/types';
+import { annotationScaleNamed } from './scale-list';
 
 /** ANNOALLVISIBLE: annotative objects not supporting the current scale shown (1) or hidden (0). */
 export const ANNOALLVISIBLE = 'ANNOALLVISIBLE';
@@ -25,11 +26,11 @@ export const ANNOAUTOSCALE_NOTICE =
 
 /** The scale of the drawing's list that CANNOSCALE names, if any. */
 export function currentAnnotationScale(
-  model: Pick<DocumentModel, 'header' | 'meta'>,
+  model: Pick<DocumentModel, 'header' | 'objects'>,
 ): AnnotationScale | undefined {
   const name = model.header.get('CANNOSCALE');
   if (typeof name !== 'string') return undefined;
-  return model.meta.annotationScales?.find((s) => s.name === name);
+  return annotationScaleNamed(model, name);
 }
 
 /**
@@ -53,7 +54,7 @@ export function supportsAnnotationScale(
  * no scale of the list.
  */
 export function annotationHidden(
-  model: Pick<DocumentModel, 'header' | 'meta'>,
+  model: Pick<DocumentModel, 'header' | 'objects'>,
   e: Pick<Entity, 'annotative'>,
   allVisible: boolean,
 ): boolean {

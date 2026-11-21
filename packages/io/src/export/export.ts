@@ -71,6 +71,7 @@ import {
 } from './triya-centermarks';
 import { planLayouts, writeLayouts } from './layouts';
 import { planPageSetups, writePageSetups } from './page-setups';
+import { planScales, writeScales } from './scales';
 import { planLayers, writeLayerOverrides, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
 import {
@@ -200,7 +201,7 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   // breaks and inspection data (triya-dims.ts) and center marks' records (triya-centermarks.ts,
   // M4-08 part 2, DEC-066), and layer states and filters (layer-states.ts, layer-filters.ts,
   // M5-07), and DGN linestyle components (dgn-linestyles.ts, M5-09 part 5), and named page setups
-  // (page-setups.ts, M6-01 part 3).
+  // (page-setups.ts, M6-01 part 3), and the scale list (scales.ts, M6-02 part 21).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'GROUP' &&
@@ -215,6 +216,7 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
     o.type !== 'LAYER_FILTER' &&
     o.type !== 'DGN_LS_COMPONENT' &&
     o.type !== 'PLOTSETTINGS' &&
+    o.type !== 'SCALE' &&
     !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
@@ -523,6 +525,7 @@ export function triyaToAcad(
   const linetypes = planLinetypes(original, base, model, r);
   const layouts = planLayouts(original, base, model, r, format);
   const pageSetups = planPageSetups(original, base, model, r, format);
+  const scales = planScales(original, base, model, r);
   const drawOrder = planDrawOrder(original, base, model, r);
   // Before the entities, which a new block holds and INSERTs, dimensions and tables name, and
   // before the styles: a dimension style's arrows, a multileader style's content and a table
@@ -620,6 +623,7 @@ export function triyaToAcad(
     ...imageObjects.problems,
     ...layouts.problems,
     ...pageSetups.problems,
+    ...scales.problems,
     ...blocks.problems,
     ...groups.problems,
     ...dimAssocs.problems,
@@ -638,6 +642,8 @@ export function triyaToAcad(
 
   writePlotStyles(original, plotStyleNamePlan.plan);
   writeMaterials(materials.plan);
+  // Before the entities: a copied annotative object's context data names its scale.
+  writeScales(original, r, scales.plan);
   writeTextStyles(original, textStyles.plan);
   writeLinetypes(original, r, linetypes.plan);
   // Before the styles that may name a new block (a dimension style's arrows, a multileader
