@@ -41,8 +41,10 @@ export {
 export {
   RIBBON_PROPERTY_KEYS,
   ribbonProperties,
+  selectionKind,
   type RibbonLayer,
   type RibbonProperties,
+  type RibbonSelection,
 } from './ribbon';
 export * from './color-books';
 export * from './match';

@@ -190,7 +190,7 @@ import { RECENT_THUMBNAIL, RecentDrawings } from './RecentDrawings';
 import { Autosaver, RecoveryOffers } from './recovery';
 import { indexedDbRecovery, webLocks } from './recovery-browser';
 import { Ribbon } from './Ribbon';
-import { ribbonPropertiesStore } from './ribbon/ribbon-properties';
+import { ribbonPropertiesStore, runningCommands } from './ribbon/ribbon-properties';
 import { RecoveryBanner } from './RecoveryBanner';
 import {
   ReferenceFiles,
@@ -425,6 +425,9 @@ engines.onCommand((doc, o) => {
     for (const c of controllersOf(doc)) c.commandPreviewed(o.seq, o.preview);
   }
   if (o.type === 'start') rollovers.clear(doc);
+  // The contextual tabs follow the command running (M7-02 part 4).
+  if (o.type === 'start') runningCommands.started(doc, o.command, o.transparent);
+  if (o.type === 'end') runningCommands.ended(doc, o.command);
   // A grip's hover menu (M3-05 part 2): shown from the engine's answer, gone as a command
   // starts or the grips change.
   if (o.type === 'grip-menu') gripMenus.answer(doc, o.point, o.grip, o.items);
@@ -914,6 +917,7 @@ async function closeDoc(id: number): Promise<boolean> {
   commandLines.forget(id);
   undoStates.forget(id);
   ribbonPropertiesStore.forget(id);
+  runningCommands.forget(id);
   return true;
 }
 
@@ -2457,6 +2461,7 @@ export function App() {
       </header>
       <Ribbon
         doc={active?.id}
+        blockEditor={active?.blockEditor !== undefined}
         preferences={preferences}
         onOpenWindow={(w) => (w === 'aliases' ? setAliasEditor(true) : setShortcutEditor(true))}
       />

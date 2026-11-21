@@ -335,3 +335,318 @@ Settings (compressed)
 Drawing Utilities (compressed)
   icon        units<ruler>
   ▾ health, purge, recover
+
+## Hatch Creation (contextual: hatch-creation)
+Boundaries (expanded)
+  small-label pick-points<cursor_click>
+  small-label select-boundaries<select_object>
+  small-label remove-boundaries<eraser>
+  small-label undo-boundary<arrow_undo>
+Options (expanded)
+  small-label hatch-settings<settings>
+Close (expanded)
+  small-label close-hatch-creation<dismiss_circle>
+
+### step 1
+Boundaries (compressed)
+  icon        pick-points<cursor_click>
+  ▾ select-boundaries, remove-boundaries, undo-boundary
+
+### step 2
+Options (compressed)
+  icon        hatch-settings<settings>
+  ▾ 
+
+## Array Creation (contextual: array-creation-rect)
+Columns (expanded)
+  small-label array-columns<align_space_evenly_horizontal>
+  small-label array-count<number_symbol>
+  small-label array-spacing<ruler>
+Rows (expanded)
+  small-label array-rows<align_space_evenly_vertical>
+Properties (expanded)
+  small-label array-associative<link>
+  small-label array-base-point<location>
+Close (expanded)
+  small-label close-array-creation<dismiss_circle>
+
+### step 1
+Properties (collapsed)
+  ▾ array-associative, array-base-point
+
+### step 2
+Columns (compressed)
+  icon        array-columns<align_space_evenly_horizontal>
+  ▾ array-count, array-spacing
+
+### step 3
+Rows (compressed)
+  icon        array-rows<align_space_evenly_vertical>
+  ▾ 
+
+## Array Creation (contextual: array-creation-polar)
+Items (expanded)
+  small-label array-items<number_symbol>
+  small-label array-angle-between<arrow_rotate_counterclockwise>
+  small-label array-fill-angle<array-polar>
+Rows (expanded)
+  small-label array-rows<align_space_evenly_vertical>
+Properties (expanded)
+  small-label array-associative<link>
+  small-label array-base-point<location>
+  small-label array-rotate-items<arrow_rotate_clockwise>
+Close (expanded)
+  small-label close-array-creation<dismiss_circle>
+
+### step 1
+Properties (collapsed)
+  ▾ array-associative, array-base-point, array-rotate-items
+
+### step 2
+Items (compressed)
+  icon        array-items<number_symbol>
+  ▾ array-angle-between, array-fill-angle
+
+### step 3
+Rows (compressed)
+  icon        array-rows<align_space_evenly_vertical>
+  ▾ 
+
+## Array Creation (contextual: array-creation-path)
+Items (expanded)
+  small-label array-items<number_symbol>
+  small-label array-method<ruler>
+Rows (expanded)
+  small-label array-rows<align_space_evenly_vertical>
+Properties (expanded)
+  small-label array-associative<link>
+  small-label array-base-point<location>
+  small-label array-tangent<arrow_routing>
+  small-label array-align-items<align_space_evenly_horizontal>
+Close (expanded)
+  small-label close-array-creation<dismiss_circle>
+
+### step 1
+Properties (collapsed)
+  ▾ array-associative, array-base-point, array-tangent, array-align-items
+
+### step 2
+Items (compressed)
+  icon        array-items<number_symbol>
+  ▾ array-method
+
+### step 3
+Rows (compressed)
+  icon        array-rows<align_space_evenly_vertical>
+  ▾ 
+
+## Table Cell (contextual: table-cell)
+Rows (expanded)
+  small-label insert-above<table_move_above>
+  small-label insert-below<table_move_below>
+  small-label delete-rows<table_delete_row>
+Columns (expanded)
+  small-label insert-left<table_move_left>
+  small-label insert-right<table_move_right>
+  small-label delete-columns<table_delete_column>
+Merge (expanded)
+  small-label merge-cells<table_cells_merge> ▾ [merge-all<table_cells_merge>, merge-rows<table_cells_merge>, merge-columns<table_cells_merge>]
+  small-label unmerge-cells<table_cells_split>
+Cell Styles (expanded)
+  small-label match-cell<paint_brush>
+  small-label cell-style<style_guide>
+  small-label cell-background<paint_bucket>
+  small-label cell-borders<border_all>
+  small-label cell-alignment<text_align_center>
+  small-label remove-overrides<broom>
+Cell Format (expanded)
+  small-label cell-locking<table_lock>
+  small-label data-format<table_settings>
+  small-label row-height<align_space_evenly_vertical>
+Insert (expanded)
+  small-label cell-block<cube_arrow_curve_down>
+  small-label cell-text<table_cell_edit>
+Close (expanded)
+  small-label close-table-cell<dismiss_circle>
+
+### step 1
+Cell Format (collapsed)
+  ▾ cell-locking, data-format, row-height
+
+### step 2
+Cell Styles (collapsed)
+  ▾ match-cell, cell-style, cell-background, cell-borders, cell-alignment, remove-overrides
+
+### step 3
+Merge (compressed)
+  icon        merge-cells<table_cells_merge> ▾ [merge-all<table_cells_merge>, merge-rows<table_cells_merge>, merge-columns<table_cells_merge>]
+  ▾ unmerge-cells
+
+### step 4
+Columns (compressed)
+  icon        insert-left<table_move_left>
+  icon        insert-right<table_move_right>
+  ▾ delete-columns
+
+### step 5
+Rows (compressed)
+  icon        insert-above<table_move_above>
+  icon        insert-below<table_move_below>
+  ▾ delete-rows
+
+### step 6
+Insert (compressed)
+  icon        cell-block<cube_arrow_curve_down>
+  ▾ cell-text
+
+## Block Editor (contextual: block-editor)
+Open/Save (expanded)
+  small-label edit-block<cube_tree>
+  small-label save-block<save>
+Attributes (expanded)
+  small-label attribute-definition<tag_add>
+  small-label block-attribute-manager<tag_multiple>
+Close (expanded)
+  small-label close-block-editor<dismiss_circle>
+
+### step 1
+Attributes (compressed)
+  icon        attribute-definition<tag_add>
+  ▾ block-attribute-manager
+
+### step 2
+Open/Save (compressed)
+  icon        save-block<save>
+  ▾ edit-block
+
+## Hatch Editor (contextual: hatch-editor)
+Boundaries (expanded)
+  small-label add-boundaries<hatch>
+  small-label remove-hatch-boundaries<eraser>
+  small-label recreate-boundary<border_outside>
+Properties (expanded)
+  small-label edit-hatch<pen>
+  small-label match-hatch<paint_brush>
+Origin (expanded)
+  small-label set-origin<location>
+Options (expanded)
+  small-label separate-hatches<board_split>
+  small-label hatch-front<position_to_front>
+  small-label hatch-back<position_to_back>
+Close (expanded)
+  small-label close-hatch-editor<dismiss_circle>
+
+### step 1
+Boundaries (compressed)
+  icon        add-boundaries<hatch>
+  ▾ remove-hatch-boundaries, recreate-boundary
+
+### step 2
+Properties (compressed)
+  icon        edit-hatch<pen>
+  ▾ match-hatch
+
+### step 3
+Origin (compressed)
+  icon        set-origin<location>
+  ▾ 
+
+### step 4
+Options (collapsed)
+  ▾ separate-hatches, hatch-front, hatch-back
+
+## Image (contextual: image)
+Adjust (expanded)
+  small-label image-adjust<image_edit>
+Clipping (expanded)
+  small-label image-clip<crop>
+Options (expanded)
+  small-label bring-front<position_to_front>
+  small-label send-back<position_to_back>
+Close (expanded)
+  small-label close-image<dismiss_circle>
+
+### step 1
+Options (collapsed)
+  ▾ bring-front, send-back
+
+### step 2
+Adjust (compressed)
+  icon        image-adjust<image_edit>
+  ▾ 
+
+### step 3
+Clipping (compressed)
+  icon        image-clip<crop>
+  ▾ 
+
+## PDF Underlay (contextual: pdf-underlay)
+Adjust (expanded)
+  small-label pdf-adjust<document_edit>
+Clipping (expanded)
+  small-label pdf-clip<crop>
+PDF Layers (expanded)
+  small-label pdf-layers<layer_diagonal>
+Options (expanded)
+  small-label pdf-snap<target> ▾ [pdf-snap-on<target>, pdf-snap-off<target>]
+  small-label pdf-front<position_to_front>
+  small-label pdf-back<position_to_back>
+Close (expanded)
+  small-label close-pdf-underlay<dismiss_circle>
+
+### step 1
+Options (collapsed)
+  ▾ pdf-snap, pdf-front, pdf-back
+
+### step 2
+PDF Layers (compressed)
+  icon        pdf-layers<layer_diagonal>
+  ▾ 
+
+### step 3
+Adjust (compressed)
+  icon        pdf-adjust<document_edit>
+  ▾ 
+
+### step 4
+Clipping (compressed)
+  icon        pdf-clip<crop>
+  ▾ 
+
+## External Reference (contextual: external-reference)
+Edit (expanded)
+  small-label edit-reference<pen>
+Clipping (expanded)
+  small-label xref-clip<crop>
+Options (expanded)
+  small-label xref-manager<link_multiple>
+Close (expanded)
+  small-label close-external-reference<dismiss_circle>
+
+### step 1
+Options (collapsed)
+  ▾ xref-manager
+
+### step 2
+Edit (compressed)
+  icon        edit-reference<pen>
+  ▾ 
+
+### step 3
+Clipping (compressed)
+  icon        xref-clip<crop>
+  ▾ 
+
+## Array (contextual: array)
+Options (expanded)
+  small-label edit-source<pen>
+  small-label replace-item<arrow_swap>
+  small-label reset-array<arrow_reset>
+  small-label explode-array<explode>
+Close (expanded)
+  small-label close-array<dismiss_circle>
+
+### step 1
+Options (compressed)
+  icon        edit-source<pen>
+  ▾ replace-item, reset-array, explode-array

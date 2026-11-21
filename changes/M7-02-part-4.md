@@ -1,0 +1,1 @@
+- M7-02 part 4 (#PR): contextual ribbon tabs, as in AutoCAD: Hatch Creation, Array Creation and Table Cell while those commands run, the Block Editor tab in the Block Editor, and Hatch Editor, Image, PDF Underlay, External Reference and Array tabs while such objects are selected.

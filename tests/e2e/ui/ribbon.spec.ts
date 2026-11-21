@@ -8,9 +8,10 @@
 // breakpoint and compression step, every item with its icon; tooltips name the command, its
 // aliases and keys; the Quick Access Undo and Redo show Fluent's arrows. Home's Layers and
 // Properties dropdowns (part 3) show the selection's values, or the current ones, and set them.
+// Contextual tabs (part 4) come and go with the command running and the selection.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, expectDrawn, expectShown, openWithPicker } from '../app/page';
+import { DXF, enterCommand, expectDrawn, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import { layoutTab, type Breakpoint } from '../../../apps/web/src/ribbon/layout';
 import { RIBBON_TABS } from '../../../apps/web/src/ribbon/ribbon.config';
@@ -411,7 +412,10 @@ test("Home's Layers and Properties dropdowns follow the selection and set it (M7
   // With objects selected they show the objects' values, and a pick changes the objects.
   await page.locator('canvas').first().hover();
   await page.keyboard.press('Control+a');
-  // The drawing's objects are all on HATCH, coloured White.
+  // The drawing is one hatch, on HATCH, coloured White; its Hatch Editor tab (part 4) comes up
+  // and Home is a click away.
+  await expect(ribbon(page).getByRole('tab', { selected: true })).toHaveText('Hatch Editor');
+  await ribbon(page).getByRole('tab', { name: 'Home', exact: true }).click();
   await expect(layer).toHaveAccessibleName('Layer: HATCH');
   await expect(color).toHaveAccessibleName('Object Color: White');
   await lineweight.click();
@@ -461,4 +465,65 @@ test('a compressed Properties panel lists its dropdowns, each opening its list',
   await list.getByRole('option', { name: '30', exact: true }).click();
   await properties.getByRole('button', { name: 'More Properties tools' }).click();
   await expect(menu.getByRole('menuitem', { name: 'Transparency: 30' })).toBeVisible();
+});
+
+test('contextual tabs come with the selection and the command running (M7-02 part 4)', async ({
+  page,
+}) => {
+  await open(page, 1920);
+  const tabs = ribbon(page).getByRole('tab');
+  const selected = ribbon(page).getByRole('tab', { selected: true });
+  const canvas = page.locator('canvas').first();
+
+  // The drawing is one hatch: selected, the Hatch Editor tab comes up beside the others.
+  await canvas.hover();
+  await page.keyboard.press('Control+a');
+  await expect(selected).toHaveText('Hatch Editor');
+  await expect(tabs).toHaveCount(8);
+  await expect(ribbon(page).getByRole('group')).toHaveText([
+    /Boundaries/,
+    /Properties/,
+    /Origin/,
+    /Options/,
+    /Close/,
+  ]);
+  await page.mouse.move(960, 600);
+  await shot(page, '1920-hatch-editor');
+  // Its Close button deselects the hatch: the tab goes, and Home is back.
+  await panel(page, 'Close').getByRole('button', { name: 'Close Hatch Editor' }).click();
+  await expect(tabs).toHaveCount(7);
+  await expect(selected).toHaveText('Home');
+
+  // Shown from another tab, Esc takes it away and that tab is back.
+  await ribbon(page).getByRole('tab', { name: 'Annotate', exact: true }).click();
+  await canvas.hover();
+  await page.keyboard.press('Control+a');
+  await expect(selected).toHaveText('Hatch Editor');
+  await page.keyboard.press('Escape');
+  await expect(selected).toHaveText('Annotate');
+
+  // While ARRAYRECT runs, Array Creation's buttons answer its prompts.
+  await enterCommand(page, 'ARRAYRECT');
+  await expect(selected).toHaveText('Array Creation');
+  await enterCommand(page, 'ALL');
+  await enterCommand(page, '');
+  await expect(prompt(page)).toHaveText(/Select grip to edit array/);
+  await panel(page, 'Rows').getByRole('button', { name: 'Rows', exact: true }).click();
+  await expect(prompt(page)).toHaveText(/rows/i);
+  await shot(page, '1920-array-creation');
+  await enterCommand(page, '2');
+  await expect(prompt(page)).toHaveText(/distance between rows/);
+  await enterCommand(page, '');
+  await expect(prompt(page)).toHaveText(/Select grip to edit array/);
+  await panel(page, 'Close').getByRole('button', { name: 'Close Array' }).click();
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(selected).toHaveText('Annotate');
+
+  // The array made is associative: selected, its Array tab comes up.
+  await canvas.hover();
+  await page.keyboard.press('Control+a');
+  await expect(selected).toHaveText('Array');
+  await shot(page, '1920-array');
+  await page.keyboard.press('Escape');
+  await expect(selected).toHaveText('Annotate');
 });

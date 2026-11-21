@@ -2,9 +2,15 @@
 // DEC-017). The breakpoints, each item's size at each, the protected Home Draw/Modify/Annotation
 // panels that never compress, and the order the other Home panels give up their room in.
 import { describe, expect, it } from 'vitest';
-import { builtinCommands } from '@triya/engine';
+import { TABLE_CELL_OPTIONS, builtinCommands } from '@triya/engine';
 import { DRAFTING_ITEMS } from '../src/drafting';
-import { RIBBON_TABS, type RibbonItem, type RibbonTab } from '../src/ribbon/ribbon.config';
+import {
+  CONTEXTUAL_TABS,
+  RIBBON_TABS,
+  contextualTabOf,
+  type RibbonItem,
+  type RibbonTab,
+} from '../src/ribbon/ribbon.config';
 import { ICON_NAMES } from '../src/ribbon/icons';
 import {
   BREAKPOINTS,
@@ -190,7 +196,7 @@ describe('the data model', () => {
     const registry = builtinCommands();
     const toggles = new Set(DRAFTING_ITEMS.map((i) => i.id));
     const ids = new Set<string>();
-    for (const t of RIBBON_TABS)
+    for (const t of [...RIBBON_TABS, ...CONTEXTUAL_TABS])
       for (const p of t.panels)
         for (const i of flat(p.items)) {
           const where = `${t.id}/${p.id}/${i.id}`;
@@ -205,16 +211,61 @@ describe('the data model', () => {
             continue;
           }
           if (i.unavailable) continue;
-          if ('command' in i.run) expect(registry.get(i.run.command), where).toBeDefined();
+          if ('command' in i.run) expect(registry.resolve(i.run.command), where).toBeDefined();
+          // A contextual tab's option (M7-02 part 4): a keyword, or Enter.
+          else if ('keyword' in i.run) expect(i.run.keyword, where).toMatch(/^[A-Za-z]*$/);
           else if (i.run.action.startsWith('drafting:'))
             expect(toggles.has(i.run.action), where).toBe(true);
           else if (!i.control)
             expect(i.run.action, where).toMatch(
-              /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts))$/,
+              /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts)|escape)$/,
             );
           // A dropdown (M7-02 part 3) opens its own list.
           if (i.control) expect(i.run, where).toEqual({ action: `control:${i.control}` });
         }
+  });
+
+  it('shows the contextual tab of the command running, the Block Editor or the selection', () => {
+    const shown = (c: Parameters<typeof contextualTabOf>[0]) => contextualTabOf(c)?.id;
+    expect(shown({})).toBeUndefined();
+    expect(shown({ command: 'HATCH' })).toBe('hatch-creation');
+    expect(shown({ command: 'GRADIENT' })).toBe('hatch-creation');
+    expect(shown({ command: 'ARRAYRECT' })).toBe('array-creation-rect');
+    expect(shown({ command: 'ARRAYPOLAR' })).toBe('array-creation-polar');
+    expect(shown({ command: 'ARRAYPATH' })).toBe('array-creation-path');
+    expect(shown({ command: 'TABLECELL' })).toBe('table-cell');
+    // Table Cell's buttons are TABLECELL's options, typed whole.
+    const cell = CONTEXTUAL_TABS.find((t) => t.id === 'table-cell')!;
+    for (const i of flat(cell.panels.flatMap((p) => p.items)))
+      if ('keyword' in i.run) expect(TABLE_CELL_OPTIONS, i.id).toContain(i.run.keyword);
+    expect(shown({ command: 'LINE' })).toBeUndefined();
+    expect(shown({ blockEditor: true })).toBe('block-editor');
+    expect(shown({ selection: 'hatch' })).toBe('hatch-editor');
+    expect(shown({ selection: 'image' })).toBe('image');
+    expect(shown({ selection: 'pdf' })).toBe('pdf-underlay');
+    expect(shown({ selection: 'xref' })).toBe('external-reference');
+    expect(shown({ selection: 'array' })).toBe('array');
+    // A command's tab shows over the Block Editor's, and that over a selection's.
+    expect(shown({ command: 'HATCH', selection: 'hatch' })).toBe('hatch-creation');
+    expect(shown({ blockEditor: true, selection: 'hatch' })).toBe('block-editor');
+    // Every contextual tab ends with its Close button, which never gives up room; its other
+    // panels compress in a distinct order, keeping items they have.
+    for (const t of CONTEXTUAL_TABS) {
+      expect(t.panels.at(-1)!.id, t.id).toBe('close');
+      expect(t.panels.at(-1)!.items.map((i) => i.label)[0], t.id).toMatch(/^Close /);
+      expect(t.panels.at(-1)!.compress, t.id).toBeUndefined();
+      const rest = t.panels.slice(0, -1);
+      const orders = rest.map((p) => p.compress?.order);
+      expect(new Set(orders).size, t.id).toBe(orders.length);
+      for (const p of rest) {
+        expect(p.compress, `${t.id}/${p.id}`).toBeDefined();
+        for (const k of p.compress!.keep)
+          expect(
+            p.items.map((i) => i.id),
+            `${t.id}/${p.id}`,
+          ).toContain(k);
+      }
+    }
   });
 
   it("has AutoCAD's Layers and Properties dropdowns on Home (M7-02 part 3)", () => {
