@@ -562,7 +562,8 @@ button {
   border-radius: 3px;
   transition:
     background-color var(--motion),
-    border-color var(--motion);
+    border-color var(--motion),
+    transform var(--motion) ease-out;
 }
 
 .ribbon-item:hover:not(:disabled),
@@ -641,32 +642,90 @@ button {
   height: 12px;
 }
 
-.ribbon-glyph {
-  display: inline-grid;
+.ribbon .icon,
+.ribbon-menu .icon {
   flex: none;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  font:
-    700 8.5px/1 ui-monospace,
-    'SFMono-Regular',
-    Menlo,
-    monospace;
-  letter-spacing: -0.4px;
-  color: var(--accent);
-  background: var(--selected-bg);
-  border-radius: 3px;
+  color: var(--chrome-text);
+  transition: transform var(--motion) ease-out;
 }
 
-.ribbon-item.large-label .ribbon-glyph {
-  width: 30px;
-  height: 30px;
-  font-size: 11px;
+/* Hover lifts an enabled item's icon a pixel and a press sinks the button, both within the
+   ≤ 160 ms motion budget and off under prefers-reduced-motion (--motion is 0 there). */
+.ribbon-item:hover:not(:disabled) .icon {
+  transform: translateY(-1px);
+}
+
+.ribbon-item:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.ribbon-item[aria-pressed='true'] .icon {
+  color: var(--accent);
+}
+
+/* The rich tooltip (M7-02): AutoCAD's name, description, then command, aliases and keys. */
+.ribbon-tooltip {
+  position: fixed;
+  z-index: 45;
+  width: max-content;
+  max-width: 280px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--chrome-text);
+  pointer-events: none;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 20%);
+  animation: ribbon-pop-in var(--motion) ease-out;
+}
+
+.ribbon-tooltip-title {
+  font-weight: 600;
+}
+
+.ribbon-tooltip-text {
+  margin: 4px 0 0;
+  line-height: 1.35;
+}
+
+.ribbon-tooltip-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 6px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.ribbon-tooltip-meta > div {
+  display: contents;
+}
+
+.ribbon-tooltip-meta dt {
+  color: var(--chrome-text-muted);
+}
+
+.ribbon-tooltip-meta dd {
+  margin: 0;
+}
+
+.ribbon-tooltip-meta kbd {
+  font: inherit;
+  font-weight: 600;
+}
+
+@keyframes ribbon-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 
 .ribbon-menu {
   position: fixed;
   z-index: 40;
+  animation: ribbon-pop-in var(--motion) ease-out;
   display: flex;
   flex-direction: column;
   min-width: 200px;
@@ -4103,6 +4162,14 @@ button {
 .undo-button,
 .redo-button {
   border-radius: 4px 0 0 4px;
+}
+
+/* M7-02: Fluent's undo and redo arrows in place of their words; the title names the step. */
+.undo-button,
+.redo-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
 }
 
 .undo-list {

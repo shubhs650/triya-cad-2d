@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { builtinCommands } from '@triya/engine';
 import { DRAFTING_ITEMS } from '../src/drafting';
 import { RIBBON_TABS, type RibbonItem, type RibbonTab } from '../src/ribbon/ribbon.config';
+import { ICON_NAMES } from '../src/ribbon/icons';
 import {
   BREAKPOINTS,
   ROWS,
@@ -140,8 +141,8 @@ describe('the data model', () => {
           // Ids are unique within a tab: the tests and the overflow lists find items by them.
           expect(ids.has(`${t.id}/${i.id}`), where).toBe(false);
           ids.add(`${t.id}/${i.id}`);
-          expect(i.glyph.length, where).toBeGreaterThan(0);
-          expect(i.glyph.length, where).toBeLessThanOrEqual(3);
+          // M7-02: a Fluent or CAD icon of the set (ribbon-icons.test.ts checks them).
+          expect(ICON_NAMES, where).toContain(i.icon);
           if (i.menu?.length) {
             // A split button runs its list's first entry until another is picked.
             expect(i.run, where).toEqual(i.menu[0]!.run);
