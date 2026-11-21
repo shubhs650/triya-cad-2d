@@ -42,6 +42,7 @@ Annotation (protected)
   small-label centerline<centerline> ▾ [centerline-line<centerline>, centermark<centermark>]
 Layers (expanded)
   large-label layer-properties<layer>
+  small-label layer-control<layer>
   icon        layer-off<eye_off>
   icon        layer-isolate<layer-isolate>
   icon        layer-unisolate<layer_diagonal>
@@ -60,7 +61,11 @@ Block (expanded)
   small-label edit-attributes<tag_edit> ▾ [eattedit<tag_edit>, battman<tag_multiple>]
 Properties (expanded)
   large-label match-properties<paint_brush>
-  small-label properties<apps_list_detail>
+  small-label color-control<color>
+  small-label linetype-control<linetype>
+  small-label lineweight-control<lineweight>
+  icon        transparency-control<transparency_square>
+  icon        properties<apps_list_detail>
 Groups (expanded)
   large-label group<group>
   icon        ungroup<group_dismiss>
@@ -70,9 +75,9 @@ Groups (expanded)
   icon        group-box<border_outside>
 Utilities (expanded)
   large-label measure-tools<ruler> ▾ [measure-geom<ruler>, dist<distance>, area<area>]
-  small-label quick-select<filter>
-  small-label id-point<location>
-  small-label list<text_bullet_list_square>
+  icon        quick-select<filter>
+  icon        id-point<location>
+  icon        list<text_bullet_list_square>
 Clipboard (expanded)
   large-label paste<clipboard_paste> ▾ [pasteclip<clipboard_paste>, pasteblock<clipboard_more>, pasteorig<clipboard_arrow_right>]
   icon        cut<cut>
@@ -94,7 +99,7 @@ Groups (collapsed)
 ### step 4
 Properties (compressed)
   icon        match-properties<paint_brush>
-  ▾ properties
+  ▾ color-control, linetype-control, lineweight-control, transparency-control, properties
 
 ### step 5
 Block (compressed)
@@ -104,6 +109,7 @@ Block (compressed)
 ### step 6
 Layers (compressed)
   icon        layer-properties<layer>
+  small-label layer-control<layer>
   ▾ layer-off, layer-isolate, layer-unisolate, layer-freeze, layer-lock, layer-unlock, layer-on, layer-thaw, layer-make-current, layer-match, layer-previous
 
 ## Insert

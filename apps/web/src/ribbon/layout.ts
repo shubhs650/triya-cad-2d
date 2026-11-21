@@ -74,12 +74,17 @@ export function layoutTab(tab: RibbonTab, bp: Breakpoint, steps: number): TabLay
       }
       const keep = new Set(panel.compress!.keep);
       const kept = panel.items.filter((i) => keep.has(i.id));
-      // The items kept show as icons: the panel is giving up room.
+      // The items kept show as icons: the panel is giving up room. A dropdown keeps its size, so
+      // the layer list still names the layer (UI_SPEC §3: "Layers (dropdown + Layer Properties +
+      // overflow)").
       return {
         panel,
         protected: false,
         state: kept.length ? 'compressed' : 'collapsed',
-        shown: kept.map((item) => ({ item, size: 'icon' as const })),
+        shown: kept.map((item) => ({
+          item,
+          size: item.control ? sizeAt(item, bp) : ('icon' as const),
+        })),
         overflow: panel.items.filter((i) => !keep.has(i.id)),
       };
     }),

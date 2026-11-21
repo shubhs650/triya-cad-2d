@@ -664,6 +664,80 @@ button {
   color: var(--accent);
 }
 
+/* The Layers and Properties dropdowns (M7-02 part 3): an icon, a swatch, the value and an arrow
+   in a field-like box, one row high; as an icon, the icon over nothing but its swatch. */
+.ribbon-cell.control {
+  justify-self: stretch;
+}
+
+.ribbon-item.ribbon-control {
+  width: 100%;
+  min-width: 132px;
+  max-width: 160px;
+  gap: 4px;
+  padding: 0 2px 0 3px;
+  background: var(--chrome-bg);
+  border-color: var(--chrome-border);
+}
+
+.ribbon-item.ribbon-control.icon {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  padding: 0 2px;
+}
+
+.ribbon-control-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.ribbon-control-arrow {
+  font-size: 9px;
+  color: var(--chrome-text-muted);
+}
+
+.ribbon-swatch {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--chrome-text-muted);
+}
+
+.ribbon-swatch.none {
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.5px),
+    var(--chrome-text-muted) 50%,
+    transparent calc(50% + 0.5px)
+  );
+}
+
+/* AutoCAD's Layers panel: the layer dropdown over the tool icons' rows. */
+.ribbon-stack {
+  display: flex;
+  flex-direction: column;
+  grid-row: 1 / -1;
+  gap: 1px;
+  align-self: stretch;
+}
+
+.ribbon-stack .ribbon-cell.control {
+  display: flex;
+}
+
+.ribbon-stack .ribbon-item.ribbon-control {
+  max-width: none;
+}
+
+.ribbon-tools {
+  flex: none;
+  padding: 0;
+}
+
 /* The rich tooltip (M7-02): AutoCAD's name, description, then command, aliases and keys. */
 .ribbon-tooltip {
   position: fixed;
@@ -770,6 +844,63 @@ button {
 .ribbon-menu [aria-checked='true']::after {
   margin-left: auto;
   content: '✓';
+}
+
+/* A dropdown's value in a compressed panel's list, and the dropdown's own list. */
+.ribbon-menu-value {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--chrome-text-muted);
+}
+
+.ribbon-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.ribbon-option {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 1px 6px 1px 4px;
+  white-space: nowrap;
+  cursor: default;
+  border-radius: 3px;
+}
+
+.ribbon-option:hover,
+.ribbon-option:focus-visible {
+  background: var(--selected-bg);
+  outline: none;
+}
+
+.ribbon-option[aria-selected='true'] {
+  font-weight: 600;
+}
+
+.ribbon-option.opens {
+  border-top: 1px solid var(--chrome-border);
+  border-radius: 0;
+}
+
+.ribbon-layer-states {
+  display: inline-flex;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+.ribbon-layer-state {
+  display: inline-flex;
+  padding: 1px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+}
+
+.ribbon-layer-state:hover {
+  border-color: var(--chrome-border);
 }
 
 .ribbon-menu-heading {

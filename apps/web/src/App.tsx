@@ -190,6 +190,7 @@ import { RECENT_THUMBNAIL, RecentDrawings } from './RecentDrawings';
 import { Autosaver, RecoveryOffers } from './recovery';
 import { indexedDbRecovery, webLocks } from './recovery-browser';
 import { Ribbon } from './Ribbon';
+import { ribbonPropertiesStore } from './ribbon/ribbon-properties';
 import { RecoveryBanner } from './RecoveryBanner';
 import {
   ReferenceFiles,
@@ -417,6 +418,7 @@ engines.onCommand((doc, o) => {
   }
   if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
   if (o.type === 'properties') propertySheets.set(doc, o.sheet);
+  if (o.type === 'ribbon-properties') ribbonPropertiesStore.set(doc, o.properties);
   // A rollover tooltip's answer shows; a command starting takes it away (M2-35 part 21).
   if (o.type === 'rollover') rollovers.answer(doc, o.id, o.sheet);
   if (o.type === 'command-preview') {
@@ -911,6 +913,7 @@ async function closeDoc(id: number): Promise<boolean> {
   engines.stop(id);
   commandLines.forget(id);
   undoStates.forget(id);
+  ribbonPropertiesStore.forget(id);
   return true;
 }
 

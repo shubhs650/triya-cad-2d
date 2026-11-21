@@ -6,7 +6,8 @@
 //
 // M7-02: at each width the app draws exactly the layout `ribbon-snapshots.test.ts` pins for its
 // breakpoint and compression step, every item with its icon; tooltips name the command, its
-// aliases and keys; the Quick Access Undo and Redo show Fluent's arrows.
+// aliases and keys; the Quick Access Undo and Redo show Fluent's arrows. Home's Layers and
+// Properties dropdowns (part 3) show the selection's values, or the current ones, and set them.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { DXF, expectDrawn, expectShown, openWithPicker } from '../app/page';
@@ -25,7 +26,8 @@ test.afterAll(async () => {
 /** Owner-facing screenshots of the ribbon (M7 rule), written only when asked for. */
 const SHOTS = process.env['TRIYA_SHOTS'];
 const shot = async (page: Page, name: string) => {
-  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `${name}.png`) });
+  if (SHOTS)
+    await page.screenshot({ path: path.join(SHOTS, `${name}.png`), animations: 'disabled' });
 };
 
 const ribbon = (page: Page) => page.getByTestId('ribbon');
@@ -359,4 +361,104 @@ test('the other tabs open palettes, the theme and the app windows (M7-02 part 2)
   await panel(page, 'Settings').getByRole('button', { name: 'Options', exact: true }).click();
   await expect(page.getByRole('dialog').first()).toBeVisible();
   await shot(page, '1920-tools-options');
+});
+
+test("Home's Layers and Properties dropdowns follow the selection and set it (M7-02 part 3)", async ({
+  page,
+}) => {
+  await open(page, 1920);
+  const layer = panel(page, 'Layers').getByRole('button', { name: /^Layer: / });
+  const color = panel(page, 'Properties').getByRole('button', { name: /^Object Color: / });
+  const lineweight = panel(page, 'Properties').getByRole('button', { name: /^Lineweight: / });
+  // Nothing selected: the current settings, which new objects take.
+  await expect(layer).toHaveAccessibleName('Layer: 0');
+  await expect(color).toHaveAccessibleName('Object Color: ByLayer');
+  await expect(lineweight).toHaveAccessibleName('Lineweight: ByLayer');
+
+  // The layer list names every layer with its states; a pick makes it current (CLAYER).
+  await layer.click();
+  const layers = page.getByRole('listbox', { name: 'Layer' });
+  await expect(layers.getByRole('option')).toHaveText(['0', 'Defpoints', 'HATCH']);
+  await expect(layers.getByRole('option', { name: '0' })).toHaveAttribute('aria-selected', 'true');
+  await shot(page, '1920-layer-dropdown');
+  await layers.getByRole('option', { name: 'Defpoints' }).click();
+  await expect(layers).toHaveCount(0);
+  await expect(layer).toHaveAccessibleName('Layer: Defpoints');
+  await expect(layer).toBeFocused();
+
+  // Its state buttons lock and unlock a layer without picking it.
+  await layer.click();
+  await layers.getByRole('button', { name: 'Lock layer 0' }).click();
+  await expect(layers.getByRole('button', { name: 'Unlock layer 0' })).toBeVisible();
+  await expect(layer).toHaveAccessibleName('Layer: Defpoints');
+  await layers.getByRole('button', { name: 'Unlock layer 0' }).click();
+  await expect(layers.getByRole('button', { name: 'Lock layer 0' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(layers).toHaveCount(0);
+
+  // The keyboard picks too: the colour list opens on its value; Red is three entries down.
+  await color.focus();
+  await page.keyboard.press('Enter');
+  const colors = page.getByRole('listbox', { name: 'Object Color' });
+  await expect(colors.getByRole('option', { name: 'ByLayer' })).toBeFocused();
+  await expect(colors.getByRole('option').last()).toHaveText('Select Colors...');
+  await shot(page, '1920-color-dropdown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(color).toHaveAccessibleName('Object Color: Red');
+
+  // With objects selected they show the objects' values, and a pick changes the objects.
+  await page.locator('canvas').first().hover();
+  await page.keyboard.press('Control+a');
+  // The drawing's objects are all on HATCH, coloured White.
+  await expect(layer).toHaveAccessibleName('Layer: HATCH');
+  await expect(color).toHaveAccessibleName('Object Color: White');
+  await lineweight.click();
+  await page
+    .getByRole('listbox', { name: 'Lineweight' })
+    .getByRole('option', { name: '0.30 mm' })
+    .click();
+  await expect(lineweight).toHaveAccessibleName('Lineweight: 0.30 mm');
+  await shot(page, '1920-properties-selection');
+  // Deselected, they show the current settings again.
+  await page.keyboard.press('Escape');
+  await expect(lineweight).toHaveAccessibleName('Lineweight: ByLayer');
+  await expect(color).toHaveAccessibleName('Object Color: Red');
+
+  // "Select Colors..." opens the Select Color dialog.
+  await color.click();
+  await colors.getByRole('option', { name: 'Select Colors...' }).click();
+  await expect(page.getByRole('dialog', { name: 'Select Color' })).toBeVisible();
+  await page
+    .getByRole('dialog', { name: 'Select Color' })
+    .getByRole('button', { name: 'Cancel' })
+    .click();
+});
+
+test('a compressed Properties panel lists its dropdowns, each opening its list', async ({
+  page,
+}) => {
+  await open(page, 1280);
+  const properties = panel(page, 'Properties');
+  await expect(properties).toHaveAttribute('data-state', 'compressed');
+  // The layer dropdown stays, naming the layer, beside Layer Properties.
+  await expect(
+    panel(page, 'Layers').getByRole('button', { name: 'Layer: 0', exact: true }),
+  ).toBeVisible();
+  await properties.getByRole('button', { name: 'More Properties tools' }).click();
+  const menu = page.getByRole('menu', { name: 'Properties' });
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    /Object Color\s*ByLayer/,
+    /Linetype\s*ByLayer/,
+    /Lineweight\s*ByLayer/,
+    /Transparency\s*ByLayer/,
+    'Properties',
+  ]);
+  await shot(page, '1280-properties-popover');
+  await menu.getByRole('menuitem', { name: 'Transparency: ByLayer' }).click();
+  const list = page.getByRole('listbox', { name: 'Transparency' });
+  await list.getByRole('option', { name: '30', exact: true }).click();
+  await properties.getByRole('button', { name: 'More Properties tools' }).click();
+  await expect(menu.getByRole('menuitem', { name: 'Transparency: 30' })).toBeVisible();
 });
