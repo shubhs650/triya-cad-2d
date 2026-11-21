@@ -11,7 +11,8 @@
 // when the drawing has none, as AutoCAD does.
 //
 // A layer's viewport overrides (M1-62) are XRECORDs of its extension dictionary, one per
-// property (ADSK_XREC_LAYER_COLOR_OVR, _LINETYPE_OVR, _LINEWT_OVR, _ALPHA_OVR), each holding a
+// property (ADSK_XREC_LAYER_COLOR_OVR, _LINETYPE_OVR, _LINEWT_OVR, _ALPHA_OVR, and M6-07's
+// _PLOTSTYLE_OVR, a 390 pointer to the plot style's placeholder, DEC-078), each holding a
 // `102 {ADSK_LYR_…_OVERRIDE` group per viewport: the viewport (335) and the value. A change
 // (VPLAYER, MVIEW LAyer; M6-02 part 5) rewrites the records whose property changed, as AutoCAD
 // files them (viewport-overrides.dxf; ezdxf `store_layer_overrides`), adding the dictionary and
@@ -31,6 +32,7 @@
 
 import {
   ACadVersion,
+  AcdbPlaceHolder,
   AppId,
   CadDictionary,
   DictionaryCloningFlags,
@@ -190,6 +192,8 @@ function overrideProblems(r: Resolver, version: ACadVersion | undefined, a: Laye
       (typeof t !== 'object' || !Number.isInteger(t.alpha) || t.alpha < 0 || t.alpha > 255)
     )
       out.push('a viewport override transparency must be an alpha from 0 to 255');
+    if (o.plotStyle !== undefined && !r.store.original(o.plotStyle) && !r.created.has(o.plotStyle))
+      out.push(`plot style ${o.plotStyle} does not exist`);
   }
   return out;
 }
@@ -261,6 +265,7 @@ const OVERRIDE_GROUPS: Record<string, string> = {
   ADSK_XREC_LAYER_LINETYPE_OVR: '{ADSK_LYR_LINETYPE_OVERRIDE',
   ADSK_XREC_LAYER_LINEWT_OVR: '{ADSK_LYR_LINEWT_OVERRIDE',
   ADSK_XREC_LAYER_ALPHA_OVR: '{ADSK_LYR_ALPHA_OVERRIDE',
+  ADSK_XREC_LAYER_PLOTSTYLE_OVR: '{ADSK_LYR_PLOTSTYLE_OVERRIDE',
 };
 
 /**
@@ -280,6 +285,10 @@ function overrideValue(r: Resolver, o: LayerViewportOverride, field: string): un
   if (field === 'linetype') return o.linetype && resolve(r, o.linetype, LineType);
   if (field === 'lineweight')
     return o.lineweight === undefined ? undefined : acadLineweight(o.lineweight);
+  if (field === 'plotStyle')
+    return (
+      o.plotStyle && (resolve(r, o.plotStyle, AcdbPlaceHolder) ?? Number.parseInt(o.plotStyle, 16))
+    );
   const t = o.transparency;
   return typeof t === 'object' ? BY_ALPHA | t.alpha : undefined;
 }
