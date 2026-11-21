@@ -116,3 +116,46 @@ describe('drafting aids', () => {
     expect([d.isOn('groups'), d.get().pickStyle]).toEqual([true, 3]);
   });
 });
+
+// M6-02 part 19: SNAP and GRID are the viewport worked in's (AutoCAD keeps SNAPMODE and GRIDMODE
+// in each viewport): the shown canvas tells them and the toggles turn them there.
+describe('SNAP and GRID of the viewport worked in', () => {
+  it('shows the viewport’s, and F9, F7 and the Drafting Settings turn them there', () => {
+    const d = new Drafting();
+    const sent: { snap?: boolean; grid?: boolean }[] = [];
+    const set = (p: { snap?: boolean; grid?: boolean }) => sent.push(p);
+    let heard = 0;
+    d.subscribe(() => heard++);
+    d.setViewportModes({ snap: false, grid: true, set });
+    expect(d.isOn('grid')).toBe(true);
+    expect(d.get()).toMatchObject({ snap: false, grid: true });
+    expect(heard).toBe(1);
+    d.toggle('grid');
+    d.toggle('snap');
+    expect(sent).toEqual([{ grid: false }, { snap: true }]);
+    // Shown at once, before the drawing's edit comes back.
+    expect(d.get()).toMatchObject({ snap: true, grid: false });
+    // The Drafting Settings' OK: only what differs is sent, the rest kept as usual.
+    d.configure({ snap: true, grid: true, polarAngle: 45 });
+    expect(sent.at(-1)).toEqual({ grid: true });
+    expect(d.get()).toMatchObject({ grid: true, polarAngle: 45 });
+    // The canvas telling the same again changes nothing.
+    const before = heard;
+    d.setViewportModes({ snap: true, grid: true, set });
+    expect(heard).toBe(before);
+  });
+
+  it('keeps the session’s own for a drawing with no viewport to keep them in', () => {
+    const d = new Drafting();
+    d.setViewportModes({ snap: true, grid: true, set: () => {} });
+    d.setViewportModes(undefined);
+    expect(d.isOn('grid')).toBe(false);
+    d.toggle('grid');
+    expect(d.isOn('grid')).toBe(true);
+    // Another drawing's viewport shows its own; the session's comes back without one.
+    d.setViewportModes({ snap: false, grid: false, set: () => {} });
+    expect(d.isOn('grid')).toBe(false);
+    d.setViewportModes(undefined);
+    expect(d.isOn('grid')).toBe(true);
+  });
+});

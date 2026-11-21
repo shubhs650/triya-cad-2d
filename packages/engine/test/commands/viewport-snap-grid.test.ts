@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_VIEWPORT_SNAP_GRID,
   DocumentModel,
+  EngineSession,
   FLOATING_VIEWPORT_FLAGS,
   PAPER_VIEWPORT_FLAGS,
   PromptBus,
@@ -126,11 +127,11 @@ const PAPER: [string, EntityGeometry][] = [
   ],
 ];
 
-function setup(
-  o: { paper?: [string, EntityGeometry][]; space?: string; vport?: Partial<VportRecord> } = {},
-) {
+type Setup = { paper?: [string, EntityGeometry][]; space?: string; vport?: Partial<VportRecord> };
+
+function initOf(o: Setup = {}) {
   const init = sampleInit();
-  const model = DocumentModel.create({
+  return {
     ...init,
     tables: { ...init.tables, vports: [vport(o.vport)] },
     entities: [
@@ -139,7 +140,11 @@ function setup(
         entityInit(h, g, { owner: PAPER_SPACE, layer: LAYER_0 }),
       ),
     ],
-  });
+  };
+}
+
+function setup(o: Setup = {}) {
+  const model = DocumentModel.create(initOf(o));
   const app: Record<string, number> = { SNAPMODE: 0, GRIDMODE: 0, SNAPTYPE: 0 };
   const view: ViewHost = {
     request: (r): Promise<ViewReply> => {
@@ -185,6 +190,10 @@ describe('a VIEWPORT’s own snap and grid settings', () => {
       gridMajor: 3,
       // FLOATING_VIEWPORT_FLAGS has 262144 and 524288: beyond the limits and adaptive.
       gridFlags: 3,
+      // And 32, the UCS icon shown; snap and grid off (M6-02 part 19).
+      snapOn: false,
+      gridOn: false,
+      ucsIcon: 1,
     });
     // A viewport made without them works with AutoCAD's defaults.
     const { snapGrid: _none, ...bare } = g;
@@ -225,7 +234,9 @@ describe('SNAP, GRID, SETVAR and DSETTINGS in a layout viewport made current', (
     expect(t.bus.promptText).toBe('Specify snap spacing or [ON/OFF/Aspect/Type] <1.0000>:');
     await t.bus.submit('0.5');
     expect(t.vp(A).snapGrid?.snapSpacing).toEqual({ x: 0.5, y: 0.5 });
-    expect(t.app['SNAPMODE']).toBe(1);
+    // Snap turned on in the viewport too (M6-02 part 19), not the status bar's own.
+    expect(viewportSnapGrid(t.vp(A)).snapOn).toBe(true);
+    expect(t.app['SNAPMODE']).toBe(0);
     await t.bus.script(['GRID', 'Major']);
     expect(t.bus.promptText).toContain('<10>');
     await t.bus.submit('4');
@@ -271,9 +282,9 @@ describe('SNAP, GRID, SETVAR and DSETTINGS in a layout viewport made current', (
     await t.bus.script(['SETVAR', 'GRIDMAJOR', '0']);
     await t.bus.cancel();
     expect(t.vp(A).snapGrid?.gridMajor).toBe(7);
-    // Model space's VPORT keeps its own, and UCSICON is still model space's.
+    // Model space's VPORT keeps its own; UCSICON is the viewport's too (M6-02 part 19: 90 bit 32).
     expect(t.active()).toMatchObject({ gridSpacing: { x: 10, y: 10 }, snapRotation: 0 });
-    expect(await t.variable('UCSICON')).toContain('<3>');
+    expect(await t.variable('UCSICON')).toContain('<1>');
   });
 
   it('switching viewports shows the other one’s', async () => {
@@ -355,3 +366,120 @@ describe('MVIEW', () => {
     });
   });
 });
+
+// M6-02 part 19: SNAPMODE, GRIDMODE and UCSICON are the viewport worked in's too (AutoCAD 2024
+// Help, each "Saved in: Drawing"; DXF reference, VPORT 75, 76 and 74, VIEWPORT 90 bits 256, 512,
+// 32 and 64), so each viewport has its own snap and grid on or off and its own UCS icon.
+describe('SNAPMODE, GRIDMODE and UCSICON in the viewport worked in', () => {
+  it('a VIEWPORT keeps them in its 90 bits, its other bits untouched', () => {
+    const g = withViewportSnapGrid(viewport({ flags: FLOATING_VIEWPORT_FLAGS | 16384 }), {
+      snapOn: true,
+      gridOn: true,
+      ucsIcon: 2,
+    });
+    expect(g.flags).toBe(((FLOATING_VIEWPORT_FLAGS | 16384) & ~32) | 64 | 256 | 512);
+    expect(viewportSnapGrid(g)).toMatchObject({ snapOn: true, gridOn: true, ucsIcon: 2 });
+    const off = withViewportSnapGrid(g, { snapOn: false, gridOn: false, ucsIcon: 1 });
+    expect(off.flags).toBe(FLOATING_VIEWPORT_FLAGS | 16384);
+  });
+
+  it('SNAP and GRID ON and OFF turn the current viewport’s, the others kept', async () => {
+    const t = setup();
+    await t.bus.script(['MSPACE']);
+    await t.bus.script(['GRID', 'ON']);
+    await t.bus.script(['SNAP', 'ON']);
+    expect(viewportSnapGrid(t.vp(A))).toMatchObject({ snapOn: true, gridOn: true });
+    expect(viewportSnapGrid(t.vp(B))).toMatchObject({ snapOn: false, gridOn: false });
+    expect(viewportSnapGrid(t.vp(SHEET))).toMatchObject({ snapOn: false, gridOn: false });
+    expect(t.active()).toMatchObject({ snapOn: false, gridOn: false });
+    expect(t.app).toMatchObject({ SNAPMODE: 0, GRIDMODE: 0 });
+    // A GRID typed spacing turns it on as well, in the same undo step.
+    await t.bus.doubleClick({ x: 200, y: 100 }, true);
+    await t.bus.script(['GRID', '5']);
+    expect(viewportSnapGrid(t.vp(B))).toMatchObject({ gridOn: true });
+    await t.bus.submit('U');
+    expect(viewportSnapGrid(t.vp(B))).toMatchObject({ gridOn: false });
+    expect(t.vp(B).snapGrid?.gridSpacing).toEqual({ x: 0, y: 0 });
+    expect(viewportSnapGrid(t.vp(A))).toMatchObject({ snapOn: true, gridOn: true });
+    // ON and OFF are SNAP's and GRID's undo steps (AutoCAD's commands; F9 and F7 are not).
+    await t.bus.submit('U');
+    expect(viewportSnapGrid(t.vp(A))).toMatchObject({ snapOn: false, gridOn: true });
+  });
+
+  it('SETVAR reads and sets them where the drafter works', async () => {
+    const t = setup();
+    await t.bus.script(['MSPACE']);
+    expect(await t.variable('GRIDMODE')).toContain('<0>');
+    await t.bus.script(['SETVAR', 'GRIDMODE', '1']);
+    await t.bus.script(['SETVAR', 'SNAPMODE', '1']);
+    await t.bus.script(['SETVAR', 'UCSICON', '3']);
+    expect(viewportSnapGrid(t.vp(A))).toMatchObject({ snapOn: true, gridOn: true, ucsIcon: 3 });
+    expect(t.vp(A).flags & (32 | 64 | 256 | 512)).toBe(32 | 64 | 256 | 512);
+    expect(await t.variable('GRIDMODE')).toContain('<1>');
+    // On paper: the paper-space viewport's.
+    await t.bus.script(['PSPACE']);
+    expect(await t.variable('GRIDMODE')).toContain('<0>');
+    await t.bus.script(['SETVAR', 'SNAPMODE', '1']);
+    expect(viewportSnapGrid(t.vp(SHEET)).snapOn).toBe(true);
+    // The Model tab: the *Active VPORT's (DXF 75, 76, 74).
+    const m = setup({ space: MODEL_SPACE, vport: { gridOn: true } });
+    expect(await m.variable('GRIDMODE')).toContain('<1>');
+    await m.bus.script(['SETVAR', 'GRIDMODE', '0']);
+    await m.bus.script(['SETVAR', 'UCSICON', '0']);
+    expect(m.active()).toMatchObject({ gridOn: false, ucsIcon: 0 });
+    expect(m.bus.undo.state.undoable).toBe(2);
+  });
+
+  it('a drawing with no viewport to keep them in asks the status bar’s', async () => {
+    const init = sampleInit();
+    const model = DocumentModel.create({ ...init, tables: { ...init.tables, vports: [] } });
+    const app: Record<string, number> = { SNAPMODE: 0, GRIDMODE: 1 };
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r): Promise<ViewReply> => {
+          if (r.op !== 'sysvar' || !(r.name in app)) return Promise.resolve({ ok: true });
+          if (r.value !== undefined) app[r.name] = r.value;
+          return Promise.resolve({ ok: true, value: app[r.name]! });
+        },
+      },
+      space: () => MODEL_SPACE,
+    });
+    await bus.script(['SNAP', 'ON']);
+    await bus.script(['SETVAR', 'GRIDMODE', '0']);
+    expect(app).toEqual({ SNAPMODE: 1, GRIDMODE: 0 });
+  });
+
+  it('UCSICON sets the current viewport’s icon, else the paper-space viewport’s', async () => {
+    const t = setup();
+    await t.bus.script(['MSPACE']);
+    await t.bus.script(['UCSICON', 'OFF']);
+    expect(t.vp(A).flags & 32).toBe(0);
+    expect(t.vp(B).flags & 32).toBe(32);
+    await t.bus.script(['PSPACE']);
+    await t.bus.script(['UCSICON', 'ORigin']);
+    expect(viewportSnapGrid(t.vp(SHEET)).ucsIcon).toBe(3);
+    expect(t.active().ucsIcon).toBe(3);
+  });
+
+  it('the status bar’s SNAP and GRID turn the viewport named, no undo step', () => {
+    const session = new EngineSession(initOf());
+    const model = session.model;
+    expect(session.edit({ kind: 'viewport-mode', holder: B, grid: true, snap: true }).ok).toBe(
+      true,
+    );
+    expect(viewportSnapGrid(t(model, B))).toMatchObject({ snapOn: true, gridOn: true });
+    expect(session.edit({ kind: 'viewport-mode', holder: VPORT, grid: true }).ok).toBe(true);
+    expect(model.tables.vports.get(VPORT)).toMatchObject({ gridOn: true, snapOn: false });
+    expect(session.undoState.undoable).toBe(0);
+    // Unchanged: nothing to do. Not a viewport: refused.
+    expect(session.edit({ kind: 'viewport-mode', holder: B, grid: true })).toEqual({
+      ok: true,
+      change: {},
+    });
+    expect(session.edit({ kind: 'viewport-mode', holder: 'FFFF', grid: true }).ok).toBe(false);
+  });
+});
+
+const t = (model: DocumentModel, h: string) => model.entityByHandle(h)!.geom as ViewportGeometry;

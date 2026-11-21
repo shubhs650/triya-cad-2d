@@ -1,8 +1,9 @@
 // M3-06 part 2: the Drafting Settings dialog's Snap and Grid tab (AutoCAD 2024 Help, "Snap and
 // Grid Tab (Drafting Settings Dialog Box)") and the SNAP and GRID commands ("SNAP (Command)",
 // "GRID (Command)"). SNAPUNIT, GRIDUNIT and GRIDMAJOR are the drawing's, kept in the model-space
-// `*Active` VPORT as AutoCAD keeps them in the current viewport; SNAPMODE and GRIDMODE are the
-// app's status bar toggles, which the commands turn through the view host as SETVAR does.
+// `*Active` VPORT as AutoCAD keeps them in the current viewport; SNAPMODE and GRIDMODE are kept
+// there too (M6-02 part 19: DXF 75 and 76), and a drawing without one turns the app's status bar
+// toggles through the view host.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
@@ -167,19 +168,21 @@ describe('SNAP', () => {
     expect(bus.promptText).toBe('Specify snap spacing or [ON/OFF/Aspect/Type] <2.5000>:');
     await bus.submit('0.5');
     expect(vp().snapSpacing).toEqual({ x: 0.5, y: 0.5 });
-    expect(app['SNAPMODE']).toBe(1);
+    expect(vp().snapOn).toBe(true);
     await bus.script(['SNAP', 'OFF']);
-    expect(app['SNAPMODE']).toBe(0);
+    expect(vp().snapOn).toBe(false);
     await bus.script(['SNAP', 'ON']);
-    expect(app['SNAPMODE']).toBe(1);
+    expect(vp().snapOn).toBe(true);
+    // The VPORT keeps it, not the app (M6-02 part 19).
+    expect(app['SNAPMODE']).toBe(0);
     // A spacing of 0 or less is refused and asked again.
     await bus.script(['SNAP', '0']);
     expect(log.at(-1)).toBe('Value must be positive and nonzero.');
     expect(bus.promptText).toContain('Specify snap spacing');
     await bus.cancel();
     expect(vp().snapSpacing).toEqual({ x: 0.5, y: 0.5 });
-    // One SNAP undo step for the spacing; the toggles are not steps.
-    expect(bus.undo.state.undoable).toBe(1);
+    // One SNAP undo step for the spacing, and one each for OFF and ON.
+    expect(bus.undo.state.undoable).toBe(3);
   });
 
   it('sets the snap type, PolarSnap or grid snap (SNAPTYPE), with the current one the default', async () => {
@@ -223,6 +226,7 @@ describe('SNAP', () => {
     expect(bus.promptText).toBe('Specify vertical spacing <10.0000>:');
     await bus.submit('');
     expect(vp().snapSpacing).toEqual({ x: 3, y: 10 });
+    expect(vp().snapOn).toBe(false);
     expect(app['SNAPMODE']).toBe(0);
     await bus.script(['SNAP', 'A', '1']);
     await bus.cancel();
@@ -246,7 +250,7 @@ describe('SNAP', () => {
   });
 
   it('says why the app refused a toggle', async () => {
-    const model = DocumentModel.create(init());
+    const model = DocumentModel.create(init(null));
     const log: string[] = [];
     const bus = new PromptBus({ model, registry: builtinCommands() });
     bus.on((e: BusEvent) => {
@@ -267,11 +271,12 @@ describe('GRID', () => {
     );
     await bus.submit('20');
     expect(vp().gridSpacing).toEqual({ x: 20, y: 20 });
-    expect(app['GRIDMODE']).toBe(1);
+    expect(vp().gridOn).toBe(true);
     await bus.script(['GRID', 'OFF']);
-    expect(app['GRIDMODE']).toBe(0);
+    expect(vp().gridOn).toBe(false);
     await bus.script(['GRID', 'ON']);
-    expect(app['GRIDMODE']).toBe(1);
+    expect(vp().gridOn).toBe(true);
+    expect(app['GRIDMODE']).toBe(0);
   });
 
   it('takes 0 or Snap to follow the snap spacing, and 2x for twice it', async () => {
