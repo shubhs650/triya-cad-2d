@@ -32,6 +32,11 @@
 // lists the new layers an evaluation of the layer list found and nobody has reconciled yet,
 // LAYEREVAL) lists the unreconciled layers. It is there only while one is; the menu acts on its
 // layers as on the Xref node's.
+//
+// The Viewport Overrides node (M6-02 part 12; Help: "Viewport Overrides: Displays all layers
+// with property overrides in the current viewport") lists the layers the layout viewport made
+// current overrides a colour, linetype, lineweight or transparency of; the app shows it while
+// that viewport overrides one, and its menu acts on them as on the Xref node's.
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
@@ -45,7 +50,7 @@ import {
 import { isXrefDependent, isXrefRecord } from '../model/xref';
 import { filteredLayers } from './layer-filters';
 import { layerPropsChange, layersInUse, type LayerProps } from './layer-manager';
-import { viewportLayerChange } from './viewport-layer-edits';
+import { viewportLayerChange, viewportOverrideLayers } from './viewport-layer-edits';
 
 /**
  * A node of the filter tree: All, All Used Layers, a filter's handle, Unreconciled New Layers
@@ -61,6 +66,16 @@ const XREF_PREFIX = 'xref:';
 
 /** The node of the xref named `name`: the layers it brings. */
 export const xrefNode = (name: string): LayerFilterNode => `${XREF_PREFIX}${name}`;
+
+const VP_OVERRIDES_PREFIX = 'vpoverrides:';
+
+/** The Viewport Overrides node of the layout viewport `viewport`: the layers it overrides. */
+export const viewportOverridesNode = (viewport: Handle): LayerFilterNode =>
+  `${VP_OVERRIDES_PREFIX}${viewport}`;
+
+/** The viewport whose Viewport Overrides node `node` is, if it is one. */
+export const viewportOfOverridesNode = (node: LayerFilterNode): Handle | undefined =>
+  node.startsWith(VP_OVERRIDES_PREFIX) ? node.slice(VP_OVERRIDES_PREFIX.length) : undefined;
 
 /** The Unreconciled New Layers node: every unreconciled layer. */
 export const UNRECONCILED_NODE = 'unreconciled';
@@ -113,6 +128,8 @@ export function filterNodeLayers(
   const layers = [...model.tables.layers.values()];
   if (node === 'all') return layers;
   if (node === UNRECONCILED_NODE) return unreconciledLayers(layers);
+  const viewport = viewportOfOverridesNode(node);
+  if (viewport !== undefined) return viewportOverrideLayers(layers, viewport);
   const xref = xrefNodeLayers(layers, node);
   if (xref) return xref;
   const used = layersInUse(model);

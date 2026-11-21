@@ -9,7 +9,9 @@
 // (part 6) are below `listedLayers`. The Xref node (part 8) comes after the filters when the
 // drawing has xrefs, with a node for each listing the layers it brings (the engine's
 // `xrefNodeLayers`). Unreconciled New Layers (M5-19 part 2) comes after All Used Layers while a
-// layer is unreconciled (the engine's `UNRECONCILED_NODE`).
+// layer is unreconciled (the engine's `UNRECONCILED_NODE`). Viewport Overrides (M6-02 part 12)
+// comes after it while the layout viewport made current overrides a layer (the engine's
+// `viewportOverridesNode`).
 import {
   UNRECONCILED_NODE,
   XREF_NODE,
@@ -17,6 +19,8 @@ import {
   isLayerFilter,
   parseLayerFilterExpression,
   unreconciledLayers,
+  viewportOfOverridesNode,
+  viewportOverrideLayers,
   xrefNodeLayers,
   xrefNodeNames,
   type ChangeSet,
@@ -97,6 +101,7 @@ export function filterNodeName(choice: FilterChoice, filter: LayerFilter | undef
   if (choice === 'all') return 'All';
   if (choice === 'used') return 'All Used Layers';
   if (choice === UNRECONCILED_NODE) return 'Unreconciled New Layers';
+  if (viewportOfOverridesNode(choice) !== undefined) return 'Viewport Overrides';
   if (choice === XREF_NODE) return 'Xref';
   if (choice.startsWith(`${XREF_NODE}:`)) return choice.slice(XREF_NODE.length + 1);
   return filter?.name ?? '';
@@ -117,10 +122,13 @@ export function listedLayers(
     const used = options.used ?? new Set<Handle>();
     return new Set(all.filter((h) => used.has(h) !== options.invert));
   }
+  const viewport = viewportOfOverridesNode(choice);
   const predefined =
     choice === UNRECONCILED_NODE
       ? unreconciledLayers(source.tables.layers.values())
-      : xrefNodeLayers(source.tables.layers.values(), choice);
+      : viewport !== undefined
+        ? viewportOverrideLayers(source.tables.layers.values(), viewport)
+        : xrefNodeLayers(source.tables.layers.values(), choice);
   if (predefined) {
     const listed = new Set(predefined.map((l) => l.handle));
     return new Set(all.filter((h) => listed.has(h) !== options.invert));
@@ -223,7 +231,7 @@ export interface FilterMenuContext {
   readonly viewport?: Handle | undefined;
   /**
    * A node the drawing makes for itself, in which no filter can be made: Unreconciled New
-   * Layers, the Xref node or an xref's.
+   * Layers, Viewport Overrides, the Xref node or an xref's.
    */
   readonly predefined?: boolean;
 }

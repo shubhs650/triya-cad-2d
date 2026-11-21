@@ -179,6 +179,46 @@ const ownValue = (
   value: unknown,
 ): boolean => JSON.stringify(layer[key]) === JSON.stringify(value);
 
+/** A viewport property override's key (the manager's VP cells). */
+export type ViewportOverrideKey = (typeof OVERRIDE_KEYS)[number];
+
+/** Why `viewport` is not a floating viewport of a layout, or undefined when it is. */
+export function layoutViewportProblem(model: DocumentModel, viewport: Handle): string | undefined {
+  const vp = viewportOf(model, viewport);
+  return !vp || vp.geom.id === 1 ? `No layout viewport ${viewport}.` : undefined;
+}
+
+/**
+ * `props` as `layer`'s overrides in `viewport`, into `b`: a value equal to the layer's own
+ * removes that override (and the viewport's entry with its last one).
+ */
+export function setViewportLayerProps(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  layer: Handle,
+  viewport: Handle,
+  props: ViewportOverrideProps,
+): void {
+  const record = model.tables.layers.get(layer);
+  const keys = OVERRIDE_KEYS.filter((k) => props[k] !== undefined);
+  if (!record || keys.length === 0) return;
+  rewrite(b, model, layer, (list) => {
+    const at = list.findIndex((o) => o.viewport === viewport);
+    // The viewport first, as the reader builds an entry.
+    const entry: Record<string, unknown> = { viewport, ...(at >= 0 ? list[at] : {}) };
+    for (const k of keys) {
+      if (ownValue(record, k, props[k])) delete entry[k];
+      else entry[k] = props[k];
+    }
+    const kept = OVERRIDE_KEYS.some((k) => entry[k] !== undefined);
+    const out = [...list];
+    if (at >= 0 && kept) out[at] = entry as unknown as LayerViewportOverride;
+    else if (at >= 0) out.splice(at, 1);
+    else if (kept) out.push(entry as unknown as LayerViewportOverride);
+    return out;
+  });
+}
+
 /**
  * The manager's VP Freeze, VP Color, VP Linetype, VP Lineweight and VP Transparency on `layers`
  * in the floating viewport `viewport` (AutoCAD 2024 Help, "Layer Properties Manager": "for the
@@ -192,33 +232,67 @@ export function viewportLayerChange(
   viewport: Handle,
   props: ViewportLayerProps,
 ): ChangeSet | string {
-  const vp = viewportOf(model, viewport);
-  if (!vp || vp.geom.id === 1) return `No layout viewport ${viewport}.`;
+  const why = layoutViewportProblem(model, viewport);
+  if (why) return why;
   const unknown = layers.find((h) => !model.tables.layers.has(h));
   if (unknown !== undefined) return `No layer ${unknown}.`;
   const b = new ChangeSetBuilder(model);
   if (props.frozen !== undefined) freezeInViewports(b, model, layers, [viewport], props.frozen);
-  const keys = OVERRIDE_KEYS.filter((k) => props[k] !== undefined);
-  if (keys.length === 0) return b.build();
-  for (const h of layers) {
-    const layer = model.tables.layers.get(h)!;
-    rewrite(b, model, h, (list) => {
-      const at = list.findIndex((o) => o.viewport === viewport);
-      // The viewport first, as the reader builds an entry.
-      const entry: Record<string, unknown> = { viewport, ...(at >= 0 ? list[at] : {}) };
-      for (const k of keys) {
-        if (ownValue(layer, k, props[k])) delete entry[k];
-        else entry[k] = props[k];
-      }
-      const kept = OVERRIDE_KEYS.some((k) => entry[k] !== undefined);
-      const out = [...list];
-      if (at >= 0 && kept) out[at] = entry as unknown as LayerViewportOverride;
-      else if (at >= 0) out.splice(at, 1);
-      else if (kept) out.push(entry as unknown as LayerViewportOverride);
-      return out;
-    });
+  for (const h of layers) setViewportLayerProps(b, model, h, viewport, props);
+  return b.build();
+}
+
+/**
+ * The layer list menu's Remove Viewport Overrides For (M6-02 part 12; AutoCAD 2024 Help, "Layer
+ * Properties Manager": "Removes a single property override or all property overrides on
+ * selected layers or all layers, for either the current viewport or all viewports"): the
+ * overrides of `layers` (every layer when absent) in `viewport` (every viewport when absent), of
+ * `property` only (the VP cell right-clicked) or of every one. VP Freeze is not an override.
+ */
+export function removeViewportOverridesChange(
+  model: DocumentModel,
+  o: {
+    readonly layers?: readonly Handle[] | undefined;
+    readonly viewport?: Handle | undefined;
+    readonly property?: ViewportOverrideKey | undefined;
+  },
+): ChangeSet | string {
+  const why = o.viewport === undefined ? undefined : layoutViewportProblem(model, o.viewport);
+  if (why) return why;
+  const unknown = o.layers?.find((h) => !model.tables.layers.has(h));
+  if (unknown !== undefined) return `No layer ${unknown}.`;
+  const b = new ChangeSetBuilder(model);
+  for (const h of o.layers ?? [...model.tables.layers.keys()]) {
+    rewrite(b, model, h, (list) =>
+      list.flatMap((e) => {
+        if (o.viewport !== undefined && e.viewport !== o.viewport) return [e];
+        if (o.property === undefined) return [];
+        const rest: Record<string, unknown> = { ...e };
+        delete rest[o.property];
+        return OVERRIDE_KEYS.some((k) => rest[k] !== undefined)
+          ? [rest as unknown as LayerViewportOverride]
+          : [];
+      }),
+    );
   }
   return b.build();
+}
+
+/** The layers `viewport` overrides a property of (the Viewport Overrides filter node). */
+export function viewportOverrideLayers(
+  layers: Iterable<LayerRecord>,
+  viewport: Handle,
+): LayerRecord[] {
+  return [...layers].filter((l) =>
+    (l.viewportOverrides ?? []).some(
+      (o) => o.viewport === viewport && OVERRIDE_KEYS.some((k) => o[k] !== undefined),
+    ),
+  );
+}
+
+/** The layers frozen in `viewport` (its DXF 341), when it is a viewport. */
+export function frozenInViewport(model: DocumentModel, viewport: Handle): ReadonlySet<Handle> {
+  return new Set(viewportOf(model, viewport)?.geom.frozenLayers ?? []);
 }
 
 /** Every layout's floating viewports (not a sheet's own, 69 = 1), in layout tab order. */

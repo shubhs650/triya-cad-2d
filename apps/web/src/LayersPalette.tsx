@@ -70,6 +70,7 @@ import {
   isLayerFilter,
   transparencyOf,
   transparencyValue,
+  viewportOverridesNode,
   xrefNode,
   type EditResult,
   type EngineEdit,
@@ -89,8 +90,10 @@ import {
 import {
   LayerListMenu,
   MergeToLayerDialog,
+  isRemoveOverrides,
   mergeTargets,
   reconcilable,
+  removeOverridesTarget,
   type LayerListAction,
 } from './LayerListMenu';
 import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from './LayerDialogs';
@@ -528,7 +531,10 @@ export function LayersPalette({
   /** The rows' elements as last rendered, re-created only for a row whose props changed. */
   const rowElements = useRef(new Map<Handle, { props: RowProps; element: ReactElement }>());
   const [customizing, setCustomizing] = useState(false);
-  const [listMenu, setListMenu] = useState<{ x: number; y: number } | undefined>();
+  // The layer list menu, and the VP column right-clicked for it (M6-02 part 12).
+  const [listMenu, setListMenu] = useState<
+    { x: number; y: number; column?: keyof typeof VP_CELLS | undefined } | undefined
+  >();
   const [merging, setMerging] = useState<readonly LayerRow[] | undefined>();
   const paletteRef = useRef<HTMLElement>(null);
   /** When the search last changed, until its rows are on screen. */
@@ -600,12 +606,19 @@ export function LayersPalette({
   const evaluating = useSyncExternalStore(drafting.subscribe, () => drafting.get().layerEvalCtl);
   const unreconciled = evaluating && rows.some((r) => r.unreconciled);
   const unreconciledChoice = (c: FilterChoice) => c === UNRECONCILED_NODE && unreconciled;
+  // Viewport Overrides (M6-02 part 12) is there while the viewport made current overrides a layer.
+  const overridesNode =
+    viewport !== undefined && rows.some((r) => Object.keys(r.vp?.overridden ?? {}).length > 0)
+      ? viewportOverridesNode(viewport)
+      : undefined;
+  const overridesChoice = (c: FilterChoice) => overridesNode !== undefined && c === overridesNode;
   const chosen: FilterChoice =
     choice === 'all' ||
     choice === 'used' ||
     filterOf(choice) ||
     xrefChoice(choice) ||
-    unreconciledChoice(choice)
+    unreconciledChoice(choice) ||
+    overridesChoice(choice)
       ? choice
       : 'all';
   const chosenFilter = filterOf(chosen);
@@ -753,6 +766,20 @@ export function LayersPalette({
     } else if (a === 'reconcile') {
       const layers = selectedRows.filter((r) => r.unreconciled).map((r) => r.handle);
       if (layers.length > 0) void apply({ kind: 'layer', layer: layers, reconcile: true });
+    } else if (isRemoveOverrides(a)) {
+      // Remove Viewport Overrides For (M6-02 part 12), of the VP column right-clicked only.
+      const target = removeOverridesTarget(
+        a,
+        selectedRows.map((r) => r.handle),
+        viewport,
+      );
+      const column = listMenu?.column;
+      if (target)
+        void apply({
+          kind: 'viewport-overrides-remove',
+          ...target,
+          ...(column && { property: VP_CELLS[column].property }),
+        });
     } else if (a === 'all') select(new Set(shown.map((r) => r.handle)));
     else if (a === 'clear') select(new Set());
     else if (a === 'allButCurrent')
@@ -762,9 +789,13 @@ export function LayersPalette({
   };
 
   /** The menu on a layer: the layer is selected first unless it is already. */
-  const openListMenu = (row: LayerRow, at: { x: number; y: number }) => {
+  const openListMenu = (
+    row: LayerRow,
+    at: { x: number; y: number },
+    column?: keyof typeof VP_CELLS,
+  ) => {
     if (!selected.has(row.handle)) select(new Set([row.handle]), row.handle);
-    setListMenu(at);
+    setListMenu({ ...at, column });
   };
 
   const setCurrent = async (row?: LayerRow) => {
@@ -875,7 +906,7 @@ export function LayersPalette({
       parent: filter?.parent === undefined ? undefined : filterOf(filter.parent),
       space: inLayout ? doc.block : undefined,
       viewport,
-      predefined: xrefChoice(c) || unreconciledChoice(c),
+      predefined: xrefChoice(c) || unreconciledChoice(c) || overridesChoice(c),
     };
   };
 
@@ -1241,6 +1272,7 @@ export function LayersPalette({
             tree={layerFilterTree(filters)}
             xrefs={xrefs}
             unreconciled={unreconciled}
+            viewportOverrides={overridesNode}
             choice={chosen}
             invert={invert}
             renaming={renamingFilter}
@@ -1324,7 +1356,12 @@ export function LayersPalette({
                 const row = tr && shown.find((r) => r.handle === tr.dataset.handle);
                 if (!row) return;
                 e.preventDefault();
-                openListMenu(row, { x: e.clientX, y: e.clientY });
+                const col = (e.target as HTMLElement).closest<HTMLElement>('td[data-col]')?.dataset
+                  .col;
+                // A VP cell the viewport overrides: the menu removes that override only.
+                const vpCol = col && col in VP_CELLS ? (col as keyof typeof VP_CELLS) : undefined;
+                const overridden = vpCol && row.vp?.overridden[VP_CELLS[vpCol].property];
+                openListMenu(row, { x: e.clientX, y: e.clientY }, overridden ? vpCol : undefined);
               }}
             >
               {rowList}
@@ -1356,6 +1393,14 @@ export function LayersPalette({
           selected={selectedRows.length}
           group={chosenFilter?.filterType === 'group'}
           reconcile={evaluating && reconcilable(selectedRows)}
+          overrides={
+            inLayout
+              ? {
+                  current: viewport !== undefined,
+                  column: listMenu.column && VP_CELLS[listMenu.column].title,
+                }
+              : undefined
+          }
           onAction={onListAction}
           onClose={() => setListMenu(undefined)}
         />

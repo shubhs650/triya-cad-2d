@@ -3,7 +3,13 @@
 // the rows mark unreconciled layers, which Reconcile Layer is offered for.
 import type { DocumentInit, LayerRecord } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { mergeQuestion, mergeTargets, reconcilable } from '../src/LayerListMenu';
+import {
+  isRemoveOverrides,
+  mergeQuestion,
+  mergeTargets,
+  reconcilable,
+  removeOverridesTarget,
+} from '../src/LayerListMenu';
 import { layerRows } from '../src/layers';
 
 const layer = (handle: string, name: string, flags?: number): LayerRecord => ({
@@ -61,5 +67,26 @@ describe('Reconcile Layer (M5-19 part 2)', () => {
     expect(reconcilable(pick('Notes', 'Site|Grid'))).toBe(true);
     expect(reconcilable(pick('Notes', 'Site|Walls'))).toBe(false);
     expect(reconcilable([])).toBe(false);
+  });
+});
+
+// M6-02 part 12: Remove Viewport Overrides For's items: the selected layers or all, in the
+// viewport made current only or in all viewports.
+describe('Remove Viewport Overrides For (M6-02 part 12)', () => {
+  it('asks for the layers and the viewport each item names', () => {
+    expect(removeOverridesTarget('removeSelectedCurrent', ['11', '12'], 'A1')).toEqual({
+      layers: ['11', '12'],
+      viewport: 'A1',
+    });
+    expect(removeOverridesTarget('removeSelectedAll', ['11'], 'A1')).toEqual({ layers: ['11'] });
+    expect(removeOverridesTarget('removeAllCurrent', ['11'], 'A1')).toEqual({ viewport: 'A1' });
+    expect(removeOverridesTarget('removeAllAll', [], undefined)).toEqual({});
+  });
+
+  it('needs a current viewport for Current Viewport Only and a selection for Selected Layers', () => {
+    expect(removeOverridesTarget('removeAllCurrent', ['11'], undefined)).toBeUndefined();
+    expect(removeOverridesTarget('removeSelectedAll', [], 'A1')).toBeUndefined();
+    expect(isRemoveOverrides('removeAllAll')).toBe(true);
+    expect(isRemoveOverrides('merge')).toBe(false);
   });
 });

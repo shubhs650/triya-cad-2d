@@ -58,8 +58,8 @@ export const LAYER_COLUMNS: readonly LayerColumn[] = [
   { key: 'lineweight', title: 'Lineweight', width: 110, fits: true },
   { key: 'transparency', title: 'Transparency', width: 110, fits: true },
   { key: 'description', title: 'Description', width: 200 },
-  // M6-02 part 8: the viewport made current's overrides (AutoCAD's VP Plot Style is left out,
-  // as Triya does not plot by named plot style).
+  // M6-02 part 8: the viewport made current's overrides (AutoCAD's VP Plot Style waits with a
+  // Plot Style column, M6-07).
   { key: 'vpColor', title: 'VP Color', layoutOnly: true, width: 110 },
   { key: 'vpLinetype', title: 'VP Linetype', layoutOnly: true, width: 130 },
   { key: 'vpLineweight', title: 'VP Lineweight', layoutOnly: true, width: 110, fits: true },

@@ -357,7 +357,7 @@ export interface CanvasHooks {
   readonly onViewportView?: (
     viewport: Handle,
     view: ViewportView,
-    label: 'ZOOM' | 'PAN',
+    label: 'ZOOM' | 'PAN' | 'VIEW',
     join: boolean,
   ) => Promise<unknown> | void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
@@ -946,6 +946,20 @@ export class CanvasController {
   }
 
   /**
+   * A model view restored in the layout viewport made current (M2-47's leftover, M6-02 part 12;
+   * AutoCAD 2024 Help, "View Manager Dialog Box": Set Current in a layout viewport's model space
+   * restores a model view there): the window `box` (world units) fills the viewport, a VIEW step
+   * of the viewport's own view. False when no viewport whose view can change is current.
+   */
+  showInViewport(box: { minX: number; minY: number; maxX: number; maxY: number }): boolean {
+    const z = this.#zoomable();
+    if (!z) return false;
+    const w = windowView({ x: box.minX, y: box.minY }, { x: box.maxX, y: box.maxY }, z.frame.size);
+    if (w) this.#goViewport(z, w, 'VIEW');
+    return w !== undefined;
+  }
+
+  /**
    * A view step undone or redone (M2-47 part 4): shows `view` without a ZOOM Previous entry or
    * another step, and answers with the view it replaced.
    */
@@ -1094,7 +1108,7 @@ export class CanvasController {
   #goViewport(
     z: { readonly c: CurrentViewport; readonly frame: FrameOnCanvas },
     view: ViewTransform,
-    label: 'ZOOM' | 'PAN',
+    label: 'ZOOM' | 'PAN' | 'VIEW',
     o: { readonly join?: boolean; readonly previous?: boolean } = {},
   ): void {
     const { c, frame } = z;
