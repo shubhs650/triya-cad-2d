@@ -80,7 +80,20 @@ export type ViewRequest =
    * engine's `modelTiles` places them, and which one is current. Answered on the Model tab only.
    */
   | { readonly op: 'tiles' }
-  | { readonly op: 'restore'; readonly name: string }
+  /**
+   * VIEW Restore of the named view `name` of the space shown; with `window` (M6-02 part 14), a
+   * model view restored in the layout viewport made current: that window (world units) fills it.
+   */
+  | {
+      readonly op: 'restore';
+      readonly name: string;
+      readonly window?: {
+        readonly minX: number;
+        readonly minY: number;
+        readonly maxX: number;
+        readonly maxY: number;
+      };
+    }
   /**
    * A view step undone or redone (M2-47 part 4): `viewport`, the front-end's name for one canvas
    * as its `view-step` input gave it, shows `view` again, recorded for no ZOOM Previous or undo

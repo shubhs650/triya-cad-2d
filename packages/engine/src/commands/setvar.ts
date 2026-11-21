@@ -31,8 +31,14 @@ import {
   type VariableValue,
 } from './sysvars';
 import { drawingUnits } from './units';
-import { currentVport, snapGridOf, snapGridPatch, snapGridProblem } from '../edit/snap-grid';
-import type { VportRecord } from '../model/types';
+import {
+  currentVport,
+  snapGridHolder,
+  snapGridOf,
+  snapGridPatch,
+  snapGridProblem,
+  type SnapGridState,
+} from '../edit/snap-grid';
 import { inquiryResults } from './inquiry/inquiry';
 import { ANNOAUTOSCALE, ANNOAUTOSCALE_NOTICE } from '../annotation/annotation-scale';
 
@@ -62,9 +68,15 @@ async function read(
     case 'computed':
       return computed(ctx, v.name);
     case 'vport': {
-      const vport = currentVport(ctx.model);
-      if (!vport) return { problem: noVport(v) };
-      return { value: vportValue(vport, v.name) };
+      // UCSICON stays model space's `*Active` VPORT's; the snap and grid settings are the
+      // viewport worked in's (M6-02 part 17).
+      if (v.name === 'UCSICON') {
+        const vport = currentVport(ctx.model);
+        return vport ? { value: vport.ucsIcon } : { problem: noVport(v) };
+      }
+      const h = snapGridHolder(ctx.model, ctx.viewport);
+      if (!h) return { problem: noVport(v) };
+      return { value: vportValue(h.state, v.name) };
     }
   }
 }
@@ -90,8 +102,8 @@ async function frameMembers(
 
 const noVport = (v: SystemVariable) => `The drawing has no current viewport to keep ${v.name} in.`;
 
-/** A `VPORT_VARIABLES` variable as the `*Active` VPORT holds it. */
-function vportValue(vport: VportRecord, name: string): VariableValue {
+/** A `VPORT_VARIABLES` snap or grid variable as the viewport worked in holds it. */
+function vportValue(vport: SnapGridState, name: string): VariableValue {
   switch (name) {
     case 'SNAPUNIT':
       return { x: vport.snapSpacing.x, y: vport.snapSpacing.y };
@@ -104,38 +116,47 @@ function vportValue(vport: VportRecord, name: string): VariableValue {
     case 'SNAPANG':
       // Shown in degrees, as SETVAR shows the header's angles.
       return (vport.snapRotation * 180) / Math.PI;
-    case 'UCSICON':
-      return vport.ucsIcon;
     default:
       return vport.gridFlags;
   }
 }
 
 /**
- * Sets a `VPORT_VARIABLES` variable in the `*Active` VPORT, one undo step; the Snap and Grid
- * tab's checks refuse what it would refuse (a typed point is not checked on the way here).
+ * Sets a `VPORT_VARIABLES` variable, one undo step: UCSICON in the `*Active` VPORT, the snap and
+ * grid settings in the viewport worked in (M6-02 part 17). The Snap and Grid tab's checks refuse
+ * what it would refuse (a typed point is not checked on the way here).
  */
 function writeVport(ctx: CommandContext, v: SystemVariable, value: VariableValue): void {
-  const vport = currentVport(ctx.model);
-  if (!vport) {
+  if (v.name === 'UCSICON') {
+    const vport = currentVport(ctx.model);
+    if (!vport) {
+      ctx.message(noVport(v));
+      return;
+    }
+    // UCSICON (0–3, which the variable's range checked) is patched as it is (M3-06 part 7).
+    const n = value as number;
+    if (vport.ucsIcon === n) return;
+    ctx.edit((b) => b.updateTableRecord('vports', vport.handle, { ucsIcon: n }));
+    return;
+  }
+  const h = snapGridHolder(ctx.model, ctx.viewport);
+  if (!h) {
     ctx.message(noVport(v));
     return;
   }
-  // SNAPANG (radians, finite) and UCSICON (0–3, which the variable's range checked) are
-  // patched as they are (M3-06 part 7).
-  if (v.name === 'SNAPANG' || v.name === 'UCSICON') {
-    const n = v.name === 'SNAPANG' ? ((value as number) * Math.PI) / 180 : (value as number);
-    if (!Number.isFinite(n)) return;
-    const patch = v.name === 'SNAPANG' ? { snapRotation: n } : { ucsIcon: n };
-    if ((v.name === 'SNAPANG' ? vport.snapRotation : vport.ucsIcon) === n) return;
-    ctx.edit((b) => b.updateTableRecord('vports', vport.handle, patch));
+  const vport = h.state;
+  // SNAPANG (radians, finite) is patched as it is (M3-06 part 7).
+  if (v.name === 'SNAPANG') {
+    const n = ((value as number) * Math.PI) / 180;
+    if (!Number.isFinite(n) || vport.snapRotation === n) return;
+    ctx.edit((b) => h.write(b, { snapRotation: n }));
     return;
   }
   if (v.name === 'SNAPBASE') {
     const p = value as Vec2;
     if (!(Number.isFinite(p.x) && Number.isFinite(p.y))) return;
     if (p.x === vport.snapBase.x && p.y === vport.snapBase.y) return;
-    ctx.edit((b) => b.updateTableRecord('vports', vport.handle, { snapBase: { x: p.x, y: p.y } }));
+    ctx.edit((b) => h.write(b, { snapBase: { x: p.x, y: p.y } }));
     return;
   }
   const now = snapGridOf(vport);
@@ -153,7 +174,7 @@ function writeVport(ctx: CommandContext, v: SystemVariable, value: VariableValue
     return;
   }
   const patch = snapGridPatch(vport, settings);
-  if (patch) ctx.edit((b) => b.updateTableRecord('vports', vport.handle, patch));
+  if (patch) ctx.edit((b) => h.write(b, patch));
 }
 
 /** A variable the engine works out (`COMPUTED_VARIABLES`). */

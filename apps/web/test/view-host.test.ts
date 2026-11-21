@@ -51,6 +51,11 @@ class Target implements ViewTarget {
   zoomCenter = (c: Vec2, h: number) => void this.calls.push(`center ${c.x},${c.y} ${h}`);
   panWorld = (by: Vec2) => void this.calls.push(`pan ${by.x},${by.y}`);
   show = (v: ViewTransform) => void this.calls.push(`show ${v.center.x},${v.center.y} ${v.scale}`);
+  unlocked = true;
+  showInViewport = (b: { minX: number; minY: number; maxX: number; maxY: number }) => (
+    this.calls.push(`in viewport ${b.minX},${b.minY} ${b.maxX},${b.maxY}`),
+    this.unlocked
+  );
   setMode = (m: CanvasMode) => void this.calls.push(`mode ${m}`);
   regen = () => void this.calls.push('regen');
   pick = (p: Vec2) => (this.calls.push(`pick ${p.x},${p.y}`), Promise.resolve([7]));
@@ -767,6 +772,22 @@ describe('answerView', () => {
       ok: true,
       view: stateOf(t),
       screen: t.size,
+    });
+  });
+
+  it('restores a model view’s window in the layout viewport made current (M6-02 part 14)', () => {
+    const t = new Target(true);
+    const { ctx } = context(t);
+    const window = { minX: 0, minY: 0, maxX: 40, maxY: 20 };
+    // Paper space: the window is no paper view's, and the named view is looked up as before.
+    expect(answerView({ op: 'restore', name: 'Back', window }, ctx)).toMatchObject({ ok: false });
+    t.viewport = 'A0';
+    expect(now(answerView({ op: 'restore', name: 'Plan', window }, ctx)).ok).toBe(true);
+    expect(t.calls).toEqual(['in viewport 0,0 40,20']);
+    t.unlocked = false;
+    expect(answerView({ op: 'restore', name: 'Plan', window }, ctx)).toEqual({
+      ok: false,
+      message: 'The viewport is display locked: its view cannot change.',
     });
   });
 });

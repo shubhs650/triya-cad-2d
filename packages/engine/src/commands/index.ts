@@ -95,6 +95,13 @@ export {
   type ViewportArrangement,
 } from './mview';
 export {
+  DEFAULT_VIEWPORT_SCALES,
+  fittingScale,
+  parseViewportScale,
+  viewportScales,
+  type ViewportScale,
+} from './mview-place';
+export {
   INVALID_CONFIGURATION_NAME,
   JOIN_ITSELF,
   JOIN_NOT_RECTANGLE,

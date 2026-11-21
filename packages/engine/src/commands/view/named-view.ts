@@ -6,7 +6,10 @@
 // Save, sEttings and Window are the 2D ones (Orthographic is 3D).
 // Save and Window write the view into the drawing's VIEW table (M2-29), an undo step the save
 // keeps, as AutoCAD's do; Delete removes views from it, with their layer snapshots. Restore
-// restores a view's layer snapshot with it (M5-07 part 7, `restoreViewLayers`). Save and Window
+// restores a view's layer snapshot with it (M5-07 part 7, `restoreViewLayers`).
+// In a layout (M6-02 part 14) a model view is restored in a layout viewport: the one made current,
+// else the one picked at "Select viewport for view:", made current first (AutoCAD 2024 Help,
+// "-VIEW (Command)"); a layout view restored from a viewport made current goes to paper space. Save and Window
 // keep no snapshot: AutoCAD 2024 Help's -VIEW Save says nothing of one, so a view saved again
 // keeps the one it had; sEttings' Layer snapshot sets it (M5-07 part 8).
 //   Enter an option [?/Delete/Restore/Save/sEttings/Window]:
@@ -29,6 +32,8 @@ import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import type { ViewRecord } from '../../model/types';
 import {
+  isPaperView,
+  namedViewWindow,
   saveNamedView,
   validViewName,
   viewCategory,
@@ -37,6 +42,10 @@ import {
 } from '../../edit/named-view';
 import { dropViewLayers, restoreViewLayers, saveViewLayers } from '../../edit/view-layers';
 import { isPaperSpace } from '../bus';
+import { workableViewport } from '../../layout/current-viewport';
+import type { EntityId } from '../../model/entity-ids';
+import type { Handle } from '../../model/handle';
+import { viewportOfPick } from '../vpclip';
 import { viewRequest } from './zoom';
 import { windowDialog } from '../file';
 
@@ -199,6 +208,55 @@ async function* layerSnapshot(ctx: CommandContext): CommandGenerator {
   if (why) ctx.message(why);
 }
 
+/**
+ * "Select viewport for view:" in a layout's paper space: a floating viewport that is on and can be
+ * worked in (`workableViewport`), picked by its border; undefined at Esc or Enter.
+ */
+async function* viewportForView(
+  ctx: CommandContext,
+): AsyncGenerator<Prompt, Handle | undefined, PromptAnswer> {
+  for (;;) {
+    const a = yield ctx.prompt.selection({ message: 'Select viewport for view', single: true });
+    const ids = (a as { ids?: readonly EntityId[] }).ids ?? [];
+    if (ids.length === 0) return undefined;
+    const v = viewportOfPick(ctx, ctx.model.entity(ids[0]!));
+    if (v && workableViewport(v.geom)) return v.handle;
+    ctx.message(
+      v ? 'The viewport must be on and in plan.' : 'The object selected is not a viewport.',
+    );
+  }
+}
+
+/**
+ * A model view restored in a layout (M6-02 part 14; AutoCAD 2024 Help, "-VIEW (Command)":
+ * restoring a model space view in paper space, "you are prompted to select a viewport in which to
+ * restore that view" by "clicking its border", which "must be on and active"; "The program
+ * switches to model space and restores the view in the selected viewport"): in the viewport made
+ * current, or the one picked made current first. Its layer snapshot sets VP Freeze there, as the
+ * View Manager's Set Current does (M6-02 part 12).
+ */
+async function* restoreInViewport(ctx: CommandContext, view: ViewRecord): CommandGenerator {
+  const window = namedViewWindow(view);
+  if (!window) {
+    ctx.message(`View "${view.name}" is not a plan view; it cannot be shown yet.`);
+    return;
+  }
+  let viewport = ctx.viewport.current;
+  if (viewport === undefined) {
+    viewport = yield* viewportForView(ctx);
+    if (viewport === undefined) return;
+    await ctx.viewport.set(viewport);
+  }
+  const { center: c, width: w, height: h } = window;
+  const r = await viewRequest(ctx, {
+    op: 'restore',
+    name: view.name,
+    window: { minX: c.x - w / 2, minY: c.y - h / 2, maxX: c.x + w / 2, maxY: c.y + h / 2 },
+  });
+  if (r.ok && view.layerState !== undefined)
+    ctx.edit((b) => restoreViewLayers(b, ctx.model, view, viewport));
+}
+
 /** Saves `extent` of the space drawn in as the view `name`. */
 function save(ctx: CommandContext, name: string, extent: ViewExtent, paper: boolean): void {
   ctx.edit((b) => saveNamedView(b, ctx.model, name, { ...extent, paper }));
@@ -228,10 +286,15 @@ export function viewCommand(): CommandDef {
       if (a.keyword === 'Restore') {
         const name = yield* viewName(ctx, 'Enter view name to restore');
         if (!name) return;
-        const r = await viewRequest(ctx, { op: 'restore', name });
-        // The view's layer snapshot comes back with it (M5-07 part 7).
         const key = name.toUpperCase();
         const view = [...ctx.model.tables.views.values()].find((v) => v.name.toUpperCase() === key);
+        const inViewport = ctx.viewport.current !== undefined;
+        if (view && !isPaperView(view) && (inViewport || isPaperSpace(ctx.model, ctx.space)))
+          return yield* restoreInViewport(ctx, view);
+        // A layout view restored from a viewport made current: paper space again (Help).
+        if (view && isPaperView(view) && inViewport) await ctx.viewport.set(undefined);
+        const r = await viewRequest(ctx, { op: 'restore', name });
+        // The view's layer snapshot comes back with it (M5-07 part 7).
         if (r.ok && view?.layerState !== undefined)
           ctx.edit((b) => restoreViewLayers(b, ctx.model, view));
         return;

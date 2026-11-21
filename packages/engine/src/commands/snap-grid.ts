@@ -8,7 +8,8 @@
 // A spacing typed sets both X and Y and turns SNAP (or GRID) on, as AutoCAD's does; GRID takes
 // `2x` for twice the snap spacing and Snap for spacing 0 (the grid follows the snap spacing).
 // ON and OFF are the status bar's toggles (SNAPMODE, GRIDMODE: the app's, as SETVAR sets them);
-// the spacing and Major are the drawing's `*Active` VPORT's (`edit/snap-grid.ts`), one undo step.
+// the spacing and Major are the drawing's `*Active` VPORT's (`edit/snap-grid.ts`), one undo step;
+// in a layout they are the current layout viewport's, or paper space's (M6-02 part 17).
 // SNAP's Type (M3-06 part 3): "Enter snap type [Polar/Grid] <Grid>:" sets SNAPTYPE, the app's
 // per-user setting (AutoCAD keeps it in the registry), and ends the command.
 // GRID's aDaptive, Limits and Follow (M3-06 part 6) set the viewport's GRIDDISPLAY bits:
@@ -22,9 +23,10 @@
 import {
   GRID_DISPLAY,
   GRID_MAJOR,
-  currentVport,
+  snapGridHolder,
   snapGridOf,
   snapGridPatch,
+  type SnapGridHolder,
 } from '../edit/snap-grid';
 import type { Vec2 } from '../geom/types';
 import type { CommandContext, CommandDef } from './command';
@@ -39,19 +41,23 @@ async function toggle(ctx: CommandContext, name: 'SNAPMODE' | 'GRIDMODE', on: bo
   if (!r.ok) ctx.message(r.message);
 }
 
-/** Sets `change` in the `*Active` VPORT's settings; false (with a message) without one. */
+/** Where the viewport worked in keeps its snap and grid settings (M6-02 part 17). */
+const holderOf = (ctx: CommandContext): SnapGridHolder | undefined =>
+  snapGridHolder(ctx.model, ctx.viewport);
+
+/** Sets `change` in the current viewport's settings; false (with a message) without one. */
 function setSettings(
   ctx: CommandContext,
   change: (s: SnapGridSettings) => Partial<SnapGridSettings>,
 ): boolean {
-  const v = currentVport(ctx.model);
-  if (!v) {
+  const h = holderOf(ctx);
+  if (!h) {
     ctx.message(NO_VPORT);
     return false;
   }
-  const s = snapGridOf(v);
-  const patch = snapGridPatch(v, { ...s, ...change(s) });
-  if (patch) ctx.edit((b) => b.updateTableRecord('vports', v.handle, patch));
+  const s = snapGridOf(h.state);
+  const patch = snapGridPatch(h.state, { ...s, ...change(s) });
+  if (patch) ctx.edit((b) => h.write(b, patch));
   return true;
 }
 
@@ -114,14 +120,14 @@ async function* yesNo(
 }
 
 /**
- * GRID's aDaptive, Limits and Follow: the GRIDDISPLAY bits asked about, set in the `*Active`
- * VPORT in one undo step. Without one, says why before asking anything.
+ * GRID's aDaptive, Limits and Follow: the GRIDDISPLAY bits asked about, set in the current
+ * viewport's settings in one undo step. Without one, says why before asking anything.
  */
 async function* gridBehavior(
   ctx: CommandContext,
   option: 'aDaptive' | 'Limits' | 'Follow',
 ): AsyncGenerator<Prompt, void, PromptAnswer> {
-  const v = currentVport(ctx.model);
+  const v = holderOf(ctx)?.state;
   if (!v) {
     ctx.message(NO_VPORT);
     return;
@@ -153,7 +159,7 @@ async function* gridBehavior(
 }
 
 const spacingNow = (ctx: CommandContext, key: 'snapSpacing' | 'gridSpacing'): Vec2 =>
-  currentVport(ctx.model)?.[key] ?? { x: 10, y: 10 };
+  holderOf(ctx)?.state[key] ?? { x: 10, y: 10 };
 
 export function snapCommand(): CommandDef {
   return {
@@ -221,7 +227,7 @@ export function gridCommand(): CommandDef {
         if (a.kind === 'keyword' && a.keyword === 'Major') {
           const m = yield ctx.prompt.integer({
             message: 'Specify the number of grid lines per major grid line',
-            default: { kind: 'number', value: currentVport(ctx.model)?.gridMajor ?? 5 },
+            default: { kind: 'number', value: holderOf(ctx)?.state.gridMajor ?? 5 },
           });
           if (m.kind !== 'number') return;
           if (m.value < GRID_MAJOR.min || m.value > GRID_MAJOR.max) {
