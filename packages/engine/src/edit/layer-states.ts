@@ -177,7 +177,12 @@ function addState(model: DocumentModel, b: ChangeSetBuilder, init: LayerStateIni
 export function saveLayerStateChange(
   model: DocumentModel,
   name: string,
-  options: { readonly description?: string; readonly mask?: number } = {},
+  options: {
+    readonly description?: string;
+    readonly mask?: number;
+    /** The layout viewport made current: its VP Freeze is saved (M6-02 part 12). */
+    readonly viewport?: Handle | undefined;
+  } = {},
 ): ChangeSet | string {
   const b = new ChangeSetBuilder(model);
   return saveLayerState(b, model, name, options) ?? b.build();
