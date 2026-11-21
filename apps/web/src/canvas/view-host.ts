@@ -225,6 +225,10 @@ export interface ViewContext {
   readonly viewportsDialog?: (
     r: Extract<ViewRequest, { op: 'viewportsDialog' }>,
   ) => ViewReply | Promise<ViewReply>;
+  /** SCALELISTEDIT (M6-02 part 22): the Edit Drawing Scales dialog, answered when it closes. */
+  readonly scaleListDialog?: (
+    r: Extract<ViewRequest, { op: 'scaleListDialog' }>,
+  ) => ViewReply | Promise<ViewReply>;
   /** ULAYERS (M2-56 part 1): the Underlay Layers dialog, answered when it closes. */
   readonly underlayLayers?: (
     r: Extract<ViewRequest, { op: 'underlayLayers' }>,
@@ -333,6 +337,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'viewportsDialog') {
     return ctx.viewportsDialog ? ctx.viewportsDialog(r) : { ok: false, message: NO_DIALOGS };
+  }
+  if (r.op === 'scaleListDialog') {
+    return ctx.scaleListDialog ? ctx.scaleListDialog(r) : { ok: false, message: NO_DIALOGS };
   }
   if (r.op === 'clipboard') {
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };

@@ -27,6 +27,7 @@ import type { SheetCells } from '../../edit/spreadsheet';
 import type { UndoView } from '../undo';
 import type { UnderlayLayersInfo } from '../../edit/underlay-layers';
 import type { ViewportsDialogChoice, ViewportsDialogRequest } from '../standard-viewports';
+import type { ScaleListDialogRequest, ScaleListEntry } from '../../annotation/scale-list';
 import type { LinetypeDefinition } from '../../edit/linetypes';
 import type { EnclosedSpace } from '../inquiry/quick';
 import type { TextFrame } from '../../edit/text-justify';
@@ -299,6 +300,11 @@ export type ViewRequest =
    * with `viewports`, Cancel without.
    */
   | ({ readonly op: 'viewportsDialog' } & ViewportsDialogRequest)
+  /**
+   * SCALELISTEDIT (M6-02 part 22): the Edit Drawing Scales dialog over the drawing's scale list;
+   * OK answers with `scaleList`, Cancel without.
+   */
+  | ({ readonly op: 'scaleListDialog' } & ScaleListDialogRequest)
   /**
    * -PLOT (M2-17 part 5): what the space named (the space shown without `layout`) would plot
    * with, as the Plot dialog opens on it, and what the app can plot it with.
@@ -704,6 +710,8 @@ export type ViewReply =
       readonly value?: number | string;
       /** The Viewports dialog's OK (M6-02 part 11). */
       readonly viewports?: ViewportsDialogChoice;
+      /** The Edit Drawing Scales dialog's OK (M6-02 part 22): the list as it left it. */
+      readonly scaleList?: readonly ScaleListEntry[];
       /**
        * The Underlay Layers dialog's OK (M2-56 part 1): the layers each underlay it changed turns
        * off, all of them (the others on).
@@ -724,10 +732,16 @@ export interface ViewHost {
  * commands' dialogs and pickers (Plot, Publish, Export, Save Drawing As, CLOSE's "Save changes"),
  * and the preview, which waits until the drafter leaves it. While a command waits on one, no
  * prompt shows: AutoCAD's command line shows none while its dialog is up. ULAYERS' Underlay
- * Layers dialog (M2-56 part 1) too, and VPORTS' Viewports dialog (M6-02 part 11).
+ * Layers dialog (M2-56 part 1) too, VPORTS' Viewports dialog (M6-02 part 11) and SCALELISTEDIT's
+ * Edit Drawing Scales dialog (part 22).
  */
 export function waitsOnApp(r: ViewRequest): boolean {
-  return r.op === 'file' || r.op === 'underlayLayers' || r.op === 'viewportsDialog';
+  return (
+    r.op === 'file' ||
+    r.op === 'underlayLayers' ||
+    r.op === 'viewportsDialog' ||
+    r.op === 'scaleListDialog'
+  );
 }
 
 /** The host of a bus no canvas listens to (scripts, tests): every request is refused. */

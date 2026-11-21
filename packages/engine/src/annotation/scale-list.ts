@@ -190,17 +190,23 @@ export function scaleListOf(model: Objects, fallback: readonly ScaleListEntry[])
   }));
 }
 
-/** The list Reset leaves: the defaults, the scales in use kept (see the head comment). */
-export function resetScaleList(model: Model, list: readonly ScaleListEntry[]): ScaleListEntry[] {
-  const uses = scaleUses(model);
-  const kept = list.filter((s) => s.handle !== undefined && uses.has(s.handle));
+/**
+ * The list Reset leaves of `list`: `defaults`, the scales `inUse` says are in use kept (see the
+ * head comment). The Edit Drawing Scales dialog resets its own copy with it.
+ */
+export function resetScaleEntries<T extends ScaleListEntry>(
+  list: readonly T[],
+  inUse: (s: T) => boolean,
+  defaults: readonly ScaleListEntry[] = DEFAULT_SCALE_LIST,
+): (T | ScaleListEntry)[] {
+  const kept = list.filter((s) => s.handle !== undefined && inUse(s));
   const upper = (n: string) => n.toUpperCase();
-  const out: ScaleListEntry[] = DEFAULT_SCALE_LIST.map((d) => {
+  const out: (T | ScaleListEntry)[] = defaults.map((d) => {
     const mine = kept.find((k) => upper(k.name) === upper(d.name));
     if (mine) return mine;
     // An unused scale of a default name stays itself with the default's ratio.
     const same = list.find(
-      (s) => s.handle !== undefined && !uses.has(s.handle) && upper(s.name) === upper(d.name),
+      (s) => s.handle !== undefined && !inUse(s) && upper(s.name) === upper(d.name),
     );
     return same
       ? { ...same, name: d.name, paperUnits: d.paperUnits, drawingUnits: d.drawingUnits }
@@ -208,6 +214,24 @@ export function resetScaleList(model: Model, list: readonly ScaleListEntry[]): S
   });
   for (const k of kept) if (!out.includes(k)) out.push(k);
   return out;
+}
+
+/** The list Reset leaves: the defaults, the scales the drawing uses kept. */
+export function resetScaleList(model: Model, list: readonly ScaleListEntry[]): ScaleListEntry[] {
+  const uses = scaleUses(model);
+  return resetScaleEntries(list, (s) => uses.has(s.handle!));
+}
+
+/** A scale as the Edit Drawing Scales dialog lists it: with how the drawing uses it. */
+export type ScaleListDialogEntry = ScaleListEntry & { readonly use?: ScaleUse };
+
+/**
+ * SCALELISTEDIT's Edit Drawing Scales dialog (M6-02 part 22): the list it opens on, and the
+ * list its Reset restores.
+ */
+export interface ScaleListDialogRequest {
+  readonly scales: readonly ScaleListDialogEntry[];
+  readonly defaults: readonly ScaleListEntry[];
 }
 
 /** The longest scale name SCALELISTEDIT takes (a dictionary entry's text). */
@@ -261,6 +285,7 @@ export function scaleListProblem(
   if (list.length === 0) return SCALE_LIST_EMPTY;
   const uses = scaleUses(model);
   const now = new Map(drawingScales(model).map((s) => [s.handle, s]));
+  const seen = new Set<Handle>();
   for (const [i, s] of list.entries()) {
     const name = scaleNameProblem(list, s.name, i);
     if (name) return name;
@@ -268,7 +293,9 @@ export function scaleListProblem(
       return 'Invalid scale.';
     if (s.handle === undefined) continue;
     const was = now.get(s.handle);
-    if (!was) return 'Invalid scale.';
+    // One scale listed twice.
+    if (!was || seen.has(s.handle)) return 'Invalid scale.';
+    seen.add(s.handle);
     const ratioChanged = was.paperUnits !== s.paperUnits || was.drawingUnits !== s.drawingUnits;
     if (ratioChanged && uses.get(s.handle) === 'object') return SCALE_RATIO_IN_USE(was.name);
   }
