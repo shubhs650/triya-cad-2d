@@ -72,6 +72,9 @@ export type AuditSaveKind =
   // VPLAYER Color, LWeight, TRansparency, Freeze, Vpvisdflt and Newfrz in every floating viewport
   // of the AC1032 sample, text_in_viewports.dxf and viewport-overrides.dxf (M6-02 part 5).
   | 'vplayer'
+  // viewport-overrides.dxf's layouts copied and its overridden viewports erased: the layer
+  // overrides name the copies alone (M6-02 part 18).
+  | 'vp-override-links'
   // -VPORTS 3, 4 and SIngle on model space's tiles, named configurations saved, restored and
   // deleted: VPORT records in the AC1032 sample and colors.dxf (M6-02 part 10).
   | 'vports'

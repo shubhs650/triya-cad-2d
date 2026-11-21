@@ -17,6 +17,7 @@
 //     cannot lose its current layout yet (said so). Deleting the only layout leaves an empty one
 //     named Layout1 in its place, as AutoCAD keeps one layout (ambiguous in Help; the common
 //     drafter expectation): Triya empties and resets the same layout, which saves as a rename.
+import { dropViewportOverrides } from './viewport-override-links';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -146,8 +147,6 @@ export interface LayoutCopy {
   readonly refused: ReadonlyMap<string, number>;
   /** Copies of annotative objects made without their annotation scales. */
   readonly unannotated: number;
-  /** Copied viewports whose source has layer overrides (VP Color and the rest) not copied. */
-  readonly withoutOverrides: number;
 }
 
 /**
@@ -157,8 +156,8 @@ export interface LayoutCopy {
  * everything on its sheet in its draw order (the copies' new handles keep it, so no draw order
  * table is needed). Its viewports keep their ids (DXF 69) and stacking (68): AutoCAD's files
  * number each layout's viewports from 1 (sample_AC1032: every layout has 1 and 2). A clipped
- * viewport comes with its boundary's copy. Layer overrides of the copied viewports are not copied
- * yet: the save cannot write new ones until M6-02's VPLAYER writer (said so).
+ * viewport comes with its boundary's copy, and each viewport's layer overrides with its copy
+ * (`copyObjects`, M6-02 part 18).
  */
 export function copyLayout(
   b: ChangeSetBuilder,
@@ -201,23 +200,17 @@ export function copyLayout(
   }
   const report = copyObjects(b, model, rest, moveBy({ x: 0, y: 0 }), {}, layout.blockRecord);
   for (const [h, copy] of report.copies) copies.set(h, copy);
-  const overridden = new Set<Handle>();
-  for (const l of model.tables.layers.values())
-    for (const o of l.viewportOverrides ?? []) overridden.add(o.viewport);
-  let withoutOverrides = 0;
   for (const [h, copy] of copies) {
     const g = model.entityByHandle(h)?.geom;
     if (g?.kind !== 'VIEWPORT' || copy.geom.kind !== 'VIEWPORT') continue;
     const now = b.entity(copy.id)!.geom;
     if (now.kind === 'VIEWPORT' && (now.id !== g.id || now.status !== g.status))
       b.updateEntity(copy.id, { geom: { ...now, id: g.id, status: g.status } });
-    if (overridden.has(h)) withoutOverrides++;
   }
   return {
     layout: b.layout(layout.handle) ?? layout,
     refused: report.refused,
     unannotated: report.unannotated,
-    withoutOverrides,
   };
 }
 
@@ -228,12 +221,6 @@ export function copyMessages(c: LayoutCopy): string[] {
     const n = c.unannotated;
     out.push(
       `${n} ${n === 1 ? 'copy is' : 'copies are'} not annotative (annotative copies are not saved yet).`,
-    );
-  }
-  if (c.withoutOverrides > 0) {
-    const n = c.withoutOverrides;
-    out.push(
-      `${n} ${n === 1 ? 'viewport was' : 'viewports were'} copied without ${n === 1 ? 'its' : 'their'} layer overrides (not saved yet).`,
     );
   }
   return out;
@@ -274,11 +261,23 @@ export function deleteLayout(b: ChangeSetBuilder, model: DocumentModel, layout: 
     return;
   }
   if (currentSheetLayout(model) === layout) b.setCurrentLayout(successor(model, layout)!.handle);
+  dropViewportOverrides(b, viewportsOf(b, layout));
   b.removeLayout(layout.handle);
+}
+
+/** The viewports on `layout`'s sheet, whose layer overrides go with it (M6-02 part 18). */
+function viewportsOf(b: ChangeSetBuilder, layout: Layout): Set<Handle> {
+  const out = new Set<Handle>();
+  for (const id of b.blockEntities(layout.blockRecord)) {
+    const e = b.entity(id);
+    if (e?.geom.kind === 'VIEWPORT') out.add(e.handle);
+  }
+  return out;
 }
 
 /** The only layout deleted: emptied, named Layout1 and given a new layout's page setup. */
 function resetLayout(b: ChangeSetBuilder, model: DocumentModel, layout: Layout): void {
+  dropViewportOverrides(b, viewportsOf(b, layout));
   for (const id of b.blockEntities(layout.blockRecord)) b.removeEntity(id);
   const { plot, limits } = newLayoutSetup(model);
   const name = 'Layout1';

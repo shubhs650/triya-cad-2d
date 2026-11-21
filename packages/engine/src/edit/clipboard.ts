@@ -52,6 +52,7 @@
 // layout's), external references (their content lives in another file: attaching one is
 // XATTACH's, M5-04), an image whose definition is missing and what COPY refuses.
 import type { GeneralProps } from '../properties/sheet';
+import { namedPlotStyles } from '../properties/general';
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { sub } from '../geom/vec';
@@ -74,6 +75,7 @@ import {
   type HatchGeometry,
   type ImageDefinition,
   type LayerRecord,
+  type LayerViewportOverride,
   type NonGraphicalObject,
   type ObjectCommon,
   type PdfDefinition,
@@ -143,6 +145,18 @@ export interface Clipboard {
    * gives the pasted reference a filter of its own with the same fields (xclip.ts `fileClip`).
    */
   readonly clips?: readonly SpatialFilter[];
+  /**
+   * The layer overrides of the viewports copied (M6-02 part 18, a layout's sheet only): each
+   * names its layer and viewport (and linetype and plot style) by the source's handles, the
+   * records among `tables`. A paste gives each pasted viewport the same overrides.
+   */
+  readonly viewportOverrides?: readonly ClipboardViewportOverride[];
+}
+
+/** One layer's override in one copied viewport, by the source's handles. */
+export interface ClipboardViewportOverride {
+  readonly layer: Handle;
+  readonly override: LayerViewportOverride;
 }
 
 export interface ClipboardCopy {
@@ -529,6 +543,22 @@ export function copyToClipboard(
     if (clip) clips.push(common(model, clip));
   };
   for (const e of sorted) take(e, entities);
+  // The copied viewports' layer overrides, with the layers, linetypes and plot styles they name.
+  const viewportOverrides: ClipboardViewportOverride[] = [];
+  if (options.viewports === true) {
+    const viewports = new Set(
+      entities.filter((e) => e.geom.kind === 'VIEWPORT').map((e) => e.handle),
+    );
+    for (const l of model.tables.layers.values()) {
+      for (const o of l.viewportOverrides ?? []) {
+        if (!viewports.has(o.viewport)) continue;
+        viewportOverrides.push({ layer: l.handle, override: o });
+        pending.push(l.handle);
+        if (o.linetype !== undefined) pending.push(o.linetype);
+        if (o.plotStyle !== undefined) pending.push(o.plotStyle);
+      }
+    }
+  }
   // Records asked for by themselves (M4-03 part 3: dimension styles imported from a drawing),
   // with what they name, as an object's.
   pending.push(...alsoRecords);
@@ -580,6 +610,7 @@ export function copyToClipboard(
       ...(coded.length > 0 ? { coded: coded.map((o) => common(model, o)) } : {}),
       ...(groups.length > 0 ? { groups } : {}),
       ...(clips.length > 0 ? { clips } : {}),
+      ...(viewportOverrides.length > 0 ? { viewportOverrides } : {}),
     },
     refused,
     unannotated,
@@ -869,6 +900,8 @@ function pasteInto(
     const e = copies.get(f.insert);
     if (e) fileClip(b, f, e.id);
   }
+  // A pasted viewport shows its layers as the copied one did (M6-02 part 18).
+  pasteViewportOverrides(b, model, clip.viewportOverrides ?? [], map);
   // A hatch pasted with its whole boundary stays associative with the boundary's copies.
   const source = new Map([...contents, ...clip.entities].map((e) => [map.get(e.handle)!, e]));
   for (const h of pasted) {
@@ -891,6 +924,46 @@ function pasteInto(
   const ids = top.map((e) => e.id);
   if (t) transformObjects(b, model, ids, t);
   return { ids, refused: new Map(), unannotated: 0 };
+}
+
+/**
+ * The Clipboard's viewport overrides given to the pasted viewports, on the layers they mapped to
+ * (`map`: source handle to `model`'s). An override's linetype or plot style the paste did not
+ * bring (a plot style is kept by name only, and only a drawing with named plot styles has one)
+ * is left out of it, and an override left with nothing to override is dropped.
+ */
+function pasteViewportOverrides(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  list: readonly ClipboardViewportOverride[],
+  map: ReadonlyMap<Handle, Handle>,
+): void {
+  const byLayer = new Map<Handle, LayerViewportOverride[]>();
+  for (const { layer, override } of list) {
+    const to = map.get(layer);
+    const viewport = map.get(override.viewport);
+    if (to === undefined || viewport === undefined) continue;
+    const { linetype, plotStyle, ...rest } = override;
+    const lt = linetype === undefined ? undefined : map.get(linetype);
+    const ps = plotStyle === undefined || !namedPlotStyles(model) ? undefined : map.get(plotStyle);
+    const o: LayerViewportOverride = {
+      ...rest,
+      viewport,
+      ...(lt !== undefined && { linetype: lt }),
+      ...(ps !== undefined && { plotStyle: ps }),
+    };
+    if (Object.keys(o).length === 1) continue;
+    let entries = byLayer.get(to);
+    if (!entries) byLayer.set(to, (entries = []));
+    entries.push(o);
+  }
+  for (const [h, entries] of byLayer) {
+    const l = b.tableRecord('layers', h);
+    if (!l) continue;
+    b.updateTableRecord('layers', h, {
+      viewportOverrides: [...(l.viewportOverrides ?? []), ...entries],
+    });
+  }
 }
 
 /** BLOCK_RECORD DXF 70 bit 32: an xref (or xref-dependent record) resolved, its file loaded. */
