@@ -2222,6 +2222,16 @@ const viewportWriter: Writer<ViewportGeometry> = {
       v.elevation = u?.elevation ?? 0;
       v.ucsOrthographicType = u?.orthographic ?? 0;
     }
+    // Its own snap and grid settings (M6-02 part 17; DXF 13, 14, 15, 50, 61), GRIDDISPLAY being
+    // 90 bits written with the flags. A viewport that states none keeps what it had.
+    const sg = g.snapGrid;
+    if (d('snapGrid') && sg) {
+      v.snapBase = new XY(sg.snapBase.x, sg.snapBase.y);
+      v.snapSpacing = new XY(sg.snapSpacing.x, sg.snapSpacing.y);
+      v.gridSpacing = new XY(sg.gridSpacing.x, sg.gridSpacing.y);
+      v.snapAngle = sg.snapAngle;
+      v.majorGridLineFrequency = sg.gridMajor;
+    }
   },
 };
 

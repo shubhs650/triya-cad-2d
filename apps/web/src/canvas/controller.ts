@@ -49,6 +49,7 @@ import {
   viewportLocked,
   viewportScale,
   viewportTwist,
+  viewportSnapGrid,
   viewportViewOf,
   withViewportView,
   workableViewport,
@@ -91,6 +92,7 @@ import {
   type UnderlaySnapPage,
   type UndoView,
   type Vec2,
+  type SnapGridState,
   type VportRecord,
   type CommandPreview,
   type TableCellLock,
@@ -445,6 +447,11 @@ export class CanvasController {
    * and GRID edit the `*Active` one's spacing), by handle; the opened ones otherwise.
    */
   readonly #vports = new Map<Handle, VportRecord>();
+  /**
+   * A layout's paper-space viewport (DXF 69 id 1) as edited, which keeps paper space's snap and
+   * grid settings (M6-02 part 17); undefined on the Model tab and in a layout that has none.
+   */
+  #paperViewport: { readonly handle: Handle; geom: ViewportGeometry } | undefined;
   readonly #hooks: CanvasHooks;
   readonly #observer: ResizeObserver;
   /** The view shown is still the saved one the space opened in (`#resize` fits it again). */
@@ -653,9 +660,18 @@ export class CanvasController {
         ? undefined
         : layoutsOf(opened.init, changes).find((l) => l.blockRecord === block);
     this.#header = new Map(opened.init.header ?? []);
+    if (this.#layout) {
+      const sheet = opened.init.entities?.find(
+        (e) => e.owner === block && e.geom.kind === 'VIEWPORT' && e.geom.id === 1,
+      );
+      if (sheet?.geom.kind === 'VIEWPORT') {
+        this.#paperViewport = { handle: sheet.handle, geom: sheet.geom };
+      }
+    }
     for (const cs of changes) {
       this.#followHeader(cs);
       this.#followVports(cs);
+      this.#followPaperViewport(cs);
     }
     this.#hooks = hooks;
     this.#underlays = hooks.underlays?.(
@@ -1045,8 +1061,9 @@ export class CanvasController {
     this.#leftWork(this.#isOutside());
     // The crosshairs turn with a twisted viewport's model space (M6-02 part 15).
     this.#paintCursor();
-    // The grid is model space's through the viewport, paper space's on the sheet (M6-02 part 9).
-    if (this.#drafting.grid && (before === undefined) !== (this.#current === undefined)) {
+    // The grid is model space's through the viewport, paper space's on the sheet (M6-02 part 9),
+    // at the spacing of the viewport worked in (M6-02 part 17).
+    if (this.#drafting.grid && before !== this.#current?.handle) {
       this.#host.setStyle(this.#style());
     }
     if (this.#prompt) this.#requestSnap();
@@ -2004,7 +2021,9 @@ export class CanvasController {
     )
       this.#images?.resend();
     this.#measure();
+    const snapGrid = this.#snapGridKey();
     this.#followViewport(change);
+    this.#followPaperViewport(change);
     // The layout renamed or given a new page setup or limits (M1-97): its sheet frames ZOOM
     // Extents and All from now on, and the canvas takes its new name.
     const layout = this.#layout;
@@ -2017,7 +2036,9 @@ export class CanvasController {
     // The snap and grid spacing or behaviour, or the limits a grid may stay within (M3-06
     // part 6), changed: the grid shows them.
     const limits = this.#followHeader(change);
-    const vports = this.#followVports(change);
+    // The snap and grid settings of the viewport worked in, a layout viewport's or paper
+    // space's own (M6-02 part 17), changed: SNAPANG turns the crosshairs.
+    const vports = this.#followVports(change) || this.#snapGridKey() !== snapGrid;
     if (vports) this.#showUcsIcon();
     if (vports || (limits && this.#drafting.grid)) this.#host.setStyle(this.#style());
     // Drawn now rather than on the next animation frame, so `flush` resolves once the change
@@ -2121,6 +2142,26 @@ export class CanvasController {
     (this.#hooks.changes?.() ?? []).forEach((change, i) => host.apply(change, i + 1));
     this.canvas.dataset['renderer'] = host.mode;
     return host;
+  }
+
+  /** Keeps the layout's paper-space viewport as `change` leaves it (M6-02 part 17). */
+  #followPaperViewport(change: ChangeSet): void {
+    if (!this.#layout) return;
+    const p = this.#paperViewport;
+    const e = change.entities;
+    if (p && e?.removed?.some((r) => r.entity.handle === p.handle)) this.#paperViewport = undefined;
+    for (const a of [
+      ...(e?.added ?? []).map((x) => x.entity),
+      ...(e?.updated ?? []).map((u) => u.after),
+    ]) {
+      if (a.owner !== this.block || a.geom.kind !== 'VIEWPORT' || a.geom.id !== 1) continue;
+      this.#paperViewport = { handle: a.handle, geom: a.geom };
+    }
+  }
+
+  /** The snap and grid settings shown, as text: what `apply` tells a change of them by. */
+  #snapGridKey(): string {
+    return JSON.stringify(this.#snapGrid() ?? null);
   }
 
   /** Keeps the VPORT records `change` edits; true when it edited any. */
@@ -2253,7 +2294,9 @@ export class CanvasController {
     const color = this.#ui().crosshair;
     // A twisted layout viewport made current turns them with model space (M6-02 part 15).
     const angle =
-      this.#ucs().angle + (this.#vport()?.snapRotation ?? 0) + (this.#pointerView()?.rotation ?? 0);
+      this.#ucs().angle +
+      (this.#snapGrid()?.snapRotation ?? 0) +
+      (this.#pointerView()?.rotation ?? 0);
     const asked = this.#asked;
     const badge =
       (asked?.kind === 'selection' ? asked.cursor : undefined) ??
@@ -2304,7 +2347,7 @@ export class CanvasController {
    * GRIDDISPLAY and GRIDSTYLE say (M3-06 part 6).
    */
   #grid(): GridSpec {
-    const vport = this.#vport();
+    const vport = this.#snapGrid();
     const g = vport?.gridSpacing;
     const s = this.#snapSpacing();
     // A GRIDUNIT of 0 follows the snap spacing, as AutoCAD's does.
@@ -2378,10 +2421,27 @@ export class CanvasController {
   /** The `*Active` VPORT of model space, or this tile's, as edited; none in a layout. */
   #vport(): VportRecord | undefined {
     if (this.#layout) return undefined;
+    return this.#modelVport();
+  }
+
+  /** The `*Active` VPORT of model space, or this tile's, as edited. */
+  #modelVport(): VportRecord | undefined {
     const opened = this.#hooks.tile
       ? this.#hooks.tile.vport
       : activeVport(this.#opened.init.tables?.vports);
     return opened && (this.#vports.get(opened.handle) ?? opened);
+  }
+
+  /**
+   * The snap and grid settings of the viewport worked in (M6-02 part 17), as the engine edits
+   * them (`snapGridHolder`): the layout viewport made current, else a layout's paper-space
+   * viewport, else model space's `*Active` VPORT (or this tile's), which also stands in for a
+   * layout with no paper-space viewport yet. Undefined when there is none: 10 × 10 applies.
+   */
+  #snapGrid(): SnapGridState | undefined {
+    if (this.#current) return viewportSnapGrid(this.#current.geom);
+    if (this.#layout && this.#paperViewport) return viewportSnapGrid(this.#paperViewport.geom);
+    return this.#modelVport();
   }
 
   #resize(): void {
@@ -3201,9 +3261,9 @@ export class CanvasController {
     return p && 'base' in p ? p.base : undefined;
   }
 
-  /** SNAPUNIT of the viewport shown (10 × 10 when it has none). */
+  /** SNAPUNIT of the viewport worked in (10 × 10 when it has none). */
   #snapSpacing(): Vec2 {
-    const s = this.#vport()?.snapSpacing;
+    const s = this.#snapGrid()?.snapSpacing;
     return s && s.x > 0 && s.y > 0 ? s : { x: 10, y: 10 };
   }
 
@@ -3215,7 +3275,7 @@ export class CanvasController {
   #constrain(world: Vec2): ReturnType<typeof constrainCursor> {
     const d = this.#aids();
     const base = this.#base();
-    const vport = this.#vport();
+    const vport = this.#snapGrid();
     const p = this.#prompt;
     const last = p?.kind === 'point' ? p.rubberBand?.direction : undefined;
     const polarSnap = polarSnapDistance(d, this.#snapSpacing().x);
