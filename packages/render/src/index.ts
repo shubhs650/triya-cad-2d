@@ -83,6 +83,7 @@ export {
 export {
   Canvas2DRenderer,
   COMMAND_PREVIEW_FADE,
+  MAXIMIZED_VIEWPORT_COLOR,
   DEFAULT_STYLE,
   type Canvas2D,
   type Canvas2DRendererOptions,

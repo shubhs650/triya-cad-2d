@@ -15,6 +15,7 @@ import type {
   DragMotion,
   EntityId,
   Handle,
+  ViewportGeometry,
   NestedPick,
   GroupGrip,
   MTextGeometry,
@@ -327,10 +328,18 @@ export class RendererHost {
     else this.#post({ type: 'highlight', ids });
   }
 
-  /** The layout viewport made current (MSPACE, M6-02 part 3); undefined, paper space. */
-  setActiveViewport(handle: Handle | undefined): void {
-    if (this.#session) this.#session.renderer.setActiveViewport(handle);
-    else this.#post({ type: 'active-viewport', handle: handle ?? null });
+  /**
+   * The layout viewport made current (MSPACE, M6-02 part 3); undefined, paper space. `maximized`:
+   * the geometry it fills the canvas with (VPMAX, M6-02 part 7).
+   */
+  setActiveViewport(handle: Handle | undefined, maximized?: ViewportGeometry): void {
+    if (this.#session) this.#session.renderer.setActiveViewport(handle, maximized);
+    else
+      this.#post({
+        type: 'active-viewport',
+        handle: handle ?? null,
+        ...(maximized && { maximized }),
+      });
   }
 
   /** The reference edited in place (M5-02 part 5); undefined, none. */

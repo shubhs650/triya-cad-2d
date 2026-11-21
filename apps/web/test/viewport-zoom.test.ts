@@ -3,6 +3,7 @@
 import {
   FLOATING_VIEWPORT_FLAGS,
   paperPointOf,
+  viewportViewOf,
   withViewportView,
   type ViewportGeometry,
 } from '@triya/engine';
@@ -13,6 +14,7 @@ import {
   ViewportHistories,
   frameOnCanvas,
   frameView,
+  maximizedGeometry,
   viewportViewFrom,
 } from '../src/canvas/viewport-zoom';
 import { windowView } from '../src/canvas/views';
@@ -96,5 +98,39 @@ describe('ZOOM Previous of each viewport', () => {
     const xs: number[] = [];
     for (let v = h.previous('A'); v; v = h.previous('A')) xs.push(v.center.x);
     expect(xs).toEqual([11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
+  });
+});
+
+describe('a viewport maximized (VPMAX, M6-02 part 7)', () => {
+  it('is framed by the whole canvas and shows what its frame showed, about the same point', () => {
+    const g = maximizedGeometry(vp, sheet, canvas);
+    // The canvas shows paper 0…200 × 25…175.
+    expect(g).toMatchObject({ center: sheet.center, width: 200, height: 150 });
+    expect(frameOnCanvas(g, sheet, canvas)).toEqual({ size: canvas, left: 0, top: 0 });
+    // Its 40 × 30 of model space fit the 4:3 canvas exactly, about model 15,15.
+    const v = viewportViewOf(g);
+    expect(v.center.x).toBeCloseTo(15, 9);
+    expect(v.center.y).toBeCloseTo(15, 9);
+    expect(v.height).toBe(30);
+    expect(modelViewOf(sheet, g).scale).toBeCloseTo(20, 9);
+    // The target stays: model and display coordinates differ as they did.
+    expect(g.viewTarget).toEqual(vp.viewTarget);
+    // A wide canvas: the frame's height decides.
+    const wide = maximizedGeometry(vp, sheet, { width: 1200, height: 300 });
+    expect(viewportViewOf(wide).height).toBe(30);
+    // A tall one: its width, 40 across 300 pixels of a 600 high canvas.
+    const tall = maximizedGeometry(vp, sheet, { width: 300, height: 600 });
+    expect(viewportViewOf(tall).height).toBeCloseTo(80, 9);
+  });
+
+  it('shows the view it is given, as a resized canvas keeps it', () => {
+    const view = { center: { x: 1, y: 2 }, height: 12 };
+    const g = maximizedGeometry(vp, sheet, canvas, view);
+    const v = viewportViewOf(g);
+    expect(v.center.x).toBeCloseTo(1, 9);
+    expect(v.center.y).toBeCloseTo(2, 9);
+    expect(v.height).toBe(12);
+    // Its frame on the canvas is still the whole canvas.
+    expect(frameView(g, canvas).scale).toBeCloseTo(50, 9);
   });
 });

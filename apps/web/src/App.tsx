@@ -126,11 +126,13 @@ import { LayoutTabs } from './LayoutTabs';
 import { DraftingToggles } from './DraftingToggles';
 import {
   DocumentStore,
+  inLayout,
   inPaperSpace,
   isDirty,
   layoutsOf,
   spacesOf,
   tabBlock,
+  viewportMaximized,
   type OpenDocument,
 } from './documents';
 import { engines, nextEngineWorker } from './engine/registry';
@@ -2836,6 +2838,25 @@ function PreviewToggle({ doc }: { readonly doc: number | undefined }) {
   );
 }
 
+/**
+ * The status bar's Maximize Viewport button on a layout (AutoCAD's, M6-02 part 7): VPMAX, and
+ * VPMIN while the viewport is maximized.
+ */
+function MaximizeViewportToggle({ doc }: { readonly doc: OpenDocument }) {
+  const on = viewportMaximized(doc);
+  return (
+    <button
+      type="button"
+      className="status-toggle"
+      aria-pressed={on}
+      title={on ? 'Minimize Viewport (VPMIN)' : 'Maximize Viewport (VPMAX)'}
+      onClick={() => engines.command(doc.id, { kind: 'invoke', name: on ? 'VPMIN' : 'VPMAX' })}
+    >
+      VPMAX
+    </button>
+  );
+}
+
 /** The world point under the cursor, written straight into the status bar (no React render). */
 let showCursor: (p: { x: number; y: number } | undefined) => void = () => {};
 
@@ -3073,7 +3094,7 @@ function ViewportCanvas({
         );
       },
       onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
-      onViewport: (viewport) => store.setViewport(id, block, viewport),
+      onViewport: (viewport, maximized) => store.setViewport(id, block, viewport, maximized),
       // COMMANDPREVIEW (M3-12 part 6): the engine works out what a pick here would do.
       onCommandPreview: (q) =>
         engines.command(id, {
@@ -3243,6 +3264,7 @@ function StatusBar({
           <span className="space" data-testid="space">
             {inPaperSpace(doc) ? 'PAPER' : 'MODEL'}
           </span>
+          {inLayout(doc) && <MaximizeViewportToggle doc={doc} />}
           <AnnotationScaleControls doc={doc} header={header} />
         </>
       )}

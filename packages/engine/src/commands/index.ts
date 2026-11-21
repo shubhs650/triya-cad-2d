@@ -96,6 +96,13 @@ export {
 } from './mview';
 export { polygonalBoundary, vpclipCommand } from './vpclip';
 export { vplayerCommand } from './vplayer';
+export {
+  ALREADY_MAXIMIZED,
+  NOT_MAXIMIZED,
+  NOT_WORKABLE,
+  vpmaxCommand,
+  vpminCommand,
+} from './vpmax';
 export { layvpiCommand } from './layvpi';
 export {
   IN_PAPER_SPACE,

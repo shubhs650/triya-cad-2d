@@ -3,7 +3,13 @@
 // to its frame, which is drawn bold.
 import type { EntityInit, LayoutPlot, ViewportGeometry } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { Canvas2DRenderer, modelViewOf, screenToWorld, type RenderStyle } from '../src/index';
+import {
+  Canvas2DRenderer,
+  MAXIMIZED_VIEWPORT_COLOR,
+  modelViewOf,
+  screenToWorld,
+  type RenderStyle,
+} from '../src/index';
 import { drawing, entity, line, PAPER, surface, type Call } from './fixtures';
 
 const LIGHT: RenderStyle = {
@@ -169,5 +175,68 @@ describe('a layout viewport made current', () => {
     d.model.apply({ entities: { updated: [{ before: vp, after: off }] } });
     r.apply({ entities: { updated: [{ before: vp, after: off }] } });
     expect(r.pickBlock).toBe(PAPER);
+  });
+});
+
+/**
+ * M6-02 part 7 (VPMAX): the viewport maximized, framed by the whole canvas (paper −10…190 ×
+ * −10…90 at VIEW), showing model space about (10, 10), 50 high: 2 px per model unit.
+ */
+const MAXIMIZED: ViewportGeometry = {
+  ...VIEWPORT,
+  center: { x: 90, y: 40 },
+  width: 200,
+  height: 100,
+  viewHeight: 50,
+};
+
+describe('a layout viewport maximized', () => {
+  it('fills the canvas with its model space alone: no sheet, paper objects or frame', () => {
+    const { r, scene } = setup();
+    r.setActiveViewport(VP, MAXIMIZED);
+    r.frame();
+    const calls = scene.ctx.calls;
+    // The viewport's view, then what is selected through it.
+    const views = clipped(calls);
+    expect(views).toHaveLength(2);
+    expect(views[0]!.filter((c) => c[0] === 'rect')).toEqual([['rect', 0, 0, 200, 100]]);
+    // Model (10, 10) at the canvas centre, 2 px per model unit.
+    expect(views[0]).toContainEqual(['setTransform', 2, -0, 0, -2, 100, 50]);
+    // Nothing is stroked outside the viewport: not the sheet, nor the paper-space line.
+    const outside = calls.filter((c, i) => {
+      const opened = calls.slice(0, i).filter((x) => x[0] === 'save').length;
+      const closed = calls.slice(0, i).filter((x) => x[0] === 'restore').length;
+      return opened === closed;
+    });
+    expect(outside.filter((c) => c[0] === 'moveTo' || c[0] === 'lineTo')).toEqual([]);
+    // The canvas is filled with the sheet's colour, as the viewport shows model space on it.
+    expect(scene.ctx.calls).toContainEqual(['fillStyle', '#ffffff']);
+  });
+
+  it('picks and windows take model space’s objects all over the canvas', () => {
+    const { r, id } = setup();
+    r.setActiveViewport(VP, MAXIMIZED);
+    const model = modelViewOf(VIEW, MAXIMIZED);
+    // Model (18, 18) is device (116, 34): outside the viewport's own frame on the sheet.
+    expect(r.hitTest({ x: 116, y: 34 }, 3, model)).toEqual([id('20')]);
+    const all = () => r.entitiesIn({ x: 0, y: 0, width: 200, height: 100 }).map((e) => e.handle);
+    expect(all()).toEqual(['20']);
+    r.setActiveViewport(VP);
+    expect(all().sort()).toEqual(['20', '30', '31']);
+  });
+
+  it('draws a red border round the canvas in place of the bold frame', () => {
+    const { r, transient } = setup();
+    r.setActiveViewport(VP, MAXIMIZED);
+    r.setTransient([{ kind: 'stroke', path: [0, 0, 0, 1, 20, 0], color: '#ff0000' }]);
+    r.frame();
+    const [inside] = clipped(transient.ctx.calls);
+    expect(inside!.filter((c) => c[0] === 'rect')).toEqual([['rect', 0, 0, 200, 100]]);
+    const after = transient.ctx.calls.slice(
+      transient.ctx.calls.findLastIndex((c) => c[0] === 'restore'),
+    );
+    expect(after).toContainEqual(['strokeStyle', MAXIMIZED_VIEWPORT_COLOR]);
+    expect(after).toContainEqual(['rect', 1, 1, 198, 98]);
+    expect(after.filter((c) => c[0] === 'lineTo')).toHaveLength(0);
   });
 });

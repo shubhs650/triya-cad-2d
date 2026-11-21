@@ -338,11 +338,14 @@ export type ViewRequest =
    * MSPACE and PSPACE (M6-02 part 3): the layout shown is worked in through its floating
    * viewport `viewport` (model space), or in its paper space again (null). No edit: as in
    * AutoCAD, the viewport made current is no undo step. `geometry` is the viewport's as it is now.
+   * `maximized` (VPMAX, M6-02 part 7): the viewport fills the canvas, its view there the canvas's
+   * own until VPMIN shows the layout again with the viewport's view as it was.
    */
   | {
       readonly op: 'viewport';
       readonly viewport: Handle | null;
       readonly geometry?: ViewportGeometry;
+      readonly maximized?: boolean;
     };
 
 /** Where a hatch's pattern lies: its angle, its scale and the point its lines start from. */
