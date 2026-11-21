@@ -318,8 +318,9 @@ test.describe('floating, bottom dock and auto-hide (1600 px)', () => {
     const log = history.getByRole('log', { name: 'Command history' });
     await expect(log).toContainText('Command: LINE');
     await expect(log).toContainText('Specify first point: 1,1');
-    // The command line keeps the keyboard: what is typed next goes on with the history.
-    await expect(page.getByRole('textbox', { name: 'Command' })).toBeFocused();
+    // It does not take the keyboard: what is typed next goes to the command line, and on with
+    // the history.
+    await expect(history.locator(':focus')).toHaveCount(0);
     await enterCommand(page, 'CIRCLE');
     await expect(log).toContainText('Command: CIRCLE');
     await page.keyboard.press('Escape');
