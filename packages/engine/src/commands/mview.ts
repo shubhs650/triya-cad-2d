@@ -28,6 +28,7 @@ import { unionBox, type Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { blockExtentsOf } from '../edit/mleader';
 import { PAPER_VIEWPORT_FLAGS } from '../edit/named-view';
+import { withNewViewportSnapGrid } from '../edit/snap-grid';
 import { viewportClipFrame, clipObjectProblem, clipViewport } from '../edit/viewport-clip';
 import {
   configurationLines,
@@ -282,7 +283,10 @@ export async function addViewports(
       b.addEntity({
         owner: space,
         layer: zeroLayer(ctx) ?? layer,
-        geom: newViewportGeometry(sheet, view, 1, status, PAPER_VIEWPORT_FLAGS),
+        geom: withNewViewportSnapGrid(
+          ctx.model,
+          newViewportGeometry(sheet, view, 1, status, PAPER_VIEWPORT_FLAGS),
+        ),
       });
     }
     // The polygon is made before the viewport it clips, as AutoCAD makes it (its handle is the
@@ -297,7 +301,11 @@ export async function addViewports(
         };
       // Layers frozen by default in new viewports (VPLAYER Vpvisdflt, DXF 70 bit 2) are frozen
       // in it, as AutoCAD's new viewports have them.
-      const geom = newViewportGeometry(frame, view, id++, current ? ++status : 0);
+      // Each starts with model space's snap and grid settings (M6-02 part 17).
+      const geom = withNewViewportSnapGrid(
+        ctx.model,
+        newViewportGeometry(frame, view, id++, current ? ++status : 0),
+      );
       const vp = b.addEntity({
         owner: space,
         layer,

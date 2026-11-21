@@ -918,6 +918,27 @@ export interface ViewportGeometry {
    * draws in plan, so one whose XY plane is not the world's reads as the WCS (`viewportUcs`).
    */
   readonly ucs?: UcsFrame;
+  /**
+   * DXF 13, 14, 15, 50 and 61 (M6-02 part 17): the snap base, snap and grid spacing, snap angle
+   * and major grid lines the viewport keeps, as model space's `*Active` VPORT keeps its own.
+   * Absent on a viewport made without them; GRIDDISPLAY's bits are in `flags`
+   * (`VIEWPORT_GRID_DISPLAY_SHIFT`).
+   */
+  readonly snapGrid?: ViewportSnapGrid;
+}
+
+/** What a VIEWPORT keeps of SNAPBASE, SNAPUNIT, GRIDUNIT, SNAPANG and GRIDMAJOR. */
+export interface ViewportSnapGrid {
+  /** DXF 13. */
+  readonly snapBase: Vec2;
+  /** DXF 14. */
+  readonly snapSpacing: Vec2;
+  /** DXF 15; 0 follows the snap spacing. */
+  readonly gridSpacing: Vec2;
+  /** DXF 50, radians. */
+  readonly snapAngle: number;
+  /** DXF 61. */
+  readonly gridMajor: number;
 }
 
 /**

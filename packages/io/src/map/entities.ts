@@ -120,6 +120,7 @@ import type {
   RegionGeometry,
   UcsFrame,
   ViewportGeometry,
+  ViewportSnapGrid,
   PlanarProps,
   TextFields,
   PolylineVertex,
@@ -1542,6 +1543,25 @@ function viewportGeometry(v: Viewport): ViewportGeometry {
     ...(visualStyle ? { visualStyle } : {}),
     ...(v.ucsPerViewport && { ucsPerViewport: true }),
     ...viewportUcs(v),
+    ...viewportSnapGrid(v),
+  };
+}
+
+/**
+ * A viewport's own snap and grid settings (DXF 13, 14, 15, 50, 61; M6-02 part 17). A file that
+ * states no snap spacing (an R12 one keeps it in the viewport's ACAD xdata, which acad-ts does
+ * not read into these) gives none, and the viewport is worked in with the defaults.
+ */
+function viewportSnapGrid(v: Viewport): { snapGrid: ViewportSnapGrid } | Record<string, never> {
+  if (!(v.snapSpacing.x > 0 && v.snapSpacing.y > 0)) return {};
+  return {
+    snapGrid: {
+      snapBase: xy(v.snapBase),
+      snapSpacing: xy(v.snapSpacing),
+      gridSpacing: xy(v.gridSpacing),
+      snapAngle: v.snapAngle,
+      gridMajor: v.majorGridLineFrequency,
+    },
   };
 }
 
