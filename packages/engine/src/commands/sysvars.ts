@@ -348,6 +348,8 @@ export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
   { name: 'SCREENSIZE', store: 'computed', kind: 'point', readOnly: true, pixels: true },
   // The file's own $TILEMODE stays as it was read: Triya's tabs never write it.
   { name: 'TILEMODE', store: 'computed', kind: 'switch' },
+  // M6-02 part 20: the layout viewport worked in keeps its own UCS (DXF 71).
+  { name: 'UCSVP', store: 'computed', kind: 'switch' },
   { name: 'VIEWCTR', store: 'computed', kind: 'point', readOnly: true },
   { name: 'VIEWSIZE', store: 'computed', kind: 'distance', readOnly: true },
   // The current layout viewport's twist (M6-02 part 15); 0 elsewhere, as Triya shows model

@@ -11,9 +11,10 @@
 // the engine's header holds now.
 //
 // M3-06 part 7: they are the current UCS's (the header's $UCSORG and axes, $PUCS* in a layout),
-// as AutoCAD's are.
+// as AutoCAD's are; `ucs` is a layout viewport's own while it is current with UCSVP on (M6-02
+// part 20).
 import { formatLinear } from '@triya/dims';
-import { toUcs, ucsOf, type ChangeSet, type Vec2 } from '@triya/engine';
+import { toUcs, ucsOf, type ChangeSet, type PlanUcs, type Vec2 } from '@triya/engine';
 import type { CoordinateDisplay } from './preferences';
 
 const MAX_PLACES = 8;
@@ -23,8 +24,9 @@ export function coordinateText(
   header: ReadonlyMap<string, unknown>,
   mode: CoordinateDisplay,
   paper = false,
+  ucs?: PlanUcs,
 ): string {
-  const p = toUcs(ucsOf(header, paper), world);
+  const p = toUcs(ucs ?? ucsOf(header, paper), world);
   const luprec = header.get('$LUPREC');
   const lunits = header.get('$LUNITS');
   const places = typeof luprec === 'number' ? Math.min(Math.max(luprec, 0), MAX_PLACES) : 4;

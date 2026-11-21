@@ -63,6 +63,7 @@ import {
   trackLabel,
   toWorld,
   ucsOf,
+  viewportUcs,
   type Acquired,
   type PlanUcs,
   unionBox,
@@ -262,7 +263,14 @@ export interface ViewportModesShown {
 
 export interface CanvasHooks {
   /** The world point under the cursor, or undefined when it leaves the canvas. */
-  readonly onCursor: (p: { readonly x: number; readonly y: number } | undefined) => void;
+  /**
+   * The cursor's world point, with the UCS of a layout viewport made current that keeps its own
+   * (UCSVP 1, M6-02 part 20), which the status bar's coordinates are in; else the header's.
+   */
+  readonly onCursor: (
+    p: { readonly x: number; readonly y: number } | undefined,
+    ucs?: PlanUcs,
+  ) => void;
   readonly onError: (e: Error) => void;
   /**
    * A left click (M2-02, M2-03): the world point under it, in this canvas's space, for the
@@ -2416,8 +2424,16 @@ export class CanvasController {
 
   /** The current UCS of the space shown: model space's, or the layout's paper space's. */
   #ucs(): PlanUcs {
-    // Model space's UCS while a layout viewport is current (MSPACE, M6-02 part 3).
-    return ucsOf(this.#header, this.#layout !== undefined && !this.#current);
+    // Model space's UCS while a layout viewport is current (MSPACE, M6-02 part 3), or the
+    // viewport's own while its UCSVP is on (M6-02 part 20).
+    if (this.#current) return viewportUcs(this.#current.geom, ucsOf(this.#header, false));
+    return ucsOf(this.#header, this.#layout !== undefined);
+  }
+
+  /** Tells the cursor's point, in a viewport's own UCS when one keeps it (M6-02 part 20). */
+  #cursorAt(p: Vec2 | undefined): void {
+    const own = this.#current?.geom.ucsPerViewport ? this.#ucs() : undefined;
+    this.#hooks.onCursor(p, own);
   }
 
   /**
@@ -2564,7 +2580,7 @@ export class CanvasController {
     const hovered = this.#pointer && !this.#drag && this.#canvas.matches(':hover');
     if (hovered && this.#prompt && this.#mode === 'none') this.#track();
     else {
-      if (hovered) this.#hooks.onCursor(this.#world(this.#pointer!));
+      if (hovered) this.#cursorAt(this.#world(this.#pointer!));
       // The current vertex's marker keeps its size in pixels (M2-35 part 8).
       if (this.#vertexMark) this.#rubberBand(undefined);
     }
@@ -2953,7 +2969,7 @@ export class CanvasController {
           const at = { x: e.offsetX - z.frame.left, y: e.offsetY - z.frame.top };
           const now = frameView(z.c.geom, z.frame.size);
           this.#goViewport(z, zoomAt(now, z.frame.size, at, factor), 'ZOOM', { join });
-          this.#hooks.onCursor(this.#world(e));
+          this.#cursorAt(this.#world(e));
           return;
         }
         // One roll is one ZOOM Previous view and one undo step, which UNDO Control Combine
@@ -2964,7 +2980,7 @@ export class CanvasController {
         }
         this.#lastWheel = e.timeStamp;
         this.#setView(zoomAt(this.#view, this.#size, { x: e.offsetX, y: e.offsetY }, factor));
-        this.#hooks.onCursor(this.#world(e));
+        this.#cursorAt(this.#world(e));
       },
       { ...opts, passive: false },
     );
@@ -3136,7 +3152,7 @@ export class CanvasController {
           }
           this.#requestQuick();
         }
-        this.#hooks.onCursor(world);
+        this.#cursorAt(world);
       },
       opts,
     );
@@ -3185,7 +3201,7 @@ export class CanvasController {
           this.#quickMeasure = undefined;
           this.#drawQuick();
         }
-        this.#hooks.onCursor(undefined);
+        this.#cursorAt(undefined);
       },
       opts,
     );
@@ -3535,7 +3551,7 @@ export class CanvasController {
       this.#tip.hidden = true;
       // Outside the viewport worked in the cursor is an arrow, with no rubber band to it.
       this.#rubberBand(this.#outside ? undefined : world);
-      if (world) this.#hooks.onCursor(world);
+      if (world) this.#cursorAt(world);
       return;
     }
     const ui = this.#ui();
@@ -3595,7 +3611,7 @@ export class CanvasController {
       this.#tip.style.left = `${this.#pointer!.offsetX + 16}px`;
       this.#tip.style.top = `${this.#pointer!.offsetY - 34}px`;
     }
-    this.#hooks.onCursor(point);
+    this.#cursorAt(point);
   }
 
   /** LUPREC, for the tooltips. */

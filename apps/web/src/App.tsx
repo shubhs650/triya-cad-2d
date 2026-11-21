@@ -32,6 +32,7 @@ import {
   layerNotifyEventOf,
   type FieldEvent,
   type LayerNotifyEvent,
+  type PlanUcs,
 } from '@triya/engine';
 import {
   decodeRaster,
@@ -2874,7 +2875,7 @@ function MaximizeViewportToggle({ doc }: { readonly doc: OpenDocument }) {
 }
 
 /** The world point under the cursor, written straight into the status bar (no React render). */
-let showCursor: (p: { x: number; y: number } | undefined) => void = () => {};
+let showCursor: (p: { x: number; y: number } | undefined, ucs?: PlanUcs) => void = () => {};
 
 /** The block definitions a Block Editor showed (M5-02): not spaces whose canvas is kept. */
 const editorCanvases = new Set<string>();
@@ -3114,9 +3115,9 @@ function ViewportCanvas({
   useEffect(() => {
     const c = new CanvasController(ref.current!, opened, block, {
       ...drawingHooks(id, opened),
-      onCursor: (p) => {
+      onCursor: (p, ucs) => {
         if (p) lastCursor = p;
-        showCursor(p);
+        showCursor(p, ucs);
       },
       onError: (e) => store.failed(name, openError(name, e)),
       onPick: (point, o) => {
@@ -3273,6 +3274,8 @@ function StatusBar({
   const coords = useRef<HTMLSpanElement>(null);
   // The cursor's last point over a canvas, shown again when the units change under it.
   const cursor = useRef<{ x: number; y: number } | undefined>(undefined);
+  // A layout viewport's own UCS the cursor's point is in (M6-02 part 20).
+  const cursorUcs = useRef<PlanUcs | undefined>(undefined);
   // The header as the drawing's edits left it (M2-73): units set by SETVAR or UNITS, or undone,
   // show at once. `doc` is a new object, its `revision` one on, with every edit the log takes.
   const header = useMemo(
@@ -3292,12 +3295,13 @@ function StatusBar({
     drafting.setDrawingLineweights(lwdisplay === 1 || lwdisplay === true);
   }, [lwdisplay]);
   useEffect(() => {
-    showCursor = (p) => {
+    showCursor = (p, ucs) => {
       cursor.current = p;
+      cursorUcs.current = ucs;
       if (!coords.current) return;
-      coords.current.textContent = p ? coordinateText(p, header, display, paper) : '';
+      coords.current.textContent = p ? coordinateText(p, header, display, paper, ucs) : '';
     };
-    showCursor(cursor.current);
+    showCursor(cursor.current, cursorUcs.current);
     return () => {
       showCursor = () => {};
     };
