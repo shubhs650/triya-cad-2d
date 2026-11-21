@@ -310,6 +310,9 @@ describe('palette search', () => {
       'VPCLIP',
       // M6-02 part 5: layers frozen and overridden in layout viewports.
       'VPLAYER',
+      // M6-02 part 7: a layout viewport maximized to fill the canvas, and restored.
+      'VPMAX',
+      'VPMIN',
       // M5-01 part 4: the Write Block dialog.
       'WBLOCK',
       'WIPEOUT',
