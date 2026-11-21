@@ -47,6 +47,10 @@
 // space VP Freeze counts the layout's viewports freezing the layer and the VP cells are empty,
 // since Help gives them no paper-space meaning Triya draws. The filter menu's Viewport (Freeze,
 // Thaw) and Isolate Group's Active Viewport Only act in that viewport too. One LAYER step each.
+// M6-07: the Plot Style column, and VP Plot Style with a layout viewport made current: in a drawing
+// with named plot styles each opens Select Plot Style to set the layers' plot style (as -LAYER
+// PStyle) or override it in that viewport (as VPLAYER PStyle); in a colour-dependent drawing both
+// show the colour's plot style (`Color_7`) greyed, as AutoCAD's manager does.
 import {
   Fragment,
   memo,
@@ -96,7 +100,12 @@ import {
   removeOverridesTarget,
   type LayerListAction,
 } from './LayerListMenu';
-import { LayerTransparencyDialog, LineweightDialog, SelectLinetypeDialog } from './LayerDialogs';
+import {
+  LayerTransparencyDialog,
+  LineweightDialog,
+  SelectLinetypeDialog,
+  SelectPlotStyleDialog,
+} from './LayerDialogs';
 import type { LinetypeFiles } from './linetype-files';
 import {
   MIN_COLUMN_WIDTH,
@@ -142,6 +151,7 @@ import { currentLayerStateName, layerStatesManager } from './layer-states';
 import {
   layerColorBooks,
   layerLinetypes,
+  layerPlotStyles,
   layerRows,
   type LayerRow,
   type ViewportProperty,
@@ -170,10 +180,12 @@ type Picking = {
     | 'linetype'
     | 'lineweight'
     | 'transparency'
+    | 'plotStyle'
     | 'vpColor'
     | 'vpLinetype'
     | 'vpLineweight'
-    | 'vpTransparency';
+    | 'vpTransparency'
+    | 'vpPlotStyle';
   readonly row: LayerRow;
 };
 
@@ -183,7 +195,11 @@ const VP_CELLS = {
   vpLinetype: { title: 'VP Linetype', property: 'linetype' },
   vpLineweight: { title: 'VP Lineweight', property: 'lineweight' },
   vpTransparency: { title: 'VP Transparency', property: 'transparency' },
+  vpPlotStyle: { title: 'VP Plot Style', property: 'plotStyle' },
 } as const satisfies Record<string, { title: string; property: ViewportProperty }>;
+
+/** Why the plot style cells are greyed: a colour-dependent drawing plots by colour. */
+const BY_COLOR = 'color-dependent plot styles: set by the layer’s color';
 
 /** Why a VP cell is empty: no layout viewport is current. */
 const NO_VIEWPORT = 'Double-click in a layout viewport (MSPACE) to override layers in it';
@@ -298,7 +314,7 @@ function cellOf(
     cell: Picking['cell'],
     title: string,
     text: string,
-    o: { swatch?: string; overridden?: boolean } = {},
+    o: { swatch?: string; overridden?: boolean; disabled?: string } = {},
   ) => (
     <td className={o.overridden ? `${cell} vp-overridden` : cell} data-col={key}>
       <button
@@ -306,7 +322,15 @@ function cellOf(
         className="layer-cell"
         aria-label={`${title} ${r.name}`}
         aria-haspopup="dialog"
-        title={o.overridden ? `${text} (viewport override)` : text}
+        // A colour-dependent drawing's plot style is its colour's: shown, not set (M6-07).
+        disabled={o.disabled !== undefined}
+        title={
+          o.disabled !== undefined
+            ? `${text} (${o.disabled})`
+            : o.overridden
+              ? `${text} (viewport override)`
+              : text
+        }
         onClick={() => act.current.pick(cell, r)}
       >
         {o.swatch !== undefined && (
@@ -328,6 +352,7 @@ function cellOf(
     const text = property === 'color' ? vp.color.label : vp[property];
     return propertyCell(cell, title, text, {
       ...(property === 'color' && { swatch: vp.color.css }),
+      ...(property === 'plotStyle' && vp.value.plotStyle === undefined && { disabled: BY_COLOR }),
       overridden: vp.overridden[property] === true,
     });
   };
@@ -385,6 +410,7 @@ function cellOf(
     case 'vpLinetype':
     case 'vpLineweight':
     case 'vpTransparency':
+    case 'vpPlotStyle':
       return vpCell(key);
     case 'color':
       return propertyCell('color', 'Color', r.color.label, { swatch: r.color.css });
@@ -394,6 +420,10 @@ function cellOf(
       return propertyCell('lineweight', 'Lineweight', r.lineweight);
     case 'transparency':
       return propertyCell('transparency', 'Transparency', r.transparency);
+    case 'plotStyle':
+      return propertyCell('plotStyle', 'Plot Style', r.plotStyle, {
+        ...(r.value.plotStyle === undefined && { disabled: BY_COLOR }),
+      });
     case 'description':
       return (
         <td
@@ -1483,6 +1513,14 @@ export function LayersPalette({
           units={lwUnits}
           initial={pickedValue(picking).lineweight}
           onOk={(lineweight) => void setProps({ lineweight })}
+          onCancel={closeDialog}
+        />
+      )}
+      {(picking?.cell === 'plotStyle' || picking?.cell === 'vpPlotStyle') && (
+        <SelectPlotStyleDialog
+          initial={pickedValue(picking).plotStyle}
+          styles={layerPlotStyles(doc.opened.init, engines.changesOf(doc.id))}
+          onOk={(plotStyle) => void setProps({ plotStyle })}
           onCancel={closeDialog}
         />
       )}
