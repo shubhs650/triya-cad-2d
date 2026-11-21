@@ -160,7 +160,10 @@ export function withViewportSnapGrid(
  * layout viewport starts with; model space's is the common drafter expectation, as -VPORTS's new
  * tiles start with the current viewport's (M6-02 part 10).
  */
-export function withNewViewportSnapGrid(model: DocumentModel, g: ViewportGeometry): ViewportGeometry {
+export function withNewViewportSnapGrid(
+  model: DocumentModel,
+  g: ViewportGeometry,
+): ViewportGeometry {
   const v = currentVport(model);
   if (!v) return { ...g, snapGrid: DEFAULT_VIEWPORT_SNAP_GRID };
   const { snapBase, snapSpacing, snapRotation, gridSpacing, gridMajor, gridFlags } = v;
