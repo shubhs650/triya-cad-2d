@@ -20,6 +20,10 @@ export type LayerColumnKey =
   | 'linetype'
   | 'lineweight'
   | 'transparency'
+  | 'vpColor'
+  | 'vpLinetype'
+  | 'vpLineweight'
+  | 'vpTransparency'
   | 'description';
 
 export interface LayerColumn {
@@ -53,6 +57,12 @@ export const LAYER_COLUMNS: readonly LayerColumn[] = [
   { key: 'linetype', title: 'Linetype', width: 130 },
   { key: 'lineweight', title: 'Lineweight', width: 110, fits: true },
   { key: 'transparency', title: 'Transparency', width: 110, fits: true },
+  // M6-02 part 8: the viewport made current's overrides (AutoCAD's VP Plot Style is left out,
+  // as Triya does not plot by named plot style).
+  { key: 'vpColor', title: 'VP Color', layoutOnly: true, width: 110 },
+  { key: 'vpLinetype', title: 'VP Linetype', layoutOnly: true, width: 130 },
+  { key: 'vpLineweight', title: 'VP Lineweight', layoutOnly: true, width: 110, fits: true },
+  { key: 'vpTransparency', title: 'VP Transparency', layoutOnly: true, width: 120, fits: true },
   { key: 'description', title: 'Description', width: 200 },
 ];
 
@@ -254,7 +264,7 @@ const lineweightOrder = (w: Lineweight): number =>
   typeof w === 'number' ? w : w === 'Default' ? -3 : w === 'ByBlock' ? -2 : -1;
 
 /** A colour's order: ACI by number, then true colours (and colour-book colours) by label. */
-const colorOrder = (r: LayerRow): number => {
+const colorOrder = (r: Pick<LayerRow, 'value'>): number => {
   const c = r.value.color;
   return c.kind === 'aci' ? c.index : 256;
 };
@@ -279,6 +289,18 @@ const COMPARE: Record<LayerColumnKey, (a: LayerRow, b: LayerRow) => number> = {
   linetype: (a, b) => text(a.linetype, b.linetype),
   lineweight: (a, b) => lineweightOrder(a.value.lineweight) - lineweightOrder(b.value.lineweight),
   transparency: (a, b) => Number(a.transparency) - Number(b.transparency),
+  // In paper space (no VP cells) every row ties, and the rows keep their order by name.
+  vpColor: (a, b) =>
+    a.vp && b.vp
+      ? colorOrder(a.vp) - colorOrder(b.vp) || text(a.vp.color.label, b.vp.color.label)
+      : 0,
+  vpLinetype: (a, b) => (a.vp && b.vp ? text(a.vp.linetype, b.vp.linetype) : 0),
+  vpLineweight: (a, b) =>
+    a.vp && b.vp
+      ? lineweightOrder(a.vp.value.lineweight) - lineweightOrder(b.vp.value.lineweight)
+      : 0,
+  vpTransparency: (a, b) =>
+    a.vp && b.vp ? Number(a.vp.transparency) - Number(b.vp.transparency) : 0,
   description: (a, b) => text(a.description, b.description),
 };
 

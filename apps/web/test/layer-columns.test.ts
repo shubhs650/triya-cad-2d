@@ -64,6 +64,14 @@ describe('the manager’s columns (M5-05 part 3)', () => {
       'Description',
     ]);
     expect(keys(true)).toContain('VP Freeze');
+    // M6-02 part 8: the viewport override columns, after Transparency, in a layout only.
+    expect(keys(true).slice(-5)).toEqual([
+      'VP Color',
+      'VP Linetype',
+      'VP Lineweight',
+      'VP Transparency',
+      'Description',
+    ]);
   });
 
   it('hides the columns the user hid, never Name', () => {
