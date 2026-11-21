@@ -13,6 +13,7 @@ import {
   type ColorBook,
   type ColorBookColor,
   type DocumentInit,
+  type EntityInit,
   type Handle,
   type LayerRecord,
   type LinetypeElement,
@@ -55,6 +56,27 @@ export interface LayerRow {
   readonly unreconciled?: true;
   /** In a layout: of its viewports (not its own paper-space view), how many freeze the layer. */
   readonly vpFrozen?: { readonly frozen: number; readonly of: number };
+  /** With a layout viewport made current (M6-02 part 8): the VP columns of that viewport. */
+  readonly vp?: LayerViewportCells;
+}
+
+/** A property a viewport can override (the VP Color, Linetype, Lineweight, Transparency cells). */
+export type ViewportProperty = keyof LayerRow['value'];
+
+/**
+ * A row's VP Freeze, VP Color, VP Linetype, VP Lineweight and VP Transparency in the viewport
+ * made current: the override where it has one, else the layer's own value, as AutoCAD shows them.
+ */
+export interface LayerViewportCells {
+  readonly viewport: Handle;
+  readonly frozen: boolean;
+  readonly color: LayerRow['color'];
+  readonly linetype: string;
+  readonly lineweight: string;
+  readonly transparency: string;
+  readonly value: LayerRow['value'];
+  /** The properties the viewport overrides, which the manager marks. */
+  readonly overridden: Readonly<Partial<Record<ViewportProperty, true>>>;
 }
 
 /** AutoCAD names ACI 1–7 in the colour column; others show their number. */
@@ -94,6 +116,25 @@ function currentTable<K extends 'layers' | 'linetypes'>(
 /** The LAYER table as opened with `changes` applied in order. */
 export const currentLayers = (init: DocumentInit, changes: readonly ChangeSet[]): LayerRecord[] =>
   currentTable(init.tables?.layers, changes, 'layers');
+
+/** The VIEWPORT entities of layout `block` as opened with `changes` applied, in no set order. */
+function layoutViewports(
+  init: DocumentInit,
+  changes: readonly ChangeSet[],
+  block: Handle,
+): EntityInit[] {
+  const out = new Map<Handle, EntityInit>();
+  const take = (e: EntityInit) => {
+    if (e.geom.kind === 'VIEWPORT') out.set(e.handle, e);
+  };
+  for (const e of init.entities ?? []) take(e);
+  for (const cs of changes) {
+    for (const { entity } of cs.entities?.removed ?? []) out.delete(entity.handle);
+    for (const { entity } of cs.entities?.added ?? []) take(entity);
+    for (const { after } of cs.entities?.updated ?? []) take(after);
+  }
+  return [...out.values()].filter((e) => e.owner === block);
+}
 
 /** AutoCAD's order of names: case aside, numbers by value (Layer2 before Layer10). */
 export const compareNames = (a: string, b: string): number =>
@@ -183,6 +224,8 @@ export function layerRows(
   block?: Handle,
   /** LWUNITS: the Lineweight column in millimetres or inches (M5-08). */
   lwUnits: LineweightUnits = 'mm',
+  /** The layout viewport made current on `block` (MSPACE), whose VP cells the rows get. */
+  viewport?: Handle,
 ): LayerRow[] {
   // The current layer as the changes left it: the Properties palette sets it (M2-35).
   let current = new Map(init.header ?? []).get('$CLAYER');
@@ -192,14 +235,44 @@ export function layerRows(
   const linetypes = new Map(
     currentTable(init.tables?.linetypes, changes, 'linetypes').map((l) => [l.handle, l.name]),
   );
-  const viewports =
+  const floating =
     block === undefined
       ? undefined
-      : (init.entities ?? []).flatMap((e) =>
-          e.owner === block && e.geom.kind === 'VIEWPORT' && e.geom.id !== 1
-            ? [e.geom.frozenLayers]
-            : [],
+      : layoutViewports(init, changes, block).filter(
+          (e) => e.geom.kind === 'VIEWPORT' && e.geom.id !== 1,
         );
+  const viewports = floating?.map((e) => (e.geom.kind === 'VIEWPORT' ? e.geom.frozenLayers : []));
+  const vpCurrent = floating?.find((e) => e.handle === viewport);
+  const currentFrozen =
+    vpCurrent?.geom.kind === 'VIEWPORT' ? vpCurrent.geom.frozenLayers : undefined;
+  const vpCells = (
+    l: LayerRecord,
+    viewport: Handle,
+    frozen: readonly Handle[],
+  ): LayerViewportCells => {
+    const o = l.viewportOverrides?.find((v) => v.viewport === viewport);
+    const value = {
+      color: o?.color ?? l.color,
+      linetype: o?.linetype ?? l.linetype,
+      lineweight: o?.lineweight ?? l.lineweight,
+      transparency: o?.transparency ?? l.transparency,
+    };
+    return {
+      viewport,
+      frozen: frozen.includes(l.handle),
+      color: colorCell(value.color),
+      linetype: linetypes.get(value.linetype) ?? value.linetype,
+      lineweight: lineweightCell(value.lineweight, lwUnits),
+      transparency: String(transparencyValue(value.transparency)),
+      value,
+      overridden: {
+        ...(o?.color && { color: true as const }),
+        ...(o?.linetype && { linetype: true as const }),
+        ...(o?.lineweight !== undefined && { lineweight: true as const }),
+        ...(o?.transparency && { transparency: true as const }),
+      },
+    };
+  };
   return currentLayers(init, changes)
     .sort(byName)
     .map((l) => ({
@@ -229,5 +302,6 @@ export function layerRows(
           of: viewports.length,
         },
       }),
+      ...(viewport !== undefined && currentFrozen && { vp: vpCells(l, viewport, currentFrozen) }),
     }));
 }

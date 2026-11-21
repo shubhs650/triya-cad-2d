@@ -40,6 +40,13 @@
 // them out. Each is one LAYER undo step.
 // M5-19 part 2: while a layer is unreconciled the tree shows Unreconciled New Layers, and the layer
 // list menu's Reconcile Layer reconciles the unreconciled layers selected (one LAYER step).
+// M6-02 part 8: with a layout viewport made current (MSPACE), VP Freeze is a toggle freezing the
+// layer in that viewport, and the VP Color, VP Linetype, VP Lineweight and VP Transparency cells
+// open the same dialogs to override the layer there (AutoCAD 2024 Help, "Layer Properties
+// Manager": "for the active layout viewport"); a cell the viewport overrides is marked. In paper
+// space VP Freeze counts the layout's viewports freezing the layer and the VP cells are empty,
+// since Help gives them no paper-space meaning Triya draws. The filter menu's Viewport (Freeze,
+// Thaw) and Isolate Group's Active Viewport Only act in that viewport too. One LAYER step each.
 import {
   Fragment,
   memo,
@@ -62,6 +69,7 @@ import {
   XREF_NODE,
   isLayerFilter,
   transparencyOf,
+  transparencyValue,
   xrefNode,
   type EditResult,
   type EngineEdit,
@@ -128,7 +136,13 @@ import {
   type LayerFilterAction,
 } from './LayerFilterTree';
 import { currentLayerStateName, layerStatesManager } from './layer-states';
-import { layerColorBooks, layerLinetypes, layerRows, type LayerRow } from './layers';
+import {
+  layerColorBooks,
+  layerLinetypes,
+  layerRows,
+  type LayerRow,
+  type ViewportProperty,
+} from './layers';
 import { SelectColorDialog } from './SelectColorDialog';
 
 type Toggle = 'on' | 'frozen' | 'locked' | 'plot';
@@ -146,11 +160,34 @@ const TOGGLES: Record<Toggle, ToggleColumn> = {
   plot: { key: 'plot', title: 'Plot', label: (r) => (r.plot ? 'Plot' : 'No plot') },
 };
 
-/** A property cell whose dialog is open, and the row clicked. */
+/** A property cell whose dialog is open, and the row clicked (a VP cell: the viewport's). */
 type Picking = {
-  readonly cell: 'color' | 'linetype' | 'lineweight' | 'transparency';
+  readonly cell:
+    | 'color'
+    | 'linetype'
+    | 'lineweight'
+    | 'transparency'
+    | 'vpColor'
+    | 'vpLinetype'
+    | 'vpLineweight'
+    | 'vpTransparency';
   readonly row: LayerRow;
 };
+
+/** The VP cells, by column, and the property each overrides. */
+const VP_CELLS = {
+  vpColor: { title: 'VP Color', property: 'color' },
+  vpLinetype: { title: 'VP Linetype', property: 'linetype' },
+  vpLineweight: { title: 'VP Lineweight', property: 'lineweight' },
+  vpTransparency: { title: 'VP Transparency', property: 'transparency' },
+} as const satisfies Record<string, { title: string; property: ViewportProperty }>;
+
+/** Why a VP cell is empty: no layout viewport is current. */
+const NO_VIEWPORT = 'Double-click in a layout viewport (MSPACE) to override layers in it';
+
+/** What a property dialog opens on: the viewport's value from a VP cell, else the layer's own. */
+const pickedValue = (p: Picking): LayerRow['value'] =>
+  p.cell.startsWith('vp') && p.row.vp ? p.row.vp.value : p.row.value;
 
 /** A name or a description being typed in place. */
 type Editing = { readonly handle: Handle; readonly field: 'name' | 'description' };
@@ -193,6 +230,8 @@ interface RowActions {
   rowClick(e: MouseEvent, row: LayerRow): void;
   rowKey(e: KeyboardEvent, row: LayerRow): void;
   toggle(row: LayerRow, key: Toggle): void;
+  /** VP Freeze in the viewport made current (M6-02 part 8). */
+  vpFreeze(row: LayerRow): void;
   pick(cell: Picking['cell'], row: LayerRow): void;
   setCurrent(row: LayerRow): void;
   edit(e: Editing): void;
@@ -252,23 +291,43 @@ function cellOf(
       </button>
     </td>
   );
-  const propertyCell = (cell: Picking['cell'], title: string, text: string) => (
-    <td className={cell} data-col={key}>
+  const propertyCell = (
+    cell: Picking['cell'],
+    title: string,
+    text: string,
+    o: { swatch?: string; overridden?: boolean } = {},
+  ) => (
+    <td className={o.overridden ? `${cell} vp-overridden` : cell} data-col={key}>
       <button
         type="button"
         className="layer-cell"
         aria-label={`${title} ${r.name}`}
         aria-haspopup="dialog"
-        title={text}
+        title={o.overridden ? `${text} (viewport override)` : text}
         onClick={() => act.current.pick(cell, r)}
       >
-        {cell === 'color' && (
-          <span className="swatch" style={{ background: r.color.css }} aria-hidden />
+        {o.swatch !== undefined && (
+          <span className="swatch" style={{ background: o.swatch }} aria-hidden />
         )}
         {text}
       </button>
     </td>
   );
+  const vpCell = (cell: keyof typeof VP_CELLS) => {
+    const { title, property } = VP_CELLS[cell];
+    const vp = r.vp;
+    if (!vp)
+      return (
+        <td className={`${cell} vp-none`} data-col={key} title={NO_VIEWPORT}>
+          —
+        </td>
+      );
+    const text = property === 'color' ? vp.color.label : vp[property];
+    return propertyCell(cell, title, text, {
+      ...(property === 'color' && { swatch: vp.color.css }),
+      overridden: vp.overridden[property] === true,
+    });
+  };
   switch (key) {
     case 'status':
       return (
@@ -297,13 +356,35 @@ function cellOf(
     case 'plot':
       return toggleCell(TOGGLES[key]);
     case 'vpFreeze':
+      if (r.vp) {
+        const label = r.vp.frozen ? 'Frozen in viewport' : 'Thawed in viewport';
+        return (
+          <td className="vp-freeze" data-col={key}>
+            <button
+              type="button"
+              className="toggle vp-frozen"
+              aria-pressed={r.vp.frozen}
+              aria-label={`VP Freeze ${r.name}`}
+              title={label}
+              onClick={() => act.current.vpFreeze(r)}
+            >
+              {r.vp.frozen ? 'Frozen' : 'Thawed'}
+            </button>
+          </td>
+        );
+      }
       return (
         <td className="vp-freeze" data-col={key}>
           {r.vpFrozen && r.vpFrozen.of > 0 ? `${r.vpFrozen.frozen} of ${r.vpFrozen.of}` : '—'}
         </td>
       );
+    case 'vpColor':
+    case 'vpLinetype':
+    case 'vpLineweight':
+    case 'vpTransparency':
+      return vpCell(key);
     case 'color':
-      return propertyCell('color', 'Color', r.color.label);
+      return propertyCell('color', 'Color', r.color.label, { swatch: r.color.css });
     case 'linetype':
       return propertyCell('linetype', 'Linetype', r.linetype);
     case 'lineweight':
@@ -457,6 +538,8 @@ export function LayersPalette({
     { click: number; frame: number; drawn: number | undefined } | undefined
   >();
   const inLayout = layoutShown(doc);
+  // The layout viewport made current (MSPACE), whose VP cells the rows show (M6-02 part 8).
+  const viewport = inLayout ? doc.viewports?.[doc.block] : undefined;
   // The Lineweight column in LWUNITS's units (M5-08).
   const lwUnits = useSyncExternalStore(drafting.subscribe, () =>
     drafting.get().lwUnits === 0 ? 'in' : 'mm',
@@ -468,9 +551,10 @@ export function LayersPalette({
         engines.changesOf(doc.id),
         inLayout ? doc.block : undefined,
         lwUnits,
+        viewport,
       ),
     // `revision` changes when the engine applied an edit, which is what the rows read.
-    [doc.opened, doc.id, doc.block, doc.revision, inLayout, lwUnits],
+    [doc.opened, doc.id, doc.block, doc.revision, inLayout, lwUnits, viewport],
   );
   const sorted = useMemo(() => sortLayerRows(rows, columns.sort), [rows, columns.sort]);
   // The filter tree (M5-07 part 5): the node chosen, Invert filter and the layers in use, which
@@ -790,6 +874,7 @@ export function LayersPalette({
       filter,
       parent: filter?.parent === undefined ? undefined : filterOf(filter.parent),
       space: inLayout ? doc.block : undefined,
+      viewport,
       predefined: xrefChoice(c) || unreconciledChoice(c),
     };
   };
@@ -891,13 +976,32 @@ export function LayersPalette({
   const targets = (row: LayerRow): Handle | Handle[] =>
     selected.has(row.handle) && selected.size > 1 ? [...selected] : row.handle;
 
-  /** A property dialog's OK: the value on the layers of the row it was opened from. */
+  /**
+   * A property dialog's OK: the value on the layers of the row it was opened from; from a VP
+   * cell, as their override in the viewport made current (M6-02 part 8).
+   */
   const setProps = async (props: LayerProps) => {
     if (!picking) return;
     const row = picking.row;
     setPicking(undefined);
-    await apply({ kind: 'layer', layer: targets(row), ...props });
+    const vp = picking.cell.startsWith('vp') ? row.vp?.viewport : undefined;
+    await apply(
+      vp !== undefined
+        ? { kind: 'viewport-layer', layer: targets(row), viewport: vp, ...props }
+        : { kind: 'layer', layer: targets(row), ...props },
+    );
     focusRow(row.handle);
+  };
+
+  /** VP Freeze: the layers frozen or thawed in the viewport made current, as the row's opposite. */
+  const vpFreeze = async (row: LayerRow) => {
+    if (!row.vp) return;
+    await apply({
+      kind: 'viewport-layer',
+      layer: targets(row),
+      viewport: row.vp.viewport,
+      frozen: !row.vp.frozen,
+    });
   };
   const closeDialog = () => {
     const row = picking?.row;
@@ -947,6 +1051,7 @@ export function LayersPalette({
     rowClick: onRowClick,
     rowKey: onRowKey,
     toggle: (row, key) => void toggle(row, key),
+    vpFreeze: (row) => void vpFreeze(row),
     pick: (cell, row) => setPicking({ cell, row }),
     setCurrent: (row) => void setCurrent(row),
     edit: startEditing,
@@ -1299,9 +1404,9 @@ export function LayersPalette({
           onCancel={() => setCustomizing(false)}
         />
       )}
-      {picking?.cell === 'color' && (
+      {(picking?.cell === 'color' || picking?.cell === 'vpColor') && (
         <SelectColorDialog
-          initial={picking.row.value.color}
+          initial={pickedValue(picking).color}
           books={layerColorBooks(doc.opened.init, engines.changesOf(doc.id))}
           trueColors
           notByLayer="A layer’s color cannot be ByLayer or ByBlock."
@@ -1309,9 +1414,9 @@ export function LayersPalette({
           onCancel={closeDialog}
         />
       )}
-      {picking?.cell === 'linetype' && (
+      {(picking?.cell === 'linetype' || picking?.cell === 'vpLinetype') && (
         <SelectLinetypeDialog
-          initial={picking.row.value.linetype}
+          initial={pickedValue(picking).linetype}
           linetypes={layerLinetypes(doc.opened.init, engines.changesOf(doc.id))}
           onOk={(linetype) => void setProps({ linetype })}
           onCancel={closeDialog}
@@ -1328,17 +1433,17 @@ export function LayersPalette({
           }}
         />
       )}
-      {picking?.cell === 'lineweight' && (
+      {(picking?.cell === 'lineweight' || picking?.cell === 'vpLineweight') && (
         <LineweightDialog
           units={lwUnits}
-          initial={picking.row.value.lineweight}
+          initial={pickedValue(picking).lineweight}
           onOk={(lineweight) => void setProps({ lineweight })}
           onCancel={closeDialog}
         />
       )}
-      {picking?.cell === 'transparency' && (
+      {(picking?.cell === 'transparency' || picking?.cell === 'vpTransparency') && (
         <LayerTransparencyDialog
-          initial={Number(picking.row.transparency)}
+          initial={Number(transparencyValue(pickedValue(picking).transparency))}
           onOk={(percent) => void setProps({ transparency: transparencyOf(percent) })}
           onCancel={closeDialog}
         />

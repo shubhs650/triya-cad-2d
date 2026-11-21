@@ -137,9 +137,9 @@ export function listedLayers(
 // The filter menu (part 6; AutoCAD 2024 Help, "Layer Properties Manager", the tree view's
 // shortcut menu): Visibility, Lock, Viewport and Isolate Group act on every layer the node lists
 // (the engine's `layer-filter-set` and `layer-filter-isolate`), then the filters' own items.
-// Viewport and Isolate Group's Active Viewport Only act in the layout viewport made current,
-// which Triya cannot make yet (MSPACE, M6-02): they are greyed in a layout, and Active Viewport
-// Only in model space does what All Viewports does there, as AutoCAD's help says of both.
+// Viewport and Isolate Group's Active Viewport Only act in the layout viewport made current
+// (MSPACE, M6-02 part 8): they are greyed in paper space, and Active Viewport Only in model
+// space does what All Viewports does there, as AutoCAD's help says of both.
 
 export type LayerFilterAction =
   | 'newProperty'
@@ -219,6 +219,8 @@ export interface FilterMenuContext {
   readonly parent?: LayerFilter | undefined;
   /** The block of the layout shown; undefined in model space. */
   readonly space?: Handle | undefined;
+  /** The layout viewport made current on that layout (MSPACE, M6-02 part 8), if any. */
+  readonly viewport?: Handle | undefined;
   /**
    * A node the drawing makes for itself, in which no filter can be made: Unreconciled New
    * Layers, the Xref node or an xref's.
@@ -241,8 +243,8 @@ export function filterMenuEnabled(a: LayerFilterAction, ctx: FilterMenuContext):
   const { filter } = ctx;
   if (isSetting(a) || a === 'isolateAll') return true;
   if (a === 'newProperty') return ctx.predefined !== true;
-  if (a === 'vpFreeze' || a === 'vpThaw') return false;
-  if (a === 'isolateActive') return ctx.space === undefined;
+  if (a === 'vpFreeze' || a === 'vpThaw') return ctx.viewport !== undefined;
+  if (a === 'isolateActive') return ctx.space === undefined || ctx.viewport !== undefined;
   if (a === 'newGroup') return ctx.predefined !== true && filter?.filterType !== 'property';
   if (a === 'properties') return filter?.filterType === 'property';
   if (a === 'selectAdd' || a === 'selectReplace') return filter?.filterType === 'group';
@@ -258,6 +260,15 @@ export function filterMenuEdit(
   ctx: FilterMenuContext,
 ): EngineEdit | undefined {
   if (isSetting(a)) return { kind: 'layer-filter-set', node: choice, set: a };
+  if ((a === 'vpFreeze' || a === 'vpThaw') && ctx.viewport !== undefined)
+    return {
+      kind: 'layer-filter-viewport',
+      node: choice,
+      viewport: ctx.viewport,
+      frozen: a === 'vpFreeze',
+    };
+  if (a === 'isolateActive' && ctx.space !== undefined && ctx.viewport !== undefined)
+    return { kind: 'layer-filter-isolate', node: choice, space: ctx.space, viewport: ctx.viewport };
   if (a === 'isolateAll' || (a === 'isolateActive' && ctx.space === undefined))
     return {
       kind: 'layer-filter-isolate',

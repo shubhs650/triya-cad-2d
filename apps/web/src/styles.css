@@ -1248,6 +1248,7 @@ button {
 
 .layer-table .toggle.on[aria-pressed='false'],
 .layer-table .toggle.frozen[aria-pressed='true'],
+.layer-table .toggle.vp-frozen[aria-pressed='true'],
 .layer-table .toggle.locked[aria-pressed='true'],
 .edit-layer-state-list .toggle.on[aria-pressed='false'],
 .edit-layer-state-list .toggle.frozen[aria-pressed='true'],
@@ -1285,6 +1286,16 @@ button {
 .edit-layer-state-list .layer-cell:hover,
 .edit-layer-state-list .layer-cell:focus-visible {
   border-color: var(--chrome-border);
+}
+
+/* M6-02 part 8: a VP cell the viewport made current overrides, as AutoCAD tints it; a VP cell
+   with no viewport current is empty. */
+.layer-table td.vp-overridden {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.layer-table td.vp-none {
+  color: var(--chrome-text-muted);
 }
 
 /* Select Linetype's Loaded linetypes: Linetype, Appearance and Description in columns. */
