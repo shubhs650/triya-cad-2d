@@ -126,3 +126,206 @@ Import (expanded)
   icon        pdf-import<arrow_import>
 Data (expanded)
   icon        field<text_field>
+
+## Annotate
+Text (expanded)
+  icon        mtext<text_t>
+  icon        dtext<text_font>
+  icon        text-style<text_edit_style>
+  icon        find<search>
+  icon        spell<text_grammar_checkmark>
+  icon        justify-text<text_align_justify>
+  icon        scale-text<text_font_size>
+  icon        text-align<text_align_distributed>
+Dimensions (expanded)
+  icon        dimension<dim-linear> ▾ [dim-linear<dim-linear>, dim-aligned<dim-aligned>, dim-angular<dim-angular>, dim-arc<dim-arc>, dim-radius<dim-radius>, dim-diameter<dim-diameter>, dim-jogged<dim-jogged>, dim-ordinate<dim-ordinate>]
+  icon        qdim<dim-quick>
+  icon        continue<dim-continue> ▾ [dim-continue<dim-continue>, dim-baseline<dim-baseline>]
+  icon        dim-style<style_guide>
+  icon        dim-space<dim-space>
+  icon        dim-break<dim-break>
+  icon        dim-jogline<dim-jogline>
+  icon        dim-inspect<dim-inspect>
+  icon        dim-oblique<dim-oblique>
+  icon        dim-text-angle<dim-text-angle>
+  icon        dim-reassociate<link>
+  icon        dim-disassociate<link_dismiss>
+  icon        dim-override<dim-override>
+Centerlines (expanded)
+  icon        centermark<centermark>
+  icon        centerline-line<centerline>
+Leaders (expanded)
+  icon        mleader<mleader>
+  icon        mleader-add<mleader-add>
+  icon        mleader-remove<mleader-remove>
+  icon        mleader-align<mleader-align>
+  icon        mleader-collect<mleader-collect>
+  icon        mleader-style<style_guide>
+Tables (expanded)
+  icon        table<table>
+  icon        table-style<table_settings>
+Markup (expanded)
+  icon        wipeout<wipeout>
+  icon        revcloud<revcloud-rect> ▾ [revcloud-rect<revcloud-rect>, revcloud-poly<revcloud-poly>, revcloud-free<revcloud-free>, revcloud-object<revcloud-object>]
+Annotation Scaling (expanded)
+  icon        scale-list<scale_fit>
+  icon        add-scales<scale_fill>
+  icon        sync-scales<arrow_sync>
+
+### step 1
+Annotation Scaling (collapsed)
+  ▾ scale-list, add-scales, sync-scales
+
+### step 2
+Markup (collapsed)
+  ▾ wipeout, revcloud
+
+### step 3
+Tables (compressed)
+  icon        table<table>
+  ▾ table-style
+
+### step 4
+Centerlines (collapsed)
+  ▾ centermark, centerline-line
+
+### step 5
+Leaders (compressed)
+  icon        mleader<mleader>
+  ▾ mleader-add, mleader-remove, mleader-align, mleader-collect, mleader-style
+
+### step 6
+Text (compressed)
+  icon        mtext<text_t>
+  ▾ dtext, text-style, find, spell, justify-text, scale-text, text-align
+
+### step 7
+Dimensions (compressed)
+  icon        dimension<dim-linear> ▾ [dim-linear<dim-linear>, dim-aligned<dim-aligned>, dim-angular<dim-angular>, dim-arc<dim-arc>, dim-radius<dim-radius>, dim-diameter<dim-diameter>, dim-jogged<dim-jogged>, dim-ordinate<dim-ordinate>]
+  ▾ qdim, continue, dim-style, dim-space, dim-break, dim-jogline, dim-inspect, dim-oblique, dim-text-angle, dim-reassociate, dim-disassociate, dim-override
+
+## View
+Navigate (expanded)
+  icon        zoom<zoom_fit> ▾ [zoom-extents<zoom_fit>, zoom-window<search_square>, zoom-previous<arrow_previous>, zoom-realtime<search>, zoom-all<full_screen_maximize>, zoom-center<location_arrow>, zoom-object<select_object>, zoom-in<zoom_in>, zoom-out<zoom_out>]
+  icon        pan<hand_left>
+  icon        named-views<camera>
+Viewport Tools (expanded)
+  icon        ucs-icon<ucs-icon> ▾ [ucs-icon-on<ucs-icon>, ucs-icon-off<ucs-icon>]
+  icon        ucs<ucs>
+  icon        regen<arrow_clockwise>
+  icon        regen-all<arrow_sync>
+Model Viewports (expanded)
+  icon        viewport-config<board_split>
+Palettes (expanded)
+  icon        properties<apps_list_detail>
+  icon        layers-palette<layer>
+  icon        designcenter<app_folder>
+  icon        references<link_multiple>
+  icon        health<heart_pulse>
+  icon        history<history>
+Interface (expanded)
+  icon        theme<dark_theme> ▾ [theme-system<dark_theme>, theme-light<weather_sunny>, theme-dark<weather_moon>]
+
+### step 1
+Model Viewports (collapsed)
+  ▾ viewport-config
+
+### step 2
+Viewport Tools (collapsed)
+  ▾ ucs-icon, ucs, regen, regen-all
+
+### step 3
+Interface (collapsed)
+  ▾ theme
+
+### step 4
+Palettes (compressed)
+  icon        properties<apps_list_detail>
+  ▾ layers-palette, designcenter, references, health, history
+
+### step 5
+Navigate (compressed)
+  icon        zoom<zoom_fit> ▾ [zoom-extents<zoom_fit>, zoom-window<search_square>, zoom-previous<arrow_previous>, zoom-realtime<search>, zoom-all<full_screen_maximize>, zoom-center<location_arrow>, zoom-object<select_object>, zoom-in<zoom_in>, zoom-out<zoom_out>]
+  ▾ pan, named-views
+
+## Output
+Plot (expanded)
+  icon        plot<print>
+  icon        preview<document_search>
+  icon        page-setup<document_landscape>
+Export (expanded)
+  icon        export-pdf<document_pdf>
+  icon        export<arrow_export_ltr>
+Publish (expanded)
+  icon        publish<document_multiple>
+
+### step 1
+Publish (collapsed)
+  ▾ publish
+
+### step 2
+Export (compressed)
+  icon        export-pdf<document_pdf>
+  ▾ export
+
+### step 3
+Plot (compressed)
+  icon        plot<print>
+  ▾ preview, page-setup
+
+## Layout
+Layout (expanded)
+  icon        new-layout<tab_add> ▾ [layout-new<tab_add>, layout-template<document_one_page_add>]
+  icon        page-setup<document_landscape>
+  icon        layout-copy<document_copy>
+  icon        layout-rename<rename>
+  icon        layout-delete<document_dismiss>
+Layout Viewports (expanded)
+  icon        viewports<rectangle_landscape> ▾ [mview-rect<rectangle_landscape>, mview-poly<pentagon>, mview-object<select_object>]
+  icon        vp-clip<crop>
+  icon        vp-lock<lock_closed>
+  icon        vp-layer<layer_diagonal>
+  icon        vp-max<full_screen_maximize>
+  icon        vp-min<full_screen_minimize>
+  icon        scale-list<scale_fit>
+
+### step 1
+Layout Viewports (compressed)
+  icon        viewports<rectangle_landscape> ▾ [mview-rect<rectangle_landscape>, mview-poly<pentagon>, mview-object<select_object>]
+  ▾ vp-clip, vp-lock, vp-layer, vp-max, vp-min, scale-list
+
+### step 2
+Layout (compressed)
+  icon        new-layout<tab_add> ▾ [layout-new<tab_add>, layout-template<document_one_page_add>]
+  ▾ page-setup, layout-copy, layout-rename, layout-delete
+
+## Tools
+Drawing Utilities (expanded)
+  icon        units<ruler>
+  icon        health<heart_pulse>
+  icon        purge<broom>
+  icon        recover<drafts>
+Settings (expanded)
+  icon        options<settings>
+  icon        drafting-settings<grid>
+  icon        linetype<linetype>
+  icon        lineweight<lineweight>
+  icon        point-style<point>
+  icon        setvar<options>
+Customization (expanded)
+  icon        aliases<textbox_more>
+  icon        shortcuts<keyboard>
+
+### step 1
+Customization (collapsed)
+  ▾ aliases, shortcuts
+
+### step 2
+Settings (compressed)
+  icon        options<settings>
+  ▾ drafting-settings, linetype, lineweight, point-style, setvar
+
+### step 3
+Drawing Utilities (compressed)
+  icon        units<ruler>
+  ▾ health, purge, recover
