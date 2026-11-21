@@ -107,6 +107,10 @@ export function AnnotationScaleControls({
             close();
             if (s !== name) setAnnotationScale(doc.id, s);
           }}
+          onCustom={() => {
+            close();
+            engines.command(doc.id, { kind: 'invoke', name: 'SCALELISTEDIT' });
+          }}
           onClose={close}
         />
       )}
@@ -114,21 +118,26 @@ export function AnnotationScaleControls({
   );
 }
 
-/** The drawing's annotation scales, the current one checked; Esc or a click elsewhere closes it. */
+/**
+ * The drawing's annotation scales, the current one checked, then Custom..., which opens the Edit
+ * Drawing Scales dialog as AutoCAD's does (M6-02 part 22); Esc or a click elsewhere closes it.
+ */
 function ScaleMenu({
   scales,
   current,
   onPick,
+  onCustom,
   onClose,
 }: {
   scales: readonly string[];
   current: string;
   onPick: (name: string) => void;
+  onCustom: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const items = ref.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]');
+    const items = ref.current?.querySelectorAll<HTMLElement>(ITEMS);
     const checked = ref.current?.querySelector<HTMLElement>('[aria-checked="true"]');
     (checked ?? items?.[0])?.focus();
     const onDown = (e: PointerEvent) => {
@@ -144,9 +153,7 @@ function ScaleMenu({
       role="menu"
       aria-label="Annotation scales"
       onKeyDown={(e) => {
-        const list = [
-          ...(ref.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? []),
-        ];
+        const list = [...(ref.current?.querySelectorAll<HTMLElement>(ITEMS) ?? [])];
         const i = list.indexOf(document.activeElement as HTMLElement);
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -174,6 +181,13 @@ function ScaleMenu({
           {s}
         </button>
       ))}
+      <hr className="osnap-menu-separator" />
+      <button type="button" role="menuitem" className="osnap-menu-item" onClick={onCustom}>
+        <span className="osnap-check" aria-hidden="true" />
+        Custom...
+      </button>
     </div>
   );
 }
+
+const ITEMS = '[role="menuitemradio"], [role="menuitem"]';

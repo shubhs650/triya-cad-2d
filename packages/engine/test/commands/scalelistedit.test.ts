@@ -10,6 +10,9 @@ import {
   type BusEvent,
   type DrawingScale,
   type EntityInit,
+  type ScaleListDialogRequest,
+  type ViewHost,
+  type ViewReply,
 } from '../../src/index';
 import { entityInit, lineGeom, sampleInit } from '../model/fixtures';
 import { host } from './edit-harness';
@@ -36,7 +39,14 @@ const SCALES = [
   scale('A02', 'A2', '1:100', 1, 100),
 ];
 
-function setup(o: { scales?: DrawingScale[]; cannoscale?: string; entities?: EntityInit[] } = {}) {
+function setup(
+  o: {
+    scales?: DrawingScale[];
+    cannoscale?: string;
+    entities?: EntityInit[];
+    dialog?: (r: ScaleListDialogRequest) => ViewReply;
+  } = {},
+) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
@@ -49,7 +59,14 @@ function setup(o: { scales?: DrawingScale[]; cannoscale?: string; entities?: Ent
     objects: [...(init.objects ?? []), ...(o.scales ?? SCALES)],
     entities: [...(init.entities ?? []), ...(o.entities ?? [])],
   });
-  const bus = new PromptBus({ model, registry: builtinCommands(), view: host(() => model) });
+  const base = host(() => model);
+  const view: ViewHost = {
+    request: (r) =>
+      r.op === 'scaleListDialog' && o.dialog
+        ? Promise.resolve(o.dialog({ scales: r.scales, defaults: r.defaults }))
+        : base.request(r),
+  };
+  const bus = new PromptBus({ model, registry: builtinCommands(), view });
   const log: string[] = [];
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);
@@ -150,7 +167,61 @@ describe('-SCALELISTEDIT', () => {
     expect(t.names()).toEqual([...DEFAULT_SCALE_LIST.slice(0, 17).map((s) => s.name), 'Site']);
   });
 
-  it('SCALELISTEDIT asks the same until the dialog comes', async () => {
+  it('SCALELISTEDIT opens Edit Drawing Scales on the list, each scale with how it is in use', async () => {
+    const line = entityInit('300', lineGeom(0, 0, 1, 0), {
+      annotative: { representations: [{ handle: '301', scale: 'A02', isDefault: true }] },
+    });
+    let asked: ScaleListDialogRequest | undefined;
+    const t = setup({
+      cannoscale: '1:1',
+      entities: [line],
+      dialog: (r) => {
+        asked = r;
+        return { ok: true };
+      },
+    });
+    await t.bus.script(['SCALELISTEDIT']);
+    expect(t.bus.command).toBeUndefined();
+    expect(asked!.scales).toEqual([
+      { handle: 'A00', name: '1:1', paperUnits: 1, drawingUnits: 1, use: 'current' },
+      { handle: 'A01', name: '1:50', paperUnits: 1, drawingUnits: 50 },
+      { handle: 'A02', name: '1:100', paperUnits: 1, drawingUnits: 100, use: 'object' },
+    ]);
+    expect(asked!.defaults).toEqual(DEFAULT_SCALE_LIST);
+    // Cancel changes nothing.
+    expect(t.bus.undo.state.undoable).toBe(0);
+  });
+
+  it('the dialog’s OK makes its list in one undo step', async () => {
+    const t = setup({
+      dialog: (r) => ({
+        ok: true,
+        scaleList: [
+          { ...r.scales[2]!, name: 'Hundred' },
+          r.scales[0]!,
+          { name: 'Site', paperUnits: 1, drawingUnits: 500 },
+        ],
+      }),
+    });
+    await t.bus.script(['SCALELISTEDIT']);
+    expect(t.names()).toEqual(['Hundred', '1:1', 'Site']);
+    expect(drawingScales(t.model)[0]).toMatchObject({ handle: 'A02', key: 'A0' });
+    expect(t.bus.undo.state.undoable).toBe(1);
+    await t.bus.script(['U']);
+    expect(t.names()).toEqual(['1:1', '1:50', '1:100']);
+  });
+
+  it('an OK the drawing cannot take says why and changes nothing', async () => {
+    const t = setup({
+      dialog: (r) => ({ ok: true, scaleList: [...r.scales, { ...r.scales[0]! }] }),
+    });
+    await t.bus.script(['SCALELISTEDIT']);
+    expect(t.log.at(-1)).toBe('A scale named "1:1" already exists.');
+    expect(t.names()).toEqual(['1:1', '1:50', '1:100']);
+    expect(t.bus.undo.state.undoable).toBe(0);
+  });
+
+  it('SCALELISTEDIT without a dialog to show asks at the command line', async () => {
     const t = setup();
     await t.bus.script(['SCALELISTEDIT']);
     expect(t.bus.promptText).toBe(OPTIONS);

@@ -3108,6 +3108,21 @@ button {
   max-width: min(480px, calc(100vw - 32px));
 }
 
+/* M6-02 part 22: Edit Drawing Scales lays its Scale List out as the Page Setup Manager's. */
+.cad-dialog.scale-list-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.scale-list-dialog .page-setup-rows ul {
+  height: 240px;
+}
+
+.scale-list-units {
+  min-height: 1.4em;
+  margin: 6px 0 0;
+}
+
 .page-setup-list,
 .page-setup-details {
   margin: 8px 0 0;
@@ -6128,6 +6143,7 @@ button {
   font-style: italic;
 }
 
+.osnap-menu-separator,
 .spell-menu-separator {
   width: 100%;
   margin: 4px 0;

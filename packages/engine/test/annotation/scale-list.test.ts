@@ -157,7 +157,7 @@ describe('scale list edits', () => {
     ).toBeUndefined();
   });
 
-  it('refuses a duplicate name (any case), an empty one, a bad ratio and an empty list', () => {
+  it('refuses a duplicate name (any case), an empty one, a bad ratio, a scale twice, an empty list', () => {
     const model = drawing();
     const list = scaleListOf(model, []);
     expect(
@@ -170,6 +170,10 @@ describe('scale list edits', () => {
       'Invalid scale.',
     );
     expect(scaleListProblem(model, [])).toBe('The scale list needs at least one scale.');
+    // One scale listed twice, under two names.
+    expect(scaleListProblem(model, [...list, { ...list[0]!, name: 'Twice' }])).toBe(
+      'Invalid scale.',
+    );
   });
 
   it('CANNOSCALE and CANNOSCALEVALUE follow the current scale renamed or rescaled', () => {

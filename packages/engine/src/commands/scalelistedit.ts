@@ -13,9 +13,12 @@
 // prompts or messages): the prompts are "Enter name for new scale", "Enter scale ratio",
 // "Enter name of scale to delete" and "Reset scale list to default entries? [Yes/No] <No>";
 // a ratio typed as one number n is n:1; an invalid one says "Invalid scale." and asks again.
-// Until the dialog comes (M6-02 part 22), SCALELISTEDIT runs these prompts too.
+// SCALELISTEDIT opens the Edit Drawing Scales dialog (M6-02 part 22) on the list, each scale with
+// how it is in use; its OK makes the list it left in one undo step, Cancel nothing. With no
+// dialog to show (a script, a test without a canvas) it asks these prompts instead.
 import {
   DEFAULT_SCALE_LIST,
+  type ScaleListDialogEntry,
   parseScaleRatio,
   resetScaleList,
   scaleListOf,
@@ -144,11 +147,29 @@ async function* reset(ctx: CommandContext): Sub<void> {
   commitScaleList(ctx, resetScaleList(ctx.model, editedList(ctx)));
 }
 
+/** The Edit Drawing Scales dialog; false when there is none to show. */
+async function dialog(ctx: CommandContext): Promise<boolean> {
+  const uses = scaleUses(ctx.model);
+  const scales: ScaleListDialogEntry[] = editedList(ctx).map((s) => {
+    const use = s.handle === undefined ? undefined : uses.get(s.handle);
+    return use ? { ...s, use } : s;
+  });
+  const reply = await ctx.view.request({
+    op: 'scaleListDialog',
+    scales,
+    defaults: DEFAULT_SCALE_LIST,
+  });
+  if (!reply.ok) return false;
+  if (reply.scaleList) commitScaleList(ctx, reply.scaleList);
+  return true;
+}
+
 export function scalelisteditCommand(): CommandDef {
   return {
     name: 'SCALELISTEDIT',
     dashVariant: true,
     async *run(ctx) {
+      if (!ctx.dash && (await dialog(ctx))) return;
       for (;;) {
         const a = yield ctx.prompt.keyword({
           message: 'Enter option',

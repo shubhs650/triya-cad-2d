@@ -111,6 +111,8 @@ import {
 import { underlayLayersDialog } from './underlay-layers';
 import { viewportsDialog } from './viewports-dialog';
 import { ViewportsDialog } from './ViewportsDialog';
+import { scaleListDialog } from './scale-list-dialog';
+import { EditDrawingScalesDialog } from './EditDrawingScalesDialog';
 import { insertLayoutsDialog, layoutFileReply } from './layout-template-files';
 import { InsertLayoutsDialog } from './InsertLayoutsDialog';
 import { UnderlayLayers } from './UnderlayLayers';
@@ -658,6 +660,8 @@ function viewContext(id: number): ViewContext {
       }),
     // VPORTS (M6-02 part 11): the Viewports dialog, waited for as ULAYERS waits for its own.
     viewportsDialog: ({ op: _op, ...request }) => viewportsDialog.show(id, request),
+    // SCALELISTEDIT (M6-02 part 22): the Edit Drawing Scales dialog, waited for as VPORTS' is.
+    scaleListDialog: ({ op: _op, ...request }) => scaleListDialog.show(id, request),
     // -INSERT name=file (M5-01 part 4): a drawing open, or a file given for xrefs.
     drawingFile: (file) => drawingFileReply(file, heldDrawings()),
     // LAYOUT Template (M6-01 part 4): the Insert Layout(s) dialog, or a drawing named.
@@ -2790,6 +2794,7 @@ export function App() {
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <InsertLayoutsDialog doc={active?.id} />
       <ViewportsDialog doc={active?.id} />
+      <EditDrawingScalesDialog doc={active?.id} />
       <SaveChanges prompt={saveChanges} />
       <PlotNoticeDialog />
       <SnapMenu />
