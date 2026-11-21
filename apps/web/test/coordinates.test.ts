@@ -93,3 +93,15 @@ describe('the header as edited', () => {
     expect(coordinateText({ x: 1, y: 2 }, header, 'drawing')).toBe('1.0000, 2.0000, 0.0000');
   });
 });
+
+// M6-02 part 20: a layout viewport made current with UCSVP on gives its own UCS, which the
+// coordinates are in rather than the header's.
+describe('status bar coordinates in a viewport’s own UCS', () => {
+  it('reads the point in the UCS given, not the header’s', () => {
+    const turned = { origin: { x: 1, y: 0 }, angle: Math.PI / 2 };
+    expect(coordinateText({ x: 1, y: 2 }, header(2, 2), 'drawing', false, turned)).toBe(
+      '2.00, 0.00, 0.00',
+    );
+    expect(coordinateText({ x: 1, y: 2 }, header(2, 2), 'drawing')).toBe('1.00, 2.00, 0.00');
+  });
+});

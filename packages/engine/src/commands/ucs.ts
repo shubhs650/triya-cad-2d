@@ -44,6 +44,7 @@ import {
   ucsAxes,
   ucsHeaderEntries,
   ucsOf,
+  viewportUcs,
   UCS_VARIABLES,
   type PlanUcs,
 } from '../input/ucs';
@@ -65,13 +66,35 @@ type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
  */
 const inPaper = (ctx: CommandContext): boolean => isPaperSpace(ctx.model, ctx.space);
 
-/** The current UCS of the space the commands draw in. */
+/**
+ * The layout viewport made current (MSPACE) when its UCSVP is on, so that it keeps the UCS worked
+ * in (M6-02 part 20, M3-15's item; AutoCAD 2024 Help, "UCSVP": "UCS stored in viewport is
+ * independent of the UCS of the current viewport"); undefined otherwise.
+ */
+function ownUcsViewport(ctx: CommandContext): { id: EntityId; geom: ViewportGeometry } | undefined {
+  if (inPaper(ctx)) return undefined;
+  const h = ctx.viewport.current;
+  const id = h === undefined ? undefined : ctx.model.ids.idOf(h);
+  const geom = id === undefined ? undefined : ctx.model.entity(id)?.geom;
+  return id !== undefined && geom?.kind === 'VIEWPORT' && geom.ucsPerViewport
+    ? { id, geom }
+    : undefined;
+}
+
+/**
+ * The current UCS of the space the commands draw in: a layout viewport made current shows its
+ * own while its UCSVP is on (M6-02 part 20), else model space's (`viewportUcs`).
+ */
 export function currentUcs(ctx: CommandContext): PlanUcs {
+  const own = ownUcsViewport(ctx);
+  if (own) return viewportUcs(own.geom, ucsOf(ctx.model.header, false));
   return ucsOf(ctx.model.header, inPaper(ctx));
 }
 
 /** The current UCS's name, as AutoCAD reports it: `*WORLD*`, `*NO NAME*` or its name. */
 function ucsName(ctx: CommandContext): string {
+  // A viewport's own UCS keeps no name (Triya reads no DXF 345): it is the WCS or unnamed.
+  if (ownUcsViewport(ctx)) return isWorld(currentUcs(ctx)) ? '*WORLD*' : '*NO NAME*';
   const names = inPaper(ctx) ? UCS_VARIABLES.paper : UCS_VARIABLES.model;
   const name = ctx.model.header.get(names.name);
   if (typeof name === 'string' && name !== '') return name;
@@ -90,6 +113,16 @@ interface Remembered {
  * and model space's `*Active` VPORT. Nothing changes when it is current already.
  */
 function setUcs(ctx: CommandContext, u: PlanUcs, name: string): boolean {
+  // In a viewport keeping its own UCS, the UCS goes there (DXF 110–112), model space's header and
+  // VPORT untouched (M6-02 part 20).
+  const own = ownUcsViewport(ctx);
+  if (own) {
+    if (sameUcs(currentUcs(ctx), u)) return false;
+    const a = ucsAxes(u);
+    const ucs = { ...a, elevation: own.geom.ucs?.elevation ?? 0, orthographic: 0 };
+    ctx.edit((b) => b.updateEntity(own.id, { geom: { ...own.geom, ucs } }));
+    return true;
+  }
   const paper = inPaper(ctx);
   const names = paper ? UCS_VARIABLES.paper : UCS_VARIABLES.model;
   const nowName = ctx.model.header.get(names.name);
@@ -339,6 +372,7 @@ async function* named(ctx: CommandContext, previous: (u: Remembered) => void): S
 
 /** The current UCS's name as the header keeps it ('' unnamed). */
 function nameNow(ctx: CommandContext): string {
+  if (ownUcsViewport(ctx)) return '';
   const v = ctx.model.header.get((inPaper(ctx) ? UCS_VARIABLES.paper : UCS_VARIABLES.model).name);
   return typeof v === 'string' ? v : '';
 }
@@ -426,11 +460,12 @@ async function* applyUcs(ctx: CommandContext): Sub<void> {
 }
 
 export function ucsCommand(): CommandDef {
-  const history = new Map<boolean, Remembered[]>();
+  // Each space's last UCSs, and each viewport's keeping its own (M6-02 part 20).
+  const history = new Map<string, Remembered[]>();
   const stack = (ctx: CommandContext): Remembered[] => {
-    const paper = inPaper(ctx);
-    let s = history.get(paper);
-    if (!s) history.set(paper, (s = []));
+    const key = ownUcsViewport(ctx) ? `viewport ${ctx.viewport.current}` : String(inPaper(ctx));
+    let s = history.get(key);
+    if (!s) history.set(key, (s = []));
     return s;
   };
   const remember = (ctx: CommandContext, r: Remembered) => {
@@ -502,6 +537,47 @@ export function ucsCommand(): CommandDef {
       }
     },
   };
+}
+
+/**
+ * The viewport whose UCSVP SETVAR reads and sets (M6-02 part 20): the layout viewport made
+ * current, else the layout's paper-space viewport; undefined on the Model tab, whose VPORT's own
+ * (DXF 65) Triya does not read.
+ */
+function ucsVpViewport(ctx: CommandContext): { id: EntityId; geom: ViewportGeometry } | undefined {
+  const h = snapGridHolder(ctx.model, ctx.viewport);
+  if (h?.kind !== 'viewport') return undefined;
+  const id = ctx.model.ids.idOf(h.handle);
+  const geom = id === undefined ? undefined : ctx.model.entity(id)?.geom;
+  return id !== undefined && geom?.kind === 'VIEWPORT' ? { id, geom } : undefined;
+}
+
+/**
+ * UCSVP (AutoCAD 2024 Help, "UCSVP": 1 keeps the UCS stored in the viewport, 0 has it follow the
+ * current UCS; "Saved in: Drawing", initially 1): the viewport worked in's DXF 71. The Model tab
+ * shows AutoCAD's 1.
+ */
+export function ucsVpOf(ctx: CommandContext): number {
+  const vp = ucsVpViewport(ctx);
+  return !vp || vp.geom.ucsPerViewport ? 1 : 0;
+}
+
+/**
+ * Sets UCSVP in the viewport worked in, one undo step; turned on, the viewport keeps the UCS it
+ * shows now, so nothing turns (Help does not say; the common drafter expectation). False when
+ * there is no layout viewport to keep it in.
+ */
+export function setUcsVp(ctx: CommandContext, on: boolean): boolean {
+  const vp = ucsVpViewport(ctx);
+  if (!vp) return false;
+  if ((vp.geom.ucsPerViewport ?? false) === on) return true;
+  const shown = viewportUcs(vp.geom, ucsOf(ctx.model.header, false));
+  const a = ucsAxes(shown);
+  const ucs = on ? { ...a, elevation: vp.geom.ucs?.elevation ?? 0, orthographic: 0 } : vp.geom.ucs;
+  ctx.edit((b) =>
+    b.updateEntity(vp.id, { geom: { ...vp.geom, ucsPerViewport: on, ...(ucs && { ucs }) } }),
+  );
+  return true;
 }
 
 /** UCSICON's bits (DXF 74): the icon shows, and at the UCS's origin where it can. */

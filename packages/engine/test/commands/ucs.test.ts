@@ -21,6 +21,7 @@ import {
   type VportRecord,
   WORLD_UCS,
   viewportUcs,
+  UCSVP_IN_MODEL,
 } from '../../src/index';
 import { MODEL_SPACE, PAPER_SPACE, entityInit, sampleInit } from '../model/fixtures';
 
@@ -662,6 +663,81 @@ describe('a layout viewport’s own UCS (M3-15, UCSVP)', () => {
     }
     // Paper space's own viewport keeps no model space UCS.
     expect(s.geom('50').ucs).toBeUndefined();
+  });
+
+  // M6-02 part 20: a viewport made current with its UCSVP on works in its own UCS, and a UCS set
+  // there is kept in it (DXF 110–112), model space's header untouched (AutoCAD 2024 Help, "UCSVP").
+  const line = (s: ReturnType<typeof layout>) => {
+    const l = [...s.model.entities()].findLast((e) => e.geom.kind === 'LINE')!.geom;
+    if (l.kind !== 'LINE') throw new Error('no line');
+    return l;
+  };
+
+  it('works in a current viewport’s own UCS and keeps a UCS set there in it', async () => {
+    const s = layout(turned30);
+    // Into 52 (UCSVP 1, no UCS of its own yet: the WCS), at paper 200,50.
+    await s.bus.doubleClick({ x: 200, y: 50 });
+    await s.bus.submit('UCS');
+    expect(s.bus.history.at(-1)).toBe('Current ucs name:  *WORLD*');
+    // No Apply while in model space.
+    expect(s.bus.promptText).toBe(
+      'Specify origin of UCS or [NAmed/OBject/Previous/View/World/Z] <World>:',
+    );
+    await s.bus.script(['Z', '90']);
+    const g = s.geom('52');
+    expect(g.ucs?.xAxis.x).toBeCloseTo(0, 12);
+    expect(g.ucs?.xAxis.y).toBeCloseTo(1, 12);
+    // Model space's current UCS is as it was.
+    expect(ucsOf(s.model.header, false).angle).toBeCloseTo(deg(30), 12);
+    // Typed points read in it: 1,0 is world 0,1.
+    await s.bus.script(['LINE', '1,0', '2,0', '']);
+    expect(line(s).start.x).toBeCloseTo(0, 12);
+    expect(line(s).start.y).toBeCloseTo(1, 12);
+    // Previous goes back through this viewport's own; one undo step each.
+    await s.bus.script(['UCS', 'P']);
+    expect(viewportUcs(s.geom('52'), WORLD_UCS)).toEqual(WORLD_UCS);
+    await s.bus.submit('U');
+    expect(viewportUcs(s.geom('52'), WORLD_UCS).angle).toBeCloseTo(Math.PI / 2, 12);
+  });
+
+  it('works in model space’s current UCS in a viewport with UCSVP 0, and sets it there', async () => {
+    const s = layout(turned30);
+    // Into 51 (UCSVP 0), at paper 100,50.
+    await s.bus.doubleClick({ x: 100, y: 50 });
+    await s.bus.script(['LINE', '1,0', '2,0', '']);
+    expect(line(s).start.x).toBeCloseTo(5 + Math.cos(deg(30)), 12);
+    await s.bus.script(['UCS', 'W']);
+    expect(ucsOf(s.model.header, false)).toEqual(WORLD_UCS);
+    expect(s.geom('51').ucs).toBeUndefined();
+  });
+
+  it('SETVAR UCSVP reads and sets the viewport worked in’s', async () => {
+    const s = layout(turned30);
+    const variable = async (name: string) => {
+      await s.bus.script(['SETVAR', name, '']);
+      return s.bus.history.filter((l) => l.startsWith('Enter new value')).at(-1);
+    };
+    // Paper space: the paper-space viewport's, off.
+    expect(await variable('UCSVP')).toContain('<0>');
+    await s.bus.doubleClick({ x: 100, y: 50 });
+    expect(await variable('UCSVP')).toContain('<0>');
+    // Turned on, it keeps the UCS it shows (model space's, 30°), so nothing turns.
+    await s.bus.script(['SETVAR', 'UCSVP', '1']);
+    expect(s.geom('51').ucsPerViewport).toBe(true);
+    expect(viewportUcs(s.geom('51'), WORLD_UCS).angle).toBeCloseTo(deg(30), 12);
+    await s.bus.submit('U');
+    expect(s.geom('51').ucsPerViewport).toBeUndefined();
+    await s.bus.doubleClick({ x: 200, y: 50 }, true);
+    expect(await variable('UCSVP')).toContain('<1>');
+    // Turned off, the viewport follows model space's current UCS again.
+    await s.bus.script(['SETVAR', 'UCSVP', '0']);
+    expect(s.geom('52').ucsPerViewport).toBe(false);
+    // The Model tab: AutoCAD's 1, kept by layout viewports only.
+    const m = setup();
+    await m.bus.script(['SETVAR', 'UCSVP', '']);
+    expect(m.bus.history.at(-1)).toContain('<1>');
+    await m.bus.script(['SETVAR', 'UCSVP', '0']);
+    expect(m.bus.history.at(-1)).toBe(UCSVP_IN_MODEL);
   });
 
   it('does not offer Apply on the Model tab', async () => {

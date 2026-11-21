@@ -144,7 +144,7 @@ export {
   pspaceCommand,
 } from './mspace';
 export { UCS_ICON, currentUcs, objectUcs, ucsCommand, ucsIconCommand } from './ucs';
-export { setvarCommand, variableCommand, UNKNOWN_VARIABLE } from './setvar';
+export { setvarCommand, variableCommand, UNKNOWN_VARIABLE, UCSVP_IN_MODEL } from './setvar';
 export * from './sysvars';
 export * from '../selection/loop';
 export * from '../selection/rules';

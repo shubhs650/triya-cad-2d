@@ -14,7 +14,7 @@ import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
 import { OSNAP, type DeferredModes } from '../input/osnap';
 import { orthoPoint } from '../input/constrain';
-import { toUcs, toWorld, ucsOf, type PlanUcs } from '../input/ucs';
+import { toUcs, toWorld, ucsOf, viewportUcs, type PlanUcs } from '../input/ucs';
 import { ChangeSetBuilder } from '../model/builder';
 import { isXrefRecord } from '../model/xref';
 import { invertChangeSet, isEmptyChangeSet, type ChangeSet } from '../model/changeset';
@@ -1314,8 +1314,14 @@ export class PromptBus {
     };
   }
 
-  /** The current UCS of the space the commands draw in (M3-06 part 7). */
+  /**
+   * The current UCS of the space the commands draw in (M3-06 part 7): a layout viewport made
+   * current shows its own while its UCSVP is on (M6-02 part 20), as `currentUcs` has it.
+   */
   #ucs(): PlanUcs {
+    const vp = this.#currentViewport();
+    if (vp && !isPaperSpace(this.#model, this.#space()))
+      return viewportUcs(vp.geom, ucsOf(this.#model.header, false));
     return ucsOf(this.#model.header, isPaperSpace(this.#model, this.#space()));
   }
 

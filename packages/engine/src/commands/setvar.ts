@@ -14,6 +14,7 @@ import { wcmatch } from './modify/attributes';
 import type { Prompt, PromptAnswer } from './prompt';
 import { isPaperSpace, modelSpaceOf } from './bus';
 import { shownTwist } from './mspace';
+import { setUcsVp, ucsVpOf } from './ucs';
 import {
   annotationScaleValue,
   calendarDate,
@@ -42,6 +43,10 @@ import { inquiryResults } from './inquiry/inquiry';
 import { ANNOAUTOSCALE, ANNOAUTOSCALE_NOTICE } from '../annotation/annotation-scale';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
+
+/** SETVAR UCSVP on the Model tab (M6-02 part 20): Triya keeps it in layout viewports only. */
+export const UCSVP_IN_MODEL =
+  'UCSVP is kept by layout viewports: set it in one, or in paper space.';
 
 export const UNKNOWN_VARIABLE = 'Unknown variable name.  Type SETVAR ? for a list of variables.';
 
@@ -208,6 +213,8 @@ async function computed(
       return { value: ctx.viewport.maximized ? 1 : 0 };
     case 'VIEWTWIST':
       return { value: (shownTwist(ctx) * 180) / Math.PI };
+    case 'UCSVP':
+      return { value: ucsVpOf(ctx) };
     case 'REFEDITNAME':
       return { value: ctx.refEdit.session?.name ?? '' };
     case 'AREA':
@@ -317,6 +324,10 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
       return;
     }
     case 'computed':
+      if (v.name === 'UCSVP') {
+        if (!setUcsVp(ctx, value === 1)) ctx.message(UCSVP_IN_MODEL);
+        return;
+      }
       return showTab(ctx, v.name, value);
     case 'vport':
       return writeVport(ctx, v, value);
