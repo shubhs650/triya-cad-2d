@@ -11,13 +11,16 @@
 // current viewport, which a snapshot saved here is given too.
 //
 // Ambiguity: the Help says a view restores "layer visibility" and does not list the properties.
-// The common drafter expectation, which Triya follows, is the layers' On and Freeze settings (and
-// VP Freeze of a layout viewport once one can be made current, MSPACE, M6-02); the state keeps
+// The common drafter expectation, which Triya follows, is the layers' On and Freeze settings, and
+// VP Freeze in a layout viewport made current (M6-02 part 12): a snapshot saved while one is
+// keeps the layers' VP Freeze there (and is saved as a layout's, DXF 290), and restored while
+// one is sets VP Freeze there; one saved in model space leaves it alone. The state keeps
 // every property, as AutoCAD's does, but only those are restored, the current layer staying
 // current and thawed. A renamed view's snapshot is renamed with it, and a deleted view's goes
 // with it, so no hidden state is left that nothing restores.
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
+import type { Handle } from '../model/handle';
 import { LAYER_STATE_MASK, type LayerState, type ViewRecord } from '../model/types';
 import { layerStateNamed, restoreLayerVisibility, saveLayerState } from './layer-states';
 import { PAPER_VIEW } from './named-view';
@@ -48,6 +51,8 @@ export function saveViewLayers(
   b: ChangeSetBuilder,
   model: DocumentModel,
   view: ViewRecord,
+  /** The layout viewport made current: its VP Freeze is kept (M6-02 part 12). */
+  viewport?: Handle,
 ): string | undefined {
   const own = snapshotOf(model, view);
   const name = own?.name ?? viewLayerStateName(view.name);
@@ -55,6 +60,7 @@ export function saveViewLayers(
     mask: VIEW_LAYER_STATE_MASK,
     hidden: true,
     paperSpace: ((view.flags ?? 0) & PAPER_VIEW) !== 0,
+    viewport,
   });
   if (why) return why;
   if (view.layerState !== name) b.updateTableRecord('views', view.handle, { layerState: name });
@@ -88,12 +94,16 @@ export function renameViewLayers(
   b.updateTableRecord('views', view.handle, { layerState: to });
 }
 
-/** The view's layers as its snapshot has them, into `b`; false when it has none. */
+/**
+ * The view's layers as its snapshot has them, into `b`, VP Freeze too in the layout viewport
+ * `viewport` made current; false when it has none.
+ */
 export function restoreViewLayers(
   b: ChangeSetBuilder,
   model: DocumentModel,
   view: ViewRecord,
+  viewport?: Handle,
 ): boolean {
   const s = view.layerState === undefined ? undefined : layerStateNamed(model, view.layerState);
-  return s !== undefined && restoreLayerVisibility(b, model, s.handle);
+  return s !== undefined && restoreLayerVisibility(b, model, s.handle, viewport);
 }

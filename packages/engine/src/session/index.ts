@@ -36,7 +36,13 @@ import type { Vec2 } from '../geom/types';
 import type { Lasso } from '../selection/loop';
 import { ChangeSetBuilder } from '../model/builder';
 import { viewportViewProblem, withViewportView, type ViewportView } from '../layout/viewport-view';
-import { viewportLayerChange, type ViewportLayerProps } from '../edit/viewport-layer-edits';
+import {
+  layoutViewportProblem,
+  removeViewportOverridesChange,
+  viewportLayerChange,
+  type ViewportLayerProps,
+  type ViewportOverrideKey,
+} from '../edit/viewport-layer-edits';
 import { isEmptyChangeSet, type ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -159,6 +165,18 @@ export interface ViewportLayerEdit extends ViewportLayerProps {
 }
 
 /**
+ * The layer list menu's Remove Viewport Overrides For (M6-02 part 12): the overrides of `layers`
+ * (all layers when absent) in `viewport` (all viewports when absent), of `property` only or of
+ * every one. One LAYER step.
+ */
+export interface ViewportOverridesRemoveEdit {
+  readonly kind: 'viewport-overrides-remove';
+  readonly layers?: readonly Handle[];
+  readonly viewport?: Handle;
+  readonly property?: ViewportOverrideKey;
+}
+
+/**
  * The Layer States Manager's New (or an overwrite of the state so named), Restore, Delete, Edit
  * and Rename, and Import of a `.las` file's state (M5-07): one LAYERSTATE undo step each.
  */
@@ -168,12 +186,18 @@ export type NamedLayerStateEdit =
       readonly name: string;
       readonly description?: string;
       readonly mask?: number;
+      /** The layout viewport made current: its VP Freeze is saved (M6-02 part 12). */
+      readonly viewport?: Handle;
     }
   | {
       readonly kind: 'layer-state-restore';
       readonly state: Handle;
       /** "Turn off layers not found in layer state". */
       readonly turnOffMissing?: boolean;
+      /** The layout viewport made current: VP Freeze is restored there (M6-02 part 12). */
+      readonly viewport?: Handle;
+      /** "Apply properties as viewport overrides" in `viewport`. */
+      readonly asOverrides?: boolean;
     }
   | { readonly kind: 'layer-state-delete'; readonly state: Handle }
   | {
@@ -375,6 +399,8 @@ export interface NamedViewEdit {
    * now as the view's snapshot, false saves it without one; absent keeps what the view had.
    */
   readonly layers?: boolean;
+  /** The layout viewport made current: the snapshot keeps VP Freeze there (M6-02 part 12). */
+  readonly viewport?: Handle;
 }
 
 /**
@@ -390,12 +416,23 @@ export type ViewTableEdit =
    * Update Layers and the Layer snapshot row (M5-07 part 7): `save` saves the layers' settings
    * now as the view's snapshot, otherwise the view's snapshot goes.
    */
-  | { readonly kind: 'view-layers'; readonly name: string; readonly save: boolean }
+  | {
+      readonly kind: 'view-layers';
+      readonly name: string;
+      readonly save: boolean;
+      /** The layout viewport made current: VP Freeze there is kept (M6-02 part 12). */
+      readonly viewport?: Handle;
+    }
   /**
    * The View Manager's OK and Apply with a view set current (M5-07 part 7): the layers as the
    * view's snapshot has them, once the app shows the view; nothing when it has none.
    */
-  | { readonly kind: 'view-restore'; readonly name: string };
+  | {
+      readonly kind: 'view-restore';
+      readonly name: string;
+      /** The layout viewport made current: VP Freeze is restored there (M6-02 part 12). */
+      readonly viewport?: Handle;
+    };
 
 /**
  * A per-user system variable the app keeps that the drawing's engine follows: REVCLOUDGRIPS
@@ -472,6 +509,7 @@ export type EngineEdit =
   | ViewTableEdit
   | ViewportViewEdit
   | ViewportLayerEdit
+  | ViewportOverridesRemoveEdit
   | SessionVariableEdit
   | AliasEdit;
 
@@ -979,6 +1017,8 @@ export class EngineSession {
       return this.#viewTableEdit(e);
     if (e.kind === 'viewport-view') return this.#viewportView(e);
     if (e.kind === 'viewport-layer') return this.#viewportLayer(e);
+    if (e.kind === 'viewport-overrides-remove')
+      return this.#layerStep(removeViewportOverridesChange(this.model, e));
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     if (e.kind === 'fields') return this.#fieldEvent(e);
     if (
@@ -1028,10 +1068,13 @@ export class EngineSession {
     if (!validViewName(name)) return { ok: false, message: 'Invalid view name.' };
     const problem = viewCategoryProblem(e.category && viewCategory(e.category));
     if (problem) return { ok: false, message: problem };
+    const vpWhy =
+      e.viewport === undefined ? undefined : layoutViewportProblem(this.model, e.viewport);
+    if (vpWhy) return { ok: false, message: vpWhy };
     const b = new ChangeSetBuilder(this.model);
     const view = saveNamedView(b, this.model, name, e.view, e.category);
     if (e.layers === true) {
-      const why = saveViewLayers(b, this.model, view);
+      const why = saveViewLayers(b, this.model, view, e.viewport);
       if (why) return { ok: false, message: why };
     } else if (e.layers === false) {
       const before = this.model.tables.views.get(view.handle);
@@ -1069,17 +1112,20 @@ export class EngineSession {
     const named = (n: string) => views.find((v) => v.name.toUpperCase() === n.trim().toUpperCase());
     const view = named(e.name);
     if (!view) return { ok: false, message: `Cannot find view "${e.name.trim()}".` };
+    const viewport = e.kind === 'view-layers' || e.kind === 'view-restore' ? e.viewport : undefined;
+    const vpWhy = viewport === undefined ? undefined : layoutViewportProblem(this.model, viewport);
+    if (vpWhy) return { ok: false, message: vpWhy };
     const b = new ChangeSetBuilder(this.model);
     if (e.kind === 'view-delete') {
       dropViewLayers(b, this.model, view);
       b.removeTableRecord('views', view.handle);
     } else if (e.kind === 'view-layers') {
       if (e.save) {
-        const why = saveViewLayers(b, this.model, view);
+        const why = saveViewLayers(b, this.model, view, viewport);
         if (why) return { ok: false, message: why };
       } else dropViewLayers(b, this.model, view);
     } else if (e.kind === 'view-restore') {
-      restoreViewLayers(b, this.model, view);
+      restoreViewLayers(b, this.model, view, viewport);
     } else if (e.kind === 'view-category') {
       const category = viewCategory(e.category);
       const problem = viewCategoryProblem(category);
