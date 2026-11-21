@@ -3094,7 +3094,8 @@ function ViewportCanvas({
           point instanceof Promise ? point.then((r) => pick(r.point, r)) : pick(point),
         );
       },
-      onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
+      onDoubleClick: (point, paper) =>
+        engines.command(id, { kind: 'double-click', point, ...(paper && { paper }) }),
       onViewport: (viewport, maximized) => store.setViewport(id, block, viewport, maximized),
       // COMMANDPREVIEW (M3-12 part 6): the engine works out what a pick here would do.
       onCommandPreview: (q) =>

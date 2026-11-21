@@ -298,7 +298,11 @@ export interface CanvasHooks {
    * A left double click (M2-07 part 2): the world point under it, for the command engine to
    * edit the object there (TEXTEDIT on a text, AutoCAD's DBLCLKEDIT).
    */
-  readonly onDoubleClick?: (p: Vec2) => void;
+  /**
+   * `paper` (M6-02 part 9): the double click began outside the layout viewport current then,
+   * and `p` is the sheet's point.
+   */
+  readonly onDoubleClick?: (p: Vec2, paper?: true) => void;
   /**
    * The layout viewport worked in changed (MSPACE, PSPACE; M6-02 part 3), or was maximized or
    * restored (VPMAX, VPMIN; part 7): the status bar's.
@@ -451,6 +455,14 @@ export class CanvasController {
    * that frames it by the whole canvas, and its view there the canvas's own, which VPMIN drops.
    */
   #maximized = false;
+  /**
+   * The last left press outside the current layout viewport's frame (M6-02 part 9), which the
+   * engine takes to make the viewport there current, with its point on the sheet: a double click
+   * begun with it is that switch alone, not a pick or an edit in the viewport it went to.
+   */
+  #outsidePress:
+    | { readonly t: number; readonly x: number; readonly y: number; readonly paper: Vec2 }
+    | undefined;
   /** ZOOM Previous of the view of the viewport maximized, apart from its own. */
   #maximizedHistory = new ViewportHistories();
   /**
@@ -972,6 +984,7 @@ export class CanvasController {
     const current = handle !== undefined && geometry && this.#layout ? geometry : undefined;
     // VPMAX (M6-02 part 7): the viewport framed by the whole canvas, showing what it showed.
     const max = maximized && current && view && this.#size.width > 0 && this.#size.height > 0;
+    const before = this.#current?.handle;
     this.#current =
       handle !== undefined && current
         ? { handle, geom: max ? maximizedGeometry(current, view, this.#size) : current }
@@ -988,9 +1001,42 @@ export class CanvasController {
     this.#hits = [];
     this.#hit = undefined;
     this.#acquired = [];
+    // The grid is model space's through the viewport, paper space's on the sheet (M6-02 part 9).
+    if (this.#drafting.grid && (before === undefined) !== (this.#current === undefined)) {
+      this.#host.setStyle(this.#style());
+    }
     if (this.#prompt) this.#requestSnap();
     this.#track();
     if (this.#view && this.#size.width > 0) this.#host.frame();
+  }
+
+  /**
+   * A left press while a layout viewport is current (M6-02 part 9): one outside its frame is
+   * kept, as the engine switches to the viewport there (or does nothing, on the sheet between
+   * them). True for the second press of a double click begun with it, which is taken for nothing
+   * else: the canvas may not show the switch yet, and the viewport switched to has nothing to
+   * pick from that click.
+   */
+  #viewportPress(e: PointerEvent): boolean {
+    if (this.#outsideDouble(e, DOUBLE_CLICK_MS)) return true;
+    this.#outsidePress = undefined;
+    const c = this.#current;
+    const view = this.#view;
+    if (!c || this.#maximized || !view || this.#mode !== 'none') return false;
+    const { width, height } = this.#size;
+    const paper = screenToWorld(view, width, height, { x: e.offsetX, y: e.offsetY });
+    const g = c.geom;
+    const outside =
+      Math.abs(paper.x - g.center.x) > g.width / 2 || Math.abs(paper.y - g.center.y) > g.height / 2;
+    if (outside) this.#outsidePress = { t: e.timeStamp, x: e.offsetX, y: e.offsetY, paper };
+    return false;
+  }
+
+  /** The press outside the current viewport that `e`, within `ms` of it, doubles. */
+  #outsideDouble(e: MouseEvent, ms: number): { readonly paper: Vec2 } | undefined {
+    const o = this.#outsidePress;
+    if (!o || e.timeStamp - o.t >= ms) return undefined;
+    return Math.hypot(e.offsetX - o.x, e.offsetY - o.y) <= DOUBLE_CLICK_PX ? o : undefined;
   }
 
   /**
@@ -2201,7 +2247,8 @@ export class CanvasController {
     const display = gridDisplayOf({
       flags: vport?.gridFlags,
       limits: this.#layout ? undefined : this.#limits(),
-      layout: this.#layout !== undefined,
+      // Through a layout viewport made current the grid is model space's (M6-02 part 9).
+      layout: this.#layout !== undefined && !this.#current,
       gridStyle: this.#drafting.gridStyle,
     });
     // The grid runs along the UCS's axes turned by SNAPANG, from the snap base, which is a UCS
@@ -2766,6 +2813,7 @@ export class CanvasController {
         // A press in a viewport that is not current makes it current; AutoCAD takes the
         // left-button click that does so for nothing else.
         if (this.#activate() && e.button === 0) return;
+        if (e.button === 0 && this.#viewportPress(e)) return;
         if (e.button === 1) {
           // No autoscroll or paste on middle click.
           e.preventDefault();
@@ -2978,6 +3026,14 @@ export class CanvasController {
       'dblclick',
       (e) => {
         if (e.button !== 0 || this.#mode !== 'none') return;
+        // One begun outside the current viewport switches viewports, or goes to paper space,
+        // and edits nothing (M6-02 part 9).
+        const outside = this.#outsideDouble(e, 2 * DOUBLE_CLICK_MS);
+        if (outside) {
+          this.#outsidePress = undefined;
+          this.#hooks.onDoubleClick?.(outside.paper, true);
+          return;
+        }
         const world = this.#world(e);
         if (world) this.#hooks.onDoubleClick?.(world);
       },
