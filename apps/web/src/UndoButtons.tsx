@@ -6,6 +6,7 @@
 // a click elsewhere closes it.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { engines } from './engine/registry';
+import { Icon } from './ribbon/Icon';
 import { keymap, keymapVersion } from './shortcuts';
 import { undoButtons, undoList, undoListPick, undoStates } from './undo';
 
@@ -35,12 +36,13 @@ export function UndoButtons({ doc }: { readonly doc: number | undefined }) {
       <button
         type="button"
         className="undo-button"
+        aria-label="Undo"
         disabled={!undo.enabled}
         title={undo.title}
         aria-keyshortcuts="Control+Z"
         onClick={() => run('U')}
       >
-        Undo
+        <Icon name="arrow_undo" />
       </button>
       <ListButton
         kind="undo"
@@ -52,12 +54,13 @@ export function UndoButtons({ doc }: { readonly doc: number | undefined }) {
       <button
         type="button"
         className="redo-button"
+        aria-label="Redo"
         disabled={!redo.enabled}
         title={redo.title}
         aria-keyshortcuts="Control+Y"
         onClick={() => run('REDO')}
       >
-        Redo
+        <Icon name="arrow_redo" />
       </button>
       <ListButton
         kind="redo"

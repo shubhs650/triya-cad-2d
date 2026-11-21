@@ -3,10 +3,16 @@
 // the page never scrolls sideways, and from 1920 the ribbon is the full three-row labelled one
 // with every panel expanded. Its buttons run their commands; split buttons remember the entry
 // picked; compressed panels list the rest of their items; a double-clicked tab minimizes it.
+//
+// M7-02: at each width the app draws exactly the layout `ribbon-snapshots.test.ts` pins for its
+// breakpoint and compression step, every item with its icon; tooltips name the command, its
+// aliases and keys; the Quick Access Undo and Redo show Fluent's arrows.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { DXF, expectDrawn, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
+import { layoutTab, type Breakpoint } from '../../../apps/web/src/ribbon/layout';
+import { RIBBON_TABS } from '../../../apps/web/src/ribbon/ribbon.config';
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -32,6 +38,40 @@ async function open(page: Page, width: number, height = 900) {
   await openWithPicker(page, DXF);
   await expectShown(page, path.basename(DXF));
   await expectDrawn(page);
+}
+
+const tooltip = (page: Page) => page.getByRole('tooltip');
+
+/**
+ * The tab shown is drawn as layout.ts lays it out at the ribbon's breakpoint and compression
+ * step (the snapshot files pin those layouts): each panel's state, and its buttons' items, sizes
+ * and icons (a split button shows the icon of the entry it runs, the first until one is picked).
+ */
+async function expectLayoutOfSnapshot(page: Page, tabId: string) {
+  const got = await page.evaluate(() => {
+    const r = document.querySelector<HTMLElement>('[data-testid="ribbon"]')!;
+    const sizes = ['large-label', 'small-label', 'icon'];
+    return {
+      bp: r.dataset['breakpoint']!,
+      steps: Number(r.dataset['steps']),
+      panels: [...r.querySelectorAll<HTMLElement>('.ribbon-panel')].map((p) => ({
+        panel: p.dataset['panel'],
+        state: p.dataset['state'],
+        items: [...p.querySelectorAll<HTMLElement>('.ribbon-item')].map(
+          (b) =>
+            `${b.dataset['item']}:${sizes.find((s) => b.classList.contains(s))}:` +
+            b.querySelector<SVGElement>('svg[data-icon]')?.dataset['icon'],
+        ),
+      })),
+    };
+  });
+  const tab = RIBBON_TABS.find((t) => t.id === tabId)!;
+  const want = layoutTab(tab, got.bp as Breakpoint, got.steps).panels.map((p) => ({
+    panel: p.panel.id,
+    state: p.state,
+    items: p.shown.map((s) => `${s.item.id}:${s.size}:${(s.item.menu?.[0] ?? s.item).icon}`),
+  }));
+  expect(got.panels).toEqual(want);
 }
 
 const PROTECTED = ['Draw', 'Modify', 'Annotation'];
@@ -80,6 +120,7 @@ for (const [width, breakpoint] of [
     await open(page, width, width === 1366 ? 768 : 900);
     await expect(ribbon(page)).toHaveAttribute('data-breakpoint', breakpoint);
     await expectProtectedVisible(page, width);
+    await expectLayoutOfSnapshot(page, 'home');
     // The unprotected panels fit, compressed as far as needed, or scroll by themselves.
     const rest = await page.evaluate(() => {
       const r = document.querySelector('.ribbon-rest')!;
@@ -99,15 +140,21 @@ for (const [width, breakpoint] of [
         panel(page, 'Draw').getByRole('button', { name: 'Line', exact: true }),
       ).toHaveText(/Line/);
       const erase = panel(page, 'Modify').getByRole('button', { name: 'Erase', exact: true });
-      await expect(erase).toHaveAttribute('title', 'Erase');
       await expect(erase).not.toHaveText(/Erase/);
+      await erase.hover();
+      await expect(tooltip(page)).toContainText('Erase');
+      await expect(erase).toHaveAttribute('aria-describedby', 'ribbon-tooltip');
     } else {
       // One row of icons: no labels in the buttons.
       await expect(
         panel(page, 'Draw').getByRole('button', { name: 'Line', exact: true }),
       ).not.toHaveText(/Line/);
     }
+    await page.mouse.move(width / 2, 600);
     await shot(page, `${width}-home`);
+    await ribbon(page).getByRole('tab', { name: 'Insert' }).click();
+    await expectLayoutOfSnapshot(page, 'insert');
+    await shot(page, `${width}-insert`);
   });
 }
 
@@ -159,8 +206,12 @@ test('a button runs its command; a split button runs the entry picked last', asy
   await expect(prompt(page)).toHaveText('Command:');
   // The button now runs 2-Point, as AutoCAD's does.
   const circle = draw.getByRole('button', { name: 'Circle', exact: true });
-  await expect(circle).toHaveAttribute('title', 'Circle: 2-Point');
+  await expect(circle.locator('svg')).toHaveAttribute('data-icon', 'circle-2p');
+  await circle.hover();
+  await expect(tooltip(page).locator('.ribbon-tooltip-title')).toHaveText('Circle: 2-Point');
+  await expect(tooltip(page)).toContainText('CIRCLE 2P');
   await circle.click();
+  await expect(tooltip(page)).toHaveCount(0);
   await expect(prompt(page)).toHaveText(/^Specify first end point of circle's diameter/);
   await page.keyboard.press('Escape');
 });
@@ -198,4 +249,52 @@ test('a double-clicked tab minimizes the ribbon; a tab then pops its panels', as
   await page.keyboard.press('ArrowLeft');
   await expect(tabs.filter({ hasText: 'Home' })).toBeFocused();
   await expect(ribbon(page).getByRole('tabpanel', { name: 'Home' })).toBeVisible();
+});
+
+test('a rich tooltip names the command, its aliases and keys', async ({ page }) => {
+  await open(page, 1920);
+  const line = panel(page, 'Draw').getByRole('button', { name: 'Line', exact: true });
+  await line.hover();
+  // It waits for the pointer to rest, then shows AutoCAD's name, description and command.
+  const tip = tooltip(page);
+  await expect(tip).toBeVisible();
+  await expect(tip.locator('.ribbon-tooltip-title')).toHaveText('Line');
+  await expect(tip.locator('.ribbon-tooltip-text')).toHaveText(
+    'Creates straight line segments, each one a separate object.',
+  );
+  await expect(tip.locator('dt')).toHaveText(['Command', 'Alias']);
+  await expect(tip.locator('dd')).toHaveText(['LINE', 'L']);
+  // Under the button, inside the window.
+  const at = (await line.boundingBox())!;
+  const box = (await tip.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(at.y + at.height);
+  await shot(page, '1920-tooltip-line');
+  await page.mouse.move(960, 600);
+  await expect(tip).toHaveCount(0);
+
+  // The keys that run it too: Paste is Ctrl+V.
+  await panel(page, 'Clipboard').getByRole('button', { name: 'Paste', exact: true }).hover();
+  await expect(tip.locator('dd')).toHaveText(['PASTECLIP', 'Ctrl+V']);
+  await shot(page, '1920-tooltip-paste');
+  await page.mouse.move(960, 600);
+
+  // Keyboard focus shows it at once; Esc hides it.
+  await panel(page, 'Modify').getByRole('button', { name: 'Move', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  const copy = panel(page, 'Modify').getByRole('button', { name: 'Copy', exact: true });
+  await expect(copy).toBeFocused();
+  await expect(tip.locator('.ribbon-tooltip-title')).toHaveText('Copy');
+  await expect(tip.locator('dd')).toHaveText(['COPY', 'CO, CP']);
+  await page.keyboard.press('Escape');
+  await expect(tip).toHaveCount(0);
+});
+
+test('the Quick Access Undo and Redo show Fluent arrows', async ({ page }) => {
+  await open(page, 1366, 768);
+  await expect(
+    page.getByRole('button', { name: 'Undo', exact: true }).locator('svg'),
+  ).toHaveAttribute('data-icon', 'arrow_undo');
+  await expect(
+    page.getByRole('button', { name: 'Redo', exact: true }).locator('svg'),
+  ).toHaveAttribute('data-icon', 'arrow_redo');
 });

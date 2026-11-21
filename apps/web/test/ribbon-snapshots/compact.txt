@@ -1,0 +1,128 @@
+# compact
+
+## Home
+Draw (protected)
+  icon        line<line>
+  icon        polyline<polyline>
+  icon        circle<circle-cr> ▾ [circle-cr<circle-cr>, circle-2p<circle-2p>, circle-3p<circle-3p>, circle-ttr<circle-ttr>]
+  icon        arc<arc> ▾ [arc-3p<arc>, arc-cse<arc-cse>]
+  icon        rectangle<rectangle_landscape> ▾ [rectang<rectangle_landscape>, polygon<pentagon>]
+  icon        ellipse<ellipse-center> ▾ [ellipse-center<ellipse-center>, ellipse-axis<ellipse-axis>, ellipse-arc<ellipse-arc>]
+  icon        hatch<hatch> ▾ [hatch-hatch<hatch>, gradient<gradient>]
+  icon        spline<spline-fit> ▾ [spline-fit<spline-fit>, spline-cv<spline-cv>]
+  icon        xline<xline> ▾ [xline-xline<xline>, ray<ray>]
+  icon        point<point> ▾ [point-multiple<point>, divide<divide>, measure<measure>]
+  icon        revcloud<revcloud-rect> ▾ [revcloud-rect<revcloud-rect>, revcloud-poly<revcloud-poly>, revcloud-free<revcloud-free>, revcloud-object<revcloud-object>]
+  icon        wipeout<wipeout>
+Modify (protected)
+  icon        move<arrow_move>
+  icon        copy<copy_arrow_right>
+  icon        stretch<stretch>
+  icon        rotate<arrow_rotate_clockwise>
+  icon        mirror<flip_horizontal>
+  icon        scale<resize>
+  icon        trim<trim> ▾ [trim-trim<trim>, trim-extend<extend>]
+  icon        extend<extend>
+  icon        fillet<fillet> ▾ [fillet-fillet<fillet>, fillet-chamfer<chamfer>]
+  icon        chamfer<chamfer>
+  icon        array<array-rect> ▾ [array-rect<array-rect>, array-polar<array-polar>, array-path<array-path>]
+  icon        offset<offset>
+  icon        explode<explode>
+  icon        erase<eraser>
+  icon        break<break> ▾ [break-break<break>, break-at-point<break-at-point>]
+  icon        join<join>
+  icon        lengthen<lengthen>
+  icon        align<align>
+  icon        overkill<overkill>
+Annotation (protected)
+  icon        text<text_t> ▾ [mtext<text_t>, dtext<text_font>]
+  icon        dimension<dim-linear> ▾ [dim-linear<dim-linear>, dim-aligned<dim-aligned>, dim-angular<dim-angular>, dim-arc<dim-arc>, dim-radius<dim-radius>, dim-diameter<dim-diameter>, dim-jogged<dim-jogged>, dim-ordinate<dim-ordinate>]
+  icon        leader<mleader> ▾ [mleader<mleader>, mleader-add<mleader-add>, mleader-remove<mleader-remove>]
+  icon        table<table>
+  icon        centerline<centerline> ▾ [centerline-line<centerline>, centermark<centermark>]
+Layers (expanded)
+  icon        layer-properties<layer>
+  icon        layer-off<eye_off>
+  icon        layer-isolate<layer-isolate>
+  icon        layer-unisolate<layer_diagonal>
+  icon        layer-freeze<weather_snowflake>
+  icon        layer-lock<lock_closed>
+  icon        layer-unlock<lock_open>
+  icon        layer-on<eye>
+  icon        layer-thaw<weather_sunny>
+  icon        layer-make-current<checkmark_circle>
+  icon        layer-match<paint_brush_arrow_down>
+  icon        layer-previous<history>
+Block (expanded)
+  icon        insert<cube_arrow_curve_down>
+  icon        create<cube_add>
+  icon        edit<cube_tree>
+  icon        edit-attributes<tag_edit> ▾ [eattedit<tag_edit>, battman<tag_multiple>]
+Properties (expanded)
+  icon        match-properties<paint_brush>
+  icon        properties<apps_list_detail>
+Groups (expanded)
+  icon        group<group>
+  icon        ungroup<group_dismiss>
+  icon        group-edit<pen>
+  icon        group-manager<group_list>
+  icon        group-selection<select_object>
+  icon        group-box<border_outside>
+Utilities (expanded)
+  icon        measure-tools<ruler> ▾ [measure-geom<ruler>, dist<distance>, area<area>]
+  icon        quick-select<filter>
+  icon        id-point<location>
+  icon        list<text_bullet_list_square>
+Clipboard (expanded)
+  icon        paste<clipboard_paste> ▾ [pasteclip<clipboard_paste>, pasteblock<clipboard_more>, pasteorig<clipboard_arrow_right>]
+  icon        cut<cut>
+  icon        copy-clip<copy>
+  icon        copy-base<copy_select>
+
+### step 1
+Clipboard (collapsed)
+  ▾ paste, cut, copy-clip, copy-base
+
+### step 2
+Utilities (collapsed)
+  ▾ measure-tools, quick-select, id-point, list
+
+### step 3
+Groups (collapsed)
+  ▾ group, ungroup, group-edit, group-manager, group-selection, group-box
+
+### step 4
+Properties (compressed)
+  icon        match-properties<paint_brush>
+  ▾ properties
+
+### step 5
+Block (compressed)
+  icon        insert<cube_arrow_curve_down>
+  ▾ create, edit, edit-attributes
+
+### step 6
+Layers (compressed)
+  icon        layer-properties<layer>
+  ▾ layer-off, layer-isolate, layer-unisolate, layer-freeze, layer-lock, layer-unlock, layer-on, layer-thaw, layer-make-current, layer-match, layer-previous
+
+## Insert
+Block (expanded)
+  icon        insert<cube_arrow_curve_down>
+  icon        create<cube_add>
+  icon        define-attributes<tag_add>
+  icon        manage-attributes<tag_multiple>
+  icon        block-editor<cube_tree>
+  icon        edit-attribute<tag_edit>
+Reference (expanded)
+  icon        attach<attach> ▾ [xattach<attach>, imageattach<image_add>, pdfattach<document_pdf>]
+  icon        clip<crop>
+  icon        adjust<image_edit> ▾ [imageadjust<image_edit>, pdfadjust<document_edit>]
+  icon        xref-palette<link_multiple>
+  icon        bind<merge>
+  icon        underlay-layers<layer_diagonal>
+  icon        underlay-snap<target> ▾ [underlay-snap-on<target>, underlay-snap-off<target>]
+Import (expanded)
+  icon        pdf-import<arrow_import>
+Data (expanded)
+  icon        field<text_field>

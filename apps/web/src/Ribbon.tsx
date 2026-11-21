@@ -8,6 +8,10 @@
 // An item runs as the command typed at the command line would (`invoke`, cancelling a running
 // command unless it is transparent), then types its keywords; a toggle flips the drafting
 // setting. Items that run commands are greyed out with no drawing open.
+//
+// M7-02: items show their Fluent or CAD icons (ribbon/icons.ts), and a rich tooltip (AutoCAD's:
+// name, what it does, command, aliases, keys) after the pointer rests on one for TOOLTIP_DELAY, or
+// at once when the keyboard focuses it.
 import {
   useEffect,
   useLayoutEffect,
@@ -20,6 +24,10 @@ import {
 } from 'react';
 import { drafting, type DraftingToggle } from './drafting';
 import { engines } from './engine/registry';
+import { Icon } from './ribbon/Icon';
+import { tooltipOf, type Tooltip } from './ribbon/tooltips';
+import { keymap } from './shortcuts';
+import { appRegistry } from './user-aliases';
 import { ROWS, breakpointOf, layoutTab, type PanelLayout } from './ribbon/layout';
 import {
   RIBBON_TABS,
@@ -35,6 +43,17 @@ const viewport = {
   },
   width: () => window.innerWidth,
 };
+
+/** How long the pointer rests on an item before its tooltip shows (AutoCAD's is about 1 s). */
+export const TOOLTIP_DELAY = 500;
+
+const tooltipSources = {
+  aliasesOf: (command: string) => appRegistry.aliasesOf(command),
+  keysOf: (action: string) => keymap().keysOf(action),
+};
+
+/** The icon's size in pixels for an item size: big over a large button's label. */
+const iconSize = (size: ItemSize) => (size === 'large-label' ? 32 : 20);
 
 const toggleOf = (run: RibbonRun): DraftingToggle | undefined =>
   'action' in run && run.action.startsWith('drafting:')
@@ -59,6 +78,11 @@ function blurIfClicked(e: ReactMouseEvent<HTMLElement>) {
   if (e.detail > 0) e.currentTarget.blur();
 }
 
+interface TipState {
+  readonly tip: Tooltip;
+  readonly anchor: HTMLElement;
+}
+
 interface MenuState {
   readonly id: string;
   readonly label: string;
@@ -75,6 +99,8 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
   const [minimized, setMinimized] = useState(false);
   const [popped, setPopped] = useState(false);
   const [menu, setMenu] = useState<MenuState | undefined>();
+  const [tip, setTip] = useState<TipState | undefined>();
+  const tipTimer = useRef<number | undefined>(undefined);
   /** The entry each split button runs, by its id: the one picked last. */
   const [picked, setPicked] = useState<ReadonlyMap<string, RibbonItem>>(new Map());
   const tab = RIBBON_TABS.find((t) => t.id === tabId)!;
@@ -108,7 +134,21 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
     return () => window.removeEventListener('pointerdown', away);
   }, [popped]);
 
+  useEffect(() => () => window.clearTimeout(tipTimer.current), []);
+  const hideTip = () => {
+    window.clearTimeout(tipTimer.current);
+    setTip(undefined);
+  };
+  /** Shows `item`'s tooltip under `anchor`, after the rest delay unless `now`. */
+  const showTip = (item: RibbonItem, anchor: HTMLElement, now: boolean) => {
+    window.clearTimeout(tipTimer.current);
+    const show = () => setTip({ tip: tooltipOf(item, current(item), tooltipSources), anchor });
+    if (now) show();
+    else tipTimer.current = window.setTimeout(show, TOOLTIP_DELAY);
+  };
+
   const run = (item: RibbonItem) => {
+    hideTip();
     runItem(item.run, doc);
     setMenu(undefined);
     setPopped(false);
@@ -122,7 +162,10 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
   // `draftingState` re-renders the toggles' pressed state when a setting changes elsewhere.
   void draftingState;
 
-  const openMenu = (m: MenuState) => setMenu((was) => (was?.id === m.id ? undefined : m));
+  const openMenu = (m: MenuState) => {
+    hideTip();
+    setMenu((was) => (was?.id === m.id ? undefined : m));
+  };
 
   const button = (item: RibbonItem, size: ItemSize) => {
     const now = current(item);
@@ -133,17 +176,21 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
         className={`ribbon-item ${size}`}
         data-item={item.id}
         aria-label={item.label}
-        title={item.menu ? `${item.label}: ${now.label}` : item.label}
+        aria-describedby={tip?.anchor.dataset['item'] === item.id ? 'ribbon-tooltip' : undefined}
         disabled={disabled(now)}
         aria-pressed={pressed(now)}
         onClick={(e) => {
           blurIfClicked(e);
           run(now);
         }}
+        onPointerEnter={(e) => showTip(item, e.currentTarget, false)}
+        onPointerLeave={hideTip}
+        onFocus={(e) => {
+          if (e.currentTarget.matches(':focus-visible')) showTip(item, e.currentTarget, true);
+        }}
+        onBlur={hideTip}
       >
-        <span className="ribbon-glyph" aria-hidden="true">
-          {now.glyph}
-        </span>
+        <Icon name={now.icon} size={iconSize(size)} />
         {size !== 'icon' && <span className="ribbon-label">{item.label}</span>}
       </button>
     );
@@ -176,7 +223,7 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
 
   const panel = (p: PanelLayout) => {
     const id = `panel:${p.panel.id}`;
-    const more = (label: string, glyph: string) => (
+    const more = (label: string, icon?: RibbonItem['icon']) => (
       <button
         type="button"
         className={p.state === 'collapsed' ? 'ribbon-panel-button' : 'ribbon-overflow'}
@@ -188,11 +235,7 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
           openMenu({ id, label: p.panel.label, items: p.overflow, anchor: e.currentTarget })
         }
       >
-        {glyph && (
-          <span className="ribbon-glyph" aria-hidden="true">
-            {glyph}
-          </span>
-        )}
+        {icon && <Icon name={icon} />}
         <span aria-hidden="true">▾</span>
       </button>
     );
@@ -207,13 +250,13 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
       >
         <div className="ribbon-panel-items">
           {p.state === 'collapsed'
-            ? more(p.panel.label, p.panel.items[0]!.glyph)
+            ? more(p.panel.label, p.panel.items[0]!.icon)
             : p.shown.map((s) => (
                 <span key={s.item.id} className={`ribbon-cell ${s.size}`}>
                   {button(s.item, s.size)}
                 </span>
               ))}
-          {p.state === 'compressed' && more(`More ${p.panel.label} tools`, '')}
+          {p.state === 'compressed' && more(`More ${p.panel.label} tools`)}
         </div>
         <div className="ribbon-panel-title" aria-hidden="true">
           {p.panel.label}
@@ -246,6 +289,7 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
       ref={root}
       className={minimized ? 'ribbon minimized' : 'ribbon'}
       data-breakpoint={bp}
+      data-steps={steps}
       data-testid="ribbon"
     >
       <div className="ribbon-tabs" role="tablist" aria-label="Ribbon">
@@ -286,7 +330,8 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
           aria-label={tab.label}
           style={{ '--ribbon-rows': ROWS[bp] } as CSSProperties}
           onKeyDown={(e) => {
-            if (e.key === 'Escape' && popped) setPopped(false);
+            if (e.key === 'Escape' && tip) hideTip();
+            else if (e.key === 'Escape' && popped) setPopped(false);
           }}
         >
           {protectedPanels.length > 0 && (
@@ -297,6 +342,7 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
           </div>
         </div>
       )}
+      {tip && !menu && <RibbonTooltip {...tip} />}
       {menu && (
         <RibbonMenu
           menu={menu}
@@ -392,9 +438,7 @@ function RibbonMenu({
         aria-label={heading ? `${heading}: ${item.label}` : undefined}
         onClick={() => onPick(item)}
       >
-        <span className="ribbon-glyph" aria-hidden="true">
-          {item.glyph}
-        </span>
+        <Icon name={item.icon} />
         <span className="ribbon-menu-label">{item.label}</span>
       </button>
     );
@@ -421,6 +465,39 @@ function RibbonMenu({
             {item.menu.map((e) => entry(e, item.label))}
           </div>
         ),
+      )}
+    </div>
+  );
+}
+
+/** An item's rich tooltip under it, as AutoCAD's: name, what it does, command, aliases, keys. */
+function RibbonTooltip({ tip, anchor }: TipState) {
+  const at = anchor.getBoundingClientRect();
+  const rows: [string, string][] = [];
+  if (tip.command) rows.push(['Command', [tip.command, ...(tip.keywords ?? [])].join(' ')]);
+  if (tip.aliases.length)
+    rows.push([tip.aliases.length > 1 ? 'Aliases' : 'Alias', tip.aliases.join(', ')]);
+  if (tip.keys.length) rows.push([tip.keys.length > 1 ? 'Keys' : 'Key', tip.keys.join(', ')]);
+  return (
+    <div
+      id="ribbon-tooltip"
+      className="ribbon-tooltip"
+      role="tooltip"
+      style={{ left: Math.max(4, Math.min(at.left, window.innerWidth - 284)), top: at.bottom + 6 }}
+    >
+      <div className="ribbon-tooltip-title">{tip.title}</div>
+      {tip.description && <p className="ribbon-tooltip-text">{tip.description}</p>}
+      {rows.length > 0 && (
+        <dl className="ribbon-tooltip-meta">
+          {rows.map(([k, v]) => (
+            <div key={k}>
+              <dt>{k}</dt>
+              <dd>
+                <kbd>{v}</kbd>
+              </dd>
+            </div>
+          ))}
+        </dl>
       )}
     </div>
   );
