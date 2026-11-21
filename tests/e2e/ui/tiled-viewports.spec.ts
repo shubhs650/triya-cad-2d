@@ -5,9 +5,11 @@
 // configuration (AutoCAD DXF reference, VPORT): the left half (10/11 = 0,0 – 0.5,1) looks at a
 // circle at the origin, 20 units high; the right half (0.5,0 – 1,1) at a circle at (100, 0),
 // 40 units high. No public corpus file saves more than one `*Active` VPORT.
+// M6-02 part 10: -VPORTS divides the current viewport, goes back to one, and saves and restores a
+// named configuration; the canvases follow, each new viewport starting on the current view.
 import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { activeCanvas, expectShown, openWithPicker, worldAt } from '../app/page';
+import { activeCanvas, enterCommand, expectShown, openWithPicker, worldAt } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -53,6 +55,14 @@ const DRAWING = [
   ...circle('101', 100, 10),
   ...['0', 'ENDSEC', '0', 'EOF'],
 ].join('\n');
+
+/** The same drawing with one viewport, the left one's view filling the window. */
+const SINGLE = DRAWING.replace(vport('2F', [0.5, 0], [1, 1], [100, 0], 40).join('\n') + '\n', '')
+  .replace(
+    vport('2E', [0, 0], [0.5, 1], [0, 0], 20).join('\n'),
+    vport('2E', [0, 0], [1, 1], [0, 0], 20).join('\n'),
+  )
+  .replace('70\n2\n0\nVPORT', '70\n1\n0\nVPORT');
 
 /** The model canvases of the drawing, current or not. */
 const tiles = (page: Page) => page.locator('canvas[aria-label^="Model"]');
@@ -124,5 +134,57 @@ test.describe('tiled model-space viewports', () => {
     v = await view(page);
     expect(Math.abs(v.c.x)).toBeLessThan(2 * v.u);
     expect(v.height).toBeCloseTo(20, 0);
+  });
+
+  test('-VPORTS divides the viewport, saves, goes back to one and restores (M6-02 part 10)', async ({
+    page,
+  }) => {
+    const file = test.info().outputPath('one-viewport.dxf');
+    writeFileSync(file, SINGLE);
+    await page.goto(app.url);
+    await openWithPicker(page, file);
+    await expectShown(page, 'one-viewport.dxf');
+    await expect(tiles(page)).toHaveCount(1);
+
+    // 2, Vertical (the default): two side by side, the left one current, both on the view.
+    await enterCommand(page, '-VPORTS');
+    await enterCommand(page, '2');
+    await enterCommand(page, '');
+    await expect(tiles(page)).toHaveCount(2);
+    await expect(tiles(page).nth(0)).toHaveAttribute('data-active', 'true');
+    const [left, right] = [
+      (await tiles(page).nth(0).boundingBox())!,
+      (await tiles(page).nth(1).boundingBox())!,
+    ];
+    expect(Math.abs(left.width - right.width)).toBeLessThanOrEqual(2);
+    expect(right.x).toBeGreaterThanOrEqual(left.x + left.width - 2);
+    let v = await view(page);
+    expect(Math.abs(v.c.x)).toBeLessThan(2 * v.u);
+    expect(v.height).toBeCloseTo(20, 0);
+    await page.mouse.click(right.x + right.width / 2, right.y + right.height / 2);
+    await expect(tiles(page).nth(1)).toHaveAttribute('data-active', 'true');
+    v = await view(page);
+    expect(Math.abs(v.c.x)).toBeLessThan(2 * v.u);
+    expect(v.height).toBeCloseTo(20, 0);
+
+    // Saved as Pair, then one viewport again, then Pair restored.
+    await enterCommand(page, '-VPORTS');
+    await enterCommand(page, 'S');
+    await enterCommand(page, 'Pair');
+    await enterCommand(page, '-VPORTS');
+    await enterCommand(page, 'SI');
+    await expect(tiles(page)).toHaveCount(1);
+    v = await view(page);
+    expect(v.height).toBeCloseTo(20, 0);
+    await enterCommand(page, '-VPORTS');
+    await enterCommand(page, 'R');
+    await enterCommand(page, 'Pair');
+    await expect(tiles(page)).toHaveCount(2);
+    // Pair was saved with the right one current, so it comes back first.
+    await expect(tiles(page).nth(0)).toHaveAttribute('data-active', 'true');
+
+    // U puts the single viewport back.
+    await enterCommand(page, 'U');
+    await expect(tiles(page)).toHaveCount(1);
   });
 });

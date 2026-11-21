@@ -72,6 +72,9 @@ export type AuditSaveKind =
   // VPLAYER Color, LWeight, TRansparency, Freeze, Vpvisdflt and Newfrz in every floating viewport
   // of the AC1032 sample, text_in_viewports.dxf and viewport-overrides.dxf (M6-02 part 5).
   | 'vplayer'
+  // -VPORTS 3, 4 and SIngle on model space's tiles, named configurations saved, restored and
+  // deleted: VPORT records in the AC1032 sample and colors.dxf (M6-02 part 10).
+  | 'vports'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).

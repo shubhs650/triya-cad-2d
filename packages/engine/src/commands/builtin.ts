@@ -53,6 +53,7 @@ import { mleaderstyleCommand } from './mleaderstyle';
 import { dashDimstyleCommand } from './dimstyle-dash';
 import { SNAP_GRID_COMMANDS } from './snap-grid';
 import { mviewCommand } from './mview';
+import { dashVportsCommand } from './vports';
 import { mspaceCommand, pspaceCommand } from './mspace';
 import { vpclipCommand } from './vpclip';
 import { vpmaxCommand, vpminCommand } from './vpmax';
@@ -208,6 +209,7 @@ export function builtinCommands(): CommandRegistry {
     ...SNAP_GRID_COMMANDS.map((make) => make()),
     ...UCS_COMMANDS.map((make) => make()),
     mviewCommand(),
+    dashVportsCommand(),
     mspaceCommand(),
     pspaceCommand(),
     vpclipCommand(),
