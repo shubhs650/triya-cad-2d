@@ -228,6 +228,9 @@ export const CAD_GLYPHS = {
   'dim-override': { d: 'M3.5 4.5v12M16.5 4.5v12M3.5 8.5h13M8 15.5l5.5-5.5 1.5 1.5-5.5 5.5H8z' },
   'mleader-align': { d: 'M2.5 9.5l5-5h4M2.5 17.5l5-5h4M14.5 2.5v15' },
   'mleader-collect': { d: 'M2.5 16.5l7-7h3M12.5 5.5h2v2h-2zM15.5 5.5h2v2h-2zM12.5 9.5h2v2h-2z' },
+  // Text Editor (M7-02 part 5): an overlined T; a stacked fraction.
+  'text-overline': { d: 'M4.5 3.5h11M6.5 6.5h7M10 6.5v10' },
+  'text-stack': { d: 'M5.5 3.5v5M3.5 10.5h13M12.5 12.5h3l-3 4h3M14.5 3.5l-9 13' },
   // View, Tools (M7-02 part 2)
   'ucs-icon': { d: 'M4.5 3.5v13h12M2.5 5.5l2-2 2 2M14.5 14.5l2 2-2 2', dots: [[4.5, 16.5]] },
   ucs: { d: 'M4.5 3.5v13h12M2.5 5.5l2-2 2 2M14.5 14.5l2 2-2 2M7.5 13.5l6-6' },

@@ -170,6 +170,20 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'underlay-snap-off': 'Stops snapping to the geometry of PDF underlays.',
   'pdf-import': 'Attaches a PDF page as an underlay to trace over.',
   field: 'Inserts a field that updates with the data it shows.',
+  // Text Editor (M7-02 part 5)
+  'text-bold':
+    'Turns bold on or off for the selected text, or the text typed next (TrueType only).',
+  'text-italic':
+    'Turns italic on or off for the selected text, or the text typed next (TrueType only).',
+  'text-underline': 'Turns underlining on or off for the selected text, or the text typed next.',
+  'text-overline': 'Turns overlining on or off for the selected text, or the text typed next.',
+  'text-strike': 'Turns strikethrough on or off for the selected text, or the text typed next.',
+  'text-stack': 'Stacks the selected text around its /, # or ^ as a fraction or tolerance.',
+  'text-paragraph': 'Sets the tabs, indents, alignment and spacing of the paragraph.',
+  'text-columns': 'Flows the text into columns, or breaks a column here.',
+  'text-field': 'Inserts a field that updates with the data it shows.',
+  'text-spell': 'Underlines the words the dictionaries do not have as you type.',
+  'close-text-editor': 'Closes the Text Editor and keeps the text.',
   // Annotate (M7-02 part 2)
   'text-style':
     'Shows the current text style; pick another to make it current, or manage the text styles.',

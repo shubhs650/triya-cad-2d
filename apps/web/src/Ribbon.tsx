@@ -43,6 +43,7 @@ import {
   type ControlState,
 } from './ribbon/RibbonControls';
 import { ribbonPropertiesStore, runningCommands } from './ribbon/ribbon-properties';
+import { textEditorActionOf, textEditorBridge } from './ribbon/text-editor-bridge';
 import { SelectColorDialog } from './SelectColorDialog';
 import { tooltipOf, type Tooltip } from './ribbon/tooltips';
 import { keymap } from './shortcuts';
@@ -119,6 +120,8 @@ function runItem(
     if (doc !== undefined) engines.command(doc, { kind: 'cancel' });
     return;
   }
+  const text = 'action' in run ? textEditorActionOf(run.action) : undefined;
+  if (text !== undefined) return textEditorBridge.run(text);
   const palette = actionArg(run, 'palette:');
   if (palette !== undefined) return paletteStack.set(palette as PaletteName);
   const theme = actionArg(run, 'theme:');
@@ -179,10 +182,12 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonPr
   /** The entry each split button runs, by its id: the one picked last. */
   const [picked, setPicked] = useState<ReadonlyMap<string, RibbonItem>>(new Map());
   const command = useSyncExternalStore(runningCommands.subscribe, () => runningCommands.get(doc));
+  const textEditor = useSyncExternalStore(textEditorBridge.subscribe, textEditorBridge.get);
   const contextual = contextualTabOf({
     command,
     selection: properties?.selection,
     blockEditor,
+    textEditor: textEditor !== undefined,
   });
   const tabs = contextual ? [...RIBBON_TABS, contextual] : RIBBON_TABS;
   // A contextual tab is brought up as it appears; as it goes, the tab shown before it is back.
@@ -255,11 +260,21 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonPr
     setMenu(undefined);
     setPopped(false);
   };
+  const textActionOf = (item: RibbonItem) =>
+    'action' in item.run ? textEditorActionOf(item.run.action) : undefined;
+  const textDisabled = (item: RibbonItem) => {
+    const a = textActionOf(item);
+    return a !== undefined && textEditor?.disabled[a] === true;
+  };
   const disabled = (item: RibbonItem) =>
     item.unavailable !== undefined ||
-    (doc === undefined && ('command' in item.run || item.control !== undefined));
+    (doc === undefined && ('command' in item.run || item.control !== undefined)) ||
+    textDisabled(item);
   const current = (item: RibbonItem) => (item.menu ? (picked.get(item.id) ?? item.menu[0]!) : item);
   const pressed = (item: RibbonItem) => {
+    // The Text Editor tab's toggles (part 5): on at the editor's caret or across its selection.
+    const text = textActionOf(item);
+    if (text !== undefined) return textEditor?.pressed[text];
     const t = toggleOf(item.run);
     return t === undefined || 'on' in item.run ? undefined : drafting.isOn(t);
   };
@@ -496,6 +511,12 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonPr
       data-breakpoint={bp}
       data-steps={steps}
       data-testid="ribbon"
+      // The Text Editor tab is the in-place editor's toolbar: clicking it keeps the editor open,
+      // and its buttons keep the editor's focus and selection (part 5).
+      data-keeps-text-editor={tab.id === 'text-editor' ? '' : undefined}
+      onMouseDown={(e) => {
+        if (tab.id === 'text-editor' && (e.target as Element).closest('button')) e.preventDefault();
+      }}
     >
       <div className="ribbon-tabs" role="tablist" aria-label="Ribbon">
         {tabs.map((t, i) => (

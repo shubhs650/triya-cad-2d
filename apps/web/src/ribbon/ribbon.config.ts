@@ -813,7 +813,8 @@ export const RIBBON_TABS: readonly RibbonTab[] = [
 export type RibbonWhen =
   | { readonly commands: readonly string[] }
   | { readonly selection: RibbonSelection }
-  | { readonly blockEditor: true };
+  | { readonly blockEditor: true }
+  | { readonly textEditor: true };
 
 export interface ContextualTab extends RibbonTab {
   readonly when: RibbonWhen;
@@ -824,6 +825,8 @@ export interface RibbonContext {
   readonly command?: string | undefined;
   readonly selection?: RibbonSelection | undefined;
   readonly blockEditor?: boolean | undefined;
+  /** MTEXT's in-place editor is open (part 5). */
+  readonly textEditor?: boolean | undefined;
 }
 
 /** The last panel of every contextual tab: AutoCAD's Close button, which never compresses. */
@@ -1234,11 +1237,69 @@ const BLOCK_EDITOR: ContextualTab = {
   ],
 };
 
+/** A button of the Text Editor tab: one of the in-place editor's actions. */
+const textTool = (
+  id: string,
+  label: string,
+  icon: IconName,
+  action: string,
+  sizes: ItemSizes = ICON,
+): RibbonItem => ({ id, label, icon, sizes, run: { action: `text:${action}` } });
+
 /**
- * The contextual tabs, in the order their rules are tried: a command's first (a command's tab
+ * AutoCAD's Text Editor tab, while MTEXT's in-place editor is open: the editor's Text Formatting
+ * toolbar on the ribbon (its font, height and colour fields stay on the toolbar).
+ */
+const TEXT_EDITOR: ContextualTab = {
+  id: 'text-editor',
+  label: 'Text Editor',
+  when: { textEditor: true },
+  panels: [
+    {
+      id: 'formatting',
+      label: 'Formatting',
+      compress: { order: 4, keep: ['text-bold', 'text-italic', 'text-underline'] },
+      items: [
+        textTool('text-bold', 'Bold', 'text_bold', 'bold', SECONDARY),
+        textTool('text-italic', 'Italic', 'text_italic', 'italic', SECONDARY),
+        textTool('text-underline', 'Underline', 'text_underline', 'underline', SECONDARY),
+        textTool('text-overline', 'Overline', 'text-overline', 'overline'),
+        textTool('text-strike', 'Strikethrough', 'text_strikethrough', 'strike'),
+        textTool('text-stack', 'Stack', 'text-stack', 'stack'),
+      ],
+    },
+    {
+      id: 'paragraph',
+      label: 'Paragraph',
+      compress: { order: 3, keep: ['text-paragraph'] },
+      items: [textTool('text-paragraph', 'Paragraph', 'text_paragraph', 'paragraph', BIG)],
+    },
+    {
+      id: 'insert',
+      label: 'Insert',
+      compress: { order: 2, keep: ['text-columns'] },
+      items: [
+        textTool('text-columns', 'Columns', 'text_column_two', 'columns', BIG),
+        textTool('text-field', 'Field', 'text_field', 'field', BIG),
+      ],
+    },
+    {
+      id: 'spell-check',
+      label: 'Spell Check',
+      compress: { order: 1, keep: ['text-spell'] },
+      items: [textTool('text-spell', 'Spell Check', 'text_grammar_checkmark', 'spell', LABELLED)],
+    },
+    close('close-text-editor', 'Close Text Editor', { action: 'text:close' }),
+  ],
+};
+
+/**
+ * The contextual tabs, in the order their rules are tried: the Text Editor's first (it is the
+ * toolbar of the text being typed, whatever command runs), then a command's (a command's tab
  * shows over the selection's), then the Block Editor's, then a selection's.
  */
 export const CONTEXTUAL_TABS: readonly ContextualTab[] = [
+  TEXT_EDITOR,
   HATCH_CREATION,
   ARRAY_CREATION_RECT,
   ARRAY_CREATION_POLAR,
@@ -1259,6 +1320,8 @@ export function contextualTabOf(context: RibbonContext): ContextualTab | undefin
       ? context.command !== undefined && t.when.commands.includes(context.command)
       : 'blockEditor' in t.when
         ? context.blockEditor === true
-        : context.selection === t.when.selection,
+        : 'textEditor' in t.when
+          ? context.textEditor === true
+          : context.selection === t.when.selection,
   );
 }

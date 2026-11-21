@@ -336,6 +336,46 @@ Drawing Utilities (compressed)
   icon        units<ruler>
   ▾ health, purge, recover
 
+## Text Editor (contextual: text-editor)
+Formatting (expanded)
+  icon        text-bold<text_bold>
+  icon        text-italic<text_italic>
+  icon        text-underline<text_underline>
+  icon        text-overline<text-overline>
+  icon        text-strike<text_strikethrough>
+  icon        text-stack<text-stack>
+Paragraph (expanded)
+  icon        text-paragraph<text_paragraph>
+Insert (expanded)
+  icon        text-columns<text_column_two>
+  icon        text-field<text_field>
+Spell Check (expanded)
+  icon        text-spell<text_grammar_checkmark>
+Close (expanded)
+  icon        close-text-editor<dismiss_circle>
+
+### step 1
+Spell Check (compressed)
+  icon        text-spell<text_grammar_checkmark>
+  ▾ 
+
+### step 2
+Insert (compressed)
+  icon        text-columns<text_column_two>
+  ▾ text-field
+
+### step 3
+Paragraph (compressed)
+  icon        text-paragraph<text_paragraph>
+  ▾ 
+
+### step 4
+Formatting (compressed)
+  icon        text-bold<text_bold>
+  icon        text-italic<text_italic>
+  icon        text-underline<text_underline>
+  ▾ text-overline, text-strike, text-stack
+
 ## Hatch Creation (contextual: hatch-creation)
 Boundaries (expanded)
   icon        pick-points<cursor_click>

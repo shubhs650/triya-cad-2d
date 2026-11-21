@@ -220,7 +220,7 @@ describe('the data model', () => {
             expect(toggles.has(i.run.action), where).toBe(true);
           else if (!i.control)
             expect(i.run.action, where).toMatch(
-              /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts)|escape)$/,
+              /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts)|escape|text:(bold|italic|underline|overline|strike|stack|paragraph|columns|field|spell|close))$/,
             );
           // A dropdown (M7-02 part 3) opens its own list.
           if (i.control) expect(i.run, where).toEqual({ action: `control:${i.control}` });
@@ -250,6 +250,10 @@ describe('the data model', () => {
     // A command's tab shows over the Block Editor's, and that over a selection's.
     expect(shown({ command: 'HATCH', selection: 'hatch' })).toBe('hatch-creation');
     expect(shown({ blockEditor: true, selection: 'hatch' })).toBe('block-editor');
+    // The Text Editor's tab (part 5) shows over every other while the in-place editor is open.
+    expect(shown({ textEditor: true })).toBe('text-editor');
+    expect(shown({ textEditor: true, command: 'MTEXT', selection: 'hatch' })).toBe('text-editor');
+    expect(shown({ textEditor: false, command: 'MTEXT' })).toBeUndefined();
     // Every contextual tab ends with its Close button, which never gives up room; its other
     // panels compress in a distinct order, keeping items they have.
     for (const t of CONTEXTUAL_TABS) {
