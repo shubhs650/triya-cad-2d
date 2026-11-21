@@ -577,7 +577,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 **Exit criteria:** `UI_SPEC.md` fully implemented; T9 passes; all dialogs listed in PRD FR-U7 exist; theme/keyboard/settings complete; a11y baseline.
 
-- [ ] **M7-01** Ribbon data model + responsive layout algorithm (labelled 3-row at ≥1920, collapse rules, Home Draw/Modify/Annotate never overflow). **Acceptance:** T9 Playwright at 1280/1366/1600/1920/2560. *From M5-04 (#579):* Insert > Reference's "Snap to Underlays" button (AutoCAD's split button, ON and OFF) runs the `drafting:underlaySnap` toggle (UOSNAP), in the Ctrl+K palette until then.
+- [~] (thread: Ship first M7 roadmap task) **M7-01** Ribbon data model + responsive layout algorithm (labelled 3-row at ≥1920, collapse rules, Home Draw/Modify/Annotate never overflow). **Acceptance:** T9 Playwright at 1280/1366/1600/1920/2560. *From M5-04 (#579):* Insert > Reference's "Snap to Underlays" button (AutoCAD's split button, ON and OFF) runs the `drafting:underlaySnap` toggle (UOSNAP), in the Ctrl+K palette until then.
 
 - [ ] **M7-02** All tabs/panels per `UI_SPEC.md` with Fluent icons, tooltips with command names/aliases/F-keys, hover/press animations, contextual tabs (Hatch, MText, Table, Block Editor, Xref). **Acceptance:** snapshot tests per breakpoint. *Added from M2-36 (#287):* Fluent icons on the Quick Access Undo and Redo split buttons.
 
