@@ -4,7 +4,14 @@
 // removing it in Settings takes the lines away again.
 import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { expectDrawn, expectShown, ink, openWithDrop, openWithPicker } from '../app/page';
+import {
+  expectDrawn,
+  expectShown,
+  ink,
+  openWithDrop,
+  openWithPicker,
+  openOptions,
+} from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -102,8 +109,7 @@ test('a dropped .pat draws a hatch saved without lines, and stays after a reload
   await expect(page.getByRole('tab', { name: 'custom-hatch.dxf' })).toHaveCount(1);
 
   // Removing the file in Settings takes the lines away.
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Files');
   await expect(settings.getByRole('list', { name: 'Pattern files' })).toContainText('my-grid.pat');
   await settings.getByRole('button', { name: 'Remove my-grid.pat' }).click();
   await expect(settings.getByText('No pattern files added.')).toBeVisible();
@@ -119,8 +125,7 @@ test('Settings adds .pat files with its picker and refuses one without patterns'
   await page.goto(app.url);
   const bare = await openDrawing(page, dxf);
 
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Files');
   await expect(settings).toBeVisible();
   await expect(settings.getByText('No pattern files added.')).toBeVisible();
 

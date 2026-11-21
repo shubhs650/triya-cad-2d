@@ -5,7 +5,7 @@
 // rules are unit-tested in apps/web/test/keymap.test.ts and shortcuts.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
-import { DXF, expectShown, openWithPicker } from '../app/page';
+import { DXF, expectShown, openWithPicker, openOptions } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -88,8 +88,7 @@ test("AutoCAD's keys, a command given a key, kept, and reset", async ({ page }) 
   await flips(page, 'F8', 'ORTHO');
 
   // Settings opens it too; F3 removed from OSNAP leaves Ctrl+F, and the tooltip follows.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'User Preferences');
   await settings.getByRole('button', { name: 'Edit shortcut keys…' }).click();
   await list.getByRole('option', { name: /^Object Snap on\/off/ }).click();
   await dialog(page).getByRole('button', { name: 'Remove F3' }).click();

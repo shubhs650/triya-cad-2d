@@ -40,6 +40,11 @@
 //
 // -EXPORT (M2-39 part 5) asks for the export at the command line instead: see export-script.ts.
 //
+// OPTIONS (M7-04): AutoCAD 2024 Help, "OPTIONS (Command)": "Customizes the program settings"
+// through the Options dialog box. What it sets is the app's per-user settings (AutoCAD keeps them
+// in the registry, Triya in its preferences), so the command asks the app to show its dialog and
+// waits until it closes. It runs transparently ('OPTIONS), as AutoCAD's does, and edits nothing.
+//
 // NEW and QNEW (M5-10): AutoCAD 2024 Help, "NEW": "Creates a new drawing" from the template chosen
 // in the Select Template dialog box; "QNEW": "Starts a new drawing from the default drawing
 // template file", opening Select Template when none is set. The new drawing is the app's (a tab of
@@ -60,6 +65,20 @@ function fileCommand(name: string, action: FileAction): CommandDef {
     // eslint-disable-next-line require-yield -- the host does the prompting (its dialogs)
     async *run(ctx) {
       await viewRequest(ctx, { op: 'file', action });
+    },
+  };
+}
+
+/** OPTIONS (OP): the app's Options dialog, inside another command too. */
+function optionsCommand(): CommandDef {
+  return {
+    name: 'OPTIONS',
+    transparent: true,
+    usesSelection: 'none',
+    keepsSelection: true,
+    // eslint-disable-next-line require-yield -- the app's dialog does the asking
+    async *run(ctx) {
+      await viewRequest(ctx, { op: 'file', action: 'options' });
     },
   };
 }
@@ -252,6 +271,7 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => plotCommand('PRINT'),
   pageSetupCommand,
   () => fileCommand('PUBLISH', 'publish'),
+  optionsCommand,
   previewCommand,
   () => exportCommand('EXPORT', 'export'),
   () => exportCommand('EXPORTPDF', 'exportpdf'),

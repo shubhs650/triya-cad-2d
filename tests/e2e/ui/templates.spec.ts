@@ -10,7 +10,7 @@
 import { copyFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { enterCommand, expectDrawn, expectShown } from '../app/page';
+import { enterCommand, expectDrawn, expectShown, openOptions } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -103,8 +103,7 @@ test.describe('the user templates folder and Open with no template (M5-10 part 2
     const notes = test.info().outputPath('notes.dxf');
     writeFileSync(notes, 'not a drawing');
     await page.goto(app.url);
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    const settings = page.getByRole('dialog', { name: 'Settings' });
+    const settings = await openOptions(page, 'Files');
     await expect(settings).toBeVisible();
     await settings.getByRole('heading', { name: 'Templates' }).scrollIntoViewIfNeeded();
     await expect(settings.getByText('No templates added.')).toBeVisible();

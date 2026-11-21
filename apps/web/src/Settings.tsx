@@ -1,10 +1,20 @@
-// Settings (UI_SPEC.md §1 title bar, M2-20): the chrome's theme, the canvas colours and the
-// coordinate display (AutoCAD's OPTIONS > Display), the object snap settings (DRAFTINGSETTINGS
-// and OPTIONS > Drafting), the user's files the app draws with, hatch pattern files (M1-50) and
-// font files (M1-38, M1-37), as OPTIONS > Files lists its support files, and "Clear all local
-// data" (PRD FR-F11). One scrolling modal <dialog>, so focus stays inside it and Esc closes it.
+// Options (OPTIONS, OP; UI_SPEC.md §1 title bar's Settings, M2-20; tabbed in M7-04): the app's
+// per-user settings in AutoCAD 2024's Options dialog's tabs and labels (AutoCAD Help, "Options
+// Dialog Box"). Files: the user's files the app draws with, hatch pattern files (M1-50), font
+// files (M1-38, M1-37), linetypes, layer states and templates, as AutoCAD's Files tab lists its
+// support files. Display: the chrome's theme, the canvas colours, the coordinate display, layout
+// elements and fade control. Open and Save: how Triya saves (DXF only, DEC-047) and keeps recovery
+// copies. Plot and Publish: plot style tables and plot transparency. System: "Clear all local
+// data" (PRD FR-F11). User Preferences: command aliases, shortcut keys and fields. Drafting:
+// AutoSnap, AutoTrack and the drafting aids. Selection: pickbox, grips and selection modes.
+// Settings apply as they change and are kept between sessions, so the dialog has Close where
+// AutoCAD's has OK, Cancel and Apply. One modal <dialog>: focus stays inside and Esc closes it.
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { GripColorsDialog } from './GripColorsDialog';
+import { TooltipAppearanceDialog } from './DraftingSettingsDialog';
+import { OPTIONS_TABS, nextTab, optionsDialog, type OptionsTab } from './options-dialog';
+import { AUTOSAVE_DELAY_MS } from './recovery';
+import { RECENT_MAX } from './recent';
 import { OSNAP, OSNAP_MODES } from '@triya/engine';
 import {
   AUTOSNAP_MAGNET,
@@ -90,175 +100,238 @@ export function Settings({
     if (!open && d.open) d.close();
   }, [open]);
 
+  const { tab } = useSyncExternalStore(optionsDialog.subscribe, optionsDialog.get);
+  const id = useId();
+  const tabs = useRef<HTMLDivElement>(null);
+  const panel = (t: OptionsTab) => ({
+    role: 'tabpanel',
+    id: `${id}-${t}-panel`,
+    'aria-labelledby': `${id}-${t}-tab`,
+    className: 'options-panel',
+    hidden: tab !== t,
+  });
+
   return (
     <dialog ref={dialog} className="settings" aria-labelledby="settings-title" onClose={onClose}>
-      <h2 id="settings-title">Settings</h2>
-      <DisplaySettings preferences={preferences} />
-      <DraftingSettings />
-      <section aria-labelledby="patterns-title">
-        <h3 id="patterns-title">Hatch patterns</h3>
-        <p>
-          Your .pat files draw hatches saved without their pattern lines, ahead of the bundled
-          patterns. They stay on this device. You can also drop them on the window.
-        </p>
-        {files.length === 0 ? (
-          <p className="empty">No pattern files added.</p>
-        ) : (
-          <ul aria-label="Pattern files">
-            {files.map((f) => (
-              <li key={f.name}>
-                <span className="file-name">{f.name}</span>
-                <span className="pattern-names">{f.patterns.join(', ')}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${f.name}`}
-                  onClick={() => void patterns.remove(f.name)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {/* The shell's banners sit behind the modal, so the outcome of adding shows here. */}
-        {error && (
-          <p className="message error" role="alert">
-            {error}
+      <h2 id="settings-title">Options</h2>
+      {/* AutoCAD's tabs (options-dialog.ts), a tab list moved along with the arrow keys. */}
+      <div
+        ref={tabs}
+        role="tablist"
+        aria-label="Options"
+        className="cad-dialog-tabs options-tabs"
+        onKeyDown={(e) => {
+          const to = nextTab(tab, e.key);
+          if (!to) return;
+          e.preventDefault();
+          optionsDialog.showTab(to);
+          tabs.current?.querySelector<HTMLElement>(`#${CSS.escape(`${id}-${to}-tab`)}`)?.focus();
+        }}
+      >
+        {OPTIONS_TABS.map(({ tab: t, label }) => (
+          <button
+            key={t}
+            id={`${id}-${t}-tab`}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            aria-controls={`${id}-${t}-panel`}
+            tabIndex={tab === t ? 0 : -1}
+            onClick={() => optionsDialog.showTab(t)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {/* Every tab stays mounted, hidden while another shows, so what a tab holds (a file being
+          added, Clear all local data's question) outlives switching tabs, as AutoCAD's does. */}
+      <div {...panel('files')}>
+        <section aria-labelledby="patterns-title">
+          <h3 id="patterns-title">Hatch patterns</h3>
+          <p>
+            Your .pat files draw hatches saved without their pattern lines, ahead of the bundled
+            patterns. They stay on this device. You can also drop them on the window.
           </p>
-        )}
-        {notice && (
-          <p className="message" role="status">
-            {notice}
+          {files.length === 0 ? (
+            <p className="empty">No pattern files added.</p>
+          ) : (
+            <ul aria-label="Pattern files">
+              {files.map((f) => (
+                <li key={f.name}>
+                  <span className="file-name">{f.name}</span>
+                  <span className="pattern-names">{f.patterns.join(', ')}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${f.name}`}
+                    onClick={() => void patterns.remove(f.name)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* The shell's banners sit behind the modal, so the outcome of adding shows here. */}
+          {error && (
+            <p className="message error" role="alert">
+              {error}
+            </p>
+          )}
+          {notice && (
+            <p className="message" role="status">
+              {notice}
+            </p>
+          )}
+          <button type="button" onClick={() => picker.current?.click()}>
+            Add pattern files…
+          </button>
+          <input
+            ref={picker}
+            type="file"
+            accept=".pat"
+            multiple
+            hidden
+            data-testid="pattern-picker"
+            onChange={(e) => {
+              onAdd(e.currentTarget.files ?? []);
+              e.currentTarget.value = '';
+            }}
+          />
+        </section>
+        <section aria-labelledby="fonts-title">
+          <h3 id="fonts-title">Fonts</h3>
+          <p>
+            Your SHX, TrueType and OpenType files draw the text styles that name them, instead of
+            the bundled stand-in. They stay on this device. You can also drop them on the window.
           </p>
-        )}
-        <button type="button" onClick={() => picker.current?.click()}>
-          Add pattern files…
-        </button>
-        <input
-          ref={picker}
-          type="file"
-          accept=".pat"
-          multiple
-          hidden
-          data-testid="pattern-picker"
-          onChange={(e) => {
-            onAdd(e.currentTarget.files ?? []);
-            e.currentTarget.value = '';
-          }}
+          {fontState.files.length === 0 ? (
+            <p className="empty">No font files added.</p>
+          ) : (
+            <ul aria-label="Font files">
+              {fontState.files.map((f) => (
+                <li key={f.name}>
+                  <span className="file-name">{f.name}</span>
+                  <span className="pattern-names">{f.kind}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${f.name}`}
+                    onClick={() => void fonts.remove(f.name)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {fontState.error && (
+            <p className="message error" role="alert">
+              {fontState.error}
+            </p>
+          )}
+          {fontState.notice && (
+            <p className="message" role="status">
+              {fontState.notice}
+            </p>
+          )}
+          <button type="button" onClick={() => fontPicker.current?.click()}>
+            Add font files…
+          </button>
+          <input
+            ref={fontPicker}
+            type="file"
+            accept=".shx,.ttf,.otf,.ttc"
+            multiple
+            hidden
+            data-testid="font-picker"
+            onChange={(e) => {
+              onAddFonts(e.currentTarget.files ?? []);
+              e.currentTarget.value = '';
+            }}
+          />
+          <InstalledFonts state={device} onAllow={() => void deviceFonts.allow()} />
+        </section>
+        <SupportFiles
+          title="Linetypes"
+          about="Your .lin files, for loading linetypes beside the bundled ISO set. They stay on this device. You can also drop them on the window."
+          empty="No linetype files added."
+          listLabel="Linetype files"
+          button="Add linetype files…"
+          accept=".lin"
+          testId="linetype-picker"
+          store={linetypes}
+          onAdd={onAddFiles}
         />
-      </section>
-      <section aria-labelledby="fonts-title">
-        <h3 id="fonts-title">Fonts</h3>
-        <p>
-          Your SHX, TrueType and OpenType files draw the text styles that name them, instead of the
-          bundled stand-in. They stay on this device. You can also drop them on the window.
-        </p>
-        {fontState.files.length === 0 ? (
-          <p className="empty">No font files added.</p>
-        ) : (
-          <ul aria-label="Font files">
-            {fontState.files.map((f) => (
-              <li key={f.name}>
-                <span className="file-name">{f.name}</span>
-                <span className="pattern-names">{f.kind}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${f.name}`}
-                  onClick={() => void fonts.remove(f.name)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {fontState.error && (
-          <p className="message error" role="alert">
-            {fontState.error}
-          </p>
-        )}
-        {fontState.notice && (
-          <p className="message" role="status">
-            {fontState.notice}
-          </p>
-        )}
-        <button type="button" onClick={() => fontPicker.current?.click()}>
-          Add font files…
-        </button>
-        <input
-          ref={fontPicker}
-          type="file"
-          accept=".shx,.ttf,.otf,.ttc"
-          multiple
-          hidden
-          data-testid="font-picker"
-          onChange={(e) => {
-            onAddFonts(e.currentTarget.files ?? []);
-            e.currentTarget.value = '';
-          }}
+        <SupportFiles
+          title="Layer states"
+          about="Your .las layer state files, which -LAYER's stAte Import finds by name, as AutoCAD finds them in its support path. stAte EXport keeps the files it writes here too. They stay on this device. You can also drop them on the window."
+          empty="No layer state files added."
+          listLabel="Layer state files"
+          button="Add layer state files…"
+          accept=".las"
+          testId="layer-state-picker"
+          store={layerStates}
+          onAdd={onAddFiles}
         />
-        <InstalledFonts state={device} onAllow={() => void deviceFonts.allow()} />
-      </section>
-      <SupportFiles
-        title="Plot style tables"
-        about="Your .ctb and .stb files, for plotting beside the bundled tables. They stay on this device. You can also drop them on the window."
-        empty="No plot style tables added."
-        listLabel="Plot style tables"
-        button="Add plot style tables…"
-        accept=".ctb,.stb"
-        testId="plot-style-picker"
-        store={plotStyles}
-        onAdd={onAddFiles}
-      />
-      <SupportFiles
-        title="Linetypes"
-        about="Your .lin files, for loading linetypes beside the bundled ISO set. They stay on this device. You can also drop them on the window."
-        empty="No linetype files added."
-        listLabel="Linetype files"
-        button="Add linetype files…"
-        accept=".lin"
-        testId="linetype-picker"
-        store={linetypes}
-        onAdd={onAddFiles}
-      />
-      <SupportFiles
-        title="Layer states"
-        about="Your .las layer state files, which -LAYER's stAte Import finds by name, as AutoCAD finds them in its support path. stAte EXport keeps the files it writes here too. They stay on this device. You can also drop them on the window."
-        empty="No layer state files added."
-        listLabel="Layer state files"
-        button="Add layer state files…"
-        accept=".las"
-        testId="layer-state-picker"
-        store={layerStates}
-        onAdd={onAddFiles}
-      />
-      <SupportFiles
-        title="Templates"
-        about="Your .dxf drawing templates, listed in the Select Template dialog (NEW) after the bundled ones. Each is opened as it is added, to check that a drawing can start from it. They stay on this device."
-        empty="No templates added."
-        listLabel="Template files"
-        button="Add templates…"
-        accept=".dxf"
-        testId="template-picker"
-        store={templates}
-        onAdd={onAddTemplates}
-      />
-      <section aria-labelledby="aliases-title">
-        <h3 id="aliases-title">Command aliases</h3>
-        <p>Your own aliases, in acad.pgp syntax, run in place of the default ones.</p>
-        <button type="button" onClick={onEditAliases}>
-          Edit aliases…
-        </button>
-      </section>
-      <section aria-labelledby="shortcuts-title">
-        <h3 id="shortcuts-title">Keyboard shortcuts</h3>
-        <p>AutoCAD&apos;s shortcut keys (F1–F12, Ctrl+…), and your own for any command.</p>
-        <button type="button" onClick={onEditShortcuts}>
-          Edit shortcut keys…
-        </button>
-      </section>
-      <LocalData onClearAll={onClearAll} />
-      <form method="dialog">
+        <SupportFiles
+          title="Templates"
+          about="Your .dxf drawing templates, listed in the Select Template dialog (NEW) after the bundled ones. Each is opened as it is added, to check that a drawing can start from it. They stay on this device."
+          empty="No templates added."
+          listLabel="Template files"
+          button="Add templates…"
+          accept=".dxf"
+          testId="template-picker"
+          store={templates}
+          onAdd={onAddTemplates}
+        />
+      </div>
+      <div {...panel('display')}>
+        <DisplaySettings preferences={preferences} />
+      </div>
+      <div {...panel('opensave')}>
+        <OpenSaveSettings />
+      </div>
+      <div {...panel('plot')}>
+        {/* AutoCAD's Plot and Publish tab: Add or Edit Plot Style Tables. */}
+        <SupportFiles
+          title="Plot style tables"
+          about="Your .ctb and .stb files, for plotting beside the bundled tables. They stay on this device. You can also drop them on the window."
+          empty="No plot style tables added."
+          listLabel="Plot style tables"
+          button="Add plot style tables…"
+          accept=".ctb,.stb"
+          testId="plot-style-picker"
+          store={plotStyles}
+          onAdd={onAddFiles}
+        />
+        <PlotSettings />
+      </div>
+      <div {...panel('system')}>
+        <LocalData onClearAll={onClearAll} />
+      </div>
+      <div {...panel('user')}>
+        <section aria-labelledby="aliases-title">
+          <h3 id="aliases-title">Command aliases</h3>
+          <p>Your own aliases, in acad.pgp syntax, run in place of the default ones.</p>
+          <button type="button" onClick={onEditAliases}>
+            Edit aliases…
+          </button>
+        </section>
+        <section aria-labelledby="shortcuts-title">
+          <h3 id="shortcuts-title">Keyboard shortcuts</h3>
+          <p>AutoCAD&apos;s shortcut keys (F1–F12, Ctrl+…), and your own for any command.</p>
+          <button type="button" onClick={onEditShortcuts}>
+            Edit shortcut keys…
+          </button>
+        </section>
+        <UserPreferenceSettings />
+      </div>
+      <div {...panel('drafting')}>
+        <DraftingSettings />
+      </div>
+      <div {...panel('selection')}>
+        <SelectionSettings />
+      </div>
+      <form method="dialog" className="options-buttons">
         <button type="submit">Close</button>
       </form>
     </dialog>
@@ -415,8 +488,7 @@ function DisplaySettings({ preferences }: { preferences: PreferencesStore }) {
   const setCanvas = (patch: Partial<CanvasColours>) =>
     preferences.update({ canvas: { ...p.canvas, ...patch } });
   return (
-    <section aria-labelledby={`${id}-display`}>
-      <h3 id={`${id}-display`}>Display</h3>
+    <section>
       <div className="setting-row">
         <label htmlFor={`${id}-theme`}>Color theme</label>
         <select
@@ -469,6 +541,14 @@ function DisplaySettings({ preferences }: { preferences: PreferencesStore }) {
           <option value="decimal">Decimal</option>
         </select>
       </div>
+      <label className="setting-check">
+        <input
+          type="checkbox"
+          checked={d.rolloverTips}
+          onChange={(e) => drafting.configure({ rolloverTips: e.currentTarget.checked })}
+        />
+        Show rollover tooltips (ROLLOVERTIPS)
+      </label>
       {/* M6-06: AutoCAD's Options > Display > Layout elements, for a new layout first shown. */}
       <fieldset>
         <legend>Layout elements</legend>
@@ -490,6 +570,17 @@ function DisplaySettings({ preferences }: { preferences: PreferencesStore }) {
           />
           Create viewport in new layouts (LAYOUTCREATEVIEWPORT)
         </label>
+      </fieldset>
+      {/* Display > Fade control: what is not in REFEDIT's working set (M5-02 part 5). */}
+      <fieldset>
+        <legend>Fade control</legend>
+        <Slider
+          id={`${id}-xfade`}
+          label="In-place edit and annotative representations (XFADECTL)"
+          range={X_FADES}
+          value={d.xFade}
+          onChange={(xFade) => drafting.configure({ xFade })}
+        />
       </fieldset>
     </section>
   );
@@ -563,119 +654,182 @@ const SELECTION_PREVIEW_CHECKS = [
 ] as const;
 
 /**
- * OPTIONS > Drafting's AutoSnap and AutoTrack settings, AUTOSNAP's bits but POLAR's and OTRACK's
- * (the status bar's buttons), labelled as AutoCAD 2024's Options dialog labels them (M2-59).
+ * OPTIONS > Drafting's AutoSnap Settings, AUTOSNAP's bits but POLAR's and OTRACK's (the status
+ * bar's buttons) and AutoTrack's tooltip (a group of its own), labelled as AutoCAD 2024's Options
+ * dialog labels them (M2-59).
  */
 const AUTOSNAP_CHECKS = [
   { bit: AUTOSNAP_MARKER, label: 'Marker' },
   { bit: AUTOSNAP_MAGNET, label: 'Magnet' },
   { bit: AUTOSNAP_TIP, label: 'Display AutoSnap tooltip' },
-  { bit: AUTOSNAP_TRACK_TIP, label: 'Display AutoTrack tooltip' },
 ] as const;
 
+/** A slider with its value beside it, as the Options dialog's sizes and fades show. */
+function Slider(props: {
+  id: string;
+  label: string;
+  range: { readonly min: number; readonly max: number };
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="setting-row">
+      <label htmlFor={props.id}>{props.label}</label>
+      <span>
+        <input
+          id={props.id}
+          type="range"
+          min={props.range.min}
+          max={Math.max(props.range.max, props.value)}
+          value={props.value}
+          onChange={(e) => props.onChange(Number(e.currentTarget.value))}
+        />
+        <span className="range-value">{props.value}</span>
+      </span>
+    </div>
+  );
+}
+
+/** A check box for a setting, labelled with what AutoCAD calls it. */
+function Check(props: { checked: boolean; onChange: (on: boolean) => void; children: string }) {
+  return (
+    <label className="setting-check">
+      <input
+        type="checkbox"
+        checked={props.checked}
+        onChange={(e) => props.onChange(e.currentTarget.checked)}
+      />
+      {props.children}
+    </label>
+  );
+}
+
+/** XFADECTL's range (AutoCAD 2024 system variable reference): 0 to 90 percent. */
+const X_FADES = { min: 0, max: 90 } as const;
+/** PICKBOX's range: 0 to 50 pixels. */
+const PICKBOXES = { min: 0, max: 50 } as const;
+
 /**
- * DRAFTINGSETTINGS' object snap modes and polar increment, OPTIONS > Drafting's AutoSnap
- * settings, Alignment point acquisition (POLARMODE 8, M3-06 part 3) and marker and aperture sizes, OPTIONS > Selection's grip size, Grip Colors (M3-05 part 5) and Noun/verb selection, and
- * Dynamic Input. They act on the status bar's drafting aids,
- * which keep them between sessions (preferences.ts).
+ * OPTIONS > Open and Save (M7-04), as Triya's are fixed: it saves AutoCAD 2018 DXF only (DEC-047),
+ * keeps a recovery copy of each changed drawing on this device a few seconds after its last edit
+ * (M2-14) where AutoCAD's SAVETIME counts minutes, and lists the drawings opened last.
+ */
+function OpenSaveSettings() {
+  const id = useId();
+  return (
+    <section>
+      <fieldset>
+        <legend>File Save</legend>
+        <div className="setting-row">
+          <label htmlFor={`${id}-saveas`}>Save as</label>
+          <select id={`${id}-saveas`} disabled value="AC1032">
+            <option value="AC1032">AutoCAD 2018 DXF (*.dxf)</option>
+          </select>
+        </div>
+        <p>Drawings are saved as DXF files only, whatever they were opened from.</p>
+      </fieldset>
+      <fieldset>
+        <legend>File Safety Precautions</legend>
+        <p>
+          Automatic save: a recovery copy of each changed drawing is kept on this device{' '}
+          {AUTOSAVE_DELAY_MS / 1000} seconds after its last edit, and offered again after a crash
+          (DRAWINGRECOVERY).
+        </p>
+      </fieldset>
+      <fieldset>
+        <legend>File Open</legend>
+        <div className="setting-row">
+          <label htmlFor={`${id}-recent`}>Number of recently-used files</label>
+          <output id={`${id}-recent`}>{RECENT_MAX}</output>
+        </div>
+      </fieldset>
+    </section>
+  );
+}
+
+/** PLOTTRANSPARENCYOVERRIDE's values, as AutoCAD's system variable reference describes them. */
+const PLOT_TRANSPARENCY = [
+  { value: 1, label: 'As each page setup or plot says' },
+  { value: 0, label: 'Never' },
+  { value: 2, label: 'Always' },
+] as const;
+
+/** OPTIONS > Plot and Publish (M7-04): whether plots show object transparency (M6-04 part 2). */
+function PlotSettings() {
+  const d = useSyncExternalStore(drafting.subscribe, drafting.get);
+  const id = useId();
+  return (
+    <fieldset>
+      <legend>Plot transparency (PLOTTRANSPARENCYOVERRIDE)</legend>
+      {PLOT_TRANSPARENCY.map(({ value, label }) => (
+        <label key={value} className="setting-check">
+          <input
+            type="radio"
+            name={`${id}-transparency`}
+            checked={d.plotTransparencyOverride === value}
+            onChange={() => drafting.configure({ plotTransparencyOverride: value })}
+          />
+          {label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+/** OPTIONS > User Preferences > Fields (M7-04): FIELDDISPLAY (M4-10 part 3). */
+function UserPreferenceSettings() {
+  const d = useSyncExternalStore(drafting.subscribe, drafting.get);
+  return (
+    <fieldset>
+      <legend>Fields</legend>
+      <Check
+        checked={d.fieldDisplay}
+        onChange={(fieldDisplay) => drafting.configure({ fieldDisplay })}
+      >
+        Display background of fields (FIELDDISPLAY)
+      </Check>
+    </fieldset>
+  );
+}
+
+/**
+ * OPTIONS > Drafting: AutoSnap and AutoTrack settings (AUTOSNAP's bits but POLAR's and OTRACK's,
+ * M2-59), the marker and aperture sizes, Alignment point acquisition (POLARMODE 8, M3-06 part 3),
+ * PDFOSNAP and Drafting Tooltip Settings (DSETTINGS' Tooltip Appearance, M3-06 part 8); and the
+ * drafting aids DSETTINGS also sets (the running object snap modes, the polar increment and
+ * Dynamic Input), which the status bar's buttons follow and the preferences keep.
  */
 function DraftingSettings() {
   const d = useSyncExternalStore(drafting.subscribe, drafting.get);
   const dyn = useSyncExternalStore(dynMode.subscribe, dynMode.get);
   const id = useId();
-  const [gripColors, setGripColors] = useState(false);
+  const [appearance, setAppearance] = useState(false);
+  const autosnap = (bit: number, label: string) => (
+    <Check
+      key={bit}
+      checked={(d.autosnap & bit) !== 0}
+      onChange={(on) => drafting.configure({ autosnap: on ? d.autosnap | bit : d.autosnap & ~bit })}
+    >
+      {label}
+    </Check>
+  );
   return (
-    <section aria-labelledby={`${id}-drafting`}>
-      <h3 id={`${id}-drafting`}>Drafting</h3>
+    <section>
       <fieldset>
-        <legend>Object Snap modes</legend>
-        <div className="osnap-modes">
-          {OSNAP_MODES.map(({ mode, label }) => (
-            <label key={mode}>
-              <input
-                type="checkbox"
-                checked={(d.osmode & OSNAP[mode]) !== 0}
-                onChange={(e) => drafting.setMode(mode, e.currentTarget.checked)}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
+        <legend>AutoSnap Settings</legend>
+        {AUTOSNAP_CHECKS.map(({ bit, label }) => autosnap(bit, label))}
       </fieldset>
-      <div className="setting-row">
-        <label htmlFor={`${id}-polar`}>Polar increment angle</label>
-        <select
-          id={`${id}-polar`}
-          value={String(d.polarAngle)}
-          onChange={(e) => drafting.configure({ polarAngle: Number(e.currentTarget.value) })}
-        >
-          {POLAR_ANGLES.map((a) => (
-            <option key={a} value={String(a)}>
-              {a}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="setting-row">
-        <label htmlFor={`${id}-marker`}>AutoSnap marker size</label>
-        <span>
-          <input
-            id={`${id}-marker`}
-            type="range"
-            min={MARKER_SIZES.min}
-            max={MARKER_SIZES.max}
-            value={d.markerSize}
-            onChange={(e) => drafting.configure({ markerSize: Number(e.currentTarget.value) })}
-          />
-          <span className="range-value">{d.markerSize}</span>
-        </span>
-      </div>
-      <div className="setting-row">
-        <label htmlFor={`${id}-aperture`}>Aperture size</label>
-        <span>
-          <input
-            id={`${id}-aperture`}
-            type="range"
-            min={APERTURES.min}
-            max={APERTURES.max}
-            value={d.aperture}
-            onChange={(e) => drafting.configure({ aperture: Number(e.currentTarget.value) })}
-          />
-          <span className="range-value">{d.aperture}</span>
-        </span>
-      </div>
-      <div className="setting-row">
-        <label htmlFor={`${id}-grip`}>Grip size</label>
-        <span>
-          <input
-            id={`${id}-grip`}
-            type="range"
-            min={GRIP_SLIDER.min}
-            max={Math.max(GRIP_SLIDER.max, d.gripSize)}
-            value={d.gripSize}
-            onChange={(e) => drafting.configure({ gripSize: Number(e.currentTarget.value) })}
-          />
-          <span className="range-value">{d.gripSize}</span>
-        </span>
-      </div>
-      <div className="setting-row">
-        <span>Grip colors</span>
-        <button type="button" onClick={() => setGripColors(true)}>
-          Grip Colors...
-        </button>
-      </div>
-      {gripColors && (
-        // AutoCAD's Options > Selection > Grip Colors (M3-05 part 5): GRIPCOLOR, GRIPHOT,
-        // GRIPHOVER and GRIPCONTOUR.
-        <GripColorsDialog
-          initial={d.gripColors}
-          onOk={(c) => {
-            drafting.configure({ gripColors: c });
-            setGripColors(false);
-          }}
-          onCancel={() => setGripColors(false)}
-        />
-      )}
+      <Slider
+        id={`${id}-marker`}
+        label="AutoSnap marker size"
+        range={MARKER_SIZES}
+        value={d.markerSize}
+        onChange={(markerSize) => drafting.configure({ markerSize })}
+      />
+      <fieldset>
+        <legend>AutoTrack Settings</legend>
+        {autosnap(AUTOSNAP_TRACK_TIP, 'Display AutoTrack tooltip')}
+      </fieldset>
       <fieldset>
         <legend>Alignment point acquisition</legend>
         {[
@@ -699,89 +853,148 @@ function DraftingSettings() {
           </label>
         ))}
       </fieldset>
-      {AUTOSNAP_CHECKS.map(({ bit, label }) => (
-        <label key={bit} className="setting-check">
-          <input
-            type="checkbox"
-            checked={(d.autosnap & bit) !== 0}
-            onChange={(e) =>
-              drafting.configure({
-                autosnap: e.currentTarget.checked ? d.autosnap | bit : d.autosnap & ~bit,
-              })
-            }
-          />
-          {label}
-        </label>
-      ))}
-      <label className="setting-check">
-        <input
-          type="checkbox"
-          checked={d.pickfirst}
-          onChange={(e) => drafting.configure({ pickfirst: e.currentTarget.checked })}
+      <Slider
+        id={`${id}-aperture`}
+        label="Aperture size"
+        range={APERTURES}
+        value={d.aperture}
+        onChange={(aperture) => drafting.configure({ aperture })}
+      />
+      <fieldset>
+        <legend>Object Snap Options</legend>
+        <Check checked={d.pdfOsnap} onChange={(pdfOsnap) => drafting.configure({ pdfOsnap })}>
+          Snap to PDF underlays (PDFOSNAP)
+        </Check>
+      </fieldset>
+      <button type="button" onClick={() => setAppearance(true)}>
+        Drafting Tooltip Settings...
+      </button>
+      {appearance && (
+        <TooltipAppearanceDialog
+          value={d.tooltip}
+          onOk={(tooltip) => {
+            drafting.configure({ tooltip });
+            setAppearance(false);
+          }}
+          onCancel={() => setAppearance(false)}
         />
-        Noun/verb selection (PICKFIRST)
-      </label>
+      )}
+      <fieldset>
+        <legend>Drafting aids (DSETTINGS)</legend>
+        <fieldset>
+          <legend>Object Snap modes</legend>
+          <div className="osnap-modes">
+            {OSNAP_MODES.map(({ mode, label }) => (
+              <label key={mode}>
+                <input
+                  type="checkbox"
+                  checked={(d.osmode & OSNAP[mode]) !== 0}
+                  onChange={(e) => drafting.setMode(mode, e.currentTarget.checked)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <div className="setting-row">
+          <label htmlFor={`${id}-polar`}>Polar increment angle</label>
+          <select
+            id={`${id}-polar`}
+            value={String(d.polarAngle)}
+            onChange={(e) => drafting.configure({ polarAngle: Number(e.currentTarget.value) })}
+          >
+            {POLAR_ANGLES.map((a) => (
+              <option key={a} value={String(a)}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Check checked={dyn} onChange={(on) => dynMode.set(on)}>
+          Dynamic Input (F12)
+        </Check>
+      </fieldset>
+    </section>
+  );
+}
+
+/**
+ * OPTIONS > Selection: the pickbox and grip sizes, Grip Colors (M3-05 part 5), Selection modes
+ * (PICKFIRST, PICKADD) and Selection preview (SELECTIONPREVIEW, COMMANDPREVIEW; M3-04 part 5).
+ */
+function SelectionSettings() {
+  const d = useSyncExternalStore(drafting.subscribe, drafting.get);
+  const id = useId();
+  const [gripColors, setGripColors] = useState(false);
+  return (
+    <section>
+      <Slider
+        id={`${id}-pickbox`}
+        label="Pickbox size"
+        range={PICKBOXES}
+        value={d.pickbox}
+        onChange={(pickbox) => drafting.configure({ pickbox })}
+      />
+      <Slider
+        id={`${id}-grip`}
+        label="Grip size"
+        range={GRIP_SLIDER}
+        value={d.gripSize}
+        onChange={(gripSize) => drafting.configure({ gripSize })}
+      />
+      <div className="setting-row">
+        <span>Grip colors</span>
+        <button type="button" onClick={() => setGripColors(true)}>
+          Grip Colors...
+        </button>
+      </div>
+      {gripColors && (
+        // AutoCAD's Options > Selection > Grip Colors (M3-05 part 5): GRIPCOLOR, GRIPHOT,
+        // GRIPHOVER and GRIPCONTOUR.
+        <GripColorsDialog
+          initial={d.gripColors}
+          onOk={(c) => {
+            drafting.configure({ gripColors: c });
+            setGripColors(false);
+          }}
+          onCancel={() => setGripColors(false)}
+        />
+      )}
+      <fieldset>
+        <legend>Selection modes</legend>
+        <Check checked={d.pickfirst} onChange={(pickfirst) => drafting.configure({ pickfirst })}>
+          Noun/verb selection (PICKFIRST)
+        </Check>
+        {/* AutoCAD sets PICKADD 0 when checked, and its initial 2 when not. */}
+        <Check
+          checked={d.pickadd === 0}
+          onChange={(on) => drafting.configure({ pickadd: on ? 0 : 2 })}
+        >
+          Use Shift to add to selection (PICKADD)
+        </Check>
+      </fieldset>
       <fieldset>
         <legend>Selection preview (SELECTIONPREVIEW)</legend>
         {SELECTION_PREVIEW_CHECKS.map(({ bit, label }) => (
-          <label key={bit} className="setting-check">
-            <input
-              type="checkbox"
-              checked={(d.selectionPreview & bit) !== 0}
-              onChange={(e) =>
-                drafting.configure({
-                  selectionPreview: e.currentTarget.checked
-                    ? d.selectionPreview | bit
-                    : d.selectionPreview & ~bit,
-                })
-              }
-            />
-            {label}
-          </label>
-        ))}
-        <label className="setting-check">
-          <input
-            type="checkbox"
-            checked={d.commandPreview === 1}
-            onChange={(e) =>
-              drafting.configure({ commandPreview: e.currentTarget.checked ? 1 : 0 })
+          <Check
+            key={bit}
+            checked={(d.selectionPreview & bit) !== 0}
+            onChange={(on) =>
+              drafting.configure({
+                selectionPreview: on ? d.selectionPreview | bit : d.selectionPreview & ~bit,
+              })
             }
-          />
+          >
+            {label}
+          </Check>
+        ))}
+        <Check
+          checked={d.commandPreview === 1}
+          onChange={(on) => drafting.configure({ commandPreview: on ? 1 : 0 })}
+        >
           Command preview (COMMANDPREVIEW)
-        </label>
+        </Check>
       </fieldset>
-      <label className="setting-check">
-        <input
-          type="checkbox"
-          checked={d.rolloverTips}
-          onChange={(e) => drafting.configure({ rolloverTips: e.currentTarget.checked })}
-        />
-        Show rollover tooltips (ROLLOVERTIPS)
-      </label>
-      <label className="setting-check">
-        <input
-          type="checkbox"
-          checked={d.fieldDisplay}
-          onChange={(e) => drafting.configure({ fieldDisplay: e.currentTarget.checked })}
-        />
-        Display background of fields (FIELDDISPLAY)
-      </label>
-      <label className="setting-check">
-        <input
-          type="checkbox"
-          checked={d.pdfOsnap}
-          onChange={(e) => drafting.configure({ pdfOsnap: e.currentTarget.checked })}
-        />
-        Snap to PDF underlays (PDFOSNAP)
-      </label>
-      <label className="setting-check">
-        <input
-          type="checkbox"
-          checked={dyn}
-          onChange={(e) => dynMode.set(e.currentTarget.checked)}
-        />
-        Dynamic Input (F12)
-      </label>
     </section>
   );
 }

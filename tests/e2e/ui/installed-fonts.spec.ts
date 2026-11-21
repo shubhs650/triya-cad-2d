@@ -9,7 +9,7 @@
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
-import { expectShown, inkWeight, openWithPicker } from '../app/page';
+import { expectShown, inkWeight, openWithPicker, openOptions } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -96,8 +96,7 @@ test('installed fonts draw the style that names them once allowed, and on later 
   // Nothing is asked before the user chooses to.
   expect(await queries(page)).toBe(0);
 
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Files');
   await settings.getByRole('button', { name: 'Use installed fonts…' }).click();
   const inUse = settings.getByRole('list', { name: 'Installed fonts in use' });
   await expect(inUse).toContainText('arial.ttf');
@@ -129,8 +128,7 @@ test('denying installed fonts keeps the bundled stand-in without errors', async 
   await page.goto(app.url);
   const standIn = await openDrawing(page);
 
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Files');
   await settings.getByRole('button', { name: 'Use installed fonts…' }).click();
   await expect(settings.getByRole('status')).toHaveText(/Access to installed fonts is blocked/);
   await settings.getByRole('button', { name: 'Close' }).click();

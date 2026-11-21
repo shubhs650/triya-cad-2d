@@ -2,7 +2,7 @@
 // makes a layer at the command line, which the palette lists as current at once.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, enterCommand, expectShown, openWithPicker } from '../app/page';
+import { DXF, enterCommand, expectShown, openWithPicker, openOptions } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -89,8 +89,7 @@ test('-LAYER stAte EXport downloads a .las and Import reads it back by name', as
   await expect(prompt(page)).toHaveText('Command:');
 
   // Settings lists the file EXport kept.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Files');
   await expect(settings.getByRole('list', { name: 'Layer state files' })).toContainText(
     'M5-18-PLAN.las',
   );

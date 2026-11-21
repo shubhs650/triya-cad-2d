@@ -7,7 +7,7 @@
 // (grip-shortcut-menu.test.ts, setvar.test.ts), packages/render (drag.test.ts) and apps/web
 // (system-variables.test.ts, preferences.test.ts).
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { DXF, activeCanvas, expectShown, openWithPicker, openOptions } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -98,8 +98,7 @@ test('the grip right-click menu and the Grip Colors dialog', async ({ page }) =>
   await shot('1-grips-before.png');
 
   // Settings > Grip Colors...: the unselected grips Green.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Selection');
   await settings.getByRole('button', { name: 'Grip Colors...' }).click();
   const colors = page.getByRole('dialog', { name: 'Grip Colors' });
   await expect(colors.getByLabel('Unselected grip color:', { exact: true })).toHaveValue('150');

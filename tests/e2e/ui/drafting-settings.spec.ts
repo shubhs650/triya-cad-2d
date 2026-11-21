@@ -14,7 +14,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
-import { DXF, activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
+import { DXF, activeCanvas, expectShown, openWithPicker, viewOf, openOptions } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -505,8 +505,7 @@ test('snaps along polar paths by the polar distance, relative to the last segmen
   await type(page, '', 'Command:');
 
   // Shift to acquire (Settings): a pause no longer acquires the endpoint; Shift over it does.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'Drafting');
   await expect(settings.getByRole('radio', { name: 'Automatic' })).toBeChecked();
   await settings.getByRole('radio', { name: 'Shift to acquire' }).check();
   await page.keyboard.press('Escape');
