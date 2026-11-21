@@ -4,8 +4,18 @@
 // Layers palette shows each change as the engine made it.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, activeCanvas, expectDrawn, expectShown, openWithPicker } from '../app/page';
+import {
+  DOCKED_PALETTES,
+  DXF,
+  activeCanvas,
+  expectDrawn,
+  expectShown,
+  openWithPicker,
+} from '../app/page';
 import { startApp } from '../app/server';
+
+// The palettes dock beside the drawing area (M7-03; narrower windows slide them over it).
+test.use({ viewport: DOCKED_PALETTES });
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {

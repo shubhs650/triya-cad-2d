@@ -8,9 +8,19 @@
 // sheet are unit-tested in packages/engine/test/properties/quick.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity } from '@triya/engine';
-import { DXF, activeCanvas, expectDrawn, expectShown, openWithPicker } from '../app/page';
+import {
+  DOCKED_PALETTES,
+  DXF,
+  activeCanvas,
+  expectDrawn,
+  expectShown,
+  openWithPicker,
+} from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
+
+// The palettes dock beside the drawing area (M7-03; narrower windows slide them over it).
+test.use({ viewport: DOCKED_PALETTES });
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {

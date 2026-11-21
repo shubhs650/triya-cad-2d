@@ -9,6 +9,13 @@ import { CORPUS } from './server';
 export const DXF = path.join(CORPUS, 'ezdxf/examples_dxf/clockwise_arcs_hatch.dxf');
 export const DWG = path.join(CORPUS, 'acadsharp/sample_AC1018.dwg');
 
+/**
+ * A window wide enough for the palette stack to dock beside the drawing area (M7-03): below
+ * 1366 px it slides over the drawing instead, so specs that pick in the drawing with a palette
+ * open, or that count on the palette narrowing the canvas, use this size (`test.use`).
+ */
+export const DOCKED_PALETTES = { width: 1366, height: 720 } as const;
+
 /** The canvas of the document tab that is showing. */
 export const activeCanvas = (page: Page): Locator => page.locator('canvas[data-active="true"]');
 

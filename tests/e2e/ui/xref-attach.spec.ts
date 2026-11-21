@@ -17,8 +17,11 @@
 // packages/testkit/src/xref/xref-paste.test.ts).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DXF, expectShown, ink, openWithPicker } from '../app/page';
+import { DOCKED_PALETTES, DXF, expectShown, ink, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
+
+// The palettes dock beside the drawing area (M7-03; narrower windows slide them over it).
+test.use({ viewport: DOCKED_PALETTES });
 
 const ROOT = path.join(import.meta.dirname, '../../../packages/testkit/fixtures');
 const HOST = path.join(ROOT, 'raster/raster-images.dxf');

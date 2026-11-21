@@ -166,7 +166,9 @@ import {
   linetypeFileSources,
   type LinetypeFiles,
 } from './linetype-files';
-import { dockedPalette, propertySheets, type PaletteName } from './properties';
+import { propertySheets } from './properties';
+import { paletteStack, type PaletteName } from './palette-stack';
+import { PaletteDock } from './PaletteDock';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { drawingFileReply, type HeldDrawing } from './block-files';
@@ -368,7 +370,7 @@ function layerNotice(doc: number, event: LayerNotifyEvent): void {
 function viewUnreconciled(doc: number): void {
   layerNotices.closeBalloon(doc);
   unreconciledView.request(doc);
-  dockedPalette.set('layers');
+  paletteStack.set('layers');
 }
 
 /**
@@ -526,7 +528,10 @@ preferences.subscribe(() => {
   editorSpelling.bind(p.spellCheck, (spellCheck) => preferences.update({ spellCheck }));
   if (applyAliasFile(p.aliasFile)) for (const d of store.getSnapshot().docs) tellAliases(d.id);
   applyKeyOverrides(p.keys);
+  paletteStack.restore(p.palettes);
 });
+// The palette stack's layout is the user's (M7-03): kept with the preferences as it changes.
+paletteStack.subscribe(() => preferences.update({ palettes: paletteStack.layout() }));
 applyAliasFile(preferences.get().aliasFile);
 applyKeyOverrides(preferences.get().keys);
 editorSpelling.bind(preferences.get().spellCheck, (spellCheck) =>
@@ -728,8 +733,8 @@ function viewContext(id: number): ViewContext {
         if (open) quickRequests.request(id, selectionKey(selections.get(id) ?? []));
         return { ok: true };
       }
-      if (open) dockedPalette.set(name);
-      else if (dockedPalette.get() === name) dockedPalette.set(undefined);
+      if (open) paletteStack.set(name);
+      else paletteStack.close(name);
       return { ok: true };
     },
   };
@@ -1997,7 +2002,7 @@ async function open(
     // A drawing opened with unreconciled new layers alerts for them (LAYERNOTIFY 2).
     layerNotice(id, 'open');
     // The Properties palette, docked, showed the drawing before its engine started (M2-21).
-    if (dockedPalette.get() === 'properties' && store.getSnapshot().active === id)
+    if (paletteStack.get() === 'properties' && store.getSnapshot().active === id)
       engines.command(id, { kind: 'properties', open: true });
     // Quick Properties too (M2-35 part 16), in the Properties palette's place.
     else if (drafting.isOn('qp') && store.getSnapshot().active === id)
@@ -2207,15 +2212,14 @@ export function App() {
     preferences.subscribe,
     preferences.get,
   );
-  // One palette docks at a time until the palette stack (M7-03); PROPERTIES opens one too.
-  const palette = useSyncExternalStore(dockedPalette.subscribe, dockedPalette.get);
+  // The palette in front of the palette stack (M7-03), unless the slide-over slid away.
+  const palette = useSyncExternalStore(paletteStack.subscribe, paletteStack.get);
   const quickOn = useSyncExternalStore(drafting.subscribe, () => drafting.isOn('qp'));
   // QUICKPROPERTIES shows Quick Properties with QPMODE off too (M2-35 part 21).
   const quickAsked = useSyncExternalStore(quickRequests.subscribe, () =>
     state.active === undefined ? false : quickRequests.get(state.active) !== undefined,
   );
-  const setPalette = (p: PaletteName | undefined) => dockedPalette.set(p);
-  const togglePalette = (p: PaletteName) => dockedPalette.toggle(p);
+  const setPalette = (p: PaletteName | undefined) => paletteStack.set(p);
   const suppliedVersion = useSyncExternalStore(supplied.subscribe, () => supplied.version);
   const waitingHandles = useSyncExternalStore(referenceFiles.subscribe, referenceFiles.waiting);
   const picker = useRef<HTMLInputElement>(null);
@@ -2270,12 +2274,12 @@ export function App() {
           return true;
         },
         properties: () => {
-          if (store.getSnapshot().active !== undefined) dockedPalette.toggle('properties');
+          if (store.getSnapshot().active !== undefined) paletteStack.toggle('properties');
           return true;
         },
         // Ctrl+2: DesignCenter (M5-11), as AutoCAD's ADCENTER.
         designcenter: () => {
-          if (store.getSnapshot().active !== undefined) dockedPalette.toggle('designcenter');
+          if (store.getSnapshot().active !== undefined) paletteStack.toggle('designcenter');
           return true;
         },
       }),
@@ -2603,129 +2607,107 @@ export function App() {
             </div>
           )}
         </main>
-        {active && palette === 'properties' && (
-          <PropertiesPalette
-            doc={active}
-            onClose={() => setPalette(undefined)}
-            patternNames={patternNames}
-          />
-        )}
-        {active && palette === 'layers' && (
-          <LayersPalette
-            doc={active}
-            store={store}
-            columns={layerColumns}
-            onColumns={(c) => preferences.update({ layerColumns: c })}
-            onClose={() => setPalette(undefined)}
-            linetypeFiles={linetypeFiles}
-          />
-        )}
-        {active && palette === 'health' && (
-          <HealthPalette
-            doc={active}
-            store={store}
-            patternSources={patterns.sources()}
-            fontStore={fonts}
-            deviceFonts={deviceFonts}
-            onClose={() => setPalette(undefined)}
-          />
-        )}
-        {active && palette === 'designcenter' && (
-          <DesignCenterPalette
-            doc={active}
-            docs={state.docs}
-            onClose={() => setPalette(undefined)}
-          />
-        )}
-        {active && palette === 'references' && (
-          <ReferencesPalette
-            rows={references}
-            savable={(r) =>
-              r.kind === 'image' && r.status === 'loaded' && isPastedPictureName(r.path)
-            }
-            onSaveFile={(r) =>
-              void pictureFiles
-                .saveOne(fileNameOf(r.path), active.file?.handle)
-                .then((note) => note && store.notify(note))
-            }
-            waiting={waitingHandles}
-            onFiles={(files) => supply(files.map(fromFile), 'references')}
-            onReconnect={() => void resolveKept(true)}
-            onUnload={(rows) =>
-              unloadXrefs(
-                active.id,
-                rows.map((r) => r.handle),
-              )
-            }
-            onReload={(rows) =>
-              reloadXrefs(
-                active.id,
-                rows.map((r) => r.handle),
-              )
-            }
-            onDetach={(rows) =>
-              detachXrefs(
-                active.id,
-                rows.map((r) => r.handle),
-              )
-            }
-            onAttachImage={() =>
-              engines.command(active.id, { kind: 'invoke', name: 'IMAGEATTACH' })
-            }
-            onAttachDrawing={() => engines.command(active.id, { kind: 'invoke', name: 'XATTACH' })}
-            onAttachPdf={() => engines.command(active.id, { kind: 'invoke', name: 'PDFATTACH' })}
-            onReloadAll={() => reloadAllReferences(active.id)}
-            onOpen={(row) => openReference(active.id, row)}
-            onPaths={(changes, file) => changeReferencePaths(active.id, changes, file)}
-            found={(row) => referenceFound(active.id, row)}
-            onBind={(rows, insert) =>
-              bindXrefs(
-                active.id,
-                rows.map((r) => r.handle),
-                insert,
-              )
-            }
-            onClose={() => setPalette(undefined)}
-          />
-        )}
         {active && (
-          <nav className="palette-rail" aria-label="Palettes">
-            <button
-              type="button"
-              aria-expanded={palette === 'properties'}
-              onClick={() => togglePalette('properties')}
-            >
-              Properties
-            </button>
-            <button
-              type="button"
-              aria-expanded={palette === 'layers'}
-              onClick={() => togglePalette('layers')}
-            >
-              Layers
-            </button>
-            <button
-              type="button"
-              aria-expanded={palette === 'health'}
-              onClick={() => togglePalette('health')}
-            >
-              Health
-            </button>
-            <button
-              type="button"
-              aria-expanded={palette === 'references'}
-              onClick={() => togglePalette('references')}
-            >
-              References
-            </button>
-            <button
-              type="button"
-              aria-expanded={palette === 'designcenter'}
-              onClick={() => togglePalette('designcenter')}
-            >
-              DesignCenter
-            </button>
-          </nav>
+          <PaletteDock
+            render={(p) => {
+              switch (p) {
+                case 'properties':
+                  return (
+                    <PropertiesPalette
+                      doc={active}
+                      onClose={() => paletteStack.close('properties')}
+                      patternNames={patternNames}
+                    />
+                  );
+                case 'layers':
+                  return (
+                    <LayersPalette
+                      doc={active}
+                      store={store}
+                      columns={layerColumns}
+                      onColumns={(c) => preferences.update({ layerColumns: c })}
+                      onClose={() => paletteStack.close('layers')}
+                      linetypeFiles={linetypeFiles}
+                    />
+                  );
+                case 'health':
+                  return (
+                    <HealthPalette
+                      doc={active}
+                      store={store}
+                      patternSources={patterns.sources()}
+                      fontStore={fonts}
+                      deviceFonts={deviceFonts}
+                      onClose={() => paletteStack.close('health')}
+                    />
+                  );
+                case 'designcenter':
+                  return (
+                    <DesignCenterPalette
+                      doc={active}
+                      docs={state.docs}
+                      onClose={() => paletteStack.close('designcenter')}
+                    />
+                  );
+                case 'references':
+                  return (
+                    <ReferencesPalette
+                      rows={references}
+                      savable={(r) =>
+                        r.kind === 'image' && r.status === 'loaded' && isPastedPictureName(r.path)
+                      }
+                      onSaveFile={(r) =>
+                        void pictureFiles
+                          .saveOne(fileNameOf(r.path), active.file?.handle)
+                          .then((note) => note && store.notify(note))
+                      }
+                      waiting={waitingHandles}
+                      onFiles={(files) => supply(files.map(fromFile), 'references')}
+                      onReconnect={() => void resolveKept(true)}
+                      onUnload={(rows) =>
+                        unloadXrefs(
+                          active.id,
+                          rows.map((r) => r.handle),
+                        )
+                      }
+                      onReload={(rows) =>
+                        reloadXrefs(
+                          active.id,
+                          rows.map((r) => r.handle),
+                        )
+                      }
+                      onDetach={(rows) =>
+                        detachXrefs(
+                          active.id,
+                          rows.map((r) => r.handle),
+                        )
+                      }
+                      onAttachImage={() =>
+                        engines.command(active.id, { kind: 'invoke', name: 'IMAGEATTACH' })
+                      }
+                      onAttachDrawing={() =>
+                        engines.command(active.id, { kind: 'invoke', name: 'XATTACH' })
+                      }
+                      onAttachPdf={() =>
+                        engines.command(active.id, { kind: 'invoke', name: 'PDFATTACH' })
+                      }
+                      onReloadAll={() => reloadAllReferences(active.id)}
+                      onOpen={(row) => openReference(active.id, row)}
+                      onPaths={(changes, file) => changeReferencePaths(active.id, changes, file)}
+                      found={(row) => referenceFound(active.id, row)}
+                      onBind={(rows, insert) =>
+                        bindXrefs(
+                          active.id,
+                          rows.map((r) => r.handle),
+                          insert,
+                        )
+                      }
+                      onClose={() => paletteStack.close('references')}
+                    />
+                  );
+              }
+            }}
+          />
         )}
       </div>
 
