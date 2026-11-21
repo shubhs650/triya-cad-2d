@@ -187,6 +187,7 @@ test('a double-clicked tab minimizes the ribbon; a tab then pops its panels', as
     'aria-checked',
     'true',
   );
+  await shot(page, '1600-minimized-insert-popped');
   await snap.getByRole('menuitemradio', { name: 'Snap to Underlays OFF' }).click();
   await expect(body).toHaveCount(0);
 
