@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentStore,
   inLayout,
+  inPaperSpace,
   layoutsOf,
   spacesOf,
   tabBlock,
+  viewportMaximized,
   type OpenDocument,
 } from '../src/documents';
 
@@ -190,6 +192,31 @@ describe('DocumentStore drawings opened in the background', () => {
     expect(s.getSnapshot().background).toEqual([]);
     expect(names(s)).toEqual(['a.dwg']);
     expect(s.getSnapshot().active).toBe(shown);
+  });
+});
+
+// M6-02 parts 3 and 7: the viewport worked in on each layout, and whether it is maximized, which
+// the status bar shows (MODEL/PAPER, the Maximize Viewport button).
+describe('the layout viewport worked in', () => {
+  it('is kept per layout, maximized or not', () => {
+    const s = new DocumentStore();
+    s.startOpening('a.dxf');
+    s.opened('a.dxf', { modelSpace: '1F' } as OpenResult, '50');
+    const id = s.getSnapshot().active!;
+    const doc = () => s.getSnapshot().docs[0]!;
+    expect(inPaperSpace(doc())).toBe(true);
+    s.setViewport(id, '50', '5A', true);
+    expect(inPaperSpace(doc())).toBe(false);
+    expect(viewportMaximized(doc())).toBe(true);
+    s.showSpace(id, '1F');
+    expect(viewportMaximized(doc())).toBe(false);
+    s.showSpace(id, '50');
+    expect(viewportMaximized(doc())).toBe(true);
+    s.setViewport(id, '50', '5A');
+    expect(viewportMaximized(doc())).toBe(false);
+    expect(inPaperSpace(doc())).toBe(false);
+    s.setViewport(id, '50', undefined);
+    expect(inPaperSpace(doc())).toBe(true);
   });
 });
 

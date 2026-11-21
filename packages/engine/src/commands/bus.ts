@@ -133,6 +133,9 @@ export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
   // A feature control frame opens the Geometric Tolerance dialog (M4-11; AutoCAD 2024 Help,
   // "TEXTEDIT (Command)").
   TOLERANCE: 'TEXTEDIT',
+  // A layout viewport's frame maximizes the viewport (AutoCAD's double click action for a
+  // viewport, M6-02 part 7).
+  VIEWPORT: 'VPMAX',
 };
 
 /**
@@ -414,6 +417,14 @@ export class PromptBus {
   readonly #viewports = new Map<Handle, Handle>();
   /** The viewport last current in each layout, which MSPACE makes current again. */
   readonly #lastViewports = new Map<Handle, Handle>();
+  /**
+   * The viewport maximized in each layout (VPMAX, M6-02 part 7), by the layout's block, and
+   * whether VPMAX was given in paper space, where VPMIN goes back to.
+   */
+  readonly #maximized = new Map<
+    Handle,
+    { readonly viewport: Handle; readonly fromPaper: boolean }
+  >();
   /**
    * The Block Editor (M5-02): the block definition it shows, which commands draw in, and the
    * edits made since BEDIT opened it or BSAVE last saved it, which BCLOSE's Discard takes back.
@@ -732,6 +743,8 @@ export class PromptBus {
       // AutoCAD refuses a pick an override found no object at with "Invalid point." and asks
       // again; its help does not say what follows, so the override stays for the next pick.
       if (o.missed && this.#collectors.at(-1)?.osnap) return this.#reject('Invalid point.');
+      // A click outside the current layout viewport switches to the one there (M6-02 part 9).
+      if (!o.release && (await this.#clickViewport(point))) return;
       const frame = this.#stack.at(-1);
       // A click on a grip of the selection at `Command:` starts grip editing (M2-06): `grip` is
       // how near, in drawing units, the canvas counts as on a grip. `gripFunction`: the function
@@ -818,10 +831,19 @@ export class PromptBus {
    * with the command `DOUBLE_CLICK` names for its type (AutoCAD's DBLCLKEDIT), with that object
    * alone as the pre-selection. Grip editing the double click's own clicks started is dropped;
    * inside any other command it does nothing, nor on an object no command edits this way.
+   *
+   * `paper` (M6-02 part 9): the double click began outside the layout viewport current then,
+   * whose first click switched to the viewport there, and `point` is on the sheet: it is that
+   * switch alone, or, on the sheet outside every viewport, paper space. The canvas sends the
+   * sheet's point because its view may not have followed the switch yet.
    */
-  doubleClick(point: Vec2): Promise<void> {
+  doubleClick(point: Vec2, paper = false): Promise<void> {
     return this.#enqueue(async () => {
       const top = this.#stack.at(-1);
+      if (paper) {
+        if (top || !this.#currentViewport() || this.#maximizedViewport()) return;
+        return this.#setViewport(viewportAt(this.#model, this.#sheet(), point)?.handle);
+      }
       if (top && !top.def.keepsSelection && !top.def.yieldsToDoubleClick) return;
       // A double click in another viewport makes it current; on the sheet outside every
       // viewport, paper space (M6-02 part 3).
@@ -926,18 +948,28 @@ export class PromptBus {
 
   /**
    * Makes `viewport` (of the layout shown) current, or, undefined, puts the layout in paper
-   * space (MSPACE and PSPACE, M6-02 part 3), and tells the canvas. What was selected was
-   * selected in the other space, so it is deselected (M2-03).
+   * space (MSPACE and PSPACE, M6-02 part 3), and tells the canvas. Going between paper and model
+   * space deselects what was selected in the other space (M2-03).
    */
-  async #setViewport(viewport: Handle | undefined): Promise<void> {
+  async #setViewport(
+    viewport: Handle | undefined,
+    maximize?: { readonly fromPaper: boolean },
+  ): Promise<void> {
     const sheet = this.#sheet();
-    if (viewport === this.#currentViewport()?.handle) return;
+    const current = this.#currentViewport()?.handle;
+    const wasMaximized = this.#maximizedViewport() !== undefined;
+    const maximized = maximize !== undefined && viewport !== undefined;
+    if (maximized) this.#maximized.set(sheet, { viewport, fromPaper: maximize.fromPaper });
+    else this.#maximized.delete(sheet);
+    if (viewport === current && maximized === wasMaximized) return;
     if (viewport === undefined) this.#viewports.delete(sheet);
     else {
       this.#viewports.set(sheet, viewport);
       this.#lastViewports.set(sheet, viewport);
     }
-    if (this.#idle.ids.length > 0) {
+    // Another viewport shows the same model space: what is selected stays (M6-02 part 9).
+    const otherSpace = (viewport === undefined) !== (current === undefined);
+    if (otherSpace && this.#idle.ids.length > 0) {
       this.#idle.clear();
       this.#showSelection();
     }
@@ -946,7 +978,34 @@ export class PromptBus {
       op: 'viewport',
       viewport: viewport ?? null,
       ...(vp && { geometry: vp.geom }),
+      ...(maximized && { maximized: true }),
     });
+  }
+
+  /**
+   * The current viewport's maximized state (VPMAX, M6-02 part 7), while it is still current:
+   * one erased or undone away is maximized no longer.
+   */
+  #maximizedViewport(): { readonly viewport: Handle; readonly fromPaper: boolean } | undefined {
+    const sheet = this.#sheet();
+    const m = this.#maximized.get(sheet);
+    if (!m) return undefined;
+    if (m.viewport === this.#currentViewport()?.handle) return m;
+    this.#maximized.delete(sheet);
+    return undefined;
+  }
+
+  /** VPMAX: `viewport` made current and maximized. */
+  async #maximize(viewport: Handle): Promise<void> {
+    if (this.#maximizedViewport()) return;
+    await this.#setViewport(viewport, { fromPaper: this.#currentViewport() === undefined });
+  }
+
+  /** VPMIN: the layout shown again, in the space VPMAX was given in. */
+  async #minimize(): Promise<void> {
+    const m = this.#maximizedViewport();
+    if (!m) return;
+    await this.#setViewport(m.fromPaper ? undefined : m.viewport);
   }
 
   /**
@@ -957,10 +1016,33 @@ export class PromptBus {
    */
   async #doubleClickViewport(point: Vec2): Promise<boolean> {
     const current = this.#currentViewport();
-    if (!current || this.#stack.length > 0) return false;
+    // A viewport maximized fills the canvas: there is no other viewport nor paper to click.
+    if (!current || this.#stack.length > 0 || this.#maximizedViewport()) return false;
     const paper = paperPointOf(current.geom, point);
     if (insideViewport(current.geom, paper)) return false;
     await this.#setViewport(viewportAt(this.#model, this.#sheet(), paper)?.handle);
+    return true;
+  }
+
+  /**
+   * A single click while a layout viewport is current (M6-02 part 9), at `Command:` or inside a
+   * command: outside the current viewport's frame it makes the viewport there current and is
+   * taken for nothing else, and on the sheet outside every viewport it does nothing (AutoCAD
+   * 2024 Help, "To Make a Layout Viewport Current": "click inside its border"; "you can switch
+   * from one viewport to another during command execution", the command going on in the other
+   * viewport). True when the click was taken. `point` is model space's as the current viewport
+   * maps the cursor. A selection window's other corner may lie beyond the frame; a maximized
+   * viewport fills the canvas, so there is nothing outside it to click.
+   */
+  async #clickViewport(point: Vec2): Promise<boolean> {
+    const current = this.#currentViewport();
+    if (!current || this.#maximizedViewport()) return false;
+    const paper = paperPointOf(current.geom, point);
+    if (insideViewport(current.geom, paper)) return false;
+    const frame = this.#stack.at(-1);
+    if (frame ? frame.select?.wantsPoint : this.#idle.wantsPoint) return false;
+    const vp = viewportAt(this.#model, this.#sheet(), paper);
+    if (vp) await this.#setViewport(vp.handle);
     return true;
   }
 
@@ -1421,6 +1503,11 @@ export class PromptBus {
           return bus.#lastViewports.get(bus.#sheet());
         },
         set: (viewport) => this.#setViewport(viewport),
+        get maximized() {
+          return bus.#maximizedViewport() !== undefined;
+        },
+        maximize: (viewport) => this.#maximize(viewport),
+        minimize: () => this.#minimize(),
       },
       blockEditor: {
         get block() {

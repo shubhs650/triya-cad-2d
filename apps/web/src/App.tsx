@@ -126,15 +126,17 @@ import { LayoutTabs } from './LayoutTabs';
 import { DraftingToggles } from './DraftingToggles';
 import {
   DocumentStore,
+  inLayout,
   inPaperSpace,
   isDirty,
   layoutsOf,
   spacesOf,
   tabBlock,
+  viewportMaximized,
   type OpenDocument,
 } from './documents';
 import { engines, nextEngineWorker } from './engine/registry';
-import { shownPaperViews, shownViewsChange } from './saved-views';
+import { drawingRecords, shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
 import type { ImageAdjustPreview } from './ImageAdjustDialog';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
@@ -592,6 +594,15 @@ function viewContext(id: number): ViewContext {
   return {
     target,
     all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
+    tiles: () => {
+      if (!doc || doc.block !== doc.opened.modelSpace) return undefined;
+      const tiles = new Map(tilesOf(doc.id, doc.block));
+      const count = tiles.size === 0 ? 0 : Math.max(...tiles.keys()) + 1;
+      return {
+        targets: Array.from({ length: count }, (_, i) => tiles.get(i)),
+        current: currentTile(doc.id, doc.block),
+      };
+    },
     views: () => (doc && target ? namedViewsOf(doc, engines.changesOf(doc.id), target.size) : []),
     viewport: (key) => {
       const at = key.lastIndexOf(':');
@@ -2837,6 +2848,25 @@ function PreviewToggle({ doc }: { readonly doc: number | undefined }) {
   );
 }
 
+/**
+ * The status bar's Maximize Viewport button on a layout (AutoCAD's, M6-02 part 7): VPMAX, and
+ * VPMIN while the viewport is maximized.
+ */
+function MaximizeViewportToggle({ doc }: { readonly doc: OpenDocument }) {
+  const on = viewportMaximized(doc);
+  return (
+    <button
+      type="button"
+      className="status-toggle"
+      aria-pressed={on}
+      title={on ? 'Minimize Viewport (VPMIN)' : 'Maximize Viewport (VPMAX)'}
+      onClick={() => engines.command(doc.id, { kind: 'invoke', name: on ? 'VPMIN' : 'VPMAX' })}
+    >
+      VPMAX
+    </button>
+  );
+}
+
 /** The world point under the cursor, written straight into the status bar (no React render). */
 let showCursor: (p: { x: number; y: number } | undefined) => void = () => {};
 
@@ -2898,10 +2928,27 @@ function SpaceCanvas({
   onMode: (m: CanvasMode) => void;
 }) {
   const { id, opened } = doc;
-  const tiles = useMemo(
-    () => (block === opened.modelSpace ? modelTiles(opened.init.tables?.vports) : [undefined]),
-    [block, opened],
+  // Model space's tiles as the drawing has them now: -VPORTS rearranges them (M6-02 part 10),
+  // and U puts them back. Every edit gives a new `doc`; the canvases are made again only when
+  // the tiles themselves (their records and corners) change, not for a grid or UCS setting the
+  // `*Active` record also holds.
+  const placed = useMemo(
+    () =>
+      block === opened.modelSpace
+        ? modelTiles(drawingRecords(opened.init, engines.changesOf(id), 'vports'))
+        : [undefined],
+    [block, opened, id, doc],
   );
+  const placement = placed
+    .map((t) => (t ? `${t.vport?.handle}:${Object.values(t.rect).join(',')}` : ''))
+    .join(';');
+  const tiles = useMemo(() => placed, [placement]);
+  // A new arrangement opens on its first tile, the current viewport (DXF reference, VPORT).
+  const shownPlacement = useRef(placement);
+  if (shownPlacement.current !== placement) {
+    shownPlacement.current = placement;
+    setCurrentTile(id, block, 0);
+  }
   const tiled = tiles.length > 1;
   // Runs after the viewports' own effects, so every controller exists by now.
   useEffect(() => {
@@ -3073,8 +3120,9 @@ function ViewportCanvas({
           point instanceof Promise ? point.then((r) => pick(r.point, r)) : pick(point),
         );
       },
-      onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
-      onViewport: (viewport) => store.setViewport(id, block, viewport),
+      onDoubleClick: (point, paper) =>
+        engines.command(id, { kind: 'double-click', point, ...(paper && { paper }) }),
+      onViewport: (viewport, maximized) => store.setViewport(id, block, viewport, maximized),
       // COMMANDPREVIEW (M3-12 part 6): the engine works out what a pick here would do.
       onCommandPreview: (q) =>
         engines.command(id, {
@@ -3244,6 +3292,7 @@ function StatusBar({
           <span className="space" data-testid="space">
             {inPaperSpace(doc) ? 'PAPER' : 'MODEL'}
           </span>
+          {inLayout(doc) && <MaximizeViewportToggle doc={doc} />}
           <AnnotationScaleControls doc={doc} header={header} />
         </>
       )}

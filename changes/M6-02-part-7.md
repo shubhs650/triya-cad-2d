@@ -1,0 +1,1 @@
+- M6-02 part 7 (#607): VPMAX expands a layout viewport to fill the drawing area for editing, with a red border round it; zooming there is temporary, and VPMIN (or the status bar's VPMAX button) shows the layout again with the viewport's view as it was. A double click on a viewport's frame maximizes it.

@@ -53,8 +53,10 @@ import { mleaderstyleCommand } from './mleaderstyle';
 import { dashDimstyleCommand } from './dimstyle-dash';
 import { SNAP_GRID_COMMANDS } from './snap-grid';
 import { mviewCommand } from './mview';
+import { dashVportsCommand } from './vports';
 import { mspaceCommand, pspaceCommand } from './mspace';
 import { vpclipCommand } from './vpclip';
+import { vpmaxCommand, vpminCommand } from './vpmax';
 import { vplayerCommand } from './vplayer';
 import { layvpiCommand } from './layvpi';
 import { UCS_COMMANDS } from './ucs';
@@ -207,9 +209,12 @@ export function builtinCommands(): CommandRegistry {
     ...SNAP_GRID_COMMANDS.map((make) => make()),
     ...UCS_COMMANDS.map((make) => make()),
     mviewCommand(),
+    dashVportsCommand(),
     mspaceCommand(),
     pspaceCommand(),
     vpclipCommand(),
+    vpmaxCommand(),
+    vpminCommand(),
     vplayerCommand(),
     layvpiCommand(),
     underlayLayersCommand(),

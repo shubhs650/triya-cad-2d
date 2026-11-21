@@ -43,8 +43,15 @@ export interface ViewTarget {
    * Center starts from.
    */
   readonly viewportView?: { center: Vec2; height: number; width: number } | undefined;
-  /** MSPACE and PSPACE: the viewport to work through, or none (paper space). */
-  setViewport(handle: Handle | undefined, geometry: ViewportGeometry | undefined): void;
+  /**
+   * MSPACE and PSPACE: the viewport to work through, or none (paper space); `maximized`, VPMAX
+   * (M6-02 part 7): filling the canvas until VPMIN.
+   */
+  setViewport(
+    handle: Handle | undefined,
+    geometry: ViewportGeometry | undefined,
+    maximized?: boolean,
+  ): void;
   readonly mode: CanvasMode;
   /** Settles once a layout viewport made current, which measures model space first, has zoomed. */
   zoomExtents(): void | Promise<void>;
@@ -113,6 +120,12 @@ export interface ViewContext {
   readonly target: ViewTarget | undefined;
   /** Every viewport of the space shown, for REGENALL. */
   readonly all: () => readonly ViewTarget[];
+  /**
+   * Model space's tiled viewports when the Model tab is shown (M6-02 part 10): each tile's
+   * canvas by tile index (undefined for one not made yet) and the current tile's index.
+   */
+  readonly tiles?: () =>
+    { readonly targets: readonly (ViewTarget | undefined)[]; readonly current: number } | undefined;
   /** The space's named views, as `target` would show them. */
   readonly views: () => readonly NamedView[];
   /**
@@ -312,6 +325,18 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   if (r.op === 'clipboard') {
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };
   }
+  if (r.op === 'tiles') {
+    // -VPORTS (M6-02 part 10): every Model tile's view, by tile index, and the current one.
+    const tiles = ctx.tiles?.();
+    if (!tiles) return { ok: false, message: NO_CANVAS };
+    return {
+      ok: true,
+      tiles: {
+        views: tiles.targets.map((t) => (t && stateOf(t)) ?? null),
+        current: tiles.current,
+      },
+    };
+  }
   if (r.op === 'swap') {
     // Not the space shown: the viewport the step was made in, which U may reach from another.
     const v = ctx.viewport?.(r.viewport);
@@ -385,7 +410,7 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       t.setMode(r.mode);
       return done();
     case 'viewport':
-      t.setViewport(r.viewport ?? undefined, r.geometry);
+      t.setViewport(r.viewport ?? undefined, r.geometry, r.maximized === true);
       return done();
     case 'regen':
       for (const c of r.all ? ctx.all() : [t]) c.regen();

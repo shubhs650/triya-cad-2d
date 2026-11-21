@@ -94,8 +94,22 @@ export {
   viewportFit,
   type ViewportArrangement,
 } from './mview';
+export {
+  INVALID_CONFIGURATION_NAME,
+  NO_MATCHING_CONFIGURATIONS,
+  NO_MODEL_VIEWPORT,
+  VPORTS_IN_BLOCK_EDITOR,
+  dashVportsCommand,
+} from './vports';
 export { polygonalBoundary, vpclipCommand } from './vpclip';
 export { vplayerCommand } from './vplayer';
+export {
+  ALREADY_MAXIMIZED,
+  NOT_MAXIMIZED,
+  NOT_WORKABLE,
+  vpmaxCommand,
+  vpminCommand,
+} from './vpmax';
 export { layvpiCommand } from './layvpi';
 export {
   IN_PAPER_SPACE,

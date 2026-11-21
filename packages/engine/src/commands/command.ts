@@ -144,8 +144,20 @@ export interface ViewportControl {
   readonly sheet: Handle;
   /** The viewport last current in the layout shown (MSPACE's), if one has been. */
   readonly last: Handle | undefined;
-  /** Makes `viewport` current, or none (PSPACE), and tells the canvas. Deselects. */
+  /**
+   * Makes `viewport` current, or none (PSPACE), and tells the canvas. Deselects. A viewport
+   * maximized is restored first.
+   */
   set(viewport: Handle | undefined): Promise<void>;
+  /** Whether the current viewport is maximized (VPMAX, M6-02 part 7). */
+  readonly maximized: boolean;
+  /** Makes `viewport` (of the layout shown) current, maximized; VPMIN restores it. */
+  maximize(viewport: Handle): Promise<void>;
+  /**
+   * Restores the viewport maximized: the layout shown again, worked in through the viewport, or
+   * in paper space when that is where VPMAX was given.
+   */
+  minimize(): Promise<void>;
 }
 
 /**

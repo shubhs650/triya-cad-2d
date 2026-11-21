@@ -1,0 +1,1 @@
+- M6-02 part 9 (#609): while a layout viewport is current, a single click in another viewport makes it current, even in the middle of a command, and the grid shows model space's lines through the viewport worked in, maximized or not. VPMAXIMIZEDSTATE says whether the viewport is maximized.

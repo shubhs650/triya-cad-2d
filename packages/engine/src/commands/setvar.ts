@@ -171,6 +171,8 @@ async function computed(
       return { value: isPaperSpace(ctx.model, ctx.viewport.sheet) ? 0 : 1 };
     case 'BLOCKEDITOR':
       return { value: ctx.blockEditor.block === undefined ? 0 : 1 };
+    case 'VPMAXIMIZEDSTATE':
+      return { value: ctx.viewport.maximized ? 1 : 0 };
     case 'REFEDITNAME':
       return { value: ctx.refEdit.session?.name ?? '' };
     case 'AREA':

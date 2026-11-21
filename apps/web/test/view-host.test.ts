@@ -36,9 +36,9 @@ class Target implements ViewTarget {
   previous = true;
   viewport: string | undefined;
   constructor(readonly isLayout = false) {}
-  setViewport = (h: string | undefined) => {
+  setViewport = (h: string | undefined, _g?: unknown, maximized?: boolean) => {
     this.viewport = h;
-    this.calls.push(`viewport ${h ?? 'none'}`);
+    this.calls.push(`viewport ${h ?? 'none'}${maximized ? ' maximized' : ''}`);
   };
   zoomExtents: () => void | Promise<void> = () => void this.calls.push('extents');
   zoomAll = () => void this.calls.push('all');
@@ -201,6 +201,28 @@ describe('answerView', () => {
     expect(now(answerView(r, ctx))).toEqual({ ok: false, message: NO_CANVAS });
   });
 
+  it('answers every Model tile’s view and the current tile for -VPORTS (M6-02 part 10)', () => {
+    const left = new Target();
+    const right = new Target();
+    right.view = { center: { x: 1, y: 2 }, scale: 2 };
+    right.size = { width: 400, height: 400 };
+    const { ctx } = context(right);
+    const tiled = { ...ctx, tiles: () => ({ targets: [left, right, undefined], current: 1 }) };
+    expect(now(answerView({ op: 'tiles' }, tiled))).toEqual({
+      ok: true,
+      tiles: {
+        views: [
+          { center: { x: 10, y: 20 }, height: 100, width: 200, paper: false },
+          { center: { x: 1, y: 2 }, height: 200, width: 200, paper: false },
+          null,
+        ],
+        current: 1,
+      },
+    });
+    // Not on the Model tab: no tiles to answer.
+    expect(now(answerView({ op: 'tiles' }, ctx))).toEqual({ ok: false, message: NO_CANVAS });
+  });
+
   it('works in a layout through the viewport MSPACE makes current, model space’s view (M6-02 part 3)', () => {
     const shown = new Target(true);
     const { ctx } = context(shown);
@@ -213,6 +235,15 @@ describe('answerView', () => {
       view: { paper: true },
     });
     expect(shown.calls).toEqual(['viewport 5A', 'viewport none']);
+  });
+
+  it('fills the canvas with the viewport VPMAX maximizes (M6-02 part 7)', () => {
+    const shown = new Target(true);
+    const { ctx } = context(shown);
+    const r: ViewRequest = { op: 'viewport', viewport: '5A', maximized: true };
+    expect(now(answerView(r, ctx))).toMatchObject({ ok: true, view: { paper: false } });
+    expect(now(answerView({ op: 'viewport', viewport: '5A' }, ctx))).toMatchObject({ ok: true });
+    expect(shown.calls).toEqual(['viewport 5A maximized', 'viewport 5A']);
   });
 
   it('shows a glance at a view in the space shown, as a swap does (M2-47 part 5)', () => {

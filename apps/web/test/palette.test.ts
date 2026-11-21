@@ -31,6 +31,8 @@ describe('palette search', () => {
       '-TABLE',
       // M3-09: the Drawing Units questions at the command line.
       '-UNITS',
+      // M6-02 part 10: model space's viewport configurations.
+      '-VPORTS',
       // M5-11: DesignCenter.
       'ADCCLOSE',
       'ADCENTER',
@@ -310,6 +312,9 @@ describe('palette search', () => {
       'VPCLIP',
       // M6-02 part 5: layers frozen and overridden in layout viewports.
       'VPLAYER',
+      // M6-02 part 7: a layout viewport maximized to fill the canvas, and restored.
+      'VPMAX',
+      'VPMIN',
       // M5-01 part 4: the Write Block dialog.
       'WBLOCK',
       'WIPEOUT',

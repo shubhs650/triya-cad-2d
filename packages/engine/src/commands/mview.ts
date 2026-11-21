@@ -29,6 +29,14 @@ import type { Vec2 } from '../geom/types';
 import { blockExtentsOf } from '../edit/mleader';
 import { PAPER_VIEWPORT_FLAGS } from '../edit/named-view';
 import { viewportClipFrame, clipObjectProblem, clipViewport } from '../edit/viewport-clip';
+import {
+  configurationLines,
+  configurationTiles,
+  cornersIn,
+  recordView,
+  type ConfigTile,
+} from '../edit/viewport-configs';
+import { ACTIVE_VPORT } from '../layout/model-tiles';
 import { layoutSheet } from '../layout/sheet';
 import { VIEWPORT_LOCKED, VIEWPORT_OFF } from '../layout/viewport';
 import type { Entity, LwPolylineGeometry, ViewportGeometry } from '../model/types';
@@ -209,7 +217,7 @@ async function fit(ctx: CommandContext): Promise<Box | undefined> {
 }
 
 /** "Specify first corner or [Fit] <Fit>:" (or MVIEW's own first prompt's corner): the area. */
-async function* area(ctx: CommandContext, first?: Vec2): Sub<Box | undefined> {
+export async function* viewportArea(ctx: CommandContext, first?: Vec2): Sub<Box | undefined> {
   for (;;) {
     let corner = first;
     first = undefined;
@@ -238,13 +246,15 @@ async function* area(ctx: CommandContext, first?: Vec2): Sub<Box | undefined> {
 type NewClip = { readonly id: EntityId } | { readonly polygon: LwPolylineGeometry };
 
 /**
- * Makes viewports with `frames` in the space shown, each showing model space's extents; the one
- * viewport framed by `clip`'s box is clipped by it (Object, Polygonal).
+ * Makes viewports with `frames` in the space shown, each showing model space's extents, or the
+ * view `views` gives it (Restore); the one viewport framed by `clip`'s box is clipped by it
+ * (Object, Polygonal).
  */
 async function addViewports(
   ctx: CommandContext,
   frames: readonly Box[],
   clip?: NewClip,
+  views?: readonly ({ center: Vec2; height: number } | undefined)[],
 ): Promise<void> {
   const space = ctx.space;
   const extents = await modelExtents(ctx);
@@ -278,12 +288,13 @@ async function addViewports(
     // The polygon is made before the viewport it clips, as AutoCAD makes it (its handle is the
     // lower: text_in_viewports.dxf).
     const boundary = clip && ('id' in clip ? clip.id : addBoundary(ctx, b, clip.polygon));
-    for (const frame of frames) {
+    for (const [i, frame] of frames.entries()) {
       // Nothing in model space to show: the viewport shows it 1:1 about the frame.
-      const view = (extents && viewportFit(frame, extents)) ?? {
-        center: { x: (frame.minX + frame.maxX) / 2, y: (frame.minY + frame.maxY) / 2 },
-        height: frame.maxY - frame.minY,
-      };
+      const view = views?.[i] ??
+        (extents && viewportFit(frame, extents)) ?? {
+          center: { x: (frame.minX + frame.maxX) / 2, y: (frame.minY + frame.maxY) / 2 },
+          height: frame.maxY - frame.minY,
+        };
       // Layers frozen by default in new viewports (VPLAYER Vpvisdflt, DXF 70 bit 2) are frozen
       // in it, as AutoCAD's new viewports have them.
       const geom = newViewportGeometry(frame, view, id++, current ? ++status : 0);
@@ -402,6 +413,49 @@ async function* clipObject(ctx: CommandContext): Sub<EntityId | undefined> {
   }
 }
 
+/**
+ * Restore (M6-02 part 10): "Enter viewport configuration name or [?] <*Active>:", then the area
+ * as for 2: one layout viewport for each tile of the model-space configuration named (VPORTS'
+ * saved ones; `*Active` the current one), "in the same arrangement" fitted to the area (AutoCAD
+ * 2024 Help, "MVIEW (Command)"), each showing its tile's view (centre and height; a 3D view, which
+ * a layout viewport here cannot show, gives model space's extents instead).
+ */
+async function* restoreConfiguration(ctx: CommandContext): Sub<void> {
+  let tiles: ConfigTile[];
+  for (;;) {
+    const a = yield ctx.prompt.string({
+      message: 'Enter viewport configuration name or',
+      options: ['?'],
+      default: { kind: 'string', value: ACTIVE_VPORT },
+      spaces: true,
+    });
+    if (a.kind === 'keyword' || (a.kind === 'string' && a.value.trim() === '?')) {
+      for (const line of configurationLines(ctx.model.tables.vports.values(), '*'))
+        ctx.message(line);
+      continue;
+    }
+    if (a.kind !== 'string') return;
+    const name = a.value.trim() || ACTIVE_VPORT;
+    tiles = configurationTiles(ctx.model.tables.vports.values(), name);
+    if (tiles.length > 0) break;
+    ctx.message(`Cannot find viewport configuration "${name}".`);
+  }
+  const frame = yield* viewportArea(ctx);
+  if (!frame) return;
+  const views = tiles.map((t) => {
+    const d = t.source.direction;
+    if (!(d.z > 0 && d.x === 0 && d.y === 0 && t.source.twist === 0)) return undefined;
+    const { center, height } = recordView(t.source);
+    return height > 0 && Number.isFinite(height) ? { center, height } : undefined;
+  });
+  await addViewports(
+    ctx,
+    tiles.map((t) => cornersIn(t.corners, frame)),
+    undefined,
+    views,
+  );
+}
+
 export function mviewCommand(): CommandDef {
   return {
     name: 'MVIEW',
@@ -416,11 +470,23 @@ export function mviewCommand(): CommandDef {
       }
       const a = yield ctx.prompt.point({
         message: 'Specify corner of viewport or',
-        options: ['ON', 'OFF', 'Fit', 'Lock', 'Object', 'Polygonal', 'LAyer', '2', '3', '4'],
+        options: [
+          'ON',
+          'OFF',
+          'Fit',
+          'Lock',
+          'Object',
+          'Polygonal',
+          'Restore',
+          'LAyer',
+          '2',
+          '3',
+          '4',
+        ],
         default: { kind: 'keyword', keyword: 'Fit' },
       });
       if (a.kind !== 'keyword') {
-        const frame = yield* area(ctx, pointOf(a));
+        const frame = yield* viewportArea(ctx, pointOf(a));
         if (frame) await addViewports(ctx, [frame]);
         return;
       }
@@ -434,6 +500,9 @@ export function mviewCommand(): CommandDef {
           return;
         case 'LAyer':
           yield* resetLayers(ctx);
+          return;
+        case 'Restore':
+          yield* restoreConfiguration(ctx);
           return;
         case 'Object': {
           const id = yield* clipObject(ctx);
@@ -464,7 +533,7 @@ export function mviewCommand(): CommandDef {
             options,
             default: { kind: 'keyword', keyword: two ? 'Vertical' : 'Right' },
           });
-          const frame = yield* area(ctx);
+          const frame = yield* viewportArea(ctx);
           if (frame) {
             const arrangement = (k as { keyword: ViewportArrangement }).keyword;
             await addViewports(ctx, viewportArrangement(frame, two ? 2 : 3, arrangement));
@@ -472,7 +541,7 @@ export function mviewCommand(): CommandDef {
           return;
         }
         case '4': {
-          const frame = yield* area(ctx);
+          const frame = yield* viewportArea(ctx);
           if (frame) await addViewports(ctx, viewportArrangement(frame, 4));
           return;
         }

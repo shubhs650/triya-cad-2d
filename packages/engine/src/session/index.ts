@@ -558,8 +558,12 @@ export type CommandInput =
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
-  /** A double click on the canvas: edits the object there (M2-07 part 2, `PromptBus.doubleClick`). */
-  | { readonly kind: 'double-click'; readonly point: Vec2 }
+  /**
+   * A double click on the canvas: edits the object there (M2-07 part 2, `PromptBus.doubleClick`).
+   * `paper`: it began outside the layout viewport current then, and `point` is paper space's
+   * (M6-02 part 9).
+   */
+  | { readonly kind: 'double-click'; readonly point: Vec2; readonly paper?: true }
   /** The space the drafter works in now: model space or a layout's paper space. */
   | { readonly kind: 'space'; readonly block: Handle }
   /**
@@ -839,7 +843,7 @@ export class EngineSession {
       case 'select-all':
         return this.#bus.selectAll();
       case 'double-click':
-        return this.#bus.doubleClick(input.point);
+        return this.#bus.doubleClick(input.point, input.paper === true);
       case 'space':
         if (!this.model.hasBlock(input.block) || input.block === this.#space) {
           return Promise.resolve();

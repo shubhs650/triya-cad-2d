@@ -121,6 +121,10 @@ FIXTURE_SAVES = (
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "vplayer"),
     ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "vplayer"),
     ("self-authored/viewport-overrides.dxf", "vplayer"),
+    # -VPORTS on model space's tiles and its named configurations: VPORT records added, updated
+    # and removed (M6-02 part 10, packages/testkit/src/export/export-vports.corpus.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "vports"),
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "vports"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
     # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,
