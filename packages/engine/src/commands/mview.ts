@@ -297,6 +297,19 @@ async function addViewports(
   });
 }
 
+/**
+ * The viewport a new layout gets the first time it is shown (LAYOUTCREATEVIEWPORT, M6-06):
+ * MVIEW Fit's, filling the printable area and showing model space's extents, after the layout's
+ * own paper-space viewport. AutoCAD's help does not say where it goes; Fit's area is the common
+ * drafter expectation (the sheet's plotted part). False when the layout has no area to fill.
+ */
+export async function addLayoutViewport(ctx: CommandContext): Promise<boolean> {
+  const out = await fitArea(ctx);
+  if (!out) return false;
+  await addViewports(ctx, [out]);
+  return true;
+}
+
 const zeroLayer = (ctx: CommandContext): Handle | undefined =>
   [...ctx.model.tables.layers.values()].find((l) => l.name === '0')?.handle;
 

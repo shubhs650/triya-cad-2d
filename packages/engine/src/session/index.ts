@@ -122,6 +122,7 @@ import {
 } from '../edit/purge';
 import { eraseObjects } from '../edit/edit';
 import { layerFilterSelectCommand } from '../commands/layer-filter-select';
+import { layoutInitCommand } from '../commands/layout-init';
 
 /**
  * A layer's on, frozen and locked states (LAYER palette toggles, M1-23) and, from the Layer
@@ -655,6 +656,8 @@ export class EngineSession {
   /** Its commands, with the user's aliases (M3-10). */
   readonly #registry = builtinCommands();
   #space: Handle | undefined;
+  /** The spaces shown so far (M6-06): a new layout is initialized the first time only. */
+  readonly #shown = new Set<Handle>();
   readonly #listeners = new Set<(o: CommandOutput) => void>();
   readonly #viewReplies = new Map<number, (r: ViewReply) => void>();
   #nextView = 1;
@@ -818,7 +821,9 @@ export class EngineSession {
         }
         this.#space = input.block;
         // Objects are selected in one space: another layout shown starts with none (M2-03).
-        return this.#bus.clearSelection();
+        if (!this.#firstShowing(input.block)) return this.#bus.clearSelection();
+        // A new layout shown for the first time gets its viewport (M6-06, layout-init.ts).
+        return this.#bus.clearSelection().then(() => this.#bus.run(layoutInitCommand()));
       case 'properties':
         this.#properties = input.open;
         this.#quick = input.quick === true;
@@ -1300,6 +1305,22 @@ export class EngineSession {
   }
 
   /** The drawing's undo history as the undo/redo buttons show it (M2-05, M2-23). */
+  /**
+   * Whether `block` is shown for the first time and is a layout made since the drawing opened
+   * with nothing on its sheet, which AutoCAD initializes as it is first shown (M6-06).
+   */
+  #firstShowing(block: Handle): boolean {
+    if (this.#shown.has(block)) return false;
+    this.#shown.add(block);
+    const layout = this.model.layouts.find((l) => l.blockRecord === block);
+    return (
+      layout !== undefined &&
+      !isModelLayout(this.model, layout) &&
+      !this.model.openedLayouts.has(layout.handle) &&
+      this.model.blockEntities(block).length === 0
+    );
+  }
+
   get undoState(): UndoState {
     return this.#bus.undo.state;
   }
