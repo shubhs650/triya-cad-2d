@@ -1,0 +1,1 @@
+- M7-02 part 2 (#PR): the ribbon's Annotate, View, Output, Layout and Tools tabs, as in AutoCAD, with icons and tooltips; View shows the palettes and switches the theme, Tools opens Options, aliases and keyboard shortcuts; Annotation Scaling's annotative tools show greyed out with the reason.

@@ -2452,7 +2452,11 @@ export function App() {
           Settings
         </button>
       </header>
-      <Ribbon doc={active?.id} />
+      <Ribbon
+        doc={active?.id}
+        preferences={preferences}
+        onOpenWindow={(w) => (w === 'aliases' ? setAliasEditor(true) : setShortcutEditor(true))}
+      />
       <Settings
         preferences={preferences}
         onClearAll={clearAllLocalData}

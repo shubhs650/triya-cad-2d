@@ -24,7 +24,11 @@ export interface ItemSizes {
 /** What an item does: a command with the keywords typed at its first prompts, or a toggle. */
 export type RibbonRun =
   | { readonly command: string; readonly keys?: readonly string[] }
-  /** A drafting toggle (`drafting:<toggle>`): flipped, or set to `on`. */
+  /**
+   * An app action: a drafting toggle (`drafting:<toggle>`), flipped or set to `on`; a palette
+   * of the stack shown (`palette:<name>`); the colour theme (`theme:<light|dark|system>`); or a
+   * window of the app's own (`app:<aliases|shortcuts>`, M7-02 part 2).
+   */
   | { readonly action: string; readonly on?: boolean };
 
 export interface RibbonItem {
@@ -41,6 +45,11 @@ export interface RibbonItem {
    * the first until then.
    */
   readonly menu?: readonly RibbonItem[];
+  /**
+   * Why the item is shown but cannot run (UI_SPEC §2's Annotation Scaling: "Annotative creation
+   * is view-only in v1"); its tooltip says so.
+   */
+  readonly unavailable?: string;
 }
 
 export interface RibbonPanel {
@@ -109,12 +118,48 @@ function toggle(
   return { id, label, icon, sizes: ICON, run: on === undefined ? { action } : { action, on } };
 }
 
+/** An app action (a palette, the theme, a window of the app's own). */
+function act(
+  id: string,
+  label: string,
+  icon: IconName,
+  action: string,
+  sizes: ItemSizes = LABELLED,
+): RibbonItem {
+  return { id, label, icon, sizes, run: { action } };
+}
+
+/** An item AutoCAD has that Triya shows greyed out, saying why (`unavailable`). */
+function off(item: RibbonItem, reason: string): RibbonItem {
+  return { ...item, unavailable: reason };
+}
+
 const protect = (items: readonly RibbonItem[]): RibbonItem[] =>
   items.map((i) => ({
     ...i,
     protected: true as const,
     ...(i.menu && { menu: i.menu.map((e) => ({ ...e, protected: true as const })) }),
   }));
+
+/** Dimension's ▾ list: Home > Annotation and Annotate > Dimensions. */
+const DIMENSION_ENTRIES: readonly RibbonItem[] = [
+  cmd('dim-linear', 'Linear', 'dim-linear', 'DIMLINEAR'),
+  cmd('dim-aligned', 'Aligned', 'dim-aligned', 'DIMALIGNED'),
+  cmd('dim-angular', 'Angular', 'dim-angular', 'DIMANGULAR'),
+  cmd('dim-arc', 'Arc Length', 'dim-arc', 'DIMARC'),
+  cmd('dim-radius', 'Radius', 'dim-radius', 'DIMRADIUS'),
+  cmd('dim-diameter', 'Diameter', 'dim-diameter', 'DIMDIAMETER'),
+  cmd('dim-jogged', 'Jogged', 'dim-jogged', 'DIMJOGGED'),
+  cmd('dim-ordinate', 'Ordinate', 'dim-ordinate', 'DIMORDINATE'),
+];
+
+/** Revision Cloud's ▾ list: Home > Draw and Annotate > Markup. */
+const REVCLOUD_ENTRIES: readonly RibbonItem[] = [
+  cmd('revcloud-rect', 'Rectangular', 'revcloud-rect', 'REVCLOUD', LABELLED, ['R']),
+  cmd('revcloud-poly', 'Polygonal', 'revcloud-poly', 'REVCLOUD', LABELLED, ['P']),
+  cmd('revcloud-free', 'Freehand', 'revcloud-free', 'REVCLOUD', LABELLED, ['F']),
+  cmd('revcloud-object', 'Object', 'revcloud-object', 'REVCLOUD', LABELLED, ['O']),
+];
 
 const HOME: RibbonTab = {
   id: 'home',
@@ -162,12 +207,7 @@ const HOME: RibbonTab = {
           cmd('divide', 'Divide', 'divide', 'DIVIDE'),
           cmd('measure', 'Measure', 'measure', 'MEASURE'),
         ]),
-        split('revcloud', 'Revision Cloud', 'revcloud-rect', ICON, [
-          cmd('revcloud-rect', 'Rectangular', 'revcloud-rect', 'REVCLOUD', LABELLED, ['R']),
-          cmd('revcloud-poly', 'Polygonal', 'revcloud-poly', 'REVCLOUD', LABELLED, ['P']),
-          cmd('revcloud-free', 'Freehand', 'revcloud-free', 'REVCLOUD', LABELLED, ['F']),
-          cmd('revcloud-object', 'Object', 'revcloud-object', 'REVCLOUD', LABELLED, ['O']),
-        ]),
+        split('revcloud', 'Revision Cloud', 'revcloud-rect', ICON, REVCLOUD_ENTRIES),
         cmd('wipeout', 'Wipeout', 'wipeout', 'WIPEOUT', ICON),
       ]),
     },
@@ -217,16 +257,7 @@ const HOME: RibbonTab = {
           cmd('mtext', 'Multiline Text', 'text_t', 'MTEXT'),
           cmd('dtext', 'Single Line', 'text_font', 'TEXT'),
         ]),
-        split('dimension', 'Dimension', 'dim-linear', BIG, [
-          cmd('dim-linear', 'Linear', 'dim-linear', 'DIMLINEAR'),
-          cmd('dim-aligned', 'Aligned', 'dim-aligned', 'DIMALIGNED'),
-          cmd('dim-angular', 'Angular', 'dim-angular', 'DIMANGULAR'),
-          cmd('dim-arc', 'Arc Length', 'dim-arc', 'DIMARC'),
-          cmd('dim-radius', 'Radius', 'dim-radius', 'DIMRADIUS'),
-          cmd('dim-diameter', 'Diameter', 'dim-diameter', 'DIMDIAMETER'),
-          cmd('dim-jogged', 'Jogged', 'dim-jogged', 'DIMJOGGED'),
-          cmd('dim-ordinate', 'Ordinate', 'dim-ordinate', 'DIMORDINATE'),
-        ]),
+        split('dimension', 'Dimension', 'dim-linear', BIG, DIMENSION_ENTRIES),
         split('leader', 'Leader', 'mleader', LABELLED, [
           cmd('mleader', 'Multileader', 'mleader', 'MLEADER'),
           cmd('mleader-add', 'Add Leader', 'mleader-add', 'AIMLEADEREDITADD'),
@@ -397,4 +428,305 @@ const INSERT: RibbonTab = {
   ],
 };
 
-export const RIBBON_TABS: readonly RibbonTab[] = [HOME, INSERT];
+/** UI_SPEC §2: the annotative scale tools stay greyed out (DEC-058). */
+const ANNOTATIVE_VIEW_ONLY = 'Annotative creation is view-only in v1';
+
+// M7-02 part 2: the other tabs of UI_SPEC §2. None is protected, so every panel has a rule for
+// giving up room, the panels AutoCAD drafters reach for least giving it up first. Parametric
+// comes with the constraints (M9-05); Compare with COMPARE (M8-06).
+const ANNOTATE: RibbonTab = {
+  id: 'annotate',
+  label: 'Annotate',
+  panels: [
+    {
+      id: 'text',
+      label: 'Text',
+      compress: { order: 6, keep: ['mtext'] },
+      items: [
+        cmd('mtext', 'Multiline Text', 'text_t', 'MTEXT', BIG),
+        cmd('dtext', 'Single Line', 'text_font', 'TEXT'),
+        cmd('text-style', 'Text Style', 'text_edit_style', 'STYLE', SECONDARY),
+        cmd('find', 'Find Text', 'search', 'FIND', ICON),
+        cmd('spell', 'Check Spelling', 'text_grammar_checkmark', 'SPELL', ICON),
+        cmd('justify-text', 'Justify', 'text_align_justify', 'JUSTIFYTEXT', ICON),
+        cmd('scale-text', 'Scale', 'text_font_size', 'SCALETEXT', ICON),
+        cmd('text-align', 'Text Align', 'text_align_distributed', 'TEXTALIGN', ICON),
+      ],
+    },
+    {
+      id: 'dimensions',
+      label: 'Dimensions',
+      compress: { order: 7, keep: ['dimension'] },
+      items: [
+        split('dimension', 'Dimension', 'dim-linear', BIG, DIMENSION_ENTRIES),
+        cmd('qdim', 'Quick', 'dim-quick', 'QDIM', SECONDARY),
+        split('continue', 'Continue', 'dim-continue', SECONDARY, [
+          cmd('dim-continue', 'Continue', 'dim-continue', 'DIMCONTINUE'),
+          cmd('dim-baseline', 'Baseline', 'dim-baseline', 'DIMBASELINE'),
+        ]),
+        cmd('dim-style', 'Dimension Style', 'style_guide', 'DIMSTYLE', SECONDARY),
+        cmd('dim-space', 'Adjust Space', 'dim-space', 'DIMSPACE', ICON),
+        cmd('dim-break', 'Break', 'dim-break', 'DIMBREAK', ICON),
+        cmd('dim-jogline', 'Jog Line', 'dim-jogline', 'DIMJOGLINE', ICON),
+        cmd('dim-inspect', 'Inspect', 'dim-inspect', 'DIMINSPECT', ICON),
+        cmd('dim-oblique', 'Oblique', 'dim-oblique', 'DIMEDIT', ICON, ['O']),
+        cmd('dim-text-angle', 'Text Angle', 'dim-text-angle', 'DIMTEDIT', ICON),
+        cmd('dim-reassociate', 'Reassociate', 'link', 'DIMREASSOCIATE', ICON),
+        cmd('dim-disassociate', 'Disassociate', 'link_dismiss', 'DIMDISASSOCIATE', ICON),
+        cmd('dim-override', 'Override', 'dim-override', 'DIMOVERRIDE', ICON),
+      ],
+    },
+    {
+      id: 'centerlines',
+      label: 'Centerlines',
+      compress: { order: 4, keep: [] },
+      items: [
+        cmd('centermark', 'Center Mark', 'centermark', 'CENTERMARK', BIG),
+        cmd('centerline-line', 'Centerline', 'centerline', 'CENTERLINE', BIG),
+      ],
+    },
+    {
+      id: 'leaders',
+      label: 'Leaders',
+      compress: { order: 5, keep: ['mleader'] },
+      items: [
+        cmd('mleader', 'Multileader', 'mleader', 'MLEADER', BIG),
+        cmd('mleader-add', 'Add Leader', 'mleader-add', 'AIMLEADEREDITADD', SECONDARY),
+        cmd('mleader-remove', 'Remove Leader', 'mleader-remove', 'AIMLEADEREDITREMOVE', SECONDARY),
+        cmd('mleader-align', 'Align', 'mleader-align', 'MLEADERALIGN', SECONDARY),
+        cmd('mleader-collect', 'Collect', 'mleader-collect', 'MLEADERCOLLECT', ICON),
+        cmd('mleader-style', 'Multileader Style', 'style_guide', 'MLEADERSTYLE', ICON),
+      ],
+    },
+    {
+      id: 'tables',
+      label: 'Tables',
+      compress: { order: 3, keep: ['table'] },
+      items: [
+        cmd('table', 'Table', 'table', 'TABLE', BIG),
+        cmd('table-style', 'Table Style', 'table_settings', 'TABLESTYLE', SECONDARY),
+      ],
+    },
+    {
+      id: 'markup',
+      label: 'Markup',
+      compress: { order: 2, keep: [] },
+      items: [
+        cmd('wipeout', 'Wipeout', 'wipeout', 'WIPEOUT', LABELLED),
+        split('revcloud', 'Revision Cloud', 'revcloud-rect', LABELLED, REVCLOUD_ENTRIES),
+      ],
+    },
+    {
+      id: 'annotation-scaling',
+      label: 'Annotation Scaling',
+      compress: { order: 1, keep: [] },
+      items: [
+        cmd('scale-list', 'Scale List', 'scale_fit', 'SCALELISTEDIT', BIG),
+        off(
+          act('add-scales', 'Add/Delete Scales', 'scale_fill', 'none', SECONDARY),
+          ANNOTATIVE_VIEW_ONLY,
+        ),
+        off(
+          act('sync-scales', 'Sync Scale Positions', 'arrow_sync', 'none', SECONDARY),
+          ANNOTATIVE_VIEW_ONLY,
+        ),
+      ],
+    },
+  ],
+};
+
+const VIEW: RibbonTab = {
+  id: 'view',
+  label: 'View',
+  panels: [
+    {
+      id: 'navigate',
+      label: 'Navigate',
+      compress: { order: 5, keep: ['zoom'] },
+      items: [
+        split('zoom', 'Zoom', 'zoom_fit', BIG, [
+          cmd('zoom-extents', 'Extents', 'zoom_fit', 'ZOOM', LABELLED, ['E']),
+          cmd('zoom-window', 'Window', 'search_square', 'ZOOM', LABELLED, ['W']),
+          cmd('zoom-previous', 'Previous', 'arrow_previous', 'ZOOM', LABELLED, ['P']),
+          cmd('zoom-realtime', 'Realtime', 'search', 'ZOOM'),
+          cmd('zoom-all', 'All', 'full_screen_maximize', 'ZOOM', LABELLED, ['A']),
+          cmd('zoom-center', 'Center', 'location_arrow', 'ZOOM', LABELLED, ['C']),
+          cmd('zoom-object', 'Object', 'select_object', 'ZOOM', LABELLED, ['O']),
+          cmd('zoom-in', 'In', 'zoom_in', 'ZOOM', LABELLED, ['2X']),
+          cmd('zoom-out', 'Out', 'zoom_out', 'ZOOM', LABELLED, ['0.5X']),
+        ]),
+        cmd('pan', 'Pan', 'hand_left', 'PAN', SECONDARY),
+        cmd('named-views', 'Named Views', 'camera', 'VIEW', SECONDARY),
+      ],
+    },
+    {
+      id: 'viewport-tools',
+      label: 'Viewport Tools',
+      compress: { order: 2, keep: [] },
+      items: [
+        split('ucs-icon', 'UCS Icon', 'ucs-icon', SECONDARY, [
+          cmd('ucs-icon-on', 'Show UCS Icon', 'ucs-icon', 'UCSICON', LABELLED, ['ON']),
+          cmd('ucs-icon-off', 'Hide UCS Icon', 'ucs-icon', 'UCSICON', LABELLED, ['OFF']),
+        ]),
+        cmd('ucs', 'UCS', 'ucs', 'UCS', SECONDARY),
+        cmd('regen', 'Regen', 'arrow_clockwise', 'REGEN', SECONDARY),
+        cmd('regen-all', 'Regen All', 'arrow_sync', 'REGENALL', ICON),
+      ],
+    },
+    {
+      id: 'model-viewports',
+      label: 'Model Viewports',
+      compress: { order: 1, keep: [] },
+      items: [cmd('viewport-config', 'Viewport Configuration', 'board_split', 'VPORTS', BIG)],
+    },
+    {
+      id: 'palettes',
+      label: 'Palettes',
+      compress: { order: 4, keep: ['properties'] },
+      items: [
+        cmd('properties', 'Properties', 'apps_list_detail', 'PROPERTIES', BIG),
+        cmd('layers-palette', 'Layers', 'layer', 'LAYER', SECONDARY),
+        cmd('designcenter', 'DesignCenter', 'app_folder', 'ADCENTER', SECONDARY),
+        cmd('references', 'External References', 'link_multiple', 'EXTERNALREFERENCES', SECONDARY),
+        act('health', 'Health', 'heart_pulse', 'palette:health', SECONDARY),
+        act('history', 'Command History', 'history', 'palette:history', SECONDARY),
+      ],
+    },
+    {
+      id: 'interface',
+      label: 'Interface',
+      compress: { order: 3, keep: [] },
+      items: [
+        split('theme', 'Theme', 'dark_theme', BIG, [
+          act('theme-system', 'Use System Setting', 'dark_theme', 'theme:system'),
+          act('theme-light', 'Light', 'weather_sunny', 'theme:light'),
+          act('theme-dark', 'Dark', 'weather_moon', 'theme:dark'),
+        ]),
+      ],
+    },
+  ],
+};
+
+const OUTPUT: RibbonTab = {
+  id: 'output',
+  label: 'Output',
+  panels: [
+    {
+      id: 'plot',
+      label: 'Plot',
+      compress: { order: 3, keep: ['plot'] },
+      items: [
+        cmd('plot', 'Plot', 'print', 'PLOT', BIG),
+        cmd('preview', 'Preview', 'document_search', 'PREVIEW', SECONDARY),
+        cmd('page-setup', 'Page Setup Manager', 'document_landscape', 'PAGESETUP', SECONDARY),
+      ],
+    },
+    {
+      id: 'export',
+      label: 'Export',
+      compress: { order: 2, keep: ['export-pdf'] },
+      items: [
+        cmd('export-pdf', 'Export to PDF', 'document_pdf', 'EXPORTPDF', BIG),
+        cmd('export', 'Export', 'arrow_export_ltr', 'EXPORT', SECONDARY),
+      ],
+    },
+    {
+      id: 'publish',
+      label: 'Publish',
+      compress: { order: 1, keep: [] },
+      items: [cmd('publish', 'Publish', 'document_multiple', 'PUBLISH', BIG)],
+    },
+  ],
+};
+
+const LAYOUT: RibbonTab = {
+  id: 'layout',
+  label: 'Layout',
+  panels: [
+    {
+      id: 'layout',
+      label: 'Layout',
+      compress: { order: 2, keep: ['new-layout'] },
+      items: [
+        split('new-layout', 'New', 'tab_add', BIG, [
+          cmd('layout-new', 'New Layout', 'tab_add', 'LAYOUT', LABELLED, ['N']),
+          cmd('layout-template', 'From Template', 'document_one_page_add', 'LAYOUT', LABELLED, [
+            'T',
+          ]),
+        ]),
+        cmd('page-setup', 'Page Setup', 'document_landscape', 'PAGESETUP', SECONDARY),
+        cmd('layout-copy', 'Copy Layout', 'document_copy', 'LAYOUT', SECONDARY, ['C']),
+        cmd('layout-rename', 'Rename Layout', 'rename', 'LAYOUT', ICON, ['R']),
+        cmd('layout-delete', 'Delete Layout', 'document_dismiss', 'LAYOUT', ICON, ['D']),
+      ],
+    },
+    {
+      id: 'layout-viewports',
+      label: 'Layout Viewports',
+      compress: { order: 1, keep: ['viewports'] },
+      items: [
+        split('viewports', 'Viewport', 'rectangle_landscape', BIG, [
+          cmd('mview-rect', 'Rectangular', 'rectangle_landscape', 'MVIEW'),
+          cmd('mview-poly', 'Polygonal', 'pentagon', 'MVIEW', LABELLED, ['P']),
+          cmd('mview-object', 'Object', 'select_object', 'MVIEW', LABELLED, ['O']),
+        ]),
+        cmd('vp-clip', 'Clip', 'crop', 'VPCLIP', SECONDARY),
+        cmd('vp-lock', 'Lock', 'lock_closed', 'MVIEW', SECONDARY, ['L']),
+        cmd('vp-layer', 'Viewport Layers', 'layer_diagonal', 'VPLAYER', ICON),
+        cmd('vp-max', 'Maximize Viewport', 'full_screen_maximize', 'VPMAX', ICON),
+        cmd('vp-min', 'Minimize Viewport', 'full_screen_minimize', 'VPMIN', ICON),
+        cmd('scale-list', 'Scale List', 'scale_fit', 'SCALELISTEDIT', ICON),
+      ],
+    },
+  ],
+};
+
+const TOOLS: RibbonTab = {
+  id: 'tools',
+  label: 'Tools',
+  panels: [
+    {
+      id: 'drawing-utilities',
+      label: 'Drawing Utilities',
+      compress: { order: 3, keep: ['units'] },
+      items: [
+        cmd('units', 'Units', 'ruler', 'UNITS', BIG),
+        act('health', 'Drawing Health', 'heart_pulse', 'palette:health', SECONDARY),
+        cmd('purge', 'Purge', 'broom', 'PURGE', SECONDARY),
+        cmd('recover', 'Drawing Recovery', 'drafts', 'DRAWINGRECOVERY', SECONDARY),
+      ],
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      compress: { order: 2, keep: ['options'] },
+      items: [
+        cmd('options', 'Options', 'settings', 'OPTIONS', BIG),
+        cmd('drafting-settings', 'Drafting Settings', 'grid', 'DSETTINGS', SECONDARY),
+        cmd('linetype', 'Linetype', 'linetype', 'LINETYPE', SECONDARY),
+        cmd('lineweight', 'Lineweight', 'lineweight', 'LWEIGHT', SECONDARY),
+        cmd('point-style', 'Point Style', 'point', 'DDPTYPE', ICON),
+        cmd('setvar', 'Set Variable', 'options', 'SETVAR', ICON),
+      ],
+    },
+    {
+      id: 'customization',
+      label: 'Customization',
+      compress: { order: 1, keep: [] },
+      items: [
+        act('aliases', 'Edit Aliases', 'textbox_more', 'app:aliases', LABELLED),
+        act('shortcuts', 'Keyboard Shortcuts', 'keyboard', 'app:shortcuts', LABELLED),
+      ],
+    },
+  ],
+};
+
+export const RIBBON_TABS: readonly RibbonTab[] = [
+  HOME,
+  INSERT,
+  ANNOTATE,
+  VIEW,
+  OUTPUT,
+  LAYOUT,
+  TOOLS,
+];

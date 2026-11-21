@@ -50,8 +50,17 @@ describe('breakpoints', () => {
 });
 
 describe('the data model', () => {
-  it('has Home first with its AutoCAD panels in order, then Insert', () => {
-    expect(RIBBON_TABS.map((t) => t.label)).toEqual(['Home', 'Insert']);
+  it('has the tabs of UI_SPEC §2 in order, Home first with its AutoCAD panels', () => {
+    // Parametric arrives with the constraints (M9-05).
+    expect(RIBBON_TABS.map((t) => t.label)).toEqual([
+      'Home',
+      'Insert',
+      'Annotate',
+      'View',
+      'Output',
+      'Layout',
+      'Tools',
+    ]);
     expect(home.panels.map((p) => p.label)).toEqual([
       'Draw',
       'Modify',
@@ -68,6 +77,53 @@ describe('the data model', () => {
       'Reference',
       'Import',
       'Data',
+    ]);
+  });
+
+  it('gives the other tabs their AutoCAD panels (M7-02 part 2)', () => {
+    const labels = (id: string) => tab(id).panels.map((p) => p.label);
+    expect(labels('annotate')).toEqual([
+      'Text',
+      'Dimensions',
+      'Centerlines',
+      'Leaders',
+      'Tables',
+      'Markup',
+      'Annotation Scaling',
+    ]);
+    expect(labels('view')).toEqual([
+      'Navigate',
+      'Viewport Tools',
+      'Model Viewports',
+      'Palettes',
+      'Interface',
+    ]);
+    expect(labels('output')).toEqual(['Plot', 'Export', 'Publish']);
+    expect(labels('layout')).toEqual(['Layout', 'Layout Viewports']);
+    expect(labels('tools')).toEqual(['Drawing Utilities', 'Settings', 'Customization']);
+    // Every panel outside Home's protected three can give up room, in a distinct order.
+    for (const t of RIBBON_TABS.filter((x) => x.id !== 'home' && x.id !== 'insert')) {
+      const orders = t.panels.map((p) => p.compress?.order);
+      expect(
+        orders.every((o) => o !== undefined),
+        t.id,
+      ).toBe(true);
+      expect(new Set(orders).size, t.id).toBe(orders.length);
+      for (const p of t.panels)
+        for (const k of p.compress!.keep)
+          expect(
+            p.items.map((i) => i.id),
+            `${t.id}/${p.id}`,
+          ).toContain(k);
+    }
+  });
+
+  it("greys out Annotation Scaling's annotative tools, saying why (DEC-058)", () => {
+    const scaling = panel(tab('annotate'), 'annotation-scaling').items;
+    expect(scaling.map((i) => [i.label, i.unavailable])).toEqual([
+      ['Scale List', undefined],
+      ['Add/Delete Scales', 'Annotative creation is view-only in v1'],
+      ['Sync Scale Positions', 'Annotative creation is view-only in v1'],
     ]);
   });
 
@@ -148,8 +204,14 @@ describe('the data model', () => {
             expect(i.run, where).toEqual(i.menu[0]!.run);
             continue;
           }
+          if (i.unavailable) continue;
           if ('command' in i.run) expect(registry.get(i.run.command), where).toBeDefined();
-          else expect(toggles.has(i.run.action), where).toBe(true);
+          else if (i.run.action.startsWith('drafting:'))
+            expect(toggles.has(i.run.action), where).toBe(true);
+          else
+            expect(i.run.action, where).toMatch(
+              /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts))$/,
+            );
         }
   });
 

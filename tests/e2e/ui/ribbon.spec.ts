@@ -152,9 +152,16 @@ for (const [width, breakpoint] of [
     }
     await page.mouse.move(width / 2, 600);
     await shot(page, `${width}-home`);
-    await ribbon(page).getByRole('tab', { name: 'Insert' }).click();
-    await expectLayoutOfSnapshot(page, 'insert');
-    await shot(page, `${width}-insert`);
+    // Every other tab, as its snapshot lays it out, in the window (M7-02 part 2).
+    for (const t of RIBBON_TABS.slice(1)) {
+      await ribbon(page).getByRole('tab', { name: t.label, exact: true }).click();
+      await expectLayoutOfSnapshot(page, t.id);
+      const right = await page.evaluate(
+        () => document.querySelector('.ribbon-rest')!.getBoundingClientRect().right,
+      );
+      expect(right, t.id).toBeLessThanOrEqual(width);
+      await shot(page, `${width}-${t.id}`);
+    }
   });
 }
 
@@ -219,7 +226,7 @@ test('a button runs its command; a split button runs the entry picked last', asy
 test('a double-clicked tab minimizes the ribbon; a tab then pops its panels', async ({ page }) => {
   await open(page, 1600);
   const tabs = ribbon(page).getByRole('tab');
-  await expect(tabs).toHaveText(['Home', 'Insert']);
+  await expect(tabs).toHaveText(RIBBON_TABS.map((t) => t.label));
   await tabs.filter({ hasText: 'Home' }).dblclick();
   await expect(ribbon(page).getByRole('tabpanel')).toHaveCount(0);
 
@@ -297,4 +304,59 @@ test('the Quick Access Undo and Redo show Fluent arrows', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Redo', exact: true }).locator('svg'),
   ).toHaveAttribute('data-icon', 'arrow_redo');
+});
+
+test('the other tabs open palettes, the theme and the app windows (M7-02 part 2)', async ({
+  page,
+}) => {
+  await open(page, 1920);
+  const tab = (name: string) => ribbon(page).getByRole('tab', { name, exact: true }).click();
+
+  // View > Palettes > Command History shows it in the palette stack.
+  await tab('View');
+  await panel(page, 'Palettes').getByRole('button', { name: 'Command History' }).click();
+  await expect(page.getByRole('complementary', { name: 'Command History' })).toBeVisible();
+  // View > Interface > Theme ▾ Dark: the chrome goes dark, the list checks Dark.
+  await panel(page, 'Interface').getByRole('button', { name: 'Theme options' }).click();
+  const themes = page.getByRole('menu', { name: 'Theme' });
+  await expect(themes.locator('.ribbon-menu-label')).toHaveText([
+    'Use System Setting',
+    'Light',
+    'Dark',
+  ]);
+  await themes.getByRole('menuitemradio', { name: 'Dark' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await shot(page, '1920-view-dark');
+  await panel(page, 'Interface').getByRole('button', { name: 'Theme options' }).click();
+  await expect(themes.getByRole('menuitemradio', { name: 'Dark' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await themes.getByRole('menuitemradio', { name: 'Light' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+  // Annotate > Annotation Scaling: AutoCAD's annotative tools, greyed out, saying why.
+  await tab('Annotate');
+  const addScales = panel(page, 'Annotation Scaling').getByRole('button', {
+    name: 'Add/Delete Scales',
+  });
+  await expect(addScales).toHaveAttribute('aria-disabled', 'true');
+  await addScales.hover();
+  await expect(tooltip(page)).toContainText('Annotative creation is view-only in v1');
+  await shot(page, '1920-annotate-unavailable');
+  // Clicking it runs nothing (Playwright, as a screen reader, treats it as disabled).
+  await addScales.click({ force: true });
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // Annotate > Dimensions > Continue runs DIMCONTINUE.
+  await panel(page, 'Dimensions').getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(prompt(page)).toHaveText(/continue|extension line|Select/i);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // Tools > Options opens the app's settings.
+  await tab('Tools');
+  await panel(page, 'Settings').getByRole('button', { name: 'Options', exact: true }).click();
+  await expect(page.getByRole('dialog').first()).toBeVisible();
+  await shot(page, '1920-tools-options');
 });

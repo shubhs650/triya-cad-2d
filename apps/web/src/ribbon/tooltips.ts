@@ -160,6 +160,98 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'underlay-snap-off': 'Stops snapping to the geometry of PDF underlays.',
   'pdf-import': 'Attaches a PDF page as an underlay to trace over.',
   field: 'Inserts a field that updates with the data it shows.',
+  // Annotate (M7-02 part 2)
+  'text-style': 'Creates, modifies or sets the current text style.',
+  find: 'Finds and replaces text in the drawing.',
+  spell: 'Checks the spelling of text in the drawing.',
+  'justify-text': 'Changes the justification point of text without moving it.',
+  'scale-text': 'Enlarges or reduces text objects without moving them.',
+  'text-align': 'Lines up text objects along a line or with another text.',
+  qdim: 'Creates a series of dimensions from the objects you select.',
+  continue: 'Continues a dimension from the last or a selected one.',
+  'dim-continue': 'Creates a dimension that starts at the second extension line of another.',
+  'dim-baseline': 'Creates a dimension from the first extension line of another.',
+  'dim-style': 'Creates, modifies or sets the current dimension style.',
+  'dim-space': 'Spaces parallel linear and angular dimensions evenly.',
+  'dim-break': 'Breaks dimension and extension lines where objects cross them.',
+  'dim-jogline': 'Adds or removes a jog line on a linear dimension.',
+  'dim-inspect': 'Adds or removes an inspection frame and rate on a dimension.',
+  'dim-oblique': 'Slants the extension lines of linear dimensions.',
+  'dim-text-angle': 'Moves and rotates the text of a dimension.',
+  'dim-reassociate': 'Associates dimensions with the objects they measure.',
+  'dim-disassociate': 'Removes the association between dimensions and their objects.',
+  'dim-override': 'Overrides dimension variables for the dimensions you select.',
+  'mleader-align': 'Lines up and spaces multileaders you select.',
+  'mleader-collect': 'Gathers multileaders holding blocks into one leader.',
+  'mleader-style': 'Creates, modifies or sets the current multileader style.',
+  'table-style': 'Creates, modifies or sets the current table style.',
+  'scale-list': 'Edits the list of scales offered for viewports, layouts and plots.',
+  'add-scales': 'Adds or deletes annotation scales of annotative objects.',
+  'sync-scales': 'Resets the positions of annotative objects at other scales.',
+  // View
+  zoom: 'Enlarges or reduces the view of the drawing.',
+  'zoom-extents': 'Zooms to show every object in the drawing.',
+  'zoom-window': 'Zooms to show the area of a window you draw.',
+  'zoom-previous': 'Zooms back to the previous view.',
+  'zoom-realtime': 'Zooms in and out as you drag up and down.',
+  'zoom-all': 'Zooms to the drawing limits or extents, whichever is larger.',
+  'zoom-center': 'Zooms to a center point and a magnification or height.',
+  'zoom-object': 'Zooms to show the objects you select as large as possible.',
+  'zoom-in': 'Zooms in to twice the current magnification.',
+  'zoom-out': 'Zooms out to half the current magnification.',
+  pan: 'Moves the view as you drag.',
+  'named-views': 'Saves and restores named views.',
+  'ucs-icon': 'Shows or hides the UCS icon.',
+  'ucs-icon-on': 'Shows the UCS icon.',
+  'ucs-icon-off': 'Hides the UCS icon.',
+  ucs: 'Sets the origin and orientation of the user coordinate system.',
+  regen: 'Regenerates the drawing in the current viewport.',
+  'regen-all': 'Regenerates the drawing in every viewport.',
+  'viewport-config': 'Splits the drawing area into tiled model viewports.',
+  'layers-palette': 'Manages layers and their properties.',
+  designcenter: 'Shows DesignCenter, to browse and insert content from drawings.',
+  references: 'Shows the External References palette.',
+  health: 'Shows the Health palette: what the drawing holds that may need attention.',
+  history: 'Shows the Command History palette.',
+  theme: 'Sets the colour theme of the window.',
+  'theme-system': "Follows the device's light or dark setting.",
+  'theme-light': 'Uses the light colour theme.',
+  'theme-dark': 'Uses the dark colour theme.',
+  // Output
+  plot: 'Plots the drawing to a PDF or a printer.',
+  preview: 'Shows the drawing as it will be plotted.',
+  'page-setup': 'Manages the page setups of model space and the layouts.',
+  'export-pdf': 'Exports the drawing to a PDF file.',
+  export: 'Exports the drawing to another file format.',
+  publish: 'Plots several layouts and drawings to one PDF.',
+  // Layout
+  'new-layout': 'Creates a layout.',
+  'layout-new': 'Creates a layout from scratch.',
+  'layout-template': 'Creates a layout from a template drawing.',
+  'layout-copy': 'Copies a layout.',
+  'layout-rename': 'Renames a layout.',
+  'layout-delete': 'Deletes a layout.',
+  viewports: 'Creates layout viewports.',
+  'mview-rect': 'Creates a rectangular layout viewport.',
+  'mview-poly': 'Creates a layout viewport of a polygonal shape you draw.',
+  'mview-object': 'Turns a closed object into a layout viewport.',
+  'vp-clip': 'Clips a layout viewport to a boundary.',
+  'vp-lock': 'Locks the scale and view of layout viewports.',
+  'vp-layer': 'Sets layer visibility in layout viewports.',
+  'vp-max': 'Enlarges a layout viewport to fill the drawing area.',
+  'vp-min': 'Brings a maximized layout viewport back to its layout.',
+  // Tools
+  units: 'Sets the drawing units, precision and angle measure.',
+  purge: 'Removes unused styles, layers, blocks and other named objects.',
+  recover: 'Shows the drawings recovered after the app closed unexpectedly.',
+  options: 'Customizes the program settings.',
+  'drafting-settings': 'Sets snap, grid, polar tracking and object snap modes.',
+  linetype: 'Loads, sets and manages linetypes.',
+  lineweight: 'Sets the current lineweight and how lineweights display.',
+  'point-style': 'Sets the style and size of point objects.',
+  setvar: 'Lists or changes the values of system variables.',
+  aliases: 'Edits the command aliases (acad.pgp).',
+  shortcuts: 'Edits the keyboard shortcuts.',
 };
 
 /** An item's tooltip: its name, what it does, and the command, aliases and keys that run it. */
@@ -172,6 +264,8 @@ export interface Tooltip {
   readonly keywords?: readonly string[];
   readonly aliases: readonly string[];
   readonly keys: readonly string[];
+  /** Why it cannot run (an item shown greyed out). */
+  readonly unavailable?: string;
 }
 
 export interface TooltipSources {
@@ -182,7 +276,11 @@ export interface TooltipSources {
 }
 
 /** Commands whose keys belong to an app action of the keymap rather than `command:<NAME>`. */
-const KEY_ACTION_OF: Readonly<Record<string, string>> = { PROPERTIES: 'properties' };
+const KEY_ACTION_OF: Readonly<Record<string, string>> = {
+  ADCENTER: 'designcenter',
+  PROPERTIES: 'properties',
+  'palette:history': 'history',
+};
 
 export const descriptionOf = (id: string): string | undefined => DESCRIPTIONS[id];
 
@@ -195,6 +293,8 @@ export function tooltipOf(item: RibbonItem, now: RibbonItem, from: TooltipSource
     now === item || now.label === item.label ? item.label : `${item.label}: ${now.label}`;
   const description = DESCRIPTIONS[now.id] ?? DESCRIPTIONS[item.id] ?? '';
   const run = now.run;
+  if (now.unavailable)
+    return { title, description, aliases: [], keys: [], unavailable: now.unavailable };
   if ('command' in run)
     return {
       title,
@@ -204,5 +304,10 @@ export function tooltipOf(item: RibbonItem, now: RibbonItem, from: TooltipSource
       aliases: from.aliasesOf(run.command),
       keys: from.keysOf(KEY_ACTION_OF[run.command] ?? `command:${run.command}`),
     };
-  return { title, description, aliases: [], keys: from.keysOf(run.action) };
+  return {
+    title,
+    description,
+    aliases: [],
+    keys: from.keysOf(KEY_ACTION_OF[run.action] ?? run.action),
+  };
 }

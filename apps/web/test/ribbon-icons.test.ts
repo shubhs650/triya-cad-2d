@@ -94,6 +94,18 @@ describe('tooltips', () => {
     });
   });
 
+  it('says why an unavailable item cannot run, and gives a palette its keys', () => {
+    const add = item('annotate', 'add-scales');
+    expect(tooltipOf(add, add, from)).toMatchObject({
+      title: 'Add/Delete Scales',
+      unavailable: 'Annotative creation is view-only in v1',
+      keys: [],
+    });
+    const history = item('view', 'history');
+    keys['history'] = ['F2'];
+    expect(tooltipOf(history, history, from).keys).toEqual(['F2']);
+  });
+
   it('gives a toggle the keys of its drafting setting and no command', () => {
     const groups = item('home', 'group-selection');
     const tip = tooltipOf(groups, groups, from);
