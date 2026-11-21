@@ -45,8 +45,10 @@ import RenderWorker from '@triya/render/worker?worker';
 import {
   IDENTITY,
   MAX_ACQUIRED,
+  paperPointOf,
   viewportLocked,
-  viewportTransform,
+  viewportScale,
+  viewportTwist,
   viewportViewOf,
   withViewportView,
   workableViewport,
@@ -125,7 +127,14 @@ import {
 import type { OpenResult } from '@triya/io';
 import { ROLLOVER_DELAY_MS, type RestAt } from '../rollover';
 import { RestWatch } from './rest';
-import { areaPreviewed, pathArea, previewsSelection, windowArea } from '../selection-preview';
+import {
+  areaPreviewed,
+  leftOf,
+  pathArea,
+  previewsSelection,
+  windowArea,
+  windowCorners,
+} from '../selection-preview';
 import { layoutsOf } from '../documents';
 import {
   appliedPageSetupName,
@@ -184,10 +193,12 @@ import {
 } from './views';
 import {
   ViewportHistories,
+  fitTurned,
   frameOnCanvas,
   frameView,
   maximizedGeometry,
   sameViewportView,
+  turnedBox,
   viewportViewFrom,
   type FrameOnCanvas,
 } from './viewport-zoom';
@@ -883,7 +894,7 @@ export class CanvasController {
   zoomWindow(a: Vec2, b: Vec2): void {
     const z = this.#zoomable();
     if (z) {
-      const w = windowView(a, b, z.frame.size);
+      const w = fitTurned(this.#frameTurn(z), (t) => windowView(t(a), t(b), z.frame.size));
       if (w) this.#goViewport(z, w, 'ZOOM');
       return;
     }
@@ -915,7 +926,12 @@ export class CanvasController {
       const limits =
         this.#modelLimits() ?? (ms === undefined ? undefined : this.#opened.extents[ms]);
       const now = frameView(z.c.geom, z.frame.size);
-      const w = limitsView(limits, z.frame.size, factor, now);
+      const w = fitTurned(this.#frameTurn(z), (t) =>
+        limitsView(limits && turnedBox(limits, t), z.frame.size, factor, {
+          ...now,
+          center: t(now.center),
+        }),
+      );
       if (w) this.#goViewport(z, w, 'ZOOM');
       return;
     }
@@ -954,7 +970,10 @@ export class CanvasController {
   showInViewport(box: { minX: number; minY: number; maxX: number; maxY: number }): boolean {
     const z = this.#zoomable();
     if (!z) return false;
-    const w = windowView({ x: box.minX, y: box.minY }, { x: box.maxX, y: box.maxY }, z.frame.size);
+    const w = fitTurned(this.#frameTurn(z), (t) => {
+      const b = turnedBox(box, t);
+      return windowView({ x: b.minX, y: b.minY }, { x: b.maxX, y: b.maxY }, z.frame.size);
+    });
     if (w) this.#goViewport(z, w, 'VIEW');
     return w !== undefined;
   }
@@ -1024,6 +1043,8 @@ export class CanvasController {
     this.#hit = undefined;
     this.#acquired = [];
     this.#leftWork(this.#isOutside());
+    // The crosshairs turn with a twisted viewport's model space (M6-02 part 15).
+    this.#paintCursor();
     // The grid is model space's through the viewport, paper space's on the sheet (M6-02 part 9).
     if (this.#drafting.grid && (before === undefined) !== (this.#current === undefined)) {
       this.#host.setStyle(this.#style());
@@ -1076,14 +1097,13 @@ export class CanvasController {
   #toSheet(p: Vec2): Vec2 {
     const c = this.#current;
     if (!c) return p;
-    const t = viewportTransform(c.geom);
-    return { x: t.a * p.x + t.e, y: t.d * p.y + t.f };
+    return paperPointOf(c.geom, p);
   }
 
   /** Sheet units per unit of the cursor's space (1 on paper). */
   #sheetScale(): number {
     const c = this.#current;
-    return c ? viewportTransform(c.geom).a : 1;
+    return c ? viewportScale(c.geom) : 1;
   }
 
   /**
@@ -1098,6 +1118,11 @@ export class CanvasController {
     if (!c || !v || (!this.#maximized && viewportLocked(c.geom))) return undefined;
     const frame = frameOnCanvas(c.geom, v, this.#size);
     return frame.size.width > 0 && frame.size.height > 0 ? { c, frame } : undefined;
+  }
+
+  /** The angle a zoomable viewport's frame turns model space by: its twist (M6-02 part 15). */
+  #frameTurn(z: { readonly c: CurrentViewport }): number {
+    return viewportTwist(z.c.geom);
   }
 
   /**
@@ -1152,7 +1177,7 @@ export class CanvasController {
       g.height === height / v.scale;
     if (framed) return;
     const was = viewportViewOf(g);
-    const scale = viewportTransform(g).a;
+    const scale = viewportScale(g);
     c.geom = maximizedGeometry(g, v, this.#size, {
       center: was.center,
       height: height / v.scale / scale,
@@ -1166,7 +1191,12 @@ export class CanvasController {
     const z = this.#zoomable();
     if (!z) return;
     const size = z.frame.size;
-    const view = all ? allView(this.#modelLimits(), box, size) : extentsView(box, size);
+    const limits = this.#modelLimits();
+    // A twisted viewport fits the boxes as its turned frame shows them (M6-02 part 15).
+    const view = fitTurned(this.#frameTurn(z), (t) => {
+      const b = box && turnedBox(box, t);
+      return all ? allView(limits && turnedBox(limits, t), b, size) : extentsView(b, size);
+    })!;
     this.#goViewport(z, view, 'ZOOM');
   }
 
@@ -1251,13 +1281,18 @@ export class CanvasController {
     const v = this.#pointerView();
     const { width, height } = this.#size;
     if (!v || !(width > 0) || !(height > 0)) return undefined;
-    const a = screenToWorld(v, width, height, { x: 0, y: 0 });
-    const b = screenToWorld(v, width, height, { x: width, y: height });
+    // All four corners: a twisted viewport's view turns the canvas (M6-02 part 15).
+    const ps = [
+      screenToWorld(v, width, height, { x: 0, y: 0 }),
+      screenToWorld(v, width, height, { x: width, y: 0 }),
+      screenToWorld(v, width, height, { x: width, y: height }),
+      screenToWorld(v, width, height, { x: 0, y: height }),
+    ];
     return {
-      minX: Math.min(a.x, b.x),
-      minY: Math.min(a.y, b.y),
-      maxX: Math.max(a.x, b.x),
-      maxY: Math.max(a.y, b.y),
+      minX: Math.min(...ps.map((p) => p.x)),
+      minY: Math.min(...ps.map((p) => p.y)),
+      maxX: Math.max(...ps.map((p) => p.x)),
+      maxY: Math.max(...ps.map((p) => p.y)),
     };
   }
 
@@ -1827,7 +1862,8 @@ export class CanvasController {
 
   /** The objects a selection window between two world points takes (M2-03). */
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]> {
-    return this.#host.select(windowArea(a, b, crossing));
+    // Square to the screen in a twisted layout viewport (M6-02 part 15).
+    return this.#host.select(windowArea(a, b, crossing, this.#pointerView()?.rotation ?? 0));
   }
 
   /** What a selection polygon (WPolygon, CPolygon) or fence takes (M3-04). */
@@ -1841,7 +1877,9 @@ export class CanvasController {
     if (!found || !(this.#size.width > 0)) return false;
     const z = this.#zoomable();
     if (z) {
-      const fit = fitView(found, z.frame.size.width, z.frame.size.height, 0);
+      const fit = fitTurned(this.#frameTurn(z), (t) =>
+        fitView(turnedBox(found, t), z.frame.size.width, z.frame.size.height, 0),
+      )!;
       const flat = found.maxX === found.minX && found.maxY === found.minY;
       const now = frameView(z.c.geom, z.frame.size);
       this.#goViewport(z, flat ? { ...fit, scale: now.scale } : fit, 'ZOOM');
@@ -2213,7 +2251,9 @@ export class CanvasController {
    */
   #paintCursor(): void {
     const color = this.#ui().crosshair;
-    const angle = this.#ucs().angle + (this.#vport()?.snapRotation ?? 0);
+    // A twisted layout viewport made current turns them with model space (M6-02 part 15).
+    const angle =
+      this.#ucs().angle + (this.#vport()?.snapRotation ?? 0) + (this.#pointerView()?.rotation ?? 0);
     const asked = this.#asked;
     const badge =
       (asked?.kind === 'selection' ? asked.cursor : undefined) ??
@@ -2554,7 +2594,8 @@ export class CanvasController {
     const box = p?.kind === 'point' && p.rubberBand?.box;
     const selection = p?.kind === 'point' ? p.rubberBand?.selection : undefined;
     if (from && cursor && selection && this.#mode === 'none') {
-      const crossing = selection === 'auto' ? cursor.x < from.x : selection === 'crossing';
+      const turn = this.#pointerView()?.rotation ?? 0;
+      const crossing = selection === 'auto' ? leftOf(from, cursor, turn) : selection === 'crossing';
       const lasso = this.#lasso();
       const path =
         lasso && lasso.points.length > 1
@@ -2566,7 +2607,7 @@ export class CanvasController {
       this.#areaPreview(
         path && path.points.length > 0
           ? pathArea([...path.points, cursor], kind)
-          : windowArea(from, cursor, crossing),
+          : windowArea(from, cursor, crossing, turn),
       );
       this.#host.setTransient([
         ...preview,
@@ -2711,27 +2752,11 @@ export class CanvasController {
   /** A selection window: a translucent fill and its edge, dashed when it is a crossing one. */
   #selectionBand(a: Point, b: Point, crossing: boolean): RenderPrimitive[] {
     const color = crossing ? CROSSING_COLOR : WINDOW_COLOR;
-    const corners: [number, number][] = [
-      [a.x, a.y],
-      [b.x, a.y],
-      [b.x, b.y],
-      [a.x, b.y],
-    ];
-    const outline = [
-      PATH_M,
-      a.x,
-      a.y,
-      PATH_L,
-      b.x,
-      a.y,
-      PATH_L,
-      b.x,
-      b.y,
-      PATH_L,
-      a.x,
-      b.y,
-      PATH_Z,
-    ];
+    // Square to the screen, which a twisted layout viewport turns (M6-02 part 15).
+    const corners = windowCorners(a, b, this.#pointerView()?.rotation ?? 0).map(
+      (p): [number, number] => [p.x, p.y],
+    );
+    const outline = [...corners.flatMap(([x, y], i) => [i === 0 ? PATH_M : PATH_L, x, y]), PATH_Z];
     let edge = outline;
     const scale = this.#pointerView()?.scale ?? 1;
     if (crossing) {

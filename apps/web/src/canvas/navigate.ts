@@ -45,21 +45,20 @@ export function zoomAt(
   if (!(factor > 0) || !Number.isFinite(factor)) return view;
   const anchor = screenToWorld(view, size.width, size.height, screen);
   const scale = view.scale * factor;
-  return {
-    scale,
-    center: {
-      x: anchor.x - (screen.x - size.width / 2) / scale,
-      y: anchor.y + (screen.y - size.height / 2) / scale,
-    },
-  };
+  // The world offset of the screen point from the middle, in a turned view too (M6-02 part 15).
+  const off = offsetOf({ ...view, scale }, screen.x - size.width / 2, screen.y - size.height / 2);
+  return { ...view, scale, center: { x: anchor.x - off.x, y: anchor.y - off.y } };
 }
 
 /** Moves the drawing by a pointer movement of (dx, dy) CSS pixels, y down. */
 export function panBy(view: ViewTransform, dx: number, dy: number): ViewTransform {
-  return {
-    scale: view.scale,
-    center: { x: view.center.x - dx / view.scale, y: view.center.y + dy / view.scale },
-  };
+  const off = offsetOf(view, dx, dy);
+  return { ...view, center: { x: view.center.x - off.x, y: view.center.y - off.y } };
+}
+
+/** The world vector a screen offset of (dx, dy) CSS pixels (y down) spans in `view`. */
+function offsetOf(view: ViewTransform, dx: number, dy: number): { x: number; y: number } {
+  return screenToWorld({ ...view, center: { x: 0, y: 0 } }, 0, 0, { x: dx, y: dy });
 }
 
 /**

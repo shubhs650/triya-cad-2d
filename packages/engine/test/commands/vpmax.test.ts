@@ -162,8 +162,10 @@ describe('VPMAX and VPMIN', () => {
     expect(t.told()).toEqual([`${B}+`]);
   });
 
-  it('VPMAX refuses a viewport twisted or not in plan, which cannot be worked in', async () => {
-    const t = drawing({ paper: [...TWO, ['52', viewport({ id: 4, twist: Math.PI / 6 })]] });
+  it('VPMAX refuses a viewport not in plan, which cannot be worked in', async () => {
+    const t = drawing({
+      paper: [...TWO, ['52', viewport({ id: 4, viewDirection: { x: 1, y: -1, z: 1 } })]],
+    });
     await t.bus.script(['VPMAX']);
     await t.bus.answer({ kind: 'selection', ids: [t.id('52')] });
     expect(t.log.at(-1)).toBe(NOT_WORKABLE);

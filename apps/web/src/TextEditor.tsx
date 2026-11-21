@@ -192,6 +192,8 @@ interface Placement {
   readonly top: number;
   /** Drawing units to CSS px. */
   readonly scale: number;
+  /** The angle the view turns the drawing by: a twisted layout viewport's (M6-02 part 15). */
+  readonly turn?: number;
 }
 
 /**
@@ -207,7 +209,12 @@ function usePlacement(controller: CanvasController, request: TextEditorRequest):
     const rect = controller.canvas.getBoundingClientRect();
     if (!view) return { left: rect.left, top: rect.top, scale: 1 };
     const p = worldToScreen(view, rect.width, rect.height, current.current.position);
-    return { left: rect.left + p.x, top: rect.top + p.y, scale: view.scale };
+    return {
+      left: rect.left + p.x,
+      top: rect.top + p.y,
+      scale: view.scale,
+      ...(view.rotation && { turn: view.rotation }),
+    };
   };
   const [placement, setPlacement] = useState(place);
   useEffect(() => {
@@ -215,7 +222,8 @@ function usePlacement(controller: CanvasController, request: TextEditorRequest):
     let last = placement;
     const tick = () => {
       const next = place();
-      if (next.left !== last.left || next.top !== last.top || next.scale !== last.scale) {
+      const moved = next.left !== last.left || next.top !== last.top;
+      if (moved || next.scale !== last.scale || next.turn !== last.turn) {
         last = next;
         setPlacement(next);
       }
@@ -234,7 +242,7 @@ function boxStyle(p: Placement, request: TextEditorRequest): CSSProperties {
   return {
     left: p.left,
     top: p.top,
-    transform: `rotate(${-request.rotation}rad) translate(${-50 * col}%, ${-50 * row}%)`,
+    transform: `rotate(${-(request.rotation + (p.turn ?? 0))}rad) translate(${-50 * col}%, ${-50 * row}%)`,
     fontSize: `${(request.height * p.scale) / CAP_HEIGHT}px`,
     ...(request.width > 0 && { width: `${request.width * p.scale}px` }),
   };
@@ -2141,7 +2149,7 @@ function MTextBox({
             fitted={fitted}
             scale={placement.scale}
             textHeight={request.height}
-            rotation={request.rotation}
+            rotation={request.rotation + (placement.turn ?? 0)}
             onChange={setColumns}
           />
         )}

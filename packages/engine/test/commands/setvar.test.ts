@@ -1096,6 +1096,7 @@ describe('computed variables', () => {
       // A value too long for its column still has a space before the note.
       'VIEWCTR           5.0000,2.5000,0.0000 (read only)',
       'VIEWSIZE          20.0000           (read only)',
+      'VIEWTWIST         0                 (read only)',
     ]);
     const model = DocumentModel.create(sampleInit());
     expect(systemVariable(model, 'ctab')).toMatchObject({ store: 'computed', kind: 'name' });

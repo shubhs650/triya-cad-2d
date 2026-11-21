@@ -127,6 +127,11 @@ export interface SelectionLoopHost {
   pickauto?(): number;
   /** The objects of `ids` a command that edits may not take while a reference is edited in place. */
   outsideWorkingSet?(ids: readonly EntityId[]): ReadonlySet<EntityId>;
+  /**
+   * The angle the canvas shows the space's X axis at: a twisted layout viewport's (M6-02 part
+   * 15), whose windows are square to the screen. Absent is 0.
+   */
+  turn?(): number;
 }
 
 export interface SelectionLoopOptions {
@@ -364,7 +369,10 @@ export class SelectionLoop {
     }
     if (c) {
       this.#corner = undefined;
-      const crossing = c.kind === 'auto' ? p.x < c.from.x : c.kind === 'crossing';
+      // Dragged leftward on the screen, which a twisted viewport turns (M6-02 part 15).
+      const turn = this.#host.turn?.() ?? 0;
+      const across = (p.x - c.from.x) * Math.cos(turn) - (p.y - c.from.y) * Math.sin(turn);
+      const crossing = c.kind === 'auto' ? across < 0 : c.kind === 'crossing';
       const r = await this.#host.request({ op: 'select', a: c.from, b: p, crossing });
       const window = { a: c.from, b: p };
       if (c.op !== 'remove' && r.ok) this.#window = window;

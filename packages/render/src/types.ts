@@ -26,6 +26,12 @@ import type { Affine } from './affine';
 export interface ViewTransform {
   readonly center: { readonly x: number; readonly y: number };
   readonly scale: number;
+  /**
+   * The angle world +X shows at on the screen, radians counterclockwise; absent is 0. Only the
+   * view the cursor works in through a twisted layout viewport has one (`modelViewOf`, M6-02
+   * part 15): the canvas itself shows model space and paper space unturned.
+   */
+  readonly rotation?: number;
 }
 
 /** Display settings that change how the scene looks but not what it contains. */
@@ -572,26 +578,42 @@ export interface SelectQuery {
 /**
  * The view of model space a layout viewport shows when the sheet is shown in `view` (MSPACE,
  * M6-02 part 3): a point of model space is at the screen point its sheet point is at. The
- * viewport must be one the cursor can work through (`workableViewport`: plan, no twist), whose
- * model → paper map is a scale and a move.
+ * viewport must be one the cursor can work through (`workableViewport`: in plan), whose
+ * model → paper map is a turn by its twist (M6-02 part 15), a scale and a move; the sheet's
+ * `view` is never turned.
  */
 export function modelViewOf(view: ViewTransform, vp: ViewportGeometry): ViewTransform {
   const t = viewportTransform(vp);
+  const k = Math.hypot(t.a, t.b);
+  const det = t.a * t.d - t.b * t.c;
+  const x = view.center.x - t.e;
+  const y = view.center.y - t.f;
+  // A plan view's map may carry rounding off the axes (a direction of (−6e-14, 0, 273)).
+  const rotation = Math.abs(t.b) <= k * 1e-12 && t.a > 0 ? 0 : Math.atan2(t.b, t.a);
   return {
-    center: { x: (view.center.x - t.e) / t.a, y: (view.center.y - t.f) / t.d },
-    scale: view.scale * t.a,
+    center:
+      rotation === 0
+        ? { x: x / t.a, y: y / t.d }
+        : { x: (t.d * x - t.c * y) / det, y: (t.a * y - t.b * x) / det },
+    scale: view.scale * k,
+    ...(rotation !== 0 && { rotation }),
   };
 }
 
-/** The world box a view shows on a viewport of the given CSS size. */
+/** The world box a view shows on a viewport of the given CSS size (all of it, when turned). */
 export function visibleBox(view: ViewTransform, width: number, height: number): Box {
-  const hw = width / 2 / view.scale;
-  const hh = height / 2 / view.scale;
+  const r = view.rotation ?? 0;
+  const c = Math.abs(Math.cos(r));
+  const s = Math.abs(Math.sin(r));
+  const hw = (width / 2) * c + (height / 2) * s;
+  const hh = (width / 2) * s + (height / 2) * c;
+  const w = r === 0 ? width / 2 / view.scale : hw / view.scale;
+  const h = r === 0 ? height / 2 / view.scale : hh / view.scale;
   return {
-    minX: view.center.x - hw,
-    minY: view.center.y - hh,
-    maxX: view.center.x + hw,
-    maxY: view.center.y + hh,
+    minX: view.center.x - w,
+    minY: view.center.y - h,
+    maxX: view.center.x + w,
+    maxY: view.center.y + h,
   };
 }
 
@@ -613,6 +635,18 @@ export function worldToScreen(
   height: number,
   p: { readonly x: number; readonly y: number },
 ): { x: number; y: number } {
+  const r = view.rotation;
+  if (r) {
+    // Turned counterclockwise on the screen (screen Y down).
+    const dx = p.x - view.center.x;
+    const dy = p.y - view.center.y;
+    const c = Math.cos(r);
+    const s = Math.sin(r);
+    return {
+      x: width / 2 + (dx * c - dy * s) * view.scale,
+      y: height / 2 - (dx * s + dy * c) * view.scale,
+    };
+  }
   return {
     x: width / 2 + (p.x - view.center.x) * view.scale,
     y: height / 2 - (p.y - view.center.y) * view.scale,
@@ -625,6 +659,14 @@ export function screenToWorld(
   height: number,
   p: { readonly x: number; readonly y: number },
 ): { x: number; y: number } {
+  const r = view.rotation;
+  if (r) {
+    const u = (p.x - width / 2) / view.scale;
+    const v = -(p.y - height / 2) / view.scale;
+    const c = Math.cos(r);
+    const s = Math.sin(r);
+    return { x: view.center.x + u * c + v * s, y: view.center.y - u * s + v * c };
+  }
   return {
     x: view.center.x + (p.x - width / 2) / view.scale,
     y: view.center.y - (p.y - height / 2) / view.scale,

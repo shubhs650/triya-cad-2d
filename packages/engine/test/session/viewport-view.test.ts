@@ -139,8 +139,8 @@ describe("a current viewport's own view", () => {
     const view = { center: { x: 0, y: 0 }, height: 10 };
     const edit = { kind: 'viewport-view', viewport: VP, view, label: 'ZOOM' } as const;
     expect(locked.edit(edit)).toEqual({ ok: false, message: 'The viewport display is locked.' });
-    const twisted = session(viewport({ twist: 0.5 }));
-    expect(twisted.edit(edit)).toEqual({ ok: false, message: 'The viewport cannot be worked in.' });
+    const side = session(viewport({ viewDirection: { x: 1, y: -1, z: 1 } }));
+    expect(side.edit(edit)).toEqual({ ok: false, message: 'The viewport cannot be worked in.' });
     const s = session();
     expect(s.edit({ ...edit, view: { ...view, height: 0 } })).toEqual({
       ok: false,
@@ -148,6 +148,20 @@ describe("a current viewport's own view", () => {
     });
     expect(s.edit({ ...edit, viewport: '24' })).toEqual({ ok: false, message: 'No viewport 24.' });
     expect(s.undoState.undoable).toBe(0);
+  });
+
+  it('changes a twisted viewport’s view, keeping its twist and frame (M6-02 part 15)', () => {
+    const s = session(viewport({ twist: Math.PI / 3, viewCenter: { x: 5, y: 1 } }));
+    const view = { center: { x: -2, y: 8 }, height: 12 };
+    const r = s.edit({ kind: 'viewport-view', viewport: VP, view, label: 'ZOOM' });
+    expect(r.ok).toBe(true);
+    const g = geomOf(s);
+    expect(g.twist).toBe(Math.PI / 3);
+    expect(g.center).toEqual({ x: 100, y: 100 });
+    expect(g.viewHeight).toBe(12);
+    const shown = paperPointOf(g, view.center);
+    expect(shown.x).toBeCloseTo(100, 9);
+    expect(shown.y).toBeCloseTo(100, 9);
   });
 
   it('leaves an unchanged view out of the history', () => {

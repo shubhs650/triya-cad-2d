@@ -13,6 +13,7 @@ import { imageFrame, setImageFrame } from './image';
 import { wcmatch } from './modify/attributes';
 import type { Prompt, PromptAnswer } from './prompt';
 import { isPaperSpace, modelSpaceOf } from './bus';
+import { shownTwist } from './mspace';
 import {
   annotationScaleValue,
   calendarDate,
@@ -173,6 +174,8 @@ async function computed(
       return { value: ctx.blockEditor.block === undefined ? 0 : 1 };
     case 'VPMAXIMIZEDSTATE':
       return { value: ctx.viewport.maximized ? 1 : 0 };
+    case 'VIEWTWIST':
+      return { value: (shownTwist(ctx) * 180) / Math.PI };
     case 'REFEDITNAME':
       return { value: ctx.refEdit.session?.name ?? '' };
     case 'AREA':

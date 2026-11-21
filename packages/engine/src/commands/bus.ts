@@ -82,6 +82,7 @@ import {
   insideViewport,
   paperPointOf,
   viewportAt,
+  viewportTwist,
   type FloatingViewport,
 } from '../layout/current-viewport';
 import { NO_VIEW, waitsOnApp, type ViewHost, type ViewReply, type ViewRequest } from './view/host';
@@ -1690,6 +1691,10 @@ export class PromptBus {
         pickadd: () => this.#pickadd,
         pickauto: () => this.#pickauto,
         outsideWorkingSet: (ids) => this.#outsideWorkingSet(ids),
+        turn: () => {
+          const c = this.#currentViewport();
+          return c ? viewportTwist(c.geom) : 0;
+        },
       },
       o,
     );
