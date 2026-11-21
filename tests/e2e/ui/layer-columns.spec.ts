@@ -11,8 +11,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { BENCH_LAYERS, benchDwg } from '../../../packages/testkit/src/bench/drawing';
-import { expectShown, openWithPicker } from '../app/page';
+import { DOCKED_PALETTES, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
+
+// The palettes dock beside the drawing area (M7-03; narrower windows slide them over it).
+test.use({ viewport: DOCKED_PALETTES });
 
 /** The acceptance: the manager filters a 200-layer drawing in under 100 ms. */
 const FILTER_MS = 100;
@@ -32,10 +35,12 @@ async function openLayers(page: Page, goto = true): Promise<Locator> {
   if (goto) await page.goto(app.url);
   await openWithPicker(page, file);
   await expectShown(page, 'bench-layers.dwg');
-  await page
-    .getByRole('navigation', { name: 'Palettes' })
-    .getByRole('button', { name: 'Layers' })
-    .click();
+  // After a reload the palette comes back open with the palette layout (M7-03).
+  if (goto)
+    await page
+      .getByRole('navigation', { name: 'Palettes' })
+      .getByRole('button', { name: 'Layers' })
+      .click();
   const palette = page.getByRole('complementary', { name: 'Layers' });
   await expect(palette).toBeVisible();
   return palette;

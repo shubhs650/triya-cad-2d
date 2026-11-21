@@ -380,7 +380,7 @@ test('Ctrl+K finds a command by name or alias and runs it', async ({ page }) => 
   await page.keyboard.press('Control+k');
   await page.keyboard.type('history');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Command history' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Command History' })).toBeVisible();
   await page.keyboard.press('Control+k');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: 'Command palette' })).toHaveCount(0);

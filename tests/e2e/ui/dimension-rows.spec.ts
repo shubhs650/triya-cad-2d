@@ -9,9 +9,18 @@
 // packages/engine/test/properties/dimension-rows.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Color, DimensionGeometry, Entity } from '@triya/engine';
-import { activeCanvas, expectDrawn, expectShown, openWithPicker } from '../app/page';
+import {
+  DOCKED_PALETTES,
+  activeCanvas,
+  expectDrawn,
+  expectShown,
+  openWithPicker,
+} from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 import path from 'node:path';
+
+// The palettes dock beside the drawing area (M7-03; narrower windows slide them over it).
+test.use({ viewport: DOCKED_PALETTES });
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {

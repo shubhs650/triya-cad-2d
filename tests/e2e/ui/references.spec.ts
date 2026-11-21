@@ -156,7 +156,7 @@ test('keeps a dropped folder and finds the references in it again, after a reloa
     // A later session.
     await page.reload();
     await openParent(page);
-    await showReferences(page);
+    // The References palette comes back open with the palette layout (M7-03).
     await expect.poll(() => rows(page), { timeout: 30_000 }).toEqual(LOADED);
     await expect(alert(page)).toHaveCount(0);
   } finally {

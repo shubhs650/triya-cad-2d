@@ -131,7 +131,7 @@ test('Esc cancels and keeps the segments drawn; Up recalls; F2 shows the history
   await expect(input).toHaveValue('3,1');
   await page.keyboard.press('Escape');
   await page.keyboard.press('F2');
-  const full = page.getByRole('dialog', { name: 'Command history' });
+  const full = page.getByRole('complementary', { name: 'Command History' });
   await expect(full).toContainText('Command: LINE');
   await expect(full).toContainText('Specify first point: 1,1');
   await page.keyboard.press('F2');
