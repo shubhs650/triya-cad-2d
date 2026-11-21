@@ -1,7 +1,7 @@
 // The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs
 // (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
-// tabs; the command line (CommandLine.tsx, M2-02); the status bar. The ribbon and the palette
-// stack arrive with their own tasks.
+// tabs; the command line (CommandLine.tsx, M2-02); the status bar; the ribbon under the title bar
+// (Ribbon.tsx, M7-01). The palette stack arrives with its own task.
 import type {
   ChangeSet,
   Clipboard,
@@ -185,6 +185,7 @@ import { RecentFiles, indexedDbRecent, type RecentHandle } from './recent';
 import { RECENT_THUMBNAIL, RecentDrawings } from './RecentDrawings';
 import { Autosaver, RecoveryOffers } from './recovery';
 import { indexedDbRecovery, webLocks } from './recovery-browser';
+import { Ribbon } from './Ribbon';
 import { RecoveryBanner } from './RecoveryBanner';
 import {
   ReferenceFiles,
@@ -2440,6 +2441,7 @@ export function App() {
           Settings
         </button>
       </header>
+      <Ribbon doc={active?.id} />
       <Settings
         preferences={preferences}
         onClearAll={clearAllLocalData}
