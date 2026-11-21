@@ -15,6 +15,10 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import { colorValue, type ColorBook } from './color-books';
 import { currentLayer } from './current';
+import { currentTextStyle } from '../commands/draw/text';
+import { currentDimStyle } from '../edit/dimension';
+import { currentMLeaderStyle } from '../edit/mleader';
+import { currentTableStyle } from '../edit/table';
 import { propertySheet, type PropertyRow } from './sheet';
 
 /** The rows the dropdowns show, in the ribbon's order. */
@@ -36,6 +40,25 @@ export interface RibbonLayer {
   readonly locked: boolean;
 }
 
+/**
+ * Annotate's style dropdowns (M7-02 part 5): each the drawing's styles of a kind, by name, and
+ * the current one, which TEXTSTYLE, DIMSTYLE, CMLEADERSTYLE or CTABLESTYLE names.
+ */
+export interface RibbonStyles {
+  readonly current?: string;
+  readonly names: readonly string[];
+}
+
+/** The style variables the dropdowns set, by the kind of style. */
+export const RIBBON_STYLE_VARIABLES = {
+  text: 'TEXTSTYLE',
+  dim: 'DIMSTYLE',
+  mleader: 'CMLEADERSTYLE',
+  table: 'CTABLESTYLE',
+} as const;
+
+export type RibbonStyleKind = keyof typeof RIBBON_STYLE_VARIABLES;
+
 /** The kinds of selection that have a contextual tab. */
 export type RibbonSelection = 'hatch' | 'image' | 'pdf' | 'xref' | 'array';
 
@@ -51,6 +74,27 @@ export interface RibbonProperties {
   readonly colorBooks?: readonly ColorBook[];
   /** The kind every selected object is, when they all are one with a contextual tab. */
   readonly selection?: RibbonSelection;
+  readonly styles: Readonly<Record<RibbonStyleKind, RibbonStyles>>;
+}
+
+const named = (records: Iterable<{ readonly name: string }>, current?: { name: string }) => {
+  // Shape files are text style records too, without a name to choose.
+  const names = [...records]
+    .map((r) => r.name)
+    .filter((n) => n !== '')
+    .sort((a, b) => a.localeCompare(b));
+  return current ? { current: current.name, names } : { names };
+};
+
+/** The drawing's text, dimension, multileader and table styles and the current ones. */
+export function ribbonStyles(model: DocumentModel): Record<RibbonStyleKind, RibbonStyles> {
+  const t = model.tables;
+  return {
+    text: named(t.textStyles.values(), currentTextStyle(model)),
+    dim: named(t.dimStyles.values(), currentDimStyle(model)),
+    mleader: named(t.mleaderStyles.values(), currentMLeaderStyle(model)),
+    table: named(t.tableStyles.values(), currentTableStyle(model)),
+  };
 }
 
 /**
@@ -110,5 +154,6 @@ export function ribbonProperties(model: DocumentModel, ids: readonly EntityId[])
     currentLayer: currentLayer(model),
     ...(sheet.colorBooks && { colorBooks: sheet.colorBooks }),
     ...(selection && { selection }),
+    styles: ribbonStyles(model),
   };
 }
