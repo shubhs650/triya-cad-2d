@@ -58,6 +58,7 @@ import {
   type FieldContext,
 } from '../../edit/fields';
 import { colorBooks } from '../../properties/color-books';
+import { inPolygon } from '../../edit/edit';
 
 /** DXF 70 bit 1: invisible; bit 2: constant (a constant attribute is never an ATTRIB to edit). */
 const INVISIBLE = 1;
@@ -396,27 +397,34 @@ function pickedOf(d: DrawnAttributes, point: Vec2): Handle | undefined {
 /**
  * The attributes a window takes, as AutoCAD's object selection takes objects: drawn wholly
  * inside it, or, a crossing window, inside or crossing it. An attribute no font draws counts
- * by its insertion point.
+ * by its insertion point. A window with a polygon (one square to a twisted viewport's screen,
+ * M6-02 part 16) takes by the polygon.
  */
 function windowedOf(d: DrawnAttributes, w: SelectionWindow, crossing: boolean): Handle[] {
   const lo = { x: Math.min(w.a.x, w.b.x), y: Math.min(w.a.y, w.b.y) };
   const hi = { x: Math.max(w.a.x, w.b.x), y: Math.max(w.a.y, w.b.y) };
-  const inRect = (p: Vec2) => p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
+  const area =
+    w.polygon && w.polygon.length >= 3
+      ? w.polygon
+      : [lo, { x: hi.x, y: lo.y }, hi, { x: lo.x, y: hi.y }];
+  const inArea = inPolygon(area);
   return d.attributes
     .filter((a, i) => {
       const corners = d.outlines[i]?.corners ?? [a.mtext?.position ?? insertionPoint(a)];
-      if (corners.every(inRect)) return true;
-      return crossing && crossesRect(corners, lo, hi);
+      if (corners.every(inArea)) return true;
+      return crossing && crossesArea(corners, area, inArea);
     })
     .map((a) => a.handle);
 }
 
-/** Whether the polygon `corners` and the rectangle `lo`–`hi` overlap at all. */
-function crossesRect(corners: readonly Vec2[], lo: Vec2, hi: Vec2): boolean {
-  const rect = [lo, { x: hi.x, y: lo.y }, hi, { x: lo.x, y: hi.y }];
-  const inRect = (p: Vec2) => p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
-  if (corners.some(inRect)) return true;
-  if (corners.length >= 3 && rect.some((p) => outside(p, corners) === 0)) return true;
+/** Whether the polygon `corners` and the window `area` (holding `inArea`) overlap at all. */
+function crossesArea(
+  corners: readonly Vec2[],
+  area: readonly Vec2[],
+  inArea: (p: Vec2) => boolean,
+): boolean {
+  if (corners.some(inArea)) return true;
+  if (corners.length >= 3 && area.some((p) => outside(p, corners) === 0)) return true;
   const cross = (o: Vec2, a: Vec2, b: Vec2) =>
     (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
   const meets = (p: Vec2, q: Vec2, r: Vec2, s: Vec2) =>
@@ -424,7 +432,9 @@ function crossesRect(corners: readonly Vec2[], lo: Vec2, hi: Vec2): boolean {
   for (let i = 0; i < corners.length; i++) {
     const p = corners[i]!;
     const q = corners[(i + 1) % corners.length]!;
-    for (let j = 0; j < 4; j++) if (meets(p, q, rect[j]!, rect[(j + 1) % 4]!)) return true;
+    for (let j = 0; j < area.length; j++) {
+      if (meets(p, q, area[j]!, area[(j + 1) % area.length]!)) return true;
+    }
   }
   return false;
 }

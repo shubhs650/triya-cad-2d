@@ -676,6 +676,31 @@ function image(t: Similarity, g: ImageGeometry): ImageGeometry {
   return { ...planar(t, g), ...frame, ...normal(frame.u, frame.v), clip: { ...g.clip, vertices } };
 }
 
+/**
+ * The cosine and sine of a turn, exactly 0 and ±1 for a turn by right angles (to within 1e-9 of
+ * a quarter), so a viewport turned by them keeps its numbers clean.
+ */
+function turnOf(angle: number): [number, number] {
+  const quarters = angle / (Math.PI / 2);
+  const k = Math.round(quarters);
+  if (Math.abs(quarters - k) > 1e-9) return [Math.cos(angle), Math.sin(angle)];
+  const q = ((k % 4) + 4) % 4;
+  return (
+    [
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+      [0, -1],
+    ] as const
+  )[q]!.slice() as [number, number];
+}
+
+/** Whether a turn is by other than right angles: a viewport turned by it is clipped. */
+export function turnsOffSquare(angle: number): boolean {
+  const quarters = angle / (Math.PI / 2);
+  return Math.abs(quarters - Math.round(quarters)) > 1e-9;
+}
+
 // ── All kinds ───────────────────────────────────────────────────────────────────────────────
 
 /** Kinds no edit can carry: Triya cannot write their geometry back (M1-40). */
@@ -697,8 +722,6 @@ export function transformProblem(g: EntityGeometry, t: Similarity): string | und
   if (g.kind === 'VIEWPORT') {
     if (g.id === 1) return 'the paper space viewport cannot be edited';
     if (t.reflect) return 'a viewport cannot be mirrored';
-    const quarter = (t.angle / (Math.PI / 2)) % 1;
-    if (Math.min(quarter, 1 - quarter) > 1e-9) return 'a viewport turns by right angles only';
   }
   return undefined;
 }
@@ -910,17 +933,31 @@ export function transformGeometry(
         })),
       };
     case 'VIEWPORT': {
-      // The frame moves and scales with the sheet, and turns by right angles with its view
-      // (VPROTATEASSOC 1, AutoCAD's default); the view shows the same part of the model.
-      const quarterTurns = Math.round(t.angle / (Math.PI / 2)) % 2 !== 0;
+      // The frame moves and scales with the sheet and the view turns with it (VPROTATEASSOC 1,
+      // AutoCAD's default): the view shows the same part of the model, at the same place in the
+      // frame. A VIEWPORT's frame is square to the sheet, so turned by other than right angles
+      // it becomes the box round the turned frame, which the edit clips to the turned frame
+      // (`clipTurnedViewport`, M6-02 part 16), as AutoCAD makes such a viewport a clipped one.
+      const w = Math.abs(g.width);
+      const h = Math.abs(g.height);
+      const [cos, sin] = turnOf(t.angle);
+      const width = w * Math.abs(cos) + h * Math.abs(sin);
+      const height = w * Math.abs(sin) + h * Math.abs(cos);
+      // The model shows at the same zoom on a frame the scale made larger, so it grows too;
+      // the view height spans the new frame's height at the old zoom.
+      const viewHeight = h > 0 && height !== h ? (g.viewHeight * height) / h : g.viewHeight;
+      // The view centre is in the twisted display coordinates: it turns with the twist.
+      const vc = g.viewCenter;
       return {
         ...g,
         center: p(g.center),
-        width: len(t, quarterTurns ? g.height : g.width),
-        height: len(t, quarterTurns ? g.width : g.height),
-        // The model shows at the same zoom on a frame the scale made larger, so it grows too.
-        viewHeight: quarterTurns ? (g.viewHeight * g.width) / g.height : g.viewHeight,
-        twist: t.angle === 0 ? g.twist : normalizeAngle(g.twist + t.angle),
+        width: len(t, width),
+        height: len(t, height),
+        viewHeight,
+        ...(t.angle !== 0 && {
+          viewCenter: { x: vc.x * cos - vc.y * sin, y: vc.x * sin + vc.y * cos },
+          twist: normalizeAngle(g.twist + t.angle),
+        }),
       };
     }
     case 'OLE2FRAME':

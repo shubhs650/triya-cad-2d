@@ -18,11 +18,12 @@ import { flatten } from '../geom/flatten';
 import type { Box } from '../geom/bounds';
 import { toleranceForSize } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
-import { viewportScale } from '../layout/viewport';
+import { viewportFrame, viewportScale } from '../layout/viewport';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
-import type { Entity, EntityGeometry, ViewportGeometry } from '../model/types';
+import type { Entity, EntityGeometry, LwPolylineGeometry, ViewportGeometry } from '../model/types';
+import { point, type Similarity } from './similarity';
 import { entityBounds } from '../spatial/entity-bounds';
 import { VIEWPORT_NON_RECT_CLIP } from '../layout/viewport';
 import { eraseObjects } from './edit';
@@ -125,6 +126,31 @@ const viewportIn = (b: ChangeSetBuilder, id: EntityId) => {
 };
 
 /**
+ * The viewport framed by `frame`, with the same scale and model space where it was on the sheet.
+ */
+function framedBy<G extends ViewportGeometry | Omit<ViewportGeometry, 'clipBoundary'>>(
+  g: G,
+  frame: Box,
+): G {
+  const center = { x: (frame.minX + frame.maxX) / 2, y: (frame.minY + frame.maxY) / 2 };
+  const height = frame.maxY - frame.minY;
+  const s = viewportScale(g as ViewportGeometry);
+  // The view centre moves with the frame's centre, at the viewport's scale, so the sheet
+  // shows model space where it was (`viewportTransform`); the view's height spans the frame's.
+  const view =
+    s > 0
+      ? {
+          viewCenter: {
+            x: g.viewCenter.x + (center.x - g.center.x) / s,
+            y: g.viewCenter.y + (center.y - g.center.y) / s,
+          },
+          viewHeight: height / s,
+        }
+      : {};
+  return { ...g, ...view, center, width: frame.maxX - frame.minX, height };
+}
+
+/**
  * Clips viewport `viewportId` with object `boundaryId` (checked with `clipObjectProblem`): the
  * viewport names it, is non-rectangular and framed by its box, with the same scale and model
  * space where it was on the sheet; the object lists the viewport in its reactors. A boundary
@@ -145,28 +171,9 @@ export function clipViewport(
   }
   const { clipBoundary: _old, ...g } = viewportIn(b, viewportId)!.geom;
   const frame = viewportClipFrame(boundary.geom)!;
-  const center = { x: (frame.minX + frame.maxX) / 2, y: (frame.minY + frame.maxY) / 2 };
-  const height = frame.maxY - frame.minY;
-  const s = viewportScale(g);
-  // The view centre moves with the frame's centre, at the viewport's scale, so the sheet
-  // shows model space where it was (`viewportTransform`); the view's height spans the frame's.
-  const view =
-    s > 0
-      ? {
-          viewCenter: {
-            x: g.viewCenter.x + (center.x - g.center.x) / s,
-            y: g.viewCenter.y + (center.y - g.center.y) / s,
-          },
-          viewHeight: height / s,
-        }
-      : {};
   b.updateEntity(viewportId, {
     geom: {
-      ...g,
-      ...view,
-      center,
-      width: frame.maxX - frame.minX,
-      height,
+      ...framedBy(g, frame),
       clipBoundary: boundary.handle,
       flags: g.flags | VIEWPORT_NON_RECT_CLIP,
     },
@@ -196,4 +203,58 @@ export function deleteViewportClip(
     const { clipBoundary: _c, ...rest } = g;
     b.updateEntity(viewportId, { geom: { ...rest, flags: g.flags & ~VIEWPORT_NON_RECT_CLIP } });
   }
+}
+
+/**
+ * A viewport an edit turned by other than right angles (ROTATE, ALIGN, a rotating grip, a
+ * rotated copy; M6-02 part 16; `turnsOffSquare`): its frame stays square to the sheet, so it is
+ * clipped to its turned frame, as AutoCAD makes a turned rectangular viewport a clipped one. A
+ * viewport already clipped, its boundary turned with it, is framed by its boundary's box again.
+ * `before` is the viewport as it was, `t` the edit's motion.
+ *
+ * The new boundary is a closed LWPOLYLINE through the turned frame's corners, in the viewport's
+ * space with the viewport's general properties, so the sheet shows the frame as it was, turned
+ * (AutoCAD's help does not say which properties it takes; choice documented in the PR).
+ */
+export function clipTurnedViewport(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  viewportId: EntityId,
+  before: ViewportGeometry,
+  t: Similarity,
+): void {
+  const vp = viewportIn(b, viewportId);
+  if (!vp) return;
+  const clip = vp.geom.clipBoundary;
+  if (clip !== undefined) {
+    const id = model.ids.idOf(clip);
+    const boundary = id === undefined ? undefined : b.entity(id);
+    const frame = boundary && viewportClipFrame(boundary.geom);
+    if (frame) b.updateEntity(viewportId, { geom: framedBy(vp.geom, frame) });
+    return;
+  }
+  const f = viewportFrame(before);
+  const corners = [
+    { x: f.minX, y: f.minY },
+    { x: f.maxX, y: f.minY },
+    { x: f.maxX, y: f.maxY },
+    { x: f.minX, y: f.maxY },
+  ].map((q) => point(t, q));
+  const polygon: LwPolylineGeometry = {
+    kind: 'LWPOLYLINE',
+    vertices: corners.map((q) => ({ x: q.x, y: q.y, bulge: 0 })),
+    closed: true,
+  };
+  const { layer, color, linetype, lineweight, ltScale, transparency } = vp;
+  const boundary = b.addEntity({
+    owner: vp.owner,
+    layer,
+    color,
+    linetype,
+    lineweight,
+    ltScale,
+    transparency,
+    geom: polygon,
+  });
+  clipViewport(b, model, viewportId, boundary.id);
 }

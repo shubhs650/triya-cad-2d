@@ -13,6 +13,7 @@ export * from './flatten';
 export * from './intersect';
 export * from './nurbs';
 export * from './offset';
+export * from './screen-window';
 export * from './shapes';
 export * from './ellipse-xline';
 export * from './tangent';
