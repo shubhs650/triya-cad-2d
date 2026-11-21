@@ -381,6 +381,25 @@ export async function* detailed(
   return { ...s, scaleLineweights, paperspaceLast: !first, hidePaperspace: hide };
 }
 
+/** "Enter an output device name": the device's id, or undefined when the command ends. */
+async function* outputDevice(
+  ctx: CommandContext,
+  setup: PlotScriptSetup,
+): Step<string | undefined> {
+  const name = yield* pickName(
+    ctx,
+    'Enter an output device name',
+    setup.devices.map((d) => d.name),
+    nameOf(setup.devices, setup.settings.device),
+    (t) => `Output device "${t}" not found.`,
+    (t) => {
+      const id = choiceNamed(setup.devices, t);
+      return id === undefined ? undefined : nameOf(setup.devices, id);
+    },
+  );
+  return name === undefined ? undefined : setup.devices.find((d) => d.name === name)!.id;
+}
+
 /** -PLOT. */
 export async function* dashPlot(ctx: CommandContext): CommandGenerator {
   const full = yield* yesNo(ctx, 'Detailed plot configuration?', false);
@@ -423,19 +442,8 @@ export async function* dashPlot(ctx: CommandContext): CommandGenerator {
     }
   }
 
-  const deviceName = yield* pickName(
-    ctx,
-    'Enter an output device name',
-    setup.devices.map((d) => d.name),
-    nameOf(setup.devices, setup.settings.device),
-    (t) => `Output device "${t}" not found.`,
-    (t) => {
-      const id = choiceNamed(setup.devices, t);
-      return id === undefined ? undefined : nameOf(setup.devices, id);
-    },
-  );
-  if (deviceName === undefined) return;
-  const device = setup.devices.find((d) => d.name === deviceName)!.id;
+  const device = yield* outputDevice(ctx, setup);
+  if (device === undefined) return;
 
   let settings: PlotScriptSettings | undefined = { ...setup.settings, device };
   if (full) {
@@ -462,6 +470,37 @@ export async function* dashPlot(ctx: CommandContext): CommandGenerator {
   await viewRequest(ctx, {
     op: 'plotScript',
     script: { layout, ...(pageSetup !== undefined && { pageSetup }), settings, file, save, plot },
+  });
+}
+
+/**
+ * -PAGESETUP (M6-06; AutoCAD 2024 Help, "-PAGESETUP (Command)"): the output device, then every
+ * setting -PLOT's detailed configuration asks, for the page setup of the space shown (a layout
+ * shown in a viewport made current is still the layout's), each defaulting to what it holds. The
+ * answers go into it as the Page Setup dialog's OK puts them (the app's `plotScript`, saving and
+ * not plotting), one undo step of the app's. AutoCAD's help gives no message for a space without a
+ * page setup of its own (a drawing read without a Model layout); Triya says so and asks nothing.
+ */
+export async function* dashPageSetup(ctx: CommandContext): CommandGenerator {
+  const setup = await setupOf(ctx);
+  if (!setup) return;
+  if (!setup.canSave) {
+    ctx.message(`${setup.layout} has no page setup to change.`);
+    return;
+  }
+  const device = yield* outputDevice(ctx, setup);
+  if (device === undefined) return;
+  const settings = yield* detailed(ctx, setup, device);
+  if (!settings) return;
+  await viewRequest(ctx, {
+    op: 'plotScript',
+    script: {
+      layout: setup.layout,
+      settings,
+      file: withExtension(setup.file, device),
+      save: true,
+      plot: false,
+    },
   });
 }
 

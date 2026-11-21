@@ -19,6 +19,18 @@ describe('system variables the app keeps', () => {
     });
   });
 
+  it('keeps what a new layout gets the first time it is shown as two switches (M6-06)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'LAYOUTCREATEVIEWPORT')).toEqual({ ok: true, value: 1 });
+    expect(systemVariableReply(d, 'SHOWPAGESETUPFORNEWLAYOUTS')).toEqual({ ok: true, value: 0 });
+    systemVariableReply(d, 'LAYOUTCREATEVIEWPORT', 0);
+    systemVariableReply(d, 'SHOWPAGESETUPFORNEWLAYOUTS', 1);
+    expect(d.get()).toMatchObject({
+      layoutCreateViewport: false,
+      showPageSetupForNewLayouts: true,
+    });
+  });
+
   it('keeps the modify commands\u2019 options, OFFSETDIST and CHAMMODE only while the app runs (M3-12)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'OFFSETDIST')).toEqual({ ok: true, value: -1 });

@@ -404,9 +404,13 @@ const COLOURS: readonly {
   { key: 'selection', label: 'Selection highlight' },
 ];
 
-/** OPTIONS > Display: the colour theme, the canvas colours and how coordinates show. */
+/**
+ * OPTIONS > Display: the colour theme, the canvas colours, how coordinates show and the layout
+ * elements (M6-06).
+ */
 function DisplaySettings({ preferences }: { preferences: PreferencesStore }) {
   const p = useSyncExternalStore(preferences.subscribe, preferences.get);
+  const d = useSyncExternalStore(drafting.subscribe, drafting.get);
   const id = useId();
   const setCanvas = (patch: Partial<CanvasColours>) =>
     preferences.update({ canvas: { ...p.canvas, ...patch } });
@@ -465,6 +469,28 @@ function DisplaySettings({ preferences }: { preferences: PreferencesStore }) {
           <option value="decimal">Decimal</option>
         </select>
       </div>
+      {/* M6-06: AutoCAD's Options > Display > Layout elements, for a new layout first shown. */}
+      <fieldset>
+        <legend>Layout elements</legend>
+        <label className="setting-check">
+          <input
+            type="checkbox"
+            checked={d.showPageSetupForNewLayouts}
+            onChange={(e) =>
+              drafting.configure({ showPageSetupForNewLayouts: e.currentTarget.checked })
+            }
+          />
+          Show Page Setup Manager for new layouts (SHOWPAGESETUPFORNEWLAYOUTS)
+        </label>
+        <label className="setting-check">
+          <input
+            type="checkbox"
+            checked={d.layoutCreateViewport}
+            onChange={(e) => drafting.configure({ layoutCreateViewport: e.currentTarget.checked })}
+          />
+          Create viewport in new layouts (LAYOUTCREATEVIEWPORT)
+        </label>
+      </fieldset>
     </section>
   );
 }

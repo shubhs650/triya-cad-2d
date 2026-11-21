@@ -204,6 +204,12 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // plots no object transparency, 1 (initially) as the page setup or the Plot dialog says, 2
   // always plots it.
   { name: 'PLOTTRANSPARENCYOVERRIDE', store: 'app', kind: 'integer', min: 0, max: 2 },
+  // M6-06 (AutoCAD 2024 Help, both "Saved in: Registry"): LAYOUTCREATEVIEWPORT makes a viewport
+  // in each new layout the first time it is shown (1, initially) or not (0);
+  // SHOWPAGESETUPFORNEWLAYOUTS opens the Page Setup Manager then (1) or not (0, initially), the
+  // manager's "Display when creating a new layout".
+  { name: 'LAYOUTCREATEVIEWPORT', store: 'app', kind: 'switch' },
+  { name: 'SHOWPAGESETUPFORNEWLAYOUTS', store: 'app', kind: 'switch' },
   // BINDTYPE (M5-04 part 2; AutoCAD 2024 Help, "Saved in: Not-saved"): how -XREF Bind binds an
   // xref, 0 (initially) as Bind (`xref$0$name`), 1 as Insert (the names without the xref's).
   { name: 'BINDTYPE', store: 'app', kind: 'integer', min: 0, max: 1 },

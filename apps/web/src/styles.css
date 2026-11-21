@@ -3141,6 +3141,14 @@ button {
   margin: 0;
 }
 
+/* M6-06: "Display when creating a new layout" at the manager's lower left, as AutoCAD's. */
+.page-setup-show-new {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: auto;
+}
+
 .new-page-setup-start select {
   width: 100%;
 }

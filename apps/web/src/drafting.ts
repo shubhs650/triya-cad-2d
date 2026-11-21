@@ -127,6 +127,16 @@ export interface DraftingState {
    */
   readonly plotTransparencyOverride: 0 | 1 | 2;
   /**
+   * LAYOUTCREATEVIEWPORT (M6-06): a new layout gets a viewport the first time it is shown
+   * (initially). AutoCAD keeps it per user; Settings' "Create viewport in new layouts".
+   */
+  readonly layoutCreateViewport: boolean;
+  /**
+   * SHOWPAGESETUPFORNEWLAYOUTS (M6-06): the Page Setup Manager opens on a new layout first shown
+   * (initially not). AutoCAD keeps it per user; the manager's "Display when creating a new layout".
+   */
+  readonly showPageSetupForNewLayouts: boolean;
+  /**
    * LWDEFAULT (M5-08 part 3): what a Default lineweight draws as, hundredths of a millimetre, one
    * of AutoCAD's lineweights. AutoCAD keeps it per user, initially 25; Lineweight Settings sets it.
    */
@@ -519,6 +529,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   layLockFade: 50,
   xFade: 50,
   plotTransparencyOverride: 1,
+  layoutCreateViewport: true,
+  showPageSetupForNewLayouts: false,
   lwDefault: 25,
   lwUnits: 1,
   lwScale: 1,

@@ -146,6 +146,15 @@ const VALUES: Readonly<
     get: (s) => s.plotTransparencyOverride,
     set: (v) => ({ plotTransparencyOverride: v as 0 | 1 | 2 }),
   },
+  // M6-06: what a new layout gets the first time it is shown (the engine's layout-init.ts).
+  LAYOUTCREATEVIEWPORT: {
+    get: (s) => bit(s.layoutCreateViewport),
+    set: (v) => ({ layoutCreateViewport: v === 1 }),
+  },
+  SHOWPAGESETUPFORNEWLAYOUTS: {
+    get: (s) => bit(s.showPageSetupForNewLayouts),
+    set: (v) => ({ showPageSetupForNewLayouts: v === 1 }),
+  },
   // M5-08 part 3: what Default draws as (the canvas's `RenderStyle.lineweightDefault`) and the
   // units lineweights are listed in; Lineweight Settings sets both.
   LWDEFAULT: { get: (s) => s.lwDefault, set: (lwDefault) => ({ lwDefault }) },
