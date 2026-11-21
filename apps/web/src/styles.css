@@ -566,7 +566,7 @@ button {
     transform var(--motion) ease-out;
 }
 
-.ribbon-item:hover:not(:disabled),
+.ribbon-item:hover:not(:disabled, [aria-disabled='true']),
 .ribbon-split-arrow:hover,
 .ribbon-overflow:hover,
 .ribbon-panel-button:hover {
@@ -574,11 +574,12 @@ button {
   border-color: var(--chrome-border);
 }
 
-.ribbon-item:active:not(:disabled) {
+.ribbon-item:active:not(:disabled, [aria-disabled='true']) {
   background: var(--selected-bg);
 }
 
-.ribbon-item:disabled {
+.ribbon-item:disabled,
+.ribbon-item[aria-disabled='true'] {
   cursor: default;
   opacity: 0.45;
 }
@@ -651,11 +652,11 @@ button {
 
 /* Hover lifts an enabled item's icon a pixel and a press sinks the button, both within the
    ≤ 160 ms motion budget and off under prefers-reduced-motion (--motion is 0 there). */
-.ribbon-item:hover:not(:disabled) .icon {
+.ribbon-item:hover:not(:disabled, [aria-disabled='true']) .icon {
   transform: translateY(-1px);
 }
 
-.ribbon-item:active:not(:disabled) {
+.ribbon-item:active:not(:disabled, [aria-disabled='true']) {
   transform: scale(0.94);
 }
 
@@ -687,6 +688,12 @@ button {
 .ribbon-tooltip-text {
   margin: 4px 0 0;
   line-height: 1.35;
+}
+
+.ribbon-tooltip-unavailable {
+  margin: 4px 0 0;
+  font-style: italic;
+  color: var(--chrome-text-muted);
 }
 
 .ribbon-tooltip-meta {

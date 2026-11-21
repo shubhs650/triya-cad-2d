@@ -213,6 +213,28 @@ export const CAD_GLYPHS = {
   centermark: {
     d: 'M10 5.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3M9 10h2M10 9v2',
   },
+  // Annotate > Dimensions, Leaders (M7-02 part 2)
+  'dim-quick': { d: 'M2.5 4.5v12M9.5 8.5v8M16.5 6.5v10M2.5 13.5h14M13 2.5l-2 3h3l-2 3' },
+  'dim-continue': { d: 'M2.5 5.5v11M10 5.5v11M17.5 5.5v11M2.5 9.5h15', dots: [[10, 9.5]] },
+  'dim-baseline': { d: 'M2.5 3.5v13M10 9.5v7M17.5 9.5v7M2.5 7.5h7.5M2.5 11.5h15' },
+  'dim-space': { d: 'M3.5 4.5v12M16.5 4.5v12M3.5 7.5h13M3.5 12.5h13M10 9l0 2M9 10l1-1 1 1' },
+  'dim-break': { d: 'M3.5 4.5v12M16.5 4.5v12M3.5 8.5h4M12.5 8.5h4M8.5 12.5l3-8' },
+  'dim-jogline': { d: 'M3.5 4.5v12M16.5 4.5v12M3.5 10.5h5l1.5-3 1 6 1.5-3h4.5' },
+  'dim-inspect': {
+    d: 'M3.5 4.5v12M16.5 4.5v12M3.5 8.5h13M7 12.5h6a1.5 1.5 0 0 1 0 3H7a1.5 1.5 0 0 1 0-3z',
+  },
+  'dim-oblique': { d: 'M4.5 16.5l3-12M14.5 16.5l3-12M5.5 9.5h10.5' },
+  'dim-text-angle': { d: 'M3.5 4.5v12M16.5 4.5v12M3.5 12.5h13M7.5 9.5l5-4M10 4.5h2.5V7' },
+  'dim-override': { d: 'M3.5 4.5v12M16.5 4.5v12M3.5 8.5h13M8 15.5l5.5-5.5 1.5 1.5-5.5 5.5H8z' },
+  'mleader-align': { d: 'M2.5 9.5l5-5h4M2.5 17.5l5-5h4M14.5 2.5v15' },
+  'mleader-collect': { d: 'M2.5 16.5l7-7h3M12.5 5.5h2v2h-2zM15.5 5.5h2v2h-2zM12.5 9.5h2v2h-2z' },
+  // View, Tools (M7-02 part 2)
+  'ucs-icon': { d: 'M4.5 3.5v13h12M2.5 5.5l2-2 2 2M14.5 14.5l2 2-2 2', dots: [[4.5, 16.5]] },
+  ucs: { d: 'M4.5 3.5v13h12M2.5 5.5l2-2 2 2M14.5 14.5l2 2-2 2M7.5 13.5l6-6' },
+  linetype: {
+    d: 'M2.5 5.5h15M2.5 10h4M8.5 10h4M14.5 10h3M2.5 14.5h3M7.5 14.5h1M10.5 14.5h3M15.5 14.5h1',
+  },
+  lineweight: { d: 'M2.5 4.5h15M2.5 9h15M2.5 9.5h15M2.5 14h15M2.5 14.5h15M2.5 15h15' },
   // Layers, measuring
   'layer-isolate': { d: `${LAYER}M3.5 11.5l6.5 3 6.5-3`, dots: [[10, 7.5]] },
   area: { d: 'M3.5 6.5l6-3 7 4v6l-5 3.5-8-2.5zM6.5 9.5l3 2M8.5 7.5l5 3.5M10.5 14l3-2' },

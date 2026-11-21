@@ -23,6 +23,8 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { drafting, type DraftingToggle } from './drafting';
+import { paletteStack, type PaletteName } from './palette-stack';
+import type { PreferencesStore, Theme } from './preferences';
 import { engines } from './engine/registry';
 import { Icon } from './ribbon/Icon';
 import { tooltipOf, type Tooltip } from './ribbon/tooltips';
@@ -55,12 +57,37 @@ const tooltipSources = {
 /** The icon's size in pixels for an item size: big over a large button's label. */
 const iconSize = (size: ItemSize) => (size === 'large-label' ? 32 : 20);
 
+const noSubscription = () => () => {};
+
 const toggleOf = (run: RibbonRun): DraftingToggle | undefined =>
   'action' in run && run.action.startsWith('drafting:')
     ? (run.action.slice('drafting:'.length) as DraftingToggle)
     : undefined;
 
-function runItem(run: RibbonRun, doc: number | undefined): void {
+/** The app's own windows a ribbon item opens (`app:<name>`): the aliases and the keys. */
+export type AppWindow = 'aliases' | 'shortcuts';
+
+export interface RibbonProps {
+  readonly doc: number | undefined;
+  /** The colour theme's store, for View > Interface > Theme. */
+  readonly preferences?: PreferencesStore | undefined;
+  readonly onOpenWindow?: ((window: AppWindow) => void) | undefined;
+}
+
+const actionArg = (run: RibbonRun, prefix: string): string | undefined =>
+  'action' in run && run.action.startsWith(prefix) ? run.action.slice(prefix.length) : undefined;
+
+function runItem(
+  run: RibbonRun,
+  doc: number | undefined,
+  { preferences, onOpenWindow }: Omit<RibbonProps, 'doc'>,
+): void {
+  const palette = actionArg(run, 'palette:');
+  if (palette !== undefined) return paletteStack.set(palette as PaletteName);
+  const theme = actionArg(run, 'theme:');
+  if (theme !== undefined) return preferences?.update({ theme: theme as Theme });
+  const win = actionArg(run, 'app:');
+  if (win !== undefined) return onOpenWindow?.(win as AppWindow);
   const t = toggleOf(run);
   if (t !== undefined) {
     const on = 'on' in run ? run.on : undefined;
@@ -92,9 +119,13 @@ interface MenuState {
   readonly split?: RibbonItem;
 }
 
-export function Ribbon({ doc }: { doc: number | undefined }) {
+export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
   const width = useSyncExternalStore(viewport.subscribe, viewport.width);
   const draftingState = useSyncExternalStore(drafting.subscribe, drafting.get);
+  const theme = useSyncExternalStore(
+    preferences?.subscribe ?? noSubscription,
+    () => preferences?.get().theme,
+  );
   const [tabId, setTabId] = useState(RIBBON_TABS[0]!.id);
   const [minimized, setMinimized] = useState(false);
   const [popped, setPopped] = useState(false);
@@ -149,11 +180,13 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
 
   const run = (item: RibbonItem) => {
     hideTip();
-    runItem(item.run, doc);
+    if (item.unavailable) return;
+    runItem(item.run, doc, { preferences, onOpenWindow });
     setMenu(undefined);
     setPopped(false);
   };
-  const disabled = (item: RibbonItem) => doc === undefined && 'command' in item.run;
+  const disabled = (item: RibbonItem) =>
+    item.unavailable !== undefined || (doc === undefined && 'command' in item.run);
   const current = (item: RibbonItem) => (item.menu ? (picked.get(item.id) ?? item.menu[0]!) : item);
   const pressed = (item: RibbonItem) => {
     const t = toggleOf(item.run);
@@ -177,7 +210,10 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
         data-item={item.id}
         aria-label={item.label}
         aria-describedby={tip?.anchor.dataset['item'] === item.id ? 'ribbon-tooltip' : undefined}
-        disabled={disabled(now)}
+        // An unavailable item stays hoverable (a disabled button hears no pointer) for the
+        // tooltip that says why it cannot run.
+        disabled={disabled(now) && !now.unavailable}
+        aria-disabled={now.unavailable ? true : undefined}
         aria-pressed={pressed(now)}
         onClick={(e) => {
           blurIfClicked(e);
@@ -348,6 +384,8 @@ export function Ribbon({ doc }: { doc: number | undefined }) {
           menu={menu}
           disabled={disabled}
           checked={(item) => {
+            const th = actionArg(item.run, 'theme:');
+            if (th !== undefined) return th === (theme ?? 'system');
             const t = toggleOf(item.run);
             return t !== undefined && 'on' in item.run
               ? drafting.isOn(t) === item.run.on
@@ -487,6 +525,7 @@ function RibbonTooltip({ tip, anchor }: TipState) {
     >
       <div className="ribbon-tooltip-title">{tip.title}</div>
       {tip.description && <p className="ribbon-tooltip-text">{tip.description}</p>}
+      {tip.unavailable && <p className="ribbon-tooltip-unavailable">{tip.unavailable}</p>}
       {rows.length > 0 && (
         <dl className="ribbon-tooltip-meta">
           {rows.map(([k, v]) => (

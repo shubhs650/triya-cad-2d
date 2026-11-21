@@ -45,6 +45,8 @@ Panel names and groupings match AutoCAD so the drafter's spatial memory transfer
 
 **Tools:** Drawing Utilities (Units, Audit/Health, Purge, Recover) · Drafting Settings · Options · Alias editor · Keyboard · Clear local data · About
 
+*As built (M7-02 part 2):* every tab above but Parametric (M9-05) is in `ribbon.config.ts`, with the commands Triya has: Annotate's Annotation Scaling holds Scale List and the greyed-out Add/Delete Scales and Sync Scale Positions (tooltip: "Annotative creation is view-only in v1"); View's Palettes show Properties, Layers, DesignCenter (Blocks/Library until M8-03), External References, Health and Command History in the palette stack, and Interface holds Theme ▾ (Use System Setting, Light, Dark); Tools holds Units, Drawing Health, Purge, Drawing Recovery, Options (OPTIONS, M7-04), Drafting Settings, Linetype, Lineweight, Point Style, Set Variable, Edit Aliases and Keyboard Shortcuts. Every panel of these tabs has a compression rule, the least-used giving up room first. Not yet: View's Compare (M8-06), Interface's File tabs / Layout tabs / Status bar switches, Tools' Clear local data and About (both in Settings).
+
 **Contextual tabs** appear while active: Hatch Creation, Text Editor, Table Cell, Block Editor, Xref/Image/PDF Underlay, Array Creation, Compare.
 
 ## 3. Responsive ribbon rules (DEC-017)
