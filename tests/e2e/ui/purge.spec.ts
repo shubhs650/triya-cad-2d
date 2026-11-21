@@ -47,7 +47,7 @@ test('-PURGE removes the layers nothing uses, and finds none left on a second ru
   await enterCommand(page, 'N');
   await expect(prompt(page)).toHaveText('Command:');
   await page.keyboard.press('F2');
-  const full = page.getByRole('dialog', { name: 'Command history' });
+  const full = page.getByRole('complementary', { name: 'Command History' });
   await expect(full).toContainText('Deleting layer "');
   await expect(full).toContainText(/\d+ layers? deleted\./);
   await shot('1-purge-layers.png');

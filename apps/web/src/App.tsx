@@ -144,6 +144,7 @@ import {
 import { engines, nextEngineWorker } from './engine/registry';
 import { drawingRecords, shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
+import { CommandHistoryPalette } from './CommandHistoryPalette';
 import type { ImageAdjustPreview } from './ImageAdjustDialog';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
 import {
@@ -2639,6 +2640,14 @@ export function App() {
                       fontStore={fonts}
                       deviceFonts={deviceFonts}
                       onClose={() => paletteStack.close('health')}
+                    />
+                  );
+                case 'history':
+                  return (
+                    <CommandHistoryPalette
+                      doc={active.id}
+                      lines={commandLines}
+                      onClose={() => paletteStack.close('history')}
                     />
                   );
                 case 'designcenter':

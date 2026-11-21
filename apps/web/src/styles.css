@@ -849,14 +849,16 @@ button {
 /* Palettes (M1-23, UI_SPEC.md §4): docked right of the canvas, opened from the rail. */
 /* The palette stack (M7-03): the rail on the dock's outer edge, the stack between it and the
    drawing area, docked (it takes its width from the drawing area) or, below 1366 px, sliding
-   over the drawing area. */
+   over the drawing area. Part 2: docked at the bottom (under the drawing area, the rail staying
+   at its side), floating over the drawing area, and auto-hidden (collapsed to its tab strip over
+   the drawing area, opening over it). */
 .palette-dock {
   position: relative;
   display: flex;
   min-height: 0;
 }
 
-.palette-dock[data-side='left'] {
+.palette-dock[data-rail='left'] {
   order: -1;
   flex-direction: row-reverse;
 }
@@ -876,7 +878,9 @@ button {
   border-left: 0;
 }
 
-.palette-dock[data-mode='slide-over'] .palette-stack {
+.palette-dock[data-mode='slide-over'] .palette-stack,
+.palette-dock[data-autohide='true'][data-side='right'] .palette-stack,
+.palette-dock[data-autohide='true'][data-side='left'] .palette-stack {
   position: absolute;
   z-index: 20;
   top: 0;
@@ -884,10 +888,14 @@ button {
   bottom: 0;
   width: min(var(--palette-width), calc(100vw - 96px));
   box-shadow: -6px 0 16px rgb(0 0 0 / 25%);
+}
+
+.palette-dock[data-mode='slide-over'] .palette-stack {
   animation: palette-slide-in 140ms ease-out;
 }
 
-.palette-dock[data-mode='slide-over'][data-side='left'] .palette-stack {
+.palette-dock[data-mode='slide-over'][data-side='left'] .palette-stack,
+.palette-dock[data-autohide='true'][data-side='left'] .palette-stack {
   right: auto;
   left: 100%;
   box-shadow: 6px 0 16px rgb(0 0 0 / 25%);
@@ -914,7 +922,135 @@ button {
   }
 }
 
-/* The width handle on the stack's edge facing the drawing area. */
+/* Docked at the bottom: the workspace becomes a grid, the stack under the drawing area and the
+   rail beside both. */
+.workspace:has(> .palette-dock[data-side='bottom'][data-floating='false']) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.workspace:has(> .palette-dock[data-side='bottom'][data-floating='false']) > .canvas-area {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.palette-dock[data-side='bottom'][data-floating='false'] {
+  display: contents;
+}
+
+.palette-dock[data-side='bottom'][data-floating='false'] > .palette-rail {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
+.palette-dock[data-side='bottom'][data-floating='false'] .palette-stack {
+  grid-row: 2;
+  grid-column: 1;
+  width: auto;
+  height: min(var(--palette-height), 50vh);
+  border-top: 1px solid var(--chrome-border);
+  border-left: 0;
+}
+
+/* Auto-hidden at the bottom, it lies over the drawing area's bottom edge. */
+.palette-dock[data-side='bottom'][data-floating='false'][data-autohide='true'] .palette-stack {
+  z-index: 20;
+  grid-row: 1;
+  align-self: end;
+  box-shadow: 0 -6px 16px rgb(0 0 0 / 25%);
+}
+
+/* Floating over the drawing area, where it was dropped. */
+.palette-dock[data-floating='true'] .palette-stack {
+  position: fixed;
+  z-index: 30;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  animation: none;
+}
+
+/* Collapsed to its tab strip: docked at a side, the strip stands upright along the edge. */
+.palette-stack[data-collapsed='true'] {
+  height: auto;
+  box-shadow: none;
+}
+
+.palette-dock[data-side='right'][data-floating='false'] .palette-stack[data-collapsed='true'],
+.palette-dock[data-side='left'][data-floating='false'] .palette-stack[data-collapsed='true'] {
+  bottom: auto;
+  width: auto;
+}
+
+.palette-dock[data-side='right'][data-floating='false']
+  .palette-stack[data-collapsed='true']
+  .palette-tabs,
+.palette-dock[data-side='left'][data-floating='false']
+  .palette-stack[data-collapsed='true']
+  .palette-tabs,
+.palette-dock[data-side='right'][data-floating='false']
+  .palette-stack[data-collapsed='true']
+  [role='tablist'],
+.palette-dock[data-side='left'][data-floating='false']
+  .palette-stack[data-collapsed='true']
+  [role='tablist'] {
+  flex-direction: column;
+  border-bottom: 0;
+}
+
+.palette-dock[data-floating='false'] .palette-stack[data-collapsed='true'] [role='tab'] {
+  writing-mode: vertical-rl;
+  padding: 10px 5px;
+  border-bottom: 0;
+  border-left: 2px solid transparent;
+}
+
+.palette-dock[data-side='bottom'][data-floating='false']
+  .palette-stack[data-collapsed='true']
+  [role='tab'] {
+  writing-mode: horizontal-tb;
+  padding: 5px 10px;
+  border-bottom: 2px solid transparent;
+  border-left: 0;
+}
+
+.palette-dock[data-floating='false'] .palette-stack[data-collapsed='true'] [aria-selected='true'] {
+  border-left-color: var(--accent);
+}
+
+/* Where a dragged stack docks when it is dropped: a band at that edge of the drawing area. */
+.workspace:has(> .palette-dock[data-dock-target]) > .canvas-area::after {
+  position: absolute;
+  z-index: 25;
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  content: '';
+  pointer-events: none;
+}
+
+.workspace:has(> .palette-dock[data-dock-target='left']) > .canvas-area::after {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(var(--palette-width, 420px), 45%);
+}
+
+.workspace:has(> .palette-dock[data-dock-target='right']) > .canvas-area::after {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 45%);
+}
+
+.workspace:has(> .palette-dock[data-dock-target='bottom']) > .canvas-area::after {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: min(240px, 50%);
+}
+
+/* The width handle on the stack's edge facing the drawing area (a floating stack's right edge). */
 .palette-resize {
   position: absolute;
   z-index: 1;
@@ -926,21 +1062,43 @@ button {
   touch-action: none;
 }
 
-.palette-dock[data-side='left'] .palette-resize {
+.palette-dock[data-side='left'] .palette-resize,
+.palette-dock[data-floating='true'] .palette-resize {
   right: -3px;
   left: auto;
 }
 
+/* The height handle on a bottom dock's top edge, a floating stack's bottom edge. */
+.palette-resize-height {
+  position: absolute;
+  z-index: 1;
+  top: -3px;
+  right: 0;
+  left: 0;
+  height: 6px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.palette-dock[data-floating='true'] .palette-resize-height {
+  top: auto;
+  bottom: -3px;
+}
+
 .palette-resize:hover,
-.palette-resize:focus-visible {
+.palette-resize:focus-visible,
+.palette-resize-height:hover,
+.palette-resize-height:focus-visible {
   background: var(--accent);
   outline: none;
 }
 
 .palette-tabs {
+  position: relative;
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid var(--chrome-border);
+  touch-action: none;
 }
 
 .palette-tabs [role='tablist'] {
@@ -969,11 +1127,68 @@ button {
   background: var(--chrome-bg);
 }
 
-.palette-dock-side {
+.palette-grip {
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--chrome-text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.palette-dock[data-floating='true'] .palette-tabs {
+  cursor: move;
+}
+
+.palette-options {
   padding: 0 8px;
   border: 0;
   border-left: 1px solid var(--chrome-border);
   background: none;
+}
+
+.palette-menu {
+  position: absolute;
+  z-index: 40;
+  top: 100%;
+  right: 0;
+  display: flex;
+  min-width: 140px;
+  flex-direction: column;
+  padding: 4px 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg-raised);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 25%);
+}
+
+.palette-dock[data-side='bottom'][data-floating='false'] .palette-menu {
+  top: auto;
+  bottom: 100%;
+}
+
+.palette-menu [role^='menuitem'] {
+  padding: 4px 12px 4px 24px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.palette-menu [role^='menuitem'][aria-checked='true']::before {
+  position: absolute;
+  left: 8px;
+  content: '✓';
+}
+
+.palette-menu [role^='menuitem']:hover,
+.palette-menu [role^='menuitem']:focus-visible {
+  background: var(--chrome-bg);
+  outline: none;
+}
+
+.palette-menu [role='separator'] {
+  margin: 4px 0;
+  border-top: 1px solid var(--chrome-border);
 }
 
 .palette-panel {
@@ -983,6 +1198,10 @@ button {
   min-height: 0;
 }
 
+.palette-panel[hidden] {
+  display: none;
+}
+
 .palette-rail {
   display: flex;
   flex-direction: column;
@@ -990,7 +1209,7 @@ button {
   background: var(--chrome-bg-raised);
 }
 
-.palette-dock[data-side='left'] .palette-rail {
+.palette-dock[data-rail='left'] .palette-rail {
   border-right: 1px solid var(--chrome-border);
   border-left: 0;
 }
@@ -1006,6 +1225,18 @@ button {
 .palette-rail button[aria-expanded='true'] {
   background: var(--chrome-bg);
   color: var(--accent);
+}
+
+/* The Command History palette (F2): the drawing's command lines, the latest at the bottom. */
+.command-history-log {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 10px;
+  overflow: auto;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+  font-size: 12px;
+  user-select: text;
+  white-space: pre-wrap;
 }
 
 .palette {
@@ -2250,36 +2481,6 @@ button {
 
 .command-suggestions .alias {
   color: var(--chrome-text-muted);
-}
-
-/* F2: the whole command history, over the bottom of the drawing area. */
-.command-history-window {
-  position: absolute;
-  bottom: 100%;
-  left: 8px;
-  right: 8px;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  max-height: 40vh;
-  background: var(--chrome-bg-raised);
-  border: 1px solid var(--chrome-border);
-  border-radius: 4px 4px 0 0;
-  box-shadow: 0 -4px 12px rgb(0 0 0 / 15%);
-}
-
-.command-history-header {
-  display: flex;
-  justify-content: space-between;
-  padding: 2px 8px;
-  border-bottom: 1px solid var(--chrome-border);
-  font-family: system-ui, sans-serif;
-}
-
-.command-history-full {
-  overflow: auto;
-  padding: 4px 8px;
-  white-space: pre;
 }
 
 /* Dynamic Input (M2-02 part 2, UI_SPEC.md §5): the prompt and its fields beside the cursor,

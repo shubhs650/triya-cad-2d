@@ -189,7 +189,7 @@ test('the drawing’s computed variables, read only', async ({ page }) => {
   await type(page, 'CTAB,DBMOD,DWG*,VIEW*', 'Command:');
   await expect(log).toContainText(/VIEWSIZE\s+\d+\.\d+\s+\(read only\)/);
   await page.keyboard.press('F2');
-  const history = page.getByRole('dialog', { name: 'Command history' });
+  const history = page.getByRole('complementary', { name: 'Command History' });
   await expect(history).toContainText(`DWGNAME = "${path.basename(DXF)}" (read only)`);
   await page.screenshot({ path: test.info().outputPath('computed-variables.png') });
   await page.keyboard.press('F2');
