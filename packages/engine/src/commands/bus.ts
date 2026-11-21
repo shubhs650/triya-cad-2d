@@ -743,6 +743,8 @@ export class PromptBus {
       // AutoCAD refuses a pick an override found no object at with "Invalid point." and asks
       // again; its help does not say what follows, so the override stays for the next pick.
       if (o.missed && this.#collectors.at(-1)?.osnap) return this.#reject('Invalid point.');
+      // A click outside the current layout viewport switches to the one there (M6-02 part 9).
+      if (!o.release && (await this.#clickViewport(point))) return;
       const frame = this.#stack.at(-1);
       // A click on a grip of the selection at `Command:` starts grip editing (M2-06): `grip` is
       // how near, in drawing units, the canvas counts as on a grip. `gripFunction`: the function
@@ -829,10 +831,19 @@ export class PromptBus {
    * with the command `DOUBLE_CLICK` names for its type (AutoCAD's DBLCLKEDIT), with that object
    * alone as the pre-selection. Grip editing the double click's own clicks started is dropped;
    * inside any other command it does nothing, nor on an object no command edits this way.
+   *
+   * `paper` (M6-02 part 9): the double click began outside the layout viewport current then,
+   * whose first click switched to the viewport there, and `point` is on the sheet: it is that
+   * switch alone, or, on the sheet outside every viewport, paper space. The canvas sends the
+   * sheet's point because its view may not have followed the switch yet.
    */
-  doubleClick(point: Vec2): Promise<void> {
+  doubleClick(point: Vec2, paper = false): Promise<void> {
     return this.#enqueue(async () => {
       const top = this.#stack.at(-1);
+      if (paper) {
+        if (top || !this.#currentViewport() || this.#maximizedViewport()) return;
+        return this.#setViewport(viewportAt(this.#model, this.#sheet(), point)?.handle);
+      }
       if (top && !top.def.keepsSelection && !top.def.yieldsToDoubleClick) return;
       // A double click in another viewport makes it current; on the sheet outside every
       // viewport, paper space (M6-02 part 3).
@@ -937,8 +948,8 @@ export class PromptBus {
 
   /**
    * Makes `viewport` (of the layout shown) current, or, undefined, puts the layout in paper
-   * space (MSPACE and PSPACE, M6-02 part 3), and tells the canvas. What was selected was
-   * selected in the other space, so it is deselected (M2-03).
+   * space (MSPACE and PSPACE, M6-02 part 3), and tells the canvas. Going between paper and model
+   * space deselects what was selected in the other space (M2-03).
    */
   async #setViewport(
     viewport: Handle | undefined,
@@ -956,7 +967,9 @@ export class PromptBus {
       this.#viewports.set(sheet, viewport);
       this.#lastViewports.set(sheet, viewport);
     }
-    if (viewport !== current && this.#idle.ids.length > 0) {
+    // Another viewport shows the same model space: what is selected stays (M6-02 part 9).
+    const otherSpace = (viewport === undefined) !== (current === undefined);
+    if (otherSpace && this.#idle.ids.length > 0) {
       this.#idle.clear();
       this.#showSelection();
     }
@@ -1008,6 +1021,28 @@ export class PromptBus {
     const paper = paperPointOf(current.geom, point);
     if (insideViewport(current.geom, paper)) return false;
     await this.#setViewport(viewportAt(this.#model, this.#sheet(), paper)?.handle);
+    return true;
+  }
+
+  /**
+   * A single click while a layout viewport is current (M6-02 part 9), at `Command:` or inside a
+   * command: outside the current viewport's frame it makes the viewport there current and is
+   * taken for nothing else, and on the sheet outside every viewport it does nothing (AutoCAD
+   * 2024 Help, "To Make a Layout Viewport Current": "click inside its border"; "you can switch
+   * from one viewport to another during command execution", the command going on in the other
+   * viewport). True when the click was taken. `point` is model space's as the current viewport
+   * maps the cursor. A selection window's other corner may lie beyond the frame; a maximized
+   * viewport fills the canvas, so there is nothing outside it to click.
+   */
+  async #clickViewport(point: Vec2): Promise<boolean> {
+    const current = this.#currentViewport();
+    if (!current || this.#maximizedViewport()) return false;
+    const paper = paperPointOf(current.geom, point);
+    if (insideViewport(current.geom, paper)) return false;
+    const frame = this.#stack.at(-1);
+    if (frame ? frame.select?.wantsPoint : this.#idle.wantsPoint) return false;
+    const vp = viewportAt(this.#model, this.#sheet(), paper);
+    if (vp) await this.#setViewport(vp.handle);
     return true;
   }
 

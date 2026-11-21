@@ -2172,7 +2172,10 @@ export class Canvas2DRenderer implements Renderer {
     const maximized = this.#maximizedViewport();
     if (maximized) return this.#drawMaximized(ctx, maximized, view, reduced);
     if (sheet) this.#drawSheet(ctx, sheet, view);
-    this.#drawGrid(ctx, view);
+    // While a viewport is current the grid is model space's, through it (M6-02 part 9).
+    const active = this.#activeViewport();
+    if (active) this.#drawViewportGrid(ctx, active, view);
+    else this.#drawGrid(ctx, view);
     for (const vp of this.#viewportList()) this.#drawViewport(ctx, vp, view, reduced);
     if (this.#style.viewportUcsIcons) {
       for (const vp of this.#viewportList()) this.#drawViewportUcsIcon(ctx, vp, view);
@@ -2209,6 +2212,7 @@ export class Canvas2DRenderer implements Renderer {
   #drawMaximized(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame, reduced: boolean): void {
     ctx.fillStyle = this.#style.background;
     ctx.fillRect(0, 0, this.#scene.canvas.width, this.#scene.canvas.height);
+    this.#drawViewportGrid(ctx, vp, view);
     this.#drawViewport(ctx, vp, view, reduced);
     const overlay = this.#overlayFrame(ctx, view);
     this.#drawHighlight(ctx, overlay);
@@ -2321,13 +2325,27 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   /**
+   * GRID while a layout viewport is current (M6-02 part 9): model space's lines as the viewport
+   * shows them, clipped to its frame, as AutoCAD shows the grid of the viewport worked in rather
+   * than paper space's; points snap to model space's grid there, so the lines show where.
+   */
+  #drawViewportGrid(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame): void {
+    if (!this.#style.grid) return;
+    const through = this.#throughViewport(vp, view);
+    if (!through) return;
+    this.#clipTo(ctx, vp, view, through.clip);
+    this.#drawGrid(ctx, through.frame);
+    ctx.restore();
+  }
+
+  /**
    * GRID (M2-04 part 2): the minor lines faint and the major ones stronger, a device pixel
    * wide on whole pixels, under everything drawn (UI_SPEC.md §6).
    */
   #drawGrid(ctx: Canvas2D, view: DrawFrame): void {
     const spec = this.#style.grid;
     if (!spec) return;
-    const lines = gridLines(spec, view.box, this.#view.scale);
+    const lines = gridLines(spec, view.box, view.scale);
     if (!lines) return;
     const { m, ox, oy } = view;
     const { background, foreground } = this.#style;

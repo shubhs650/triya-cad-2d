@@ -240,3 +240,71 @@ describe('a layout viewport maximized', () => {
     expect(after.filter((c) => c[0] === 'lineTo')).toHaveLength(0);
   });
 });
+
+/**
+ * M6-02 part 9: the grid follows the space worked in. A 10-unit grid on paper is 10 px apart
+ * at VIEW; through the current viewport (2 px per model unit) its lines are model space's,
+ * 20 px apart, clipped to the frame; a maximized viewport's run across the canvas.
+ */
+describe('the grid while a layout viewport is current', () => {
+  const GRID: RenderStyle = {
+    ...LIGHT,
+    grid: { spacing: { x: 10, y: 10 }, major: 0, adaptive: false },
+  };
+  /** The device X of each vertical grid line drawn, and the clip rectangle it was drawn in. */
+  function gridColumns(calls: Call[]): { xs: number[]; clip: Call | undefined }[] {
+    const out: { xs: number[]; clip: Call | undefined }[] = [];
+    let clip: Call | undefined;
+    let depth = 0;
+    for (const c of calls) {
+      if (c[0] === 'save') depth++;
+      else if (c[0] === 'restore') {
+        depth--;
+        if (depth === 0) clip = undefined;
+      } else if (c[0] === 'rect' && depth > 0 && !clip) clip = c;
+      else if (c[0] === 'moveTo' && c[2] === 0 && (c[1] as number) % 1 === 0.5) {
+        const last = out.at(-1);
+        if (last && last.clip === clip) last.xs.push(c[1] as number);
+        else out.push({ xs: [c[1] as number], clip });
+      }
+    }
+    return out;
+  }
+
+  it('is paper space’s across the sheet in paper space', () => {
+    const { r, scene } = setup();
+    r.setStyle(GRID);
+    r.frame();
+    const [grid, ...more] = gridColumns(scene.ctx.calls);
+    expect(more).toEqual([]);
+    expect(grid!.clip).toBeUndefined();
+    // Paper −10…190: device 0…200, a line every 10 px.
+    expect(grid!.xs.slice(0, 3)).toEqual([0.5, 10.5, 20.5]);
+  });
+
+  it('is model space’s through the current viewport, inside its frame only', () => {
+    const { r, scene } = setup();
+    r.setStyle(GRID);
+    r.setActiveViewport(VP);
+    r.frame();
+    const [grid, ...more] = gridColumns(scene.ctx.calls);
+    // No paper grid besides it.
+    expect(more).toEqual([]);
+    // Frame device 50…90 × 30…70; model 0, 10, 20 at device 50, 70, 90.
+    expect(grid!.clip).toEqual(['rect', 50, 30, 40, 40]);
+    expect(grid!.xs).toEqual([50.5, 70.5, 90.5]);
+  });
+
+  it('runs across the canvas through a maximized viewport', () => {
+    const { r, scene } = setup();
+    r.setStyle(GRID);
+    r.setActiveViewport(VP, MAXIMIZED);
+    r.frame();
+    const [grid, ...more] = gridColumns(scene.ctx.calls);
+    expect(more).toEqual([]);
+    expect(grid!.clip).toEqual(['rect', 0, 0, 200, 100]);
+    // Model (10, 10) at device (100, 50), 2 px per unit: model 0 at device 80.
+    expect(grid!.xs).toContain(80.5);
+    expect(grid!.xs.slice(0, 2)).toEqual([0.5, 20.5]);
+  });
+});
