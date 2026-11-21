@@ -316,3 +316,14 @@ export async function enterCommand(page: Page, text: string): Promise<void> {
   await input.fill(text);
   await input.press('Enter');
 }
+
+/**
+ * Turns GRID off in the viewport worked in, when the drawing was saved with it on (M6-02 part 19:
+ * each viewport keeps its own GRIDMODE, so sample_AC1032_ascii.dxf opens with model space's grid
+ * shown). For specs whose pixel checks measure the drawing alone.
+ */
+export async function gridOff(page: Page): Promise<void> {
+  const grid = page.getByRole('contentinfo').getByRole('button', { name: 'GRID', exact: true });
+  if ((await grid.getAttribute('aria-pressed')) === 'true') await grid.click();
+  await expect(grid).toHaveAttribute('aria-pressed', 'false');
+}

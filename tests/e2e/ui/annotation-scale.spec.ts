@@ -16,6 +16,7 @@ import {
   expectShown,
   openWithPicker,
   viewOf,
+  gridOff,
 } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
@@ -67,6 +68,8 @@ test('the annotation scale, Annotation Visibility and AutoScale on the status ba
   await page.goto(app.url);
   await openWithPicker(page, FILE);
   await expectShown(page, path.basename(FILE));
+  // The ink below is the text's alone, not the grid's the drawing was saved with.
+  await gridOff(page);
   const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
   const scale = page.getByRole('button', { name: 'Annotation Scale' });
   const visibility = page.getByRole('button', { name: 'Annotation Visibility' });

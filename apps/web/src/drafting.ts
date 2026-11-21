@@ -4,9 +4,9 @@
 // ORTHOMODE, SNAPMODE, GRIDMODE and LWDISPLAY in each drawing. Triya starts from AutoCAD's
 // initial values (OSNAP on with Endpoint, Center, Intersection and Extension, POLAR on at 90°,
 // OTRACK and TPY on, ORTHO and SNAP off) and keeps the per-user ones between sessions (M2-20,
-// preferences.ts), the others per session. GRID starts off, so a drawing opens looking as it
-// was drawn; LWT shows each drawing's own LWDISPLAY until the drafter turns it, and is then the
-// same for every drawing. Nothing is written back to the file. The snap and grid spacing are
+// preferences.ts), the others per session. GRID starts off for a drawing with no viewport to
+// keep it in (see part 19 below); LWT shows each drawing's own LWDISPLAY until the drafter turns
+// it, and is then the same for every drawing. Nothing is written back to the file. The snap and grid spacing are
 // each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas. SNAP and
 // GRID are the viewport worked in's (M6-02 part 19; AutoCAD keeps SNAPMODE and GRIDMODE in each
 // viewport): the shown canvas tells them (`setViewportModes`) and F9, F7, the buttons and the
