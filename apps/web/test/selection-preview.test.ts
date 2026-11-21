@@ -3,7 +3,14 @@
 // prompts for object selection; initially 3).
 import { describe, expect, it } from 'vitest';
 import type { Prompt } from '@triya/engine';
-import { areaPreviewed, pathArea, previewsSelection, windowArea } from '../src/selection-preview';
+import {
+  areaPreviewed,
+  leftOf,
+  pathArea,
+  previewsSelection,
+  windowArea,
+  windowCorners,
+} from '../src/selection-preview';
 
 const select: Prompt = { kind: 'selection', message: 'Select objects' };
 const trim: Prompt = { kind: 'point', message: 'Select object to trim', pickbox: true };
@@ -67,6 +74,66 @@ describe('areaPreviewed', () => {
     expect(areaPreviewed(3, corner)).toBe(false);
     expect(areaPreviewed(3, select)).toBe(false);
     expect(areaPreviewed(3, undefined)).toBe(false);
+  });
+});
+
+describe('a window on a turned screen (a twisted layout viewport, M6-02 part 15)', () => {
+  const quarter = Math.PI / 2;
+  const close = (ps: { x: number; y: number }[], want: [number, number][]) => {
+    expect(ps).toHaveLength(want.length);
+    ps.forEach((p, i) => {
+      expect(p.x).toBeCloseTo(want[i]![0], 12);
+      expect(p.y).toBeCloseTo(want[i]![1], 12);
+    });
+  };
+
+  it('is square to the screen: its sides along the screen’s axes in the world', () => {
+    // A quarter turn shows world +X up the screen: the screen's X is world −Y.
+    close(windowCorners({ x: 0, y: 0 }, { x: 4, y: -2 }, quarter), [
+      [0, 0],
+      [0, -2],
+      [4, -2],
+      [4, 0],
+    ]);
+    const r = Math.PI / 6;
+    const a = { x: 1, y: 1 };
+    const b = { x: 5, y: 3 };
+    const [p0, p1, p2, p3] = windowCorners(a, b, r);
+    // Opposite sides parallel, adjacent sides square.
+    const side = (p: { x: number; y: number }, q: { x: number; y: number }) => ({
+      x: q.x - p.x,
+      y: q.y - p.y,
+    });
+    const s1 = side(p0!, p1!);
+    const s2 = side(p1!, p2!);
+    expect(s1.x * s2.x + s1.y * s2.y).toBeCloseTo(0, 12);
+    // The first side runs along the screen's X: world (cos r, −sin r).
+    expect(s1.x * Math.sin(r) + s1.y * Math.cos(r)).toBeCloseTo(0, 12);
+    expect(p3!.x - p0!.x).toBeCloseTo(p2!.x - p1!.x, 12);
+  });
+
+  it('selects through the polygon of its corners', () => {
+    const q = windowArea({ x: 0, y: 0 }, { x: 4, y: -2 }, false, quarter);
+    expect(q.kind).toBe('window');
+    close(q.polygon as { x: number; y: number }[], [
+      [0, 0],
+      [0, -2],
+      [4, -2],
+      [4, 0],
+    ]);
+    expect(q.box.minY).toBeCloseTo(-2, 12);
+    expect(q.box.maxX).toBeCloseTo(4, 12);
+    expect(windowArea({ x: 0, y: 0 }, { x: 4, y: -2 }, true)).toEqual({
+      kind: 'crossing',
+      box: { minX: 0, minY: -2, maxX: 4, maxY: 0 },
+    });
+  });
+
+  it('is dragged leftward as the screen shows it', () => {
+    // World +Y shows leftward on a quarter-turned screen.
+    expect(leftOf({ x: 0, y: 0 }, { x: 0, y: 2 }, quarter)).toBe(true);
+    expect(leftOf({ x: 0, y: 0 }, { x: 0, y: -2 }, quarter)).toBe(false);
+    expect(leftOf({ x: 0, y: 0 }, { x: -1, y: 0 })).toBe(true);
   });
 });
 

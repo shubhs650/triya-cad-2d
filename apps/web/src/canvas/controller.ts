@@ -127,7 +127,14 @@ import {
 import type { OpenResult } from '@triya/io';
 import { ROLLOVER_DELAY_MS, type RestAt } from '../rollover';
 import { RestWatch } from './rest';
-import { areaPreviewed, pathArea, previewsSelection, windowArea } from '../selection-preview';
+import {
+  areaPreviewed,
+  leftOf,
+  pathArea,
+  previewsSelection,
+  windowArea,
+  windowCorners,
+} from '../selection-preview';
 import { layoutsOf } from '../documents';
 import {
   appliedPageSetupName,
@@ -1853,7 +1860,8 @@ export class CanvasController {
 
   /** The objects a selection window between two world points takes (M2-03). */
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]> {
-    return this.#host.select(windowArea(a, b, crossing));
+    // Square to the screen in a twisted layout viewport (M6-02 part 15).
+    return this.#host.select(windowArea(a, b, crossing, this.#pointerView()?.rotation ?? 0));
   }
 
   /** What a selection polygon (WPolygon, CPolygon) or fence takes (M3-04). */
@@ -2584,7 +2592,8 @@ export class CanvasController {
     const box = p?.kind === 'point' && p.rubberBand?.box;
     const selection = p?.kind === 'point' ? p.rubberBand?.selection : undefined;
     if (from && cursor && selection && this.#mode === 'none') {
-      const crossing = selection === 'auto' ? cursor.x < from.x : selection === 'crossing';
+      const turn = this.#pointerView()?.rotation ?? 0;
+      const crossing = selection === 'auto' ? leftOf(from, cursor, turn) : selection === 'crossing';
       const lasso = this.#lasso();
       const path =
         lasso && lasso.points.length > 1
@@ -2596,7 +2605,7 @@ export class CanvasController {
       this.#areaPreview(
         path && path.points.length > 0
           ? pathArea([...path.points, cursor], kind)
-          : windowArea(from, cursor, crossing),
+          : windowArea(from, cursor, crossing, turn),
       );
       this.#host.setTransient([
         ...preview,
@@ -2741,27 +2750,11 @@ export class CanvasController {
   /** A selection window: a translucent fill and its edge, dashed when it is a crossing one. */
   #selectionBand(a: Point, b: Point, crossing: boolean): RenderPrimitive[] {
     const color = crossing ? CROSSING_COLOR : WINDOW_COLOR;
-    const corners: [number, number][] = [
-      [a.x, a.y],
-      [b.x, a.y],
-      [b.x, b.y],
-      [a.x, b.y],
-    ];
-    const outline = [
-      PATH_M,
-      a.x,
-      a.y,
-      PATH_L,
-      b.x,
-      a.y,
-      PATH_L,
-      b.x,
-      b.y,
-      PATH_L,
-      a.x,
-      b.y,
-      PATH_Z,
-    ];
+    // Square to the screen, which a twisted layout viewport turns (M6-02 part 15).
+    const corners = windowCorners(a, b, this.#pointerView()?.rotation ?? 0).map(
+      (p): [number, number] => [p.x, p.y],
+    );
+    const outline = [...corners.flatMap(([x, y], i) => [i === 0 ? PATH_M : PATH_L, x, y]), PATH_Z];
     let edge = outline;
     const scale = this.#pointerView()?.scale ?? 1;
     if (crossing) {

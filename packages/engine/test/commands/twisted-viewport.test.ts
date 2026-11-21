@@ -95,7 +95,9 @@ function drawing() {
     const e = model.entity(Math.max(...model.blockEntities(MODEL_SPACE)))!;
     return e.geom.kind === 'LINE' ? { start: e.geom.start, end: e.geom.end } : undefined;
   };
-  return { model, bus, log, told, picked, lastLine };
+  const windows = () =>
+    requests.flatMap((r) => (r.op === 'select' ? [r.crossing ? 'crossing' : 'window'] : []));
+  return { model, bus, log, told, picked, lastLine, windows };
 }
 
 describe('a twisted viewport’s map between the sheet and model space', () => {
@@ -166,6 +168,17 @@ describe('working in a twisted viewport', () => {
     await u.bus.pick({ x: 0, y: 200 });
     expect(u.told()).toEqual([T, A]);
     expect(u.picked()).toBe(was);
+  });
+
+  it('takes a window dragged leftward on the screen as a crossing one', async () => {
+    const t = drawing();
+    await t.bus.script(['MS']);
+    // Model 0,−2 and 0,2 show at paper 302,100 and 298,100: the second left of the first.
+    await t.bus.pick({ x: 0, y: -2 });
+    await t.bus.pick({ x: 0, y: 2 });
+    await t.bus.pick({ x: 0, y: 2 });
+    await t.bus.pick({ x: 0, y: -2 });
+    expect(t.windows()).toEqual(['crossing', 'window']);
   });
 
   it('VIEWTWIST is the current viewport’s twist, 0 in paper space, and read only', async () => {
