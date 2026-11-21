@@ -18,14 +18,28 @@
 // the layer current after it thawed. A state hidden from the manager (a view's layer snapshot,
 // `ACAD_VIEWS_<view>`, mask bit 0x8000) is restored with its view (later part), not listed.
 //
-// VP Freeze in the current viewport (`vpFrozen`) waits for a layout viewport to be made current
-// (MSPACE, M6-02): a state saved here keeps it off and a restore leaves it alone.
+// VP Freeze in the current viewport (`vpFrozen`, M6-02 part 12): a state saved while a layout
+// viewport is current (MSPACE) keeps each layer's VP Freeze there and is saved as a layout's
+// (DXF 290, the manager's Space "Layout"); restored while one is current, with Current VP
+// Frozen/Thawed checked, it sets VP Freeze there. Ambiguity, settled for the drafter: Help does
+// not say what a state saved in model space restores in a viewport; its VP Freeze settings were
+// never saved (all thawed), so such a state, and one saved on a layout's paper, leave VP Freeze
+// alone rather than thaw every layer in the viewport. "Apply properties as viewport overrides"
+// (Help: "Applies layer property overrides to the current viewport") restores the colour,
+// linetype, lineweight and transparency as the viewport's overrides instead of on the layers.
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
 import { aciOfTrueColor } from '../model/aci';
 import { LINEWEIGHTS } from '../properties/sheet';
+import {
+  freezeInViewports,
+  frozenInViewport,
+  layoutViewportProblem,
+  setViewportLayerProps,
+  type ViewportOverrideProps,
+} from './viewport-layer-edits';
 import {
   LAYER_STATE_MASK,
   isLayerState,
@@ -109,7 +123,12 @@ const aciOf = (c: Color): number =>
  * A layer's settings now, as a state keeps them: what New saves for it, and what Edit Layer
  * State's "Add layers to layer state" adds (with the app's mirror of the tables).
  */
-export function layerStateEntry(model: LayerStateTables, l: LayerRecord): LayerStateLayer {
+export function layerStateEntry(
+  model: LayerStateTables,
+  l: LayerRecord,
+  /** VP Freeze in the layout viewport current when saved (M6-02 part 12). */
+  vpFrozen = false,
+): LayerStateLayer {
   const linetype = model.tables.linetypes.get(l.linetype);
   const style = l.plotStyle === undefined ? undefined : model.tables.plotStyles.get(l.plotStyle);
   return {
@@ -120,7 +139,7 @@ export function layerStateEntry(model: LayerStateTables, l: LayerRecord): LayerS
     locked: l.locked,
     plot: l.plot,
     newVpFrozen: ((l.flags ?? 0) & NEW_VP_FROZEN) !== 0,
-    vpFrozen: false,
+    vpFrozen,
     color: l.color,
     ...(linetype ? { linetype: linetype.handle } : {}),
     linetypeName: linetype?.name ?? 'Continuous',
@@ -158,7 +177,12 @@ function addState(model: DocumentModel, b: ChangeSetBuilder, init: LayerStateIni
 export function saveLayerStateChange(
   model: DocumentModel,
   name: string,
-  options: { readonly description?: string; readonly mask?: number } = {},
+  options: {
+    readonly description?: string;
+    readonly mask?: number;
+    /** The layout viewport made current: its VP Freeze is saved (M6-02 part 12). */
+    readonly viewport?: Handle | undefined;
+  } = {},
 ): ChangeSet | string {
   const b = new ChangeSetBuilder(model);
   return saveLayerState(b, model, name, options) ?? b.build();
@@ -178,14 +202,19 @@ export function saveLayerState(
     /** A view's layer snapshot (M5-07 part 7): hidden from the manager, saved in a layout. */
     readonly hidden?: boolean;
     readonly paperSpace?: boolean;
+    /** The layout viewport made current (M6-02 part 12): its VP Freeze is saved. */
+    readonly viewport?: Handle | undefined;
   } = {},
 ): string | undefined {
   const old = layerStateNamed(model, name);
+  const { viewport } = options;
   const why =
+    (viewport === undefined ? undefined : layoutViewportProblem(model, viewport)) ??
     nameProblem(model, name, old?.handle) ??
     descriptionProblem(options.description) ??
     maskProblem(options.mask);
   if (why) return why;
+  const frozen = viewport === undefined ? new Set<Handle>() : frozenInViewport(model, viewport);
   const init: LayerStateInit = {
     name,
     description: options.description ?? old?.description ?? '',
@@ -197,9 +226,11 @@ export function saveLayerState(
         ? (old?.mask ?? LAYER_STATE_MASK.all)
         : (options.mask & LAYER_STATE_MASK.all) | ((old?.mask ?? 0) & ~LAYER_STATE_MASK.all)) |
       (options.hidden ? LAYER_STATE_MASK.hidden : 0),
-    paperSpace: options.paperSpace ?? false,
+    paperSpace: options.paperSpace === true || viewport !== undefined,
     currentLayer: currentLayerName(model),
-    layers: [...model.tables.layers.values()].map((l) => layerStateEntry(model, l)),
+    layers: [...model.tables.layers.values()].map((l) =>
+      layerStateEntry(model, l, frozen.has(l.handle)),
+    ),
   };
   if (old) b.updateObject(old.handle, init);
   else addState(model, b, init);
@@ -366,10 +397,21 @@ export function layerStateMatches(model: LayerStateTables, state: LayerState): b
 export function restoreLayerStateChange(
   model: DocumentModel,
   handle: Handle,
-  options: { readonly turnOffMissing?: boolean } = {},
+  options: {
+    readonly turnOffMissing?: boolean | undefined;
+    /** The layout viewport made current (M6-02 part 12). */
+    readonly viewport?: Handle | undefined;
+    /** "Apply properties as viewport overrides", in `viewport`. */
+    readonly asOverrides?: boolean | undefined;
+  } = {},
 ): ChangeSet | string {
   const s = stateOf(model, handle);
   if (typeof s === 'string') return s;
+  const { viewport } = options;
+  const why = viewport === undefined ? undefined : layoutViewportProblem(model, viewport);
+  if (why) return why;
+  const overridesIn = options.asOverrides === true ? viewport : undefined;
+  const layerMask = overridesIn !== undefined ? s.mask & ~VIEWPORT_PROPERTIES : s.mask;
   const entries = new Map<Handle, LayerStateLayer>();
   for (const e of s.layers) {
     const l = layerOf(model, e);
@@ -391,14 +433,17 @@ export function restoreLayerStateChange(
   for (const l of model.tables.layers.values()) {
     const e = entries.get(l.handle);
     const patch: Record<string, unknown> = e
-      ? restorePatch(model, l, e, s.mask)
+      ? restorePatch(model, l, e, layerMask)
       : options.turnOffMissing && l.on
         ? { on: false }
         : {};
     // AutoCAD never freezes the current layer.
     if (current && l.handle === current.handle && patch['frozen'] === true) delete patch['frozen'];
     if (Object.keys(patch).length > 0) b.updateTableRecord('layers', l.handle, patch);
+    if (e && overridesIn !== undefined)
+      setViewportLayerProps(b, model, l.handle, overridesIn, overrideProps(model, e, s.mask));
   }
+  if (viewport !== undefined) restoreViewportFreeze(b, model, s, viewport);
   if (current && upper(current.name) !== upper(currentLayerName(model)))
     b.setHeader('$CLAYER', current.name);
   for (const o of layerStates(model, true)) {
@@ -411,15 +456,63 @@ export function restoreLayerStateChange(
   return b.build();
 }
 
+/** The properties a viewport can override, as mask bits. */
+const VIEWPORT_PROPERTIES =
+  LAYER_STATE_MASK.color |
+  LAYER_STATE_MASK.linetype |
+  LAYER_STATE_MASK.lineweight |
+  LAYER_STATE_MASK.transparency;
+
+/** The overrides "Apply properties as viewport overrides" gives a layer from `e` under `mask`. */
+function overrideProps(
+  model: DocumentModel,
+  e: LayerStateLayer,
+  mask: number,
+): ViewportOverrideProps {
+  const has = (bit: number) => (mask & bit) !== 0;
+  const linetype = has(LAYER_STATE_MASK.linetype) ? linetypeOf(model, e) : undefined;
+  return {
+    ...(has(LAYER_STATE_MASK.color) &&
+      (e.color.kind === 'aci' || e.color.kind === 'rgb') && { color: e.color }),
+    ...(linetype !== undefined && { linetype }),
+    ...(has(LAYER_STATE_MASK.lineweight) && { lineweight: e.lineweight }),
+    ...(has(LAYER_STATE_MASK.transparency) && { transparency: e.transparency }),
+  };
+}
+
+/**
+ * The state's VP Freeze set in `viewport`, into `b`, when it was saved in a layout (where a
+ * viewport's VP Freeze is saved) and Current VP Frozen/Thawed is checked.
+ */
+function restoreViewportFreeze(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  s: LayerState,
+  viewport: Handle,
+): void {
+  if (!s.paperSpace || (s.mask & LAYER_STATE_MASK.vpFrozen) === 0) return;
+  const frozen: Handle[] = [];
+  const thawed: Handle[] = [];
+  for (const e of s.layers) {
+    const l = layerOf(model, e);
+    if (l) (e.vpFrozen ? frozen : thawed).push(l.handle);
+  }
+  freezeInViewports(b, model, frozen, [viewport], true);
+  freezeInViewports(b, model, thawed, [viewport], false);
+}
+
 /**
  * A view's layer snapshot restored with the view (M5-07 part 7): the On and Freeze settings of
  * the layers the state names, into `b`, whatever the state's own mask says, the current layer
- * left current and thawed and no state marked restored last. False when there is no such state.
+ * left current and thawed and no state marked restored last; in the layout viewport `viewport`
+ * made current, VP Freeze there too when the snapshot was saved in a layout (M6-02 part 12).
+ * False when there is no such state.
  */
 export function restoreLayerVisibility(
   b: ChangeSetBuilder,
   model: DocumentModel,
   handle: Handle,
+  viewport?: Handle,
 ): boolean {
   const s = stateOf(model, handle);
   if (typeof s === 'string') return false;
@@ -439,6 +532,7 @@ export function restoreLayerVisibility(
     if (upper(l.name) === current && patch['frozen'] === true) delete patch['frozen'];
     if (Object.keys(patch).length > 0) b.updateTableRecord('layers', l.handle, patch);
   }
+  if (viewport !== undefined) restoreViewportFreeze(b, model, s, viewport);
   return true;
 }
 

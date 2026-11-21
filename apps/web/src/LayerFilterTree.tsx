@@ -11,7 +11,8 @@
 //   on a property filter opens its properties); Enter keeps it, Esc does not, Delete deletes.
 // - Layers dragged from the list onto a group filter are put in it.
 // - While a layer is unreconciled, Unreconciled New Layers (M5-19 part 2) comes after All Used
-//   Layers; its menu is the Xref node's.
+//   Layers; its menu is the Xref node's. Viewport Overrides (M6-02 part 12) comes after it while
+//   the layout viewport made current overrides a layer, with the same menu.
 // - When the drawing has xrefs, the Xref node comes after the filters, with a node for each xref
 //   (part 8); their menus offer Visibility, Lock and Isolate Group, not new filters.
 // - Keyboard: ↑/↓ move between the nodes shown, ← closes a node or goes to its parent, → opens
@@ -53,6 +54,7 @@ function shownNodes(
   tree: readonly LayerFilterNode[],
   xrefs: readonly string[],
   unreconciled: boolean,
+  overrides: FilterChoice | undefined,
   closed: ReadonlySet<FilterChoice>,
 ): Shown[] {
   const out: Shown[] = [{ choice: 'all', name: 'All', level: 1, hasChildren: true }];
@@ -68,6 +70,14 @@ function shownNodes(
     out.push({
       choice: UNRECONCILED_NODE,
       name: 'Unreconciled New Layers',
+      level: 2,
+      parent: 'all',
+      hasChildren: false,
+    });
+  if (overrides !== undefined)
+    out.push({
+      choice: overrides,
+      name: 'Viewport Overrides',
       level: 2,
       parent: 'all',
       hasChildren: false,
@@ -99,6 +109,7 @@ export function LayerFilterTree({
   tree,
   xrefs,
   unreconciled = false,
+  viewportOverrides,
   choice,
   invert,
   renaming,
@@ -115,6 +126,8 @@ export function LayerFilterTree({
   xrefs: readonly string[];
   /** Whether a layer is unreconciled: Unreconciled New Layers is shown. */
   unreconciled?: boolean;
+  /** The Viewport Overrides node of the viewport made current, while it overrides a layer. */
+  viewportOverrides?: FilterChoice | undefined;
   choice: FilterChoice;
   invert: boolean;
   /** The filter whose name is being typed in place. */
@@ -132,7 +145,7 @@ export function LayerFilterTree({
   const [closed, setClosed] = useState<ReadonlySet<FilterChoice>>(new Set());
   const [dropping, setDropping] = useState<Handle | undefined>();
   const ref = useRef<HTMLUListElement>(null);
-  const nodes = shownNodes(tree, xrefs, unreconciled, closed);
+  const nodes = shownNodes(tree, xrefs, unreconciled, viewportOverrides, closed);
   // The selected node may be inside a closed one: then its nearest open ancestor takes the focus.
   const focusable = nodes.some((n) => n.choice === choice) ? choice : 'all';
   const focus = (c: FilterChoice) =>

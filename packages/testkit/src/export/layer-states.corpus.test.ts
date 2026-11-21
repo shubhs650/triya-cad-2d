@@ -7,7 +7,9 @@
 // reads back as saved, filed in the drawing's ACAD_LAYERSTATES, or in a new one the save makes
 // when the drawing had none; the states the drawing had keep every group as read. Then, on the
 // sample, its state is edited, renamed and deleted through the same round trip, and its layers
-// changed, removed and added as Edit Layer State does (M5-07 part 3).
+// changed, removed and added as Edit Layer State does (M5-07 part 3). M6-02 part 12: a state
+// saved with a layout viewport current keeps each layer's VP Freeze there (DXF 90 bit 32) and is
+// a layout's (290), through the same round trip.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CadObject, XRecord, type CadDocument } from '@node-projects/acad-ts';
@@ -19,8 +21,10 @@ import {
   layerStateEntry,
   layerStateNamed,
   layerStates,
+  layoutViewports,
   restoreLayerStateChange,
   saveLayerStateChange,
+  viewportLayerChange,
   type ChangeSet,
   type LayerState,
 } from '@triya/engine';
@@ -198,6 +202,23 @@ describe('sample_AC1032_ascii.dxf', () => {
     expect(rawStates(back.doc).get('ACAD_VIEWS_view_custom')).toEqual(
       before.get('ACAD_VIEWS_view_custom'),
     );
+  });
+});
+
+describe('viewport-overrides.dxf (self-authored)', () => {
+  it('saves a state with VP Freeze in the viewport made current, as a layout’s', () => {
+    const file = `${corpusDir}public/self-authored/viewport-overrides.dxf`;
+    const bytes = new Uint8Array(readFileSync(file));
+    const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
+    const vp = layoutViewports(model)[0]!;
+    const piping = [...model.tables.layers.values()].find((l) => l.name === 'PIPING')!;
+    apply(model, viewportLayerChange(model, [piping.handle], vp.handle, { frozen: true }));
+    apply(model, saveLayerStateChange(model, 'Piping hidden', { viewport: vp.handle }));
+    const back = reopen(bytes, model);
+    const state = layerStateNamed(back.model, 'Piping hidden')!;
+    expect(state.paperSpace).toBe(true);
+    expect(state.layers.filter((e) => e.vpFrozen).map((e) => e.name)).toEqual(['PIPING']);
+    expect(shown(state)).toEqual(shown(layerStateNamed(model, 'Piping hidden')));
   });
 });
 

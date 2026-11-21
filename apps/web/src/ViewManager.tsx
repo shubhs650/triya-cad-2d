@@ -5,8 +5,12 @@
 // Esc) restores nothing. New..., Delete and a changed Name are each a VIEW undo step at once, as
 // in AutoCAD, where Cancel does not bring a deleted view back (AutoCAD 2024 Help, "View Manager
 // Dialog Box", does not say; the drafter's expectation is that a deleted view stays deleted).
-// A view of the other space is listed but cannot be set current from this one: a model view in a
-// layout restores into a floating viewport, which waits on MSPACE (M6-02).
+// A view of the other space is listed but cannot be set current from this one, except a model
+// view in a layout while a layout viewport is current (MSPACE; M6-02 part 12): OK and Apply
+// restore it in that viewport (its own view, a VIEW step), as AutoCAD's Set Current does in a
+// viewport's model space; a display-locked viewport keeps its view. With a viewport current,
+// Update Layers and the Layer snapshot row's Yes keep the layers' VP Freeze there, and a view's
+// snapshot restored there sets VP Freeze again (the engine's `view-layers`, `view-restore`).
 //
 // New... opens New View / Shot Properties: View name and Boundary, Current display or Define
 // window. Define window hides both dialogs and VIEW asks for the corners at the command line, then
@@ -40,7 +44,7 @@ import {
 import { Modal } from './AttributeDialogs';
 import { controllerOf } from './canvas/registry';
 import { stateOf } from './canvas/view-host';
-import { namedView } from './canvas/views';
+import { namedView, namedViewBox } from './canvas/views';
 import { inLayout as layoutShown, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { drawingViews } from './saved-views';
@@ -116,6 +120,11 @@ function ManagerBody({
 
   const ctl = controllerOf(doc.id, doc.block);
   const inLayout = layoutShown(doc);
+  // The layout viewport made current (MSPACE), where a model view restores (M6-02 part 12).
+  const viewport = inLayout ? doc.viewports?.[doc.block] : undefined;
+  const inViewport = viewport !== undefined && { viewport };
+  /** A model view restored in the viewport made current, not on the layout's sheet. */
+  const intoViewport = (v: ViewRecord) => viewport !== undefined && !isPaperView(v);
   const views = drawingViews(doc.opened.init, changes);
   const tree = viewTree(views);
   const byKey = new Map(views.map((v) => [keyOf(v), v]));
@@ -126,6 +135,8 @@ function ManagerBody({
   /** Why the selected view cannot be set current, or undefined when it can. */
   const notCurrent = (v: ViewRecord | undefined): string | undefined => {
     if (!v) return 'Select a named view';
+    if (intoViewport(v))
+      return namedViewBox(v) ? undefined : 'Not a plan view; 3D and twisted views come later';
     if (isPaperView(v) !== inLayout) {
       return inLayout
         ? 'A model view is restored on the Model tab'
@@ -138,6 +149,12 @@ function ManagerBody({
   const restore = () => {
     const v = state.current ? byKey.get(state.current) : undefined;
     const now = controllerOf(doc.id, doc.block);
+    if (v && now && intoViewport(v)) {
+      const box = namedViewBox(v);
+      if (box && now.showInViewport(box) && v.layerState !== undefined)
+        void run({ kind: 'view-restore', name: v.name, ...inViewport });
+      return;
+    }
     const t = v && now && namedView(v, now.size);
     if (!now || !t) return;
     now.show(t);
@@ -179,7 +196,7 @@ function ManagerBody({
   };
 
   const snapshot = async (save: boolean) => {
-    if (selected) await run({ kind: 'view-layers', name: selected.name, save });
+    if (selected) await run({ kind: 'view-layers', name: selected.name, save, ...inViewport });
   };
 
   const recategorize = async (to: string) => {
