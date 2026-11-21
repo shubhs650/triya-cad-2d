@@ -66,6 +66,8 @@ def model(doc: ezdxf.document.Drawing, styles: dict[str, str]) -> None:
         [(10, 100), (170, 100), (170, 20), (190, 20)], dxfattribs={"layer": "PIPING"}
     )
     msp.add_circle((60, 100), 6, dxfattribs={"layer": "PIPING"})
+    # Model space opens on the plan (ezdxf's *Active view would show nothing of it).
+    doc.set_modelspace_vport(height=VIEW_HEIGHT, center=VIEW_CENTER)
 
 
 def layout(doc: ezdxf.document.Drawing, styles: dict[str, str]) -> None:

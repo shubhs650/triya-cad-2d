@@ -63,6 +63,7 @@ test('Plot Style and VP Plot Style set and override named plot styles (M6-07)', 
   await dialog.getByRole('button', { name: 'OK' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(plotStyle('PIPING')).toHaveText('Heavy');
+  await expectDrawn(page, { timeout: 15_000 });
   await page.screenshot({ path: test.info().outputPath('plot-style.png') });
 
   // Layout1: in paper space VP Plot Style is empty.

@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-40
+41
   9
 $SURFTAB1
  70
@@ -1377,7 +1377,7 @@ AcDbSymbolTable
   0
 VPORT
   5
-23
+38
 330
 8
 100
@@ -1397,9 +1397,9 @@ AcDbViewportTableRecord
  21
 1.0
  12
-0.0
+100.0
  22
-0.0
+60.0
  13
 0.0
  23
@@ -1425,7 +1425,7 @@ AcDbViewportTableRecord
  37
 0.0
  40
-1000.0
+140.0
  41
 1.34
  42
@@ -1457,6 +1457,26 @@ AcDbViewportTableRecord
 281
 0
  65
+1
+110
+0.0
+120
+0.0
+130
+0.0
+111
+1.0
+121
+0.0
+131
+0.0
+112
+0.0
+122
+1.0
+132
+0.0
+ 79
 0
 146
 0.0
@@ -1635,7 +1655,7 @@ LAYER
 102
 {ACAD_XDICTIONARY
 360
-3B
+3C
 102
 }
 330
@@ -1783,7 +1803,7 @@ ACAD
   0
 APPID
   5
-3D
+3E
 330
 3
 100
@@ -1797,7 +1817,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-3E
+3F
 330
 3
 100
@@ -2215,7 +2235,7 @@ AcDbCircle
   0
 VIEWPORT
   5
-38
+39
 330
 1B
 100
@@ -2319,7 +2339,7 @@ AcDbViewport
   0
 VIEWPORT
   5
-39
+3A
 330
 1B
 100
@@ -2423,7 +2443,7 @@ AcDbViewport
   0
 VIEWPORT
   5
-3A
+3B
 330
 1B
 100
@@ -2999,7 +3019,7 @@ Layout1
 330
 1B
 331
-38
+39
   0
 MATERIAL
   5
@@ -3527,7 +3547,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-3F
+40
   0
 DICTIONARYVAR
   5
@@ -3555,7 +3575,7 @@ ACDBPLACEHOLDER
   0
 DICTIONARY
   5
-3B
+3C
 330
 32
 100
@@ -3567,13 +3587,13 @@ AcDbDictionary
   3
 ADSK_XREC_LAYER_PLOTSTYLE_OVR
 350
-3C
+3D
   0
 XRECORD
   5
-3C
+3D
 330
-3B
+3C
 100
 AcDbXrecord
 280
@@ -3581,7 +3601,7 @@ AcDbXrecord
 102
 {ADSK_LYR_PLOTSTYLE_OVERRIDE
 335
-3A
+3B
 390
 30
 102
@@ -3589,7 +3609,7 @@ AcDbXrecord
   0
 DICTIONARYVAR
   5
-3F
+40
 330
 2D
 100
