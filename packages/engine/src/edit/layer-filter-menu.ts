@@ -9,8 +9,10 @@
 //   - Isolate Group: "In all viewports of a layout, sets the VP Freeze setting for all layers
 //     that are not in the selected filter. In model space, turns off all layers that are not in
 //     the selected filter." The layers in the filter keep their settings. Active Viewport Only
-//     acts in the layout viewport made current, which Triya cannot make yet (MSPACE, M6-02), so
-//     the app offers All Viewports only in a layout, and either in model space, both the same.
+//     acts in the layout viewport made current (M6-02 part 8; MSPACE, part 3); the app offers it
+//     in a layout while one is, and in model space, where it does what All Viewports does.
+//   - Viewport (Freeze, Thaw), M6-02 part 8: "Freezes or thaws the layers in the selected filter
+//     in the current viewport", the layout viewport made current.
 //   - Convert to Group Filter: "Converts the selected property filter to a group filter.
 //     Changing the properties of the layers in a group filter has no effect on the filter." The
 //     group holds the layers the filter lists now, under the same name, handle and parent, with
@@ -43,6 +45,7 @@ import {
 import { isXrefDependent, isXrefRecord } from '../model/xref';
 import { filteredLayers } from './layer-filters';
 import { layerPropsChange, layersInUse, type LayerProps } from './layer-manager';
+import { viewportLayerChange } from './viewport-layer-edits';
 
 /**
  * A node of the filter tree: All, All Used Layers, a filter's handle, Unreconciled New Layers
@@ -140,21 +143,41 @@ export function filterLayersChange(
   );
 }
 
+/** Viewport Freeze or Thaw: the layers `node` lists frozen or thawed in `viewport` (part 8). */
+export function filterViewportChange(
+  model: DocumentModel,
+  node: LayerFilterNode,
+  viewport: Handle,
+  frozen: boolean,
+): ChangeSet | string {
+  const listed = filterNodeLayers(model, node);
+  if (typeof listed === 'string') return listed;
+  return viewportLayerChange(
+    model,
+    listed.map((l) => l.handle),
+    viewport,
+    { frozen },
+  );
+}
+
 /**
  * Isolate Group: in model space (`space` undefined or model space's block) the layers `node`
  * does not list turned off; in the layout whose block is `space`, frozen in each of its
- * viewports (not the sheet's own view, viewport 1).
+ * viewports (not the sheet's own view, viewport 1), or with `viewport` (Active Viewport Only,
+ * M6-02 part 8) in that one only.
  */
 export function isolateFilterChange(
   model: DocumentModel,
   node: LayerFilterNode,
   space?: Handle,
+  viewport?: Handle,
 ): ChangeSet | string {
   const listed = filterNodeLayers(model, node);
   if (typeof listed === 'string') return listed;
   if (listed.length === 0) return 'The filter lists no layers.';
   const keep = new Set(listed.map((l) => l.handle));
   const others = [...model.tables.layers.keys()].filter((h) => !keep.has(h));
+  if (viewport !== undefined) return viewportLayerChange(model, others, viewport, { frozen: true });
   const layout =
     space === undefined ? undefined : model.layouts.find((l) => l.blockRecord === space);
   if (space !== undefined && !layout) return `No layout ${space}.`;

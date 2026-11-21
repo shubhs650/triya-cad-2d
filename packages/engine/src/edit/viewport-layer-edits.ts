@@ -8,12 +8,14 @@
 //
 // Each function writes into the builder only what changes, so an edit that changes nothing
 // builds an empty change set.
-import type { ChangeSetBuilder } from '../model/builder';
+import { ChangeSetBuilder } from '../model/builder';
+import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type {
   Color,
   Entity,
+  LayerRecord,
   LayerViewportOverride,
   Lineweight,
   Transparency,
@@ -160,6 +162,63 @@ export function setNewViewportFrozen(
     const next = frozen ? flags | NEW_VP_FROZEN : flags & ~NEW_VP_FROZEN;
     if (next !== flags) b.updateTableRecord('layers', h, { flags: next });
   }
+}
+
+/** The Layer Properties Manager's VP columns in the viewport made current (M6-02 part 8). */
+export interface ViewportLayerProps extends ViewportOverrideProps {
+  /** VP Freeze. */
+  readonly frozen?: boolean;
+}
+
+const OVERRIDE_KEYS = ['color', 'linetype', 'lineweight', 'transparency'] as const;
+
+/** Whether `value` is what `layer` has of its own for `key` (no override needed). */
+const ownValue = (
+  layer: LayerRecord,
+  key: (typeof OVERRIDE_KEYS)[number],
+  value: unknown,
+): boolean => JSON.stringify(layer[key]) === JSON.stringify(value);
+
+/**
+ * The manager's VP Freeze, VP Color, VP Linetype, VP Lineweight and VP Transparency on `layers`
+ * in the floating viewport `viewport` (AutoCAD 2024 Help, "Layer Properties Manager": "for the
+ * active layout viewport"). A VP value set to the layer's own value removes that override (and
+ * the viewport's entry with its last one): Help does not say whether such an override is kept,
+ * and the drafter setting it back expects the cell to read as not overridden again.
+ */
+export function viewportLayerChange(
+  model: DocumentModel,
+  layers: readonly Handle[],
+  viewport: Handle,
+  props: ViewportLayerProps,
+): ChangeSet | string {
+  const vp = viewportOf(model, viewport);
+  if (!vp || vp.geom.id === 1) return `No layout viewport ${viewport}.`;
+  const unknown = layers.find((h) => !model.tables.layers.has(h));
+  if (unknown !== undefined) return `No layer ${unknown}.`;
+  const b = new ChangeSetBuilder(model);
+  if (props.frozen !== undefined) freezeInViewports(b, model, layers, [viewport], props.frozen);
+  const keys = OVERRIDE_KEYS.filter((k) => props[k] !== undefined);
+  if (keys.length === 0) return b.build();
+  for (const h of layers) {
+    const layer = model.tables.layers.get(h)!;
+    rewrite(b, model, h, (list) => {
+      const at = list.findIndex((o) => o.viewport === viewport);
+      // The viewport first, as the reader builds an entry.
+      const entry: Record<string, unknown> = { viewport, ...(at >= 0 ? list[at] : {}) };
+      for (const k of keys) {
+        if (ownValue(layer, k, props[k])) delete entry[k];
+        else entry[k] = props[k];
+      }
+      const kept = OVERRIDE_KEYS.some((k) => entry[k] !== undefined);
+      const out = [...list];
+      if (at >= 0 && kept) out[at] = entry as unknown as LayerViewportOverride;
+      else if (at >= 0) out.splice(at, 1);
+      else if (kept) out.push(entry as unknown as LayerViewportOverride);
+      return out;
+    });
+  }
+  return b.build();
 }
 
 /** Every layout's floating viewports (not a sheet's own, 69 = 1), in layout tab order. */

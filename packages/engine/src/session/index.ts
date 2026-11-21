@@ -36,6 +36,7 @@ import type { Vec2 } from '../geom/types';
 import type { Lasso } from '../selection/loop';
 import { ChangeSetBuilder } from '../model/builder';
 import { viewportViewProblem, withViewportView, type ViewportView } from '../layout/viewport-view';
+import { viewportLayerChange, type ViewportLayerProps } from '../edit/viewport-layer-edits';
 import { isEmptyChangeSet, type ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -90,6 +91,7 @@ import {
 import {
   convertLayerFilterChange,
   filterLayersChange,
+  filterViewportChange,
   isolateFilterChange,
   type FilterLayerSetting,
   type LayerFilterNode,
@@ -144,6 +146,17 @@ export type LayerTableEdit =
   /** Merge Selected Layer(s) to (M5-05 part 4): their objects move to `target`, they go. */
   | { readonly kind: 'layer-merge'; readonly layers: readonly Handle[]; readonly target: Handle }
   | { readonly kind: 'layer-current'; readonly layer: Handle };
+
+/**
+ * The Layer Properties Manager's VP Freeze, VP Color, VP Linetype, VP Lineweight and VP
+ * Transparency (M6-02 part 8) on one layer or the layers selected, in the layout viewport made
+ * current: one LAYER step, as the manager's other edits.
+ */
+export interface ViewportLayerEdit extends ViewportLayerProps {
+  readonly kind: 'viewport-layer';
+  readonly layer: Handle | readonly Handle[];
+  readonly viewport: Handle;
+}
 
 /**
  * The Layer States Manager's New (or an overwrite of the state so named), Restore, Delete, Edit
@@ -211,11 +224,22 @@ export type LayerFilterEdit =
       readonly node: LayerFilterNode;
       readonly set: FilterLayerSetting;
     }
-  /** Isolate Group: in model space, or the layout whose block is `space` (its viewports). */
+  /**
+   * Isolate Group: in model space, or the layout whose block is `space` (its viewports), or with
+   * `viewport` that layout viewport only (Active Viewport Only, M6-02 part 8).
+   */
   | {
       readonly kind: 'layer-filter-isolate';
       readonly node: LayerFilterNode;
       readonly space?: Handle;
+      readonly viewport?: Handle;
+    }
+  /** Viewport Freeze and Thaw (M6-02 part 8): the node's layers in the viewport made current. */
+  | {
+      readonly kind: 'layer-filter-viewport';
+      readonly node: LayerFilterNode;
+      readonly viewport: Handle;
+      readonly frozen: boolean;
     }
   /** Convert to Group Filter. */
   | { readonly kind: 'layer-filter-convert'; readonly filter: Handle };
@@ -447,6 +471,7 @@ export type EngineEdit =
   | NamedViewEdit
   | ViewTableEdit
   | ViewportViewEdit
+  | ViewportLayerEdit
   | SessionVariableEdit
   | AliasEdit;
 
@@ -949,6 +974,7 @@ export class EngineSession {
     )
       return this.#viewTableEdit(e);
     if (e.kind === 'viewport-view') return this.#viewportView(e);
+    if (e.kind === 'viewport-layer') return this.#viewportLayer(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     if (e.kind === 'fields') return this.#fieldEvent(e);
     if (
@@ -972,6 +998,7 @@ export class EngineSession {
       e.kind === 'layer-filter-delete' ||
       e.kind === 'layer-filter-set' ||
       e.kind === 'layer-filter-isolate' ||
+      e.kind === 'layer-filter-viewport' ||
       e.kind === 'layer-filter-convert'
     )
       return this.#layerFiltersEdit(e);
@@ -1172,6 +1199,13 @@ export class EngineSession {
     );
   }
 
+  #viewportLayer(e: ViewportLayerEdit): EditResult {
+    const { kind: _kind, layer, viewport, ...props } = e;
+    return this.#layerStep(
+      viewportLayerChange(this.model, typeof layer === 'string' ? [layer] : layer, viewport, props),
+    );
+  }
+
   #layerTableEdit(e: LayerTableEdit): EditResult {
     return this.#layerStep(
       e.kind === 'layer-new'
@@ -1271,11 +1305,13 @@ export class EngineSession {
           ? editLayerFilterChange(m, e.filter, e)
           : e.kind === 'layer-filter-set'
             ? filterLayersChange(m, e.node, e.set)
-            : e.kind === 'layer-filter-isolate'
-              ? isolateFilterChange(m, e.node, e.space)
-              : e.kind === 'layer-filter-convert'
-                ? convertLayerFilterChange(m, e.filter)
-                : deleteLayerFilterChange(m, e.filter);
+            : e.kind === 'layer-filter-viewport'
+              ? filterViewportChange(m, e.node, e.viewport, e.frozen)
+              : e.kind === 'layer-filter-isolate'
+                ? isolateFilterChange(m, e.node, e.space, e.viewport)
+                : e.kind === 'layer-filter-convert'
+                  ? convertLayerFilterChange(m, e.filter)
+                  : deleteLayerFilterChange(m, e.filter);
     return this.#layerStep(change);
   }
 
