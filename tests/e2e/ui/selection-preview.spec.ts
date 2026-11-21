@@ -73,8 +73,10 @@ test('lights up the line under the pickbox at Command: and at Select objects', a
   const box = (await canvas.boundingBox())!;
   const on = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const off = { x: on.x, y: on.y - box.height / 4 };
-  // Along the line, away from the cursor: the whole line lights up, not only where it is.
-  const along = { x: on.x - box.width / 6, y: on.y };
+  // Along the line, away from the cursor: the whole line lights up, not only where it is. 20
+  // units left of the centre, at the scale ZOOM W gives the 160 × 100 window in this canvas.
+  const scale = Math.min(box.width / 160, box.height / 100);
+  const along = { x: on.x - 20 * scale, y: on.y };
 
   await page.mouse.move(off.x, off.y);
   await shot(page, '1-before-hover');
