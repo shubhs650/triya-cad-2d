@@ -9,6 +9,7 @@
 // (`icons.tsx`); its rich tooltip (`tooltips.ts`) adds a description, the command, its aliases
 // and keys.
 
+import type { RibbonSelection } from '@triya/engine';
 import type { IconName } from './icons';
 
 /** How an item shows at a breakpoint: a big icon over its label, a small icon and label, an icon. */
@@ -25,10 +26,17 @@ export interface ItemSizes {
 export type RibbonRun =
   | { readonly command: string; readonly keys?: readonly string[] }
   /**
+   * A contextual tab's option of the command running (M7-02 part 4): `keyword` typed at its
+   * prompt, as AutoCAD's Hatch Creation and Array Creation buttons answer HATCH's and ARRAY's
+   * prompts (and Table Cell's TABLECELL's); empty is Enter, which ends it.
+   */
+  | { readonly keyword: string }
+  /**
    * An app action: a drafting toggle (`drafting:<toggle>`), flipped or set to `on`; a palette
    * of the stack shown (`palette:<name>`); the colour theme (`theme:<light|dark|system>`); or a
    * window of the app's own (`app:<aliases|shortcuts>`, M7-02 part 2). A dropdown's is
-   * `control:<control>`: it opens its list instead of running.
+   * `control:<control>`: it opens its list instead of running. `escape` is Esc: a contextual
+   * tab's Close button deselects what showed it.
    */
   | { readonly action: string; readonly on?: boolean };
 
@@ -156,6 +164,17 @@ function control(
 const SECONDARY_CONTROL: ItemSizes = { full: 'small-label', wide: 'small-label', laptop: 'icon' };
 /** A dropdown that shows its value at every size: the layer list. */
 const NAMED: ItemSizes = { full: 'small-label', wide: 'small-label', laptop: 'small-label' };
+
+/** A contextual tab's option of the command running: its keyword, typed. */
+function key(
+  id: string,
+  label: string,
+  icon: IconName,
+  keyword: string,
+  sizes: ItemSizes = LABELLED,
+): RibbonItem {
+  return { id, label, icon, sizes, run: { keyword } };
+}
 
 /** An item AutoCAD has that Triya shows greyed out, saying why (`unavailable`). */
 function off(item: RibbonItem, reason: string): RibbonItem {
@@ -769,3 +788,461 @@ export const RIBBON_TABS: readonly RibbonTab[] = [
   LAYOUT,
   TOOLS,
 ];
+
+/**
+ * When a contextual tab shows (UI_SPEC §2; AutoCAD 2024 Help, "Contextual Ribbon Tabs"): while
+ * one of `commands` runs, while everything selected is one `selection` kind, or while the Block
+ * Editor is open.
+ */
+export type RibbonWhen =
+  | { readonly commands: readonly string[] }
+  | { readonly selection: RibbonSelection }
+  | { readonly blockEditor: true };
+
+export interface ContextualTab extends RibbonTab {
+  readonly when: RibbonWhen;
+}
+
+/** What the contextual tabs follow: the command running, the selection's kind, the editor. */
+export interface RibbonContext {
+  readonly command?: string | undefined;
+  readonly selection?: RibbonSelection | undefined;
+  readonly blockEditor?: boolean | undefined;
+}
+
+/** The last panel of every contextual tab: AutoCAD's Close button, which never compresses. */
+const close = (id: string, label: string, run: RibbonRun): RibbonPanel => ({
+  id: 'close',
+  label: 'Close',
+  items: [{ id, label, icon: 'dismiss_circle', sizes: BIG, run }],
+});
+
+/** The Close panel of a selection's tab: Esc, which deselects it. */
+const closeSelection = (id: string, label: string) => close(id, label, { action: 'escape' });
+
+const HATCH_CREATION: ContextualTab = {
+  id: 'hatch-creation',
+  label: 'Hatch Creation',
+  when: { commands: ['HATCH', 'GRADIENT'] },
+  panels: [
+    {
+      id: 'boundaries',
+      label: 'Boundaries',
+      compress: { order: 1, keep: ['pick-points'] },
+      items: [
+        key('pick-points', 'Pick Points', 'cursor_click', 'K', BIG),
+        key('select-boundaries', 'Select', 'select_object', 'S'),
+        key('remove-boundaries', 'Remove', 'eraser', 'B'),
+        key('undo-boundary', 'Undo', 'arrow_undo', 'U'),
+      ],
+    },
+    {
+      id: 'options',
+      label: 'Options',
+      compress: { order: 2, keep: ['hatch-settings'] },
+      items: [key('hatch-settings', 'Hatch Settings', 'settings', 'T', BIG)],
+    },
+    close('close-hatch-creation', 'Close Hatch Creation', { keyword: '' }),
+  ],
+};
+
+const HATCH_EDITOR: ContextualTab = {
+  id: 'hatch-editor',
+  label: 'Hatch Editor',
+  when: { selection: 'hatch' },
+  panels: [
+    {
+      id: 'boundaries',
+      label: 'Boundaries',
+      compress: { order: 1, keep: ['add-boundaries'] },
+      items: [
+        cmd('add-boundaries', 'Add Boundaries', 'hatch', '-HATCHEDIT', BIG, ['AD']),
+        cmd('remove-hatch-boundaries', 'Remove', 'eraser', '-HATCHEDIT', LABELLED, ['R']),
+        cmd('recreate-boundary', 'Recreate', 'border_outside', '-HATCHEDIT', LABELLED, ['B']),
+      ],
+    },
+    {
+      id: 'properties',
+      label: 'Properties',
+      compress: { order: 2, keep: ['edit-hatch'] },
+      items: [
+        cmd('edit-hatch', 'Hatch Edit', 'pen', 'HATCHEDIT', BIG),
+        cmd('match-hatch', 'Match Properties', 'paint_brush', 'MATCHPROP', LABELLED),
+      ],
+    },
+    {
+      id: 'origin',
+      label: 'Origin',
+      compress: { order: 3, keep: ['set-origin'] },
+      items: [cmd('set-origin', 'Set Origin', 'location', '-HATCHEDIT', BIG, ['O'])],
+    },
+    {
+      id: 'options',
+      label: 'Options',
+      compress: { order: 4, keep: [] },
+      items: [
+        cmd('separate-hatches', 'Separate Hatches', 'board_split', '-HATCHEDIT', LABELLED, ['H']),
+        cmd('hatch-front', 'Bring to Front', 'position_to_front', 'DRAWORDER', LABELLED, ['F']),
+        cmd('hatch-back', 'Send to Back', 'position_to_back', 'DRAWORDER', LABELLED, ['B']),
+      ],
+    },
+    closeSelection('close-hatch-editor', 'Close Hatch Editor'),
+  ],
+};
+
+/** Image's and PDF Underlay's draw order buttons, as AutoCAD's Options panels hold them. */
+const drawOrder = (order: number): RibbonPanel => ({
+  id: 'draw-order',
+  label: 'Options',
+  compress: { order, keep: [] },
+  items: [
+    cmd('bring-front', 'Bring to Front', 'position_to_front', 'DRAWORDER', LABELLED, ['F']),
+    cmd('send-back', 'Send to Back', 'position_to_back', 'DRAWORDER', LABELLED, ['B']),
+  ],
+});
+
+const IMAGE: ContextualTab = {
+  id: 'image',
+  label: 'Image',
+  when: { selection: 'image' },
+  panels: [
+    {
+      id: 'adjust',
+      label: 'Adjust',
+      compress: { order: 2, keep: ['image-adjust'] },
+      items: [cmd('image-adjust', 'Adjust', 'image_edit', 'IMAGEADJUST', BIG)],
+    },
+    {
+      id: 'clipping',
+      label: 'Clipping',
+      compress: { order: 3, keep: ['image-clip'] },
+      items: [cmd('image-clip', 'Create Clipping Boundary', 'crop', 'IMAGECLIP', BIG)],
+    },
+    drawOrder(1),
+    closeSelection('close-image', 'Close Image'),
+  ],
+};
+
+const PDF_UNDERLAY: ContextualTab = {
+  id: 'pdf-underlay',
+  label: 'PDF Underlay',
+  when: { selection: 'pdf' },
+  panels: [
+    {
+      id: 'adjust',
+      label: 'Adjust',
+      compress: { order: 3, keep: ['pdf-adjust'] },
+      items: [cmd('pdf-adjust', 'Adjust', 'document_edit', 'PDFADJUST', BIG)],
+    },
+    {
+      id: 'clipping',
+      label: 'Clipping',
+      compress: { order: 4, keep: ['pdf-clip'] },
+      items: [cmd('pdf-clip', 'Create Clipping Boundary', 'crop', 'PDFCLIP', BIG)],
+    },
+    {
+      id: 'layers',
+      label: 'PDF Layers',
+      compress: { order: 2, keep: ['pdf-layers'] },
+      items: [cmd('pdf-layers', 'Edit Layers', 'layer_diagonal', 'ULAYERS', BIG)],
+    },
+    {
+      id: 'options',
+      label: 'Options',
+      compress: { order: 1, keep: [] },
+      items: [
+        split('pdf-snap', 'Snap to Underlays', 'target', LABELLED, [
+          toggle('pdf-snap-on', 'Snap to Underlays ON', 'target', 'drafting:underlaySnap', true),
+          toggle('pdf-snap-off', 'Snap to Underlays OFF', 'target', 'drafting:underlaySnap', false),
+        ]),
+        cmd('pdf-front', 'Bring to Front', 'position_to_front', 'DRAWORDER', LABELLED, ['F']),
+        cmd('pdf-back', 'Send to Back', 'position_to_back', 'DRAWORDER', LABELLED, ['B']),
+      ],
+    },
+    closeSelection('close-pdf-underlay', 'Close PDF Underlay'),
+  ],
+};
+
+const EXTERNAL_REFERENCE: ContextualTab = {
+  id: 'external-reference',
+  label: 'External Reference',
+  when: { selection: 'xref' },
+  panels: [
+    {
+      id: 'edit',
+      label: 'Edit',
+      compress: { order: 2, keep: ['edit-reference'] },
+      items: [cmd('edit-reference', 'Edit Reference In-Place', 'pen', 'REFEDIT', BIG)],
+    },
+    {
+      id: 'clipping',
+      label: 'Clipping',
+      compress: { order: 3, keep: ['xref-clip'] },
+      items: [cmd('xref-clip', 'Create Clipping Boundary', 'crop', 'XCLIP', BIG)],
+    },
+    {
+      id: 'options',
+      label: 'Options',
+      compress: { order: 1, keep: [] },
+      items: [cmd('xref-manager', 'External References', 'link_multiple', 'EXTERNALREFERENCES')],
+    },
+    closeSelection('close-external-reference', 'Close External Reference'),
+  ],
+};
+
+const ARRAY: ContextualTab = {
+  id: 'array',
+  label: 'Array',
+  when: { selection: 'array' },
+  panels: [
+    {
+      id: 'options',
+      label: 'Options',
+      compress: { order: 1, keep: ['edit-source'] },
+      items: [
+        cmd('edit-source', 'Edit Source', 'pen', 'ARRAYEDIT', BIG, ['S']),
+        cmd('replace-item', 'Replace Item', 'arrow_swap', 'ARRAYEDIT', LABELLED, ['REP']),
+        cmd('reset-array', 'Reset Array', 'arrow_reset', 'ARRAYEDIT', LABELLED, ['RES']),
+        cmd('explode-array', 'Explode', 'explode', 'EXPLODE', LABELLED),
+      ],
+    },
+    closeSelection('close-array', 'Close Array'),
+  ],
+};
+
+/** Array Creation's Properties panel: ASsociative and Base point, every ARRAY type's. */
+const arrayProperties = (order: number): RibbonPanel => ({
+  id: 'properties',
+  label: 'Properties',
+  compress: { order, keep: [] },
+  items: [
+    key('array-associative', 'Associative', 'link', 'AS'),
+    key('array-base-point', 'Base Point', 'location', 'B'),
+  ],
+});
+
+const closeArray = close('close-array-creation', 'Close Array', { keyword: 'X' });
+
+const ARRAY_CREATION_RECT: ContextualTab = {
+  id: 'array-creation-rect',
+  label: 'Array Creation',
+  when: { commands: ['ARRAYRECT'] },
+  panels: [
+    {
+      id: 'columns',
+      label: 'Columns',
+      compress: { order: 2, keep: ['array-columns'] },
+      items: [
+        key('array-columns', 'Columns', 'align_space_evenly_horizontal', 'COL', BIG),
+        key('array-count', 'Count', 'number_symbol', 'COU'),
+        key('array-spacing', 'Spacing', 'ruler', 'S'),
+      ],
+    },
+    {
+      id: 'rows',
+      label: 'Rows',
+      compress: { order: 3, keep: ['array-rows'] },
+      items: [key('array-rows', 'Rows', 'align_space_evenly_vertical', 'R', BIG)],
+    },
+    arrayProperties(1),
+    closeArray,
+  ],
+};
+
+const ARRAY_CREATION_POLAR: ContextualTab = {
+  id: 'array-creation-polar',
+  label: 'Array Creation',
+  when: { commands: ['ARRAYPOLAR'] },
+  panels: [
+    {
+      id: 'items',
+      label: 'Items',
+      compress: { order: 2, keep: ['array-items'] },
+      items: [
+        key('array-items', 'Items', 'number_symbol', 'I', BIG),
+        key('array-angle-between', 'Between', 'arrow_rotate_counterclockwise', 'A'),
+        key('array-fill-angle', 'Fill', 'array-polar', 'F'),
+      ],
+    },
+    {
+      id: 'rows',
+      label: 'Rows',
+      compress: { order: 3, keep: ['array-rows'] },
+      items: [key('array-rows', 'Rows', 'align_space_evenly_vertical', 'ROW', BIG)],
+    },
+    {
+      ...arrayProperties(1),
+      items: [
+        ...arrayProperties(1).items,
+        key('array-rotate-items', 'Rotate Items', 'arrow_rotate_clockwise', 'ROT'),
+      ],
+    },
+    closeArray,
+  ],
+};
+
+const ARRAY_CREATION_PATH: ContextualTab = {
+  id: 'array-creation-path',
+  label: 'Array Creation',
+  when: { commands: ['ARRAYPATH'] },
+  panels: [
+    {
+      id: 'items',
+      label: 'Items',
+      compress: { order: 2, keep: ['array-items'] },
+      items: [
+        key('array-items', 'Items', 'number_symbol', 'I', BIG),
+        key('array-method', 'Measure / Divide', 'ruler', 'M'),
+      ],
+    },
+    {
+      id: 'rows',
+      label: 'Rows',
+      compress: { order: 3, keep: ['array-rows'] },
+      items: [key('array-rows', 'Rows', 'align_space_evenly_vertical', 'R', BIG)],
+    },
+    {
+      ...arrayProperties(1),
+      items: [
+        ...arrayProperties(1).items,
+        key('array-tangent', 'Tangent Direction', 'arrow_routing', 'T'),
+        key('array-align-items', 'Align Items', 'align_space_evenly_horizontal', 'A'),
+      ],
+    },
+    closeArray,
+  ],
+};
+
+/**
+ * Table Cell: TABLECELL (M4-05 part 3) is the cells selected, its prompt's options the tab's
+ * actions, each typed as its whole keyword. Esc ends it, deselecting the cells.
+ */
+const TABLE_CELL: ContextualTab = {
+  id: 'table-cell',
+  label: 'Table Cell',
+  when: { commands: ['TABLECELL'] },
+  panels: [
+    {
+      id: 'rows',
+      label: 'Rows',
+      compress: { order: 5, keep: ['insert-above', 'insert-below'] },
+      items: [
+        key('insert-above', 'Insert Above', 'table_move_above', 'Above', BIG),
+        key('insert-below', 'Insert Below', 'table_move_below', 'Below', BIG),
+        key('delete-rows', 'Delete Row(s)', 'table_delete_row', 'DeleteRows', BIG),
+      ],
+    },
+    {
+      id: 'columns',
+      label: 'Columns',
+      compress: { order: 4, keep: ['insert-left', 'insert-right'] },
+      items: [
+        key('insert-left', 'Insert Left', 'table_move_left', 'Left', BIG),
+        key('insert-right', 'Insert Right', 'table_move_right', 'Right', BIG),
+        key('delete-columns', 'Delete Column(s)', 'table_delete_column', 'DeleteColumns', BIG),
+      ],
+    },
+    {
+      id: 'merge',
+      label: 'Merge',
+      compress: { order: 3, keep: ['merge-cells'] },
+      items: [
+        split('merge-cells', 'Merge Cells', 'table_cells_merge', BIG, [
+          key('merge-all', 'Merge All', 'table_cells_merge', 'MergeAll'),
+          key('merge-rows', 'Merge By Row', 'table_cells_merge', 'MergeRows'),
+          key('merge-columns', 'Merge By Column', 'table_cells_merge', 'MergeColumns'),
+        ]),
+        key('unmerge-cells', 'Unmerge Cells', 'table_cells_split', 'Unmerge', BIG),
+      ],
+    },
+    {
+      id: 'cell-styles',
+      label: 'Cell Styles',
+      compress: { order: 2, keep: [] },
+      items: [
+        key('match-cell', 'Match Cell', 'paint_brush', 'Match'),
+        key('cell-style', 'Cell Style', 'style_guide', 'CellStyle'),
+        key('cell-background', 'Background Fill', 'paint_bucket', 'BAckground'),
+        key('cell-borders', 'Cell Borders', 'border_all', 'BOrders'),
+        key('cell-alignment', 'Alignment', 'text_align_center', 'ALignment'),
+        key('remove-overrides', 'Remove All Property Overrides', 'broom', 'RemoveOverrides'),
+      ],
+    },
+    {
+      id: 'cell-format',
+      label: 'Cell Format',
+      compress: { order: 1, keep: [] },
+      items: [
+        key('cell-locking', 'Cell Locking', 'table_lock', 'LOcking'),
+        key('data-format', 'Data Format', 'table_settings', 'DataFormat'),
+        key('row-height', 'Row Height', 'align_space_evenly_vertical', 'Height'),
+      ],
+    },
+    {
+      id: 'insert',
+      label: 'Insert',
+      compress: { order: 6, keep: ['cell-block'] },
+      items: [
+        key('cell-block', 'Block', 'cube_arrow_curve_down', 'BLock', BIG),
+        key('cell-text', 'Edit Text', 'table_cell_edit', 'Text', LABELLED),
+      ],
+    },
+    close('close-table-cell', 'Close Table Cell', { action: 'escape' }),
+  ],
+};
+
+const BLOCK_EDITOR: ContextualTab = {
+  id: 'block-editor',
+  label: 'Block Editor',
+  when: { blockEditor: true },
+  panels: [
+    {
+      id: 'open-save',
+      label: 'Open/Save',
+      compress: { order: 2, keep: ['save-block'] },
+      items: [
+        cmd('edit-block', 'Edit Block', 'cube_tree', 'BEDIT', BIG),
+        cmd('save-block', 'Save Block', 'save', 'BSAVE', BIG),
+      ],
+    },
+    {
+      id: 'attributes',
+      label: 'Attributes',
+      compress: { order: 1, keep: ['attribute-definition'] },
+      items: [
+        cmd('attribute-definition', 'Attribute Definition', 'tag_add', 'ATTDEF', BIG),
+        cmd('block-attribute-manager', 'Manage Attributes', 'tag_multiple', 'BATTMAN', LABELLED),
+      ],
+    },
+    close('close-block-editor', 'Close Block Editor', { command: 'BCLOSE' }),
+  ],
+};
+
+/**
+ * The contextual tabs, in the order their rules are tried: a command's first (a command's tab
+ * shows over the selection's), then the Block Editor's, then a selection's.
+ */
+export const CONTEXTUAL_TABS: readonly ContextualTab[] = [
+  HATCH_CREATION,
+  ARRAY_CREATION_RECT,
+  ARRAY_CREATION_POLAR,
+  ARRAY_CREATION_PATH,
+  TABLE_CELL,
+  BLOCK_EDITOR,
+  HATCH_EDITOR,
+  IMAGE,
+  PDF_UNDERLAY,
+  EXTERNAL_REFERENCE,
+  ARRAY,
+];
+
+/** The contextual tab `context` shows, if any. */
+export function contextualTabOf(context: RibbonContext): ContextualTab | undefined {
+  return CONTEXTUAL_TABS.find((t) =>
+    'commands' in t.when
+      ? context.command !== undefined && t.when.commands.includes(context.command)
+      : 'blockEditor' in t.when
+        ? context.blockEditor === true
+        : context.selection === t.when.selection,
+  );
+}

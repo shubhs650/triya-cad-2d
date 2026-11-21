@@ -14,7 +14,9 @@
 // at once when the keyboard focuses it. M7-02 part 3: Home's Layers and Properties dropdowns
 // (ribbon/RibbonControls.tsx) show the selection's layer, colour, linetype, lineweight and
 // transparency, or the current ones, while a drawing is open; in a compressed panel they are
-// entries of its list, each opening its dropdown's list there.
+// entries of its list, each opening its dropdown's list there. M7-02 part 4: a contextual tab
+// (ribbon.config.ts `CONTEXTUAL_TABS`) joins the tabs and is shown while its command runs, the
+// Block Editor is open or the selection is all of its kind, then goes, the tab shown before back.
 import {
   useEffect,
   useLayoutEffect,
@@ -38,7 +40,7 @@ import {
   type ControlChoice,
   type ControlState,
 } from './ribbon/RibbonControls';
-import { ribbonPropertiesStore } from './ribbon/ribbon-properties';
+import { ribbonPropertiesStore, runningCommands } from './ribbon/ribbon-properties';
 import { SelectColorDialog } from './SelectColorDialog';
 import { tooltipOf, type Tooltip } from './ribbon/tooltips';
 import { keymap } from './shortcuts';
@@ -46,6 +48,7 @@ import { appRegistry } from './user-aliases';
 import { ROWS, breakpointOf, layoutTab, type PanelLayout } from './ribbon/layout';
 import {
   RIBBON_TABS,
+  contextualTabOf,
   type ItemSize,
   type RibbonControl,
   type RibbonItem,
@@ -90,6 +93,8 @@ export type AppWindow = 'aliases' | 'shortcuts';
 
 export interface RibbonProps {
   readonly doc: number | undefined;
+  /** The drawing shows the Block Editor: its contextual tab shows. */
+  readonly blockEditor?: boolean | undefined;
   /** The colour theme's store, for View > Interface > Theme. */
   readonly preferences?: PreferencesStore | undefined;
   readonly onOpenWindow?: ((window: AppWindow) => void) | undefined;
@@ -101,8 +106,17 @@ const actionArg = (run: RibbonRun, prefix: string): string | undefined =>
 function runItem(
   run: RibbonRun,
   doc: number | undefined,
-  { preferences, onOpenWindow }: Omit<RibbonProps, 'doc'>,
+  { preferences, onOpenWindow }: Omit<RibbonProps, 'doc' | 'blockEditor'>,
 ): void {
+  if ('keyword' in run) {
+    // A contextual tab's option, typed at the running command's prompt.
+    if (doc !== undefined) engines.command(doc, { kind: 'submit', text: run.keyword });
+    return;
+  }
+  if ('action' in run && run.action === 'escape') {
+    if (doc !== undefined) engines.command(doc, { kind: 'cancel' });
+    return;
+  }
   const palette = actionArg(run, 'palette:');
   if (palette !== undefined) return paletteStack.set(palette as PaletteName);
   const theme = actionArg(run, 'theme:');
@@ -140,7 +154,7 @@ interface MenuState {
   readonly split?: RibbonItem;
 }
 
-export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
+export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonProps) {
   const width = useSyncExternalStore(viewport.subscribe, viewport.width);
   const draftingState = useSyncExternalStore(drafting.subscribe, drafting.get);
   const theme = useSyncExternalStore(
@@ -162,7 +176,24 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
   const tipTimer = useRef<number | undefined>(undefined);
   /** The entry each split button runs, by its id: the one picked last. */
   const [picked, setPicked] = useState<ReadonlyMap<string, RibbonItem>>(new Map());
-  const tab = RIBBON_TABS.find((t) => t.id === tabId)!;
+  const command = useSyncExternalStore(runningCommands.subscribe, () => runningCommands.get(doc));
+  const contextual = contextualTabOf({
+    command,
+    selection: properties?.selection,
+    blockEditor,
+  });
+  const tabs = contextual ? [...RIBBON_TABS, contextual] : RIBBON_TABS;
+  // A contextual tab is brought up as it appears; as it goes, the tab shown before it is back.
+  const [shownContextual, setShownContextual] = useState<string | undefined>();
+  const before = useRef(tabId);
+  if (contextual?.id !== shownContextual) {
+    setShownContextual(contextual?.id);
+    if (contextual) {
+      if (!shownContextual) before.current = tabId;
+      setTabId(contextual.id);
+    } else if (tabs.every((t) => t.id !== tabId)) setTabId(before.current);
+  }
+  const tab = tabs.find((t) => t.id === tabId) ?? RIBBON_TABS[0]!;
   const bp = breakpointOf(width);
   // Compression steps hold for one tab at one width; a new width starts from none again.
   const fitKey = `${tabId}:${width}`;
@@ -172,14 +203,13 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
   const rest = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const bodyShown = !minimized || popped;
-  const hasControls = tab.panels.some((p) => p.items.some((i) => i.control));
 
-  // The engine sends the dropdowns' values only while a tab showing them is up.
+  // The engine sends the dropdowns' values and the selection's kind while a drawing is open.
   useEffect(() => {
-    if (doc === undefined || !hasControls) return;
+    if (doc === undefined) return;
     engines.command(doc, { kind: 'ribbon-properties', open: true });
     return () => engines.command(doc, { kind: 'ribbon-properties', open: false });
-  }, [doc, hasControls]);
+  }, [doc]);
   const stateOf = (control: RibbonControl): ControlState =>
     controlState(control, properties, lwUnits === 0 ? 'in' : 'mm');
 
@@ -435,10 +465,10 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
           : e.key === 'Home'
             ? 0
             : undefined;
-    const n = e.key === 'End' ? RIBBON_TABS.length - 1 : to;
+    const n = e.key === 'End' ? tabs.length - 1 : to;
     if (n === undefined) return;
     e.preventDefault();
-    const next = RIBBON_TABS[(n + RIBBON_TABS.length) % RIBBON_TABS.length]!;
+    const next = tabs[(n + tabs.length) % tabs.length]!;
     setTabId(next.id);
     e.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-tab="${next.id}"]`)?.focus();
   };
@@ -454,13 +484,13 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
       data-testid="ribbon"
     >
       <div className="ribbon-tabs" role="tablist" aria-label="Ribbon">
-        {RIBBON_TABS.map((t, i) => (
+        {tabs.map((t, i) => (
           <button
             key={t.id}
             type="button"
             role="tab"
             data-tab={t.id}
-            className="ribbon-tab"
+            className={t === contextual ? 'ribbon-tab contextual' : 'ribbon-tab'}
             aria-selected={t.id === tabId}
             aria-controls="ribbon-body"
             tabIndex={t.id === tabId ? 0 : -1}
@@ -685,6 +715,7 @@ function RibbonTooltip({ tip, anchor }: TipState) {
   const at = anchor.getBoundingClientRect();
   const rows: [string, string][] = [];
   if (tip.command) rows.push(['Command', [tip.command, ...(tip.keywords ?? [])].join(' ')]);
+  else if (tip.keywords) rows.push(['Option', tip.keywords.join(' ')]);
   if (tip.aliases.length)
     rows.push([tip.aliases.length > 1 ? 'Aliases' : 'Alias', tip.aliases.join(', ')]);
   if (tip.keys.length) rows.push([tip.keys.length > 1 ? 'Keys' : 'Key', tip.keys.join(', ')]);

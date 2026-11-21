@@ -39,3 +39,42 @@ export function swatchOf(value: string): string | undefined {
   if (c.kind === 'rgb') return `rgb(${c.r} ${c.g} ${c.b})`;
   return undefined;
 }
+
+/**
+ * The command each drawing is running (M7-02 part 4), for the contextual tab it shows (Hatch
+ * Creation, Array Creation): its outermost, as a transparent command inside it keeps the tab.
+ */
+class RunningCommands {
+  readonly #byDoc = new Map<number, readonly string[]>();
+  readonly #listeners = new Set<() => void>();
+
+  #set(doc: number, names: readonly string[]): void {
+    if (names.length) this.#byDoc.set(doc, names);
+    else this.#byDoc.delete(doc);
+    for (const l of this.#listeners) l();
+  }
+
+  started(doc: number, command: string, transparent: boolean): void {
+    if (!transparent) this.#set(doc, [...(this.#byDoc.get(doc) ?? []), command]);
+  }
+
+  ended(doc: number, command: string): void {
+    const names = this.#byDoc.get(doc) ?? [];
+    const i = names.lastIndexOf(command);
+    if (i >= 0) this.#set(doc, names.toSpliced(i, 1));
+  }
+
+  forget(doc: number): void {
+    if (this.#byDoc.has(doc)) this.#set(doc, []);
+  }
+
+  get = (doc: number | undefined): string | undefined =>
+    doc === undefined ? undefined : this.#byDoc.get(doc)?.[0];
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  };
+}
+
+export const runningCommands = new RunningCommands();

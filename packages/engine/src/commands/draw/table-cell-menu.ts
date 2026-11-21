@@ -2,9 +2,9 @@
 // table cell selects the cell ("To Select Table Cells": Shift+click another cell selects the
 // cells between), its border shown, and the Table Cell ribbon tab and the cell shortcut menu
 // then insert and delete rows and columns, merge and unmerge cells and edit the text.
-// Triya has no ribbon yet, so TABLECELL is the selection, its prompt's options the Table Cell
-// tab's actions and its right-click menu the cell shortcut menu; every action is one undo step
-// and ends it, the click elsewhere or Esc too. A click at `Command:` inside a cell, farther from
+// TABLECELL is the selection, its prompt's options the Table Cell contextual ribbon tab's
+// actions (M7-02 part 4) and its right-click menu the cell shortcut menu; every action is one
+// undo step and ends it, the click elsewhere or Esc too. A click at `Command:` inside a cell, farther from
 // its lines than the pickbox reaches, starts it (a click on a line still selects the table);
 // typed, it asks "Pick a table cell:" first. A double click gives way to TABLEDIT.
 //

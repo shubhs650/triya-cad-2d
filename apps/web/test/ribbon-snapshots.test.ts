@@ -6,7 +6,7 @@
 // and review the diff: it is the ribbon's change as a drafter sees it.
 import { describe, expect, it } from 'vitest';
 import { BREAKPOINTS, compressionOrder, layoutTab, type PanelLayout } from '../src/ribbon/layout';
-import { RIBBON_TABS, type RibbonItem } from '../src/ribbon/ribbon.config';
+import { CONTEXTUAL_TABS, RIBBON_TABS, type RibbonItem } from '../src/ribbon/ribbon.config';
 
 const entry = (i: RibbonItem): string =>
   i.menu
@@ -28,8 +28,9 @@ describe('ribbon snapshots per breakpoint', () => {
   for (const bp of BREAKPOINTS)
     it(`pins the ${bp} ribbon`, async () => {
       const out: string[] = [`# ${bp}`];
-      for (const tab of RIBBON_TABS) {
-        out.push('', `## ${tab.label}`);
+      // The contextual tabs (M7-02 part 4) after the others, named by id: three are Array Creation.
+      for (const tab of [...RIBBON_TABS, ...CONTEXTUAL_TABS]) {
+        out.push('', `## ${'when' in tab ? `${tab.label} (contextual: ${tab.id})` : tab.label}`);
         for (const p of layoutTab(tab, bp, 0).panels) out.push(...panelText(p));
         const order = compressionOrder(tab);
         for (let step = 1; step <= order.length; step++) {
