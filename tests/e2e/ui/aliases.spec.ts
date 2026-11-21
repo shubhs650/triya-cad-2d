@@ -6,7 +6,7 @@
 // unit-tested in packages/engine/test/commands/pgp.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
-import { DXF, expectShown, openWithPicker } from '../app/page';
+import { DXF, expectShown, openWithPicker, openOptions } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -42,8 +42,7 @@ test('a user alias overrides a default one, at once and after a reload', async (
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
 
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = await openOptions(page, 'User Preferences');
   await settings.getByRole('button', { name: 'Edit aliases…' }).click();
   await expect(editor(page)).toBeVisible();
   const file = editor(page).getByRole('textbox', { name: 'User aliases (acad.pgp)' });
