@@ -4,10 +4,14 @@
 // ORTHOMODE, SNAPMODE, GRIDMODE and LWDISPLAY in each drawing. Triya starts from AutoCAD's
 // initial values (OSNAP on with Endpoint, Center, Intersection and Extension, POLAR on at 90°,
 // OTRACK and TPY on, ORTHO and SNAP off) and keeps the per-user ones between sessions (M2-20,
-// preferences.ts), the others per session. GRID starts off, so a drawing opens looking as it
-// was drawn; LWT shows each drawing's own LWDISPLAY until the drafter turns it, and is then the
-// same for every drawing. Nothing is written back to the file. The snap and grid spacing are
-// each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas.
+// preferences.ts), the others per session. GRID starts off for a drawing with no viewport to
+// keep it in (see part 19 below); LWT shows each drawing's own LWDISPLAY until the drafter turns
+// it, and is then the same for every drawing. Nothing is written back to the file. The snap and grid spacing are
+// each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas. SNAP and
+// GRID are the viewport worked in's (M6-02 part 19; AutoCAD keeps SNAPMODE and GRIDMODE in each
+// viewport): the shown canvas tells them (`setViewportModes`) and F9, F7, the buttons and the
+// Drafting Settings turn them there, a drawing edit; a drawing with no viewport to keep them in
+// has the session's own, as before.
 import { GRIP_COLORS_DEFAULT, type GripColors } from '@triya/render';
 import { DEFAULT_TOOLTIP, type TooltipAppearance } from './tooltip-appearance';
 import {
@@ -592,14 +596,25 @@ export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): bo
   return s[t];
 }
 
+/** SNAP and GRID of the viewport worked in (M6-02 part 19), and how to turn them there. */
+export interface ViewportModes {
+  readonly snap: boolean;
+  readonly grid: boolean;
+  set(patch: { readonly snap?: boolean; readonly grid?: boolean }): void;
+}
+
 export class Drafting {
   #state: DraftingState;
+  /** `#state` with the viewport worked in's SNAP and GRID, as `get` gives it. */
+  #shown: DraftingState;
+  #viewport: ViewportModes | undefined;
   /** The LWDISPLAY of the drawing shown, which LWT shows until the drafter turns it. */
   #drawingLwt = false;
   readonly #listeners = new Set<() => void>();
 
   constructor(initial: DraftingState = INITIAL_DRAFTING) {
     this.#state = initial;
+    this.#shown = initial;
   }
 
   subscribe = (l: () => void): (() => void) => {
@@ -607,10 +622,37 @@ export class Drafting {
     return () => this.#listeners.delete(l);
   };
 
-  get = (): DraftingState => this.#state;
+  get = (): DraftingState => this.#shown;
 
   isOn(t: DraftingToggle, lwdisplay = this.#drawingLwt): boolean {
-    return isOn(this.#state, t, lwdisplay);
+    return isOn(this.#shown, t, lwdisplay);
+  }
+
+  /**
+   * The canvas worked in changed, or its viewport's SNAP or GRID did (M6-02 part 19): undefined
+   * when its drawing has no viewport to keep them in, and the session's own apply.
+   */
+  setViewportModes(m: ViewportModes | undefined): void {
+    const was = this.#viewport;
+    this.#viewport = m;
+    if (was?.snap === m?.snap && was?.grid === m?.grid) return;
+    this.#set(this.#state);
+  }
+
+  /** Turns SNAP or GRID in the viewport worked in; false when the session's own apply. */
+  #turnViewport(patch: { snap?: boolean; grid?: boolean }): boolean {
+    const v = this.#viewport;
+    if (!v) return false;
+    const changed = {
+      ...(patch.snap !== undefined && patch.snap !== v.snap && { snap: patch.snap }),
+      ...(patch.grid !== undefined && patch.grid !== v.grid && { grid: patch.grid }),
+    };
+    if (Object.keys(changed).length === 0) return true;
+    // Shown at once; the canvas tells the drawing's again once the edit is made.
+    this.#viewport = { ...v, ...changed };
+    v.set(changed);
+    this.#set(this.#state);
+    return true;
   }
 
   /** The drawing shown changed: its LWDISPLAY is what LWT shows until turned. */
@@ -669,8 +711,10 @@ export class Drafting {
       case 'annoAutoScale':
         return this.#set({ ...s, annoAutoScale: -s.annoAutoScale });
       case 'snap':
-      case 'otrack':
       case 'grid':
+        if (this.#turnViewport({ [t]: !this.isOn(t) })) return;
+        return this.#set({ ...s, [t]: !s[t] });
+      case 'otrack':
       case 'tpy':
         return this.#set({ ...s, [t]: !s[t] });
     }
@@ -686,6 +730,15 @@ export class Drafting {
 
   /** Settings (M2-20) changed some of the state: the stored settings or the dialog's. */
   configure(patch: Partial<DraftingState>): void {
+    // The Drafting Settings' Snap On and Grid On, in the viewport worked in (M6-02 part 19).
+    if (this.#viewport && (patch.snap !== undefined || patch.grid !== undefined)) {
+      const { snap, grid, ...rest } = patch;
+      this.#turnViewport({
+        ...(snap !== undefined && { snap }),
+        ...(grid !== undefined && { grid }),
+      });
+      patch = rest;
+    }
     const next = { ...this.#state, ...patch };
     // ORTHO and POLAR cannot both be on; the stored POLAR wins over this session's ORTHO.
     if (patch.polar && next.ortho) next.ortho = false;
@@ -694,6 +747,8 @@ export class Drafting {
 
   #set(next: DraftingState): void {
     this.#state = next;
+    const v = this.#viewport;
+    this.#shown = v ? { ...next, snap: v.snap, grid: v.grid } : next;
     for (const l of this.#listeners) l();
   }
 }

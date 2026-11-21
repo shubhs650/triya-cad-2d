@@ -3,6 +3,8 @@
 // self-authored/viewport-overrides.dxf's Layout1 has four floating viewports (43 top left, 44 top
 // right, 45 bottom left, 46 bottom right), each at the file's 10 × 10. SNAP in viewport 43 sets
 // 43's alone: the cursor snaps 7 apart there and 10 apart in 44, and paper space keeps its own.
+// Part 19: SNAP and GRID on or off are each viewport's too (VIEWPORT 90 bits 256 and 512): 44
+// opens with both off, as the file has them, and F9 turns its own on.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { activeCanvas, expectDrawn, expectShown, openWithPicker, viewOf } from '../app/page';
@@ -104,6 +106,11 @@ test('SNAP and GRID set the layout viewport worked in, which keeps its own', asy
   await type(page, 'SNAP', 'Specify snap spacing or [ON/OFF/Aspect/Type] <10.0000>:');
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
+  // Its own SNAP and GRID, off as the file has them; F9 turns its snap on (M6-02 part 19).
+  await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle(page, 'GRID')).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('F9');
+  await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'true');
   await page.mouse.move(tr.x + 13, tr.y - 9);
   await expectDrawn(page);
   await shot(page, '2-viewport-44-keeps-10');
@@ -113,11 +120,14 @@ test('SNAP and GRID set the layout viewport worked in, which keeps its own', asy
   // Back in 43, its own still; paper space's untouched.
   await page.mouse.click(tl.x, tl.y);
   await expect.poll(() => viewport(page)).toBe('43');
+  await expect(toggle(page, 'GRID')).toHaveAttribute('aria-pressed', 'true');
   await type(page, 'SETVAR', /^Enter variable name or \[\?\]/);
   await type(page, 'GRIDUNIT', 'Enter new value for GRIDUNIT <14.0000,14.0000>:');
   await type(page, '', 'Command:');
   await type(page, 'PSPACE', 'Command:');
   await expect.poll(() => viewport(page)).toBe('');
+  await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle(page, 'GRID')).toHaveAttribute('aria-pressed', 'false');
   await type(page, 'SETVAR', /^Enter variable name or \[\?\]/);
   await type(page, 'SNAPUNIT', 'Enter new value for SNAPUNIT <10.0000,10.0000>:');
   await type(page, '', 'Command:');

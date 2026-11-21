@@ -4,12 +4,15 @@
 // bits 262144–2097152), so each is read; then every viewport of every layout, paper space's own
 // (id 1) too, is given other settings as SNAP, GRID and SETVAR set them through it, the drawing
 // saved as AC1032 DXF (DEC-047) and read again: every viewport reads back as the engine has it.
+// M6-02 part 19 adds SNAPMODE, GRIDMODE and UCSICON, the VIEWPORT 90 bits 256, 512, 32 and 64,
+// and the model-space `*Active` VPORT's DXF 75, 76 and 74, turned and saved the same way.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
   DocumentModel,
   EngineSession,
+  currentVport,
   viewportSnapGrid,
   withViewportSnapGrid,
   type Entity,
@@ -39,6 +42,10 @@ const SETTINGS = {
   gridMajor: 4,
   // Adaptive with subdivision, within the limits.
   gridFlags: 6,
+  // Snap and grid on, the UCS icon off but at the origin (M6-02 part 19).
+  snapOn: true,
+  gridOn: true,
+  ucsIcon: 2,
 };
 
 let read = 0;
@@ -68,6 +75,15 @@ describe('layout viewports’ own snap and grid settings saved on the public cor
           }
         }
         if (handles.length === 0) return;
+        // Model space's switches turned from what the file has.
+        const active = currentVport(model);
+        if (active) {
+          b.updateTableRecord('vports', active.handle, {
+            snapOn: !active.snapOn,
+            gridOn: !active.gridOn,
+            ucsIcon: active.ucsIcon ^ 1,
+          });
+        }
         model.apply(b.build());
         const save = () => saveAc1032Dxf(readCadDocument(bytes), model);
         const back = DocumentModel.create(documentInit(readCadDocument(save())));
@@ -76,6 +92,14 @@ describe('layout viewports’ own snap and grid settings saved on the public cor
           const g = back.entityByHandle(h)!.geom;
           if (g.kind !== 'VIEWPORT') throw new Error(`${path}: ${h} is not a viewport`);
           expect(viewportSnapGrid(g), `${path}: ${h}`).toEqual(SETTINGS);
+        }
+        if (active) {
+          const v = currentVport(model)!;
+          expect(currentVport(back), path).toMatchObject({
+            snapOn: v.snapOn,
+            gridOn: v.gridOn,
+            ucsIcon: v.ucsIcon,
+          });
         }
         edited += handles.length;
         files++;

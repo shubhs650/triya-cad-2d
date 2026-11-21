@@ -7,9 +7,9 @@
 //         Aspect: Specify the horizontal spacing(X) <10.0000>:  Specify the vertical spacing(Y) …
 // A spacing typed sets both X and Y and turns SNAP (or GRID) on, as AutoCAD's does; GRID takes
 // `2x` for twice the snap spacing and Snap for spacing 0 (the grid follows the snap spacing).
-// ON and OFF are the status bar's toggles (SNAPMODE, GRIDMODE: the app's, as SETVAR sets them);
-// the spacing and Major are the drawing's `*Active` VPORT's (`edit/snap-grid.ts`), one undo step;
-// in a layout they are the current layout viewport's, or paper space's (M6-02 part 17).
+// ON and OFF turn SNAPMODE and GRIDMODE, which the status bar shows; the spacing and Major are the
+// drawing's `*Active` VPORT's (`edit/snap-grid.ts`), one undo step; in a layout they are the
+// current layout viewport's, or paper space's (M6-02 part 17), and so are ON and OFF (part 19).
 // SNAP's Type (M3-06 part 3): "Enter snap type [Polar/Grid] <Grid>:" sets SNAPTYPE, the app's
 // per-user setting (AutoCAD keeps it in the registry), and ends the command.
 // GRID's aDaptive, Limits and Follow (M3-06 part 6) set the viewport's GRIDDISPLAY bits:
@@ -35,8 +35,18 @@ import type { Prompt, PromptAnswer, SnapGridSettings } from './prompt';
 const NOT_POSITIVE = 'Value must be positive and nonzero.';
 const NO_VPORT = 'The drawing has no current viewport to keep the spacing in.';
 
-/** SNAPMODE or GRIDMODE turned on or off through the app, as F9 and F7 do. */
+/**
+ * SNAPMODE or GRIDMODE turned on or off in the viewport worked in, which keeps them (M6-02 part
+ * 19: VPORT 75 and 76, VIEWPORT 90 bits 256 and 512); a drawing with no viewport to keep them in
+ * turns the status bar's own, as F9 and F7 do.
+ */
 async function toggle(ctx: CommandContext, name: 'SNAPMODE' | 'GRIDMODE', on: boolean) {
+  const h = holderOf(ctx);
+  if (h) {
+    const key = name === 'SNAPMODE' ? 'snapOn' : 'gridOn';
+    if (h.state[key] !== on) ctx.edit((b) => h.write(b, { [key]: on }));
+    return;
+  }
   const r = await ctx.view.request({ op: 'sysvar', name, value: on ? 1 : 0 });
   if (!r.ok) ctx.message(r.message);
 }

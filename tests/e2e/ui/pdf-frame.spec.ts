@@ -7,7 +7,7 @@
 // SHOTS=<dir> saves the PR's screenshots.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { colourAt, expectShown, openWithDrop, openWithPicker, viewOf } from '../app/page';
+import { colourAt, expectShown, gridOff, openWithDrop, openWithPicker, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 
 const FIXTURES = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
@@ -50,6 +50,8 @@ async function openUnderlay(page: Page) {
   await page.goto(app.url);
   await openWithPicker(page, DXF);
   await expectShown(page, 'pdf-underlay.dxf');
+  // The probe below tells the frame from the canvas, not from the grid the fixture was saved with.
+  await gridOff(page);
   await openWithDrop(page, PDF);
   await expectShown(page, 'pdf-underlay.dxf');
   await type(page, 'Z', /^Specify corner of window/);

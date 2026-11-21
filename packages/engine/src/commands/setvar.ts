@@ -32,7 +32,6 @@ import {
 } from './sysvars';
 import { drawingUnits } from './units';
 import {
-  currentVport,
   snapGridHolder,
   snapGridOf,
   snapGridPatch,
@@ -68,14 +67,10 @@ async function read(
     case 'computed':
       return computed(ctx, v.name);
     case 'vport': {
-      // UCSICON stays model space's `*Active` VPORT's; the snap and grid settings are the
-      // viewport worked in's (M6-02 part 17).
-      if (v.name === 'UCSICON') {
-        const vport = currentVport(ctx.model);
-        return vport ? { value: vport.ucsIcon } : { problem: noVport(v) };
-      }
+      // The viewport worked in's (M6-02 parts 17 and 19).
       const h = snapGridHolder(ctx.model, ctx.viewport);
-      if (!h) return { problem: noVport(v) };
+      if (!h)
+        return SWITCHES.has(v.name) ? read(ctx, { ...v, store: 'app' }) : { problem: noVport(v) };
       return { value: vportValue(h.state, v.name) };
     }
   }
@@ -100,6 +95,12 @@ async function frameMembers(
   return out;
 }
 
+/**
+ * SNAPMODE and GRIDMODE (M6-02 part 19): the viewport worked in keeps them, and a drawing with no
+ * viewport to keep them in has the status bar's own, which the app keeps.
+ */
+const SWITCHES = new Set(['SNAPMODE', 'GRIDMODE']);
+
 const noVport = (v: SystemVariable) => `The drawing has no current viewport to keep ${v.name} in.`;
 
 /** A `VPORT_VARIABLES` snap or grid variable as the viewport worked in holds it. */
@@ -116,32 +117,42 @@ function vportValue(vport: SnapGridState, name: string): VariableValue {
     case 'SNAPANG':
       // Shown in degrees, as SETVAR shows the header's angles.
       return (vport.snapRotation * 180) / Math.PI;
+    case 'SNAPMODE':
+      return vport.snapOn ? 1 : 0;
+    case 'GRIDMODE':
+      return vport.gridOn ? 1 : 0;
+    case 'UCSICON':
+      return vport.ucsIcon;
     default:
       return vport.gridFlags;
   }
 }
 
 /**
- * Sets a `VPORT_VARIABLES` variable, one undo step: UCSICON in the `*Active` VPORT, the snap and
- * grid settings in the viewport worked in (M6-02 part 17). The Snap and Grid tab's checks refuse
- * what it would refuse (a typed point is not checked on the way here).
+ * Sets a `VPORT_VARIABLES` variable in the viewport worked in, one undo step (M6-02 parts 17 and
+ * 19). The Snap and Grid tab's checks refuse what it would refuse (a typed point is not checked on
+ * the way here).
  */
-function writeVport(ctx: CommandContext, v: SystemVariable, value: VariableValue): void {
-  if (v.name === 'UCSICON') {
-    const vport = currentVport(ctx.model);
-    if (!vport) {
-      ctx.message(noVport(v));
-      return;
-    }
-    // UCSICON (0–3, which the variable's range checked) is patched as it is (M3-06 part 7).
-    const n = value as number;
-    if (vport.ucsIcon === n) return;
-    ctx.edit((b) => b.updateTableRecord('vports', vport.handle, { ucsIcon: n }));
-    return;
-  }
+async function writeVport(
+  ctx: CommandContext,
+  v: SystemVariable,
+  value: VariableValue,
+): Promise<void> {
   const h = snapGridHolder(ctx.model, ctx.viewport);
   if (!h) {
+    if (SWITCHES.has(v.name)) return write(ctx, { ...v, store: 'app' }, value);
     ctx.message(noVport(v));
+    return;
+  }
+  // The switches and UCSICON (0–3, which the variable's range checked) are set as they are.
+  const switches = {
+    ...(v.name === 'SNAPMODE' && { snapOn: value === 1 }),
+    ...(v.name === 'GRIDMODE' && { gridOn: value === 1 }),
+    ...(v.name === 'UCSICON' && { ucsIcon: value as number }),
+  };
+  const [key] = Object.keys(switches) as (keyof typeof switches)[];
+  if (key) {
+    if (h.state[key] !== switches[key]) ctx.edit((b) => h.write(b, switches));
     return;
   }
   const vport = h.state;

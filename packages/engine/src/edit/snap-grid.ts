@@ -10,6 +10,9 @@
 // GRIDUNIT, SNAPBASE, SNAPANG, GRIDMAJOR and GRIDDISPLAY in the viewport worked in, a layout
 // viewport's in its VIEWPORT (DXF 13, 14, 15, 50, 61 and the 90 bits 262144 to 2097152), paper
 // space's in the layout's paper-space viewport (DXF 69 id 1).
+// Part 19 adds the switches AutoCAD keeps there too: SNAPMODE, GRIDMODE and UCSICON (AutoCAD 2024
+// Help, each "Saved in: Drawing"; the DXF reference's VPORT 75, 76 and 74, VIEWPORT 90 bits 256,
+// 512, 32 and 64), so each viewport has its own snap and grid on or off and its own UCS icon.
 import type { DocumentModel } from '../model/document';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { Handle } from '../model/handle';
@@ -46,7 +49,16 @@ export interface SnapGridState {
   readonly gridMajor: number;
   /** GRIDDISPLAY's bits (`GRID_DISPLAY`). */
   readonly gridFlags: number;
+  /** SNAPMODE. */
+  readonly snapOn: boolean;
+  /** GRIDMODE. */
+  readonly gridOn: boolean;
+  /** UCSICON's bits (`UCS_ICON_BITS`). */
+  readonly ucsIcon: number;
 }
+
+/** UCSICON's bits (DXF 74): the icon shows, and at the UCS's origin where it can. */
+export const UCS_ICON_BITS = { on: 1, origin: 2 } as const;
 
 /** The Snap and Grid tab's settings as `v` holds them. */
 export function snapGridOf(v: SnapGridState): SnapGridSettings {
@@ -110,6 +122,19 @@ export const VIEWPORT_GRID_DISPLAY_SHIFT = 18;
 const VIEWPORT_GRID_DISPLAY_MASK = GRID_DISPLAY_BITS << VIEWPORT_GRID_DISPLAY_SHIFT;
 
 /**
+ * A VIEWPORT's switches (DXF reference, VIEWPORT 90): 32 the UCS icon shown, 64 it at the UCS
+ * origin, 256 snap on, 512 grid on.
+ */
+export const VIEWPORT_MODE = {
+  ucsIcon: 32,
+  ucsIconAtOrigin: 64,
+  snap: 256,
+  grid: 512,
+} as const;
+const VIEWPORT_MODE_MASK =
+  VIEWPORT_MODE.ucsIcon | VIEWPORT_MODE.ucsIconAtOrigin | VIEWPORT_MODE.snap | VIEWPORT_MODE.grid;
+
+/**
  * What a viewport made without them starts with: AutoCAD's 10 × 10 spacing, a major line every
  * 5, from 0,0, square to the UCS (the canvas's own defaults, M3-06 part 2).
  */
@@ -131,6 +156,11 @@ export function viewportSnapGrid(g: ViewportGeometry): SnapGridState {
     gridSpacing: s.gridSpacing,
     gridMajor: s.gridMajor,
     gridFlags: (g.flags & VIEWPORT_GRID_DISPLAY_MASK) >>> VIEWPORT_GRID_DISPLAY_SHIFT,
+    snapOn: (g.flags & VIEWPORT_MODE.snap) !== 0,
+    gridOn: (g.flags & VIEWPORT_MODE.grid) !== 0,
+    ucsIcon:
+      ((g.flags & VIEWPORT_MODE.ucsIcon) !== 0 ? UCS_ICON_BITS.on : 0) |
+      ((g.flags & VIEWPORT_MODE.ucsIconAtOrigin) !== 0 ? UCS_ICON_BITS.origin : 0),
   };
 }
 
@@ -141,9 +171,14 @@ export function withViewportSnapGrid(
 ): ViewportGeometry {
   const n = { ...viewportSnapGrid(g), ...patch };
   const display = (n.gridFlags & GRID_DISPLAY_BITS) << VIEWPORT_GRID_DISPLAY_SHIFT;
+  const modes =
+    (n.snapOn ? VIEWPORT_MODE.snap : 0) |
+    (n.gridOn ? VIEWPORT_MODE.grid : 0) |
+    (n.ucsIcon & UCS_ICON_BITS.on ? VIEWPORT_MODE.ucsIcon : 0) |
+    (n.ucsIcon & UCS_ICON_BITS.origin ? VIEWPORT_MODE.ucsIconAtOrigin : 0);
   return {
     ...g,
-    flags: (g.flags & ~VIEWPORT_GRID_DISPLAY_MASK) | display,
+    flags: (g.flags & ~(VIEWPORT_GRID_DISPLAY_MASK | VIEWPORT_MODE_MASK)) | display | modes,
     snapGrid: {
       snapBase: { ...n.snapBase },
       snapSpacing: { ...n.snapSpacing },
@@ -158,7 +193,9 @@ export function withViewportSnapGrid(
  * `g`, a viewport MVIEW is making, with model space's snap and grid settings (its `*Active`
  * VPORT's, GRIDDISPLAY too), else AutoCAD's defaults. AutoCAD's help does not say what a new
  * layout viewport starts with; model space's is the common drafter expectation, as -VPORTS's new
- * tiles start with the current viewport's (M6-02 part 10).
+ * tiles start with the current viewport's (M6-02 part 10). Its snap, grid and UCS icon switches
+ * stay as `g` has them (M6-02 part 19): AutoCAD's own new viewports have snap and grid off and
+ * the icon on (`FLOATING_VIEWPORT_FLAGS`).
  */
 export function withNewViewportSnapGrid(
   model: DocumentModel,
@@ -243,5 +280,24 @@ export function snapGridHolder(
     handle: v.handle,
     state: v,
     write: (b, patch) => b.updateTableRecord('vports', v.handle, patch),
+  };
+}
+
+/**
+ * The settings `handle` keeps, the VPORT record or the VIEWPORT it names (the status bar's
+ * SNAP and GRID name the viewport of the canvas worked in, a model tile's own VPORT among them,
+ * M6-02 part 19); undefined when it is neither.
+ */
+export function snapGridHolderAt(model: DocumentModel, handle: Handle): SnapGridHolder | undefined {
+  const id = model.ids.idOf(handle);
+  const e = id === undefined ? undefined : model.entity(id);
+  if (e?.geom.kind === 'VIEWPORT') return viewportHolder(model, handle, e.geom);
+  const v = model.tables.vports.get(handle);
+  if (!v) return undefined;
+  return {
+    kind: 'vport',
+    handle,
+    state: v,
+    write: (b, patch) => b.updateTableRecord('vports', handle, patch),
   };
 }

@@ -19,14 +19,15 @@
 // $PUCS*), and model space's `*Active` VPORT keeps it too (DXF 110/111/112), as AutoCAD saves
 // it per viewport; each change is one undo step. Named UCSs are the UCS table's records.
 // Previous goes back through the last ten UCSs of the space this session (AutoCAD: "up to 10").
-// UCSICON's ON and ORigin are the `*Active` VPORT's DXF 74 bits 1 and 2 (UCSICON's value).
+// UCSICON's ON and ORigin are the `*Active` VPORT's DXF 74 bits 1 and 2 (UCSICON's value); in a
+// layout they are the viewport worked in's DXF 90 bits 32 and 64 (M6-02 part 19).
 // Apply (M3-15; AutoCAD: "Applies the current UCS setting to a specified viewport or all
 // viewports") keeps a UCS in a layout's floating viewports (DXF 110/111/112) and turns their UCSVP
 // on (DXF 71), so each shows it from then on (`viewportUcs`). AutoCAD sets a viewport's UCS from
 // model space inside it; Triya cannot make a viewport current yet (MSPACE, M6-02), so Apply is
 // offered in a layout, where it applies model space's current UCS, the one a viewport with UCSVP 0
 // shows. Its <current> is paper space's own viewport, which keeps no model space UCS: Enter ends.
-import { currentVport } from '../edit/snap-grid';
+import { currentVport, snapGridHolder, UCS_ICON_BITS } from '../edit/snap-grid';
 import { shownTwist } from './mspace';
 import { offsetCurveOf } from '../edit/offset';
 import { hatchBoundary } from '../edit/trim-edges';
@@ -504,7 +505,7 @@ export function ucsCommand(): CommandDef {
 }
 
 /** UCSICON's bits (DXF 74): the icon shows, and at the UCS's origin where it can. */
-export const UCS_ICON = { on: 1, origin: 2 } as const;
+export const UCS_ICON = UCS_ICON_BITS;
 
 export function ucsIconCommand(): CommandDef {
   return {
@@ -513,8 +514,9 @@ export function ucsIconCommand(): CommandDef {
     usesSelection: 'none',
     keepsSelection: true,
     async *run(ctx) {
-      const v = currentVport(ctx.model);
-      const now = v?.ucsIcon ?? UCS_ICON.on;
+      // The viewport worked in keeps it (M6-02 part 19), as it keeps the snap and grid.
+      const v = snapGridHolder(ctx.model, ctx.viewport);
+      const now = v?.state.ucsIcon ?? UCS_ICON.on;
       const a = yield ctx.prompt.keyword({
         message: 'Enter an option',
         options: ['ON', 'OFF', 'Noorigin', 'ORigin'],
@@ -533,8 +535,7 @@ export function ucsIconCommand(): CommandDef {
             : a.keyword === 'ORigin'
               ? now | UCS_ICON.origin
               : now & ~UCS_ICON.origin;
-      if (bits !== v.ucsIcon)
-        ctx.edit((b) => b.updateTableRecord('vports', v.handle, { ucsIcon: bits }));
+      if (bits !== v.state.ucsIcon) ctx.edit((b) => v.write(b, { ucsIcon: bits }));
     },
   };
 }

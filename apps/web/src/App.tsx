@@ -45,6 +45,7 @@ import {
   type CanvasHooks,
   type CanvasMode,
   type PickedPoint,
+  type ViewportModesShown,
 } from './canvas/controller';
 import { pictureOf, pngOf, type PictureSize } from './canvas/picture';
 import {
@@ -3052,7 +3053,24 @@ function showCurrent(doc: number, block: string, visible: boolean): void {
   const current = currentTile(doc, block);
   for (const [i, c] of tilesOf(doc, block)) {
     c.canvas.dataset['active'] = String(visible && i === current);
+    if (visible && i === current) showViewportModes(doc, c.viewportModes());
   }
+}
+
+/**
+ * The status bar's SNAP and GRID are those of the viewport the canvas on screen works in, and
+ * turning them turns that viewport's, a drawing edit (M6-02 part 19).
+ */
+function showViewportModes(doc: number, m: ViewportModesShown | undefined): void {
+  drafting.setViewportModes(
+    m && {
+      snap: m.snap,
+      grid: m.grid,
+      set: (patch) => {
+        void engines.edit(doc, { kind: 'viewport-mode', holder: m.holder, ...patch });
+      },
+    },
+  );
 }
 
 /**
@@ -3164,6 +3182,10 @@ function ViewportCanvas({
       // an undo step (M6-02 part 4).
       onViewportView: (viewport, view, label, join) =>
         engines.edit(id, { kind: 'viewport-view', viewport, view, label, ...(join && { join }) }),
+      // The status bar shows the SNAP and GRID of the canvas on screen (M6-02 part 19).
+      onViewportModes: (m) => {
+        if (visibleRef.current && currentTile(id, block) === index) showViewportModes(id, m);
+      },
       onSnapMenu: (at) => snapMenu.open(id, at),
       // A plain right-click (M3-05 part 5): the prompt's shortcut menu, the grip modes' options.
       onShortcutMenu: (at) => {
@@ -3214,6 +3236,9 @@ function ViewportCanvas({
     if (shown?.ids.length || shown?.groups?.length) c.setGrips(shown.ids, shown.hot, shown.groups);
     showCurrent(id, block, visibleRef.current);
     return () => {
+      // The status bar no longer turns the SNAP and GRID of a canvas gone (M6-02 part 19).
+      if (visibleRef.current && currentTile(id, block) === index)
+        drafting.setViewportModes(undefined);
       unregister();
       disposeCanvas(c);
     };

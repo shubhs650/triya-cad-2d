@@ -315,11 +315,14 @@ test('sets the snap and grid spacing, from the Snap and Grid tab and from SNAP a
   await page.keyboard.press('Escape');
   await expect(d).toBeHidden();
 
-  // SNAP OFF is F9's toggle; U takes back GRID's spacing, then SNAP's.
+  // SNAP OFF is F9's toggle, and like any command an undo step (M6-02 part 19): U turns snap
+  // back on, then takes back GRID's spacing, then SNAP's.
   await canvas.hover();
   await type(page, 'SNAP', /^Specify snap spacing/);
   await type(page, 'OFF', 'Command:');
   await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'false');
+  await type(page, 'U', 'Command:');
+  await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'true');
   await type(page, 'U', 'Command:');
   await type(page, 'U', 'Command:');
   await type(page, 'DS', 'Drafting Settings:');

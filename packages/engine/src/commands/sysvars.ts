@@ -133,8 +133,6 @@ export const LINEWEIGHT_VALUES: readonly number[] = [
 
 export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'ORTHOMODE', store: 'app', kind: 'switch' },
-  { name: 'SNAPMODE', store: 'app', kind: 'switch' },
-  { name: 'GRIDMODE', store: 'app', kind: 'switch' },
   // OSMODE's 14 mode bits, and 16384 for "running snaps off" (F3).
   { name: 'OSMODE', store: 'app', kind: 'integer', min: 0, max: 0x3fff | OSNAP_OFF },
   { name: 'POLARANG', store: 'app', kind: 'real', choices: [90, 45, 30, 22.5, 18, 15, 10, 5] },
@@ -369,6 +367,10 @@ export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
 export const VPORT_VARIABLES: readonly SystemVariable[] = [
   { name: 'GRIDDISPLAY', store: 'vport', kind: 'integer', min: 0, max: 15 },
   { name: 'GRIDMAJOR', store: 'vport', kind: 'integer', min: 1, max: 100 },
+  // M6-02 part 19: snap and grid on or off (VPORT 75 and 76, VIEWPORT 90 bits 256 and 512); a
+  // drawing with no viewport to keep them in asks the app for the status bar's own.
+  { name: 'GRIDMODE', store: 'vport', kind: 'switch' },
+  { name: 'SNAPMODE', store: 'vport', kind: 'switch' },
   { name: 'GRIDUNIT', store: 'vport', kind: 'point' },
   { name: 'SNAPBASE', store: 'vport', kind: 'point' },
   { name: 'SNAPUNIT', store: 'vport', kind: 'point' },

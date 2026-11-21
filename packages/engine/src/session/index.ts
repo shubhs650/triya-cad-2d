@@ -9,6 +9,7 @@ import type { PromptAnswer } from '../commands/prompt';
 import type { DesignCenterDrop } from '../commands/design-center';
 import type { ReferencePathEdit } from '../commands/reference-path';
 import { isDesignCenterItem } from '../edit/design-center';
+import { snapGridHolderAt } from '../edit/snap-grid';
 import type { CommandPreview } from '../commands/command-preview';
 import { PICKFIRST } from '../commands/sysvars';
 import { GROUPDISPLAYMODE, PICKADD, PICKAUTO, PICKSTYLE } from '../selection/loop';
@@ -345,6 +346,21 @@ export interface ViewportViewEdit {
 }
 
 /**
+ * The status bar's SNAP (F9) or GRID (F7), or the Drafting Settings' Snap On and Grid On, turned
+ * in the viewport of the canvas worked in (M6-02 part 19): `holder` is the layout viewport made
+ * current, a layout's paper-space viewport, or model space's VPORT record of the tile (AutoCAD
+ * keeps SNAPMODE and GRIDMODE in each viewport). A drawing edit the save keeps but no undo step:
+ * AutoCAD's UNDO "has no effect on ... commands and system variables [that] change the graphics
+ * display" (AutoCAD 2024 Help, "UNDO"), and F9 and F7 are not commands.
+ */
+export interface ViewportModeEdit {
+  readonly kind: 'viewport-mode';
+  readonly holder: Handle;
+  readonly snap?: boolean;
+  readonly grid?: boolean;
+}
+
+/**
  * An xref's drawing found (M1-21): its file as the importer maps it, loaded as the content of
  * the host's xref block (`xrefLoadChange`). Not an undoable edit in AutoCAD either: loading
  * changes what the drawing shows, not the drawing. The load XATTACH asks for while it runs is
@@ -508,6 +524,7 @@ export type EngineEdit =
   | NamedViewEdit
   | ViewTableEdit
   | ViewportViewEdit
+  | ViewportModeEdit
   | ViewportLayerEdit
   | ViewportOverridesRemoveEdit
   | SessionVariableEdit
@@ -1022,6 +1039,7 @@ export class EngineSession {
     )
       return this.#viewTableEdit(e);
     if (e.kind === 'viewport-view') return this.#viewportView(e);
+    if (e.kind === 'viewport-mode') return this.#viewportMode(e);
     if (e.kind === 'viewport-layer') return this.#viewportLayer(e);
     if (e.kind === 'viewport-overrides-remove')
       return this.#layerStep(removeViewportOverridesChange(this.model, e));
@@ -1110,6 +1128,21 @@ export class EngineSession {
       { command: e.label, changes: [change] },
       { view: e.join ? 'join' : 'combine' },
     );
+    return { ok: true, change };
+  }
+
+  #viewportMode(e: ViewportModeEdit): EditResult {
+    const h = snapGridHolderAt(this.model, e.holder);
+    if (!h) return { ok: false, message: `No viewport ${e.holder}.` };
+    const patch = {
+      ...(e.snap !== undefined && e.snap !== h.state.snapOn && { snapOn: e.snap }),
+      ...(e.grid !== undefined && e.grid !== h.state.gridOn && { gridOn: e.grid }),
+    };
+    if (Object.keys(patch).length === 0) return { ok: true, change: {} };
+    const b = new ChangeSetBuilder(this.model);
+    h.write(b, patch);
+    const change = b.build();
+    this.model.apply(change);
     return { ok: true, change };
   }
 

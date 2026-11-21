@@ -30,6 +30,7 @@ import {
   openWithDrop,
   openWithPicker,
   paperPixels,
+  gridOff,
 } from '../app/page';
 import { rasterisePdf } from '../app/pdf-raster';
 import { CORPUS, startApp } from '../app/server';
@@ -255,6 +256,8 @@ test('a plot of the extents holds the PDF underlays’ pages before the screen d
   await openWithPicker(page, path.join(fixtures, 'pdf-underlay.dxf'));
   await expectShown(page, 'pdf-underlay.dxf');
   await expectDrawn(page, { timeout: 15_000 });
+  // The ink below is the underlays' alone, not the grid's the fixture was saved with.
+  await gridOff(page);
   await activeCanvas(page).click({ position: { x: 5, y: 5 } });
   // Far from the underlays: the canvas asks for none of their pages.
   await typed(page, 'ZOOM', /^Specify corner of window/);

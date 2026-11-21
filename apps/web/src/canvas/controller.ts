@@ -253,6 +253,13 @@ const QUICK_CLEAR_PX = 8;
  */
 export type CanvasMode = 'none' | 'pan' | 'zoom' | 'window';
 
+/** SNAPMODE and GRIDMODE of the viewport a canvas works in, and where they are kept. */
+export interface ViewportModesShown {
+  readonly holder: Handle;
+  readonly snap: boolean;
+  readonly grid: boolean;
+}
+
 export interface CanvasHooks {
   /** The world point under the cursor, or undefined when it leaves the canvas. */
   readonly onCursor: (p: { readonly x: number; readonly y: number } | undefined) => void;
@@ -373,6 +380,11 @@ export interface CanvasHooks {
     label: 'ZOOM' | 'PAN' | 'VIEW',
     join: boolean,
   ) => Promise<unknown> | void;
+  /**
+   * SNAP or GRID of the viewport this canvas works in changed, or it works in another one (M6-02
+   * part 19): the status bar shows the shown canvas's (`viewportModes`).
+   */
+  readonly onViewportModes?: (modes: ViewportModesShown | undefined) => void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
   readonly patterns?: () => readonly string[];
   /**
@@ -1063,8 +1075,11 @@ export class CanvasController {
     this.#paintCursor();
     // The grid is model space's through the viewport, paper space's on the sheet (M6-02 part 9),
     // at the spacing of the viewport worked in (M6-02 part 17).
-    if (this.#drafting.grid && before !== this.#current?.handle) {
+    // Each viewport has its own GRIDMODE and SNAPMODE and UCS icon too (M6-02 part 19).
+    if (before !== this.#current?.handle) {
       this.#host.setStyle(this.#style());
+      this.#showUcsIcon();
+      this.#hooks.onViewportModes?.(this.viewportModes());
     }
     if (this.#prompt) this.#requestSnap();
     this.#track();
@@ -1482,7 +1497,31 @@ export class CanvasController {
    * held applied (M3-06 part 5).
    */
   #aids(): DraftingState {
-    return withOverrides(this.#drafting, heldOverrides.active());
+    return withOverrides(this.#ownModes(this.#drafting), heldOverrides.active());
+  }
+
+  /**
+   * The drafting aids with SNAP and GRID of the viewport this canvas works in, which keeps them
+   * (M6-02 part 19), else the status bar's own for a drawing with none.
+   */
+  #ownModes(d: DraftingState): DraftingState {
+    const s = this.#snapGrid();
+    return s ? { ...d, snap: s.snapOn, grid: s.gridOn } : d;
+  }
+
+  /** GRIDMODE of the viewport worked in (M6-02 part 19). */
+  #gridOn(): boolean {
+    return this.#ownModes(this.#drafting).grid;
+  }
+
+  /**
+   * SNAPMODE and GRIDMODE of the viewport this canvas works in, and where they are kept (the
+   * layout viewport made current, a layout's paper-space viewport, model space's VPORT of this
+   * tile); undefined when the drawing has none (M6-02 part 19).
+   */
+  viewportModes(): ViewportModesShown | undefined {
+    const h = this.#snapGridHolder();
+    return h && { holder: h.handle, snap: h.state.snapOn, grid: h.state.gridOn };
   }
 
   /** A temporary override key was pressed or let go: snap and track anew at a point prompt. */
@@ -2040,7 +2079,9 @@ export class CanvasController {
     // space's own (M6-02 part 17), changed: SNAPANG turns the crosshairs.
     const vports = this.#followVports(change) || this.#snapGridKey() !== snapGrid;
     if (vports) this.#showUcsIcon();
-    if (vports || (limits && this.#drafting.grid)) this.#host.setStyle(this.#style());
+    if (vports || (limits && this.#gridOn())) this.#host.setStyle(this.#style());
+    // Its SNAP or GRID turned (M6-02 part 19): the status bar shows them.
+    if (vports) this.#hooks.onViewportModes?.(this.viewportModes());
     // Drawn now rather than on the next animation frame, so `flush` resolves once the change
     // is on screen (the palette measures toggle → canvas, M1-23). The view is sent only when it
     // is not the one the renderer has: setting a view redraws the whole scene, and a render
@@ -2330,7 +2371,7 @@ export class CanvasController {
       xFade: d.xFade,
       gripSize: d.gripSize,
       gripColors: d.gripColors,
-      ...(d.grid && { grid: { ...this.#grid(), ...(c.grid && { color: c.grid }) } }),
+      ...(this.#gridOn() && { grid: { ...this.#grid(), ...(c.grid && { color: c.grid }) } }),
     };
     const background = this.#layout ? c.paper : c.model;
     return {
@@ -2384,7 +2425,7 @@ export class CanvasController {
    * the current UCS's, with a square at their corner in the WCS. UCSICON's bits are the viewport's
    * (DXF 74): 1 shows it, 2 puts it at the UCS origin while the origin is on the canvas with
    * room for it, else it sits in the lower-left corner. A layout's icon shows its paper space's
-   * UCS, always on, as Triya keeps no layout VPORT.
+   * UCS, with its paper-space viewport's bits (on without one).
    */
   #showUcsIcon(): void {
     // The UCS or SNAPANG may have turned: the crosshairs follow them (once the canvas exists:
@@ -2392,7 +2433,12 @@ export class CanvasController {
     const icon = this.#ucsIcon as HTMLDivElement | undefined;
     if (!icon) return;
     this.#paintCursor();
-    const bits = this.#layout ? 1 : (this.#vport()?.ucsIcon ?? 1);
+    // A layout's is its paper-space viewport's (DXF 90 bits 32 and 64, M6-02 part 19).
+    const bits = this.#layout
+      ? this.#paperViewport
+        ? viewportSnapGrid(this.#paperViewport.geom).ucsIcon
+        : 1
+      : (this.#vport()?.ucsIcon ?? 1);
     const { width, height } = this.#size;
     if (!(bits & 1) || width === 0 || !this.#view) {
       icon.hidden = true;
@@ -2439,9 +2485,15 @@ export class CanvasController {
    * layout with no paper-space viewport yet. Undefined when there is none: 10 × 10 applies.
    */
   #snapGrid(): SnapGridState | undefined {
-    if (this.#current) return viewportSnapGrid(this.#current.geom);
-    if (this.#layout && this.#paperViewport) return viewportSnapGrid(this.#paperViewport.geom);
-    return this.#modelVport();
+    return this.#snapGridHolder()?.state;
+  }
+
+  /** `#snapGrid`'s, with the handle of the VIEWPORT or VPORT record keeping them. */
+  #snapGridHolder(): { handle: Handle; state: SnapGridState } | undefined {
+    const at = this.#current ?? (this.#layout ? this.#paperViewport : undefined);
+    if (at) return { handle: at.handle, state: viewportSnapGrid(at.geom) };
+    const v = this.#modelVport();
+    return v && { handle: v.handle, state: v };
   }
 
   #resize(): void {
