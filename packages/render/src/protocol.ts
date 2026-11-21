@@ -11,6 +11,7 @@ import type {
   DragMotion,
   EntityId,
   Handle,
+  ViewportGeometry,
   NestedPick,
   GroupGrip,
   MTextGeometry,
@@ -120,8 +121,15 @@ export type HostMessage =
   | { readonly type: 'select'; readonly id: number; readonly query: SelectQuery }
   /** The entities to draw selected (M2-03). */
   | { readonly type: 'highlight'; readonly ids: readonly EntityId[] }
-  /** The layout viewport made current (MSPACE, M6-02 part 3); null, paper space. */
-  | { readonly type: 'active-viewport'; readonly handle: Handle | null }
+  /**
+   * The layout viewport made current (MSPACE, M6-02 part 3); null, paper space. `maximized`: the
+   * geometry it fills the canvas with (VPMAX, M6-02 part 7).
+   */
+  | {
+      readonly type: 'active-viewport';
+      readonly handle: Handle | null;
+      readonly maximized?: ViewportGeometry;
+    }
   /** The reference edited in place (M5-02 part 5); null, none. */
   | { readonly type: 'ref-edit'; readonly display: RefEditDisplay | null }
   /** The objects a command drags with the cursor (M2-06 part 2); null ends the drag. */

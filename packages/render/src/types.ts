@@ -492,8 +492,11 @@ export interface Renderer {
    * The layout viewport made current (MSPACE, M6-02 part 3), by handle; undefined, paper space.
    * While it is, picks, windows and snaps take model space's objects, and the selection, grips
    * and previews are drawn through the viewport, clipped to it; its frame is drawn bold.
+   * `maximized` (VPMAX, M6-02 part 7): the viewport is drawn with this geometry, framed by the
+   * whole canvas, alone: no sheet, paper space objects or other viewports; a red border instead
+   * of the bold frame.
    */
-  setActiveViewport(handle: Handle | undefined): void;
+  setActiveViewport(handle: Handle | undefined, maximized?: ViewportGeometry): void;
   /**
    * The reference edited in place (REFEDIT, M5-02 part 5): the working set drawn in full and the
    * rest faded (XFADECTL), the other references to its block drawing it whole; undefined, none.

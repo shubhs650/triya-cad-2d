@@ -55,6 +55,7 @@ import { SNAP_GRID_COMMANDS } from './snap-grid';
 import { mviewCommand } from './mview';
 import { mspaceCommand, pspaceCommand } from './mspace';
 import { vpclipCommand } from './vpclip';
+import { vpmaxCommand, vpminCommand } from './vpmax';
 import { vplayerCommand } from './vplayer';
 import { layvpiCommand } from './layvpi';
 import { UCS_COMMANDS } from './ucs';
@@ -210,6 +211,8 @@ export function builtinCommands(): CommandRegistry {
     mspaceCommand(),
     pspaceCommand(),
     vpclipCommand(),
+    vpmaxCommand(),
+    vpminCommand(),
     vplayerCommand(),
     layvpiCommand(),
     underlayLayersCommand(),

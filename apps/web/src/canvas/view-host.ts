@@ -43,8 +43,15 @@ export interface ViewTarget {
    * Center starts from.
    */
   readonly viewportView?: { center: Vec2; height: number; width: number } | undefined;
-  /** MSPACE and PSPACE: the viewport to work through, or none (paper space). */
-  setViewport(handle: Handle | undefined, geometry: ViewportGeometry | undefined): void;
+  /**
+   * MSPACE and PSPACE: the viewport to work through, or none (paper space); `maximized`, VPMAX
+   * (M6-02 part 7): filling the canvas until VPMIN.
+   */
+  setViewport(
+    handle: Handle | undefined,
+    geometry: ViewportGeometry | undefined,
+    maximized?: boolean,
+  ): void;
   readonly mode: CanvasMode;
   /** Settles once a layout viewport made current, which measures model space first, has zoomed. */
   zoomExtents(): void | Promise<void>;
@@ -385,7 +392,7 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       t.setMode(r.mode);
       return done();
     case 'viewport':
-      t.setViewport(r.viewport ?? undefined, r.geometry);
+      t.setViewport(r.viewport ?? undefined, r.geometry, r.maximized === true);
       return done();
     case 'regen':
       for (const c of r.all ? ctx.all() : [t]) c.regen();

@@ -36,9 +36,9 @@ class Target implements ViewTarget {
   previous = true;
   viewport: string | undefined;
   constructor(readonly isLayout = false) {}
-  setViewport = (h: string | undefined) => {
+  setViewport = (h: string | undefined, _g?: unknown, maximized?: boolean) => {
     this.viewport = h;
-    this.calls.push(`viewport ${h ?? 'none'}`);
+    this.calls.push(`viewport ${h ?? 'none'}${maximized ? ' maximized' : ''}`);
   };
   zoomExtents: () => void | Promise<void> = () => void this.calls.push('extents');
   zoomAll = () => void this.calls.push('all');
@@ -213,6 +213,15 @@ describe('answerView', () => {
       view: { paper: true },
     });
     expect(shown.calls).toEqual(['viewport 5A', 'viewport none']);
+  });
+
+  it('fills the canvas with the viewport VPMAX maximizes (M6-02 part 7)', () => {
+    const shown = new Target(true);
+    const { ctx } = context(shown);
+    const r: ViewRequest = { op: 'viewport', viewport: '5A', maximized: true };
+    expect(now(answerView(r, ctx))).toMatchObject({ ok: true, view: { paper: false } });
+    expect(now(answerView({ op: 'viewport', viewport: '5A' }, ctx))).toMatchObject({ ok: true });
+    expect(shown.calls).toEqual(['viewport 5A maximized', 'viewport 5A']);
   });
 
   it('shows a glance at a view in the space shown, as a swap does (M2-47 part 5)', () => {

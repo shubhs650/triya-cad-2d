@@ -25,6 +25,8 @@ export interface OpenDocument {
    * bar says MODEL and the coordinates are model space's while the layout shown has one.
    */
   readonly viewports?: Readonly<Record<string, string>>;
+  /** The layouts whose viewport worked in is maximized (VPMAX, M6-02 part 7), by block. */
+  readonly maximized?: Readonly<Record<string, true>>;
   /** The layout tab shown last (TILEMODE 0 shows it again, M2-59 part 5), if any has been. */
   readonly lastLayout?: string;
   /** Edits applied by the drawing's engine so far (M1-67): chrome that mirrors it re-reads. */
@@ -79,6 +81,11 @@ export const inLayout = (doc: Pick<OpenDocument, 'opened' | 'block' | 'blockEdit
 export const inPaperSpace = (
   doc: Pick<OpenDocument, 'opened' | 'block' | 'blockEditor' | 'viewports'>,
 ): boolean => inLayout(doc) && doc.viewports?.[doc.block] === undefined;
+
+/** Whether the layout shown has its viewport maximized (VPMAX, M6-02 part 7). */
+export const viewportMaximized = (
+  doc: Pick<OpenDocument, 'opened' | 'block' | 'blockEditor' | 'maximized'>,
+): boolean => inLayout(doc) && doc.maximized?.[doc.block] === true;
 
 /** `block` as the layout tab shown last, when it is a layout's. */
 const layoutShown = (opened: OpenResult, block: string) =>
@@ -288,12 +295,21 @@ export class DocumentStore {
     );
   }
 
-  /** MSPACE and PSPACE (M6-02 part 3): the viewport worked in on the layout `block`, or none. */
-  setViewport(id: number, block: string, viewport: string | undefined): void {
+  /**
+   * MSPACE and PSPACE (M6-02 part 3): the viewport worked in on the layout `block`, or none;
+   * `maximized`, VPMAX (part 7).
+   */
+  setViewport(id: number, block: string, viewport: string | undefined, maximized = false): void {
     this.#update(id, (d) => {
-      if (d.viewports?.[block] === viewport) return d;
+      const max = maximized && viewport !== undefined;
+      if (d.viewports?.[block] === viewport && (d.maximized?.[block] === true) === max) return d;
       const { [block]: _was, ...rest } = d.viewports ?? {};
-      return { ...d, viewports: viewport === undefined ? rest : { ...rest, [block]: viewport } };
+      const { [block]: _wasMax, ...restMax } = d.maximized ?? {};
+      return {
+        ...d,
+        viewports: viewport === undefined ? rest : { ...rest, [block]: viewport },
+        maximized: max ? { ...restMax, [block]: true } : restMax,
+      };
     });
   }
 

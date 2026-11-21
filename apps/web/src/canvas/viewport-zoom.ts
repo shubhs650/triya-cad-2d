@@ -6,6 +6,7 @@
 import {
   viewportFrame,
   viewportViewOf,
+  withViewportView,
   type Handle,
   type ViewportGeometry,
   type ViewportView,
@@ -45,6 +46,33 @@ export function frameView(g: ViewportGeometry, size: ViewportSize): ViewTransfor
 /** A view of the frame of `size` pixels as the viewport's own view. */
 export function viewportViewFrom(view: ViewTransform, size: ViewportSize): ViewportView {
   return { center: view.center, height: size.height / view.scale };
+}
+
+/**
+ * A viewport maximized (VPMAX, M6-02 part 7): framed by the whole canvas of `canvas` size showing
+ * the sheet in `sheet`, and showing `view`, else what its own frame showed: its model space
+ * across the frame fitted to the canvas about the same point, as AutoCAD expands the viewport
+ * "to fill the screen". Only the canvas draws it so; the drawing keeps the viewport as it is.
+ */
+export function maximizedGeometry(
+  g: ViewportGeometry,
+  sheet: ViewTransform,
+  canvas: ViewportSize,
+  view?: ViewportView,
+): ViewportGeometry {
+  const own = viewportViewOf(g);
+  const ownWidth = (own.height * Math.abs(g.width)) / Math.abs(g.height);
+  const fit = view ?? {
+    center: own.center,
+    height: Math.max(own.height, (ownWidth * canvas.height) / canvas.width),
+  };
+  const framed = {
+    ...g,
+    center: sheet.center,
+    width: canvas.width / sheet.scale,
+    height: canvas.height / sheet.scale,
+  };
+  return withViewportView(framed, fit);
 }
 
 /** Whether two viewport views are the same. */

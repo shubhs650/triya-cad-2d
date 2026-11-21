@@ -186,6 +186,7 @@ import {
   ViewportHistories,
   frameOnCanvas,
   frameView,
+  maximizedGeometry,
   sameViewportView,
   viewportViewFrom,
   type FrameOnCanvas,
@@ -298,8 +299,11 @@ export interface CanvasHooks {
    * edit the object there (TEXTEDIT on a text, AutoCAD's DBLCLKEDIT).
    */
   readonly onDoubleClick?: (p: Vec2) => void;
-  /** The layout viewport worked in changed (MSPACE, PSPACE; M6-02 part 3): the status bar's. */
-  readonly onViewport?: (handle: Handle | undefined) => void;
+  /**
+   * The layout viewport worked in changed (MSPACE, PSPACE; M6-02 part 3), or was maximized or
+   * restored (VPMAX, VPMIN; part 7): the status bar's.
+   */
+  readonly onViewport?: (handle: Handle | undefined, maximized: boolean) => void;
   /**
    * A tap of Ctrl at a prompt that `ctrlCycles` (M3-05): the hot multi-functional grip's next
    * function, as AutoCAD's Ctrl cycles them.
@@ -442,6 +446,13 @@ export class CanvasController {
   #current: CurrentViewport | undefined;
   /** ZOOM Previous of each layout viewport's own view (M6-02 part 4). */
   readonly #viewportHistory = new ViewportHistories();
+  /**
+   * The current viewport is maximized (VPMAX, M6-02 part 7): `#current`'s geometry is the one
+   * that frames it by the whole canvas, and its view there the canvas's own, which VPMIN drops.
+   */
+  #maximized = false;
+  /** ZOOM Previous of the view of the viewport maximized, apart from its own. */
+  #maximizedHistory = new ViewportHistories();
   /**
    * Viewport view edits sent and not answered yet: the view the canvas gave the current viewport
    * stands over the one a change set brings meanwhile, so a roll of the wheel goes on from it.
@@ -828,7 +839,7 @@ export class CanvasController {
     const z = this.#zoomable();
     if (z) {
       // Each viewport steps back through its own views.
-      const was = this.#viewportHistory.previous(z.c.handle);
+      const was = this.#ownHistory().previous(z.c.handle);
       if (was)
         this.#goViewport(
           z,
@@ -952,12 +963,28 @@ export class CanvasController {
    * `handle` (its geometry as it is now), or on paper again. The cursor's points, snaps, picks
    * and windows are model space's while one is current; the sheet stays where it is.
    */
-  setViewport(handle: Handle | undefined, geometry: ViewportGeometry | undefined): void {
+  setViewport(
+    handle: Handle | undefined,
+    geometry: ViewportGeometry | undefined,
+    maximized = false,
+  ): void {
+    const view = this.#view;
+    const current = handle !== undefined && geometry && this.#layout ? geometry : undefined;
+    // VPMAX (M6-02 part 7): the viewport framed by the whole canvas, showing what it showed.
+    const max = maximized && current && view && this.#size.width > 0 && this.#size.height > 0;
     this.#current =
-      handle !== undefined && geometry && this.#layout ? { handle, geom: geometry } : undefined;
-    this.#host.setActiveViewport(this.#current?.handle);
+      handle !== undefined && current
+        ? { handle, geom: max ? maximizedGeometry(current, view, this.#size) : current }
+        : undefined;
+    this.#maximized = max !== undefined && max !== false;
+    if (this.#maximized) this.#maximizedHistory = new ViewportHistories();
+    this.#host.setActiveViewport(
+      this.#current?.handle,
+      this.#maximized ? this.#current?.geom : undefined,
+    );
     this.#canvas.dataset['viewport'] = this.#current?.handle ?? '';
-    this.#hooks.onViewport?.(this.#current?.handle);
+    this.#canvas.dataset['maximized'] = this.#maximized ? 'true' : '';
+    this.#hooks.onViewport?.(this.#current?.handle, this.#maximized);
     this.#hits = [];
     this.#hit = undefined;
     this.#acquired = [];
@@ -998,7 +1025,8 @@ export class CanvasController {
   #zoomable(): { readonly c: CurrentViewport; readonly frame: FrameOnCanvas } | undefined {
     const c = this.#current;
     const v = this.#view;
-    if (!c || !v || viewportLocked(c.geom)) return undefined;
+    // A viewport maximized zooms whatever its lock: the view is the canvas's own (VPMAX).
+    if (!c || !v || (!this.#maximized && viewportLocked(c.geom))) return undefined;
     const frame = frameOnCanvas(c.geom, v, this.#size);
     return frame.size.width > 0 && frame.size.height > 0 ? { c, frame } : undefined;
   }
@@ -1018,9 +1046,12 @@ export class CanvasController {
     const next = viewportViewFrom(view, frame.size);
     const was = viewportViewOf(c.geom);
     if (!(next.height > 0) || !Number.isFinite(next.height) || sameViewportView(next, was)) return;
-    if (!o.join && !o.previous) this.#viewportHistory.push(c.handle, was);
+    if (!o.join && !o.previous) this.#ownHistory().push(c.handle, was);
     c.geom = withViewportView(c.geom, next);
-    const sent = this.#hooks.onViewportView?.(c.handle, next, label, o.join === true);
+    // Maximized, the view is the canvas's alone: VPMIN shows the viewport's own again.
+    let sent: Promise<unknown> | void = undefined;
+    if (this.#maximized) this.#host.setActiveViewport(c.handle, c.geom);
+    else sent = this.#hooks.onViewportView?.(c.handle, next, label, o.join === true);
     if (sent) {
       this.#viewportEdits++;
       const done = () => void this.#viewportEdits--;
@@ -1028,6 +1059,36 @@ export class CanvasController {
     }
     // The cursor is over another model point now: its coordinates and rubber band follow.
     if (this.#view) this.#setView(this.#view);
+  }
+
+  /** The ZOOM Previous views of the current viewport: its own, or those it had maximized. */
+  #ownHistory(): ViewportHistories {
+    return this.#maximized ? this.#maximizedHistory : this.#viewportHistory;
+  }
+
+  /**
+   * The viewport maximized framed by the canvas again, once the canvas or the sheet's view has
+   * changed (a resize): about the same model point, at the same scale.
+   */
+  #refitMaximized(): void {
+    const c = this.#current;
+    const v = this.#view;
+    const { width, height } = this.#size;
+    if (!this.#maximized || !c || !v || !(width > 0) || !(height > 0)) return;
+    const g = c.geom;
+    const framed =
+      g.center.x === v.center.x &&
+      g.center.y === v.center.y &&
+      g.width === width / v.scale &&
+      g.height === height / v.scale;
+    if (framed) return;
+    const was = viewportViewOf(g);
+    const scale = viewportTransform(g).a;
+    c.geom = maximizedGeometry(g, v, this.#size, {
+      center: was.center,
+      height: height / v.scale / scale,
+    });
+    this.#host.setActiveViewport(c.handle, c.geom);
   }
 
   /** ZOOM Extents or All in the current viewport: model space's, as the renderer measures it. */
@@ -1878,6 +1939,13 @@ export class CanvasController {
     const after = change.entities?.updated?.find((u) => u.after.handle === c.handle)?.after;
     if (after?.geom.kind !== 'VIEWPORT') return;
     if (!workableViewport(after.geom)) return this.setViewport(undefined, undefined);
+    if (this.#maximized) {
+      // Still framed by the canvas, showing what it shows (a VPLAYER edit, say).
+      const { center, width, height, viewCenter, viewHeight } = c.geom;
+      c.geom = { ...after.geom, center, width, height, viewCenter, viewHeight };
+      this.#host.setActiveViewport(c.handle, c.geom);
+      return;
+    }
     // While the canvas's own view edits are on their way, its view is the newest.
     c.geom =
       this.#viewportEdits > 0
@@ -2260,6 +2328,7 @@ export class CanvasController {
   #setView(view: ViewTransform): void {
     this.#openedSaved = false;
     this.#view = view;
+    this.#refitMaximized();
     this.#viewed();
     this.#requestFrame();
     this.#showUcsIcon();

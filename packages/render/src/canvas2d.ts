@@ -365,6 +365,12 @@ const GRID_DOT_MIX = 0.6;
 const SELECTION_COLOR = '#4da3ff';
 /** The current viewport's frame (MSPACE, M6-02 part 3), CSS pixels wide. */
 const ACTIVE_VIEWPORT_PX = 3;
+/**
+ * The border round the drawing area while a layout viewport is maximized (VPMAX, M6-02 part 7):
+ * AutoCAD draws it red, whatever the background, so the state is not mistaken for the Model tab.
+ */
+export const MAXIMIZED_VIEWPORT_COLOR = '#e0301e';
+const MAXIMIZED_VIEWPORT_PX = 2;
 const SELECTION_GLOW_PX = 5;
 const SELECTION_GLOW_ALPHA = 0.35;
 const SELECTION_DASH = [4, 3];
@@ -635,6 +641,15 @@ export class Canvas2DRenderer implements Renderer {
    * is drawn over the scene (selection, grips, previews) are model space's, through it.
    */
   #active: Handle | undefined;
+  /**
+   * The current viewport maximized (VPMAX, M6-02 part 7): the geometry it is drawn with, framed by
+   * the whole canvas; the sheet, paper space's objects and the other viewports are not drawn.
+   */
+  #maximized: ViewportGeometry | undefined;
+  /** `#activeViewport()` of the entry and maximized geometry it was made for. */
+  #maximizedEntry:
+    | { readonly of: ViewportEntry; readonly geom: ViewportGeometry; readonly entry: ViewportEntry }
+    | undefined;
   /** The layout's model-space viewports in stacking order; undefined until first needed. */
   #viewports: readonly ViewportEntry[] | undefined;
   /**
@@ -860,17 +875,34 @@ export class Canvas2DRenderer implements Renderer {
     this.#transientDirty = true;
   }
 
-  setActiveViewport(handle: Handle | undefined): void {
-    if (handle === this.#active) return;
+  setActiveViewport(handle: Handle | undefined, maximized?: ViewportGeometry): void {
+    const max = handle === undefined ? undefined : maximized;
+    if (handle === this.#active && max === this.#maximized) return;
     this.#active = handle;
+    this.#maximized = max;
     // The selection is drawn with the scene, the current viewport's bold frame with the rest.
     this.#sceneDirty = this.#transientDirty = true;
   }
 
-  /** The current viewport (MSPACE), while it shows model space. */
+  /**
+   * The current viewport (MSPACE), while it shows model space; maximized (VPMAX), with the
+   * geometry that frames it by the canvas.
+   */
   #activeViewport(): ViewportEntry | undefined {
     const h = this.#active;
-    return h === undefined ? undefined : this.#viewportList().find((v) => v.handle === h);
+    const vp = h === undefined ? undefined : this.#viewportList().find((v) => v.handle === h);
+    const geom = this.#maximized;
+    if (!vp || !geom) return vp;
+    const made = this.#maximizedEntry;
+    if (made?.of === vp && made.geom === geom) return made.entry;
+    const entry = { ...vp, geom, toPaper: viewportTransform(geom), clip: undefined };
+    this.#maximizedEntry = { of: vp, geom, entry };
+    return entry;
+  }
+
+  /** The current viewport while it is maximized (VPMAX), framed by the canvas. */
+  #maximizedViewport(): ViewportEntry | undefined {
+    return this.#maximized ? this.#activeViewport() : undefined;
   }
 
   /** The block picks and windows take objects of: model space while a viewport is current. */
@@ -928,6 +960,7 @@ export class Canvas2DRenderer implements Renderer {
   #drawActiveFrame(ctx: Canvas2D): void {
     const vp = this.#activeViewport();
     if (!vp) return;
+    if (this.#maximized) return this.#drawMaximizedBorder(ctx);
     const view = this.#viewFrame();
     const { m } = view;
     ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
@@ -961,6 +994,19 @@ export class Canvas2DRenderer implements Renderer {
     ctx.setLineDash([]);
     ctx.strokeStyle = this.#style.foreground;
     ctx.lineWidth = ACTIVE_VIEWPORT_PX * this.#dpr;
+    ctx.stroke();
+  }
+
+  /** The red border round the canvas while a viewport is maximized (VPMAX, M6-02 part 7). */
+  #drawMaximizedBorder(ctx: Canvas2D): void {
+    const w = MAXIMIZED_VIEWPORT_PX * this.#dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.rect(w / 2, w / 2, this.#width * this.#dpr - w, this.#height * this.#dpr - w);
+    ctx.strokeStyle = MAXIMIZED_VIEWPORT_COLOR;
+    ctx.lineWidth = w;
     ctx.stroke();
   }
 
@@ -1636,9 +1682,11 @@ export class Canvas2DRenderer implements Renderer {
       toWorld(rect.x + rect.width, rect.y + rect.height),
     ]);
     const found = new Set<EntityId>();
-    this.#drawnIn(this.#block, box, found);
+    // A viewport maximized fills the canvas: its model space is all there is (VPMAX).
+    const maximized = this.#maximizedViewport();
+    if (!maximized) this.#drawnIn(this.#block, box, found);
     // Model space through each viewport, under the part of the rectangle inside its frame.
-    for (const vp of this.#viewportList()) {
+    for (const vp of maximized ? [maximized] : this.#viewportList()) {
       const frame = viewportFrame(vp.geom);
       const shown = {
         minX: Math.max(frame.minX, box.minX),
@@ -2121,6 +2169,8 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillStyle = this.#surround();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const view = this.#viewFrame();
+    const maximized = this.#maximizedViewport();
+    if (maximized) return this.#drawMaximized(ctx, maximized, view, reduced);
     if (sheet) this.#drawSheet(ctx, sheet, view);
     this.#drawGrid(ctx, view);
     for (const vp of this.#viewportList()) this.#drawViewport(ctx, vp, view, reduced);
@@ -2148,6 +2198,21 @@ export class Canvas2DRenderer implements Renderer {
     const overlay = this.#overlayFrame(ctx, view);
     this.#drawHighlight(ctx, overlay);
     if (this.#activeViewport()) ctx.restore();
+    this.#askForPages();
+  }
+
+  /**
+   * The scene while a viewport is maximized (VPMAX, M6-02 part 7): the canvas in the sheet's
+   * colour, as the viewport shows model space on it, and model space through the viewport alone,
+   * with its frozen layers and layer overrides; its selection over it.
+   */
+  #drawMaximized(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame, reduced: boolean): void {
+    ctx.fillStyle = this.#style.background;
+    ctx.fillRect(0, 0, this.#scene.canvas.width, this.#scene.canvas.height);
+    this.#drawViewport(ctx, vp, view, reduced);
+    const overlay = this.#overlayFrame(ctx, view);
+    this.#drawHighlight(ctx, overlay);
+    ctx.restore();
     this.#askForPages();
   }
 
