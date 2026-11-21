@@ -71,7 +71,7 @@ test('a double click works in a layout viewport; off the sheet, in paper space a
   await enterCommand(page, 'L');
   await enterCommand(page, '');
   await page.keyboard.press('F2');
-  const history = page.getByRole('dialog', { name: 'Command history' });
+  const history = page.getByRole('complementary', { name: 'Command History' });
   await expect(history).toContainText('Space: Model space');
   await page.keyboard.press('F2');
   await expect(history).toBeHidden();

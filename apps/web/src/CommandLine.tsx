@@ -1,6 +1,7 @@
 // The command line (M2-02, UI_SPEC.md §5): AutoCAD's docked command window under the layout
 // tabs. The last history lines above the prompt line; the prompt's options as chips; commands
-// completed as they are typed; Up/Down recall; F2 opens the whole history. Typing anywhere
+// completed as they are typed; Up/Down recall; F2 shows the whole history (the Command History
+// palette of the palette stack, M7-03 part 2). Typing anywhere
 // outside a text field goes to it, and Enter or Space there ends the input, as in AutoCAD. It
 // is a front-end of the drawing's command engine, which runs in the engine worker. Dynamic
 // Input (F12) and the Ctrl+K palette (part 2) are two more front-ends, kept here beside it: they
@@ -23,6 +24,7 @@ import { DRAFTING_ITEMS, drafting, type DraftingToggle } from './drafting';
 import { cycleSnap } from './canvas/registry';
 import { engines } from './engine/registry';
 import { commandItems, type PaletteItem } from './palette';
+import { paletteStack } from './palette-stack';
 import { aliasFileVersion, appRegistry as registry } from './user-aliases';
 import { commandOf, keysText } from './keymap';
 import {
@@ -95,10 +97,8 @@ export function CommandLine({
   const state = doc === undefined ? undefined : lines.get(doc);
   const [text, setText] = useState('');
   const [recall, setRecall] = useState<number | undefined>();
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const full = useRef<HTMLDivElement>(null);
   const prompt = state?.prompt;
   const suggestions =
     prompt === undefined ? completions(registry, text, variables).slice(0, 8) : [];
@@ -113,6 +113,8 @@ export function CommandLine({
   textRef.current = text;
   const promptRef = useRef(prompt);
   promptRef.current = prompt;
+  const docRef = useRef(doc);
+  docRef.current = doc;
 
   /** Sends typed input; `relativeTo`: what its `@` counts from, for Dynamic Input (M2-71). */
   const send = (value: string, relativeTo?: Vec2) => {
@@ -191,8 +193,9 @@ export function CommandLine({
   const runItem = (item: PaletteItem) => {
     if (item.kind === 'command') {
       if (doc !== undefined) engines.command(doc, { kind: 'invoke', name: item.id });
-    } else if (item.id === 'history') setHistoryOpen(true);
-    else if (item.id === 'dyn') dynMode.toggle();
+    } else if (item.id === 'history') {
+      if (doc !== undefined) paletteStack.set('history');
+    } else if (item.id === 'dyn') dynMode.toggle();
     else if (item.id === 'aliases') onEditAliases?.();
     else if (item.id === 'shortcuts') onEditShortcuts?.();
     else if (item.id.startsWith('recent:')) onOpenRecent?.(item.id.slice('recent:'.length));
@@ -280,8 +283,10 @@ export function CommandLine({
   // Ctrl+Y REDO, M2-23; Ctrl+P PLOT): like a ribbon button, a command cancels a running one.
   useEffect(() => {
     const own: Record<string, ShortcutHandler> = {
+      // AutoCAD's F2 shows the command history; Triya's is a palette of the stack (M7-03 part 2),
+      // which F2 closes again. The command line keeps the keyboard.
       history: () => {
-        setHistoryOpen((o) => !o);
+        if (docRef.current !== undefined) paletteStack.toggle('history');
         return true;
       },
       dyn: () => {
@@ -387,19 +392,9 @@ export function CommandLine({
     };
   }, []);
 
-  useEffect(() => {
-    if (historyOpen && full.current) full.current.scrollTop = full.current.scrollHeight;
-  }, [historyOpen, state?.lines]);
-
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const spaces = prompt?.kind === 'string' && prompt.spaces;
-    if (
-      !(e.key === 'Escape' && historyOpen) &&
-      !e.ctrlKey &&
-      !e.metaKey &&
-      !e.altKey &&
-      hold(e.key)
-    ) {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && hold(e.key)) {
       e.preventDefault();
     } else if (e.key === 'Enter' || (e.key === ' ' && !spaces)) {
       e.preventDefault();
@@ -408,8 +403,7 @@ export function CommandLine({
       send(e.currentTarget.value);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      if (historyOpen) setHistoryOpen(false);
-      else cancel();
+      cancel();
     } else if (e.key === 'Tab' && suggestions[0]) {
       e.preventDefault();
       setText(suggestions[0].name);
@@ -456,21 +450,6 @@ export function CommandLine({
           onRun={runItem}
           onClose={() => setPaletteOpen(false)}
         />
-      )}
-      {historyOpen && (
-        <div className="command-history-window" role="dialog" aria-label="Command history">
-          <div className="command-history-header">
-            <span>Command history</span>
-            <button type="button" onClick={() => setHistoryOpen(false)} aria-label="Close history">
-              ×
-            </button>
-          </div>
-          <div className="command-history-full" ref={full} role="log" tabIndex={0}>
-            {state?.lines.map((l, i) => (
-              <div key={i}>{l}</div>
-            ))}
-          </div>
-        </div>
       )}
       <div className="command-lines" role="log" aria-label="Recent command lines">
         {shown.map((l, i) => (
