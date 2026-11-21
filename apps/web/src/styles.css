@@ -1019,6 +1019,12 @@ button {
   border-left-color: var(--accent);
 }
 
+/* An auto-hidden stack's strip on the right edge: the navigation bar moves left of it. */
+.workspace:has(> .palette-dock[data-autohide='true'][data-side='right'][data-floating='false'])
+  .nav-bar {
+  right: 40px;
+}
+
 /* Where a dragged stack docks when it is dropped: a band at that edge of the drawing area. */
 .workspace:has(> .palette-dock[data-dock-target]) > .canvas-area::after {
   position: absolute;
