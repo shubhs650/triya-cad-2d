@@ -5,8 +5,12 @@
 // narrowed to a type), so a pick applies exactly as the palette's does: to the selected objects,
 // or with none to CLAYER, CECOLOR, CELTYPE, CELWEIGHT or CETRANSPARENCY. The layer list also
 // carries each layer's colour and on, frozen and locked states, which AutoCAD's layer dropdown
-// shows, and the current layer.
+// shows, and the current layer. M7-02 part 4: what kind of object every selected one is, when
+// they share one, for the contextual tab AutoCAD shows for it (Hatch Editor, Image, PDF Underlay,
+// External Reference, Array).
 import type { DocumentModel } from '../model/document';
+import { isXrefRecord } from '../model/xref';
+import { isAssocArray, type Entity } from '../model/types';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import { colorValue, type ColorBook } from './color-books';
@@ -32,6 +36,9 @@ export interface RibbonLayer {
   readonly locked: boolean;
 }
 
+/** The kinds of selection that have a contextual tab. */
+export type RibbonSelection = 'hatch' | 'image' | 'pdf' | 'xref' | 'array';
+
 export interface RibbonProperties {
   /** How many objects are selected; 0 shows the current settings. */
   readonly count: number;
@@ -42,10 +49,46 @@ export interface RibbonProperties {
   readonly currentLayer: Handle;
   /** The Select Color dialog's colour books, as the palette's sheet gives them. */
   readonly colorBooks?: readonly ColorBook[];
+  /** The kind every selected object is, when they all are one with a contextual tab. */
+  readonly selection?: RibbonSelection;
+}
+
+/**
+ * The kind every object of `ids` is: hatches, raster images, PDF underlays, external references
+ * or associative arrays (an INSERT an array record names); undefined for none, or a mix.
+ */
+export function selectionKind(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+): RibbonSelection | undefined {
+  const es = ids.map((id) => model.entity(id)).filter((e): e is Entity => e !== undefined);
+  if (es.length === 0) return undefined;
+  let arrays: Set<Handle> | undefined;
+  const kindOf = (e: Entity): RibbonSelection | undefined => {
+    switch (e.geom.kind) {
+      case 'HATCH':
+        return 'hatch';
+      case 'IMAGE':
+        return 'image';
+      case 'PDFUNDERLAY':
+        return 'pdf';
+      case 'INSERT': {
+        if (isXrefRecord(model.tables.blockRecords.get(e.geom.block))) return 'xref';
+        if (e.extDict === undefined) return undefined;
+        arrays ??= new Set([...model.objects.values()].filter(isAssocArray).map((a) => a.insert));
+        return arrays.has(e.handle) ? 'array' : undefined;
+      }
+      default:
+        return undefined;
+    }
+  };
+  const first = kindOf(es[0]!);
+  return first !== undefined && es.every((e) => kindOf(e) === first) ? first : undefined;
 }
 
 export function ribbonProperties(model: DocumentModel, ids: readonly EntityId[]): RibbonProperties {
   const sheet = propertySheet(model, ids);
+  const selection = selectionKind(model, ids);
   const general = sheet.sections.find((s) => s.title === 'General')?.rows ?? [];
   const rows = RIBBON_PROPERTY_KEYS.map((k) => general.find((r) => r.key === k)).filter(
     (r): r is PropertyRow => r !== undefined,
@@ -66,5 +109,6 @@ export function ribbonProperties(model: DocumentModel, ids: readonly EntityId[])
     layers,
     currentLayer: currentLayer(model),
     ...(sheet.colorBooks && { colorBooks: sheet.colorBooks }),
+    ...(selection && { selection }),
   };
 }

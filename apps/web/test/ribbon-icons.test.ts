@@ -6,12 +6,14 @@ import { builtinCommands } from '@triya/engine';
 import { CAD_GLYPHS } from '../src/ribbon/cad-icons';
 import { FLUENT_ICONS } from '../src/ribbon/fluent-icons';
 import { ICON_NAMES, iconArt } from '../src/ribbon/icons';
-import { RIBBON_TABS, type RibbonItem } from '../src/ribbon/ribbon.config';
+import { CONTEXTUAL_TABS, RIBBON_TABS, type RibbonItem } from '../src/ribbon/ribbon.config';
 import { descriptionOf, tooltipOf, type TooltipSources } from '../src/ribbon/tooltips';
 
 const flat = (items: readonly RibbonItem[]): RibbonItem[] =>
   items.flatMap((i) => [i, ...(i.menu ?? [])]);
-const ALL = RIBBON_TABS.flatMap((t) => t.panels.flatMap((p) => flat(p.items)));
+const ALL = [...RIBBON_TABS, ...CONTEXTUAL_TABS].flatMap((t) =>
+  t.panels.flatMap((p) => flat(p.items)),
+);
 const item = (tab: string, id: string) =>
   flat(RIBBON_TABS.find((t) => t.id === tab)!.panels.flatMap((p) => p.items)).find(
     (i) => i.id === id,
