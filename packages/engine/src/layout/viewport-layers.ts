@@ -2,7 +2,8 @@
 // Properties Manager's "VP" columns gave it in that viewport. AutoCAD: "you can override the
 // color, linetype, lineweight, transparency, and plot style … of layers in a layout viewport";
 // ByLayer objects in the viewport then take the override, other viewports keep the layer's own
-// values. Plot style overrides are not read (Triya does not plot by style yet).
+// values. A plot style override (M6-07, a drawing with named plot styles) is the plot style the
+// plot gives those objects in that viewport (`plot/job.ts` reads the layer's).
 
 import type { Handle } from '../model/handle';
 import type { LayerRecord } from '../model/types';
@@ -29,6 +30,7 @@ export function viewportLayers(
       ...(o.linetype ? { linetype: o.linetype } : {}),
       ...(o.lineweight !== undefined ? { lineweight: o.lineweight } : {}),
       ...(o.transparency ? { transparency: o.transparency } : {}),
+      ...(o.plotStyle ? { plotStyle: o.plotStyle } : {}),
     });
   }
   if (!out) return undefined;

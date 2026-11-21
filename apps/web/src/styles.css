@@ -1288,6 +1288,12 @@ button {
   border-color: var(--chrome-border);
 }
 
+/* M6-07: a colour-dependent drawing's plot style cells show the colour's style, greyed. */
+.layer-table .layer-cell:disabled {
+  color: var(--chrome-text-muted);
+  cursor: default;
+}
+
 /* M6-02 part 8: a VP cell the viewport made current overrides, as AutoCAD tints it; a VP cell
    with no viewport current is empty. */
 .layer-table td.vp-overridden {
@@ -1508,13 +1514,15 @@ button {
   }
 }
 
-.layer-lineweight-list {
+.layer-lineweight-list,
+.layer-plot-style-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.layer-lineweight-list select {
+.layer-lineweight-list select,
+.layer-plot-style-list select {
   font: inherit;
 }
 

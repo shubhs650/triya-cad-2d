@@ -2,7 +2,9 @@
 // LAyer). AutoCAD 2024 Help, "VPLAYER (Command)": a layer can be frozen in some viewports and
 // thawed in others (the VIEWPORT's frozen layers, DXF 341), and shown in a viewport with another
 // colour, linetype, lineweight or transparency than its own (the layer's `viewportOverrides`,
-// AutoCAD's ADSK_XREC_LAYER_*_OVR XRECORDs, which `layout/viewport-layers.ts` applies). A layer's
+// AutoCAD's ADSK_XREC_LAYER_*_OVR XRECORDs, which `layout/viewport-layers.ts` applies), and in a
+// drawing with named plot styles with another plot style (M6-07: VPLAYER PStyle, the manager's VP
+// Plot Style; `ADSK_XREC_LAYER_PLOTSTYLE_OVR`, which the plot reads through the same layers). A layer's
 // viewport visibility default (DXF 70 bit 2, "frozen by default in new viewports") is what a new
 // viewport and VPLAYER Reset give it.
 //
@@ -10,6 +12,7 @@
 // builds an empty change set.
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
+import { namedPlotStyles } from '../properties/general';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type {
@@ -25,12 +28,14 @@ import type {
 /** DXF 70 bit 2 of a LAYER: "Layer is frozen by default in new viewports". */
 export const NEW_VP_FROZEN = 2;
 
-/** The properties a viewport can override (VPLAYER Color, Ltype, LWeight, TRansparency). */
+/** The properties a viewport can override (VPLAYER Color, Ltype, LWeight, PStyle, TRansparency). */
 export interface ViewportOverrideProps {
   readonly color?: Color;
   readonly linetype?: Handle;
   readonly lineweight?: Lineweight;
   readonly transparency?: Transparency;
+  /** A named plot style (ACAD_PLOTSTYLENAME), in a drawing with named plot styles only (M6-07). */
+  readonly plotStyle?: Handle;
 }
 
 type ViewportEntity = Entity & { geom: ViewportGeometry };
@@ -170,14 +175,45 @@ export interface ViewportLayerProps extends ViewportOverrideProps {
   readonly frozen?: boolean;
 }
 
-const OVERRIDE_KEYS = ['color', 'linetype', 'lineweight', 'transparency'] as const;
+const OVERRIDE_KEYS = ['color', 'linetype', 'lineweight', 'transparency', 'plotStyle'] as const;
+
+/**
+ * The named plot style a layer plots by: its own (DXF 390), else the drawing's Normal, which
+ * AutoCAD gives a layer that names none (the ACAD_PLOTSTYLENAME default).
+ */
+export function layerPlotStyle(model: DocumentModel, layer: LayerRecord): Handle | undefined {
+  if (layer.plotStyle !== undefined) return layer.plotStyle;
+  for (const s of model.tables.plotStyles.values())
+    if (s.name.toUpperCase() === 'NORMAL') return s.handle;
+  return undefined;
+}
 
 /** Whether `value` is what `layer` has of its own for `key` (no override needed). */
 const ownValue = (
+  model: DocumentModel,
   layer: LayerRecord,
   key: (typeof OVERRIDE_KEYS)[number],
   value: unknown,
-): boolean => JSON.stringify(layer[key]) === JSON.stringify(value);
+): boolean =>
+  key === 'plotStyle'
+    ? layerPlotStyle(model, layer) === value
+    : JSON.stringify(layer[key]) === JSON.stringify(value);
+
+/**
+ * Why `props` cannot be set as viewport overrides in this drawing: a plot style override needs
+ * named plot styles (AutoCAD greys VP Plot Style in a colour-dependent drawing and VPLAYER does
+ * not offer PStyle) and a plot style of the drawing.
+ */
+export function overridePropsProblem(
+  model: DocumentModel,
+  props: ViewportOverrideProps,
+): string | undefined {
+  if (props.plotStyle === undefined) return undefined;
+  if (!namedPlotStyles(model)) return 'The drawing uses color-dependent plot styles.';
+  return model.tables.plotStyles.has(props.plotStyle)
+    ? undefined
+    : `No plot style ${props.plotStyle}.`;
+}
 
 /** A viewport property override's key (the manager's VP cells). */
 export type ViewportOverrideKey = (typeof OVERRIDE_KEYS)[number];
@@ -207,7 +243,7 @@ export function setViewportLayerProps(
     // The viewport first, as the reader builds an entry.
     const entry: Record<string, unknown> = { viewport, ...(at >= 0 ? list[at] : {}) };
     for (const k of keys) {
-      if (ownValue(record, k, props[k])) delete entry[k];
+      if (ownValue(model, record, k, props[k])) delete entry[k];
       else entry[k] = props[k];
     }
     const kept = OVERRIDE_KEYS.some((k) => entry[k] !== undefined);
@@ -220,9 +256,9 @@ export function setViewportLayerProps(
 }
 
 /**
- * The manager's VP Freeze, VP Color, VP Linetype, VP Lineweight and VP Transparency on `layers`
- * in the floating viewport `viewport` (AutoCAD 2024 Help, "Layer Properties Manager": "for the
- * active layout viewport"). A VP value set to the layer's own value removes that override (and
+ * The manager's VP Freeze, VP Color, VP Linetype, VP Lineweight, VP Transparency and VP Plot
+ * Style (M6-07) on `layers` in the floating viewport `viewport` (AutoCAD 2024 Help, "Layer
+ * Properties Manager": "for the active layout viewport"). A VP value set to the layer's own value removes that override (and
  * the viewport's entry with its last one): Help does not say whether such an override is kept,
  * and the drafter setting it back expects the cell to read as not overridden again.
  */
@@ -236,6 +272,8 @@ export function viewportLayerChange(
   if (why) return why;
   const unknown = layers.find((h) => !model.tables.layers.has(h));
   if (unknown !== undefined) return `No layer ${unknown}.`;
+  const bad = overridePropsProblem(model, props);
+  if (bad) return bad;
   const b = new ChangeSetBuilder(model);
   if (props.frozen !== undefined) freezeInViewports(b, model, layers, [viewport], props.frozen);
   for (const h of layers) setViewportLayerProps(b, model, h, viewport, props);

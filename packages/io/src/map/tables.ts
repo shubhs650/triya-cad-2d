@@ -87,12 +87,16 @@ function layerDescription(l: Layer): string | undefined {
  * extension dictionary, one `102 {ADSK_LYR_…_OVERRIDE` group per viewport holding the
  * viewport (335) and the value. Names and codes as AutoCAD writes them and ezdxf reads them
  * (`ezdxf.entities.layer.load_layer_overrides`); the transparency key is `_ALPHA_OVR`.
+ * The plot style override (M6-07) has no published layout and ezdxf does not read it: Triya files
+ * it the same way, `ADSK_XREC_LAYER_PLOTSTYLE_OVR` with the plot style (an ACAD_PLOTSTYLENAME
+ * placeholder) as a 390 pointer, the code a LAYER names its plot style by (DEC-078).
  */
 export const OVERRIDES = [
   ['ADSK_XREC_LAYER_COLOR_OVR', 420, 'color'],
   ['ADSK_XREC_LAYER_LINETYPE_OVR', 343, 'linetype'],
   ['ADSK_XREC_LAYER_LINEWT_OVR', 91, 'lineweight'],
   ['ADSK_XREC_LAYER_ALPHA_OVR', 440, 'transparency'],
+  ['ADSK_XREC_LAYER_PLOTSTYLE_OVR', 390, 'plotStyle'],
 ] as const;
 /** The viewport's group in each override. */
 export const OVERRIDE_VIEWPORT = 335;
@@ -130,7 +134,7 @@ function viewportOverrides(l: Layer): LayerViewportOverride[] | undefined {
         const value =
           field === 'color'
             ? rawColor(Number(e.value))
-            : field === 'linetype'
+            : field === 'linetype' || field === 'plotStyle'
               ? pointer(e.value)
               : field === 'lineweight'
                 ? mapLineweight(Number(e.value))

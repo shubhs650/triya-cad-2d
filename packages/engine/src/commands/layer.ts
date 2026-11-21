@@ -39,7 +39,13 @@
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { Handle } from '../model/handle';
-import type { Color, LayerRecord, LinetypeRecord, Lineweight } from '../model/types';
+import type {
+  Color,
+  LayerRecord,
+  LinetypeRecord,
+  Lineweight,
+  SymbolTableRecord,
+} from '../model/types';
 import { ChangeSetBuilder } from '../model/builder';
 import { isEmptyChangeSet } from '../model/changeset';
 import { newLayer, setLayerProps, type LayerProps } from '../edit/layer-manager';
@@ -444,8 +450,11 @@ async function* plot(ctx: CommandContext): Sub<void> {
   apply(ctx, layers, { plot: plots });
 }
 
-/** "Enter plot style or [?] <Normal>": a named plot style of the drawing, ? listing them. */
-async function* plotStyle(ctx: CommandContext): Sub<void> {
+/**
+ * "Enter plot style or [?] <Normal>": a named plot style of the drawing, ? listing them (-LAYER
+ * PStyle, VPLAYER PStyle); undefined, said, when the drawing has none of that name.
+ */
+export async function* plotStyleAsked(ctx: CommandContext): Sub<SymbolTableRecord | undefined> {
   const styles = [...ctx.model.tables.plotStyles.values()].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
@@ -468,10 +477,13 @@ async function* plotStyle(ctx: CommandContext): Sub<void> {
   }
   const name = typed(a) || 'Normal';
   const style = styles.find((s) => upper(s.name) === upper(name));
-  if (!style) {
-    ctx.message(`Cannot find plot style ${quoted(name)}.`);
-    return;
-  }
+  if (!style) ctx.message(`Cannot find plot style ${quoted(name)}.`);
+  return style;
+}
+
+async function* plotStyle(ctx: CommandContext): Sub<void> {
+  const style = yield* plotStyleAsked(ctx);
+  if (!style) return;
   // Help's own prompt, "current" and all.
   const message = 'Enter name list of layer(s) for plot style current';
   apply(ctx, yield* nameList(ctx, message, 'current'), { plotStyle: style.handle });

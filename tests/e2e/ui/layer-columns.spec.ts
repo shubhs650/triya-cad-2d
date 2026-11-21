@@ -113,10 +113,13 @@ test('Customize Layer Columns orders and hides columns from the keyboard (M5-05)
     'aria-disabled',
     'true',
   );
-  // Description up two places, before Lineweight; Linetype cleared with Space.
+  // Description up three places (past Plot Style, M6-07), before Lineweight; Linetype cleared
+  // with Space.
   await dialog.getByRole('checkbox', { name: 'Description' }).focus();
-  await dialog.getByRole('button', { name: 'Move Up' }).click();
-  await expect(dialog.getByRole('checkbox', { name: 'Description' })).toBeFocused();
+  for (let i = 0; i < 2; i++) {
+    await dialog.getByRole('button', { name: 'Move Up' }).click();
+    await expect(dialog.getByRole('checkbox', { name: 'Description' })).toBeFocused();
+  }
   await dialog.getByRole('button', { name: 'Move Up' }).click();
   // Move Up gives the moved column the focus back once the list re-renders: wait for that
   // before focusing Linetype, or the late refocus takes the Space (seen in CI on #506).
@@ -141,6 +144,7 @@ test('Customize Layer Columns orders and hides columns from the keyboard (M5-05)
       'Description',
       'Lineweight',
       'Transparency',
+      'Plot Style',
     ]);
 
   // Esc leaves the columns as they were.
@@ -324,6 +328,7 @@ test('sizes, freezes and moves columns from their headers (M5-05 part 5)', async
     'Linetype',
     'Lineweight',
     'Transparency',
+    'Plot Style',
     'Description',
   ];
   await expect.poll(() => titles(palette)).toEqual(moved);
@@ -379,7 +384,7 @@ test('sizes, freezes and moves columns from their headers (M5-05 part 5)', async
   // Optimize All Columns, back with every column: each fits its contents and header.
   await header(again, 'Name').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Restore All Columns to Defaults' }).click();
-  await expect(table(again).getByRole('columnheader')).toHaveCount(11);
+  await expect(table(again).getByRole('columnheader')).toHaveCount(12);
   await header(again, 'Name').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Optimize All Columns' }).click();
   await expect

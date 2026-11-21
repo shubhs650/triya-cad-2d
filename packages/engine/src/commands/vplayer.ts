@@ -1,11 +1,12 @@
 // VPLAYER (M6-02 part 5): layers frozen, thawed and overridden in layout viewports, on AutoCAD
 // 2024's prompts (AutoCAD 2024 Help, "VPLAYER (Command)"):
 //
-//   Enter an option [?/Color/Ltype/LWeight/TRansparency/Freeze/Thaw/Reset/Newfrz/Vpvisdflt]:
+//   Enter an option [?/Color/Ltype/LWeight/PStyle/TRansparency/Freeze/Thaw/Reset/Newfrz/Vpvisdflt]:
 //     ?:            Select a viewport:          its frozen layers listed
 //     Color:        Enter a color [Truecolor/COlorbook]:  then the layers and the viewports
 //     Ltype:        Enter a loaded linetype name or [?] <Continuous>:  then as Color
 //     LWeight:      Enter lineweight (0.0mm - 2.11mm):  then as Color
+//     PStyle:       Enter plot style or [?] <Normal>:  then as Color (named plot styles only)
 //     TRansparency: Enter transparency value (0-90):  then as Color
 //     Freeze:       Enter layer name(s) to freeze or <select objects>:
 //                   Enter an option [All/Select/Current/Except current] <Current>:
@@ -28,9 +29,10 @@
 //
 // Reset sets the layers' visibility in the viewports to their viewport visibility default
 // (Vpvisdflt, DXF 70 bit 2); Newfrz makes layers as -LAYER New does (colour 7, Continuous) that
-// are frozen in every floating viewport and by default in new ones (MVIEW's). PStyle is not
-// offered: Triya does not plot by named plot style yet, so a plot style override would do
-// nothing (`layout/viewport-layers.ts` does not read one either).
+// are frozen in every floating viewport and by default in new ones (MVIEW's). PStyle (M6-07) is
+// offered only in a drawing with named plot styles ($PSTYLEMODE 0), as AutoCAD offers it, and
+// overrides the layers' plot style in the viewports (`ADSK_XREC_LAYER_PLOTSTYLE_OVR`), which the
+// plot reads through `layout/viewport-layers.ts`.
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import type { EntityId } from '../model/entity-ids';
@@ -58,8 +60,10 @@ import {
   makeLayer,
   makeProblem,
   matching,
+  plotStyleAsked,
   typed,
 } from './layer';
+import { namedPlotStyles } from '../properties/general';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -68,6 +72,7 @@ const OPTIONS = [
   'Color',
   'Ltype',
   'LWeight',
+  'PStyle',
   'TRansparency',
   'Freeze',
   'Thaw',
@@ -77,6 +82,10 @@ const OPTIONS = [
 ];
 
 const quoted = (s: string) => `"${s}"`;
+
+/** VPLAYER's options in the drawing: PStyle only with named plot styles. */
+const optionsOf = (ctx: CommandContext): string[] =>
+  namedPlotStyles(ctx.model) ? OPTIONS : OPTIONS.filter((o) => o !== 'PStyle');
 
 /**
  * Viewports picked in paper space ("temporarily switches to paper space"): the viewport made
@@ -211,6 +220,11 @@ async function* lweight(ctx: CommandContext): Sub<void> {
   yield* override(ctx, `lineweight to ${lineweightLabel(w)}`, { lineweight: w });
 }
 
+async function* plotStyle(ctx: CommandContext): Sub<void> {
+  const s = yield* plotStyleAsked(ctx);
+  if (s) yield* override(ctx, `plot style to ${quoted(s.name)}`, { plotStyle: s.handle });
+}
+
 async function* transparency(ctx: CommandContext): Sub<void> {
   const text = typed(yield ctx.prompt.string({ message: 'Enter transparency value (0-90)' }));
   if (text === '') return;
@@ -305,6 +319,8 @@ function option(ctx: CommandContext, keyword: string): Sub<void> {
       return ltype(ctx);
     case 'LWeight':
       return lweight(ctx);
+    case 'PStyle':
+      return plotStyle(ctx);
     case 'TRansparency':
       return transparency(ctx);
     case 'Freeze':
@@ -327,7 +343,7 @@ export function vplayerCommand(): CommandDef {
     keepsSelection: true,
     async *run(ctx) {
       for (;;) {
-        const a = yield ctx.prompt.keyword({ message: 'Enter an option', options: OPTIONS });
+        const a = yield ctx.prompt.keyword({ message: 'Enter an option', options: optionsOf(ctx) });
         if (a.kind !== 'keyword') return;
         yield* option(ctx, a.keyword);
       }

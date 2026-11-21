@@ -1383,6 +1383,11 @@ export interface LayerViewportOverride {
   readonly lineweight?: Lineweight;
   /** XRECORD group 440. */
   readonly transparency?: Transparency;
+  /**
+   * A named plot style of ACAD_PLOTSTYLENAME (M6-07), XRECORD group 390 of
+   * `ADSK_XREC_LAYER_PLOTSTYLE_OVR`. Only a drawing with named plot styles ($PSTYLEMODE 0) has one.
+   */
+  readonly plotStyle?: Handle;
 }
 
 /** One dash, gap or dot of a linetype (DXF 49), with its optional shape or text (74–75, 340, 9). */

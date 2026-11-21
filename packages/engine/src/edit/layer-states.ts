@@ -32,6 +32,7 @@ import type { ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
 import { aciOfTrueColor } from '../model/aci';
+import { namedPlotStyles } from '../properties/general';
 import { LINEWEIGHTS } from '../properties/sheet';
 import {
   freezeInViewports,
@@ -120,6 +121,13 @@ const aciOf = (c: Color): number =>
   c.kind === 'aci' ? c.index : c.kind === 'rgb' ? aciOfTrueColor(c.r, c.g, c.b) : 7;
 
 /**
+ * The plot style a colour-dependent drawing gives a layer of colour `c`, as AutoCAD names it in a
+ * layer state and shows it, greyed, in the Layer Properties Manager's Plot Style column: `Color_7`
+ * (a true colour by its nearest ACI).
+ */
+export const colorPlotStyleName = (c: Color): string => `Color_${aciOf(c)}`;
+
+/**
  * A layer's settings now, as a state keeps them: what New saves for it, and what Edit Layer
  * State's "Add layers to layer state" adds (with the app's mirror of the tables).
  */
@@ -145,7 +153,7 @@ export function layerStateEntry(
     linetypeName: linetype?.name ?? 'Continuous',
     lineweight: l.lineweight,
     // A colour-dependent drawing's plot style is the colour's (`Color_7`), as AutoCAD saves it.
-    plotStyle: style?.name ?? `Color_${aciOf(l.color)}`,
+    plotStyle: style?.name ?? colorPlotStyleName(l.color),
     transparency: l.transparency,
   };
 }
@@ -461,7 +469,10 @@ const VIEWPORT_PROPERTIES =
   LAYER_STATE_MASK.color |
   LAYER_STATE_MASK.linetype |
   LAYER_STATE_MASK.lineweight |
-  LAYER_STATE_MASK.transparency;
+  LAYER_STATE_MASK.transparency |
+  // A viewport overrides a named plot style too (M6-07); a colour-dependent state's `Color_7`
+  // names no plot style of the drawing, so it restores nothing either way.
+  LAYER_STATE_MASK.plotStyle;
 
 /** The overrides "Apply properties as viewport overrides" gives a layer from `e` under `mask`. */
 function overrideProps(
@@ -471,12 +482,17 @@ function overrideProps(
 ): ViewportOverrideProps {
   const has = (bit: number) => (mask & bit) !== 0;
   const linetype = has(LAYER_STATE_MASK.linetype) ? linetypeOf(model, e) : undefined;
+  const plotStyle =
+    has(LAYER_STATE_MASK.plotStyle) && namedPlotStyles(model)
+      ? plotStyleOf(model, e.plotStyle)
+      : undefined;
   return {
     ...(has(LAYER_STATE_MASK.color) &&
       (e.color.kind === 'aci' || e.color.kind === 'rgb') && { color: e.color }),
     ...(linetype !== undefined && { linetype }),
     ...(has(LAYER_STATE_MASK.lineweight) && { lineweight: e.lineweight }),
     ...(has(LAYER_STATE_MASK.transparency) && { transparency: e.transparency }),
+    ...(plotStyle !== undefined && { plotStyle }),
   };
 }
 

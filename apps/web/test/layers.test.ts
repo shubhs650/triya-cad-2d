@@ -7,8 +7,10 @@ import { describe, expect, it } from 'vitest';
 import {
   layerColorBooks,
   layerLinetypes,
+  layerPlotStyles,
   layerRows,
   linetypeDashes,
+  namedPlotStylesOf,
   parseLayerTransparency,
 } from '../src/layers';
 
@@ -255,6 +257,70 @@ describe('the VP cells of the viewport made current (M6-02 part 8)', () => {
       color: { label: 'red' },
       overridden: {},
     });
+  });
+});
+
+describe('the Plot Style and VP Plot Style cells (M6-07)', () => {
+  // Named plot styles: Walls plots by Heavy, overridden to Light in viewport 31; 0 and doors name
+  // none, so plot by Normal.
+  const named: DocumentInit = {
+    ...init,
+    header: [...init.header!, ['$PSTYLEMODE', 0]],
+    tables: {
+      ...init.tables,
+      plotStyles: [
+        { handle: '82', name: 'Light' },
+        { handle: '81', name: 'Heavy' },
+        { handle: '80', name: 'Normal' },
+      ],
+      layers: init.tables!.layers!.map((l) =>
+        l.handle === '12'
+          ? { ...l, plotStyle: '81', viewportOverrides: [{ viewport: '31', plotStyle: '82' }] }
+          : l,
+      ),
+    },
+  };
+  const row = (rows: ReturnType<typeof layerRows>, name: string) =>
+    rows.find((r) => r.name === name)!;
+
+  it('gives each row its named plot style to edit, Normal when it names none', () => {
+    const rows = layerRows(named, []);
+    expect(row(rows, 'Walls')).toMatchObject({ plotStyle: 'Heavy', value: { plotStyle: '81' } });
+    expect(row(rows, '0')).toMatchObject({ plotStyle: 'Normal', value: { plotStyle: '80' } });
+  });
+
+  it("gives the viewport made current's override, marked", () => {
+    const rows = layerRows(named, [], '1B', 'mm', '31');
+    expect(row(rows, 'Walls').vp).toMatchObject({
+      plotStyle: 'Light',
+      value: { plotStyle: '82' },
+      overridden: { plotStyle: true },
+    });
+    expect(row(rows, 'doors').vp).toMatchObject({ plotStyle: 'Normal', overridden: {} });
+    expect(row(layerRows(named, [], '1B', 'mm', '32'), 'Walls').vp).toMatchObject({
+      plotStyle: 'Heavy',
+      overridden: {},
+    });
+  });
+
+  it("shows a colour-dependent drawing's colour plot style, with nothing to edit", () => {
+    const rows = layerRows(init, [], '1B', 'mm', '31');
+    expect(row(rows, 'Walls').plotStyle).toBe('Color_1');
+    expect(row(rows, 'Walls').value.plotStyle).toBeUndefined();
+    expect(row(rows, '0').plotStyle).toBe('Color_7');
+    expect(row(rows, 'Walls').vp).toMatchObject({ plotStyle: 'Color_1' });
+    expect(row(rows, 'Walls').vp!.value.plotStyle).toBeUndefined();
+  });
+
+  it('follows a change of $PSTYLEMODE', () => {
+    const cs = { header: [{ name: '$PSTYLEMODE', before: 0, after: 1 }] } as unknown as ChangeSet;
+    expect(namedPlotStylesOf(named, [])).toBe(true);
+    expect(namedPlotStylesOf(named, [cs])).toBe(false);
+    expect(row(layerRows(named, [cs]), 'Walls').plotStyle).toBe('Color_1');
+  });
+
+  it('lists the plot styles Select Plot Style offers: Normal first, the others by name', () => {
+    expect(layerPlotStyles(named, []).map((s) => s.name)).toEqual(['Normal', 'Heavy', 'Light']);
   });
 });
 
