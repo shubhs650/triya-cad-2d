@@ -315,6 +315,8 @@ describe('palette search', () => {
       // M6-02 part 7: a layout viewport maximized to fill the canvas, and restored.
       'VPMAX',
       'VPMIN',
+      // M6-02 part 11: the Viewports dialog.
+      'VPORTS',
       // M5-01 part 4: the Write Block dialog.
       'WBLOCK',
       'WIPEOUT',

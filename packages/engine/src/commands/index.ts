@@ -100,7 +100,20 @@ export {
   NO_MODEL_VIEWPORT,
   VPORTS_IN_BLOCK_EDITOR,
   dashVportsCommand,
+  type VportsState,
 } from './vports';
+export { modelViews, vportsCommand, vportsCommands } from './vports-dialog';
+export {
+  ACTIVE_MODEL_CONFIGURATION,
+  STANDARD_VIEWPORTS,
+  spacedViewports,
+  standardViewports,
+  type NamedViewportsChoice,
+  type NewViewportsChoice,
+  type StandardViewports,
+  type ViewportsDialogChoice,
+  type ViewportsDialogRequest,
+} from './standard-viewports';
 export { polygonalBoundary, vpclipCommand } from './vpclip';
 export { vplayerCommand } from './vplayer';
 export {

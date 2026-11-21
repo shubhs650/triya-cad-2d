@@ -250,7 +250,7 @@ type NewClip = { readonly id: EntityId } | { readonly polygon: LwPolylineGeometr
  * view `views` gives it (Restore); the one viewport framed by `clip`'s box is clipped by it
  * (Object, Polygonal).
  */
-async function addViewports(
+export async function addViewports(
   ctx: CommandContext,
   frames: readonly Box[],
   clip?: NewClip,
@@ -442,18 +442,27 @@ async function* restoreConfiguration(ctx: CommandContext): Sub<void> {
   }
   const frame = yield* viewportArea(ctx);
   if (!frame) return;
-  const views = tiles.map((t) => {
+  await addViewports(
+    ctx,
+    tiles.map((t) => cornersIn(t.corners, frame)),
+    undefined,
+    tileViews(tiles),
+  );
+}
+
+/**
+ * The view each tile shows as a layout viewport can show it: its record's centre and height in
+ * plan; a 3D or twisted view gives none (model space's extents instead).
+ */
+export function tileViews(
+  tiles: readonly ConfigTile[],
+): ({ center: Vec2; height: number } | undefined)[] {
+  return tiles.map((t) => {
     const d = t.source.direction;
     if (!(d.z > 0 && d.x === 0 && d.y === 0 && t.source.twist === 0)) return undefined;
     const { center, height } = recordView(t.source);
     return height > 0 && Number.isFinite(height) ? { center, height } : undefined;
   });
-  await addViewports(
-    ctx,
-    tiles.map((t) => cornersIn(t.corners, frame)),
-    undefined,
-    views,
-  );
 }
 
 export function mviewCommand(): CommandDef {

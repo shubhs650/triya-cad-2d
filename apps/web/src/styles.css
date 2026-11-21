@@ -3776,6 +3776,71 @@ button {
 }
 
 /* ULAYERS' Underlay Layers dialog (M2-56 part 1). */
+.viewports-dialog {
+  max-width: min(640px, calc(100vw - 32px));
+}
+
+.viewports-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.viewports-list select,
+.viewports-named {
+  width: 200px;
+}
+
+.viewports-named {
+  height: 200px;
+  overflow: auto;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.viewports-named [role='option'] {
+  padding: 2px 6px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.viewports-named [role='option'][aria-selected='true'] {
+  background: var(--chrome-hover);
+  outline: 1px solid var(--chrome-border);
+}
+
+.viewports-preview {
+  position: relative;
+  width: 260px;
+  height: 180px;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.viewports-tile {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--chrome-text-muted);
+  border-radius: 0;
+  background: transparent;
+  color: var(--chrome-text);
+  font-size: 11px;
+}
+
+.viewports-tile[aria-pressed='true'] {
+  border: 2px solid var(--accent);
+}
+
+.viewports-problem {
+  color: var(--danger-text);
+}
+
 .underlay-layers .cad-dialog-field {
   margin-bottom: 6px;
 }
