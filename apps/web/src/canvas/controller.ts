@@ -1043,6 +1043,8 @@ export class CanvasController {
     this.#hit = undefined;
     this.#acquired = [];
     this.#leftWork(this.#isOutside());
+    // The crosshairs turn with a twisted viewport's model space (M6-02 part 15).
+    this.#paintCursor();
     // The grid is model space's through the viewport, paper space's on the sheet (M6-02 part 9).
     if (this.#drafting.grid && (before === undefined) !== (this.#current === undefined)) {
       this.#host.setStyle(this.#style());
