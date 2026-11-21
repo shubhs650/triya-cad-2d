@@ -170,6 +170,8 @@ describe('MVIEW', () => {
       'OFF',
       'Fit',
       'Lock',
+      'NEw',
+      'NAmed',
       'Object',
       'Polygonal',
       'Restore',

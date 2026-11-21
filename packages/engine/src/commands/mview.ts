@@ -17,8 +17,9 @@
 // on the current layer. Object and Polygonal (M6-02 part 2) make a non-rectangular viewport
 // framed by the object's or the polygon's box and clipped by it, as VPCLIP clips one
 // (`vpclip.ts`, `edit/viewport-clip.ts`); the polygon is a closed polyline made first, as
-// AutoCAD makes it. AutoCAD's other options wait for later parts of M6-02: Restore (VPORTS'
-// configurations) and NEw and NAmed (the Viewports dialog); Shadeplot is 3D (excluded).
+// AutoCAD makes it. Restore (M6-02 part 10) lays out VPORTS' configurations; NEw and NAmed
+// (M6-02 part 14, `mview-place.ts`) place a view of model space in a new display-locked viewport
+// at a scale. Shadeplot is 3D (excluded).
 //     LAyer:     Reset viewport layer property overrides back to global properties [Yes/No] <Yes>:
 //                Select viewports:                         their layer overrides removed
 // LAyer (M6-02 part 5) removes the colour, linetype, lineweight and transparency overrides
@@ -48,6 +49,8 @@ import { isPaperSpace, modelSpaceOf } from './bus';
 import type { CommandContext, CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import { addBoundary, polygonProblem, polygonalBoundary } from './vpclip';
+import { namedViewAsked, newViewWindow, placeView } from './mview-place';
+import type { ViewExtent } from '../edit/named-view';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -255,8 +258,10 @@ export async function addViewports(
   frames: readonly Box[],
   clip?: NewClip,
   views?: readonly ({ center: Vec2; height: number } | undefined)[],
+  /** The space to add them to (`ctx.space` by default), and whether they are display locked. */
+  options: { readonly space?: Handle; readonly locked?: boolean } = {},
 ): Promise<void> {
-  const space = ctx.space;
+  const space = options.space ?? ctx.space;
   const extents = await modelExtents(ctx);
   const all = [...ctx.model.entities()].filter((e) => e.geom.kind === 'VIEWPORT');
   const here = all.filter((e) => e.owner === space);
@@ -297,7 +302,8 @@ export async function addViewports(
         };
       // Layers frozen by default in new viewports (VPLAYER Vpvisdflt, DXF 70 bit 2) are frozen
       // in it, as AutoCAD's new viewports have them.
-      const geom = newViewportGeometry(frame, view, id++, current ? ++status : 0);
+      const flags = FLOATING_VIEWPORT_FLAGS | (options.locked ? VIEWPORT_LOCKED : 0);
+      const geom = newViewportGeometry(frame, view, id++, current ? ++status : 0, flags);
       const vp = b.addEntity({
         owner: space,
         layer,
@@ -465,6 +471,16 @@ export function tileViews(
   });
 }
 
+/** A display-locked viewport in `sheet` showing `view` at the scale chosen, where it is placed. */
+async function* placeViewport(ctx: CommandContext, sheet: Handle, view: ViewExtent): Sub<void> {
+  const frame = yield* placeView(ctx, sheet, view);
+  if (!frame) return;
+  await addViewports(ctx, [frame], undefined, [{ center: view.center, height: view.height }], {
+    space: sheet,
+    locked: true,
+  });
+}
+
 export function mviewCommand(): CommandDef {
   return {
     name: 'MVIEW',
@@ -484,6 +500,8 @@ export function mviewCommand(): CommandDef {
           'OFF',
           'Fit',
           'Lock',
+          'NEw',
+          'NAmed',
           'Object',
           'Polygonal',
           'Restore',
@@ -513,6 +531,15 @@ export function mviewCommand(): CommandDef {
         case 'Restore':
           yield* restoreConfiguration(ctx);
           return;
+        case 'NEw':
+        case 'NAmed': {
+          // NEw shows the Model tab while its window is picked: the layout is kept to add to.
+          const sheet = ctx.space;
+          const view =
+            a.keyword === 'NEw' ? yield* newViewWindow(ctx, sheet) : yield* namedViewAsked(ctx);
+          if (view) yield* placeViewport(ctx, sheet, view);
+          return;
+        }
         case 'Object': {
           const id = yield* clipObject(ctx);
           if (id !== undefined) {
