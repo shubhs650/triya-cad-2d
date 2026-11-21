@@ -16,7 +16,7 @@ import {
   type DrawnEntity,
   type SpaceTriage,
 } from '../../../packages/testkit/src/fidelity/triage';
-import { activeCanvas, expectDrawn, openWithPicker } from '../app/page';
+import { activeCanvas, expectDrawn, gridOff, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 /**
@@ -113,6 +113,9 @@ export async function settled(page: Page): Promise<Buffer> {
 export async function shootSpace(page: Page, i: number): Promise<Buffer> {
   await spaceTabs(page).nth(i).click();
   await expect(spaceTabs(page).nth(i)).toHaveAttribute('aria-selected', 'true');
+  // A drawing opens with the grid its viewport saved (M6-02 part 19). The grid is a drafting
+  // aid, not part of the drawing, so the golden images are drawn without it.
+  await gridOff(page);
   let shot = await settled(page);
   if (i === 0) {
     await zoomExtents(page).click();
