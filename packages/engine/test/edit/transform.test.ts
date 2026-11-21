@@ -354,13 +354,14 @@ describe('what cannot be carried', () => {
     ).toBeUndefined();
   });
 
-  it('does not mirror a region, and turns a viewport by right angles only', () => {
+  it('does not mirror a region, and turns a viewport by any angle but never mirrors one', () => {
     expect(transformProblem({ kind: 'REGION', loops: [] } as unknown as EntityGeometry, flip)).toBe(
       'a region cannot be mirrored',
     );
     const vp = { kind: 'VIEWPORT', id: 2 } as EntityGeometry;
     expect(transformProblem(vp, turnAbout({ x: 0, y: 0 }, Math.PI / 2))).toBeUndefined();
-    expect(transformProblem(vp, turn)).toBe('a viewport turns by right angles only');
+    // Turned by other than right angles, the edit clips it to its turned frame (M6-02 part 16).
+    expect(transformProblem(vp, turn)).toBeUndefined();
     expect(transformProblem(vp, flip)).toBe('a viewport cannot be mirrored');
     expect(transformProblem({ ...vp, id: 1 } as EntityGeometry, moveBy({ x: 1, y: 0 }))).toBe(
       'the paper space viewport cannot be edited',

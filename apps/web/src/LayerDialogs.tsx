@@ -6,6 +6,10 @@
 //   opens Load or Reload Linetypes (M5-08) and loads the linetypes picked, one LINETYPE step.
 // - Lineweight: the list of AutoCAD's lineweights and Default, with Original and New below.
 // - Layer Transparency: "Transparency value (0-90)", typed or picked in tens.
+// - Select Plot Style (M6-07; AutoCAD 2024 Help, "Select Plot Style Dialog Box"), from the Plot
+//   Style and VP Plot Style cells of a drawing with named plot styles: the drawing's plot styles
+//   (ACAD_PLOTSTYLENAME), Normal first, with Original and New below. Help's Active Plot Style
+//   Table list and Editor button edit .stb files, which the manager does not; they are left out.
 // Enter is OK and Esc Cancel in each (`Modal`); every list is keyboard operable.
 import { useRef, useState, type KeyboardEvent } from 'react';
 import {
@@ -15,6 +19,7 @@ import {
   type LinetypeRecord,
   type Lineweight,
   type LineweightUnits,
+  type SymbolTableRecord,
 } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
 import { parseLayerTransparency } from './layers';
@@ -238,6 +243,51 @@ export function LayerTransparencyDialog({
       <p className="message error" role="alert">
         {invalid}
       </p>
+      <Buttons ok={ok} cancel={onCancel} />
+    </Modal>
+  );
+}
+
+export function SelectPlotStyleDialog({
+  initial,
+  styles,
+  onOk,
+  onCancel,
+}: {
+  /** The plot style the layer (or the viewport) has now. */
+  initial: Handle | undefined;
+  /** The drawing's named plot styles, in the order listed. */
+  styles: readonly SymbolTableRecord[];
+  onOk: (style: Handle) => void;
+  onCancel: () => void;
+}) {
+  const [chosen, setChosen] = useState<Handle | undefined>(initial ?? styles[0]?.handle);
+  const name = (h: Handle | undefined) => styles.find((s) => s.handle === h)?.name ?? '';
+  const ok = () => {
+    if (chosen !== undefined) onOk(chosen);
+    else onCancel();
+  };
+  return (
+    <Modal label="Select Plot Style" className="layer-plot-style" onOk={ok} onCancel={onCancel}>
+      <label className="layer-plot-style-list">
+        <span>Plot styles:</span>
+        <select
+          size={10}
+          aria-label="Plot styles"
+          autoFocus
+          value={chosen ?? ''}
+          onChange={(e) => setChosen(e.currentTarget.value)}
+          onDoubleClick={ok}
+        >
+          {styles.map((s) => (
+            <option key={s.handle} value={s.handle}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p>Original: {name(initial)}</p>
+      <p>New: {name(chosen)}</p>
       <Buttons ok={ok} cancel={onCancel} />
     </Modal>
   );

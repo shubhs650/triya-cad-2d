@@ -42,6 +42,7 @@ import { domain, pointAt } from '../../geom/eval';
 import { intersect } from '../../geom/intersect';
 import { closestPoint } from '../../geom/closest';
 import type { Tolerance } from '../../geom/tolerance';
+import { inScreenWindow, screenOffset, screenWindowCorners } from '../../geom/screen-window';
 import type { Vec2 } from '../../geom/types';
 import { distance } from '../../geom/vec';
 import { eraseObjects, reshapeObject, revertChanges } from '../../edit/edit';
@@ -58,6 +59,7 @@ import type { EntityId } from '../../model/entity-ids';
 import type { Entity, EntityGeometry } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
 import { reshapePreview, type CommandPreview, type PreviewQuery } from '../command-preview';
+import { shownTwist } from '../mspace';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { toleranceFor } from './offset';
 import { optionVariable, setOptionVariable } from './option-variables';
@@ -593,7 +595,8 @@ class Runner {
 
   /** COMMANDPREVIEW of a crossing window from `a` to the cursor `b`. */
   async windowPreview(a: Vec2, b: Vec2, work: Work): Promise<CommandPreview | undefined> {
-    if (a.x === b.x || a.y === b.y) return undefined;
+    const d = screenOffset(a, b, shownTwist(this.#ctx));
+    if (d.x === 0 || d.y === 0) return undefined;
     await this.measure();
     return this.#planned(this.#windowCrossings(a, b), work);
   }
@@ -634,16 +637,15 @@ class Runner {
     return this.#each(this.#windowCrossings(a, b), work);
   }
 
-  /** The point of each object in a crossing window nearest its first corner, nearest first. */
+  /**
+   * The point of each object in a crossing window nearest its first corner, nearest first. The
+   * window is square to the screen, which a twisted viewport turns (M6-02 part 16).
+   */
   #windowCrossings(a: Vec2, b: Vec2): { id: EntityId; point: Vec2 }[] {
-    const lo = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) };
-    const hi = { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) };
-    const inside = (p: Vec2, tol: Tolerance): boolean =>
-      p.x >= lo.x - tol.linear &&
-      p.x <= hi.x + tol.linear &&
-      p.y >= lo.y - tol.linear &&
-      p.y <= hi.y + tol.linear;
-    const corners = [lo, { x: hi.x, y: lo.y }, hi, { x: lo.x, y: hi.y }];
+    const turn = shownTwist(this.#ctx);
+    const corners = screenWindowCorners(a, b, turn);
+    const { minX, minY, maxX, maxY } = boxOf(corners);
+    const inside = (p: Vec2, tol: Tolerance): boolean => inScreenWindow(a, b, p, turn, tol.linear);
     const sides: Curve[] = corners.map((p, i) => ({
       kind: 'LINE',
       start: p,
@@ -654,10 +656,10 @@ class Runner {
       // Only what reaches the window: the preview asks at every cursor move.
       const box = curveBounds(c, tol);
       if (
-        box.minX > hi.x + tol.linear ||
-        box.maxX < lo.x - tol.linear ||
-        box.minY > hi.y + tol.linear ||
-        box.maxY < lo.y - tol.linear
+        box.minX > maxX + tol.linear ||
+        box.maxX < minX - tol.linear ||
+        box.minY > maxY + tol.linear ||
+        box.maxY < minY - tol.linear
       )
         continue;
       const p = nearestInside(c, sides, a, (q) => inside(q, tol), tol);

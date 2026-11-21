@@ -109,7 +109,7 @@ describe('MSPACE and PSPACE', () => {
       paper: [
         ['50', viewport({ id: 1, status: 1 })],
         ['51', viewport({ flags: FLOATING_VIEWPORT_FLAGS | VIEWPORT_OFF })],
-        ['52', viewport({ twist: Math.PI / 6 })],
+        ['52', viewport({ viewDirection: { x: 1, y: -1, z: 1 } })],
       ],
     });
     await t.bus.script(['MS']);
@@ -194,10 +194,10 @@ describe('MSPACE and PSPACE', () => {
 });
 
 describe('the viewports one can work in', () => {
-  it('are on, in plan and untwisted; the first is the one stacked first', () => {
+  it('are on and in plan, twisted or not (M6-02 part 15); the first is the one stacked first', () => {
     expect(workableViewport(viewport())).toBe(true);
     expect(workableViewport(viewport({ id: 1 }))).toBe(false);
-    expect(workableViewport(viewport({ twist: 0.1 }))).toBe(false);
+    expect(workableViewport(viewport({ twist: 0.1 }))).toBe(true);
     expect(workableViewport(viewport({ viewDirection: { x: 1, y: -1, z: 1 } }))).toBe(false);
     const t = drawing();
     expect(firstViewport(t.model, PAPER_SPACE)?.handle).toBe(B);

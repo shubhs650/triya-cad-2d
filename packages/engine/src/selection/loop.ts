@@ -30,6 +30,7 @@
 // objects replace the set and Shift toggles them in or out (a Shift step finding nothing clears
 // the set at 0, keeps it at 3); 1 and 2 add, Shift removing. Without PICKAUTO's bit 1 a pick that
 // finds nothing at "Select objects" starts no window (at `Command:` one always starts).
+import { screenOffset, screenWindowCorners } from '../geom/screen-window';
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
@@ -127,6 +128,11 @@ export interface SelectionLoopHost {
   pickauto?(): number;
   /** The objects of `ids` a command that edits may not take while a reference is edited in place. */
   outsideWorkingSet?(ids: readonly EntityId[]): ReadonlySet<EntityId>;
+  /**
+   * The angle the canvas shows the space's X axis at: a twisted layout viewport's (M6-02 part
+   * 15), whose windows are square to the screen. Absent is 0.
+   */
+  turn?(): number;
 }
 
 export interface SelectionLoopOptions {
@@ -364,9 +370,16 @@ export class SelectionLoop {
     }
     if (c) {
       this.#corner = undefined;
-      const crossing = c.kind === 'auto' ? p.x < c.from.x : c.kind === 'crossing';
+      // Dragged leftward on the screen, which a twisted viewport turns (M6-02 part 15).
+      const turn = this.#host.turn?.() ?? 0;
+      const crossing =
+        c.kind === 'auto' ? screenOffset(c.from, p, turn).x < 0 : c.kind === 'crossing';
       const r = await this.#host.request({ op: 'select', a: c.from, b: p, crossing });
-      const window = { a: c.from, b: p };
+      // Turned with the screen, the window is a turned rectangle in the world: STRETCH and
+      // -ATTEDIT take its corners as a polygon (M6-02 part 16).
+      const window: SelectionWindow = turn
+        ? polygonWindow(screenWindowCorners(c.from, p, turn))
+        : { a: c.from, b: p };
       if (c.op !== 'remove' && r.ok) this.#window = window;
       return await this.#take(r, c.op, 'Specify opposite corner:', { window, crossing });
     }

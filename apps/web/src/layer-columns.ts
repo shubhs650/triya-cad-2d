@@ -20,11 +20,13 @@ export type LayerColumnKey =
   | 'linetype'
   | 'lineweight'
   | 'transparency'
+  | 'plotStyle'
   | 'description'
   | 'vpColor'
   | 'vpLinetype'
   | 'vpLineweight'
-  | 'vpTransparency';
+  | 'vpTransparency'
+  | 'vpPlotStyle';
 
 export interface LayerColumn {
   readonly key: LayerColumnKey;
@@ -57,13 +59,15 @@ export const LAYER_COLUMNS: readonly LayerColumn[] = [
   { key: 'linetype', title: 'Linetype', width: 130 },
   { key: 'lineweight', title: 'Lineweight', width: 110, fits: true },
   { key: 'transparency', title: 'Transparency', width: 110, fits: true },
+  // M6-07: after Transparency, as AutoCAD's manager has it.
+  { key: 'plotStyle', title: 'Plot Style', width: 110 },
   { key: 'description', title: 'Description', width: 200 },
-  // M6-02 part 8: the viewport made current's overrides (AutoCAD's VP Plot Style waits with a
-  // Plot Style column, M6-07).
+  // M6-02 part 8: the viewport made current's overrides (VP Plot Style, M6-07).
   { key: 'vpColor', title: 'VP Color', layoutOnly: true, width: 110 },
   { key: 'vpLinetype', title: 'VP Linetype', layoutOnly: true, width: 130 },
   { key: 'vpLineweight', title: 'VP Lineweight', layoutOnly: true, width: 110, fits: true },
   { key: 'vpTransparency', title: 'VP Transparency', layoutOnly: true, width: 120, fits: true },
+  { key: 'vpPlotStyle', title: 'VP Plot Style', layoutOnly: true, width: 120 },
 ];
 
 const COLUMN = new Map(LAYER_COLUMNS.map((c) => [c.key, c]));
@@ -289,6 +293,7 @@ const COMPARE: Record<LayerColumnKey, (a: LayerRow, b: LayerRow) => number> = {
   linetype: (a, b) => text(a.linetype, b.linetype),
   lineweight: (a, b) => lineweightOrder(a.value.lineweight) - lineweightOrder(b.value.lineweight),
   transparency: (a, b) => Number(a.transparency) - Number(b.transparency),
+  plotStyle: (a, b) => text(a.plotStyle, b.plotStyle),
   // In paper space (no VP cells) every row ties, and the rows keep their order by name.
   vpColor: (a, b) =>
     a.vp && b.vp
@@ -301,6 +306,7 @@ const COMPARE: Record<LayerColumnKey, (a: LayerRow, b: LayerRow) => number> = {
       : 0,
   vpTransparency: (a, b) =>
     a.vp && b.vp ? Number(a.vp.transparency) - Number(b.vp.transparency) : 0,
+  vpPlotStyle: (a, b) => (a.vp && b.vp ? text(a.vp.plotStyle, b.vp.plotStyle) : 0),
   description: (a, b) => text(a.description, b.description),
 };
 

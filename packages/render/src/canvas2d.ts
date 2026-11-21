@@ -2352,7 +2352,13 @@ export class Canvas2DRenderer implements Renderer {
     const toward = spec.color ?? foreground;
     const dx = (x: number) => m.a * (x - ox) + m.e;
     const dy = (y: number) => m.d * (y - oy) + m.f;
-    if (lines.turned) return this.#drawTurnedGrid(ctx, lines, dx, dy, spec);
+    if (lines.turned) return this.#drawTurnedGrid(ctx, lines, view, spec);
+    if (m.b !== 0 || m.c !== 0) {
+      // Model space through a twisted viewport (M6-02 part 15): the frame turns the lines.
+      const frame = lines.extent ?? view.box;
+      const turned = { angle: 0, base: { x: 0, y: 0 }, frame };
+      return this.#drawTurnedGrid(ctx, { ...lines, turned }, view, spec);
+    }
     if (spec.dots) {
       // GRIDSTYLE (M3-06 part 6): a dot of a device pixel or two where the lines cross.
       const size = Math.max(1, Math.round(this.#dpr));
@@ -2400,20 +2406,17 @@ export class Canvas2DRenderer implements Renderer {
    * sides, or a dot where two cross, mapped to the device; not snapped to whole pixels, as a
    * slanted line has none to keep to.
    */
-  #drawTurnedGrid(
-    ctx: Canvas2D,
-    lines: GridLines,
-    dx: (x: number) => number,
-    dy: (y: number) => number,
-    spec: GridSpec,
-  ): void {
+  #drawTurnedGrid(ctx: Canvas2D, lines: GridLines, view: DrawFrame, spec: GridSpec): void {
     const { angle, base, frame } = lines.turned!;
+    const { m, ox, oy } = view;
     const c = Math.cos(angle);
     const s = Math.sin(angle);
-    const at = (u: number, v: number): [number, number] => [
-      dx(base.x + u * c - v * s),
-      dy(base.y + u * s + v * c),
-    ];
+    // The whole frame matrix: a twisted viewport's turns the device axes too (M6-02 part 15).
+    const at = (u: number, v: number): [number, number] => {
+      const x = base.x + u * c - v * s - ox;
+      const y = base.y + u * s + v * c - oy;
+      return [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
+    };
     const { background, foreground } = this.#style;
     const toward = spec.color ?? foreground;
     if (spec.dots) {

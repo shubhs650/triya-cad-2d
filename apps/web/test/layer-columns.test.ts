@@ -35,6 +35,7 @@ const row = (name: string, extra: Partial<LayerRow> = {}): LayerRow => ({
   lineweight: 'Default',
   description: '',
   transparency: '0',
+  plotStyle: 'Color_7',
   value: {
     color: { kind: 'aci', index: 7 },
     linetype: '14',
@@ -61,16 +62,19 @@ describe('the manager’s columns (M5-05 part 3)', () => {
       'Linetype',
       'Lineweight',
       'Transparency',
+      'Plot Style',
       'Description',
     ]);
     expect(keys(true)).toContain('VP Freeze');
-    // M6-02 part 8: the viewport override columns, after Description, in a layout only.
-    expect(keys(true).slice(-5)).toEqual([
+    // M6-02 part 8: the viewport override columns, after Description, in a layout only; VP Plot
+    // Style last (M6-07).
+    expect(keys(true).slice(-6)).toEqual([
       'Description',
       'VP Color',
       'VP Linetype',
       'VP Lineweight',
       'VP Transparency',
+      'VP Plot Style',
     ]);
   });
 
@@ -92,12 +96,13 @@ describe('the manager’s columns (M5-05 part 3)', () => {
     expect(new Set(s.order).size).toBe(LAYER_COLUMNS.length);
     // On follows Name as it does by default; Linetype follows Color; the VP columns (M6-02
     // part 8) follow Description, wherever the user put it.
-    expect(s.order.slice(0, 8)).toEqual([
+    expect(s.order.slice(0, 9)).toEqual([
       'description',
       'vpColor',
       'vpLinetype',
       'vpLineweight',
       'vpTransparency',
+      'vpPlotStyle',
       'name',
       'on',
       'frozen',
@@ -271,6 +276,7 @@ describe('the rows’ column tracks and the columns that cut their contents (M5-
       'name',
       'color',
       'linetype',
+      'plotStyle',
       'description',
     ]);
     const narrowed = { ...DEFAULT_LAYER_COLUMNS, widths: { on: 40, lineweight: 110, name: 600 } };
@@ -279,6 +285,7 @@ describe('the rows’ column tracks and the columns that cut their contents (M5-
       'on',
       'color',
       'linetype',
+      'plotStyle',
       'description',
     ]);
     // Only the columns shown.
@@ -287,6 +294,7 @@ describe('the rows’ column tracks and the columns that cut their contents (M5-
       'name',
       'color',
       'linetype',
+      'plotStyle',
     ]);
   });
 });

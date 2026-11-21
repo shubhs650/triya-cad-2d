@@ -121,6 +121,10 @@ FIXTURE_SAVES = (
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "vplayer"),
     ("third-party/ezdxf/examples_dxf/text_in_viewports.dxf", "vplayer"),
     ("self-authored/viewport-overrides.dxf", "vplayer"),
+    # VPLAYER PStyle and VP Plot Style on the named-plot-style test drawing: the
+    # ADSK_XREC_LAYER_PLOTSTYLE_OVR record rewritten and made (M6-07, DEC-078,
+    # packages/testkit/src/plot/vp-plot-style.test.ts).
+    ("fixtures/plot-styles/named-plot-styles.dxf", "vplayer"),
     # -VPORTS on model space's tiles and its named configurations: VPORT records added, updated
     # and removed (M6-02 part 10, packages/testkit/src/export/export-vports.corpus.test.ts).
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "vports"),

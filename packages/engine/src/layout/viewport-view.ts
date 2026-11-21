@@ -6,8 +6,8 @@
 // ("Viewport display locking ... prevents the scale from being changed"), which the canvas does.
 import type { Vec2 } from '../geom/types';
 import type { ViewportGeometry } from '../model/types';
-import { workableViewport } from './current-viewport';
-import { VIEWPORT_LOCKED, viewportScale, viewportTransform } from './viewport';
+import { modelPointOf, paperPointOf, workableViewport } from './current-viewport';
+import { VIEWPORT_LOCKED, viewportScale } from './viewport';
 
 /**
  * A viewport's view in model space: the point at the middle of its frame and the model units its
@@ -18,13 +18,12 @@ export interface ViewportView {
   readonly height: number;
 }
 
-/** The viewport's view as model space has it. Valid for a workable (plan, untwisted) viewport. */
+/**
+ * The viewport's view as model space has it. Valid for a workable (plan) viewport; a twisted
+ * one's height is still measured across its frame, along the view's own Y.
+ */
 export function viewportViewOf(g: ViewportGeometry): ViewportView {
-  const t = viewportTransform(g);
-  return {
-    center: { x: (g.center.x - t.e) / t.a, y: (g.center.y - t.f) / t.d },
-    height: g.viewHeight,
-  };
+  return { center: modelPointOf(g, g.center), height: g.viewHeight };
 }
 
 /**
@@ -34,8 +33,8 @@ export function viewportViewOf(g: ViewportGeometry): ViewportView {
  */
 export function withViewportView(g: ViewportGeometry, view: ViewportView): ViewportGeometry {
   const s = viewportScale(g);
-  const t = viewportTransform(g);
-  const shown = { x: t.a * view.center.x + t.e, y: t.d * view.center.y + t.f };
+  // The view centre is in the twisted display coordinates, so a sheet offset moves it as is.
+  const shown = paperPointOf(g, view.center);
   return {
     ...g,
     viewCenter: {

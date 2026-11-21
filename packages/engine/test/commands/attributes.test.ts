@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
+  FLOATING_VIEWPORT_FLAGS,
   PromptBus,
   attributeEntries,
   builtinCommands,
@@ -24,7 +25,7 @@ import {
   type ViewReply,
   type ViewRequest,
 } from '../../src/index';
-import { blockRecord, entityInit, layer, sampleInit } from '../model/fixtures';
+import { PAPER_SPACE, blockRecord, entityInit, layer, sampleInit } from '../model/fixtures';
 
 const STANDARD = '30';
 const NOTES_STYLE = '31';
@@ -115,7 +116,37 @@ const insert = (block: string, at: { x: number; y: number }, attributes: InsertA
  * A title block TB (title, revision, multiline notes, an invisible attribute and a constant
  * logo) inserted twice, at (100, 0) and (300, 0), and a block without attributes at (500, 0).
  */
-function setup(o: { fonts?: boolean; namedPlotStyles?: boolean; books?: boolean } = {}) {
+/**
+ * A layout viewport twisted 45°, 1:1, showing model (101, 6) at paper (300, 100) (M6-02 part 16).
+ */
+const TWISTED_VIEW = (() => {
+  const c = Math.SQRT1_2;
+  return {
+    kind: 'VIEWPORT' as const,
+    center: { x: 300, y: 100 },
+    width: 40,
+    height: 30,
+    id: 2,
+    status: 2,
+    flags: FLOATING_VIEWPORT_FLAGS,
+    // The view centre in display coordinates: model (101, 6) turned 45°.
+    viewCenter: { x: c * (101 - 6), y: c * (101 + 6) },
+    viewHeight: 30,
+    viewDirection: { x: 0, y: 0, z: 1 },
+    viewTarget: { x: 0, y: 0, z: 0 },
+    twist: Math.PI / 4,
+    lensLength: 50,
+    frontClip: 0,
+    backClip: 0,
+    frozenLayers: [],
+    plotStyleSheet: '',
+    renderMode: 0,
+  };
+})();
+
+function setup(
+  o: { fonts?: boolean; namedPlotStyles?: boolean; books?: boolean; twisted?: boolean } = {},
+) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
@@ -206,6 +237,7 @@ function setup(o: { fonts?: boolean; namedPlotStyles?: boolean; books?: boolean 
         ...text('PART', 'P-1', { x: 700, y: 0 }),
         prompt: 'Part number',
       }),
+      ...(o.twisted ? [entityInit('99', TWISTED_VIEW, { owner: PAPER_SPACE })] : []),
     ],
   });
   // The test canvas: a pick finds the objects whose insertion point is within 5 of it; a
@@ -243,6 +275,8 @@ function setup(o: { fonts?: boolean; namedPlotStyles?: boolean; books?: boolean 
         }),
       };
     }
+    // In the twisted viewport the canvas takes the first title block (60) wherever the window is.
+    if (r.op === 'select' && o.twisted) return { ok: true, ids: [byHandle('60').id] };
     if (r.op === 'select') {
       // A window takes the objects whose insertion point lies in it, crossing or not.
       const [lo, hi] = [
@@ -276,6 +310,7 @@ function setup(o: { fonts?: boolean; namedPlotStyles?: boolean; books?: boolean 
     model,
     registry: builtinCommands(),
     view: { request: (r) => Promise.resolve(answer(r)) },
+    ...(o.twisted && { space: () => PAPER_SPACE }),
   });
   const byHandle = (h: string): Entity => [...model.entities()].find((e) => e.handle === h)!;
   const attr = (insertHandle: string, h: string): InsertAttribute =>
@@ -1184,6 +1219,19 @@ describe("attribute editing: the rest of AutoCAD's behaviour", () => {
     await bus.pick({ x: 95, y: 13 });
     await bus.pick({ x: 120, y: -12 });
     await bus.submit('');
+    expect(bus.history).toContain('2 attributes selected.');
+  });
+
+  it('-ATTEDIT windows in a twisted viewport are square to its screen', async () => {
+    // M6-02 part 16: from model (97, 6) to (105, 6) the window is the square |x − 101| +
+    // |y − 6| ≤ 4 turned 45°, which holds REV (100…102 by 4.5…7.5) but not TITLE.
+    const { bus } = setup({ twisted: true });
+    await bus.script(['MS']);
+    await bus.script(['-ATTEDIT', 'Y', '*', '*', '*', 'W', '97,6', '105,6', '']);
+    expect(bus.history).toContain('1 attributes selected.');
+    await bus.cancel();
+    // Crossing, it takes TITLE too, whose lower left corner it reaches.
+    await bus.script(['-ATTEDIT', 'Y', '*', '*', '*', 'C', '96.5,6', '105.5,6', '']);
     expect(bus.history).toContain('2 attributes selected.');
   });
 

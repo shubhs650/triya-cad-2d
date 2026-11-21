@@ -21,15 +21,27 @@ export interface FloatingViewport {
 
 /**
  * Whether model space can be worked in through the viewport: it shows model space (on, not the
- * layout's own paper-space viewport) in plan without a twist, so the cursor's point on the sheet
- * maps to one point of model space's XY plane by a scale and a move. Triya draws in plan only
- * (DEC-061); a twisted view waits for a turned crosshair (left as a roadmap note).
+ * layout's own paper-space viewport) in plan, so the cursor's point on the sheet maps to one
+ * point of model space's XY plane by a turn (the view's twist, DXF 51; M6-02 part 15), a scale
+ * and a move. Triya draws in plan only (DEC-061): a view from below or from the side is none to
+ * work in, as its map mirrors or squashes model space.
  */
 export function workableViewport(g: ViewportGeometry): boolean {
   if (!viewportShowsModel(g)) return false;
   const t = viewportTransform(g);
-  const s = Math.abs(t.a);
-  return s > 0 && Math.abs(t.b) <= s * 1e-9 && Math.abs(t.c) <= s * 1e-9 && t.d > 0 && t.a > 0;
+  const s = Math.hypot(t.a, t.b);
+  // A turn and a scale: [a c; b d] = s·[cos −sin; sin cos].
+  return s > 0 && Math.abs(t.a - t.d) <= s * 1e-9 && Math.abs(t.b + t.c) <= s * 1e-9;
+}
+
+/**
+ * The angle model space's X axis shows at on the sheet through a workable viewport, radians
+ * counterclockwise in [0, 2π): its twist (DXF 51), which AutoCAD's VIEWTWIST reports.
+ */
+export function viewportTwist(g: ViewportGeometry): number {
+  const t = viewportTransform(g);
+  const a = Math.atan2(t.b, t.a);
+  return a < 0 ? a + 2 * Math.PI : a;
 }
 
 /** The layout's floating viewports one can work in, in the order its block holds them. */
@@ -93,4 +105,13 @@ export function viewportAt(
 export function paperPointOf(g: ViewportGeometry, model: Vec2): Vec2 {
   const t = viewportTransform(g);
   return { x: t.a * model.x + t.c * model.y + t.e, y: t.b * model.x + t.d * model.y + t.f };
+}
+
+/** The point of model space's XY plane a workable viewport shows at a sheet point. */
+export function modelPointOf(g: ViewportGeometry, paper: Vec2): Vec2 {
+  const t = viewportTransform(g);
+  const det = t.a * t.d - t.b * t.c;
+  const x = paper.x - t.e;
+  const y = paper.y - t.f;
+  return { x: (t.d * x - t.c * y) / det, y: (t.a * y - t.b * x) / det };
 }

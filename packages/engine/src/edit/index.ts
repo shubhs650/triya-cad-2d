@@ -189,6 +189,7 @@ export {
   NOT_A_CLIP_OBJECT,
   viewportClipFrame,
   clipObjectProblem,
+  clipTurnedViewport,
   clipViewport,
   clipsViewport,
   deleteViewportClip,

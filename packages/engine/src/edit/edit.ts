@@ -54,8 +54,10 @@ import {
   carriedDimensionXdata,
   transformGeometry,
   transformProblem,
+  turnsOffSquare,
   type TransformOptions,
 } from './transform';
+import { clipTurnedViewport } from './viewport-clip';
 
 /** What an edit did, and the objects it left out with the reason for each. */
 export interface EditReport {
@@ -337,6 +339,12 @@ export function transformObjects(
     carryBlock(b, cur.geom, t, blocksDone);
   }
   carryDimensionRecords(b, moving, t);
+  // A viewport turned by other than right angles is clipped to its turned frame (M6-02 part 16).
+  if (turnsOffSquare(t.angle)) {
+    for (const e of moving) {
+      if (e.geom.kind === 'VIEWPORT') clipTurnedViewport(b, model, e.id, e.geom, t);
+    }
+  }
   for (const a of keptAssocs) {
     const points = a.points.map((p) => {
       if (!p) return p;
@@ -710,6 +718,14 @@ export function copyObjects(
     b.updateEntity(copy.id, { geom: { ...g, clipBoundary: boundary.handle } });
     const s = b.entity(boundary.id)!;
     b.updateEntity(s.id, { reactors: [...(s.reactors ?? []), copy.handle] });
+  }
+  // A copy turned by other than right angles is clipped to its turned frame (M6-02 part 16).
+  if (turnsOffSquare(t.angle)) {
+    for (const [handle, copy] of copies) {
+      const id = model.ids.idOf(handle);
+      const g = id === undefined ? undefined : b.entity(id)?.geom;
+      if (g?.kind === 'VIEWPORT') clipTurnedViewport(b, model, copy.id, g, t);
+    }
   }
   // A copy of an associative array is an array of its own (M3-11).
   copyAssocArrays(b, model, copies, names);

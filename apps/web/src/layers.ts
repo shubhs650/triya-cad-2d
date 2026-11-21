@@ -4,7 +4,11 @@
 // The Layer Properties Manager's property cells (M5-05 part 2) read each row's colour,
 // linetype, lineweight and transparency as values to edit, the loaded linetypes Select Linetype
 // lists and the colour books Select Color offers.
+// M6-07: the Plot Style and VP Plot Style cells: in a drawing with named plot styles the layer's
+// plot style (its own, else Normal) and the viewport's override of it, which Select Plot Style
+// sets; in a colour-dependent drawing the colour's plot style (`Color_7`), read only.
 import {
+  colorPlotStyleName,
   colorValue,
   lineweightText,
   transparencyValue,
@@ -21,6 +25,7 @@ import {
   type LineweightUnits,
   type Lineweight,
   type KeyedChanges,
+  type SymbolTableRecord,
   type TableRecords,
   type Transparency,
 } from '@triya/engine';
@@ -43,12 +48,19 @@ export interface LayerRow {
   readonly description: string;
   /** The Transparency column: AutoCAD's percentage, 0 (opaque) to 90. */
   readonly transparency: string;
-  /** What the Color, Linetype, Lineweight and Transparency cells edit. */
+  /**
+   * The Plot Style column (M6-07): the named plot style's name, or in a colour-dependent drawing
+   * the colour's (`Color_1`), which the manager greys.
+   */
+  readonly plotStyle: string;
+  /** What the Color, Linetype, Lineweight, Transparency and Plot Style cells edit. */
   readonly value: {
     readonly color: Color;
     readonly linetype: Handle;
     readonly lineweight: Lineweight;
     readonly transparency: Transparency;
+    /** The named plot style the layer plots by (Normal when it names none); none when colour-dependent. */
+    readonly plotStyle?: Handle;
   };
   /** An xref-dependent layer (DXF 70 bit 16), which no object of the drawing can go on. */
   readonly xref?: true;
@@ -74,6 +86,7 @@ export interface LayerViewportCells {
   readonly linetype: string;
   readonly lineweight: string;
   readonly transparency: string;
+  readonly plotStyle: string;
   readonly value: LayerRow['value'];
   /** The properties the viewport overrides, which the manager marks. */
   readonly overridden: Readonly<Partial<Record<ViewportProperty, true>>>;
@@ -97,7 +110,7 @@ const lineweightCell = (w: LayerRecord['lineweight'], units: LineweightUnits): s
   typeof w === 'number' ? lineweightText(w, units) : w;
 
 /** Table `table` as opened with `changes` applied in order. */
-function currentTable<K extends 'layers' | 'linetypes'>(
+function currentTable<K extends 'layers' | 'linetypes' | 'plotStyles'>(
   opened: readonly TableRecords[K][] | undefined,
   changes: readonly ChangeSet[],
   table: K,
@@ -116,6 +129,28 @@ function currentTable<K extends 'layers' | 'linetypes'>(
 /** The LAYER table as opened with `changes` applied in order. */
 export const currentLayers = (init: DocumentInit, changes: readonly ChangeSet[]): LayerRecord[] =>
   currentTable(init.tables?.layers, changes, 'layers');
+
+/** Whether the drawing plots by named plot styles ($PSTYLEMODE 0) as `changes` leave it. */
+export function namedPlotStylesOf(init: DocumentInit, changes: readonly ChangeSet[]): boolean {
+  let mode = new Map(init.header ?? []).get('$PSTYLEMODE');
+  for (const cs of changes)
+    for (const h of cs.header ?? []) if (h.name === '$PSTYLEMODE') mode = h.after;
+  return mode === 0 || mode === false;
+}
+
+/**
+ * The named plot styles Select Plot Style lists (ACAD_PLOTSTYLENAME as changed): Normal first,
+ * the others by name, as AutoCAD's list shows them.
+ */
+export function layerPlotStyles(
+  init: DocumentInit,
+  changes: readonly ChangeSet[],
+): SymbolTableRecord[] {
+  const normal = (r: SymbolTableRecord) => r.name.toUpperCase() === 'NORMAL';
+  return currentTable(init.tables?.plotStyles, changes, 'plotStyles').sort((a, b) =>
+    normal(a) !== normal(b) ? (normal(a) ? -1 : 1) : compareNames(a.name, b.name),
+  );
+}
 
 /** The VIEWPORT entities of layout `block` as opened with `changes` applied, in no set order. */
 function layoutViewports(
@@ -235,6 +270,17 @@ export function layerRows(
   const linetypes = new Map(
     currentTable(init.tables?.linetypes, changes, 'linetypes').map((l) => [l.handle, l.name]),
   );
+  const named = namedPlotStylesOf(init, changes);
+  const styles = named ? layerPlotStyles(init, changes) : [];
+  const styleNames = new Map(styles.map((s) => [s.handle, s.name]));
+  const normal = styles.find((s) => s.name.toUpperCase() === 'NORMAL')?.handle;
+  /** A cell's plot style: the named style's name, else the colour's (colour-dependent). */
+  const plotStyleCell = (style: Handle | undefined, color: Color): string =>
+    named
+      ? style === undefined
+        ? ''
+        : (styleNames.get(style) ?? style)
+      : colorPlotStyleName(color);
   const floating =
     block === undefined
       ? undefined
@@ -251,11 +297,14 @@ export function layerRows(
     frozen: readonly Handle[],
   ): LayerViewportCells => {
     const o = l.viewportOverrides?.find((v) => v.viewport === viewport);
+    const own = ownPlotStyle(l);
+    const style = named ? (o?.plotStyle ?? own) : undefined;
     const value = {
       color: o?.color ?? l.color,
       linetype: o?.linetype ?? l.linetype,
       lineweight: o?.lineweight ?? l.lineweight,
       transparency: o?.transparency ?? l.transparency,
+      ...(style !== undefined && { plotStyle: style }),
     };
     return {
       viewport,
@@ -264,15 +313,20 @@ export function layerRows(
       linetype: linetypes.get(value.linetype) ?? value.linetype,
       lineweight: lineweightCell(value.lineweight, lwUnits),
       transparency: String(transparencyValue(value.transparency)),
+      plotStyle: plotStyleCell(style, value.color),
       value,
       overridden: {
         ...(o?.color && { color: true as const }),
         ...(o?.linetype && { linetype: true as const }),
         ...(o?.lineweight !== undefined && { lineweight: true as const }),
         ...(o?.transparency && { transparency: true as const }),
+        ...(named && o?.plotStyle && { plotStyle: true as const }),
       },
     };
   };
+  /** The named plot style a layer plots by: its own, else Normal (none when colour-dependent). */
+  const ownPlotStyle = (l: LayerRecord): Handle | undefined =>
+    named ? (l.plotStyle ?? normal) : undefined;
   return currentLayers(init, changes)
     .sort(byName)
     .map((l) => ({
@@ -288,11 +342,13 @@ export function layerRows(
       lineweight: lineweightCell(l.lineweight, lwUnits),
       description: l.description ?? '',
       transparency: String(transparencyValue(l.transparency)),
+      plotStyle: plotStyleCell(ownPlotStyle(l), l.color),
       value: {
         color: l.color,
         linetype: l.linetype,
         lineweight: l.lineweight,
         transparency: l.transparency,
+        ...(ownPlotStyle(l) !== undefined && { plotStyle: ownPlotStyle(l)! }),
       },
       ...(((l.flags ?? 0) & 16) !== 0 && { xref: true as const }),
       ...(l.unreconciled && { unreconciled: true as const }),
