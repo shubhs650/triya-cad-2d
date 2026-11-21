@@ -6091,6 +6091,21 @@ button {
   overflow-y: auto;
 }
 
+/* Remove Viewport Overrides For (M6-02 part 12): its items open below it, indented. */
+.layer-list-submenu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.layer-list-submenu-item[aria-expanded='true'] {
+  background: var(--chrome-hover, rgb(0 0 0 / 6%));
+}
+
+.layer-list-subitem {
+  padding-left: 28px;
+}
+
 /* Merge to Layer (M5-05 part 4): the Target Layer list, then AutoCAD's question. */
 .cad-dialog.merge-to-layer {
   width: min(320px, calc(100vw - 32px));
