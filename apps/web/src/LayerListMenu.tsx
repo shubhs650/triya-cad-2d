@@ -14,6 +14,15 @@
 //   Available only when an unreconciled layer is selected") reconciles the selected layers that
 //   are unreconciled, one LAYER step. Triya shows it only then, so the menu otherwise keeps the
 //   items it had.
+// - Remove Viewport Overrides For (M6-02 part 12; Help: "Removes a single property override or
+//   all property overrides on selected layers or all layers, for either the current viewport or
+//   all viewports. ... To remove a single property override, right-click the property override
+//   in the Layer list"), on a layout: Selected Layers or All Layers, each in the Current
+//   Viewport Only (greyed in paper space, as no viewport is current) or All Viewports. AutoCAD
+//   nests Selected Layers and All Layers as submenus of their own; Triya lists the four items in
+//   one submenu, named "Selected Layers - Current Viewport Only" and so on, so the menu stays
+//   one level deep. Right-clicked on a VP Color, VP Linetype, VP Lineweight or VP Transparency
+//   cell, the item names that column ("Remove VP Color Overrides For") and removes only it.
 import { useEffect, useRef, useState } from 'react';
 import type { Handle } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
@@ -28,10 +37,43 @@ export type LayerListAction =
   | 'merge'
   | 'removeFromGroup'
   | 'reconcile'
+  | RemoveOverridesAction
   | 'all'
   | 'clear'
   | 'allButCurrent'
   | 'invert';
+
+/** Remove Viewport Overrides For's items: whose layers, in which viewports. */
+export type RemoveOverridesAction =
+  'removeSelectedCurrent' | 'removeSelectedAll' | 'removeAllCurrent' | 'removeAllAll';
+
+const REMOVE_ITEMS: readonly { readonly action: RemoveOverridesAction; readonly label: string }[] =
+  [
+    { action: 'removeSelectedCurrent', label: 'Selected Layers - Current Viewport Only' },
+    { action: 'removeSelectedAll', label: 'Selected Layers - All Viewports' },
+    { action: 'removeAllCurrent', label: 'All Layers - Current Viewport Only' },
+    { action: 'removeAllAll', label: 'All Layers - All Viewports' },
+  ];
+
+/** Whether `a` is one of Remove Viewport Overrides For's items. */
+export const isRemoveOverrides = (a: string): a is RemoveOverridesAction =>
+  REMOVE_ITEMS.some((r) => r.action === a);
+
+/** The edit a Remove Viewport Overrides For item asks for: which layers, which viewport. */
+export function removeOverridesTarget(
+  a: RemoveOverridesAction,
+  selected: readonly Handle[],
+  viewport: Handle | undefined,
+): { readonly layers?: readonly Handle[]; readonly viewport?: Handle } | undefined {
+  const current = a === 'removeSelectedCurrent' || a === 'removeAllCurrent';
+  if (current && viewport === undefined) return undefined;
+  const mine = a === 'removeSelectedCurrent' || a === 'removeSelectedAll';
+  if (mine && selected.length === 0) return undefined;
+  return {
+    ...(mine && { layers: selected }),
+    ...(current && viewport !== undefined && { viewport }),
+  };
+}
 
 interface Item {
   readonly action: LayerListAction;
@@ -65,6 +107,7 @@ export function LayerListMenu({
   selected,
   group = false,
   reconcile = false,
+  overrides,
   onAction,
   onClose,
 }: {
@@ -75,10 +118,17 @@ export function LayerListMenu({
   group?: boolean;
   /** Whether an unreconciled layer is selected (`reconcilable`). */
   reconcile?: boolean;
+  /**
+   * On a layout, Remove Viewport Overrides For: whether a layout viewport is current, and the
+   * VP column right-clicked, if one was (its title, "VP Color").
+   */
+  overrides?: { readonly current: boolean; readonly column?: string | undefined } | undefined;
   onAction: (a: LayerListAction) => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [removing, setRemoving] = useState(false);
+  const removeLabel = `Remove ${overrides?.column ?? 'Viewport'} Overrides For`;
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
     const onDown = (e: PointerEvent) => {
@@ -111,10 +161,56 @@ export function LayerListMenu({
           e.preventDefault();
           const step = e.key === 'ArrowDown' ? 1 : list.length - 1;
           list[(i + step) % list.length]?.focus();
+        } else if (
+          (e.key === 'ArrowRight' || e.key === 'ArrowLeft') &&
+          (document.activeElement as HTMLElement | null)?.dataset['opens'] === 'overrides'
+        ) {
+          e.preventDefault();
+          setRemoving(e.key === 'ArrowRight');
         }
       }}
     >
-      {ITEMS.filter((it) => (group || !it.group) && (reconcile || !it.reconcile)).map((it) => (
+      {ITEMS.filter((it) => (group || !it.group) && (reconcile || !it.reconcile)).flatMap((it) => [
+        ...(it.action === 'all' && overrides
+          ? [
+              <button
+                key="overrides"
+                type="button"
+                role="menuitem"
+                className="snap-menu-item layer-list-submenu-item"
+                aria-haspopup="menu"
+                aria-expanded={removing}
+                data-opens="overrides"
+                data-separator="before"
+                onClick={() => setRemoving((r) => !r)}
+              >
+                {removeLabel}
+                <span aria-hidden className="layer-filter-submenu-arrow">
+                  {removing ? '▾' : '▸'}
+                </span>
+              </button>,
+              ...(removing
+                ? REMOVE_ITEMS.map((r) => (
+                    <button
+                      key={r.action}
+                      type="button"
+                      role="menuitem"
+                      className="snap-menu-item layer-list-subitem"
+                      disabled={
+                        (r.action.endsWith('Current') && !overrides.current) ||
+                        (r.action.startsWith('removeSelected') && selected === 0)
+                      }
+                      onClick={() => {
+                        onClose();
+                        onAction(r.action);
+                      }}
+                    >
+                      {r.label}
+                    </button>
+                  ))
+                : []),
+            ]
+          : []),
         <button
           key={it.action}
           type="button"
@@ -130,8 +226,8 @@ export function LayerListMenu({
           }}
         >
           {it.label}
-        </button>
-      ))}
+        </button>,
+      ])}
     </div>
   );
 }

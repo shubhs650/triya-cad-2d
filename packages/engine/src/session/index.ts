@@ -340,7 +340,7 @@ export interface ViewportViewEdit {
   readonly kind: 'viewport-view';
   readonly viewport: Handle;
   readonly view: ViewportView;
-  readonly label: 'ZOOM' | 'PAN';
+  readonly label: 'ZOOM' | 'PAN' | 'VIEW';
   readonly join?: boolean;
 }
 

@@ -9,7 +9,11 @@
 //     state. Rename, Delete, Import... (a `.las` file; a state of the same name asks to be
 //     overwritten) and Export... (the selected state as `<name>.las`).
 //   - Restore Options: "Turn off layers not found in layer state"; "Apply properties as viewport
-//     overrides" waits for a layout viewport to be made current (MSPACE, M6-02).
+//     overrides" (M6-02 part 12; Help: "available when the Layer States Manager is accessed while
+//     a layout viewport is active") restores the colours, linetypes, lineweights and
+//     transparencies as that viewport's overrides. With a layout viewport made current (MSPACE),
+//     New and Update save each layer's VP Freeze there and Restore sets it there again
+//     (Current VP Frozen/Thawed; the engine's `restoreLayerStateChange`).
 //   - More Restore Options shows the Layer Properties to Restore, the selected state's own: a
 //     change is saved with it at once, with Select All and Clear All.
 //   - Restore restores the selected state and closes the dialog; Close closes it.
@@ -33,7 +37,7 @@ import {
 } from '@triya/engine';
 import { LasError, parseLas, writeLas } from '@triya/io';
 import { Modal } from './AttributeDialogs';
-import type { OpenDocument } from './documents';
+import { inLayout, type OpenDocument } from './documents';
 import { drafting } from './drafting';
 import { EditLayerState } from './EditLayerState';
 import { engines } from './engine/registry';
@@ -91,6 +95,10 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
     drafting.get().lwUnits === 0 ? 'in' : 'mm',
   );
   const [turnOffMissing, setTurnOffMissing] = useState(false);
+  const [asOverrides, setAsOverrides] = useState(false);
+  // The layout viewport made current (MSPACE): VP Freeze is saved and restored there.
+  const viewport = inLayout(doc) ? doc.viewports?.[doc.block] : undefined;
+  const inViewport = viewport !== undefined && { viewport };
   const [message, setMessage] = useState<{ text: string; problem: boolean } | undefined>();
   const fileRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLTableSectionElement>(null);
@@ -112,7 +120,7 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
     );
 
   const save = async (name: string, description: string) => {
-    if (!(await run({ kind: 'layer-state-save', name, description }))) return false;
+    if (!(await run({ kind: 'layer-state-save', name, description, ...inViewport }))) return false;
     setCreating(false);
     return true;
   };
@@ -131,7 +139,7 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
 
   const update = async () => {
     if (!selected) return;
-    if (await run({ kind: 'layer-state-save', name: selected.name })) {
+    if (await run({ kind: 'layer-state-save', name: selected.name, ...inViewport })) {
       setMessage({ text: `Layer state "${selected.name}" updated.`, problem: false });
     }
   };
@@ -176,7 +184,15 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
 
   const restore = async () => {
     if (!selected) return;
-    if (await run({ kind: 'layer-state-restore', state: selected.handle, turnOffMissing })) {
+    if (
+      await run({
+        kind: 'layer-state-restore',
+        state: selected.handle,
+        turnOffMissing,
+        ...inViewport,
+        ...(inViewport && asOverrides && { asOverrides }),
+      })
+    ) {
       layerStatesManager.close();
       // A layer state restored alerts for unreconciled new layers (LAYERNOTIFY 8, M5-19 part 4).
       layerNotices.raise(
@@ -371,8 +387,19 @@ function ManagerBody({ doc, edited }: { doc: OpenDocument; edited: (id: number) 
           />
           Turn off layers not found in layer state
         </label>
-        <label title="Waits for a layout viewport to be made current (MSPACE)">
-          <input type="checkbox" disabled checked={false} readOnly />
+        <label
+          title={
+            viewport === undefined
+              ? 'Available while a layout viewport is current (double-click in one)'
+              : undefined
+          }
+        >
+          <input
+            type="checkbox"
+            disabled={viewport === undefined}
+            checked={viewport !== undefined && asOverrides}
+            onChange={(e) => setAsOverrides(e.currentTarget.checked)}
+          />
           Apply properties as viewport overrides
         </label>
       </fieldset>

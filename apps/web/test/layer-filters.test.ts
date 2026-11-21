@@ -3,12 +3,13 @@
 // filter); new filters' names; and the Layer Filter Properties dialog's definition grid, written
 // to and read from a filter expression. M5-07 part 6: the filter menu's items, which are greyed
 // on which node, and the engine edit each sends.
-import type {
-  BlockTableRecord,
-  ChangeSet,
-  DocumentInit,
-  LayerFilter,
-  LayerRecord,
+import {
+  viewportOverridesNode,
+  type BlockTableRecord,
+  type ChangeSet,
+  type DocumentInit,
+  type LayerFilter,
+  type LayerRecord,
 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
@@ -453,6 +454,45 @@ describe('the Unreconciled New Layers node (M5-19 part 2)', () => {
       kind: 'layer-filter-set',
       node: 'unreconciled',
       set: 'off',
+    });
+  });
+});
+
+// M6-02 part 12: the Viewport Overrides node lists the layers the layout viewport made current
+// overrides a property of; no filter can be made in it.
+describe('the Viewport Overrides node (M6-02 part 12)', () => {
+  const RED_IN_A = layer('22', 'Doors', {
+    viewportOverrides: [{ viewport: 'A1', color: { kind: 'aci', index: 1 } }],
+  });
+  const LW_IN_B = layer('23', 'Grid', { viewportOverrides: [{ viewport: 'B2', lineweight: 50 }] });
+  const vpInit: DocumentInit = {
+    ...init,
+    tables: { ...init.tables, layers: [ZERO, WALLS, RED_IN_A, LW_IN_B] },
+  };
+  const names = (s: ReadonlySet<string> | undefined) =>
+    s === undefined
+      ? 'every layer'
+      : [ZERO, WALLS, RED_IN_A, LW_IN_B].filter((l) => s.has(l.handle)).map((l) => l.name);
+
+  it('lists the layers that viewport overrides, the others inverted', () => {
+    const source = layerFilterSource(vpInit, []);
+    const node = viewportOverridesNode('A1');
+    expect(names(listedLayers(source, node, { invert: false }))).toEqual(['Doors']);
+    expect(names(listedLayers(source, node, { invert: true }))).toEqual(['0', 'A-Walls', 'Grid']);
+    expect(names(listedLayers(source, viewportOverridesNode('B2'), { invert: false }))).toEqual([
+      'Grid',
+    ]);
+  });
+
+  it('names the node, and its menu acts on its layers', () => {
+    expect(filterNodeName(viewportOverridesNode('A1'), undefined)).toBe('Viewport Overrides');
+    expect(
+      filterMenuEdit('vpFreeze', viewportOverridesNode('A1'), { predefined: true, viewport: 'A1' }),
+    ).toEqual({
+      kind: 'layer-filter-viewport',
+      node: viewportOverridesNode('A1'),
+      viewport: 'A1',
+      frozen: true,
     });
   });
 });
