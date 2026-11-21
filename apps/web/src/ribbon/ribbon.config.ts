@@ -42,9 +42,19 @@ export type RibbonRun =
 
 /**
  * A Layers or Properties dropdown (M7-02 part 3): the layer, colour, linetype, lineweight or
- * transparency of the selection, or with none the current one, which a pick changes.
+ * transparency of the selection, or with none the current one, which a pick changes. Or one of
+ * Annotate's style dropdowns (part 5): the current text, dimension, multileader or table style.
  */
-export type RibbonControl = 'layer' | 'color' | 'linetype' | 'lineweight' | 'transparency';
+export type RibbonControl =
+  | 'layer'
+  | 'color'
+  | 'linetype'
+  | 'lineweight'
+  | 'transparency'
+  | 'text-style'
+  | 'dim-style'
+  | 'mleader-style'
+  | 'table-style';
 
 export interface RibbonItem {
   /** Unique within its tab. */
@@ -149,7 +159,7 @@ function act(
   return { id, label, icon, sizes, run: { action } };
 }
 
-/** A Layers or Properties dropdown. */
+/** A Layers, Properties or style dropdown. */
 function control(
   id: string,
   label: string,
@@ -503,7 +513,7 @@ const ANNOTATE: RibbonTab = {
       items: [
         cmd('mtext', 'Multiline Text', 'text_t', 'MTEXT', BIG),
         cmd('dtext', 'Single Line', 'text_font', 'TEXT'),
-        cmd('text-style', 'Text Style', 'text_edit_style', 'STYLE', SECONDARY),
+        control('text-style', 'Text Style', 'text_edit_style', 'text-style', SECONDARY_CONTROL),
         cmd('find', 'Find Text', 'search', 'FIND', ICON),
         cmd('spell', 'Check Spelling', 'text_grammar_checkmark', 'SPELL', ICON),
         cmd('justify-text', 'Justify', 'text_align_justify', 'JUSTIFYTEXT', ICON),
@@ -522,7 +532,7 @@ const ANNOTATE: RibbonTab = {
           cmd('dim-continue', 'Continue', 'dim-continue', 'DIMCONTINUE'),
           cmd('dim-baseline', 'Baseline', 'dim-baseline', 'DIMBASELINE'),
         ]),
-        cmd('dim-style', 'Dimension Style', 'style_guide', 'DIMSTYLE', SECONDARY),
+        control('dim-style', 'Dimension Style', 'style_guide', 'dim-style', SECONDARY_CONTROL),
         cmd('dim-space', 'Adjust Space', 'dim-space', 'DIMSPACE', ICON),
         cmd('dim-break', 'Break', 'dim-break', 'DIMBREAK', ICON),
         cmd('dim-jogline', 'Jog Line', 'dim-jogline', 'DIMJOGLINE', ICON),
@@ -553,7 +563,13 @@ const ANNOTATE: RibbonTab = {
         cmd('mleader-remove', 'Remove Leader', 'mleader-remove', 'AIMLEADEREDITREMOVE', SECONDARY),
         cmd('mleader-align', 'Align', 'mleader-align', 'MLEADERALIGN', SECONDARY),
         cmd('mleader-collect', 'Collect', 'mleader-collect', 'MLEADERCOLLECT', ICON),
-        cmd('mleader-style', 'Multileader Style', 'style_guide', 'MLEADERSTYLE', ICON),
+        control(
+          'mleader-style',
+          'Multileader Style',
+          'style_guide',
+          'mleader-style',
+          SECONDARY_CONTROL,
+        ),
       ],
     },
     {
@@ -562,7 +578,7 @@ const ANNOTATE: RibbonTab = {
       compress: { order: 3, keep: ['table'] },
       items: [
         cmd('table', 'Table', 'table', 'TABLE', BIG),
-        cmd('table-style', 'Table Style', 'table_settings', 'TABLESTYLE', SECONDARY),
+        control('table-style', 'Table Style', 'table_settings', 'table-style', SECONDARY_CONTROL),
       ],
     },
     {

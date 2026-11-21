@@ -166,7 +166,7 @@ Leaders (expanded)
   small-label mleader-remove<mleader-remove>
   small-label mleader-align<mleader-align>
   icon        mleader-collect<mleader-collect>
-  icon        mleader-style<style_guide>
+  small-label mleader-style<style_guide>
 Tables (expanded)
   large-label table<table>
   small-label table-style<table_settings>

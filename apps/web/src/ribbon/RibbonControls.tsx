@@ -5,7 +5,7 @@
 // "Select Colors...", "Other..." and "Lineweight Settings...". The layer list also turns a layer
 // on or off, thaws or freezes it, and unlocks or locks it, as AutoCAD's layer dropdown does.
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { RibbonLayer, RibbonProperties } from '@triya/engine';
+import type { RibbonLayer, RibbonProperties, RibbonStyleKind } from '@triya/engine';
 import { lineweightsListed, VARIES } from '../properties';
 import { Icon } from './Icon';
 import type { IconName } from './icons';
@@ -20,7 +20,7 @@ export interface ControlChoice {
   readonly swatch?: string | undefined;
   readonly layer?: RibbonLayer;
   /** The last entries: a dialog or a command instead of a value. */
-  readonly opens?: 'select-color' | 'LINETYPE' | 'LWEIGHT';
+  readonly opens?: 'select-color' | 'LINETYPE' | 'LWEIGHT' | StyleManager;
 }
 
 export interface ControlState {
@@ -32,6 +32,39 @@ export interface ControlState {
   readonly choices: readonly ControlChoice[];
 }
 
+/** The style dropdowns, the kind of style each lists, and the command that manages them. */
+export const STYLE_CONTROLS = {
+  'text-style': { kind: 'text', manage: 'STYLE', label: 'Manage Text Styles...' },
+  'dim-style': { kind: 'dim', manage: 'DIMSTYLE', label: 'Manage Dimension Styles...' },
+  'mleader-style': {
+    kind: 'mleader',
+    manage: 'MLEADERSTYLE',
+    label: 'Manage Multileader Styles...',
+  },
+  'table-style': { kind: 'table', manage: 'TABLESTYLE', label: 'Manage Table Styles...' },
+} as const satisfies Partial<
+  Record<RibbonControl, { kind: RibbonStyleKind; manage: string; label: string }>
+>;
+type StyleManager = (typeof STYLE_CONTROLS)[keyof typeof STYLE_CONTROLS]['manage'];
+
+export const isStyleControl = (c: RibbonControl): c is keyof typeof STYLE_CONTROLS =>
+  c in STYLE_CONTROLS;
+
+/** A style dropdown: the drawing's styles by name, the current one picked (AutoCAD's Annotate
+ * tab lists them so, ending with "Manage ... Styles..."). */
+function styleState(control: keyof typeof STYLE_CONTROLS, p: RibbonProperties): ControlState {
+  const { kind, manage, label } = STYLE_CONTROLS[control];
+  const styles = p.styles[kind];
+  return {
+    text: styles.current ?? '',
+    selected: styles.current,
+    choices: [
+      ...styles.names.map((name) => ({ value: name, label: name })),
+      { value: '', label, opens: manage },
+    ],
+  };
+}
+
 /** AutoCAD's transparency slider runs 0–90; the list offers its tens. */
 const TRANSPARENCIES = Array.from({ length: 10 }, (_, i) => String(i * 10));
 
@@ -41,6 +74,7 @@ export function controlState(
   p: RibbonProperties | undefined,
   lineweights: 'mm' | 'in',
 ): ControlState {
+  if (p && isStyleControl(control)) return styleState(control, p);
   const sent = p?.rows.find((r) => r.key === control);
   if (!p || !sent) return { text: '', choices: [] };
   const row = control === 'lineweight' ? lineweightsListed(sent, lineweights) : sent;
@@ -70,7 +104,8 @@ export function controlState(
         { value: '', label: 'Lineweight Settings...', opens: 'LWEIGHT' },
       ];
       break;
-    case 'transparency': {
+    default: {
+      // Transparency: the style dropdowns returned above.
       const values = [...TRANSPARENCIES];
       if (selected !== undefined && !/^By/.test(selected) && !values.includes(selected))
         values.push(selected);

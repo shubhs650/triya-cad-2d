@@ -27,7 +27,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { colorValue, parseColorValue } from '@triya/engine';
+import { colorValue, parseColorValue, RIBBON_STYLE_VARIABLES } from '@triya/engine';
 import { drafting, type DraftingToggle } from './drafting';
 import { paletteStack, type PaletteName } from './palette-stack';
 import type { PreferencesStore, Theme } from './preferences';
@@ -37,6 +37,8 @@ import {
   ControlList,
   Swatch,
   controlState,
+  isStyleControl,
+  STYLE_CONTROLS,
   type ControlChoice,
   type ControlState,
 } from './ribbon/RibbonControls';
@@ -280,6 +282,15 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonPr
     if (doc === undefined) return;
     if (c.opens === 'select-color') return setPickingColor(true);
     if (c.opens) return engines.command(doc, { kind: 'invoke', name: c.opens });
+    if (isStyleControl(control)) {
+      // As SETVAR typed: transparent, so a command running keeps going with the new style.
+      engines.command(doc, { kind: 'invoke', name: 'SETVAR' });
+      engines.command(doc, {
+        kind: 'submit',
+        text: RIBBON_STYLE_VARIABLES[STYLE_CONTROLS[control].kind],
+      });
+      return engines.command(doc, { kind: 'submit', text: c.value });
+    }
     engines.command(doc, { kind: 'ribbon-property', edit: { key: control, value: c.value } });
   };
 
@@ -393,7 +404,10 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonPr
     const controls = p.shown.filter((s) => s.item.control);
     const tools = p.shown.filter((s) => !s.item.control && s.size !== 'large-label');
     return (
-      controls.length > 0 && rows - controls.length >= 2 && tools.every((s) => s.size === 'icon')
+      controls.length > 0 &&
+      tools.length > 0 &&
+      rows - controls.length >= 2 &&
+      tools.every((s) => s.size === 'icon')
     );
   };
   const stack = (p: PanelLayout) => {
