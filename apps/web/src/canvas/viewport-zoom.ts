@@ -5,8 +5,10 @@
 // what that gives back becomes the viewport's own view, which the engine saves in the drawing.
 import {
   viewportFrame,
+  viewportTwist,
   viewportViewOf,
   withViewportView,
+  type Box,
   type Handle,
   type ViewportGeometry,
   type ViewportView,
@@ -37,10 +39,54 @@ export function frameOnCanvas(
   };
 }
 
-/** The viewport's own view as a view of its frame of `size` pixels. */
+/**
+ * The viewport's own view as a view of its frame of `size` pixels, turned by its twist (M6-02
+ * part 15): the frame's own axes are the sheet's, along which ZOOM and PAN measure.
+ */
 export function frameView(g: ViewportGeometry, size: ViewportSize): ViewTransform {
   const v = viewportViewOf(g);
-  return { center: v.center, scale: size.height / v.height };
+  const rotation = viewportTwist(g);
+  return { center: v.center, scale: size.height / v.height, ...(rotation !== 0 && { rotation }) };
+}
+
+/** A point of model space turned by `angle` about the origin. */
+function turn(p: { readonly x: number; readonly y: number }, angle: number) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
+}
+
+/** The box holding `box`'s corners, each taken through `t`. */
+export function turnedBox(
+  box: Box,
+  t: (p: { x: number; y: number }) => { x: number; y: number },
+): Box {
+  const ps = [
+    t({ x: box.minX, y: box.minY }),
+    t({ x: box.maxX, y: box.minY }),
+    t({ x: box.maxX, y: box.maxY }),
+    t({ x: box.minX, y: box.maxY }),
+  ];
+  return {
+    minX: Math.min(...ps.map((p) => p.x)),
+    minY: Math.min(...ps.map((p) => p.y)),
+    maxX: Math.max(...ps.map((p) => p.x)),
+    maxY: Math.max(...ps.map((p) => p.y)),
+  };
+}
+
+/**
+ * A view fitted to what a frame turned by `rotation` (a twisted viewport's, M6-02 part 15) shows:
+ * `fit` takes model points and boxes through `t`, into the frame's own axes, so a window or an
+ * extents box fills the frame as the screen shows it; its centre comes back in model space.
+ */
+export function fitTurned(
+  rotation: number,
+  fit: (t: (p: { x: number; y: number }) => { x: number; y: number }) => ViewTransform | undefined,
+): ViewTransform | undefined {
+  if (rotation === 0) return fit((p) => p);
+  const v = fit((p) => turn(p, -rotation));
+  return v && { ...v, center: turn(v.center, rotation), rotation };
 }
 
 /** A view of the frame of `size` pixels as the viewport's own view. */

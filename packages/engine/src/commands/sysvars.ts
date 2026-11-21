@@ -335,7 +335,8 @@ export const DRAWING_VARIABLES: readonly SystemVariable[] = [
  * DISTANCE the last results of AREA, DIST and MEASUREGEOM in this session (M3-07; AutoCAD keeps
  * them unsaved, as Triya does); BLOCKEDITOR whether the Block Editor is open (M5-02); REFEDITNAME the
  * block a reference edit in place is editing, "" when none is (M5-02 part 3); VPMAXIMIZEDSTATE
- * whether the current layout viewport is maximized (M6-02 part 9).
+ * whether the current layout viewport is maximized (M6-02 part 9); VIEWTWIST the angle the current
+ * layout viewport turns model space by on the sheet, in degrees here as SETVAR shows angles.
  */
 export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
   { name: 'AREA', store: 'computed', kind: 'real', readOnly: true },
@@ -351,6 +352,9 @@ export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
   { name: 'TILEMODE', store: 'computed', kind: 'switch' },
   { name: 'VIEWCTR', store: 'computed', kind: 'point', readOnly: true },
   { name: 'VIEWSIZE', store: 'computed', kind: 'distance', readOnly: true },
+  // The current layout viewport's twist (M6-02 part 15); 0 elsewhere, as Triya shows model
+  // space and paper space untwisted.
+  { name: 'VIEWTWIST', store: 'computed', kind: 'angle', readOnly: true },
   // VPMAX (M6-02 part 7): 1 while the current layout viewport is maximized.
   { name: 'VPMAXIMIZEDSTATE', store: 'computed', kind: 'integer', readOnly: true },
 ];

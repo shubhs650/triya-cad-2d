@@ -7,8 +7,9 @@
 // Messages: on the Model tab AutoCAD refuses both ("** Command not allowed in Model Tab **").
 // AutoCAD's help gives no message for MSPACE without a viewport to work in, nor for PSPACE in
 // paper space; "There are no active model space viewports." and "Already in paper space." are
-// chosen. A viewport turned off, twisted or not in plan is none to work in (`workableViewport`).
-import { firstViewport, floatingViewport } from '../layout/current-viewport';
+// chosen. A viewport turned off or not in plan is none to work in (`workableViewport`); a twisted
+// one is worked in turned (M6-02 part 15).
+import { firstViewport, floatingViewport, viewportTwist } from '../layout/current-viewport';
 import { isPaperSpace } from './bus';
 import type { CommandContext, CommandDef } from './command';
 
@@ -19,6 +20,15 @@ export const IN_PAPER_SPACE = 'Already in paper space.';
 /** Whether the tab shown is a layout's (not the Model tab, nor the Block Editor's block). */
 const onLayout = (ctx: CommandContext): boolean =>
   ctx.viewport.current !== undefined || isPaperSpace(ctx.model, ctx.space);
+
+/**
+ * The angle model space shows turned at on the canvas: the current layout viewport's twist
+ * (VIEWTWIST, M6-02 part 15), else 0, as Triya shows model space and paper space untwisted.
+ */
+export function shownTwist(ctx: CommandContext): number {
+  const vp = floatingViewport(ctx.model, ctx.viewport.sheet, ctx.viewport.current);
+  return vp ? viewportTwist(vp.geom) : 0;
+}
 
 export function mspaceCommand(): CommandDef {
   return {

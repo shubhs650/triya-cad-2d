@@ -27,6 +27,7 @@
 // offered in a layout, where it applies model space's current UCS, the one a viewport with UCSVP 0
 // shows. Its <current> is paper space's own viewport, which keeps no model space UCS: Enter ends.
 import { currentVport } from '../edit/snap-grid';
+import { shownTwist } from './mspace';
 import { offsetCurveOf } from '../edit/offset';
 import { hatchBoundary } from '../edit/trim-edges';
 import { validViewName } from '../edit/named-view';
@@ -487,8 +488,10 @@ export function ucsCommand(): CommandDef {
         case 'OBject':
           return change(yield* alignTo(ctx));
         case 'View': {
-          // X along the screen's horizontal: a plan view turned by its twist on screen.
-          const twist = inPaper(ctx) ? 0 : (currentVport(ctx.model)?.twist ?? 0);
+          // X along the screen's horizontal: a plan view turned by its twist on screen. The
+          // Model tab shows its *Active VPORT's view untwisted (savedModelView), so only a
+          // current layout viewport's twist turns it (M6-02 part 15).
+          const twist = inPaper(ctx) ? 0 : shownTwist(ctx);
           return change({ origin: currentUcs(ctx).origin, angle: exactAngle(-twist) });
         }
         case 'NAmed':

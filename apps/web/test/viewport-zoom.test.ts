@@ -9,12 +9,14 @@ import {
 } from '@triya/engine';
 import { modelViewOf, screenToWorld, type ViewTransform } from '@triya/render';
 import { describe, expect, it } from 'vitest';
-import { zoomAt } from '../src/canvas/navigate';
+import { panBy, zoomAt } from '../src/canvas/navigate';
 import {
   ViewportHistories,
+  fitTurned,
   frameOnCanvas,
   frameView,
   maximizedGeometry,
+  turnedBox,
   viewportViewFrom,
 } from '../src/canvas/viewport-zoom';
 import { windowView } from '../src/canvas/views';
@@ -84,6 +86,76 @@ describe("a viewport's frame as a window of its own", () => {
     // 80 wide in a 4:3 frame: the width decides, 60 high.
     expect(after.viewHeight).toBeCloseTo(60, 9);
     expect(paperPointOf(after, { x: 40, y: 10 })).toEqual(vp.center);
+  });
+});
+
+describe('a twisted viewport’s frame (M6-02 part 15)', () => {
+  /** The same frame and view as `vp`, model space turned 30° counterclockwise on the sheet. */
+  const twisted = withViewportView(
+    { ...vp, twist: Math.PI / 6 },
+    { center: { x: 15, y: 15 }, height: 30 },
+  );
+  const frame = frameOnCanvas(twisted, sheet, canvas);
+
+  it('is a turned view of its frame', () => {
+    const v = frameView(twisted, frame.size);
+    expect(v.rotation).toBeCloseTo(Math.PI / 6, 12);
+    expect(v.scale).toBeCloseTo(4, 12);
+    expect(v.center.x).toBeCloseTo(15, 9);
+    expect(v.center.y).toBeCloseTo(15, 9);
+  });
+
+  it('zooms the wheel and pans about the model point under the cursor, turned', () => {
+    const cursor = { x: 350, y: 270 };
+    const before = screenToWorld(modelViewOf(sheet, twisted), canvas.width, canvas.height, cursor);
+    const local = { x: cursor.x - frame.left, y: cursor.y - frame.top };
+    const zoomed = zoomAt(frameView(twisted, frame.size), frame.size, local, 2);
+    expect(zoomed.rotation).toBeCloseTo(Math.PI / 6, 12);
+    const after = withViewportView(twisted, viewportViewFrom(zoomed, frame.size));
+    const still = screenToWorld(modelViewOf(sheet, after), canvas.width, canvas.height, cursor);
+    expect(still.x).toBeCloseTo(before.x, 9);
+    expect(still.y).toBeCloseTo(before.y, 9);
+    // A drag right by 40 px moves what was under the cursor 40 px right, along the screen.
+    const panned = withViewportView(
+      twisted,
+      viewportViewFrom(panBy(frameView(twisted, frame.size), 40, 0), frame.size),
+    );
+    const moved = screenToWorld(modelViewOf(sheet, panned), canvas.width, canvas.height, {
+      x: cursor.x + 40,
+      y: cursor.y,
+    });
+    expect(moved.x).toBeCloseTo(before.x, 9);
+    expect(moved.y).toBeCloseTo(before.y, 9);
+  });
+
+  it('fits a ZOOM Window as the screen shows its corners', () => {
+    const r = Math.PI / 6;
+    // Two model points the turned frame shows 80 apart across and 20 up: a 80 × 20 window.
+    const turn = (u: number, v: number) => ({
+      x: u * Math.cos(r) - v * Math.sin(r),
+      y: u * Math.sin(r) + v * Math.cos(r),
+    });
+    const [a, b] = [turn(0, 0), turn(80, 20)];
+    const win = fitTurned(r, (t) => windowView(t(a), t(b), frame.size))!;
+    expect(win.rotation).toBe(r);
+    const after = withViewportView(twisted, viewportViewFrom(win, frame.size));
+    expect(after.viewHeight).toBeCloseTo(60, 9);
+    const mid = paperPointOf(after, turn(40, 10));
+    expect(mid.x).toBeCloseTo(vp.center.x, 9);
+    expect(mid.y).toBeCloseTo(vp.center.y, 9);
+  });
+
+  it('measures a box of model space along the frame’s turned axes', () => {
+    const quarter = (p: { x: number; y: number }) => ({ x: p.y, y: -p.x });
+    expect(turnedBox({ minX: 1, minY: 0, maxX: 4, maxY: 2 }, quarter)).toEqual({
+      minX: 0,
+      minY: -4,
+      maxX: 2,
+      maxY: -1,
+    });
+    // Unturned, the fit is the fit.
+    const plain = fitTurned(0, () => ({ center: { x: 1, y: 2 }, scale: 3 }));
+    expect(plain).toEqual({ center: { x: 1, y: 2 }, scale: 3 });
   });
 });
 
