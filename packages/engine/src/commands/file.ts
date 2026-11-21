@@ -50,6 +50,7 @@ import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
 import { dashPlot } from './plot-script';
 import { dashExport } from './export-script';
+import { dashPageSetup } from './plot-script';
 import type { Vec2 } from '../geom/types';
 import type { EntityGeometry } from '../model/types';
 
@@ -223,13 +224,16 @@ function plotCommand(name: string): CommandDef {
  * PAGESETUP (M6-01 part 3): AutoCAD 2024 Help, "PAGESETUP": "Controls the page layout, plotting
  * device, paper size, and other settings for each new layout", through the Page Setup Manager,
  * which is the app's; its Page Setup dialog's Window< asks for the corners as PLOT's does.
+ * -PAGESETUP (M6-06) asks for the settings at the command line (`dashPageSetup`).
  */
 function pageSetupCommand(): CommandDef {
   return {
     name: 'PAGESETUP',
+    dashVariant: true,
     usesSelection: 'none',
     keepsSelection: true,
     async *run(ctx): CommandGenerator {
+      if (ctx.dash) return yield* dashPageSetup(ctx);
       return yield* windowDialog(ctx, 'pagesetup');
     },
   };

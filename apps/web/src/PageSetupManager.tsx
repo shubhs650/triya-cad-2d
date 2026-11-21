@@ -23,7 +23,10 @@
 // again with the window picked. Triya's plotters are the dialog's own, not the page setup's, so
 // <Default output device> starts as <None> does, and Device name is not listed in the details.
 // Each change is one PAGESETUP (or LAYOUT) undo step at once, as AutoCAD's: Close does not take
-// them back. "Display when creating a new layout" waits for LAYOUT New to show the manager.
+// them back. M6-06: "Display when creating a new layout" (bottom left, as AutoCAD's) is
+// SHOWPAGESETUPFORNEWLAYOUTS, which opens the manager on a new layout first shown (the engine's
+// layout-init.ts); the Page Setup dialog's Preview... shows the plot preview of its settings, as
+// the Plot dialog's does, and the dialogs come back as they were when it closes.
 import {
   PAGE_SETUP_NAME_INVALID,
   namedPageSetups,
@@ -51,7 +54,8 @@ import {
   type PlotSettings,
   type PlotSpace,
 } from './plot';
-import { lastPlotSettings } from './plot-preview';
+import { drafting } from './drafting';
+import { lastPlotSettings, previewMode, previewOf } from './plot-preview';
 import { PlotForm } from './PlotDialog';
 import { drawingObjects, drawingRecords } from './saved-views';
 
@@ -121,6 +125,22 @@ export const pageSetupManager = (() => {
       kept = undefined;
       return k;
     },
+    /**
+     * The Page Setup dialog's Preview... (M6-06): hides the dialogs, keeping their state, while
+     * `show` shows the preview, then shows them again; PAGESETUP waits on throughout.
+     */
+    async preview(
+      doc: number,
+      block: string,
+      selected: string,
+      editing: Editing,
+      show: () => Promise<void>,
+    ) {
+      kept = { doc, block, selected, editing };
+      set(undefined);
+      await show();
+      if (kept?.doc === doc && done) set(doc);
+    },
     /** Window<: hides the dialogs, keeping their state, for PAGESETUP to ask for the corners. */
     pickWindow(doc: number, block: string, selected: string, editing: Editing) {
       kept = { doc, block, selected, editing };
@@ -138,11 +158,14 @@ export const pageSetupManager = (() => {
 export function PageSetupManager({
   doc,
   userTables,
+  underlayFile,
   edited,
 }: {
   doc: OpenDocument | undefined;
   /** The plot style tables added in Settings. */
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
+  /** A PDF underlay's file, for the preview. */
+  underlayFile?: (fileName: string) => Uint8Array | undefined;
   edited: (id: number) => void;
 }) {
   const open = useSyncExternalStore(pageSetupManager.subscribe, pageSetupManager.get);
@@ -155,6 +178,7 @@ export function PageSetupManager({
       doc={doc}
       controller={controller}
       {...(userTables && { userTables })}
+      {...(underlayFile && { underlayFile })}
       edited={edited}
     />
   );
@@ -181,13 +205,19 @@ function ManagerBody({
   doc,
   controller,
   userTables,
+  underlayFile,
   edited,
 }: {
   doc: OpenDocument;
   controller: CanvasController;
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
+  underlayFile?: (fileName: string) => Uint8Array | undefined;
   edited: (id: number) => void;
 }) {
+  const showForNew = useSyncExternalStore(
+    drafting.subscribe,
+    () => drafting.get().showPageSetupForNewLayouts,
+  );
   const [own, setOwn] = useState<PlotSpace>();
   const [selected, setSelected] = useState<string>(OWN);
   const [editing, setEditing] = useState<Editing>();
@@ -330,6 +360,23 @@ function ManagerBody({
   };
 
   /** The Page Setup dialog's OK. */
+  /** Preview...: the plot the dialog's settings make, as the Plot dialog previews it. */
+  const preview = async (e: Editing) => {
+    setMessage(undefined);
+    const title = `${doc.name} - ${e.space.name}`;
+    let p;
+    try {
+      p = await previewOf((r) => controller.plot(r), e.space, e.settings, title, underlayFile);
+    } catch (err) {
+      setMessage({ text: err instanceof Error ? err.message : String(err), problem: true });
+      return;
+    }
+    const { pdf, paper } = p;
+    await pageSetupManager.preview(doc.id, doc.block, selected, e, () =>
+      previewMode.show({ doc: doc.id, title, pdf, paper }),
+    );
+  };
+
   const save = async (e: Editing): Promise<boolean> => {
     let plot;
     try {
@@ -594,7 +641,17 @@ function ManagerBody({
           </button>
         </div>
       )}
-      <div className="cad-dialog-buttons">
+      <div className="cad-dialog-buttons page-setup-manager-buttons">
+        <label className="page-setup-show-new">
+          <input
+            type="checkbox"
+            checked={showForNew}
+            onChange={(e) =>
+              drafting.configure({ showPageSetupForNewLayouts: e.currentTarget.checked })
+            }
+          />
+          Display when creating a new layout
+        </label>
         <button type="button" onClick={() => pageSetupManager.close()}>
           Close
         </button>
@@ -631,6 +688,7 @@ function ManagerBody({
           problem={message?.problem ? message.text : undefined}
           onChange={(settings) => setEditing({ ...editing, settings })}
           pickWindow={() => pageSetupManager.pickWindow(doc.id, doc.block, selected, editing)}
+          onPreview={() => void preview(editing)}
           onOk={() => void save(editing)}
           onCancel={() => {
             setEditing(undefined);
@@ -752,6 +810,7 @@ function PageSetupDialog({
   problem,
   onChange,
   pickWindow,
+  onPreview,
   onOk,
   onCancel,
 }: {
@@ -759,6 +818,7 @@ function PageSetupDialog({
   problem: string | undefined;
   onChange: (s: PlotSettings) => void;
   pickWindow: () => void;
+  onPreview: () => void;
   onOk: () => void;
   onCancel: () => void;
 }) {
@@ -789,6 +849,9 @@ function PageSetupDialog({
         </p>
       )}
       <div className="cad-dialog-buttons">
+        <button type="button" className="plot-preview-button" onClick={onPreview}>
+          Preview…
+        </button>
         <button type="button" onClick={onOk}>
           OK
         </button>

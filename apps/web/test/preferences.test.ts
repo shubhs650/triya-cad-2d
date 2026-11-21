@@ -79,6 +79,9 @@ describe('preferences', () => {
       annoAutoScale: -4,
       // PLOTTRANSPARENCYOVERRIDE 1, the page setup's (M6-04 part 2).
       plotTransparencyOverride: 1,
+      // LAYOUTCREATEVIEWPORT 1 and SHOWPAGESETUPFORNEWLAYOUTS 0, AutoCAD's (M6-06).
+      layoutCreateViewport: true,
+      showPageSetupForNewLayouts: false,
       // LWDEFAULT 25, LWUNITS 1 (millimetres) and Adjust Display Scale 1 (M5-08 part 3).
       lwDefault: 25,
       lwUnits: 1,
@@ -432,6 +435,18 @@ describe('preferences', () => {
         .plotTransparencyOverride;
     expect([o(0), o(1), o(2)]).toEqual([0, 1, 2]);
     expect([o(3), o(-1), o('2'), o(1.5)]).toEqual([1, 1, 1, 1]);
+  });
+
+  it('keep LAYOUTCREATEVIEWPORT and SHOWPAGESETUPFORNEWLAYOUTS as switches (M6-06)', () => {
+    const o = (v: unknown) => {
+      const d = normalizePreferences({
+        drafting: { layoutCreateViewport: v, showPageSetupForNewLayouts: v },
+      }).drafting;
+      return [d.layoutCreateViewport, d.showPageSetupForNewLayouts];
+    };
+    expect(o(false)).toEqual([false, false]);
+    expect(o(true)).toEqual([true, true]);
+    expect(o('yes')).toEqual([true, false]);
   });
 
   it('keep ANNOAUTOSCALE from −4 to 4 but 0 (M6-03)', () => {

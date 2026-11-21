@@ -8,8 +8,8 @@
 //     sheet, as Triya's drawings without a template have it (assets/templates, M5-10): ISO A4 in
 //     millimetres in a metric drawing (MEASUREMENT 1), ANSI A in inches otherwise, landscape,
 //     1:1, plotting the layout, its limits the paper. AutoCAD takes it from the default output
-//     device in Options, which Triya has no list of. The new layout has no viewport: AutoCAD
-//     makes one on first showing it (LAYOUTCREATEVIEWPORT), which waits for MVIEW (M6-02).
+//     device in Options, which Triya has no list of. The new layout has no viewport: it gets one
+//     the first time it is shown (LAYOUTCREATEVIEWPORT, M6-06: commands/layout-init.ts).
 //   - Delete: "The Model tab cannot be deleted." Deleting the current layout (the one on
 //     `*Paper_Space`) makes another current first, as AutoCAD does: the save swaps the two sheet
 //     blocks (M1-75 part 30). Every save starts from the file as it was opened, which can make only

@@ -2766,6 +2766,7 @@ export function App() {
       <PageSetupManager
         doc={active}
         userTables={userPlotStyleTables}
+        underlayFile={(f) => pdfPages.bytes(f)}
         edited={(id) => store.edited(id)}
       />
       <TemplateChooser />

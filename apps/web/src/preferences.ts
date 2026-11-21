@@ -90,6 +90,8 @@ export type DraftingPreferences = Pick<
   | 'xFade'
   | 'annoAutoScale'
   | 'plotTransparencyOverride'
+  | 'layoutCreateViewport'
+  | 'showPageSetupForNewLayouts'
   | 'lwDefault'
   | 'lwUnits'
   | 'lwScale'
@@ -203,6 +205,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     xFade: 50,
     annoAutoScale: -4,
     plotTransparencyOverride: 1,
+    layoutCreateViewport: true,
+    showPageSetupForNewLayouts: false,
     lwDefault: 25,
     lwUnits: 1,
     lwScale: 1,
@@ -375,6 +379,11 @@ export function normalizePreferences(raw: unknown): Preferences {
         { min: 0, max: 2 },
         d.drafting.plotTransparencyOverride,
       ) as 0 | 1 | 2,
+      layoutCreateViewport: bool(k['layoutCreateViewport'], d.drafting.layoutCreateViewport),
+      showPageSetupForNewLayouts: bool(
+        k['showPageSetupForNewLayouts'],
+        d.drafting.showPageSetupForNewLayouts,
+      ),
       // M5-08 part 3: one of AutoCAD's lineweights; mm or inches; the slider's range.
       lwDefault:
         typeof k['lwDefault'] === 'number' && LINEWEIGHTS.includes(k['lwDefault'])
@@ -533,6 +542,8 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     xFade: s.xFade,
     annoAutoScale: s.annoAutoScale,
     plotTransparencyOverride: s.plotTransparencyOverride,
+    layoutCreateViewport: s.layoutCreateViewport,
+    showPageSetupForNewLayouts: s.showPageSetupForNewLayouts,
     lwDefault: s.lwDefault,
     lwUnits: s.lwUnits,
     lwScale: s.lwScale,
