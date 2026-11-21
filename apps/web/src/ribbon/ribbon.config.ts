@@ -28,7 +28,7 @@ export type RibbonRun =
   /**
    * A contextual tab's option of the command running (M7-02 part 4): `keyword` typed at its
    * prompt, as AutoCAD's Hatch Creation and Array Creation buttons answer HATCH's and ARRAY's
-   * prompts; empty is Enter, which ends it.
+   * prompts (and Table Cell's TABLECELL's); empty is Enter, which ends it.
    */
   | { readonly keyword: string }
   /**
@@ -1113,6 +1113,84 @@ const ARRAY_CREATION_PATH: ContextualTab = {
   ],
 };
 
+/**
+ * Table Cell: TABLECELL (M4-05 part 3) is the cells selected, its prompt's options the tab's
+ * actions, each typed as its whole keyword. Esc ends it, deselecting the cells.
+ */
+const TABLE_CELL: ContextualTab = {
+  id: 'table-cell',
+  label: 'Table Cell',
+  when: { commands: ['TABLECELL'] },
+  panels: [
+    {
+      id: 'rows',
+      label: 'Rows',
+      compress: { order: 5, keep: ['insert-above', 'insert-below'] },
+      items: [
+        key('insert-above', 'Insert Above', 'table_move_above', 'Above', BIG),
+        key('insert-below', 'Insert Below', 'table_move_below', 'Below', BIG),
+        key('delete-rows', 'Delete Row(s)', 'table_delete_row', 'DeleteRows', BIG),
+      ],
+    },
+    {
+      id: 'columns',
+      label: 'Columns',
+      compress: { order: 4, keep: ['insert-left', 'insert-right'] },
+      items: [
+        key('insert-left', 'Insert Left', 'table_move_left', 'Left', BIG),
+        key('insert-right', 'Insert Right', 'table_move_right', 'Right', BIG),
+        key('delete-columns', 'Delete Column(s)', 'table_delete_column', 'DeleteColumns', BIG),
+      ],
+    },
+    {
+      id: 'merge',
+      label: 'Merge',
+      compress: { order: 3, keep: ['merge-cells'] },
+      items: [
+        split('merge-cells', 'Merge Cells', 'table_cells_merge', BIG, [
+          key('merge-all', 'Merge All', 'table_cells_merge', 'MergeAll'),
+          key('merge-rows', 'Merge By Row', 'table_cells_merge', 'MergeRows'),
+          key('merge-columns', 'Merge By Column', 'table_cells_merge', 'MergeColumns'),
+        ]),
+        key('unmerge-cells', 'Unmerge Cells', 'table_cells_split', 'Unmerge', BIG),
+      ],
+    },
+    {
+      id: 'cell-styles',
+      label: 'Cell Styles',
+      compress: { order: 2, keep: [] },
+      items: [
+        key('match-cell', 'Match Cell', 'paint_brush', 'Match'),
+        key('cell-style', 'Cell Style', 'style_guide', 'CellStyle'),
+        key('cell-background', 'Background Fill', 'paint_bucket', 'BAckground'),
+        key('cell-borders', 'Cell Borders', 'border_all', 'BOrders'),
+        key('cell-alignment', 'Alignment', 'text_align_center', 'ALignment'),
+        key('remove-overrides', 'Remove All Property Overrides', 'broom', 'RemoveOverrides'),
+      ],
+    },
+    {
+      id: 'cell-format',
+      label: 'Cell Format',
+      compress: { order: 1, keep: [] },
+      items: [
+        key('cell-locking', 'Cell Locking', 'table_lock', 'LOcking'),
+        key('data-format', 'Data Format', 'table_settings', 'DataFormat'),
+        key('row-height', 'Row Height', 'align_space_evenly_vertical', 'Height'),
+      ],
+    },
+    {
+      id: 'insert',
+      label: 'Insert',
+      compress: { order: 6, keep: ['cell-block'] },
+      items: [
+        key('cell-block', 'Block', 'cube_arrow_curve_down', 'BLock', BIG),
+        key('cell-text', 'Edit Text', 'table_cell_edit', 'Text', LABELLED),
+      ],
+    },
+    close('close-table-cell', 'Close Table Cell', { action: 'escape' }),
+  ],
+};
+
 const BLOCK_EDITOR: ContextualTab = {
   id: 'block-editor',
   label: 'Block Editor',
@@ -1149,6 +1227,7 @@ export const CONTEXTUAL_TABS: readonly ContextualTab[] = [
   ARRAY_CREATION_RECT,
   ARRAY_CREATION_POLAR,
   ARRAY_CREATION_PATH,
+  TABLE_CELL,
   BLOCK_EDITOR,
   HATCH_EDITOR,
   IMAGE,

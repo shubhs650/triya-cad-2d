@@ -2,7 +2,7 @@
 // DEC-017). The breakpoints, each item's size at each, the protected Home Draw/Modify/Annotation
 // panels that never compress, and the order the other Home panels give up their room in.
 import { describe, expect, it } from 'vitest';
-import { builtinCommands } from '@triya/engine';
+import { TABLE_CELL_OPTIONS, builtinCommands } from '@triya/engine';
 import { DRAFTING_ITEMS } from '../src/drafting';
 import {
   CONTEXTUAL_TABS,
@@ -213,7 +213,7 @@ describe('the data model', () => {
           if (i.unavailable) continue;
           if ('command' in i.run) expect(registry.resolve(i.run.command), where).toBeDefined();
           // A contextual tab's option (M7-02 part 4): a keyword, or Enter.
-          else if ('keyword' in i.run) expect(i.run.keyword, where).toMatch(/^[A-Z]*$/);
+          else if ('keyword' in i.run) expect(i.run.keyword, where).toMatch(/^[A-Za-z]*$/);
           else if (i.run.action.startsWith('drafting:'))
             expect(toggles.has(i.run.action), where).toBe(true);
           else if (!i.control)
@@ -233,6 +233,11 @@ describe('the data model', () => {
     expect(shown({ command: 'ARRAYRECT' })).toBe('array-creation-rect');
     expect(shown({ command: 'ARRAYPOLAR' })).toBe('array-creation-polar');
     expect(shown({ command: 'ARRAYPATH' })).toBe('array-creation-path');
+    expect(shown({ command: 'TABLECELL' })).toBe('table-cell');
+    // Table Cell's buttons are TABLECELL's options, typed whole.
+    const cell = CONTEXTUAL_TABS.find((t) => t.id === 'table-cell')!;
+    for (const i of flat(cell.panels.flatMap((p) => p.items)))
+      if ('keyword' in i.run) expect(TABLE_CELL_OPTIONS, i.id).toContain(i.run.keyword);
     expect(shown({ command: 'LINE' })).toBeUndefined();
     expect(shown({ blockEditor: true })).toBe('block-editor');
     expect(shown({ selection: 'hatch' })).toBe('hatch-editor');

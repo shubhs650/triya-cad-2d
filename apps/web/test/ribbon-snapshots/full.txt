@@ -440,6 +440,65 @@ Rows (compressed)
   icon        array-rows<align_space_evenly_vertical>
   ▾ 
 
+## Table Cell (contextual: table-cell)
+Rows (expanded)
+  large-label insert-above<table_move_above>
+  large-label insert-below<table_move_below>
+  large-label delete-rows<table_delete_row>
+Columns (expanded)
+  large-label insert-left<table_move_left>
+  large-label insert-right<table_move_right>
+  large-label delete-columns<table_delete_column>
+Merge (expanded)
+  large-label merge-cells<table_cells_merge> ▾ [merge-all<table_cells_merge>, merge-rows<table_cells_merge>, merge-columns<table_cells_merge>]
+  large-label unmerge-cells<table_cells_split>
+Cell Styles (expanded)
+  small-label match-cell<paint_brush>
+  small-label cell-style<style_guide>
+  small-label cell-background<paint_bucket>
+  small-label cell-borders<border_all>
+  small-label cell-alignment<text_align_center>
+  small-label remove-overrides<broom>
+Cell Format (expanded)
+  small-label cell-locking<table_lock>
+  small-label data-format<table_settings>
+  small-label row-height<align_space_evenly_vertical>
+Insert (expanded)
+  large-label cell-block<cube_arrow_curve_down>
+  small-label cell-text<table_cell_edit>
+Close (expanded)
+  large-label close-table-cell<dismiss_circle>
+
+### step 1
+Cell Format (collapsed)
+  ▾ cell-locking, data-format, row-height
+
+### step 2
+Cell Styles (collapsed)
+  ▾ match-cell, cell-style, cell-background, cell-borders, cell-alignment, remove-overrides
+
+### step 3
+Merge (compressed)
+  icon        merge-cells<table_cells_merge> ▾ [merge-all<table_cells_merge>, merge-rows<table_cells_merge>, merge-columns<table_cells_merge>]
+  ▾ unmerge-cells
+
+### step 4
+Columns (compressed)
+  icon        insert-left<table_move_left>
+  icon        insert-right<table_move_right>
+  ▾ delete-columns
+
+### step 5
+Rows (compressed)
+  icon        insert-above<table_move_above>
+  icon        insert-below<table_move_below>
+  ▾ delete-rows
+
+### step 6
+Insert (compressed)
+  icon        cell-block<cube_arrow_curve_down>
+  ▾ cell-text
+
 ## Block Editor (contextual: block-editor)
 Open/Save (expanded)
   large-label edit-block<cube_tree>
