@@ -1,0 +1,1 @@
+- M6-02 part 8 (#608): the Layer Properties Manager's VP Freeze toggle and VP Color, VP Linetype, VP Lineweight and VP Transparency cells work in the layout viewport made current, a cell the viewport overrides marked, and the filter menu's Viewport (Freeze, Thaw) and Isolate Group Active Viewport Only act in it.
