@@ -50,18 +50,23 @@ export const INVALID_CONFIGURATION_NAME = 'Invalid viewport configuration name.'
 
 type Mode = 'Display' | 'Current viewport';
 
-/** What -VPORTS keeps while the drawing is open: MOde, and the tiles Toggle brings back. */
-interface State {
+/**
+ * What -VPORTS and the VPORTS dialog keep while the drawing is open: MOde, the tiles Toggle
+ * brings back, and the configuration last saved or restored (the dialog's Current name).
+ */
+export interface VportsState {
   mode: Mode;
   previous?: readonly ConfigTile[];
+  current?: string | undefined;
 }
+type State = VportsState;
 
 /**
  * The current configuration's tiles as the canvases show them, the current one first: the
  * canvas answers each tile's view and which tile is current; without an answer, each record's
  * own view and the first tile.
  */
-async function liveTiles(ctx: CommandContext): Promise<ConfigTile[]> {
+export async function liveTiles(ctx: CommandContext): Promise<ConfigTile[]> {
   const r = await ctx.view.request({ op: 'tiles' });
   const live = r.ok ? r.tiles : undefined;
   const tiles = configurationTiles(
@@ -94,10 +99,15 @@ async function* configurationName(ctx: CommandContext, message: string): Sub<str
   }
 }
 
-/** `tiles` written as the current configuration. */
-function arrange(ctx: CommandContext, tiles: readonly ConfigTile[]): void {
+/** `tiles` written as the current configuration, which then has no name of its own. */
+function arrange(ctx: CommandContext, tiles: readonly ConfigTile[], state?: State): void {
   ctx.edit((b) => writeConfiguration(b, ctx.model, ACTIVE_VPORT, tiles));
+  if (state) state.current = undefined;
 }
+
+/** The configuration's name as the drawing spells it, after it was written as `name`. */
+export const spelled = (ctx: CommandContext, name: string): string =>
+  viewportConfiguration(ctx.model, name)?.name ?? name;
 
 /** One viewport showing the current tile's view. */
 const single = (current: ConfigTile): ConfigTile[] => [
@@ -167,6 +177,7 @@ async function* modelOptions(ctx: CommandContext, state: State): Sub<void> {
       const tiles = await liveTiles(ctx);
       const saved = name;
       ctx.edit((b) => writeConfiguration(b, ctx.model, saved, tiles));
+      state.current = spelled(ctx, saved);
       return;
     }
     case 'Restore': {
@@ -182,6 +193,7 @@ async function* modelOptions(ctx: CommandContext, state: State): Sub<void> {
           const now = await liveTiles(ctx);
           if (now.length > 1) state.previous = now;
           arrange(ctx, tiles);
+          state.current = found.name;
           return;
         }
         ctx.message(`Cannot find viewport configuration "${name}".`);
@@ -199,6 +211,8 @@ async function* modelOptions(ctx: CommandContext, state: State): Sub<void> {
       ctx.edit((b) => {
         for (const c of found) deleteConfiguration(b, ctx.model, c.name);
       });
+      const key = state.current?.toUpperCase();
+      if (found.some((c) => c.name.toUpperCase() === key)) state.current = undefined;
       return;
     }
     case 'SIngle':
@@ -206,11 +220,11 @@ async function* modelOptions(ctx: CommandContext, state: State): Sub<void> {
       const tiles = await liveTiles(ctx);
       if (tiles.length > 1) {
         state.previous = tiles;
-        return arrange(ctx, single(tiles[0]!));
+        return arrange(ctx, single(tiles[0]!), state);
       }
       if (a.keyword === 'SIngle') return;
       // Toggle from one viewport: the previous configuration, else four (Help).
-      return arrange(ctx, state.previous ?? divided(tiles, 'Display', 4));
+      return arrange(ctx, state.previous ?? divided(tiles, 'Display', 4), state);
     }
     case '2':
     case '3': {
@@ -226,10 +240,10 @@ async function* modelOptions(ctx: CommandContext, state: State): Sub<void> {
       if (k.kind !== 'keyword') return;
       const tiles = await liveTiles(ctx);
       const arrangement = k.keyword as ViewportArrangement;
-      return arrange(ctx, divided(tiles, state.mode, two ? 2 : 3, arrangement));
+      return arrange(ctx, divided(tiles, state.mode, two ? 2 : 3, arrangement), state);
     }
     case '4':
-      return arrange(ctx, divided(await liveTiles(ctx), state.mode, 4));
+      return arrange(ctx, divided(await liveTiles(ctx), state.mode, 4), state);
     case 'MOde': {
       const m = yield ctx.prompt.keyword({
         message: 'Enter a viewport configuration mode',
@@ -242,8 +256,7 @@ async function* modelOptions(ctx: CommandContext, state: State): Sub<void> {
   }
 }
 
-export function dashVportsCommand(): CommandDef {
-  const state: State = { mode: 'Current viewport' };
+export function dashVportsCommand(state: State = { mode: 'Current viewport' }): CommandDef {
   const mview = mviewCommand();
   return {
     name: '-VPORTS',

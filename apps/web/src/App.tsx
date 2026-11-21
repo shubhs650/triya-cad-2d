@@ -107,6 +107,8 @@ import {
   type DrawingTemplate,
 } from './templates';
 import { underlayLayersDialog } from './underlay-layers';
+import { viewportsDialog } from './viewports-dialog';
+import { ViewportsDialog } from './ViewportsDialog';
 import { insertLayoutsDialog, layoutFileReply } from './layout-template-files';
 import { InsertLayoutsDialog } from './InsertLayoutsDialog';
 import { UnderlayLayers } from './UnderlayLayers';
@@ -652,6 +654,8 @@ function viewContext(id: number): ViewContext {
         underlays: r.underlays,
         ...(r.current !== undefined && { current: r.current }),
       }),
+    // VPORTS (M6-02 part 11): the Viewports dialog, waited for as ULAYERS waits for its own.
+    viewportsDialog: ({ op: _op, ...request }) => viewportsDialog.show(id, request),
     // -INSERT name=file (M5-01 part 4): a drawing open, or a file given for xrefs.
     drawingFile: (file) => drawingFileReply(file, heldDrawings()),
     // LAYOUT Template (M6-01 part 4): the Insert Layout(s) dialog, or a drawing named.
@@ -2783,6 +2787,7 @@ export function App() {
       <TemplateChooser />
       <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <InsertLayoutsDialog doc={active?.id} />
+      <ViewportsDialog doc={active?.id} />
       <SaveChanges prompt={saveChanges} />
       <PlotNoticeDialog />
       <SnapMenu />
