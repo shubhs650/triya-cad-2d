@@ -180,4 +180,28 @@ describe('VIEWPORT', () => {
     expect('ucsPerViewport' in g).toBe(false);
     expect('ucs' in g).toBe(false);
   });
+
+  it('maps its own snap and grid settings (M6-02 part 17, DXF 13, 14, 15, 50, 61)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const v = new Viewport();
+    v.id = 2;
+    v.snapBase = new XY(1, 2);
+    v.snapSpacing = new XY(2.5, 5);
+    v.gridSpacing = new XY(0, 0);
+    v.snapAngle = 0.5;
+    v.majorGridLineFrequency = 4;
+    expect(mapIn(doc, v)).toMatchObject({
+      snapGrid: {
+        snapBase: { x: 1, y: 2 },
+        snapSpacing: { x: 2.5, y: 5 },
+        gridSpacing: { x: 0, y: 0 },
+        snapAngle: 0.5,
+        gridMajor: 4,
+      },
+    });
+    // No snap spacing stated (an R12 file keeps it in the viewport's xdata): none read.
+    const w = new Viewport();
+    w.id = 3;
+    expect('snapGrid' in mapIn(doc, w)).toBe(false);
+  });
 });

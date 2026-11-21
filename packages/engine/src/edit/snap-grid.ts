@@ -6,8 +6,15 @@
 // canvas's 10 × 10 spacing. Isometric snap is not built (PRD non-goal 7, DEC-026, DEC-060).
 // Part 6 adds the Grid behavior, GRIDDISPLAY, which the VPORT keeps as its grid flags (DXF 60),
 // and SETVAR's SNAPUNIT, GRIDUNIT, GRIDMAJOR, GRIDDISPLAY and SNAPBASE, which set it too.
+// Part 17 of M6-02 gives each layout viewport its own (`snapGridHolder`): AutoCAD keeps SNAPUNIT,
+// GRIDUNIT, SNAPBASE, SNAPANG, GRIDMAJOR and GRIDDISPLAY in the viewport worked in, a layout
+// viewport's in its VIEWPORT (DXF 13, 14, 15, 50, 61 and the 90 bits 262144 to 2097152), paper
+// space's in the layout's paper-space viewport (DXF 69 id 1).
 import type { DocumentModel } from '../model/document';
-import type { VportRecord } from '../model/types';
+import type { ChangeSetBuilder } from '../model/builder';
+import type { Handle } from '../model/handle';
+import type { Vec2 } from '../geom/types';
+import type { ViewportGeometry, ViewportSnapGrid, VportRecord } from '../model/types';
 import type { SnapGridSettings } from '../commands/prompt';
 
 const isActive = (v: VportRecord) => v.name.toUpperCase() === '*ACTIVE';
@@ -26,8 +33,23 @@ export function currentVport(model: DocumentModel): VportRecord | undefined {
 export const GRID_DISPLAY = { beyondLimits: 1, adaptive: 2, subdivide: 4, follow: 8 } as const;
 const GRID_DISPLAY_BITS = 15;
 
+/**
+ * The snap and grid settings of the viewport worked in, as a VPORT record names them (a
+ * VIEWPORT's are mapped to these names by `viewportSnapGrid`).
+ */
+export interface SnapGridState {
+  readonly snapBase: Vec2;
+  readonly snapSpacing: Vec2;
+  /** SNAPANG, radians. */
+  readonly snapRotation: number;
+  readonly gridSpacing: Vec2;
+  readonly gridMajor: number;
+  /** GRIDDISPLAY's bits (`GRID_DISPLAY`). */
+  readonly gridFlags: number;
+}
+
 /** The Snap and Grid tab's settings as `v` holds them. */
-export function snapGridOf(v: VportRecord): SnapGridSettings {
+export function snapGridOf(v: SnapGridState): SnapGridSettings {
   return {
     snapSpacing: v.snapSpacing,
     gridSpacing: v.gridSpacing,
@@ -64,9 +86,9 @@ export function snapGridProblem(s: SnapGridSettings): string | undefined {
 
 /** What setting `s` in `v` changes in it; undefined when nothing. */
 export function snapGridPatch(
-  v: VportRecord,
+  v: SnapGridState,
   s: SnapGridSettings,
-): Partial<VportRecord> | undefined {
+): Partial<SnapGridState> | undefined {
   const same = (p: { x: number; y: number }, q: { x: number; y: number }) =>
     p.x === q.x && p.y === q.y;
   const patch = {
@@ -77,4 +99,146 @@ export function snapGridPatch(
       v.gridFlags !== s.gridDisplay && { gridFlags: s.gridDisplay }),
   };
   return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+/**
+ * Where a VIEWPORT keeps GRIDDISPLAY (DXF reference, VIEWPORT 90): 262144 the grid beyond the
+ * limits, 524288 adaptive, 1048576 subdivision below the spacing, 2097152 following the dynamic
+ * UCS, the VPORT's DXF 60 bits 1, 2, 4 and 8 shifted up by 18.
+ */
+export const VIEWPORT_GRID_DISPLAY_SHIFT = 18;
+const VIEWPORT_GRID_DISPLAY_MASK = GRID_DISPLAY_BITS << VIEWPORT_GRID_DISPLAY_SHIFT;
+
+/**
+ * What a viewport made without them starts with: AutoCAD's 10 × 10 spacing, a major line every
+ * 5, from 0,0, square to the UCS (the canvas's own defaults, M3-06 part 2).
+ */
+export const DEFAULT_VIEWPORT_SNAP_GRID: ViewportSnapGrid = {
+  snapBase: { x: 0, y: 0 },
+  snapSpacing: { x: 10, y: 10 },
+  gridSpacing: { x: 10, y: 10 },
+  snapAngle: 0,
+  gridMajor: 5,
+};
+
+/** A VIEWPORT's snap and grid settings, by the VPORT record's names. */
+export function viewportSnapGrid(g: ViewportGeometry): SnapGridState {
+  const s = g.snapGrid ?? DEFAULT_VIEWPORT_SNAP_GRID;
+  return {
+    snapBase: s.snapBase,
+    snapSpacing: s.snapSpacing,
+    snapRotation: s.snapAngle,
+    gridSpacing: s.gridSpacing,
+    gridMajor: s.gridMajor,
+    gridFlags: (g.flags & VIEWPORT_GRID_DISPLAY_MASK) >>> VIEWPORT_GRID_DISPLAY_SHIFT,
+  };
+}
+
+/** `g` with `patch` of its snap and grid settings set (GRIDDISPLAY into its 90 bits). */
+export function withViewportSnapGrid(
+  g: ViewportGeometry,
+  patch: Partial<SnapGridState>,
+): ViewportGeometry {
+  const n = { ...viewportSnapGrid(g), ...patch };
+  const display = (n.gridFlags & GRID_DISPLAY_BITS) << VIEWPORT_GRID_DISPLAY_SHIFT;
+  return {
+    ...g,
+    flags: (g.flags & ~VIEWPORT_GRID_DISPLAY_MASK) | display,
+    snapGrid: {
+      snapBase: { ...n.snapBase },
+      snapSpacing: { ...n.snapSpacing },
+      gridSpacing: { ...n.gridSpacing },
+      snapAngle: n.snapRotation,
+      gridMajor: n.gridMajor,
+    },
+  };
+}
+
+/**
+ * `g`, a viewport MVIEW is making, with model space's snap and grid settings (its `*Active`
+ * VPORT's, GRIDDISPLAY too), else AutoCAD's defaults. AutoCAD's help does not say what a new
+ * layout viewport starts with; model space's is the common drafter expectation, as -VPORTS's new
+ * tiles start with the current viewport's (M6-02 part 10).
+ */
+export function withNewViewportSnapGrid(model: DocumentModel, g: ViewportGeometry): ViewportGeometry {
+  const v = currentVport(model);
+  if (!v) return { ...g, snapGrid: DEFAULT_VIEWPORT_SNAP_GRID };
+  const { snapBase, snapSpacing, snapRotation, gridSpacing, gridMajor, gridFlags } = v;
+  return withViewportSnapGrid(g, {
+    snapBase,
+    snapSpacing,
+    snapRotation,
+    gridSpacing,
+    gridMajor,
+    gridFlags,
+  });
+}
+
+/** The snap and grid settings of the viewport worked in, and how to edit them. */
+export interface SnapGridHolder {
+  /** The VPORT record or the VIEWPORT that keeps them. */
+  readonly kind: 'vport' | 'viewport';
+  readonly handle: Handle;
+  readonly state: SnapGridState;
+  /** Sets `patch` in it, in `b`. */
+  write(b: ChangeSetBuilder, patch: Partial<SnapGridState>): void;
+}
+
+/** A layout's paper-space viewport (DXF 69 id 1), if it has one. */
+function paperViewportOf(
+  model: DocumentModel,
+  sheet: Handle,
+): { handle: Handle; geom: ViewportGeometry } | undefined {
+  if (!model.hasBlock(sheet)) return undefined;
+  for (const id of model.blockEntities(sheet)) {
+    const e = model.entity(id);
+    if (e?.geom.kind === 'VIEWPORT' && e.geom.id === 1) return { handle: e.handle, geom: e.geom };
+  }
+  return undefined;
+}
+
+function viewportHolder(
+  model: DocumentModel,
+  handle: Handle,
+  geom: ViewportGeometry,
+): SnapGridHolder {
+  return {
+    kind: 'viewport',
+    handle,
+    state: viewportSnapGrid(geom),
+    write(b, patch) {
+      const id = model.ids.idOf(handle);
+      if (id === undefined) return;
+      b.updateEntity(id, { geom: withViewportSnapGrid(geom, patch) });
+    },
+  };
+}
+
+/**
+ * Where the snap and grid settings of the viewport worked in are kept (M6-02 part 17): the
+ * layout viewport made current (`viewport`), else, on a layout (`sheet`, its paper-space block),
+ * its paper-space viewport, else model space's `*Active` VPORT, which also stands in for a
+ * layout that has no paper-space viewport yet (AutoCAD makes one when the layout is first
+ * shown). Undefined when the drawing has none of them.
+ */
+export function snapGridHolder(
+  model: DocumentModel,
+  at?: { readonly sheet?: Handle | undefined; readonly current?: Handle | undefined },
+): SnapGridHolder | undefined {
+  const current = at?.current;
+  if (current !== undefined) {
+    const id = model.ids.idOf(current);
+    const e = id === undefined ? undefined : model.entity(id);
+    if (e?.geom.kind === 'VIEWPORT') return viewportHolder(model, current, e.geom);
+  }
+  const paper = at?.sheet === undefined ? undefined : paperViewportOf(model, at.sheet);
+  if (paper) return viewportHolder(model, paper.handle, paper.geom);
+  const v = currentVport(model);
+  if (!v) return undefined;
+  return {
+    kind: 'vport',
+    handle: v.handle,
+    state: v,
+    write: (b, patch) => b.updateTableRecord('vports', v.handle, patch),
+  };
 }
