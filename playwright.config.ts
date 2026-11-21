@@ -5,11 +5,17 @@ import { defineConfig, devices } from '@playwright/test';
 // io (M0-03) proves the @triya/io worker in a real browser; it starts its own Vite dev server.
 // ui and offline (M1-22) drive the app: each spec file starts apps/web's Vite dev server
 // (tests/e2e/app/server.ts) on a free port, so suites and workers never share one.
+// The suites that drive the app get the ribbon's 70 px (M7-01) on top of Desktop Chrome's
+// 1280 × 720, so the drawing area keeps the size their pixel and ink measures were set at.
+const APP_SUITES = new Set(['ui', 'offline', 'perf']);
 const suite = (name: string) => ({
   name,
   testDir: `./tests/e2e/${name}`,
   testMatch: '**/*.spec.ts',
-  use: { ...devices['Desktop Chrome'] },
+  use: {
+    ...devices['Desktop Chrome'],
+    ...(APP_SUITES.has(name) && { viewport: { width: 1280, height: 790 } }),
+  },
 });
 
 export default defineConfig({

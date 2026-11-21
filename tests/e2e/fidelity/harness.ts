@@ -40,10 +40,13 @@ export const test = base.extend<object, { app: { url: string } }>({
 /**
  * The size every render is taken at. The canvas area is pinned to it rather than left to fill
  * the window: the chrome around it is set in the system UI font, so its width differs between
- * machines (a 1-pixel wider canvas on CI than locally), and the window is large enough to hold it.
+ * machines (a 1-pixel wider canvas on CI than locally), and the window is large enough to hold it
+ * with the chrome around it: since the ribbon (M7-01) that is the minimum supported 1280 px wide,
+ * where Home's Draw, Modify and Annotation panels fit, and tall enough that the layout tabs and
+ * the command line under the pinned canvas stay in the window.
  */
 export const CANVAS = { width: 960, height: 600 };
-export const VIEWPORT = { width: 1100, height: 760 };
+export const VIEWPORT = { width: 1280, height: 860 };
 const PIN_CANVAS = `.canvas-area { flex: none !important; width: ${CANVAS.width}px !important; height: ${CANVAS.height}px !important; }`;
 
 /** Chrome drawn over the canvas (the navigation bar), hidden from the shots: its text is set in

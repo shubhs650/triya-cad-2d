@@ -354,13 +354,12 @@ test('Dynamic Input: a point typed right after a click counts from the clicked p
   await page.keyboard.press('Enter');
   await page.evaluate(() => (window as unknown as { triyaRelease(): void }).triyaRelease());
   await expect.poll(async () => (await linesAdded(page)).length).toBe(2);
-  const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
-  expect((await linesAdded(page))[1]).toEqual([
-    x,
-    y,
-    r4(x! + 20 * Math.cos(Math.PI / 6)),
-    r4(y! + 10),
-  ]);
+  // The line's ends come rounded to 4 decimals, so the far end, worked out here from the
+  // rounded near end, can be 1e-4 off the engine's rounding of the exact sum.
+  const [x1, y1, x2, y2] = (await linesAdded(page))[1]!;
+  expect([x1, y1]).toEqual([x, y]);
+  expect(Math.abs(x2! - (x! + 20 * Math.cos(Math.PI / 6)))).toBeLessThanOrEqual(1.5e-4);
+  expect(Math.abs(y2! - (y! + 10))).toBeLessThanOrEqual(1.5e-4);
   await expect(prompt(page)).toHaveText('Specify next point or [Close/Undo]:');
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');

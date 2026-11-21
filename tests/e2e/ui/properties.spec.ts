@@ -611,8 +611,11 @@ test('steps through a polyline’s vertices and moves one from the palette', asy
   await expect(vertexX).toHaveValue(/^1000040\.0+$/);
   await expect(vertexY).toHaveValue(/^1000030\.0+$/);
 
-  // The vertex shown is marked while the spinner has the focus.
+  // The vertex shown is marked while the spinner has the focus. The unmarked canvas is measured
+  // as it is checked again below, with the pointer on the palette's heading: off the canvas, so
+  // with no crosshair drawn wherever the window's corner left the pointer.
   const heading = palette.getByRole('heading', { name: 'Properties' });
+  await heading.click();
   const unmarked = await ink(page);
   await vertex.focus();
   await expect.poll(() => ink(page)).toBeGreaterThan(unmarked);

@@ -4,9 +4,9 @@
 // point, Reference, two points snapped on the page, then the true length between them. The PDF
 // underlay test drawing (packages/testkit/src/underlay/fixture.ts) shows page 1 at the origin, a
 // unit an inch, with a black 1 in grid; grid corners (1, 1) and (3, 1) are 2 in apart, which the
-// drafter says is 50. The Snap to Underlays toggle (Ctrl+K until the ribbon's Insert >
-// Reference panel, M7-01) turns UOSNAP, PDFOSNAP here, off and on. SHOTS=<dir> saves the PR's
-// screenshots.
+// drafter says is 50. The ribbon's Insert > Reference > Snap to Underlays button (M7-01; the
+// Ctrl+K palette's toggle before it) turns UOSNAP, PDFOSNAP here, off and on. SHOTS=<dir> saves
+// the PR's screenshots.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
@@ -128,19 +128,23 @@ test('SCALE Reference calibrates a PDF underlay by two points snapped on its pag
   await shot(page, '3-after-calibration');
 });
 
-test('the Snap to Underlays toggle turns UOSNAP, so PDFOSNAP, off and on again', async ({
+test("the ribbon's Snap to Underlays button turns UOSNAP, so PDFOSNAP, off and on again", async ({
   page,
 }) => {
   test.setTimeout(120_000);
   const { tip, hover } = await openPage1(page);
+  // AutoCAD's split button: its list's OFF entry, from the Insert tab.
   const toggle = async () => {
-    await page.keyboard.press('Control+k');
-    const palette = page.getByRole('dialog', { name: 'Command palette' });
-    await expect(palette).toBeVisible();
-    await page.keyboard.type('Snap to Underlays');
-    await expect(palette.getByRole('option').first()).toContainText('Snap to Underlays on/off');
-    await page.keyboard.press('Enter');
-    await expect(palette).toHaveCount(0);
+    const ribbon = page.getByTestId('ribbon');
+    await ribbon.getByRole('tab', { name: 'Insert' }).click();
+    await ribbon
+      .getByRole('group', { name: 'Reference' })
+      .getByRole('button', { name: 'Snap to Underlays options' })
+      .click();
+    const menu = page.getByRole('menu', { name: 'Snap to Underlays' });
+    await menu.getByRole('menuitemradio', { name: 'Snap to Underlays OFF' }).click();
+    await expect(menu).toHaveCount(0);
+    await ribbon.getByRole('tab', { name: 'Home' }).click();
   };
 
   await type(page, 'L', 'Specify first point:');
