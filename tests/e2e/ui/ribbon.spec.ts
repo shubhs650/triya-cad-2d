@@ -8,9 +8,12 @@
 // breakpoint and compression step, every item with its icon; tooltips name the command, its
 // aliases and keys; the Quick Access Undo and Redo show Fluent's arrows. Home's Layers and
 // Properties dropdowns (part 3) show the selection's values, or the current ones, and set them.
-// Contextual tabs (part 4) come and go with the command running and the selection.
+// Contextual tabs (part 4) come and go with the command running and the selection. Annotate's
+// style dropdowns (part 5) show the current text, dimension, multileader and table styles, and
+// MTEXT's in-place editor brings the Text Editor tab, the editor's toolbar on the ribbon.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import type { ChangeSet, MTextGeometry } from '@triya/engine';
 import { DXF, enterCommand, expectDrawn, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import { layoutTab, type Breakpoint } from '../../../apps/web/src/ribbon/layout';
@@ -465,6 +468,108 @@ test('a compressed Properties panel lists its dropdowns, each opening its list',
   await list.getByRole('option', { name: '30', exact: true }).click();
   await properties.getByRole('button', { name: 'More Properties tools' }).click();
   await expect(menu.getByRole('menuitem', { name: 'Transparency: 30' })).toBeVisible();
+});
+
+test("Annotate's style dropdowns show the current style and set it (M7-02 part 5)", async ({
+  page,
+}) => {
+  await open(page, 1920);
+  await ribbon(page).getByRole('tab', { name: 'Annotate', exact: true }).click();
+  const textStyle = panel(page, 'Text').getByRole('button', { name: /^Text Style: / });
+  await expect(textStyle).toHaveAccessibleName('Text Style: Standard');
+  // -STYLE makes a new style, and makes it current: the dropdown follows.
+  await enterCommand(page, '-STYLE');
+  await enterCommand(page, 'Notes');
+  // The font, height, width factor, obliquing angle, backwards, upside-down and vertical: as
+  // they are.
+  for (let i = 0; i < 7; i++) await enterCommand(page, '');
+  await expect(textStyle).toHaveAccessibleName('Text Style: Notes');
+
+  // The list names the styles, the current one picked; a pick makes another current.
+  await textStyle.click();
+  const styles = page.getByRole('listbox', { name: 'Text Style' });
+  await expect(styles.getByRole('option')).toHaveText([
+    'Notes',
+    'Standard',
+    'Manage Text Styles...',
+  ]);
+  await expect(styles.getByRole('option', { name: 'Notes' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await shot(page, '1920-text-style-dropdown');
+  await styles.getByRole('option', { name: 'Standard', exact: true }).click();
+  await expect(textStyle).toHaveAccessibleName('Text Style: Standard');
+
+  // "Manage Text Styles..." opens the Text Style dialog.
+  await textStyle.click();
+  await styles.getByRole('option', { name: 'Manage Text Styles...' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Text Style' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  // The other style dropdowns name their current styles too; this drawing has no table style.
+  await expect(
+    panel(page, 'Dimensions').getByRole('button', { name: /^Dimension Style/ }),
+  ).toHaveAccessibleName('Dimension Style: Standard');
+  await expect(
+    panel(page, 'Leaders').getByRole('button', { name: /^Multileader Style/ }),
+  ).toHaveAccessibleName('Multileader Style: Standard');
+  await expect(
+    panel(page, 'Tables').getByRole('button', { name: /^Table Style/ }),
+  ).toHaveAccessibleName('Table Style');
+});
+
+test("MTEXT's editor brings the Text Editor tab, whose buttons format the text (M7-02 part 5)", async ({
+  page,
+}) => {
+  await open(page, 1920);
+  // An empty part of the plan, then MTEXT's box in it.
+  await enterCommand(page, 'Z');
+  await enterCommand(page, '1000000,1000000');
+  await enterCommand(page, '1000160,1000100');
+  await enterCommand(page, 'MT');
+  await enterCommand(page, '1000020,1000080');
+  await enterCommand(page, '1000140,1000020');
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await expect(ribbon(page).getByRole('tab', { selected: true })).toHaveText('Text Editor');
+  const formatting = panel(page, 'Formatting');
+  const underline = formatting.getByRole('button', { name: 'Underline', exact: true });
+  // The drawing's Standard style is txt.shx: an SHX font has no bold or italic.
+  await expect(formatting.getByRole('button', { name: 'Bold', exact: true })).toBeDisabled();
+
+  // A ribbon click formats what is typed next, the editor keeping the focus, as its toolbar's.
+  await page.keyboard.type('Note ');
+  await underline.click();
+  await expect(underline).toHaveAttribute('aria-pressed', 'true');
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('under');
+  await shot(page, '1920-text-editor');
+  await underline.click();
+  await expect(underline).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.type(' plain');
+
+  // Close Text Editor keeps the text; the tab goes and Home is back.
+  await panel(page, 'Close').getByRole('button', { name: 'Close Text Editor' }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(ribbon(page).getByRole('tab', { selected: true })).toHaveText('Home');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as unknown as {
+            triyaDev: { changes(): readonly ChangeSet[] };
+          }
+        ).triyaDev
+          .changes()
+          .flatMap((cs) => cs.entities?.added ?? [])
+          .filter((a) => a.entity.geom.kind === 'MTEXT')
+          .map((a) => (a.entity.geom as MTextGeometry).contents),
+      ),
+    )
+    .toEqual(['Note {\\Lunder} plain']);
 });
 
 test('contextual tabs come with the selection and the command running (M7-02 part 4)', async ({

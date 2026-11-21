@@ -2,12 +2,14 @@
 // DEC-017). The breakpoints, each item's size at each, the protected Home Draw/Modify/Annotation
 // panels that never compress, and the order the other Home panels give up their room in.
 import { describe, expect, it } from 'vitest';
-import { TABLE_CELL_OPTIONS, builtinCommands } from '@triya/engine';
+import { TABLE_CELL_OPTIONS, builtinCommands, type RibbonProperties } from '@triya/engine';
+import { STYLE_CONTROLS, controlState, isStyleControl } from '../src/ribbon/RibbonControls';
 import { DRAFTING_ITEMS } from '../src/drafting';
 import {
   CONTEXTUAL_TABS,
   RIBBON_TABS,
   contextualTabOf,
+  type RibbonControl,
   type RibbonItem,
   type RibbonTab,
 } from '../src/ribbon/ribbon.config';
@@ -218,7 +220,7 @@ describe('the data model', () => {
             expect(toggles.has(i.run.action), where).toBe(true);
           else if (!i.control)
             expect(i.run.action, where).toMatch(
-              /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts)|escape)$/,
+              /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts)|escape|text:(bold|italic|underline|overline|strike|stack|paragraph|columns|field|spell|close))$/,
             );
           // A dropdown (M7-02 part 3) opens its own list.
           if (i.control) expect(i.run, where).toEqual({ action: `control:${i.control}` });
@@ -248,6 +250,10 @@ describe('the data model', () => {
     // A command's tab shows over the Block Editor's, and that over a selection's.
     expect(shown({ command: 'HATCH', selection: 'hatch' })).toBe('hatch-creation');
     expect(shown({ blockEditor: true, selection: 'hatch' })).toBe('block-editor');
+    // The Text Editor's tab (part 5) shows over every other while the in-place editor is open.
+    expect(shown({ textEditor: true })).toBe('text-editor');
+    expect(shown({ textEditor: true, command: 'MTEXT', selection: 'hatch' })).toBe('text-editor');
+    expect(shown({ textEditor: false, command: 'MTEXT' })).toBeUndefined();
     // Every contextual tab ends with its Close button, which never gives up room; its other
     // panels compress in a distinct order, keeping items they have.
     for (const t of CONTEXTUAL_TABS) {
@@ -283,6 +289,42 @@ describe('the data model', () => {
     // The layer list names the layer at every size; the others show a swatch on one row.
     const layer = panel(home, 'layers').items.find((i) => i.control === 'layer')!;
     for (const bp of BREAKPOINTS) expect(sizeAt(layer, bp)).toBe('small-label');
+  });
+
+  it("has Annotate's style dropdowns, listing the styles and the current one (M7-02 part 5)", () => {
+    const annotate = tab('annotate');
+    const controls = annotate.panels.flatMap((p) =>
+      p.items.filter((i) => i.control).map((i) => `${p.id}/${i.control}`),
+    );
+    expect(controls).toEqual([
+      'text/text-style',
+      'dimensions/dim-style',
+      'leaders/mleader-style',
+      'tables/table-style',
+    ]);
+    const styles = { current: 'Notes', names: ['Notes', 'Standard'] };
+    const p = {
+      count: 0,
+      rows: [],
+      layers: [],
+      currentLayer: '0',
+      styles: { text: styles, dim: { names: [] }, mleader: styles, table: styles },
+    } as unknown as RibbonProperties;
+    const text = controlState('text-style', p, 'mm');
+    expect(text.text).toBe('Notes');
+    expect(text.selected).toBe('Notes');
+    // The list ends with AutoCAD's "Manage ... Styles...", which runs the style's command.
+    expect(text.choices.map((c) => [c.label, c.opens])).toEqual([
+      ['Notes', undefined],
+      ['Standard', undefined],
+      ['Manage Text Styles...', 'STYLE'],
+    ]);
+    expect(controlState('dim-style', p, 'mm').text).toBe('');
+    for (const [control, { manage }] of Object.entries(STYLE_CONTROLS)) {
+      expect(builtinCommands().resolve(manage), control).toBeDefined();
+      expect(isStyleControl(control as RibbonControl)).toBe(true);
+    }
+    expect(isStyleControl('layer')).toBe(false);
   });
 
   it("puts Snap to Underlays on Insert > Reference as AutoCAD's ON/OFF split button (M5-04)", () => {

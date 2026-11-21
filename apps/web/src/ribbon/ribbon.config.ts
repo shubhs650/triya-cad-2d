@@ -42,9 +42,19 @@ export type RibbonRun =
 
 /**
  * A Layers or Properties dropdown (M7-02 part 3): the layer, colour, linetype, lineweight or
- * transparency of the selection, or with none the current one, which a pick changes.
+ * transparency of the selection, or with none the current one, which a pick changes. Or one of
+ * Annotate's style dropdowns (part 5): the current text, dimension, multileader or table style.
  */
-export type RibbonControl = 'layer' | 'color' | 'linetype' | 'lineweight' | 'transparency';
+export type RibbonControl =
+  | 'layer'
+  | 'color'
+  | 'linetype'
+  | 'lineweight'
+  | 'transparency'
+  | 'text-style'
+  | 'dim-style'
+  | 'mleader-style'
+  | 'table-style';
 
 export interface RibbonItem {
   /** Unique within its tab. */
@@ -149,7 +159,7 @@ function act(
   return { id, label, icon, sizes, run: { action } };
 }
 
-/** A Layers or Properties dropdown. */
+/** A Layers, Properties or style dropdown. */
 function control(
   id: string,
   label: string,
@@ -503,7 +513,7 @@ const ANNOTATE: RibbonTab = {
       items: [
         cmd('mtext', 'Multiline Text', 'text_t', 'MTEXT', BIG),
         cmd('dtext', 'Single Line', 'text_font', 'TEXT'),
-        cmd('text-style', 'Text Style', 'text_edit_style', 'STYLE', SECONDARY),
+        control('text-style', 'Text Style', 'text_edit_style', 'text-style', SECONDARY_CONTROL),
         cmd('find', 'Find Text', 'search', 'FIND', ICON),
         cmd('spell', 'Check Spelling', 'text_grammar_checkmark', 'SPELL', ICON),
         cmd('justify-text', 'Justify', 'text_align_justify', 'JUSTIFYTEXT', ICON),
@@ -522,7 +532,7 @@ const ANNOTATE: RibbonTab = {
           cmd('dim-continue', 'Continue', 'dim-continue', 'DIMCONTINUE'),
           cmd('dim-baseline', 'Baseline', 'dim-baseline', 'DIMBASELINE'),
         ]),
-        cmd('dim-style', 'Dimension Style', 'style_guide', 'DIMSTYLE', SECONDARY),
+        control('dim-style', 'Dimension Style', 'style_guide', 'dim-style', SECONDARY_CONTROL),
         cmd('dim-space', 'Adjust Space', 'dim-space', 'DIMSPACE', ICON),
         cmd('dim-break', 'Break', 'dim-break', 'DIMBREAK', ICON),
         cmd('dim-jogline', 'Jog Line', 'dim-jogline', 'DIMJOGLINE', ICON),
@@ -553,7 +563,13 @@ const ANNOTATE: RibbonTab = {
         cmd('mleader-remove', 'Remove Leader', 'mleader-remove', 'AIMLEADEREDITREMOVE', SECONDARY),
         cmd('mleader-align', 'Align', 'mleader-align', 'MLEADERALIGN', SECONDARY),
         cmd('mleader-collect', 'Collect', 'mleader-collect', 'MLEADERCOLLECT', ICON),
-        cmd('mleader-style', 'Multileader Style', 'style_guide', 'MLEADERSTYLE', ICON),
+        control(
+          'mleader-style',
+          'Multileader Style',
+          'style_guide',
+          'mleader-style',
+          SECONDARY_CONTROL,
+        ),
       ],
     },
     {
@@ -562,7 +578,7 @@ const ANNOTATE: RibbonTab = {
       compress: { order: 3, keep: ['table'] },
       items: [
         cmd('table', 'Table', 'table', 'TABLE', BIG),
-        cmd('table-style', 'Table Style', 'table_settings', 'TABLESTYLE', SECONDARY),
+        control('table-style', 'Table Style', 'table_settings', 'table-style', SECONDARY_CONTROL),
       ],
     },
     {
@@ -797,7 +813,8 @@ export const RIBBON_TABS: readonly RibbonTab[] = [
 export type RibbonWhen =
   | { readonly commands: readonly string[] }
   | { readonly selection: RibbonSelection }
-  | { readonly blockEditor: true };
+  | { readonly blockEditor: true }
+  | { readonly textEditor: true };
 
 export interface ContextualTab extends RibbonTab {
   readonly when: RibbonWhen;
@@ -808,6 +825,8 @@ export interface RibbonContext {
   readonly command?: string | undefined;
   readonly selection?: RibbonSelection | undefined;
   readonly blockEditor?: boolean | undefined;
+  /** MTEXT's in-place editor is open (part 5). */
+  readonly textEditor?: boolean | undefined;
 }
 
 /** The last panel of every contextual tab: AutoCAD's Close button, which never compresses. */
@@ -1218,11 +1237,69 @@ const BLOCK_EDITOR: ContextualTab = {
   ],
 };
 
+/** A button of the Text Editor tab: one of the in-place editor's actions. */
+const textTool = (
+  id: string,
+  label: string,
+  icon: IconName,
+  action: string,
+  sizes: ItemSizes = ICON,
+): RibbonItem => ({ id, label, icon, sizes, run: { action: `text:${action}` } });
+
 /**
- * The contextual tabs, in the order their rules are tried: a command's first (a command's tab
+ * AutoCAD's Text Editor tab, while MTEXT's in-place editor is open: the editor's Text Formatting
+ * toolbar on the ribbon (its font, height and colour fields stay on the toolbar).
+ */
+const TEXT_EDITOR: ContextualTab = {
+  id: 'text-editor',
+  label: 'Text Editor',
+  when: { textEditor: true },
+  panels: [
+    {
+      id: 'formatting',
+      label: 'Formatting',
+      compress: { order: 4, keep: ['text-bold', 'text-italic', 'text-underline'] },
+      items: [
+        textTool('text-bold', 'Bold', 'text_bold', 'bold', SECONDARY),
+        textTool('text-italic', 'Italic', 'text_italic', 'italic', SECONDARY),
+        textTool('text-underline', 'Underline', 'text_underline', 'underline', SECONDARY),
+        textTool('text-overline', 'Overline', 'text-overline', 'overline'),
+        textTool('text-strike', 'Strikethrough', 'text_strikethrough', 'strike'),
+        textTool('text-stack', 'Stack', 'text-stack', 'stack'),
+      ],
+    },
+    {
+      id: 'paragraph',
+      label: 'Paragraph',
+      compress: { order: 3, keep: ['text-paragraph'] },
+      items: [textTool('text-paragraph', 'Paragraph', 'text_paragraph', 'paragraph', BIG)],
+    },
+    {
+      id: 'insert',
+      label: 'Insert',
+      compress: { order: 2, keep: ['text-columns'] },
+      items: [
+        textTool('text-columns', 'Columns', 'text_column_two', 'columns', BIG),
+        textTool('text-field', 'Field', 'text_field', 'field', BIG),
+      ],
+    },
+    {
+      id: 'spell-check',
+      label: 'Spell Check',
+      compress: { order: 1, keep: ['text-spell'] },
+      items: [textTool('text-spell', 'Spell Check', 'text_grammar_checkmark', 'spell', LABELLED)],
+    },
+    close('close-text-editor', 'Close Text Editor', { action: 'text:close' }),
+  ],
+};
+
+/**
+ * The contextual tabs, in the order their rules are tried: the Text Editor's first (it is the
+ * toolbar of the text being typed, whatever command runs), then a command's (a command's tab
  * shows over the selection's), then the Block Editor's, then a selection's.
  */
 export const CONTEXTUAL_TABS: readonly ContextualTab[] = [
+  TEXT_EDITOR,
   HATCH_CREATION,
   ARRAY_CREATION_RECT,
   ARRAY_CREATION_POLAR,
@@ -1243,6 +1320,8 @@ export function contextualTabOf(context: RibbonContext): ContextualTab | undefin
       ? context.command !== undefined && t.when.commands.includes(context.command)
       : 'blockEditor' in t.when
         ? context.blockEditor === true
-        : context.selection === t.when.selection,
+        : 'textEditor' in t.when
+          ? context.textEditor === true
+          : context.selection === t.when.selection,
   );
 }

@@ -97,7 +97,23 @@ describe('selectionKind (M7-02 part 4)', () => {
 
 describe('EngineSession ribbon properties', () => {
   it('follows the selection while open, and a pick changes it or the current setting', async () => {
-    const se = new EngineSession(sampleInit());
+    const init = sampleInit();
+    const style = (handle: string, name: string) => ({
+      handle,
+      name,
+      font: 'txt',
+      height: 0,
+      widthFactor: 1,
+      obliqueAngle: 0,
+      lastHeight: 2.5,
+      generation: 0,
+      trueTypeFlags: 0,
+    });
+    const se = new EngineSession({
+      ...init,
+      header: new Map([...(init.header ?? []), ['$TEXTSTYLE', 'Standard']]),
+      tables: { ...init.tables, textStyles: [style('16', 'Standard'), style('17', 'Notes')] },
+    });
     const out: CommandOutput[] = [];
     se.onCommand((o) => out.push(o));
     const last = () =>
@@ -131,6 +147,16 @@ describe('EngineSession ribbon properties', () => {
     await flush();
     expect(out.length).toBeGreaterThan(before);
     expect(last()?.layers.find((l) => l.handle === LAYER_WALLS)?.on).toBe(false);
+
+    // Annotate's style dropdowns (part 5): the styles by name and the current ones; SETVAR, as
+    // a pick types it, changes the current one.
+    expect(last()!.styles.text).toEqual({ current: 'Standard', names: ['Notes', 'Standard'] });
+    expect(last()!.styles.dim.names).toEqual([]);
+    await se.command({ kind: 'invoke', name: 'SETVAR' });
+    await se.command({ kind: 'submit', text: 'TEXTSTYLE' });
+    await se.command({ kind: 'submit', text: 'Notes' });
+    await flush();
+    expect(last()!.styles.text.current).toBe('Notes');
 
     // Closed, it sends nothing more.
     await se.command({ kind: 'ribbon-properties', open: false });
