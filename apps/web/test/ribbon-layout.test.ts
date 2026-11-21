@@ -208,11 +208,30 @@ describe('the data model', () => {
           if ('command' in i.run) expect(registry.get(i.run.command), where).toBeDefined();
           else if (i.run.action.startsWith('drafting:'))
             expect(toggles.has(i.run.action), where).toBe(true);
-          else
+          else if (!i.control)
             expect(i.run.action, where).toMatch(
               /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts))$/,
             );
+          // A dropdown (M7-02 part 3) opens its own list.
+          if (i.control) expect(i.run, where).toEqual({ action: `control:${i.control}` });
         }
+  });
+
+  it("has AutoCAD's Layers and Properties dropdowns on Home (M7-02 part 3)", () => {
+    const controls = (id: string) =>
+      panel(home, id)
+        .items.filter((i) => i.control)
+        .map((i) => [i.label, i.control]);
+    expect(controls('layers')).toEqual([['Layer', 'layer']]);
+    expect(controls('properties')).toEqual([
+      ['Object Color', 'color'],
+      ['Linetype', 'linetype'],
+      ['Lineweight', 'lineweight'],
+      ['Transparency', 'transparency'],
+    ]);
+    // The layer list names the layer at every size; the others show a swatch on one row.
+    const layer = panel(home, 'layers').items.find((i) => i.control === 'layer')!;
+    for (const bp of BREAKPOINTS) expect(sizeAt(layer, bp)).toBe('small-label');
   });
 
   it("puts Snap to Underlays on Insert > Reference as AutoCAD's ON/OFF split button (M5-04)", () => {
@@ -270,11 +289,24 @@ describe('layoutTab', () => {
   it('keeps what UI_SPEC §3 keeps when a panel compresses, the rest in its overflow list', () => {
     const l = layoutTab(home, 'compact', 6);
     const of = (id: string) => l.panels.find((p) => p.panel.id === id)!;
-    // Block collapses to Insert + overflow; Layers to Layer Properties (+ its dropdown, M7-02).
+    // Block collapses to Insert + overflow; Layers to Layer Properties + its dropdown, which
+    // still names the layer (M7-02 part 3).
     expect(of('block').shown.map((s) => s.item.id)).toEqual(['insert']);
     expect(of('block').overflow.map((i) => i.id)).toEqual(['create', 'edit', 'edit-attributes']);
-    expect(of('layers').shown.map((s) => s.item.id)).toEqual(['layer-properties']);
+    expect(of('layers').shown.map((s) => [s.item.id, s.size])).toEqual([
+      ['layer-properties', 'icon'],
+      ['layer-control', 'small-label'],
+    ]);
     expect(of('layers').overflow.length).toBeGreaterThan(5);
+    // Properties keeps Match Properties; its dropdowns go to its list, as one popover.
+    expect(of('properties').shown.map((s) => s.item.id)).toEqual(['match-properties']);
+    expect(of('properties').overflow.map((i) => i.control ?? i.id)).toEqual([
+      'color',
+      'linetype',
+      'lineweight',
+      'transparency',
+      'properties',
+    ]);
     // A collapsed panel is one button whose list is the whole panel.
     expect(of('clipboard').shown).toEqual([]);
     expect(of('clipboard').overflow).toEqual(of('clipboard').panel.items);

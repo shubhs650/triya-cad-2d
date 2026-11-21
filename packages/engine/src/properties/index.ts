@@ -38,5 +38,11 @@ export {
   quickPropertySheet,
   rolloverSheet,
 } from './quick';
+export {
+  RIBBON_PROPERTY_KEYS,
+  ribbonProperties,
+  type RibbonLayer,
+  type RibbonProperties,
+} from './ribbon';
 export * from './color-books';
 export * from './match';

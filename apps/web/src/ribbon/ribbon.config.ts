@@ -27,9 +27,16 @@ export type RibbonRun =
   /**
    * An app action: a drafting toggle (`drafting:<toggle>`), flipped or set to `on`; a palette
    * of the stack shown (`palette:<name>`); the colour theme (`theme:<light|dark|system>`); or a
-   * window of the app's own (`app:<aliases|shortcuts>`, M7-02 part 2).
+   * window of the app's own (`app:<aliases|shortcuts>`, M7-02 part 2). A dropdown's is
+   * `control:<control>`: it opens its list instead of running.
    */
   | { readonly action: string; readonly on?: boolean };
+
+/**
+ * A Layers or Properties dropdown (M7-02 part 3): the layer, colour, linetype, lineweight or
+ * transparency of the selection, or with none the current one, which a pick changes.
+ */
+export type RibbonControl = 'layer' | 'color' | 'linetype' | 'lineweight' | 'transparency';
 
 export interface RibbonItem {
   /** Unique within its tab. */
@@ -50,6 +57,11 @@ export interface RibbonItem {
    * is view-only in v1"); its tooltip says so.
    */
   readonly unavailable?: string;
+  /**
+   * The item is a dropdown, not a button: labelled, it shows the value; as an icon, its icon
+   * over the value's swatch. It keeps its size in a compressed panel.
+   */
+  readonly control?: RibbonControl;
 }
 
 export interface RibbonPanel {
@@ -128,6 +140,22 @@ function act(
 ): RibbonItem {
   return { id, label, icon, sizes, run: { action } };
 }
+
+/** A Layers or Properties dropdown. */
+function control(
+  id: string,
+  label: string,
+  icon: IconName,
+  kind: RibbonControl,
+  sizes: ItemSizes,
+): RibbonItem {
+  return { id, label, icon, sizes, control: kind, run: { action: `control:${kind}` } };
+}
+
+/** A Properties dropdown: its value shown when full and wide, its swatch on the one-row ribbon. */
+const SECONDARY_CONTROL: ItemSizes = { full: 'small-label', wide: 'small-label', laptop: 'icon' };
+/** A dropdown that shows its value at every size: the layer list. */
+const NAMED: ItemSizes = { full: 'small-label', wide: 'small-label', laptop: 'small-label' };
 
 /** An item AutoCAD has that Triya shows greyed out, saying why (`unavailable`). */
 function off(item: RibbonItem, reason: string): RibbonItem {
@@ -273,9 +301,10 @@ const HOME: RibbonTab = {
     {
       id: 'layers',
       label: 'Layers',
-      compress: { order: 6, keep: ['layer-properties'] },
+      compress: { order: 6, keep: ['layer-properties', 'layer-control'] },
       items: [
         cmd('layer-properties', 'Layer Properties', 'layer', 'LAYER', BIG),
+        control('layer-control', 'Layer', 'layer', 'layer', NAMED),
         cmd('layer-off', 'Off', 'eye_off', 'LAYOFF', ICON),
         cmd('layer-isolate', 'Isolate', 'layer-isolate', 'LAYISO', ICON),
         cmd('layer-unisolate', 'Unisolate', 'layer_diagonal', 'LAYUNISO', ICON),
@@ -309,7 +338,17 @@ const HOME: RibbonTab = {
       compress: { order: 4, keep: ['match-properties'] },
       items: [
         cmd('match-properties', 'Match Properties', 'paint_brush', 'MATCHPROP', BIG),
-        cmd('properties', 'Properties', 'apps_list_detail', 'PROPERTIES', SECONDARY),
+        control('color-control', 'Object Color', 'color', 'color', SECONDARY_CONTROL),
+        control('linetype-control', 'Linetype', 'linetype', 'linetype', SECONDARY_CONTROL),
+        control('lineweight-control', 'Lineweight', 'lineweight', 'lineweight', SECONDARY_CONTROL),
+        control(
+          'transparency-control',
+          'Transparency',
+          'transparency_square',
+          'transparency',
+          ICON,
+        ),
+        cmd('properties', 'Properties', 'apps_list_detail', 'PROPERTIES', ICON),
       ],
     },
     {
@@ -335,9 +374,9 @@ const HOME: RibbonTab = {
           cmd('dist', 'Distance', 'distance', 'DIST'),
           cmd('area', 'Area', 'area', 'AREA'),
         ]),
-        cmd('quick-select', 'Quick Select', 'filter', 'QSELECT', SECONDARY),
-        cmd('id-point', 'ID Point', 'location', 'ID', SECONDARY),
-        cmd('list', 'List', 'text_bullet_list_square', 'LIST', SECONDARY),
+        cmd('quick-select', 'Quick Select', 'filter', 'QSELECT', ICON),
+        cmd('id-point', 'ID Point', 'location', 'ID', ICON),
+        cmd('list', 'List', 'text_bullet_list_square', 'LIST', ICON),
       ],
     },
     {

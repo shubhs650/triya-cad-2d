@@ -84,6 +84,7 @@ import type { EntityType, TableCellLock } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
 import { propertySheet, type DimensionMeasure, type PropertySheet } from '../properties/sheet';
 import { quickPropertySheet, rolloverSheet } from '../properties/quick';
+import { ribbonProperties, type RibbonProperties } from '../properties/ribbon';
 import { REVCLOUDGRIPS } from '../edit/revcloud';
 import { fieldEventChange, type FieldEvent } from '../edit/field-eval';
 import {
@@ -649,6 +650,17 @@ export type CommandInput =
   /** A Properties palette edit on the selected objects of the type it shows (one undo step). */
   | { readonly kind: 'property'; readonly edit: PropertyEdit }
   /**
+   * The ribbon's Layers and Properties dropdowns (M7-02 part 3) show the drawing's: while open,
+   * `ribbon-properties` outputs follow the selection and every change, whatever the Properties
+   * palette shows.
+   */
+  | { readonly kind: 'ribbon-properties'; readonly open: boolean }
+  /**
+   * A ribbon dropdown's pick: the edit on every object selected, or with none on the current
+   * setting (the palette's General row, never narrowed to a type), one undo step.
+   */
+  | { readonly kind: 'ribbon-property'; readonly edit: PropertyEdit }
+  /**
    * The Properties palette's Vertex spinner (M2-35 part 8): the polyline vertex its sheet shows,
    * from 0, until the selection changes (another selection starts at the first vertex).
    */
@@ -711,6 +723,8 @@ export type CommandOutput =
   | { readonly type: 'view'; readonly id: number; readonly request: ViewRequest }
   /** The Properties palette's sheet for the objects selected now (M2-21), while it is open. */
   | { readonly type: 'properties'; readonly sheet: PropertySheet }
+  /** The ribbon's Layers and Properties dropdowns (M7-02 part 3), while they are open. */
+  | { readonly type: 'ribbon-properties'; readonly properties: RibbonProperties }
   /** A command preview asked for with `seq` (M3-12 part 6); none where the prompt shows none. */
   | { readonly type: 'command-preview'; readonly seq: number; readonly preview?: CommandPreview }
   /** The rollover tooltip of object `id` (M2-35 part 21); no sheet when the object is gone. */
@@ -760,6 +774,9 @@ export class EngineSession {
   /** The selection the last sheet showed, so a new selection shows all types again. */
   #sheetIds: readonly EntityId[] = [];
   #sheetQueued = false;
+  /** The ribbon's dropdowns are shown: their properties are sent (M7-02 part 3). */
+  #ribbon = false;
+  #ribbonQueued = false;
   readonly #services: EngineServices;
 
   /**
@@ -814,11 +831,29 @@ export class EngineSession {
    * edits and the selection it leaves come in one go).
    */
   #queueSheet(): void {
+    this.#queueRibbon();
     if (!this.#properties || this.#sheetQueued) return;
     this.#sheetQueued = true;
     void Promise.resolve().then(() => {
       this.#sheetQueued = false;
       if (this.#properties) this.#sendSheet();
+    });
+  }
+
+  /** Sends the ribbon's dropdowns their properties once the change settles, as the sheet. */
+  #queueRibbon(): void {
+    if (!this.#ribbon || this.#ribbonQueued) return;
+    this.#ribbonQueued = true;
+    void Promise.resolve().then(() => {
+      this.#ribbonQueued = false;
+      if (this.#ribbon) this.#sendRibbon();
+    });
+  }
+
+  #sendRibbon(): void {
+    this.#emit({
+      type: 'ribbon-properties',
+      properties: ribbonProperties(this.model, this.#bus.selection),
     });
   }
 
@@ -929,6 +964,12 @@ export class EngineSession {
         // The palette shows what the edit made, a running command's selection's too (M2-35
         // part 30), which no commit announces.
         return this.#bus.setProperty(input.edit, this.#filter).then(() => this.#queueSheet());
+      case 'ribbon-properties':
+        this.#ribbon = input.open;
+        if (input.open) this.#sendRibbon();
+        return Promise.resolve();
+      case 'ribbon-property':
+        return this.#bus.setProperty(input.edit).then(() => this.#queueSheet());
       case 'property-editor':
         // The Linetype list's Other... (M5-08 part 2), or an MTEXT's Contents `...`.
         return input.key === 'linetype'
@@ -1023,8 +1064,17 @@ export class EngineSession {
     for (const l of this.#listeners) l(o);
   }
 
-  /** Applies an edit to the document; a refused edit changes nothing. */
+  /**
+   * Applies an edit to the document; a refused edit changes nothing. The ribbon's dropdowns hear
+   * of it (a layer turned off, renamed or made current in the Layer Properties Manager).
+   */
   edit(e: EngineEdit): EditResult {
+    const result = this.#edit(e);
+    if (result.ok) this.#queueRibbon();
+    return result;
+  }
+
+  #edit(e: EngineEdit): EditResult {
     if (e.kind === 'xref-load') return this.#xrefLoad(e);
     if (e.kind === 'xref-unload') return this.#xrefUnload(e);
     if (e.kind === 'xref-detach') return this.#xrefDetach(e);
