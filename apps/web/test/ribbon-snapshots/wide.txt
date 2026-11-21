@@ -42,6 +42,7 @@ Annotation (protected)
   small-label centerline<centerline> ▾ [centerline-line<centerline>, centermark<centermark>]
 Layers (expanded)
   small-label layer-properties<layer>
+  small-label layer-control<layer>
   icon        layer-off<eye_off>
   icon        layer-isolate<layer-isolate>
   icon        layer-unisolate<layer_diagonal>
@@ -60,6 +61,10 @@ Block (expanded)
   icon        edit-attributes<tag_edit> ▾ [eattedit<tag_edit>, battman<tag_multiple>]
 Properties (expanded)
   small-label match-properties<paint_brush>
+  small-label color-control<color>
+  small-label linetype-control<linetype>
+  small-label lineweight-control<lineweight>
+  icon        transparency-control<transparency_square>
   icon        properties<apps_list_detail>
 Groups (expanded)
   small-label group<group>
@@ -94,7 +99,7 @@ Groups (collapsed)
 ### step 4
 Properties (compressed)
   icon        match-properties<paint_brush>
-  ▾ properties
+  ▾ color-control, linetype-control, lineweight-control, transparency-control, properties
 
 ### step 5
 Block (compressed)
@@ -104,6 +109,7 @@ Block (compressed)
 ### step 6
 Layers (compressed)
   icon        layer-properties<layer>
+  small-label layer-control<layer>
   ▾ layer-off, layer-isolate, layer-unisolate, layer-freeze, layer-lock, layer-unlock, layer-on, layer-thaw, layer-make-current, layer-match, layer-previous
 
 ## Insert

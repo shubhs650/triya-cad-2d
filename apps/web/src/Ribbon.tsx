@@ -11,7 +11,10 @@
 //
 // M7-02: items show their Fluent or CAD icons (ribbon/icons.ts), and a rich tooltip (AutoCAD's:
 // name, what it does, command, aliases, keys) after the pointer rests on one for TOOLTIP_DELAY, or
-// at once when the keyboard focuses it.
+// at once when the keyboard focuses it. M7-02 part 3: Home's Layers and Properties dropdowns
+// (ribbon/RibbonControls.tsx) show the selection's layer, colour, linetype, lineweight and
+// transparency, or the current ones, while a drawing is open; in a compressed panel they are
+// entries of its list, each opening its dropdown's list there.
 import {
   useEffect,
   useLayoutEffect,
@@ -22,11 +25,21 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
+import { colorValue, parseColorValue } from '@triya/engine';
 import { drafting, type DraftingToggle } from './drafting';
 import { paletteStack, type PaletteName } from './palette-stack';
 import type { PreferencesStore, Theme } from './preferences';
 import { engines } from './engine/registry';
 import { Icon } from './ribbon/Icon';
+import {
+  ControlList,
+  Swatch,
+  controlState,
+  type ControlChoice,
+  type ControlState,
+} from './ribbon/RibbonControls';
+import { ribbonPropertiesStore } from './ribbon/ribbon-properties';
+import { SelectColorDialog } from './SelectColorDialog';
 import { tooltipOf, type Tooltip } from './ribbon/tooltips';
 import { keymap } from './shortcuts';
 import { appRegistry } from './user-aliases';
@@ -34,6 +47,7 @@ import { ROWS, breakpointOf, layoutTab, type PanelLayout } from './ribbon/layout
 import {
   RIBBON_TABS,
   type ItemSize,
+  type RibbonControl,
   type RibbonItem,
   type RibbonRun,
 } from './ribbon/ribbon.config';
@@ -63,6 +77,13 @@ const toggleOf = (run: RibbonRun): DraftingToggle | undefined =>
   'action' in run && run.action.startsWith('drafting:')
     ? (run.action.slice('drafting:'.length) as DraftingToggle)
     : undefined;
+
+/** A dropdown's list, open under `anchor`: the dropdown, or its panel's list button. */
+interface ListState {
+  readonly item: RibbonItem;
+  readonly control: RibbonControl;
+  readonly anchor: HTMLElement;
+}
 
 /** The app's own windows a ribbon item opens (`app:<name>`): the aliases and the keys. */
 export type AppWindow = 'aliases' | 'shortcuts';
@@ -131,6 +152,13 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
   const [popped, setPopped] = useState(false);
   const [menu, setMenu] = useState<MenuState | undefined>();
   const [tip, setTip] = useState<TipState | undefined>();
+  const [list, setList] = useState<ListState | undefined>();
+  /** "Select Colors..." was picked: the Select Color dialog shows. */
+  const [pickingColor, setPickingColor] = useState(false);
+  const properties = useSyncExternalStore(ribbonPropertiesStore.subscribe, () =>
+    ribbonPropertiesStore.get(doc),
+  );
+  const lwUnits = useSyncExternalStore(drafting.subscribe, () => drafting.get().lwUnits);
   const tipTimer = useRef<number | undefined>(undefined);
   /** The entry each split button runs, by its id: the one picked last. */
   const [picked, setPicked] = useState<ReadonlyMap<string, RibbonItem>>(new Map());
@@ -144,6 +172,16 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
   const rest = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const bodyShown = !minimized || popped;
+  const hasControls = tab.panels.some((p) => p.items.some((i) => i.control));
+
+  // The engine sends the dropdowns' values only while a tab showing them is up.
+  useEffect(() => {
+    if (doc === undefined || !hasControls) return;
+    engines.command(doc, { kind: 'ribbon-properties', open: true });
+    return () => engines.command(doc, { kind: 'ribbon-properties', open: false });
+  }, [doc, hasControls]);
+  const stateOf = (control: RibbonControl): ControlState =>
+    controlState(control, properties, lwUnits === 0 ? 'in' : 'mm');
 
   useLayoutEffect(() => {
     const r = rest.current;
@@ -186,7 +224,8 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
     setPopped(false);
   };
   const disabled = (item: RibbonItem) =>
-    item.unavailable !== undefined || (doc === undefined && 'command' in item.run);
+    item.unavailable !== undefined ||
+    (doc === undefined && ('command' in item.run || item.control !== undefined));
   const current = (item: RibbonItem) => (item.menu ? (picked.get(item.id) ?? item.menu[0]!) : item);
   const pressed = (item: RibbonItem) => {
     const t = toggleOf(item.run);
@@ -197,10 +236,59 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
 
   const openMenu = (m: MenuState) => {
     hideTip();
+    setList(undefined);
     setMenu((was) => (was?.id === m.id ? undefined : m));
+  };
+  const openList = (l: ListState) => {
+    hideTip();
+    setMenu(undefined);
+    setList((was) => (was?.item.id === l.item.id && was.anchor === l.anchor ? undefined : l));
+  };
+  const pick = (control: RibbonControl, c: ControlChoice) => {
+    setList(undefined);
+    setPopped(false);
+    if (doc === undefined) return;
+    if (c.opens === 'select-color') return setPickingColor(true);
+    if (c.opens) return engines.command(doc, { kind: 'invoke', name: c.opens });
+    engines.command(doc, { kind: 'ribbon-property', edit: { key: control, value: c.value } });
+  };
+
+  /** A dropdown: its icon, and its swatch and value when labelled. */
+  const dropdown = (item: RibbonItem, size: ItemSize) => {
+    const control = item.control!;
+    const state = stateOf(control);
+    const open = list?.item.id === item.id && list.anchor.dataset['item'] === item.id;
+    return (
+      <button
+        type="button"
+        className={`ribbon-item ribbon-control ${size}`}
+        data-item={item.id}
+        data-control={control}
+        aria-label={state.text ? `${item.label}: ${state.text}` : item.label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-describedby={tip?.anchor.dataset['item'] === item.id ? 'ribbon-tooltip' : undefined}
+        disabled={doc === undefined}
+        onClick={(e) => openList({ item, control, anchor: e.currentTarget })}
+        onPointerEnter={(e) => showTip(item, e.currentTarget, false)}
+        onPointerLeave={hideTip}
+        onFocus={(e) => {
+          if (e.currentTarget.matches(':focus-visible')) showTip(item, e.currentTarget, true);
+        }}
+        onBlur={hideTip}
+      >
+        <Icon name={item.icon} size={16} />
+        {(control === 'layer' || control === 'color') && <Swatch color={state.swatch} />}
+        {size !== 'icon' && <span className="ribbon-control-value">{state.text}</span>}
+        <span className="ribbon-control-arrow" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+    );
   };
 
   const button = (item: RibbonItem, size: ItemSize) => {
+    if (item.control) return dropdown(item, size);
     const now = current(item);
     const main = (
       <button
@@ -257,6 +345,45 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
     );
   };
 
+  const cell = (s: PanelLayout['shown'][number]) => (
+    <span
+      key={s.item.id}
+      className={s.item.control ? `ribbon-cell control ${s.size}` : `ribbon-cell ${s.size}`}
+    >
+      {button(s.item, s.size)}
+    </span>
+  );
+  const rows = ROWS[bp];
+  /**
+   * AutoCAD's Layers panel: the layer dropdown over rows of tool icons beside the big Layer
+   * Properties button, when the dropdowns leave two rows or more for the icons.
+   */
+  const stacked = (p: PanelLayout) => {
+    if (p.state !== 'expanded') return false;
+    const controls = p.shown.filter((s) => s.item.control);
+    const tools = p.shown.filter((s) => !s.item.control && s.size !== 'large-label');
+    return (
+      controls.length > 0 && rows - controls.length >= 2 && tools.every((s) => s.size === 'icon')
+    );
+  };
+  const stack = (p: PanelLayout) => {
+    const controls = p.shown.filter((s) => s.item.control);
+    return (
+      <>
+        {p.shown.filter((s) => s.size === 'large-label' && !s.item.control).map(cell)}
+        <span className="ribbon-stack">
+          {controls.map(cell)}
+          <span
+            className="ribbon-panel-items ribbon-tools"
+            style={{ '--ribbon-rows': rows - controls.length } as CSSProperties}
+          >
+            {p.shown.filter((s) => !s.item.control && s.size === 'icon').map(cell)}
+          </span>
+        </span>
+      </>
+    );
+  };
+
   const panel = (p: PanelLayout) => {
     const id = `panel:${p.panel.id}`;
     const more = (label: string, icon?: RibbonItem['icon']) => (
@@ -287,11 +414,9 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
         <div className="ribbon-panel-items">
           {p.state === 'collapsed'
             ? more(p.panel.label, p.panel.items[0]!.icon)
-            : p.shown.map((s) => (
-                <span key={s.item.id} className={`ribbon-cell ${s.size}`}>
-                  {button(s.item, s.size)}
-                </span>
-              ))}
+            : stacked(p)
+              ? stack(p)
+              : p.shown.map(cell)}
           {p.state === 'compressed' && more(`More ${p.panel.label} tools`)}
         </div>
         <div className="ribbon-panel-title" aria-hidden="true">
@@ -378,7 +503,44 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
           </div>
         </div>
       )}
-      {tip && !menu && <RibbonTooltip {...tip} />}
+      {tip && !menu && !list && <RibbonTooltip {...tip} />}
+      {list && (
+        <ControlList
+          label={list.item.label}
+          anchor={list.anchor}
+          state={stateOf(list.control)}
+          onPick={(c) => {
+            pick(list.control, c);
+            list.anchor.focus();
+          }}
+          onToggle={(layer, key) => {
+            if (doc !== undefined)
+              void engines.edit(doc, { kind: 'layer', layer: layer.handle, [key]: !layer[key] });
+          }}
+          onClose={(refocus) => {
+            setList(undefined);
+            if (refocus) list.anchor.focus();
+          }}
+        />
+      )}
+      {pickingColor && doc !== undefined && (
+        <SelectColorDialog
+          initial={(() => {
+            const v = stateOf('color').selected;
+            return v === undefined ? undefined : parseColorValue(v);
+          })()}
+          books={properties?.colorBooks ?? []}
+          trueColors={(properties?.count ?? 0) > 0}
+          onOk={(c) => {
+            setPickingColor(false);
+            engines.command(doc, {
+              kind: 'ribbon-property',
+              edit: { key: 'color', value: colorValue(c) },
+            });
+          }}
+          onCancel={() => setPickingColor(false)}
+        />
+      )}
       {menu && (
         <RibbonMenu
           menu={menu}
@@ -391,7 +553,9 @@ export function Ribbon({ doc, preferences, onOpenWindow }: RibbonProps) {
               ? drafting.isOn(t) === item.run.on
               : undefined;
           }}
+          valueOf={(item) => (item.control ? stateOf(item.control).text : undefined)}
           onPick={(item) => {
+            if (item.control) return openList({ item, control: item.control, anchor: menu.anchor });
             if (menu.split) setPicked((m) => new Map(m).set(menu.split!.id, item));
             run(item);
             menu.anchor.focus();
@@ -411,12 +575,15 @@ function RibbonMenu({
   menu,
   disabled,
   checked,
+  valueOf,
   onPick,
   onClose,
 }: {
   menu: MenuState;
   disabled: (item: RibbonItem) => boolean;
   checked: (item: RibbonItem) => boolean | undefined;
+  /** A dropdown's value, shown after its name: its entry opens its list. */
+  valueOf: (item: RibbonItem) => string | undefined;
   onPick: (item: RibbonItem) => void;
   onClose: (refocus: boolean) => void;
 }) {
@@ -465,19 +632,24 @@ function RibbonMenu({
 
   const entry = (item: RibbonItem, heading?: string) => {
     const isChecked = checked(item);
+    const value = valueOf(item);
     return (
       <button
         key={item.id}
         type="button"
         role={isChecked === undefined ? 'menuitem' : 'menuitemradio'}
         aria-checked={isChecked}
+        aria-haspopup={item.control ? 'listbox' : undefined}
         data-item={item.id}
         disabled={disabled(item)}
-        aria-label={heading ? `${heading}: ${item.label}` : undefined}
+        aria-label={
+          heading ? `${heading}: ${item.label}` : value ? `${item.label}: ${value}` : undefined
+        }
         onClick={() => onPick(item)}
       >
         <Icon name={item.icon} />
         <span className="ribbon-menu-label">{item.label}</span>
+        {value !== undefined && <span className="ribbon-menu-value">{value}</span>}
       </button>
     );
   };

@@ -95,6 +95,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   centermark: 'Creates a center mark at the center of circles and arcs.',
   // Home > Layers
   'layer-properties': 'Manages layers and their properties.',
+  'layer-control':
+    'Shows the layer of the selected objects, or the current layer; pick a layer to move the objects to it, or with none selected to make it current.',
   'layer-off': 'Turns off the layers of the objects you pick.',
   'layer-isolate': 'Hides or locks every layer except those of the objects you pick.',
   'layer-unisolate': 'Restores the layers hidden or locked by the last Isolate.',
@@ -119,6 +121,14 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'edit-attribute': 'Edits the attribute values and properties of a block reference.',
   // Home > Properties
   'match-properties': 'Applies the properties of one object to other objects.',
+  'color-control':
+    'Shows the color of the selected objects, or the color new objects take; pick one to change it.',
+  'linetype-control':
+    'Shows the linetype of the selected objects, or the linetype new objects take; pick one to change it.',
+  'lineweight-control':
+    'Shows the lineweight of the selected objects, or the lineweight new objects take; pick one to change it.',
+  'transparency-control':
+    'Shows the transparency of the selected objects, or the transparency new objects take; pick one to change it.',
   properties: 'Shows the Properties palette.',
   // Home > Groups
   group: 'Creates a named or unnamed group from the objects you select.',
