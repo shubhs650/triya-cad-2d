@@ -27,6 +27,11 @@ import {
   type LayerColumnSettings,
 } from './layer-columns';
 import { closeOnDelete } from './local-data';
+import {
+  DEFAULT_PALETTE_LAYOUT,
+  normalizePaletteLayout,
+  type PaletteLayout,
+} from './palette-stack';
 import { normalizeWords } from './custom-dictionary';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
 import { DEFAULT_TEMPLATE_ID } from './templates';
@@ -151,6 +156,8 @@ export interface Preferences {
   readonly spellCheck: boolean;
   /** The Layer Properties Manager's columns and sort (M5-05 part 3, layer-columns.ts). */
   readonly layerColumns: LayerColumnSettings;
+  /** The palette stack's tabs, side and width (M7-03, palette-stack.ts). */
+  readonly palettes: PaletteLayout;
   /**
    * The template QNEW and the start screen's New drawing open (M5-10, templates.ts): its id, or
    * '' for none, when QNEW opens the Select Template dialog as AutoCAD's does.
@@ -252,6 +259,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   customDictionary: [],
   spellCheck: true,
   layerColumns: DEFAULT_LAYER_COLUMNS,
+  palettes: DEFAULT_PALETTE_LAYOUT,
   defaultTemplate: DEFAULT_TEMPLATE_ID,
 };
 
@@ -335,6 +343,7 @@ export function normalizePreferences(raw: unknown): Preferences {
     customDictionary: normalizeWords(raw['customDictionary']),
     spellCheck: bool(raw['spellCheck'], d.spellCheck),
     layerColumns: normalizeLayerColumns(raw['layerColumns']),
+    palettes: normalizePaletteLayout(raw['palettes']),
     defaultTemplate:
       typeof raw['defaultTemplate'] === 'string' && raw['defaultTemplate'].length <= 260
         ? raw['defaultTemplate']

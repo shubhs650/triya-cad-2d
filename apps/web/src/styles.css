@@ -847,11 +847,152 @@ button {
 }
 
 /* Palettes (M1-23, UI_SPEC.md §4): docked right of the canvas, opened from the rail. */
+/* The palette stack (M7-03): the rail on the dock's outer edge, the stack between it and the
+   drawing area, docked (it takes its width from the drawing area) or, below 1366 px, sliding
+   over the drawing area. */
+.palette-dock {
+  position: relative;
+  display: flex;
+  min-height: 0;
+}
+
+.palette-dock[data-side='left'] {
+  order: -1;
+  flex-direction: row-reverse;
+}
+
+.palette-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--palette-width), 45vw);
+  min-height: 0;
+  border-left: 1px solid var(--chrome-border);
+  background: var(--chrome-bg-raised);
+}
+
+.palette-dock[data-side='left'] .palette-stack {
+  border-right: 1px solid var(--chrome-border);
+  border-left: 0;
+}
+
+.palette-dock[data-mode='slide-over'] .palette-stack {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  right: 100%;
+  bottom: 0;
+  width: min(var(--palette-width), calc(100vw - 96px));
+  box-shadow: -6px 0 16px rgb(0 0 0 / 25%);
+  animation: palette-slide-in 140ms ease-out;
+}
+
+.palette-dock[data-mode='slide-over'][data-side='left'] .palette-stack {
+  right: auto;
+  left: 100%;
+  box-shadow: 6px 0 16px rgb(0 0 0 / 25%);
+  animation-name: palette-slide-in-left;
+}
+
+@keyframes palette-slide-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+@keyframes palette-slide-in-left {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .palette-dock[data-mode='slide-over'] .palette-stack {
+    animation: none;
+  }
+}
+
+/* The width handle on the stack's edge facing the drawing area. */
+.palette-resize {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.palette-dock[data-side='left'] .palette-resize {
+  right: -3px;
+  left: auto;
+}
+
+.palette-resize:hover,
+.palette-resize:focus-visible {
+  background: var(--accent);
+  outline: none;
+}
+
+.palette-tabs {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.palette-tabs [role='tablist'] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.palette-tabs [role='tab'] {
+  padding: 5px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--chrome-text-muted);
+  white-space: nowrap;
+  touch-action: none;
+}
+
+.palette-tabs [role='tab'][aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--chrome-text);
+}
+
+.palette-tabs [role='tab'][data-dragging='true'] {
+  background: var(--chrome-bg);
+}
+
+.palette-dock-side {
+  padding: 0 8px;
+  border: 0;
+  border-left: 1px solid var(--chrome-border);
+  background: none;
+}
+
+.palette-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .palette-rail {
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--chrome-border);
   background: var(--chrome-bg-raised);
+}
+
+.palette-dock[data-side='left'] .palette-rail {
+  border-right: 1px solid var(--chrome-border);
+  border-left: 0;
 }
 
 .palette-rail button {
@@ -869,10 +1010,9 @@ button {
 
 .palette {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  width: min(420px, 45vw);
   min-height: 0;
-  border-left: 1px solid var(--chrome-border);
   background: var(--chrome-bg-raised);
 }
 
