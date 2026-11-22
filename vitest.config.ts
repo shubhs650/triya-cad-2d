@@ -37,6 +37,8 @@ export default defineConfig({
     include: [
       'packages/*/{src,test}/**/*.test.ts',
       'apps/*/{src,test}/**/*.test.ts',
+      // The error-report worker (M7-08), outside the workspace: no dependencies of its own.
+      'services/*/{src,test}/**/*.test.ts',
       'tests/**/*.test.ts',
     ],
     exclude: ['**/node_modules/**', 'tests/e2e/**'],

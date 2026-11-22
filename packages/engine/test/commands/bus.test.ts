@@ -715,6 +715,36 @@ describe('PromptBus', () => {
     expect(commits()[0]!.command).toBe('BOOM');
   });
 
+  it('tells the app of a command that throws, with the error, for the error report (M7-08)', async () => {
+    const { bus, events } = setup();
+    await bus.script(['BOOM', '0,0']);
+    const faults = events.filter((e) => e.type === 'fault');
+    expect(faults).toHaveLength(1);
+    const f = faults[0]! as Extract<BusEvent, { type: 'fault' }>;
+    expect(f.command).toBe('BOOM');
+    expect(f.error.name).toBe('Error');
+    expect(f.error.message).toBe('the command failed');
+    expect(f.error.stack).toContain('the command failed');
+    // A thrown value that is not an Error still says what it was.
+    const odd: CommandDef = {
+      name: 'ODD',
+      // eslint-disable-next-line require-yield
+      async *run() {
+        throw 'a string';
+      },
+    };
+    const model = DocumentModel.create(sampleInit());
+    const other = new PromptBus({ model, registry: new CommandRegistry([odd]) });
+    const seen: BusEvent[] = [];
+    other.on((e) => seen.push(e));
+    await other.script(['ODD']);
+    expect(seen.find((e) => e.type === 'fault')).toEqual({
+      type: 'fault',
+      command: 'ODD',
+      error: { name: 'Error', message: 'a string', stack: '' },
+    });
+  });
+
   it('applies edits through the host, and stops telling a listener that left', async () => {
     const base = sampleInit();
     const model = DocumentModel.create(base);
