@@ -191,6 +191,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'drawnAt':
         port.postMessage({ type: 'drawnAt', id: m.id, at: session.drawnAt(m.seq) ?? null });
         break;
+      case 'stats':
+        port.postMessage({ type: 'stats', id: m.id, stats: session.stats() });
+        break;
       case 'plot':
         port.postMessage({ type: 'plot', id: m.id, parts: session.plot(m.request) });
         break;

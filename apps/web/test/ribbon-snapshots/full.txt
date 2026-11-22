@@ -309,6 +309,7 @@ Layout (compressed)
 Drawing Utilities (expanded)
   large-label units<ruler>
   small-label health<heart_pulse>
+  small-label diagnostics<top_speed>
   small-label purge<broom>
   small-label recover<drafts>
 Settings (expanded)
@@ -334,7 +335,7 @@ Settings (compressed)
 ### step 3
 Drawing Utilities (compressed)
   icon        units<ruler>
-  ▾ health, purge, recover
+  ▾ health, diagnostics, purge, recover
 
 ## Text Editor (contextual: text-editor)
 Formatting (expanded)

@@ -121,6 +121,7 @@ import {
   type RasterPixels,
   type RefEditDisplay,
   type RenderPrimitive,
+  type RenderStats,
   type RenderStyle,
   type ScreenRect,
   type SelectQuery,
@@ -2141,6 +2142,15 @@ export class CanvasController {
    */
   drawnAt(seq: number): Promise<number | undefined> {
     return this.#host.drawnAt(seq);
+  }
+
+  /** Where its renderer runs, and its frames' times and scene size (the diagnostics panel, M7-08). */
+  get rendererMode(): 'worker' | 'main' {
+    return this.#host.mode;
+  }
+
+  stats(): Promise<RenderStats> {
+    return this.#host.stats();
   }
 
   /** The user's .pat files changed (M1-50): hatches stored without lines redraw from them. */

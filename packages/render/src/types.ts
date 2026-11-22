@@ -449,7 +449,29 @@ export interface DrawnEntity {
   readonly type: string;
 }
 
+/**
+ * What a renderer reports to the diagnostics panel (M7-08, ARCHITECTURE.md §17): its frames'
+ * times, wall-clock milliseconds where it draws, the last up to `STATS_FRAMES` of them, and the
+ * scene cache's size.
+ */
+export interface RenderStats {
+  /** Frames drawn since it started. */
+  readonly frames: number;
+  readonly lastFrameMs: number;
+  readonly meanFrameMs: number;
+  readonly maxFrameMs: number;
+  /** Entities in the scene cache (tessellated, not hidden). */
+  readonly entities: number;
+  /** Their primitives (dashes built for a linetype scale not counted). */
+  readonly primitives: number;
+}
+
 export interface Renderer {
+  /**
+   * The scene cache's size (M7-08, the diagnostics panel): entities tessellated and their
+   * primitives. Optional, for test doubles.
+   */
+  sceneSize?(): { readonly entities: number; readonly primitives: number };
   /** The viewport's CSS size and device pixel ratio. */
   resize(width: number, height: number, dpr: number): void;
   setView(view: ViewTransform): void;

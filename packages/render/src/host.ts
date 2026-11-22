@@ -42,6 +42,7 @@ import type {
   RasterPixels,
   RenderPrimitive,
   RefEditDisplay,
+  RenderStats,
   RenderStyle,
   ScreenRect,
   SelectQuery,
@@ -229,6 +230,15 @@ export class RendererHost {
     return this.#request((id) => ({ type: 'drawnAt', id, seq })).then((m) =>
       m.type === 'drawnAt' && m.at !== null ? m.at : undefined,
     );
+  }
+
+  /** Its frames' times and scene cache size (the diagnostics panel, M7-08), after everything sent. */
+  stats(): Promise<RenderStats> {
+    if (this.#session) return Promise.resolve(this.#session.stats());
+    return this.#request((id) => ({ type: 'stats', id })).then((m) => {
+      if (m.type !== 'stats') throw new Error(`render worker: expected stats, got ${m.type}`);
+      return m.stats;
+    });
   }
 
   /**

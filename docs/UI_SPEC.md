@@ -72,6 +72,7 @@ Breakpoints (viewport width): **≥1920 "full"**, **1600–1919 "wide"**, **1366
 - **Constraints:** list with DOF, conflicts, parameters manager.
 - **Compare:** source/target pickers, results list, filters.
 - **Health:** report cards with fix buttons.
+- **Diagnostics** *(M7-08 part 2, ARCHITECTURE.md §17)*: the drawing on screen's entity counts (by type), layers, blocks, layouts and edits; each canvas's renderer (worker or main thread, how fast it answers), last frame, mean and maximum of the last 60 frames, frames drawn and scene cache (entities, primitives); where the command engine runs, the last command's time (start to end) and how long the engine took to read the last input; the PDF page cache and, in Chromium, the main thread's heap. Read again every second while it shows; on the palette rail and in Tools > Drawing Utilities.
 - **Command History:** F2 equivalent. *As built (M7-03 part 2, `CommandHistoryPalette.tsx`):* F2, Ctrl+K's Command history and the rail's Command History button show the drawing's command history (the command line's last 2000 lines) as a palette of the stack; F2 again closes it. The latest line is at the bottom and stays in view as lines come unless the drafter scrolled up; the text can be selected. It takes no focus: typing goes on at the command line.
 
 ## 5. Command line and Dynamic Input

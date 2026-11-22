@@ -146,6 +146,7 @@ const NAMES = [
   'text_t',
   'text_underline',
   'textbox_more',
+  'top_speed',
   'transparency_square',
   'weather_moon',
   'weather_snowflake',

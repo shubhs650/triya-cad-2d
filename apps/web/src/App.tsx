@@ -207,6 +207,7 @@ import { PictureOfferNotice } from './PictureOffer';
 import { saveChanges } from './save-changes';
 import { SaveChanges } from './SaveChanges';
 import { ErrorReportDialog } from './ErrorReportDialog';
+import { DiagnosticsPalette } from './DiagnosticsPalette';
 import { Settings } from './Settings';
 import { PreferencesStore, bindPreferences, indexedDbPreferences } from './preferences';
 import { appearanceOf, applyAppearance, canvasColoursFor, watchMedia } from './theme';
@@ -1390,6 +1391,8 @@ deviceFonts.subscribe(() => fonts.setDeviceFonts(deviceFonts.files()));
  * drawings' PDFDEFINITIONs by file name. pdf.js loads with the first page a canvas asks for.
  */
 const pdfPages = new PdfPages(openPdf);
+/** The PDF page cache's size, for the Diagnostics palette (M7-08). */
+const pdfCacheSize = () => pdfPages.cached;
 
 const isPdfFile = (name: string) => /\.pdf$/i.test(name);
 
@@ -2879,6 +2882,14 @@ export function App() {
                       fontStore={fonts}
                       deviceFonts={deviceFonts}
                       onClose={() => paletteStack.close('health')}
+                    />
+                  );
+                case 'diagnostics':
+                  return (
+                    <DiagnosticsPalette
+                      doc={active}
+                      pdfCache={pdfCacheSize}
+                      onClose={() => paletteStack.close('diagnostics')}
                     />
                   );
                 case 'history':

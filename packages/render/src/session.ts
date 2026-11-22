@@ -56,7 +56,13 @@ import { dimStylePreviewImage, stylePreviewImage, type PreviewSize } from './dim
 import { plotParts, type PlotPart } from './plot/job';
 import type { PlotStyleTable } from './plot/plot-style-table';
 import { PlotResolver } from './plot/resolver';
-import type { RasterPixels, RenderStyle, UnderlayRaster, UnderlayRequest } from './types';
+import type {
+  RasterPixels,
+  RenderStats,
+  RenderStyle,
+  UnderlayRaster,
+  UnderlayRequest,
+} from './types';
 import { underlayKeyDefinition } from './underlay';
 
 /** What to plot (M2-17): a space of the drawing through a plot style table. */
@@ -149,6 +155,9 @@ export interface RenderSessionOptions {
 /** How many recent numbered changes `drawnAt` remembers (M2-62). */
 const DRAWN_KEPT = 64;
 
+/** The frames whose times the diagnostics panel's mean and maximum take in (M7-08). */
+export const STATS_FRAMES = 60;
+
 const isPoint = (v: HeaderValue | undefined): v is { x: number; y: number } =>
   typeof v === 'object' && v !== null;
 
@@ -200,6 +209,9 @@ export class RenderSession {
   /** When the first frame after each recent numbered change was drawn (`clock` time). */
   readonly #drawn = new Map<number, number>();
   readonly #clock: () => number;
+  /** Frames drawn, and the last STATS_FRAMES frames' times, ms (M7-08). */
+  #frames = 0;
+  #frameMs: number[] = [];
 
   constructor(o: RenderSessionOptions) {
     this.#surface = o.surface;
@@ -549,11 +561,19 @@ export class RenderSession {
     return true;
   }
 
-  /** Draws a frame, noting when it drew the numbered changes applied since the last one. */
+  /**
+   * Draws a frame, noting when it drew the numbered changes applied since the last one, and how
+   * long it took (the diagnostics panel, M7-08).
+   */
   frame(): void {
+    const start = this.#clock();
     this.renderer.frame();
+    const end = this.#clock();
+    this.#frames += 1;
+    this.#frameMs.push(end - start);
+    if (this.#frameMs.length > STATS_FRAMES) this.#frameMs.shift();
     if (this.#undrawn.length === 0) return;
-    const at = this.#clock();
+    const at = end;
     for (const seq of this.#undrawn) this.#drawn.set(seq, at);
     this.#undrawn = [];
     for (const seq of this.#drawn.keys()) {
@@ -568,5 +588,18 @@ export class RenderSession {
    */
   drawnAt(seq: number): number | undefined {
     return this.#drawn.get(seq);
+  }
+
+  /** Its frames' times and the scene cache's size, for the diagnostics panel (M7-08). */
+  stats(): RenderStats {
+    const ms = this.#frameMs;
+    const scene = this.renderer.sceneSize?.() ?? { entities: 0, primitives: 0 };
+    return {
+      frames: this.#frames,
+      lastFrameMs: ms.at(-1) ?? 0,
+      meanFrameMs: ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : 0,
+      maxFrameMs: ms.length ? Math.max(...ms) : 0,
+      ...scene,
+    };
   }
 }

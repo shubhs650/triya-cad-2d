@@ -220,7 +220,7 @@ describe('the data model', () => {
             expect(toggles.has(i.run.action), where).toBe(true);
           else if (!i.control)
             expect(i.run.action, where).toMatch(
-              /^(palette:(health|history)|theme:(system|light|dark)|app:(aliases|shortcuts)|escape|text:(bold|italic|underline|overline|strike|stack|paragraph|columns|field|spell|close))$/,
+              /^(palette:(diagnostics|health|history)|theme:(system|light|dark)|app:(aliases|shortcuts)|escape|text:(bold|italic|underline|overline|strike|stack|paragraph|columns|field|spell|close))$/,
             );
           // A dropdown (M7-02 part 3) opens its own list.
           if (i.control) expect(i.run, where).toEqual({ action: `control:${i.control}` });
