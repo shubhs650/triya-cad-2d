@@ -40,11 +40,15 @@ export {
 } from './quick';
 export {
   RIBBON_PROPERTY_KEYS,
+  RIBBON_STYLE_VARIABLES,
   ribbonProperties,
+  ribbonStyles,
   selectionKind,
   type RibbonLayer,
   type RibbonProperties,
   type RibbonSelection,
+  type RibbonStyleKind,
+  type RibbonStyles,
 } from './ribbon';
 export * from './color-books';
 export * from './match';

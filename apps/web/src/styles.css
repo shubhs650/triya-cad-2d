@@ -531,12 +531,25 @@ button {
   padding: 1px 0;
 }
 
+/* A panel's items take the breakpoint's rows and no more, whatever its items are: a tab whose
+   compressed panels' buttons sat a pixel taller made the ribbon, and so the drawing area under it,
+   change height as tabs changed (M7-02 part 5). */
+.ribbon-panel > .ribbon-panel-items {
+  min-height: 0;
+  height: calc(var(--ribbon-rows, 1) * 25px + 1px);
+}
+
 /* A compressed panel's kept items and its overflow button, or a collapsed panel's one button,
    sit in one row at the panel's middle whatever the breakpoint's row count. */
 .ribbon-panel:not([data-state='expanded']) .ribbon-panel-items {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* Its buttons as tall as the buttons, without the line box under an inline one. */
+.ribbon-panel:not([data-state='expanded']) .ribbon-cell {
+  display: flex;
 }
 
 .ribbon-cell.large-label {

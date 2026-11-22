@@ -170,8 +170,23 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'underlay-snap-off': 'Stops snapping to the geometry of PDF underlays.',
   'pdf-import': 'Attaches a PDF page as an underlay to trace over.',
   field: 'Inserts a field that updates with the data it shows.',
+  // Text Editor (M7-02 part 5)
+  'text-bold':
+    'Turns bold on or off for the selected text, or the text typed next (TrueType only).',
+  'text-italic':
+    'Turns italic on or off for the selected text, or the text typed next (TrueType only).',
+  'text-underline': 'Turns underlining on or off for the selected text, or the text typed next.',
+  'text-overline': 'Turns overlining on or off for the selected text, or the text typed next.',
+  'text-strike': 'Turns strikethrough on or off for the selected text, or the text typed next.',
+  'text-stack': 'Stacks the selected text around its /, # or ^ as a fraction or tolerance.',
+  'text-paragraph': 'Sets the tabs, indents, alignment and spacing of the paragraph.',
+  'text-columns': 'Flows the text into columns, or breaks a column here.',
+  'text-field': 'Inserts a field that updates with the data it shows.',
+  'text-spell': 'Underlines the words the dictionaries do not have as you type.',
+  'close-text-editor': 'Closes the Text Editor and keeps the text.',
   // Annotate (M7-02 part 2)
-  'text-style': 'Creates, modifies or sets the current text style.',
+  'text-style':
+    'Shows the current text style; pick another to make it current, or manage the text styles.',
   find: 'Finds and replaces text in the drawing.',
   spell: 'Checks the spelling of text in the drawing.',
   'justify-text': 'Changes the justification point of text without moving it.',
@@ -181,7 +196,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   continue: 'Continues a dimension from the last or a selected one.',
   'dim-continue': 'Creates a dimension that starts at the second extension line of another.',
   'dim-baseline': 'Creates a dimension from the first extension line of another.',
-  'dim-style': 'Creates, modifies or sets the current dimension style.',
+  'dim-style':
+    'Shows the current dimension style; pick another to make it current, or manage the dimension styles.',
   'dim-space': 'Spaces parallel linear and angular dimensions evenly.',
   'dim-break': 'Breaks dimension and extension lines where objects cross them.',
   'dim-jogline': 'Adds or removes a jog line on a linear dimension.',
@@ -193,8 +209,10 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'dim-override': 'Overrides dimension variables for the dimensions you select.',
   'mleader-align': 'Lines up and spaces multileaders you select.',
   'mleader-collect': 'Gathers multileaders holding blocks into one leader.',
-  'mleader-style': 'Creates, modifies or sets the current multileader style.',
-  'table-style': 'Creates, modifies or sets the current table style.',
+  'mleader-style':
+    'Shows the current multileader style; pick another to make it current, or manage the multileader styles.',
+  'table-style':
+    'Shows the current table style; pick another to make it current, or manage the table styles.',
   'scale-list': 'Edits the list of scales offered for viewports, layouts and plots.',
   'add-scales': 'Adds or deletes annotation scales of annotative objects.',
   'sync-scales': 'Resets the positions of annotative objects at other scales.',

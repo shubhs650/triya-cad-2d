@@ -1,0 +1,1 @@
+- M7-02 part 5 (#632): Annotate's text, dimension, multileader and table style dropdowns, and the Text Editor ribbon tab while MTEXT's editor is open.

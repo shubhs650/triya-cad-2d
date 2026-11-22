@@ -87,6 +87,7 @@ import { controllerOf } from './canvas/registry';
 import type { CanvasController } from './canvas/controller';
 import { commandLines, typedAfter } from './command-line';
 import { editorSpelling, lineSpellText, wordsToCheck } from './spell-check';
+import { textEditorBridge, type TextEditorAction } from './ribbon/text-editor-bridge';
 import { engines } from './engine/registry';
 import { appFonts } from './fonts';
 import {
@@ -1638,8 +1639,15 @@ function MTextBox({
       }
     };
     // A click anywhere but the editor and its toolbar keeps the text, as in AutoCAD.
+    // The ribbon's Text Editor tab (M7-02 part 5) is the toolbar's too: a click there keeps editing.
     const onOutside = (e: PointerEvent) => {
-      if (frame.current && e.target instanceof Node && !frame.current.contains(e.target)) finish();
+      if (
+        frame.current &&
+        e.target instanceof Node &&
+        !frame.current.contains(e.target) &&
+        !(e.target instanceof Element && e.target.closest('[data-keeps-text-editor]'))
+      )
+        finish();
     };
     // What the browser typed itself (IME, word deletes) moves the text past the columns' ends.
     const onInput = () => refit();
@@ -1774,6 +1782,47 @@ function MTextBox({
     change({ [key]: !on });
   };
   const ttf = (shown.font ?? font).kind === 'ttf';
+  const stack = () => {
+    const [a, b] = selection();
+    const r = toggleStack(spans(), a, b);
+    commit(r.spans, r.caret);
+  };
+
+  // The ribbon's Text Editor tab runs the toolbar's actions while the editor is open.
+  const ribbonAction = useRef<(a: TextEditorAction) => void>(() => {});
+  ribbonAction.current = (a) => {
+    switch (a) {
+      case 'stack':
+        return stack();
+      case 'paragraph':
+      case 'columns':
+        return setMenu(menu === a ? undefined : a);
+      case 'field':
+        return request.fields ? insertField() : undefined;
+      case 'spell':
+        return editorSpelling.setEnabled(!spellOn);
+      case 'close':
+        return finish();
+      default:
+        return ttf || (a !== 'bold' && a !== 'italic') ? toggle(a) : undefined;
+    }
+  };
+  const ribbonHandle = useRef<object | undefined>(undefined);
+  useEffect(() => {
+    const h = textEditorBridge.attach((a) => ribbonAction.current(a));
+    ribbonHandle.current = h;
+    return () => textEditorBridge.detach(h);
+  }, []);
+  useEffect(() => {
+    if (!ribbonHandle.current) return;
+    textEditorBridge.update(ribbonHandle.current, {
+      pressed: {
+        ...Object.fromEntries(TOGGLES.map((t) => [t.key, !!shown[t.key]])),
+        spell: spellOn,
+      },
+      disabled: { bold: !ttf, italic: !ttf, field: !request.fields },
+    });
+  }, [shown, spellOn, ttf, request.fields]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     e.stopPropagation();
@@ -1878,11 +1927,7 @@ function MTextBox({
           aria-label="Stack"
           title="Stack: select text with /, # or ^"
           className="mtext-tool"
-          onClick={() => {
-            const [a, b] = selection();
-            const r = toggleStack(spans(), a, b);
-            commit(r.spans, r.caret);
-          }}
+          onClick={stack}
         >
           a⁄b
         </button>
