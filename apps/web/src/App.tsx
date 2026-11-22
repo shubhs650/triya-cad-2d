@@ -185,6 +185,8 @@ import { EXPORT_MEDIA } from './export';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import { Pwa, type ContainerLike, type InstallPromptLike } from './pwa';
 import { InstallButton, OfflineStatus, UpdateBanner } from './PwaChrome';
+import { BrowserNotice } from './BrowserNotice';
+import { browserFeatures, browserLimits, showBrowserNotice } from './browser-support';
 import { RecentFiles, indexedDbRecent, type RecentHandle } from './recent';
 import { RECENT_THUMBNAIL } from './RecentDrawings';
 import { RedlinePanel } from './RedlinePanel';
@@ -373,6 +375,8 @@ async function pictureForRecent(id: number): Promise<void> {
  * hourly (the update check is the one request to the origin the app makes by itself, PRD G6).
  */
 const pwa = new Pwa({ reload: () => location.reload() });
+/** What this browser does differently from Chromium (M7-09): none in Chrome and Edge. */
+const BROWSER_LIMITS = browserLimits(browserFeatures(window as unknown as Record<string, unknown>));
 const UPDATE_CHECK_MS = 60 * 60 * 1000;
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   void pwa.register(navigator.serviceWorker as unknown as ContainerLike);
@@ -2431,6 +2435,11 @@ export function App() {
   const layerColumns = useSyncExternalStore(preferences.subscribe, preferences.get).layerColumns;
   // The Ctrl+K palette's items run last (M7-06 part 2).
   const paletteRecent = useSyncExternalStore(preferences.subscribe, preferences.get).paletteRecent;
+  // The first-run browser compatibility notice (M7-09), once the stored settings are read.
+  const browserNotice = showBrowserNotice(BROWSER_LIMITS, {
+    loaded: preferences.loaded,
+    seen: useSyncExternalStore(preferences.subscribe, preferences.get).browserNoticeSeen,
+  });
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
   // Properties' Pattern name offers the library the canvases draw with (M2-35 part 3).
   const patternNames = useMemo(() => hatchPatternNames(patterns.sources()), [patternState]);
@@ -2769,6 +2778,12 @@ export function App() {
         />
       )}
 
+      {browserNotice && (
+        <BrowserNotice
+          limits={BROWSER_LIMITS}
+          onDismiss={() => preferences.update({ browserNoticeSeen: true })}
+        />
+      )}
       <UpdateBanner pwa={pwa} />
       <RecoveryBanner offers={recoveryOffers} onRecover={(key) => void recover(key)} />
       {state.error && (

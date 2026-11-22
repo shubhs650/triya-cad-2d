@@ -84,6 +84,7 @@ const GATED_SCRIPTS = [
   'test:ui',
   'test:offline',
   'test:io',
+  'test:browsers',
 ];
 const SKIP_IF_PASSED = "needs.changes.outputs.tested != 'true'";
 
@@ -214,7 +215,7 @@ describe('ci.yml gates', () => {
     expect(readFileSync(path.join(root, 'ATTRIBUTION.md'), 'utf8')).toContain(`ezdxf ${version}`);
   });
 
-  it.each(['build', 'test:fidelity', 'test:offline', 'test:ui', 'test:io'])(
+  it.each(['build', 'test:fidelity', 'test:offline', 'test:ui', 'test:io', 'test:browsers'])(
     '`pnpm %s` runs under the required browser check',
     (script) => {
       expect(pkg.scripts[script]).toBeDefined();
@@ -326,7 +327,7 @@ describe('ci.yml gates', () => {
   it('runs every browser suite even when an earlier one in the same job fails', () => {
     for (const job of Object.values(ci.jobs)) {
       const suites = (job.steps ?? []).filter((s) =>
-        ['test:fidelity', 'test:offline', 'test:ui', 'test:io'].some((t) =>
+        ['test:fidelity', 'test:offline', 'test:ui', 'test:io', 'test:browsers'].some((t) =>
           s.run?.split('\n').some((l) => runsScript(l, t)),
         ),
       );
@@ -490,10 +491,51 @@ describe('ci.yml caching and artifacts', () => {
       const script = readFileSync(path.join(root, 'scripts/ci-browser-deps.sh'), 'utf8');
       expect(script).toContain('$HOME/.cache/pw-apt');
       expect(script).toContain('sudo dpkg -i');
-      expect(script).toContain('pnpm exec playwright install-deps chromium');
+      // Chromium's unless the step names other browsers (M7-09: Firefox and WebKit).
+      expect(script).toContain('browsers=(chromium)');
+      expect(script).toContain('pnpm exec playwright install-deps "${browsers[@]}"');
       // Without apt (2026-11-11) the job still fails when Chromium misses a library.
       expect(script).toContain("grep 'not found'");
     }
+  });
+
+  // M7-09 (PRD §8, DEC-023): the degraded-mode suite on Firefox and WebKit serves the production
+  // build, so it runs in the job that builds, after the suites before it, with its own browsers'
+  // cache and the .deb files of their system packages cached apart from Chromium's.
+  it('runs the Firefox and WebKit suite after the build, with its browsers cached', () => {
+    expect(pkg.scripts['test:browsers']).toBe('playwright test --project=firefox --project=webkit');
+    const [id, job] = jobRunning('test:browsers')!;
+    expect(id).toBe('offline');
+    const steps = job.steps ?? [];
+    const at = (pred: (s: Step) => boolean) => steps.findIndex(pred);
+    const build = steps.indexOf(stepRunning(job, 'build')!);
+    const suite = steps.indexOf(stepRunning(job, 'test:browsers')!);
+    expect(suite).toBeGreaterThan(build);
+    const cache = at(
+      (s) =>
+        s.uses?.startsWith('actions/cache@') === true &&
+        String(s.with?.['key']).includes('firefox-webkit'),
+    );
+    expect(String(steps[cache]!.with?.['path'])).toContain('ms-playwright/firefox-');
+    expect(String(steps[cache]!.with?.['path'])).toContain('ms-playwright/webkit-');
+    expect(String(steps[cache]!.with?.['key'])).toContain('${{ steps.pw.outputs.version }}');
+    const install = at((s) => s.run?.trim() === 'pnpm exec playwright install firefox webkit');
+    expect(install).toBeGreaterThan(cache);
+    expect(steps[install]!.if).toContain("cache-hit != 'true'");
+    const apt = at(
+      (s) =>
+        s.uses?.startsWith('actions/cache@') === true &&
+        s.with?.['path'] === '~/.cache/pw-apt-firefox-webkit',
+    );
+    const deps = at((s) => s.run?.trim() === 'bash scripts/ci-browser-deps.sh firefox webkit');
+    expect(apt).toBeGreaterThan(-1);
+    expect(deps).toBeGreaterThan(Math.max(apt, install));
+    // The script keeps other browsers' packages in ~/.cache/pw-apt-<browsers>.
+    const script = readFileSync(path.join(root, 'scripts/ci-browser-deps.sh'), 'utf8');
+    expect(script).toContain('$HOME/.cache/pw-apt-');
+    expect(suite).toBeGreaterThan(deps);
+    for (const i of [cache, install, apt, deps, suite])
+      expect(steps[i]!.if).toContain('!cancelled()');
   });
 
   // Each Playwright run empties test-results/, so the fidelity diffs are kept before the UI suite

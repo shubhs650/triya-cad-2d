@@ -1,18 +1,28 @@
 #!/usr/bin/env bash
-# Installs Chromium's system packages for the Playwright jobs (DEC-075 follow-up).
+# Installs the Playwright browsers' system packages for the CI jobs (DEC-075 follow-up):
+# Chromium's, or those of the browsers named as arguments (M7-09: `firefox webkit`).
 #
 # The runner image already has Chromium's libraries; `playwright install-deps chromium` only adds
 # Playwright's extra fonts (about 22 MB of .deb files). From an Ubuntu mirror that was 10 s on most
 # runners but 4 min 22 s on one (run 44351148859, 2026-11-18), on the critical path. So the .deb
 # files are kept in PW_APT_DIR, which the workflow caches per runner image and Playwright version
 # (saved from `main`'s perf job, which every PR can restore): with them, dpkg installs offline.
+# Other browsers' packages (WebKit's GStreamer and the rest) are kept apart, in
+# ~/.cache/pw-apt-<browsers>, under their own cache key.
 #
 # Without a cache (or if dpkg refuses it) apt installs them, with up to three attempts; apt resumes
 # a partial download. If apt cannot install them at all (the archive did not resolve from
-# 2026-11-11), the job goes on when no library Chromium links is missing and fails otherwise.
+# 2026-11-11), the job goes on when no library Chromium links is missing and fails otherwise; for
+# other browsers it goes on, and Playwright's own check at launch names any library they miss.
 set -uo pipefail
+browsers=("$@")
+[ ${#browsers[@]} -eq 0 ] && browsers=(chromium)
 # The workflow caches ~/.cache/pw-apt (actions/cache step `apt-cache` before this one).
-dir="${PW_APT_DIR:-$HOME/.cache/pw-apt}"
+if [ "${browsers[*]}" = chromium ]; then
+  dir="${PW_APT_DIR:-$HOME/.cache/pw-apt}"
+else
+  dir="${PW_APT_DIR:-$HOME/.cache/pw-apt-$(IFS=-; echo "${browsers[*]}")}"
+fi
 
 if compgen -G "$dir/*.deb" >/dev/null; then
   if sudo dpkg -i "$dir"/*.deb >/dev/null; then
@@ -28,7 +38,7 @@ echo 'Binary::apt-get::APT::Keep-Downloaded-Packages "true"; APT::Keep-Downloade
 sudo rm -f /etc/apt/apt.conf.d/docker-clean
 
 for attempt in 1 2 3; do
-  if pnpm exec playwright install-deps chromium; then
+  if pnpm exec playwright install-deps "${browsers[@]}"; then
     mkdir -p "$dir"
     find /var/cache/apt/archives -maxdepth 1 -name '*.deb' -exec cp {} "$dir"/ \;
     echo "Kept $(find "$dir" -name '*.deb' | wc -l) packages for the cache"
@@ -38,6 +48,10 @@ for attempt in 1 2 3; do
   sleep $((attempt * 10))
 done
 
+if [ "${browsers[*]}" != chromium ]; then
+  echo "::warning::playwright install-deps ${browsers[*]} failed; their launch checks the libraries"
+  exit 0
+fi
 echo "::warning::playwright install-deps failed; checking Chromium's libraries instead"
 missing="$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
   -exec ldd {} \; | grep 'not found' || true)"
