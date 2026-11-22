@@ -235,6 +235,7 @@ import { alertLayers, layerNotices, plotNotice, unreconciledView } from './layer
 import { aliasesOf, applyAliasFile } from './user-aliases';
 import { applyKeyOverrides, keymap, keymapVersion, onShortcuts } from './shortcuts';
 import { keysText } from './keymap';
+import { rememberRun } from './palette';
 import { cleanScreen } from './clean-screen';
 import { Icon } from './ribbon/Icon';
 import {
@@ -2267,6 +2268,8 @@ export function App() {
   const clean = useSyncExternalStore(cleanScreen.subscribe, cleanScreen.on);
   const recentFiles = useSyncExternalStore(recent.subscribe, recent.getSnapshot);
   const layerColumns = useSyncExternalStore(preferences.subscribe, preferences.get).layerColumns;
+  // The Ctrl+K palette's items run last (M7-06 part 2).
+  const paletteRecent = useSyncExternalStore(preferences.subscribe, preferences.get).paletteRecent;
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
   // Properties' Pattern name offers the library the canvases draw with (M2-35 part 3).
   const patternNames = useMemo(() => hatchPatternNames(patterns.sources()), [patternState]);
@@ -2899,11 +2902,18 @@ export function App() {
         variables={variables}
         lines={commandLines}
         cursor={() => lastCursor}
-        onSettings={() => void optionsDialog.show()}
+        onSettings={(tab) => {
+          if (tab) optionsDialog.showTab(tab);
+          void optionsDialog.show();
+        }}
         onEditAliases={() => setAliasEditor(true)}
         onEditShortcuts={() => setShortcutEditor(true)}
         recent={recentFiles}
         onOpenRecent={(key) => void openRecent(key)}
+        ranLast={paletteRecent}
+        onRan={(item) =>
+          preferences.update({ paletteRecent: rememberRun(preferences.get().paletteRecent, item) })
+        }
       />
       <StatusBar
         doc={active}

@@ -65,6 +65,16 @@ export function onShortcuts(own: Readonly<Record<string, ShortcutHandler>>): () 
   };
 }
 
+/**
+ * Runs an action by id as its key would with no field focused (the Ctrl+K palette, M7-06 part
+ * 2): true when a handler ran it.
+ */
+export function runAction(id: string): boolean {
+  const handler =
+    handlers.get(id) ?? (commandOf(id) !== undefined ? handlers.get('command:') : undefined);
+  return handler?.(id, { kind: 'none', empty: true }) ?? false;
+}
+
 /** Where the focus is, for `keepsForText`. */
 export function focusOf(target: EventTarget | null, commandInput: Element | null): Focus {
   if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement))

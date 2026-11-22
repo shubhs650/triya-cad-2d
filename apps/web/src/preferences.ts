@@ -20,6 +20,7 @@ import {
   type QpQuadrant,
 } from './drafting';
 import type { DynMode } from './dynamic-input';
+import { normalizePaletteRecent } from './palette';
 import { normalizeKeyOverrides, type KeyOverrides } from './keymap';
 import {
   DEFAULT_LAYER_COLUMNS,
@@ -150,6 +151,8 @@ export interface Preferences {
   readonly aliasFile: string;
   /** The user's shortcut keys over AutoCAD's defaults (M3-10 part 2, keymap.ts). */
   readonly keys: KeyOverrides;
+  /** The Ctrl+K palette's items run last, newest first (M7-06 part 2, palette.ts). */
+  readonly paletteRecent: readonly string[];
   /** SPELL's custom dictionary (M4-09 part 4, custom-dictionary.ts), AutoCAD's .cus file. */
   readonly customDictionary: readonly string[];
   /** As-you-type spell checking in the text editors (M4-17, spell-check.ts); on by default. */
@@ -256,6 +259,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   filters: {},
   aliasFile: '',
   keys: {},
+  paletteRecent: [],
   customDictionary: [],
   spellCheck: true,
   layerColumns: DEFAULT_LAYER_COLUMNS,
@@ -340,6 +344,7 @@ export function normalizePreferences(raw: unknown): Preferences {
         ? raw['aliasFile']
         : d.aliasFile,
     keys: normalizeKeyOverrides(raw['keys']),
+    paletteRecent: normalizePaletteRecent(raw['paletteRecent']),
     customDictionary: normalizeWords(raw['customDictionary']),
     spellCheck: bool(raw['spellCheck'], d.spellCheck),
     layerColumns: normalizeLayerColumns(raw['layerColumns']),
