@@ -147,7 +147,7 @@ test('Clear all local data leaves IndexedDB and the private file system empty', 
   // The page starts afresh: no drawing, nothing to recover, the default theme.
   await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeVisible();
   await expect(page.getByTestId('recovery-offer')).toHaveCount(0);
-  await expect(page.locator('html')).not.toHaveAttribute('data-theme', /./);
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'light');
   // The stores the new page opens again are empty.
   await expect.poll(() => localData(page)).toEqual({ records: [], files: [], caches: [] });
   const fresh = await openSettings(page, 'Files');
@@ -174,11 +174,11 @@ test('settings are kept between sessions and apply to the canvas and status bar'
   await settings.getByLabel('Dynamic Input (F12)').uncheck();
   await page.screenshot({ path: test.info().outputPath('settings-dark.png') });
   await page.keyboard.press('Escape');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'dark');
   await expect(page.getByTitle('Dynamic Input (F12)')).toHaveAttribute('aria-pressed', 'false');
 
   await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'dark');
   await expect(page.getByTitle('Dynamic Input (F12)')).toHaveAttribute('aria-pressed', 'false');
   const again = await openSettings(page, 'Display');
   await expect(again.getByLabel('Model space background')).toHaveValue('#ffffff');

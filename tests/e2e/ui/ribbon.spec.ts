@@ -331,7 +331,7 @@ test('the other tabs open palettes, the theme and the app windows (M7-02 part 2)
     'Dark',
   ]);
   await themes.getByRole('menuitemradio', { name: 'Dark' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'dark');
   await shot(page, '1920-view-dark');
   await panel(page, 'Interface').getByRole('button', { name: 'Theme options' }).click();
   await expect(themes.getByRole('menuitemradio', { name: 'Dark' })).toHaveAttribute(
@@ -339,7 +339,7 @@ test('the other tabs open palettes, the theme and the app windows (M7-02 part 2)
     'true',
   );
   await themes.getByRole('menuitemradio', { name: 'Light' }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', 'light');
 
   // Annotate > Annotation Scaling: AutoCAD's annotative tools, greyed out, saying why.
   await tab('Annotate');
