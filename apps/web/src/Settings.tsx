@@ -308,6 +308,7 @@ export function Settings({
       </div>
       <div {...panel('system')}>
         <LocalData onClearAll={onClearAll} />
+        <ErrorReportSettings preferences={preferences} />
       </div>
       <div {...panel('user')}>
         <section aria-labelledby="aliases-title">
@@ -804,6 +805,32 @@ function PlotSettings() {
         </label>
       ))}
     </fieldset>
+  );
+}
+
+/**
+ * OPTIONS > System > Error reports (M7-08, PRD §8 G6): whether the app offers to send a report
+ * when a problem occurs. Each report is shown in full and sent only on Send Report.
+ */
+function ErrorReportSettings({ preferences }: { preferences: PreferencesStore }) {
+  const p = useSyncExternalStore(preferences.subscribe, preferences.get);
+  const id = useId();
+  return (
+    <section aria-labelledby={`${id}-reports`}>
+      <h3 id={`${id}-reports`}>Error reports</h3>
+      <p>
+        A report holds the error, your browser, the app version and counts of what the drawing
+        holds, never its text, names, file names or paths. You see it before anything is sent.
+      </p>
+      <label className="setting-check">
+        <input
+          type="checkbox"
+          checked={p.errorReports}
+          onChange={(e) => preferences.update({ errorReports: e.currentTarget.checked })}
+        />
+        Offer to send an error report when a problem occurs
+      </label>
+    </section>
   );
 }
 

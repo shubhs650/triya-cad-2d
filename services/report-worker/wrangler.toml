@@ -1,0 +1,13 @@
+# The error-report worker (M7-08): see README.md. Deployed by the owner; CI only tests it.
+name = "triya-report-worker"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+workers_dev = false
+routes = [{ pattern = "report.openengtools.com", custom_domain = true }]
+
+[vars]
+ALLOWED_ORIGIN = "https://triya-cad-2d.openengtools.com"
+# The private triage repository, owner/name (ARCHITECTURE.md §17). Set before deploying.
+TRIAGE_REPO = ""
+
+# GITHUB_TOKEN is a secret: `wrangler secret put GITHUB_TOKEN`.

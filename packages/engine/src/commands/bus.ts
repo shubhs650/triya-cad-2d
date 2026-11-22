@@ -212,6 +212,16 @@ export type BusEvent =
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
   | { readonly type: 'commit'; readonly record: CommandRecord }
   /**
+   * A command threw (M7-08): a bug. The command line says the message; the app offers the error
+   * report, which keeps the error's name and stack frames, never its drawing content.
+   */
+  | {
+      readonly type: 'fault';
+      /** The command that threw; empty if none ran. */
+      readonly command: string;
+      readonly error: { readonly name: string; readonly message: string; readonly stack: string };
+    }
+  /**
    * An event LAYERNOTIFY can alert for happened inside a command (M5-25: -LAYER's stAte
    * Restore), told as it happens; the app raises the alert when the drawing asks for it.
    */
@@ -1144,7 +1154,7 @@ export class PromptBus {
         await regenerateRestyled(ctx, made);
       }
     } catch (err) {
-      this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
+      this.#fault(err, this.#stack.at(-1)?.def.name);
     }
     this.#showSelection();
     if (this.#history.length > logged) this.#showPrompt();
@@ -1297,6 +1307,19 @@ export class PromptBus {
   #log(line: string): void {
     this.#history.push(line);
     this.#emit({ type: 'log', line });
+  }
+
+  /**
+   * A command threw: a bug, as a command says what went wrong in a message (M2-01). The command
+   * line says so, and the app is told the error with its stack, for the error report (M7-08).
+   */
+  #fault(err: unknown, command: string | undefined): void {
+    const error =
+      err instanceof Error
+        ? { name: err.name, message: err.message, stack: err.stack ?? '' }
+        : { name: 'Error', message: String(err), stack: '' };
+    this.#log(`; error: ${error.message}`);
+    this.#emit({ type: 'fault', command: command ?? '', error });
   }
 
   #nested(text: string): string {
@@ -1634,7 +1657,7 @@ export class PromptBus {
     try {
       step = answer === undefined ? await frame.gen.next() : await frame.gen.next(answer);
     } catch (err) {
-      this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
+      this.#fault(err, frame.def.name);
       return this.#end(frame, true);
     }
     if (step.done) {
@@ -1647,7 +1670,7 @@ export class PromptBus {
           followAssociations(frame.ctx, [...this.#changes]);
           await regenerateRestyled(frame.ctx, this.#changes);
         } catch (err) {
-          this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
+          this.#fault(err, frame.def.name);
         }
       }
       return this.#end(frame, false);
@@ -1930,7 +1953,7 @@ export class PromptBus {
       try {
         await frame.gen.return(undefined);
       } catch (err) {
-        this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
+        this.#fault(err, frame.def.name);
       }
       this.#emit({ type: 'end', command: frame.def.name, cancelled: true });
     }

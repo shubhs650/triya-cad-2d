@@ -163,6 +163,11 @@ export interface Preferences {
   readonly customDictionary: readonly string[];
   /** As-you-type spell checking in the text editors (M4-17, spell-check.ts); on by default. */
   readonly spellCheck: boolean;
+  /**
+   * Options > System's "Offer to send an error report when a problem occurs" (M7-08,
+   * error-report/): on by default; a report is still sent only when the user presses Send.
+   */
+  readonly errorReports: boolean;
   /** The Layer Properties Manager's columns and sort (M5-05 part 3, layer-columns.ts). */
   readonly layerColumns: LayerColumnSettings;
   /** The palette stack's tabs, side and width (M7-03, palette-stack.ts). */
@@ -271,6 +276,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   paletteRecent: [],
   customDictionary: [],
   spellCheck: true,
+  errorReports: true,
   layerColumns: DEFAULT_LAYER_COLUMNS,
   palettes: DEFAULT_PALETTE_LAYOUT,
   defaultTemplate: DEFAULT_TEMPLATE_ID,
@@ -360,6 +366,7 @@ export function normalizePreferences(raw: unknown): Preferences {
     paletteRecent: normalizePaletteRecent(raw['paletteRecent']),
     customDictionary: normalizeWords(raw['customDictionary']),
     spellCheck: bool(raw['spellCheck'], d.spellCheck),
+    errorReports: bool(raw['errorReports'], d.errorReports),
     layerColumns: normalizeLayerColumns(raw['layerColumns']),
     palettes: normalizePaletteLayout(raw['palettes']),
     defaultTemplate:

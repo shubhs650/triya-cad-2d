@@ -210,6 +210,7 @@ import { PictureFiles, pastedPicturesOf } from './picture-files';
 import { PictureOfferNotice } from './PictureOffer';
 import { saveChanges } from './save-changes';
 import { SaveChanges } from './SaveChanges';
+import { ErrorReportDialog } from './ErrorReportDialog';
 import { Settings } from './Settings';
 import { PreferencesStore, bindPreferences, indexedDbPreferences } from './preferences';
 import { appearanceOf, applyAppearance, canvasColoursFor, watchMedia } from './theme';
@@ -245,7 +246,10 @@ import { AliasEditor } from './AliasEditor';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
 import { LayerNoticeTray, PlotNoticeDialog } from './LayerNotice';
 import { alertLayers, layerNotices, plotNotice, unreconciledView } from './layer-notice';
-import { aliasesOf, applyAliasFile } from './user-aliases';
+import { aliasesOf, applyAliasFile, appRegistry } from './user-aliases';
+import { buildReport, type Fault, type ReportContext } from './error-report/build';
+import { ErrorReports } from './error-report/offers';
+import { REPORT_URL, type ReportFeature } from './error-report/schema';
 import { applyKeyOverrides, keymap, keymapVersion, onShortcuts } from './shortcuts';
 import { keysText } from './keymap';
 import { rememberRun } from './palette';
@@ -467,6 +471,10 @@ engines.onCommand((doc, o) => {
     if (event) layerNotice(doc, event);
   }
   if (o.type === 'layerNotify') layerNotice(doc, o.event);
+  // A command threw (M7-08): a bug, offered as an error report.
+  if (o.type === 'fault') {
+    errorReports.offer({ source: 'command', command: o.command, ...o.error });
+  }
   if (o.type === 'prompt' || o.type === 'idle' || o.type === 'waiting') {
     const prompt = commandLines.get(doc).prompt;
     for (const c of controllersOf(doc)) c.setPrompt(prompt);
@@ -569,6 +577,77 @@ drafting.subscribe(() => {
  */
 const preferences = new PreferencesStore(indexedDbPreferences());
 bindPreferences(preferences, drafting, dynMode);
+
+/**
+ * The error report (M7-08, PRD §8 G6, DEC-029): an error that reaches the app is offered as a
+ * report the user reads in full and sends, or not (ErrorReportDialog). Its one request goes to
+ * the report worker only on Send Report: a simple POST (text, so no preflight), no cookies, no
+ * referrer.
+ */
+const errorReports = new ErrorReports({
+  build: (fault) => buildReport(fault, reportContext()),
+  post: async (text) => {
+    const r = await fetch(REPORT_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain;charset=utf-8' },
+      body: text,
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      cache: 'no-store',
+    });
+    return r.ok;
+  },
+  enabled: () => preferences.get().errorReports,
+});
+
+/** What a report says of the app, the browser and the drawing on screen, as they are now. */
+function reportContext(): ReportContext {
+  const s = store.getSnapshot();
+  const doc = s.docs.find((d) => d.id === s.active);
+  const features: ReportFeature[] = [];
+  if ('showOpenFilePicker' in window) features.push('file-system-access');
+  if (typeof OffscreenCanvas !== 'undefined') features.push('offscreen-canvas');
+  if (navigator.serviceWorker?.controller) features.push('service-worker');
+  if (doc && engines.modeOf(doc.id) === 'worker') features.push('engine-in-worker');
+  return {
+    appVersion: __APP_VERSION__,
+    userAgent: navigator.userAgent,
+    origin: location.origin,
+    features,
+    commands: new Set(appRegistry.names()),
+    ...(doc
+      ? {
+          drawing: {
+            name: doc.name,
+            opened: doc.opened,
+            changes: engines.changesOf(doc.id),
+            edits: doc.edits,
+            ...(doc.file ? { bytes: doc.file.bytes } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/** An uncaught error or rejection's report, unless it is not the app's to report. */
+function faultOf(source: 'window' | 'promise', thrown: unknown, file?: string): Fault | undefined {
+  // A script of another origin (an extension's) is not ours, nor what the browser hides of one.
+  if (file && !file.startsWith(`${location.origin}/`)) return undefined;
+  const e = thrown instanceof Error ? thrown : undefined;
+  const message = e ? e.message : String(thrown);
+  // Chromium reports ResizeObserver's skipped notifications as an error; nothing failed.
+  if (/^ResizeObserver loop/.test(message) || message === 'Script error.') return undefined;
+  return { source, message, ...(e ? { name: e.name, stack: e.stack ?? '' } : {}) };
+}
+
+window.addEventListener('error', (e) => {
+  const fault = faultOf('window', e.error ?? e.message, e.filename || undefined);
+  if (fault) errorReports.offer(fault);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const fault = faultOf('promise', e.reason);
+  if (fault) errorReports.offer(fault);
+});
 /**
  * The appearance (M7-05, theme.ts): the user's theme, contrast and motion over the device's
  * settings, written on the root element; the canvases take their colours as high contrast draws
@@ -2236,6 +2315,10 @@ export interface DevHooks {
   entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]>;
   /** The showing drawing's selected objects (M2-03), as its command engine last said. */
   selection(): readonly EntityId[];
+  /** Raises an uncaught error with `message`, as a bug would (the error report, M7-08). */
+  throwUncaught(message: string): void;
+  /** Rejects a promise nothing handles with `message` (the error report, M7-08). */
+  rejectUnhandled(message: string): void;
 }
 
 if (import.meta.env.DEV) {
@@ -2260,6 +2343,14 @@ if (import.meta.env.DEV) {
     entitiesIn: async (rect) => {
       const doc = showing();
       return (doc && (await controllerOf(doc.id, doc.block)?.entitiesIn(rect))) ?? [];
+    },
+    throwUncaught: (message) => {
+      setTimeout(() => {
+        throw new Error(message);
+      });
+    },
+    rejectUnhandled: (message) => {
+      void Promise.reject(new TypeError(message));
     },
     edit: async (edit) => {
       const doc = showing();
@@ -2980,6 +3071,7 @@ export function App() {
       <ViewportsDialog doc={active?.id} />
       <EditDrawingScalesDialog doc={active?.id} />
       <SaveChanges prompt={saveChanges} />
+      <ErrorReportDialog reports={errorReports} />
       <PlotNoticeDialog />
       <SnapMenu />
       <ShortcutMenu />

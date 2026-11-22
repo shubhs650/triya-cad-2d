@@ -102,6 +102,11 @@ export class Engines {
     return this.#engines.get(doc)?.connect();
   }
 
+  /** Where the drawing's engine runs (the error report's `engine-in-worker`, M7-08). */
+  modeOf(doc: number): 'worker' | 'main' | undefined {
+    return this.#engines.get(doc)?.mode;
+  }
+
   stop(doc: number): void {
     this.#engines.get(doc)?.dispose();
     this.#engines.delete(doc);

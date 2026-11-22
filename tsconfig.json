@@ -5,5 +5,5 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["tests", "scripts", "*.config.ts", "*.config.js", "eslint.config.js"]
+  "include": ["tests", "scripts", "services", "*.config.ts", "*.config.js", "eslint.config.js"]
 }
