@@ -1,12 +1,19 @@
 /* App shell theme (UI_SPEC.md §1, §6): light chrome, dark model canvas. Colours are variables
-   so the dark chrome and the configurable canvas colours can replace them. */
+   so the dark chrome, high contrast (M7-05) and the configurable canvas colours can replace them.
+   The app resolves the user's choices and the device's settings (theme.ts) into the root's
+   data-scheme, data-contrast and data-motion; these rules are all that read them. Every
+   appearance sets every colour token (theme.test.ts pins them in theme-snapshots/). */
 :root {
   --chrome-bg: #f5f6f8;
   --chrome-bg-raised: #ffffff;
   --chrome-border: #d9dce1;
   --chrome-text: #1f2328;
   --chrome-text-muted: #5b6270;
+  --chrome-hover: rgb(0 0 0 / 6%);
   --accent: #2563eb;
+  /* Text and marks on an accent background (a selected list row, a found word). */
+  --on-accent: #ffffff;
+  --focus-ring: #2563eb;
   --danger-bg: #fdecec;
   --danger-text: #8a1c1c;
   --ok-text: #1f7a3a;
@@ -19,7 +26,9 @@
   --ruler-bg: rgb(245 246 248 / 92%);
   --ruler-line: #9aa4b2;
   --ruler-mark: #1f2933;
+  /* UI_SPEC.md §6: 120 ms hover and press, a panel opening within 160 ms; none when reduced. */
   --motion: 120ms;
+  --motion-panel: 140ms;
   color-scheme: light;
   font-family:
     system-ui,
@@ -32,20 +41,23 @@
   background: var(--chrome-bg);
 }
 
-/* M2-20: the dark chrome, chosen in Settings or followed from the system. The canvas keeps
-   its own colours (Settings > Canvas colors). */
-:root[data-theme='dark'] {
+/* M2-20: the dark chrome, chosen in Options or followed from the system. The canvas keeps its own
+   colours (Options > Display > Canvas colors). */
+:root[data-scheme='dark'] {
   --chrome-bg: #1e2228;
   --chrome-bg-raised: #272c34;
   --chrome-border: #3a414c;
   --chrome-text: #e6e8eb;
   --chrome-text-muted: #a3aab5;
+  --chrome-hover: rgb(255 255 255 / 8%);
   --accent: #5b9bff;
+  /* M7-05: white on the light blue was 2.8:1; near-black is 6.8:1 (WCAG AA). */
+  --on-accent: #0b1220;
+  --focus-ring: #5b9bff;
   --danger-bg: #4a1f22;
   --danger-text: #ffb4b4;
   --ok-text: #6fd08f;
   --selected-bg: #2c4370;
-  --chrome-hover: rgb(255 255 255 / 8%);
   --tip-bg: #3a3523;
   --tip-text: #f2ecd0;
   --tip-border: #a8964a;
@@ -55,32 +67,86 @@
   color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --chrome-bg: #1e2228;
-    --chrome-bg-raised: #272c34;
-    --chrome-border: #3a414c;
-    --chrome-text: #e6e8eb;
-    --chrome-text-muted: #a3aab5;
-    --accent: #5b9bff;
-    --danger-bg: #4a1f22;
-    --danger-text: #ffb4b4;
-    --ok-text: #6fd08f;
-    --selected-bg: #2c4370;
-    --chrome-hover: rgb(255 255 255 / 8%);
-    --tip-bg: #3a3523;
-    --tip-text: #f2ecd0;
-    --tip-border: #a8964a;
-    --ruler-bg: rgb(39 44 52 / 92%);
-    --ruler-line: #6b7480;
-    --ruler-mark: #e6e8eb;
-    color-scheme: dark;
-  }
+/* M7-05: high contrast, light. Black on white, black edges, every text pair at 7:1 or more
+   (WCAG AAA), a 3 px focus ring. */
+:root[data-contrast='high'] {
+  --chrome-bg: #ffffff;
+  --chrome-bg-raised: #ffffff;
+  --chrome-border: #000000;
+  --chrome-text: #000000;
+  --chrome-text-muted: #1a1a1a;
+  --chrome-hover: rgb(0 0 0 / 14%);
+  --accent: #0037a6;
+  --on-accent: #ffffff;
+  --focus-ring: #0037a6;
+  --danger-bg: #ffffff;
+  --danger-text: #a30000;
+  --ok-text: #005a1e;
+  --selected-bg: #c7dbff;
+  --tip-bg: #ffffff;
+  --tip-text: #000000;
+  --tip-border: #000000;
+  --ruler-bg: #ffffff;
+  --ruler-line: #000000;
+  --ruler-mark: #000000;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --motion: 0ms;
+/* M7-05: high contrast, dark. White on black, white edges, cyan accent as Windows' high contrast
+   themes highlight, a yellow focus ring. */
+:root[data-scheme='dark'][data-contrast='high'] {
+  --chrome-bg: #000000;
+  --chrome-bg-raised: #000000;
+  --chrome-border: #ffffff;
+  --chrome-text: #ffffff;
+  --chrome-text-muted: #e6e6e6;
+  --chrome-hover: rgb(255 255 255 / 18%);
+  --accent: #1aebff;
+  --on-accent: #000000;
+  --focus-ring: #ffd60a;
+  --danger-bg: #000000;
+  --danger-text: #ff8080;
+  --ok-text: #5dff8a;
+  --selected-bg: #003a80;
+  --tip-bg: #000000;
+  --tip-text: #ffffff;
+  --tip-border: #ffffff;
+  --ruler-bg: #000000;
+  --ruler-line: #ffffff;
+  --ruler-mark: #ffffff;
+}
+
+/* High contrast: every focused control shows a 3 px ring, over rules that draw focus another way. */
+:root[data-contrast='high'] :focus-visible:not(canvas) {
+  outline: 3px solid var(--focus-ring) !important;
+  outline-offset: 1px;
+}
+
+/* High contrast: the browser's own buttons and fields (grey on grey in a dark scheme) take the
+   chrome's colours. Zero specificity, so any rule of the app's own still wins. */
+:where(:root[data-contrast='high']) :where(button, select, input, textarea) {
+  color: var(--chrome-text);
+  background-color: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+}
+
+/* Reduced motion (M7-05: the device's prefers-reduced-motion, or the user's choice). */
+:root[data-motion='reduced'] {
+  --motion: 0ms;
+  --motion-panel: 0ms;
+}
+
+/* Windows' high contrast themes force the system colours: show the states drawn as a background
+   (a pressed button, a selected row) with an edge in the highlight colour instead. */
+@media (forced-colors: active) {
+  [aria-pressed='true'],
+  [aria-selected='true'],
+  [aria-checked='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  canvas {
+    forced-color-adjust: none;
   }
 }
 
@@ -1431,7 +1497,7 @@ button {
 }
 
 .palette-dock[data-mode='slide-over'] .palette-stack {
-  animation: palette-slide-in 140ms ease-out;
+  animation: palette-slide-in var(--motion-panel) ease-out;
 }
 
 .palette-dock[data-mode='slide-over'][data-side='left'] .palette-stack,
@@ -1456,10 +1522,9 @@ button {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .palette-dock[data-mode='slide-over'] .palette-stack {
-    animation: none;
-  }
+/* Reduced motion: no slide at all, so nothing waits for an animation's end. */
+:root[data-motion='reduced'] .palette-dock[data-mode='slide-over'] .palette-stack {
+  animation: none;
 }
 
 /* Docked at the bottom: the workspace becomes a grid, the stack under the drawing area and the
@@ -2812,7 +2877,7 @@ button {
 
 .design-center-content [role='option'][aria-selected='true'] {
   background: var(--accent);
-  color: var(--chrome-bg);
+  color: var(--on-accent);
 }
 
 .design-center-palette.dropping {
@@ -3129,7 +3194,7 @@ button {
 
 .dyn-menu li[aria-selected='true'] {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 .dyn-menu .alias {
@@ -3973,7 +4038,7 @@ button {
 
 .eattedit-list tr[aria-selected='true'] td {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .eattedit-list tbody:focus-visible {
@@ -4496,7 +4561,7 @@ button {
 .select-color-by [aria-pressed='true'],
 .select-color-book-list [aria-pressed='true'] {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .select-color-channel {
@@ -4858,10 +4923,8 @@ button {
   margin-left: 6px;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .view-manager-item {
-    transition: background-color 120ms;
-  }
+.view-manager-item {
+  transition: background-color var(--motion);
 }
 
 /* Quick Properties (M2-35 part 16): a small floating palette over the drawing, by the cursor or
@@ -5278,7 +5341,7 @@ button {
 .selection-list button:hover,
 .selection-list button:focus-visible {
   background: var(--accent, #0078d4);
-  color: #fff;
+  color: var(--on-accent);
   outline: none;
 }
 
@@ -5344,11 +5407,11 @@ button {
 
 .find-list mark {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .find-list tr[aria-selected='true'] mark {
-  background: #fff;
+  background: var(--on-accent);
   color: var(--accent);
 }
 
@@ -5693,7 +5756,7 @@ button {
 
 .dimstyle-list [role='option'][aria-selected='true'] {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 /* XBIND's Xbind dialog (M5-04 part 7, XbindDialog.tsx). */
@@ -5747,7 +5810,7 @@ button {
 
 .xbind-item[aria-selected='true'] {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .xbind-tree:focus-within .xbind-item:focus-visible {
@@ -6287,7 +6350,7 @@ button {
 
 .spell-context mark {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .spell-suggestions,
@@ -7423,7 +7486,7 @@ button {
 }
 
 .battman-list tr.battman-duplicate[aria-selected='true'] td {
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .battman-side {

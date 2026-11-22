@@ -1,0 +1,56 @@
+# dark-high-contrast
+
+root: data-scheme=dark data-contrast=high
+
+## chrome tokens
+--chrome-bg: #000000
+--chrome-bg-raised: #000000
+--chrome-border: #ffffff
+--chrome-text: #ffffff
+--chrome-text-muted: #e6e6e6
+--chrome-hover: rgb(255 255 255 / 18%)
+--accent: #1aebff
+--on-accent: #000000
+--focus-ring: #ffd60a
+--danger-bg: #000000
+--danger-text: #ff8080
+--ok-text: #5dff8a
+--selected-bg: #003a80
+--tip-bg: #000000
+--tip-text: #ffffff
+--tip-border: #ffffff
+--ruler-bg: #000000
+--ruler-line: #ffffff
+--ruler-mark: #ffffff
+
+## contrast (WCAG 2.x)
+--chrome-text on --chrome-bg: 21.00
+--chrome-text on --chrome-bg-raised: 21.00
+--chrome-text-muted on --chrome-bg: 16.83
+--chrome-text-muted on --chrome-bg-raised: 16.83
+--chrome-text on --selected-bg: 10.96
+--accent on --chrome-bg-raised: 14.37
+--on-accent on --accent: 14.37
+--danger-text on --chrome-bg-raised: 8.65
+--danger-text on --danger-bg: 8.65
+--ok-text on --chrome-bg-raised: 16.14
+--tip-text on --tip-bg: 21.00
+--chrome-border on --chrome-bg: 21.00
+--chrome-border on --chrome-bg-raised: 21.00
+--focus-ring on --chrome-bg: 14.88
+--focus-ring on --chrome-bg-raised: 14.88
+
+## canvas (default colours)
+model: #000000
+paper: #ffffff
+surround: #000000
+grid: automatic
+selection: #4da3ff
+crosshair: automatic
+autosnap: automatic
+autotrack: automatic
+model: ACI 7 #ffffff, crosshairs #ffffff, AutoSnap #ffd400, AutoTrack #7fd7ff
+paper: ACI 7 #000000, crosshairs #000000, AutoSnap #b06d00, AutoTrack #1060c0
+
+## plot preview
+sheet: #ffffff, ACI 7 #000000 (the plot, whatever the theme)

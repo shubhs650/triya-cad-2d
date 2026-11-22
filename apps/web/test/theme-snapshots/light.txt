@@ -1,0 +1,56 @@
+# light
+
+root: data-scheme=light data-contrast=standard
+
+## chrome tokens
+--chrome-bg: #f5f6f8
+--chrome-bg-raised: #ffffff
+--chrome-border: #d9dce1
+--chrome-text: #1f2328
+--chrome-text-muted: #5b6270
+--chrome-hover: rgb(0 0 0 / 6%)
+--accent: #2563eb
+--on-accent: #ffffff
+--focus-ring: #2563eb
+--danger-bg: #fdecec
+--danger-text: #8a1c1c
+--ok-text: #1f7a3a
+--selected-bg: #dbe6fd
+--tip-bg: #fffbe0
+--tip-text: #202020
+--tip-border: #8a7a30
+--ruler-bg: rgb(245 246 248 / 92%)
+--ruler-line: #9aa4b2
+--ruler-mark: #1f2933
+
+## contrast (WCAG 2.x)
+--chrome-text on --chrome-bg: 14.61
+--chrome-text on --chrome-bg-raised: 15.80
+--chrome-text-muted on --chrome-bg: 5.67
+--chrome-text-muted on --chrome-bg-raised: 6.13
+--chrome-text on --selected-bg: 12.60
+--accent on --chrome-bg-raised: 5.17
+--on-accent on --accent: 5.17
+--danger-text on --chrome-bg-raised: 9.28
+--danger-text on --danger-bg: 8.12
+--ok-text on --chrome-bg-raised: 5.38
+--tip-text on --tip-bg: 15.62
+--chrome-border on --chrome-bg: 1.27
+--chrome-border on --chrome-bg-raised: 1.37
+--focus-ring on --chrome-bg: 4.78
+--focus-ring on --chrome-bg-raised: 5.17
+
+## canvas (default colours)
+model: #212830
+paper: #ffffff
+surround: #8a8f98
+grid: automatic
+selection: #4da3ff
+crosshair: automatic
+autosnap: automatic
+autotrack: automatic
+model: ACI 7 #ffffff, crosshairs #ffffff, AutoSnap #ffd400, AutoTrack #7fd7ff
+paper: ACI 7 #000000, crosshairs #000000, AutoSnap #b06d00, AutoTrack #1060c0
+
+## plot preview
+sheet: #ffffff, ACI 7 #000000 (the plot, whatever the theme)

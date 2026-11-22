@@ -41,6 +41,7 @@ import type { DeviceFonts, DeviceFontsState } from './local-fonts';
 import type { FontStore } from './user-fonts';
 import type { SupportFileStore } from './support-files';
 import { interfaceColours } from './canvas/colours';
+import type { Contrast, Motion } from './theme';
 
 export function Settings({
   preferences,
@@ -499,6 +500,36 @@ function DisplaySettings({ preferences }: { preferences: PreferencesStore }) {
           <option value="system">Same as system</option>
           <option value="light">Light</option>
           <option value="dark">Dark</option>
+        </select>
+      </div>
+      {/* M7-05: high contrast and reduced motion, each the device's setting unless chosen. */}
+      <div className="setting-row">
+        <label htmlFor={`${id}-contrast`}>Contrast</label>
+        <select
+          id={`${id}-contrast`}
+          value={p.contrast}
+          aria-describedby={`${id}-contrast-note`}
+          onChange={(e) => preferences.update({ contrast: e.currentTarget.value as Contrast })}
+        >
+          <option value="system">Same as system</option>
+          <option value="standard">Standard</option>
+          <option value="high">High contrast</option>
+        </select>
+      </div>
+      <p className="setting-note" id={`${id}-contrast-note`}>
+        High contrast also draws model space and the layout background in black while they keep
+        their default colors.
+      </p>
+      <div className="setting-row">
+        <label htmlFor={`${id}-motion`}>Motion</label>
+        <select
+          id={`${id}-motion`}
+          value={p.motion}
+          onChange={(e) => preferences.update({ motion: e.currentTarget.value as Motion })}
+        >
+          <option value="system">Same as system</option>
+          <option value="standard">Standard</option>
+          <option value="reduced">Reduce motion</option>
         </select>
       </div>
       <fieldset className="canvas-colours">

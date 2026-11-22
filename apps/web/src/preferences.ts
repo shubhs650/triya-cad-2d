@@ -35,6 +35,7 @@ import {
 import { normalizeWords } from './custom-dictionary';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
 import { DEFAULT_TEMPLATE_ID } from './templates';
+import type { Contrast, Motion } from './theme';
 import { DEFAULT_TOOLTIP, tooltipAppearanceOf } from './tooltip-appearance';
 import { ALIAS_FILE_MAX } from './user-aliases';
 
@@ -139,6 +140,10 @@ export type DraftingPreferences = Pick<
 
 export interface Preferences {
   readonly theme: Theme;
+  /** High contrast chrome (M7-05, theme.ts): the device's setting, or standard or high always. */
+  readonly contrast: Contrast;
+  /** Reduced motion (M7-05, theme.ts): the device's setting, or reduced or standard always. */
+  readonly motion: Motion;
   readonly canvas: CanvasColours;
   readonly coordinates: CoordinateDisplay;
   /** DYNMODE on (F12). */
@@ -186,6 +191,8 @@ export const DEFAULT_CANVAS: CanvasColours = {
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: 'system',
+  contrast: 'system',
+  motion: 'system',
   canvas: DEFAULT_CANVAS,
   coordinates: 'drawing',
   dynMode: true,
@@ -314,6 +321,8 @@ export function normalizePreferences(raw: unknown): Preferences {
   const c = isRecord(raw['canvas']) ? raw['canvas'] : {};
   const k = isRecord(raw['drafting']) ? raw['drafting'] : {};
   const theme = raw['theme'];
+  const contrast = raw['contrast'];
+  const motion = raw['motion'];
   const coordinates = raw['coordinates'];
   const osmode = k['osmode'];
   const polarAngle = k['polarAngle'];
@@ -322,6 +331,8 @@ export function normalizePreferences(raw: unknown): Preferences {
   const scQuadrant = k['scQuadrant'];
   return {
     theme: theme === 'light' || theme === 'dark' || theme === 'system' ? theme : d.theme,
+    contrast: contrast === 'standard' || contrast === 'high' ? contrast : d.contrast,
+    motion: motion === 'standard' || motion === 'reduced' ? motion : d.motion,
     canvas: {
       model: hex(c['model']) ?? d.canvas.model,
       paper: hex(c['paper']) ?? d.canvas.paper,
