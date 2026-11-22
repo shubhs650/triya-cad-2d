@@ -48,23 +48,6 @@ test.afterEach(({ browserName }, info) => {
     console.log(`[${browserName}] ${info.title}, the page's log:\n${logged.join('\n')}`);
 });
 
-test('DIAGNOSTIC a tiny PDF blob downloads', async ({ page }) => {
-  await page.goto(app.url);
-  for (const type of ['application/octet-stream', 'application/pdf']) {
-    const [d] = await Promise.all([
-      page.waitForEvent('download', { timeout: 15_000 }),
-      page.evaluate((type) => {
-        const bytes = new TextEncoder().encode('%PDF-1.7\n%%EOF\n');
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([bytes], { type }));
-        a.download = 'x.pdf';
-        a.click();
-      }, type),
-    ]);
-    console.log(`DIAGNOSTIC ${type}: ${d.suggestedFilename()}`);
-  }
-});
-
 const notice = (page: Page) => page.getByRole('region', { name: 'Browser compatibility' });
 const prompt = (page: Page) => page.getByTestId('command-prompt');
 

@@ -352,7 +352,10 @@ jobs:
   # runs whatever that job's result, so one red run still shows every broken gate.
   offline:
     name: build · offline · io
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04, not ubuntu-latest (26.04 since 2026-11): Playwright 1.64's WebKit build is made
+    # for 24.04, and on 26.04 its page crashed in the third test of every browser (M7-09, runs
+    # 44989492589, 44990093698, 44990858929); on 24.04 the same tests pass.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [changes, static]
     if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.tested != 'true' }}
@@ -415,9 +418,6 @@ jobs:
         run: bash scripts/ci-browser-deps.sh firefox webkit
       - if: ${{ !cancelled() }}
         run: pnpm test:browsers
-        # The browsers' own output (a WebKit crash's reason) goes to the log.
-        env:
-          DEBUG: pw:browser
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
