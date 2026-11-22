@@ -233,7 +233,10 @@ import { KeyboardShortcuts } from './KeyboardShortcuts';
 import { LayerNoticeTray, PlotNoticeDialog } from './LayerNotice';
 import { alertLayers, layerNotices, plotNotice, unreconciledView } from './layer-notice';
 import { aliasesOf, applyAliasFile } from './user-aliases';
-import { applyKeyOverrides, onShortcuts } from './shortcuts';
+import { applyKeyOverrides, keymap, keymapVersion, onShortcuts } from './shortcuts';
+import { keysText } from './keymap';
+import { cleanScreen } from './clean-screen';
+import { Icon } from './ribbon/Icon';
 import {
   lastPlotSettings,
   plotRequest,
@@ -386,6 +389,43 @@ function showSpaceLeft(id: number): void {
   if (!doc || doc.blockEditor || doc.refEdit !== undefined) return;
   const spaces = spacesOf(doc, engines.changesOf(id));
   if (!spaces.some((s) => s.block === doc.block)) store.showSpace(id, doc.opened.modelSpace!);
+}
+
+/**
+ * Ctrl+Page Up and Ctrl+Page Down (M7-06, AutoCAD's previous and next layout): the tab before or
+ * after the one shown, stopping at the Model tab and the last layout, as Page Up and Page Down
+ * stop at a list's ends (AutoCAD's help does not say; settled for the common expectation).
+ */
+function showNextSpace(step: 1 | -1): void {
+  const { docs, active } = store.getSnapshot();
+  const doc = docs.find((d) => d.id === active);
+  if (!doc || doc.blockEditor || doc.refEdit !== undefined) return;
+  const spaces = spacesOf(doc, engines.changesOf(doc.id));
+  const next = spaces[spaces.findIndex((t) => t.block === doc.block) + step];
+  if (next) store.showSpace(doc.id, next.block);
+}
+
+/** Ctrl+Tab and Ctrl+Shift+Tab, Ctrl+F6 and Ctrl+Shift+F6 (M7-06): the next or previous drawing. */
+function showNextDrawing(step: 1 | -1): void {
+  const { docs, active } = store.getSnapshot();
+  if (docs.length < 2) return;
+  const at = docs.findIndex((d) => d.id === active);
+  store.activate(docs[(at + step + docs.length) % docs.length]!.id);
+}
+
+/**
+ * Ctrl+R (M7-06, AutoCAD's "Toggle viewports"): on the Model tab the next tiled viewport becomes
+ * current, as a click in it does; in a layout the engine makes its next viewport current.
+ */
+function showNextViewport(): void {
+  const { docs, active } = store.getSnapshot();
+  const doc = docs.find((d) => d.id === active);
+  if (!doc) return;
+  if (inLayout(doc)) return void engines.command(doc.id, { kind: 'next-viewport' });
+  const tiles = tilesOf(doc.id, doc.block).sort(([a], [b]) => a - b);
+  if (tiles.length < 2) return;
+  const at = tiles.findIndex(([i]) => i === currentTile(doc.id, doc.block));
+  tiles[(at + 1) % tiles.length]![1].activate();
 }
 
 /** The drawing waits at `Command:`: no command runs and no prompt or dialog is up. */
@@ -743,6 +783,15 @@ function viewContext(id: number): ViewContext {
       }
       if (open) paletteStack.set(name);
       else paletteStack.close(name);
+      return { ok: true };
+    },
+    // CLEANSCREENON/OFF and HIDEPALETTES/SHOWPALETTES (M7-06).
+    cleanScreen: (on) => {
+      cleanScreen.set(on);
+      return { ok: true };
+    },
+    palettes: (shown) => {
+      paletteStack.show(shown);
       return { ok: true };
     },
   };
@@ -2214,6 +2263,8 @@ function SupportBanners() {
 
 export function App() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  // Clean Screen (Ctrl+0, M7-06) hides the ribbon and the Palettes rail.
+  const clean = useSyncExternalStore(cleanScreen.subscribe, cleanScreen.on);
   const recentFiles = useSyncExternalStore(recent.subscribe, recent.getSnapshot);
   const layerColumns = useSyncExternalStore(preferences.subscribe, preferences.get).layerColumns;
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
@@ -2295,6 +2346,36 @@ export function App() {
         // Ctrl+2: DesignCenter (M5-11), as AutoCAD's ADCENTER.
         designcenter: () => {
           if (store.getSnapshot().active !== undefined) paletteStack.toggle('designcenter');
+          return true;
+        },
+        // M7-06: AutoCAD's window keys. Ctrl+0 Clean Screen; Ctrl+Shift+H hides the palettes open
+        // or shows them again (HIDEPALETTES, SHOWPALETTES), shown again by any palette opened.
+        cleanscreen: () => {
+          cleanScreen.toggle();
+          return true;
+        },
+        palettes: () => {
+          paletteStack.show(paletteStack.hidden());
+          return true;
+        },
+        'layout:previous': () => {
+          showNextSpace(-1);
+          return true;
+        },
+        'layout:next': () => {
+          showNextSpace(1);
+          return true;
+        },
+        'file:nextdoc': () => {
+          showNextDrawing(1);
+          return true;
+        },
+        'file:previousdoc': () => {
+          showNextDrawing(-1);
+          return true;
+        },
+        'viewport:next': () => {
+          showNextViewport();
           return true;
         },
       }),
@@ -2460,6 +2541,7 @@ export function App() {
         </button>
       </header>
       <Ribbon
+        hidden={clean}
         doc={active?.id}
         blockEditor={active?.blockEditor !== undefined}
         preferences={preferences}
@@ -2630,6 +2712,7 @@ export function App() {
         </main>
         {active && (
           <PaletteDock
+            rail={!clean}
             render={(p) => {
               switch (p) {
                 case 'properties':
@@ -2828,6 +2911,28 @@ export function App() {
         onReferences={() => setPalette('references')}
       />
     </div>
+  );
+}
+
+/**
+ * The status bar's Clean Screen button (M7-06), at its right end as AutoCAD's is: Ctrl+0 and
+ * CLEANSCREENON/OFF turn it too.
+ */
+function CleanScreenToggle() {
+  const on = useSyncExternalStore(cleanScreen.subscribe, cleanScreen.on);
+  useSyncExternalStore(keymapVersion.subscribe, keymapVersion.get);
+  const keys = keysText(keymap().keysOf('cleanscreen'));
+  return (
+    <button
+      type="button"
+      className="status-toggle"
+      aria-pressed={on}
+      aria-label="Clean Screen"
+      title={keys === '' ? 'Clean Screen' : `Clean Screen (${keys})`}
+      onClick={() => cleanScreen.toggle()}
+    >
+      <Icon name={on ? 'full_screen_minimize' : 'full_screen_maximize'} size={16} />
+    </button>
   );
 }
 
@@ -3348,6 +3453,7 @@ function StatusBar({
           <AnnotationScaleControls doc={doc} header={header} />
         </>
       )}
+      <CleanScreenToggle />
     </footer>
   );
 }

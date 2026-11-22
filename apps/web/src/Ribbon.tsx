@@ -101,6 +101,8 @@ export interface RibbonProps {
   /** The colour theme's store, for View > Interface > Theme. */
   readonly preferences?: PreferencesStore | undefined;
   readonly onOpenWindow?: ((window: AppWindow) => void) | undefined;
+  /** Clean Screen hides it (Ctrl+0, M7-06), keeping its state for when it shows again. */
+  readonly hidden?: boolean | undefined;
 }
 
 const actionArg = (run: RibbonRun, prefix: string): string | undefined =>
@@ -159,7 +161,7 @@ interface MenuState {
   readonly split?: RibbonItem;
 }
 
-export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonProps) {
+export function Ribbon({ doc, blockEditor, preferences, onOpenWindow, hidden }: RibbonProps) {
   const width = useSyncExternalStore(viewport.subscribe, viewport.width);
   const draftingState = useSyncExternalStore(drafting.subscribe, drafting.get);
   const theme = useSyncExternalStore(
@@ -209,7 +211,7 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonPr
   const layout = layoutTab(tab, bp, steps);
   const rest = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
-  const bodyShown = !minimized || popped;
+  const bodyShown = !hidden && (!minimized || popped);
 
   // The engine sends the dropdowns' values and the selection's kind while a drawing is open.
   useEffect(() => {
@@ -508,6 +510,7 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow }: RibbonPr
     <div
       ref={root}
       className={minimized ? 'ribbon minimized' : 'ribbon'}
+      hidden={hidden}
       data-breakpoint={bp}
       data-steps={steps}
       data-testid="ribbon"

@@ -232,20 +232,25 @@ const sameLayout = (a: PaletteLayout, b: PaletteLayout): boolean =>
 
 /**
  * The stack the app shows: its layout (kept with the preferences) and, for this session only,
- * whether the window is narrow and whether Esc slid the slide-over away.
+ * whether the window is narrow, whether Esc slid the slide-over away and whether HIDEPALETTES
+ * (Ctrl+Shift+H, Clean Screen; M7-06) hid it.
  */
 export class PaletteStack {
   #layout: PaletteLayout = DEFAULT_PALETTE_LAYOUT;
   #narrow = false;
   #away = false;
+  #hidden = false;
   readonly #listeners = new Set<() => void>();
 
   /** The layout, for the preferences and the stack's own drawing. */
   layout = (): PaletteLayout => this.#layout;
 
-  /** The palette showing: the front tab, unless Esc slid the slide-over away. */
+  /** The palette showing: the front tab, unless Esc slid the slide-over away or it is hidden. */
   get = (): PaletteName | undefined =>
-    this.slideOver() && this.#away ? undefined : this.#layout.active;
+    this.#hidden || (this.slideOver() && this.#away) ? undefined : this.#layout.active;
+
+  /** HIDEPALETTES hid the palettes open (M7-06): their tabs stay, for SHOWPALETTES. */
+  hidden = (): boolean => this.#hidden;
 
   narrow = (): boolean => this.#narrow;
 
@@ -268,8 +273,9 @@ export class PaletteStack {
       if (shown !== undefined) this.close(shown);
       return;
     }
-    const wasAway = this.#away;
+    const wasAway = this.#away || this.#hidden;
     this.#away = false;
+    this.#hidden = false;
     this.#change(openPalette(this.#layout, p), wasAway);
   }
 
@@ -316,6 +322,17 @@ export class PaletteStack {
 
   autoHide(on: boolean): void {
     this.#change(autoHidePalettes(this.#layout, on));
+  }
+
+  /**
+   * HIDEPALETTES (false) and SHOWPALETTES (true; M7-06): the palettes open hidden, their tabs
+   * kept, or shown again. A palette opened while they are hidden shows them again.
+   */
+  show(shown: boolean): void {
+    if (this.#hidden === !shown) return;
+    this.#hidden = !shown;
+    if (shown) this.#away = false;
+    this.#notify();
   }
 
   /** Esc in the slide-over: it slides away, its tabs kept. */

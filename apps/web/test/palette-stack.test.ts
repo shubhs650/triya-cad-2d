@@ -246,6 +246,26 @@ describe('PaletteStack', () => {
     expect(s.get()).toBe('layers');
   });
 
+  // M7-06: HIDEPALETTES and SHOWPALETTES (Ctrl+Shift+H), and Clean Screen (Ctrl+0).
+  it('hides the palettes open, their tabs kept, until shown or one is opened', () => {
+    const s = new PaletteStack();
+    let calls = 0;
+    s.subscribe(() => calls++);
+    s.set('layers');
+    s.set('properties');
+    s.show(false);
+    expect([s.get(), s.hidden()]).toEqual([undefined, true]);
+    expect(s.layout().open).toEqual(['layers', 'properties']);
+    s.show(false);
+    s.show(true);
+    expect([s.get(), s.hidden()]).toEqual(['properties', false]);
+    // A palette opened (its rail button, its command, its key) shows them again.
+    s.show(false);
+    s.toggle('layers');
+    expect([s.get(), s.hidden()]).toEqual(['layers', false]);
+    expect(calls).toBe(6);
+  });
+
   it('keeps width and side within their ranges', () => {
     const s = new PaletteStack();
     s.resize(10);

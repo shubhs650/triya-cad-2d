@@ -301,6 +301,12 @@ export function CommandLine({
         selectAllRef.current();
         return true;
       },
+      // AutoCAD's Ctrl+[ and Ctrl+\ are Esc (M7-06): they cancel, as Esc does outside a field.
+      cancel: (_, focus) => {
+        if (focus.kind === 'input' || focus.kind === 'text') return false;
+        if (!holdRef.current('Escape')) cancelRef.current();
+        return true;
+      },
       // AutoCAD's Ctrl+J and Ctrl+M are Enter at the command line; another field keeps them.
       enter: (_, focus) => {
         if (focus.kind === 'input' || focus.kind === 'text') return false;

@@ -84,6 +84,9 @@ describe('palette search', () => {
       'CIRCLE',
       // M3-08: the Object Grouping dialog, GROUP, GROUPEDIT and UNGROUP.
       'CLASSICGROUP',
+      // M7-06: the window keys' commands (Ctrl+0, Ctrl+Shift+H, Ctrl+F2, Ctrl+Q).
+      'CLEANSCREENOFF',
+      'CLEANSCREENON',
       'CLOSE',
       'CLOSEALL',
       'COPY',
@@ -143,6 +146,7 @@ describe('palette search', () => {
       'FIND',
       // M4-07 part 3: GRADIENT (HATCH with a gradient).
       'GRADIENT',
+      'GRAPHSCR',
       // M3-06 part 2: GRID and SNAP.
       'GRID',
       'GROUP',
@@ -152,6 +156,7 @@ describe('palette search', () => {
       // M4-07 part 4: HATCHEDIT and -HATCHEDIT.
       'HATCHEDIT',
       'HATCHTOBACK',
+      'HIDEPALETTES',
       'ID',
       'IMAGEADJUST',
       'IMAGEATTACH',
@@ -252,6 +257,7 @@ describe('palette search', () => {
       'QSAVE',
       'QSELECT',
       'QUICKPROPERTIES',
+      'QUIT',
       'RAY',
       'RECTANG',
       'REDO',
@@ -273,6 +279,7 @@ describe('palette search', () => {
       'SELECT',
       'SELECTSIMILAR',
       'SETVAR',
+      'SHOWPALETTES',
       'SNAP',
       // M4-09 part 4: the Check Spelling dialog.
       'SPELL',
@@ -292,6 +299,7 @@ describe('palette search', () => {
       // M4-09 part 3.
       'TEXTALIGN',
       'TEXTEDIT',
+      'TEXTSCR',
       'TEXTTOFRONT',
       // M4-16: a block in a table cell.
       'TINSERT',

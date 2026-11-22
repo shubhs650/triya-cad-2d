@@ -85,7 +85,14 @@ function useViewport(): { width: number; height: number } {
   return view;
 }
 
-export function PaletteDock({ render }: { render: (p: PaletteName) => ReactNode }) {
+export function PaletteDock({
+  render,
+  rail: railShown = true,
+}: {
+  render: (p: PaletteName) => ReactNode;
+  /** The Palettes rail shows; Clean Screen (Ctrl+0, M7-06) hides it. */
+  rail?: boolean;
+}) {
   const stack = paletteStack;
   const layout = useSyncExternalStore(stack.subscribe, stack.layout);
   const shown = useSyncExternalStore(stack.subscribe, stack.get);
@@ -616,19 +623,21 @@ export function PaletteDock({ render }: { render: (p: PaletteName) => ReactNode 
           </div>
         </section>
       )}
-      <nav ref={rail} className="palette-rail" aria-label="Palettes">
-        {PALETTES.map(({ name, title }) => (
-          <button
-            key={name}
-            type="button"
-            data-palette={name}
-            aria-expanded={shown === name}
-            onClick={() => stack.toggle(name)}
-          >
-            {title}
-          </button>
-        ))}
-      </nav>
+      {railShown && (
+        <nav ref={rail} className="palette-rail" aria-label="Palettes">
+          {PALETTES.map(({ name, title }) => (
+            <button
+              key={name}
+              type="button"
+              data-palette={name}
+              aria-expanded={shown === name}
+              onClick={() => stack.toggle(name)}
+            >
+              {title}
+            </button>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }

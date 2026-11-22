@@ -273,6 +273,10 @@ export type ViewRequest =
   | { readonly op: 'blockEditor'; readonly block?: Handle; readonly name?: string }
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes a palette. */
   | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean }
+  /** CLEANSCREENON and CLEANSCREENOFF (M7-06): the app hides or shows its ribbon and palettes. */
+  | { readonly op: 'cleanScreen'; readonly on: boolean }
+  /** HIDEPALETTES and SHOWPALETTES (M7-06): the app hides or shows the palettes open. */
+  | { readonly op: 'palettes'; readonly shown: boolean }
   /**
    * -XREF Unload and Reload (M5-04): the app unloads the xrefs `blocks`, or reloads them from
    * the files it finds by name (a load reads a file, which only the app can). XATTACH's `attach`
@@ -537,9 +541,10 @@ export interface PlotScript {
 /**
  * The palettes a command opens or closes (M2-21): the Properties palette, and Quick Properties
  * (QUICKPROPERTIES, M2-35 part 21), shown for the objects selected whatever QPMODE says;
- * DesignCenter (ADCENTER, ADCCLOSE; M5-11).
+ * DesignCenter (ADCENTER, ADCCLOSE; M5-11); Command History (TEXTSCR, GRAPHSCR; M7-06).
  */
-export type PaletteName = 'designcenter' | 'layers' | 'properties' | 'quick' | 'references';
+export type PaletteName =
+  'designcenter' | 'history' | 'layers' | 'properties' | 'quick' | 'references';
 
 /**
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows

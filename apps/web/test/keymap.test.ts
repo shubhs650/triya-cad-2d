@@ -240,6 +240,101 @@ describe('the default keyboard map', () => {
     expect(BROWSER_KEYS.has('Ctrl+W')).toBe(true);
     expect(BROWSER_KEYS.has('Ctrl+P')).toBe(false);
   });
+
+  // M7-06: AutoCAD 2024's default shortcut keys (acad.cuix's Shortcut Keys, Help's "Keyboard
+  // Shortcuts Reference"), every one: the action Triya runs for it, or null with the reason it
+  // has none. A key added to or left out of the map changes this table.
+  const AUTOCAD_KEYS: Readonly<Record<string, string | readonly [null, string]>> = {
+    F1: [null, 'Help: Triya has no help window (M7-07 has the learn links)'],
+    F2: 'history',
+    'Ctrl+F2': 'history',
+    F3: 'drafting:osnap',
+    F4: [null, '3D Object Snap: PRD non-goal 1'],
+    F5: [null, 'Isoplane: PRD non-goal 7'],
+    F6: [null, 'Dynamic UCS: PRD non-goal 1'],
+    F7: 'drafting:grid',
+    F8: 'drafting:ortho',
+    F9: 'drafting:snap',
+    F10: 'drafting:polar',
+    F11: 'drafting:otrack',
+    F12: 'dyn',
+    'Alt+F8': [null, 'VBA macros: PRD non-goal 9'],
+    'Alt+F11': [null, 'VBA editor: PRD non-goal 9'],
+    'Ctrl+0': 'cleanscreen',
+    'Ctrl+1': 'properties',
+    'Ctrl+2': 'designcenter',
+    'Ctrl+3': [null, 'Tool Palettes: Triya has none (DesignCenter holds the library)'],
+    'Ctrl+4': [null, 'Sheet Set Manager: PRD non-goal 8'],
+    'Ctrl+6': [null, 'dbConnect: PRD non-goal 4 (no linked data)'],
+    'Ctrl+7': [null, 'Markup Set Manager: DWF markups, PRD non-goal 8'],
+    'Ctrl+8': [null, 'QuickCalc: Triya has no calculator'],
+    'Ctrl+9': [null, 'Command line on/off: M7-06 part 3'],
+    'Ctrl+A': 'select-all',
+    'Ctrl+Shift+A': 'drafting:groups',
+    'Ctrl+B': 'drafting:snap',
+    'Ctrl+C': 'command:COPYCLIP',
+    'Ctrl+Shift+C': 'command:COPYBASE',
+    'Ctrl+D': [null, 'Dynamic UCS: PRD non-goal 1'],
+    'Ctrl+E': [null, 'Isoplane: PRD non-goal 7'],
+    'Ctrl+F': 'drafting:osnap',
+    'Ctrl+G': 'drafting:grid',
+    'Ctrl+H': 'drafting:groups',
+    'Ctrl+Shift+H': 'palettes',
+    'Ctrl+I': [null, 'COORDS: M7-06 part 3'],
+    'Ctrl+Shift+I': [null, 'Infer Constraints: M9-05'],
+    'Ctrl+J': 'enter',
+    'Ctrl+M': 'enter',
+    // AutoCAD's HYPERLINK: Triya has no hyperlinks to edit, and Ctrl+K is its command palette.
+    'Ctrl+K': 'palette',
+    'Ctrl+L': 'drafting:ortho',
+    'Ctrl+N': 'file:new',
+    'Ctrl+O': 'file:open',
+    'Ctrl+P': 'command:PLOT',
+    'Ctrl+Shift+P': 'drafting:qp',
+    'Ctrl+Q': 'command:QUIT',
+    'Ctrl+R': 'viewport:next',
+    'Ctrl+S': 'file:save',
+    'Ctrl+Shift+S': 'file:saveas',
+    'Ctrl+T': [null, 'Tablet: PRD non-goal 11'],
+    'Ctrl+U': 'drafting:polar',
+    'Ctrl+V': 'command:PASTECLIP',
+    'Ctrl+Shift+V': 'command:PASTEBLOCK',
+    'Ctrl+W': 'drafting:sc',
+    'Ctrl+X': 'command:CUTCLIP',
+    'Ctrl+Y': 'command:REDO',
+    'Ctrl+Z': 'command:U',
+    'Ctrl+[': 'cancel',
+    'Ctrl+\\': 'cancel',
+    'Ctrl+PageUp': 'layout:previous',
+    'Ctrl+PageDown': 'layout:next',
+    'Ctrl+Tab': 'file:nextdoc',
+    'Ctrl+Shift+Tab': 'file:previousdoc',
+  };
+
+  it("has every one of AutoCAD's default keys, or says why not (M7-06)", () => {
+    const got = Object.fromEntries(
+      Object.entries(AUTOCAD_KEYS).map(([k, want]) => [
+        k,
+        typeof want === 'string' ? map.actionFor(k) : map.actionFor(k) === undefined ? want : k,
+      ]),
+    );
+    expect(got).toEqual(AUTOCAD_KEYS);
+  });
+
+  it("has no default key but AutoCAD's, the Mac's redo and Windows' drawing keys (M7-06)", () => {
+    // Triya's own: the Mac's redo key, and Windows' keys for the next and previous document
+    // window (Ctrl+F6, Ctrl+Shift+F6), which a browser tab lets through where Ctrl+Tab is kept.
+    const extra = ['Ctrl+F6', 'Ctrl+Shift+F6', 'Ctrl+Shift+Z'];
+    const own = KEY_ACTIONS.filter((a) => !a.hold)
+      .flatMap((a) => a.keys)
+      .filter((k) => !(k in AUTOCAD_KEYS));
+    expect(own).toEqual(extra);
+    expect(extra.map((k) => map.actionFor(k))).toEqual([
+      'file:nextdoc',
+      'file:previousdoc',
+      'command:REDO',
+    ]);
+  });
 });
 
 describe('the user keys over the defaults', () => {
