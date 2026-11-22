@@ -159,6 +159,8 @@ export interface ViewContext {
   readonly cleanScreen?: (on: boolean) => ViewReply;
   /** HIDEPALETTES and SHOWPALETTES (M7-06): the app hides or shows the palettes open. */
   readonly palettes?: (shown: boolean) => ViewReply;
+  /** COMMANDLINE and COMMANDLINEHIDE (M7-06 part 3): the app shows or hides its command line. */
+  readonly commandLine?: (shown: boolean) => ViewReply;
   /**
    * -PLOT (M2-17 part 5): a space's plot settings, and a plot made without the dialog; -EXPORT's
    * export (M2-39 part 5).
@@ -315,6 +317,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'palettes') {
     return ctx.palettes ? ctx.palettes(r.shown) : { ok: false, message: NO_PALETTE };
+  }
+  if (r.op === 'commandLine') {
+    return ctx.commandLine ? ctx.commandLine(r.shown) : { ok: false, message: NO_PALETTE };
   }
   if (r.op === 'linetypeFile') {
     return ctx.linetypeFile ? ctx.linetypeFile(r.file) : { ok: false, message: NO_LINETYPES };

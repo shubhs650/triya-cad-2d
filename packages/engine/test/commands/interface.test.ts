@@ -1,6 +1,7 @@
 // M7-06: the commands behind AutoCAD's window keys. CLEANSCREENON and CLEANSCREENOFF (Ctrl+0)
 // hide and show the ribbon and the palettes; HIDEPALETTES and SHOWPALETTES (Ctrl+Shift+H) the
-// palettes; TEXTSCR and GRAPHSCR (F2, Ctrl+F2) open and close the command history; QUIT (EXIT,
+// palettes; TEXTSCR and GRAPHSCR (F2, Ctrl+F2) open and close the command history; COMMANDLINE
+// and COMMANDLINEHIDE (Ctrl+9, part 3) show and hide the command line; QUIT (EXIT,
 // Ctrl+Q) closes every drawing, as a page cannot close its window. The app does each; none edits
 // the drawing, and all but QUIT run inside another command too, as AutoCAD's do.
 import { describe, expect, it } from 'vitest';
@@ -41,6 +42,8 @@ describe("the window keys' commands", () => {
     ['SHOWPALETTES', { op: 'palettes', shown: true }],
     ['TEXTSCR', { op: 'palette', palette: 'history', open: true }],
     ['GRAPHSCR', { op: 'palette', palette: 'history', open: false }],
+    ['COMMANDLINE', { op: 'commandLine', shown: true }],
+    ['COMMANDLINEHIDE', { op: 'commandLine', shown: false }],
   ] as const)('%s asks the app, inside LINE too', async (name, request) => {
     const { bus, asked, model } = setup();
     const version = model.version;

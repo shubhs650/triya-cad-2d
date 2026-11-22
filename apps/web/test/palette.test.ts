@@ -100,6 +100,8 @@ describe('palette search', () => {
       'CLEANSCREENON',
       'CLOSE',
       'CLOSEALL',
+      'COMMANDLINE',
+      'COMMANDLINEHIDE',
       'COPY',
       'COPYBASE',
       'COPYCLIP',

@@ -199,6 +199,12 @@ export interface DraftingState {
   readonly dynPiCoords: 0 | 1;
   readonly dynPiFormat: 0 | 1;
   /**
+   * COORDS (M7-06 part 3): the status bar's coordinates updated only as points are picked (0),
+   * the cursor's (1, initially), or its distance<angle from the last point where a rubber band
+   * starts there (2). Ctrl+I turns them off and back on. Per user, as AutoCAD keeps it.
+   */
+  readonly coords: 0 | 1 | 2;
+  /**
    * The rest of the Dynamic Input tab (M3-06 part 8), per user as AutoCAD keeps them: DYNPIVIS,
    * when pointer input shows (0 once typed in, 1 at a prompt for a point, initially, 2 always);
    * DYNDIVIS, how many dimension input fields grip stretching shows (0 one, 1 two, initially,
@@ -549,6 +555,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   dynPrompt: true,
   dynPiCoords: 0,
   dynPiFormat: 0,
+  coords: 1,
   dynPiVis: 1,
   dynDiVis: 1,
   dynDiGrip: 31,

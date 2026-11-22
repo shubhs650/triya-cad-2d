@@ -23,6 +23,7 @@ import { dynMode } from './dynamic-input';
 import { DRAFTING_ITEMS, drafting, type DraftingToggle } from './drafting';
 import { cycleSnap } from './canvas/registry';
 import { engines } from './engine/registry';
+import { commandLineWindow, showsInputRow } from './command-line-window';
 import { commandItems, type PaletteItem } from './palette';
 import { OPTIONS_TABS, type OptionsTab } from './options-dialog';
 import { paletteStack } from './palette-stack';
@@ -118,6 +119,8 @@ export function CommandLine({
   // The palette shows each action's keys as the keyboard map has them now (M3-10 part 2).
   const keysVersion = useSyncExternalStore(keymapVersion.subscribe, keymapVersion.get);
   const state = doc === undefined ? undefined : lines.get(doc);
+  // Ctrl+9, COMMANDLINE and COMMANDLINEHIDE (M7-06 part 3).
+  const shown = useSyncExternalStore(commandLineWindow.subscribe, commandLineWindow.shown);
   const [text, setText] = useState('');
   const [recall, setRecall] = useState<number | undefined>();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -479,7 +482,7 @@ export function CommandLine({
   const parts = state?.lasso
     ? promptParts(state.lasso, undefined)
     : promptParts(state?.promptText ?? 'Command:', prompt?.options);
-  const shown = state?.lines.slice(-SHOWN_LINES) ?? [];
+  const recentLines = state?.lines.slice(-SHOWN_LINES) ?? [];
   return (
     <section
       className="command-line"
@@ -487,6 +490,14 @@ export function CommandLine({
       // While the engine has not read every input sent, the prompt shown is the one before them
       // (M2-47 part 3); tests wait for this to clear before a key that acts on the new prompt.
       data-reading={state && reading(state) ? 'true' : undefined}
+      // Hidden (Ctrl+9), it keeps its input, which typing still reaches; the input row shows over
+      // the drawing area while text is typed or a command prompts (`showsInputRow`).
+      data-hidden={shown ? undefined : 'true'}
+      data-input={
+        !shown && showsInputRow({ shown, text, prompting: prompt !== undefined })
+          ? 'shown'
+          : undefined
+      }
     >
       {doc !== undefined && (
         <DynamicInput
@@ -509,8 +520,8 @@ export function CommandLine({
         />
       )}
       <div className="command-lines" role="log" aria-label="Recent command lines">
-        {shown.map((l, i) => (
-          <div key={state!.lines.length - shown.length + i}>{l}</div>
+        {recentLines.map((l, i) => (
+          <div key={state!.lines.length - recentLines.length + i}>{l}</div>
         ))}
       </div>
       <div className="command-input-row">

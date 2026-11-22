@@ -331,6 +331,8 @@ describe('completions', () => {
       { name: 'CLEANSCREENON' },
       { name: 'CLOSE' },
       { name: 'CLOSEALL' },
+      { name: 'COMMANDLINE' },
+      { name: 'COMMANDLINEHIDE' },
       { name: 'COPY' },
       { name: 'COPYBASE' },
       { name: 'COPYCLIP' },
@@ -381,6 +383,8 @@ describe('completions of system variables', () => {
       'CLEANSCREENON',
       'CLOSE',
       'CLOSEALL',
+      'COMMANDLINE',
+      'COMMANDLINEHIDE',
       'COPY',
       'COPYBASE',
       'COPYCLIP',
@@ -400,6 +404,8 @@ describe('completions of system variables', () => {
       'CHAMMODE',
       'CLAYER',
       'COMMANDPREVIEW',
+      // The status bar's coordinates (M7-06 part 3), kept per user.
+      'COORDS',
       'CTAB',
     ]);
     // Without variables (a drawing not open), commands only.

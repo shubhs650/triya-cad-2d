@@ -88,6 +88,8 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   // M7-06: AutoCAD's window keys.
   { id: 'cleanscreen', label: 'Clean Screen on/off', group: 'View', keys: ['Ctrl+0'] },
   { id: 'palettes', label: 'Hide/Show Palettes', group: 'View', keys: ['Ctrl+Shift+H'] },
+  // M7-06 part 3: COMMANDLINE and COMMANDLINEHIDE.
+  { id: 'commandline', label: 'Command Line on/off', group: 'View', keys: ['Ctrl+9'] },
   { id: 'viewport:next', label: 'Next Viewport', group: 'View', keys: ['Ctrl+R'] },
   { id: 'layout:previous', label: 'Previous Layout', group: 'View', keys: ['Ctrl+PageUp'] },
   { id: 'layout:next', label: 'Next Layout', group: 'View', keys: ['Ctrl+PageDown'] },
@@ -110,6 +112,8 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     keys: ['F11'],
   },
   { id: 'dyn', label: 'Dynamic Input on/off', group: 'Drafting', keys: ['F12'] },
+  // M7-06 part 3: COORDS 0 and back, the status bar's coordinates.
+  { id: 'coords', label: 'Coordinates display on/off', group: 'Drafting', keys: ['Ctrl+I'] },
   { id: 'drafting:lwt', label: 'Show/Hide Lineweight', group: 'Drafting', keys: [] },
   { id: 'drafting:tpy', label: 'Show/Hide Transparency', group: 'Drafting', keys: [] },
   {

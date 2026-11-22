@@ -395,7 +395,7 @@ export const DYN_DEFAULT_UNITS: DynUnits = { units: DECIMAL_UNITS, angles: DEFAU
  * cursor is. A bearing names a direction whatever they say (M2-35 part 18), from the UCS's Y
  * axis as north (M3-06 part 8). `turn`: a turn prompt's angle, picked from the UCS's X axis.
  */
-function typedAngle(from: Vec2, to: Vec2, u: DynUnits, turn = false): string {
+export function typedAngle(from: Vec2, to: Vec2, u: DynUnits, turn = false): string {
   const world = Math.atan2(to.y - from.y, to.x - from.x) - (turn ? (u.ucs?.angle ?? 0) : 0);
   const { base, clockwise, ucs = 0 } = u.angles ?? DEFAULT_ANGLES;
   const typed = u.units.aunits === 4 ? world - ucs : clockwise ? base - world : world - base;
