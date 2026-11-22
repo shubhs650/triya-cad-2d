@@ -1328,6 +1328,9 @@ export function LayersPalette({
           <table
             ref={tableRef}
             className="layer-table"
+            // A grid, not a table: its rows are picked (several at once) and edited in place,
+            // and ARIA lets only a grid say it is multi-selectable (M7-10).
+            role="grid"
             aria-label="Layers of the drawing"
             aria-multiselectable="true"
             style={

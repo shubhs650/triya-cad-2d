@@ -25,6 +25,6 @@ test('a drawing runs in its own engine worker until its tab closes', async ({ pa
   await expect.poll(() => engines.length).toBe(1);
 
   const closed = new Promise<void>((resolve) => engines[0]!.on('close', () => resolve()));
-  await page.getByRole('button', { name: `Close ${path.basename(DXF)}` }).click();
+  await page.getByTitle(`Close ${path.basename(DXF)}`, { exact: true }).click();
   await closed;
 });

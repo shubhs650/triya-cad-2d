@@ -155,11 +155,38 @@ export function DocTabs({
     setDragged(undefined);
   };
 
-  // Ctrl+Shift+Page Up / Page Down moves the focused tab, for the keyboard (UI_SPEC.md §8).
+  // M7-10: the tabs are one Tab stop, the drawing shown; ←/→ (wrapping), Home and End move the
+  // focus along them without switching drawings, Enter or Space shows the one focused (WAI-ARIA
+  // APG tabs, manual activation: switching drawings is not free), and Delete closes it, as a
+  // deletable tab's key (APG), since the close button is not in the tab list (a tab list may
+  // hold only tabs). Ctrl+Shift+Page Up / Page Down moves the focused tab (UI_SPEC.md §8).
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    row.current?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]')?.focus();
+  }, [state.docs]);
   const key = (doc: OpenDocument, e: ReactKeyboardEvent) => {
+    const at = state.docs.findIndex((d) => d.id === doc.id);
+    const tabs = [...(row.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
+    const focusTab = (i: number) => {
+      e.preventDefault();
+      tabs[(i + tabs.length) % tabs.length]?.focus();
+    };
+    if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      if (e.key === 'ArrowLeft') return focusTab(at - 1);
+      if (e.key === 'ArrowRight') return focusTab(at + 1);
+      if (e.key === 'Home') return focusTab(0);
+      if (e.key === 'End') return focusTab(tabs.length - 1);
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        refocus.current = true;
+        onClose(doc.id);
+        return;
+      }
+    }
     if (!e.ctrlKey || !e.shiftKey || (e.key !== 'PageUp' && e.key !== 'PageDown')) return;
     e.preventDefault();
-    const at = state.docs.findIndex((d) => d.id === doc.id);
     store.move(doc.id, at + (e.key === 'PageUp' ? -1 : 1));
   };
 
@@ -188,7 +215,8 @@ export function DocTabs({
               role="tab"
               aria-selected={d.id === state.active}
               aria-controls={`doc-${d.id}`}
-              aria-keyshortcuts="Control+Shift+PageUp Control+Shift+PageDown"
+              aria-keyshortcuts="Delete Control+Shift+PageUp Control+Shift+PageDown"
+              tabIndex={d.id === (state.active ?? state.docs[0]?.id) ? 0 : -1}
               onClick={() => store.activate(d.id)}
               onKeyDown={(e) => key(d, e)}
               onFocus={hide}
@@ -201,10 +229,14 @@ export function DocTabs({
                 </span>
               )}
             </button>
+            {/* For the pointer only: a tab list holds tabs alone, so the keyboard closes the
+                focused tab with Delete (or CLOSE), the key a screen reader hears on the tab. */}
             <button
               type="button"
               className="close"
-              aria-label={`Close ${d.name}`}
+              title={`Close ${d.name}`}
+              aria-hidden="true"
+              tabIndex={-1}
               onClick={() => onClose(d.id)}
             >
               ×

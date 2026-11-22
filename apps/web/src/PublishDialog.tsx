@@ -39,8 +39,9 @@
 // sheet or one multi-sheet file, and the multi-sheet file's name; PDF Options... is Save As
 // PDF's dialog (PdfOptions.tsx: layers, hyperlinks, bookmarks, text as geometry). The sheet list
 // keeps them all.
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import { Group, download, downloadPdf } from './PlotDialog';
+import { useModalDialog } from './modal-dialog';
 import { PdfOptionsDialog } from './PdfOptions';
 import { controllerOf } from './canvas/registry';
 import type { OpenResult } from '@triya/io';
@@ -233,11 +234,7 @@ function PublishBody({
   /** A loaded list's sheets waiting on Replace or Append. */
   const [loaded, setLoaded] = useState<readonly PublishSheet[]>();
 
-  useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
-    return () => d?.close();
-  }, []);
+  useModalDialog(ref);
 
   const included = sheets.filter((s) => s.include);
   const key = sheetKey;
@@ -858,11 +855,7 @@ function PublishOptionsDialog({
   const ref = useRef<HTMLDialogElement>(null);
   const [fileType, setFileType] = useState(value.fileType);
   const [fileName, setFileName] = useState(value.fileName);
-  useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
-    return () => d?.close();
-  }, []);
+  useModalDialog(ref);
   return (
     <dialog
       ref={ref}

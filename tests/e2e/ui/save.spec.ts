@@ -188,7 +188,7 @@ test('closing a drawing with unsaved changes asks to save them first', async ({ 
   await openFile(page, DXF32);
   const name = path.basename(DXF32);
   const dialog = page.getByRole('dialog', { name: 'Triya CAD 2D' });
-  const close = page.getByRole('button', { name: `Close ${name}` });
+  const close = page.getByTitle(`Close ${name}`, { exact: true });
 
   // Nothing changed yet: the tab just closes.
   await close.click();

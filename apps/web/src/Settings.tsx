@@ -9,8 +9,9 @@
 // AutoSnap, AutoTrack and the drafting aids. Selection: pickbox, grips and selection modes.
 // Settings apply as they change and are kept between sessions, so the dialog has Close where
 // AutoCAD's has OK, Cancel and Apply. One modal <dialog>: focus stays inside and Esc closes it.
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { useId, useRef, useState, useSyncExternalStore } from 'react';
 import { GripColorsDialog } from './GripColorsDialog';
+import { useModalDialog } from './modal-dialog';
 import { TooltipAppearanceDialog } from './DraftingSettingsDialog';
 import { OPTIONS_TABS, nextTab, optionsDialog, type OptionsTab } from './options-dialog';
 import { AUTOSAVE_DELAY_MS } from './recovery';
@@ -94,12 +95,7 @@ export function Settings({
   const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
   const device = useSyncExternalStore(deviceFonts.subscribe, deviceFonts.getSnapshot);
 
-  useEffect(() => {
-    const d = dialog.current;
-    if (!d) return;
-    if (open && !d.open) d.showModal();
-    if (!open && d.open) d.close();
-  }, [open]);
+  useModalDialog(dialog, open);
 
   const { tab } = useSyncExternalStore(optionsDialog.subscribe, optionsDialog.get);
   const id = useId();

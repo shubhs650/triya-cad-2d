@@ -82,7 +82,7 @@ test('VP Freeze and VP Color act in the layout viewport made current only (M6-02
     .click();
   await expect(activeCanvas(page)).toHaveAttribute('aria-label', 'Layout Layout1');
   await expectDrawn(page, { timeout: 15_000 });
-  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const table = palette.getByRole('grid', { name: 'Layers of the drawing' });
   const row = (name: string) =>
     table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
 

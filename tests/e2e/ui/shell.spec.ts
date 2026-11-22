@@ -90,10 +90,10 @@ test.describe('app shell', () => {
     await page.getByRole('tab', { name: DXF_NAME, exact: true }).click();
     await expectShown(page, DXF_NAME);
 
-    await page.getByRole('button', { name: `Close ${DXF_NAME}` }).click();
+    await page.getByTitle(`Close ${DXF_NAME}`, { exact: true }).click();
     await expect(docTabs(page)).toHaveCount(1);
     await expectShown(page, DWG_NAME);
-    await page.getByRole('button', { name: `Close ${DWG_NAME}` }).click();
+    await page.getByTitle(`Close ${DWG_NAME}`, { exact: true }).click();
     await expect(docTabs(page)).toHaveCount(0);
     await expect(page.getByTestId('start')).toBeVisible();
   });

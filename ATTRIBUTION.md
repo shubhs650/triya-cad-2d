@@ -26,6 +26,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |
 | yaml | dev tooling (parses workflows in `tests/ci`); not shipped | ISC | npm |
 | TypeScript, Playwright (`@playwright/test`) | compiler; browser test runner; not shipped | Apache-2.0 | npm |
+| aria-query 5.3.2 | the WAI-ARIA 1.2 role and attribute tables of the accessibility check (`tests/e2e/app/a11y.ts`, M7-10, DEC-079; dev only); not shipped | Apache-2.0 | https://github.com/A11yance/aria-query |
 | fast-check | property-based tests (dev only); not shipped | MIT | https://github.com/dubzzz/fast-check |
 | @vitest/coverage-v8 (and its MIT/ISC dependencies: @vitest/istanbul-lib-*, ast-v8-to-istanbul, @bcoe/v8-coverage, magicast, semver) | coverage gates in `pnpm test` (dev only); not shipped | MIT | npm |
 | ezdxf 1.4.5 (Python; with its dependencies numpy (BSD-3-Clause), fontTools (MIT), pyparsing (MIT) and typing_extensions (PSF-2.0, permissive, OSI-approved), pinned in `scripts/dxf-audit/requirements.txt`) | DXF validity gate in CI (M1-105, DEC-047 item 7): `recover` + `audit` of every Triya-saved corpus DXF; CI only, not shipped | MIT | https://github.com/mozman/ezdxf |

@@ -32,8 +32,9 @@ import {
   type NamedRecord,
   type PromptAnswer,
 } from '@triya/engine';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { commandLines } from './command-line';
+import { useModalDialog } from './modal-dialog';
 import { engines } from './engine/registry';
 import { SelectColorDialog } from './SelectColorDialog';
 import { MatchPropDialog } from './MatchPropDialog';
@@ -268,11 +269,7 @@ export function Modal({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
-    return () => d?.close();
-  }, []);
+  useModalDialog(ref);
   return (
     <dialog
       ref={ref}

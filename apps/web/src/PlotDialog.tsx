@@ -45,6 +45,7 @@ import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { CanvasController } from './canvas/controller';
+import { useModalDialog } from './modal-dialog';
 import { controllerOf, controllersOf } from './canvas/registry';
 import { engines } from './engine/registry';
 import { rasterSize, type PlotStyleTable } from '@triya/render';
@@ -240,9 +241,8 @@ function PlotBody({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
+  useModalDialog(ref);
   useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
     let live = true;
     void controller.plotSpace().then((measured) => {
       if (!live) return;
@@ -255,7 +255,6 @@ function PlotBody({
     });
     return () => {
       live = false;
-      d?.close();
     };
   }, [controller, doc, block, userTables]);
 

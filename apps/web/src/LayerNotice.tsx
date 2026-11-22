@@ -11,6 +11,7 @@
 //   ends without plotting), No plots.
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { OpenDocument } from './documents';
+import { useModalDialog } from './modal-dialog';
 import { drafting } from './drafting';
 import { engines } from './engine/registry';
 import { layerNotices, noticeText, plotNotice } from './layer-notice';
@@ -100,15 +101,7 @@ export function PlotNoticeDialog() {
   const question = useSyncExternalStore(plotNotice.subscribe, plotNotice.get);
   const dialog = useRef<HTMLDialogElement>(null);
   const yes = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const d = dialog.current;
-    if (!d) return;
-    if (question && !d.open) {
-      d.showModal();
-      yes.current?.focus();
-    }
-    if (!question && d.open) d.close();
-  }, [question]);
+  useModalDialog(dialog, question !== undefined, () => yes.current?.focus());
   return (
     <dialog
       ref={dialog}

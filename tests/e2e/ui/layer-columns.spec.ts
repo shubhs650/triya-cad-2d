@@ -46,7 +46,7 @@ async function openLayers(page: Page, goto = true): Promise<Locator> {
   return palette;
 }
 
-const table = (palette: Locator) => palette.getByRole('table', { name: 'Layers of the drawing' });
+const table = (palette: Locator) => palette.getByRole('grid', { name: 'Layers of the drawing' });
 const header = (palette: Locator, name: string) =>
   table(palette).getByRole('columnheader', { name, exact: true });
 const firstNames = async (palette: Locator, n: number) =>

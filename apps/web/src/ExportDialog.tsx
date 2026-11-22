@@ -18,6 +18,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Box } from '@triya/engine';
 import type { PlotStyleTable } from '@triya/render';
 import { PageSetupOverrideDialog } from './PageSetupOverride';
+import { useModalDialog } from './modal-dialog';
 import { PdfOptionsDialog } from './PdfOptions';
 import { controllerOf } from './canvas/registry';
 import type { OpenDocument } from './documents';
@@ -174,9 +175,8 @@ function ExportBody({
   const [pdfOptions, setPdfOptions] = useState(false);
   const block = doc.block;
 
+  useModalDialog(ref);
   useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
     let live = true;
     const controller = controllerOf(doc.id, block);
     void controller?.plotSpace().then((measured) => {
@@ -196,7 +196,6 @@ function ExportBody({
     });
     return () => {
       live = false;
-      d?.close();
     };
   }, [doc.id, doc.name, block, kind, userTables]);
 

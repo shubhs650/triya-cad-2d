@@ -38,7 +38,7 @@ const palette = (page: Page) => page.getByRole('complementary', { name: 'Layers'
 const tree = (page: Page) => palette(page).getByRole('tree', { name: 'Layer filters' });
 const node = (page: Page, name: string) => tree(page).getByRole('treeitem', { name, exact: true });
 const listed = (page: Page) =>
-  palette(page).getByRole('table', { name: 'Layers of the drawing' }).locator('tbody th');
+  palette(page).getByRole('grid', { name: 'Layers of the drawing' }).locator('tbody th');
 const count = (page: Page) => palette(page).locator('.layer-filter-count');
 const dialog = (page: Page) => page.getByRole('dialog', { name: 'Layer Filter Properties' });
 const filterMenu = (page: Page) => page.getByRole('menu', { name: 'Layer filter' });

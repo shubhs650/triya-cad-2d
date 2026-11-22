@@ -25,7 +25,7 @@ const stateRow = (page: Page, name: string) =>
     .getByRole('row')
     .filter({ has: page.getByRole('rowheader', { name, exact: true }) });
 const layersOf = (page: Page) =>
-  editor(page).getByRole('table', { name: 'Layers in layer state' }).getByRole('rowheader');
+  editor(page).getByRole('grid', { name: 'Layers in layer state' }).getByRole('rowheader');
 const editRow = (page: Page, name: string) =>
   editor(page)
     .getByRole('row')
