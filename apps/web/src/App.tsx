@@ -2651,6 +2651,17 @@ export function App() {
         else dropped(e.dataTransfer.files);
       }}
     >
+      {/* M7-10: past the title bar and the ribbon's many buttons to where commands are typed. */}
+      <a
+        className="skip-link"
+        href="#command-line"
+        onClick={(e) => {
+          e.preventDefault();
+          document.querySelector<HTMLElement>('.command-line input[aria-label="Command"]')?.focus();
+        }}
+      >
+        Skip to command line
+      </a>
       <header className="title-bar">
         <a className="oet-home" href={OET_HOME} aria-label="Open Engineering Tools home">
           OET

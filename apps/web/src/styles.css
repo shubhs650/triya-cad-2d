@@ -178,6 +178,25 @@ button {
   outline-offset: -6px;
 }
 
+/* M7-10: the first Tab stop skips the title bar and ribbon to the command line; off screen until
+   it has the focus. */
+.skip-link {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 100;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
+  outline: 2px solid var(--accent);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
 .title-bar {
   display: flex;
   align-items: center;

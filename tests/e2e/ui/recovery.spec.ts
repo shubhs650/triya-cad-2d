@@ -300,7 +300,7 @@ test('drawings opened through a file handle are listed as recent and reopen from
   try {
     await expect(page.getByRole('region', { name: 'Recent drawings' })).toHaveCount(0);
     await p.open(DXF32);
-    await page.getByRole('button', { name: `Close ${NAME}` }).click();
+    await page.getByTitle(`Close ${NAME}`, { exact: true }).click();
     await expect(tab(page)).toHaveCount(0);
 
     // The list outlives the page.
@@ -312,7 +312,7 @@ test('drawings opened through a file handle are listed as recent and reopen from
     await expectShown(page, NAME);
 
     // The Ctrl+K palette lists it too (UI_SPEC §5).
-    await page.getByRole('button', { name: `Close ${NAME}` }).click();
+    await page.getByTitle(`Close ${NAME}`, { exact: true }).click();
     await expect(tab(page)).toHaveCount(0);
     await page.keyboard.press('Control+k');
     const palette = page.getByRole('dialog', { name: 'Command palette' });
@@ -347,7 +347,7 @@ test('the start screen pictures each recent drawing as last autosaved or closed 
     const autosaved = (await recentPictures(page))[0]!.digest;
 
     // Closed with its changes thrown away, it keeps the picture of its last autosave.
-    await page.getByRole('button', { name: `Close ${NAME}` }).click();
+    await page.getByTitle(`Close ${NAME}`, { exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'No' }).click();
     await expect(tab(page)).toHaveCount(0);
     expect((await recentPictures(page))[0]!.digest).toBe(autosaved);
@@ -364,7 +364,7 @@ test('the start screen pictures each recent drawing as last autosaved or closed 
     // Opened again and closed with nothing unsaved, it is pictured as it shows now.
     await card.click();
     await expectShown(page, NAME);
-    await page.getByRole('button', { name: `Close ${NAME}` }).click();
+    await page.getByTitle(`Close ${NAME}`, { exact: true }).click();
     await expect(tab(page)).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     // The copy is taken before the drawing closes; it is kept just after.

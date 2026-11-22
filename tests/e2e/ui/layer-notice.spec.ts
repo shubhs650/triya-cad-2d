@@ -24,7 +24,7 @@ const node = (page: Page, name: string) =>
     .getByRole('tree', { name: 'Layer filters' })
     .getByRole('treeitem', { name, exact: true });
 const listed = (page: Page) =>
-  palette(page).getByRole('table', { name: 'Layers of the drawing' }).locator('tbody th');
+  palette(page).getByRole('grid', { name: 'Layers of the drawing' }).locator('tbody th');
 const statusBar = (page: Page) => page.locator('footer.status-bar');
 
 test('alerts for unreconciled new layers: balloon, View, PLOT question (M5-19 part 4)', async ({

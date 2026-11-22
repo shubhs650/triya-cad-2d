@@ -228,7 +228,7 @@ export function EditLayerState({
       <p className="edit-layer-state-name">Layer state: {stateName}</p>
       <div className="edit-layer-state-body">
         <div className="layer-states-list edit-layer-state-list">
-          <table aria-label="Layers in layer state" aria-multiselectable="true">
+          <table role="grid" aria-label="Layers in layer state" aria-multiselectable="true">
             <thead>
               <tr>
                 <th scope="col">Name</th>

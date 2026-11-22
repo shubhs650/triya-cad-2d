@@ -67,7 +67,7 @@ const toggleMs = async (page: Page) => {
 test('turning a layer off and freezing it hide its objects, in under 16 ms', async ({ page }) => {
   const palette = await openLayers(page, DXF);
   const shown = await ink(page);
-  const rows = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const rows = palette.getByRole('grid', { name: 'Layers of the drawing' });
   await expect(rows.getByRole('rowheader', { name: 'HATCH', exact: true })).toBeVisible();
 
   const on = palette.getByRole('button', { name: 'On HATCH' });
@@ -174,7 +174,7 @@ test('manages layers: new, rename, a toggle on the rows selected, describe, curr
   page,
 }) => {
   const palette = await openLayers(page, DXF);
-  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const table = palette.getByRole('grid', { name: 'Layers of the drawing' });
   const row = (name: string) =>
     table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
 
@@ -249,7 +249,7 @@ test('sets a layer’s color, linetype, lineweight and transparency from its cel
   // multileaders.dxf: layers 0, Defpoints and LEADERS (the leaders), linetypes Continuous and
   // DASHED.
   const palette = await openLayers(page, path.join(CORPUS, '../self-authored/multileaders.dxf'));
-  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const table = palette.getByRole('grid', { name: 'Layers of the drawing' });
   const row = (name: string) =>
     table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
 
@@ -337,7 +337,7 @@ test('merges layers from the layer list menu, one undo step with the changes bef
   const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
   // clockwise_arcs_hatch.dxf: the hatch is on HATCH.
   const palette = await openLayers(page, DXF);
-  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const table = palette.getByRole('grid', { name: 'Layers of the drawing' });
   const row = (name: string) =>
     table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
   const full = await settledInkWeight(page);

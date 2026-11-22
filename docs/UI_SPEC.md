@@ -166,3 +166,13 @@ Recent drawings (thumbnails from last autosave), New (default template one-click
 ## 11. Micro-interactions worth doing well
 
 Marching-ants selection; grip hover scale; osnap marker snap-in animation; panel/palette slide with easing; command chip ripple; Dynamic Input field focus glow; smooth zoom-to-cursor with inertia on trackpads (toggle); undo toast with count; recovery banner.
+
+## 12. Accessibility (M7-10)
+
+The baseline every screen keeps, checked by `tests/e2e/ui/accessibility.spec.ts`:
+
+- **No critical axe rule broken**, nor the serious ARIA naming and focus rules: the start screen, the drawing window, every ribbon tab, every palette, the split-button menus, the shortcut menu, the Ctrl+K palette and every dialog. The check is Triya's own (`tests/e2e/app/a11y.ts`, DEC-079): axe-core's rules re-implemented, as axe-core's MPL-2.0 licence is not on the allowed list, with Chromium's own accessible names.
+- **Every dialog works from the keyboard alone**: opened from the command line it has the focus; Tab stays inside it and reaches every enabled control, or the one stop of a tab list, list box, grid or tree, whose items the arrow keys move along; nothing in it answers only to the pointer; Esc closes it and the focus goes back to the element that had it (the command line, or the button that opened it), or to the command line when that element is gone (`apps/web/src/modal-dialog.ts`).
+- **Focus order follows the screen**: a "Skip to command line" link (shown while focused), the title bar with the drawing tabs, the ribbon, the drawing area's navigation bar, the palette rail, the layout tabs, the command line, the status bar. No positive `tabindex`.
+- **Drawing tabs** are one Tab stop (the drawing shown): ←/→ (wrapping), Home and End move the focus, Enter or Space shows the drawing focused, Delete closes it (the tab's `aria-keyshortcuts`); the × is for the pointer only, since a tab list holds tabs alone. Enter or Space on any control the arrow keys focused presses it; the command line takes the key only on the page or the canvas.
+- The Layers palette's list and Edit Layer State's list are grids (`role="grid"`, multi-selectable rows), not tables.

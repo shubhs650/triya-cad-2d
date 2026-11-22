@@ -45,7 +45,9 @@ async function expectAccessible(page: Page): Promise<void> {
 }
 
 /** Opens the title block zoomed to it; returns page coordinates of a point of the drawing. */
-async function openTitleBlock(page: Page): Promise<(x: number, y: number) => { x: number; y: number }> {
+async function openTitleBlock(
+  page: Page,
+): Promise<(x: number, y: number) => { x: number; y: number }> {
   await page.goto(app.url);
   await openWithPicker(page, FILE);
   await expectShown(page, path.basename(FILE));
@@ -72,14 +74,19 @@ interface DialogCase {
   readonly name: string | RegExp;
   /** What is typed at the command line, each ended by Enter, to open it. */
   readonly typed?: readonly string[];
+  /** A screenshot's name, taken after the Tab walk (TRIYA_SHOTS). */
+  readonly shot?: string;
   /** Or how it is opened otherwise; `at` maps drawing points to the page. */
-  readonly open?: (page: Page, at: (x: number, y: number) => { x: number; y: number }) => Promise<void>;
+  readonly open?: (
+    page: Page,
+    at: (x: number, y: number) => { x: number; y: number },
+  ) => Promise<void>;
 }
 
 /** Every dialog the command line opens on the title block (and the ones opened by a pick). */
 const DIALOGS: readonly DialogCase[] = [
   { name: 'Options', typed: ['OPTIONS'] },
-  { name: 'Drafting Settings', typed: ['DSETTINGS'] },
+  { name: 'Drafting Settings', typed: ['DSETTINGS'], shot: 'dialog-drafting-settings-tab-walk' },
   { name: 'Dimension Style Manager', typed: ['DIMSTYLE'] },
   { name: 'Text Style', typed: ['STYLE'] },
   { name: 'Table Style', typed: ['TABLESTYLE'] },
@@ -119,6 +126,7 @@ const DIALOGS: readonly DialogCase[] = [
   { name: 'Select Template', typed: ['NEW'] },
   {
     name: 'Enhanced Attribute Editor',
+    shot: 'dialog-enhanced-attribute-editor-tab-walk',
     open: async (page, at) => {
       const p = at(FRAME.x, FRAME.y);
       await page.mouse.dblclick(p.x, p.y);
@@ -136,15 +144,17 @@ const DIALOGS: readonly DialogCase[] = [
 ];
 
 /** Opens `c`, checks it, walks it with Tab and closes it with Esc. */
-async function checkDialog(page: Page, c: DialogCase, at: (x: number, y: number) => { x: number; y: number }) {
+async function checkDialog(
+  page: Page,
+  c: DialogCase,
+  at: (x: number, y: number) => { x: number; y: number },
+) {
   await expectNoModalDialog(page);
   await expect(prompt(page)).toHaveText('Command:');
   if (c.typed) for (const t of c.typed) await enterCommand(page, t);
   else await c.open!(page, at);
   const dialog = page.getByRole('dialog', { name: c.name, exact: true });
   await expect(dialog).toBeVisible();
-  // The command line had the focus (typed) or the canvas did (picked); the focus goes back there.
-  const opener = c.typed ? 'command line' : 'drawing area';
   await dialog.evaluate((d) => d.setAttribute('data-a11y-probe', ''));
   await expect.poll(() => dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
   await expectAccessible(page);
@@ -154,15 +164,17 @@ async function checkDialog(page: Page, c: DialogCase, at: (x: number, y: number)
   expect(k.outside).toEqual([]);
   expect(k.unreached).toEqual([]);
   expect(k.pointerOnly).toEqual([]);
+  if (c.shot) await shot(page, c.shot);
+  await dialog.evaluate((d) => d.removeAttribute('data-a11y-probe'));
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expectNoModalDialog(page);
+  // A dialog opened by a command's option (SELECTSIMILAR's SEttings) goes back to its prompt.
+  if ((c.typed?.length ?? 0) > 1) await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
-  if (opener === 'command line') await expect(commandLine(page)).toBeFocused();
-  else
-    await expect
-      .poll(() => page.evaluate(() => document.activeElement?.tagName.toLowerCase()))
-      .not.toBe('body');
+  // The focus goes back to the command line, where it was (typed), or where it goes when what
+  // had it cannot take it back (a pick on the canvas, which takes no focus).
+  await expect(commandLine(page)).toBeFocused();
 }
 
 const HALF = Math.ceil(DIALOGS.length / 2);
@@ -196,7 +208,8 @@ test('the start screen, drawing window, ribbon tabs, palettes and menus are acce
 
   const ribbon = page.getByRole('tablist', { name: 'Ribbon' });
   const tabs = await ribbon.getByRole('tab').allTextContents();
-  expect(tabs.length).toBeGreaterThanOrEqual(8);
+  // AutoCAD's tabs but Parametric (M9-05).
+  expect(tabs.length).toBeGreaterThanOrEqual(7);
   for (const name of tabs) {
     await test.step(`ribbon tab ${name}`, async () => {
       await ribbon.getByRole('tab', { name, exact: true }).click();
@@ -228,22 +241,37 @@ test('the start screen, drawing window, ribbon tabs, palettes and menus are acce
       await expectAccessible(page);
     });
   }
-  for (const name of ['Health', 'Diagnostics']) {
+  for (const [tab, name] of [
+    ['View', 'Health'],
+    ['Tools', 'Diagnostics'],
+  ] as const) {
     await test.step(`palette ${name}`, async () => {
-      await page.getByRole('tab', { name: 'View', exact: true }).click();
-      await page.getByRole('button', { name, exact: true }).click();
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      await page.getByTestId('ribbon').getByRole('button', { name, exact: true }).click();
       await expect(page.getByRole('complementary', { name })).toBeVisible();
       await expectAccessible(page);
     });
   }
   await shot(page, 'palettes');
 
-  await test.step('shortcut menu', async () => {
+  await test.step('Object snap modes menu', async () => {
+    await page.getByRole('button', { name: 'Object snap modes' }).click();
+    await expect(page.getByRole('menu', { name: 'Object snap modes' })).toBeVisible();
+    await expectAccessible(page);
+    await page.keyboard.press('Escape');
+  });
+  await test.step('Shift+right-click snap menu', async () => {
+    await enterCommand(page, 'LINE');
+    await expect(prompt(page)).toHaveText('Specify first point:');
     const box = (await activeCanvas(page).boundingBox())!;
+    await page.keyboard.down('Shift');
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+    await page.keyboard.up('Shift');
     await expect(page.getByRole('menu')).toBeVisible();
     await expectAccessible(page);
     await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await expect(prompt(page)).toHaveText('Command:');
   });
   await test.step('Ctrl+K command palette', async () => {
     await page.keyboard.press('Control+k');
@@ -260,7 +288,15 @@ test("the drawing window's Tab order follows the screen and starts with a skip t
   await page.goto(app.url);
   await openWithPicker(page, FILE);
   await expectShown(page, path.basename(FILE));
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const fromTop = () =>
+    // Focusing the page itself starts Tab at its top, where a blur would start it after the
+    // element that had the focus.
+    page.evaluate(() => {
+      document.body.tabIndex = -1;
+      document.body.focus();
+      document.body.removeAttribute('tabindex');
+    });
+  await fromTop();
 
   // The first stop is the skip link, shown while it has the focus; Enter goes to the command line.
   await page.keyboard.press('Tab');
@@ -274,7 +310,7 @@ test("the drawing window's Tab order follows the screen and starts with a skip t
   // Tab from the top goes skip link, title bar (with the drawing tabs), ribbon, the drawing
   // area's navigation bar, the palette rail, layout tabs, command line and status bar: each part
   // once, in the order they sit in on screen.
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await fromTop();
   const regions: string[] = [];
   for (let i = 0; i < 200; i++) {
     await page.keyboard.press('Tab');
@@ -339,6 +375,8 @@ test('the drawing tabs are one Tab stop: the arrow keys move along them, Enter s
   await expect(tabs.nth(0)).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await expect(tabs.nth(1)).toBeFocused();
+
+  await shot(page, 'drawing-tabs-arrow-keys');
 
   // Delete closes the focused drawing (unchanged, so it asks nothing); the focus stays on the tabs.
   await page.keyboard.press('Delete');

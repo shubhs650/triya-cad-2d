@@ -83,7 +83,7 @@ function roleTable(): RoleTable {
     };
   }
   for (const [name, a] of aria.entries()) {
-    const values = 'values' in a ? (a.values as readonly unknown[]).map(String) : undefined;
+    const values = a.values?.map(String);
     table.attrs[name] = values ? { type: a.type, values } : { type: a.type };
   }
   return table;
@@ -305,8 +305,7 @@ function ariaRules(table: RoleTable): Omit<Violation, 'impact'>[] {
           // aria-controls on a collapsed widget, whose popup may not exist yet.
           const ids = value.split(/\s+/);
           const found = ids.filter((id) => document.getElementById(id));
-          if (attr === 'aria-controls' && el.getAttribute('aria-expanded') !== 'true')
-            ok = true;
+          if (attr === 'aria-controls' && el.getAttribute('aria-expanded') !== 'true') ok = true;
           else ok = found.length > 0;
           break;
         }
@@ -382,7 +381,19 @@ function ariaRules(table: RoleTable): Omit<Violation, 'impact'>[] {
 
     if (role && WIDGETS.has(role) && focusable(el)) {
       // nested-interactive: a control whose children are presentational holds no focusable one.
-      if (['button', 'checkbox', 'img', 'link', 'menuitem', 'option', 'radio', 'switch', 'tab'].includes(role))
+      if (
+        [
+          'button',
+          'checkbox',
+          'img',
+          'link',
+          'menuitem',
+          'option',
+          'radio',
+          'switch',
+          'tab',
+        ].includes(role)
+      )
         for (const d of el.querySelectorAll('*'))
           if (focusable(d) && !hidden(d)) {
             out.push({
@@ -398,15 +409,21 @@ function ariaRules(table: RoleTable): Omit<Violation, 'impact'>[] {
   // aria-hidden-focus: nothing under aria-hidden takes the focus.
   for (const h of document.querySelectorAll('[aria-hidden="true"]')) {
     for (const d of [h, ...h.querySelectorAll('*')])
-      if (focusable(d) && d.checkVisibility({ visibilityProperty: true }) && !d.closest('[inert]')) {
-        out.push({ rule: 'aria-hidden-focus', target: describe(h), detail: `holds the focusable ${describe(d)}` });
+      if (
+        focusable(d) &&
+        d.checkVisibility({ visibilityProperty: true }) &&
+        !d.closest('[inert]')
+      ) {
+        out.push({
+          rule: 'aria-hidden-focus',
+          target: describe(h),
+          detail: `holds the focusable ${describe(d)}`,
+        });
         break;
       }
   }
   return out;
 }
-
-
 
 const IMPACT: Record<string, Impact> = {
   'aria-allowed-attr': 'critical',
@@ -575,25 +592,45 @@ export async function keyboardProbe(page: Page, dialog: string): Promise<Keyboar
   );
   const stops: string[] = [];
   const outside: string[] = [];
-  await page.evaluate(() => {
+  // The element focused on opening is a stop; Tab walks on from it and Shift+Tab back from it.
+  // Past the last stop Chromium's modal dialog lets the focus go to the browser (the page's
+  // <body> headless) rather than wrap, so a walk ends there or where it began.
+  const first = await page.evaluate(() => {
     for (const el of document.querySelectorAll('[data-a11y-stop]'))
       el.removeAttribute('data-a11y-stop');
+    for (const el of document.querySelectorAll('[data-a11y-first]'))
+      el.removeAttribute('data-a11y-first');
+    const a = document.activeElement;
+    if (!a || a === document.body) return undefined;
+    a.setAttribute('data-a11y-stop', '');
+    a.setAttribute('data-a11y-first', '');
+    return `${a.tagName.toLowerCase()}${a.id ? `#${a.id}` : ''} ${(a.getAttribute('aria-label') ?? a.textContent ?? '').trim().slice(0, 40)}`;
   });
-  for (let i = 0; i < 400; i++) {
-    await page.keyboard.press('Tab');
-    const s = await page.evaluate((sel) => {
-      const a = document.activeElement;
-      if (!a || a === document.body) return { kind: 'body' as const, text: 'body' };
-      const d = document.querySelector(sel);
-      const text = `${a.tagName.toLowerCase()}${a.id ? `#${a.id}` : ''} ${(a.getAttribute('aria-label') ?? a.textContent ?? '').trim().slice(0, 40)}`;
-      if (a.hasAttribute('data-a11y-stop')) return { kind: 'again' as const, text };
-      a.setAttribute('data-a11y-stop', '');
-      return { kind: d?.contains(a) ? ('inside' as const) : ('outside' as const), text };
-    }, dialog);
-    if (s.kind === 'again') break;
-    if (s.kind === 'body') continue;
-    stops.push(s.text);
-    if (s.kind === 'outside') outside.push(s.text);
+  if (first) stops.push(first);
+  if (first && !focusInside) outside.push(first);
+  for (const key of ['Tab', 'Shift+Tab']) {
+    if (key === 'Shift+Tab')
+      await page.evaluate(() => document.querySelector<HTMLElement>('[data-a11y-first]')?.focus());
+    let bodies = 0;
+    for (let i = 0; i < 400 && bodies < 2; i++) {
+      await page.keyboard.press(key);
+      const s = await page.evaluate((sel) => {
+        const a = document.activeElement;
+        if (!a || a === document.body) return { kind: 'body' as const, text: 'body' };
+        const d = document.querySelector(sel);
+        const text = `${a.tagName.toLowerCase()}${a.id ? `#${a.id}` : ''} ${(a.getAttribute('aria-label') ?? a.textContent ?? '').trim().slice(0, 40)}`;
+        if (a.hasAttribute('data-a11y-stop')) return { kind: 'again' as const, text };
+        a.setAttribute('data-a11y-stop', '');
+        return { kind: d?.contains(a) ? ('inside' as const) : ('outside' as const), text };
+      }, dialog);
+      if (s.kind === 'again') break;
+      if (s.kind === 'body') {
+        bodies++;
+        continue;
+      }
+      stops.push(s.text);
+      if (s.kind === 'outside') outside.push(s.text);
+    }
   }
   const { unreached, pointerOnly } = await page.evaluate((sel) => {
     const d = document.querySelector(sel)!;
@@ -601,23 +638,32 @@ export async function keyboardProbe(page: Page, dialog: string): Promise<Keyboar
       el.checkVisibility({ visibilityProperty: true }) && !el.closest('[aria-hidden="true"]');
     const label = (el: Element) =>
       `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''} ${(el.getAttribute('aria-label') ?? el.getAttribute('title') ?? el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40)}`;
-    const COMPOSITE = '[role="tablist"],[role="radiogroup"],[role="listbox"],[role="grid"],[role="treegrid"],[role="menu"],[role="menubar"],[role="tree"],[role="toolbar"],table[aria-multiselectable],[role="table"]';
-    const CONTROL = 'button,input:not([type="hidden"]),select,textarea,a[href],[tabindex],[role="button"],[role="checkbox"],[role="tab"],[role="option"],[role="radio"],[role="switch"],[role="slider"],[role="menuitem"],[role="treeitem"],[role="row"]';
+    const COMPOSITE =
+      '[role="tablist"],[role="radiogroup"],[role="listbox"],[role="grid"],[role="treegrid"],[role="menu"],[role="menubar"],[role="tree"],[role="toolbar"],table[aria-multiselectable],[role="table"]';
+    const CONTROL =
+      'button,input:not([type="hidden"]),select,textarea,a[href],[tabindex],[role="button"],[role="checkbox"],[role="tab"],[role="option"],[role="radio"],[role="switch"],[role="slider"],[role="menuitem"],[role="treeitem"],[role="row"]';
     const unreached: string[] = [];
     const reachedRadioGroups = new Set<string>();
     for (const r of d.querySelectorAll('input[type="radio"][data-a11y-stop]'))
       reachedRadioGroups.add((r as HTMLInputElement).name);
     for (const el of d.querySelectorAll(CONTROL)) {
       if (!shown(el) || el.hasAttribute('data-a11y-stop')) continue;
-      if ((el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true') continue;
-      if (el.closest('fieldset:disabled')) continue;
+      // Disabled, or in a disabled fieldset (whose controls' own `disabled` stays false).
+      if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') continue;
       if (el instanceof HTMLInputElement && el.type === 'radio' && reachedRadioGroups.has(el.name))
         continue;
       const composite = el.closest(COMPOSITE);
-      if (composite && d.contains(composite) && (composite.hasAttribute('data-a11y-stop') || composite.querySelector('[data-a11y-stop]')))
+      if (
+        composite &&
+        d.contains(composite) &&
+        (composite.hasAttribute('data-a11y-stop') || composite.querySelector('[data-a11y-stop]'))
+      )
         continue;
       // A non-focusable element with a role only (a row, a cell) is not a control on its own.
-      if (el.getAttribute('tabindex') === null && !el.matches('button,input,select,textarea,a[href]'))
+      if (
+        el.getAttribute('tabindex') === null &&
+        !el.matches('button,input,select,textarea,a[href]')
+      )
         continue;
       unreached.push(label(el));
     }
@@ -626,10 +672,20 @@ export async function keyboardProbe(page: Page, dialog: string): Promise<Keyboar
       if (!shown(el) || getComputedStyle(el).cursor !== 'pointer') continue;
       if (el.closest('[data-a11y-stop],label')) continue;
       if (el.querySelector('[data-a11y-stop]')) continue;
-      if ((el as HTMLButtonElement).disabled) continue;
+      if (el.matches(':disabled')) continue;
       const composite = el.closest(COMPOSITE);
-      if (composite && (composite.hasAttribute('data-a11y-stop') || composite.querySelector('[data-a11y-stop]'))) continue;
-      if (el.parentElement && getComputedStyle(el.parentElement).cursor === 'pointer' && d.contains(el.parentElement) && el.parentElement !== d) continue;
+      if (
+        composite &&
+        (composite.hasAttribute('data-a11y-stop') || composite.querySelector('[data-a11y-stop]'))
+      )
+        continue;
+      if (
+        el.parentElement &&
+        getComputedStyle(el.parentElement).cursor === 'pointer' &&
+        d.contains(el.parentElement) &&
+        el.parentElement !== d
+      )
+        continue;
       pointerOnly.push(label(el));
     }
     return { unreached, pointerOnly };

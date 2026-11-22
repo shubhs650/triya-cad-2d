@@ -59,9 +59,15 @@ function pressable(t: EventTarget | null): boolean {
     t instanceof HTMLElement &&
     t !== document.body &&
     t !== document.documentElement &&
-    t.tabIndex >= 0
+    // A control out of the Tab order that the arrow keys focused (a roving tab index: the
+    // drawing tabs, a tab list's other tabs, M7-10) is pressed as much as one in it.
+    (t.tabIndex >= 0 || t.matches(ROVING_CONTROLS))
   );
 }
+
+/** The controls a composite widget's arrow keys focus with tabindex -1. */
+const ROVING_CONTROLS =
+  'button, a[href], [role="tab"], [role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="treeitem"], [role="radio"], [role="row"], [role="gridcell"]';
 
 /** The keyboard map's actions the palette leaves out: they act on its own field. */
 const OWN_KEYS: ReadonlySet<string> = new Set(['palette', 'enter', 'cancel']);
@@ -485,6 +491,7 @@ export function CommandLine({
   const recentLines = state?.lines.slice(-SHOWN_LINES) ?? [];
   return (
     <section
+      id="command-line"
       className="command-line"
       aria-label="Command line"
       // While the engine has not read every input sent, the prompt shown is the one before them

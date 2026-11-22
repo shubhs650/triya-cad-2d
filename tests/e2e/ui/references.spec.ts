@@ -147,7 +147,7 @@ test('keeps a dropped folder and finds the references in it again, after a reloa
     await expect(tabs(page)).toHaveCount(1);
 
     // Closed and opened again: found without a drop.
-    await page.getByRole('button', { name: 'Close xref-parent.dxf' }).click();
+    await page.getByTitle('Close xref-parent.dxf', { exact: true }).click();
     await expect(tabs(page)).toHaveCount(0);
     await openParent(page);
     await showReferences(page);

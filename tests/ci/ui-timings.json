@@ -1,4 +1,6 @@
 {
+  "tests/e2e/ui/a11y-checker.spec.ts": 3.0,
+  "tests/e2e/ui/accessibility.spec.ts": 120.0,
   "tests/e2e/ui/aliases.spec.ts": 8.3,
   "tests/e2e/ui/array-grips.spec.ts": 11.5,
   "tests/e2e/ui/array.spec.ts": 14.4,

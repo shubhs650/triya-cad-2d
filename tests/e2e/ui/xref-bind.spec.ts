@@ -122,9 +122,7 @@ test('binds an xref from the palette with the Bind Xrefs dialog, and U unbinds i
     .getByRole('button', { name: 'Layers' })
     .click();
   await expect(
-    page
-      .getByRole('table', { name: 'Layers of the drawing' })
-      .getByText('xref-child-tb$0$TB-FRAME'),
+    page.getByRole('grid', { name: 'Layers of the drawing' }).getByText('xref-child-tb$0$TB-FRAME'),
   ).toBeVisible();
   await shot(page, '3-bound-layers');
 

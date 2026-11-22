@@ -33,7 +33,7 @@ async function openLayers(page: Page, file: string) {
     .click();
   const palette = page.getByRole('complementary', { name: 'Layers' });
   await expect(palette).toBeVisible();
-  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const table = palette.getByRole('grid', { name: 'Layers of the drawing' });
   const row = (name: string) =>
     table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
   return { palette, row };

@@ -51,7 +51,7 @@ function loadedLayers(): string[] {
 }
 
 const layerRow = (page: Page, name: string) =>
-  page.getByRole('table', { name: 'Layers of the drawing' }).getByText(name, { exact: true });
+  page.getByRole('grid', { name: 'Layers of the drawing' }).getByText(name, { exact: true });
 
 test('binds definitions chosen in the Xbind tree; U takes them back', async ({ page }) => {
   test.setTimeout(120_000);

@@ -60,7 +60,7 @@ test('viewport override tools in the layout viewport made current (M6-02 part 12
     .click();
   const palette = page.getByRole('complementary', { name: 'Layers' });
   await expect(palette).toBeVisible();
-  const table = palette.getByRole('table', { name: 'Layers of the drawing' });
+  const table = palette.getByRole('grid', { name: 'Layers of the drawing' });
   const row = (name: string) =>
     table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
   const tree = palette.getByRole('tree', { name: 'Layer filters' });

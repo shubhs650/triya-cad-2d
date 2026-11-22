@@ -4,8 +4,9 @@
 // Handling (Convert all text to geometry). AutoCAD's Quality group, its presets and its other Data and Font Handling
 // choices change nothing Triya writes, so the dialog says why they are absent (export.ts). OK
 // hands the choices back for the export; Cancel (and Esc) keeps what was there.
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Check, Group } from './PlotDialog';
+import { useModalDialog } from './modal-dialog';
 import type { PdfOptions } from './plot';
 
 export function PdfOptionsDialog({
@@ -19,11 +20,7 @@ export function PdfOptionsDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [s, setS] = useState(value);
-  useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
-    return () => d?.close();
-  }, []);
+  useModalDialog(ref);
   const set = (p: Partial<PdfOptions>) => setS({ ...s, ...p });
   return (
     <dialog

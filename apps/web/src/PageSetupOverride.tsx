@@ -2,9 +2,10 @@
 // "Page Setup Override..." button, with AutoCAD 2024's groups and labels (UI_SPEC.md §7): Paper
 // size, Drawing orientation, Plot scale and Plot style table (pen assignments). OK hands the four
 // back for the export; Cancel (and Esc) keeps what was there. The page setup itself is untouched.
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { PAPER_SIZES } from '@triya/pdf';
 import { Check, Group, NumberField, ownPaperLabel } from './PlotDialog';
+import { useModalDialog } from './modal-dialog';
 import type { PageSetupOverride } from './export';
 import { LAYOUT_PAPER, PLOT_SCALES, plotStyleTables, type PlotSpace } from './plot';
 
@@ -21,11 +22,7 @@ export function PageSetupOverrideDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [s, setS] = useState(value);
-  useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
-    return () => d?.close();
-  }, []);
+  useModalDialog(ref);
   const set = (p: Partial<PageSetupOverride>) => setS({ ...s, ...p });
   const own = ownPaperLabel(space);
   // Millimetres, or inches for a page setup in inches, as the Plot dialog shows its scale.

@@ -54,7 +54,7 @@ test('loads xrefs whose files are dropped, nested ones too', async ({ page }) =>
     .click();
   const rows = page
     .getByRole('complementary', { name: 'Layers' })
-    .getByRole('table', { name: 'Layers of the drawing' });
+    .getByRole('grid', { name: 'Layers of the drawing' });
   for (const name of ['xref-child-tb|TB-FRAME', 'xref-child-ovl|TB-LOGO', 'xref-grandchild|GC'])
     await expect(rows.getByRole('rowheader', { name, exact: true })).toBeVisible();
 
