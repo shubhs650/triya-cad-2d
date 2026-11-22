@@ -597,8 +597,6 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M7-10** Accessibility baseline: focus order, ARIA on ribbon/palettes/dialogs, keyboard-only operation of every dialog. **Acceptance:** axe checks zero critical.
 
-- [ ] **M7-11** Flaky UI timing test (found by M7-06 part 2, #635's run 44970855630): `tests/e2e/ui/layers.spec.ts` "turning a layer off and freezing it hide its objects, in under 16 ms" had a median toggle → canvas of 24.8 ms on a loaded CI runner (10.1–10.5 ms locally; earlier sightings: 17.6 ms on #165, 18.2 ms on #105). The UI shard runs tests in parallel next to it, so the main-thread measure counts other workers' load. **Acceptance:** the budget is measured where CI load cannot reach it (alone in its own job or project, or by the render worker's clock as M2-62's `drawn` already is) without loosening the 16 ms T3 budget, and the test passes 20 runs in a row on CI.
-
 ---
 
 ## M8 — Differentiators
