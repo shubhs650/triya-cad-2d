@@ -440,6 +440,16 @@ button {
   transition: background var(--motion);
 }
 
+/* M7-09: the first-run browser compatibility notice in Firefox and Safari. */
+.banner.browser-notice p,
+.banner.browser-notice ul {
+  margin: 0;
+}
+
+.banner.browser-notice ul {
+  padding-left: 20px;
+}
+
 /* M2-14: one row per unsaved drawing offered for recovery. */
 .banner.recovery {
   flex-direction: column;

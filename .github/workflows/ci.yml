@@ -352,7 +352,10 @@ jobs:
   # runs whatever that job's result, so one red run still shows every broken gate.
   offline:
     name: build · offline · io
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04, not ubuntu-latest (26.04 since 2026-11): Playwright 1.64's WebKit build is made
+    # for 24.04, and on 26.04 its page crashed in the third test of every browser (M7-09, runs
+    # 44989492589, 44990093698, 44990858929); on 24.04 the same tests pass.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [changes, static]
     if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.tested != 'true' }}
@@ -391,6 +394,30 @@ jobs:
       # The io suite still runs after an offline failure so one red PR shows every broken gate.
       - if: ${{ !cancelled() }}
         run: pnpm test:io
+      # M7-09 (PRD §8, DEC-023): Firefox and Safari's degraded mode on Playwright's Firefox and
+      # WebKit, against the build above. Their browsers and their system packages' .deb files are
+      # cached apart from Chromium's (WebKit's GStreamer and the rest are not on the runner image).
+      - id: pw-other
+        if: ${{ !cancelled() }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright/firefox-*
+            ~/.cache/ms-playwright/webkit-*
+            ~/.cache/ms-playwright/ffmpeg-*
+          key: playwright-firefox-webkit-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: ${{ !cancelled() && steps.pw-other.outputs.cache-hit != 'true' }}
+        run: pnpm exec playwright install firefox webkit
+      - if: ${{ !cancelled() }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pw-apt-firefox-webkit
+          key: pw-apt-firefox-webkit-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+      - name: Install Firefox and WebKit system dependencies
+        if: ${{ !cancelled() }}
+        run: bash scripts/ci-browser-deps.sh firefox webkit
+      - if: ${{ !cancelled() }}
+        run: pnpm test:browsers
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

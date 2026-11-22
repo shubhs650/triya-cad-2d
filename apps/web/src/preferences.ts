@@ -168,6 +168,11 @@ export interface Preferences {
    * error-report/): on by default; a report is still sent only when the user presses Send.
    */
   readonly errorReports: boolean;
+  /**
+   * The first-run browser compatibility notice was dismissed (M7-09, browser-support.ts): shown in
+   * Firefox and Safari until then.
+   */
+  readonly browserNoticeSeen: boolean;
   /** The Layer Properties Manager's columns and sort (M5-05 part 3, layer-columns.ts). */
   readonly layerColumns: LayerColumnSettings;
   /** The palette stack's tabs, side and width (M7-03, palette-stack.ts). */
@@ -277,6 +282,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   customDictionary: [],
   spellCheck: true,
   errorReports: true,
+  browserNoticeSeen: false,
   layerColumns: DEFAULT_LAYER_COLUMNS,
   palettes: DEFAULT_PALETTE_LAYOUT,
   defaultTemplate: DEFAULT_TEMPLATE_ID,
@@ -367,6 +373,7 @@ export function normalizePreferences(raw: unknown): Preferences {
     customDictionary: normalizeWords(raw['customDictionary']),
     spellCheck: bool(raw['spellCheck'], d.spellCheck),
     errorReports: bool(raw['errorReports'], d.errorReports),
+    browserNoticeSeen: bool(raw['browserNoticeSeen'], d.browserNoticeSeen),
     layerColumns: normalizeLayerColumns(raw['layerColumns']),
     palettes: normalizePaletteLayout(raw['palettes']),
     defaultTemplate:
@@ -525,6 +532,11 @@ export class PreferencesStore {
   };
 
   get = (): Preferences => this.#state;
+
+  /** The stored settings have been read (or found missing). */
+  get loaded(): boolean {
+    return this.#loaded;
+  }
 
   async load(): Promise<void> {
     const raw = await this.#persistence.load().catch(() => undefined);

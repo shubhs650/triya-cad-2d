@@ -34,6 +34,7 @@
     "test:ui": "playwright test --project=ui --pass-with-no-tests",
     "test:perf": "playwright test --project=perf --pass-with-no-tests",
     "test:io": "playwright test --project=io",
+    "test:browsers": "playwright test --project=firefox --project=webkit",
     "test:private": "node --experimental-strip-types scripts/test-private.ts",
     "corpus:list": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts list",
     "corpus:validate": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts validate",
