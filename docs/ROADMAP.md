@@ -597,7 +597,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M7-10** Accessibility baseline: focus order, ARIA on ribbon/palettes/dialogs, keyboard-only operation of every dialog. **Acceptance:** axe checks zero critical.
 
-- [~] (thread: Ship second next M7 task) **M7-11** Layers toggle timing test failing on CI (found by M7-06 part 2, #635's run 44970855630: median 24.8 ms, then 17.7 ms on the re-run; 2 of 6 local runs on `main` failed too): every edit re-rendered the whole ribbon (the Layers dropdown's list changes when a layer is turned off), several milliseconds of React work on the main thread in the development build the UI suite runs, ahead of the render worker's reply the toggle waits for. The ribbon now renders its panels again only when what they show changes, its buttons and icons memoized. **Acceptance:** `tests/e2e/ui/layers.spec.ts`'s 16 ms budget unchanged; its median toggle → canvas 2–3 ms locally (was 10–20 ms), 10 runs of 10 passing.
+- [x] (#637) **M7-11** Layers toggle timing test failing on CI (found by M7-06 part 2, #635's run 44970855630: median 24.8 ms, then 17.7 ms on the re-run; 2 of 6 local runs on `main` failed too): every edit re-rendered the whole ribbon (the Layers dropdown's list changes when a layer is turned off), several milliseconds of React work on the main thread in the development build the UI suite runs, ahead of the render worker's reply the toggle waits for. The ribbon now renders its panels again only when what they show changes, its buttons and icons memoized. **Acceptance:** `tests/e2e/ui/layers.spec.ts`'s 16 ms budget unchanged; its median toggle → canvas 2–3 ms locally (was 10–20 ms), 10 runs of 10 passing.
 
 ---
 
