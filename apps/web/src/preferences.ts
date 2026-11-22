@@ -111,6 +111,7 @@ export type DraftingPreferences = Pick<
   | 'dynPrompt'
   | 'dynPiCoords'
   | 'dynPiFormat'
+  | 'coords'
   | 'dynPiVis'
   | 'dynDiVis'
   | 'dynDiGrip'
@@ -230,6 +231,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     dynPrompt: true,
     dynPiCoords: 0,
     dynPiFormat: 0,
+    coords: 1,
     dynPiVis: 1,
     dynDiVis: 1,
     dynDiGrip: 31,
@@ -457,6 +459,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       dynPrompt: bool(k['dynPrompt'], d.drafting.dynPrompt),
       dynPiCoords: within(k['dynPiCoords'], { min: 0, max: 1 }, d.drafting.dynPiCoords) as 0 | 1,
       dynPiFormat: within(k['dynPiFormat'], { min: 0, max: 1 }, d.drafting.dynPiFormat) as 0 | 1,
+      coords: within(k['coords'], { min: 0, max: 2 }, d.drafting.coords) as 0 | 1 | 2,
       dynPiVis: within(k['dynPiVis'], { min: 0, max: 2 }, d.drafting.dynPiVis) as 0 | 1 | 2,
       dynDiVis: within(k['dynDiVis'], { min: 0, max: 2 }, d.drafting.dynDiVis) as 0 | 1 | 2,
       dynDiGrip: within(k['dynDiGrip'], { min: 0, max: 31 }, d.drafting.dynDiGrip),
@@ -571,6 +574,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     dynPrompt: s.dynPrompt,
     dynPiCoords: s.dynPiCoords,
     dynPiFormat: s.dynPiFormat,
+    coords: s.coords,
     dynPiVis: s.dynPiVis,
     dynDiVis: s.dynDiVis,
     dynDiGrip: s.dynDiGrip,

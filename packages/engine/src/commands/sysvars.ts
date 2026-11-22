@@ -234,6 +234,11 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'DYNPROMPT', store: 'app', kind: 'switch' },
   { name: 'DYNPICOORDS', store: 'app', kind: 'integer', min: 0, max: 1 },
   { name: 'DYNPIFORMAT', store: 'app', kind: 'integer', min: 0, max: 1 },
+  // M7-06 part 3 (AutoCAD 2024 Help, "COORDS (System Variable)", "Saved in: Registry"): the
+  // status bar's coordinates 0 updated only as points are picked, 1 the cursor's (initially), 2
+  // the cursor's, or its distance<angle from the last point at a prompt that draws a rubber band
+  // from it; Ctrl+I turns them off and on. AutoCAD's 3, geographic, has no place in Triya.
+  { name: 'COORDS', store: 'app', kind: 'integer', min: 0, max: 2 },
   // M3-06 part 8 (AutoCAD 2024 Help, all "Saved in: Registry"): DYNPIVIS pointer input shows 0
   // once typed in, 1 at a prompt for a point (initially), 2 always; DYNDIVIS dimension input
   // while a grip is stretched shows 0 one field, 1 two (initially), 2 those DYNDIGRIP's bits say

@@ -277,6 +277,8 @@ export type ViewRequest =
   | { readonly op: 'cleanScreen'; readonly on: boolean }
   /** HIDEPALETTES and SHOWPALETTES (M7-06): the app hides or shows the palettes open. */
   | { readonly op: 'palettes'; readonly shown: boolean }
+  /** COMMANDLINE and COMMANDLINEHIDE (M7-06 part 3): the app shows or hides its command line. */
+  | { readonly op: 'commandLine'; readonly shown: boolean }
   /**
    * -XREF Unload and Reload (M5-04): the app unloads the xrefs `blocks`, or reloads them from
    * the files it finds by name (a load reads a file, which only the app can). XATTACH's `attach`

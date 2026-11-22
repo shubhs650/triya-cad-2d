@@ -10,6 +10,9 @@
 // command line is part of its window, not a palette, and stays (noted in the PR), as it does for
 // Clean Screen. "TEXTSCR": "Opens the text window" (Ctrl+F2); "GRAPHSCR": "Switches from the text
 // window to the drawing area": here the Command History palette (M7-03 part 2), which F2 shows.
+// "COMMANDLINE": "Displays the Command Line window"; "COMMANDLINEHIDE": "Hides the Command Line
+// window" (Ctrl+9, part 3). AutoCAD asks first whether to hide it; Ctrl+9 shows it again, so
+// Triya hides it at once (noted in the PR).
 import type { CommandDef } from './command';
 import type { ViewRequest } from './view/host';
 import { viewRequest } from './view/zoom';
@@ -34,4 +37,6 @@ export const INTERFACE_COMMANDS: readonly (() => CommandDef)[] = [
   () => windowCommand('SHOWPALETTES', { op: 'palettes', shown: true }),
   () => windowCommand('TEXTSCR', { op: 'palette', palette: 'history', open: true }),
   () => windowCommand('GRAPHSCR', { op: 'palette', palette: 'history', open: false }),
+  () => windowCommand('COMMANDLINE', { op: 'commandLine', shown: true }),
+  () => windowCommand('COMMANDLINEHIDE', { op: 'commandLine', shown: false }),
 ];

@@ -249,6 +249,15 @@ describe('system variables the app keeps', () => {
     expect(d.get().dynPiFormat).toBe(1);
   });
 
+  it('keep COORDS, the status bar coordinates (M7-06 part 3)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'COORDS')).toEqual({ ok: true, value: 1 });
+    expect(systemVariableReply(d, 'COORDS', 2)).toEqual({ ok: true, value: 2 });
+    expect(d.get().coords).toBe(2);
+    expect(systemVariableReply(d, 'COORDS', 0)).toEqual({ ok: true, value: 0 });
+    expect(d.get().coords).toBe(0);
+  });
+
   it('keep POLARMODE and POLARADDANG, the polar tracking settings (M3-06 part 1)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'POLARMODE')).toEqual({ ok: true, value: 0 });

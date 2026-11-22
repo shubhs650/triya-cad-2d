@@ -1,8 +1,15 @@
 // M2-20: the status bar's coordinates in the drawing's units (LUNITS, LUPREC), as AutoCAD
 // shows them, or always decimal (the Settings "Coordinates" choice).
 import { describe, expect, it } from 'vitest';
-import type { ChangeSet } from '@triya/engine';
-import { coordinateText, editedHeader } from '../src/coordinates';
+import { DEFAULT_ANGLES, drawingUnits, type ChangeSet } from '@triya/engine';
+import {
+  bandStart,
+  coordinateText,
+  editedHeader,
+  polarCoordinateText,
+  shownCoordinates,
+  toggledCoords,
+} from '../src/coordinates';
 
 const header = (lunits: number, luprec: number) =>
   new Map<string, unknown>([
@@ -103,5 +110,63 @@ describe('status bar coordinates in a viewport’s own UCS', () => {
       '2.00, 0.00, 0.00',
     );
     expect(coordinateText({ x: 1, y: 2 }, header(2, 2), 'drawing')).toBe('1.00, 2.00, 0.00');
+  });
+});
+
+// M7-06 part 3: COORDS (Ctrl+I), AutoCAD 2024 Help, "COORDS (System Variable)".
+describe('COORDS', () => {
+  const cursor = { x: 4, y: 3 };
+  const picked = { x: 1, y: 1 };
+  const band = { x: 1, y: -1 };
+
+  it('0 shows the point picked last, whatever the cursor does', () => {
+    expect(shownCoordinates(0, { cursor, picked, band })).toEqual({ point: picked });
+    expect(shownCoordinates(0, { cursor })).toBeUndefined();
+  });
+
+  it('1 shows the cursor, at a rubber band too', () => {
+    expect(shownCoordinates(1, { cursor, picked, band })).toEqual({ point: cursor });
+    expect(shownCoordinates(1, { picked })).toBeUndefined();
+  });
+
+  it("2 shows the distance and angle from a rubber band's start, else the cursor", () => {
+    expect(shownCoordinates(2, { cursor, band })).toEqual({ from: band, to: cursor });
+    expect(shownCoordinates(2, { cursor, picked })).toEqual({ point: cursor });
+  });
+
+  it('shows the distance<angle in the drawing units, the angle as it is typed', () => {
+    const units = { units: drawingUnits(header(2, 4)), angles: DEFAULT_ANGLES };
+    expect(
+      polarCoordinateText({ x: 0, y: 0 }, { x: 3, y: 4 }, header(2, 4), 'drawing', units),
+    ).toBe('5.0000<53, 0.0000');
+    expect(
+      polarCoordinateText({ x: 1, y: 1 }, { x: 1, y: 0 }, header(2, 2), 'drawing', units),
+    ).toBe('1.00<270, 0.00');
+    // ANGDIR 1 (clockwise) turns the angle shown, as it turns the angle typed.
+    const clockwise = { ...units, angles: { base: 0, clockwise: true } };
+    expect(
+      polarCoordinateText({ x: 0, y: 0 }, { x: 0, y: 2 }, header(4, 2), 'drawing', clockwise),
+    ).toBe(`0'-2"<270, 0'-0"`);
+  });
+
+  it("measure from a point prompt's rubber band, or a distance's or angle's base", () => {
+    const from = { x: 2, y: 3 };
+    const point = { kind: 'point', message: 'Specify next point' } as const;
+    expect(bandStart({ ...point, rubberBand: { from } })).toEqual(from);
+    expect(bandStart({ ...point, rubberBand: { from, box: true } })).toBeUndefined();
+    expect(bandStart({ ...point, rubberBand: { from, selection: 'auto' } })).toBeUndefined();
+    expect(bandStart(point)).toBeUndefined();
+    expect(bandStart({ kind: 'distance', message: 'Specify radius', base: from })).toEqual(from);
+    expect(bandStart({ kind: 'angle', message: 'Specify angle', base: from })).toEqual(from);
+    expect(bandStart({ kind: 'distance', message: 'Specify height' })).toBeUndefined();
+    expect(bandStart(undefined)).toBeUndefined();
+  });
+
+  it('Ctrl+I turns them off, then on again as they were', () => {
+    expect(toggledCoords(1)).toBe(0);
+    expect(toggledCoords(2)).toBe(0);
+    expect(toggledCoords(0, 2)).toBe(2);
+    expect(toggledCoords(0)).toBe(1);
+    expect(toggledCoords(0, 0)).toBe(1);
   });
 });

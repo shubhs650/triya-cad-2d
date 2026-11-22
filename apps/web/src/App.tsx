@@ -211,7 +211,15 @@ import { PreferencesStore, bindPreferences, indexedDbPreferences, type Theme } f
 import { customDictionary } from './custom-dictionary';
 import { editorSpelling } from './spell-check';
 import { browserLocalData, clearLocalData, type ClearReport } from './local-data';
-import { coordinateText, editedHeader } from './coordinates';
+import {
+  bandStart,
+  coordinateText,
+  editedHeader,
+  polarCoordinateText,
+  shownCoordinates,
+  toggledCoords,
+  type Coords,
+} from './coordinates';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
 import {
@@ -237,6 +245,7 @@ import { applyKeyOverrides, keymap, keymapVersion, onShortcuts } from './shortcu
 import { keysText } from './keymap';
 import { rememberRun } from './palette';
 import { cleanScreen } from './clean-screen';
+import { commandLineWindow } from './command-line-window';
 import { Icon } from './ribbon/Icon';
 import {
   lastPlotSettings,
@@ -793,6 +802,11 @@ function viewContext(id: number): ViewContext {
     },
     palettes: (shown) => {
       paletteStack.show(shown);
+      return { ok: true };
+    },
+    // COMMANDLINE and COMMANDLINEHIDE (M7-06 part 3).
+    commandLine: (shown) => {
+      commandLineWindow.set(shown);
       return { ok: true };
     },
   };
@@ -2361,6 +2375,18 @@ export function App() {
           paletteStack.show(paletteStack.hidden());
           return true;
         },
+        // M7-06 part 3: Ctrl+9 the command line (COMMANDLINE, COMMANDLINEHIDE); Ctrl+I COORDS
+        // off, and back on as it was.
+        commandline: () => {
+          commandLineWindow.toggle();
+          return true;
+        },
+        coords: () => {
+          const now = drafting.get().coords;
+          if (now !== 0) coordsOn = now;
+          drafting.configure({ coords: toggledCoords(now, coordsOn) });
+          return true;
+        },
         'layout:previous': () => {
           showNextSpace(-1);
           return true;
@@ -2924,6 +2950,13 @@ export function App() {
   );
 }
 
+/** What the status bar's coordinates show for each COORDS, as their tooltip says. */
+const COORDS_TITLES: Readonly<Record<Coords, string>> = {
+  0: 'updated as points are picked',
+  1: 'absolute',
+  2: 'distance<angle from the last point',
+};
+
 /**
  * The status bar's Clean Screen button (M7-06), at its right end as AutoCAD's is: Ctrl+0 and
  * CLEANSCREENON/OFF turn it too.
@@ -3007,6 +3040,10 @@ function MaximizeViewportToggle({ doc }: { readonly doc: OpenDocument }) {
 
 /** The world point under the cursor, written straight into the status bar (no React render). */
 let showCursor: (p: { x: number; y: number } | undefined, ucs?: PlanUcs) => void = () => {};
+/** A point picked at a prompt, which the status bar shows while COORDS is 0 (M7-06 part 3). */
+let showPicked: (p: Vec2) => void = () => {};
+/** The COORDS Ctrl+I turns back on (M7-06 part 3): the last non-zero one, this session. */
+let coordsOn: Coords = 1;
 
 /** The block definitions a Block Editor showed (M5-02): not spaces whose canvas is kept. */
 const editorCanvases = new Set<string>();
@@ -3256,6 +3293,10 @@ function ViewportCanvas({
         // for the prompt it leads to: Dynamic Input then reads them for that prompt, whose
         // rubber band starts at the point clicked (M5-22), not for the one the click answered.
         const seq = o.answer ? commandLines.send(id) : undefined;
+        if (o.answer) {
+          if (point instanceof Promise) void point.then((r) => showPicked(r.point));
+          else showPicked(point);
+        }
         const pick = (p: Vec2, r?: Omit<PickedPoint, 'point'>): CommandInput => ({
           kind: 'pick',
           point: p,
@@ -3407,6 +3448,11 @@ function StatusBar({
   const cursor = useRef<{ x: number; y: number } | undefined>(undefined);
   // A layout viewport's own UCS the cursor's point is in (M6-02 part 20).
   const cursorUcs = useRef<PlanUcs | undefined>(undefined);
+  // The point picked last at a prompt, in the UCS it was picked in: COORDS 0 shows it.
+  const picked = useRef<{ point: Vec2; ucs: PlanUcs | undefined } | undefined>(undefined);
+  // COORDS (M7-06 part 3): picked points only (0), the cursor (1), or distance<angle (2).
+  const coordsMode = useSyncExternalStore(drafting.subscribe, () => drafting.get().coords);
+  const docId = doc?.id;
   // The header as the drawing's edits left it (M2-73): units set by SETVAR or UNITS, or undone,
   // show at once. `doc` is a new object, its `revision` one on, with every edit the log takes.
   const header = useMemo(
@@ -3425,21 +3471,55 @@ function StatusBar({
   useEffect(() => {
     drafting.setDrawingLineweights(lwdisplay === 1 || lwdisplay === true);
   }, [lwdisplay]);
+  // COORDS turned to 0 keeps what the coordinates showed until a point is picked, as AutoCAD's do.
+  const shownMode = useRef(coordsMode);
   useEffect(() => {
+    if (coordsMode === 0 && shownMode.current !== 0 && cursor.current)
+      picked.current = { point: cursor.current, ucs: cursorUcs.current };
+    shownMode.current = coordsMode;
+    const draw = () => {
+      if (!coords.current) return;
+      // Nothing picked yet: what they showed stays.
+      if (coordsMode === 0 && !picked.current) return;
+      const line = docId === undefined ? undefined : commandLines.get(docId);
+      const shown = shownCoordinates(coordsMode, {
+        cursor: cursor.current,
+        picked: picked.current?.point,
+        band: bandStart(line?.prompt),
+      });
+      const ucs = coordsMode === 0 ? picked.current?.ucs : cursorUcs.current;
+      coords.current.textContent = !shown
+        ? ''
+        : 'point' in shown
+          ? coordinateText(shown.point, header, display, paper, ucs)
+          : polarCoordinateText(shown.from, shown.to, header, display, line!.units);
+    };
     showCursor = (p, ucs) => {
       cursor.current = p;
       cursorUcs.current = ucs;
-      if (!coords.current) return;
-      coords.current.textContent = p ? coordinateText(p, header, display, paper, ucs) : '';
+      draw();
     };
-    showCursor(cursor.current, cursorUcs.current);
+    showPicked = (p) => {
+      picked.current = { point: p, ucs: cursorUcs.current };
+      draw();
+    };
+    draw();
     return () => {
       showCursor = () => {};
+      showPicked = () => {};
     };
-  }, [header, display, paper]);
+  }, [header, display, paper, coordsMode, docId]);
+  useSyncExternalStore(keymapVersion.subscribe, keymapVersion.get);
+  const coordsKeys = keysText(keymap().keysOf('coords'));
   return (
     <footer className="status-bar">
-      <span className="coords" data-testid="coords" ref={coords} />
+      <span
+        className="coords"
+        data-testid="coords"
+        data-coords={coordsMode}
+        title={`Coordinates: ${COORDS_TITLES[coordsMode]}${coordsKeys === '' ? '' : ` (${coordsKeys})`}`}
+        ref={coords}
+      />
       <span className="spacer" />
       {doc && <LayerNoticeTray doc={doc} onView={() => viewUnreconciled(doc.id)} />}
       {doc && missingReferences > 0 && (

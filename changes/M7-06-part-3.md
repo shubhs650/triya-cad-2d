@@ -1,0 +1,1 @@
+- M7-06 part 3 (#PR): Ctrl+9 hides and shows the command line (COMMANDLINE, COMMANDLINEHIDE), typing still reaching it over the drawing area, and Ctrl+I turns the status bar's coordinates off and on (COORDS 0, 1 and 2, the last showing distance<angle at a rubber band).

@@ -1025,6 +1025,12 @@ button {
   flex: 1;
 }
 
+/* COORDS 0 (Ctrl+I, M7-06 part 3): the coordinates change only as points are picked, greyed as
+   AutoCAD greys them. */
+.status-bar .coords[data-coords='0'] {
+  color: var(--chrome-text-muted);
+}
+
 .status-bar .space {
   font-weight: 600;
 }
@@ -3027,6 +3033,39 @@ button {
 
 .command-suggestions .alias {
   color: var(--chrome-text-muted);
+}
+
+/* Ctrl+9, COMMANDLINEHIDE (M7-06 part 3): hidden, the command line takes no room and its input,
+   kept focusable for typing, shows as a floating line over the drawing area only while text is
+   typed or a command prompts. */
+.command-line[data-hidden] {
+  height: 0;
+  padding: 0;
+  border-top: 0;
+}
+
+.command-line[data-hidden] .command-lines {
+  display: none;
+}
+
+.command-line[data-hidden] .command-input-row {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 3;
+  width: min(720px, calc(100% - 32px));
+  padding: 3px 8px;
+  transform: translateX(-50%);
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+}
+
+.command-line[data-hidden]:not([data-input]) .command-input-row {
+  clip-path: inset(50%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Dynamic Input (M2-02 part 2, UI_SPEC.md §5): the prompt and its fields beside the cursor,
