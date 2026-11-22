@@ -9,6 +9,7 @@ import {
   onShortcuts,
   overrideKey,
   releaseShortcut,
+  runAction,
   runShortcut,
 } from '../src/shortcuts';
 import { heldOverrides } from '../src/temp-overrides';
@@ -82,6 +83,22 @@ describe('runShortcut', () => {
     expect(runShortcut(key('F2'))).toBe(true);
     offB();
     expect(runShortcut(key('F2'))).toBe(false);
+  });
+});
+
+// M7-06 part 2: the Ctrl+K palette runs an action as its key would, with no field focused.
+describe('runAction', () => {
+  it('runs a registered action, or a command by the command handler', () => {
+    const ran: string[] = [];
+    const off = onShortcuts({
+      cleanscreen: (id, focus) => (ran.push(`${id} ${focus.kind}`), true),
+      'command:': (id) => (ran.push(id), true),
+    });
+    expect(runAction('cleanscreen')).toBe(true);
+    expect(runAction('command:QUIT')).toBe(true);
+    expect(runAction('palettes')).toBe(false);
+    expect(ran).toEqual(['cleanscreen none', 'command:QUIT']);
+    off();
   });
 });
 

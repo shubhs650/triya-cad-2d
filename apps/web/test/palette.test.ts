@@ -1,7 +1,18 @@
 // M2-02 part 2: the Ctrl+K palette's fuzzy search over commands, aliases and app actions.
 import { builtinCommands } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { commandItems, fuzzyScore, rankItems, type PaletteItem } from '../src/palette';
+import {
+  PALETTE_RECENT_MAX,
+  commandItems,
+  fuzzyMatch,
+  fuzzyScore,
+  matchedLetters,
+  normalizePaletteRecent,
+  rankItems,
+  recentFirst,
+  rememberRun,
+  type PaletteItem,
+} from '../src/palette';
 
 const items: PaletteItem[] = [
   ...commandItems(builtinCommands()),
@@ -378,5 +389,84 @@ describe('palette search', () => {
     expect(rankItems(items, 'dyn')[0]!.id).toBe('dyn');
     expect(rankItems(items, '  ')).toHaveLength(items.length);
     expect(rankItems(items, 'qqq')).toEqual([]);
+  });
+});
+
+// M7-06 part 2: the palette's polish. The letters matched are marked, the items run last come
+// first while nothing is typed, and the list of them is kept with the preferences.
+describe('palette polish (M7-06 part 2)', () => {
+  it('says which letters matched', () => {
+    expect(fuzzyMatch('zoom', 'ZOOM')?.at).toEqual([0, 1, 2, 3]);
+    expect(fuzzyMatch('reg', 'REGENALL')?.at).toEqual([0, 1, 2]);
+    // The word starts before scattered letters: D(ynamic) I(nput).
+    expect(fuzzyMatch('di', 'Dynamic Input')?.at).toEqual([0, 8]);
+    expect(fuzzyMatch('cs', 'Clean Screen on/off')?.at).toEqual([0, 6]);
+    expect(fuzzyMatch('xyz', 'ZOOM')).toBeUndefined();
+    expect(fuzzyMatch('', 'ZOOM')?.at).toEqual([]);
+    expect(fuzzyScore('reg', 'REGENALL')).toBe(fuzzyMatch('reg', 'REGENALL')?.score);
+  });
+
+  it("marks the label's letters, none when only an alias matched", () => {
+    const zoom = items.find((i) => i.id === 'ZOOM')!;
+    expect(matchedLetters(zoom, 'zo')).toEqual([0, 1]);
+    expect(matchedLetters(zoom, 'z')).toEqual([0]);
+    const copy: PaletteItem = { id: 'COPY', kind: 'command', label: 'COPY', aliases: ['CP'] };
+    expect(matchedLetters(copy, 'cp')).toEqual([0, 2]);
+    const pan: PaletteItem = { id: 'PAN', kind: 'command', label: 'PAN', aliases: ['P'] };
+    expect(matchedLetters(pan, 'x')).toEqual([]);
+    expect(matchedLetters(pan, '')).toEqual([]);
+  });
+
+  it('finds an item by a keyword whole or begun, below the names it matches', () => {
+    const drafting: PaletteItem = {
+      id: 'options:drafting',
+      kind: 'action',
+      label: 'Options: Drafting',
+      aliases: [],
+      keywords: ['AutoSnap', 'Object Snap'],
+    };
+    const all = [...items, drafting];
+    expect(rankItems(all, 'autosnap')[0]).toBe(drafting);
+    expect(rankItems(all, 'object sn')).toContain(drafting);
+    expect(rankItems(all, 'au')).not.toContain(drafting);
+    // OSNAP's own name beats the keyword it begins.
+    expect(rankItems(all, 'osn')[0]!.id).toBe('OSNAP');
+    expect(matchedLetters(drafting, 'autosnap')).toEqual([]);
+    // A name's letters at word starts beat a keyword begun.
+    const recent: PaletteItem = {
+      id: 'recent:a',
+      kind: 'action',
+      label: 'Open recent: a.dxf',
+      aliases: [],
+    };
+    const openSave = { ...drafting, id: 'options:opensave', keywords: ['Recently-used files'] };
+    expect(rankItems([openSave, recent], 'recent')[0]).toBe(recent);
+  });
+
+  it('lists the items run last first, newest first, while nothing is typed', () => {
+    const order = recentFirst(items, ['dyn', 'gone', 'ZOOM']).map((i) => i.id);
+    expect(order.slice(0, 2)).toEqual(['dyn', 'ZOOM']);
+    expect(order).toHaveLength(items.length);
+    expect(new Set(order).size).toBe(items.length);
+  });
+
+  it('remembers the items run, newest first, at most eight', () => {
+    let recent: readonly string[] = [];
+    for (const id of ['LINE', 'ZOOM', 'LINE']) recent = rememberRun(recent, id);
+    expect(recent).toEqual(['LINE', 'ZOOM']);
+    for (let i = 0; i < 10; i++) recent = rememberRun(recent, `C${i}`);
+    expect(recent).toHaveLength(PALETTE_RECENT_MAX);
+    expect(recent[0]).toBe('C9');
+  });
+
+  it('reads the kept list, leaving out what is not an id', () => {
+    expect(normalizePaletteRecent(['LINE', 3, '', 'LINE', 'x'.repeat(300), 'dyn'])).toEqual([
+      'LINE',
+      'dyn',
+    ]);
+    expect(normalizePaletteRecent('LINE')).toEqual([]);
+    expect(normalizePaletteRecent(Array.from({ length: 20 }, (_, i) => `C${i}`))).toHaveLength(
+      PALETTE_RECENT_MAX,
+    );
   });
 });

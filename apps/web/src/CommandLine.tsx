@@ -24,15 +24,17 @@ import { DRAFTING_ITEMS, drafting, type DraftingToggle } from './drafting';
 import { cycleSnap } from './canvas/registry';
 import { engines } from './engine/registry';
 import { commandItems, type PaletteItem } from './palette';
+import { OPTIONS_TABS, type OptionsTab } from './options-dialog';
 import { paletteStack } from './palette-stack';
 import { aliasFileVersion, appRegistry as registry } from './user-aliases';
-import { commandOf, keysText } from './keymap';
+import { KEY_ACTIONS, commandOf, keysText } from './keymap';
 import {
   commandInput,
   keymap,
   keymapVersion,
   onShortcuts,
   releaseShortcut,
+  runAction,
   runShortcut,
   type ShortcutHandler,
 } from './shortcuts';
@@ -60,6 +62,21 @@ function pressable(t: EventTarget | null): boolean {
   );
 }
 
+/** The keyboard map's actions the palette leaves out: they act on its own field. */
+const OWN_KEYS: ReadonlySet<string> = new Set(['palette', 'enter', 'cancel']);
+
+/** What each Options tab holds (M7-04), so the palette finds the tab by it (M7-06 part 2). */
+const OPTIONS_FINDS: Readonly<Record<OptionsTab, readonly string[]>> = {
+  files: ['Hatch patterns', 'Fonts', 'Linetypes', 'Layer states', 'Templates'],
+  display: ['Theme', 'Canvas colors', 'Rollover tooltips', 'Layout elements', 'Fade control'],
+  opensave: ['File Save', 'Automatic save', 'Recently-used files'],
+  plot: ['Plot style tables', 'CTB', 'STB', 'Plot transparency'],
+  system: ['Clear all local data', 'Local data'],
+  user: ['Command aliases', 'Keyboard shortcuts', 'Fields'],
+  drafting: ['AutoSnap', 'AutoTrack', 'Object Snap', 'Drafting aids', 'DSETTINGS'],
+  selection: ['Selection modes', 'PICKFIRST', 'Grips', 'Selection preview'],
+};
+
 export function CommandLine({
   doc,
   variables = [],
@@ -67,6 +84,8 @@ export function CommandLine({
   cursor,
   onSettings,
   recent = [],
+  ranLast = [],
+  onRan,
   onOpenRecent,
   onEditAliases,
   onEditShortcuts,
@@ -78,8 +97,8 @@ export function CommandLine({
   lines: CommandLines;
   /** The world point under the cursor, for direct distance entry. */
   cursor: () => { readonly x: number; readonly y: number } | undefined;
-  /** Opens the Settings dialog (from the palette). */
-  onSettings: () => void;
+  /** Opens the Options dialog (from the palette), on `tab` when given (M7-06 part 2). */
+  onSettings: (tab?: OptionsTab) => void;
   /** Opens the Edit Aliases dialog (from the palette, M3-10). */
   onEditAliases?: () => void;
   /** Opens the Keyboard Shortcuts dialog (from the palette, M3-10 part 2). */
@@ -88,6 +107,10 @@ export function CommandLine({
   recent?: readonly { readonly key: string; readonly name: string }[];
   /** Opens a recent drawing by its key. */
   onOpenRecent?: (key: string) => void;
+  /** The palette's items run last, newest first, which it lists first (M7-06 part 2). */
+  ranLast?: readonly string[];
+  /** An item run from the palette, to remember. */
+  onRan?: (id: string) => void;
 }) {
   useSyncExternalStore(lines.subscribe, lines.version);
   // The user alias file changes completion and the palette's aliases (M3-10).
@@ -149,59 +172,86 @@ export function CommandLine({
   const paletteItems = useMemo<PaletteItem[]>(() => {
     const map = keymap();
     const keys = (id: string) => keysText(map.keysOf(id));
+    const withKeys = (item: PaletteItem): PaletteItem => {
+      const k = keys(item.id);
+      return k === '' ? item : { ...item, keys: k };
+    };
+    // Every action the keyboard map knows, with its keys (M7-06 part 2), but those that act on
+    // the palette's own field (Ctrl+K itself, Enter, Esc) and the held overrides; commands are
+    // listed as commands. The drafting toggles with no key join them.
+    const actions = KEY_ACTIONS.filter(
+      (a) => !a.hold && commandOf(a.id) === undefined && !OWN_KEYS.has(a.id),
+    );
+    const toggles = DRAFTING_ITEMS.filter((i) => !actions.some((a) => a.id === i.id));
     return [
-      ...commandItems(registry, (name) => keys(`command:${name}`)),
-      {
-        id: 'history',
-        kind: 'action',
-        label: 'Command history',
-        aliases: [],
-        keys: keys('history'),
-      },
-      { id: 'dyn', kind: 'action', label: 'Dynamic Input on/off', aliases: [], keys: keys('dyn') },
-      ...DRAFTING_ITEMS.map((i) => ({ ...i, keys: keys(i.id) })),
+      ...commandItems(registry, (name) => keys(`command:${name}`)).map((i): PaletteItem => ({
+        ...i,
+        group: 'Command',
+      })),
+      ...actions.map((a) =>
+        withKeys({ id: a.id, kind: 'action', label: a.label, aliases: [], group: a.group }),
+      ),
+      ...toggles.map((i) => withKeys({ ...i, group: 'Drafting' })),
       {
         id: 'settings',
         kind: 'action',
         label: 'Settings',
         // AutoCAD's OPTIONS, and what Settings holds (M2-20).
-        aliases: ['Options', 'Theme', 'Canvas colors', 'Clear all local data'],
+        aliases: [],
+        keywords: ['Options', 'Preferences', 'Theme', 'Canvas colors', 'Clear all local data'],
+        group: 'Options',
       },
+      // Each tab of the Options dialog (M7-04), found by what it holds.
+      ...OPTIONS_TABS.map(({ tab, label }): PaletteItem => ({
+        id: `options:${tab}`,
+        kind: 'action',
+        label: `Options: ${label}`,
+        aliases: [],
+        keywords: OPTIONS_FINDS[tab],
+        group: 'Options',
+      })),
       {
         id: 'aliases',
         kind: 'action',
         label: 'Edit Aliases',
         // AutoCAD's Edit Aliases (Manage tab), which opens acad.pgp (M3-10).
-        aliases: ['acad.pgp', 'Command aliases', 'ALIASEDIT'],
+        aliases: [],
+        keywords: ['acad.pgp', 'Command aliases', 'ALIASEDIT'],
+        group: 'Options',
       },
       {
         id: 'shortcuts',
         kind: 'action',
         label: 'Keyboard Shortcuts',
         // AutoCAD's CUI editor, Keyboard Shortcuts > Shortcut Keys (M3-10 part 2).
-        aliases: ['CUI', 'Shortcut keys', 'Customize keyboard', 'Keyboard map'],
+        aliases: [],
+        keywords: ['CUI', 'Shortcut keys', 'Customize keyboard', 'Keyboard map'],
+        group: 'Options',
       },
       ...recent.map((r): PaletteItem => ({
         id: `recent:${r.key}`,
         kind: 'action',
         label: `Open recent: ${r.name}`,
         aliases: [],
+        group: 'Drawing',
       })),
     ];
     // The registry's aliases change with aliasVersion, the keys with keysVersion.
   }, [recent, aliasVersion, keysVersion]);
   const runItem = (item: PaletteItem) => {
+    onRan?.(item.id);
     if (item.kind === 'command') {
       if (doc !== undefined) engines.command(doc, { kind: 'invoke', name: item.id });
     } else if (item.id === 'history') {
+      // Shown, as a palette's command shows it (F2 itself turns it over).
       if (doc !== undefined) paletteStack.set('history');
-    } else if (item.id === 'dyn') dynMode.toggle();
-    else if (item.id === 'aliases') onEditAliases?.();
+    } else if (item.id === 'aliases') onEditAliases?.();
     else if (item.id === 'shortcuts') onEditShortcuts?.();
     else if (item.id.startsWith('recent:')) onOpenRecent?.(item.id.slice('recent:'.length));
-    else if (item.id.startsWith('drafting:'))
-      drafting.toggle(item.id.slice('drafting:'.length) as DraftingToggle);
-    else onSettings();
+    else if (item.id.startsWith('options:'))
+      onSettings(item.id.slice('options:'.length) as OptionsTab);
+    else if (item.id === 'settings') onSettings();
+    else runAction(item.id);
   };
   const sendRef = useRef(send);
   sendRef.current = send;
@@ -453,6 +503,7 @@ export function CommandLine({
       {paletteOpen && (
         <CommandPalette
           items={paletteItems}
+          recent={ranLast}
           onRun={runItem}
           onClose={() => setPaletteOpen(false)}
         />

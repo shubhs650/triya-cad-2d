@@ -166,6 +166,15 @@ describe('preferences', () => {
     expect(normalizePreferences({ keys: 'F1' }).keys).toEqual({});
   });
 
+  it("keep the Ctrl+K palette's items run last (M7-06 part 2)", () => {
+    expect(DEFAULT_PREFERENCES.paletteRecent).toEqual([]);
+    expect(normalizePreferences({ paletteRecent: ['LINE', 'history', 4] }).paletteRecent).toEqual([
+      'LINE',
+      'history',
+    ]);
+    expect(normalizePreferences({ paletteRecent: 'LINE' }).paletteRecent).toEqual([]);
+  });
+
   it('keep the user alias file, unless it is not text or too long (M3-10)', () => {
     expect(normalizePreferences({ aliasFile: 'C,*COPY\n' }).aliasFile).toBe('C,*COPY\n');
     expect(normalizePreferences({ aliasFile: 7 }).aliasFile).toBe('');

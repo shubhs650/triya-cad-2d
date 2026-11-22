@@ -3294,6 +3294,29 @@ button {
   color: var(--chrome-text-muted);
 }
 
+.command-palette mark {
+  color: inherit;
+  background: none;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+.command-palette .group {
+  flex: none;
+  width: 92px;
+  font-size: 11px;
+  text-align: right;
+  color: var(--chrome-text-muted);
+}
+
+.command-palette .palette-hint {
+  margin: 6px 4px 0;
+  font-size: 11px;
+  color: var(--chrome-text-muted);
+}
+
 .command-palette .empty {
   color: var(--chrome-text-muted);
   cursor: default;
