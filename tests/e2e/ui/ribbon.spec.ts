@@ -572,6 +572,30 @@ test("MTEXT's editor brings the Text Editor tab, whose buttons format the text (
     .toEqual(['Note {\\Lunder} plain']);
 });
 
+// A tab's items never change the ribbon's height: the drawing area under it would resize, and
+// its view with it, each time a contextual tab came or went (M7-02 part 5).
+for (const width of [1280, 1600, 1920]) {
+  test(`the ribbon keeps its height whatever tab shows, Text Editor included (${width} px)`, async ({
+    page,
+  }) => {
+    await open(page, width);
+    const height = () => ribbon(page).evaluate((r) => r.getBoundingClientRect().height);
+    const home = await height();
+    const heights: Record<string, number> = {};
+    for (const name of ['Insert', 'Annotate', 'View', 'Output', 'Layout', 'Tools', 'Home']) {
+      await ribbon(page).getByRole('tab', { name, exact: true }).click();
+      heights[name] = await height();
+    }
+    await enterCommand(page, 'MT');
+    await enterCommand(page, '0,0');
+    await enterCommand(page, '100,-50');
+    await expect(ribbon(page).getByRole('tab', { selected: true })).toHaveText('Text Editor');
+    heights['Text Editor'] = await height();
+    await page.keyboard.press('Escape');
+    for (const [name, h] of Object.entries(heights)) expect(h, name).toBe(home);
+  });
+}
+
 test('contextual tabs come with the selection and the command running (M7-02 part 4)', async ({
   page,
 }) => {
