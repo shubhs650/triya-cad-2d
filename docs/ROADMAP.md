@@ -589,7 +589,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [x] (#634, #635, #636) **M7-06** Keyboard: full AutoCAD default map, Ctrl+K palette polish, F2 history window, shortcut editor. **Acceptance:** keymap tests. *Part 1 (#634):* AutoCAD 2024's whole default list checked key by key in `keymap.test.ts`; added Ctrl+0 Clean Screen (CLEANSCREENON/OFF, status bar button), Ctrl+Shift+H (HIDEPALETTES/SHOWPALETTES), Ctrl+F2 (TEXTSCR/GRAPHSCR), Ctrl+R next viewport, Ctrl+Page Up/Down layouts, Ctrl+Tab/Ctrl+F6 drawings, Ctrl+[ and Ctrl+\ cancel, Ctrl+Q QUIT (EXIT). The F2 history window (M7-03 part 2) and the shortcut editor (M3-10 part 2) were already built. *Part 2 (#635):* Ctrl+K palette polish: every keyed action with its keys and what it is, each Options tab found by what it holds, matched letters marked, the items run last first (kept with the preferences), Page Up/Down with the highlight kept in view. *Part 3 (#636):* Ctrl+9 command line on/off (COMMANDLINE/COMMANDLINEHIDE; hidden, typing still reaches it and its input row floats over the drawing area while typed in or prompting) and Ctrl+I COORDS (0 picked points only, 1 the cursor, 2 distance<angle at a rubber band; per user, SETVAR).
 
-- [ ] **M7-07** Start screen: recent, templates, open, open PDF (red-line flow), samples from public corpus, learn links. **Acceptance:** smoke test.
+- [~] (thread: Ship next M7 roadmap task) **M7-07** Start screen: recent, templates, open, open PDF (red-line flow), samples from public corpus, learn links. **Acceptance:** smoke test.
 
 - [ ] **M7-08** Error-report flow (opt-in, reviewed, Cloudflare Worker → GitHub issue), diagnostics panel. **Acceptance:** report payload never contains drawing content (test).
 
