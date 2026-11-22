@@ -415,6 +415,9 @@ jobs:
         run: bash scripts/ci-browser-deps.sh firefox webkit
       - if: ${{ !cancelled() }}
         run: pnpm test:browsers
+        # The browsers' own output (a WebKit crash's reason) goes to the log.
+        env:
+          DEBUG: pw:browser
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
