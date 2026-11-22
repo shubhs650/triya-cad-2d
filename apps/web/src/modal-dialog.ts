@@ -21,6 +21,9 @@ export function restoreFocus(opener: Element | null, closed?: Element): void {
   const nowhere = !now || now === document.body || !now.isConnected || closed?.contains(now);
   if (!nowhere && now !== opener) return;
   if (opener instanceof HTMLElement && opener.isConnected && opener !== document.body) {
+    // The browser's own return of the focus on close() leaves a text field that takes no typing
+    // until it is focused afresh (Chromium): blur it first.
+    if (now === opener) opener.blur();
     opener.focus({ preventScroll: true });
     if (document.activeElement === opener) return;
   }
