@@ -189,7 +189,7 @@ import { RecentFiles, indexedDbRecent, type RecentHandle } from './recent';
 import { RECENT_THUMBNAIL, RecentDrawings } from './RecentDrawings';
 import { Autosaver, RecoveryOffers } from './recovery';
 import { indexedDbRecovery, webLocks } from './recovery-browser';
-import { Ribbon } from './Ribbon';
+import { Ribbon, type AppWindow } from './Ribbon';
 import { ribbonPropertiesStore, runningCommands } from './ribbon/ribbon-properties';
 import { RecoveryBanner } from './RecoveryBanner';
 import {
@@ -2284,6 +2284,12 @@ export function App() {
   const settings = useSyncExternalStore(optionsDialog.subscribe, optionsDialog.get).open;
   const [aliasEditor, setAliasEditor] = useState(false);
   const [shortcutEditor, setShortcutEditor] = useState(false);
+  // The ribbon's Edit Aliases and Keyboard Shortcuts, one function for every render, so the
+  // memoized ribbon does not render again with each edit (M7-11).
+  const openWindow = useCallback(
+    (w: AppWindow) => (w === 'aliases' ? setAliasEditor(true) : setShortcutEditor(true)),
+    [],
+  );
   const { aliasFile, keys: keyOverrides } = useSyncExternalStore(
     preferences.subscribe,
     preferences.get,
@@ -2555,7 +2561,7 @@ export function App() {
         doc={active?.id}
         blockEditor={active?.blockEditor !== undefined}
         preferences={preferences}
-        onOpenWindow={(w) => (w === 'aliases' ? setAliasEditor(true) : setShortcutEditor(true))}
+        onOpenWindow={openWindow}
       />
       <Settings
         preferences={preferences}
