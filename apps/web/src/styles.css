@@ -121,6 +121,14 @@
   outline-offset: 1px;
 }
 
+/* High contrast: the browser's own buttons and fields (grey on grey in a dark scheme) take the
+   chrome's colours. Zero specificity, so any rule of the app's own still wins. */
+:where(:root[data-contrast='high']) :where(button, select, input, textarea) {
+  color: var(--chrome-text);
+  background-color: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+}
+
 /* Reduced motion (M7-05: the device's prefers-reduced-motion, or the user's choice). */
 :root[data-motion='reduced'] {
   --motion: 0ms;
