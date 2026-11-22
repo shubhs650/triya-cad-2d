@@ -591,7 +591,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M7-07** Start screen: recent, templates, open, open PDF (red-line flow), samples from public corpus, learn links. **Acceptance:** smoke test.
 
-- [ ] **M7-08** Error-report flow (opt-in, reviewed, Cloudflare Worker → GitHub issue), diagnostics panel. **Acceptance:** report payload never contains drawing content (test).
+- [~] (thread: Ship second next M7 task) **M7-08** Error-report flow (opt-in, reviewed, Cloudflare Worker → GitHub issue), diagnostics panel. **Acceptance:** report payload never contains drawing content (test).
 
 - [ ] **M7-09** Firefox/Safari degraded-mode paths and first-run notice. **Acceptance:** Playwright on WebKit/Firefox: open, edit, download-save, PDF.
 
