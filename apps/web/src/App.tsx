@@ -207,7 +207,8 @@ import { PictureOfferNotice } from './PictureOffer';
 import { saveChanges } from './save-changes';
 import { SaveChanges } from './SaveChanges';
 import { Settings } from './Settings';
-import { PreferencesStore, bindPreferences, indexedDbPreferences, type Theme } from './preferences';
+import { PreferencesStore, bindPreferences, indexedDbPreferences } from './preferences';
+import { appearanceOf, applyAppearance, canvasColoursFor, watchMedia } from './theme';
 import { customDictionary } from './custom-dictionary';
 import { editorSpelling } from './spell-check';
 import { browserLocalData, clearLocalData, type ClearReport } from './local-data';
@@ -512,23 +513,32 @@ drafting.subscribe(() => {
  */
 const preferences = new PreferencesStore(indexedDbPreferences());
 bindPreferences(preferences, drafting, dynMode);
-let canvasColours = preferences.get().canvas;
-function applyTheme(theme: Theme): void {
-  const root = globalThis.document?.documentElement;
-  if (!root) return;
-  // "System" follows prefers-color-scheme in the stylesheet.
-  if (theme === 'system') delete root.dataset['theme'];
-  else root.dataset['theme'] = theme;
-  root.style.setProperty('--canvas-model', canvasColours.model);
-}
-applyTheme(preferences.get().theme);
-preferences.subscribe(() => {
+/**
+ * The appearance (M7-05, theme.ts): the user's theme, contrast and motion over the device's
+ * settings, written on the root element; the canvases take their colours as high contrast draws
+ * them.
+ */
+const deviceMedia = watchMedia(() => applyAppearanceNow());
+let canvasColours = canvasColoursFor(
+  preferences.get().canvas,
+  appearanceOf(preferences.get(), deviceMedia()),
+);
+function applyAppearanceNow(): void {
   const p = preferences.get();
-  if (JSON.stringify(p.canvas) !== JSON.stringify(canvasColours)) {
-    canvasColours = p.canvas;
+  const appearance = appearanceOf(p, deviceMedia());
+  const root = globalThis.document?.documentElement;
+  if (root) applyAppearance(root, appearance);
+  const colours = canvasColoursFor(p.canvas, appearance);
+  if (JSON.stringify(colours) !== JSON.stringify(canvasColours)) {
+    canvasColours = colours;
     for (const c of allControllers()) c.setColours(canvasColours);
   }
-  applyTheme(p.theme);
+  root?.style.setProperty('--canvas-model', canvasColours.model);
+}
+applyAppearanceNow();
+preferences.subscribe(() => {
+  const p = preferences.get();
+  applyAppearanceNow();
   selectionFilters.bind(p.filters, (filters) => preferences.update({ filters }));
   customDictionary.bind(p.customDictionary, (words) =>
     preferences.update({ customDictionary: words }),
