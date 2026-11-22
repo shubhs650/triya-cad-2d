@@ -65,12 +65,17 @@ test('starts, opens drawings and draws a PDF underlay with no connection', async
   await readyOffline(page);
   // The first visit never opened a PDF, yet pdf.js is cached: the warm-up fetched it.
   expect(app.served.filter((p) => /^\/assets\/pdf[.-]/.test(p)).length).toBeGreaterThan(0);
+  // So are the start screen's sample drawings (M7-07).
+  expect(app.served.filter((p) => /^\/assets\/[^/]+\.dxf$/.test(p)).length).toBe(6);
 
   await app.close();
   await context.setOffline(true);
   await page.reload();
   await expect(page.getByTestId('offline-status')).toHaveText('Working offline');
 
+  // A sample from the start screen opens from the cache (M7-07).
+  await page.getByTestId('start').getByRole('button', { name: 'Hatches' }).click();
+  await expectShown(page, 'hatches_2.dxf');
   await openWithPicker(page, DWG);
   await expectShown(page, path.basename(DWG));
   await openWithPicker(page, DXF);
