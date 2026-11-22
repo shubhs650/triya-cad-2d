@@ -18,6 +18,15 @@ const suite = (name: string) => ({
   },
 });
 
+// M7-09: Firefox and Safari's degraded mode (PRD §8, DEC-023) on Playwright's Firefox and WebKit,
+// against the production build (`pnpm build` first, as the offline suite). `pnpm test:browsers`.
+const crossBrowser = (name: 'firefox' | 'webkit', device: string) => ({
+  name,
+  testDir: './tests/e2e/browsers',
+  testMatch: '**/*.spec.ts',
+  use: { ...devices[device], viewport: { width: 1280, height: 790 } },
+});
+
 export default defineConfig({
   // Pre-bundles the dev servers' dependencies before any worker starts one (M2-67).
   globalSetup: './tests/e2e/global-setup.ts',
@@ -32,5 +41,13 @@ export default defineConfig({
     ['./tests/e2e/timings-reporter.ts'],
   ],
   outputDir: 'test-results',
-  projects: [suite('fidelity'), suite('offline'), suite('ui'), suite('perf'), suite('io')],
+  projects: [
+    suite('fidelity'),
+    suite('offline'),
+    suite('ui'),
+    suite('perf'),
+    suite('io'),
+    crossBrowser('firefox', 'Desktop Firefox'),
+    crossBrowser('webkit', 'Desktop Safari'),
+  ],
 });
