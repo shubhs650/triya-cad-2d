@@ -50,6 +50,19 @@ describe('offlineAssets', () => {
     ]);
   });
 
+  it("caches the start screen's sample drawings lazily (M7-07), their pictures first", () => {
+    const a = offlineAssets([
+      ...BUILD,
+      'assets/hatches_2-B1x2Y3z4.dxf',
+      'assets/viewport-overrides-Qq9Ww8Ee.dxf',
+      'assets/model-Aa1Bb2Cc.png',
+    ]);
+    expect(a.lazy).toContain('/assets/hatches_2-B1x2Y3z4.dxf');
+    expect(a.lazy).toContain('/assets/viewport-overrides-Qq9Ww8Ee.dxf');
+    expect(a.core).toContain('/assets/model-Aa1Bb2Cc.png');
+    expect(a.core.filter((f) => f.endsWith('.dxf'))).toEqual([]);
+  });
+
   it('names the cache after the build, so a new build gets a new cache', () => {
     const a = offlineAssets(BUILD);
     expect(a.version).toMatch(/^[0-9a-z]+$/);

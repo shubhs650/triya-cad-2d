@@ -438,25 +438,13 @@ button {
   min-width: 0;
 }
 
-.start .recent {
-  margin-top: 16px;
-  text-align: center;
-}
-
-.start .recent h2 {
-  margin: 0 0 6px;
-  font-size: 1em;
-}
-
 .start .recent ul {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 8px;
-  max-width: calc(3 * 212px + 2 * 8px);
 }
 
 /* A card per drawing: its picture as last kept (M2-32, UI_SPEC §10), its name under it. */
@@ -1030,12 +1018,20 @@ button {
 .start {
   position: absolute;
   inset: 0;
+  overflow: auto;
+  color: var(--chrome-text);
+  background: var(--chrome-bg);
+}
+
+/* M7-07 (UI_SPEC.md §10): the start screen as AutoCAD's Start tab lays it out, Start and Learn
+   down the left, Recent drawings and Samples beside them, the privacy statement under both. */
+.start-page {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #d6dae0;
+  gap: 16px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px 24px 16px;
 }
 
 .start h1 {
@@ -1044,13 +1040,210 @@ button {
   font-weight: 600;
 }
 
-.start button {
-  color: var(--chrome-text);
+.start-header p {
+  margin: 4px 0 0;
+  color: var(--chrome-text-muted);
 }
 
-.start .privacy {
-  color: #8a8f98;
+.start-page h2 {
+  margin: 0 0 8px;
   font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--chrome-text-muted);
+}
+
+.start-columns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.start-side {
+  display: flex;
+  flex: 0 0 240px;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.start-main {
+  display: flex;
+  flex: 1 1 520px;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.start .start-action {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  column-gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--chrome-text);
+  background: none;
+  text-align: left;
+  text-decoration: none;
+  transition: background var(--motion);
+}
+
+.start .start-action:hover {
+  background: var(--chrome-hover);
+}
+
+.start .start-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.start .start-action .icon {
+  color: var(--accent);
+}
+
+.start .start-action-hint {
+  grid-column: 2;
+  color: var(--chrome-text-muted);
+  font-size: 12px;
+}
+
+.start .samples ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A card per sample, its golden image (M1-24) as the picture. */
+.start .samples li button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 176px;
+  padding: 8px;
+}
+
+.start .sample-picture {
+  display: flex;
+  width: 160px;
+  height: 100px;
+  border: 1px solid var(--chrome-border);
+  background: var(--canvas-model);
+}
+
+.start .sample-picture img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.start .sample-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.start-note {
+  margin: 6px 0 0;
+  color: var(--chrome-text-muted);
+  font-size: 12px;
+}
+
+.start-footer {
+  padding-top: 12px;
+  border-top: 1px solid var(--chrome-border);
+  color: var(--chrome-text-muted);
+  font-size: 12px;
+}
+
+.start-footer p {
+  margin: 0 0 4px;
+}
+
+/* The "Coming from AutoCAD" guide: a long read, so its body scrolls inside the dialog. */
+.cad-dialog.coming-from-autocad {
+  width: min(640px, calc(100vw - 32px));
+  max-width: min(640px, calc(100vw - 32px));
+}
+
+.guide-body {
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.guide-body h3 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+}
+
+.guide-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.guide-body li p {
+  margin: 0 0 4px;
+}
+
+.guide-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--chrome-text-muted);
+}
+
+.guide-terms code,
+.guide-terms kbd {
+  padding: 0 4px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+/* M7-07: the card over a drawing opened from a PDF on the start screen (redline.ts). */
+.redline-panel {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  max-width: 380px;
+  padding: 8px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  color: var(--chrome-text);
+  background: var(--chrome-bg-raised);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  font-size: 12px;
+}
+
+.redline-panel p {
+  margin: 0 0 6px;
+}
+
+.redline-note {
+  color: var(--danger-text);
+}
+
+.redline-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.redline-actions button {
+  padding: 3px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  color: var(--chrome-text);
+  background: var(--chrome-bg);
 }
 
 .layout-tabs {
@@ -7709,12 +7902,15 @@ button {
   margin-top: 8px;
 }
 
-/* M5-10: the start screen's New drawing / Templates… / Open drawing… and NEW's Select Template. */
+/* M5-10: the start screen's New drawing / Templates… / Open drawing… (M7-07: a list of them) and
+   NEW's Select Template. */
 .start-actions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .cad-dialog.select-template {

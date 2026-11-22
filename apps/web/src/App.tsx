@@ -186,7 +186,11 @@ import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import { Pwa, type ContainerLike, type InstallPromptLike } from './pwa';
 import { InstallButton, OfflineStatus, UpdateBanner } from './PwaChrome';
 import { RecentFiles, indexedDbRecent, type RecentHandle } from './recent';
-import { RECENT_THUMBNAIL, RecentDrawings } from './RecentDrawings';
+import { RECENT_THUMBNAIL } from './RecentDrawings';
+import { RedlinePanel } from './RedlinePanel';
+import { redline, redlineDrawingName } from './redline';
+import { StartScreen } from './StartScreen';
+import { sampleFile, type Sample } from './start-screen';
 import { Autosaver, RecoveryOffers } from './recovery';
 import { indexedDbRecovery, webLocks } from './recovery-browser';
 import { Ribbon, type AppWindow } from './Ribbon';
@@ -488,6 +492,8 @@ engines.onCommand((doc, o) => {
   // The contextual tabs follow the command running (M7-02 part 4).
   if (o.type === 'start') runningCommands.started(doc, o.command, o.transparent);
   if (o.type === 'end') runningCommands.ended(doc, o.command);
+  // A drawing opened from a PDF on the start screen: its -PDFATTACH and SCALE answers (M7-07).
+  for (const input of redline.output(doc, o)) engines.command(doc, input);
   // A grip's hover menu (M3-05 part 2): shown from the engine's answer, gone as a command
   // starts or the grips change.
   if (o.type === 'grip-menu') gripMenus.answer(doc, o.point, o.grip, o.items);
@@ -2153,7 +2159,7 @@ async function open(
   },
   recovered?: Recovered,
   options: { readonly untitled?: boolean } = {},
-): Promise<void> {
+): Promise<number | undefined> {
   store.startOpening(file.name);
   // Its engine worker loads while the file is read (M4-22).
   nextEngineWorker.start();
@@ -2182,9 +2188,11 @@ async function open(
     if (handle) void recent.add(handle as RecentHandle);
     void deviceFonts.need(trueTypeFontsOf(opened.init));
     void resolveKept();
+    return id;
   } catch (e) {
     nextEngineWorker.discard();
     store.failed(file.name, openError(file.name, e));
+    return undefined;
   }
 }
 
@@ -2221,10 +2229,15 @@ async function openRecent(key: string): Promise<void> {
  * its own, Drawing<n>.dxf, untitled, so its first save is a Save As and never touches the
  * template.
  */
-async function newDrawing(template: DrawingTemplate): Promise<void> {
+async function newDrawing(
+  template: DrawingTemplate,
+  named?: (taken: readonly string[], fallback: string) => string,
+): Promise<number | undefined> {
   const { docs, opening } = store.getSnapshot();
-  const name = newDrawingName([...docs.map((d) => d.name), ...opening]);
-  await open(
+  const taken = [...docs.map((d) => d.name), ...opening];
+  const fallback = newDrawingName(taken);
+  const name = named ? named(taken, fallback) : fallback;
+  return open(
     { name, getFile: async () => new Blob([(await template.load()) as Uint8Array<ArrayBuffer>]) },
     undefined,
     { untitled: true },
@@ -2241,6 +2254,36 @@ async function selectNewDrawing(): Promise<void> {
 function quickNewDrawing(): void {
   const t = templateById(preferences.get().defaultTemplate, userTemplateList());
   void (t ? newDrawing(t) : selectNewDrawing());
+}
+
+/**
+ * The start screen's Open PDF (M7-07, PRD FR-Z2, redline.ts): the PDF supplied as a dropped one
+ * is, a new drawing from the default template (Triya ISO with none set) named after it, and its
+ * first page attached there by -PDFATTACH, then the offer to calibrate its scale.
+ */
+async function openPdfToRedline(file: File): Promise<void> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // pdf.js takes its own copy; one it cannot read is not a PDF Triya can show.
+  const pages = await pdfFiles.read(bytes.slice());
+  if (!pages?.length) {
+    store.fail(`${file.name} is not a PDF file Triya can open.`);
+    return;
+  }
+  pdfPages.add(file.name, bytes);
+  shownSources.set(fileKey(file.name), fromFile(file));
+  supplied.changed();
+  const template =
+    templateById(preferences.get().defaultTemplate, userTemplateList()) ?? BUNDLED_TEMPLATES[0]!;
+  const id = await newDrawing(template, (taken, fallback) =>
+    redlineDrawingName(file.name, taken, fallback),
+  );
+  if (id === undefined) return;
+  for (const input of redline.begin(id, file.name, pages[0])) engines.command(id, input);
+}
+
+/** The start screen's Samples (M7-07): a public corpus drawing, opened as a dropped file is. */
+function openSample(sample: Sample): void {
+  void open({ name: sample.file, getFile: () => sampleFile(sample) });
 }
 
 const fromFile = (f: File): Supplied => {
@@ -2829,24 +2872,26 @@ export function App() {
           )}
           {active && <CyclingBadge doc={active.id} />}
           <PlotPreview active={state.active} />
+          {active && (
+            <RedlinePanel
+              key={`redline-${active.id}`}
+              doc={active.id}
+              onCalibrate={() => {
+                for (const input of redline.calibrate(active.id)) engines.command(active.id, input);
+              }}
+            />
+          )}
           {state.docs.length === 0 && (
-            <div className="start" data-testid="start">
-              <h1>Triya CAD 2D</h1>
-              <p>Start a new drawing, or open a DWG or DXF one (or drop it anywhere here).</p>
-              <div className="start-actions">
-                <button type="button" onClick={quickNewDrawing}>
-                  New drawing
-                </button>
-                <button type="button" onClick={() => void selectNewDrawing()}>
-                  Templates…
-                </button>
-                <button type="button" onClick={pick}>
-                  Open drawing…
-                </button>
-              </div>
-              <RecentDrawings entries={recentFiles} onOpen={(key) => void openRecent(key)} />
-              <p className="privacy">Drawings never leave this device.</p>
-            </div>
+            <StartScreen
+              recent={recentFiles}
+              onNew={quickNewDrawing}
+              onTemplates={() => void selectNewDrawing()}
+              onOpen={pick}
+              onOpenPdf={(file) => void openPdfToRedline(file)}
+              onOpenRecent={(key) => void openRecent(key)}
+              onSample={openSample}
+              onShortcuts={() => setShortcutEditor(true)}
+            />
           )}
         </main>
         {active && (
