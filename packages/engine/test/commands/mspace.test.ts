@@ -209,3 +209,45 @@ describe('the viewports one can work in', () => {
     expect(firstViewport(unstacked.model, PAPER_SPACE)?.handle).toBe(A);
   });
 });
+
+// M7-06: Ctrl+R (AutoCAD's "Toggle viewports") makes the next viewport of the layout current,
+// after the last the first. In paper space, on the Model tab, while a command runs or with a
+// viewport maximized it does nothing: settled for the common drafter expectation, as AutoCAD's
+// help says only that it cycles through the viewports.
+describe('nextViewport (Ctrl+R)', () => {
+  it('goes through the layout viewports in the order the layout holds them', async () => {
+    const t = drawing();
+    // MSPACE: B, stacked first (status 2); then A, the first the layout holds, and B.
+    await t.bus.script(['MSPACE']);
+    expect(t.told()).toEqual([B]);
+    await t.bus.nextViewport();
+    await t.bus.nextViewport();
+    expect(t.told()).toEqual([B, A, B]);
+  });
+
+  it('does nothing in paper space, on the Model tab or while a command runs', async () => {
+    const t = drawing();
+    await t.bus.nextViewport();
+    expect(t.told()).toEqual([]);
+    await t.bus.script(['MSPACE']);
+    await t.bus.submit('LINE');
+    await t.bus.nextViewport();
+    expect(t.told()).toEqual([B]);
+    const m = drawing({ space: MODEL_SPACE });
+    await m.bus.nextViewport();
+    expect(m.told()).toEqual([]);
+  });
+
+  it('does nothing with one viewport to work in or a viewport maximized', async () => {
+    const one = drawing({ paper: [TWO[0]!] });
+    await one.bus.script(['MSPACE']);
+    await one.bus.nextViewport();
+    expect(one.told()).toEqual([A]);
+    const t = drawing();
+    await t.bus.script(['MSPACE']);
+    await t.bus.script(['VPMAX']);
+    const before = t.told().length;
+    await t.bus.nextViewport();
+    expect(t.told()).toHaveLength(before);
+  });
+});

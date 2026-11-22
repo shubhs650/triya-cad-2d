@@ -147,6 +147,7 @@ export const ALIASES: Readonly<Record<string, string>> = {
   // Output
   PRE: 'PREVIEW',
   EXP: 'EXPORT',
+  EXIT: 'QUIT',
   // Parametric
   GCON: 'GEOMCONSTRAINT',
   DCON: 'DIMCONSTRAINT',

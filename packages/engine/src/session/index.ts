@@ -619,6 +619,8 @@ export type CommandInput =
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
+  /** Ctrl+R (M7-06, `PromptBus.nextViewport`): the layout's next viewport made current. */
+  | { readonly kind: 'next-viewport' }
   /**
    * A double click on the canvas: edits the object there (M2-07 part 2, `PromptBus.doubleClick`).
    * `paper`: it began outside the layout viewport current then, and `point` is paper space's
@@ -938,6 +940,8 @@ export class EngineSession {
       }
       case 'select-all':
         return this.#bus.selectAll();
+      case 'next-viewport':
+        return this.#bus.nextViewport();
       case 'double-click':
         return this.#bus.doubleClick(input.point, input.paper === true);
       case 'space':

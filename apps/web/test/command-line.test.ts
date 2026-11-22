@@ -326,6 +326,9 @@ describe('completions', () => {
       { name: 'CHPROP' },
       // CLASSICGROUP, the Object Grouping dialog (M3-08).
       { name: 'CLASSICGROUP' },
+      // CLEANSCREENON/OFF, Ctrl+0's (M7-06).
+      { name: 'CLEANSCREENOFF' },
+      { name: 'CLEANSCREENON' },
       { name: 'CLOSE' },
       { name: 'CLOSEALL' },
       { name: 'COPY' },
@@ -374,6 +377,8 @@ describe('completions of system variables', () => {
       'CHANGE',
       'CHPROP',
       'CLASSICGROUP',
+      'CLEANSCREENOFF',
+      'CLEANSCREENON',
       'CLOSE',
       'CLOSEALL',
       'COPY',

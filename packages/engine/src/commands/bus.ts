@@ -79,6 +79,7 @@ import {
 } from './prompt';
 import {
   floatingViewport,
+  floatingViewports,
   insideViewport,
   paperPointOf,
   viewportAt,
@@ -892,6 +893,23 @@ export class PromptBus {
     const p = this.prompt;
     const shown = this.#stack.length === 0 || (p?.kind === 'point' && p.cellLocks === true);
     return shown ? tableCellLockUnder(this.#model, this.#space(), point) : undefined;
+  }
+
+  /**
+   * Ctrl+R (M7-06, AutoCAD's "Toggle viewports"): the next floating viewport of the layout shown
+   * one can work in becomes current, after the last the first. At `Command:` in model space of a
+   * layout only, with no viewport maximized: in paper space, on the Model tab (whose tiles the
+   * app cycles) and inside a command it does nothing, as a double click there does not switch.
+   */
+  nextViewport(): Promise<void> {
+    return this.#enqueue(async () => {
+      const current = this.#currentViewport();
+      if (this.#stack.length > 0 || !current || this.#maximizedViewport()) return;
+      const all = floatingViewports(this.#model, this.#sheet());
+      const at = all.findIndex((v) => v.handle === current.handle);
+      const next = all[(at + 1) % all.length]!;
+      if (next.handle !== current.handle) await this.#setViewport(next.handle);
+    });
   }
 
   /** Ctrl+A: everything ALL takes, at `Command:` (replacing the pre-selection) or "Select objects". */
