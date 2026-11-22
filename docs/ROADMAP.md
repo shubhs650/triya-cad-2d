@@ -587,7 +587,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M7-05** Themes (light/dark chrome, canvas colours, plot preview), high-contrast mode; reduced-motion respect. **Acceptance:** theme snapshot tests.
 
-- [ ] **M7-06** Keyboard: full AutoCAD default map, Ctrl+K palette polish, F2 history window, shortcut editor. **Acceptance:** keymap tests.
+- [~] (thread: Ship second next M7 task) **M7-06** Keyboard: full AutoCAD default map, Ctrl+K palette polish, F2 history window, shortcut editor. **Acceptance:** keymap tests.
 
 - [ ] **M7-07** Start screen: recent, templates, open, open PDF (red-line flow), samples from public corpus, learn links. **Acceptance:** smoke test.
 
