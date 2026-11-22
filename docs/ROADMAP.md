@@ -585,7 +585,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [x] (#627) **M7-04** Dialog parity set: OPTIONS (display/open-save/plot/user prefs/drafting/selection), DRAFTINGSETTINGS, all style managers, INSERT, BLOCK, XREF, LINETYPE, UNITS, PAGESETUP, PLOT, PUBLISH. **Acceptance:** each dialog has a Playwright smoke test. **Done (#627):** OPTIONS (OP, transparent; also the title bar's Settings button) opens the Options dialog, the old one-page Settings now in AutoCAD 2024's tabs (Files, Display, Open and Save, Plot and Publish, System, User Preferences, Drafting, Selection; no 3D Modeling or Profiles), opened on the tab shown last, its tab list moved with the arrow keys, Home and End, with Pickbox size, Use Shift to add to selection (PICKADD), Fade control (XFADECTL), plot transparency (PLOTTRANSPARENCYOVERRIDE), Drafting Tooltip Settings and Open and Save's fixed DXF-only save added. Every other dialog of the set already existed with its own spec; `tests/e2e/ui/dialog-parity.spec.ts` opens each from its command, checks AutoCAD's title and the focus, and closes it with Esc.
 
-- [ ] **M7-05** Themes (light/dark chrome, canvas colours, plot preview), high-contrast mode; reduced-motion respect. **Acceptance:** theme snapshot tests.
+- [~] (thread: Ship next M7 roadmap task) **M7-05** Themes (light/dark chrome, canvas colours, plot preview), high-contrast mode; reduced-motion respect. **Acceptance:** theme snapshot tests.
 
 - [ ] **M7-06** Keyboard: full AutoCAD default map, Ctrl+K palette polish, F2 history window, shortcut editor. **Acceptance:** keymap tests.
 
