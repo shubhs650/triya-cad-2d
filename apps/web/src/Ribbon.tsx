@@ -18,7 +18,9 @@
 // (ribbon.config.ts `CONTEXTUAL_TABS`) joins the tabs and is shown while its command runs, the
 // Block Editor is open or the selection is all of its kind, then goes, the tab shown before back.
 import {
+  memo,
   useEffect,
+  useMemo,
   useLayoutEffect,
   useRef,
   useState,
@@ -161,7 +163,76 @@ interface MenuState {
   readonly split?: RibbonItem;
 }
 
-export function Ribbon({ doc, blockEditor, preferences, onOpenWindow, hidden }: RibbonProps) {
+/** What a ribbon button does, kept in a ref so the button's props stay the same (M7-11). */
+interface ButtonActions {
+  run(item: RibbonItem): void;
+  showTip(item: RibbonItem, anchor: HTMLElement, now: boolean): void;
+  hideTip(): void;
+}
+
+/**
+ * A ribbon button, memoized (M7-11): the ribbon renders again with every change its dropdowns
+ * show (a layer turned off), and its hundreds of buttons, each a few elements, rendered with it.
+ * `now` is the item it runs (a split button's entry picked last).
+ */
+const RibbonButton = memo(function RibbonButton({
+  item,
+  now,
+  size,
+  described,
+  disabled,
+  pressed,
+  actions,
+}: {
+  item: RibbonItem;
+  now: RibbonItem;
+  size: ItemSize;
+  described: boolean;
+  disabled: boolean;
+  pressed: boolean | undefined;
+  actions: { readonly current: ButtonActions };
+}) {
+  return (
+    <button
+      type="button"
+      className={`ribbon-item ${size}`}
+      data-item={item.id}
+      aria-label={item.label}
+      aria-describedby={described ? 'ribbon-tooltip' : undefined}
+      disabled={disabled}
+      aria-disabled={now.unavailable ? true : undefined}
+      aria-pressed={pressed}
+      onClick={(e) => {
+        blurIfClicked(e);
+        actions.current.run(now);
+      }}
+      onPointerEnter={(e) => actions.current.showTip(item, e.currentTarget, false)}
+      onPointerLeave={() => actions.current.hideTip()}
+      onFocus={(e) => {
+        if (e.currentTarget.matches(':focus-visible'))
+          actions.current.showTip(item, e.currentTarget, true);
+      }}
+      onBlur={() => actions.current.hideTip()}
+    >
+      <Icon name={now.icon} size={iconSize(size)} />
+      {size !== 'icon' && <span className="ribbon-label">{item.label}</span>}
+    </button>
+  );
+});
+
+/**
+ * The ribbon renders again only when its own props or the stores it reads change (M7-11): an
+ * edit re-renders App, and the whole ribbon rendered with it, its hundreds of buttons and icons,
+ * held the main thread for several milliseconds after every edit (more in development builds),
+ * which made the Layers toggle's T3 measure miss its 16 ms (`tests/e2e/ui/layers.spec.ts`).
+ */
+export const Ribbon = memo(function Ribbon({
+  doc,
+  blockEditor,
+  preferences,
+  onOpenWindow,
+  hidden,
+}: RibbonProps) {
   const width = useSyncExternalStore(viewport.subscribe, viewport.width);
   const draftingState = useSyncExternalStore(drafting.subscribe, drafting.get);
   const theme = useSyncExternalStore(
@@ -208,7 +279,7 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow, hidden }: 
   const fitKey = `${tabId}:${width}`;
   const [fit, setFit] = useState({ key: '', steps: 0 });
   const steps = fit.key === fitKey ? fit.steps : 0;
-  const layout = layoutTab(tab, bp, steps);
+  const layout = useMemo(() => layoutTab(tab, bp, steps), [tab, bp, steps]);
   const rest = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const bodyShown = !hidden && (!minimized || popped);
@@ -262,6 +333,9 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow, hidden }: 
     setMenu(undefined);
     setPopped(false);
   };
+  // The buttons' handlers, read when they act, so a memoized button keeps its props (M7-11).
+  const actions = useRef<ButtonActions>({ run, showTip, hideTip });
+  actions.current = { run, showTip, hideTip };
   const textActionOf = (item: RibbonItem) =>
     'action' in item.run ? textEditorActionOf(item.run.action) : undefined;
   const textDisabled = (item: RibbonItem) => {
@@ -349,32 +423,18 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow, hidden }: 
     if (item.control) return dropdown(item, size);
     const now = current(item);
     const main = (
-      <button
+      <RibbonButton
         key="main"
-        type="button"
-        className={`ribbon-item ${size}`}
-        data-item={item.id}
-        aria-label={item.label}
-        aria-describedby={tip?.anchor.dataset['item'] === item.id ? 'ribbon-tooltip' : undefined}
+        item={item}
+        now={now}
+        size={size}
+        described={tip?.anchor.dataset['item'] === item.id}
         // An unavailable item stays hoverable (a disabled button hears no pointer) for the
         // tooltip that says why it cannot run.
         disabled={disabled(now) && !now.unavailable}
-        aria-disabled={now.unavailable ? true : undefined}
-        aria-pressed={pressed(now)}
-        onClick={(e) => {
-          blurIfClicked(e);
-          run(now);
-        }}
-        onPointerEnter={(e) => showTip(item, e.currentTarget, false)}
-        onPointerLeave={hideTip}
-        onFocus={(e) => {
-          if (e.currentTarget.matches(':focus-visible')) showTip(item, e.currentTarget, true);
-        }}
-        onBlur={hideTip}
-      >
-        <Icon name={now.icon} size={iconSize(size)} />
-        {size !== 'icon' && <span className="ribbon-label">{item.label}</span>}
-      </button>
+        pressed={pressed(now)}
+        actions={actions}
+      />
     );
     if (!item.menu) return main;
     const id = `split:${item.id}`;
@@ -504,8 +564,26 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow, hidden }: 
     e.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-tab="${next.id}"]`)?.focus();
   };
 
-  const protectedPanels = layout.panels.filter((p) => p.protected);
-  const otherPanels = layout.panels.filter((p) => !p.protected);
+  // The panels render again only when what they show changes (M7-11): a change the dropdowns
+  // list but do not show (a layer turned off) leaves them as they were. Their handlers read the
+  // latest state through `actions` and the setters, so the panels kept are still current.
+  const controlsShown = layout.panels
+    .flatMap((p) => p.shown)
+    .filter((s) => s.item.control)
+    .map((s) => {
+      const state = stateOf(s.item.control!);
+      return `${state.text}|${state.swatch ?? ''}`;
+    })
+    .join('\n');
+  const tipItem = tip?.anchor.dataset['item'];
+  const panels = useMemo(
+    () => ({
+      protected: layout.panels.filter((p) => p.protected).map(panel),
+      rest: layout.panels.filter((p) => !p.protected).map(panel),
+    }),
+    // What the panels show, worked out above (the hooks lint rule is not in use here).
+    [layout, controlsShown, tipItem, menu, list, picked, doc, draftingState, textEditor, bp],
+  );
   return (
     <div
       ref={root}
@@ -563,11 +641,11 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow, hidden }: 
             else if (e.key === 'Escape' && popped) setPopped(false);
           }}
         >
-          {protectedPanels.length > 0 && (
-            <div className="ribbon-protected">{protectedPanels.map(panel)}</div>
+          {panels.protected.length > 0 && (
+            <div className="ribbon-protected">{panels.protected}</div>
           )}
           <div className="ribbon-rest" ref={rest}>
-            {otherPanels.map(panel)}
+            {panels.rest}
           </div>
         </div>
       )}
@@ -636,7 +714,7 @@ export function Ribbon({ doc, blockEditor, preferences, onOpenWindow, hidden }: 
       )}
     </div>
   );
-}
+});
 
 /** A split button's list or a panel's overflow list, under the button that opened it. */
 function RibbonMenu({
