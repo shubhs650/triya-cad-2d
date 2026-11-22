@@ -240,6 +240,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   designcenter: 'Shows DesignCenter, to browse and insert content from drawings.',
   references: 'Shows the External References palette.',
   health: 'Shows the Health palette: what the drawing holds that may need attention.',
+  diagnostics:
+    "Shows the Diagnostics palette: frame times, entity counts, caches, workers and the last command's timing.",
   history: 'Shows the Command History palette.',
   theme: 'Sets the colour theme of the window.',
   'theme-system': "Follows the device's light or dark setting.",

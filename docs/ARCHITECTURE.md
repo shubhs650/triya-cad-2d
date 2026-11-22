@@ -353,6 +353,7 @@ PDF writer (M2-16 part 1, `packages/pdf`, no DOM): `PdfDocument` (pages at their
 
 - `DEBUG=triya:*` namespaces; an in-app diagnostics panel (frame time, entity counts, cache sizes, worker status, last command timing).
 - Error reports: assembled client-side, shown to the user, sent only on confirmation to `report.openengtools.com` (Cloudflare Worker → GitHub issue in a private triage repo). *As built (M7-08):* `apps/web/src/error-report/` (`schema.ts` the payload and its field-by-field check, `build.ts` the anonymised report, `offers.ts` one offer at a time), `ErrorReportDialog.tsx`, and the worker in `services/report-worker` (outside the pnpm workspace, no dependencies; it imports `schema.ts`). Errors reach it from `window` `error`/`unhandledrejection` and from the command bus's `fault` event (a command that threw).
+- *Diagnostics panel as built (M7-08 part 2):* `apps/web/src/DiagnosticsPalette.tsx` in the palette stack. Frame times and the scene cache's size come from `RendererHost.stats()` (a `stats` request to the render worker; `RenderSession` times each frame, `Canvas2DRenderer.sceneSize()` walks its cache); command and input timings from `Engines.timingsOf` (`start`/`end` and `read` outputs); the PDF page cache from `PdfPages.cached`. Nothing on the frame path is added beyond two clock reads per frame.
 
 ## 18. Build and release
 

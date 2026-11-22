@@ -2116,6 +2116,54 @@ button {
   white-space: pre-wrap;
 }
 
+/* M7-08 part 2: the Diagnostics palette, label and value side by side, read every second. */
+.diagnostics-body {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 10px 10px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.diagnostics-body h3 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+}
+
+.diagnostics-body p {
+  margin: 0;
+}
+
+.diagnostics-body dl {
+  display: grid;
+  grid-template-columns: minmax(120px, 45%) 1fr;
+  gap: 2px 8px;
+  margin: 0 0 6px;
+}
+
+.diagnostics-body dl + dl {
+  padding-top: 6px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.diagnostics-body dt {
+  color: var(--chrome-text-muted);
+}
+
+.diagnostics-body dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-sub {
+  display: contents;
+}
+
+.diagnostics-sub dt {
+  padding-left: 12px;
+}
+
 .palette {
   display: flex;
   flex: 1;
@@ -6628,7 +6676,7 @@ button {
 
 .dimstyle-import-list .dimstyle-substyle {
   padding-left: 24px;
-  color: var(--chrome-text-muted, inherit);
+  color: var(--chrome-text-muted);
 }
 
 .dimstyle-import-note {
@@ -7419,7 +7467,7 @@ button {
 
 .spell-menu-note {
   padding: 4px 10px;
-  color: var(--chrome-text-muted, inherit);
+  color: var(--chrome-text-muted);
   font-style: italic;
 }
 

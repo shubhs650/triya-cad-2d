@@ -25,7 +25,26 @@ export interface ChangeTarget {
   apply(change: ChangeSet, seq: number): void;
 }
 
+/** A drawing's last command, start to end (the diagnostics panel, M7-08). */
+export interface CommandTiming {
+  readonly command: string;
+  readonly ms: number;
+  readonly cancelled: boolean;
+}
+
+/** What the diagnostics panel shows of a drawing's command engine (M7-08). */
+export interface EngineTimings {
+  readonly lastCommand?: CommandTiming;
+  /** How long the engine took to read the last numbered input sent to it, ms. */
+  readonly lastResponseMs?: number;
+}
+
 export class Engines {
+  readonly #now: () => number;
+  /** Per drawing: the command running (not transparent), when its numbered inputs were sent. */
+  readonly #running = new Map<number, { readonly command: string; readonly at: number }>();
+  readonly #sentAt = new Map<number, Map<number, number>>();
+  readonly #timings = new Map<number, EngineTimings>();
   readonly #create: (init: DocumentInit, changes: readonly ChangeSet[]) => EngineHost;
   readonly #targets: (doc: number) => Iterable<ChangeTarget>;
   readonly #engines = new Map<number, EngineHost>();
@@ -37,9 +56,11 @@ export class Engines {
   constructor(
     create: (init: DocumentInit, changes: readonly ChangeSet[]) => EngineHost,
     targets: (doc: number) => Iterable<ChangeTarget>,
+    now: () => number = () => performance.now(),
   ) {
     this.#create = create;
     this.#targets = targets;
+    this.#now = now;
   }
 
   /**
@@ -55,8 +76,46 @@ export class Engines {
     engine.onCommand((o) => {
       if (this.#engines.get(doc) !== engine) return;
       if (o.type === 'change') this.#applied(doc, o.change);
+      this.#time(doc, o);
       for (const l of this.#listeners) l(doc, o);
     });
+  }
+
+  /** The drawing's last command and input timings (the diagnostics panel, M7-08). */
+  timingsOf(doc: number): EngineTimings {
+    return this.#timings.get(doc) ?? {};
+  }
+
+  #time(doc: number, o: CommandOutput): void {
+    const now = this.#now();
+    if (o.type === 'start' && !o.transparent) {
+      this.#running.set(doc, { command: o.command, at: now });
+    } else if (o.type === 'end') {
+      const run = this.#running.get(doc);
+      if (run?.command !== o.command) return;
+      this.#running.delete(doc);
+      const lastCommand = { command: o.command, ms: now - run.at, cancelled: o.cancelled };
+      this.#timings.set(doc, { ...this.#timings.get(doc), lastCommand });
+    } else if (o.type === 'read') {
+      const sent = this.#sentAt.get(doc);
+      const at = sent?.get(o.seq);
+      if (at === undefined) return;
+      for (const seq of sent!.keys()) if (seq <= o.seq) sent!.delete(seq);
+      this.#timings.set(doc, { ...this.#timings.get(doc), lastResponseMs: now - at });
+    }
+  }
+
+  /** Sends `input` to the drawing's engine, noting when a numbered one went (M7-08). */
+  #send(doc: number, input: CommandInput): void {
+    const engine = this.#engines.get(doc);
+    if (!engine) return;
+    const seq = 'seq' in input ? input.seq : undefined;
+    if (seq !== undefined) {
+      const sent = this.#sentAt.get(doc) ?? new Map<number, number>();
+      sent.set(seq, this.#now());
+      this.#sentAt.set(doc, sent);
+    }
+    engine.command(input);
   }
 
   /**
@@ -68,14 +127,14 @@ export class Engines {
   command(doc: number, input: CommandInput | Promise<CommandInput | undefined>): void {
     const before = this.#queued.get(doc);
     if (!before && !(input instanceof Promise)) {
-      this.#engines.get(doc)?.command(input);
+      this.#send(doc, input);
       return;
     }
     const next = (before ?? Promise.resolve())
       .then(() => input)
       .then(
         (i) => {
-          if (i) this.#engines.get(doc)?.command(i);
+          if (i) this.#send(doc, i);
         },
         () => undefined,
       );
@@ -111,6 +170,9 @@ export class Engines {
     this.#engines.get(doc)?.dispose();
     this.#engines.delete(doc);
     this.#logs.delete(doc);
+    this.#running.delete(doc);
+    this.#sentAt.delete(doc);
+    this.#timings.delete(doc);
   }
 
   /**

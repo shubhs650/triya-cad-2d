@@ -33,6 +33,7 @@ import type {
   DrawnEntity,
   RasterPixels,
   RenderPrimitive,
+  RenderStats,
   RefEditDisplay,
   RenderStyle,
   ScreenRect,
@@ -182,6 +183,8 @@ export type HostMessage =
   | { readonly type: 'flush'; readonly id: number }
   /** When the first frame holding numbered change `seq` was drawn (M2-62); a `drawnAt`. */
   | { readonly type: 'drawnAt'; readonly id: number; readonly seq: number }
+  /** Its frames' times and scene size, for the diagnostics panel (M7-08); a `stats`. */
+  | { readonly type: 'stats'; readonly id: number }
   /** What plotting a space draws (M2-17); the answer is a `plot`. */
   | { readonly type: 'plot'; readonly id: number; readonly request: PlotRequest }
   /**
@@ -260,6 +263,7 @@ export type WorkerMessage =
    * the frame asked for was drawn; null when no frame has drawn that change yet.
    */
   | { readonly type: 'drawnAt'; readonly id: number; readonly at: number | null }
+  | { readonly type: 'stats'; readonly id: number; readonly stats: RenderStats }
   | { readonly type: 'error'; readonly message: string; readonly id?: number }
   /** A PDF underlay page the view needs drawn (M1-20); unasked, so it carries no id. */
   | { readonly type: 'underlayRequest'; readonly request: UnderlayRequest; readonly id?: never };

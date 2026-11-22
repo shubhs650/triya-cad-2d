@@ -660,6 +660,18 @@ export class Canvas2DRenderer implements Renderer {
 
   /** Per entity id (ids are dense): its primitives and screen-size data; hidden ones absent. */
   #cache: (CacheEntry | undefined)[] = [];
+
+  /** The scene cache's size, for the diagnostics panel (M7-08): walked when asked. */
+  sceneSize(): { readonly entities: number; readonly primitives: number } {
+    let entities = 0;
+    let primitives = 0;
+    for (const e of this.#cache) {
+      if (!e) continue;
+      entities += 1;
+      primitives += e.prims.length;
+    }
+    return { entities, primitives };
+  }
   /** Per block drawn (the block shown, and model space through viewports): draw order. */
   #ordered = new Map<Handle, Ordered>();
   /** Scratch marks for walking visible entities in draw order without sorting. */

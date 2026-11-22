@@ -178,6 +178,39 @@ describe('RendererHost', () => {
     );
   });
 
+  it('reports its frames and the scene it holds, on the worker as on the main thread (M7-08)', async () => {
+    const { engine, main, off } = hosts();
+    for (const h of [main, off]) {
+      const before = await h.stats();
+      // The drawing's one line is tessellated as the renderer starts.
+      expect(before).toEqual({
+        frames: 0,
+        lastFrameMs: 0,
+        meanFrameMs: 0,
+        maxFrameMs: 0,
+        entities: 1,
+        primitives: 1,
+      });
+    }
+    const circle = change(engine, (b) =>
+      b.addEntity(entity('21', { kind: 'CIRCLE', center: { x: 5, y: 1 }, radius: 2 })),
+    );
+    for (const h of [main, off]) {
+      h.resize(100, 50, 1);
+      h.setView({ center: { x: 5, y: 0 }, scale: 10 });
+      h.frame();
+      h.apply(circle);
+      h.frame();
+      await h.flush();
+      const s = await h.stats();
+      expect(s.frames).toBe(2);
+      expect(s.entities).toBe(2);
+      expect(s.primitives).toBeGreaterThanOrEqual(2);
+      expect(s.lastFrameMs).toBeGreaterThanOrEqual(0);
+      expect(s.maxFrameMs).toBeGreaterThanOrEqual(s.meanFrameMs);
+    }
+  });
+
   it('draws the same calls on the worker as on the main thread', async () => {
     const { engine, main, off, mainSurfaces, workerSurfaces } = hosts();
     const circle = change(engine, (b) =>

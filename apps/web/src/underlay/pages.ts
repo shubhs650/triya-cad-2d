@@ -158,6 +158,11 @@ export class PdfPages {
   #queue: Promise<void> = Promise.resolve();
   /** pdf.js renders done (tests check the cache spares them). */
   renders = 0;
+
+  /** The page cache's size (the diagnostics panel, M7-08): pages kept and their bytes. */
+  get cached(): { readonly pages: number; readonly bytes: number } {
+    return { pages: this.#cache.size, bytes: this.#cachedBytes };
+  }
   /** Pages whose geometry pdf.js read (tests check each is read once). */
   snapReads = 0;
 

@@ -766,6 +766,7 @@ const TOOLS: RibbonTab = {
       items: [
         cmd('units', 'Units', 'ruler', 'UNITS', BIG),
         act('health', 'Drawing Health', 'heart_pulse', 'palette:health', SECONDARY),
+        act('diagnostics', 'Diagnostics', 'top_speed', 'palette:diagnostics', SECONDARY),
         cmd('purge', 'Purge', 'broom', 'PURGE', SECONDARY),
         cmd('recover', 'Drawing Recovery', 'drafts', 'DRAWINGRECOVERY', SECONDARY),
       ],
