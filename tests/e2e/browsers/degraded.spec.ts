@@ -33,6 +33,38 @@ async function shot(page: Page, browser: string, name: string) {
   await page.screenshot({ path: path.join(dir, `${browser}-${name}`), animations: 'disabled' });
 }
 
+// What the page logged, printed when a test fails: a browser crash on a CI runner leaves no
+// other trace (M7-09).
+const logged: string[] = [];
+test.beforeEach(({ page }) => {
+  logged.length = 0;
+  const t0 = Date.now();
+  page.on('console', (m) => logged.push(`${Date.now() - t0} ms ${m.type()}: ${m.text()}`));
+  page.on('pageerror', (e) => logged.push(`${Date.now() - t0} ms pageerror: ${e.message}`));
+  page.on('crash', () => logged.push(`${Date.now() - t0} ms crash`));
+});
+test.afterEach(({ browserName }, info) => {
+  if (info.status !== info.expectedStatus)
+    console.log(`[${browserName}] ${info.title}, the page's log:\n${logged.join('\n')}`);
+});
+
+test('DIAGNOSTIC a tiny PDF blob downloads', async ({ page }) => {
+  await page.goto(app.url);
+  for (const type of ['application/octet-stream', 'application/pdf']) {
+    const [d] = await Promise.all([
+      page.waitForEvent('download', { timeout: 15_000 }),
+      page.evaluate((type) => {
+        const bytes = new TextEncoder().encode('%PDF-1.7\n%%EOF\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([bytes], { type }));
+        a.download = 'x.pdf';
+        a.click();
+      }, type),
+    ]);
+    console.log(`DIAGNOSTIC ${type}: ${d.suggestedFilename()}`);
+  }
+});
+
 const notice = (page: Page) => page.getByRole('region', { name: 'Browser compatibility' });
 const prompt = (page: Page) => page.getByTestId('command-prompt');
 
@@ -156,11 +188,12 @@ test('plots the drawing to a PDF that downloads', async ({ page, browserName }) 
   await d.getByLabel('Paper size').selectOption('ISO A3');
   await d.getByLabel('What to plot').selectOption('extents');
   await shot(page, browserName, '4-plot-dialog.png');
-  const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    d.getByRole('button', { name: 'OK' }).click(),
-  ]);
+  const downloaded = page.waitForEvent('download');
+  await d.getByRole('button', { name: 'OK' }).click();
+  logged.push('OK clicked');
   await expect(d).toBeHidden();
+  logged.push('dialog hidden');
+  const download = await downloaded;
   expect(download.suggestedFilename()).toBe('sample_AC1018-Model.pdf');
   const pdf = await readPdf(download);
   expect(pdf.pages).toBe(1);
