@@ -155,6 +155,10 @@ export interface ViewContext {
   readonly clipboard?: (content: Clipboard | undefined) => ViewReply | Promise<ViewReply>;
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes the palette. */
   readonly palette?: (name: PaletteName, open: boolean) => ViewReply;
+  /** CLEANSCREENON/OFF (M7-06): the app hides or shows its ribbon and palettes. */
+  readonly cleanScreen?: (on: boolean) => ViewReply;
+  /** HIDEPALETTES and SHOWPALETTES (M7-06): the app hides or shows the palettes open. */
+  readonly palettes?: (shown: boolean) => ViewReply;
   /**
    * -PLOT (M2-17 part 5): a space's plot settings, and a plot made without the dialog; -EXPORT's
    * export (M2-39 part 5).
@@ -305,6 +309,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };
+  }
+  if (r.op === 'cleanScreen') {
+    return ctx.cleanScreen ? ctx.cleanScreen(r.on) : { ok: false, message: NO_PALETTE };
+  }
+  if (r.op === 'palettes') {
+    return ctx.palettes ? ctx.palettes(r.shown) : { ok: false, message: NO_PALETTE };
   }
   if (r.op === 'linetypeFile') {
     return ctx.linetypeFile ? ctx.linetypeFile(r.file) : { ok: false, message: NO_LINETYPES };

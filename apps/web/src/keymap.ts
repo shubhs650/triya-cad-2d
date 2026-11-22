@@ -41,6 +41,22 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   { id: 'file:save', label: 'Save', group: 'File', keys: ['Ctrl+S'] },
   { id: 'file:saveas', label: 'Save As…', group: 'File', keys: ['Ctrl+Shift+S'] },
   { id: 'command:PLOT', label: 'PLOT', group: 'Command', keys: ['Ctrl+P'] },
+  // M7-06: AutoCAD's Ctrl+Q QUIT, which closes every drawing here (a page keeps its window).
+  { id: 'command:QUIT', label: 'Quit (QUIT)', group: 'File', keys: ['Ctrl+Q'] },
+  // AutoCAD's Ctrl+Tab (a browser tab keeps it), and Windows' document-window keys Ctrl+F6 and
+  // Ctrl+Shift+F6, which reach Triya in a browser tab too.
+  {
+    id: 'file:nextdoc',
+    label: 'Next Drawing',
+    group: 'File',
+    keys: ['Ctrl+Tab', 'Ctrl+F6'],
+  },
+  {
+    id: 'file:previousdoc',
+    label: 'Previous Drawing',
+    group: 'File',
+    keys: ['Ctrl+Shift+Tab', 'Ctrl+Shift+F6'],
+  },
   { id: 'command:U', label: 'Undo (U)', group: 'Edit', keys: ['Ctrl+Z'] },
   // Ctrl+Y is AutoCAD's; Ctrl+Shift+Z is the Mac's redo key (Cmd+Shift+Z, AutoCAD for Mac).
   { id: 'command:REDO', label: 'Redo (REDO)', group: 'Edit', keys: ['Ctrl+Y', 'Ctrl+Shift+Z'] },
@@ -62,9 +78,19 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   { id: 'select-all', label: 'Select All', group: 'Edit', keys: ['Ctrl+A'] },
   // AutoCAD's Ctrl+J and Ctrl+M are Enter: they end the input, or repeat the last command.
   { id: 'enter', label: 'Enter (repeat last command)', group: 'Edit', keys: ['Ctrl+J', 'Ctrl+M'] },
+  // AutoCAD's Ctrl+[ and Ctrl+\ are Esc: they cancel the command running (M7-06).
+  { id: 'cancel', label: 'Cancel (Esc)', group: 'Edit', keys: ['Ctrl+[', 'Ctrl+\\'] },
   { id: 'properties', label: 'Properties palette', group: 'View', keys: ['Ctrl+1'] },
   { id: 'designcenter', label: 'DesignCenter', group: 'View', keys: ['Ctrl+2'] },
-  { id: 'history', label: 'Command history', group: 'View', keys: ['F2'] },
+  // F2 AutoCAD's expanded command history, Ctrl+F2 its text window (TEXTSCR): both are the
+  // Command History palette here (M7-03 part 2, M7-06).
+  { id: 'history', label: 'Command history', group: 'View', keys: ['F2', 'Ctrl+F2'] },
+  // M7-06: AutoCAD's window keys.
+  { id: 'cleanscreen', label: 'Clean Screen on/off', group: 'View', keys: ['Ctrl+0'] },
+  { id: 'palettes', label: 'Hide/Show Palettes', group: 'View', keys: ['Ctrl+Shift+H'] },
+  { id: 'viewport:next', label: 'Next Viewport', group: 'View', keys: ['Ctrl+R'] },
+  { id: 'layout:previous', label: 'Previous Layout', group: 'View', keys: ['Ctrl+PageUp'] },
+  { id: 'layout:next', label: 'Next Layout', group: 'View', keys: ['Ctrl+PageDown'] },
   // Triya's command palette; AutoCAD's Ctrl+K (HYPERLINK) has no command in Triya.
   { id: 'palette', label: 'Command palette', group: 'View', keys: ['Ctrl+K'] },
   { id: 'drafting:osnap', label: 'Object Snap on/off', group: 'Drafting', keys: ['F3', 'Ctrl+F'] },

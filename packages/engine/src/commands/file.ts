@@ -264,6 +264,9 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => fileCommand('SAVEAS', 'saveas'),
   () => fileCommand('CLOSE', 'close'),
   () => fileCommand('CLOSEALL', 'closeall'),
+  // QUIT (EXIT, Ctrl+Q; M7-06): AutoCAD's exits the program; a page cannot close its own window,
+  // so it closes every drawing as CLOSEALL does, each asking to save its changes.
+  () => fileCommand('QUIT', 'closeall'),
   () => fileCommand('NEW', 'new'),
   () => fileCommand('QNEW', 'qnew'),
   () => fileCommand('DRAWINGRECOVERY', 'recover'),

@@ -587,7 +587,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M7-05** Themes (light/dark chrome, canvas colours, plot preview), high-contrast mode; reduced-motion respect. **Acceptance:** theme snapshot tests.
 
-- [~] (thread: Ship second next M7 task) **M7-06** Keyboard: full AutoCAD default map, Ctrl+K palette polish, F2 history window, shortcut editor. **Acceptance:** keymap tests.
+- [~] (thread: Ship second next M7 task) **M7-06** Keyboard: full AutoCAD default map, Ctrl+K palette polish, F2 history window, shortcut editor. **Acceptance:** keymap tests. *Part 1 (#634):* AutoCAD 2024's whole default list checked key by key in `keymap.test.ts`; added Ctrl+0 Clean Screen (CLEANSCREENON/OFF, status bar button), Ctrl+Shift+H (HIDEPALETTES/SHOWPALETTES), Ctrl+F2 (TEXTSCR/GRAPHSCR), Ctrl+R next viewport, Ctrl+Page Up/Down layouts, Ctrl+Tab/Ctrl+F6 drawings, Ctrl+[ and Ctrl+\ cancel, Ctrl+Q QUIT (EXIT). The F2 history window (M7-03 part 2) and the shortcut editor (M3-10 part 2) were already built. *Part 2:* Ctrl+K palette polish (recently used first, every keyed action with its keys, Options tabs, match highlighting, list keys). *Part 3:* Ctrl+9 command line on/off (COMMANDLINE/COMMANDLINEHIDE, typing then shown at the cursor) and Ctrl+I COORDS.
 
 - [ ] **M7-07** Start screen: recent, templates, open, open PDF (red-line flow), samples from public corpus, learn links. **Acceptance:** smoke test.
 

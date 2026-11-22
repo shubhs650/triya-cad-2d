@@ -3620,6 +3620,11 @@ export class CanvasController {
     return typeof v === 'number' && v >= 0 && v <= 8 ? v : 4;
   }
 
+  /** Ctrl+R (M7-06): makes this tiled viewport current, as a click in it does. */
+  activate(): boolean {
+    return this.#activate();
+  }
+
   /** Makes this tiled viewport current; true when it was not. */
   #activate(): boolean {
     const tile = this.#hooks.tile;
