@@ -609,6 +609,40 @@ const ANNOTATE: RibbonTab = {
   ],
 };
 
+/**
+ * Parametric (M9-05, UI_SPEC §2): the Geometric panel's twelve constraints, in AutoCAD's order.
+ * Smooth is greyed out until the solver takes splines (M9-02 part 2). Auto Constrain, Show/Hide
+ * and Infer, and the Dimensional and Manage panels, come with their commands.
+ */
+const PARAMETRIC: RibbonTab = {
+  id: 'parametric',
+  label: 'Parametric',
+  panels: [
+    {
+      id: 'geometric',
+      label: 'Geometric',
+      compress: { order: 1, keep: [] },
+      items: [
+        cmd('gc-coincident', 'Coincident', 'gc-coincident', 'GCCOINCIDENT', ICON),
+        cmd('gc-collinear', 'Collinear', 'gc-collinear', 'GCCOLLINEAR', ICON),
+        cmd('gc-concentric', 'Concentric', 'gc-concentric', 'GCCONCENTRIC', ICON),
+        cmd('gc-fix', 'Fix', 'lock_closed', 'GCFIX', ICON),
+        cmd('gc-parallel', 'Parallel', 'gc-parallel', 'GCPARALLEL', ICON),
+        cmd('gc-perpendicular', 'Perpendicular', 'gc-perpendicular', 'GCPERPENDICULAR', ICON),
+        cmd('gc-horizontal', 'Horizontal', 'gc-horizontal', 'GCHORIZONTAL', ICON),
+        cmd('gc-vertical', 'Vertical', 'gc-vertical', 'GCVERTICAL', ICON),
+        cmd('gc-tangent', 'Tangent', 'gc-tangent', 'GCTANGENT', ICON),
+        off(
+          cmd('gc-smooth', 'Smooth', 'gc-smooth', 'GEOMCONSTRAINT', ICON, ['SMooth']),
+          'Smooth needs spline constraints, which come later',
+        ),
+        cmd('gc-symmetric', 'Symmetric', 'gc-symmetric', 'GCSYMMETRIC', ICON),
+        cmd('gc-equal', 'Equal', 'gc-equal', 'GCEQUAL', ICON),
+      ],
+    },
+  ],
+};
+
 const VIEW: RibbonTab = {
   id: 'view',
   label: 'View',
@@ -808,6 +842,7 @@ export const RIBBON_TABS: readonly RibbonTab[] = [
   HOME,
   INSERT,
   ANNOTATE,
+  PARAMETRIC,
   VIEW,
   OUTPUT,
   LAYOUT,

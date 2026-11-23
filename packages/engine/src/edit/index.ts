@@ -42,6 +42,7 @@ export * from './revcloud';
 export * from './image-clip';
 export * from './clipboard';
 export * from './clipboard-data';
+export * from './constraints';
 export * from './picture';
 export * from './underlay-attach';
 export * from './pdf-frame';

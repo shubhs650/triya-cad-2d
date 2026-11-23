@@ -2303,6 +2303,58 @@ export interface CenterMark extends NonGraphicalObject {
 export const isCenterMark = (o: NonGraphicalObject | undefined): o is CenterMark =>
   o?.type === 'TRIYA_CENTERMARK';
 
+/** AutoCAD's geometric constraints (M9-05), in GEOMCONSTRAINT's prompt order. */
+export const GEOMETRIC_CONSTRAINT_KINDS = [
+  'horizontal',
+  'vertical',
+  'perpendicular',
+  'parallel',
+  'tangent',
+  'smooth',
+  'coincident',
+  'concentric',
+  'collinear',
+  'symmetric',
+  'equal',
+  'fix',
+] as const;
+export type GeometricConstraintKind = (typeof GEOMETRIC_CONSTRAINT_KINDS)[number];
+
+/**
+ * A constraint point of an entity (M9-05): a LINE's start, end or mid; a CIRCLE's center; an
+ * ARC's center, start or end; a POINT's position; an LWPOLYLINE's vertex `index`, the mid of
+ * straight segment `index` or the center of arc segment `index`.
+ */
+export interface ConstraintPointRef {
+  readonly entity: Handle;
+  readonly point: 'start' | 'end' | 'mid' | 'center' | 'position' | 'vertex';
+  readonly index?: number;
+}
+
+/** A whole LINE, CIRCLE or ARC, or segment `segment` of an LWPOLYLINE. */
+export interface ConstraintCurveRef {
+  readonly entity: Handle;
+  readonly segment?: number;
+}
+
+export type ConstraintRef = ConstraintPointRef | ConstraintCurveRef;
+
+/**
+ * A geometric constraint GEOMCONSTRAINT or a GC* command made (M9-05): `refs` in the order they
+ * were picked, as `@triya/constraints`' ConstraintModel reads them. Kept in the drawing so undo,
+ * redo and recovery carry it; how a save stores it is M9-04's (`TRIYA_CONSTRAINTS`, PRD FR-X5):
+ * until then a save leaves it out. Filed under the root dictionary.
+ */
+export interface GeometricConstraintObject extends NonGraphicalObject {
+  readonly type: 'TRIYA_GEOMCONSTRAINT';
+  readonly kind: GeometricConstraintKind;
+  readonly refs: readonly ConstraintRef[];
+}
+
+export const isGeometricConstraint = (
+  o: NonGraphicalObject | undefined,
+): o is GeometricConstraintObject => o?.type === 'TRIYA_GEOMCONSTRAINT';
+
 /**
  * What restoring a layer state sets (M5-07, DXF 91 of its XRECORD): ObjectARX's
  * `AcDbLayerStateManager::LayerStateMask`, the Layer States Manager's "Layer properties to

@@ -582,7 +582,16 @@ for (const width of [1280, 1600, 1920]) {
     const height = () => ribbon(page).evaluate((r) => r.getBoundingClientRect().height);
     const home = await height();
     const heights: Record<string, number> = {};
-    for (const name of ['Insert', 'Annotate', 'View', 'Output', 'Layout', 'Tools', 'Home']) {
+    for (const name of [
+      'Insert',
+      'Annotate',
+      'Parametric',
+      'View',
+      'Output',
+      'Layout',
+      'Tools',
+      'Home',
+    ]) {
       await ribbon(page).getByRole('tab', { name, exact: true }).click();
       heights[name] = await height();
     }
@@ -608,7 +617,7 @@ test('contextual tabs come with the selection and the command running (M7-02 par
   await canvas.hover();
   await page.keyboard.press('Control+a');
   await expect(selected).toHaveText('Hatch Editor');
-  await expect(tabs).toHaveCount(8);
+  await expect(tabs).toHaveCount(RIBBON_TABS.length + 1);
   await expect(ribbon(page).getByRole('group')).toHaveText([
     /Boundaries/,
     /Properties/,
@@ -620,7 +629,7 @@ test('contextual tabs come with the selection and the command running (M7-02 par
   await shot(page, '1920-hatch-editor');
   // Its Close button deselects the hatch: the tab goes, and Home is back.
   await panel(page, 'Close').getByRole('button', { name: 'Close Hatch Editor' }).click();
-  await expect(tabs).toHaveCount(7);
+  await expect(tabs).toHaveCount(RIBBON_TABS.length);
   await expect(selected).toHaveText('Home');
 
   // Shown from another tab, Esc takes it away and that tab is back.

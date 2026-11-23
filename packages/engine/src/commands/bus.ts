@@ -98,6 +98,7 @@ import { gripInfoOf } from '../edit/array-grips';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
+import type { ConstraintService } from '../edit/constraints';
 import type { LayerNotifyEvent } from '../edit/layer-notify';
 import { distance } from '../geom/vec';
 import { wholeGroups } from '../edit/groups';
@@ -304,6 +305,8 @@ export interface PromptBusOptions {
   readonly hatchLines?: HatchLinesOf | undefined;
   /** The spelling dictionary SPELL checks with (M4-09 part 4); none by default. */
   readonly spelling?: SpellService | undefined;
+  /** The geometric constraint solver GEOMCONSTRAINT and GC* use (M9-05); none by default. */
+  readonly constraints?: ConstraintService | undefined;
   /** The time DATE and CDATE tell (M2-59); the system's local time by default. */
   readonly clock?: Clock;
 }
@@ -448,6 +451,7 @@ export class PromptBus {
   readonly #dimensions: DimensionRegenerator | undefined;
   readonly #hatchLines: HatchLinesOf | undefined;
   readonly #spelling: SpellService | undefined;
+  readonly #constraints: ConstraintService | undefined;
   readonly #listeners = new Set<(e: BusEvent) => void>();
   readonly #stack: Frame[] = [];
   #collectors: Collector[] = [];
@@ -543,6 +547,7 @@ export class PromptBus {
     this.#dimensions = options.dimensions;
     this.#hatchLines = options.hatchLines;
     this.#spelling = options.spelling;
+    this.#constraints = options.constraints;
     this.#clock = options.clock ?? SYSTEM_CLOCK;
     this.#pickfirstOn = options.pickfirst ?? true;
     this.#pickadd = options.pickadd ?? DEFAULT_PICKADD;
@@ -1621,6 +1626,7 @@ export class PromptBus {
       dimensions: this.#dimensions,
       hatchLines: this.#hatchLines,
       spelling: this.#spelling,
+      constraints: this.#constraints,
       clock: this.#clock,
     };
   }

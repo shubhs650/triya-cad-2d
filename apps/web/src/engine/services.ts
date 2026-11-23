@@ -3,16 +3,26 @@
 // (M2-10 part 3), what a dimension measures for the Properties palette (M2-35 part 10), and
 // the lines EXPLODE turns a pattern hatch into (M3-12 part 3). A hatch draws from the pattern
 // lines it stores; the bundled patterns stand in for one stored without them. SPELL's dictionary
-// (M4-09 part 4) loads the first time it is asked for.
-import type { EngineServices, SpellChecker } from '@triya/engine';
+// (M4-09 part 4) loads the first time it is asked for, as does the geometric constraint solver
+// (M9-05).
+import type { ConstraintSolver, EngineServices, SpellChecker } from '@triya/engine';
 import { measuredValue, regenerateDimension } from '@triya/dims';
 import { bundledPatterns, explodedHatchLines } from '@triya/hatch';
 
 let loaded: Promise<SpellChecker> | undefined;
+let solver: Promise<ConstraintSolver> | undefined;
 
 export const ENGINE_SERVICES: EngineServices = {
   dimensions: regenerateDimension,
   measureDimension: measuredValue,
   hatchLines: explodedHatchLines(bundledPatterns()),
   spelling: () => (loaded ??= import('./spelling').then((m) => m.checker())),
+  // A failed load is tried again the next time, rather than kept.
+  constraints: () =>
+    (solver ??= import('./constraints')
+      .then((m) => m.solver())
+      .catch((e: unknown) => {
+        solver = undefined;
+        throw e;
+      })),
 };

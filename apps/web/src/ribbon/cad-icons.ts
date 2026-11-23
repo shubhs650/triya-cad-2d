@@ -231,6 +231,32 @@ export const CAD_GLYPHS = {
   // Text Editor (M7-02 part 5): an overlined T; a stacked fraction.
   'text-overline': { d: 'M4.5 3.5h11M6.5 6.5h7M10 6.5v10' },
   'text-stack': { d: 'M5.5 3.5v5M3.5 10.5h13M12.5 12.5h3l-3 4h3M14.5 3.5l-9 13' },
+  // Parametric > Geometric (M9-05): AutoCAD's constraint glyphs (Fix is Fluent's lock).
+  'gc-coincident': { d: 'M2.5 15.5l7.5-5.5 7.5 5.5', dots: [[10, 10]] },
+  'gc-collinear': { d: 'M2.5 17.5l5-5M12.5 7.5l5-5', dots: [[10, 10]] },
+  'gc-concentric': { d: `${CIRCLE}M10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6` },
+  'gc-parallel': { d: 'M3.5 12.5l9-9M7.5 16.5l9-9' },
+  'gc-perpendicular': { d: 'M3.5 16.5h13M10 16.5v-13' },
+  'gc-horizontal': {
+    d: 'M2.5 10h15',
+    dots: [
+      [2.5, 10],
+      [17.5, 10],
+    ],
+  },
+  'gc-vertical': {
+    d: 'M10 2.5v15',
+    dots: [
+      [10, 2.5],
+      [10, 17.5],
+    ],
+  },
+  'gc-tangent': { d: 'M10 8.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8M2.5 8.5h15', dots: [[10, 8.5]] },
+  'gc-smooth': { d: 'M2.5 15.5c4 0 5-10 9-10h6', dots: [[11.5, 5.5]] },
+  'gc-symmetric': {
+    d: 'M10 2.5v2M10 6.5v2M10 10.5v2M10 14.5v2M3.5 6.5l3 3.5-3 3.5M16.5 6.5l-3 3.5 3 3.5',
+  },
+  'gc-equal': { d: 'M4.5 7.5h11M4.5 12.5h11' },
   // View, Tools (M7-02 part 2)
   'ucs-icon': { d: 'M4.5 3.5v13h12M2.5 5.5l2-2 2 2M14.5 14.5l2 2-2 2', dots: [[4.5, 16.5]] },
   ucs: { d: 'M4.5 3.5v13h12M2.5 5.5l2-2 2 2M14.5 14.5l2 2-2 2M7.5 13.5l6-6' },
