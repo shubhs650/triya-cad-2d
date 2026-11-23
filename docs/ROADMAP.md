@@ -637,7 +637,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M9-06** Modify-command interaction per FR-X4 (`ConstraintAwareness` hook). **Acceptance:** per-command tests.
 
-- [ ] **M9-07** Third-party notices in the app (found by M9-01, #646): an About dialog (or Help > About) listing `ATTRIBUTION.md`'s shipped components, with PlaneGCS's LGPL-2.1+ notice and source link and Eigen's MPL-2.0 notice and source link from `packages/constraints/wasm/NOTICE.md`, shown before the solver module first ships in the app (M9-02/M9-05 wire it). The LGPL and MPL require the notice wherever the module is distributed, and the app has no About dialog yet. **Acceptance:** Playwright opens it from the ribbon and finds both notices and links.
+- [~] (thread: Ship About dialog with license notices) **M9-07** Third-party notices in the app (found by M9-01, #646): an About dialog (or Help > About) listing `ATTRIBUTION.md`'s shipped components, with PlaneGCS's LGPL-2.1+ notice and source link and Eigen's MPL-2.0 notice and source link from `packages/constraints/wasm/NOTICE.md`, shown before the solver module first ships in the app (M9-02/M9-05 wire it). The LGPL and MPL require the notice wherever the module is distributed, and the app has no About dialog yet. **Acceptance:** Playwright opens it from the ribbon and finds both notices and links.
 
 ---
 
