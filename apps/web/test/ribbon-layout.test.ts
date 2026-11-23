@@ -108,7 +108,7 @@ describe('the data model', () => {
     ]);
     expect(labels('output')).toEqual(['Plot', 'Export', 'Publish']);
     expect(labels('layout')).toEqual(['Layout', 'Layout Viewports']);
-    expect(labels('tools')).toEqual(['Drawing Utilities', 'Settings', 'Customization']);
+    expect(labels('tools')).toEqual(['Drawing Utilities', 'Settings', 'Customization', 'Help']);
     // Every panel outside Home's protected three can give up room, in a distinct order.
     for (const t of RIBBON_TABS.filter((x) => x.id !== 'home' && x.id !== 'insert')) {
       const orders = t.panels.map((p) => p.compress?.order);
@@ -220,7 +220,7 @@ describe('the data model', () => {
             expect(toggles.has(i.run.action), where).toBe(true);
           else if (!i.control)
             expect(i.run.action, where).toMatch(
-              /^(palette:(diagnostics|health|history)|theme:(system|light|dark)|app:(aliases|shortcuts)|escape|text:(bold|italic|underline|overline|strike|stack|paragraph|columns|field|spell|close))$/,
+              /^(palette:(diagnostics|health|history)|theme:(system|light|dark)|app:(aliases|shortcuts|about)|escape|text:(bold|italic|underline|overline|strike|stack|paragraph|columns|field|spell|close))$/,
             );
           // A dropdown (M7-02 part 3) opens its own list.
           if (i.control) expect(i.run, where).toEqual({ action: `control:${i.control}` });

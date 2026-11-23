@@ -78,6 +78,7 @@ const NAMES = [
   'history',
   'image_add',
   'image_edit',
+  'info',
   'keyboard',
   'layer',
   'layer_diagonal',

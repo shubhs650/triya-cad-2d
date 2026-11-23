@@ -88,6 +88,21 @@ describe('the file commands', () => {
     expect(bus.undo.state.undoable).toBe(0);
   });
 
+  it('ABOUT opens the About dialog, transparently inside another command (M9-07)', async () => {
+    const { bus, asked, model } = setup(() => ({ ok: true }));
+    const version = model.version;
+    await bus.submit('ABOUT');
+    expect(asked).toEqual([{ op: 'file', action: 'about' }]);
+    expect(bus.command).toBeUndefined();
+    await bus.submit('LINE');
+    await bus.submit("'ABOUT");
+    expect(asked).toHaveLength(2);
+    expect(bus.promptText).toBe('Specify first point:');
+    await bus.cancel();
+    expect(model.version).toBe(version);
+    expect(bus.undo.state.undoable).toBe(0);
+  });
+
   it('reports what the app could not do', async () => {
     const { bus } = setup(() => ({ ok: false, message: 'Save cancelled.' }));
     await bus.submit('QSAVE');

@@ -97,6 +97,8 @@ import { ViewManager } from './ViewManager';
 import { viewManager } from './view-manager';
 import { layerStatesManager } from './layer-states';
 import { optionsDialog } from './options-dialog';
+import { aboutDialog } from './about';
+import { AboutDialog } from './AboutDialog';
 import { PageSetupManager, pageSetupManager } from './PageSetupManager';
 import { LayerStatesManager } from './LayerStatesManager';
 import { SelectTemplateDialog } from './SelectTemplateDialog';
@@ -1188,6 +1190,11 @@ async function fileCommand(
   if (action === 'options') {
     // OPTIONS (M7-04): the Options dialog, waited for until it closes.
     await optionsDialog.show();
+    return { ok: true };
+  }
+  if (action === 'about') {
+    // ABOUT (M9-07): the About dialog, waited for until it closes.
+    await aboutDialog.show();
     return { ok: true };
   }
   if (action === 'layerstates') {
@@ -2447,12 +2454,14 @@ export function App() {
   const settings = useSyncExternalStore(optionsDialog.subscribe, optionsDialog.get).open;
   const [aliasEditor, setAliasEditor] = useState(false);
   const [shortcutEditor, setShortcutEditor] = useState(false);
-  // The ribbon's Edit Aliases and Keyboard Shortcuts, one function for every render, so the
+  // The ribbon's Edit Aliases, Keyboard Shortcuts and About, one function for every render, so the
   // memoized ribbon does not render again with each edit (M7-11).
-  const openWindow = useCallback(
-    (w: AppWindow) => (w === 'aliases' ? setAliasEditor(true) : setShortcutEditor(true)),
-    [],
-  );
+  const about = useSyncExternalStore(aboutDialog.subscribe, aboutDialog.get);
+  const openWindow = useCallback((w: AppWindow) => {
+    if (w === 'about') void aboutDialog.show();
+    else if (w === 'aliases') setAliasEditor(true);
+    else setShortcutEditor(true);
+  }, []);
   const { aliasFile, keys: keyOverrides } = useSyncExternalStore(
     preferences.subscribe,
     preferences.get,
@@ -2778,6 +2787,7 @@ export function App() {
           onCancel={() => setShortcutEditor(false)}
         />
       )}
+      {about && <AboutDialog onClose={() => aboutDialog.close()} />}
       {aliasEditor && (
         <AliasEditor
           file={aliasFile}
