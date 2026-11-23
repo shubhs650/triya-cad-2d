@@ -2357,6 +2357,53 @@ export const isGeometricConstraint = (
 ): o is GeometricConstraintObject => o?.type === 'TRIYA_GEOMCONSTRAINT';
 
 /**
+ * AutoCAD's dimensional constraints as the drawing keeps them (M9-03): DIMCONSTRAINT's Linear
+ * becomes Horizontal or Vertical when it is placed.
+ */
+export const DIMENSIONAL_CONSTRAINT_KINDS = [
+  'horizontal',
+  'vertical',
+  'aligned',
+  'angular',
+  'radial',
+  'diameter',
+] as const;
+export type DimensionalConstraintKind = (typeof DIMENSIONAL_CONSTRAINT_KINDS)[number];
+
+/**
+ * A dimensional constraint DIMCONSTRAINT or a DC* command made (M9-03 part 3): `refs` as
+ * `@triya/constraints`' ConstraintModel reads them (Horizontal and Vertical two points or a line;
+ * Aligned two points, a point and a line, a line, or two lines; Angular two lines, an arc, or
+ * three points, the vertex first; Radial and Diameter a circle or arc). Its value is the
+ * Parameters Manager's row `parameter`, whose expression the constraint keeps. Filed and saved
+ * as geometric constraints are (the `TRIYA_CONSTRAINTS` dictionary, DEC-082).
+ */
+export interface DimensionalConstraintObject extends NonGraphicalObject {
+  readonly type: 'TRIYA_DIMCONSTRAINT';
+  readonly dimension: DimensionalConstraintKind;
+  readonly refs: readonly ConstraintRef[];
+  /** The parameter's name: d1, ang1, rad1, dia1… or the one typed. */
+  readonly parameter: string;
+  /** The parameter's expression: the measured value, or the value or expression typed. */
+  readonly expression: string;
+  /** The Parameters Manager's Description. */
+  readonly description?: string;
+  /**
+   * AutoCAD's Reference property: the constraint measures and does not drive; its expression
+   * is the measured value, set again whenever the geometry moves.
+   */
+  readonly reference?: boolean;
+  /** Where the dimension line was placed ("Specify dimension line location"). */
+  readonly location: Vec2;
+  /** AutoCAD's Constraint Form: dynamic (the default, CCONSTRAINTFORM 0) or annotational. */
+  readonly form: 'dynamic' | 'annotational';
+}
+
+export const isDimensionalConstraint = (
+  o: NonGraphicalObject | undefined,
+): o is DimensionalConstraintObject => o?.type === 'TRIYA_DIMCONSTRAINT';
+
+/**
  * What restoring a layer state sets (M5-07, DXF 91 of its XRECORD): ObjectARX's
  * `AcDbLayerStateManager::LayerStateMask`, the Layer States Manager's "Layer properties to
  * restore". `vpFrozen` is VP Freeze in the current viewport, `newVpFrozen` New VP Freeze. `hidden`
