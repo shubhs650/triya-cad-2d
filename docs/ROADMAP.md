@@ -637,7 +637,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M9-06** Modify-command interaction per FR-X4 (`ConstraintAwareness` hook). **Acceptance:** per-command tests.
 
-- [~] (thread: Ship About dialog with license notices) **M9-07** Third-party notices in the app (found by M9-01, #646): an About dialog (or Help > About) listing `ATTRIBUTION.md`'s shipped components, with PlaneGCS's LGPL-2.1+ notice and source link and Eigen's MPL-2.0 notice and source link from `packages/constraints/wasm/NOTICE.md`, shown before the solver module first ships in the app (M9-02/M9-05 wire it). The LGPL and MPL require the notice wherever the module is distributed, and the app has no About dialog yet. **Acceptance:** Playwright opens it from the ribbon and finds both notices and links.
+- [x] (#648) **M9-07** Third-party notices in the app (found by M9-01, #646): an About dialog (or Help > About) listing `ATTRIBUTION.md`'s shipped components, with PlaneGCS's LGPL-2.1+ notice and source link and Eigen's MPL-2.0 notice and source link from `packages/constraints/wasm/NOTICE.md`, shown before the solver module first ships in the app (M9-02/M9-05 wire it). The LGPL and MPL require the notice wherever the module is distributed, and the app has no About dialog yet. **Acceptance:** Playwright opens it from the ribbon and finds both notices and links. **Done (#648):** the About dialog (`apps/web/src/AboutDialog.tsx`; Tools > Help > About, with no drawing open too, and ABOUT, transparent) shows the version and MIT licence, `packages/constraints/wasm/NOTICE.md` as written (PlaneGCS LGPL-2.1+ with its FreeCAD source link, Eigen MPL-2.0 with its source link, the MPL's text link), the LGPL-2.1 and dictionary licence texts on request (loaded then), and every `ATTRIBUTION.md` row whose Use does not say not shipped, dev only or CI only (`apps/web/src/about.ts` reads both files at build time; `apps/web/test/about.test.ts` pins the shipped list). `tests/e2e/ui/about.spec.ts` opens it from the ribbon and finds both notices and links; the accessibility spec walks it. Full licence texts of the MIT/Apache components: M10-09.
 
 ---
 
@@ -654,6 +654,8 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 - [ ] **M10-04** User docs: in-app help, command reference generated from `COMMANDS.md`, keyboard card, "Coming from AutoCAD" guide, privacy page. **Acceptance:** docs build in site.
 
 - [ ] **M10-05** Security/privacy review: CSP, no third-party scripts, SRI, offline test, data-clear test; license audit (`ATTRIBUTION.md` complete). **Acceptance:** checklist in PR.
+
+- [ ] **M10-09** Full licence texts in the About dialog (found by M9-07, #648): it lists each shipped component's licence and source from `ATTRIBUTION.md` and shows the LGPL-2.1 and dictionary texts, but MIT, BSD and Apache-2.0 ask for each component's copyright and permission notice to go with copies too. Collect the LICENSE of every shipped component (`third_party/acad-ts`, `corpus/public/LICENSES`, the npm packages and React DOM's `scheduler`) into a generated, committed file the dialog shows. **Acceptance:** a unit test that every shipped `ATTRIBUTION.md` row has its licence text.
 
 - [ ] **M10-06** Release: changelog, version, tag, Pages production deploy, OET site tile and links, GitHub release notes. **Acceptance:** `v1.0.0` live at `triya-cad-2d.openengtools.com`.
 
