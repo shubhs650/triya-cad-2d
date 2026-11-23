@@ -373,6 +373,91 @@ describe('geometric constraints', () => {
   });
 });
 
+describe('lines keep their length (M9-08)', () => {
+  // AutoCAD turns the second object about its held point, or moves it whole, rather than
+  // stretching it: a least-change solve alone shortens a line it turns.
+  it('Parallel turns the second line about its start, its length kept', () => {
+    const { d, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 5, 60, 25);
+    const before = len({ x: 0, y: 5 }, { x: 60, y: 25 });
+    add(con('parallel', curve(a), curve(b)));
+    const gb = d.geom(b, 'LINE');
+    nearPt(gb.start, { x: 0, y: 5 });
+    nearPt(gb.end, { x: before, y: 5 });
+  });
+
+  it('Perpendicular turns the second line about its start, its length kept', () => {
+    const { d, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const c = d.line(20, 0, 25, 1);
+    const before = len({ x: 20, y: 0 }, { x: 25, y: 1 });
+    add(con('perpendicular', curve(a), curve(c)));
+    const gc = d.geom(c, 'LINE');
+    nearPt(gc.start, { x: 20, y: 0 });
+    nearPt(gc.end, { x: 20, y: before });
+  });
+
+  it('Horizontal and Vertical turn a line about its start, its length kept', () => {
+    const { d, add } = setup();
+    const h = d.line(1, 2, 9, 5);
+    const v = d.line(30, 0, 33, 4);
+    add(con('horizontal', curve(h)));
+    add(con('vertical', curve(v)));
+    nearPt(d.geom(h, 'LINE').start, { x: 1, y: 2 });
+    nearPt(d.geom(h, 'LINE').end, { x: 1 + Math.hypot(8, 3), y: 2 });
+    nearPt(d.geom(v, 'LINE').start, { x: 30, y: 0 });
+    nearPt(d.geom(v, 'LINE').end, { x: 30, y: 5 });
+  });
+
+  it('Coincident moves the second line whole', () => {
+    const { d, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(10.4, 0.3, 10, 8);
+    add(con('coincident', pt(a, 'end'), pt(b, 'start')));
+    nearPt(d.geom(b, 'LINE').start, { x: 10, y: 0 });
+    nearPt(d.geom(b, 'LINE').end, { x: 9.6, y: 7.7 });
+  });
+
+  it('a horizontal line made coincident with another line moves along, still horizontal', () => {
+    const { d, add } = setup();
+    // A least-change solve moved only the start, collapsing the line, and refused it.
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 5, 10, 5);
+    add(con('horizontal', curve(b)));
+    add(con('coincident', pt(a, 'end'), pt(b, 'start')));
+    nearPt(d.geom(a, 'LINE').start, { x: 0, y: 0 });
+    nearPt(d.geom(a, 'LINE').end, { x: 10, y: 0 });
+    const gb = d.geom(b, 'LINE');
+    nearPt(gb.start, { x: 10, y: 0 });
+    nearPt(gb.end, { x: 20, y: 0 });
+  });
+
+  it('a line joined to the one turned keeps its length too', () => {
+    const { d, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 5, 6, 13);
+    const c = d.line(6, 13, 9, 20);
+    add(con('coincident', pt(b, 'end'), pt(c, 'start')));
+    add(con('parallel', curve(a), curve(b)));
+    const gb = d.geom(b, 'LINE');
+    const gc = d.geom(c, 'LINE');
+    near(len(gb.start, gb.end), 10);
+    near(len(gc.start, gc.end), Math.hypot(3, 7));
+    nearPt(gc.start, gb.end);
+  });
+
+  it("Equal keeps the second line's start and direction", () => {
+    const { d, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 5, 3, 9);
+    add(con('equal', curve(a), curve(b)));
+    const gb = d.geom(b, 'LINE');
+    nearPt(gb.start, { x: 0, y: 5 });
+    nearPt(gb.end, { x: 6, y: 13 });
+  });
+});
+
 describe('polylines', () => {
   it('constrains a straight segment and a vertex', () => {
     const { d, add } = setup();
