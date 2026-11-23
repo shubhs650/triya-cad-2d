@@ -2,9 +2,10 @@
 // drawn; the Parametric tab's Parallel makes the second line parallel to the first, the first
 // staying put; GCPERPENDICULAR typed makes the third perpendicular to the first; a Perpendicular
 // between the two parallel lines is refused, saying why; U takes the last constraint back with
-// what it moved. The engine worker loads the PlaneGCS solver on the first constraint. Prompts
-// and refusals are unit-tested in packages/engine/test/commands/constraints.test.ts, the solving
-// in packages/constraints/test/solver.test.ts; this checks that the ribbon, canvas, bus, engine
+// what it moved. The lines turned keep their length (M9-08). The engine worker loads the
+// PlaneGCS solver on the first constraint. Prompts and refusals are unit-tested in
+// packages/engine/test/commands/constraints.test.ts, the solving in
+// packages/constraints/test/solver.test.ts; this checks that the ribbon, canvas, bus, engine
 // worker and solver module carry them.
 //
 // M9-04: a constraint is saved with the drawing (the `TRIYA_CONSTRAINTS` dictionary, DEC-081) and
@@ -131,6 +132,12 @@ test('Parallel from the Parametric tab, GCPERPENDICULAR typed, a refusal and U',
   await expect
     .poll(async () => (await drawn(page)).constraints)
     .toEqual(['parallel', 'perpendicular']);
+  // M9-08: each turned about its start, its length kept (the second was 63.246 long, the
+  // third 50; a least-change solve had left them 60 and about 46).
+  expect((await drawn(page)).lines.slice(1)).toEqual([
+    [20, 50, 83.246, 50],
+    [100, 20, 100, 70],
+  ]);
   await expectDrawn(page);
   await park();
   await page.screenshot({ path: test.info().outputPath('2-constrained.png') });

@@ -11,7 +11,9 @@
 // AutoCAD's rules encoded here (GEOMCONSTRAINT, AutoCAD 2024 Help):
 //  - The second object adjusts to the first: while a new constraint is solved the first
 //    object (or, for a point on a curve, the curve; for Symmetric, the first object and the
-//    symmetry line) is held where it is, unless other constraints need it to move.
+//    symmetry line) is held where it is, unless other constraints need it to move. The
+//    second object moves whole where it can, else a line turns about its held point, and
+//    lines keep their length before any stretches (M9-08, solveHolding).
 //  - A constraint that would over-constrain the geometry, contradicting the others or
 //    adding nothing to them, is refused and the geometry is left as it was.
 //  - Symmetric lines mirror their angle, not their endpoints; symmetric circles and arcs
@@ -753,6 +755,19 @@ function holdFor(c: GeometricConstraint): GeomRef[] {
  * holding everything but the second object (an arc moving whole), then letting the arc
  * change shape, then holding only the first object, then holding nothing; the first that
  * solves wins. False when none does.
+ *
+ * A geometric constraint first tries the tiers of M9-08, before any line may stretch: a
+ * least-change solve spreads the change over every coordinate, so a line it turns comes out
+ * shorter (GCPARALLEL on a 63-long line left it 60 long) and a horizontal line whose start
+ * is joined to another line had its end left behind. AutoCAD moves the second object whole
+ * where it can, or turns it about its held point, and keeps the lengths of lines it moves.
+ * So, everything but the second object held: it moves whole; else a line turns about its
+ * start, its length kept; else lines keep their length; else a line keeps its start and
+ * direction (Equal: its end slides along it). Each of these keeps circles and arcs whole.
+ * Then the old tiers, with a tier between holding the others and holding only the first
+ * object where the objects joined to the second move too but keep their lengths. The Help
+ * does not say which end a line turns about for Parallel or Perpendicular; the start, as
+ * for Horizontal (the reference carries no pick point).
  */
 function solveHolding(
   build: Build,
@@ -762,22 +777,51 @@ function solveHolding(
   keeps: readonly DimensionalConstraint[] = [],
 ): boolean {
   if (!held.length) return build.solveChecked();
-  const moving = new Set(refs.filter((r) => !held.includes(r)).map((r) => r.entity));
+  // Horizontal and Vertical hold only a line's start: the line itself turns.
+  const turning =
+    kind === 'horizontal' || kind === 'vertical'
+      ? held.filter((r) => !isPointRef(r)).map((r) => r.entity)
+      : [];
+  const moving = new Set([
+    ...refs.filter((r) => !held.includes(r)).map((r) => r.entity),
+    ...turning,
+  ]);
   const others = build.entities().filter((h) => !moving.has(h));
   const first = () => {
     held.forEach((ref) => build.hold(ref, kind));
     keeps.forEach((c) => build.keep(c));
   };
+  const holdOthers = () => {
+    first();
+    others.forEach((h) => build.holdEntity(h));
+  };
+  const keepMoving = (how: KeepMoving) => () => {
+    holdOthers();
+    moving.forEach((h) => build.keepMoving(h, how));
+  };
+  // Every entity the first object does not hold whole.
+  const loose = build
+    .entities()
+    .filter((h) => turning.includes(h) || !held.some((r) => !isPointRef(r) && r.entity === h));
+  const geometric =
+    kind === undefined
+      ? []
+      : [keepMoving('whole'), keepMoving('pivot'), keepMoving('length'), keepMoving('slide')];
   const tiers = [
+    ...geometric,
     () => {
-      first();
-      others.forEach((h) => build.holdEntity(h));
+      holdOthers();
       moving.forEach((h) => build.holdShape(h));
     },
-    () => {
-      first();
-      others.forEach((h) => build.holdEntity(h));
-    },
+    holdOthers,
+    ...(kind === undefined
+      ? []
+      : [
+          () => {
+            first();
+            loose.forEach((h) => build.keepMoving(h, 'length'));
+          },
+        ]),
     first,
     () => undefined,
   ];
@@ -839,7 +883,10 @@ type Mapped =
 
 /** The tag of the structure Triya adds (a line's midpoint). */
 const INTERNAL_TAG = ARC_RULES_TAG - 1;
-/** The tag of what `Build.keep` adds while a dimensional value is first solved. */
+/** What a moving object keeps while a geometric constraint is first solved (Build.keepMoving). */
+type KeepMoving = 'whole' | 'pivot' | 'length' | 'slide';
+
+/** The tag of what `Build.keep` and `Build.keepMoving` add until `releaseHolds()`. */
 const KEEP_TAG = ARC_RULES_TAG - 2;
 
 const describeRef = (ref: GeomRef) =>
@@ -1248,6 +1295,87 @@ class Build {
     if (m?.kind === 'ARC') this.#hold([], [m.arc.radius, m.arc.startAngle, m.arc.endAngle]);
   }
 
+  /**
+   * Keeps what `how` says of a mapped entity that moves while a geometric constraint is
+   * first solved, until `releaseHolds()` (M9-08, solveHolding): 'whole' moves a line or
+   * polyline without turning it (each end or vertex keeps its offset from the first);
+   * 'pivot' keeps a line's start and length, so it turns about its start; 'length' keeps
+   * the length of a line or of a polyline's straight segments; 'slide' keeps a line's start
+   * and direction. Each keeps a circle's radius, an arc's radius and angles, and a polyline
+   * arc segment's radius.
+   */
+  keepMoving(handle: Handle, how: KeepMoving): void {
+    const m = this.#mapped.get(handle)?.m;
+    if (!m) return;
+    switch (m.kind) {
+      case 'LINE': {
+        const l = m.line;
+        if (how === 'whole') return this.#keepOffsets(l.p1, [l.p2]);
+        if (how === 'pivot' || how === 'slide') this.#hold([l.p1], []);
+        if (how === 'slide') return this.#keepDirection(l.p1, l.p2, l.id);
+        return this.#keepLength(l.p1, l.p2);
+      }
+      case 'CIRCLE':
+        return this.#hold([], [m.circle.radius]);
+      case 'ARC':
+        return this.holdShape(handle);
+      case 'POINT':
+        return;
+      case 'LWPOLYLINE': {
+        const [v0, ...rest] = m.vertices;
+        if (how === 'whole' && v0 !== undefined) this.#keepOffsets(v0, rest);
+        for (const seg of m.segments) {
+          if (seg.type === 'arc') this.#hold([], [seg.radius]);
+          else if (how === 'pivot' || how === 'length') this.#keepLength(seg.p1, seg.p2);
+        }
+        return;
+      }
+    }
+  }
+
+  /** Keeps each of `points` at its offset from `p`, so they move together without turning. */
+  #keepOffsets(p: number, points: readonly number[]): void {
+    const s = this.#s;
+    const [px, py] = s.pointParams(p);
+    for (const q of points) {
+      const [qx, qy] = s.pointParams(q);
+      s.constrain(
+        ConstraintKind.Difference,
+        [px, qx, s.param(s.value(qx) - s.value(px), 'fixed')],
+        KEEP_TAG,
+      );
+      s.constrain(
+        ConstraintKind.Difference,
+        [py, qy, s.param(s.value(qy) - s.value(py), 'fixed')],
+        KEEP_TAG,
+      );
+      this.#keeping = true;
+    }
+  }
+
+  /** Keeps p→q parallel to where it runs now (a fixed line beside it, not P2PAngle: PlaneGCS adds that one without its tag). */
+  #keepDirection(p: number, q: number, line?: number): void {
+    const s = this.#s;
+    const a = s.pointAt(p);
+    const b = s.pointAt(q);
+    if (a.x === b.x && a.y === b.y) return;
+    const h1 = s.point(a.x, a.y);
+    const h2 = s.point(b.x, b.y);
+    s.fix(h1);
+    s.fix(h2);
+    s.constrain(ConstraintKind.Parallel, [line ?? s.line(p, q), s.line(h1, h2)], KEEP_TAG);
+    this.#keeping = true;
+  }
+
+  /** Keeps the distance from p to q; not for points that meet (a zero distance has no direction to keep). */
+  #keepLength(p: number, q: number): void {
+    const s = this.#s;
+    const d = dist(s.pointAt(p), s.pointAt(q));
+    if (d <= this.#tol.linear) return;
+    s.constrain(ConstraintKind.P2PDistance, [p, q, s.param(d, 'fixed')], KEEP_TAG);
+    this.#keeping = true;
+  }
+
   releaseHolds(): void {
     for (const p of this.#held) this.#s.setParamKind(p, 'unknown');
     this.#held.clear();
@@ -1267,23 +1395,11 @@ class Build {
   keep(c: DimensionalConstraint): void {
     const s = this.#s;
     const refs = c.refs;
-    const tag = KEEP_TAG;
-    /** Keeps p→q parallel to where it runs now (a fixed line beside it, not P2PAngle: PlaneGCS adds that one without its tag). */
-    const direction = (p: number, q: number, line = s.line(p, q)) => {
-      const a = s.pointAt(p);
-      const b = s.pointAt(q);
-      if (a.x === b.x && a.y === b.y) return;
-      const h1 = s.point(a.x, a.y);
-      const h2 = s.point(b.x, b.y);
-      s.fix(h1);
-      s.fix(h2);
-      s.constrain(ConstraintKind.Parallel, [line, s.line(h1, h2)], tag);
-      this.#keeping = true;
-    };
+    const direction = (p: number, q: number, line?: number) => this.#keepDirection(p, q, line);
     const length = (p: number, q: number) => {
       const a = s.pointAt(p);
       const b = s.pointAt(q);
-      s.constrain(ConstraintKind.P2PDistance, [p, q, s.param(dist(a, b), 'fixed')], tag);
+      s.constrain(ConstraintKind.P2PDistance, [p, q, s.param(dist(a, b), 'fixed')], KEEP_TAG);
       this.#keeping = true;
     };
     switch (c.dimension) {

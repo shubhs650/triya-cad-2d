@@ -24,6 +24,32 @@ async function open(page: Page) {
   await expectShown(page, path.basename(DXF));
 }
 
+/**
+ * Reloads once the stack's layout is stored. The app writes its settings to IndexedDB without
+ * waiting (preferences.ts), so a reload straight after a change could load the layout from
+ * before it (the bottom dock came back 240 high, not 304). A readwrite transaction on the
+ * settings store runs after every one created before it, so its completion means the app's
+ * last write is in.
+ */
+async function reload(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const r = indexedDB.open('triya-settings', 1);
+        r.onerror = () => reject(r.error ?? new Error('IndexedDB open failed'));
+        r.onsuccess = () => {
+          const t = r.result.transaction('settings', 'readwrite');
+          t.oncomplete = () => {
+            r.result.close();
+            resolve();
+          };
+          t.onerror = () => reject(t.error ?? new Error('IndexedDB transaction failed'));
+        };
+      }),
+  );
+  await page.reload();
+}
+
 const rail = (page: Page, name: string) =>
   page.getByRole('navigation', { name: 'Palettes' }).getByRole('button', { name, exact: true });
 const tabs = (page: Page) => page.getByRole('tablist', { name: 'Open palettes' }).getByRole('tab');
@@ -142,7 +168,7 @@ test.describe('docked (1600 px)', () => {
     await expect.poll(async () => Math.round((await box(page, stack(page))).width)).toBe(500);
 
     // The next session: the same tabs, front tab, side and width.
-    await page.reload();
+    await reload(page);
     await open(page);
     await expect(tabs(page)).toHaveText(['Properties', 'Layers']);
     await expect(tabs(page).nth(1)).toHaveAttribute('aria-selected', 'true');
@@ -205,7 +231,7 @@ test.describe('floating, bottom dock and auto-hide (1600 px)', () => {
     await shot(page, '3-floating.png');
 
     // The next session: floating at the same place, the same size.
-    await page.reload();
+    await reload(page);
     await open(page);
     await expect(stack(page)).toHaveAttribute('data-floating', 'true');
     const again = await box(page, stack(page));
@@ -235,7 +261,7 @@ test.describe('floating, bottom dock and auto-hide (1600 px)', () => {
     await expect(heightHandle(page)).toHaveAttribute('aria-valuenow', '304');
     await shot(page, '5-docked-bottom.png');
 
-    await page.reload();
+    await reload(page);
     await open(page);
     await expect(heightHandle(page)).toHaveAttribute('aria-valuenow', '304');
     await expect(stack(page)).toHaveAttribute('data-floating', 'false');
@@ -284,7 +310,7 @@ test.describe('floating, bottom dock and auto-hide (1600 px)', () => {
     await expect(layers).toBeHidden();
 
     // Kept after a reload; the menu turns it off.
-    await page.reload();
+    await reload(page);
     await open(page);
     await page.mouse.move(400, 400);
     await expect(tabs(page)).toHaveText(['Layers']);
