@@ -625,7 +625,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 **Exit criteria:** FR-X complete; geometric + dimensional constraints with solver, UI, storage, and modify-command interaction.
 
-- [ ] **M9-01** PlaneGCS WASM build (Emscripten, pinned commit, LGPL notices, CI build cache, lazy load). **Acceptance:** solve a 50-constraint sketch in < 20 ms in Node and browser.
+- [~] (thread: Ship first M9 roadmap task; blocked on #645) **M9-01** PlaneGCS WASM build (Emscripten, pinned commit, LGPL notices, CI build cache, lazy load). **Acceptance:** solve a 50-constraint sketch in < 20 ms in Node and browser.
 
 - [ ] **M9-02** `ConstraintModel`: entity ↔ GCS primitive mapping, geometric constraints (all 12), solve on edit, DOF, conflict/redundancy reporting. **Acceptance:** solver scenario tests incl. over-constrained detection.
 
