@@ -633,7 +633,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M9-04** Constraint storage (`TRIYA_CONSTRAINTS` dictionary) and round-trip; passes the ezdxf audit (DEC-047). **Acceptance:** round-trip diff = 0 with constraints present.
 
-- [ ] **M9-05** UI: Parametric ribbon tab, constraint bars, infer toggle, CONSTRAINTSETTINGS, show/hide, delete. **Acceptance:** Playwright.
+- [~] (thread: Ship constraint commands in the app) **M9-05** UI: Parametric ribbon tab, constraint bars, infer toggle, CONSTRAINTSETTINGS, show/hide, delete. **Acceptance:** Playwright.
 
 - [ ] **M9-06** Modify-command interaction per FR-X4 (`ConstraintAwareness` hook). **Acceptance:** per-command tests.
 
