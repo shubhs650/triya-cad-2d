@@ -258,6 +258,9 @@ function ExportBody({
       ref={ref}
       className="cad-dialog export-dialog"
       aria-label={title}
+      // Its fields show once the space is measured; until then assistive technology (and the
+      // accessibility spec's Tab walk, M9-07) knows it is still filling in.
+      aria-busy={s && space ? undefined : true}
       onCancel={(e) => {
         e.preventDefault();
         exportDialog.close();

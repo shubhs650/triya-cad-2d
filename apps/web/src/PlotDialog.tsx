@@ -415,6 +415,8 @@ function PlotBody({
       ref={ref}
       className="cad-dialog plot-dialog"
       aria-label={title}
+      // Its fields show once the space is measured; until then it is still filling in (M9-07).
+      aria-busy={s && space && own ? undefined : true}
       onCancel={(e) => {
         e.preventDefault();
         plotDialog.close();

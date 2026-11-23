@@ -1,13 +1,13 @@
 # Attribution and third-party licenses
 
-Every runtime or asset dependency is listed here. Adding a dependency without a line here fails review (see `CLAUDE.md`). Allowed licenses: MIT, BSD, Apache-2.0, ISC, and LGPL only as a separately loaded module (and, inside that PlaneGCS module only, Eigen's MPL-2.0, DEC-080). GPL/AGPL are not allowed.
+Every runtime or asset dependency is listed here. Adding a dependency without a line here fails review (see `CLAUDE.md`). The app's About dialog (Tools > About, ABOUT; M9-07) shows every row whose Use does not say "not shipped", "dev only" or "CI only", with the PlaneGCS module's `NOTICE.md`. Allowed licenses: MIT, BSD, Apache-2.0, ISC, and LGPL only as a separately loaded module (and, inside that PlaneGCS module only, Eigen's MPL-2.0, DEC-080). GPL/AGPL are not allowed.
 
 | Component | Use | License | Source |
 |---|---|---|---|
 | acad-ts | DWG/DXF read/write (vendored filtered snapshot of upstream `315f3d8` with patches, DEC-033; `third_party/acad-ts/LICENSE`) | MIT | https://github.com/node-projects/acad-ts |
 | ACadSharp | origin of acad-ts | MIT | https://github.com/DomCR/ACadSharp |
 | ezdxf example and test drawings | public fidelity corpus (`corpus/public/third-party/ezdxf`, license text in `corpus/public/LICENSES`); four of them ship in the app as the start screen's samples (M7-07, `apps/web/src/start-screen.ts`) | MIT | https://github.com/mozman/ezdxf |
-| ACadSharp sample drawings | public fidelity corpus (`corpus/public/third-party/acadsharp`, license text in `corpus/public/LICENSES`) | MIT | https://github.com/DomCR/ACadSharp |
+| ACadSharp sample drawings | public fidelity corpus (`corpus/public/third-party/acadsharp`, license text in `corpus/public/LICENSES`); not shipped | MIT | https://github.com/DomCR/ACadSharp |
 | PlaneGCS (FreeCAD) | 2D constraint solver, built to WASM as a separate module loaded at run time (`packages/constraints/wasm`, notice in `NOTICE.md` there); vendored snapshot of FreeCAD `1.1.4` (`4fd3bf3`) in `third_party/planegcs` with its build script (M9-01) | LGPL-2.1+ | https://github.com/FreeCAD/FreeCAD/tree/main/src/Mod/Sketcher/App/planegcs |
 | Eigen 3.4.0 | linear algebra inside the PlaneGCS module only, compiled unmodified with `EIGEN_MPL2_ONLY`; downloaded at build time, not committed. Allowed for this module only by DEC-080 (owner, #645) | MPL-2.0 | https://gitlab.com/libeigen/eigen |
 | Emscripten 3.1.74 | builds the PlaneGCS module (pinned Docker image); its runtime glue ships as `planegcs.mjs` | MIT | https://github.com/emscripten-core/emscripten |
@@ -19,7 +19,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | Hunspell en_US dictionary 2020.12.07 (SCOWL, via `dictionary-en` 4.0.0) | SPELL's main dictionary, bundled as `assets/dictionaries/en-US/en_US.aff` and `en_US.dic` (M4-09 part 4); full notices in `assets/dictionaries/en-US/LICENSE`, including the UKACD notice it asks to be shown | SCOWL's permissive word-list terms (Kevin Atkinson; MIT-style: use, copy, modify, distribute and sell with the notice kept), with the Ispell BSD licence for the affix file, public-domain sources and the WordNet 1.6 licence | http://wordlist.aspell.net/, https://github.com/wooorm/dictionaries |
 | UTIF.js (`utif` 3.1.0) | TIFF decoding for raster images (`packages/render`, M1-19 part 2); its embedded JPEG decoder is Mozilla pdf.js code (Apache-2.0) | MIT | https://github.com/photopea/UTIF.js |
 | fflate 0.8.2 | zlib inflate for Deflate TIFF strips, behind the `pako` stand-in `third_party/pako-inflate` (MIT, ours) that replaces pako, whose Zlib license is not on the allowed list (M1-19 part 2); zlib inflate and deflate of CTB/STB plot style tables, a direct dependency of `@triya/render` (M2-15) | MIT | https://github.com/101arrowz/fflate |
-| React, Vite, Zustand, Radix, flatbush, Playwright, Vitest | app/tooling | MIT | npm |
+| Vite, Vitest | build and test tooling (React has its own row below); not shipped | MIT | npm |
 | pixelmatch 7 | golden-image pixel comparison in `@triya/testkit` (fidelity harness, M1-24); dev only, not shipped | ISC | https://github.com/mapbox/pixelmatch |
 | pngjs 7 (and `@types/pngjs`, MIT) | PNG decode/encode for the golden-image comparison (`@triya/testkit`, M1-24); dev only, not shipped | MIT | https://github.com/pngjs/pngjs |
 | React 19.2 and React DOM (`apps/web`, M1-22); `@vitejs/plugin-react` 5 and `@types/react`, `@types/react-dom` (build and types only, not shipped) | app shell UI | MIT | https://github.com/facebook/react, https://github.com/vitejs/vite-plugin-react |

@@ -762,7 +762,7 @@ const TOOLS: RibbonTab = {
     {
       id: 'drawing-utilities',
       label: 'Drawing Utilities',
-      compress: { order: 3, keep: ['units'] },
+      compress: { order: 4, keep: ['units'] },
       items: [
         cmd('units', 'Units', 'ruler', 'UNITS', BIG),
         act('health', 'Drawing Health', 'heart_pulse', 'palette:health', SECONDARY),
@@ -774,7 +774,7 @@ const TOOLS: RibbonTab = {
     {
       id: 'settings',
       label: 'Settings',
-      compress: { order: 2, keep: ['options'] },
+      compress: { order: 3, keep: ['options'] },
       items: [
         cmd('options', 'Options', 'settings', 'OPTIONS', BIG),
         cmd('drafting-settings', 'Drafting Settings', 'grid', 'DSETTINGS', SECONDARY),
@@ -787,11 +787,19 @@ const TOOLS: RibbonTab = {
     {
       id: 'customization',
       label: 'Customization',
-      compress: { order: 1, keep: [] },
+      compress: { order: 2, keep: [] },
       items: [
         act('aliases', 'Edit Aliases', 'textbox_more', 'app:aliases', LABELLED),
         act('shortcuts', 'Keyboard Shortcuts', 'keyboard', 'app:shortcuts', LABELLED),
       ],
+    },
+    {
+      // UI_SPEC §2's Tools > About (M9-07): AutoCAD keeps About in its InfoCenter's Help menu,
+      // which Triya has not; an app action, so it opens with no drawing open too.
+      id: 'help',
+      label: 'Help',
+      compress: { order: 1, keep: [] },
+      items: [act('about', 'About', 'info', 'app:about', BIG)],
     },
   ],
 };

@@ -93,8 +93,8 @@ interface ListState {
   readonly anchor: HTMLElement;
 }
 
-/** The app's own windows a ribbon item opens (`app:<name>`): the aliases and the keys. */
-export type AppWindow = 'aliases' | 'shortcuts';
+/** The app's own windows a ribbon item opens (`app:<name>`): the aliases, the keys, About. */
+export type AppWindow = 'aliases' | 'shortcuts' | 'about';
 
 export interface RibbonProps {
   readonly doc: number | undefined;
