@@ -1,6 +1,6 @@
 # Attribution and third-party licenses
 
-Every runtime or asset dependency is listed here. Adding a dependency without a line here fails review (see `CLAUDE.md`). Allowed licenses: MIT, BSD, Apache-2.0, ISC, and LGPL only as a separately loaded module. GPL/AGPL are not allowed.
+Every runtime or asset dependency is listed here. Adding a dependency without a line here fails review (see `CLAUDE.md`). Allowed licenses: MIT, BSD, Apache-2.0, ISC, and LGPL only as a separately loaded module (and, inside that PlaneGCS module only, Eigen's MPL-2.0, DEC-080). GPL/AGPL are not allowed.
 
 | Component | Use | License | Source |
 |---|---|---|---|
@@ -8,7 +8,9 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | ACadSharp | origin of acad-ts | MIT | https://github.com/DomCR/ACadSharp |
 | ezdxf example and test drawings | public fidelity corpus (`corpus/public/third-party/ezdxf`, license text in `corpus/public/LICENSES`); four of them ship in the app as the start screen's samples (M7-07, `apps/web/src/start-screen.ts`) | MIT | https://github.com/mozman/ezdxf |
 | ACadSharp sample drawings | public fidelity corpus (`corpus/public/third-party/acadsharp`, license text in `corpus/public/LICENSES`) | MIT | https://github.com/DomCR/ACadSharp |
-| PlaneGCS (FreeCAD) | 2D constraint solver, built to WASM as a separate module | LGPL-2.1+ | https://github.com/FreeCAD/FreeCAD/tree/main/src/Mod/Sketcher/App/planegcs |
+| PlaneGCS (FreeCAD) | 2D constraint solver, built to WASM as a separate module loaded at run time (`packages/constraints/wasm`, notice in `NOTICE.md` there); vendored snapshot of FreeCAD `1.1.4` (`4fd3bf3`) in `third_party/planegcs` with its build script (M9-01) | LGPL-2.1+ | https://github.com/FreeCAD/FreeCAD/tree/main/src/Mod/Sketcher/App/planegcs |
+| Eigen 3.4.0 | linear algebra inside the PlaneGCS module only, compiled unmodified with `EIGEN_MPL2_ONLY`; downloaded at build time, not committed. Allowed for this module only by DEC-080 (owner, #645) | MPL-2.0 | https://gitlab.com/libeigen/eigen |
+| Emscripten 3.1.74 | builds the PlaneGCS module (pinned Docker image); its runtime glue ships as `planegcs.mjs` | MIT | https://github.com/emscripten-core/emscripten |
 | Hershey fonts | bundled stroke fonts `assets/fonts/oet-*.json`, converted from the original occidental data in `assets/fonts/hershey/hershey.jhf` (M1-09, DEC-044). The Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S. National Bureau of Standards. The format of the Font data in this distribution was originally created by James Hurt, Cognition, Inc., 900 Technology Park Drive, Billerica, MA 01821. | Hershey font distribution terms: free for any use, with these acknowledgements, in any format except NTIS's (`assets/fonts/hershey/README.md`) | https://paulbourke.net/dataformats/hershey/ |
 | Microsoft Fluent UI System Icons | UI icons: the 20 px regular path data of the icons the ribbon and Quick Access toolbar show, copied from `@fluentui/svg-icons` 1.1.346 into `apps/web/src/ribbon/fluent-icons.ts` by `scripts/fluent-icons.ts` (M7-02; no runtime dependency) | MIT | https://github.com/microsoft/fluentui-system-icons |
 | pdf.js (`pdfjs-dist` 6.4.299) | PDF underlay page rendering, lazy-loaded in `apps/web` (M1-20); its optional Node canvas dependency `@napi-rs/canvas` (MIT) is installed by pnpm but never shipped or used by the app | Apache-2.0 | https://github.com/mozilla/pdf.js |

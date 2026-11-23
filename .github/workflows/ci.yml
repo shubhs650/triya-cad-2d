@@ -65,6 +65,23 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm corpus:validate
       - run: pnpm changelog:check
+      # PlaneGCS (M9-01): the committed solver module must be what its inputs build
+      # (third_party/planegcs/build.sh, Emscripten in its pinned Docker image). The build runs
+      # only for a pair of input and output hashes not verified before: a job that rebuilt and
+      # matched saves the key, with Eigen's download, so later runs skip the 1-2 minute build.
+      - id: planegcs
+        run: |
+          outputs="$(cat packages/constraints/wasm/planegcs.mjs packages/constraints/wasm/planegcs.wasm | sha256sum | cut -c1-16)"
+          echo "key=$(node scripts/planegcs-stamp.mjs --key)-$outputs" >> "$GITHUB_OUTPUT"
+      - id: planegcs-cache
+        uses: actions/cache@v4
+        with:
+          path: third_party/planegcs/.cache
+          key: planegcs-verified-${{ steps.planegcs.outputs.key }}
+          restore-keys: planegcs-verified-
+      - name: Rebuild PlaneGCS and compare with the committed module
+        if: steps.planegcs-cache.outputs.cache-hit != 'true'
+        run: pnpm planegcs:build && git diff --exit-code packages/constraints/wasm
       # The PDF writer's test plot passes qpdf's structural check (M2-16; sheet.test.ts keeps the
       # committed file equal to what the writer writes).
       # From 2026-11-11 the runners could not resolve the Ubuntu archive hosts (every apt mirror
@@ -190,7 +207,8 @@ jobs:
           retention-days: 14
 
   # Decides whether the perf budgets must run on this PR (TESTING.md §1: PRs touching
-  # render/engine/io). On a PR, HEAD is the merge commit, so HEAD^1..HEAD is exactly the PR's diff.
+  # render/engine/io, and the constraint solver since M9-01). On a PR, HEAD is the merge commit,
+  # so HEAD^1..HEAD is exactly the PR's diff.
   # Also names the tree under test and, on a push to main, whether a PR run of this repository
   # already passed both required checks on that same tree (the `passed` job below records it).
   changes:
@@ -254,7 +272,7 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "hot=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if git diff --name-only HEAD^1 HEAD | grep -qE '^(packages/render/|packages/engine/|packages/io/)'; then
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(packages/render/|packages/engine/|packages/io/|packages/constraints/|third_party/planegcs/)'; then
             echo "hot=true" >> "$GITHUB_OUTPUT"
           else
             echo "hot=false" >> "$GITHUB_OUTPUT"
@@ -466,8 +484,8 @@ jobs:
     # After `build · offline · io`, on the runner it frees (DEC-075), whatever its result; on a
     # main push whose tree already passed, that job is skipped and perf runs straight away.
     needs: [changes, offline]
-    # Always on main; on PRs that touch render/engine/io, or when asked via the `perf` label
-    # or a "[perf]" title.
+    # Always on main; on PRs that touch render/engine/io or the solver, or when asked via the
+    # `perf` label or a "[perf]" title.
     if: >-
       ${{ !cancelled() && needs.changes.result == 'success' && (
       github.ref == 'refs/heads/main'

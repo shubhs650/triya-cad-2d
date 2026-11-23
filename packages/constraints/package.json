@@ -6,7 +6,8 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./wasm/planegcs.wasm": "./wasm/planegcs.wasm"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
