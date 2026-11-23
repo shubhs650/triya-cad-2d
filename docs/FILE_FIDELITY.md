@@ -119,7 +119,7 @@ Header writes (M1-75 part 6): a save writes every header variable whose value ch
 
 | Object | Notes |
 |---|---|
-| `TRIYA_CONSTRAINTS` dictionary → XRECORDs | parametric constraints; ignored by AutoCAD; round-trip through acad-ts |
+| `TRIYA_CONSTRAINTS` dictionary → XRECORDs | parametric constraints; ignored by AutoCAD; round-trip through acad-ts. *Not written yet (M9-04):* the geometric constraints GEOMCONSTRAINT and GC* make (M9-05 part 1) are kept in the drawing as `TRIYA_GEOMCONSTRAINT` objects for the session, and a save leaves them out, writing the geometry they moved |
 | `TRIYA_META` XRECORD | app version that last saved, feature flags used; optional |
 
 ## Version coverage

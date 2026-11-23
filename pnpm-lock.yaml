@@ -68,6 +68,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@triya/constraints':
+        specifier: workspace:*
+        version: link:../../packages/constraints
       '@triya/dims':
         specifier: workspace:*
         version: link:../../packages/dims

@@ -582,7 +582,16 @@ for (const width of [1280, 1600, 1920]) {
     const height = () => ribbon(page).evaluate((r) => r.getBoundingClientRect().height);
     const home = await height();
     const heights: Record<string, number> = {};
-    for (const name of ['Insert', 'Annotate', 'View', 'Output', 'Layout', 'Tools', 'Home']) {
+    for (const name of [
+      'Insert',
+      'Annotate',
+      'Parametric',
+      'View',
+      'Output',
+      'Layout',
+      'Tools',
+      'Home',
+    ]) {
       await ribbon(page).getByRole('tab', { name, exact: true }).click();
       heights[name] = await height();
     }

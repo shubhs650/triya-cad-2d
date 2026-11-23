@@ -210,6 +210,25 @@ Dimensions (compressed)
   icon        dimension<dim-linear> ▾ [dim-linear<dim-linear>, dim-aligned<dim-aligned>, dim-angular<dim-angular>, dim-arc<dim-arc>, dim-radius<dim-radius>, dim-diameter<dim-diameter>, dim-jogged<dim-jogged>, dim-ordinate<dim-ordinate>]
   ▾ qdim, continue, dim-style, dim-space, dim-break, dim-jogline, dim-inspect, dim-oblique, dim-text-angle, dim-reassociate, dim-disassociate, dim-override
 
+## Parametric
+Geometric (expanded)
+  icon        gc-coincident<gc-coincident>
+  icon        gc-collinear<gc-collinear>
+  icon        gc-concentric<gc-concentric>
+  icon        gc-fix<lock_closed>
+  icon        gc-parallel<gc-parallel>
+  icon        gc-perpendicular<gc-perpendicular>
+  icon        gc-horizontal<gc-horizontal>
+  icon        gc-vertical<gc-vertical>
+  icon        gc-tangent<gc-tangent>
+  icon        gc-smooth<gc-smooth>
+  icon        gc-symmetric<gc-symmetric>
+  icon        gc-equal<gc-equal>
+
+### step 1
+Geometric (collapsed)
+  ▾ gc-coincident, gc-collinear, gc-concentric, gc-fix, gc-parallel, gc-perpendicular, gc-horizontal, gc-vertical, gc-tangent, gc-smooth, gc-symmetric, gc-equal
+
 ## View
 Navigate (expanded)
   icon        zoom<zoom_fit> ▾ [zoom-extents<zoom_fit>, zoom-window<search_square>, zoom-previous<arrow_previous>, zoom-realtime<search>, zoom-all<full_screen_maximize>, zoom-center<location_arrow>, zoom-object<select_object>, zoom-in<zoom_in>, zoom-out<zoom_out>]

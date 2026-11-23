@@ -50,6 +50,18 @@ describe('offlineAssets', () => {
     ]);
   });
 
+  it('caches the constraint solver lazily (M9-05), its own module with the engine', () => {
+    const a = offlineAssets([
+      ...BUILD,
+      'assets/constraints-Ab12Cd34.js',
+      'assets/planegcs-Ef56Gh78.js',
+      'assets/planegcs-Ij90Kl12.wasm',
+    ]);
+    expect(a.lazy).toContain('/assets/planegcs-Ef56Gh78.js');
+    expect(a.lazy).toContain('/assets/planegcs-Ij90Kl12.wasm');
+    expect(a.core).toContain('/assets/constraints-Ab12Cd34.js');
+  });
+
   it("caches the start screen's sample drawings lazily (M7-07), their pictures first", () => {
     const a = offlineAssets([
       ...BUILD,

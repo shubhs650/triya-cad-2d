@@ -20,11 +20,12 @@ export interface OfflineAssets {
 }
 
 /**
- * pdf.js and its worker, loaded only when a PDF underlay is drawn (M1-20), and the start
- * screen's sample drawings, fetched when one is opened (M7-07); the only .dxf files a build has
- * (the templates are bundled as modules).
+ * pdf.js and its worker, loaded only when a PDF underlay is drawn (M1-20), the constraint
+ * solver's PlaneGCS module and its WebAssembly, loaded when a constraint is first applied
+ * (M9-05), and the start screen's sample drawings, fetched when one is opened (M7-07); the only
+ * .dxf files a build has (the templates are bundled as modules).
  */
-const LAZY = /^assets\/(pdf[.-]|[^/]+\.dxf$)/;
+const LAZY = /^assets\/(pdf[.-]|planegcs[.-]|[^/]+\.dxf$)/;
 const LEFT_OUT = /(\.map|^sw\.js)$/;
 
 /** The offline files of a build, from the paths of its output folder. */

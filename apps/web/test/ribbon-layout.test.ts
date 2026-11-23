@@ -59,11 +59,11 @@ describe('breakpoints', () => {
 
 describe('the data model', () => {
   it('has the tabs of UI_SPEC §2 in order, Home first with its AutoCAD panels', () => {
-    // Parametric arrives with the constraints (M9-05).
     expect(RIBBON_TABS.map((t) => t.label)).toEqual([
       'Home',
       'Insert',
       'Annotate',
+      'Parametric',
       'View',
       'Output',
       'Layout',
@@ -106,6 +106,8 @@ describe('the data model', () => {
       'Palettes',
       'Interface',
     ]);
+    // Parametric (M9-05): Geometric so far; Dimensional and Manage come with their commands.
+    expect(labels('parametric')).toEqual(['Geometric']);
     expect(labels('output')).toEqual(['Plot', 'Export', 'Publish']);
     expect(labels('layout')).toEqual(['Layout', 'Layout Viewports']);
     expect(labels('tools')).toEqual(['Drawing Utilities', 'Settings', 'Customization', 'Help']);

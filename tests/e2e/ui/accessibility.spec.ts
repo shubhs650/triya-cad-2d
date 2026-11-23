@@ -212,8 +212,8 @@ test('the start screen, drawing window, ribbon tabs, palettes and menus are acce
 
   const ribbon = page.getByRole('tablist', { name: 'Ribbon' });
   const tabs = await ribbon.getByRole('tab').allTextContents();
-  // AutoCAD's tabs but Parametric (M9-05).
-  expect(tabs.length).toBeGreaterThanOrEqual(7);
+  // AutoCAD's tabs, Parametric with M9-05.
+  expect(tabs.length).toBeGreaterThanOrEqual(8);
   for (const name of tabs) {
     await test.step(`ribbon tab ${name}`, async () => {
       await ribbon.getByRole('tab', { name, exact: true }).click();
