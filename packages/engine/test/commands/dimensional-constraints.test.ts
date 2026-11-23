@@ -453,3 +453,60 @@ describe('DIMCONSTRAINT', () => {
     await s.bus.cancel();
   });
 });
+
+describe('when the solver is missing or refuses the references', () => {
+  const drawing = () =>
+    DocumentModel.create({ ...sampleInit(), entities: [entityInit('30', lineGeom(0, 0, 10, 0))] });
+
+  it('says so when there is no solver, or it cannot load', async () => {
+    for (const [constraints, line] of [
+      [undefined, 'Dimensional constraints are not available here.'],
+      [
+        () => Promise.reject(new Error('no WebAssembly')),
+        'The constraint solver could not load: no WebAssembly',
+      ],
+    ] as const) {
+      const model = drawing();
+      const bus = new PromptBus({
+        model,
+        registry: builtinCommands(),
+        view: host(() => model),
+        ...(constraints && { constraints }),
+      });
+      const log: string[] = [];
+      bus.on((e) => e.type === 'log' && log.push(e.line));
+      await bus.script(['DCALIGNED', 'O']);
+      await bus.pick({ x: 5, y: 0 });
+      expect(log).toContain(line);
+      expect(bus.command).toBeUndefined();
+    }
+  });
+
+  it('says why the references cannot take the constraint and asks again', async () => {
+    const model = drawing();
+    const refuse: ConstraintSolver = {
+      add: () => ({ ok: false, reason: 'invalid', message: 'x', conflicting: [] }),
+      measure: () => ({
+        ok: false,
+        reason: 'invalid',
+        message: 'angular needs two different lines',
+        conflicting: [],
+      }),
+      addDimension: () => ({ ok: false, reason: 'invalid', message: 'x', conflicting: [] }),
+    };
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: host(() => model),
+      constraints: () => Promise.resolve(refuse),
+    });
+    const log: string[] = [];
+    bus.on((e) => e.type === 'log' && log.push(e.line));
+    await bus.script(['DCANGULAR']);
+    await bus.pick({ x: 5, y: 0 });
+    await bus.pick({ x: 5, y: 0 });
+    expect(log).toContain('Angular needs two different lines.');
+    expect(bus.promptText).toBe('Select first line or arc or [3Point] <3Point>:');
+    await bus.cancel();
+  });
+});
