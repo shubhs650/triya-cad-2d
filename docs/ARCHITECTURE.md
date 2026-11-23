@@ -299,7 +299,7 @@ interface Renderer {
 ## 11. Constraints (`packages/constraints`)
 
 - PlaneGCS built with Emscripten to `planegcs.wasm` + ES module glue (`third_party/planegcs/build.sh`, pinned commit, LGPL notice and source link shipped).
-- `ConstraintModel`: Triya entities ↔ GCS primitives (points, lines, arcs, circles, ellipses); geometric and dimensional constraint objects with handles; expressions evaluated by a small safe parser (`+ - * / ^ ()`, named params, functions `sin cos tan sqrt abs`).
+- `ConstraintModel`: Triya entities ↔ GCS primitives (points, lines, arcs, circles, ellipses); geometric and dimensional constraint objects with handles; expressions evaluated by a small safe parser, never `eval` (`expression.ts`, M9-03): AutoCAD's operators `+ - % * / ^ ()` in its order of evaluation, its functions (trigonometric in degrees, `max(a;b)`, `pow`, `random`…) and constants `pi`, `e`, named parameters, feet and inches in LUNITS 3 and 4. The Parameters Manager's `ParameterTable` (`parameters.ts`) evaluates each parameter after those it names and refuses an edit that would leave one without a value (cycle, unknown name, division by zero downstream).
 - Solve on each affected edit; DOF and conflict reports surfaced in the Constraints palette and as glyph bars on canvas.
 - Storage: `ACAD_DICTIONARY` entry `TRIYA_CONSTRAINTS` → xrecords keyed by constraint handle, referencing entity handles. Loaded only if the dictionary exists; ignored by AutoCAD; passthrough-safe.
 - Modify-command interaction per `PRD.md` FR-X4: a `ConstraintAwareness` hook on the command engine inspects each `ChangeSet` and decides keep/drop/re-solve.
