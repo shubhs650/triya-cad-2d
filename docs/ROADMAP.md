@@ -629,7 +629,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M9-02** `ConstraintModel`: entity ↔ GCS primitive mapping, geometric constraints (all 12), solve on edit, DOF, conflict/redundancy reporting. **Acceptance:** solver scenario tests incl. over-constrained detection.
 
-- [ ] **M9-03** Dimensional constraints with expressions and Parameters Manager; dynamic vs annotational display. **Acceptance:** expression evaluation tests.
+- [~] (thread: Ship second M9 roadmap task) **M9-03** Dimensional constraints with expressions and Parameters Manager; dynamic vs annotational display. **Acceptance:** expression evaluation tests.
 
 - [ ] **M9-04** Constraint storage (`TRIYA_CONSTRAINTS` dictionary) and round-trip; passes the ezdxf audit (DEC-047). **Acceptance:** round-trip diff = 0 with constraints present.
 
