@@ -1,13 +1,21 @@
-// Geometric constraints Triya made (GEOMCONSTRAINT and the GC* commands, M9-05; storage M9-04,
-// PRD FR-X5, DEC-081): the XRECORDs of the `TRIYA_CONSTRAINTS` dictionary in the drawing's named
-// object dictionary, each under its own handle as its key, read into the drawing's
-// `GeometricConstraintObject`s. A record's groups:
+// Constraints Triya made (GEOMCONSTRAINT and the GC* commands, M9-05; DIMCONSTRAINT and the DC*
+// commands, M9-03 part 3; storage M9-04, PRD FR-X5, DEC-081, DEC-082): the XRECORDs of the
+// `TRIYA_CONSTRAINTS` dictionary in the drawing's named object dictionary, each under its own
+// handle as its key, read into the drawing's `GeometricConstraintObject`s and
+// `DimensionalConstraintObject`s. A geometric constraint's groups (DEC-081):
 //
 //   70 the layout's version (1); 1 the kind, as Triya names it (horizontal, vertical,
 //   perpendicular, parallel, tangent, smooth, coincident, concentric, collinear, symmetric,
 //   equal, fix); then each reference in the order it was picked: 331 the object (soft pointer),
 //   71 the point (0 the object itself, or its segment; 1 start, 2 end, 3 mid, 4 center,
 //   5 position, 6 vertex), 90 the vertex or segment index of a polyline (-1 none).
+//
+// A dimensional constraint's (DEC-082):
+//
+//   70 its layout's version (1); 1 `dimensional`; 2 the kind (horizontal, vertical, aligned,
+//   angular, radial, diameter); 300 the parameter's name; 301 its expression; 302 its
+//   description, when it has one; 280 1 for a reference constraint, else 0; 281 the form (0
+//   dynamic, 1 annotational); 10 the dimension line's location; then the references as above.
 //
 // A record of another version or kind, one whose groups are not laid out so, one with no
 // reference or more than three, or one naming an object the drawing does not hold is not mapped:
@@ -16,10 +24,14 @@
 import type { CadDictionary } from '@node-projects/acad-ts';
 import { CadObject, XRecord, type CadDocument } from '@node-projects/acad-ts';
 import {
+  DIMENSIONAL_CONSTRAINT_KINDS,
   GEOMETRIC_CONSTRAINT_KINDS,
   type ConstraintRef,
+  type DimensionalConstraintKind,
+  type DimensionalConstraintObject,
   type GeometricConstraintKind,
   type GeometricConstraintObject,
+  type Vec2,
 } from '@triya/engine';
 import { common, hex } from './common';
 import { namedDictionary } from './header';
@@ -38,6 +50,10 @@ export const CONSTRAINT_POINTS = [
   'position',
   'vertex',
 ] as const;
+/** Group 1 of a dimensional constraint's record (DEC-082), a word no geometric kind is. */
+export const DIMENSIONAL_RECORD = 'dimensional';
+/** 281: the constraint's form, by its value. */
+export const CONSTRAINT_FORMS = ['dynamic', 'annotational'] as const;
 /** The most references a constraint takes (Symmetric: two objects and the symmetry line). */
 export const MAX_CONSTRAINT_REFS = 3;
 
@@ -51,16 +67,16 @@ const number = (v: unknown): number | undefined => {
 const isKind = (v: unknown): v is GeometricConstraintKind =>
   (GEOMETRIC_CONSTRAINT_KINDS as readonly unknown[]).includes(v);
 
-/** The record's kind and references, or undefined when the groups are not a whole record. */
-export function constraintFields(
-  entries: Entries,
-  doc: CadDocument,
-): Pick<GeometricConstraintObject, 'kind' | 'refs'> | undefined {
-  if (entries.length < 2 || entries[0]!.code !== 70 || entries[1]!.code !== 1) return undefined;
-  if (number(entries[0]!.value) !== TRIYA_CONSTRAINTS_VERSION) return undefined;
-  const kind = entries[1]!.value;
-  if (!isKind(kind)) return undefined;
-  const rest = entries.slice(2);
+const point = (v: unknown): Vec2 | undefined => {
+  const p = v as { x?: unknown; y?: unknown } | undefined;
+  return typeof p?.x === 'number' && typeof p.y === 'number' ? { x: p.x, y: p.y } : undefined;
+};
+
+const isDimensionalKind = (v: unknown): v is DimensionalConstraintKind =>
+  (DIMENSIONAL_CONSTRAINT_KINDS as readonly unknown[]).includes(v);
+
+/** The references of a record's last groups (331, 71, 90 each), or undefined if they are not. */
+function refsOf(rest: Entries, doc: CadDocument): ConstraintRef[] | undefined {
   if (rest.length === 0 || rest.length % 3 !== 0) return undefined;
   const refs: ConstraintRef[] = [];
   for (let i = 0; i < rest.length; i += 3) {
@@ -77,30 +93,86 @@ export function constraintFields(
     if (pointIndex < 0 || pointIndex >= CONSTRAINT_POINTS.length) return undefined;
     if (index === undefined || !Number.isInteger(index) || index < -1) return undefined;
     const entity = hex(object.handle);
-    const point = CONSTRAINT_POINTS[pointIndex];
-    if (point === undefined) refs.push(index >= 0 ? { entity, segment: index } : { entity });
-    else refs.push(index >= 0 ? { entity, point, index } : { entity, point });
+    const pt = CONSTRAINT_POINTS[pointIndex];
+    if (pt === undefined) refs.push(index >= 0 ? { entity, segment: index } : { entity });
+    else refs.push(index >= 0 ? { entity, point: pt, index } : { entity, point: pt });
   }
-  if (refs.length > MAX_CONSTRAINT_REFS) return undefined;
-  return { kind, refs };
+  return refs.length > MAX_CONSTRAINT_REFS ? undefined : refs;
 }
 
-/** The drawing's geometric constraints, in the dictionary's order. */
-export function mapTriyaConstraints(doc: CadDocument): GeometricConstraintObject[] {
+/** The record's kind and references, or undefined when the groups are not a whole record. */
+export function constraintFields(
+  entries: Entries,
+  doc: CadDocument,
+): Pick<GeometricConstraintObject, 'kind' | 'refs'> | undefined {
+  if (entries.length < 2 || entries[0]!.code !== 70 || entries[1]!.code !== 1) return undefined;
+  if (number(entries[0]!.value) !== TRIYA_CONSTRAINTS_VERSION) return undefined;
+  const kind = entries[1]!.value;
+  if (!isKind(kind)) return undefined;
+  const refs = refsOf(entries.slice(2), doc);
+  return refs && { kind, refs };
+}
+
+type DimensionalFields = Omit<DimensionalConstraintObject, 'handle' | 'type' | 'owner'>;
+
+/** A dimensional constraint's fields (DEC-082), or undefined when the groups are not a whole record. */
+export function dimensionalFields(
+  entries: Entries,
+  doc: CadDocument,
+): DimensionalFields | undefined {
+  const at = (i: number, code: number) =>
+    entries[i]?.code === code ? entries[i]!.value : undefined;
+  if (number(at(0, 70)) !== TRIYA_CONSTRAINTS_VERSION || at(1, 1) !== DIMENSIONAL_RECORD) {
+    return undefined;
+  }
+  const dimension = at(2, 2);
+  const parameter = at(3, 300);
+  const expression = at(4, 301);
+  if (!isDimensionalKind(dimension) || typeof parameter !== 'string') return undefined;
+  if (typeof expression !== 'string') return undefined;
+  let i = 5;
+  const description = at(i, 302);
+  if (description !== undefined) i++;
+  if (description !== undefined && typeof description !== 'string') return undefined;
+  const reference = number(at(i, 280));
+  const form = number(at(i + 1, 281));
+  const location = point(at(i + 2, 10));
+  if (reference !== 0 && reference !== 1) return undefined;
+  if (form !== 0 && form !== 1) return undefined;
+  if (!location) return undefined;
+  const refs = refsOf(entries.slice(i + 3), doc);
+  if (!refs) return undefined;
+  return {
+    dimension,
+    refs,
+    parameter,
+    expression,
+    ...(description === undefined ? {} : { description: description as string }),
+    ...(reference === 1 ? { reference: true } : {}),
+    location,
+    form: CONSTRAINT_FORMS[form],
+  };
+}
+
+/** The drawing's geometric and dimensional constraints, in the dictionary's order. */
+export function mapTriyaConstraints(
+  doc: CadDocument,
+): (GeometricConstraintObject | DimensionalConstraintObject)[] {
   const dict = namedDictionary(doc, TRIYA_CONSTRAINTS);
   if (!dict) return [];
-  const out: GeometricConstraintObject[] = [];
+  const out: (GeometricConstraintObject | DimensionalConstraintObject)[] = [];
   for (const key of dict.entryNames) {
     const o: unknown = dict.getEntry(key);
     if (!(o instanceof XRecord) || o.owner !== dict) continue;
-    const fields = constraintFields(o.entries as Entries, doc);
-    if (!fields) continue;
-    out.push({
-      ...common(o),
-      type: 'TRIYA_GEOMCONSTRAINT',
-      owner: hex(dict.handle),
-      ...fields,
-    });
+    const entries = o.entries as Entries;
+    const owner = hex(dict.handle);
+    const geometric = constraintFields(entries, doc);
+    if (geometric) {
+      out.push({ ...common(o), type: 'TRIYA_GEOMCONSTRAINT', owner, ...geometric });
+      continue;
+    }
+    const dimensional = dimensionalFields(entries, doc);
+    if (dimensional) out.push({ ...common(o), type: 'TRIYA_DIMCONSTRAINT', owner, ...dimensional });
   }
   return out;
 }
