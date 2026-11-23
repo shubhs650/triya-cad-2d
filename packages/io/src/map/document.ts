@@ -1,6 +1,6 @@
 // A whole drawing as a Triya document (M1-22): header, tables, every block definition with its
 // base point and dynamic-block links (`mapBlock`), the mapped entities in block order, the
-// SORTENTSTABLEs, the image definitions and settings (M1-19), the groups (M1-75 part 23), the XCLIP filters (M1-103), what makes blocks dynamic as group codes (M2-32 part 4), the associative arrays (M3-11) and center marks (M4-08) Triya made, the layer states (M5-07), the DGN linestyle components (M5-09 part 5), the scale list (M6-02 part 21) and the layouts with their page setups (M1-18), which is what the app builds
+// SORTENTSTABLEs, the image definitions and settings (M1-19), the groups (M1-75 part 23), the XCLIP filters (M1-103), what makes blocks dynamic as group codes (M2-32 part 4), the associative arrays (M3-11) and center marks (M4-08) and geometric constraints (M9-04) Triya made, the layer states (M5-07), the DGN linestyle components (M5-09 part 5), the scale list (M6-02 part 21) and the layouts with their page setups (M1-18), which is what the app builds
 // its engine and renderer from. The objects Triya keeps without mapping are listed by handle
 // only (`passthrough`, M1-05), so the engine never allocates one of their handles again.
 import type { CadDocument } from '@node-projects/acad-ts';
@@ -31,6 +31,7 @@ import { mapSpatialFilters } from './xclip';
 import { mapTriyaArrays } from './triya-array';
 import { mapTriyaDims } from './triya-dims';
 import { mapTriyaCenterMarks } from './triya-centermarks';
+import { mapTriyaConstraints } from './triya-constraints';
 import { mapLayerFilters } from './layer-filters';
 import { mapLayerStates } from './layer-states';
 import { mapDgnLinestyles } from './dgn-linestyles';
@@ -60,6 +61,7 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
       ...mapTriyaArrays(doc),
       ...mapTriyaDims(doc),
       ...mapTriyaCenterMarks(doc),
+      ...mapTriyaConstraints(doc),
       ...mapLayerStates(doc),
       ...mapLayerFilters(doc),
       ...mapDgnLinestyles(doc),

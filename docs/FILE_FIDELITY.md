@@ -119,7 +119,7 @@ Header writes (M1-75 part 6): a save writes every header variable whose value ch
 
 | Object | Notes |
 |---|---|
-| `TRIYA_CONSTRAINTS` dictionary → XRECORDs | parametric constraints; ignored by AutoCAD; round-trip through acad-ts. *Not written yet (M9-04):* the geometric constraints GEOMCONSTRAINT and GC* make (M9-05 part 1) are kept in the drawing as `TRIYA_GEOMCONSTRAINT` objects for the session, and a save leaves them out, writing the geometry they moved |
+| `TRIYA_CONSTRAINTS` dictionary → XRECORDs | parametric constraints; ignored by AutoCAD. **Read and written (M9-04, DEC-081):** each geometric constraint GEOMCONSTRAINT and GC* make (M9-05) is an XRECORD keyed by its handle in the named object dictionary's `TRIYA_CONSTRAINTS` (70 version 1, 1 the kind, then 331/71/90 per reference: object, point, polyline index), the dictionary added with a drawing's first constraint; read back into the drawing on open (`map/triya-constraints.ts`, `export/triya-constraints.ts`). A record Triya cannot read stays as read; a constraint on an erased object is saved as none. Round trip clean and ezdxf audit clean (`constraints` saves of the AC1032 sample and colors.dxf). Dimensional constraints and parameters: with M9-03's later parts |
 | `TRIYA_META` XRECORD | app version that last saved, feature flags used; optional |
 
 ## Version coverage

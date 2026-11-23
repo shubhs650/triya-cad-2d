@@ -137,6 +137,10 @@ FIXTURE_SAVES = (
     ("third-party/acadsharp/sample_AC1032_ascii.dxf", "scalelist"),
     ("third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dxf", "scalelist"),
     ("third-party/ezdxf/examples_dxf/colors.dxf", "scalelist"),
+    # Geometric constraints in the TRIYA_CONSTRAINTS dictionary of the named object dictionary
+    # (M9-04, DEC-081, packages/testkit/src/export/constraints.test.ts).
+    ("third-party/acadsharp/sample_AC1032_ascii.dxf", "constraints"),
+    ("third-party/ezdxf/examples_dxf/colors.dxf", "constraints"),
     # IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
     ("third-party/ezdxf/examples_dxf/images.dxf", "images"),
     # IMAGEATTACH on a drawing without images and on one with them (M5-04 part 5,

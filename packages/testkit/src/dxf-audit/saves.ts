@@ -82,6 +82,9 @@ export type AuditSaveKind =
   // added, rekeyed, changed and removed in the AC1032 sample, a dynamic block sample and
   // colors.dxf (M6-02 part 21).
   | 'scalelist'
+  // Geometric constraints (GEOMCONSTRAINT, GC*) in a TRIYA_CONSTRAINTS dictionary the save adds
+  // to the AC1032 sample and colors.dxf (M9-04, DEC-081).
+  | 'constraints'
   // IMAGECLIP, IMAGEADJUST, IMAGEQUALITY and IMAGEFRAME on ezdxf's images.dxf (M5-04 part 4).
   | 'images'
   // IMAGEATTACH on ezdxf's colors.dxf (no images) and images.dxf (M5-04 part 5).
