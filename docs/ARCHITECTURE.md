@@ -39,7 +39,7 @@ triya-cad-2d/
 │  ├─ public/                  # Committed drawings + Triya golden PNGs (see TESTING.md, DEC-047)
 │  └─ private/                 # .gitignored; owner's real drawings, run locally only
 ├─ third_party/
-│  ├─ planegcs/                # Git submodule + Emscripten build script → packages/constraints/wasm
+│  ├─ planegcs/                # FreeCAD snapshot + Emscripten build script → packages/constraints/wasm
 │  └─ acad-ts/                 # Vendored filtered snapshot (DEC-033) with local patches; upstream PRs tracked
 ├─ assets/
 │  ├─ fonts/                   # Bundled Hershey stroke fonts as Triya stroke-font JSON (`pnpm fonts:build`, DEC-044)
@@ -299,6 +299,7 @@ interface Renderer {
 ## 11. Constraints (`packages/constraints`)
 
 - PlaneGCS built with Emscripten to `planegcs.wasm` + ES module glue (`third_party/planegcs/build.sh`, pinned commit, LGPL notice and source link shipped).
+- **As built (M9-01, DEC-080):** `third_party/planegcs` holds FreeCAD 1.1.4's planegcs byte for byte (`UPSTREAM.sha256`), local patches (`patches/`), stand-ins for the FreeCAD and Boost headers it includes (`shim/`, no Boost code) and Triya's embind interface (`bindings/sketch.cpp`). `pnpm planegcs:build` compiles them with Eigen 3.4.0 (MPL-2.0, downloaded and checksummed, inside this module only) in the pinned Emscripten 3.1.74 image to `packages/constraints/wasm/planegcs.wasm` (≈ 425 KB) and `planegcs.mjs`, committed with `build-stamp.json` (the hashes of every input and output; a unit test fails when they drift, and CI rebuilds and compares when they change). `loadPlaneGcs(wasm)` (`constraints/src/planegcs.ts`) imports the glue dynamically on first use, so bundles split it off and nothing loads until a sketch is solved, and takes the `.wasm` bytes from the caller (Node reads the file, the browser fetches the app's asset), so the package uses no network or DOM API. `PlaneGcsSketch` builds parameters (unknown, fixed or driven), points, lines, circles and arcs (with their ArcRules), adds constraints by `ConstraintKind` with a tag, checks every id, solves (DogLeg by default; parameters change only on success) and diagnoses DOF, conflicting and redundant constraints by tag, at the current values, so redundancy shows once the sketch is solved. A 50-constraint sketch (`fiftyConstraintSketch`) builds and solves in about 1 ms in Node and in Chromium (budget 20 ms).
 - `ConstraintModel`: Triya entities ↔ GCS primitives (points, lines, arcs, circles, ellipses); geometric and dimensional constraint objects with handles; expressions evaluated by a small safe parser, never `eval` (`expression.ts`, M9-03): AutoCAD's operators `+ - % * / ^ ()` in its order of evaluation, its functions (trigonometric in degrees, `max(a;b)`, `pow`, `random`…) and constants `pi`, `e`, named parameters, feet and inches in LUNITS 3 and 4. The Parameters Manager's `ParameterTable` (`parameters.ts`) evaluates each parameter after those it names and refuses an edit that would leave one without a value (cycle, unknown name, division by zero downstream).
 - Solve on each affected edit; DOF and conflict reports surfaced in the Constraints palette and as glyph bars on canvas.
 - Storage: `ACAD_DICTIONARY` entry `TRIYA_CONSTRAINTS` → xrecords keyed by constraint handle, referencing entity handles. Loaded only if the dictionary exists; ignored by AutoCAD; passthrough-safe.
@@ -360,7 +361,7 @@ PDF writer (M2-16 part 1, `packages/pdf`, no DOM): `PdfDocument` (pages at their
 - `pnpm` workspaces + `turbo`; Node 22; TypeScript strict; ESLint + boundaries; Prettier.
 - `pnpm build` produces `apps/web/dist`; Cloudflare Pages deploys `main` to production and PR previews to `*.pages.dev`.
 - Release = tag `vX.Y.Z` → GitHub Release with changelog → Pages deploy.
-- `third_party/planegcs` builds in CI (Emscripten docker) and the artifact is cached; `third_party/acad-ts` is a filtered snapshot of a pinned upstream commit (DEC-033, `third_party/sync-acad-ts.sh`) with a `PATCHES.md` listing every local change and its upstream PR.
+- `third_party/planegcs` builds in CI (Emscripten docker) when its inputs or the committed module change, and a verified pair of hashes is cached (M9-01); `third_party/acad-ts` is a filtered snapshot of a pinned upstream commit (DEC-033, `third_party/sync-acad-ts.sh`) with a `PATCHES.md` listing every local change and its upstream PR.
 
 ## 19. Things that look optional but are not
 

@@ -37,7 +37,7 @@ Projects live at claude.ai/code → **Projects** (or under **More**). Pro/Max pl
    - Thread model: **Opus**, Thread effort: **High** (this codebase rewards it; lower later for M7 UI polish if usage bites).
    - Coordinator model: **Opus**, Coordinator effort: **Low**.
 3. **Project settings → Memory → Project instructions:** paste **Part 3** verbatim.
-4. **Project settings → Environment:** leave the default Anthropic-hosted environment unless CI needs a domain outside the default allowlist. The repo's `pnpm`, Playwright and Node needs are covered by the default; PlaneGCS's Docker/Emscripten build (M9) will need a setup script — the thread doing M9-01 will tell you exactly what to add.
+4. **Project settings → Environment:** leave the default Anthropic-hosted environment unless CI needs a domain outside the default allowlist. The repo's `pnpm`, Playwright and Node needs are covered by the default; PlaneGCS's Docker/Emscripten build needs no setup script: the built module is committed (M9-01), and a thread that changes PlaneGCS starts the sandbox's Docker daemon (`sudo dockerd &`) and runs `pnpm planegcs:build`.
 5. Desktop app only: project sidebar menu → **Notifications** → turn on "thread needs input" so `needs-human` stops reach you without opening the project.
 
 What threads get from the repo automatically: `CLAUDE.md` and `.claude/rules/*.md` (loaded at thread start). What they do **not** get: `.claude/settings.json`, hooks, repo-local skills, `.mcp.json` — this kit deliberately uses none of those.

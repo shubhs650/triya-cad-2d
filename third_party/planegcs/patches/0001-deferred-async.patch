@@ -1,0 +1,18 @@
+--- a/GCS.cpp
++++ b/GCS.cpp
+@@ -4901,6 +4901,7 @@
+         // identifyDependentParametersDenseQR(J, jacobianconstraintmap, pdiagnoselist, true)
+         //
+         auto fut = std::async(
++            std::launch::deferred,
+             &System::identifyDependentParametersDenseQR,
+             this,
+             J,
+@@ -4978,6 +4979,7 @@
+         // std::async(std::launch::deferred,&System::identifyDependentParametersSparseQR, this,
+         // J, jacobianconstraintmap, pdiagnoselist, false);
+         auto fut = std::async(
++            std::launch::deferred,
+             &System::identifyDependentParametersSparseQR,
+             this,
+             J,

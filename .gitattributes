@@ -8,3 +8,8 @@ corpus/** -text
 # Vendored upstream code keeps its own line endings (acad-ts ships mixed CRLF/LF); patches depend on them.
 third_party/acad-ts/** -text
 third_party/acad-ts-patches/** -text
+# PlaneGCS (M9-01): the snapshot is checked byte for byte against UPSTREAM.sha256, and the
+# built module against packages/constraints/wasm/build-stamp.json.
+third_party/planegcs/** -text
+packages/constraints/wasm/** -text
+packages/constraints/wasm/*.wasm binary
