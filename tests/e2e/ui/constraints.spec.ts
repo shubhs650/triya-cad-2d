@@ -7,10 +7,24 @@
 // packages/engine/test/commands/constraints.test.ts, the solving in
 // packages/constraints/test/solver.test.ts; this checks that the ribbon, canvas, bus, engine
 // worker and solver module carry them.
+//
+// M9-04: a constraint is saved with the drawing (the `TRIYA_CONSTRAINTS` dictionary, DEC-081) and
+// holds after the saved file is opened again: a Perpendicular between the parallel lines of the
+// reopened drawing is refused as before.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { DXF, expectDrawn, expectShown, gridOff, openWithPicker, viewOf } from '../app/page';
+import {
+  DXF,
+  activeCanvas,
+  expectDrawn,
+  expectShown,
+  gridOff,
+  openWithPicker,
+  viewOf,
+  worldAt,
+} from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -142,4 +156,75 @@ test('Parallel from the Parametric tab, GCPERPENDICULAR typed, a refusal and U',
   await type(page, 'U', 'Command:');
   await expect.poll(async () => (await drawn(page)).constraints).toEqual(['parallel']);
   await expect.poll(async () => (await drawn(page)).lines[2]).toEqual([100, 20, 130, 60]);
+});
+
+test('a constraint saved with the drawing holds after it is opened again (M9-04)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await gridOff(page);
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  const zoom = async () => {
+    await type(page, 'Z', /^Specify corner of window/);
+    await type(page, '1000000,1000000', 'Specify opposite corner:');
+    await type(page, '1000160,1000100', 'Command:');
+  };
+  await zoom();
+  for (const [a, b] of [
+    ['1000020,1000020', '1000080,1000020'],
+    ['1000020,1000050', '1000080,1000070'],
+  ] as const) {
+    await type(page, 'L', 'Specify first point:');
+    await type(page, a, 'Specify next point or [Undo]:');
+    await type(page, b, 'Specify next point or [Undo]:');
+    await type(page, '', 'Command:');
+  }
+  await expectDrawn(page, { timeout: 15_000 });
+  let view = await viewOf(page);
+  const click = async (x: number, y: number) => {
+    const p = view.at(1000000 + x, 1000000 + y);
+    await page.mouse.click(view.box.x + p.x, view.box.y + p.y);
+  };
+  await type(page, 'GCPARALLEL', 'Select first object:');
+  await click(50, 20);
+  await click(50, 60);
+  await expect(prompt(page)).toHaveText('Command:', { timeout: 15_000 });
+  await expect.poll(async () => (await drawn(page)).constraints).toEqual(['parallel']);
+  const second = (await drawn(page)).lines[1]!;
+
+  // Saved (downloaded, as without File System Access) and opened again.
+  await page.evaluate(() => {
+    delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+  const saving = page.waitForEvent('download');
+  await page.keyboard.press('Control+s');
+  const file = test.info().outputPath('constrained.dxf');
+  await (await saving).saveAs(file);
+  const text = readFileSync(file, 'utf8');
+  expect(text).toMatch(/\r?\nTRIYA_CONSTRAINTS\r?\n/);
+  expect(text).toMatch(/\r?\n {2}1\r?\nparallel\r?\n/);
+
+  await openWithPicker(page, file);
+  await expectShown(page, 'constrained.dxf');
+  await zoom();
+  await expectDrawn(page, { timeout: 15_000 });
+  // `Command:` is not a sync point for ZOOM's view (TESTING.md §7): wait for it to centre.
+  const box = (await activeCanvas(page).boundingBox())!;
+  await expect
+    .poll(async () => Math.abs((await worldAt(page, box.width / 2, box.height / 2)).x - 1000080))
+    .toBeLessThan(5);
+  view = await viewOf(page);
+  await type(page, 'GCPERPENDICULAR', 'Select first object:');
+  await click(50, 20);
+  await click((second[0]! + second[2]!) / 2, second[1]!);
+  await expect(log).toContainText('The constraint would over-constrain the geometry.', {
+    timeout: 15_000,
+  });
+  await page.mouse.move(view.box.x + 60, view.box.y + view.box.height - 40);
+  await page.screenshot({ path: test.info().outputPath('4-reopened-refused.png') });
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
 });
