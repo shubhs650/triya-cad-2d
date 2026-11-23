@@ -255,6 +255,11 @@ export interface CommandDef {
    */
   readonly erases?: boolean;
   /**
+   * It solves the geometric constraints its edits touch itself (GEOMCONSTRAINT, GC*), so the bus
+   * does not re-solve them as it ends (M9-06).
+   */
+  readonly solvesConstraints?: boolean;
+  /**
    * The objects selected at `Command:` stay selected while it runs and after (grip editing,
    * M2-06), where any other command that does not select deselects them.
    */

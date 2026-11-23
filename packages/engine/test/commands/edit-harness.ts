@@ -9,6 +9,7 @@ import {
   offsetCurveOf,
   toleranceForSize,
   type BusEvent,
+  type ConstraintService,
   type DocumentMeta,
   type Entity,
   type NonGraphicalObject,
@@ -162,6 +163,8 @@ export function setup(
     meta?: Partial<DocumentMeta>;
     /** The system variables the app keeps, which commands read and set (M3-12). */
     variables?: Map<string, number>;
+    /** The constraint solver (M9-06's upkeep after modify commands). */
+    constraints?: ConstraintService;
   } = {},
 ) {
   const init = sampleInit();
@@ -198,6 +201,7 @@ export function setup(
     model,
     registry: builtinCommands(),
     view: host(() => model, o.variables),
+    ...(o.constraints && { constraints: o.constraints }),
   });
   const log: string[] = [];
   bus.on((e: BusEvent) => {

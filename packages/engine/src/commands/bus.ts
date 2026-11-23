@@ -51,6 +51,7 @@ import {
   type ResolvedCommand,
 } from './command';
 import { blocklessDimensionBlocks, regenerateRestyled } from './modify/dimensions';
+import { keepConstraints } from './constraint-upkeep';
 import { followAssociations } from './modify/array';
 import { applyProperty } from './modify/property-edit';
 import { otherLinetype } from './linetype';
@@ -1667,6 +1668,7 @@ export class PromptBus {
       return this.#end(frame, true);
     }
     if (step.done) {
+      if (frame === this.#stack[0]) await this.#keepConstraints(frame);
       // The dimensions the command restyled are redrawn as it ends, in its undo step (M2-30
       // part 2): a transparent command's edits wait for the command it ran inside.
       if (!frame.transparent && this.#changes.length > 0) {
@@ -1916,6 +1918,23 @@ export class PromptBus {
     this.#showSelection();
   }
 
+  /**
+   * The drawing's constraints kept in step with what the outermost command (`frame`) changed, as
+   * it ends (M9-06): dropped with an object erased or trimmed, re-solved after a move. When they
+   * refuse the edit, the command's changes are taken back and it leaves no undo step.
+   */
+  async #keepConstraints(frame: Frame): Promise<void> {
+    if (frame.transparent || frame.def.solvesConstraints) return;
+    if (this.#changes.length === 0) return;
+    try {
+      if (await keepConstraints(frame.ctx, frame.def.name, this.#changes)) return;
+      for (const cs of [...this.#changes].reverse()) this.#apply(invertChangeSet(cs));
+      this.#changes = [];
+    } catch (err) {
+      this.#fault(err, frame.def.name);
+    }
+  }
+
   /** A command ended: close its record, or resume the one it ran inside. */
   #end(frame: Frame, cancelled: boolean): void {
     this.#stack.pop();
@@ -1954,6 +1973,7 @@ export class PromptBus {
     this.#collectors = [];
     // Esc at `Command:` deselects, as in AutoCAD.
     if (this.#stack.length === 0) this.#idle.clear();
+    const outermost = this.#stack[0];
     while (this.#stack.length > 0) {
       const frame = this.#stack.pop()!;
       try {
@@ -1961,6 +1981,8 @@ export class PromptBus {
       } catch (err) {
         this.#fault(err, frame.def.name);
       }
+      // The edits a command kept before Esc (TRIM's picks) keep the constraints in step too.
+      if (frame === outermost) await this.#keepConstraints(frame);
       this.#emit({ type: 'end', command: frame.def.name, cancelled: true });
     }
     this.#close();

@@ -1,6 +1,14 @@
 export * from './aliases';
 export * from './bus';
 export * from './command';
+export {
+  DROPS_CONSTRAINTS,
+  keepConstraints,
+  netEntityChanges,
+  planUpkeep,
+  type NetEntityChanges,
+  type UpkeepPlan,
+} from './constraint-upkeep';
 export * from './parse';
 export * from './prompt';
 export * from './units';

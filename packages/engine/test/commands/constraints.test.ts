@@ -106,6 +106,10 @@ function setup(
       calls.push(call);
       return answer(call);
     },
+    // The GC* commands solve their own edits: the bus never re-solves after them.
+    solveEdit: () => {
+      throw new Error('not asked');
+    },
   };
   const bus = new PromptBus({
     model,

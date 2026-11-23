@@ -5,6 +5,7 @@
 // While a second point, angle or scale is asked for, the objects are dragged with the cursor
 // (`drag` on the prompt, part 2), as AutoCAD drags them (DRAGMODE Auto). STRETCH (part 2) takes
 // the last crossing window of its selection.
+import { carryConstraints } from '../../edit/constraints';
 import { removeCopies } from '../../edit/groups';
 import { angleOf, distance, sub } from '../../geom/vec';
 import type { Vec2 } from '../../geom/types';
@@ -69,8 +70,20 @@ function run(
 const transform = (ctx: CommandContext, ids: readonly EntityId[], t: Similarity, verb: string) =>
   run(ctx, verb, (b) => transformObjects(b, ctx.model, ids, t, mirrorOptions(ctx.model)));
 
+/** Copies `ids` by `t`, the constraints among them with them (M9-06). */
+function copyCarrying(
+  b: Parameters<Parameters<CommandContext['edit']>[0]>[0],
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  t: Similarity,
+): EditReport {
+  const report = copyObjects(b, model, ids, t, mirrorOptions(model));
+  carryConstraints(b, model, report.copies, t);
+  return report;
+}
+
 const copy = (ctx: CommandContext, ids: readonly EntityId[], t: Similarity, verb: string) =>
-  run(ctx, verb, (b) => copyObjects(b, ctx.model, ids, t, mirrorOptions(ctx.model)));
+  run(ctx, verb, (b) => copyCarrying(b, ctx.model, ids, t));
 
 const point = (a: PromptAnswer): Vec2 | undefined => (a.kind === 'point' ? a.point : undefined);
 
@@ -256,13 +269,7 @@ async function* copyArray(
   let report: EditReport | undefined;
   ctx.edit((b) => {
     for (let i = 1; i < n; i++) {
-      report = copyObjects(
-        b,
-        ctx.model,
-        ids,
-        moveBy({ x: step.x * k * i, y: step.y * k * i }),
-        mirrorOptions(ctx.model),
-      );
+      report = copyCarrying(b, ctx.model, ids, moveBy({ x: step.x * k * i, y: step.y * k * i }));
       out.push(...report.ids);
     }
   });

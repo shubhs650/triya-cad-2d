@@ -361,6 +361,7 @@ export function geomconstraintCommand(): CommandDef {
   let last: GeometricConstraintKind = 'horizontal';
   return {
     name: 'GEOMCONSTRAINT',
+    solvesConstraints: true,
     async *run(ctx) {
       const options = GEOMETRIC_CONSTRAINT_KINDS.map((k) => KEYWORDS[k]);
       const a = yield ctx.prompt.keyword({
@@ -384,5 +385,6 @@ export const GEOMETRIC_CONSTRAINT_COMMANDS: readonly CommandDef[] =
     (k): k is Exclude<GeometricConstraintKind, 'smooth'> => k !== 'smooth',
   ).map((kind) => ({
     name: `GC${kind.toUpperCase()}`,
+    solvesConstraints: true,
     run: (ctx: CommandContext) => constraintFlow(ctx, kind),
   }));
