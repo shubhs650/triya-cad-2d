@@ -304,6 +304,11 @@ private:
         }
         sys.declareUnknowns(unknowns);
         sys.declareDrivenParams(driven);
+        // PlaneGCS keeps its diagnosis (the redundant constraints it sets aside) until a
+        // constraint is added or removed, not when the unknowns change. A constraint with no
+        // unknown while some parameters were fixed for one solve would stay set aside after
+        // they are freed, so the diagnosis is redone for the unknowns of this solve.
+        sys.invalidatedDiagnosis();
         sys.initSolution(algorithm);
     }
 

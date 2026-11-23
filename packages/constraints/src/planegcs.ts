@@ -247,6 +247,11 @@ export class PlaneGcsSketch {
     return this.#live().addPoint(px, py);
   }
 
+  /** A point's x and y parameters (to pin them, or read them in `values()`). */
+  pointParams(point: number): readonly [number, number] {
+    return this.#points[this.#check('point', point)]!;
+  }
+
   pointAt(point: number): { x: number; y: number } {
     const [px, py] = this.#points[this.#check('point', point)]!;
     return { x: this.value(px), y: this.value(py) };
@@ -272,15 +277,23 @@ export class PlaneGcsSketch {
 
   /**
    * An arc from its centre, radius and angles (radians, counter-clockwise). Its start and
-   * end points are added too and held on it by an ArcRules constraint (`ARC_RULES_TAG`).
+   * end points are added too, or are `ends` when given (a polyline's vertices), and are held
+   * on it by an ArcRules constraint (`ARC_RULES_TAG`).
    */
-  arc(center: number, radius: number, startAngle: number, endAngle: number): ArcIds {
+  arc(
+    center: number,
+    radius: number,
+    startAngle: number,
+    endAngle: number,
+    ends?: { readonly start: number; readonly end: number },
+  ): ArcIds {
     const c = this.pointAt(center);
-    const start = this.point(
-      c.x + radius * Math.cos(startAngle),
-      c.y + radius * Math.sin(startAngle),
-    );
-    const end = this.point(c.x + radius * Math.cos(endAngle), c.y + radius * Math.sin(endAngle));
+    const start = ends
+      ? this.#check('point', ends.start)
+      : this.point(c.x + radius * Math.cos(startAngle), c.y + radius * Math.sin(startAngle));
+    const end = ends
+      ? this.#check('point', ends.end)
+      : this.point(c.x + radius * Math.cos(endAngle), c.y + radius * Math.sin(endAngle));
     const r = this.param(radius);
     const a0 = this.param(startAngle);
     const a1 = this.param(endAngle);

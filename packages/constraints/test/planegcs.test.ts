@@ -178,6 +178,35 @@ describe('PlaneGCS sketch', () => {
     s.dispose();
   });
 
+  // M9-02: PlaneGCS keeps its diagnosis until a constraint changes, and solving uses it to
+  // set constraints aside. Parameters fixed for one solve and freed again must not leave
+  // the constraints that had no unknowns while they were fixed out of the next solve.
+  it('solves with every constraint after parameter kinds change', async () => {
+    const s = await sketch();
+    const a = s.point(0, 0);
+    const b = s.point(10, 0);
+    const ab = s.line(a, b);
+    s.constrain(ConstraintKind.CoordinateX, [a, s.param(0, 'fixed')], 1);
+    s.constrain(ConstraintKind.CoordinateY, [a, s.param(0, 'fixed')], 1);
+    s.constrain(ConstraintKind.HorizontalPoints, [b, a], 2);
+    // A circle fixed by constraints (3) where the horizontal line cannot touch it (4).
+    const c = s.point(20, 0);
+    const circle = s.circle(c, 4);
+    s.constrain(ConstraintKind.CoordinateX, [c, s.param(20, 'fixed')], 3);
+    s.constrain(ConstraintKind.CoordinateY, [c, s.param(0, 'fixed')], 3);
+    s.constrain(ConstraintKind.Equal, [circle.radius, s.param(4, 'fixed')], 3);
+    s.constrain(ConstraintKind.TangentLC, [ab, circle.id], 4);
+    // Held for a solve, constraint 3 has no unknown; freed, it must count again.
+    const held = [...s.pointParams(c), circle.radius];
+    held.forEach((p) => s.setParamKind(p, 'fixed'));
+    s.solve();
+    held.forEach((p) => s.setParamKind(p, 'unknown'));
+    expect(s.solve()).toBe(SolveStatus.Failed);
+    expect(s.pointAt(c)).toEqual({ x: 20, y: 0 });
+    expect(s.value(circle.radius)).toBe(4);
+    s.dispose();
+  });
+
   it('refuses ids that are not in the sketch', async () => {
     const s = await sketch();
     const a = s.point(0, 0);
