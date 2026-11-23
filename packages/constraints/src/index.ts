@@ -1,5 +1,7 @@
 // @triya/constraints: PlaneGCS WASM wrapper and constraint model.
 // Runs in Node and in a Web Worker: no DOM or browser globals (enforced by tsconfig `lib` and ESLint).
+export * from './expression';
+export * from './parameters';
 export {
   ARC_RULES_TAG,
   Algorithm,
