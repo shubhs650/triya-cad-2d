@@ -48,6 +48,12 @@ export const ConstraintKind = {
   CoordinateX: 31,
   CoordinateY: 32,
   MidpointOnLine: 33,
+  /**
+   * Beware: the overload of `addConstraintP2PAngle` the module calls (the one without an
+   * angle increment, FreeCAD 1.1.4 GCS.cpp) ignores its tag and adds the constraint with tag
+   * 0, so it cannot be removed or diagnosed by tag. The constraint model uses lines and
+   * L2LAngle instead.
+   */
   P2PAngle: 34,
   PointOnPerpBisector: 35,
 } as const;
