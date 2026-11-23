@@ -25,6 +25,14 @@
 //
 // Smooth (G2 continuity with a spline) needs splines in the solver module and is refused as
 // unsupported until then (M9-02 part 2), as are ellipses and splines in any constraint.
+//
+// Dimensional constraints (M9-03, measure.ts) live beside the geometric ones, each with its
+// parameter in the model's ParameterTable, the Parameters Manager's table: an edit of an
+// expression goes through `setExpression`, which re-solves the geometry its values drive. A
+// reference constraint (AutoCAD's Reference property) is left out of the solver: its
+// parameter follows what it measures after every solve and cannot be edited, and no driving
+// value may follow from it, so an edit never feeds back into the values that drove it (the
+// Help is silent; AutoCAD lets reference parameters be named in expressions).
 
 import {
   bulgeArc,
@@ -41,6 +49,19 @@ import {
   type Tolerance,
   type Vec2,
 } from '@triya/engine';
+import {
+  DIMENSION_PREFIX,
+  DIMENSION_TYPE,
+  dimensionShape,
+  dimensionValueError,
+  formatMeasured,
+  lineAngle,
+  measureDimension,
+  pointAngle,
+  type DimensionalConstraint,
+  type DimensionalKind,
+} from './measure';
+import { ParameterTable } from './parameters';
 import {
   ARC_RULES_TAG,
   ConstraintKind,
@@ -123,6 +144,8 @@ export type AddResult =
       readonly updated: readonly Replacement<Entity>[];
       /** Degrees of freedom left in the constrained group the new constraint joined. */
       readonly dofs: number;
+      /** Reference parameters that measured the moved geometry, and those that follow from them. */
+      readonly parameters?: readonly string[];
     }
   | Refusal;
 
@@ -131,8 +154,53 @@ export type EditResult =
       readonly ok: true;
       /** The edit's own replacements (adjusted where the solver had to), then the rest it moved. */
       readonly updated: readonly Replacement<Entity>[];
+      /** Reference parameters that measured the moved geometry, and those that follow from them. */
+      readonly parameters?: readonly string[];
     }
   | Refusal;
+
+/** A dimensional constraint as DIMCONSTRAINT makes it. */
+export interface DimensionSpec {
+  readonly handle: Handle;
+  /** Linear becomes Horizontal or Vertical (measure.ts). */
+  readonly dimension: DimensionalKind;
+  readonly refs: readonly GeomRef[];
+  /** Its parameter's name; the next free d1, ang1, rad1 or dia1 when not given. */
+  readonly parameter?: string;
+  /** The value typed at the prompt (`name = expression` or an expression); the measured value when not given. */
+  readonly expression?: string;
+  /** A reference constraint: measures, does not drive. */
+  readonly reference?: boolean;
+  readonly description?: string;
+}
+
+export type DimensionResult =
+  | {
+      readonly ok: true;
+      /** The constraint as kept (Linear resolved, its parameter named). */
+      readonly constraint: DimensionalConstraint;
+      readonly parameter: string;
+      readonly value: number;
+      /** Entities the solver moved to satisfy the new constraint. */
+      readonly updated: readonly Replacement<Entity>[];
+      readonly dofs: number;
+      /** Reference parameters that measured the moved geometry, and those that follow from them. */
+      readonly parameters: readonly string[];
+    }
+  | Refusal;
+
+export type ParameterResult =
+  | {
+      readonly ok: true;
+      /** Entities moved to the new values. */
+      readonly updated: readonly Replacement<Entity>[];
+      /** Every row whose expression or value changed, in evaluation order. */
+      readonly parameters: readonly string[];
+    }
+  | Refusal;
+
+type AnyConstraint = GeometricConstraint | DimensionalConstraint;
+const isDimensional = (c: AnyConstraint): c is DimensionalConstraint => 'dimension' in c;
 
 export interface ModelDiagnosis {
   /** Every constrained group solves. */
@@ -153,16 +221,46 @@ export type EntityLookup = (handle: Handle) => Entity | undefined;
 export class ConstraintModel {
   readonly #gcs: PlaneGcs;
   readonly #tol: Tolerance;
+  readonly #parameters: ParameterTable;
   #constraints: GeometricConstraint[] = [];
+  #dimensions: DimensionalConstraint[] = [];
 
-  /** `tolerance`: the document's (toleranceFromExtents), for what counts as moved. */
-  constructor(gcs: PlaneGcs, tolerance: Tolerance) {
+  /**
+   * `tolerance`: the document's (toleranceFromExtents), for what counts as moved.
+   * `parameters`: the drawing's Parameters Manager table, a new one when not given.
+   */
+  constructor(gcs: PlaneGcs, tolerance: Tolerance, parameters = new ParameterTable()) {
     this.#gcs = gcs;
     this.#tol = tolerance;
+    this.#parameters = parameters;
   }
 
+  /** The geometric constraints. */
   get constraints(): readonly GeometricConstraint[] {
     return this.#constraints;
+  }
+
+  get dimensions(): readonly DimensionalConstraint[] {
+    return this.#dimensions;
+  }
+
+  /**
+   * The Parameters Manager's table. Read it here; change expressions and names through
+   * `setExpression` and `renameParameter`, which solve and keep the constraints in step.
+   * User parameters may be added to it directly.
+   */
+  get parameters(): ParameterTable {
+    return this.#parameters;
+  }
+
+  /** The dimensional constraints that reference `entity`. */
+  dimensionsOn(entity: Handle): DimensionalConstraint[] {
+    return this.#dimensions.filter((c) => c.refs.some((r) => r.entity === entity));
+  }
+
+  /** Replaces the dimensional constraints without checking or solving them (a file being read). */
+  loadDimensions(dimensions: readonly DimensionalConstraint[]): void {
+    this.#dimensions = [...dimensions];
   }
 
   get(handle: Handle): GeometricConstraint | undefined {
@@ -179,7 +277,17 @@ export class ConstraintModel {
     this.#constraints = [...constraints];
   }
 
+  /**
+   * Removes a constraint. A dimensional constraint's parameter goes with it, and the
+   * expressions that named it keep its value (ParameterTable.delete), so nothing moves.
+   */
   remove(handle: Handle): boolean {
+    const dim = this.#dimensions.find((c) => c.handle === handle);
+    if (dim) {
+      this.#dimensions = this.#dimensions.filter((c) => c !== dim);
+      this.#parameters.delete(dim.parameter);
+      return true;
+    }
     const before = this.#constraints.length;
     this.#constraints = this.#constraints.filter((c) => c.handle !== handle);
     return this.#constraints.length < before;
@@ -194,8 +302,152 @@ export class ConstraintModel {
     if (constraint.kind === 'smooth') {
       return refusal('unsupported', 'Smooth needs a spline, which constraints do not support yet');
     }
+    const r = this.#addSolved(constraint, holdFor(constraint), lookup);
+    if (!r.ok) return r;
+    this.#constraints.push(constraint);
+    const parameters = this.#remeasure(r.updated, lookup);
+    return parameters.length ? { ...r, parameters } : r;
+  }
+
+  /**
+   * Adds a dimensional constraint as DIMCONSTRAINT does: its parameter joins the table
+   * (named d1, ang1, rad1, dia1… unless given; the measured value unless an expression is
+   * given) and the geometry is solved to its value, the second object adjusting. Refused,
+   * and nothing kept or moved, when it does not fit its references, its expression has no
+   * value or one out of range, or it would over-constrain the geometry (AutoCAD then offers
+   * a reference constraint: add it again with `reference`).
+   */
+  addDimension(spec: DimensionSpec, lookup: EntityLookup): DimensionResult {
+    const measured = measureDimension(spec, lookup);
+    if (!measured.ok) return refusal(measured.reason, measured.message, [spec.handle]);
+    const table = this.#parameters;
+    const name = spec.parameter ?? table.nextName(DIMENSION_PREFIX[measured.dimension]);
+    const added = table.add({
+      name,
+      expression:
+        spec.reference || spec.expression === undefined
+          ? formatMeasured(measured.value)
+          : spec.expression,
+      kind: 'constraint',
+      type: DIMENSION_TYPE[measured.dimension],
+      ...(spec.description === undefined ? {} : { description: spec.description }),
+    });
+    if (!added.ok) return refusal('invalid', added.error, [spec.handle]);
+    const constraint: DimensionalConstraint = {
+      handle: spec.handle,
+      dimension: measured.dimension,
+      refs: spec.refs,
+      parameter: name,
+      ...(spec.reference ? { reference: true } : {}),
+    };
+    const undo = () => table.delete(name);
+    const value = table.value(name)!;
+    if (constraint.reference) {
+      this.#dimensions.push(constraint);
+      return {
+        ok: true,
+        constraint,
+        parameter: name,
+        value,
+        updated: [],
+        dofs: this.#dofs(constraint.refs, lookup),
+        parameters: [],
+      };
+    }
+    const wrong = this.#drivingError(constraint);
+    if (wrong) {
+      undo();
+      return refusal('invalid', wrong, [spec.handle]);
+    }
+    const r = this.#addSolved(constraint, dimensionShape(constraint, lookup).holds, lookup);
+    if (!r.ok) {
+      undo();
+      return r;
+    }
+    this.#dimensions.push(constraint);
+    return {
+      ...r,
+      constraint,
+      parameter: name,
+      value,
+      parameters: this.#remeasure(r.updated, lookup),
+    };
+  }
+
+  /**
+   * Sets a parameter's expression (the Parameters Manager's Expression cell, or a
+   * constraint's value edited in place) and moves the geometry its driving values change.
+   * Refused, the table and the drawing left as they were, when the expression has no value,
+   * a driving value would be out of range or follow from a reference parameter, the
+   * parameter is a reference one, or the geometry cannot take the values.
+   */
+  setExpression(name: string, expression: string, lookup: EntityLookup): ParameterResult {
+    const table = this.#parameters;
+    const row = table.get(name);
+    if (!row) return refusal('invalid', `No parameter named "${name}".`);
+    const own = this.#dimensions.find((c) => c.parameter === name);
+    if (own?.reference) {
+      return refusal(
+        'invalid',
+        `${name} is a reference parameter: its value is measured and cannot be set`,
+        [own.handle],
+      );
+    }
+    const edit = table.setExpression(name, expression);
+    if (!edit.ok) return refusal('invalid', edit.error);
+    const undo = () => table.setExpression(name, row.expression);
+    const driven = this.#dimensions.filter(
+      (c) => !c.reference && edit.changed.includes(c.parameter),
+    );
+    for (const c of driven) {
+      const wrong = this.#drivingError(c);
+      if (wrong) {
+        undo();
+        return refusal('invalid', `${c.parameter}: ${wrong}`, [c.handle]);
+      }
+    }
+    const updated: Replacement<Entity>[] = [];
+    const done = new Set<DimensionalConstraint>();
+    for (const c of driven) {
+      if (done.has(c)) continue;
+      const group = this.#group(c.refs.map((r) => r.entity));
+      const changed = driven.filter((d) => group.includes(d));
+      changed.forEach((d) => done.add(d));
+      const r = this.#resolveValues(group, changed, lookup);
+      if (!r.ok) {
+        undo();
+        return r;
+      }
+      updated.push(...r.updated);
+    }
+    const remeasured = this.#remeasure(updated, lookup);
+    return { ok: true, updated, parameters: [...new Set([...edit.changed, ...remeasured])] };
+  }
+
+  /** Renames a parameter in the table, in its constraint and in every expression naming it. */
+  renameParameter(
+    from: string,
+    to: string,
+  ): { readonly ok: true; readonly parameters: readonly string[] } | Refusal {
+    const r = this.#parameters.rename(from, to);
+    if (!r.ok) return refusal('invalid', r.error);
+    this.#dimensions = this.#dimensions.map((c) =>
+      c.parameter === from ? { ...c, parameter: to } : c,
+    );
+    return { ok: true, parameters: [to, ...r.changed.filter((n) => n !== to)] };
+  }
+
+  /**
+   * Builds a constraint's group with it added and solves, holding `holds` (the first
+   * object) and as much of the rest as can stay. The caller keeps the constraint.
+   */
+  #addSolved(
+    constraint: AnyConstraint,
+    holds: readonly GeomRef[],
+    lookup: EntityLookup,
+  ): (AddResult & { ok: true }) | Refusal {
     const group = this.#group(constraint.refs.map((r) => r.entity));
-    const build = new Build(this.#gcs.sketch(), lookup, this.#tol);
+    const build = this.#build(lookup);
     try {
       for (const c of group) build.tryConstrain(c);
       const before = group.length ? build.diagnose() : undefined;
@@ -205,7 +457,10 @@ export class ConstraintModel {
         if (e instanceof Refused) return refusal(e.reason, e.message, [constraint.handle]);
         throw e;
       }
-      if (!solveAdding(build, constraint)) {
+      const dimensional = isDimensional(constraint);
+      const kind = dimensional ? undefined : constraint.kind;
+      const keeps = dimensional ? [constraint] : [];
+      if (!solveHolding(build, holds, constraint.refs, kind, keeps)) {
         const named = build.diagnose().conflicting;
         const conflicting = named.length
           ? named
@@ -225,11 +480,103 @@ export class ConstraintModel {
           withHandle(newlyRedundant, constraint.handle),
         );
       }
-      this.#constraints.push(constraint);
       return { ok: true, updated: build.moved(new Map()), dofs: diagnosis.dofs };
     } finally {
       build.dispose();
     }
+  }
+
+  /** Solves a group whose driving values `changed` were set, holding their first objects. */
+  #resolveValues(
+    group: readonly AnyConstraint[],
+    changed: readonly DimensionalConstraint[],
+    lookup: EntityLookup,
+  ): EditResult {
+    const build = this.#build(lookup);
+    try {
+      for (const c of group) build.tryConstrain(c);
+      const holds = changed.flatMap((c) => dimensionShape(c, lookup).holds);
+      if (
+        !solveHolding(
+          build,
+          holds,
+          changed.flatMap((c) => c.refs),
+          undefined,
+          changed,
+        )
+      ) {
+        const named = build.diagnose().conflicting;
+        return refusal(
+          'overconstrained',
+          'The geometry cannot take the value',
+          named.length ? named : changed.map((c) => c.handle),
+        );
+      }
+      return { ok: true, updated: build.moved(new Map()) };
+    } finally {
+      build.dispose();
+    }
+  }
+
+  /** Why a driving constraint's parameter cannot drive it now, if it cannot. */
+  #drivingError(c: DimensionalConstraint): string | undefined {
+    const table = this.#parameters;
+    const row = table.get(c.parameter);
+    if (row?.value === undefined) return row?.error ?? `No parameter named "${c.parameter}".`;
+    const range = dimensionValueError(c.dimension, row.value);
+    if (range) return range;
+    for (const r of this.#dimensions) {
+      if (r.reference && table.dependents(r.parameter).includes(c.parameter)) {
+        return `a driving value cannot follow from reference parameter ${r.parameter}`;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Sets each reference parameter that measures geometry `updated` moved to its new value;
+   * the rows changed, with those that follow from them.
+   */
+  #remeasure(updated: readonly Replacement<Entity>[], lookup: EntityLookup): string[] {
+    if (!updated.length) return [];
+    const after = new Map(updated.map((u) => [u.after.handle, u.after]));
+    const view: EntityLookup = (h) => after.get(h) ?? lookup(h);
+    const changed: string[] = [];
+    for (const c of this.#dimensions) {
+      if (!c.reference || !c.refs.some((r) => after.has(r.entity))) continue;
+      const m = measureDimension(c, view);
+      const old = this.#parameters.value(c.parameter);
+      if (!m.ok || (old !== undefined && Math.abs(m.value - old) <= this.#tol.linear)) continue;
+      const r = this.#parameters.setExpression(c.parameter, formatMeasured(m.value));
+      if (r.ok) changed.push(...r.changed);
+    }
+    return [...new Set(changed)];
+  }
+
+  /** Degrees of freedom of the constrained group around `refs`' entities. */
+  #dofs(refs: readonly GeomRef[], lookup: EntityLookup): number {
+    const group = this.#group(refs.map((r) => r.entity));
+    if (!group.length) return 0;
+    const build = this.#build(lookup);
+    try {
+      for (const c of group) build.tryConstrain(c);
+      return build.diagnose().dofs;
+    } finally {
+      build.dispose();
+    }
+  }
+
+  /** The constraints the solver takes: geometric and driving dimensional ones. */
+  #active(): AnyConstraint[] {
+    return [...this.#constraints, ...this.#dimensions.filter((c) => !c.reference)];
+  }
+
+  #build(lookup: EntityLookup): Build {
+    return new Build(this.#gcs.sketch(), lookup, this.#tol, (c) => {
+      const v = this.#parameters.value(c.parameter);
+      if (dimensionValueError(c.dimension, v)) return undefined;
+      return c.dimension === 'angular' ? (v! * Math.PI) / 180 : v;
+    });
   }
 
   /**
@@ -238,8 +585,12 @@ export class ConstraintModel {
    * when the edit breaks a constraint the rest cannot absorb (a Fix, say).
    */
   solveEdit(edits: readonly Replacement<Entity>[], lookup: EntityLookup): EditResult {
+    const done = (updated: readonly Replacement<Entity>[]): EditResult => {
+      const parameters = this.#remeasure(updated, lookup);
+      return parameters.length ? { ok: true, updated, parameters } : { ok: true, updated };
+    };
     const group = this.#group(edits.map((e) => e.after.handle));
-    if (!group.length) return { ok: true, updated: edits };
+    if (!group.length) return done(edits);
     const edited = new Map(edits.map((e) => [e.after.handle, e]));
     const build = this.#editBuild(group, edits, lookup);
     try {
@@ -251,7 +602,7 @@ export class ConstraintModel {
           named.length ? named : this.#culprits(group, lookup, () => edits),
         );
       }
-      return { ok: true, updated: build.moved(edited, lookup) };
+      return done(build.moved(edited, lookup));
     } finally {
       build.dispose();
     }
@@ -268,11 +619,11 @@ export class ConstraintModel {
       invalid: [] as Handle[],
     };
     const done = new Set<Handle>();
-    for (const c of this.#constraints) {
+    for (const c of this.#active()) {
       if (done.has(c.handle)) continue;
       const group = this.#group(c.refs.map((r) => r.entity));
       for (const g of group) done.add(g.handle);
-      const build = new Build(this.#gcs.sketch(), lookup, this.#tol);
+      const build = this.#build(lookup);
       try {
         for (const g of group) if (!build.tryConstrain(g)) out.invalid.push(g.handle);
         const ok = build.solveChecked();
@@ -300,16 +651,16 @@ export class ConstraintModel {
    * entities held whole.
    */
   #editBuild(
-    group: readonly GeometricConstraint[],
+    group: readonly AnyConstraint[],
     edits: readonly Replacement<Entity>[],
     lookup: EntityLookup,
   ): Build {
-    const build = new Build(this.#gcs.sketch(), lookup, this.#tol);
+    const build = this.#build(lookup);
     for (const c of group) build.tryConstrain(c);
     if (edits.every((e) => build.assignEdit(e))) return build;
     build.dispose();
     const edited = new Map(edits.map((e) => [e.after.handle, e.after]));
-    const reshaped = new Build(this.#gcs.sketch(), (h) => edited.get(h) ?? lookup(h), this.#tol);
+    const reshaped = this.#build((h) => edited.get(h) ?? lookup(h));
     for (const c of group) reshaped.tryConstrain(c);
     for (const e of edits) reshaped.holdEntity(e.after.handle);
     return reshaped;
@@ -321,7 +672,7 @@ export class ConstraintModel {
    * to nothing (two horizontal lines made perpendicular), which `solveChecked` refuses.
    */
   #culprits(
-    constraints: readonly GeometricConstraint[],
+    constraints: readonly AnyConstraint[],
     lookup: EntityLookup,
     edits: () => readonly Replacement<Entity>[] | undefined,
   ): Handle[] {
@@ -329,9 +680,7 @@ export class ConstraintModel {
     for (const left of constraints) {
       const rest = constraints.filter((c) => c !== left);
       const e = edits();
-      const build = e
-        ? this.#editBuild(rest, e, lookup)
-        : new Build(this.#gcs.sketch(), lookup, this.#tol);
+      const build = e ? this.#editBuild(rest, e, lookup) : this.#build(lookup);
       try {
         if (!e) for (const c of rest) build.tryConstrain(c);
         if (build.solveChecked()) out.push(left.handle);
@@ -343,12 +692,13 @@ export class ConstraintModel {
   }
 
   /** The constraints connected, through the entities they share, to any of `entities`. */
-  #group(entities: readonly Handle[]): GeometricConstraint[] {
+  #group(entities: readonly Handle[]): AnyConstraint[] {
     const reached = new Set(entities);
-    const taken = new Set<GeometricConstraint>();
+    const taken = new Set<AnyConstraint>();
+    const active = this.#active();
     for (let grew = true; grew;) {
       grew = false;
-      for (const c of this.#constraints) {
+      for (const c of active) {
         if (taken.has(c) || !c.refs.some((r) => reached.has(r.entity))) continue;
         taken.add(c);
         for (const r of c.refs) reached.add(r.entity);
@@ -358,11 +708,9 @@ export class ConstraintModel {
     // The model's order, so tags (and with them diagnosis) do not depend on the seed, but
     // Coincident first: a Tangent between curves whose ends are joined is solved at that
     // point (Build.#tangent), which it can only see once the join is in.
-    const group = this.#constraints.filter((c) => taken.has(c));
-    return [
-      ...group.filter((c) => c.kind === 'coincident'),
-      ...group.filter((c) => c.kind !== 'coincident'),
-    ];
+    const group = active.filter((c) => taken.has(c));
+    const coincident = (c: AnyConstraint) => !isDimensional(c) && c.kind === 'coincident';
+    return [...group.filter(coincident), ...group.filter((c) => !coincident(c))];
   }
 }
 
@@ -399,17 +747,27 @@ function holdFor(c: GeometricConstraint): GeomRef[] {
 }
 
 /**
- * Solves a group with a new constraint, AutoCAD's way: the second object adjusts to the
- * first. Tries, in turn, holding everything but the second object (an arc moving whole),
- * then letting the arc change shape, then holding only the first object, then holding
- * nothing; the first that solves wins. False when none does.
+ * Solves a group with a new constraint or value, AutoCAD's way: the second object adjusts to
+ * the first. `held` is the first object (geometric constraints: holdFor; dimensional:
+ * dimensionShape), `refs` every reference of the constraints concerned. Tries, in turn,
+ * holding everything but the second object (an arc moving whole), then letting the arc
+ * change shape, then holding only the first object, then holding nothing; the first that
+ * solves wins. False when none does.
  */
-function solveAdding(build: Build, c: GeometricConstraint): boolean {
-  const held = holdFor(c);
+function solveHolding(
+  build: Build,
+  held: readonly GeomRef[],
+  refs: readonly GeomRef[],
+  kind?: GeometricKind,
+  keeps: readonly DimensionalConstraint[] = [],
+): boolean {
   if (!held.length) return build.solveChecked();
-  const moving = new Set(c.refs.filter((r) => !held.includes(r)).map((r) => r.entity));
+  const moving = new Set(refs.filter((r) => !held.includes(r)).map((r) => r.entity));
   const others = build.entities().filter((h) => !moving.has(h));
-  const first = () => held.forEach((ref) => build.hold(ref, c.kind));
+  const first = () => {
+    held.forEach((ref) => build.hold(ref, kind));
+    keeps.forEach((c) => build.keep(c));
+  };
   const tiers = [
     () => {
       first();
@@ -481,6 +839,8 @@ type Mapped =
 
 /** The tag of the structure Triya adds (a line's midpoint). */
 const INTERNAL_TAG = ARC_RULES_TAG - 1;
+/** The tag of what `Build.keep` adds while a dimensional value is first solved. */
+const KEEP_TAG = ARC_RULES_TAG - 2;
 
 const describeRef = (ref: GeomRef) =>
   isPointRef(ref)
@@ -496,15 +856,28 @@ class Build {
   readonly #tags = new Map<number, Handle>();
   /** Points joined by Coincident constraints: each point's parent (union-find). */
   readonly #joined = new Map<number, number>();
+  /** Whether `keep` added constraints (KEEP_TAG) that `releaseHolds()` removes. */
+  #keeping = false;
   /** Parameters held (fixed) until `releaseHolds()`. */
   readonly #held = new Set<number>();
+  /** Pairs of lines a Parallel constraint keeps parallel (pairKey). */
+  readonly #parallel = new Set<string>();
   /** Lines' ends and circles' and arcs' radii, with their size when mapped. */
   readonly #sizes: { line?: LinePrim; radius?: number; initial: number }[] = [];
 
-  constructor(sketch: PlaneGcsSketch, lookup: EntityLookup, tol: Tolerance) {
+  /** A driving dimensional constraint's value for the solver (radians for angles); undefined without one. */
+  readonly #value: (c: DimensionalConstraint) => number | undefined;
+
+  constructor(
+    sketch: PlaneGcsSketch,
+    lookup: EntityLookup,
+    tol: Tolerance,
+    value: (c: DimensionalConstraint) => number | undefined,
+  ) {
     this.#s = sketch;
     this.#lookup = lookup;
     this.#tol = tol;
+    this.#value = value;
   }
 
   dispose(): void {
@@ -530,7 +903,7 @@ class Build {
   }
 
   /** Adds a constraint that is already in the model; false if its references no longer fit. */
-  tryConstrain(c: GeometricConstraint): boolean {
+  tryConstrain(c: AnyConstraint): boolean {
     try {
       this.constrain(c);
       return true;
@@ -540,7 +913,11 @@ class Build {
     }
   }
 
-  constrain(c: GeometricConstraint): void {
+  constrain(c: AnyConstraint): void {
+    if (isDimensional(c)) {
+      this.#dimension(c);
+      return;
+    }
     const tag = this.#tags.size + 1;
     const add = (kind: ConstraintKind, ids: readonly number[]) => this.#s.constrain(kind, ids, tag);
     const refs = c.refs;
@@ -579,6 +956,7 @@ class Build {
             a.id,
             b.id,
           ]);
+          if (c.kind === 'parallel') this.#parallel.add(pairKey(a.id, b.id));
         }
         break;
       }
@@ -679,6 +1057,121 @@ class Build {
   }
 
   /**
+   * A driving dimensional constraint at its parameter's value. The sense it was drawn in is
+   * kept: a horizontal distance stays to the right or left, an angle counter-clockwise or
+   * clockwise, read from the geometry as it is when the sketch is built.
+   */
+  #dimension(c: DimensionalConstraint): void {
+    const tag = this.#tags.size + 1;
+    const s = this.#s;
+    const v = this.#value(c);
+    if (v === undefined) throw new Refused('invalid', `${c.parameter} has no value it can take`);
+    const refs = c.refs;
+    const add = (kind: ConstraintKind, ids: readonly number[]) => s.constrain(kind, ids, tag);
+    const fixed = (value: number) => s.param(value, 'fixed');
+    const arity = (...n: number[]) => {
+      if (!n.includes(refs.length)) {
+        throw new Refused('invalid', `${c.dimension} takes ${n.join(' or ')} references`);
+      }
+    };
+    switch (c.dimension) {
+      case 'horizontal':
+      case 'vertical': {
+        arity(1, 2);
+        const [p, q] =
+          refs.length === 1
+            ? (() => {
+                const l = this.#line(refs[0]!);
+                return [l.p1, l.p2];
+              })()
+            : this.#distinctPoints(refs[0]!, refs[1]!);
+        const axis = c.dimension === 'horizontal' ? 0 : 1;
+        const pa = s.pointParams(p)[axis];
+        const qa = s.pointParams(q)[axis];
+        const sign = s.value(qa) - s.value(pa) < 0 ? -1 : 1;
+        add(ConstraintKind.Difference, [pa, qa, fixed(sign * v)]);
+        break;
+      }
+      case 'aligned': {
+        arity(1, 2);
+        if (refs.length === 1) {
+          const l = this.#line(refs[0]!);
+          add(ConstraintKind.P2PDistance, [l.p1, l.p2, fixed(v)]);
+          break;
+        }
+        const [a, b] = refs as [GeomRef, GeomRef];
+        if (isPointRef(a) && isPointRef(b)) {
+          add(ConstraintKind.P2PDistance, [...this.#distinctPoints(a, b), fixed(v)]);
+        } else if (isPointRef(a) !== isPointRef(b)) {
+          const [p, l] = isPointRef(a) ? [a, b] : [b, a];
+          add(ConstraintKind.P2LDistance, [this.#point(p), this.#line(l).id, fixed(v)]);
+        } else {
+          const la = this.#line(a);
+          const lb = this.#line(b);
+          if (la === lb) throw new Refused('invalid', 'aligned needs two different lines');
+          // 2Line: the second line is made parallel to the first, unless a Parallel already
+          // keeps them so (the two together would be redundant).
+          if (!this.#parallel.has(pairKey(la.id, lb.id)))
+            add(ConstraintKind.Parallel, [la.id, lb.id]);
+          add(ConstraintKind.P2LDistance, [lb.p1, la.id, fixed(v)]);
+        }
+        break;
+      }
+      case 'angular': {
+        arity(1, 2, 3);
+        if (refs.length === 1) {
+          const arc = this.#circular(refs[0]!);
+          if (arc.type !== 'arc')
+            throw new Refused('invalid', 'angular takes an arc, not a circle');
+          add(ConstraintKind.Difference, [arc.startAngle, arc.endAngle, fixed(v)]);
+        } else if (refs.length === 2) {
+          const la = this.#line(refs[0]!);
+          const lb = this.#line(refs[1]!);
+          if (la === lb) throw new Refused('invalid', 'angular needs two different lines');
+          const ends = (l: LinePrim) => ({ a: s.pointAt(l.p1), b: s.pointAt(l.p2) });
+          const angle = lineAngle(ends(la), ends(lb));
+          if (!angle) throw new Refused('invalid', 'the lines are parallel');
+          // PlaneGCS's angle runs from line a's direction to line b's; a line that runs
+          // into the corner points half a turn from the side the angle is measured on.
+          const turn = (Number(angle.flipB) - Number(angle.flipA)) * Math.PI;
+          add(ConstraintKind.L2LAngle, [la.id, lb.id, fixed(angle.sign * v + turn)]);
+        } else {
+          const [vtx, p, q] = refs.map((r) => this.#point(r)) as [number, number, number];
+          if (vtx === p || vtx === q || p === q) {
+            throw new Refused('invalid', 'the constraint needs three different points');
+          }
+          const theta = pointAngle(s.pointAt(vtx), s.pointAt(p), s.pointAt(q));
+          if (theta === undefined) {
+            throw new Refused('invalid', 'the points must be away from the vertex');
+          }
+          // Lines from the vertex, not P2PAngle: PlaneGCS adds that one without its tag.
+          const sign = theta < 0 ? -1 : 1;
+          add(ConstraintKind.L2LAngle, [s.line(vtx, p), s.line(vtx, q), fixed(sign * v)]);
+        }
+        break;
+      }
+      case 'radial':
+      case 'diameter': {
+        arity(1);
+        const circ = this.#circular(refs[0]!);
+        const kind =
+          c.dimension === 'radial'
+            ? circ.type === 'circle'
+              ? ConstraintKind.CircleRadius
+              : ConstraintKind.ArcRadius
+            : circ.type === 'circle'
+              ? ConstraintKind.CircleDiameter
+              : ConstraintKind.ArcDiameter;
+        add(kind, [circ.id, fixed(v)]);
+        break;
+      }
+      default:
+        throw new Refused('invalid', `unknown dimensional constraint ${String(c.dimension)}`);
+    }
+    this.#tags.set(tag, c.handle);
+  }
+
+  /**
    * Solves with the held values kept, then releases them. Fails when PlaneGCS does not zero
    * every constraint, when the solution collapses a line, circle or arc to nothing, or when
    * a constraint with no free value left (a Fix on a held point) does not hold: the check
@@ -718,7 +1211,7 @@ class Build {
    * Holds the reference's geometry where it is until `releaseHolds()`; for Horizontal and
    * Vertical on a line, only its start.
    */
-  hold(ref: GeomRef, kind: GeometricKind): void {
+  hold(ref: GeomRef, kind?: GeometricKind): void {
     const lineStart = (kind === 'horizontal' || kind === 'vertical') && !isPointRef(ref);
     const { points, params } = lineStart
       ? { points: [this.#line(ref).p1], params: [] }
@@ -758,6 +1251,78 @@ class Build {
   releaseHolds(): void {
     for (const p of this.#held) this.#s.setParamKind(p, 'unknown');
     this.#held.clear();
+    if (this.#keeping) this.#s.remove(KEEP_TAG);
+    this.#keeping = false;
+  }
+
+  /**
+   * While a dimensional constraint's value is first solved, keeps what AutoCAD keeps of the
+   * object that adjusts, until `releaseHolds()`: a distance moves the second point along
+   * the line between the points (a line keeps its direction, a horizontal distance moves
+   * only across, a line at a distance from a point moves parallel); an angle turns the
+   * second line or point about the vertex, its length kept. Without these the solver's
+   * least-change step reaches the value by any route (a point moved to distance 10 also
+   * swings round).
+   */
+  keep(c: DimensionalConstraint): void {
+    const s = this.#s;
+    const refs = c.refs;
+    const tag = KEEP_TAG;
+    /** Keeps p→q parallel to where it runs now (a fixed line beside it, not P2PAngle: PlaneGCS adds that one without its tag). */
+    const direction = (p: number, q: number, line = s.line(p, q)) => {
+      const a = s.pointAt(p);
+      const b = s.pointAt(q);
+      if (a.x === b.x && a.y === b.y) return;
+      const h1 = s.point(a.x, a.y);
+      const h2 = s.point(b.x, b.y);
+      s.fix(h1);
+      s.fix(h2);
+      s.constrain(ConstraintKind.Parallel, [line, s.line(h1, h2)], tag);
+      this.#keeping = true;
+    };
+    const length = (p: number, q: number) => {
+      const a = s.pointAt(p);
+      const b = s.pointAt(q);
+      s.constrain(ConstraintKind.P2PDistance, [p, q, s.param(dist(a, b), 'fixed')], tag);
+      this.#keeping = true;
+    };
+    switch (c.dimension) {
+      case 'horizontal':
+      case 'vertical': {
+        const q = refs.length === 1 ? this.#line(refs[0]!).p2 : this.#point(refs[1]!);
+        // The second point moves only along the dimension's direction.
+        this.#hold([], [s.pointParams(q)[c.dimension === 'horizontal' ? 1 : 0]]);
+        return;
+      }
+      case 'aligned': {
+        if (refs.length === 1) {
+          const l = this.#line(refs[0]!);
+          return direction(l.p1, l.p2, l.id);
+        }
+        const [a, b] = refs as [GeomRef, GeomRef];
+        if (isPointRef(a) && isPointRef(b)) return direction(this.#point(a), this.#point(b));
+        if (isPointRef(a) && !isPointRef(b)) {
+          const l = this.#line(b);
+          return direction(l.p1, l.p2, l.id);
+        }
+        if (!isPointRef(a) && !isPointRef(b)) {
+          // 2Line: the second line turns parallel and moves; its length stays.
+          const l = this.#line(b);
+          return length(l.p1, l.p2);
+        }
+        return;
+      }
+      case 'angular': {
+        if (refs.length === 2) {
+          const l = this.#line(refs[1]!);
+          return length(l.p1, l.p2);
+        }
+        if (refs.length === 3) return length(this.#point(refs[0]!), this.#point(refs[2]!));
+        return;
+      }
+      default:
+        return;
+    }
   }
 
   /**
@@ -1254,6 +1819,8 @@ class Build {
  */
 const COLLAPSE = 1e-6;
 
+const pairKey = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`);
+
 /** Whether a polyline segment from `v` to `w` maps to a line or an arc. */
 function segmentKind(v: BulgeVertex, w: Vec2, tol: number): 'line' | 'arc' {
   return v.bulge === 0 || samePoint(v, w, tol) ? 'line' : 'arc';
@@ -1263,6 +1830,10 @@ function mapSegmentKinds(g: LwPolylineGeometry, tol: number): ('line' | 'arc')[]
   return Array.from({ length: polylineSegmentCount(g) }, (_, i) =>
     segmentKind(g.vertices[i]!, g.vertices[(i + 1) % g.vertices.length]!, tol),
   );
+}
+
+function dist(a: Vec2, b: Vec2): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
 function samePoint(a: Vec2, b: Vec2, tol: number): boolean {
