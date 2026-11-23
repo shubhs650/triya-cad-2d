@@ -142,6 +142,9 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
   await expect.poll(() => lit(page, onB)).toBeGreaterThan(10);
   await shot(page, '2-crossing-preview');
   await page.keyboard.press('Escape');
+  // Typed before the engine has read the Esc, the variable's name went partly to the corner
+  // prompt Esc then ended, and the rest ran as another command (CI, M9-07's #648).
+  await expect(prompt(page)).toHaveText('Command:');
 
   // SELECTIONPREVIEWLIMIT 1: the crossing window takes two, so it previews none.
   await type(page, 'SELECTIONPREVIEWLIMIT', 'Enter new value for SELECTIONPREVIEWLIMIT <20000>:');
@@ -153,6 +156,7 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
   await page.waitForTimeout(300);
   expect(await lit(page, onA)).toBe(0);
   await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
   await type(page, 'SELECTIONPREVIEWLIMIT', 'Enter new value for SELECTIONPREVIEWLIMIT <1>:');
   await type(page, '20000', 'Command:');
 
