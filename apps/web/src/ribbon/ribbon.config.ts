@@ -611,8 +611,10 @@ const ANNOTATE: RibbonTab = {
 
 /**
  * Parametric (M9-05, UI_SPEC §2): the Geometric panel's twelve constraints, in AutoCAD's order.
- * Smooth is greyed out until the solver takes splines (M9-02 part 2). Auto Constrain, Show/Hide
- * and Infer, and the Dimensional and Manage panels, come with their commands.
+ * Smooth is greyed out until the solver takes splines (M9-02 part 2). The Dimensional panel
+ * (M9-03 part 3): Linear (with Horizontal and Vertical), Aligned, Radius, Diameter, Angular;
+ * Convert greyed out until DIMCONSTRAINT converts dimensions. Auto Constrain, Show/Hide and
+ * Infer, the dimensional constraints' Show/Hide, and the Manage panel come with their commands.
  */
 const PARAMETRIC: RibbonTab = {
   id: 'parametric',
@@ -638,6 +640,26 @@ const PARAMETRIC: RibbonTab = {
         ),
         cmd('gc-symmetric', 'Symmetric', 'gc-symmetric', 'GCSYMMETRIC', ICON),
         cmd('gc-equal', 'Equal', 'gc-equal', 'GCEQUAL', ICON),
+      ],
+    },
+    {
+      id: 'dimensional',
+      label: 'Dimensional',
+      compress: { order: 2, keep: ['dc-linear'] },
+      items: [
+        split('dc-linear', 'Linear', 'dim-linear', BIG, [
+          cmd('dc-linear-linear', 'Linear', 'dim-linear', 'DCLINEAR'),
+          cmd('dc-horizontal', 'Horizontal', 'dim-linear', 'DCHORIZONTAL'),
+          cmd('dc-vertical', 'Vertical', 'dim-linear', 'DCVERTICAL'),
+        ]),
+        cmd('dc-aligned', 'Aligned', 'dim-aligned', 'DCALIGNED', SECONDARY),
+        cmd('dc-radius', 'Radius', 'dim-radius', 'DCRADIUS', SECONDARY),
+        cmd('dc-diameter', 'Diameter', 'dim-diameter', 'DCDIAMETER', SECONDARY),
+        cmd('dc-angular', 'Angular', 'dim-angular', 'DCANGULAR', SECONDARY),
+        off(
+          cmd('dc-convert', 'Convert', 'dim-linear', 'DIMCONSTRAINT', SECONDARY),
+          'Converting a dimension to a constraint comes later',
+        ),
       ],
     },
   ],

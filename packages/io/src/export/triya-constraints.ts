@@ -1,5 +1,5 @@
-// TriyaToAcad for geometric constraints (M9-04, PRD FR-X5, DEC-081), the inverse of
-// map/triya-constraints.ts: each constraint is an XRECORD in the `TRIYA_CONSTRAINTS` dictionary
+// TriyaToAcad for geometric constraints (M9-04, PRD FR-X5, DEC-081) and dimensional ones (M9-03
+// part 3, DEC-082), the inverse of map/triya-constraints.ts: each constraint is an XRECORD in the `TRIYA_CONSTRAINTS` dictionary
 // of the named object dictionary, keyed by its own handle. A new constraint joins it; the first
 // one a drawing gets brings the dictionary, made as AutoCAD files its own dictionaries there
 // (soft owner, 281 = 1, the root dictionary its reactor). A constraint whose kind or references
@@ -11,18 +11,23 @@
 //
 // Refused, before anything changes: a constraint filed elsewhere than the root dictionary (where
 // GEOMCONSTRAINT files a new one) or `TRIYA_CONSTRAINTS`, a kind Triya does not name, no
-// reference or more than three, a bad vertex or segment index, a new constraint's handle in use,
+// reference or more than three, a bad vertex or segment index, a dimensional constraint's
+// parameter name taken by another or text that does not fit a string group, a new constraint's handle in use,
 // and a version before R2000 (the save writes AC1032, DEC-047).
 import {
   ACadVersion,
   CadDictionary,
   DictionaryCloningFlags,
   XRecord,
+  XYZ,
   type CadDocument,
 } from '@node-projects/acad-ts';
 import {
+  DIMENSIONAL_CONSTRAINT_KINDS,
   GEOMETRIC_CONSTRAINT_KINDS,
+  isDimensionalConstraint,
   isGeometricConstraint,
+  type DimensionalConstraintObject,
   type DocumentInit,
   type DocumentModel,
   type GeometricConstraintObject,
@@ -30,7 +35,9 @@ import {
   type NonGraphicalObject,
 } from '@triya/engine';
 import {
+  CONSTRAINT_FORMS,
   CONSTRAINT_POINTS,
+  DIMENSIONAL_RECORD,
   MAX_CONSTRAINT_REFS,
   TRIYA_CONSTRAINTS,
   TRIYA_CONSTRAINTS_VERSION,
@@ -38,21 +45,48 @@ import {
 } from '../map/triya-constraints';
 import { resolve, same, type Resolver } from './entities';
 
+type Constraint = GeometricConstraintObject | DimensionalConstraintObject;
+
+const isConstraint = (o: NonGraphicalObject | undefined): o is Constraint =>
+  isGeometricConstraint(o) || isDimensionalConstraint(o);
+
 export interface TriyaConstraintsPlan {
-  readonly updated: { readonly acad: XRecord; readonly after: GeometricConstraintObject }[];
-  readonly added: GeometricConstraintObject[];
+  readonly updated: { readonly acad: XRecord; readonly after: Constraint }[];
+  readonly added: Constraint[];
   readonly removed: XRecord[];
 }
 
 const handle = (h: Handle): number => Number.parseInt(h, 16);
 
-/** What the record states: its kind and references. */
-const fields = (c: GeometricConstraintObject) => ({ kind: c.kind, refs: c.refs });
+/** What the record states: everything but the handle and owner. */
+const fields = (c: Constraint) => {
+  const { handle: _h, owner: _o, ...rest } = c;
+  return rest;
+};
 
-/** Why `c` cannot be written as DEC-081 lays a record out. */
-function layoutProblems(c: GeometricConstraintObject): string[] {
+/** A string group's text: one line, at most 2049 characters (DXF's limit for a string value). */
+const textProblem = (what: string, s: string): string | undefined =>
+  /[\r\n]/.test(s) || s.length > 2049 ? `${what} does not fit one string group` : undefined;
+
+/** Why `c` cannot be written as DEC-081 (DEC-082) lays a record out. */
+function layoutProblems(c: Constraint): string[] {
   const out: string[] = [];
-  if (!(GEOMETRIC_CONSTRAINT_KINDS as readonly string[]).includes(c.kind)) {
+  if (isDimensionalConstraint(c)) {
+    if (!(DIMENSIONAL_CONSTRAINT_KINDS as readonly string[]).includes(c.dimension)) {
+      out.push(`kind ${String(c.dimension)}`);
+    }
+    if (!CONSTRAINT_FORMS.includes(c.form)) out.push(`form ${String(c.form)}`);
+    if (!Number.isFinite(c.location?.x) || !Number.isFinite(c.location?.y)) out.push('location');
+    for (const [what, text] of [
+      ['the parameter name', c.parameter],
+      ['the expression', c.expression],
+      ['the description', c.description ?? ''],
+    ] as const) {
+      const p = textProblem(what, text);
+      if (p) out.push(p);
+    }
+    if (c.parameter === '' || c.expression === '') out.push('an empty parameter or expression');
+  } else if (!(GEOMETRIC_CONSTRAINT_KINDS as readonly string[]).includes(c.kind)) {
     out.push(`kind ${String(c.kind)}`);
   }
   if (c.refs.length === 0 || c.refs.length > MAX_CONSTRAINT_REFS) {
@@ -75,9 +109,7 @@ export function planTriyaConstraints(
 ): { plan: TriyaConstraintsPlan; problems: string[] } {
   const plan: TriyaConstraintsPlan = { updated: [], added: [], removed: [] };
   const problems: string[] = [];
-  const before = new Map(
-    (base.objects ?? []).filter(isGeometricConstraint).map((o) => [o.handle, o]),
-  );
+  const before = new Map((base.objects ?? []).filter(isConstraint).map((o) => [o.handle, o]));
   const dict = constraintsDictionary(doc);
   const owners = new Set<Handle | undefined>([model.meta.rootDictionary]);
   if (dict) owners.add(dict.handle.toString(16).toUpperCase());
@@ -86,19 +118,29 @@ export function planTriyaConstraints(
     version !== undefined && version !== ACadVersion.Unknown && version < ACadVersion.AC1015;
 
   // A constraint on an object that is gone is saved as none.
-  const saved = (o: NonGraphicalObject | undefined): o is GeometricConstraintObject =>
-    isGeometricConstraint(o) && o.refs.every((ref) => model.entityByHandle(ref.entity));
-  for (const h of before.keys()) {
+  const saved = (o: NonGraphicalObject | undefined): o is Constraint =>
+    isConstraint(o) && o.refs.every((ref) => model.entityByHandle(ref.entity));
+  for (const [h, was] of before) {
     if (saved(model.objects.get(h))) continue;
     const acad = resolve(r, h, XRecord);
     if (acad) plan.removed.push(acad);
-    else problems.push(`TRIYA_GEOMCONSTRAINT ${h}: the original is not an XRECORD`);
+    else problems.push(`${was.type} ${h}: the original is not an XRECORD`);
+  }
+  // A parameter's name is the Parameters Manager's key: two records may not share one.
+  const names = new Map<string, number>();
+  for (const a of model.objects.values()) {
+    if (saved(a) && isDimensionalConstraint(a)) {
+      names.set(a.parameter, (names.get(a.parameter) ?? 0) + 1);
+    }
   }
   for (const a of model.objects.values()) {
     if (!saved(a)) continue;
     const b = before.get(a.handle);
-    if (b && same(fields(b), fields(a))) continue;
+    if (b && b.type === a.type && same(fields(b), fields(a))) continue;
     const out = layoutProblems(a);
+    if (isDimensionalConstraint(a) && (names.get(a.parameter) ?? 0) > 1) {
+      out.push(`parameter ${a.parameter} is another constraint's too`);
+    }
     if (!owners.has(a.owner)) out.push(`it is filed in ${a.owner}, not ${TRIYA_CONSTRAINTS}`);
     if (old) out.push(`${ACadVersion[version!]} is older than R2000`);
     if (b) {
@@ -110,16 +152,27 @@ export function planTriyaConstraints(
       if (!dict && !doc.rootDictionary) out.push('the drawing has no named object dictionary');
       if (out.length === 0) plan.added.push(a);
     }
-    problems.push(...out.map((p) => `TRIYA_GEOMCONSTRAINT ${a.handle}: ${p}`));
+    problems.push(...out.map((p) => `${a.type} ${a.handle}: ${p}`));
   }
   return { plan, problems };
 }
 
 /** The record's groups, as map/triya-constraints.ts reads them. */
-function fill(x: XRecord, c: GeometricConstraintObject): void {
+function fill(x: XRecord, c: Constraint): void {
   x.clear();
   x.createEntry(70, TRIYA_CONSTRAINTS_VERSION);
-  x.createEntry(1, c.kind);
+  if (isDimensionalConstraint(c)) {
+    x.createEntry(1, DIMENSIONAL_RECORD);
+    x.createEntry(2, c.dimension);
+    x.createEntry(300, c.parameter);
+    x.createEntry(301, c.expression);
+    if (c.description !== undefined) x.createEntry(302, c.description);
+    x.createEntry(280, c.reference ? 1 : 0);
+    x.createEntry(281, CONSTRAINT_FORMS.indexOf(c.form));
+    x.createEntry(10, new XYZ(c.location.x, c.location.y, 0));
+  } else {
+    x.createEntry(1, c.kind);
+  }
   for (const ref of c.refs) {
     const point = 'point' in ref ? ref.point : undefined;
     const index = 'point' in ref ? ref.index : ref.segment;

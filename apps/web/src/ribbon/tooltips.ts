@@ -229,6 +229,16 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'gc-smooth': 'Joins a spline to another curve with curvature continuity.',
   'gc-symmetric': 'Makes two objects or points symmetric about a line.',
   'gc-equal': 'Makes lines the same length, or arcs and circles the same radius.',
+  'dc-linear': 'Holds the horizontal or vertical distance between two points at a value.',
+  'dc-linear-linear': 'Holds the horizontal or vertical distance between two points at a value.',
+  'dc-horizontal':
+    'Holds the horizontal distance between two points, or a line’s ends, at a value.',
+  'dc-vertical': 'Holds the vertical distance between two points, or a line’s ends, at a value.',
+  'dc-aligned': 'Holds a length, or the distance between points and lines, at a value.',
+  'dc-radius': 'Holds the radius of a circle or arc at a value.',
+  'dc-diameter': 'Holds the diameter of a circle or arc at a value.',
+  'dc-angular': 'Holds the angle between two lines, of an arc, or at three points at a value.',
+  'dc-convert': 'Turns an associative dimension into a dimensional constraint.',
   // View
   zoom: 'Enlarges or reduces the view of the drawing.',
   'zoom-extents': 'Zooms to show every object in the drawing.',

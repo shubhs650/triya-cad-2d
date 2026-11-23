@@ -29,6 +29,7 @@ import { updateFieldCommand } from './modify/fields';
 import { fieldCommand } from './draw/field';
 import { FIND_COMMANDS } from './modify/find';
 import { GEOMETRIC_CONSTRAINT_COMMANDS, geomconstraintCommand } from './constraints';
+import { dimensionalConstraintCommands } from './dimensional-constraints';
 import { SPELL_COMMANDS } from './modify/spell';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
@@ -160,6 +161,8 @@ export function builtinCommands(): CommandRegistry {
     // M9-05: geometric constraints.
     geomconstraintCommand(),
     ...GEOMETRIC_CONSTRAINT_COMMANDS,
+    // M9-03 part 3: dimensional constraints.
+    ...dimensionalConstraintCommands(),
     breakCommand(),
     breakAtPointCommand(),
     joinCommand(),

@@ -1,16 +1,19 @@
-// M9-04: geometric constraints saved in the `TRIYA_CONSTRAINTS` dictionary (PRD FR-X5, DEC-081)
+// M9-04 and M9-03 part 3: geometric and dimensional constraints saved in the `TRIYA_CONSTRAINTS` dictionary (PRD FR-X5, DEC-081)
 // on public corpus files. The acceptance: a drawing holding constraints round-trips with zero
 // structural difference, and its save passes ezdxf's audit (DEC-047; audit.py `FIXTURE_SAVES`,
 // kind `constraints`). The constraints are added to the drawing as GEOMCONSTRAINT files them
 // (the solver is `@triya/constraints`', which the testkit may not reach; its scenarios are in
-// packages/constraints/test).
+// packages/constraints/test). Dimensional constraints (DEC-082) are added beside them, as
+// DIMCONSTRAINT files them.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
   DocumentModel,
+  isDimensionalConstraint,
   isGeometricConstraint,
   type ConstraintRef,
+  type DimensionalConstraintObject,
   type Entity,
   type GeometricConstraintKind,
   type GeometricConstraintObject,
@@ -33,10 +36,23 @@ const bytesOf = (path: string) =>
 
 const open = (bytes: Uint8Array) => DocumentModel.create(documentInit(readCadDocument(bytes)));
 
-const constraintsOf = (model: DocumentModel) =>
-  [...model.objects.values()]
+const constraintsOf = (model: DocumentModel) => [
+  ...[...model.objects.values()]
     .filter(isGeometricConstraint)
-    .map(({ handle, kind, refs }) => ({ handle, kind, refs }));
+    .map(({ handle, kind, refs }) => ({ handle, kind, refs })),
+  ...[...model.objects.values()].filter(isDimensionalConstraint).map((d) => {
+    const {
+      raw: _raw,
+      owner: _owner,
+      ...rest
+    } = d as DimensionalConstraintObject & {
+      raw?: unknown;
+    };
+    return rest;
+  }),
+];
+
+type Dim = Omit<DimensionalConstraintObject, 'handle' | 'type' | 'owner'>;
 
 /** Constraints on the drawing's lines, circles, arcs and polylines, as the GC* commands file them. */
 function constrain(model: DocumentModel): number {
@@ -78,7 +94,46 @@ function constrain(model: DocumentModel): number {
     const any = [...model.entities()].slice(0, 2).map((e) => e.handle);
     made.push(['equal', any.map((entity) => ({ entity }))]);
   }
+  const dims: Dim[] = [];
+  if (lines.length >= 1) {
+    dims.push({
+      dimension: 'aligned',
+      refs: [{ entity: lines[0]! }],
+      parameter: 'd1',
+      expression: '10',
+      description: 'Length of the first line',
+      location: { x: 1, y: 2 },
+      form: 'dynamic',
+    });
+  }
+  if (lines.length >= 2) {
+    dims.push({
+      dimension: 'angular',
+      refs: [{ entity: lines[0]! }, { entity: lines[1]! }],
+      parameter: 'ang1',
+      expression: '30',
+      reference: true,
+      location: { x: 3, y: 4 },
+      form: 'annotational',
+    });
+  }
+  if (circles.length >= 1) {
+    dims.push({
+      dimension: 'radial',
+      refs: [{ entity: circles[0]! }],
+      parameter: 'rad1',
+      expression: 'd1/4',
+      location: { x: 5, y: 6 },
+      form: 'dynamic',
+    });
+  }
   const b = new ChangeSetBuilder(model);
+  for (const d of dims) {
+    b.addObject({ type: 'TRIYA_DIMCONSTRAINT', owner: model.meta.rootDictionary!, ...d } as Omit<
+      DimensionalConstraintObject,
+      'handle'
+    >);
+  }
   for (const [kind, refs] of made) {
     b.addObject({
       type: 'TRIYA_GEOMCONSTRAINT',
@@ -88,10 +143,10 @@ function constrain(model: DocumentModel): number {
     } as Omit<GeometricConstraintObject, 'handle'>);
   }
   model.apply(b.build());
-  return made.length;
+  return made.length + dims.length;
 }
 
-describe('geometric constraints on corpus files (M9-04)', () => {
+describe('geometric and dimensional constraints on corpus files (M9-04, M9-03 part 3)', () => {
   for (const path of FILES) {
     it(`${path}: saved, reopened and round-tripped with no difference`, () => {
       const bytes = bytesOf(path);

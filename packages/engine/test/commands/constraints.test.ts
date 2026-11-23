@@ -106,6 +106,12 @@ function setup(
       calls.push(call);
       return answer(call);
     },
+    measure: () => {
+      throw new Error('no dimensional constraints here');
+    },
+    addDimension: () => {
+      throw new Error('no dimensional constraints here');
+    },
   };
   const bus = new PromptBus({
     model,

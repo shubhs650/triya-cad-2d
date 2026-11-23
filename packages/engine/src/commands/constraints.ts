@@ -19,8 +19,12 @@ import {
   constraintCurveAt,
   constraintPointAt,
   constraintPointsOf,
+  dimensionalConstraints,
   geometricConstraints,
+  type ExpressionChange,
 } from '../edit/constraints';
+import type { ChangeSetBuilder } from '../model/builder';
+import type { RecordPatch } from '../model/update';
 import type { Vec2 } from '../geom/types';
 import type { Tolerance } from '../geom/tolerance';
 import {
@@ -31,16 +35,17 @@ import {
   type Entity,
   type GeometricConstraintKind,
   type GeometricConstraintObject,
+  type NonGraphicalObject,
 } from '../model/types';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
-const INVALID_OBJECT = 'Invalid selection. Select a line, circle, arc or polyline segment.';
+export const INVALID_OBJECT = 'Invalid selection. Select a line, circle, arc or polyline segment.';
 const INVALID_POINT = 'Invalid selection. Select a line, circle, arc, point or polyline.';
-const LOCKED = 'The object is on a locked layer.';
+export const LOCKED = 'The object is on a locked layer.';
 
 /** The object of the current space under a pick that a constraint can take, nearest first. */
-async function entityAt(ctx: CommandContext, p: Vec2): Promise<Entity | undefined> {
+export async function entityAt(ctx: CommandContext, p: Vec2): Promise<Entity | undefined> {
   const r = await ctx.view.request({ op: 'pick', point: p });
   const hits = (r.ok ? (r.ids ?? []) : [])
     .map((id) => ctx.model.entity(id))
@@ -48,11 +53,11 @@ async function entityAt(ctx: CommandContext, p: Vec2): Promise<Entity | undefine
   return hits.find((e) => constraintPointsOf(e).length > 0) ?? hits[0];
 }
 
-const locked = (ctx: CommandContext, e: Entity): boolean =>
+export const locked = (ctx: CommandContext, e: Entity): boolean =>
   ctx.model.tables.layers.get(e.layer)?.locked === true;
 
 /** The tolerance a constraint on these points works to: the drawing's, from its extents. */
-function toleranceOf(ctx: CommandContext, refs: readonly ConstraintRef[]): Tolerance {
+export function toleranceOf(ctx: CommandContext, refs: readonly ConstraintRef[]): Tolerance {
   const pts = refs.flatMap((r) => {
     const e = ctx.model.entityByHandle(r.entity);
     return e ? constraintPointsOf(e).map((c) => c.at) : [];
@@ -70,7 +75,7 @@ function toleranceOf(ctx: CommandContext, refs: readonly ConstraintRef[]): Toler
  * Asks for an object at `message`: the curve picked, a keyword typed, `enter`, or undefined when
  * the command ends (Esc, or an answer it cannot take). A pick on nothing asks again.
  */
-async function* objectPick(
+export async function* objectPick(
   ctx: CommandContext,
   message: string,
   options?: readonly string[],
@@ -96,7 +101,7 @@ async function* objectPick(
 }
 
 /** Asks for a constraint point at `message`, as `objectPick` asks for an object. */
-async function* pointPick(
+export async function* pointPick(
   ctx: CommandContext,
   message: string,
   options?: readonly string[],
@@ -132,10 +137,10 @@ async function* point(ctx: CommandContext, message: string): Sub<ConstraintPoint
   return r !== undefined && r !== 'enter' && !('keyword' in r) ? r : undefined;
 }
 
-const isRef = (r: unknown): r is ConstraintRef =>
+export const isRef = (r: unknown): r is ConstraintRef =>
   typeof r === 'object' && r !== null && 'entity' in r;
 
-const sentence = (s: string): string =>
+export const sentence = (s: string): string =>
   `${s.charAt(0).toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? '' : '.'}`;
 
 /**
@@ -172,6 +177,7 @@ async function apply(
     constraint,
     (h) => ctx.model.entityByHandle(h),
     toleranceOf(ctx, refs),
+    dimensionalConstraints(ctx.model),
   );
   if (!r.ok) {
     ctx.message(sentence(r.message));
@@ -179,12 +185,32 @@ async function apply(
   }
   ctx.edit((b) => {
     for (const u of r.updated) b.updateEntity(u.after.id, { geom: u.after.geom });
+    setExpressions(ctx, b, r.expressions ?? []);
     b.addObject({ type: 'TRIYA_GEOMCONSTRAINT', owner, kind, refs } as Omit<
       GeometricConstraintObject,
       'handle'
     >);
   });
   return true;
+}
+
+/**
+ * Keeps the drawing's dimensional constraints' expressions in step with a solve (M9-03 part 3):
+ * a reference constraint measuring geometry that moved.
+ */
+export function setExpressions(
+  ctx: CommandContext,
+  b: ChangeSetBuilder,
+  changes: readonly ExpressionChange[],
+): void {
+  if (!changes.length) return;
+  const now = new Map(changes.map((c) => [c.parameter, c.expression]));
+  for (const d of dimensionalConstraints(ctx.model)) {
+    const expression = now.get(d.parameter);
+    if (expression !== undefined && expression !== d.expression) {
+      b.updateObject(d.handle, { expression } as RecordPatch<NonGraphicalObject>);
+    }
+  }
 }
 
 // ── Each constraint's prompts ────────────────────────────────────────────────────────────────

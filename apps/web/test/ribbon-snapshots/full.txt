@@ -224,10 +224,22 @@ Geometric (expanded)
   icon        gc-smooth<gc-smooth>
   icon        gc-symmetric<gc-symmetric>
   icon        gc-equal<gc-equal>
+Dimensional (expanded)
+  large-label dc-linear<dim-linear> ▾ [dc-linear-linear<dim-linear>, dc-horizontal<dim-linear>, dc-vertical<dim-linear>]
+  small-label dc-aligned<dim-aligned>
+  small-label dc-radius<dim-radius>
+  small-label dc-diameter<dim-diameter>
+  small-label dc-angular<dim-angular>
+  small-label dc-convert<dim-linear>
 
 ### step 1
 Geometric (collapsed)
   ▾ gc-coincident, gc-collinear, gc-concentric, gc-fix, gc-parallel, gc-perpendicular, gc-horizontal, gc-vertical, gc-tangent, gc-smooth, gc-symmetric, gc-equal
+
+### step 2
+Dimensional (compressed)
+  icon        dc-linear<dim-linear> ▾ [dc-linear-linear<dim-linear>, dc-horizontal<dim-linear>, dc-vertical<dim-linear>]
+  ▾ dc-aligned, dc-radius, dc-diameter, dc-angular, dc-convert
 
 ## View
 Navigate (expanded)
