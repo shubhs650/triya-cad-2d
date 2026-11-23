@@ -2342,8 +2342,9 @@ export type ConstraintRef = ConstraintPointRef | ConstraintCurveRef;
 /**
  * A geometric constraint GEOMCONSTRAINT or a GC* command made (M9-05): `refs` in the order they
  * were picked, as `@triya/constraints`' ConstraintModel reads them. Kept in the drawing so undo,
- * redo and recovery carry it; how a save stores it is M9-04's (`TRIYA_CONSTRAINTS`, PRD FR-X5):
- * until then a save leaves it out. Filed under the root dictionary.
+ * redo and recovery carry it. A new one is filed under the root dictionary; a save writes it as
+ * an XRECORD of the root dictionary's `TRIYA_CONSTRAINTS` (M9-04, PRD FR-X5, DEC-081), and one
+ * read back is owned by that dictionary.
  */
 export interface GeometricConstraintObject extends NonGraphicalObject {
   readonly type: 'TRIYA_GEOMCONSTRAINT';

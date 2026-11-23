@@ -69,6 +69,7 @@ import {
   planTriyaCenterMarks,
   writeTriyaCenterMarks,
 } from './triya-centermarks';
+import { planTriyaConstraints, writeTriyaConstraints } from './triya-constraints';
 import { planLayouts, writeLayouts } from './layouts';
 import { planPageSetups, writePageSetups } from './page-setups';
 import { planScales, writeScales } from './scales';
@@ -201,9 +202,8 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   // breaks and inspection data (triya-dims.ts) and center marks' records (triya-centermarks.ts,
   // M4-08 part 2, DEC-066), and layer states and filters (layer-states.ts, layer-filters.ts,
   // M5-07), and DGN linestyle components (dgn-linestyles.ts, M5-09 part 5), and named page setups
-  // (page-setups.ts, M6-01 part 3), and the scale list (scales.ts, M6-02 part 21). Geometric
-  // constraints (M9-05) are kept for the session only: their storage is M9-04's TRIYA_CONSTRAINTS
-  // (PRD FR-X5), so until then a save leaves them out rather than refusing.
+  // (page-setups.ts, M6-01 part 3), and the scale list (scales.ts, M6-02 part 21), and geometric
+  // constraints (triya-constraints.ts, M9-04, DEC-081).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'TRIYA_GEOMCONSTRAINT' &&
@@ -585,6 +585,7 @@ export function triyaToAcad(
   // Before the entities: a new center mark's INSERT holds its record's new extension dictionary,
   // and one let go of in the same session an empty one no other writer makes.
   const triyaCenterMarks = planTriyaCenterMarks(original, base, model, r, newDictionaries);
+  const triyaConstraints = planTriyaConstraints(original, base, model, r);
   // A current style variable may name a style, and an arrow-block variable a block, by the name
   // the same save gives it (RENAME).
   const renamed = new Map<CadObject, string>(
@@ -634,6 +635,7 @@ export function triyaToAcad(
     ...triyaArrays.problems,
     ...triyaDims.problems,
     ...triyaCenterMarks.problems,
+    ...triyaConstraints.problems,
     ...coded.problems,
     ...purge.problems,
   );
@@ -730,6 +732,8 @@ export function triyaToAcad(
   writeTriyaArrays(r, triyaArrays.plan);
   writeTriyaDims(original, r, triyaDims.plan);
   writeTriyaCenterMarks(original, r, triyaCenterMarks.plan);
+  // After the entities: a record may name an object the same save adds.
+  writeTriyaConstraints(original, r, triyaConstraints.plan);
   writeCodedObjects(r, coded.plan);
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
