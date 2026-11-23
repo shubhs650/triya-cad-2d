@@ -193,19 +193,35 @@ describe('modify commands keep constraints with PlaneGCS (M9-06)', () => {
   });
 
   it('refuses a ROTATE that turns a horizontal line, and a MOVE of a fixed one', async () => {
-    const s = setup(true);
+    const s = setup();
+    // About the line's own start, which ROTATE leaves where it was: that is held too, so the
+    // line cannot slide up to stay level.
     await s.bus.script(['ROTATE']);
     await s.select(L);
     await s.bus.script(['0,0', '30']);
     expect(s.log.some((l) => /breaks a constraint/.test(l))).toBe(true);
     expect(s.ends('30')).toEqual([0, 0, 10, 0]);
     expect(s.ends('31')).toEqual([10, 0, 10, 10]);
-    const logged = s.log.length;
-    await s.bus.script(['MOVE']);
-    await s.select(TOP);
-    await s.bus.script(['0,0', '0,5']);
-    expect(s.log.slice(logged).some((l) => /breaks a constraint/.test(l))).toBe(true);
-    expect(s.ends('32')).toEqual([0, 20, 10, 20]);
+    const f = setup(true);
+    await f.bus.script(['MOVE']);
+    await f.select(TOP);
+    await f.bus.script(['0,0', '0,5']);
+    expect(f.log.some((l) => /breaks a constraint/.test(l))).toBe(true);
+    expect(f.ends('32')).toEqual([0, 20, 10, 20]);
+  });
+
+  it('a grip drag of a horizontal line’s end moves the line up whole, dragging the upright', async () => {
+    const s = setup();
+    await s.bus.pick(L);
+    await s.bus.pick({ x: 0.1, y: 0.1 }, { grip: 0.5 });
+    expect(s.bus.command).toBe('GRIP');
+    await s.bus.submit('0,3');
+    expect(s.bus.command).toBeUndefined();
+    // A least-change solve: the line's far end drifts by under 1e-5.
+    expect(s.ends('30').map((v) => Math.round(v * 1e3) / 1e3)).toEqual([0, 3, 10, 3]);
+    const l31 = s.ends('31').map((v) => Math.round(v * 1e3) / 1e3);
+    expect(l31.slice(0, 2)).toEqual([10, 3]);
+    expect(l31[2]).toBe(10);
   });
 
   it('a grip stretch of the vertical line drags the horizontal one along', async () => {

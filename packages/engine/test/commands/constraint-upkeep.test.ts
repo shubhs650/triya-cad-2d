@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DROPS_CONSTRAINTS,
+  MOVES_CHANGED_VALUES,
   carriedKind,
   isGeometricConstraint,
   moveBy,
@@ -40,6 +41,7 @@ interface Asked {
   readonly constraints: readonly string[];
   readonly edits: readonly Replacement<Entity>[];
   readonly lookup: (h: string) => Entity | undefined;
+  readonly whole: boolean;
 }
 
 /**
@@ -56,9 +58,9 @@ function drawing(
     add: () => {
       throw new Error('not asked');
     },
-    solveEdit: (constraints, edits, lookup, tol) => {
+    solveEdit: (constraints, edits, lookup, tol, whole) => {
       expect(tol.linear).toBeGreaterThan(0);
-      const a = { constraints: constraints.map((c) => c.handle), edits, lookup };
+      const a = { constraints: constraints.map((c) => c.handle), edits, lookup, whole };
       asked.push(a);
       return answer ? answer(a) : { ok: true, updated: [...edits] };
     },
@@ -200,6 +202,8 @@ describe('commands that re-solve (FR-X4)', () => {
     const [a] = d.asked;
     // Every constraint kept; the edit is line 40's move.
     expect(a!.constraints).toEqual(['C1', 'C2', 'C3', 'C4']);
+    // MOVE places line 40 whole.
+    expect(a!.whole).toBe(true);
     expect(a!.edits.map((e) => [e.after.handle, e.before.geom, e.after.geom])).toEqual([
       ['40', lineGeom(10, 0, 10, 10), lineGeom(15, 0, 15, 10)],
     ]);
@@ -210,6 +214,16 @@ describe('commands that re-solve (FR-X4)', () => {
     await d.bus.script(['U']);
     expect(d.ends(d.byHandle('30')!)).toEqual([0, 0, 10, 0]);
     expect(d.ends(d.byHandle('40')!)).toEqual([10, 0, 10, 10]);
+  });
+
+  it('a grip drag holds only the grip moved', async () => {
+    const d = drawing();
+    await d.bus.pick({ x: 10, y: 5 });
+    await d.bus.pick({ x: 10.1, y: 10.1 }, { grip: 0.5 });
+    expect(d.bus.command).toBe('GRIP');
+    await d.bus.submit('10,12');
+    expect(d.asked.map((a) => a.whole)).toEqual([false]);
+    expect(MOVES_CHANGED_VALUES.has('PROPERTIES')).toBe(true);
   });
 
   it('takes the edit back, with the solver’s reason, when the constraints refuse it', async () => {

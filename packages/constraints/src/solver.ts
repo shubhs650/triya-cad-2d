@@ -13,10 +13,10 @@ export function constraintSolver(gcs: PlaneGcs): ConstraintSolver {
       model.load(constraints);
       return model.add(constraint, lookup);
     },
-    solveEdit(constraints, edits, lookup, tolerance) {
+    solveEdit(constraints, edits, lookup, tolerance, whole) {
       const model = new ConstraintModel(gcs, tolerance);
       model.load(constraints);
-      return model.solveEdit(edits, lookup);
+      return model.solveEdit(edits, lookup, whole);
     },
   };
 }

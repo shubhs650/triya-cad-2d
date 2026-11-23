@@ -71,14 +71,17 @@ export interface ConstraintSolver {
   /**
    * Re-solves the drawing's `constraints` after an edit (M9-06): the values each of `edits`
    * changed are held and the geometry constrained to them follows. `lookup` gives the drawing as
-   * it was before the edit. Refused when the edit breaks a constraint the rest cannot absorb (a
-   * Fix, or a Horizontal line turned).
+   * it was before the edit. With `whole`, each edited entity is held whole, the values it kept
+   * too (a modify command places its objects whole; a grip drag moves only its grip). Refused
+   * when the edit breaks a constraint the rest cannot absorb (a Fix, or a Horizontal line
+   * turned).
    */
   solveEdit(
     constraints: readonly GeometricConstraintObject[],
     edits: readonly Replacement<Entity>[],
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
+    whole: boolean,
   ): ConstraintEditResult;
 }
 

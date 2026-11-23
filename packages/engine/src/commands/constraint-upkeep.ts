@@ -9,8 +9,9 @@
 //   Objects": "TRIM, EXTEND, BREAK, and JOIN commands can remove constraints"), as does any edit
 //   that changes an object's type or a polyline's vertices, which the constraint's points name.
 // - Any other edit (MOVE, ROTATE, SCALE, MIRROR, STRETCH, LENGTHEN, grips, the Properties
-//   palette) is re-solved: what the edit changed is held and the geometry constrained to it
-//   follows. Constraints wholly within the objects moved together still hold, so nothing else
+//   palette) is re-solved: what the edit placed is held and the geometry constrained to it
+//   follows. A modify command places its objects whole; a grip drag or a palette edit only the
+//   values it changed, the rest of the object following its constraints. Constraints wholly within the objects moved together still hold, so nothing else
 //   moves. An edit the constraints cannot take (moving a Fixed object, turning a Horizontal line)
 //   is refused with the solver's reason and the command's changes are taken back: AutoCAD keeps
 //   the constraint and the geometry does not turn. Its Help does not say what ROTATE does to a
@@ -37,6 +38,14 @@ export const DROPS_CONSTRAINTS: ReadonlySet<string> = new Set([
   'JOIN',
   'TRIM',
 ]);
+
+/**
+ * The edits that move only what they changed, the rest of the object free to follow its
+ * constraints: grip drags and the Properties palette's coordinates (AutoCAD: dragging a grip of a
+ * Horizontal line moves the whole line up). Every other command places its objects whole: a line
+ * ROTATE turns about its start keeps that start where it is.
+ */
+export const MOVES_CHANGED_VALUES: ReadonlySet<string> = new Set(['GRIP', 'PROPERTIES']);
 
 /** What a command's change sets did to the drawing's entities, taken together. */
 export interface NetEntityChanges {
@@ -169,6 +178,7 @@ export async function keepConstraints(
     edits,
     (h) => before.get(h) ?? ctx.model.entityByHandle(h),
     toleranceOf(ctx, edits),
+    !MOVES_CHANGED_VALUES.has(command),
   );
   if (!r.ok) {
     ctx.message(sentence(r.message));

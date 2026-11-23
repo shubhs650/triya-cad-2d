@@ -4,6 +4,7 @@ export * from './command';
 export {
   DROPS_CONSTRAINTS,
   keepConstraints,
+  MOVES_CHANGED_VALUES,
   netEntityChanges,
   planUpkeep,
   type NetEntityChanges,
