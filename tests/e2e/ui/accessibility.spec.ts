@@ -86,6 +86,7 @@ interface DialogCase {
 /** Every dialog the command line opens on the title block (and the ones opened by a pick). */
 const DIALOGS: readonly DialogCase[] = [
   { name: 'Options', typed: ['OPTIONS'] },
+  { name: 'About Triya CAD 2D', typed: ['ABOUT'] },
   { name: 'Drafting Settings', typed: ['DSETTINGS'], shot: 'dialog-drafting-settings-tab-walk' },
   { name: 'Dimension Style Manager', typed: ['DIMSTYLE'] },
   { name: 'Text Style', typed: ['STYLE'] },
@@ -155,6 +156,9 @@ async function checkDialog(
   else await c.open!(page, at);
   const dialog = page.getByRole('dialog', { name: c.name, exact: true });
   await expect(dialog).toBeVisible();
+  // A dialog filling in its fields (Export Data measures the space first) is walked once it has:
+  // under load the Tab walk ran before they showed and found them unreached afterwards (M9-07).
+  await expect(dialog).not.toHaveAttribute('aria-busy', 'true');
   await dialog.evaluate((d) => d.setAttribute('data-a11y-probe', ''));
   await expect.poll(() => dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
   await expectAccessible(page);

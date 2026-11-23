@@ -1198,6 +1198,58 @@ button {
 }
 
 /* The "Coming from AutoCAD" guide: a long read, so its body scrolls inside the dialog. */
+.cad-dialog.about-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-width: min(680px, calc(100vw - 32px));
+}
+
+.about-body {
+  max-height: min(64vh, 560px);
+  overflow: auto;
+  padding-right: 4px;
+  overflow-wrap: anywhere;
+}
+
+.about-body h3 {
+  margin: 14px 0 4px;
+  font-size: 13px;
+}
+
+.about-body p {
+  margin: 0 0 6px;
+}
+
+.about-body ul {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.about-product {
+  font-size: 14px;
+}
+
+.about-components li p {
+  margin: 0 0 2px;
+}
+
+.about-use {
+  color: var(--chrome-text-muted);
+}
+
+.about-licence {
+  margin: 0 0 6px;
+}
+
+.about-licence pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 4px 0 0;
+  padding: 6px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  border: 1px solid var(--chrome-border);
+}
+
 .cad-dialog.coming-from-autocad {
   width: min(640px, calc(100vw - 32px));
   max-width: min(640px, calc(100vw - 32px));

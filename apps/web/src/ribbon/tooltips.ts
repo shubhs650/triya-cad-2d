@@ -282,6 +282,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   setvar: 'Lists or changes the values of system variables.',
   aliases: 'Edits the command aliases (acad.pgp).',
   shortcuts: 'Edits the keyboard shortcuts.',
+  about: 'Shows the version and the third-party software notices.',
   // Contextual tabs (M7-02 part 4). Hatch Creation: HATCH's and GRADIENT's options.
   'pick-points': 'Picks points inside areas the objects enclose, to hatch each area.',
   'select-boundaries': 'Selects closed objects to hatch.',

@@ -44,6 +44,8 @@ describe('palette search', () => {
       '-UNITS',
       // M6-02 part 10: model space's viewport configurations.
       '-VPORTS',
+      // M9-07: ABOUT, the About dialog.
+      'ABOUT',
       // M5-11: DesignCenter.
       'ADCCLOSE',
       'ADCENTER',

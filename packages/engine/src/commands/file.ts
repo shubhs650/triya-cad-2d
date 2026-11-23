@@ -45,6 +45,11 @@
 // in the registry, Triya in its preferences), so the command asks the app to show its dialog and
 // waits until it closes. It runs transparently ('OPTIONS), as AutoCAD's does, and edits nothing.
 //
+// ABOUT (M9-07): AutoCAD 2024 Help, "ABOUT (Command)": "Displays information about AutoCAD", in its
+// About dialog box, with the product's version and its legal notices. Triya's lists the
+// third-party software it ships and the PlaneGCS module's LGPL and MPL notices. Like OPTIONS it
+// asks the app to show its dialog, waits until it closes, runs transparently and edits nothing.
+//
 // NEW and QNEW (M5-10): AutoCAD 2024 Help, "NEW": "Creates a new drawing" from the template chosen
 // in the Select Template dialog box; "QNEW": "Starts a new drawing from the default drawing
 // template file", opening Select Template when none is set. The new drawing is the app's (a tab of
@@ -69,16 +74,16 @@ function fileCommand(name: string, action: FileAction): CommandDef {
   };
 }
 
-/** OPTIONS (OP): the app's Options dialog, inside another command too. */
-function optionsCommand(): CommandDef {
+/** OPTIONS (OP) and ABOUT: a dialog of the app's that edits nothing, inside another command too. */
+function appDialogCommand(name: string, action: 'options' | 'about'): CommandDef {
   return {
-    name: 'OPTIONS',
+    name,
     transparent: true,
     usesSelection: 'none',
     keepsSelection: true,
     // eslint-disable-next-line require-yield -- the app's dialog does the asking
     async *run(ctx) {
-      await viewRequest(ctx, { op: 'file', action: 'options' });
+      await viewRequest(ctx, { op: 'file', action });
     },
   };
 }
@@ -274,7 +279,8 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => plotCommand('PRINT'),
   pageSetupCommand,
   () => fileCommand('PUBLISH', 'publish'),
-  optionsCommand,
+  () => appDialogCommand('OPTIONS', 'options'),
+  () => appDialogCommand('ABOUT', 'about'),
   previewCommand,
   () => exportCommand('EXPORT', 'export'),
   () => exportCommand('EXPORTPDF', 'exportpdf'),

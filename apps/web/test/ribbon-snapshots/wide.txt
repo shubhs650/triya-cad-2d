@@ -322,17 +322,23 @@ Settings (expanded)
 Customization (expanded)
   small-label aliases<textbox_more>
   small-label shortcuts<keyboard>
+Help (expanded)
+  small-label about<info>
 
 ### step 1
+Help (collapsed)
+  ▾ about
+
+### step 2
 Customization (collapsed)
   ▾ aliases, shortcuts
 
-### step 2
+### step 3
 Settings (compressed)
   icon        options<settings>
   ▾ drafting-settings, linetype, lineweight, point-style, setvar
 
-### step 3
+### step 4
 Drawing Utilities (compressed)
   icon        units<ruler>
   ▾ health, diagnostics, purge, recover
