@@ -3,6 +3,7 @@
 export * from './expression';
 export * from './model';
 export * from './parameters';
+export { constraintSolver } from './solver';
 export {
   ARC_RULES_TAG,
   Algorithm,

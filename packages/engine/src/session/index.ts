@@ -17,6 +17,7 @@ import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
+import type { ConstraintService } from '../edit/constraints';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
 import {
   paperViewsChange,
@@ -753,6 +754,8 @@ export interface EngineServices {
   readonly hatchLines?: HatchLinesOf;
   /** The spelling dictionary SPELL checks with (M4-09 part 4, `@triya/text`'s). */
   readonly spelling?: SpellService;
+  /** The geometric constraint solver (M9-05, `@triya/constraints`' PlaneGCS model). */
+  readonly constraints?: ConstraintService;
 }
 
 export class EngineSession {
@@ -802,6 +805,7 @@ export class EngineSession {
       dimensions: services.dimensions,
       hatchLines: services.hatchLines,
       spelling: services.spelling,
+      constraints: services.constraints,
       apply: (change) => {
         this.model.apply(change);
         this.#emit({ type: 'change', change });

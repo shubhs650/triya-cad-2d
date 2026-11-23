@@ -201,9 +201,12 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   // breaks and inspection data (triya-dims.ts) and center marks' records (triya-centermarks.ts,
   // M4-08 part 2, DEC-066), and layer states and filters (layer-states.ts, layer-filters.ts,
   // M5-07), and DGN linestyle components (dgn-linestyles.ts, M5-09 part 5), and named page setups
-  // (page-setups.ts, M6-01 part 3), and the scale list (scales.ts, M6-02 part 21).
+  // (page-setups.ts, M6-01 part 3), and the scale list (scales.ts, M6-02 part 21). Geometric
+  // constraints (M9-05) are kept for the session only: their storage is M9-04's TRIYA_CONSTRAINTS
+  // (PRD FR-X5), so until then a save leaves them out rather than refusing.
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
+    o.type !== 'TRIYA_GEOMCONSTRAINT' &&
     o.type !== 'GROUP' &&
     o.type !== 'DIMASSOC' &&
     o.type !== 'SPATIAL_FILTER' &&

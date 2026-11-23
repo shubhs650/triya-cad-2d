@@ -12,6 +12,7 @@ import type { Placement } from '../edit/refedit';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
+import type { ConstraintService } from '../edit/constraints';
 import type { LayerNotifyEvent } from '../edit/layer-notify';
 import { ALIASES } from './aliases';
 import type { ViewHost } from './view/host';
@@ -129,6 +130,11 @@ export interface CommandContext {
    * Without it (scripts, tests that do not give one) SPELL says it has none.
    */
   readonly spelling?: SpellService | undefined;
+  /**
+   * The geometric constraint solver (M9-05, `@triya/constraints`, loaded when first asked for).
+   * Without it (scripts, tests that do not give one) GEOMCONSTRAINT and GC* say there is none.
+   */
+  readonly constraints?: ConstraintService | undefined;
   /** The time, for the variables that tell it (DATE, CDATE; M2-59). */
   readonly clock: Clock;
 }

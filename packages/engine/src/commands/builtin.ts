@@ -28,6 +28,7 @@ import { TEXT_TOOL_COMMANDS } from './modify/text-tools';
 import { updateFieldCommand } from './modify/fields';
 import { fieldCommand } from './draw/field';
 import { FIND_COMMANDS } from './modify/find';
+import { GEOMETRIC_CONSTRAINT_COMMANDS, geomconstraintCommand } from './constraints';
 import { SPELL_COMMANDS } from './modify/spell';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
@@ -156,6 +157,9 @@ export function builtinCommands(): CommandRegistry {
     extendCommand(trim),
     filletCommand(corner),
     chamferCommand(corner),
+    // M9-05: geometric constraints.
+    geomconstraintCommand(),
+    ...GEOMETRIC_CONSTRAINT_COMMANDS,
     breakCommand(),
     breakAtPointCommand(),
     joinCommand(),
