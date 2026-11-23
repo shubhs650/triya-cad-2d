@@ -114,6 +114,8 @@ export default defineConfig(
       '**/coverage/**',
       '.turbo/**',
       'third_party/**',
+      // The PlaneGCS module's Emscripten glue, written by `pnpm planegcs:build` (M9-01).
+      'packages/constraints/wasm/planegcs.mjs',
       'corpus/**',
       'test-results/**',
       'test-reports/**',

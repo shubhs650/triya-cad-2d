@@ -625,7 +625,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 **Exit criteria:** FR-X complete; geometric + dimensional constraints with solver, UI, storage, and modify-command interaction.
 
-- [~] (thread: Ship first M9 roadmap task; blocked on #645) **M9-01** PlaneGCS WASM build (Emscripten, pinned commit, LGPL notices, CI build cache, lazy load). **Acceptance:** solve a 50-constraint sketch in < 20 ms in Node and browser.
+- [x] (#646) **M9-01** PlaneGCS WASM build (Emscripten, pinned commit, LGPL notices, CI build cache, lazy load). **Acceptance:** solve a 50-constraint sketch in < 20 ms in Node and browser. **Done (#646):** FreeCAD 1.1.4's planegcs vendored byte for byte in `third_party/planegcs` with one patch (deferred `std::async`), Triya's stand-ins for the FreeCAD and Boost headers (no Boost code) and an embind binding; `pnpm planegcs:build` (Emscripten 3.1.74 Docker image, Eigen 3.4.0 MPL-2.0 inside the module only: owner decision on #645, DEC-080) writes the reproducible, committed `packages/constraints/wasm/planegcs.wasm` (425 KB) and glue with a stamp of their inputs; CI rebuilds and compares when the hashes change (cached once verified). `loadPlaneGcs` imports the module on first use and `PlaneGcsSketch` solves and diagnoses (DOF, conflicting, redundant by tag); the 50-constraint sketch builds and solves in about 1 ms in Node and 1.5 ms in Chromium. LGPL and MPL notices: `packages/constraints/wasm/NOTICE.md`, `ATTRIBUTION.md`; in the app's UI with M9-07.
 
 - [ ] **M9-02** `ConstraintModel`: entity ↔ GCS primitive mapping, geometric constraints (all 12), solve on edit, DOF, conflict/redundancy reporting. **Acceptance:** solver scenario tests incl. over-constrained detection.
 
@@ -636,6 +636,8 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 - [ ] **M9-05** UI: Parametric ribbon tab, constraint bars, infer toggle, CONSTRAINTSETTINGS, show/hide, delete. **Acceptance:** Playwright.
 
 - [ ] **M9-06** Modify-command interaction per FR-X4 (`ConstraintAwareness` hook). **Acceptance:** per-command tests.
+
+- [ ] **M9-07** Third-party notices in the app (found by M9-01, #646): an About dialog (or Help > About) listing `ATTRIBUTION.md`'s shipped components, with PlaneGCS's LGPL-2.1+ notice and source link and Eigen's MPL-2.0 notice and source link from `packages/constraints/wasm/NOTICE.md`, shown before the solver module first ships in the app (M9-02/M9-05 wire it). The LGPL and MPL require the notice wherever the module is distributed, and the app has no About dialog yet. **Acceptance:** Playwright opens it from the ribbon and finds both notices and links.
 
 ---
 
