@@ -1,13 +1,15 @@
 // The plot job (M2-17): model space and layouts as plot parts, each painted through the plot
 // style table by what its object has with ByLayer and ByBlock resolved, blocks included.
-import type {
-  EntityInit,
-  ImageGeometry,
-  LayoutPlot,
-  NonGraphicalObject,
-  PdfDefinition,
-  UnderlayGeometry,
-  ViewportGeometry,
+import {
+  constraintDisplays,
+  type DimensionalConstraintObject,
+  type EntityInit,
+  type ImageGeometry,
+  type LayoutPlot,
+  type NonGraphicalObject,
+  type PdfDefinition,
+  type UnderlayGeometry,
+  type ViewportGeometry,
 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,6 +20,8 @@ import {
   PATH_M,
   PATH_Z,
   PlotResolver,
+  annotationalSizes,
+  constraintPrimitives,
   newPlotStyle,
   pathPolygons,
   plotObject,
@@ -25,6 +29,8 @@ import {
   type PlotPart,
   type PlotStyleTable,
 } from '../../src/index';
+import { FontBook, parseShx } from '@triya/text';
+import { buildShapes } from '../../../text/test/shx/builder';
 import { drawing, entity, layer, LAYER_0, LAYER_RED, line, MODEL, PAPER } from '../fixtures';
 
 const BLOCK = '40';
@@ -299,6 +305,105 @@ describe('plotParts in a layout', () => {
 
   it('plots model space alone on the Model tab', () => {
     expect(plotParts(sheet(), MODEL, { resolver })).toHaveLength(2);
+  });
+});
+
+/**
+ * The labels' bundled stroke font, built in memory: every character a label can hold is the
+ * same square (a pen-down 1×1 cell), advancing 2.
+ */
+function labelFont(): FontBook {
+  const cell = [0x14, 0x10, 0x1c, 0x18, 2, 0x20, 0];
+  const codes = [...'0123456789.=-()dA'].map((c) => c.charCodeAt(0));
+  const book = new FontBook();
+  book.addShx(
+    'oet-simplex.shx',
+    parseShx(
+      buildShapes(
+        codes.map((code) => ({ code, name: `c${code}`, bytes: cell })),
+        { name: 'Label', above: 1, below: 0 },
+      ),
+    ),
+  );
+  return book;
+}
+
+describe('plotParts with dimensional constraints (M9-03 part 8)', () => {
+  const dim = (
+    handle: string,
+    o: Partial<DimensionalConstraintObject> = {},
+  ): DimensionalConstraintObject => ({
+    handle,
+    type: 'TRIYA_DIMCONSTRAINT',
+    owner: '0',
+    dimension: 'horizontal',
+    refs: [{ entity: '50' }],
+    parameter: `d${handle}`,
+    expression: '10',
+    location: { x: 5, y: -2 },
+    form: 'annotational',
+    ...o,
+  });
+  const model = (dims: readonly DimensionalConstraintObject[]) =>
+    drawing(
+      [
+        entity('50', line(0, 0, 10, 0), { color: { kind: 'aci', index: 1 } }),
+        entity('71', viewport(), { owner: PAPER }),
+      ],
+      { objects: dims, layoutPlot: PLOT, header: [['$DIMSCALE', 2]] },
+    ).model;
+  /** What the screen draws of the drawing's one annotational constraint, as paths. */
+  const drawn = (m: ReturnType<typeof model>) =>
+    constraintPrimitives(
+      constraintDisplays(m, 2).find((d) => d.form === 'annotational')!,
+      annotationalSizes(m.header),
+      'foreground',
+      undefined,
+    ).map((p) => (p.kind === 'stroke' || p.kind === 'fill' ? p.path : []));
+
+  it('plots annotational constraints on the Model tab, after the objects, as the screen draws them', () => {
+    const m = model([dim('A1'), dim('A2', { form: 'dynamic', location: { x: 5, y: 3 } })]);
+    const parts = plotParts(m, MODEL, { resolver });
+    expect(paths(parts)[0]).toEqual([PATH_M, 0, 0, PATH_L, 10, 0]);
+    // Two extension lines and the dimension line, then the two arrowheads; the dynamic one not.
+    expect(paths(parts).slice(1)).toEqual(drawn(m));
+    expect(parts.slice(1).map((p) => p.kind)).toEqual(['stroke', 'stroke', 'stroke', 'fill', 'fill']);
+    // Sized by the DIMVARs times DIMSCALE: the arrows DIMASZ 0.18 × 2 long.
+    const arrow = paths(parts)[4]!;
+    expect(Math.hypot(arrow[1]! - arrow[4]!, arrow[2]! - arrow[5]!)).toBeCloseTo(0.36, 2);
+  });
+
+  it('plots them in colour 7 through the plot style table, solid and continuous', () => {
+    const parts = plotParts(model([dim('A1')]), MODEL, { resolver }).slice(1);
+    // The test table plots ACI 7 blue.
+    expect(new Set(colours(parts).map((c) => c.join()))).toEqual(new Set(['0,0,255']));
+    expect(parts.map((p) => p.paint.linetype)).toEqual(parts.map(() => ({ kind: 'object' })));
+    expect(parts.every((p) => !('layer' in p))).toBe(true);
+  });
+
+  it('plots no dynamic constraint, none with only the named objects, and none on a layout', () => {
+    const m = model([dim('A1')]);
+    expect(plotParts(model([dim('A1', { form: 'dynamic' })]), MODEL, { resolver })).toHaveLength(1);
+    expect(plotParts(m, MODEL, { resolver, only: new Set(['50']) })).toHaveLength(1);
+    // The layout: its viewport's frame and the line through it; the screen shows constraints on
+    // the Model tab only.
+    expect(plotParts(m, PAPER, { resolver })).toHaveLength(2);
+  });
+
+  it("labels them by the plot's CONSTRAINTNAMEFORMAT, Name and expression when absent", () => {
+    const m = model([dim('A1')]);
+    const text = { fonts: labelFont(), style: (h: string) => m.tables.textStyles.get(h) };
+    const at = (nameFormat?: 0 | 1 | 2) =>
+      plotParts(m, MODEL, {
+        resolver,
+        tessellate: { text },
+        ...(nameFormat !== undefined && { constraintNameFormat: nameFormat }),
+      })
+        .slice(6)
+        .reduce((n, p) => n + paths([p])[0]!.length, 0);
+    // "dA1=10" against "10": a longer glyph path with the name, the label after the 5 lines.
+    expect(at()).toBeGreaterThan(at(1));
+    expect(at(2)).toBe(at());
   });
 });
 

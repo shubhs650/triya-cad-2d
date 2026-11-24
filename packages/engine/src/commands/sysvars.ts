@@ -197,6 +197,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // (initially); and hidden dynamic constraints shown while their objects are selected (1,
   // initially).
   { name: 'CONSTRAINTNAMEFORMAT', store: 'app', kind: 'integer', min: 0, max: 2 },
+  // CCONSTRAINTFORM (M9-03 part 8; AutoCAD 2024 Help, "Saved in: Registry", initially 0): the
+  // Form new dimensional constraints take, 0 dynamic, 1 annotational; DIMCONSTRAINT's Form sets it.
+  { name: 'CCONSTRAINTFORM', store: 'app', kind: 'switch' },
   { name: 'DYNCONSTRAINTMODE', store: 'app', kind: 'switch' },
   // M9-05 part 2 (AutoCAD 2024 Help, each "Saved in: Registry"): CONSTRAINTBARMODE, the kinds the
   // constraint bars show (1 Horizontal, 2 Vertical, 4 Perpendicular, 8 Parallel, 16 Tangent, 32
