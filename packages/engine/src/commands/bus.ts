@@ -33,7 +33,9 @@ import {
   type PickVariable,
   SelectionLoop,
   type Lasso,
+  type SetOp,
   type StepResult,
+  type WindowArea,
 } from '../selection/loop';
 import { onLockedLayers, outsideMessage } from '../selection/rules';
 import { RefEdits } from './refedit-session';
@@ -583,7 +585,11 @@ export class PromptBus {
     this.#pickfirstOn = options.pickfirst ?? true;
     this.#pickadd = options.pickadd ?? DEFAULT_PICKADD;
     this.#pickauto = options.pickauto ?? DEFAULT_PICKAUTO;
-    this.#idle = this.#selectionLoop({ message: 'Command', atCommand: true });
+    this.#idle = this.#selectionLoop({
+      message: 'Command',
+      atCommand: true,
+      windowed: (area, op) => this.#windowConstraints(area, op),
+    });
     this.#undo = new UndoStack({
       apply: (cs) => this.#apply(cs),
       ...(options.undoLimitBytes !== undefined ? { maxBytes: options.undoLimitBytes } : {}),
@@ -918,6 +924,28 @@ export class PromptBus {
     }
     this.#showSelection();
     return true;
+  }
+
+  /**
+   * A window, polygon or lasso made at `Command:` (M9-03 part 14) selects the dimensional
+   * constraints drawn in it, as it selects objects: the canvas, which knows where each is drawn,
+   * is asked with the same window, and `op` (PICKADD and Shift) adds, removes, replaces or
+   * toggles them as it does the objects. AutoCAD 2024 Help does not say whether a window takes a
+   * dynamic constraint ("About Applying Dimensional Constraints" selects an annotational one as
+   * a dimension): ours takes those the canvas draws, of either form.
+   */
+  async #windowConstraints(area: WindowArea, op: SetOp): Promise<void> {
+    const r = await this.#view.request({ op: 'constraintsIn', area });
+    const found = r.ok ? (r.constraints ?? []) : [];
+    const had = this.#constraintSel;
+    const inside = new Set(found);
+    if (op === 'replace') this.#constraintSel = [...inside];
+    else if (op === 'remove') this.#constraintSel = had.filter((h) => !inside.has(h));
+    else if (op === 'add') this.#constraintSel = [...new Set([...had, ...found])];
+    else {
+      const kept = had.filter((h) => !inside.has(h));
+      this.#constraintSel = [...kept, ...found.filter((h) => !had.includes(h))];
+    }
   }
 
   /**

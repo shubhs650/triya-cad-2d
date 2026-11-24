@@ -145,6 +145,13 @@ export type HostMessage =
       readonly aperture: number;
       readonly view?: ViewTransform;
     }
+  /** The constraints a selection window takes (M9-03 part 14); the answer is `constraints`. */
+  | {
+      readonly type: 'constraintsIn';
+      readonly id: number;
+      readonly query: SelectQuery;
+      readonly view?: ViewTransform;
+    }
   /**
    * The layout viewport made current (MSPACE, M6-02 part 3); null, paper space. `maximized`: the
    * geometry it fills the canvas with (VPMAX, M6-02 part 7).
@@ -246,6 +253,8 @@ export type WorkerMessage =
   | { readonly type: 'bar'; readonly id: number; readonly hit: ConstraintBarHit | null }
   /** The constraint drawn under a pick, by handle, or null (M9-03 part 10). */
   | { readonly type: 'constraint'; readonly id: number; readonly handle: Handle | null }
+  /** The constraints a selection window took, by handle (M9-03 part 14). */
+  | { readonly type: 'constraints'; readonly id: number; readonly handles: readonly Handle[] }
   /** What a pick hit inside a block reference, or null (M5-06 part 5). */
   | { readonly type: 'nested'; readonly id: number; readonly hit: NestedPick | null }
   /** The thumbnail asked for, transferred; null when the canvas was never sized. */

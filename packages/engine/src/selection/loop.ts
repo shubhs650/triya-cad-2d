@@ -87,7 +87,7 @@ const PICKAUTO_WINDOW = 1;
 const PICKAUTO_DRAG = 2;
 
 /** What a step does to the set: adds, removes, replaces it, or toggles (Shift at PICKADD 0). */
-type SetOp = 'add' | 'remove' | 'replace' | 'toggle';
+export type SetOp = 'add' | 'remove' | 'replace' | 'toggle';
 
 /** The modes typed at "Select objects", in AutoCAD's display form. */
 export const SELECTION_MODES = [
@@ -154,7 +154,16 @@ export interface SelectionLoopOptions {
    * GROUPEDIT's objects, M3-08).
    */
   readonly groups?: false;
+  /**
+   * A window, polygon or lasso was completed with `area` (the request that took its objects):
+   * at `Command:`, the dimensional constraints drawn in it are taken as well, by `op` (M9-03
+   * part 14). Called before the objects' step is shown.
+   */
+  readonly windowed?: (area: WindowArea, op: SetOp) => Promise<void>;
 }
+
+/** The `select` or `selectPath` request a window or path took its objects with. */
+export type WindowArea = Extract<ViewRequest, { op: 'select' } | { op: 'selectPath' }>;
 
 /**
  * A fence or a selection polygon being drawn (M3-04): `window` is WPolygon, `crossing`
@@ -360,11 +369,9 @@ export class SelectionLoop {
     // A path that cannot hold anything ends as the window it started (a straight drag).
     if (c && lasso && lasso.points.length >= (lasso.kind === 'fence' ? 2 : 3)) {
       this.#corner = undefined;
-      const r = await this.#host.request({
-        op: 'selectPath',
-        kind: lasso.kind,
-        points: lasso.points,
-      });
+      const area: WindowArea = { op: 'selectPath', kind: lasso.kind, points: lasso.points };
+      const r = await this.#host.request(area);
+      await this.#o.windowed?.(area, c.op);
       this.#pathWindow(r, c.op, lasso);
       return await this.#take(r, c.op, `${lassoPrompt(lasso.kind)}:`, {});
     }
@@ -374,7 +381,9 @@ export class SelectionLoop {
       const turn = this.#host.turn?.() ?? 0;
       const crossing =
         c.kind === 'auto' ? screenOffset(c.from, p, turn).x < 0 : c.kind === 'crossing';
-      const r = await this.#host.request({ op: 'select', a: c.from, b: p, crossing });
+      const area: WindowArea = { op: 'select', a: c.from, b: p, crossing };
+      const r = await this.#host.request(area);
+      await this.#o.windowed?.(area, c.op);
       // Turned with the screen, the window is a turned rectangle in the world: STRETCH and
       // -ATTEDIT take its corners as a polygon (M6-02 part 16).
       const window: SelectionWindow = turn

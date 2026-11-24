@@ -164,6 +164,15 @@ describe("dimensional constraints in a layout's viewports (M9-03 part 13)", () =
     expect(dynamic.r.constraintAt(at, 3, MODEL_VIEW)).toBe('D1');
   });
 
+  // M9-03 part 14: a window at `Command:` takes them there too, in model space's units.
+  it('a window takes a constraint only through the viewport made current', () => {
+    const { r } = setup([dim()]);
+    const crossing = { kind: 'crossing' as const, box: { minX: 9, minY: 4, maxX: 11, maxY: 6 } };
+    expect(r.constraintsIn(crossing, MODEL_VIEW)).toEqual([]);
+    r.setActiveViewport(VP);
+    expect(r.constraintsIn(crossing, MODEL_VIEW)).toEqual(['D1']);
+  });
+
   it("draws a selected constraint's glow and grips through the viewport made current", () => {
     const SELECTION = '#4da3ff';
     const { r, scene, overlay } = setup([dim()]);

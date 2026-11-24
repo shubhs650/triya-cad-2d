@@ -121,6 +121,23 @@ export type ViewRequest =
    */
   | { readonly op: 'constraintAt'; readonly point: Vec2 }
   /**
+   * The dimensional constraints drawn in a selection window, polygon or lasso made at `Command:`
+   * (M9-03 part 14): `area` is the `select` or `selectPath` request the objects were taken with,
+   * and the reply's `constraints` those it takes the same way (wholly inside a window, inside or
+   * crossing a crossing window, crossed by a fence), by their text, dimension line or arc and
+   * arrows, as a pick finds them.
+   */
+  | {
+      readonly op: 'constraintsIn';
+      readonly area:
+        | { readonly op: 'select'; readonly a: Vec2; readonly b: Vec2; readonly crossing: boolean }
+        | {
+            readonly op: 'selectPath';
+            readonly kind: 'fence' | 'window' | 'crossing';
+            readonly points: readonly Vec2[];
+          };
+    }
+  /**
    * What a pick at `point` hit inside the block reference `id` it took (M5-06 part 5: the layer
    * tools' Block selection setting), as drawn: the reply's `nested`, or none where the pick
    * comes near none of its contents.
@@ -651,6 +668,8 @@ export type ViewReply =
       readonly ids?: readonly EntityId[];
       /** What a `constraintAt` request found (M9-03 part 10). */
       readonly constraint?: Handle;
+      /** What a `constraintsIn` request found (M9-03 part 14). */
+      readonly constraints?: readonly Handle[];
       /** What a `nested` pick hit. */
       readonly nested?: NestedPick;
       /** What an `xref` request did, one line each (M5-04). */

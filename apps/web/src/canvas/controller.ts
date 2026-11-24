@@ -137,6 +137,7 @@ import type { OpenResult } from '@triya/io';
 import { ROLLOVER_DELAY_MS, type RestAt } from '../rollover';
 import { commandInput, focusOf } from '../shortcuts';
 import { RestWatch } from './rest';
+import type { ConstraintArea } from './view-host';
 import {
   areaPreviewed,
   leftOf,
@@ -2112,6 +2113,20 @@ export class CanvasController {
   /** What a selection polygon (WPolygon, CPolygon) or fence takes (M3-04). */
   selectPath(points: readonly Vec2[], kind: 'window' | 'crossing' | 'fence'): Promise<EntityId[]> {
     return this.#host.select(pathArea(points, kind));
+  }
+
+  /**
+   * The dimensional constraints a selection window or path at `Command:` takes (M9-03 part 14),
+   * in the view the pointer works in, as `constraintAt` finds one.
+   */
+  constraintsIn(area: ConstraintArea): Promise<Handle[]> {
+    const v = this.#pointerView();
+    if (!v) return Promise.resolve([]);
+    const query =
+      area.op === 'select'
+        ? windowArea(area.a, area.b, area.crossing, v.rotation ?? 0)
+        : pathArea(area.points, area.kind);
+    return this.#host.constraintsIn(query, v);
   }
 
   /** ZOOM Object: the objects' extents fill the window; false when none has a known extent. */
