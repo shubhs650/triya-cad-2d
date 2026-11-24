@@ -585,8 +585,10 @@ export class ConstraintModel {
    * Re-solves the constraints an edit touches. `edits` are the edit's replacements; the
    * values each one changed are held and the geometry constrained to them follows. With
    * `whole`, each edited entity is held whole, unchanged values too: a modify command (MOVE,
-   * ROTATE…) places its objects whole, where a grip drag moves only its grip (M9-06). Refused
-   * when the edit breaks a constraint the rest cannot absorb (a Fix, say).
+   * ROTATE…) places its objects whole, where a grip drag moves only its grip (M9-06); a grip
+   * drag still keeps the rest of its entity where it can, and a line an orientation
+   * constraint turns keeps its length (M9-09, solveEditKeeping). Refused when the edit breaks
+   * a constraint the rest cannot absorb (a Fix, say).
    */
   solveEdit(
     edits: readonly Replacement<Entity>[],
@@ -602,7 +604,7 @@ export class ConstraintModel {
     const edited = new Map(edits.map((e) => [e.after.handle, e]));
     const build = this.#editBuild(group, edits, lookup, whole);
     try {
-      if (!build.solveChecked()) {
+      if (!solveEditKeeping(build, group, new Set(edited.keys()), whole)) {
         const named = build.diagnose().conflicting;
         return refusal(
           'overconstrained',
@@ -667,14 +669,15 @@ export class ConstraintModel {
     const build = this.#build(lookup);
     for (const c of group) build.tryConstrain(c);
     if (edits.every((e) => build.assignEdit(e))) {
-      if (whole) for (const e of edits) build.holdEntity(e.after.handle);
+      build.holdEdited(whole);
       return build;
     }
     build.dispose();
     const edited = new Map(edits.map((e) => [e.after.handle, e.after]));
     const reshaped = this.#build((h) => edited.get(h) ?? lookup(h));
     for (const c of group) reshaped.tryConstrain(c);
-    for (const e of edits) reshaped.holdEntity(e.after.handle);
+    reshaped.reshapedEdits(edits.map((e) => e.after.handle));
+    reshaped.holdEdited(true);
     return reshaped;
   }
 
@@ -757,6 +760,101 @@ function holdFor(c: GeometricConstraint): GeomRef[] {
     default:
       return [a];
   }
+}
+
+/** Geometric constraints that set a line's direction from another's. */
+const ORIENTING: ReadonlySet<GeometricKind> = new Set<GeometricKind>([
+  'parallel',
+  'perpendicular',
+  'collinear',
+  'symmetric',
+]);
+
+/**
+ * The entities whose lines a constraint of `group` turns with others: the curves of
+ * Parallel, Perpendicular, Collinear and Symmetric, of an Angular dimension, and of an
+ * Aligned one between two lines (which makes them parallel).
+ */
+function orientedEntities(group: readonly AnyConstraint[]): Set<Handle> {
+  const out = new Set<Handle>();
+  for (const c of group) {
+    const orients = isDimensional(c)
+      ? c.dimension === 'angular' || (c.dimension === 'aligned' && c.refs.length === 2)
+      : ORIENTING.has(c.kind);
+    if (!orients) continue;
+    for (const r of c.refs) if (!isPointRef(r)) out.add(r.entity);
+  }
+  return out;
+}
+
+/**
+ * Solves an edit (its values set into `build`) so that constrained lines keep their length
+ * (M9-09). A least-change solve spreads a turn over both ends of a line it has to turn,
+ * shortening it (dragging the end of a line made parallel to a 20-long one left that one
+ * 17.5 long), and lets a grip drag move the dragged line's other end. So:
+ *  - the edited entities are first held whole as edited, and only their changed values when
+ *    that cannot solve (a rectangle's corner grip moves the far end of the side it drags);
+ *  - a line an orientation constraint turns (orientedEntities) keeps its length: with every
+ *    other entity held, it turns about its start, else about whatever its joints allow;
+ *    else the rest may move too, the lengths still kept; else the least-change solution
+ *    stands. When least change cannot solve the edit at all (a quarter turn would collapse
+ *    the line it shortens), these tiers are tried with every such line kept. A line the edit turns that way may in turn turn another: it joins the kept
+ *    ones and the tiers run again.
+ * A line held only by joints still stretches as a drag pulls it, its far end staying (a
+ * polyline vertex's way): lengths are free until a dimensional constraint sets them, and a
+ * constrained rectangle resizes from a grip on one side rather than moving whole. The Help
+ * does not say which end a turned line keeps; the start, as for GCPARALLEL (M9-08).
+ * False when the edit cannot be solved at all.
+ */
+function solveEditKeeping(
+  build: Build,
+  group: readonly AnyConstraint[],
+  edited: ReadonlySet<Handle>,
+  whole: boolean,
+): boolean {
+  build.releaseHolds();
+  const start = build.snapshot();
+  const attempt = (tier: () => void) => {
+    build.restore(start);
+    let ok = false;
+    try {
+      tier();
+      ok = build.solveChecked();
+    } catch (e) {
+      if (!(e instanceof Refused)) throw e;
+    }
+    build.releaseHolds();
+    return ok;
+  };
+  const bases = whole
+    ? [() => build.holdEdited(true)]
+    : [() => build.holdEdited(true), () => build.holdEdited(false)];
+  const candidates = [...orientedEntities(group)].filter((h) => !edited.has(h));
+  // When even least change cannot solve (a quarter turn collapses the line it shortens),
+  // every line that may turn keeps its length.
+  let result = bases.some(attempt) ? build.snapshot() : undefined;
+  let turned = result ? build.turned(candidates, start) : candidates;
+  for (let round = 0; turned.length && round < candidates.length; round++) {
+    const kept = turned;
+    const others = build.entities().filter((h) => !edited.has(h) && !kept.includes(h));
+    const keep = (base: () => void, how: KeepMoving, holdOthers: boolean) => () => {
+      base();
+      if (holdOthers) others.forEach((h) => build.holdEntity(h));
+      kept.forEach((h) => build.keepMoving(h, how));
+    };
+    const tiers = [
+      ...bases.flatMap((base) => [keep(base, 'pivot', true), keep(base, 'length', true)]),
+      ...bases.map((base) => keep(base, 'length', false)),
+    ];
+    if (!tiers.some(attempt)) break;
+    result = build.snapshot();
+    const more = build.turned(candidates, start).filter((h) => !kept.includes(h));
+    if (!more.length) break;
+    turned = [...kept, ...more];
+  }
+  if (!result) return false;
+  build.restore(result);
+  return true;
 }
 
 /**
@@ -918,6 +1016,10 @@ class Build {
   #keeping = false;
   /** Parameters held (fixed) until `releaseHolds()`. */
   readonly #held = new Set<number>();
+  /** The values edits set (assignEdit), and the entities edited, for `holdEdited`. */
+  readonly #edit = { points: [] as number[], params: [] as number[], handles: [] as Handle[] };
+  /** Whether the sketch was built from edited geometry, so an edit's values are not known apart. */
+  #reshaped = false;
   /** Pairs of lines a Parallel constraint keeps parallel (pairKey). */
   readonly #parallel = new Set<string>();
   /** Lines' ends and circles' and arcs' radii, with their size when mapped. */
@@ -1525,8 +1627,57 @@ class Build {
     } else {
       return false;
     }
-    this.#hold(points, params);
+    this.#edit.points.push(...points);
+    this.#edit.params.push(...params);
+    this.#edit.handles.push(after.handle);
     return true;
+  }
+
+  /** Marks `handles` as edited in a sketch built from their edited geometry. */
+  reshapedEdits(handles: readonly Handle[]): void {
+    this.#edit.handles.push(...handles);
+    this.#reshaped = true;
+  }
+
+  /**
+   * Holds, until `releaseHolds()`, the values edits set (assignEdit), or with `whole` (or in
+   * a sketch built from edited geometry) every edited entity whole.
+   */
+  holdEdited(whole: boolean): void {
+    if (whole || this.#reshaped) this.#edit.handles.forEach((h) => this.holdEntity(h));
+    else this.#hold(this.#edit.points, this.#edit.params);
+  }
+
+  /**
+   * Of `handles`, the lines, and polylines with a straight segment, whose direction differs
+   * from the one they had in `from` (a snapshot).
+   */
+  turned(handles: readonly Handle[], from: readonly number[]): Handle[] {
+    const s = this.#s;
+    const at = (p: number, values?: readonly number[]): Vec2 => {
+      if (!values) return s.pointAt(p);
+      const [px, py] = s.pointParams(p);
+      return { x: values[px]!, y: values[py]! };
+    };
+    const turns = (p: number, q: number) => {
+      const a0 = at(p, from);
+      const b0 = at(q, from);
+      const a1 = at(p);
+      const b1 = at(q);
+      const u = { x: b0.x - a0.x, y: b0.y - a0.y };
+      const v = { x: b1.x - a1.x, y: b1.y - a1.y };
+      if (Math.hypot(u.x, u.y) <= this.#tol.linear || Math.hypot(v.x, v.y) <= this.#tol.linear) {
+        return false;
+      }
+      const angle = Math.atan2(u.x * v.y - u.y * v.x, u.x * v.x + u.y * v.y);
+      return Math.abs(angle) > this.#tol.angular;
+    };
+    return handles.filter((h) => {
+      const m = this.#mapped.get(h)?.m;
+      if (m?.kind === 'LINE') return turns(m.line.p1, m.line.p2);
+      if (m?.kind !== 'LWPOLYLINE') return false;
+      return m.segments.some((seg) => seg.type === 'line' && turns(seg.p1, seg.p2));
+    });
   }
 
   /**

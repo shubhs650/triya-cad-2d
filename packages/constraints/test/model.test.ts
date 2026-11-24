@@ -599,6 +599,106 @@ describe('solve on edit', () => {
   });
 });
 
+describe('edits keep line lengths (M9-09)', () => {
+  // A least-change solve of an edit spread a turn over both ends of a line it had to turn,
+  // shortening it (a 20-long line left 17.5), and moved the dragged line's other end. Now the
+  // edited entity stays as edited where it can, and a line an orientation constraint turns
+  // (Parallel, Perpendicular, Collinear, Symmetric, an angle) keeps its length, turning about
+  // its start where it can, everything else staying put.
+  it('a grip drag of one line of a parallel pair turns the other about its start, its length kept', () => {
+    const { d, m, add } = setup();
+    const a = d.line(0, 0, 20, 0);
+    const b = d.line(0, 5, 20, 5);
+    add(con('parallel', curve(a), curve(b)));
+    const r = m.solveEdit([d.edit(a, { end: { x: 16, y: 12 } })], d.lookup);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    const ga = d.geom(a, 'LINE');
+    const gb = d.geom(b, 'LINE');
+    nearPt(ga.start, { x: 0, y: 0 });
+    nearPt(ga.end, { x: 16, y: 12 });
+    nearPt(gb.start, { x: 0, y: 5 });
+    nearPt(gb.end, { x: 16, y: 17 });
+  });
+
+  it('a joined chain turned by a grip drag keeps every length', () => {
+    const { d, m, add } = setup();
+    // a, b and c joined end to start; b parallel to the reference r, c perpendicular to b.
+    const ref = d.line(0, -10, 10, -10);
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(10, 0, 20, 0);
+    const c = d.line(20, 0, 20, 6);
+    add(con('coincident', pt(a, 'end'), pt(b, 'start')));
+    add(con('coincident', pt(b, 'end'), pt(c, 'start')));
+    add(con('parallel', curve(ref), curve(b)));
+    add(con('perpendicular', curve(b), curve(c)));
+    const r = m.solveEdit([d.edit(ref, { end: { x: 8, y: -4 } })], d.lookup);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    nearPt(d.geom(ref, 'LINE').start, { x: 0, y: -10 });
+    // a stays; b turns about the joint with a; c rides on b's end, still square to it.
+    nearPt(d.geom(a, 'LINE').start, { x: 0, y: 0 });
+    nearPt(d.geom(a, 'LINE').end, { x: 10, y: 0 });
+    nearPt(d.geom(b, 'LINE').start, { x: 10, y: 0 });
+    nearPt(d.geom(b, 'LINE').end, { x: 18, y: 6 });
+    nearPt(d.geom(c, 'LINE').start, { x: 18, y: 6 });
+    nearPt(d.geom(c, 'LINE').end, { x: 14.4, y: 10.8 });
+    expect(r.updated.map((u) => u.after.handle).sort()).toEqual([ref, b, c].sort());
+  });
+
+  it("a modify command's edit turns a parallel line about its start, its length kept", () => {
+    const { d, m, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 5, 20, 5);
+    add(con('parallel', curve(a), curve(b)));
+    // ROTATE a 60 degrees about its start: the command holds a whole.
+    const turn = { x: Math.cos(Math.PI / 3), y: Math.sin(Math.PI / 3) };
+    const r = m.solveEdit([d.edit(a, { end: { x: 10 * turn.x, y: 10 * turn.y } })], d.lookup, true);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    nearPt(d.geom(b, 'LINE').start, { x: 0, y: 5 });
+    nearPt(d.geom(b, 'LINE').end, { x: 20 * turn.x, y: 5 + 20 * turn.y });
+  });
+
+  it('an angular dimension turns its second line with its length kept', () => {
+    const { d, m } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 0, 0, 8);
+    const coincident = con('coincident', pt(a, 'start'), pt(b, 'start'));
+    expect(m.add(coincident, d.lookup).ok).toBe(true);
+    const dim = m.addDimension(
+      { handle: 'D90', dimension: 'angular', refs: [curve(a), curve(b)] },
+      d.lookup,
+    );
+    expect(dim.ok).toBe(true);
+    const r = m.solveEdit([d.edit(a, { end: { x: 0, y: 10 } })], d.lookup);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    nearPt(d.geom(b, 'LINE').start, { x: 0, y: 0 });
+    nearPt(d.geom(b, 'LINE').end, { x: -8, y: 0 });
+  });
+
+  it('a line held only by a Coincident still stretches to a dragged corner', () => {
+    const { d, m, add } = setup();
+    // Lengths are free until a dimensional constraint sets them: a joint drags the line
+    // joined to it as a polyline vertex would, its far end staying.
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(10, 0, 10, 10);
+    add(con('coincident', pt(a, 'end'), pt(b, 'start')));
+    const r = m.solveEdit([d.edit(a, { end: { x: 12, y: 3 } })], d.lookup);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    nearPt(d.geom(a, 'LINE').start, { x: 0, y: 0 });
+    nearPt(d.geom(b, 'LINE').start, { x: 12, y: 3 });
+    nearPt(d.geom(b, 'LINE').end, { x: 10, y: 10 });
+  });
+});
+
 describe('degrees of freedom and over-constrained geometry', () => {
   it('counts the degrees of freedom left', () => {
     const { d, m, add } = setup();
