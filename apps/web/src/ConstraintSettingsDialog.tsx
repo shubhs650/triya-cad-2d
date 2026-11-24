@@ -39,6 +39,14 @@ type Tab = (typeof CONSTRAINT_SETTINGS_TABS)[number]['tab'];
 /** The tab shown last, which CONSTRAINTSETTINGS opens on (AutoCAD remembers it). */
 let lastTab: Tab = 'geometric';
 
+/**
+ * The tab CONSTRAINTSETTINGS opens on next: a constraint bar's Constraint Bar Settings (M9-05
+ * part 4) opens the Geometric tab, where the bars are set.
+ */
+export function openConstraintSettingsOn(tab: Tab): void {
+  lastTab = tab;
+}
+
 export function ConstraintSettingsDialog({ doc, request }: { doc: number; request: Request }) {
   const [tab, setTab] = useState<Tab>(request.tab ?? lastTab);
   const [d, setD] = useState<ConstraintSettingsDraft>(() => draftOf(drafting.get()));

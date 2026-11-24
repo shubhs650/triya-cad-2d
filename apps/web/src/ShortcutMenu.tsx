@@ -4,7 +4,8 @@
 // answers the prompt as its keyword typed would, so the command line, Dynamic Input and this
 // menu are one way in. A selected table cell's prompt (TABLECELL, M4-05 part 3) lists the Table
 // Cell options here, AutoCAD's cell shortcut menu. Greyed items are not chosen; arrow keys
-// move, Enter chooses, Esc or a click elsewhere closes it.
+// move, Enter chooses, Esc or a click elsewhere closes it. A constraint bar's icon (M9-05 part 4)
+// has its own menu here, whose items act on the drawing instead of answering a prompt.
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { engines } from './engine/registry';
 import { shortcutMenu } from './shortcut-menu';
@@ -60,6 +61,7 @@ export function ShortcutMenu() {
           data-separator={item.separatorBefore ? 'before' : undefined}
           onClick={() => {
             shortcutMenu.close();
+            if (state.choose) return state.choose(item);
             engines.command(state.doc, {
               kind: 'answer',
               answer:

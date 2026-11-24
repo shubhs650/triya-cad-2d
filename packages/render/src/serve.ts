@@ -145,6 +145,13 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'selection-preview':
         r.setSelectionPreview(m.preview ?? undefined);
         break;
+      case 'bar-hover':
+        port.postMessage({
+          type: 'bar',
+          id: m.id,
+          hit: r.hoverConstraintBar(m.screen ?? undefined, m.view),
+        });
+        break;
       case 'bounds':
         port.postMessage({ type: 'extents', id: m.id, box: session.boundsOf(m.ids) ?? null });
         break;

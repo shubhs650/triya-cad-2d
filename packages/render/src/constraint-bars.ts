@@ -16,6 +16,7 @@ import type {
   Handle,
   Vec2,
 } from '@triya/engine';
+import type { ConstraintBarHit } from './types';
 import { CONSTRAINT_BAR_BITS } from '@triya/engine';
 import { PATH_A, PATH_L, PATH_M, PATH_Z, type PrimitiveColor, type RenderPrimitive } from './types';
 
@@ -208,6 +209,97 @@ export function constraintBarPrimitives(
         kind: 'fill',
         path: rect(m.at.x - half, m.at.y - half, m.at.x + half, m.at.y + half),
         color: look.color,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * What of the bars `visible` shows lies under `p` (drawing units) at a view of `scale`, under
+ * CONSTRAINTBARMODE `mode` (M9-05 part 4): a Coincident square's constraint (drawn over the
+ * bars, so found first), else an icon's, else a bar's panel alone; undefined over none. AutoCAD
+ * 2024 Help, "About Displaying and Verifying Geometric Constraints": "When you roll over a
+ * constraint icon … the associated objects are highlighted" and the icon has a shortcut menu.
+ */
+export function constraintBarAt(
+  bars: ConstraintBars,
+  visible: (entity: Handle) => boolean,
+  scale: number,
+  mode: number,
+  p: Vec2,
+): ConstraintBarHit | undefined {
+  const k = 1 / scale;
+  if ((mode & CONSTRAINT_BAR_BITS.coincident) !== 0) {
+    const half = (CONSTRAINT_BAR_PX.mark / 2) * k;
+    for (let i = bars.marks.length - 1; i >= 0; i--) {
+      const m = bars.marks[i]!;
+      if (!m.entities.some(visible)) continue;
+      if (Math.abs(p.x - m.at.x) <= half && Math.abs(p.y - m.at.y) <= half) {
+        return { constraint: m.handle, kind: 'coincident', entities: m.entities };
+      }
+    }
+  }
+  // The bar drawn last is on top.
+  for (let b = bars.bars.length - 1; b >= 0; b--) {
+    const bar = bars.bars[b]!;
+    if (!visible(bar.entity)) continue;
+    const icons = barIcons(bar, mode);
+    if (icons.length === 0) continue;
+    const box = barBox(bar, icons.length, scale);
+    if (p.x < box.min.x || p.x > box.max.x || p.y < box.min.y || p.y > box.max.y) continue;
+    const at = bar.segment === undefined ? {} : { segment: bar.segment };
+    // Each icon's square, half the gap between two either side of it.
+    const reach = ((CONSTRAINT_BAR_PX.icon + CONSTRAINT_BAR_PX.pad) / 2) * k;
+    const n = box.icons.findIndex((c) => Math.abs(p.x - c.x) < reach);
+    // The panel's outer margins are no icon's.
+    const inside = n >= 0 && Math.abs(p.x - box.icons[n]!.x) <= (CONSTRAINT_BAR_PX.icon / 2) * k;
+    const icon = inside ? icons[n] : undefined;
+    if (!icon) return { entity: bar.entity, ...at, entities: [bar.entity] };
+    return {
+      entity: bar.entity,
+      ...at,
+      constraint: icon.handle,
+      kind: icon.kind,
+      entities: icon.entities,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * The frames round what `hit` names (M9-05 part 4): each icon of its constraint on the bars
+ * shown, or its Coincident square, in `color`; none for a bar's panel alone.
+ */
+export function constraintBarHoverPrimitives(
+  bars: ConstraintBars,
+  visible: (entity: Handle) => boolean,
+  scale: number,
+  mode: number,
+  hit: ConstraintBarHit,
+  color: PrimitiveColor,
+): RenderPrimitive[] {
+  const out: RenderPrimitive[] = [];
+  if (hit.constraint === undefined) return out;
+  const k = 1 / scale;
+  const half = (CONSTRAINT_BAR_PX.icon / 2) * k;
+  for (const bar of bars.bars) {
+    if (!visible(bar.entity)) continue;
+    const icons = barIcons(bar, mode);
+    const n = icons.findIndex((i) => i.handle === hit.constraint);
+    if (n < 0) continue;
+    const c = barBox(bar, icons.length, scale).icons[n]!;
+    out.push({ kind: 'stroke', path: rect(c.x - half, c.y - half, c.x + half, c.y + half), color });
+  }
+  if ((mode & CONSTRAINT_BAR_BITS.coincident) !== 0) {
+    // A pixel round the square, so the frame shows beside its fill.
+    const r = (CONSTRAINT_BAR_PX.mark / 2 + 1) * k;
+    for (const m of bars.marks) {
+      if (m.handle !== hit.constraint || !m.entities.some(visible)) continue;
+      out.push({
+        kind: 'stroke',
+        path: rect(m.at.x - r, m.at.y - r, m.at.x + r, m.at.y + r),
+        color,
       });
     }
   }

@@ -38,6 +38,7 @@ import type { PreviewSize } from './dim-style-preview';
 import { offscreenLayer, surfaceOf } from './surface';
 import type { BitmapFactory, ThumbnailSize } from './thumbnail';
 import type {
+  ConstraintBarHit,
   DrawnEntity,
   RasterPixels,
   RenderPrimitive,
@@ -380,6 +381,24 @@ export class RendererHost {
   setSelectionPreview(preview: SelectionPreview | undefined): void {
     if (this.#session) this.#session.renderer.setSelectionPreview(preview);
     else this.#post({ type: 'selection-preview', preview: preview ?? null });
+  }
+
+  /**
+   * The cursor over the constraint bars (M9-05 part 4): what is under it, highlighted; undefined
+   * clears the highlight. Answers null for nothing.
+   */
+  hoverConstraintBar(
+    screen: { readonly x: number; readonly y: number } | undefined,
+    view?: ViewTransform,
+  ): Promise<ConstraintBarHit | null> {
+    if (this.#session)
+      return Promise.resolve(this.#session.renderer.hoverConstraintBar(screen, view));
+    return this.#request((id) => ({
+      type: 'bar-hover',
+      id,
+      screen: screen ?? null,
+      ...(view && { view }),
+    })).then((m) => (m.type === 'bar' ? m.hit : null));
   }
 
   /** The extents of some entities (ZOOM Object, M2-03); undefined when none is known. */

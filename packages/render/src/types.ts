@@ -8,6 +8,7 @@ import type {
   DragMotion,
   Entity,
   EntityId,
+  GeometricConstraintKind,
   GroupGrip,
   Handle,
   NestedPick,
@@ -51,6 +52,22 @@ export interface ConstraintStyle {
   readonly nameFormat?: 0 | 1 | 2;
   /** A dynamic constraint's colour, a CSS colour; the foreground's when absent. */
   readonly color?: string;
+}
+
+/**
+ * What of a constraint bar lies under the cursor (M9-05 part 4, `constraintBarAt`): an icon (or
+ * a Coincident square), with its constraint, or a bar's panel alone.
+ */
+export interface ConstraintBarHit {
+  /** The object whose bar it is; none for a Coincident square. */
+  readonly entity?: Handle;
+  /** The polyline segment whose bar it is. */
+  readonly segment?: number;
+  /** The constraint whose icon or square it is; none for the panel between icons. */
+  readonly constraint?: Handle;
+  readonly kind?: GeometricConstraintKind;
+  /** What the cursor highlights: the constraint's objects, or the bar's object alone. */
+  readonly entities: readonly Handle[];
 }
 
 /** How constraint bars show (M9-05 part 2, `constraint-bars.ts`); the app's display state. */
@@ -594,6 +611,17 @@ export interface Renderer {
    * undefined, none is.
    */
   setSelectionPreview(preview: SelectionPreview | undefined): void;
+  /**
+   * The cursor at `screen` (CSS pixels; `view` as `hitTest`'s) over the constraint bars on the
+   * Model tab (M9-05 part 4): the icon (or Coincident square, or bar) under it, its constraint's
+   * icons framed and its objects highlighted on the transient layer, as AutoCAD highlights a
+   * constraint's objects while the cursor rests on its icon; undefined, none is. Answers what
+   * it found, null for nothing.
+   */
+  hoverConstraintBar(
+    screen: { readonly x: number; readonly y: number } | undefined,
+    view?: ViewTransform,
+  ): ConstraintBarHit | null;
 }
 
 /** Where the pickbox is and what the selection preview leaves out (M3-04 part 5). */

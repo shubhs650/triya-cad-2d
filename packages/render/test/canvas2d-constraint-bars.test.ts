@@ -8,16 +8,20 @@ import {
   CONSTRAINT_BAR_PX,
   Canvas2DRenderer,
   barBox,
+  constraintBarAt,
+  constraintBarHoverPrimitives,
   constraintBarPrimitives,
   type RenderStyle,
 } from '../src/index';
 import { drawing, entity, line, MODEL, PAPER, surface, type FakeContext } from './fixtures';
 
 const BLUE = '#3399ff';
+const PINK = '#ff00ff';
 const STYLE: RenderStyle = {
   background: '#000000',
   foreground: '#ffffff',
   showLineweights: false,
+  selection: PINK,
   constraintBars: { hidden: new Set(), color: BLUE },
 };
 
@@ -64,7 +68,14 @@ function setup(o: { style?: RenderStyle; block?: string } = {}) {
     r.frame();
     return scene.ctx;
   };
-  return { d, r, redraw };
+  /** The transient layer's calls of the next frame. */
+  const overlay = () => {
+    const t = layers[1]!;
+    t.ctx.clear();
+    r.frame();
+    return t.ctx;
+  };
+  return { d, r, redraw, overlay };
 }
 
 /** The strokes and fills drawn in `color`. */
@@ -150,5 +161,111 @@ describe('Canvas2DRenderer draws constraint bars', () => {
       constraintBars: { hidden: new Set(['20', '21']), color: BLUE, showSelected: false },
     });
     expect(drawnIn(redraw(), BLUE)).toEqual({ strokes: 0, fills: 0 });
+  });
+});
+
+/** A drawing point on the 200 x 100 canvas centred on 5,0 at 10 pixels a unit. */
+const screenOf = (p: { x: number; y: number }) => ({ x: (p.x - 5) * 10 + 100, y: 50 - p.y * 10 });
+
+describe('constraintBarAt (M9-05 part 4)', () => {
+  const bars = constraintBars(setup().d.model);
+  const bar20 = bars.bars.find((b) => b.entity === '20')!;
+  const box = barBox(bar20, 2, 10);
+
+  it("finds the icon under a point: its constraint, kind and objects, and the bar's object", () => {
+    expect(constraintBarAt(bars, () => true, 10, 4095, box.icons[0]!)).toEqual({
+      entity: '20',
+      constraint: 'E1',
+      kind: 'horizontal',
+      entities: ['20'],
+    });
+    expect(constraintBarAt(bars, () => true, 10, 4095, box.icons[1]!)).toMatchObject({
+      entity: '20',
+      constraint: 'E2',
+      kind: 'parallel',
+      entities: ['20', '21'],
+    });
+  });
+
+  it('finds the bar alone on its margin, and nothing off it', () => {
+    // The panel's left margin, between its edge and the first icon.
+    const edge = { x: box.min.x + 0.05, y: box.icons[0]!.y };
+    expect(constraintBarAt(bars, () => true, 10, 4095, edge)).toEqual({
+      entity: '20',
+      entities: ['20'],
+    });
+    expect(constraintBarAt(bars, () => true, 10, 4095, { x: 5, y: 1.5 })).toBeUndefined();
+  });
+
+  it("finds a Coincident square's constraint", () => {
+    expect(constraintBarAt(bars, () => true, 10, 4095, { x: 0.1, y: -0.1 })).toMatchObject({
+      constraint: 'E3',
+      kind: 'coincident',
+      entities: ['20', '21'],
+    });
+    // CONSTRAINTBARMODE without Coincident shows no squares to find.
+    expect(constraintBarAt(bars, () => true, 10, 4095 - 64, { x: 0.1, y: -0.1 })).toBeUndefined();
+  });
+
+  it("follows the icons shown: CONSTRAINTBARMODE's kinds, bars not shown left out", () => {
+    // Parallel alone: line 20's bar holds one icon, where its first was laid out.
+    const one = barBox(bar20, 1, 10);
+    expect(constraintBarAt(bars, () => true, 10, 8, one.icons[0]!)?.constraint).toBe('E2');
+    expect(constraintBarAt(bars, (h) => h !== '20', 10, 4095, box.icons[0]!)).toBeUndefined();
+  });
+
+  it("frames every icon of the constraint under the cursor, on each object's bar", () => {
+    const hit = constraintBarAt(bars, () => true, 10, 4095, box.icons[1]!)!;
+    const prims = constraintBarHoverPrimitives(bars, () => true, 10, 4095, hit, PINK);
+    // Parallel's icons on line 20's bar and line 21's.
+    expect(prims.filter((p) => p.kind === 'stroke' && p.color === PINK)).toHaveLength(2);
+    const square = constraintBarAt(bars, () => true, 10, 4095, { x: 0, y: 0 })!;
+    expect(constraintBarHoverPrimitives(bars, () => true, 10, 4095, square, PINK)).toHaveLength(1);
+    // A bar's margin frames no icon.
+    const edge = { x: box.min.x + 0.05, y: box.icons[0]!.y };
+    const panel = constraintBarAt(bars, () => true, 10, 4095, edge)!;
+    expect(constraintBarHoverPrimitives(bars, () => true, 10, 4095, panel, PINK)).toEqual([]);
+  });
+});
+
+describe('Canvas2DRenderer: the cursor over a constraint bar (M9-05 part 4)', () => {
+  it("answers what is under the cursor and highlights the constraint's icons and objects", () => {
+    const { d, r, overlay } = setup();
+    const bars = constraintBars(d.model);
+    const icon = barBox(
+      bars.bars.find((b) => b.entity === '20')!,
+      2,
+      10,
+    ).icons[1]!;
+    expect(drawnIn(overlay(), PINK).strokes).toBe(0);
+    expect(r.hoverConstraintBar(screenOf(icon))).toMatchObject({ constraint: 'E2' });
+    // Both lines' outlines (one path, its glow and its line) and the two Parallel icons'
+    // frames (one path of the same colour).
+    expect(drawnIn(overlay(), PINK).strokes).toBe(3);
+    expect(r.hoverConstraintBar(screenOf({ x: 5, y: 1.5 }))).toBeNull();
+    expect(drawnIn(overlay(), PINK).strokes).toBe(0);
+  });
+
+  it('answers nothing on a layout, without a bar style, or for a hidden bar', () => {
+    const { d } = setup();
+    const at = screenOf(barBox(constraintBars(d.model).bars[0]!, 2, 10).icons[0]!);
+    expect(setup({ block: PAPER }).r.hoverConstraintBar(at)).toBeNull();
+    const plain: RenderStyle = { ...STYLE };
+    delete (plain as { constraintBars?: unknown }).constraintBars;
+    expect(setup({ style: plain }).r.hoverConstraintBar(at)).toBeNull();
+    const hidden: RenderStyle = {
+      ...STYLE,
+      constraintBars: { hidden: new Set(['20']), color: BLUE },
+    };
+    expect(setup({ style: hidden }).r.hoverConstraintBar(at)).toBeNull();
+  });
+
+  it('forgets the hover when asked with no cursor', () => {
+    const { d, r, overlay } = setup();
+    const at = screenOf(barBox(constraintBars(d.model).bars[0]!, 2, 10).icons[0]!);
+    expect(r.hoverConstraintBar(at)).toMatchObject({ constraint: 'E1' });
+    expect(drawnIn(overlay(), PINK).strokes).toBeGreaterThan(0);
+    expect(r.hoverConstraintBar(undefined)).toBeNull();
+    expect(drawnIn(overlay(), PINK).strokes).toBe(0);
   });
 });

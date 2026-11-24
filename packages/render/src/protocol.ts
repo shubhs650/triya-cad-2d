@@ -30,6 +30,7 @@ import type { PreviewSize } from './dim-style-preview';
 import type { PlotPart } from './plot/job';
 import type { FontSources, PlotRequest, RenderDocument } from './session';
 import type {
+  ConstraintBarHit,
   DrawnEntity,
   RasterPixels,
   RenderPrimitive,
@@ -107,6 +108,15 @@ export type HostMessage =
       readonly screen: { readonly x: number; readonly y: number };
       readonly aperture: number;
       /** The view the point was taken in (M5-23); the worker's own when left out. */
+      readonly view?: ViewTransform;
+    }
+  /**
+   * The cursor over the constraint bars (M9-05 part 4), null for none; the answer is a `bar`.
+   */
+  | {
+      readonly type: 'bar-hover';
+      readonly id: number;
+      readonly screen: { readonly x: number; readonly y: number } | null;
       readonly view?: ViewTransform;
     }
   /** What a pick hit inside a block reference (M5-06 part 5); the answer is a `nested`. */
@@ -217,6 +227,8 @@ export type HostMessage =
 export type WorkerMessage =
   | { readonly type: 'reply'; readonly id: number; readonly ids?: readonly EntityId[] }
   | { readonly type: 'entities'; readonly id: number; readonly entities: readonly DrawnEntity[] }
+  /** What lies under the cursor on the constraint bars, or null (M9-05 part 4). */
+  | { readonly type: 'bar'; readonly id: number; readonly hit: ConstraintBarHit | null }
   /** What a pick hit inside a block reference, or null (M5-06 part 5). */
   | { readonly type: 'nested'; readonly id: number; readonly hit: NestedPick | null }
   /** The thumbnail asked for, transferred; null when the canvas was never sized. */

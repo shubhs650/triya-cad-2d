@@ -173,6 +173,12 @@ import {
 } from './linetype-files';
 import { parameterRows } from './parameters';
 import { constraintBarStates } from './constraint-bars';
+import {
+  constraintBarMenu,
+  runConstraintBarItem,
+  type ConstraintBarMenuDeps,
+} from './constraint-bar-menu';
+import { openConstraintSettingsOn } from './ConstraintSettingsDialog';
 import { propertySheets } from './properties';
 import { paletteStack, type PaletteName } from './palette-stack';
 import { PaletteDock } from './PaletteDock';
@@ -461,6 +467,24 @@ function showNextViewport(): void {
 function atCommand(doc: number): boolean {
   const line = commandLines.get(doc);
   return line.prompt === undefined && line.promptText === 'Command:';
+}
+
+/** What a constraint bar's shortcut menu acts through on drawing `doc` (M9-05 part 4). */
+function constraintBarMenuDeps(doc: number): ConstraintBarMenuDeps {
+  return {
+    deleteConstraints: (handles) => engines.command(doc, { kind: 'delete-constraints', handles }),
+    hideBars: (entities) =>
+      constraintBarStates.apply(
+        doc,
+        { action: 'hide', entities },
+        drafting.get().constraintBarDisplay,
+      ),
+    invoke: (name, keys = []) => {
+      engines.command(doc, { kind: 'invoke', name });
+      for (const text of keys) engines.command(doc, { kind: 'submit', text });
+    },
+    geometricTabNext: () => openConstraintSettingsOn('geometric'),
+  };
 }
 
 /**
@@ -3596,6 +3620,17 @@ function ViewportCanvas({
         if (!items?.length) return false;
         shortcutMenu.open(id, at, items, prompt?.shortcutMenuTitle);
         return true;
+      },
+      // A constraint bar's icon (M9-05 part 4): its shortcut menu, and Delete on it.
+      onConstraintBarMenu: (at, hit) => {
+        shortcutMenu.open(id, at, constraintBarMenu(hit), 'Constraint bar', (item) =>
+          runConstraintBarItem(hit, item, constraintBarMenuDeps(id)),
+        );
+        return true;
+      },
+      onConstraintDelete: (hit) => {
+        if (hit.constraint !== undefined)
+          constraintBarMenuDeps(id).deleteConstraints([hit.constraint]);
       },
       // SELECTIONPREVIEW's bit 1 (M3-04 part 5) previews at `Command:` only.
       atCommand: () => atCommand(id),
