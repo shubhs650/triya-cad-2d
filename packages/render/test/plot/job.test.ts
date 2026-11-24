@@ -367,7 +367,13 @@ describe('plotParts with dimensional constraints (M9-03 part 8)', () => {
     expect(paths(parts)[0]).toEqual([PATH_M, 0, 0, PATH_L, 10, 0]);
     // Two extension lines and the dimension line, then the two arrowheads; the dynamic one not.
     expect(paths(parts).slice(1)).toEqual(drawn(m));
-    expect(parts.slice(1).map((p) => p.kind)).toEqual(['stroke', 'stroke', 'stroke', 'fill', 'fill']);
+    expect(parts.slice(1).map((p) => p.kind)).toEqual([
+      'stroke',
+      'stroke',
+      'stroke',
+      'fill',
+      'fill',
+    ]);
     // Sized by the DIMVARs times DIMSCALE: the arrows DIMASZ 0.18 × 2 long.
     const arrow = paths(parts)[4]!;
     expect(Math.hypot(arrow[1]! - arrow[4]!, arrow[2]! - arrow[5]!)).toBeCloseTo(0.36, 2);

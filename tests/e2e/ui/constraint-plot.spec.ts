@@ -1,6 +1,6 @@
 // M9-03 part 8: annotational constraints plot, dynamic ones do not, and CCONSTRAINTFORM is the
-// Form new constraints take. On an empty part of the plan two lines are drawn with DIMSCALE 20 (so
-// an annotational constraint's DIMVAR-sized text and arrows show on a 160-unit view); SETVAR
+// Form new constraints take. On a part of the plan two lines are drawn (the metric drawing's
+// DIMVARs size an annotational constraint's text and arrows 2.5 units); SETVAR
 // CCONSTRAINTFORM 1 makes DCALIGNED's constraint on the first line annotational, DIMCONSTRAINT's
 // Form back to Dynamic sets CCONSTRAINTFORM 0 and the second line's constraint is dynamic. The
 // plot preview (monochrome, the display) inks the annotational constraint and not the dynamic
@@ -52,15 +52,26 @@ async function previewInk(page: Page, shot?: (name: string) => Promise<void>, na
   await d.getByLabel('Paper size').selectOption('ISO A4');
   await d.getByLabel('What to plot').selectOption('display');
   await d.getByLabel('Plot style table').selectOption('triya-monochrome.ctb');
+  await d.getByLabel('Fit to paper').check();
+  await d.getByLabel('Center the plot').check();
   await d.getByRole('button', { name: 'Preview…' }).click();
   const canvas = sheet(page);
   await expect(canvas).toHaveAttribute('data-state', 'ready', { timeout: 20_000 });
   const [x, y, width, height] = (await canvas.getAttribute('data-raster'))!.split(' ').map(Number);
+  // Read through a copy: the preview's own canvas may not keep a 2D context to read.
   const dark = await canvas.evaluate(
-    (c: HTMLCanvasElement, r) => {
-      const d = c.getContext('2d')!.getImageData(r.x, r.y, r.width, r.height).data;
+    async (c: HTMLCanvasElement, r) => {
+      const img = new Image();
+      img.src = c.toDataURL('image/png');
+      await img.decode();
+      const copy = document.createElement('canvas');
+      copy.width = img.width;
+      copy.height = img.height;
+      const ctx = copy.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(r.x, r.y, r.width, r.height).data;
       let n = 0;
-      for (let i = 0; i < d.length; i += 4) if (d[i]! + d[i + 1]! + d[i + 2]! < 384) n++;
+      for (let i = 0; i < d.length; i += 4) if (d[i]! + d[i + 1]! + d[i + 2]! < 600) n++;
       return n;
     },
     { x: x!, y: y!, width: width!, height: height! },
@@ -93,8 +104,6 @@ test('an annotational constraint plots, a dynamic one does not; CCONSTRAINTFORM 
   await type(page, 'Z', /^Specify corner of window/);
   await type(page, '1000000,1000000', 'Specify opposite corner:');
   await type(page, '1000160,1000100', 'Command:');
-  await type(page, 'DIMSCALE', /^Enter new value for DIMSCALE/);
-  await type(page, '20', 'Command:');
   for (const y of [30, 70]) {
     await type(page, 'L', 'Specify first point:');
     await type(page, `1000020,10000${y}`, 'Specify next point or [Undo]:');
@@ -107,7 +116,7 @@ test('an annotational constraint plots, a dynamic one does not; CCONSTRAINTFORM 
     const p = view.at(1000000 + x, 1000000 + y);
     await page.mouse.click(view.box.x + p.x, view.box.y + p.y);
   };
-  const lines = await previewInk(page);
+  const lines = await previewInk(page, shot, '0-lines-preview.png');
   expect(lines).toBeGreaterThan(0);
 
   // CCONSTRAINTFORM 1: DCALIGNED's constraint on the lower line is annotational.
