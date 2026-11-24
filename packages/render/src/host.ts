@@ -382,10 +382,18 @@ export class RendererHost {
     else this.#post({ type: 'drag', motion: motion ?? null });
   }
 
-  /** The objects to show grips on and the hot grip (M2-06 part 2). */
-  setGrips(ids: readonly EntityId[], hot?: Vec2, groups: readonly GroupGrip[] = []): void {
-    if (this.#session) this.#session.renderer.setGrips(ids, hot, groups);
-    else this.#post({ type: 'grips', ids, hot: hot ?? null, groups });
+  /**
+   * The objects to show grips on and the hot grip (M2-06 part 2), and the dimensional
+   * constraints selected, which show theirs (M9-03 part 11).
+   */
+  setGrips(
+    ids: readonly EntityId[],
+    hot?: Vec2,
+    groups: readonly GroupGrip[] = [],
+    constraints: readonly Handle[] = [],
+  ): void {
+    if (this.#session) this.#session.renderer.setGrips(ids, hot, groups, constraints);
+    else this.#post({ type: 'grips', ids, hot: hot ?? null, groups, constraints });
   }
 
   /** The cursor for the grip hover colour (M3-05 part 2); undefined, none. */

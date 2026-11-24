@@ -214,6 +214,11 @@ export interface ConstraintSolver {
     expression: string,
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
+    /**
+     * Which side of `name`'s constraint adjusts (M9-03 part 11): the second, as a value typed
+     * (the default), or the first, its triangular grip at the first object's end dragged.
+     */
+    side?: 'first' | 'second',
   ): ParameterChangeResult;
   /**
    * The Properties palette's Reference (M9-03 part 10): dimensional constraint `handle` made a

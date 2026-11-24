@@ -114,6 +114,8 @@ import type { EntityType } from '../model/types';
 import { LAYERP, layerPreviousOf } from './layer-previous';
 import { designCenterCommand, type DesignCenterDrop } from './design-center';
 import { referencePathCommand, type ReferencePathEdit } from './reference-path';
+import { constraintGripCommand, constraintTextCommand } from './constraint-grips';
+import { constraintGripAt } from '../edit/constraint-grips';
 
 /**
  * What a double click on an object of each type runs (AutoCAD's DBLCLKEDIT; its CUI's
@@ -270,6 +272,8 @@ export type BusEvent =
        * too (2). The canvas, which knows the objects' extents, places the grip.
        */
       readonly groups?: readonly GroupGrip[];
+      /** The dimensional constraints selected that show their grips (M9-03 part 11). */
+      readonly constraints?: readonly Handle[];
     };
 
 /** A selected group's one grip (M3-13): at the centre of its members' extents. */
@@ -810,6 +814,13 @@ export class PromptBus {
           reach = distance(c, point);
           group = true;
         }
+        // A selected dimensional constraint's grip (M9-03 part 11): drawn over the objects, it
+        // wins a tie.
+        const held = constraintGripAt(this.#model, this.#constraintSel, point, reach);
+        if (held) {
+          this.#hot = held.grip.point;
+          return this.#start(constraintGripCommand(held.handle, held.grip), false, false);
+        }
         if (hot) {
           this.#hot = hot;
           return this.#start(
@@ -931,6 +942,16 @@ export class PromptBus {
       // A double click in another viewport makes it current; on the sheet outside every
       // viewport, paper space (M6-02 part 3).
       if (await this.#doubleClickViewport(point)) return;
+      // A dimensional constraint drawn there (M9-03 part 11): its text is edited. It is drawn
+      // over the objects, so the canvas is asked first, as a click asks it.
+      const under = await this.#view.request({ op: 'constraintAt', point });
+      const constraint = under.ok ? under.constraint : undefined;
+      if (constraint !== undefined) {
+        if (top) await this.#cancel();
+        this.#log('Command: TEXTEDIT');
+        await this.#start(constraintTextCommand(constraint), false, false);
+        return;
+      }
       const r = await this.#view.request({ op: 'pick', point });
       const ids = r.ok ? (r.ids ?? []) : [];
       // Inside an empty table cell nothing drawn is under the cursor: the cell's table is.
@@ -1942,17 +1963,21 @@ export class PromptBus {
 
   #showGrips(): void {
     const top = this.#stack.at(-1);
-    const all = !top || (top.def.keepsSelection && this.#hot) ? this.#gripIds() : [];
+    const gripping = !top || (top.def.keepsSelection && this.#hot);
+    const all = gripping ? this.#gripIds() : [];
+    // A selected constraint's grips (M9-03 part 11), the selection's at `Command:` as objects'.
+    const constraints = gripping ? [...this.constraintSelection] : [];
     const hot = top ? this.#hot : undefined;
     const { loose, groups } = this.#gripShapes(all);
-    const key = JSON.stringify([loose, groups, hot]);
+    const key = JSON.stringify([loose, groups, hot, constraints]);
     if (key === this.#gripsShown) return;
     this.#gripsShown = key;
     this.#emit({
       type: 'grips',
       ids: [...loose],
-      ...(hot && all.length > 0 && { hot }),
+      ...(hot && (all.length > 0 || constraints.length > 0) && { hot }),
       ...(groups.length > 0 && { groups }),
+      ...(constraints.length > 0 && { constraints }),
     });
   }
 

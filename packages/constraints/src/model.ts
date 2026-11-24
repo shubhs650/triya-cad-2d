@@ -73,7 +73,9 @@ import {
 import {
   DIMENSION_PREFIX,
   DIMENSION_TYPE,
+  dimensionHolds,
   dimensionShape,
+  type DimensionSide,
   dimensionValueError,
   formatMeasured,
   lineAngle,
@@ -404,7 +406,12 @@ export class ConstraintModel {
    * a driving value would be out of range or follow from a reference parameter, the
    * parameter is a reference one, or the geometry cannot take the values.
    */
-  setExpression(name: string, expression: string, lookup: EntityLookup): ParameterResult {
+  setExpression(
+    name: string,
+    expression: string,
+    lookup: EntityLookup,
+    side: DimensionSide = 'second',
+  ): ParameterResult {
     const table = this.#parameters;
     const row = table.get(name);
     if (!row) return refusal('invalid', `No parameter named "${name}".`);
@@ -436,7 +443,12 @@ export class ConstraintModel {
       const group = this.#group(c.refs.map((r) => r.entity));
       const changed = driven.filter((d) => group.includes(d));
       changed.forEach((d) => done.add(d));
-      const r = this.#resolveValues(group, changed, lookup);
+      const r = this.#resolveValues(
+        group,
+        changed,
+        lookup,
+        own && side === 'first' ? own : undefined,
+      );
       if (!r.ok) {
         undo();
         return r;
@@ -555,16 +567,22 @@ export class ConstraintModel {
     }
   }
 
-  /** Solves a group whose driving values `changed` were set, holding their first objects. */
+  /**
+   * Solves a group whose driving values `changed` were set, holding their first objects; the
+   * second instead for `firstSide`, set from its first side (a triangular grip, M9-03 part 11).
+   */
   #resolveValues(
     group: readonly AnyConstraint[],
     changed: readonly DimensionalConstraint[],
     lookup: EntityLookup,
+    firstSide?: DimensionalConstraint,
   ): EditResult {
     const build = this.#build(lookup);
     try {
       for (const c of group) build.tryConstrain(c);
-      const holds = changed.flatMap((c) => dimensionShape(c, lookup).holds);
+      const holds = changed.flatMap((c) =>
+        dimensionHolds(c, lookup, c === firstSide ? 'first' : 'second'),
+      );
       if (
         !solveHolding(
           build,
@@ -572,6 +590,7 @@ export class ConstraintModel {
           changed.flatMap((c) => c.refs),
           undefined,
           changed,
+          firstSide,
         )
       ) {
         const named = build.diagnose().conflicting;
@@ -1033,6 +1052,7 @@ function solveHolding(
   refs: readonly GeomRef[],
   kind?: GeometricKind,
   keeps: readonly DimensionalConstraint[] = [],
+  firstSide?: DimensionalConstraint,
 ): boolean {
   if (!held.length) return build.solveChecked();
   // Horizontal and Vertical hold only a line's start: the line itself turns.
@@ -1047,7 +1067,7 @@ function solveHolding(
   const others = build.entities().filter((h) => !moving.has(h));
   const first = () => {
     held.forEach((ref) => build.hold(ref, kind));
-    keeps.forEach((c) => build.keep(c));
+    keeps.forEach((c) => build.keep(c, c === firstSide ? 'first' : 'second'));
   };
   const holdOthers = () => {
     first();
@@ -1721,8 +1741,10 @@ class Build {
    * least-change step reaches the value by any route (a point moved to distance 10 also
    * swings round).
    */
-  keep(c: DimensionalConstraint): void {
+  keep(c: DimensionalConstraint, side: DimensionSide = 'second'): void {
     const s = this.#s;
+    // Set from its first side (M9-03 part 11), the first object is the one to keep in shape.
+    const first = side === 'first';
     const refs = c.refs;
     const direction = (p: number, q: number, line?: number) => this.#keepDirection(p, q, line);
     const length = (p: number, q: number) => {
@@ -1734,8 +1756,11 @@ class Build {
     switch (c.dimension) {
       case 'horizontal':
       case 'vertical': {
-        const q = refs.length === 1 ? this.#line(refs[0]!).p2 : this.#point(refs[1]!);
-        // The second point moves only along the dimension's direction.
+        const q =
+          refs.length === 1
+            ? this.#line(refs[0]!)[first ? 'p1' : 'p2']
+            : this.#point(refs[first ? 0 : 1]!);
+        // The second point (the first, set from its side) moves only along the dimension.
         this.#hold([], [s.pointParams(q)[c.dimension === 'horizontal' ? 1 : 0]]);
         return;
       }
@@ -1752,17 +1777,19 @@ class Build {
         }
         if (!isPointRef(a) && !isPointRef(b)) {
           // 2Line: the second line turns parallel and moves; its length stays.
-          const l = this.#line(b);
+          const l = this.#line(first ? a : b);
           return length(l.p1, l.p2);
         }
         return;
       }
       case 'angular': {
         if (refs.length === 2) {
-          const l = this.#line(refs[1]!);
+          const l = this.#line(refs[first ? 0 : 1]!);
           return length(l.p1, l.p2);
         }
-        if (refs.length === 3) return length(this.#point(refs[0]!), this.#point(refs[2]!));
+        if (refs.length === 3) {
+          return length(this.#point(refs[0]!), this.#point(refs[first ? 1 : 2]!));
+        }
         return;
       }
       default:

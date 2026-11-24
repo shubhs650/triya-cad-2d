@@ -1632,10 +1632,18 @@ export class CanvasController {
     return markerPrimitives('INT', this.#vertexMark, marker, this.#ui().autosnap);
   }
 
-  /** The objects to show grips on, and the hot grip (M2-06 part 2). */
-  setGrips(ids: readonly EntityId[], hot?: Vec2, groups: readonly GroupGrip[] = []): void {
-    this.#host.setGrips(ids, hot, groups);
-    this.#gripsHoverable = (ids.length > 0 || groups.length > 0) && !hot;
+  /**
+   * The objects to show grips on, and the hot grip (M2-06 part 2); the dimensional constraints
+   * selected show theirs (M9-03 part 11).
+   */
+  setGrips(
+    ids: readonly EntityId[],
+    hot?: Vec2,
+    groups: readonly GroupGrip[] = [],
+    constraints: readonly Handle[] = [],
+  ): void {
+    this.#host.setGrips(ids, hot, groups, constraints);
+    this.#gripsHoverable = (ids.length > 0 || groups.length > 0 || constraints.length > 0) && !hot;
     if (!this.#gripsHoverable) this.#hoverGrip(undefined);
     this.#requestFrame();
   }

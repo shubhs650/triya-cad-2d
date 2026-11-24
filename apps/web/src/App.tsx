@@ -551,7 +551,7 @@ engines.onCommand((doc, o) => {
   }
   if (o.type === 'grips') {
     grips.set(doc, o);
-    for (const c of controllersOf(doc)) c.setGrips(o.ids, o.hot, o.groups);
+    for (const c of controllersOf(doc)) c.setGrips(o.ids, o.hot, o.groups, o.constraints);
   }
   if (o.type === 'view') {
     void Promise.resolve(answerView(o.request, viewContext(doc))).then(
@@ -788,6 +788,8 @@ const grips = new Map<
     readonly ids: readonly EntityId[];
     readonly hot?: Vec2;
     readonly groups?: readonly GroupGrip[];
+    /** The dimensional constraints selected that show their grips (M9-03 part 11). */
+    readonly constraints?: readonly Handle[];
   }
 >();
 
@@ -3676,7 +3678,9 @@ function ViewportCanvas({
     const editing = refEdits.get(id);
     if (editing) c.setRefEdit(editing);
     const shown = grips.get(id);
-    if (shown?.ids.length || shown?.groups?.length) c.setGrips(shown.ids, shown.hot, shown.groups);
+    if (shown?.ids.length || shown?.groups?.length || shown?.constraints?.length) {
+      c.setGrips(shown.ids, shown.hot, shown.groups, shown.constraints);
+    }
     showCurrent(id, block, visibleRef.current);
     return () => {
       // The status bar no longer turns the SNAP and GRID of a canvas gone (M6-02 part 19).

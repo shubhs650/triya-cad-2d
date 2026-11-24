@@ -75,7 +75,14 @@ function setup(
     r.frame();
     return scene.ctx;
   };
-  return { d, r, redraw };
+  /** The transient layer's calls of a frame drawn afresh (grips, rubber bands). */
+  const overlay = () => {
+    const t = layers[1]!;
+    t.ctx.clear();
+    r.frame();
+    return t.ctx;
+  };
+  return { d, r, redraw, overlay };
 }
 
 /** The strokes and fills drawn in `color`. */
@@ -257,5 +264,55 @@ describe('Canvas2DRenderer picks and highlights dimensional constraints', () => 
     ).toBe(true);
     r.setHighlight([]);
     expect(drawnIn(redraw(), SELECTION).strokes).toBe(0);
+  });
+});
+
+// M9-03 part 11: a selected constraint's grips, triangles at its dimension line's ends that set
+// its value and a square at its text that moves it, drawn as objects' grips are.
+describe("Canvas2DRenderer draws a selected constraint's grips", () => {
+  const moves = (c: FakeContext) =>
+    c.calls.filter((call) => call[0] === 'moveTo').map((call) => [call[1], call[2]] as number[]);
+  const rects = (c: FakeContext) =>
+    c.calls.filter((call) => call[0] === 'fillRect').map((call) => call.slice(1) as number[]);
+
+  it('a distance: triangles pointing out at the dimension line ends, a square at the text', () => {
+    const { r, overlay } = setup([dim('D1')]);
+    expect(rects(overlay())).toEqual([]);
+    r.setGrips([], undefined, [], ['D1']);
+    const c = overlay();
+    // The square at the text, (5, -2): device (100, 70), its contour then its fill.
+    expect(rects(c)).toEqual([
+      [95, 65, 10, 10],
+      [96, 66, 8, 8],
+    ]);
+    // The triangles' tips, 1.4 half sizes out from (0, -2) and (10, -2): (50, 70), (150, 70).
+    const tips = moves(c).map(([x, y]) => [Math.round(x! * 10) / 10, y]);
+    expect(tips).toEqual([
+      [43, 70],
+      [44.4, 70],
+      [157, 70],
+      [155.6, 70],
+    ]);
+    r.setGrips([]);
+    expect(moves(overlay())).toEqual([]);
+  });
+
+  it('the hot grip and the one under the cursor take their colours', () => {
+    const { r, overlay } = setup([dim('D1')]);
+    r.setGrips([], { x: 10, y: -2 }, [], ['D1']);
+    const fills = (c: FakeContext) =>
+      c.calls.filter((call) => call[0] === 'fillStyle').map((call) => call[1]);
+    const hot = fills(overlay());
+    r.setGrips([], undefined, [], ['D1']);
+    const cold = fills(overlay());
+    expect(hot).not.toEqual(cold);
+    r.setGripHover({ x: 5, y: -2 }, 0.5);
+    expect(fills(overlay())).not.toEqual(cold);
+  });
+
+  it('none for a constraint gone or not shown on this tab', () => {
+    const { r, overlay } = setup([dim('D1')], { block: PAPER });
+    r.setGrips([], undefined, [], ['D1', 'GONE']);
+    expect(rects(overlay())).toEqual([]);
   });
 });

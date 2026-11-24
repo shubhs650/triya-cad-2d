@@ -165,6 +165,8 @@ export type HostMessage =
       readonly hot: Vec2 | null;
       /** The groups shown by one grip (GROUPDISPLAYMODE, M3-13). */
       readonly groups?: readonly GroupGrip[];
+      /** The dimensional constraints selected that show their grips (M9-03 part 11). */
+      readonly constraints?: readonly Handle[];
     }
   /** The cursor for the grip hover colour (M3-05 part 2); null, none. */
   | { readonly type: 'grip-hover'; readonly at: Vec2 | null; readonly within: number }
