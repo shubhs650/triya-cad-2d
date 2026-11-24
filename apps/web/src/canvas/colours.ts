@@ -30,6 +30,9 @@ export function isDarkColor(hex: string): boolean {
  */
 export const CONSTRAINT_COLOR = { dark: '#5ab4ff', light: '#1565c0' } as const;
 
+/** A constraint bar's panel (M9-05 part 2): a grey off the canvas, as AutoCAD's bars are. */
+export const CONSTRAINT_BAR_PANEL = { dark: '#4a5260', light: '#dde3ea' } as const;
+
 /** What ACI 7 draws in on `background`. */
 export const foregroundOn = (background: string): string =>
   isDarkColor(background) ? '#ffffff' : '#000000';

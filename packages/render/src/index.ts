@@ -121,3 +121,4 @@ export {
   type PreviewSize,
 } from './dim-style-preview';
 export * from './constraint-display';
+export * from './constraint-bars';

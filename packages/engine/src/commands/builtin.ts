@@ -29,6 +29,7 @@ import { updateFieldCommand } from './modify/fields';
 import { fieldCommand } from './draw/field';
 import { FIND_COMMANDS } from './modify/find';
 import { GEOMETRIC_CONSTRAINT_COMMANDS, geomconstraintCommand } from './constraints';
+import { constraintBarCommand, delConstraintCommand } from './constraint-bar';
 import { dcdisplayCommand } from './dcdisplay';
 import { dimensionalConstraintCommands } from './dimensional-constraints';
 import { SPELL_COMMANDS } from './modify/spell';
@@ -167,6 +168,9 @@ export function builtinCommands(): CommandRegistry {
     ...dimensionalConstraintCommands(),
     // M9-03 part 7: each dynamic constraint shown or hidden.
     dcdisplayCommand(),
+    // M9-05 part 2: constraint bars shown or hidden, and constraints removed.
+    constraintBarCommand(),
+    delConstraintCommand(),
     // M9-03 part 5: the Parameters Manager.
     ...PARAMETERS_COMMANDS.map((make) => make()),
     breakCommand(),
