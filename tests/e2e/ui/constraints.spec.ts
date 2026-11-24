@@ -107,7 +107,8 @@ test('Parallel from the Parametric tab, GCPERPENDICULAR typed, a refusal and U',
   const ribbon = page.getByRole('tablist', { name: 'Ribbon' });
   await ribbon.getByRole('tab', { name: 'Parametric', exact: true }).click();
   const geometric = page.getByRole('group', { name: 'Geometric' });
-  await expect(geometric.getByRole('button', { name: 'Smooth', exact: true })).toBeDisabled();
+  // Smooth runs GCSMOOTH since M9-02 part 2 (constraint-smooth.spec.ts).
+  await expect(geometric.getByRole('button', { name: 'Smooth', exact: true })).toBeEnabled();
   await park();
   await page.screenshot({ path: test.info().outputPath('1-parametric-tab.png') });
 
