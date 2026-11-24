@@ -52,6 +52,24 @@ export class Drawing {
       endAngle: endDeg * rad,
     });
   }
+  /** An ellipse, or an elliptical arc between parameters given in degrees. */
+  ellipse(
+    x: number,
+    y: number,
+    majorAxis: [number, number],
+    ratio: number,
+    params: [number, number] = [0, 360],
+  ): Handle {
+    const rad = Math.PI / 180;
+    return this.add({
+      kind: 'ELLIPSE',
+      center: { x, y },
+      majorAxis: { x: majorAxis[0], y: majorAxis[1] },
+      ratio,
+      startParam: params[0] * rad,
+      endParam: params[1] * rad,
+    });
+  }
   point(x: number, y: number): Handle {
     return this.add({ kind: 'POINT', position: { x, y } });
   }

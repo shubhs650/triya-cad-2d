@@ -7,9 +7,9 @@
 // a constraint point is a valid point of an object (endpoint, midpoint, center, insertion
 // point), and the one nearest the cursor is taken; a polyline segment is picked as its own
 // object.
-import { ccwSweep } from '../geom/angle';
+import { ccwSweep, TAU } from '../geom/angle';
 import { closestPoint } from '../geom/closest';
-import { polylineSegment, polylineSegmentCount } from '../geom/eval';
+import { ellipseSweep, pointAt, polylineSegment, polylineSegmentCount } from '../geom/eval';
 import { distance, midpoint } from '../geom/vec';
 import type { Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
@@ -263,8 +263,8 @@ export interface ConstraintPoint {
 /**
  * The points of `e` a constraint can take, as ConstraintModel maps them (AutoCAD's: a line's
  * ends and midpoint, an arc's centre, ends and midpoint, a polyline's vertices and its
- * segments' midpoints and arc centres, an open spline's ends); none for an entity it does not
- * map (ellipses, blocks, text…).
+ * segments' midpoints and arc centres, an open spline's ends, an ellipse's centre and axis
+ * ends and an elliptical arc's ends); none for an entity it does not map (blocks, text…).
  */
 export function constraintPointsOf(e: Entity): ConstraintPoint[] {
   const g = e.geom;
@@ -295,6 +295,23 @@ export function constraintPointsOf(e: Entity): ConstraintPoint[] {
     }
     case 'SPLINE':
       return splineEnds(e);
+    case 'ELLIPSE': {
+      const out: ConstraintPoint[] = [{ ref: { entity, point: 'center' }, at: g.center }];
+      for (let index = 0; index < 4; index++) {
+        out.push({
+          ref: { entity, point: 'quadrant', index },
+          at: pointAt(g, (index * Math.PI) / 2),
+        });
+      }
+      const sweep = ellipseSweep(g);
+      if (sweep !== TAU) {
+        out.push(
+          { ref: { entity, point: 'start' }, at: pointAt(g, g.startParam) },
+          { ref: { entity, point: 'end' }, at: pointAt(g, g.startParam + sweep) },
+        );
+      }
+      return out;
+    }
     case 'POINT':
       return [{ ref: { entity, point: 'position' }, at: g.position }];
     case 'LWPOLYLINE': {
@@ -398,6 +415,7 @@ export function constraintCurveAt(
     case 'LINE':
     case 'CIRCLE':
     case 'ARC':
+    case 'ELLIPSE':
       return { entity: e.handle };
     case 'SPLINE':
       // Whole, for Fix; the solver says which other constraints cannot take a spline.

@@ -48,7 +48,7 @@ import { namedDictionary } from './header';
 export const TRIYA_CONSTRAINTS = 'TRIYA_CONSTRAINTS';
 /** The record layout DEC-081 sets out. */
 export const TRIYA_CONSTRAINTS_VERSION = 1;
-/** 71: the reference's point, by its value; 0 is the object (or segment) itself. */
+/** 71: the reference's point, by its value; 0 is the object (or segment) itself; 7 is DEC-085's. */
 export const CONSTRAINT_POINTS = [
   undefined,
   'start',
@@ -57,6 +57,7 @@ export const CONSTRAINT_POINTS = [
   'center',
   'position',
   'vertex',
+  'quadrant',
 ] as const;
 /** Group 1 of a dimensional constraint's record (DEC-082), a word no geometric kind is. */
 export const DIMENSIONAL_RECORD = 'dimensional';
@@ -104,6 +105,8 @@ function refsOf(rest: Entries, doc: CadDocument): ConstraintRef[] | undefined {
     if (index === undefined || !Number.isInteger(index) || index < -1) return undefined;
     const entity = hex(object.handle);
     const pt = CONSTRAINT_POINTS[pointIndex];
+    // An ellipse's axis end names its quadrant (DEC-085).
+    if (pt === 'quadrant' && !(index >= 0 && index <= 3)) return undefined;
     if (pt === undefined) refs.push(index >= 0 ? { entity, segment: index } : { entity });
     else refs.push(index >= 0 ? { entity, point: pt, index } : { entity, point: pt });
   }

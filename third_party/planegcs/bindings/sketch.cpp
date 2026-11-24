@@ -3,13 +3,14 @@
 // only caller; keep the constraint codes below in step with `ConstraintKind` there.
 //
 // A Sketch owns its parameters (plain doubles; PlaneGCS works on pointers to them, so they
-// live in deques, whose elements never move) and the points, lines, circles and arcs built
-// from them. Each parameter is an unknown the solver may change, fixed (a Fix constraint or
+// live in deques, whose elements never move) and the points, lines, circles, arcs, ellipses
+// and elliptical arcs (M9-02 part 3) built from them. Each parameter is an unknown the solver may change, fixed (a Fix constraint or
 // a driving dimension's value) or driven (a reference dimension's value, which the solver
 // computes). Constraints carry a caller-chosen tag (>= 1), which is what diagnose() reports
 // conflicting and redundant constraints by. Two constraints are Triya's own, written here on
 // PlaneGCS's Constraint interface: a spline end's curvature, for Smooth (M9-02 part 2).
 #include <deque>
+#include <memory>
 #include <vector>
 
 #include <emscripten/bind.h>
@@ -69,6 +70,13 @@ enum ConstraintCode
     PointOnPerpBisector = 35,// point, line
     SplineEndCurvatureArc = 36,   // point, point, point, param, param (Triya's, below)
     SplineEndCurvatureMatch = 37, // point x6, param, param (Triya's, below)
+    PointOnEllipse = 38,          // point, ellipse (or elliptical arc)
+    TangentLineEllipse = 39,      // line, ellipse
+    EllipticalArcRules = 40,      // elliptical arc
+    EllipseMajorStart = 41,       // ellipse, point (centre + major axis)
+    EllipseMajorEnd = 42,         // ellipse, point (centre - major axis)
+    EllipseMinorStart = 43,       // ellipse, point (centre + minor axis)
+    EllipseMinorEnd = 44,         // ellipse, point (centre - minor axis)
 };
 
 // Smooth (AutoCAD's G2 continuity, M9-02 part 2) needs a spline end's curvature, which PlaneGCS
@@ -282,6 +290,33 @@ public:
     // (a kind may add two), or -1 for a tag below 1 or an unknown code. The module is built
     // without C++ exceptions, so an index out of range aborts (a RuntimeError in JS);
     // planegcs.ts checks indices before calling.
+    // An ellipse from its centre, its first focus (on the major axis's positive side) and its
+    // minor radius, as PlaneGCS keeps one; an elliptical arc also has its start and end
+    // parameters (radians from the major axis, counter-clockwise) and points, which an
+    // EllipticalArcRules constraint keeps on it. Both are numbered in one list.
+    int addEllipse(int center, int focus, int radmin)
+    {
+        auto e = std::make_unique<GCS::Ellipse>();
+        e->center = points.at(center);
+        e->focus1 = points.at(focus);
+        e->radmin = param(radmin);
+        ellipses.push_back(std::move(e));
+        return static_cast<int>(ellipses.size()) - 1;
+    }
+    int addEllipticalArc(int center, int focus, int radmin, int startAngle, int endAngle, int start, int end)
+    {
+        auto a = std::make_unique<GCS::ArcOfEllipse>();
+        a->center = points.at(center);
+        a->focus1 = points.at(focus);
+        a->radmin = param(radmin);
+        a->startAngle = param(startAngle);
+        a->endAngle = param(endAngle);
+        a->start = points.at(start);
+        a->end = points.at(end);
+        ellipses.push_back(std::move(a));
+        return static_cast<int>(ellipses.size()) - 1;
+    }
+
     int addConstraint(int code, const emscripten::val& idArray, int tag, bool driving)
     {
         const std::vector<int> ids = emscripten::vecFromJSArray<int>(idArray);
@@ -293,6 +328,10 @@ public:
         auto C = [&](int i) -> GCS::Circle& { return circles.at(ids.at(i)); };
         auto A = [&](int i) -> GCS::Arc& { return arcs.at(ids.at(i)); };
         auto V = [&](int i) -> double* { return param(ids.at(i)); };
+        auto E = [&](int i) -> GCS::Ellipse& { return *ellipses.at(ids.at(i)); };
+        auto axisPoint = [&](GCS::InternalAlignmentType type) {
+            return sys.addConstraintInternalAlignmentPoint2Ellipse(E(0), P(1), type, tag, driving);
+        };
         switch (code) {
             case Coincident:
                 return sys.addConstraintP2PCoincident(P(0), P(1), tag, driving);
@@ -375,6 +414,22 @@ public:
                     tag,
                     driving
                 );
+            case PointOnEllipse:
+                return sys.addConstraintPointOnEllipse(P(0), E(1), tag, driving);
+            case TangentLineEllipse:
+                return sys.addConstraintTangent(L(0), E(1), tag, driving);
+            case EllipticalArcRules: {
+                auto* arc = dynamic_cast<GCS::ArcOfEllipse*>(&E(0));
+                return arc ? sys.addConstraintArcOfEllipseRules(*arc, tag, driving) : -1;
+            }
+            case EllipseMajorStart:
+                return axisPoint(GCS::EllipsePositiveMajorX), axisPoint(GCS::EllipsePositiveMajorY);
+            case EllipseMajorEnd:
+                return axisPoint(GCS::EllipseNegativeMajorX), axisPoint(GCS::EllipseNegativeMajorY);
+            case EllipseMinorStart:
+                return axisPoint(GCS::EllipsePositiveMinorX), axisPoint(GCS::EllipsePositiveMinorY);
+            case EllipseMinorEnd:
+                return axisPoint(GCS::EllipseNegativeMinorX), axisPoint(GCS::EllipseNegativeMinorY);
             default:
                 return -1;
         }
@@ -466,6 +521,7 @@ private:
     std::deque<GCS::Line> lines;
     std::deque<GCS::Circle> circles;
     std::deque<GCS::Arc> arcs;
+    std::deque<std::unique_ptr<GCS::Ellipse>> ellipses;
     GCS::System sys;
 };
 
@@ -485,6 +541,8 @@ EMSCRIPTEN_BINDINGS(planegcs)
         .function("addLine", &Sketch::addLine)
         .function("addCircle", &Sketch::addCircle)
         .function("addArc", &Sketch::addArc)
+        .function("addEllipse", &Sketch::addEllipse)
+        .function("addEllipticalArc", &Sketch::addEllipticalArc)
         .function("addConstraint", &Sketch::addConstraint)
         .function("removeTag", &Sketch::removeTag)
         .function("clearConstraints", &Sketch::clearConstraints)

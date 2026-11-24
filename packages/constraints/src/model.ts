@@ -33,8 +33,14 @@
 // control points moving (the Help: "The splines are updated to be contiguous"); the other curve
 // stays. Where the Help is silent: a spline whose control points a constraint moved loses its
 // fit points, as SPLINEDIT's control-vertex edits make it, unless it only moved whole.
-// An arc's midpoint (and a polyline arc segment's) is a constraint point too. Ellipses are not
-// mapped yet.
+// An arc's midpoint (and a polyline arc segment's) is a constraint point too.
+//
+// Ellipses and elliptical arcs (M9-02 part 3) are PlaneGCS ellipses (centre, first focus, minor
+// radius; an arc's parameters and end points). AutoCAD's points on one are its centre and its
+// axes' ends ("Center, major and minor axes"), an arc's ends too; Concentric takes its centre,
+// Coincident puts a point on it, Tangent takes it with a line, and Fix holds it whole. Where
+// the Help is silent: Tangent between an ellipse and a circle, arc or ellipse, and Equal and
+// Symmetric on ellipses, are refused (PlaneGCS has no plain tangency between conics).
 //
 // Dimensional constraints (M9-03, measure.ts) live beside the geometric ones, each with its
 // parameter in the model's ParameterTable, the Parameters Manager's table: an edit of an
@@ -47,11 +53,14 @@
 import {
   bulgeArc,
   ccwSweep,
+  ellipseSweep,
   normalizeAngle,
   polylineSegmentCount,
   purgeFitData,
+  TAU,
   updateEntity,
   type BulgeVertex,
+  type EllipseGeometry,
   type Entity,
   type EntityGeometry,
   type Handle,
@@ -80,6 +89,8 @@ import {
   SolveStatus,
   type ArcIds,
   type CircleIds,
+  type EllipseIds,
+  type EllipticalArcIds,
   type PlaneGcs,
   type PlaneGcsSketch,
 } from './planegcs';
@@ -104,9 +115,11 @@ export type GeometricKind = (typeof GEOMETRIC_KINDS)[number];
 /**
  * A point on an entity: a LINE's start, end or mid; a CIRCLE's center; an ARC's center,
  * start, end or mid; a POINT's position; an LWPOLYLINE's vertex `index`, start or end, the mid
- * of segment `index` or the center of arc segment `index`; a SPLINE's start or end.
+ * of segment `index` or the center of arc segment `index`; a SPLINE's start or end; an
+ * ELLIPSE's center, `quadrant` `index` (its axes' ends: 0 the major axis's, 1 the minor's, 2
+ * and 3 opposite them, as the parameter runs), and an elliptical arc's start and end.
  */
-export type PointName = 'start' | 'end' | 'mid' | 'center' | 'position' | 'vertex';
+export type PointName = 'start' | 'end' | 'mid' | 'center' | 'position' | 'vertex' | 'quadrant';
 
 export interface PointRef {
   readonly entity: Handle;
@@ -1068,13 +1081,21 @@ interface ArcPrim extends ArcIds {
   /** Its midpoint, once a constraint names it (Build.#arcMid). */
   mid?: number;
 }
-type Curve = LinePrim | CirclePrim | ArcPrim;
+interface EllipsePrim extends EllipseIds {
+  readonly type: 'ellipse';
+  /** An elliptical arc's parameters and end points. */
+  readonly arc?: Pick<EllipticalArcIds, 'startAngle' | 'endAngle' | 'start' | 'end'>;
+  /** Its axes' ends, by quadrant, once a constraint names them. */
+  readonly quadrants: (number | undefined)[];
+}
+type Curve = LinePrim | CirclePrim | ArcPrim | EllipsePrim;
 
 type Mapped =
   | { readonly kind: 'LINE'; readonly line: LinePrim }
   | { readonly kind: 'CIRCLE'; readonly circle: CirclePrim }
   | { readonly kind: 'ARC'; readonly arc: ArcPrim }
   | { readonly kind: 'POINT'; readonly point: number }
+  | { readonly kind: 'ELLIPSE'; readonly ellipse: EllipsePrim }
   | {
       readonly kind: 'SPLINE';
       /** Its control points, in order. */
@@ -1253,6 +1274,7 @@ class Build {
             line: ConstraintKind.PointOnLine,
             circle: ConstraintKind.PointOnCircle,
             arc: ConstraintKind.PointOnArc,
+            ellipse: ConstraintKind.PointOnEllipse,
           }[cv.type];
           add(kind, [point, cv.id]);
         } else {
@@ -1262,8 +1284,8 @@ class Build {
       }
       case 'concentric': {
         arity(2);
-        const a = this.#circular(refs[0]!);
-        const b = this.#circular(refs[1]!);
+        const a = this.#centred(refs[0]!);
+        const b = this.#centred(refs[1]!);
         if (a.center === b.center)
           throw new Refused('invalid', 'concentric needs two different centres');
         add(ConstraintKind.Coincident, [a.center, b.center]);
@@ -1283,7 +1305,7 @@ class Build {
         const b = this.#curve(this.#curveRef(refs[1]!));
         if (a === b) throw new Refused('invalid', 'equal needs two different objects');
         if (a.type === 'line' && b.type === 'line') add(ConstraintKind.EqualLength, [a.id, b.id]);
-        else if (a.type !== 'line' && b.type !== 'line') add(...equalRadius(a, b));
+        else if (isRound(a) && isRound(b)) add(...equalRadius(a, b));
         else throw new Refused('invalid', 'equal takes two lines, or two circles or arcs');
         break;
       }
@@ -1308,7 +1330,7 @@ class Build {
         }
         if (ca.type === 'line' && cb.type === 'line') {
           this.#symmetricAngles(ca, cb, axis, tag);
-        } else if (ca.type !== 'line' && cb.type !== 'line') {
+        } else if (isRound(ca) && isRound(cb)) {
           const eq = equalRadius(ca, cb);
           add(ConstraintKind.SymmetricLine, [ca.center, cb.center, axis.id]);
           add(...eq);
@@ -1517,6 +1539,10 @@ class Build {
         return this.#hold([m.point], []);
       case 'SPLINE':
         return this.#hold(m.points, []);
+      case 'ELLIPSE': {
+        const { points, params } = ellipseParts(m.ellipse);
+        return this.#hold(points, params);
+      }
       case 'LWPOLYLINE': {
         const arcs = m.segments.filter((s): s is ArcPrim => s.type === 'arc');
         return this.#hold(
@@ -1527,10 +1553,21 @@ class Build {
     }
   }
 
-  /** Holds an ARC's radius and angles, so it can only move as a whole. */
+  /** Holds an ARC's radius and angles, so it can only move as a whole; an ellipse's size. */
   holdShape(handle: Handle): void {
     const m = this.#mapped.get(handle)?.m;
     if (m?.kind === 'ARC') this.#hold([], [m.arc.radius, m.arc.startAngle, m.arc.endAngle]);
+    if (m?.kind === 'ELLIPSE') this.#keepEllipse(m.ellipse, 'turning');
+  }
+
+  /**
+   * Keeps an ellipse's size (its focus's distance from its centre, its minor radius, an arc's
+   * parameters), and unless `turning` its turn too (the focus's offset).
+   */
+  #keepEllipse(e: EllipsePrim, how?: 'turning'): void {
+    if (how === 'turning') this.#keepLength(e.center, e.focus);
+    else this.#keepOffsets(e.center, [e.focus]);
+    this.#hold([], ellipseParts(e).params);
   }
 
   /**
@@ -1559,6 +1596,8 @@ class Build {
         return this.holdShape(handle);
       case 'POINT':
         return;
+      case 'ELLIPSE':
+        return this.#keepEllipse(m.ellipse, how === 'whole' ? undefined : 'turning');
       case 'SPLINE': {
         // Moved whole, or else free: Smooth reshapes only the end it joins.
         const [p0, ...rest] = m.points;
@@ -1739,6 +1778,29 @@ class Build {
     } else if (m.kind === 'ARC' && g.kind === 'ARC') {
       const a0 = g.startAngle;
       setArc(m.arc, g.center, g.radius, a0, a0 + ccwSweep(a0, g.endAngle));
+    } else if (m.kind === 'ELLIPSE' && g.kind === 'ELLIPSE' && was.kind === 'ELLIPSE') {
+      const e = m.ellipse;
+      // Mapped as a whole ellipse or as an arc of one: it must stay what it was.
+      if ((ellipseSweep(g) === TAU) !== !e.arc) return false;
+      const fb = ellipseFocus(was);
+      const fa = ellipseFocus(g);
+      if (!fa || !fb) return false;
+      setPointIf(e.center, g.center, was.center);
+      setPointIf(e.focus, fa, fb);
+      const b = Math.hypot(g.majorAxis.x, g.majorAxis.y) * g.ratio;
+      setParamIf(e.radmin, b, Math.abs(b - s.value(e.radmin)) > this.#tol.linear);
+      if (e.arc) {
+        const a0 = g.startParam;
+        const a1 = a0 + ellipseSweep(g);
+        const turned = (p: number, v: number) => !sameAngle(v, s.value(p), this.#tol.angular);
+        setParamIf(e.arc.startAngle, a0, turned(e.arc.startAngle, a0));
+        setParamIf(e.arc.endAngle, a1, turned(e.arc.endAngle, a1));
+        setPoint(e.arc.start, ellipseAt(g, a0));
+        setPoint(e.arc.end, ellipseAt(g, a1));
+      }
+      e.quadrants.forEach((q, i) => {
+        if (q !== undefined) setPoint(q, ellipseAt(g, (i * Math.PI) / 2));
+      });
     } else if (m.kind === 'SPLINE' && g.kind === 'SPLINE' && was.kind === 'SPLINE') {
       // Smooth's curvature factor was worked out from the knots and weights mapped.
       if (!sameSplineFrame(g, was)) return false;
@@ -1907,11 +1969,43 @@ class Build {
       case 'SPLINE':
         m = { kind: 'SPLINE', points: g.controlPoints.map((p) => s.point(p.x, p.y)), spline: g };
         break;
+      case 'ELLIPSE':
+        m = { kind: 'ELLIPSE', ellipse: this.#mapEllipse(g, handle) };
+        break;
       default:
         throw new Refused('unsupported', `${g.kind} cannot be constrained yet`);
     }
     this.#mapped.set(handle, { entity, m });
     return m;
+  }
+
+  /**
+   * An ellipse or elliptical arc. One whose foci are within tolerance of its centre is a
+   * circle to PlaneGCS, which keeps an ellipse by its focus: refused, as AutoCAD's ELLIPSE
+   * never draws one (its ratio stays below 1).
+   */
+  #mapEllipse(g: EllipseGeometry, handle: Handle): EllipsePrim {
+    const s = this.#s;
+    const a = Math.hypot(g.majorAxis.x, g.majorAxis.y);
+    if (a * Math.sqrt(Math.max(0, 1 - g.ratio * g.ratio)) <= this.#tol.linear) {
+      throw new Refused('unsupported', `ellipse ${handle} is a circle: its axes are equal`);
+    }
+    const c = s.point(g.center.x, g.center.y);
+    const sweep = ellipseSweep(g);
+    if (sweep === TAU) {
+      const ids = s.ellipse(c, g.majorAxis, g.ratio);
+      this.#radius(ids.radmin);
+      return { type: 'ellipse', ...ids, quadrants: [] };
+    }
+    const { startAngle, endAngle, start, end, ...ids } = s.ellipticalArc(
+      c,
+      g.majorAxis,
+      g.ratio,
+      g.startParam,
+      g.startParam + sweep,
+    );
+    this.#radius(ids.radmin);
+    return { type: 'ellipse', ...ids, arc: { startAngle, endAngle, start, end }, quadrants: [] };
   }
 
   #newLine(p1: number, p2: number): LinePrim {
@@ -1977,6 +2071,17 @@ class Build {
       case 'SPLINE':
         if (ref.point !== 'start' && ref.point !== 'end') throw bad();
         return m.points[splineEndIndex(m.spline, ref.point, ref.entity)]!;
+      case 'ELLIPSE': {
+        const e = m.ellipse;
+        if (ref.point === 'center') return e.center;
+        if (ref.point === 'start' && e.arc) return e.arc.start;
+        if (ref.point === 'end' && e.arc) return e.arc.end;
+        const i = ref.index ?? -1;
+        if (ref.point === 'quadrant' && i >= 0 && i < 4 && Number.isInteger(i)) {
+          return this.#quadrant(e, i);
+        }
+        throw bad();
+      }
       case 'POINT':
         if (ref.point === 'position') return m.point;
         throw bad();
@@ -2019,6 +2124,7 @@ class Build {
     if (m.kind === 'LINE') return m.line;
     if (m.kind === 'CIRCLE') return m.circle;
     if (m.kind === 'ARC') return m.arc;
+    if (m.kind === 'ELLIPSE') return m.ellipse;
     if (m.kind === 'SPLINE') {
       throw new Refused(
         'unsupported',
@@ -2036,8 +2142,16 @@ class Build {
 
   #circular(ref: GeomRef): CirclePrim | ArcPrim {
     const c = this.#curve(this.#curveRef(ref));
-    if (c.type === 'line')
-      throw new Refused('invalid', `${describeRef(ref)} is not a circle or arc`);
+    if (!isRound(c)) throw new Refused('invalid', `${describeRef(ref)} is not a circle or arc`);
+    return c;
+  }
+
+  /** A circle, arc or ellipse, for Concentric. */
+  #centred(ref: GeomRef): CirclePrim | ArcPrim | EllipsePrim {
+    const c = this.#curve(this.#curveRef(ref));
+    if (c.type === 'line') {
+      throw new Refused('invalid', `${describeRef(ref)} is not a circle, arc or ellipse`);
+    }
     return c;
   }
 
@@ -2067,6 +2181,14 @@ class Build {
       throw new Refused('invalid', 'tangent needs a circle or arc');
     }
     const s = this.#s;
+    if (a.type === 'ellipse' || b.type === 'ellipse') {
+      const [line, ellipse] = a.type === 'line' ? [a, b] : [b, a];
+      if (line.type !== 'line' || ellipse.type !== 'ellipse') {
+        throw new Refused('unsupported', 'tangent takes an ellipse with a line only');
+      }
+      s.constrain(ConstraintKind.TangentLineEllipse, [line.id, ellipse.id], tag);
+      return;
+    }
     const ends = (c: Curve) =>
       c.type === 'line' ? [c.p1, c.p2] : c.type === 'arc' ? [c.start, c.end] : [];
     const meet = (arc: ArcPrim, other: Curve) =>
@@ -2104,6 +2226,44 @@ class Build {
       s.constrain(ConstraintKind.PointOnPerpBisector, [arc.mid, chord], INTERNAL_TAG);
     }
     return arc.mid;
+  }
+
+  /**
+   * An end of an ellipse's axis, `i` quadrants round from the major axis's positive end (the
+   * parameter i·π/2), held there by PlaneGCS's internal alignment. An elliptical arc's
+   * quadrant may lie off the arc, as AutoCAD's quadrant osnap never offers it then.
+   */
+  #quadrant(e: EllipsePrim, i: number): number {
+    let q = e.quadrants[i];
+    if (q === undefined) {
+      const s = this.#s;
+      const { x, y } = ellipseAt(this.#ellipseValues(e), (i * Math.PI) / 2);
+      q = s.point(x, y);
+      e.quadrants[i] = q;
+      const kind = [
+        ConstraintKind.EllipseMajorStart,
+        ConstraintKind.EllipseMinorStart,
+        ConstraintKind.EllipseMajorEnd,
+        ConstraintKind.EllipseMinorEnd,
+      ][i]!;
+      s.constrain(kind, [e.id, q], INTERNAL_TAG);
+    }
+    return q;
+  }
+
+  /** An ellipse's solved centre, major axis and ratio (from its focus and minor radius). */
+  #ellipseValues(e: EllipsePrim): { center: Vec2; majorAxis: Vec2; ratio: number } {
+    const s = this.#s;
+    const center = s.pointAt(e.center);
+    const f = s.pointAt(e.focus);
+    const dx = f.x - center.x;
+    const dy = f.y - center.y;
+    const c = Math.hypot(dx, dy);
+    const b = Math.abs(s.value(e.radmin));
+    const a = Math.hypot(b, c);
+    // A focus on the centre leaves the axis's direction to the ellipse as it was drawn.
+    const dir = c > 0 ? { x: dx / c, y: dy / c } : { x: 1, y: 0 };
+    return { center, majorAxis: { x: dir.x * a, y: dir.y * a }, ratio: a > 0 ? b / a : 1 };
   }
 
   /**
@@ -2330,6 +2490,7 @@ class Build {
     const c = this.#curve(ref);
     if (c.type === 'line') return { points: [c.p1, c.p2], params: [] };
     if (c.type === 'circle') return { points: [c.center], params: [c.radius] };
+    if (c.type === 'ellipse') return ellipseParts(c);
     if (m.kind === 'ARC') {
       return { points: [c.center], params: [c.radius, c.startAngle, c.endAngle] };
     }
@@ -2438,6 +2599,20 @@ class Build {
       return same ? undefined : { ...g, ...arc };
     }
     if (m.kind === 'SPLINE' && g.kind === 'SPLINE') return solvedSpline(g, m.points.map(at), lin);
+    if (m.kind === 'ELLIPSE' && g.kind === 'ELLIPSE') {
+      const e = this.#ellipseValues(m.ellipse);
+      const arc = m.ellipse.arc;
+      const startParam = arc ? normalizeAngle(s.value(arc.startAngle)) : g.startParam;
+      const endParam = arc ? normalizeAngle(s.value(arc.endAngle)) : g.endParam;
+      const ang = this.#tol.angular;
+      const same =
+        samePoint(e.center, g.center, lin) &&
+        samePoint(e.majorAxis, g.majorAxis, lin) &&
+        Math.abs(e.ratio - g.ratio) <= ang &&
+        sameAngle(startParam, g.startParam, ang) &&
+        sameAngle(endParam, g.endParam, ang);
+      return same ? undefined : { ...g, ...e, startParam, endParam };
+    }
     if (m.kind === 'LWPOLYLINE' && g.kind === 'LWPOLYLINE') {
       let changed = false;
       const vertices = g.vertices.map((v, i) => {
@@ -2574,7 +2749,10 @@ function sameAngle(a: number, b: number, tol: number): boolean {
 }
 
 /** PlaneGCS's tangency between a line, circle or arc and a circle or arc. */
-function tangent(a: Curve, b: Curve): [ConstraintKind, number[]] {
+function tangent(
+  a: LinePrim | CirclePrim | ArcPrim,
+  b: LinePrim | CirclePrim | ArcPrim,
+): [ConstraintKind, number[]] {
   if (b.type === 'line') return tangent(b, a);
   if (a.type === 'line') {
     return [
@@ -2587,6 +2765,29 @@ function tangent(a: Curve, b: Curve): [ConstraintKind, number[]] {
   return a.type === 'circle'
     ? [ConstraintKind.TangentCA, [a.id, b.id]]
     : [ConstraintKind.TangentCA, [b.id, a.id]];
+}
+
+const isRound = (c: Curve): c is CirclePrim | ArcPrim => c.type === 'circle' || c.type === 'arc';
+
+/** What pins an ellipse down: its centre and focus, its minor radius, an arc's parameters. */
+function ellipseParts(e: EllipsePrim): { points: number[]; params: number[] } {
+  const arc = e.arc ? [e.arc.startAngle, e.arc.endAngle] : [];
+  return { points: [e.center, e.focus], params: [e.radmin, ...arc] };
+}
+
+/** The point at parameter `t` of an ellipse (DXF's: the minor axis 90° counter-clockwise). */
+function ellipseAt(e: { center: Vec2; majorAxis: Vec2; ratio: number }, t: number): Vec2 {
+  const { center: c, majorAxis: a, ratio: r } = e;
+  const cos = Math.cos(t);
+  const sin = Math.sin(t) * r;
+  return { x: c.x + a.x * cos - a.y * sin, y: c.y + a.y * cos + a.x * sin };
+}
+
+/** An ellipse's first focus (on its major axis's positive side), or undefined for a circle. */
+function ellipseFocus(e: { center: Vec2; majorAxis: Vec2; ratio: number }): Vec2 | undefined {
+  const f = Math.sqrt(1 - e.ratio * e.ratio);
+  if (!(f > 0)) return undefined;
+  return { x: e.center.x + e.majorAxis.x * f, y: e.center.y + e.majorAxis.y * f };
 }
 
 function equalRadius(a: CirclePrim | ArcPrim, b: CirclePrim | ArcPrim): [ConstraintKind, number[]] {

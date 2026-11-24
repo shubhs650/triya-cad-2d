@@ -5,6 +5,7 @@ import {
   ACadVersion,
   CadDictionary,
   CadDocument,
+  Ellipse,
   Line,
   LwPolyline,
   LwPolylineVertex,
@@ -31,8 +32,8 @@ import {
 
 const hex = (n: number) => n.toString(16).toUpperCase();
 
-/** Two lines and a polyline with an arc segment. */
-function drawing(): { bytes: Uint8Array; a: string; b: string; pl: string } {
+/** Two lines, a polyline with an arc segment and an ellipse. */
+function drawing(): { bytes: Uint8Array; a: string; b: string; pl: string; el: string } {
   const doc = new CadDocument(ACadVersion.AC1032);
   const a = new Line(new XYZ(0, 0, 0), new XYZ(10, 0, 0));
   const b = new Line(new XYZ(0, 5, 0), new XYZ(10, 8, 0));
@@ -42,12 +43,19 @@ function drawing(): { bytes: Uint8Array; a: string; b: string; pl: string } {
     return o;
   };
   const pl = new LwPolyline([v(0, 20), v(10, 20, 1), v(10, 30), v(0, 30)]);
-  for (const e of [a, b, pl]) doc.entities!.add(e);
+  const el = new Ellipse();
+  el.center = new XYZ(30, 0, 0);
+  el.majorAxisEndPoint = new XYZ(4, 0, 0);
+  el.radiusRatio = 0.5;
+  el.startParameter = 0;
+  el.endParameter = 2 * Math.PI;
+  for (const e of [a, b, pl, el]) doc.entities!.add(e);
   return {
     bytes: writeCadDocument(doc, { format: 'dxf' }),
     a: hex(a.handle),
     b: hex(b.handle),
     pl: hex(pl.handle),
+    el: hex(el.handle),
   };
 }
 
@@ -153,6 +161,31 @@ describe('saving geometric constraints (TRIYA_CONSTRAINTS, DEC-081)', () => {
         hex(dict.handle),
       ],
     ]);
+  });
+
+  it("writes an ellipse's axis end as point 7 with its quadrant (DEC-085) and reads it back", () => {
+    const s = open(source.bytes);
+    const refs: ConstraintRef[] = [
+      { entity: source.el, point: 'quadrant', index: 3 },
+      { entity: source.a, point: 'start' },
+    ];
+    const h = s.constrain('coincident', refs);
+    const saved = s.save();
+    expect(groups(dictionaryOf(saved)!.getEntry(h)).slice(2, 5)).toEqual([
+      [331, source.el],
+      [71, 7],
+      [90, 3],
+    ]);
+    expect(
+      open(saved)
+        .constraints()
+        .map((c) => c.refs),
+    ).toEqual([refs]);
+    // A quadrant past the fourth leaves the record unread.
+    const doc = readCadDocument(saved);
+    const x = (doc.rootDictionary!.get(TRIYA_CONSTRAINTS) as CadDictionary).getEntry(h) as XRecord;
+    x.entries[4]!.value = 4;
+    expect(open(writeCadDocument(doc, { format: 'dxf' })).constraints()).toEqual([]);
   });
 
   it('adds no dictionary to a drawing without constraints', () => {
