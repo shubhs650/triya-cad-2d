@@ -15,7 +15,16 @@
 // a redo swaps back in.
 import type { ChangeSet, PositionedEntity } from '../model/changeset';
 import { invertChangeSet, isEmptyChangeSet } from '../model/changeset';
-import type { Entity } from '../model/types';
+import {
+  isDimensionalConstraint,
+  isGeometricConstraint,
+  type DimensionalConstraintObject,
+  type Entity,
+  type GeometricConstraintObject,
+} from '../model/types';
+
+/** A geometric or dimensional constraint. */
+type Constraint = GeometricConstraintObject | DimensionalConstraintObject;
 import type { Vec2 } from '../geom/types';
 import type { CommandRecord } from './bus';
 
@@ -173,6 +182,7 @@ export class UndoStack {
   #control: UndoControl = 'all';
   #settings: UndoSettings = { auto: true, combineZoomPan: true, combineLayer: true };
   #erased: readonly Entity[] = [];
+  #erasedConstraints: readonly Constraint[] = [];
 
   constructor(options: UndoStackOptions) {
     this.#apply = options.apply;
@@ -218,6 +228,14 @@ export class UndoStack {
   }
 
   /**
+   * The constraints the last erasing command removed with its objects (M9-10): OOPS puts back
+   * those whose objects are all back.
+   */
+  get erasedConstraints(): readonly Constraint[] {
+    return this.#erasedConstraints;
+  }
+
+  /**
    * A finished command's record becomes a step (or joins the open BEgin group). A record whose
    * change sets are all empty is no step (DEC-049). `erases` marks ERASE-like commands, whose
    * removed entities become the OOPS set.
@@ -235,7 +253,10 @@ export class UndoStack {
       readonly view?: 'combine' | 'join';
     } = {},
   ): void {
-    if (options.erases) this.#erased = erasedBy(record.changes);
+    if (options.erases) {
+      this.#erased = erasedBy(record.changes);
+      this.#erasedConstraints = constraintsRemovedBy(record.changes);
+    }
     const changes = record.changes.filter((c) => !isEmptyChangeSet(c));
     if (changes.length === 0 || this.#control === 'none') return;
     const bytes = changes.reduce((n, c) => n + estimateBytes(c), 0);
@@ -609,6 +630,20 @@ function erasedBy(changes: readonly ChangeSet[]): Entity[] {
     for (const a of c.entities?.added ?? []) gone.delete(a.entity.id);
   }
   return [...gone.values()].sort((a, b) => a.index - b.index).map((r) => r.entity);
+}
+
+/** The constraint objects a command removed and did not put back, as they were. */
+function constraintsRemovedBy(changes: readonly ChangeSet[]): Constraint[] {
+  const gone = new Map<string, Constraint>();
+  for (const c of changes) {
+    for (const o of c.objects?.removed ?? []) {
+      if ((isGeometricConstraint(o) || isDimensionalConstraint(o)) && !gone.has(o.handle)) {
+        gone.set(o.handle, o);
+      }
+    }
+    for (const o of c.objects?.added ?? []) gone.delete(o.handle);
+  }
+  return [...gone.values()];
 }
 
 /**

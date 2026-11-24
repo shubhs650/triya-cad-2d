@@ -3,6 +3,7 @@
 // packages/constraints/test/upkeep.test.ts runs the same commands against PlaneGCS.
 import { describe, expect, it } from 'vitest';
 import {
+  APP_VARIABLES,
   DROPS_CONSTRAINTS,
   MOVES_CHANGED_VALUES,
   carriedKind,
@@ -11,7 +12,9 @@ import {
   moveBy,
   mirrorIn,
   netEntityChanges,
+  parameterCopyMode,
   planUpkeep,
+  renameInExpression,
   turnAbout,
   type ChangeSet,
   type ConstraintEditResult,
@@ -26,7 +29,7 @@ import {
 } from '../../src/index';
 import { NO_PARAMETERS } from './solver-stub';
 import { lineGeom } from '../model/fixtures';
-import { setup } from './edit-harness';
+import { setup, type SharedClipboard } from './edit-harness';
 
 const constraint = (
   handle: string,
@@ -76,11 +79,22 @@ interface Asked {
  */
 function drawing(
   answer?: (asked: Asked) => ConstraintEditResult,
-  o: { solver?: 'none' | 'broken'; dimensions?: boolean } = {},
+  o: {
+    solver?: 'none' | 'broken';
+    dimensions?: boolean;
+    /** More constraints (M9-10). */
+    objects?: readonly (GeometricConstraintObject | DimensionalConstraintObject)[];
+    /** The app's system variables (PARAMETERCOPYMODE, ARRAYASSOCIATIVITY). */
+    variables?: Map<string, number>;
+    clipboard?: SharedClipboard;
+    /** What the solver's deleteParameter answers (M9-10). */
+    deleteParameter?: ConstraintSolver['deleteParameter'];
+  } = {},
 ) {
   const asked: Asked[] = [];
   const solver: ConstraintSolver = {
     ...NO_PARAMETERS,
+    ...(o.deleteParameter && { deleteParameter: o.deleteParameter }),
     add: () => {
       throw new Error('not asked');
     },
@@ -131,7 +145,10 @@ function drawing(
               { ...dimension('D2', '30', 'd2', '10'), reference: true },
             ]
           : []),
+        ...(o.objects ?? []),
       ],
+      ...(o.variables && { variables: o.variables }),
+      ...(o.clipboard && { clipboard: o.clipboard }),
       ...(o.solver !== 'none' && {
         constraints:
           o.solver === 'broken'
@@ -410,6 +427,252 @@ describe('copies carry the constraints among the objects copied', () => {
     expect(carriedKind('vertical', mirrorIn({ x: 0, y: 0 }, { x: 1, y: 1 }))).toBe('horizontal');
     expect(carriedKind('parallel', turn(30))).toBe('parallel');
     expect(carriedKind('fix', mirrorIn({ x: 0, y: 0 }, { x: 1, y: 2 }))).toBe('fix');
+  });
+});
+
+describe('the rest of constraint upkeep (M9-10)', () => {
+  /** The dimensional constraints as `name=expression@entities`, the original ones first. */
+  const dims = (d: ReturnType<typeof drawing>) =>
+    [...d.model.objects.values()]
+      .filter(isDimensionalConstraint)
+      .map((c) => `${c.parameter}=${c.expression}@${c.refs.map((r) => r.entity).join(',')}`);
+  /** Line 40's length (d1) and line 30's (width, named by an expression of d1). */
+  const DIMENSIONS = [dimension('D5', '40', 'd1', '10'), dimension('D6', '30', 'width', 'd1')];
+  const copyMode = (mode: number) => new Map([['PARAMETERCOPYMODE', mode]]);
+  /** The copies of lines 30 and 40 (by their places), and their handles. */
+  const copiesOf = (d: ReturnType<typeof drawing>) =>
+    d.space().filter((e) => e.geom.kind === 'LINE' && !['30', '40'].includes(e.handle));
+  const pickBoth = async (d: ReturnType<typeof drawing>) => {
+    await d.bus.pick({ x: 5, y: 0 });
+    await d.bus.pick({ x: 10, y: 5 });
+  };
+
+  it('ARRAY gives each item the constraints among the objects arrayed', async () => {
+    const d = drawing(undefined, { variables: new Map([['ARRAYASSOCIATIVITY', 0]]) });
+    await d.bus.script(['ARRAYRECT']);
+    await pickBoth(d);
+    await d.bus.submit('');
+    await d.bus.script(['COU', '3', '1', '']);
+    expect(d.bus.command).toBeUndefined();
+    const copies = copiesOf(d);
+    expect(copies).toHaveLength(4);
+    const added = d.added();
+    expect(added).toHaveLength(4);
+    expect(added.filter((c) => /:horizontal:/.test(c))).toHaveLength(2);
+    expect(added.filter((c) => /:coincident:/.test(c))).toHaveLength(2);
+    // Every carried constraint names copies only: the polyline's stays its own.
+    const handles = new Set(copies.map((e) => e.handle));
+    for (const c of added) {
+      for (const h of c.split(':')[2]!.split(',')) expect(handles.has(h)).toBe(true);
+    }
+  });
+
+  it('ARRAYPOLAR keeps Horizontal on the items turned level, Vertical on those turned square', async () => {
+    const d = drawing(undefined, { variables: new Map([['ARRAYASSOCIATIVITY', 0]]) });
+    await d.bus.script(['ARRAYPOLAR']);
+    await d.bus.pick({ x: 5, y: 0 });
+    await d.bus.submit('');
+    await d.bus.script(['0,-20', 'I', '4', '']);
+    expect(d.bus.command).toBeUndefined();
+    expect(
+      d
+        .added()
+        .map((c) => c.split(':')[1])
+        .sort(),
+    ).toEqual(['horizontal', 'vertical', 'vertical']);
+    // Items 120° apart cannot stay level: they carry none.
+    const three = drawing(undefined, { variables: new Map([['ARRAYASSOCIATIVITY', 0]]) });
+    await three.bus.script(['ARRAYPOLAR']);
+    await three.bus.pick({ x: 5, y: 0 });
+    await three.bus.submit('');
+    await three.bus.script(['0,-20', 'I', '3', '']);
+    expect(three.added()).toEqual([]);
+  });
+
+  it('an associative array takes its source, and so its constraints, out of the drawing', async () => {
+    const d = drawing(undefined, { variables: new Map([['ARRAYASSOCIATIVITY', 1]]) });
+    await d.bus.script(['ARRAYRECT']);
+    await pickBoth(d);
+    await d.bus.submit('');
+    await d.bus.script(['']);
+    expect(d.byHandle('30')).toBeUndefined();
+    expect(d.constraints()).toEqual(['C3:horizontal:41', 'C4:fix:31']);
+    expect(d.log).toContain('2 geometric constraints removed.');
+  });
+
+  it('grip Copy gives each copy the constraints, and Undo takes the last copy’s back', async () => {
+    const d = drawing();
+    await pickBoth(d);
+    await d.bus.pick({ x: 0, y: 0 }, { grip: 0.5 });
+    await d.bus.script(['', 'C', '0,20', '0,40']);
+    expect(d.added()).toHaveLength(4);
+    await d.bus.script(['U']);
+    expect(d.added()).toHaveLength(2);
+    await d.bus.submit('');
+    expect(d.bus.command).toBeUndefined();
+    const [c30, c40] = copiesOf(d).map((e) => e.handle);
+    expect(d.added()).toEqual([
+      expect.stringMatching(new RegExp(`:horizontal:${c30}$`)),
+      expect.stringMatching(new RegExp(`:coincident:${c30},${c40}$`)),
+    ]);
+  });
+
+  it('PASTECLIP into the same drawing carries the constraints among the objects pasted', async () => {
+    const clipboard: SharedClipboard = {};
+    const d = drawing(undefined, { clipboard, objects: DIMENSIONS });
+    await d.bus.script(['COPYCLIP']);
+    await pickBoth(d);
+    await d.bus.submit('');
+    await d.bus.script(['PASTECLIP', '0,20']);
+    expect(d.bus.command).toBeUndefined();
+    const [c30, c40] = copiesOf(d).map((e) => e.handle);
+    expect(d.added()).toEqual([
+      expect.stringMatching(new RegExp(`:horizontal:${c30}$`)),
+      expect.stringMatching(new RegExp(`:coincident:${c30},${c40}$`)),
+    ]);
+    // Names in use: the copies take the next free ones, their values as constants.
+    expect(dims(d)).toEqual([
+      'd1=10@40,40',
+      'width=d1@30,30',
+      `d2=10@${c40},${c40}`,
+      `d3=10@${c30},${c30}`,
+    ]);
+  });
+
+  it('PASTECLIP into another drawing keeps free names and, under 4, the expressions among them', async () => {
+    for (const [mode, width] of [
+      [1, '10'],
+      [4, 'd2'],
+    ] as const) {
+      const clipboard: SharedClipboard = {};
+      const variables = copyMode(mode);
+      const from = drawing(undefined, { clipboard, variables, objects: DIMENSIONS });
+      const to = drawing(undefined, {
+        clipboard,
+        variables,
+        objects: [dimension('E1', '41', 'd1', '10')],
+      });
+      await from.bus.script(['COPYCLIP']);
+      await pickBoth(from);
+      await from.bus.submit('');
+      await to.bus.script(['PASTECLIP', '0,20']);
+      const [c30, c40] = copiesOf(to).map((e) => e.handle);
+      expect(to.added()).toHaveLength(2);
+      // d1 is the target's own: the copy is renamed; width is free and keeps its name.
+      expect(dims(to)).toEqual([
+        'd1=10@41,41',
+        `d2=10@${c40},${c40}`,
+        `width=${width}@${c30},${c30}`,
+      ]);
+    }
+  });
+
+  it('PARAMETERCOPYMODE 0 copies no constraints, 1 copies values, 4 expressions', async () => {
+    const copy = async (mode: number | undefined, scale?: string) => {
+      const d = drawing(undefined, {
+        objects: DIMENSIONS,
+        ...(mode !== undefined && { variables: copyMode(mode) }),
+      });
+      if (scale) {
+        await d.bus.script(['SCALE']);
+        await pickBoth(d);
+        await d.bus.submit('');
+        await d.bus.script(['0,0', 'C', scale]);
+      } else {
+        await d.bus.script(['COPY']);
+        await pickBoth(d);
+        await d.bus.submit('');
+        await d.bus.script(['0,0', '0,20', '']);
+      }
+      const [c30, c40] = copiesOf(d).map((e) => e.handle);
+      const added = dims(d)
+        .slice(2)
+        .map((x) => x.replace(`@${c40},${c40}`, '@40copy').replace(`@${c30},${c30}`, '@30copy'));
+      return { added, geometric: d.added().length };
+    };
+    expect(await copy(0)).toEqual({ added: [], geometric: 0 });
+    // 1 is the initial value, where the app keeps none.
+    expect(await copy(undefined)).toEqual({
+      added: ['d2=10@40copy', 'd3=10@30copy'],
+      geometric: 2,
+    });
+    expect((await copy(2)).added).toEqual(['d2=10@40copy', 'd3=10@30copy']);
+    expect((await copy(4)).added).toEqual(['d2=10@40copy', 'd3=d2@30copy']);
+    // Scaled copies measure other values: an expression would pull them back, so values.
+    expect((await copy(4, '2')).added).toEqual(['d2=20@40copy', 'd3=20@30copy']);
+  });
+
+  it('OOPS puts back the constraints ERASE removed whose objects are all back', async () => {
+    const d = drawing(undefined, { objects: [dimension('D5', '40', 'd1', '10')] });
+    await d.bus.script(['ERASE']);
+    await d.bus.pick({ x: 10, y: 5 });
+    await d.bus.submit('');
+    expect(d.constraints()).not.toContain('C2:coincident:30,40');
+    expect(dims(d)).toEqual([]);
+    await d.bus.script(['LINE', '0,50', '10,50', '']);
+    await d.bus.script(['OOPS']);
+    expect(d.byHandle('40')).toBeDefined();
+    expect(d.constraints()).toEqual(ORIGINAL);
+    expect(dims(d)).toEqual(['d1=10@40,40']);
+
+    // Line 40 erased, then line 30: OOPS brings 30 back with its Horizontal, but the coincidence
+    // with 40, still erased, stays out.
+    await d.bus.script(['ERASE']);
+    await d.bus.pick({ x: 10, y: 5 });
+    await d.bus.submit('');
+    await d.bus.script(['ERASE']);
+    await d.bus.pick({ x: 5, y: 0 });
+    await d.bus.submit('');
+    await d.bus.script(['OOPS']);
+    expect(d.byHandle('30')).toBeDefined();
+    expect(d.constraints()).toEqual(['C1:horizontal:30', 'C3:horizontal:41', 'C4:fix:31']);
+    // U takes the OOPS back as one step.
+    await d.bus.script(['U']);
+    expect(d.byHandle('30')).toBeUndefined();
+    expect(d.constraints()).toEqual(['C3:horizontal:41', 'C4:fix:31']);
+  });
+
+  it('a dimensional constraint dropped leaves the expressions naming it their values', async () => {
+    const asked: [readonly string[], string][] = [];
+    const d = drawing(undefined, {
+      objects: DIMENSIONS,
+      deleteParameter: (dimensions, name) => {
+        asked.push([dimensions.map((c) => c.parameter), name]);
+        return { ok: true, updated: [], expressions: [{ parameter: 'width', expression: '10' }] };
+      },
+    });
+    await d.bus.script(['ERASE']);
+    await d.bus.pick({ x: 10, y: 5 });
+    await d.bus.submit('');
+    expect(asked).toEqual([[['d1', 'width'], 'd1']]);
+    expect(dims(d)).toEqual(['width=10@30,30']);
+    expect(d.log).toContain('1 dimensional constraint removed.');
+    await d.bus.script(['U']);
+    expect(dims(d).sort()).toEqual(['d1=10@40,40', 'width=d1@30,30']);
+  });
+
+  it('PARAMETERCOPYMODE is a variable the app keeps, 0 to 4', () => {
+    expect(APP_VARIABLES.find((v) => v.name === 'PARAMETERCOPYMODE')).toMatchObject({
+      store: 'app',
+      kind: 'integer',
+      min: 0,
+      max: 4,
+    });
+    expect(parameterCopyMode(4)).toBe(4);
+    expect(parameterCopyMode(7)).toBe(1);
+    expect(parameterCopyMode(undefined)).toBe(1);
+  });
+
+  it('renames the parameters an expression names, never numbers, constants or functions', () => {
+    const names = new Set<string>();
+    const rename = new Map([
+      ['d1', 'd4'],
+      ['e1', 'x'],
+    ]);
+    expect(renameInExpression('d1*2+sin(d10)+1e1+pi/e1 - E', rename, names)).toBe(
+      'd4*2+sin(d10)+1e1+pi/x - E',
+    );
+    expect([...names].sort()).toEqual(['d1', 'd10', 'e1']);
   });
 });
 

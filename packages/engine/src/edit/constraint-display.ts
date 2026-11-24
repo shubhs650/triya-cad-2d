@@ -130,6 +130,14 @@ export function constraintDisplay(
   return { handle: c.handle, form: c.form, entities, label, ...placed.at };
 }
 
+/**
+ * What a dimensional constraint measures on the geometry `lookup` gives (a distance in drawing
+ * units, an angle in degrees); undefined when its references do not resolve.
+ */
+export function measuredValue(c: DimensionalConstraintObject, lookup: Lookup): number | undefined {
+  return shapeOf(c, lookup)?.value;
+}
+
 interface Placed {
   readonly value: number;
   readonly at: Pick<ConstraintDisplay, 'shape' | 'textAt' | 'textAngle'>;

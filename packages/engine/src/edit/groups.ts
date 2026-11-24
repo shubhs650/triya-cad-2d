@@ -13,7 +13,13 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { Group, NonGraphicalObject, SpatialFilter } from '../model/types';
+import {
+  isDimensionalConstraint,
+  isGeometricConstraint,
+  type Group,
+  type NonGraphicalObject,
+  type SpatialFilter,
+} from '../model/types';
 
 const isGroup = (o: NonGraphicalObject | undefined): o is Group => o?.type === 'GROUP';
 
@@ -290,6 +296,13 @@ export function removeCopies(b: ChangeSetBuilder, ids: readonly EntityId[]): voi
   if (gone.size === 0) return;
   for (const o of [...b.objects()]) {
     if (o.type === 'SPATIAL_FILTER' && gone.has((o as SpatialFilter).insert)) {
+      b.removeObject(o.handle);
+    }
+    // The constraints the copies carried (M9-10) go with them.
+    if (
+      (isGeometricConstraint(o) || isDimensionalConstraint(o)) &&
+      o.refs.some((r) => gone.has(r.entity))
+    ) {
       b.removeObject(o.handle);
     }
   }

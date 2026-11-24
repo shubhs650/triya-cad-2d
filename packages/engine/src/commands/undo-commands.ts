@@ -157,7 +157,9 @@ export const MREDO: CommandDef = {
 
 /**
  * OOPS: puts back what the last erasing command removed (ERASE, BLOCK, WBLOCK), whatever ran
- * since, as one new step; what is already back (after U, or a second OOPS) is skipped.
+ * since, as one new step; what is already back (after U, or a second OOPS) is skipped. The
+ * constraints the command removed with the objects come back where their objects all are
+ * (M9-10); one on an object erased since stays out, as it would have gone with that object.
  */
 export const OOPS: CommandDef = {
   name: 'OOPS',
@@ -167,7 +169,18 @@ export const OOPS: CommandDef = {
       (e) => ctx.model.entity(e.id) === undefined && ctx.model.hasBlock(e.owner),
     );
     if (back.length === 0) return ctx.message('Nothing to restore.');
-    ctx.edit((b) => back.forEach((e) => b.restoreEntity(e)));
+    ctx.edit((b) => {
+      back.forEach((e) => b.restoreEntity(e));
+      const there = (h: string) => {
+        const id = ctx.model.ids.idOf(h);
+        return id !== undefined && b.entity(id) !== undefined;
+      };
+      for (const o of ctx.undo.erasedConstraints) {
+        if (b.object(o.handle) === undefined && o.refs.every((r) => there(r.entity))) {
+          b.restoreObject(o);
+        }
+      }
+    });
   },
 };
 
