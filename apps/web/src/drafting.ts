@@ -328,6 +328,7 @@ export interface DraftingState {
   /**
    * The modify commands' options AutoCAD keeps per user (M3-12, `MODIFY_OPTIONS`): OFFSETERASE,
    * OFFSETGAPTYPE, TRIMEXTENDMODE, EDGEMODE, PROJMODE, TRIMMODE, PEDITACCEPT, PARAMETERCOPYMODE,
+   * CCONSTRAINTFORM,
    * TEXTALIGNMODE, TEXTALIGNSPACING and HPDLGMODE, by name.
    */
   readonly modifyOptions: Readonly<Record<string, number>>;
@@ -353,6 +354,8 @@ export const MODIFY_OPTIONS: Readonly<Record<string, { initial: number; max: num
   PEDITACCEPT: { initial: 0, max: 1 },
   // M9-10: PARAMETERCOPYMODE, what copies carry of constraints (1: values, renamed on conflict).
   PARAMETERCOPYMODE: { initial: 1, max: 4 },
+  // M9-03 part 8: CCONSTRAINTFORM, the Form new dimensional constraints take (0: dynamic).
+  CCONSTRAINTFORM: { initial: 0, max: 1 },
   // M4-09 part 3: TEXTALIGN's alignment point (Left) and spacing (Current vertical).
   TEXTALIGNMODE: { initial: 9, max: 11 },
   TEXTALIGNSPACING: { initial: 2, max: 3 },

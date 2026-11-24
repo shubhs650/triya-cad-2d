@@ -37,9 +37,19 @@
 //   reference's link is the link: AutoCAD's hyperlink belongs to the object selected, and a part
 //   of the block has no selection of its own (its own link, if any, is not followed).
 //
-// Not plotted: an image whose bitmap the app has not loaded, which plots its frame only.
+// - Annotational dimensional constraints plot on the Model tab (M9-03 part 8), after the
+//   objects, as the screen draws them (sized by the drawing's DIMVARs, labelled by
+//   CONSTRAINTNAMEFORMAT); dynamic ones never plot (AutoCAD 2024 Help, "About Applying
+//   Dimensional Constraints": dynamic constraints "are not displayed when plotting", annotational
+//   ones "are displayed in plots"). Triya's constraints keep no layer or colour, so they plot
+//   as colour 7 at the default lineweight, continuous, through the table (ours: AutoCAD gives
+//   them the current layer's).
+//
+// Not plotted: an image whose bitmap the app has not loaded, which plots its frame only;
+// constraints in a layout's viewports, as the screen shows them on the Model tab only.
 
 import {
+  constraintDisplays,
   viewportFrame,
   viewportLayers,
   viewportScale,
@@ -60,6 +70,7 @@ import {
 import { expandInsert, expands, insertClips, transformPrimitive } from '../blocks';
 import type { Affine } from '../affine';
 import { imageFrames, withLayers } from '../document-settings';
+import { annotationalSizes, constraintPrimitives } from '../constraint-display';
 import { adjustPixels } from '../image';
 import { createPaint } from '../paint';
 import { drawOrder } from '../style/draw-order';
@@ -205,6 +216,11 @@ export interface PlotSource {
    * annotative objects ANNOALLVISIBLE 0 hides on the Model tab, M6-03): not plotted either.
    */
   readonly hidden?: (e: Entity) => boolean;
+  /**
+   * CONSTRAINTNAMEFORMAT, how annotational constraints are labelled (0 Name, 1 Value, 2 Name and
+   * expression); 2, its initial value, when absent.
+   */
+  readonly constraintNameFormat?: 0 | 1 | 2;
 }
 
 /** What an INSERT hands down for plotting: the display context and the colour it resolved. */
@@ -258,6 +274,13 @@ function paperRgb(c: PrimitiveColor): PlotRgb {
 }
 
 const hex = (c: PlotRgb): string => `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+
+/** `props` with the object's own linetype (Continuous) and a solid fill. */
+const solidOf = (props: PlotProperties): PlotProperties => ({
+  ...props,
+  linetype: { kind: 'object' },
+  fillStyle: 'solid',
+});
 
 const isSortEnts = (o: NonGraphicalObject): o is SortEntsTable => o.type === 'SORTENTSTABLE';
 
@@ -414,6 +437,24 @@ class Plotter {
         const tagged = layer === undefined ? part : { ...part, layer };
         const linked = link ? { ...tagged, link } : tagged;
         out.push(clip ? { ...linked, clip } : linked);
+      }
+    }
+  }
+
+  /** The drawing's annotational constraints, as `out`'s parts (model space only). */
+  constraintParts(out: PlotPart[]): void {
+    const model = this.#model;
+    const displays = constraintDisplays(model, this.#src.constraintNameFormat ?? 2);
+    const annotational = displays.filter((d) => d.form === 'annotational');
+    if (annotational.length === 0) return;
+    const sizes = annotationalSizes(model.header);
+    const object: PlotObject = { color: COLOR_7, lineweight: this.#lwDefault };
+    const props = this.#src.resolver.resolve(object);
+    for (const d of annotational) {
+      for (const prim of constraintPrimitives(d, sizes, 'foreground', this.#tessellate.text)) {
+        const part = this.part(prim, object, props, 'foreground');
+        // Dimension and extension lines plot continuous, as a dimension's text does.
+        if (part) out.push(part.kind === 'stroke' ? { ...part, paint: solidOf(props) } : part);
       }
     }
   }
@@ -718,6 +759,7 @@ export function plotParts(model: DocumentModel, block: Handle, src: PlotSource):
       viewports.push(e);
     plotter.entityParts(e, model, layout ? paper : out);
   }
+  if (block === msp && !src.only) plotter.constraintParts(out);
   if (!layout || msp === undefined) return out;
   // PSLTSCALE (the layout's DXF 70 bit 1, on unless stated).
   const psltscale = ((layout.flags ?? 1) & 1) !== 0;
