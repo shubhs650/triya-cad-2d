@@ -607,6 +607,8 @@ export type CommandInput =
       readonly deferred?: DeferredPick;
       /** The object snap the point was given by and its object, which Infer reads (M9-05 part 7). */
       readonly snap?: Omit<SnappedPoint, 'point'>;
+      /** The tracking paths the point was placed on that Infer reads (M9-05 part 8). */
+      readonly tracks?: readonly Omit<SnappedPoint, 'point'>[];
       /** Ctrl was held: an arc's direction switched (M3-01 part 6), or a grip copy (M3-05). */
       readonly ctrl?: boolean;
       /** The function picked from a grip's hover menu, with `grip` (M3-05 part 2). */
@@ -1010,6 +1012,7 @@ export class EngineSession {
           ...(input.grip !== undefined && { grip: input.grip }),
           ...(input.deferred && { deferred: input.deferred }),
           ...(input.snap && { snap: input.snap }),
+          ...(input.tracks && { tracks: input.tracks }),
           ...(input.ctrl && { ctrl: true }),
           ...(input.gripFunction && { gripFunction: input.gripFunction }),
           ...(input.dragged && { dragged: true }),

@@ -1,7 +1,7 @@
 // Infer Constraints as a command ends (M9-05 part 7; AutoCAD 2024 Help, "About Inferring
 // Geometric Constraints"): while CONSTRAINTINFER is 1 (the status bar's Infer Constraints,
 // Ctrl+Shift+I, the Constraint Settings' "Infer geometric constraints"), the objects the
-// outermost command made take the constraints `inferredConstraints` finds from the points it was
+// outermost command made (and, part 8, those MOVE, COPY, STRETCH, FILLET and CHAMFER edited) take the constraints `inferredConstraints` finds from the points it was
 // given by object snaps, in the command's own undo step, silently as AutoCAD applies them, their
 // bars shown as an applied constraint's are. The app keeps the variable per user, as AutoCAD keeps
 // it in the registry (initially 0), and tells each drawing's engine (the session's `sysvar`
@@ -13,6 +13,7 @@ import type { CommandContext } from './command';
 import { applyGeometricConstraints } from './autoconstrain';
 import { toleranceOf } from './constraints';
 import {
+  INFERS_EDITED,
   INFERS_ITSELF,
   INFERS_NOTHING,
   inferredConstraints,
@@ -20,21 +21,32 @@ import {
   type SnappedPoint,
 } from '../edit/infer-constraints';
 
-/** The objects `changes` added that are still there, in the order they were made. */
-function addedBy(ctx: CommandContext, changes: readonly ChangeSet[]): Entity[] {
-  const out: Entity[] = [];
+/**
+ * The objects `changes` added that are still there, in the order they were made, and those it
+ * edited (part 8: MOVE, STRETCH, FILLET's and CHAMFER's trimmed objects), as they are now.
+ */
+function touchedBy(
+  ctx: CommandContext,
+  changes: readonly ChangeSet[],
+): { added: Entity[]; edited: Entity[] } {
+  const added: Entity[] = [];
+  const edited: Entity[] = [];
   const seen = new Set<EntityId>();
+  const take = (id: EntityId, into: Entity[]) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const now = ctx.model.entity(id);
+    if (!now || now.owner !== ctx.space || !takesConstraints(now)) return;
+    if (ctx.model.tables.layers.get(now.layer)?.locked === true) return;
+    into.push(now);
+  };
   for (const cs of changes) {
-    for (const { entity } of cs.entities?.added ?? []) {
-      if (seen.has(entity.id)) continue;
-      seen.add(entity.id);
-      const now = ctx.model.entity(entity.id);
-      if (!now || now.owner !== ctx.space || !takesConstraints(now)) continue;
-      if (ctx.model.tables.layers.get(now.layer)?.locked === true) continue;
-      out.push(now);
-    }
+    for (const { entity } of cs.entities?.added ?? []) take(entity.id, added);
   }
-  return out;
+  for (const cs of changes) {
+    for (const { after } of cs.entities?.updated ?? []) take(after.id, edited);
+  }
+  return { added, edited };
 }
 
 /**
@@ -49,16 +61,18 @@ export async function inferConstraints(
 ): Promise<void> {
   if (INFERS_NOTHING.has(name)) return;
   if (snaps.length === 0 && !INFERS_ITSELF.has(name)) return;
-  const added = addedBy(ctx, changes);
-  if (added.length === 0) return;
+  const { added, edited: all } = touchedBy(ctx, changes);
+  const edited = INFERS_EDITED.has(name) ? all : [];
+  if (added.length === 0 && edited.length === 0) return;
   const candidates = inferredConstraints({
     command: name,
     added,
+    edited,
     snaps,
     entity: (id) => ctx.model.entity(id),
     // The drawing's tolerance over the objects made and those snapped to.
     tol: toleranceOf(ctx, [
-      ...added.map((e) => ({ entity: e.handle })),
+      ...[...added, ...edited].map((e) => ({ entity: e.handle })),
       ...snaps.flatMap((s) => {
         const target = ctx.model.entity(s.id);
         return target ? [{ entity: target.handle }] : [];

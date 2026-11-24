@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   inferredConstraints,
+  trackedSnaps,
   isGeometricConstraint,
   toleranceForSize,
   type ConstraintSolver,
@@ -41,11 +42,14 @@ function stub() {
   return { solver, asked };
 }
 
-/** Line 30 (0,0)-(10,0) and circle 31 at (50,0) r 5, with CONSTRAINTINFER `infer`. */
-function drawing(infer = 1) {
+/**
+ * Line 30 (0,0)-(10,0) and circle 31 at (50,0) r 5, with CONSTRAINTINFER `infer`, and `extra`
+ * objects from handle 40 on.
+ */
+function drawing(infer = 1, extra: readonly Entity['geom'][] = []) {
   const { solver, asked } = stub();
   const requests: ViewRequest[] = [];
-  const s = setup([], {
+  const s = setup(extra as Entity['geom'][], {
     requests,
     constraints: () => Promise.resolve(solver),
   });
@@ -57,7 +61,29 @@ function drawing(infer = 1) {
   const snap = (x: number, y: number, mode: OsnapMode, h: string) =>
     s.bus.pick({ x, y }, { snap: { mode, id: idOf(h) } });
   const made = () => s.space().filter((e) => !['30', '31'].includes(e.handle));
-  return { ...s, asked, requests, constraints, snap, made };
+  /** A click on tracking paths (PARallel, OTRACK) from the objects with the handles given. */
+  const track = (
+    x: number,
+    y: number,
+    tracks: readonly {
+      mode: OsnapMode;
+      h: string;
+      from: [number, number];
+      along?: 'horizontal' | 'vertical';
+    }[],
+  ) =>
+    s.bus.pick(
+      { x, y },
+      {
+        tracks: tracks.map((t) => ({
+          mode: t.mode,
+          id: idOf(t.h),
+          from: { x: t.from[0], y: t.from[1] },
+          ...(t.along && { along: t.along }),
+        })),
+      },
+    );
+  return { ...s, asked, requests, constraints, snap, made, track };
 }
 
 const summary = (cs: readonly GeometricConstraintObject[]) =>
@@ -188,6 +214,173 @@ describe('Infer Constraints (M9-05 part 7)', () => {
       await d.bus.submit('');
       expect(d.constraints()).toEqual([]);
     }
+  });
+});
+
+/** Line 40 (20,20)-(30,20), away from line 30 and circle 31. */
+const LINE_40: Entity['geom'] = { kind: 'LINE', start: { x: 20, y: 20 }, end: { x: 30, y: 20 } };
+
+describe('Infer Constraints: tracking, edits, fillets and chamfers (M9-05 part 8)', () => {
+  it('PARallel: a line ended on the Parallel path from line 30 is Parallel to it', async () => {
+    const d = drawing();
+    await d.bus.script(['LINE', '20,20']);
+    await d.track(30, 20, [{ mode: 'PAR', h: '30', from: [5, 0] }]);
+    await d.bus.submit('');
+    const [a] = d.made();
+    expect(summary(d.constraints())).toEqual([`parallel 30 ${a!.handle}`]);
+
+    // A point that is not on the path (the canvas said so, the geometry did not) infers nothing.
+    const off = drawing();
+    await off.bus.script(['LINE', '20,20']);
+    await off.track(30, 25, [{ mode: 'PAR', h: '30', from: [5, 0] }]);
+    await off.bus.submit('');
+    expect(off.constraints()).toEqual([]);
+  });
+
+  it("MOVE by a line's END onto line 30's END: Coincident ends", async () => {
+    const d = drawing(1, [LINE_40]);
+    await d.bus.script(['MOVE', '25,20', '']);
+    await d.snap(20, 20, 'END', '40');
+    await d.snap(10, 0, 'END', '30');
+    expect(d.byHandle('40')!.geom).toMatchObject({ start: { x: 10, y: 0 }, end: { x: 20, y: 0 } });
+    expect(summary(d.constraints())).toEqual(['coincident 30.end 40.start']);
+    // One undo step puts the line back and takes the constraint away.
+    await d.bus.script(['U']);
+    expect(d.byHandle('40')!.geom).toMatchObject({ start: { x: 20, y: 20 } });
+    expect(d.constraints()).toEqual([]);
+  });
+
+  it('MOVE with a typed base point and destination infers nothing', async () => {
+    const d = drawing(1, [LINE_40]);
+    await d.bus.script(['MOVE', '25,20', '', '20,20', '10,0']);
+    expect(d.constraints()).toEqual([]);
+    expect(d.asked).toEqual([]);
+  });
+
+  it('COPY tracked horizontally from an END: the copy and that point Horizontal', async () => {
+    const d = drawing(1, [LINE_40]);
+    await d.bus.script(['COPY', '25,20', '']);
+    await d.snap(20, 20, 'END', '40');
+    await d.track(40, 0, [{ mode: 'END', h: '30', from: [10, 0], along: 'horizontal' }]);
+    await d.bus.submit('');
+    const [, copy] = d.made();
+    expect(copy!.geom).toMatchObject({ start: { x: 40, y: 0 } });
+    expect(summary(d.constraints())).toEqual([`horizontal 30.end ${copy!.handle}.start`]);
+  });
+
+  it('STRETCH tracked vertically from a CENter: that point and the end stretched Vertical', async () => {
+    const d = drawing(1, [LINE_40]);
+    await d.bus.script(['STRETCH', 'C', '29,19', '31,21', '']);
+    await d.snap(30, 20, 'END', '40');
+    await d.track(50, 20, [{ mode: 'CEN', h: '31', from: [50, 0], along: 'vertical' }]);
+    expect(d.byHandle('40')!.geom).toMatchObject({ end: { x: 50, y: 20 } });
+    expect(summary(d.constraints())).toEqual(['vertical 31.center 40.end']);
+  });
+
+  it("LINE's points tracked horizontally infer nothing (the Help names MOVE, COPY, STRETCH)", async () => {
+    const d = drawing();
+    await d.bus.script(['LINE', '20,20']);
+    await d.track(40, 0, [{ mode: 'END', h: '30', from: [10, 0], along: 'horizontal' }]);
+    await d.bus.submit('');
+    expect(d.constraints()).toEqual([]);
+  });
+
+  it("FILLET: the arc's ends Coincident with the trimmed lines' and Tangent to both", async () => {
+    const d = drawing(1, [{ kind: 'LINE', start: { x: 12, y: 2 }, end: { x: 12, y: 10 } }]);
+    await d.bus.script(['FILLET', 'R', '1']);
+    await d.bus.pick({ x: 5, y: 0 });
+    await d.bus.pick({ x: 12, y: 6 });
+    const arc = d.space().find((e) => e.geom.kind === 'ARC')!;
+    const got = summary(d.constraints());
+    expect([...got].sort()).toEqual(
+      [
+        `coincident 30.end ${arc.handle}.start`,
+        `tangent 30 ${arc.handle}`,
+        `coincident 40.start ${arc.handle}.end`,
+        `tangent 40 ${arc.handle}`,
+      ].sort(),
+    );
+    // Each Coincident comes before the Tangent it makes solvable at the shared end.
+    expect(got.indexOf(`coincident 30.end ${arc.handle}.start`)).toBeLessThan(
+      got.indexOf(`tangent 30 ${arc.handle}`),
+    );
+  });
+
+  it("CHAMFER: the new line's ends Coincident with the trimmed lines'", async () => {
+    const d = drawing(1, [{ kind: 'LINE', start: { x: 12, y: 2 }, end: { x: 12, y: 10 } }]);
+    await d.bus.script(['CHAMFER', 'D', '1', '1']);
+    await d.bus.pick({ x: 5, y: 0 });
+    await d.bus.pick({ x: 12, y: 6 });
+    const chamfer = d.made().find((e) => e.handle !== '40')!;
+    expect(summary(d.constraints()).sort()).toEqual(
+      [
+        `coincident 30.end ${chamfer.handle}.start`,
+        `coincident 40.start ${chamfer.handle}.end`,
+      ].sort(),
+    );
+  });
+
+  it('a sharp corner (FILLET radius 0) holds the two ends together', async () => {
+    const d = drawing(1, [{ kind: 'LINE', start: { x: 12, y: 2 }, end: { x: 12, y: 10 } }]);
+    await d.bus.script(['FILLET', 'R', '0']);
+    await d.bus.pick({ x: 5, y: 0 });
+    await d.bus.pick({ x: 12, y: 6 });
+    expect(summary(d.constraints())).toEqual(['coincident 30.end 40.start']);
+  });
+
+  it('nothing with CONSTRAINTINFER 0', async () => {
+    const d = drawing(0, [{ kind: 'LINE', start: { x: 12, y: 2 }, end: { x: 12, y: 10 } }]);
+    await d.bus.script(['FILLET', 'R', '1']);
+    await d.bus.pick({ x: 5, y: 0 });
+    await d.bus.pick({ x: 12, y: 6 });
+    expect(d.constraints()).toEqual([]);
+  });
+});
+
+describe('trackedSnaps (M9-05 part 8)', () => {
+  const from = { x: 10, y: 0 };
+  const point = { kind: 'point', point: from, mode: 'END', id: 7 } as const;
+  const parallel = { kind: 'parallel', point: from, direction: { x: 1, y: 0 }, id: 8 } as const;
+
+  it('PARallel paths and horizontal or vertical OTRACK paths, with their objects', () => {
+    expect(
+      trackedSnaps({
+        point: { x: 40, y: 0 },
+        paths: [
+          { from, angle: Math.PI, label: 'Endpoint', source: point },
+          { from: { x: 0, y: 0 }, angle: 0, label: 'Parallel', source: parallel },
+          { from, angle: (3 * Math.PI) / 2, label: 'Endpoint', source: point },
+        ],
+      }),
+    ).toEqual([
+      { mode: 'END', id: 7, from, along: 'horizontal' },
+      { mode: 'PAR', id: 8, from },
+      { mode: 'END', id: 7, from, along: 'vertical' },
+    ]);
+  });
+
+  it('nothing from polar paths, Extension, slanted or unknown objects', () => {
+    expect(
+      trackedSnaps({
+        point: { x: 40, y: 0 },
+        paths: [
+          { from, angle: 0, label: 'Polar', polar: true },
+          {
+            from,
+            angle: 0,
+            label: 'Extension',
+            source: { kind: 'extension', point: from, direction: { x: 1, y: 0 } },
+          },
+          { from, angle: Math.PI / 4, label: 'Endpoint', source: point },
+          {
+            from,
+            angle: 0,
+            label: 'Endpoint',
+            source: { kind: 'point', point: from, mode: 'END' },
+          },
+        ],
+      }),
+    ).toEqual([]);
   });
 });
 

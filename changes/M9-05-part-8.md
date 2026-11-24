@@ -1,0 +1,1 @@
+- M9-05 part 8 (#677): Infer Constraints follows tracking (Parallel from the PARallel path; Horizontal or Vertical when MOVE, COPY or STRETCH track from an acquired point), constrains what MOVE, COPY and STRETCH edit to the snapped object, and holds FILLET's arc and CHAMFER's line to the objects they trim.

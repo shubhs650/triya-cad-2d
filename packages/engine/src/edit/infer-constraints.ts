@@ -28,14 +28,30 @@
 // moved to meet it, and the command then adds them through the solver, skipping what it refuses
 // as redundant (`applyGeometricConstraints`).
 //
-// Left for later (M9-05 part 8): PARallel (a tracking path, which the canvas does not tell the
-// engine), MOVE, COPY's and STRETCH's edited objects, FILLET and CHAMFER, and Horizontal and
-// Vertical from object tracking.
+// Part 8 adds the rest of the Help:
+// - PARallel: a point placed on the Parallel tracking path makes the new object's straight part
+//   ending there Parallel to the line acquired (the canvas tells which, `trackedSnaps`).
+// - MOVE, COPY and STRETCH: "coincident, perpendicular, parallel, or tangent constraints between
+//   the edited object and the snapped object", where the edited object's base point is one of its
+//   constraint points. A move takes every point of an object along with the base point, so an
+//   edited object has a constraint point at the snapped destination exactly when it had one at the
+//   base point: the rule for new objects (its point at the snap) is that condition. Moved, copied
+//   or stretched "from a valid constraint point while object tracking horizontally or vertically
+//   along a valid constraint point on another object", the two points are Horizontal (Vertical).
+//   The Help names those three commands for it, so LINE's tracked points take nothing.
+// - FILLET: the new arc Tangent to, and its ends Coincident with, the trimmed or extended
+//   objects; CHAMFER: the new line's ends Coincident with them. A sharp corner (radius or
+//   distance 0) makes no new object: the two ends meeting there are Coincident (decision: the
+//   Help names only the new arc and line; a drafter expects the corner held). With Trim off the
+//   objects are not edited, so nothing is inferred, as the Help ties both to "the trimmed or
+//   extended pair of lines".
+// Grip edits are not commands the Help names, so they infer nothing.
 import type { Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
 import { cross, distance, dot, normalize, sub } from '../geom/vec';
 import { polylineSegment, polylineSegmentCount } from '../geom/eval';
 import type { OsnapMode } from '../input/osnap';
+import type { TrackLock } from '../input/track';
 import type { EntityId } from '../model/entity-ids';
 import type {
   ConstraintCurveRef,
@@ -54,6 +70,13 @@ export interface SnappedPoint {
   readonly point: Vec2;
   readonly mode: OsnapMode;
   readonly id: EntityId;
+  /**
+   * A point on a tracking path rather than at the snap (part 8): where on object `id` the path
+   * comes from, the line paused on for PARallel or the acquired point for object snap tracking.
+   */
+  readonly from?: Vec2;
+  /** Object snap tracking from `from` (its snap `mode`) along a horizontal or vertical path. */
+  readonly along?: 'horizontal' | 'vertical';
 }
 
 /** A constraint to try, as AUTOCONSTRAIN's candidates are. */
@@ -79,7 +102,41 @@ export const INFERS_NOTHING: ReadonlySet<string> = new Set([
 ]);
 
 /** The commands that infer constraints of their own, whatever was snapped. */
-export const INFERS_ITSELF: ReadonlySet<string> = new Set(['LINE', 'RECTANG']);
+export const INFERS_ITSELF: ReadonlySet<string> = new Set(['CHAMFER', 'FILLET', 'LINE', 'RECTANG']);
+
+/** The commands whose edited objects (not only those made) take constraints (part 8). */
+export const INFERS_EDITED: ReadonlySet<string> = new Set([
+  'CHAMFER',
+  'COPY',
+  'FILLET',
+  'MOVE',
+  'STRETCH',
+]);
+
+/** The commands whose points tracked horizontally or vertically infer Horizontal or Vertical. */
+const TRACKS_ALIGNED: ReadonlySet<string> = new Set(['COPY', 'MOVE', 'STRETCH']);
+
+/**
+ * The tracking paths a point was placed on that infer constraints (part 8): PARallel's from the
+ * line acquired, and object snap tracking's horizontal and vertical paths from an acquired point
+ * (in the world's axes: a turned UCS's are not Horizontal and Vertical's).
+ */
+export function trackedSnaps(lock: TrackLock): Omit<SnappedPoint, 'point'>[] {
+  const out: Omit<SnappedPoint, 'point'>[] = [];
+  for (const path of lock.paths) {
+    const q = path.source;
+    if (!q || q.kind === 'extension' || q.id === undefined) continue;
+    if (q.kind === 'parallel') {
+      out.push({ mode: 'PAR', id: q.id, from: q.point });
+      continue;
+    }
+    const quarter = path.angle / (Math.PI / 2);
+    if (Math.abs(quarter - Math.round(quarter)) > 1e-9) continue;
+    const along = Math.round(quarter) % 2 === 0 ? 'horizontal' : 'vertical';
+    out.push({ mode: q.mode, id: q.id, from: q.point, along });
+  }
+  return out;
+}
 
 /** The objects the constraint model maps (`ConstraintModel`). */
 const MAPPED = new Set(['LINE', 'ARC', 'CIRCLE', 'LWPOLYLINE', 'ELLIPSE', 'SPLINE', 'POINT']);
@@ -217,6 +274,8 @@ export const constraintKey = (c: InferredConstraint): string =>
 export function inferredConstraints(o: {
   readonly command: string;
   readonly added: readonly Entity[];
+  /** What the command edited (MOVE, COPY, STRETCH, FILLET, CHAMFER: `INFERS_EDITED`). */
+  readonly edited?: readonly Entity[];
   readonly snaps: readonly SnappedPoint[];
   readonly entity: (id: EntityId) => Entity | undefined;
   readonly tol: Tolerance;
@@ -224,6 +283,8 @@ export function inferredConstraints(o: {
   const { tol } = o;
   if (INFERS_NOTHING.has(o.command)) return [];
   const added = o.added.filter(takesConstraints);
+  const edited = INFERS_EDITED.has(o.command) ? (o.edited ?? []).filter(takesConstraints) : [];
+  const objects = [...added, ...edited];
   const out: InferredConstraint[] = [];
   const seen = new Set<string>();
   const push = (c: InferredConstraint) => {
@@ -236,6 +297,10 @@ export function inferredConstraints(o: {
   for (const s of o.snaps) {
     const target = o.entity(s.id);
     if (!target || !takesConstraints(target)) continue;
+    if (s.from) {
+      for (const c of tracked(s, target, objects, o.command, tol)) push(c);
+      continue;
+    }
     const points = POINT_SNAPS[s.mode];
     const onTarget = points
       ? constraintPointsOf(target).find(
@@ -247,7 +312,7 @@ export function inferredConstraints(o: {
         ? curveAt(target, s.point, tol)
         : undefined;
     if (!onTarget && !curve) continue;
-    for (const e of added) {
+    for (const e of objects) {
       if (e.handle === target.handle) continue;
       const at = pointAt(e, s.point, tol);
       if (!at) continue;
@@ -292,6 +357,10 @@ export function inferredConstraints(o: {
     if (lines.length >= 2) join(lines.at(-1)!, lines[0]!);
   }
 
+  if (o.command === 'FILLET' || o.command === 'CHAMFER') {
+    for (const c of corners(added, edited, o.command === 'FILLET', tol)) push(c);
+  }
+
   if (o.command === 'RECTANG') {
     for (const e of added) {
       const g = e.geom;
@@ -305,6 +374,121 @@ export function inferredConstraints(o: {
       if (t02 && t02.sin <= tol.angular) push({ kind: 'parallel', refs: [seg(0), seg(2)] });
       if (t13 && t13.sin <= tol.angular) push({ kind: 'parallel', refs: [seg(1), seg(3)] });
       if (t01 && t01.cos <= tol.angular) push({ kind: 'perpendicular', refs: [seg(0), seg(1)] });
+    }
+  }
+  return out;
+}
+
+/**
+ * What a point on a tracking path infers (part 8): on PARallel's, the straight parts of the
+ * objects ending there Parallel to the line acquired; on object snap tracking's horizontal or
+ * vertical path (MOVE, COPY, STRETCH), their point there Horizontal or Vertical with the point
+ * acquired.
+ */
+function tracked(
+  s: SnappedPoint,
+  target: Entity,
+  objects: readonly Entity[],
+  command: string,
+  tol: Tolerance,
+): InferredConstraint[] {
+  const out: InferredConstraint[] = [];
+  const from = s.from!;
+  if (s.mode === 'PAR') {
+    const line = curveAt(target, from, tol);
+    if (!line || line.shape.kind !== 'line') return [];
+    for (const e of objects) {
+      if (e.handle === target.handle) continue;
+      const at = pointAt(e, s.point, tol);
+      if (!at) continue;
+      for (const l of straightAt(e, at.ref)) {
+        const t = turn(line.shape, l.shape);
+        if (t && t.sin <= tol.angular) out.push({ kind: 'parallel', refs: [line.ref, l.ref] });
+      }
+    }
+    return out;
+  }
+  const points = POINT_SNAPS[s.mode];
+  if (!s.along || !points || !TRACKS_ALIGNED.has(command)) return [];
+  const onTarget = constraintPointsOf(target).find(
+    (c) => points.includes(c.ref.point) && distance(c.at, from) <= tol.linear,
+  );
+  if (!onTarget) return [];
+  const off = s.along === 'horizontal' ? s.point.y - from.y : s.point.x - from.x;
+  if (Math.abs(off) > tol.linear) return [];
+  for (const e of objects) {
+    if (e.handle === target.handle) continue;
+    const at = pointAt(e, s.point, tol);
+    if (at) out.push({ kind: s.along, refs: [onTarget.ref, at.ref] });
+  }
+  return out;
+}
+
+/** The ends of `e` (a line's, an arc's, a polyline's vertices), where a corner joins it. */
+const endsOf = (e: Entity): ConstraintPoint[] =>
+  constraintPointsOf(e).filter((c) => ['start', 'end', 'vertex'].includes(c.ref.point));
+
+/** Whether two circles (arcs) touch, inside or out, within `tol`. */
+function roundsTouch(a: Shape, b: Shape, tol: Tolerance): boolean {
+  if (a.kind !== 'round' || b.kind !== 'round') return false;
+  const d = distance(a.center, b.center);
+  return (
+    Math.abs(d - (a.radius + b.radius)) <= tol.linear ||
+    Math.abs(d - Math.abs(a.radius - b.radius)) <= tol.linear
+  );
+}
+
+/**
+ * FILLET's and CHAMFER's constraints (part 8): the new arc's (line's) ends Coincident with the
+ * ends of the objects trimmed or extended to it, and a fillet's arc Tangent to them; with no new
+ * object (a sharp corner), the edited objects' ends meeting Coincident.
+ */
+function corners(
+  added: readonly Entity[],
+  edited: readonly Entity[],
+  fillet: boolean,
+  tol: Tolerance,
+): InferredConstraint[] {
+  const out: InferredConstraint[] = [];
+  const meet = (a: Entity, b: Entity) =>
+    endsOf(a).flatMap((pa) =>
+      endsOf(b)
+        .filter((pb) => distance(pa.at, pb.at) <= tol.linear)
+        .map((pb) => [pa, pb] as const),
+    );
+  if (added.length === 0) {
+    for (let i = 0; i < edited.length; i++) {
+      for (let j = i + 1; j < edited.length; j++) {
+        for (const [pa, pb] of meet(edited[i]!, edited[j]!)) {
+          out.push({ kind: 'coincident', refs: [pa.ref, pb.ref] });
+        }
+      }
+    }
+    return out;
+  }
+  for (const n of added) {
+    const g = n.geom;
+    const arc: Shape | undefined =
+      fillet && g.kind === 'ARC'
+        ? { kind: 'round', center: g.center, radius: g.radius }
+        : undefined;
+    for (const e of edited) {
+      for (const [pe, pn] of meet(e, n)) {
+        out.push({ kind: 'coincident', refs: [pe.ref, pn.ref] });
+        if (!arc) continue;
+        for (const l of straightAt(e, pe.ref)) {
+          if (touches(l.shape, arc, tol)) {
+            out.push({ kind: 'tangent', refs: [l.ref, { entity: n.handle }] });
+          }
+        }
+        const eg = e.geom;
+        if (
+          (eg.kind === 'ARC' || eg.kind === 'CIRCLE') &&
+          roundsTouch({ kind: 'round', center: eg.center, radius: eg.radius }, arc, tol)
+        ) {
+          out.push({ kind: 'tangent', refs: [{ entity: e.handle }, { entity: n.handle }] });
+        }
+      }
     }
   }
   return out;
