@@ -1,1 +1,1 @@
-- M9-05 part 4 (#TBD): constraint bar icons answer the pointer (claimed; in progress).
+- M9-05 part 4 (#668): constraint bar icons answer the cursor: resting on an icon (or a Coincident square) at `Command:` highlights the constraint's objects and frames its icons; a right-click opens the icon's shortcut menu (Delete, Hide, Hide All Constraints, Constraint Bar Settings...), and the Delete key on an icon deletes its constraint as one undo step.
