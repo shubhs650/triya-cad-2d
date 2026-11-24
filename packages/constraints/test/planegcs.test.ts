@@ -207,6 +207,38 @@ describe('PlaneGCS sketch', () => {
     s.dispose();
   });
 
+  it("solves Triya's spline-end curvature constraints (M9-02 part 2)", async () => {
+    const s = await sketch();
+    // A quadratic Bezier's end: curvature 1/2 * cross / |d1|^3, made 1/10 by moving its third point.
+    const q0 = s.point(0, 10);
+    const q1 = s.point(-2, 10);
+    const q2 = s.point(-6, 13);
+    s.fix(q0);
+    s.fix(q1);
+    const radius = s.param(10, 'fixed');
+    s.constrain(
+      ConstraintKind.SplineEndCurvatureArc,
+      [q0, q1, q2, radius, s.param(0.5, 'fixed')],
+      1,
+    );
+    expect(s.solve()).toBe(SolveStatus.Success);
+    const p = s.pointAt(q2);
+    close((0.5 * (-2 * (p.y - 10))) / 8, 0.1, 1e-8);
+    // Another end at the same point: leaving it, the curve turns the other way as much.
+    const r1 = s.point(2, 10);
+    const r2 = s.point(5, 9);
+    s.fix(r1);
+    s.constrain(
+      ConstraintKind.SplineEndCurvatureMatch,
+      [q0, q1, q2, q0, r1, r2, s.param(0.5, 'fixed'), s.param(2 / 3, 'fixed')],
+      2,
+    );
+    expect(s.solve()).toBe(SolveStatus.Success);
+    const r = s.pointAt(r2);
+    close(((2 / 3) * (2 * (r.y - 10))) / 8, -0.1, 1e-8);
+    s.dispose();
+  });
+
   it('refuses ids that are not in the sketch', async () => {
     const s = await sketch();
     const a = s.point(0, 0);

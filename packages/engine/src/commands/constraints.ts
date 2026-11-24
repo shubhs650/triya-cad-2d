@@ -5,18 +5,19 @@
 //
 // Prompts from AutoCAD 2024 Help ("GEOMCONSTRAINT (Command)", "GCHORIZONTAL", "GCVERTICAL",
 // "GCPERPENDICULAR", "GCPARALLEL", "GCTANGENT", "GCCOINCIDENT", "GCCONCENTRIC", "GCCOLLINEAR",
-// "GCSYMMETRIC", "GCEQUAL", "GCFIX"). A point pick takes the constraint point of the object under
-// the cursor nearest the pick (endpoint, midpoint, center, vertex); an object pick takes a line,
-// circle or arc whole, or the polyline segment picked.
+// "GCSYMMETRIC", "GCEQUAL", "GCFIX", "GCSMOOTH"). A point pick takes the constraint point of the
+// object under the cursor nearest the pick (endpoint, midpoint, center, vertex); an object pick
+// takes a line, circle or arc whole, or the polyline segment picked; GCSMOOTH's picks take the
+// end of the curve nearest the pick (M9-02 part 2).
 //
-// Left out here: GCSMOOTH (Smooth needs splines in the solver, M9-02 part 2; GEOMCONSTRAINT's
-// SMooth says so), GCCOINCIDENT's Autoconstrain (AUTOCONSTRAIN is not built), the constraint bars
+// Left out here: GCCOINCIDENT's Autoconstrain (AUTOCONSTRAIN is not built), the constraint bars
 // that show a constraint once applied, and Infer (later parts of M9-05).
 import { toleranceFor } from './modify/offset';
 import type { CommandContext, CommandDef, CommandGenerator } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import {
   constraintCurveAt,
+  constraintEndAt,
   constraintPointAt,
   constraintPointsOf,
   parameterObjects,
@@ -343,12 +344,43 @@ async function* fix(ctx: CommandContext): CommandGenerator {
   }
 }
 
-const SMOOTH_UNSUPPORTED = 'Smooth needs a spline, which constraints do not support yet.';
+const INVALID_SPLINE = 'Invalid selection. Select an open spline.';
+const INVALID_CURVE = 'Invalid selection. Select a spline, line, arc or open polyline.';
 
-function constraintFlow(
+/** A curve's end, picked as GCSMOOTH picks it: the end nearest the pick. */
+async function* endPick(
   ctx: CommandContext,
-  kind: Exclude<GeometricConstraintKind, 'smooth'>,
-): CommandGenerator {
+  message: string,
+  spline: boolean,
+): Sub<ConstraintPointRef | undefined> {
+  for (;;) {
+    const a = yield ctx.prompt.point({ message, pickbox: true });
+    if (a.kind !== 'point') return undefined;
+    const e = await entityAt(ctx, a.point);
+    if (!e) continue;
+    const end = constraintEndAt(e, a.point);
+    if (!end || (spline && e.geom.kind !== 'SPLINE')) {
+      ctx.message(spline ? INVALID_SPLINE : INVALID_CURVE);
+    } else if (locked(ctx, e)) ctx.message(LOCKED);
+    else return end.ref;
+  }
+}
+
+/**
+ * Smooth: a spline, then the curve it runs on from (a spline, line, arc or polyline). The ends
+ * nearest the picks are joined with G2 continuity, the spline adjusting.
+ */
+async function* smooth(ctx: CommandContext): CommandGenerator {
+  for (;;) {
+    const a = yield* endPick(ctx, 'Select first spline curve', true);
+    if (!a) return;
+    const b = yield* endPick(ctx, 'Select second curve', false);
+    if (!b) return;
+    if (await apply(ctx, 'smooth', [a, b])) return;
+  }
+}
+
+function constraintFlow(ctx: CommandContext, kind: GeometricConstraintKind): CommandGenerator {
   switch (kind) {
     case 'horizontal':
     case 'vertical':
@@ -362,6 +394,8 @@ function constraintFlow(
       return symmetric(ctx);
     case 'fix':
       return fix(ctx);
+    case 'smooth':
+      return smooth(ctx);
     default:
       return twoObjects(ctx, kind);
   }
@@ -400,18 +434,16 @@ export function geomconstraintCommand(): CommandDef {
       const kind = GEOMETRIC_CONSTRAINT_KINDS.find((k) => KEYWORDS[k] === a.keyword);
       if (!kind) return;
       last = kind;
-      if (kind === 'smooth') ctx.message(SMOOTH_UNSUPPORTED);
-      else yield* constraintFlow(ctx, kind);
+      yield* constraintFlow(ctx, kind);
     },
   };
 }
 
-/** GCHORIZONTAL … GCFIX: one constraint each. GCSMOOTH waits for splines in the solver. */
-export const GEOMETRIC_CONSTRAINT_COMMANDS: readonly CommandDef[] =
-  GEOMETRIC_CONSTRAINT_KINDS.filter(
-    (k): k is Exclude<GeometricConstraintKind, 'smooth'> => k !== 'smooth',
-  ).map((kind) => ({
+/** GCHORIZONTAL … GCFIX: one constraint each. */
+export const GEOMETRIC_CONSTRAINT_COMMANDS: readonly CommandDef[] = GEOMETRIC_CONSTRAINT_KINDS.map(
+  (kind) => ({
     name: `GC${kind.toUpperCase()}`,
     solvesConstraints: true,
     run: (ctx: CommandContext) => constraintFlow(ctx, kind),
-  }));
+  }),
+);

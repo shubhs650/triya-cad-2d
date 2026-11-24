@@ -7,7 +7,8 @@
 // from them. Each parameter is an unknown the solver may change, fixed (a Fix constraint or
 // a driving dimension's value) or driven (a reference dimension's value, which the solver
 // computes). Constraints carry a caller-chosen tag (>= 1), which is what diagnose() reports
-// conflicting and redundant constraints by.
+// conflicting and redundant constraints by. Two constraints are Triya's own, written here on
+// PlaneGCS's Constraint interface: a spline end's curvature, for Smooth (M9-02 part 2).
 #include <deque>
 #include <vector>
 
@@ -66,7 +67,145 @@ enum ConstraintCode
     MidpointOnLine = 33,     // line, line (first's midpoint on the second)
     P2PAngle = 34,           // point, point, param
     PointOnPerpBisector = 35,// point, line
+    SplineEndCurvatureArc = 36,   // point, point, point, param, param (Triya's, below)
+    SplineEndCurvatureMatch = 37, // point x6, param, param (Triya's, below)
 };
+
+// Smooth (AutoCAD's G2 continuity, M9-02 part 2) needs a spline end's curvature, which PlaneGCS
+// has no constraint for. A clamped NURBS's end is its first control point q0, its tangent there
+// runs to q1, and its signed curvature, travelling away from the end, is
+//     k = c * cross(q1 - q0, q2 - q1) / |q1 - q0|^3
+// with c = (p - 1) / p * (u[p+1] - u[p]) / (u[p+2] - u[p]) * w0 * w2 / w1^2 for degree p, knots u
+// and weights w counted from that end (the caller works c out; it is a fixed parameter here).
+// Both constraints below are written in units of length, k * |q1 - q0|^2, as PlaneGCS's own
+// point and line constraints are, so its convergence test means the same for them.
+
+// The spline end's curvature equals 1 / radius: coef * cross / |d1| - |d1|^2 / radius = 0, where
+// coef is c times the sign of the arc's turn (+1 counter-clockwise) as the spline leaves it.
+// pvec: q0x q0y q1x q1y q2x q2y radius coef.
+class EndCurvatureArc: public GCS::Constraint
+{
+public:
+    EndCurvatureArc(GCS::Point& q0, GCS::Point& q1, GCS::Point& q2, double* radius, double* coef)
+    {
+        for (GCS::Point* q : {&q0, &q1, &q2}) {
+            pvec.push_back(q->x);
+            pvec.push_back(q->y);
+        }
+        pvec.push_back(radius);
+        pvec.push_back(coef);
+        origpvec = pvec;
+        rescale();
+    }
+
+private:
+    void errorgrad(double* err, double* grad, double* param) override
+    {
+        GCS::DeriVector2 q0(GCS::Point(pvec[0], pvec[1]), param);
+        GCS::DeriVector2 q1(GCS::Point(pvec[2], pvec[3]), param);
+        GCS::DeriVector2 q2(GCS::Point(pvec[4], pvec[5]), param);
+        const double r = *pvec[6];
+        const double dr = param == pvec[6] ? 1.0 : 0.0;
+        const double coef = *pvec[7];
+        const double dcoef = param == pvec[7] ? 1.0 : 0.0;
+        GCS::DeriVector2 d1 = q1.subtr(q0);
+        GCS::DeriVector2 d2 = q2.subtr(q1);
+        double dcr = 0.0;
+        double da = 0.0;
+        const double cr = d1.crossProdZ(d2, dcr);
+        const double a = d1.length(da);
+        if (a == 0.0 || r == 0.0) {
+            if (err) {
+                *err = 0.0;
+            }
+            if (grad) {
+                *grad = 0.0;
+            }
+            return;
+        }
+        if (err) {
+            *err = coef * cr / a - a * a / r;
+        }
+        if (grad) {
+            *grad = dcoef * cr / a + coef * (dcr * a - cr * da) / (a * a)
+                - (2.0 * a * da * r - a * a * dr) / (r * r);
+        }
+    }
+};
+
+// Two spline ends at one point, each curvature taken travelling away from it, turn opposite
+// ways by the same amount: cA * crossA / |dA| + cB * crossB * |dA|^2 / |dB|^3 = 0.
+// pvec: the q0, q1, q2 of A, then of B (x and y each), cA, cB.
+class EndCurvatureMatch: public GCS::Constraint
+{
+public:
+    EndCurvatureMatch(
+        GCS::Point& a0,
+        GCS::Point& a1,
+        GCS::Point& a2,
+        GCS::Point& b0,
+        GCS::Point& b1,
+        GCS::Point& b2,
+        double* ca,
+        double* cb
+    )
+    {
+        for (GCS::Point* q : {&a0, &a1, &a2, &b0, &b1, &b2}) {
+            pvec.push_back(q->x);
+            pvec.push_back(q->y);
+        }
+        pvec.push_back(ca);
+        pvec.push_back(cb);
+        origpvec = pvec;
+        rescale();
+    }
+
+private:
+    void errorgrad(double* err, double* grad, double* param) override
+    {
+        auto at = [&](int i) { return GCS::DeriVector2(GCS::Point(pvec[2 * i], pvec[2 * i + 1]), param); };
+        const double ca = *pvec[12];
+        const double dca = param == pvec[12] ? 1.0 : 0.0;
+        const double cb = *pvec[13];
+        const double dcb = param == pvec[13] ? 1.0 : 0.0;
+        GCS::DeriVector2 da1 = at(1).subtr(at(0));
+        GCS::DeriVector2 da2 = at(2).subtr(at(1));
+        GCS::DeriVector2 db1 = at(4).subtr(at(3));
+        GCS::DeriVector2 db2 = at(5).subtr(at(4));
+        double dcra = 0.0;
+        double dcrb = 0.0;
+        double dla = 0.0;
+        double dlb = 0.0;
+        const double cra = da1.crossProdZ(da2, dcra);
+        const double crb = db1.crossProdZ(db2, dcrb);
+        const double a = da1.length(dla);
+        const double b = db1.length(dlb);
+        if (a == 0.0 || b == 0.0) {
+            if (err) {
+                *err = 0.0;
+            }
+            if (grad) {
+                *grad = 0.0;
+            }
+            return;
+        }
+        const double b3 = b * b * b;
+        if (err) {
+            *err = ca * cra / a + cb * crb * a * a / b3;
+        }
+        if (grad) {
+            *grad = dca * cra / a + ca * (dcra * a - cra * dla) / (a * a) + dcb * crb * a * a / b3
+                + cb * (dcrb * a * a / b3 + 2.0 * crb * a * dla / b3 - 3.0 * crb * a * a * dlb / (b3 * b));
+        }
+    }
+};
+
+int addOwn(GCS::System& sys, GCS::Constraint* c, int tag, bool driving)
+{
+    c->setTag(tag);
+    c->setDriving(driving);
+    return sys.addConstraint(c);
+}
 
 class Sketch
 {
@@ -227,6 +366,15 @@ public:
                 return sys.addConstraintP2PAngle(P(0), P(1), V(2), tag, driving);
             case PointOnPerpBisector:
                 return sys.addConstraintPointOnPerpBisector(P(0), L(1), tag, driving);
+            case SplineEndCurvatureArc:
+                return addOwn(sys, new EndCurvatureArc(P(0), P(1), P(2), V(3), V(4)), tag, driving);
+            case SplineEndCurvatureMatch:
+                return addOwn(
+                    sys,
+                    new EndCurvatureMatch(P(0), P(1), P(2), P(3), P(4), P(5), V(6), V(7)),
+                    tag,
+                    driving
+                );
             default:
                 return -1;
         }

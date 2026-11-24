@@ -7,6 +7,7 @@
 // a constraint point is a valid point of an object (endpoint, midpoint, center, insertion
 // point), and the one nearest the cursor is taken; a polyline segment is picked as its own
 // object.
+import { ccwSweep } from '../geom/angle';
 import { closestPoint } from '../geom/closest';
 import { polylineSegment, polylineSegmentCount } from '../geom/eval';
 import { distance, midpoint } from '../geom/vec';
@@ -260,8 +261,10 @@ export interface ConstraintPoint {
 }
 
 /**
- * The points of `e` a constraint can take, as ConstraintModel maps them; none for an entity it
- * does not map (ellipses, splines, blocks, text…).
+ * The points of `e` a constraint can take, as ConstraintModel maps them (AutoCAD's: a line's
+ * ends and midpoint, an arc's centre, ends and midpoint, a polyline's vertices and its
+ * segments' midpoints and arc centres, an open spline's ends); none for an entity it does not
+ * map (ellipses, blocks, text…).
  */
 export function constraintPointsOf(e: Entity): ConstraintPoint[] {
   const g = e.geom;
@@ -284,8 +287,14 @@ export function constraintPointsOf(e: Entity): ConstraintPoint[] {
         { ref: { entity, point: 'center' }, at: g.center },
         { ref: { entity, point: 'start' }, at: on(g.startAngle) },
         { ref: { entity, point: 'end' }, at: on(g.endAngle) },
+        {
+          ref: { entity, point: 'mid' },
+          at: on(g.startAngle + ccwSweep(g.startAngle, g.endAngle) / 2),
+        },
       ];
     }
+    case 'SPLINE':
+      return splineEnds(e);
     case 'POINT':
       return [{ ref: { entity, point: 'position' }, at: g.position }];
     case 'LWPOLYLINE': {
@@ -295,10 +304,18 @@ export function constraintPointsOf(e: Entity): ConstraintPoint[] {
       }));
       for (let index = 0; index < polylineSegmentCount(g); index++) {
         const s = polylineSegment(g, index);
+        if ('line' in s) {
+          out.push({ ref: { entity, point: 'mid', index }, at: midpoint(s.line.a, s.line.b) });
+          continue;
+        }
+        const { center, radius, startAngle, sweep } = s.arc;
+        const t = startAngle + sweep / 2;
         out.push(
-          'line' in s
-            ? { ref: { entity, point: 'mid', index }, at: midpoint(s.line.a, s.line.b) }
-            : { ref: { entity, point: 'center', index }, at: s.arc.center },
+          { ref: { entity, point: 'center', index }, at: center },
+          {
+            ref: { entity, point: 'mid', index },
+            at: { x: center.x + radius * Math.cos(t), y: center.y + radius * Math.sin(t) },
+          },
         );
       }
       return out;
@@ -306,6 +323,57 @@ export function constraintPointsOf(e: Entity): ConstraintPoint[] {
     default:
       return [];
   }
+}
+
+/**
+ * An open spline's start and end, the points a constraint takes on it: its first and last
+ * control points, where the curve begins and ends when its knots are clamped there.
+ */
+function splineEnds(e: Entity): ConstraintPoint[] {
+  const g = e.geom;
+  if (g.kind !== 'SPLINE' || g.closed || g.periodic) return [];
+  const c = g.controlPoints;
+  const k = g.knots;
+  if (c.length < 2 || k.length !== c.length + g.degree + 1) return [];
+  const eps = 1e-9 * Math.max(1, Math.abs(k[k.length - 1]! - k[0]!));
+  const clamped = (us: readonly number[]) => us.every((u) => Math.abs(u - us[0]!) <= eps);
+  const out: ConstraintPoint[] = [];
+  if (clamped(k.slice(0, g.degree + 1))) {
+    out.push({ ref: { entity: e.handle, point: 'start' }, at: c[0]! });
+  }
+  if (clamped(k.slice(k.length - g.degree - 1))) {
+    out.push({ ref: { entity: e.handle, point: 'end' }, at: c[c.length - 1]! });
+  }
+  return out;
+}
+
+/**
+ * The end of a curve nearest `p`, as GCSMOOTH picks it ("Selects an endpoint of a curve"): a
+ * line's, an arc's, an open polyline's or an open spline's start or end; undefined for
+ * anything else.
+ */
+export function constraintEndAt(e: Entity, p: Vec2): ConstraintPoint | undefined {
+  const g = e.geom;
+  const ends =
+    g.kind === 'LINE' ||
+    g.kind === 'ARC' ||
+    g.kind === 'SPLINE' ||
+    (g.kind === 'LWPOLYLINE' && !g.closed)
+      ? constraintPointsOf(e).filter((c) => c.ref.point === 'start' || c.ref.point === 'end')
+      : [];
+  if (g.kind === 'LWPOLYLINE' && g.vertices.length >= 2) {
+    const v = g.vertices;
+    ends.push(
+      { ref: { entity: e.handle, point: 'start' }, at: { x: v[0]!.x, y: v[0]!.y } },
+      {
+        ref: { entity: e.handle, point: 'end' },
+        at: { x: v[v.length - 1]!.x, y: v[v.length - 1]!.y },
+      },
+    );
+  }
+  let best: ConstraintPoint | undefined;
+  for (const c of ends) if (!best || distance(c.at, p) < distance(best.at, p)) best = c;
+  return best;
 }
 
 /** The constraint point of `e` nearest `p`, AutoCAD's pick; undefined when it has none. */
@@ -331,6 +399,9 @@ export function constraintCurveAt(
     case 'CIRCLE':
     case 'ARC':
       return { entity: e.handle };
+    case 'SPLINE':
+      // Whole, for Fix; the solver says which other constraints cannot take a spline.
+      return splineEnds(e).length ? { entity: e.handle } : undefined;
     case 'LWPOLYLINE': {
       const n = polylineSegmentCount(g);
       if (n === 0) return undefined;

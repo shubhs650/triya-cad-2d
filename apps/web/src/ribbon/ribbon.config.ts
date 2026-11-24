@@ -610,8 +610,8 @@ const ANNOTATE: RibbonTab = {
 };
 
 /**
- * Parametric (M9-05, UI_SPEC §2): the Geometric panel's twelve constraints, in AutoCAD's order.
- * Smooth is greyed out until the solver takes splines (M9-02 part 2). The Dimensional panel
+ * Parametric (M9-05, UI_SPEC §2): the Geometric panel's twelve constraints, in AutoCAD's order
+ * (Smooth with M9-02 part 2). The Dimensional panel
  * (M9-03 part 3): Linear (with Horizontal and Vertical), Aligned, Radius, Diameter, Angular;
  * Convert greyed out until DIMCONSTRAINT converts dimensions; Show Dynamic Constraints (M9-03
  * part 4); Show/Hide, DCDISPLAY (M9-03 part 7). The Manage panel: Parameters Manager (M9-03
@@ -636,10 +636,7 @@ const PARAMETRIC: RibbonTab = {
         cmd('gc-horizontal', 'Horizontal', 'gc-horizontal', 'GCHORIZONTAL', ICON),
         cmd('gc-vertical', 'Vertical', 'gc-vertical', 'GCVERTICAL', ICON),
         cmd('gc-tangent', 'Tangent', 'gc-tangent', 'GCTANGENT', ICON),
-        off(
-          cmd('gc-smooth', 'Smooth', 'gc-smooth', 'GEOMCONSTRAINT', ICON, ['SMooth']),
-          'Smooth needs spline constraints, which come later',
-        ),
+        cmd('gc-smooth', 'Smooth', 'gc-smooth', 'GCSMOOTH', ICON),
         cmd('gc-symmetric', 'Symmetric', 'gc-symmetric', 'GCSYMMETRIC', ICON),
         cmd('gc-equal', 'Equal', 'gc-equal', 'GCEQUAL', ICON),
       ],

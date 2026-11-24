@@ -325,7 +325,8 @@ function entityOf(ref: GeomRef, lookup: Lookup): Entity {
     kind !== 'CIRCLE' &&
     kind !== 'ARC' &&
     kind !== 'POINT' &&
-    kind !== 'LWPOLYLINE'
+    kind !== 'LWPOLYLINE' &&
+    kind !== 'SPLINE'
   ) {
     throw new MeasureError('unsupported', `${kind} cannot be constrained yet`);
   }
@@ -354,6 +355,19 @@ export function resolvePoint(ref: GeomRef, lookup: Lookup): Vec2 {
       if (ref.point === 'center') return g.center;
       if (ref.point === 'start') return at(g.startAngle);
       if (ref.point === 'end') return at(g.endAngle);
+      if (ref.point === 'mid') return at(g.startAngle + ccwSweep(g.startAngle, g.endAngle) / 2);
+      throw bad();
+    }
+    case 'SPLINE': {
+      // An open, clamped spline's ends are its first and last control points (model.ts).
+      const c = g.controlPoints;
+      const k = g.knots;
+      const eps = 1e-9 * Math.max(1, Math.abs(k[k.length - 1]! - k[0]!));
+      const clamped = (knots: readonly number[]) =>
+        knots.every((u) => Math.abs(u - knots[0]!) <= eps);
+      if (g.closed || g.periodic || !c.length) throw bad();
+      if (ref.point === 'start' && clamped(k.slice(0, g.degree + 1))) return c[0]!;
+      if (ref.point === 'end' && clamped(k.slice(k.length - g.degree - 1))) return c[c.length - 1]!;
       throw bad();
     }
     case 'POINT':
@@ -369,6 +383,11 @@ export function resolvePoint(ref: GeomRef, lookup: Lookup): Vec2 {
         const p = v[i]!;
         const q = v[(i + 1) % v.length]!;
         if (ref.point === 'mid' && p.bulge === 0) return mid(p, q);
+        if (ref.point === 'mid') {
+          const a = bulgeArc(p, q, p.bulge);
+          const t = a.startAngle + a.sweep / 2;
+          return { x: a.center.x + a.radius * Math.cos(t), y: a.center.y + a.radius * Math.sin(t) };
+        }
         if (ref.point === 'center' && p.bulge !== 0) return bulgeArc(p, q, p.bulge).center;
       }
       throw bad();

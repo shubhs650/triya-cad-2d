@@ -179,6 +179,7 @@ describe('palette search', () => {
       'GCHORIZONTAL',
       'GCPARALLEL',
       'GCPERPENDICULAR',
+      'GCSMOOTH',
       'GCSYMMETRIC',
       'GCTANGENT',
       'GCVERTICAL',
