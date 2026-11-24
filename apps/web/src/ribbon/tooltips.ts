@@ -239,6 +239,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'dc-diameter': 'Holds the diameter of a circle or arc at a value.',
   'dc-angular': 'Holds the angle between two lines, of an arc, or at three points at a value.',
   'dc-convert': 'Turns an associative dimension into a dimensional constraint.',
+  'dc-show-dynamic':
+    'Shows or hides the dynamic constraints; hidden ones show while their objects are selected.',
   // View
   zoom: 'Enlarges or reduces the view of the drawing.',
   'zoom-extents': 'Zooms to show every object in the drawing.',

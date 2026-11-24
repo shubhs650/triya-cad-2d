@@ -165,7 +165,14 @@ import {
 } from '../drafting';
 import { DEFAULT_CANVAS, type CanvasColours } from '../preferences';
 import { heldOverrides, withOverrides } from '../temp-overrides';
-import { crosshairCursor, foregroundOn, interfaceColours, type InterfaceColours } from './colours';
+import {
+  CONSTRAINT_COLOR,
+  crosshairCursor,
+  foregroundOn,
+  interfaceColours,
+  isDarkColor,
+  type InterfaceColours,
+} from './colours';
 import { tooltipStyle } from '../tooltip-appearance';
 import {
   ACQUIRE_MS,
@@ -1483,6 +1490,9 @@ export class CanvasController {
       before.tpy !== state.tpy ||
       before.annoAllVisible !== state.annoAllVisible ||
       before.fieldDisplay !== state.fieldDisplay ||
+      before.dynConstraints !== state.dynConstraints ||
+      before.dynConstraintMode !== state.dynConstraintMode ||
+      before.constraintNameFormat !== state.constraintNameFormat ||
       before.layLockFade !== state.layLockFade ||
       before.xFade !== state.xFade ||
       before.lwDefault !== state.lwDefault ||
@@ -2395,6 +2405,14 @@ export class CanvasController {
     return {
       background,
       foreground: foregroundOn(background),
+      // Dimensional constraints (M9-03 part 4): Show Dynamic Constraints, DYNCONSTRAINTMODE and
+      // CONSTRAINTNAMEFORMAT; dynamic ones in a blue that reads on the background.
+      constraints: {
+        dynamic: d.dynConstraints,
+        showSelected: d.dynConstraintMode,
+        nameFormat: d.constraintNameFormat,
+        color: isDarkColor(background) ? CONSTRAINT_COLOR.dark : CONSTRAINT_COLOR.light,
+      },
       // A layout's viewports show model space's UCS icon (M3-06 part 8).
       ...(this.#layout && { layoutBackground: c.surround, viewportUcsIcons: true }),
       ...shared,

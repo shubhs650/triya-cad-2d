@@ -656,6 +656,15 @@ const PARAMETRIC: RibbonTab = {
         cmd('dc-radius', 'Radius', 'dim-radius', 'DCRADIUS', SECONDARY),
         cmd('dc-diameter', 'Diameter', 'dim-diameter', 'DCDIAMETER', SECONDARY),
         cmd('dc-angular', 'Angular', 'dim-angular', 'DCANGULAR', SECONDARY),
+        {
+          ...toggle(
+            'dc-show-dynamic',
+            'Show Dynamic Constraints',
+            'eye',
+            'drafting:dynConstraints',
+          ),
+          sizes: SECONDARY,
+        },
         off(
           cmd('dc-convert', 'Convert', 'dim-linear', 'DIMCONSTRAINT', SECONDARY),
           'Converting a dimension to a constraint comes later',

@@ -305,6 +305,7 @@ jobs:
         run: |
           echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
           echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
       - id: pw-cache
         uses: actions/cache@v4
         with:
@@ -321,6 +322,11 @@ jobs:
         with:
           path: ~/.cache/pw-apt
           key: pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          # Another build of the same runner image (ImageVersion 20261116.133.1 and .376.1 ran side by
+          # side on 2026-11-24) restores the latest packages saved for its OS: dpkg installs them, or
+          # the script falls back to apt. Without this a new build missed the cache, and apt from a
+          # slow mirror ran the job into its time limit (runs 45307386010, 45311774597).
+          restore-keys: pw-apt-${{ steps.pw.outputs.os }}-
       - name: Install browser system dependencies
         run: bash scripts/ci-browser-deps.sh
       - run: pnpm test:fidelity --shard=${{ matrix.shard }}/3
@@ -389,6 +395,7 @@ jobs:
         run: |
           echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
           echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
       - id: pw-cache
         uses: actions/cache@v4
         with:
@@ -405,6 +412,11 @@ jobs:
         with:
           path: ~/.cache/pw-apt
           key: pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          # Another build of the same runner image (ImageVersion 20261116.133.1 and .376.1 ran side by
+          # side on 2026-11-24) restores the latest packages saved for its OS: dpkg installs them, or
+          # the script falls back to apt. Without this a new build missed the cache, and apt from a
+          # slow mirror ran the job into its time limit (runs 45307386010, 45311774597).
+          restore-keys: pw-apt-${{ steps.pw.outputs.os }}-
       - name: Install browser system dependencies
         run: bash scripts/ci-browser-deps.sh
       - run: pnpm build
@@ -431,6 +443,7 @@ jobs:
         with:
           path: ~/.cache/pw-apt-firefox-webkit
           key: pw-apt-firefox-webkit-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          restore-keys: pw-apt-firefox-webkit-${{ steps.pw.outputs.os }}-
       - name: Install Firefox and WebKit system dependencies
         if: ${{ !cancelled() }}
         run: bash scripts/ci-browser-deps.sh firefox webkit
@@ -504,6 +517,7 @@ jobs:
         run: |
           echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
           echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
       - id: pw-cache
         uses: actions/cache@v4
         with:
@@ -520,6 +534,11 @@ jobs:
         with:
           path: ~/.cache/pw-apt
           key: pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          # Another build of the same runner image (ImageVersion 20261116.133.1 and .376.1 ran side by
+          # side on 2026-11-24) restores the latest packages saved for its OS: dpkg installs them, or
+          # the script falls back to apt. Without this a new build missed the cache, and apt from a
+          # slow mirror ran the job into its time limit (runs 45307386010, 45311774597).
+          restore-keys: pw-apt-${{ steps.pw.outputs.os }}-
       - name: Install browser system dependencies
         run: bash scripts/ci-browser-deps.sh
       - run: pnpm build

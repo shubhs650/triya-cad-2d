@@ -139,6 +139,13 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   { id: 'drafting:groupBox', label: 'Group Bounding Box on/off', group: 'Drafting', keys: [] },
   // AutoCAD's Snap to Underlays button (Insert > Reference) has none either (M5-04 part 20).
   { id: 'drafting:underlaySnap', label: 'Snap to Underlays on/off', group: 'Drafting', keys: [] },
+  // AutoCAD's Show Dynamic Constraints button (Parametric > Dimensional) has none (M9-03 part 4).
+  {
+    id: 'drafting:dynConstraints',
+    label: 'Show Dynamic Constraints on/off',
+    group: 'Drafting',
+    keys: [],
+  },
   // AutoCAD's temporary override keys (M3-06 part 5): each has a left-hand and a right-hand key.
   ...(
     [

@@ -31,6 +31,8 @@
 // both first, then to the renderer (the order `SpatialIndex.apply` already requires).
 
 import {
+  constraintDisplays,
+  type ConstraintDisplay,
   annotationHidden,
   applyPoint,
   PDFFRAME,
@@ -131,6 +133,12 @@ import {
   type PointStyle,
 } from './point-style';
 import { columnCounter, type TextContext } from './text';
+import {
+  annotationalSizes,
+  constraintPrimitives,
+  DYNAMIC_CONSTRAINT_PX,
+  sizesAt,
+} from './constraint-display';
 import type { PatternLibrary } from '@triya/hatch';
 import type { TextFonts } from '@triya/text';
 import {
@@ -684,6 +692,8 @@ export class Canvas2DRenderer implements Renderer {
   #transient: readonly RenderPrimitive[] = [];
   /** The entities drawn selected (M2-03). */
   #highlight: ReadonlySet<EntityId> = new Set();
+  /** The drawing's dimensional constraints as they show (M9-03 part 4), until a change. */
+  #constraints: readonly ConstraintDisplay[] | undefined;
   /**
    * What a command drags (M2-06 part 2): cached entries drawn through `m`, and the stretched
    * objects' entries tessellated from their stretched geometry.
@@ -843,6 +853,8 @@ export class Canvas2DRenderer implements Renderer {
     const lwDefault = this.#style.lineweightDefault;
     const allVisible = this.#style.annotationAllVisible !== false;
     this.#style = style;
+    // CONSTRAINTNAMEFORMAT may have changed the constraints' text.
+    this.#constraints = undefined;
     // ANNOALLVISIBLE turned (M6-03): the annotative objects it hides or shows are cached again.
     if (this.#modelTab && (style.annotationAllVisible !== false) !== allVisible) this.#cacheBlock();
     // LWDEFAULT changed (M5-08 part 3): Default lineweights are resolved with the paint, at
@@ -1392,6 +1404,9 @@ export class Canvas2DRenderer implements Renderer {
     }
     // Grips sit on the objects' points, which the change may have moved.
     if (this.#grips) this.#transientDirty = true;
+    // Dimensional constraints follow their objects, values and the drawing's units; a drawing
+    // without any is looked at again only when its objects change.
+    if (cs.objects || cs.header || this.#constraints?.length) this.#constraints = undefined;
     for (const r of e?.removed ?? []) this.#forget(r.entity);
     for (const a of e?.added ?? []) this.#cacheIfShown(a.entity);
     for (const u of e?.updated ?? []) {
@@ -2209,11 +2224,43 @@ export class Canvas2DRenderer implements Renderer {
       reduced,
       annotation === undefined ? view : { ...view, linetypeScale: annotation },
     );
+    if (this.#modelTab) this.#drawConstraints(ctx, view);
     // While a viewport is current its model space's objects are selected, drawn through it.
     const overlay = this.#overlayFrame(ctx, view);
     this.#drawHighlight(ctx, overlay);
     if (this.#activeViewport()) ctx.restore();
     this.#askForPages();
+  }
+
+  /**
+   * The dimensional constraints on the Model tab (M9-03 part 4): dynamic ones the same size on
+   * screen at any zoom, in their own colour, unless hidden (then shown while an object they
+   * constrain is selected, under DYNCONSTRAINTMODE 1); annotational ones sized by the drawing's
+   * DIMVARs, as dimensions. Not plotted: plots draw entities only.
+   */
+  #drawConstraints(ctx: Canvas2D, view: DrawFrame): void {
+    const look = this.#style.constraints;
+    this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
+    if (this.#constraints.length === 0) return;
+    const showDynamic = look?.dynamic !== false;
+    const showSelected = look?.showSelected !== false;
+    const selected = (d: ConstraintDisplay) =>
+      d.entities.some((h) => {
+        const e = this.#model.entityByHandle(h);
+        return e !== undefined && this.#highlight.has(e.id);
+      });
+    const dynamic = sizesAt(DYNAMIC_CONSTRAINT_PX, view.scale);
+    const annotational = annotationalSizes(this.#model.header);
+    const prims: RenderPrimitive[] = [];
+    for (const d of this.#constraints) {
+      if (d.form === 'annotational') {
+        prims.push(...constraintPrimitives(d, annotational, 'foreground', this.#tessellate.text));
+      } else if (showDynamic || (showSelected && selected(d))) {
+        const color = look?.color ?? 'foreground';
+        prims.push(...constraintPrimitives(d, dynamic, color, this.#tessellate.text));
+      }
+    }
+    this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);
   }
 
   /**
