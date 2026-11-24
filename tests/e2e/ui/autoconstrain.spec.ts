@@ -89,9 +89,10 @@ test('Auto Constrain squares up a rectangle as the Constraint Settings say', asy
     'true',
   );
   await expect(dialog.getByRole('checkbox', { name: 'Smooth (G2)' })).toBeChecked();
+  // Infer (CONSTRAINTINFER, M9-05 part 7) is off at first.
   await expect(
     dialog.getByRole('checkbox', { name: 'Infer geometric constraints' }),
-  ).toBeDisabled();
+  ).not.toBeChecked();
   await shot('1-geometric-tab.png');
   await dialog.getByRole('tab', { name: 'Dimensional' }).click();
   await expect(dialog.getByLabel('Dimension name format:')).toHaveValue('2');

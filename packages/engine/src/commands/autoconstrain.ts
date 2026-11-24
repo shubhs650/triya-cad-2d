@@ -37,6 +37,7 @@ import type { Handle } from '../model/handle';
 import type {
   ConstraintRef,
   Entity,
+  GeometricConstraintKind,
   GeometricConstraintObject,
   ParameterObject,
 } from '../model/types';
@@ -90,25 +91,19 @@ const sameRefs = (a: readonly ConstraintRef[], b: readonly ConstraintRef[]) => {
 };
 
 /**
- * Applies the constraints `settings` finds among `ids`, one at a time, skipping what the solver
- * refuses: one edit, one undo step. Objects on locked layers are left out, as a pick of one is.
+ * Adds `candidates` through the solver one at a time, skipping one the drawing already has and
+ * what the solver refuses (redundant, or more than the geometry takes): one edit, made only when
+ * any is applied. The applied constraints, in order (AUTOCONSTRAIN; Infer Constraints, M9-05
+ * part 7).
  */
-export async function autoConstrain(
+export function applyGeometricConstraints(
   ctx: CommandContext,
-  ids: readonly EntityId[],
-  settings: AutoConstrainSettings,
-): Promise<void> {
-  const entities = ids
-    .map((id) => ctx.model.entity(id))
-    .filter((e): e is Entity => e !== undefined && e.owner === ctx.space)
-    .filter((e) => ctx.model.tables.layers.get(e.layer)?.locked !== true);
-  const candidates = autoConstraints(entities, settings);
-  if (candidates.length === 0) {
-    ctx.message('No constraints applied.');
-    return;
-  }
-  const solver = await solverOf(ctx);
-  if (!solver) return;
+  candidates: readonly {
+    readonly kind: GeometricConstraintKind;
+    readonly refs: readonly ConstraintRef[];
+  }[],
+  solver: ConstraintSolver,
+): GeometricConstraintObject[] {
   const owner = ctx.model.meta.rootDictionary ?? '0';
   const constraints: GeometricConstraintObject[] = geometricConstraints(ctx.model);
   const moved = new Map<Handle, Entity>();
@@ -138,7 +133,6 @@ export async function autoConstrain(
     constraints.push(constraint);
     applied.push(constraint);
   }
-  const objects = [...new Set(applied.flatMap((c) => c.refs.map((r) => r.entity)))];
   if (applied.length) {
     const changes: ExpressionChange[] = [...expressions].map(([parameter, expression]) => ({
       parameter,
@@ -155,6 +149,31 @@ export async function autoConstrain(
       }
     });
   }
+  return applied;
+}
+
+/**
+ * Applies the constraints `settings` finds among `ids`, one at a time, skipping what the solver
+ * refuses: one edit, one undo step. Objects on locked layers are left out, as a pick of one is.
+ */
+export async function autoConstrain(
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+  settings: AutoConstrainSettings,
+): Promise<void> {
+  const entities = ids
+    .map((id) => ctx.model.entity(id))
+    .filter((e): e is Entity => e !== undefined && e.owner === ctx.space)
+    .filter((e) => ctx.model.tables.layers.get(e.layer)?.locked !== true);
+  const candidates = autoConstraints(entities, settings);
+  if (candidates.length === 0) {
+    ctx.message('No constraints applied.');
+    return;
+  }
+  const solver = await solverOf(ctx);
+  if (!solver) return;
+  const applied = applyGeometricConstraints(ctx, candidates, solver);
+  const objects = [...new Set(applied.flatMap((c) => c.refs.map((r) => r.entity)))];
   const n = applied.length;
   const m = objects.length;
   ctx.message(

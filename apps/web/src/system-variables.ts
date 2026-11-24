@@ -37,6 +37,9 @@ const TOGGLES: Readonly<Record<string, DraftingToggle>> = {
   TRANSPARENCYDISPLAY: 'tpy',
   // M6-03: the status bar's Annotation Visibility.
   ANNOALLVISIBLE: 'annoVisible',
+  // M9-05 part 7: the status bar's Infer Constraints, which each drawing's engine asks for as a
+  // command ends.
+  CONSTRAINTINFER: 'infer',
 };
 
 /** A grip colour variable (M3-05 part 5): one of the drafting state's grip colours. */

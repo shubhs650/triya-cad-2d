@@ -228,6 +228,7 @@ Geometric (expanded)
   icon        gc-show-hide<eye_off>
   icon        gc-show-all<eye>
   icon        gc-hide-all<eye_off>
+  icon        gc-infer<link>
   icon        gc-settings<settings>
 Dimensional (expanded)
   small-label dc-linear<dim-linear> ▾ [dc-linear-linear<dim-linear>, dc-horizontal<dim-linear>, dc-vertical<dim-linear>]
@@ -244,7 +245,7 @@ Manage (expanded)
 
 ### step 1
 Geometric (collapsed)
-  ▾ gc-auto, gc-coincident, gc-collinear, gc-concentric, gc-fix, gc-parallel, gc-perpendicular, gc-horizontal, gc-vertical, gc-tangent, gc-smooth, gc-symmetric, gc-equal, gc-show-hide, gc-show-all, gc-hide-all, gc-settings
+  ▾ gc-auto, gc-coincident, gc-collinear, gc-concentric, gc-fix, gc-parallel, gc-perpendicular, gc-horizontal, gc-vertical, gc-tangent, gc-smooth, gc-symmetric, gc-equal, gc-show-hide, gc-show-all, gc-hide-all, gc-infer, gc-settings
 
 ### step 2
 Dimensional (compressed)

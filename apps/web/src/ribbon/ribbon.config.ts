@@ -614,8 +614,8 @@ const ANNOTATE: RibbonTab = {
  * (Smooth with M9-02 part 2). The Dimensional panel
  * (M9-03 part 3): Linear (with Horizontal and Vertical), Aligned, Radius, Diameter, Angular;
  * Convert (DCCONVERT, M9-03 part 9); Show Dynamic Constraints (M9-03 part 4); Show/Hide, DCDISPLAY (M9-03 part 7). The Manage panel: Parameters Manager (M9-03
- * part 5). Auto Constrain and Constraint Settings (M9-05 part 3) on the Geometric panel; Infer
- * comes with its command.
+ * part 5). Auto Constrain and Constraint Settings (M9-05 part 3) on the Geometric panel, with
+ * Infer Constraints (M9-05 part 7).
  */
 const PARAMETRIC: RibbonTab = {
   id: 'parametric',
@@ -644,6 +644,8 @@ const PARAMETRIC: RibbonTab = {
         cmd('gc-show-hide', 'Show/Hide', 'eye_off', 'CONSTRAINTBAR', SECONDARY),
         cmd('gc-show-all', 'Show All', 'eye', 'CONSTRAINTBAR', SECONDARY, ['Showall']),
         cmd('gc-hide-all', 'Hide All', 'eye_off', 'CONSTRAINTBAR', SECONDARY, ['Hideall']),
+        // M9-05 part 7: Infer Constraints (CONSTRAINTINFER), the status bar's toggle too.
+        { ...toggle('gc-infer', 'Infer Constraints', 'link', 'drafting:infer'), sizes: SECONDARY },
         // M9-05 part 3: the panel's launcher in AutoCAD; a button of its own here.
         cmd('gc-settings', 'Constraint Settings', 'settings', 'CONSTRAINTSETTINGS', SECONDARY),
       ],

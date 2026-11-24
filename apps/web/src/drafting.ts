@@ -133,6 +133,12 @@ export interface DraftingState {
    */
   readonly constraintNameFormat: 0 | 1 | 2;
   /**
+   * CONSTRAINTINFER (M9-05 part 7): geometric constraints inferred as objects are drawn, from
+   * the object snaps that placed them (the status bar's Infer Constraints, Ctrl+Shift+I).
+   * AutoCAD keeps it per user, initially 0; each drawing's engine asks for it as a command ends.
+   */
+  readonly constraintInfer: boolean;
+  /**
    * CONSTRAINTBARMODE (M9-05 part 2): the kinds of geometric constraint the constraint bars
    * show, bits 1 Horizontal … 2048 Fix. AutoCAD keeps it per user, initially 4095 (all).
    */
@@ -527,6 +533,7 @@ export type DraftingToggle =
   | 'annoVisible'
   | 'annoAutoScale'
   | 'dynConstraints'
+  | 'infer'
   | 'qp'
   | 'sc'
   | 'groups'
@@ -549,6 +556,7 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:annoVisible', label: 'Annotation Visibility on/off' },
   { id: 'drafting:annoAutoScale', label: 'Annotation AutoScale on/off' },
   { id: 'drafting:dynConstraints', label: 'Show Dynamic Constraints on/off' },
+  { id: 'drafting:infer', label: 'Infer Constraints on/off' },
   { id: 'drafting:qp', label: 'Quick Properties on/off' },
   { id: 'drafting:sc', label: 'Selection Cycling on/off' },
   { id: 'drafting:groups', label: 'Group Selection on/off' },
@@ -585,6 +593,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   dynConstraints: true,
   dynConstraintMode: true,
   constraintNameFormat: 2,
+  constraintInfer: false,
   constraintBarMode: 4095,
   constraintBarDisplay: 3,
   cbarTransparency: 50,
@@ -653,6 +662,7 @@ export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): bo
   if (t === 'underlaySnap') return s.pdfOsnap;
   if (t === 'annoVisible') return s.annoAllVisible;
   if (t === 'annoAutoScale') return s.annoAutoScale > 0;
+  if (t === 'infer') return s.constraintInfer;
   return s[t];
 }
 
@@ -770,6 +780,9 @@ export class Drafting {
         return this.#set({ ...s, annoAllVisible: !s.annoAllVisible });
       case 'annoAutoScale':
         return this.#set({ ...s, annoAutoScale: -s.annoAutoScale });
+      // Infer Constraints (M9-05 part 7): CONSTRAINTINFER.
+      case 'infer':
+        return this.#set({ ...s, constraintInfer: !s.constraintInfer });
       case 'snap':
       case 'grid':
         if (this.#turnViewport({ [t]: !this.isOn(t) })) return;

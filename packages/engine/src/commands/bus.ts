@@ -52,6 +52,8 @@ import {
 } from './command';
 import { blocklessDimensionBlocks, regenerateRestyled } from './modify/dimensions';
 import { keepConstraints } from './constraint-upkeep';
+import { inferConstraints } from './infer-constraints';
+import type { SnappedPoint } from '../edit/infer-constraints';
 import { followAssociations } from './modify/array';
 import { applyProperty } from './modify/property-edit';
 import { otherLinetype } from './linetype';
@@ -470,6 +472,13 @@ export class PromptBus {
   readonly #stack: Frame[] = [];
   #collectors: Collector[] = [];
   #changes: ChangeSet[] = [];
+  /**
+   * The points the outermost command was given by object snaps, with the snap and the object
+   * (M9-05 part 7): what Infer Constraints infers from as it ends.
+   */
+  #snaps: SnappedPoint[] = [];
+  /** CONSTRAINTINFER as the app last told it (M9-05 part 7): off, AutoCAD's initial 0. */
+  #constraintInfer = false;
   #last: { readonly def: CommandDef; readonly dash: boolean } | undefined;
   /** The outermost command running, whose record `#close` makes. */
   #current: CommandDef | undefined;
@@ -779,6 +788,8 @@ export class PromptBus {
       readonly freehand?: readonly Vec2[];
       /** The tiled model viewport clicked in (M6-02 part 13), for a prompt that asks one. */
       readonly tile?: number;
+      /** The object snap the point was given by and its object (M9-05 part 7, Infer). */
+      readonly snap?: Omit<SnappedPoint, 'point'>;
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
@@ -855,6 +866,7 @@ export class PromptBus {
         }
         const p = this.prompt;
         const tile = p?.kind === 'point' && p.viewport ? o.tile : undefined;
+        if (o.snap) this.#snaps.push({ point, mode: o.snap.mode, id: o.snap.id });
         return this.#direct({
           kind: 'point',
           point,
@@ -1033,6 +1045,18 @@ export class PromptBus {
    * PICKFIRST set while the drawing is open (SETVAR, M2-59): it holds from the next pick, and
    * turned off it deselects what was picked at `Command:`, which no command could take now.
    */
+  /**
+   * CONSTRAINTINFER (M9-05 part 7), a per-user setting the app tells each drawing's engine, so
+   * a command ending asks the app nothing.
+   */
+  setConstraintInfer(on: boolean): void {
+    this.#constraintInfer = on;
+  }
+
+  get constraintInfer(): boolean {
+    return this.#constraintInfer;
+  }
+
   setPickfirst(on: boolean): Promise<void> {
     if (on === this.#pickfirstOn) return Promise.resolve();
     this.#pickfirstOn = on;
@@ -1596,6 +1620,7 @@ export class PromptBus {
       if (!def.keepsSelection) this.#last = { def, dash };
       this.#current = def;
       this.#changes = [];
+      this.#snaps = [];
       // Noun-verb: a command that selects takes the pre-selection at its first "Select objects"
       // prompt. One that does not clears it, as AutoCAD deselects when LINE starts; a view
       // command (one that may run transparently) leaves it selected, and ZOOM Object takes it.
@@ -1770,7 +1795,10 @@ export class PromptBus {
       return this.#end(frame, true);
     }
     if (step.done) {
-      if (frame === this.#stack[0]) await this.#keepConstraints(frame);
+      if (frame === this.#stack[0]) {
+        await this.#keepConstraints(frame);
+        await this.#inferConstraints(frame);
+      }
       // The dimensions the command restyled are redrawn as it ends, in its undo step (M2-30
       // part 2): a transparent command's edits wait for the command it ran inside.
       if (!frame.transparent && this.#changes.length > 0) {
@@ -2061,6 +2089,21 @@ export class PromptBus {
     }
   }
 
+  /**
+   * Infer Constraints (M9-05 part 7): what the outermost command (`frame`) made takes the
+   * constraints its snapped points and the command imply, in its undo step, while CONSTRAINTINFER
+   * is on (`setConstraintInfer`).
+   */
+  async #inferConstraints(frame: Frame): Promise<void> {
+    if (!this.#constraintInfer || frame.transparent || frame.def.solvesConstraints) return;
+    if (this.#changes.length === 0) return;
+    try {
+      await inferConstraints(frame.ctx, frame.def.name, this.#changes, this.#snaps);
+    } catch (err) {
+      this.#fault(err, frame.def.name);
+    }
+  }
+
   /** A command ended: close its record, or resume the one it ran inside. */
   #end(frame: Frame, cancelled: boolean): void {
     this.#stack.pop();
@@ -2112,7 +2155,10 @@ export class PromptBus {
         this.#fault(err, frame.def.name);
       }
       // The edits a command kept before Esc (TRIM's picks) keep the constraints in step too.
-      if (frame === outermost) await this.#keepConstraints(frame);
+      if (frame === outermost) {
+        await this.#keepConstraints(frame);
+        await this.#inferConstraints(frame);
+      }
       this.#emit({ type: 'end', command: frame.def.name, cancelled: true });
     }
     this.#close();

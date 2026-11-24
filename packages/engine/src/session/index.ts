@@ -42,6 +42,7 @@ import {
   saveViewLayers,
 } from '../edit/view-layers';
 import type { DeferredPick } from '../geom/deferred';
+import { CONSTRAINT_INFER, type SnappedPoint } from '../edit/infer-constraints';
 import type { Vec2 } from '../geom/types';
 import type { Lasso } from '../selection/loop';
 import { ChangeSetBuilder } from '../model/builder';
@@ -468,15 +469,17 @@ export type ViewTableEdit =
 
 /**
  * A per-user system variable the app keeps that the drawing's engine follows: REVCLOUDGRIPS
- * (M2-42), which its grips follow, PICKFIRST (M2-59), which its command line follows, and
- * LAYEREVALCTL (M5-19 part 3), which its evaluation of new layers follows. The app
+ * (M2-42), which its grips follow, PICKFIRST (M2-59), which its command line follows,
+ * LAYEREVALCTL (M5-19 part 3), which its evaluation of new layers follows, and CONSTRAINTINFER
+ * (M9-05 part 7), which its commands' Infer Constraints follows. The app
  * sets them on every drawing it opens and whenever SETVAR changes them. Not undoable edits, and
  * never saved: AutoCAD keeps them in the registry, not in the drawing.
  */
 export type SessionVariableEdit =
   | {
       readonly kind: 'sysvar';
-      readonly name: typeof REVCLOUDGRIPS | typeof PICKFIRST | typeof LAYEREVALCTL;
+      readonly name:
+        typeof REVCLOUDGRIPS | typeof PICKFIRST | typeof LAYEREVALCTL | typeof CONSTRAINT_INFER;
       readonly value: 0 | 1;
     }
   /**
@@ -602,6 +605,8 @@ export type CommandInput =
       readonly grip?: number;
       /** The Deferred Tangent or Perpendicular the point was snapped with (M3-01 part 2). */
       readonly deferred?: DeferredPick;
+      /** The object snap the point was given by and its object, which Infer reads (M9-05 part 7). */
+      readonly snap?: Omit<SnappedPoint, 'point'>;
       /** Ctrl was held: an arc's direction switched (M3-01 part 6), or a grip copy (M3-05). */
       readonly ctrl?: boolean;
       /** The function picked from a grip's hover menu, with `grip` (M3-05 part 2). */
@@ -1004,6 +1009,7 @@ export class EngineSession {
           ...(input.missed && { missed: true }),
           ...(input.grip !== undefined && { grip: input.grip }),
           ...(input.deferred && { deferred: input.deferred }),
+          ...(input.snap && { snap: input.snap }),
           ...(input.ctrl && { ctrl: true }),
           ...(input.gripFunction && { gripFunction: input.gripFunction }),
           ...(input.dragged && { dragged: true }),
@@ -1361,9 +1367,17 @@ export class EngineSession {
       this.#bus.setPickVariable(name, e.value);
       return { ok: true, change: {} };
     }
-    const known = e.name === REVCLOUDGRIPS || e.name === PICKFIRST || e.name === LAYEREVALCTL;
+    const known =
+      e.name === REVCLOUDGRIPS ||
+      e.name === PICKFIRST ||
+      e.name === LAYEREVALCTL ||
+      e.name === CONSTRAINT_INFER;
     if (!known || (e.value !== 0 && e.value !== 1)) {
       return { ok: false, message: `Cannot set ${String(e.name)} here.` };
+    }
+    if (e.name === CONSTRAINT_INFER) {
+      this.#bus.setConstraintInfer(e.value === 1);
+      return { ok: true, change: {} };
     }
     if (e.name === PICKFIRST) {
       void this.#bus.setPickfirst(e.value === 1);
@@ -1572,6 +1586,11 @@ export class EngineSession {
   /** PICKFIRST as the app last set it (M2-59): picks at `Command:` select. */
   get pickfirst(): boolean {
     return this.#bus.pickfirst;
+  }
+
+  /** CONSTRAINTINFER as the app last set it (M9-05 part 7). */
+  get constraintInfer(): boolean {
+    return this.#bus.constraintInfer;
   }
 
   /** The drawing's undo history as the undo/redo buttons show it (M2-05, M2-23). */

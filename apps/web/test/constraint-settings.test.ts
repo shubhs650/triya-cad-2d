@@ -4,7 +4,9 @@
 // preferences, and answered to AUTOCONSTRAIN.
 import { describe, expect, it } from 'vitest';
 import { AUTOCONSTRAIN_DEFAULTS, CONSTRAINT_BAR_ALL } from '@triya/engine';
-import { INITIAL_DRAFTING } from '../src/drafting';
+import { Drafting, INITIAL_DRAFTING } from '../src/drafting';
+import { keymap } from '../src/shortcuts';
+import { systemVariableReply } from '../src/system-variables';
 import {
   CONSTRAINT_SETTINGS_TABS,
   draftOf,
@@ -39,6 +41,7 @@ describe('Constraint Settings (M9-05 part 3)', () => {
       angle: '1',
     });
     expect(draftPatch(d)).toEqual({
+      constraintInfer: false,
       constraintBarMode: 4095,
       cbarTransparency: 50,
       constraintBarDisplay: 3,
@@ -110,5 +113,33 @@ describe('Constraint Settings (M9-05 part 3)', () => {
     expect(p.drafting.autoConstrain.angle).toBe(3);
     const bad = normalizePreferences({ drafting: { autoConstrain: { distance: 'x' } } });
     expect(bad.drafting.autoConstrain).toEqual(AUTOCONSTRAIN_DEFAULTS);
+  });
+});
+
+describe('Infer Constraints (M9-05 part 7)', () => {
+  it('is off at first; the status bar toggle, Ctrl+Shift+I and the dialog turn it', () => {
+    expect(INITIAL_DRAFTING.constraintInfer).toBe(false);
+    const d = new Drafting();
+    expect(d.isOn('infer')).toBe(false);
+    d.toggle('infer');
+    expect(d.isOn('infer')).toBe(true);
+    expect(d.get().constraintInfer).toBe(true);
+    expect(keymap().keysOf('drafting:infer')).toEqual(['Ctrl+Shift+I']);
+    const draft = draftOf(INITIAL_DRAFTING);
+    expect(draft.infer).toBe(false);
+    expect(draftPatch({ ...draft, infer: true }).constraintInfer).toBe(true);
+  });
+
+  it('is CONSTRAINTINFER, kept per user in the preferences', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'CONSTRAINTINFER')).toEqual({ ok: true, value: 0 });
+    expect(systemVariableReply(d, 'CONSTRAINTINFER', 1)).toEqual({ ok: true, value: 1 });
+    expect(d.isOn('infer')).toBe(true);
+    expect(
+      normalizePreferences({ drafting: { constraintInfer: true } }).drafting.constraintInfer,
+    ).toBe(true);
+    expect(
+      normalizePreferences({ drafting: { constraintInfer: 'x' } }).drafting.constraintInfer,
+    ).toBe(false);
   });
 });

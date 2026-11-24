@@ -43,6 +43,7 @@ export * from './image-clip';
 export * from './clipboard';
 export * from './clipboard-data';
 export * from './autoconstrain';
+export * from './infer-constraints';
 export * from './constraints';
 export * from './constraint-copy';
 export * from './constraint-display';

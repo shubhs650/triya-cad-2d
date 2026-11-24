@@ -208,6 +208,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // ones while their objects are selected (2), initially 3; CBARTRANSPARENCY, the bars' opacity,
   // 10 to 90, initially 50.
   { name: 'CONSTRAINTBARMODE', store: 'app', kind: 'integer', min: 0, max: 4095 },
+  // CONSTRAINTINFER (M9-05 part 7; AutoCAD 2024 Help, "Saved in: Registry", initially 0):
+  // geometric constraints inferred as objects are drawn (1) or not (0); the status bar's Infer.
+  { name: 'CONSTRAINTINFER', store: 'app', kind: 'switch' },
   { name: 'CONSTRAINTBARDISPLAY', store: 'app', kind: 'integer', min: 0, max: 3 },
   { name: 'CBARTRANSPARENCY', store: 'app', kind: 'integer', min: 10, max: 90 },
   // LAYLOCKFADECTL (M5-06; AutoCAD 2024 Help, "Saved in: Registry"): objects on locked layers

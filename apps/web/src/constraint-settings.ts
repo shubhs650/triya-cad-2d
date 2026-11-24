@@ -3,7 +3,8 @@
 // from the user's settings as the dialog opens and given back to them on OK. The dialog edits a
 // copy, so Cancel changes nothing, as DSETTINGS' does.
 //
-// Geometric: the kinds the constraint bars show (CONSTRAINTBARMODE), the bars' transparency
+// Geometric: Infer geometric constraints (CONSTRAINTINFER, M9-05 part 7), the kinds the
+// constraint bars show (CONSTRAINTBARMODE), the bars' transparency
 // (CBARTRANSPARENCY), and CONSTRAINTBARDISPLAY's two bits. Dimensional: the name format
 // (CONSTRAINTNAMEFORMAT) and Show hidden dynamic constraints for selected objects
 // (DYNCONSTRAINTMODE). AutoConstrain: the types AUTOCONSTRAIN applies, in order, each with its
@@ -50,6 +51,8 @@ export const NAME_FORMATS: readonly { value: 0 | 1 | 2; label: string }[] = [
 ];
 
 export interface ConstraintSettingsDraft {
+  /** CONSTRAINTINFER: Infer geometric constraints (M9-05 part 7). */
+  readonly infer: boolean;
   /** CONSTRAINTBARMODE: the kinds the bars show. */
   readonly barMode: number;
   /** CBARTRANSPARENCY, 10 to 90. */
@@ -73,6 +76,7 @@ export interface ConstraintSettingsDraft {
 export function draftOf(s: DraftingState): ConstraintSettingsDraft {
   const a = s.autoConstrain;
   return {
+    infer: s.constraintInfer,
     barMode: s.constraintBarMode,
     transparency: s.cbarTransparency,
     showApplied: (s.constraintBarDisplay & 1) !== 0,
@@ -119,6 +123,7 @@ export function draftProblem(d: ConstraintSettingsDraft): string | undefined {
 /** What OK sets: the user's settings from the draft (`draftProblem` already checked). */
 export function draftPatch(d: ConstraintSettingsDraft): Partial<DraftingState> {
   return {
+    constraintInfer: d.infer,
     constraintBarMode: d.barMode,
     cbarTransparency: d.transparency,
     constraintBarDisplay: (d.showApplied ? 1 : 0) | (d.showSelected ? 2 : 0),

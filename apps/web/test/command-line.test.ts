@@ -413,6 +413,8 @@ describe('completions of system variables', () => {
       'COMMANDPREVIEW',
       'CONSTRAINTBARDISPLAY',
       'CONSTRAINTBARMODE',
+      // Infer Constraints (M9-05 part 7), kept per user.
+      'CONSTRAINTINFER',
       // A dimensional constraint's text (M9-03 part 4), kept per user.
       'CONSTRAINTNAMEFORMAT',
       // The status bar's coordinates (M7-06 part 3), kept per user.

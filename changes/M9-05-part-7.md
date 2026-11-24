@@ -1,0 +1,1 @@
+- M9-05 part 7 (#674): Infer Constraints (CONSTRAINTINFER): with the status bar's INFER on, what you draw takes constraints from the object snaps that placed it, LINE joins its segments and RECTANG keeps square.
