@@ -230,6 +230,45 @@ function keepValues(
 }
 
 /**
+ * Removes `dropped` (DELCONSTRAINT, M9-05 part 2): the expressions of the parameters left that
+ * named a dropped dimensional constraint's take the value it had, as `keepConstraints` leaves
+ * them, so no geometry moves. Without a solver the constraints still go and the expressions are
+ * left as they are.
+ */
+export async function dropConstraints(
+  ctx: CommandContext,
+  dropped: readonly (GeometricConstraintObject | DimensionalConstraintObject)[],
+): Promise<void> {
+  const gone = new Set(dropped.map((c) => c.handle));
+  // The parameter table as it is, in the drawing's order, the dropped ones among the rest.
+  const ordered: ParameterObject[] = [
+    ...dimensionalConstraints(ctx.model),
+    ...userParameters(ctx.model),
+  ];
+  ctx.edit((b) => dropped.forEach((c) => b.removeObject(c.handle)));
+  const left = ordered.filter((c) => !gone.has(c.handle));
+  const named = dropped.filter(
+    (c): c is DimensionalConstraintObject =>
+      !isGeometricConstraint(c) && left.some((d) => names(d).has(c.parameter)),
+  );
+  if (named.length === 0) return;
+  let solver;
+  try {
+    solver = await ctx.constraints?.();
+  } catch {
+    return;
+  }
+  if (!solver) return;
+  const pool = new Set<ParameterObject>([...left, ...named]);
+  keepValues(
+    ctx,
+    solver,
+    ordered.filter((c) => pool.has(c)),
+    named,
+  );
+}
+
+/**
  * Keeps the drawing's constraints in step with what `command` changed (`changes`, its undo
  * step so far), adding its own edits to the step. False when the constraints refuse the edit:
  * the caller takes the command's changes back.
