@@ -15,7 +15,7 @@ import {
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import type { EntityId, EntityType } from '@triya/engine';
+import type { EntityId, SheetType } from '@triya/engine';
 import { commandLines } from './command-line';
 import { drafting } from './drafting';
 import type { OpenDocument } from './documents';
@@ -123,7 +123,7 @@ export function QuickProperties({
       kind: 'properties',
       open: true,
       quick: true,
-      filter: type === '' ? null : (type as EntityType),
+      filter: type === '' ? null : (type as SheetType),
     });
 
   const startDrag = (e: ReactPointerEvent<HTMLElement>) => {

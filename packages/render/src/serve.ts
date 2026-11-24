@@ -125,7 +125,14 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         port.postMessage({ type: 'reply', id: m.id, ids: r.select(m.query) });
         break;
       case 'highlight':
-        r.setHighlight(m.ids);
+        r.setHighlight(m.ids, m.constraints);
+        break;
+      case 'constraintAt':
+        port.postMessage({
+          type: 'constraint',
+          id: m.id,
+          handle: r.constraintAt(m.screen, m.aperture, m.view),
+        });
         break;
       case 'active-viewport':
         r.setActiveViewport(m.handle ?? undefined, m.maximized);

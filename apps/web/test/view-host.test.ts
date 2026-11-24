@@ -59,6 +59,7 @@ class Target implements ViewTarget {
   setMode = (m: CanvasMode) => void this.calls.push(`mode ${m}`);
   regen = () => void this.calls.push('regen');
   pick = (p: Vec2) => (this.calls.push(`pick ${p.x},${p.y}`), Promise.resolve([7]));
+  constraintAt = (p: Vec2) => Promise.resolve(p.x === 5 ? 'D1' : undefined);
   pickNested = (p: Vec2, id: number) =>
     Promise.resolve(id === 7 && p.x === 1 ? { path: [7, 12], attribute: 'A1' } : undefined);
   selectWindow = (a: Vec2, b: Vec2, crossing: boolean) => (
@@ -410,6 +411,14 @@ describe('answerView', () => {
     expect(
       await answerView({ op: 'select', a: { x: 0, y: 0 }, b: { x: 5, y: 5 }, crossing: true }, ctx),
     ).toEqual({ ok: true, ids: [7, 8] });
+    // M9-03 part 10: the dimensional constraint drawn under a pick, none where none is.
+    expect(await answerView({ op: 'constraintAt', point: { x: 5, y: 2 } }, ctx)).toEqual({
+      ok: true,
+      constraint: 'D1',
+    });
+    expect(await answerView({ op: 'constraintAt', point: { x: 1, y: 2 } }, ctx)).toEqual({
+      ok: true,
+    });
     // M5-06 part 5: what the pick hit inside the reference it took, nothing where it hit none.
     expect(await answerView({ op: 'nested', point: { x: 1, y: 2 }, id: 7 }, ctx)).toEqual({
       ok: true,

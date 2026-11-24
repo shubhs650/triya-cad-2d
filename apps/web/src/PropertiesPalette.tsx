@@ -20,7 +20,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   colorValue,
   parseColorValue,
-  type EntityType,
+  type SheetType,
   type PropertyRow,
   type PropertySheet,
   type PropertyUnits,
@@ -62,7 +62,7 @@ export function PropertiesPalette({
     engines.command(doc.id, {
       kind: 'properties',
       open: true,
-      filter: type === '' ? null : (type as EntityType),
+      filter: type === '' ? null : (type as SheetType),
     });
   const set = (key: string, value: string) =>
     engines.command(doc.id, { kind: 'property', edit: { key, value } });

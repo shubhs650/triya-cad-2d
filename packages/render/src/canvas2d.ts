@@ -140,6 +140,7 @@ import {
   constraintPrimitives,
   DYNAMIC_CONSTRAINT_PX,
   sizesAt,
+  type ConstraintSizes,
 } from './constraint-display';
 import {
   constraintBarAt,
@@ -162,6 +163,7 @@ import {
   visibleBox,
   type ConstraintBarHit,
   type ConstraintBarStyle,
+  type ConstraintStyle,
   type DrawnEntity,
   type FillGradient,
   type GripColors,
@@ -701,6 +703,8 @@ export class Canvas2DRenderer implements Renderer {
   #transient: readonly RenderPrimitive[] = [];
   /** The entities drawn selected (M2-03). */
   #highlight: ReadonlySet<EntityId> = new Set();
+  /** The dimensional constraints drawn selected (M9-03 part 10), by handle. */
+  #highlightConstraints: ReadonlySet<Handle> = new Set();
   /** The drawing's dimensional constraints as they show (M9-03 part 4), until a change. */
   #constraints: readonly ConstraintDisplay[] | undefined;
   /** The drawing's constraint bars as they are laid out (M9-05 part 2), until a change. */
@@ -1047,10 +1051,44 @@ export class Canvas2DRenderer implements Renderer {
     ctx.stroke();
   }
 
-  setHighlight(ids: readonly EntityId[]): void {
-    if (ids.length === 0 && this.#highlight.size === 0) return;
+  setHighlight(ids: readonly EntityId[], constraints: readonly Handle[] = []): void {
+    const none = ids.length === 0 && constraints.length === 0;
+    if (none && this.#highlight.size === 0 && this.#highlightConstraints.size === 0) return;
     this.#highlight = new Set(ids);
+    this.#highlightConstraints = new Set(constraints);
     this.#sceneDirty = this.#contentDirty = true;
+  }
+
+  constraintAt(
+    screen: { readonly x: number; readonly y: number },
+    aperture: number,
+    view: ViewTransform = this.#view,
+  ): Handle | null {
+    if (!this.#modelTab) return null;
+    const look = this.#style.constraints;
+    this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
+    const p = screenToWorld(view, this.#width, this.#height, screen);
+    const r = aperture / view.scale;
+    let best: { handle: Handle; d: number } | undefined;
+    for (const d of this.#constraints) {
+      const sizes = this.#constraintSizes(d, look, view.scale);
+      if (!sizes) continue;
+      for (const prim of constraintPrimitives(
+        d,
+        sizes,
+        'foreground',
+        this.#tessellate.text,
+        false,
+      )) {
+        let dist = distanceTo(prim, p);
+        // Its text picks anywhere in its runs' boxes, as an object's does.
+        if (prim.kind !== 'infinite' && prim.kind !== 'point' && prim.text) {
+          dist = Math.min(dist, distanceTo({ kind: 'fill', path: prim.text.greek, color: '' }, p));
+        }
+        if (dist <= r && (!best || dist < best.d)) best = { handle: d.handle, d: dist };
+      }
+    }
+    return best?.handle ?? null;
   }
 
   setRefEdit(display: RefEditDisplay | undefined): void {
@@ -2285,27 +2323,41 @@ export class Canvas2DRenderer implements Renderer {
     const look = this.#style.constraints;
     this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
     if (this.#constraints.length === 0) return;
-    const showDynamic = look?.dynamic !== false;
-    const showSelected = look?.showSelected !== false;
-    const selected = (d: ConstraintDisplay) =>
+    const prims: RenderPrimitive[] = [];
+    const picked: RenderPrimitive[] = [];
+    for (const d of this.#constraints) {
+      const sizes = this.#constraintSizes(d, look, view.scale);
+      if (!sizes) continue;
+      const color = d.form === 'annotational' ? 'foreground' : (look?.color ?? 'foreground');
+      const drawn = constraintPrimitives(d, sizes, color, this.#tessellate.text);
+      prims.push(...drawn);
+      if (this.#highlightConstraints.has(d.handle)) picked.push(...drawn);
+    }
+    this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);
+    // The constraints selected (M9-03 part 10), highlighted as selected objects are.
+    if (picked.length > 0 && this.#outlinePrimitives(ctx, view, picked)) this.#strokeSelected(ctx);
+  }
+
+  /**
+   * The sizes `d` is drawn at, or undefined where it is not drawn: an annotational one always,
+   * sized by the drawing's DIMVARs; a dynamic one the same size on screen, unless hidden (all
+   * of them, or this one by DCDISPLAY, M9-03 part 7), then shown only while an object it
+   * constrains is selected (DYNCONSTRAINTMODE 1).
+   */
+  #constraintSizes(
+    d: ConstraintDisplay,
+    look: ConstraintStyle | undefined,
+    scale: number,
+  ): ConstraintSizes | undefined {
+    if (d.form === 'annotational') return annotationalSizes(this.#model.header);
+    const selected = () =>
       d.entities.some((h) => {
         const e = this.#model.entityByHandle(h);
         return e !== undefined && this.#highlight.has(e.id);
       });
-    const dynamic = sizesAt(DYNAMIC_CONSTRAINT_PX, view.scale);
-    const annotational = annotationalSizes(this.#model.header);
-    const prims: RenderPrimitive[] = [];
-    for (const d of this.#constraints) {
-      if (d.form === 'annotational') {
-        prims.push(...constraintPrimitives(d, annotational, 'foreground', this.#tessellate.text));
-      } else if ((showDynamic && !d.hidden) || (showSelected && selected(d))) {
-        // A constraint DCDISPLAY hid (M9-03 part 7) shows as all do while Show Dynamic
-        // Constraints is off: only while an object it constrains is selected.
-        const color = look?.color ?? 'foreground';
-        prims.push(...constraintPrimitives(d, dynamic, color, this.#tessellate.text));
-      }
-    }
-    this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);
+    const shown =
+      (look?.dynamic !== false && !d.hidden) || (look?.showSelected !== false && selected());
+    return shown ? sizesAt(DYNAMIC_CONSTRAINT_PX, scale) : undefined;
   }
 
   /**
@@ -2393,6 +2445,11 @@ export class Canvas2DRenderer implements Renderer {
    */
   #drawHighlight(ctx: Canvas2D, frame: DrawFrame): void {
     if (this.#highlight.size === 0 || !this.#outline(ctx, frame, this.#highlight)) return;
+    this.#strokeSelected(ctx);
+  }
+
+  /** The path built strokes as the selection: a wide translucent glow, then a dashed line. */
+  #strokeSelected(ctx: Canvas2D): void {
     const color = this.#style.selection ?? SELECTION_COLOR;
     const px = this.#dpr;
     ctx.strokeStyle = color;
@@ -2427,6 +2484,22 @@ export class Canvas2DRenderer implements Renderer {
    * Builds the path of `ids` as drawn in the space shown (text by its runs' boxes, fills by
    * their outlines) on `ctx`, in device pixels; false when none of them is in view.
    */
+  /** Builds the outline of `prims` (drawn outside the scene cache) as `#outline` does. */
+  #outlinePrimitives(ctx: Canvas2D, frame: DrawFrame, prims: readonly RenderPrimitive[]): boolean {
+    const { ox, oy, m } = frame;
+    let any = false;
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    ctx.beginPath();
+    for (const prim of prims) {
+      if (prim.kind === 'point' || prim.kind === 'infinite') continue;
+      const runs = prim.text?.greek;
+      buildPath(ctx, runs && runs.length > 0 ? runs : (prim.continuous ?? prim.path), ox, oy);
+      any = true;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return any;
+  }
+
   #outline(ctx: Canvas2D, frame: DrawFrame, ids: Iterable<EntityId>): boolean {
     const { ox, oy, m, scale, box } = frame;
     const dot = 2 / scale;

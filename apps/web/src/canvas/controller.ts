@@ -1922,8 +1922,8 @@ export class CanvasController {
   }
 
   /** The objects to draw selected (M2-03). */
-  setHighlight(ids: readonly EntityId[]): void {
-    this.#host.setHighlight(ids);
+  setHighlight(ids: readonly EntityId[], constraints: readonly Handle[] = []): void {
+    this.#host.setHighlight(ids, constraints);
     this.#requestFrame();
   }
 
@@ -1958,6 +1958,17 @@ export class CanvasController {
       }
     }
     return this.#host.hitTest(screen, pickbox, v);
+  }
+
+  /**
+   * The dimensional constraint drawn within the pickbox of a world point (M9-03 part 10), in
+   * the view the pointer works in, as `pick` takes objects.
+   */
+  constraintAt(point: Vec2): Promise<Handle | undefined> {
+    const v = this.#pointerView();
+    if (!v) return Promise.resolve(undefined);
+    const screen = worldToScreen(v, this.#size.width, this.#size.height, point);
+    return this.#host.constraintAt(screen, this.#drafting.pickbox, v).then((h) => h ?? undefined);
   }
 
   /**

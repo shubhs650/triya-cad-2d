@@ -447,6 +447,52 @@ export class ConstraintModel {
     return { ok: true, updated, parameters: [...new Set([...edit.changed, ...remeasured])] };
   }
 
+  /**
+   * The Properties palette's Reference (M9-03 part 10; AutoCAD 2024 Help, "About Applying
+   * Dimensional Constraints"): `reference` makes the constraint measure rather than drive, its
+   * expression set to the value it measures; refused while a driving value follows from it.
+   * Made driving again it keeps that value and is solved as a new one; refused, and left a
+   * reference, when it would over-constrain the geometry ("You cannot change a reference
+   * parameter back to a dimensional constraint if doing so would overconstrain the geometry").
+   * `parameters`: the rows whose expression or value changed.
+   */
+  setReference(handle: Handle, reference: boolean, lookup: EntityLookup): ParameterResult {
+    const c = this.#dimensions.find((d) => d.handle === handle);
+    if (!c) return refusal('invalid', `No dimensional constraint ${handle}.`);
+    if ((c.reference === true) === reference) return { ok: true, updated: [], parameters: [] };
+    const table = this.#parameters;
+    if (reference) {
+      const driven = new Set(table.dependents(c.parameter));
+      const follows = this.#dimensions.find((d) => !d.reference && driven.has(d.parameter));
+      if (follows) {
+        return refusal(
+          'invalid',
+          `${follows.parameter} follows from ${c.parameter}: a driving value cannot follow from a reference parameter`,
+          [follows.handle],
+        );
+      }
+      const measured = measureDimension(c, lookup);
+      if (!measured.ok) return refusal(measured.reason, measured.message, [handle]);
+      const set = table.setExpression(c.parameter, formatMeasured(measured.value));
+      if (!set.ok) return refusal('invalid', set.error, [handle]);
+      this.#dimensions = this.#dimensions.map((d) => (d === c ? { ...c, reference: true } : d));
+      return { ok: true, updated: [], parameters: set.changed };
+    }
+    const { reference: _, ...driving } = c;
+    const wrong = this.#drivingError(driving);
+    if (wrong) return refusal('invalid', wrong, [handle]);
+    // Solved as a constraint added anew, without itself among the drawing's.
+    const others = this.#dimensions;
+    this.#dimensions = others.filter((d) => d !== c);
+    const r = this.#addSolved(driving, dimensionShape(driving, lookup).holds, lookup);
+    if (!r.ok) {
+      this.#dimensions = others;
+      return r;
+    }
+    this.#dimensions = others.map((d) => (d === c ? driving : d));
+    return { ok: true, updated: r.updated, parameters: this.#remeasure(r.updated, lookup) };
+  }
+
   /** Renames a parameter in the table, in its constraint and in every expression naming it. */
   renameParameter(
     from: string,
