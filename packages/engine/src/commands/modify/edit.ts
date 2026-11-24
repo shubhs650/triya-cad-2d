@@ -5,7 +5,7 @@
 // While a second point, angle or scale is asked for, the objects are dragged with the cursor
 // (`drag` on the prompt, part 2), as AutoCAD drags them (DRAGMODE Auto). STRETCH (part 2) takes
 // the last crossing window of its selection.
-import { carryConstraints } from '../../edit/constraints';
+import { carryConstraints, type ParameterCopyMode } from '../../edit/constraint-copy';
 import { removeCopies } from '../../edit/groups';
 import { angleOf, distance, sub } from '../../geom/vec';
 import type { Vec2 } from '../../geom/types';
@@ -27,6 +27,7 @@ import type { Prompt, PromptAnswer, SelectionWindow } from '../prompt';
 import { formatNumber } from '../units';
 import type { Box } from '../../geom/bounds';
 import type { CommandContext, CommandDef } from '../command';
+import { parameterCopyModeOf } from '../constraint-upkeep';
 import { regenerateDimensions } from './dimensions';
 import { currentUcs } from '../ucs';
 
@@ -70,20 +71,26 @@ function run(
 const transform = (ctx: CommandContext, ids: readonly EntityId[], t: Similarity, verb: string) =>
   run(ctx, verb, (b) => transformObjects(b, ctx.model, ids, t, mirrorOptions(ctx.model)));
 
-/** Copies `ids` by `t`, the constraints among them with them (M9-06). */
+/** Copies `ids` by `t`, the constraints among them with them as PARAMETERCOPYMODE says (M9-06). */
 function copyCarrying(
   b: Parameters<Parameters<CommandContext['edit']>[0]>[0],
   model: DocumentModel,
   ids: readonly EntityId[],
   t: Similarity,
+  mode: ParameterCopyMode,
 ): EditReport {
   const report = copyObjects(b, model, ids, t, mirrorOptions(model));
-  carryConstraints(b, model, report.copies, t);
+  carryConstraints(b, model, report.copies, t, mode);
   return report;
 }
 
-const copy = (ctx: CommandContext, ids: readonly EntityId[], t: Similarity, verb: string) =>
-  run(ctx, verb, (b) => copyCarrying(b, ctx.model, ids, t));
+const copy = (
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+  t: Similarity,
+  verb: string,
+  mode: ParameterCopyMode,
+) => run(ctx, verb, (b) => copyCarrying(b, ctx.model, ids, t, mode));
 
 const point = (a: PromptAnswer): Vec2 | undefined => (a.kind === 'point' ? a.point : undefined);
 
@@ -168,6 +175,7 @@ export function copyCommand(): CommandDef {
     async *run(ctx) {
       const ids = yield* selectObjects(ctx);
       if (ids.length === 0) return;
+      const mode = await parameterCopyModeOf(ctx);
       let base: Vec2 | undefined;
       for (;;) {
         ctx.message(`Current settings:  Copy mode = ${multiple ? 'Multiple' : 'Single'}`);
@@ -190,7 +198,7 @@ export function copyCommand(): CommandDef {
           const d = yield* displacement(ctx, last);
           if (!d) return;
           last = d;
-          copy(ctx, ids, moveBy(d), 'copied');
+          copy(ctx, ids, moveBy(d), 'copied', mode);
           return;
         }
         break;
@@ -213,7 +221,7 @@ export function copyCommand(): CommandDef {
           continue;
         }
         if (a.kind === 'keyword' && a.keyword === 'Array') {
-          const row = yield* copyArray(ctx, ids, base);
+          const row = yield* copyArray(ctx, ids, base, mode);
           if (row) {
             made.push(row);
             first = false;
@@ -223,14 +231,14 @@ export function copyCommand(): CommandDef {
         }
         if (a.kind === 'enter' && first) {
           last = base;
-          copy(ctx, ids, moveBy(base), 'copied');
+          copy(ctx, ids, moveBy(base), 'copied', mode);
           return;
         }
         const to = point(a);
         if (!to) return;
         const d = sub(to, base);
         last = d;
-        made.push(copy(ctx, ids, moveBy(d), 'copied').ids);
+        made.push(copy(ctx, ids, moveBy(d), 'copied', mode).ids);
         first = false;
         if (!multiple) return;
       }
@@ -243,6 +251,7 @@ async function* copyArray(
   ctx: CommandContext,
   ids: readonly EntityId[],
   base: Vec2,
+  mode: ParameterCopyMode,
 ): Sub<readonly EntityId[] | undefined> {
   let n: number | undefined;
   while (n === undefined) {
@@ -269,7 +278,13 @@ async function* copyArray(
   let report: EditReport | undefined;
   ctx.edit((b) => {
     for (let i = 1; i < n; i++) {
-      report = copyCarrying(b, ctx.model, ids, moveBy({ x: step.x * k * i, y: step.y * k * i }));
+      report = copyCarrying(
+        b,
+        ctx.model,
+        ids,
+        moveBy({ x: step.x * k * i, y: step.y * k * i }),
+        mode,
+      );
       out.push(...report.ids);
     }
   });
@@ -305,6 +320,7 @@ export function rotateCommand(): CommandDef {
       );
       const ids = yield* selectObjects(ctx);
       if (ids.length === 0) return;
+      const mode = await parameterCopyModeOf(ctx);
       const b = yield ctx.prompt.point({ message: 'Specify base point' });
       if (b.kind !== 'point') return;
       const base = b.point;
@@ -355,7 +371,7 @@ export function rotateCommand(): CommandDef {
         if (angle === undefined) return;
         last = angle;
         const t = turnAbout(base, angle);
-        if (copying) copy(ctx, ids, t, 'copied');
+        if (copying) copy(ctx, ids, t, 'copied', mode);
         else transform(ctx, ids, t, 'rotated');
         return;
       }
@@ -379,6 +395,7 @@ export function scaleCommand(): CommandDef {
     async *run(ctx) {
       const ids = yield* selectObjects(ctx);
       if (ids.length === 0) return;
+      const mode = await parameterCopyModeOf(ctx);
       const b = yield ctx.prompt.point({ message: 'Specify base point' });
       if (b.kind !== 'point') return;
       const base = b.point;
@@ -440,7 +457,9 @@ export function scaleCommand(): CommandDef {
         if (factor === undefined) return;
         last = factor;
         const t = scaleAbout(base, factor);
-        const report = copying ? copy(ctx, ids, t, 'copied') : transform(ctx, ids, t, 'scaled');
+        const report = copying
+          ? copy(ctx, ids, t, 'copied', mode)
+          : transform(ctx, ids, t, 'scaled');
         // A scaled dimension measures the scaled distance, in its own text height.
         await regenerateDimensions(ctx, report.regenerate ?? []);
         return;
@@ -459,6 +478,7 @@ export function mirrorCommand(): CommandDef {
     async *run(ctx) {
       const ids = yield* selectObjects(ctx);
       if (ids.length === 0) return;
+      const mode = await parameterCopyModeOf(ctx);
       const a = yield ctx.prompt.point({ message: 'Specify first point of mirror line' });
       if (a.kind !== 'point') return;
       let p2: Vec2 | undefined;
@@ -483,7 +503,7 @@ export function mirrorCommand(): CommandDef {
       // Erasing the source mirrors the objects themselves, keeping their handles (the drawing
       // AutoCAD leaves is the same; Triya keeps every link and passthrough datum with them).
       if (e.keyword === 'Yes') transform(ctx, ids, t, 'mirrored');
-      else copy(ctx, ids, t, 'mirrored');
+      else copy(ctx, ids, t, 'mirrored', mode);
     },
   };
 }

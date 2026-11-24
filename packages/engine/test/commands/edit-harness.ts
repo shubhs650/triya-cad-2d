@@ -9,6 +9,7 @@ import {
   offsetCurveOf,
   toleranceForSize,
   type BusEvent,
+  type Clipboard,
   type ConstraintService,
   type DocumentMeta,
   type Entity,
@@ -88,13 +89,35 @@ const textStyle = (handle: string, name: string, height: number) => ({
   trueTypeFlags: 0,
 });
 
+/** One Clipboard for the drawings of a test, tagged with the drawing that filled it. */
+export interface SharedClipboard {
+  held?: { readonly from: DocumentModel; readonly content: Clipboard };
+}
+
 /**
  * A canvas whose picks take the objects within 0.25 of the pick, nearest first; with
  * `variables`, an app keeping those system variables (M3-12).
  */
-export function host(model: () => DocumentModel, variables?: Map<string, number>): ViewHost {
+export function host(
+  model: () => DocumentModel,
+  variables?: Map<string, number>,
+  clipboard?: SharedClipboard,
+): ViewHost {
   return {
     request: (r): Promise<ViewReply> => {
+      // The app's Clipboard, shared by the drawings given the same one (M9-10).
+      if (r.op === 'clipboard' && clipboard) {
+        if (r.content) {
+          clipboard.held = { from: model(), content: r.content };
+          return Promise.resolve({ ok: true });
+        }
+        const held = clipboard.held;
+        return Promise.resolve(
+          held
+            ? { ok: true, clipboard: held.content, sameDrawing: held.from === model() }
+            : { ok: true },
+        );
+      }
       if (r.op === 'sysvar' && variables?.has(r.name)) {
         if (typeof r.value === 'number') variables.set(r.name, r.value);
         return Promise.resolve({ ok: true, value: variables.get(r.name)! });
@@ -165,6 +188,8 @@ export function setup(
     variables?: Map<string, number>;
     /** The constraint solver (M9-06's upkeep after modify commands). */
     constraints?: ConstraintService;
+    /** The app's Clipboard, which COPYCLIP fills and PASTECLIP reads (M9-10). */
+    clipboard?: SharedClipboard;
   } = {},
 ) {
   const init = sampleInit();
@@ -200,7 +225,7 @@ export function setup(
   const bus = new PromptBus({
     model,
     registry: builtinCommands(),
-    view: host(() => model, o.variables),
+    view: host(() => model, o.variables, o.clipboard),
     ...(o.constraints && { constraints: o.constraints }),
   });
   const log: string[] = [];

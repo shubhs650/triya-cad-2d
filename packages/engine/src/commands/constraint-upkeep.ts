@@ -19,10 +19,19 @@
 //   the constraint and the geometry does not turn. Its Help does not say what ROTATE does to a
 //   Horizontal line; drafters report that the line will not rotate, which this follows.
 //
-// Copies carry the constraints among the objects copied (COPY, MIRROR, ROTATE and SCALE's Copy:
-// `carryConstraints`, made with the copies), so nothing here handles them.
+// Copies carry the constraints among the objects copied (COPY, MIRROR, ROTATE and SCALE's Copy,
+// ARRAY's items, grip Copy, PASTECLIP: `carryConstraints`, made with the copies, M9-10), so
+// nothing here handles them. A dimensional constraint dropped leaves the expressions that name
+// its parameter the value they had, as the Parameters Manager's delete does (M9-10).
+import {
+  parameterCopyMode,
+  PARAMETER_COPY_MODE,
+  renameInExpression,
+  type ParameterCopyMode,
+} from '../edit/constraint-copy';
 import {
   constraintPointsOf,
+  type ConstraintSolver,
   dimensionalConstraints,
   geometricConstraints,
   userParameters,
@@ -31,16 +40,40 @@ import type { Tolerance } from '../geom/tolerance';
 import type { ChangeSet, Replacement } from '../model/changeset';
 import type { Handle } from '../model/handle';
 import {
+  isDimensionalConstraint,
   isGeometricConstraint,
   type ConstraintRef,
   type DimensionalConstraintObject,
   type Entity,
   type EntityGeometry,
   type GeometricConstraintObject,
+  type ParameterObject,
 } from '../model/types';
 import type { CommandContext } from './command';
 import { setExpressions } from './constraints';
 import { toleranceFor } from './modify/offset';
+import { optionVariable } from './modify/option-variables';
+
+/** Whether the drawing has any geometric or dimensional constraint. */
+function hasConstraints(ctx: CommandContext): boolean {
+  for (const o of ctx.model.objects.values()) {
+    if (isGeometricConstraint(o) || isDimensionalConstraint(o)) return true;
+  }
+  return false;
+}
+
+/**
+ * PARAMETERCOPYMODE as the app keeps it (M9-10): what a copy made now carries of the
+ * constraints. Asked only where there are constraints to carry (`carrying`, by default the
+ * drawing's own); initially 1.
+ */
+export async function parameterCopyModeOf(
+  ctx: CommandContext,
+  carrying = hasConstraints(ctx),
+): Promise<ParameterCopyMode> {
+  if (!carrying) return 1;
+  return parameterCopyMode(await optionVariable(ctx, PARAMETER_COPY_MODE, 1));
+}
 
 /** The commands whose changes drop the constraints on what they change (FR-X4). */
 export const DROPS_CONSTRAINTS: ReadonlySet<string> = new Set([
@@ -160,6 +193,42 @@ function toleranceOf(ctx: CommandContext, edits: readonly Replacement<Entity>[])
 const sentence = (s: string): string =>
   `${s.charAt(0).toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? '' : '.'}`;
 
+/** The parameters a dimensional constraint's expression names. */
+function names(d: ParameterObject): Set<string> {
+  const out = new Set<string>();
+  renameInExpression(d.expression, new Map(), out);
+  return out;
+}
+
+/**
+ * The dimensional constraints `dropped` gone (M9-10): the expressions of the others that named
+ * their parameters take the values they had, as the Parameters Manager's delete leaves them
+ * (`deleteParameter`), so no geometry moves. Returns the others as they now are.
+ */
+function keepValues(
+  ctx: CommandContext,
+  solver: ConstraintSolver,
+  dimensions: readonly ParameterObject[],
+  dropped: readonly DimensionalConstraintObject[],
+): ParameterObject[] {
+  let now = [...dimensions];
+  const changes = new Map<string, string>();
+  for (const d of dropped) {
+    const r = solver.deleteParameter(now, d.parameter);
+    now = now.filter((c) => c.handle !== d.handle);
+    if (!r.ok) continue;
+    const set = new Map(r.expressions.map((c) => [c.parameter, c.expression]));
+    for (const [parameter, expression] of set) changes.set(parameter, expression);
+    now = now.map((c) => {
+      const expression = set.get(c.parameter);
+      return expression === undefined ? c : { ...c, expression };
+    });
+  }
+  const expressions = [...changes].map(([parameter, expression]) => ({ parameter, expression }));
+  if (expressions.length > 0) ctx.edit((b) => setExpressions(ctx, b, expressions));
+  return now;
+}
+
 /**
  * Keeps the drawing's constraints in step with what `command` changed (`changes`, its undo
  * step so far), adding its own edits to the step. False when the constraints refuse the edit:
@@ -187,7 +256,17 @@ export async function keepConstraints(
     removed(geometric, 'geometric');
     removed(dimensional, 'dimensional');
   }
-  if (edits.length === 0) return true;
+  // The parameters the re-solve evaluates: the dimensional constraints kept and the user
+  // parameters (M9-03 part 6), which may name a dropped one.
+  let parameters: ParameterObject[] = [
+    ...kept.filter((c): c is DimensionalConstraintObject => !isGeometricConstraint(c)),
+    ...userParameters(ctx.model),
+  ];
+  const named = dropped.filter(
+    (c): c is DimensionalConstraintObject =>
+      !isGeometricConstraint(c) && parameters.some((d) => names(d).has(c.parameter)),
+  );
+  if (edits.length === 0 && named.length === 0) return true;
   let solver;
   try {
     solver = await ctx.constraints?.();
@@ -197,6 +276,16 @@ export async function keepConstraints(
   }
   // Without a solver (scripts, tests that give none) the constraints are left as they are.
   if (!solver) return true;
+  if (named.length > 0) {
+    // In the drawing's order, the dropped ones among the rest.
+    const pool = new Set<object>([...parameters, ...named]);
+    const ordered = [
+      ...all.filter((c): c is DimensionalConstraintObject => pool.has(c)),
+      ...userParameters(ctx.model),
+    ];
+    parameters = keepValues(ctx, solver, ordered, named);
+    if (edits.length === 0) return true;
+  }
   const before = new Map(edits.map((u) => [u.after.handle, u.before]));
   const r = solver.solveEdit(
     kept.filter(isGeometricConstraint),
@@ -205,10 +294,7 @@ export async function keepConstraints(
     toleranceOf(ctx, edits),
     !MOVES_CHANGED_VALUES.has(command),
     // The user parameters too, which the constraints' expressions may name (M9-03 part 6).
-    [
-      ...kept.filter((c): c is DimensionalConstraintObject => !isGeometricConstraint(c)),
-      ...userParameters(ctx.model),
-    ],
+    parameters,
   );
   if (!r.ok) {
     ctx.message(sentence(r.message));

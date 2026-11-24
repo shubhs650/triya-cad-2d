@@ -24,6 +24,7 @@
 // A dimension's grips (M3-05 part 4): Flip Arrow and the text placements that take no point act at
 // once; Continue and Baseline Dimension end grip editing in DIMCONTINUE's or DIMBASELINE's
 // prompts, going on from the extension line at the grip's end.
+import { carryConstraints } from '../../edit/constraint-copy';
 import { removeCopies } from '../../edit/groups';
 import type { Vec2 } from '../../geom/types';
 import { add, sub } from '../../geom/vec';
@@ -44,6 +45,7 @@ import { mirrorIn, moveBy, scaleAbout, turnAbout, type Similarity } from '../../
 import type { DocumentModel } from '../../model/document';
 import type { TransformOptions } from '../../edit/transform';
 import type { Prompt, PromptAnswer } from '../prompt';
+import { parameterCopyModeOf } from '../constraint-upkeep';
 import type { CommandContext, CommandDef } from '../command';
 import { arrayGripAt, editArrayByGrip } from './array-grips';
 import { regenerateDimensions } from './dimensions';
@@ -179,6 +181,8 @@ export function gripCommand(
       let mode = 0;
       let base = hot;
       let copying = false;
+      // What copies carry of the constraints among the objects (M9-10).
+      const copyMode = await parameterCopyModeOf(ctx);
       const made: EntityId[][] = [];
       /** The first copy's offset or angle in the mode it was placed in (M3-05 part 6). */
       let snap: { mode: number; snap: OffsetSnap } | undefined;
@@ -189,6 +193,7 @@ export function gripCommand(
           let r: ReturnType<typeof copyObjects> | undefined;
           ctx.edit((b) => {
             r = copyObjects(b, ctx.model, ids, t, mirrorOptions(ctx.model));
+            carryConstraints(b, ctx.model, r.copies, t, copyMode);
           });
           say(refusalMessages(r!.refused, 'copied'));
           made.push([...r!.ids]);

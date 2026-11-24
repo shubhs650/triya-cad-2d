@@ -146,6 +146,8 @@ describe('preferences', () => {
         PROJMODE: 1,
         TRIMMODE: 1,
         PEDITACCEPT: 0,
+        // M9-10: what copies carry of constraints (copy values, rename on conflict).
+        PARAMETERCOPYMODE: 1,
         // M4-09 part 3: TEXTALIGN's Left and Current vertical.
         TEXTALIGNMODE: 9,
         TEXTALIGNSPACING: 2,
@@ -346,7 +348,15 @@ describe('preferences', () => {
 
   it('keep the modify commands\u2019 options when valid (M3-12)', () => {
     const kept = normalizePreferences({
-      drafting: { modifyOptions: { OFFSETGAPTYPE: 2, TRIMMODE: 0, PEDITACCEPT: 1, NOSUCH: 4 } },
+      drafting: {
+        modifyOptions: {
+          OFFSETGAPTYPE: 2,
+          TRIMMODE: 0,
+          PEDITACCEPT: 1,
+          PARAMETERCOPYMODE: 4,
+          NOSUCH: 4,
+        },
+      },
     }).drafting.modifyOptions;
     expect(kept).toEqual({
       OFFSETERASE: 0,
@@ -356,14 +366,17 @@ describe('preferences', () => {
       PROJMODE: 1,
       TRIMMODE: 0,
       PEDITACCEPT: 1,
+      PARAMETERCOPYMODE: 4,
       TEXTALIGNMODE: 9,
       TEXTALIGNSPACING: 2,
       HPDLGMODE: 2,
     });
     const bad = normalizePreferences({
-      drafting: { modifyOptions: { OFFSETGAPTYPE: 3, PROJMODE: 'View', EDGEMODE: 0.5 } },
+      drafting: {
+        modifyOptions: { OFFSETGAPTYPE: 3, PROJMODE: 'View', EDGEMODE: 0.5, PARAMETERCOPYMODE: 5 },
+      },
     }).drafting.modifyOptions;
-    expect(bad).toMatchObject({ OFFSETGAPTYPE: 0, PROJMODE: 1, EDGEMODE: 0 });
+    expect(bad).toMatchObject({ OFFSETGAPTYPE: 0, PROJMODE: 1, EDGEMODE: 0, PARAMETERCOPYMODE: 1 });
     expect(normalizePreferences({ drafting: { modifyOptions: 7 } }).drafting.modifyOptions).toEqual(
       DEFAULT_PREFERENCES.drafting.modifyOptions,
     );

@@ -308,6 +308,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // Multiple lines; kept while the app runs, as OFFSETDIST and CHAMMODE are.
   { name: 'AFLAGS', store: 'app', kind: 'integer', min: 0, max: 63 },
   { name: 'PEDITACCEPT', store: 'app', kind: 'switch' },
+  // PARAMETERCOPYMODE (M9-10; AutoCAD 2024 Help, "Saved in: Registry", initially 1): what copies
+  // carry of the constraints among the objects copied, 0 none, 1 dimensional ones with values,
+  // 2 and 3 keeping expressions of user parameters, 4 keeping their expressions.
+  { name: 'PARAMETERCOPYMODE', store: 'app', kind: 'integer', min: 0, max: 4 },
   // M4-09 part 3 (AutoCAD 2024 Help, both "Saved in: Registry"): TEXTALIGN's options.
   // TEXTALIGNMODE the point it aligns by, 0–8 TL to BR, 9 Left, 10 Center, 11 Right (9), and
   // TEXTALIGNSPACING 0 Distribute, 1 Set spacing, 2 Current vertical, 3 Current horizontal (2).

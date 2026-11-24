@@ -41,6 +41,7 @@ import {
   rectangularItems,
   type ArrayPath,
 } from '../../edit/array';
+import { carryConstraints, type ParameterCopyMode } from '../../edit/constraint-copy';
 import { copyObjects, refusalMessages, transformObjects, type EditReport } from '../../edit/edit';
 import {
   arrayItemAt,
@@ -82,6 +83,7 @@ import type { Prompt, PromptAnswer } from '../prompt';
 import { parseDistance } from '../parse';
 import { drawingUnits, formatNumber } from '../units';
 import type { CommandContext, CommandDef } from '../command';
+import { parameterCopyModeOf } from '../constraint-upkeep';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -159,7 +161,11 @@ class LiveArray {
   #refused: ReadonlyMap<string, number> = new Map();
   #unannotated = 0;
 
-  constructor(readonly ids: readonly EntityId[]) {}
+  /** `mode`: PARAMETERCOPYMODE, what each item carries of the constraints among `ids` (M9-10). */
+  constructor(
+    readonly ids: readonly EntityId[],
+    readonly mode: ParameterCopyMode = 1,
+  ) {}
 
   show(ctx: CommandContext, items: readonly Similarity[]): void {
     const o = mirrorOptions(ctx.model);
@@ -172,6 +178,7 @@ class LiveArray {
       items.forEach((t, i) => {
         if (i === 0 && isIdentity(t)) return;
         const r = copyObjects(b, ctx.model, this.ids, t, o);
+        carryConstraints(b, ctx.model, r.copies, t, this.mode);
         if (i === 0) this.#first = [...r.ids];
         this.#copies.push(...r.ids);
         unannotated = Math.max(unannotated, r.unannotated);
@@ -593,7 +600,7 @@ async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<
   let base = centreOf(box);
   let on = await associativity(ctx);
   ctx.message(typeLine('Rectangular', on));
-  const live = new LiveArray(ids);
+  const live = new LiveArray(ids, await parameterCopyModeOf(ctx));
   const show = () => live.show(ctx, rectangularItems(s));
   show();
   try {
@@ -643,7 +650,7 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
     rowSpacing: defaultSpacing(Math.max(box.maxX - box.minX, box.maxY - box.minY)),
     rotateItems: true,
   };
-  const live = new LiveArray(ids);
+  const live = new LiveArray(ids, await parameterCopyModeOf(ctx));
   const show = () => live.show(ctx, polarItems(s));
   show();
   try {
@@ -719,7 +726,7 @@ async function* along(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
     align: true,
   };
   s.items = Math.min(measureMaxItems(path, s.spacing), MAX_ARRAY_ITEMS);
-  const live = new LiveArray(ids);
+  const live = new LiveArray(ids, await parameterCopyModeOf(ctx));
   const show = () => live.show(ctx, pathItems({ path, ...s }));
   show();
   try {
@@ -1167,7 +1174,7 @@ function dashArray(): (ctx: CommandContext) => Sub<void> {
         ['Rectangular', 'Polar'],
         last,
       )) as typeof last;
-      const live = new LiveArray(ids);
+      const live = new LiveArray(ids, await parameterCopyModeOf(ctx));
       if (last === 'Rectangular') {
         const rows = yield* count(ctx, 'Enter the number of rows (---)', 1);
         const columns = yield* count(ctx, 'Enter the number of columns (|||)', 1);

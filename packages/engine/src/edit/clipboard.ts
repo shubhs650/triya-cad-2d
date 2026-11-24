@@ -56,6 +56,12 @@ import { namedPlotStyles } from '../properties/general';
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { sub } from '../geom/vec';
+import {
+  carryConstraintsFrom,
+  constraintsAmong,
+  type CarriedConstraint,
+  type ParameterCopyMode,
+} from './constraint-copy';
 import { createGroup, groupsOf } from './groups';
 import { bookColors, heldBookColor } from '../model/book-colors';
 import type { ChangeSetBuilder } from '../model/builder';
@@ -151,6 +157,12 @@ export interface Clipboard {
    * records among `tables`. A paste gives each pasted viewport the same overrides.
    */
   readonly viewportOverrides?: readonly ClipboardViewportOverride[];
+  /**
+   * The geometric and dimensional constraints wholly among `entities` (M9-10), naming them by
+   * the source's handles: a paste gives the pasted objects the same, as PARAMETERCOPYMODE says
+   * (constraint-copy.ts).
+   */
+  readonly constraints?: readonly CarriedConstraint[];
 }
 
 /** One layer's override in one copied viewport, by the source's handles. */
@@ -597,6 +609,7 @@ export function copyToClipboard(
   }
   const tables: Record<string, ObjectCommon[]> = {};
   for (const [t, list] of records) tables[t] = [...list.values()];
+  const constraints = constraintsAmong(model.objects.values(), carried);
   return {
     clipboard: {
       base,
@@ -611,6 +624,7 @@ export function copyToClipboard(
       ...(groups.length > 0 ? { groups } : {}),
       ...(clips.length > 0 ? { clips } : {}),
       ...(viewportOverrides.length > 0 ? { viewportOverrides } : {}),
+      ...(constraints.length > 0 ? { constraints } : {}),
     },
     refused,
     unannotated,
@@ -670,11 +684,27 @@ export function pasteObjects(
   owner: Handle,
   at: Vec2,
   units?: number,
+  constraints?: PastedConstraints,
 ): EditReport {
-  const report = pasteInto(b, model, clip, owner, {
-    t: pastePlacement(model, clip, at, units),
-    evaluate: true,
-  });
+  const t = pastePlacement(model, clip, at, units);
+  const copies = new Map<Handle, Entity>();
+  const report = pasteInto(b, model, clip, owner, { t, evaluate: true, copies });
+  // The constraints among the objects pasted (M9-10), where the paste is told how to carry them.
+  if (constraints && clip.constraints) {
+    const source = new Map(clip.entities.map((e) => [e.handle, e as unknown as Entity]));
+    carryConstraintsFrom(
+      b,
+      model,
+      {
+        constraints: clip.constraints,
+        lookup: (h) => source.get(h),
+        sameDrawing: constraints.sameDrawing,
+      },
+      new Map([...copies].filter(([h]) => source.has(h))),
+      t ?? moveBy({ x: 0, y: 0 }),
+      constraints.mode,
+    );
+  }
   // A group copied whole is pasted as a new unnamed group (M3-13); the pasted objects are in
   // the Clipboard's order.
   const index = new Map(clip.entities.map((e, i) => [e.handle, i]));
@@ -721,8 +751,18 @@ export function pasteKnown(
   return { report, map };
 }
 
+/** How PASTECLIP carries the Clipboard's constraints (M9-10). */
+export interface PastedConstraints {
+  /** PARAMETERCOPYMODE. */
+  readonly mode: ParameterCopyMode;
+  /** Pasted into the drawing they were copied from (every parameter name is in use). */
+  readonly sameDrawing: boolean;
+}
+
 /** How `pasteInto` pastes. */
 interface PasteOptions {
+  /** Filled with each object pasted by the handle it had in the source. */
+  readonly copies?: Map<Handle, Entity>;
   /** What carries the objects (left where they are without). */
   readonly t?: Similarity | undefined;
   /** What `model` holds already of what the Clipboard carries (`pasteKnown`). */
@@ -881,7 +921,7 @@ function pasteInto(
   };
   const pasted: Entity[] = [];
   /** Each pasted object by the handle it had in the source. */
-  const copies = new Map<Handle, Entity>();
+  const copies = options.copies ?? new Map<Handle, Entity>();
   for (const e of contents) {
     const entity = b.adoptEntity(colored(copyEntity(e, copy)));
     pasted.push(entity);
