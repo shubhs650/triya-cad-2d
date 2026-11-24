@@ -6,9 +6,10 @@
 // Parametric tab > Geometric panel > Show All"); the Help gives no command line for them, and
 // CONSTRAINTBARDISPLAY's page speaks of "CONSTRAINTBAR = Showall", so Triya offers them as the
 // selection prompt's options, Showall and Hideall, which the ribbon types. Reset "displays
-// constraint bars ... and resets them to their default locations": bars cannot be dragged yet,
-// so it shows the selected objects' bars, as Show does. Which bars show is the app's display
-// state of the drawing, not an edit (`constraint-bars.ts` in edit/).
+// constraint bars ... and resets them to their default locations": it shows the selected
+// objects' bars and puts those the drafter dragged (M9-05 part 6) back. Which bars show, and
+// where a dragged one sits, is the app's display state of the drawing, not an edit
+// (`constraint-bars.ts` in edit/).
 //
 // DELCONSTRAINT (AutoCAD 2024 Help, "DELCONSTRAINT (Command)": "Removes all geometric and
 // dimensional constraints from a selection set of objects. The number of constraints removed
@@ -37,7 +38,7 @@ function handlesOf(ctx: CommandContext, a: PromptAnswer): Set<Handle> {
 /** The app shows or hides the bars of `entities`, saying why not where it cannot. */
 async function bars(
   ctx: CommandContext,
-  action: 'show' | 'hide',
+  action: 'show' | 'hide' | 'reset',
   entities: readonly Handle[],
 ): Promise<void> {
   const r = await ctx.view.request({ op: 'constraintBars', action, entities });
@@ -70,8 +71,8 @@ export function constraintBarCommand(): CommandDef {
         default: { kind: 'keyword', keyword: 'Show' },
       });
       // A default: Enter answers Show, so the answer is a keyword.
-      const hide = (a as { keyword: string }).keyword === 'Hide';
-      await bars(ctx, hide ? 'hide' : 'show', constrained);
+      const k = (a as { keyword: string }).keyword;
+      await bars(ctx, k === 'Hide' ? 'hide' : k === 'Reset' ? 'reset' : 'show', constrained);
     },
   };
 }

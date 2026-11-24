@@ -1,0 +1,1 @@
+- M9-05 part 6 (#673): constraint bars can be dragged off their objects and keep their place beside them at any zoom and as the objects move; CONSTRAINTBAR Reset puts them back.
