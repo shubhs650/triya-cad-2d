@@ -43,10 +43,11 @@
 //   Dimensional Constraints": dynamic constraints "are not displayed when plotting", annotational
 //   ones "are displayed in plots"). Triya's constraints keep no layer or colour, so they plot
 //   as colour 7 at the default lineweight, continuous, through the table (ours: AutoCAD gives
-//   them the current layer's).
+//   them the current layer's). A layout plots them through each viewport after its objects,
+//   carried and clipped as they are (M9-03 part 13), leaving out in a viewport those whose
+//   objects are all on layers frozen in it, as the screen does.
 //
-// Not plotted: an image whose bitmap the app has not loaded, which plots its frame only;
-// constraints in a layout's viewports, as the screen shows them on the Model tab only.
+// Not plotted: an image whose bitmap the app has not loaded, which plots its frame only.
 
 import {
   constraintDisplays,
@@ -57,6 +58,7 @@ import {
   viewportTransform,
   VIEWPORT_NON_RECT_CLIP,
   type Color,
+  type ConstraintDisplay,
   type DocumentModel,
   type Entity,
   type EntityId,
@@ -293,6 +295,8 @@ class Plotter {
   readonly #orders = new Map<Handle, readonly EntityId[]>();
   #sortTables: Map<Handle, SortEntsTable> | undefined;
   #clips: ReturnType<typeof insertClips> | undefined;
+  /** The annotational constraints, worked out once for the model and every viewport. */
+  #displays: readonly ConstraintDisplay[] | undefined;
   readonly #base: ReturnType<typeof createPaint>;
 
   constructor(model: DocumentModel, src: PlotSource) {
@@ -441,20 +445,45 @@ class Plotter {
     }
   }
 
-  /** The drawing's annotational constraints, as `out`'s parts (model space only). */
-  constraintParts(out: PlotPart[]): void {
+  /**
+   * The drawing's annotational constraints, as `out`'s parts: in model space, or through a
+   * viewport (M9-03 part 13) carried by `m` within `clip`, those whose objects are all on layers
+   * in `frozen` left out.
+   */
+  constraintParts(
+    out: PlotPart[],
+    o: {
+      readonly m?: Affine;
+      readonly clip?: readonly (readonly number[])[];
+      readonly frozen?: ReadonlySet<Handle>;
+    } = {},
+  ): void {
     const model = this.#model;
-    const displays = constraintDisplays(model, this.#src.constraintNameFormat ?? 2);
-    const annotational = displays.filter((d) => d.form === 'annotational');
-    if (annotational.length === 0) return;
+    this.#displays ??= constraintDisplays(model, this.#src.constraintNameFormat ?? 2).filter(
+      (d) => d.form === 'annotational',
+    );
+    const frozen = o.frozen;
+    const shown = frozen
+      ? this.#displays.filter(
+          (d) =>
+            !d.entities.every((h) => {
+              const layer = model.entityByHandle(h)?.layer;
+              return layer !== undefined && frozen.has(layer);
+            }),
+        )
+      : this.#displays;
+    if (shown.length === 0) return;
     const sizes = annotationalSizes(model.header);
     const object: PlotObject = { color: COLOR_7, lineweight: this.#lwDefault };
     const props = this.#src.resolver.resolve(object);
-    for (const d of annotational) {
-      for (const prim of constraintPrimitives(d, sizes, 'foreground', this.#tessellate.text)) {
+    for (const d of shown) {
+      for (const drawn of constraintPrimitives(d, sizes, 'foreground', this.#tessellate.text)) {
+        const prim = o.m ? transformPrimitive(drawn, o.m) : drawn;
         const part = this.part(prim, object, props, 'foreground');
+        if (!part) continue;
         // Dimension and extension lines plot continuous, as a dimension's text does.
-        if (part) out.push(part.kind === 'stroke' ? { ...part, paint: solidOf(props) } : part);
+        const solid = part.kind === 'stroke' ? { ...part, paint: solidOf(props) } : part;
+        out.push(o.clip ? { ...solid, clip: o.clip } : solid);
       }
     }
   }
@@ -786,6 +815,7 @@ export function plotParts(model: DocumentModel, block: Handle, src: PlotSource):
         ...(frozen ? { frozen } : {}),
       });
     }
+    if (!src.only) plotter.constraintParts(views, { m, clip, ...(frozen ? { frozen } : {}) });
   }
   return src.paperspaceLast ? [...views, ...paper] : [...paper, ...views];
 }
