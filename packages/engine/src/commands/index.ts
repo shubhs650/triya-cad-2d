@@ -40,6 +40,7 @@ export { rayCommand, xlineCommand } from './draw/xline';
 export { dashDimstyleCommand } from './dimstyle-dash';
 export { dcdisplayCommand } from './dcdisplay';
 export { deleteConstraintsCommand } from './constraint-bar';
+export { constraintPropertyCommand } from './constraint-properties';
 export {
   dimensionalConstraintCommands,
   linearDirection,

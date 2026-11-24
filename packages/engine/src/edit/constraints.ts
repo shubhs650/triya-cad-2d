@@ -215,6 +215,20 @@ export interface ConstraintSolver {
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
   ): ParameterChangeResult;
+  /**
+   * The Properties palette's Reference (M9-03 part 10): dimensional constraint `handle` made a
+   * reference one (its expression set to what it measures; refused while a driving value
+   * follows from it) or a driving one again (solved at that value; refused when it would
+   * over-constrain the geometry).
+   */
+  setReference(
+    constraints: readonly GeometricConstraintObject[],
+    dimensions: readonly ParameterObject[],
+    handle: Handle,
+    reference: boolean,
+    lookup: (handle: Handle) => Entity | undefined,
+    tolerance: Tolerance,
+  ): ParameterChangeResult;
   /** Renames a parameter; `expressions` are those naming it, rewritten. Moves nothing. */
   renameParameter(
     dimensions: readonly ParameterObject[],

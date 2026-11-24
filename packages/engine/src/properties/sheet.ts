@@ -16,11 +16,15 @@ import { defaultTableBreaks } from '../annotation/table-breaks';
 import { TABLE_BREAK_DIRECTIONS, TABLE_BREAK_FLAGS, type TableBreakFlag } from './table-breaks';
 import { dynamicProperties } from './dynamic';
 import type { EntityId } from '../model/entity-ids';
+import type { Handle } from '../model/handle';
+import { dimensionalConstraints } from '../edit/constraints';
+import { measuredValue } from '../edit/constraint-display';
 import type {
   Color,
   Entity,
   EntityGeometry,
   EntityType,
+  DimensionalConstraintObject,
   HatchGeometry,
   Lineweight,
   LinetypeRef,
@@ -127,8 +131,18 @@ export interface PropertySection {
   readonly rows: readonly PropertyRow[];
 }
 
+/**
+ * The Properties palette's type for dimensional constraints selected (M9-03 part 10): they are
+ * objects, not entities, but the palette lists them beside the objects' types and narrows to
+ * them as to a type.
+ */
+export const DIMCONSTRAINT_SHEET_TYPE = 'TRIYA_DIMCONSTRAINT';
+
+/** A type the Properties palette lists: an entity type, or the dimensional constraints'. */
+export type SheetType = EntityType | typeof DIMCONSTRAINT_SHEET_TYPE;
+
 export interface PropertyTypeCount {
-  readonly type: EntityType;
+  readonly type: SheetType;
   /** AutoCAD's name for the type in the palette's list: "Line", "Block Reference". */
   readonly label: string;
   readonly count: number;
@@ -146,7 +160,7 @@ export interface PropertySheet {
   /** The selected objects' types, in the order first selected. */
   readonly types: readonly PropertyTypeCount[];
   /** The one type the sheet is narrowed to; undefined for all. */
-  readonly filter?: EntityType;
+  readonly filter?: SheetType;
   readonly sections: readonly PropertySection[];
   /**
    * FR-B3: the objects shown are references to one dynamic block, which Triya does not
@@ -1883,6 +1897,125 @@ function visualizationRows(model: DocumentModel, es: readonly Entity[]): Propert
 }
 
 /**
+ * The sheet for objects `ids` and dimensional `constraints` selected together (M9-03 part 10):
+ * both types listed; the constraints' Constraint rows when narrowed to them or when no object
+ * is selected; an object type's rows when narrowed to it; else nothing, as an object and a
+ * constraint share no property (AutoCAD's All shows what the types have in common).
+ */
+function withConstraints(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  filter: SheetType | undefined,
+  constraints: readonly DimensionalConstraintObject[],
+  vertex: number,
+  measure: DimensionMeasure | undefined,
+): PropertySheet {
+  const units = propertyUnits(model);
+  const own = {
+    type: DIMCONSTRAINT_SHEET_TYPE,
+    label: 'Dimensional Constraint',
+    count: constraints.length,
+  } as const;
+  const rows = [constraintSection(model, constraints)];
+  if (ids.length === 0) return { count: constraints.length, types: [own], sections: rows, units };
+  const objects = propertySheet(
+    model,
+    ids,
+    filter === DIMCONSTRAINT_SHEET_TYPE ? undefined : filter,
+    vertex,
+    measure,
+  );
+  const count = objects.count + constraints.length;
+  const types = [...objects.types, own];
+  if (filter === DIMCONSTRAINT_SHEET_TYPE) {
+    return { count, types, filter, sections: rows, units };
+  }
+  if (objects.filter !== undefined) return { ...objects, count, types };
+  return { count, types, sections: [], units };
+}
+
+/**
+ * A dimensional constraint's Constraint rows (M9-03 part 10; AutoCAD 2024 Help, "To Edit a
+ * Dimensional Constraint Using the Properties Palette": "Under Constraint, click the value that
+ * you want to change"). Constraint Form (Dynamic or Annotational) and Reference, which "About
+ * Applying Dimensional Constraints" sets here; Name, Expression and Description, as the
+ * Parameters Manager edits them; Value, what it measures. The Help lists no rows, so these are
+ * the properties it speaks of, in the order Triya shows them. A name and an expression are one
+ * parameter's, read only with several shown; a reference constraint's expression is measured
+ * ("You cannot edit the Expression and Value properties for a reference parameter").
+ */
+function constraintSection(
+  model: DocumentModel,
+  cs: readonly DimensionalConstraintObject[],
+): PropertySection {
+  const one = cs.length === 1;
+  const lookup = (h: string) => model.entityByHandle(h);
+  const angular = cs.map((c) => c.dimension === 'angular');
+  const values = cs.map((c) => {
+    const v = measuredValue(c, lookup);
+    return v === undefined ? undefined : c.dimension === 'angular' ? (v * Math.PI) / 180 : v;
+  });
+  const sameKind = angular.every((a) => a === angular[0]);
+  const known = values.filter((v): v is number => v !== undefined);
+  const value =
+    sameKind && known.length === values.length ? sharedNumber(known) : { varies: true as const };
+  const row = (
+    key: string,
+    label: string,
+    kind: PropertyKind,
+    s: { value?: PropertyValue; varies?: true },
+    extra: Partial<PropertyRow> = {},
+  ): PropertyRow => ({
+    key,
+    label,
+    kind,
+    ...(s.value !== undefined && { value: s.value }),
+    ...(s.varies && { varies: true as const }),
+    ...extra,
+  });
+  return {
+    title: 'Constraint',
+    rows: [
+      row('constraint-form', 'Constraint Form', 'choice', shared(cs.map((c) => c.form)), {
+        options: CONSTRAINT_FORMS,
+      }),
+      row(
+        'constraint-reference',
+        'Reference',
+        'choice',
+        shared(cs.map((c) => yesNo(!!c.reference))),
+        {
+          options: YES_NO,
+        },
+      ),
+      row('constraint-name', 'Name', 'text', shared(cs.map((c) => c.parameter)), {
+        ...(!one && { readOnly: true as const }),
+      }),
+      row('constraint-expression', 'Expression', 'text', shared(cs.map((c) => c.expression)), {
+        ...((!one || cs[0]!.reference) && { readOnly: true as const }),
+      }),
+      row('constraint-value', 'Value', angular[0] && sameKind ? 'angle' : 'distance', value, {
+        readOnly: true,
+      }),
+      row(
+        'constraint-description',
+        'Description',
+        'text',
+        shared(cs.map((c) => c.description ?? '')),
+        {
+          clearable: true,
+        },
+      ),
+    ],
+  };
+}
+
+const CONSTRAINT_FORMS: readonly PropertyOption[] = [
+  { value: 'dynamic', label: 'Dynamic' },
+  { value: 'annotational', label: 'Annotational' },
+];
+
+/**
  * The Properties palette's sheet for the objects `ids`, narrowed to `filter` (a type among
  * them; any other shows all). With nothing selected, AutoCAD's "No selection": General with the
  * drawing's current settings for new objects (`current`, M2-35).
@@ -1890,12 +2023,18 @@ function visualizationRows(model: DocumentModel, es: readonly Entity[]): Propert
 export function propertySheet(
   model: DocumentModel,
   ids: readonly EntityId[],
-  filter?: EntityType,
+  filter?: SheetType,
   /** The polyline vertex shown, from 0 (M2-35 part 8); kept within the polyline. */
   vertex = 0,
   /** What a dimension measures, from the dimension engine (M2-35 part 10); none without. */
   measure?: DimensionMeasure,
+  /** The dimensional constraints selected too (M9-03 part 10), by handle. */
+  constraintHandles: readonly Handle[] = [],
 ): PropertySheet {
+  const picked = new Set(constraintHandles);
+  const constraints = dimensionalConstraints(model).filter((c) => picked.has(c.handle));
+  if (constraints.length > 0)
+    return withConstraints(model, ids, filter, constraints, vertex, measure);
   const all = filtered(model, ids, undefined);
   const counts = new Map<EntityType, number>();
   for (const e of all) counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
@@ -1911,7 +2050,10 @@ export function propertySheet(
     return kind === 'line' ? 'Centerline' : kind ? 'Center Mark' : typeLabel(type);
   };
   const types = [...counts].map(([type, count]) => ({ type, label: label(type), count }));
-  const narrowed = filter !== undefined && counts.has(filter) ? filter : undefined;
+  const narrowed =
+    filter !== undefined && filter !== DIMCONSTRAINT_SHEET_TYPE && counts.has(filter)
+      ? filter
+      : undefined;
   const es = narrowed ? all.filter((e) => e.type === narrowed) : all;
   const units = propertyUnits(model);
   if (ids.length === 0) {

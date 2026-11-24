@@ -9,7 +9,12 @@
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { EntityType } from '../model/types';
-import { propertySheet, type PropertySheet } from './sheet';
+import {
+  DIMCONSTRAINT_SHEET_TYPE,
+  propertySheet,
+  type PropertySheet,
+  type SheetType,
+} from './sheet';
 
 /** The rows every object shows. */
 export const QUICK_GENERAL: readonly string[] = ['color', 'layer', 'linetype'];
@@ -48,8 +53,8 @@ export const QUICK_PROPERTIES: Readonly<Partial<Record<EntityType, readonly stri
 };
 
 /** QPMODE 2 shows the palette only for these types (Help: "objects that are supported"). */
-export function hasQuickProperties(type: EntityType): boolean {
-  return QUICK_PROPERTIES[type] !== undefined;
+export function hasQuickProperties(type: SheetType): boolean {
+  return type !== DIMCONSTRAINT_SHEET_TYPE && QUICK_PROPERTIES[type] !== undefined;
 }
 
 /**
@@ -60,6 +65,13 @@ export function hasQuickProperties(type: EntityType): boolean {
 export function quickPropertySheet(sheet: PropertySheet): PropertySheet | undefined {
   if (sheet.current || sheet.count === 0) return undefined;
   const oneType = sheet.filter ?? (sheet.types.length === 1 ? sheet.types[0]!.type : undefined);
+  // Dimensional constraints (M9-03 part 10) have no General rows: all their Constraint rows.
+  if (oneType === DIMCONSTRAINT_SHEET_TYPE) {
+    return {
+      ...sheet,
+      sections: [{ title: 'Quick Properties', rows: sheet.sections[0]?.rows ?? [] }],
+    };
+  }
   const keys = [...QUICK_GENERAL, ...((oneType && QUICK_PROPERTIES[oneType]) ?? [])];
   const rows = sheet.sections.flatMap((s) => s.rows);
   const quick = keys.flatMap((k) => rows.filter((r) => r.key === k));

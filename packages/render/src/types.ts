@@ -572,8 +572,21 @@ export interface Renderer {
    * inside `box` (world units), a `crossing` window those inside it or crossing its edge.
    */
   select(query: SelectQuery): EntityId[];
-  /** The entities to draw selected (M2-03): highlighted over the scene; none clears it. */
-  setHighlight(ids: readonly EntityId[]): void;
+  /**
+   * The entities to draw selected (M2-03): highlighted over the scene; none clears it. With
+   * them, the dimensional constraints selected (M9-03 part 10), by handle.
+   */
+  setHighlight(ids: readonly EntityId[], constraints?: readonly Handle[]): void;
+  /**
+   * The dimensional constraint drawn on the Model tab within `aperture` CSS pixels of a screen
+   * point (M9-03 part 10), by its text, dimension line or arc and arrows, the nearest; null for
+   * none. `view` as `hitTest`'s.
+   */
+  constraintAt(
+    screen: { readonly x: number; readonly y: number },
+    aperture: number,
+    view?: ViewTransform,
+  ): Handle | null;
   /**
    * The layout viewport made current (MSPACE, M6-02 part 3), by handle; undefined, paper space.
    * While it is, picks, windows and snaps take model space's objects, and the selection, grips

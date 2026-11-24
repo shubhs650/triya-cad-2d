@@ -83,9 +83,15 @@ import {
 import { xrefDetachChange, xrefDetachProblem } from '../edit/xrefs';
 import { xrefBindChange, xrefBindProblem } from '../edit/xref-bind';
 import type { EntityId } from '../model/entity-ids';
-import type { EntityType, TableCellLock } from '../model/types';
+import type { TableCellLock } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
-import { propertySheet, type DimensionMeasure, type PropertySheet } from '../properties/sheet';
+import {
+  DIMCONSTRAINT_SHEET_TYPE,
+  propertySheet,
+  type DimensionMeasure,
+  type PropertySheet,
+  type SheetType,
+} from '../properties/sheet';
 import { quickPropertySheet, rolloverSheet } from '../properties/quick';
 import { ribbonProperties, type RibbonProperties } from '../properties/ribbon';
 import { REVCLOUDGRIPS } from '../edit/revcloud';
@@ -649,7 +655,7 @@ export type CommandInput =
   | {
       readonly kind: 'properties';
       readonly open: boolean;
-      readonly filter?: EntityType | null;
+      readonly filter?: SheetType | null;
       readonly quick?: boolean;
     }
   /** A Properties palette edit on the selected objects of the type it shows (one undo step). */
@@ -789,11 +795,12 @@ export class EngineSession {
   #properties = false;
   /** Quick Properties asked for the sheets: they are cut to its rows (M2-35 part 16). */
   #quick = false;
-  #filter: EntityType | undefined;
+  #filter: SheetType | undefined;
   /** The polyline vertex the Properties sheet shows (M2-35 part 8). */
   #vertex = 0;
   /** The selection the last sheet showed, so a new selection shows all types again. */
   #sheetIds: readonly EntityId[] = [];
+  #sheetConstraints: readonly Handle[] = [];
   #sheetQueued = false;
   /** The ribbon's dropdowns are shown: their properties are sent (M7-02 part 3). */
   #ribbon = false;
@@ -914,20 +921,26 @@ export class EngineSession {
 
   #sendSheet(): void {
     const ids = this.#bus.selection;
+    const constraints = this.#bus.constraintSelection;
     // A different selection shows every type again, as AutoCAD's palette does.
     const same =
-      ids.length === this.#sheetIds.length && ids.every((id, i) => id === this.#sheetIds[i]);
+      ids.length === this.#sheetIds.length &&
+      ids.every((id, i) => id === this.#sheetIds[i]) &&
+      constraints.length === this.#sheetConstraints.length &&
+      constraints.every((h, i) => h === this.#sheetConstraints[i]);
     if (!same) {
       this.#filter = undefined;
       this.#vertex = 0;
     }
     this.#sheetIds = [...ids];
+    this.#sheetConstraints = [...constraints];
     const sheet = propertySheet(
       this.model,
       ids,
       this.#filter,
       this.#vertex,
       this.#services.measureDimension,
+      constraints,
     );
     if (!this.#quick) return this.#emit({ type: 'properties', sheet });
     // Nothing selected shows no Quick Properties: an empty sheet says so.
@@ -1012,8 +1025,13 @@ export class EngineSession {
         if (input.filter !== undefined) this.#filter = input.filter ?? undefined;
         if (input.open) {
           // Narrowing keeps the selection the sheet showed; opening starts from it.
-          if (input.filter === undefined) this.#sheetIds = [];
-          else this.#sheetIds = [...this.#bus.selection];
+          if (input.filter === undefined) {
+            this.#sheetIds = [];
+            this.#sheetConstraints = [];
+          } else {
+            this.#sheetIds = [...this.#bus.selection];
+            this.#sheetConstraints = [...this.#bus.constraintSelection];
+          }
           this.#sendSheet();
         }
         return Promise.resolve();
@@ -1038,6 +1056,7 @@ export class EngineSession {
         return this.#bus.setProperty(input.edit).then(() => this.#queueSheet());
       case 'property-editor':
         // The Linetype list's Other... (M5-08 part 2), or an MTEXT's Contents `...`.
+        if (this.#filter === DIMCONSTRAINT_SHEET_TYPE) return Promise.resolve();
         return input.key === 'linetype'
           ? this.#bus.otherLinetype(this.#filter)
           : this.#bus.editContents(this.#filter);

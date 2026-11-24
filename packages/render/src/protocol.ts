@@ -131,7 +131,20 @@ export type HostMessage =
   /** The entities a selection window takes (M2-03); the answer is a `reply` with ids. */
   | { readonly type: 'select'; readonly id: number; readonly query: SelectQuery }
   /** The entities to draw selected (M2-03). */
-  | { readonly type: 'highlight'; readonly ids: readonly EntityId[] }
+  | {
+      readonly type: 'highlight';
+      readonly ids: readonly EntityId[];
+      /** The dimensional constraints selected (M9-03 part 10), by handle. */
+      readonly constraints?: readonly Handle[];
+    }
+  /** The constraint drawn under a pick (M9-03 part 10); the answer is a `constraint`. */
+  | {
+      readonly type: 'constraintAt';
+      readonly id: number;
+      readonly screen: { readonly x: number; readonly y: number };
+      readonly aperture: number;
+      readonly view?: ViewTransform;
+    }
   /**
    * The layout viewport made current (MSPACE, M6-02 part 3); null, paper space. `maximized`: the
    * geometry it fills the canvas with (VPMAX, M6-02 part 7).
@@ -229,6 +242,8 @@ export type WorkerMessage =
   | { readonly type: 'entities'; readonly id: number; readonly entities: readonly DrawnEntity[] }
   /** What lies under the cursor on the constraint bars, or null (M9-05 part 4). */
   | { readonly type: 'bar'; readonly id: number; readonly hit: ConstraintBarHit | null }
+  /** The constraint drawn under a pick, by handle, or null (M9-03 part 10). */
+  | { readonly type: 'constraint'; readonly id: number; readonly handle: Handle | null }
   /** What a pick hit inside a block reference, or null (M5-06 part 5). */
   | { readonly type: 'nested'; readonly id: number; readonly hit: NestedPick | null }
   /** The thumbnail asked for, transferred; null when the canvas was never sized. */

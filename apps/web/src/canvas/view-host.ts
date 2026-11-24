@@ -79,6 +79,8 @@ export interface ViewTarget {
    */
   whenViewed(): Promise<boolean>;
   pick(point: Vec2): Promise<EntityId[]>;
+  /** The dimensional constraint drawn within the pickbox of a world point (M9-03 part 10). */
+  constraintAt(point: Vec2): Promise<Handle | undefined>;
   /** What a pick hit inside a block reference (M5-06 part 5). */
   pickNested(point: Vec2, id: EntityId): Promise<NestedPick | undefined>;
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]>;
@@ -491,6 +493,11 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
     }
     case 'pick':
       return t.pick(r.point).then((ids) => ({ ok: true, ids }));
+    case 'constraintAt':
+      return t.constraintAt(r.point).then((constraint) => ({
+        ok: true,
+        ...(constraint !== undefined && { constraint }),
+      }));
     case 'nested':
       return t
         .pickNested(r.point, r.id)

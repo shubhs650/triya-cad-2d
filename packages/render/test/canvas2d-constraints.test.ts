@@ -217,3 +217,45 @@ describe('Canvas2DRenderer draws dimensional constraints', () => {
     expect(drawnIn(redraw(), BLUE).strokes).toBe(0);
   });
 });
+
+// M9-03 part 10: a constraint is picked by what it draws (its text, dimension line or arc and
+// arrows; not its extension lines, which start at the objects' points) and drawn selected.
+describe('Canvas2DRenderer picks and highlights dimensional constraints', () => {
+  /** Where world point (x, y) shows: the view's centre (5, 0) at the canvas's, 10 px a unit. */
+  const screenOf = (x: number, y: number) => ({ x: (x - 5) * 10 + 100, y: 50 - y * 10 });
+
+  it('finds the constraint drawn under the pickbox, nearest first', () => {
+    const { r } = setup([dim('D1'), dim('D2', { parameter: 'd2', location: { x: 5, y: -5 } })]);
+    expect(r.constraintAt(screenOf(5, -2), 3)).toBe('D1');
+    expect(r.constraintAt(screenOf(3, -2.2), 3)).toBe('D1');
+    expect(r.constraintAt(screenOf(5, -4.9), 3)).toBe('D2');
+    // On the object and on an extension line, none.
+    expect(r.constraintAt(screenOf(5, 0), 3)).toBeNull();
+    expect(r.constraintAt(screenOf(0, -1), 3)).toBeNull();
+  });
+
+  it('finds none where none is drawn: hidden, or on a layout', () => {
+    const hidden: RenderStyle = { ...DARK, constraints: { color: BLUE, dynamic: false } };
+    expect(setup([dim('D1')], { style: hidden }).r.constraintAt(screenOf(5, -2), 3)).toBeNull();
+    expect(setup([dim('D1', { hidden: true })]).r.constraintAt(screenOf(5, -2), 3)).toBeNull();
+    expect(setup([dim('D1')], { block: PAPER }).r.constraintAt(screenOf(5, -2), 3)).toBeNull();
+    // An annotational one shows, so it is found with dynamic ones hidden.
+    const annotational = setup([dim('D1', { form: 'annotational' })], { style: hidden });
+    expect(annotational.r.constraintAt(screenOf(5, -2), 3)).toBe('D1');
+  });
+
+  it('draws a selected constraint with the selection glow and dashes', () => {
+    const { r, redraw } = setup([dim('D1'), dim('D2', { parameter: 'd2' })]);
+    const SELECTION = '#4da3ff';
+    expect(drawnIn(redraw(), SELECTION).strokes).toBe(0);
+    r.setHighlight([], ['D1']);
+    const c = redraw();
+    // The glow and the dashed line over it, one path for the constraint's strokes and arrows.
+    expect(drawnIn(c, SELECTION).strokes).toBe(2);
+    expect(
+      c.calls.some((call) => call[0] === 'setLineDash' && (call[1] as number[]).length > 0),
+    ).toBe(true);
+    r.setHighlight([]);
+    expect(drawnIn(redraw(), SELECTION).strokes).toBe(0);
+  });
+});

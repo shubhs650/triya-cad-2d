@@ -66,6 +66,10 @@ function setup() {
 }
 
 const deg = Math.PI / 180;
+const lineLength = (d: Drawing, h: Handle) => {
+  const g = d.geom(h, 'LINE');
+  return len(g.start, g.end);
+};
 const angleOf = (a: Vec2, b: Vec2) => Math.atan2(b.y - a.y, b.x - a.x);
 
 describe('dimensional constraint kinds', () => {
@@ -503,6 +507,66 @@ describe('reference parameters', () => {
       expect(edit.parameters).toEqual(['rad1']);
     }
     expect(m.parameters.value('rad1')).toBeCloseTo(6, 9);
+  });
+
+  // M9-03 part 10: the Properties palette's Reference row (AutoCAD 2024 Help, "About Applying
+  // Dimensional Constraints": "You can set the Reference property in the Properties palette to
+  // convert a dynamic or annotational constraint to a reference parameter … You cannot change a
+  // reference parameter back to a dimensional constraint if doing so would overconstrain the
+  // geometry").
+  it('setReference makes a driving constraint measure, and back while it fits', () => {
+    const { d, m, add, set } = setup();
+    const l = d.line(0, 0, 10, 0);
+    const r = add(dim('aligned', [curve(l)], { expression: '12' }));
+    expect(lineLength(d, l)).toBeCloseTo(12, 9);
+    const on = m.setReference(r.constraint.handle, true, d.lookup);
+    expect(on).toMatchObject({ ok: true, updated: [], parameters: ['d1'] });
+    expect(m.dimensions[0]!.reference).toBe(true);
+    // Its expression is the measured value, and it no longer drives.
+    expect(m.parameters.get('d1')?.expression).toBe('12');
+    expect(m.setExpression('d1', '20', d.lookup).ok).toBe(false);
+    const back = m.setReference(r.constraint.handle, false, d.lookup);
+    expect(back.ok).toBe(true);
+    expect(m.dimensions[0]!.reference).toBeUndefined();
+    set('d1', '15');
+    expect(lineLength(d, l)).toBeCloseTo(15, 9);
+  });
+
+  it('setReference refuses a driving constraint back that would over-constrain', () => {
+    const { d, m, add, geometric } = setup();
+    const l = d.line(0, 0, 10, 0);
+    geometric(con('horizontal', curve(l)));
+    add(dim('aligned', [curve(l)]));
+    const ref = add(dim('horizontal', [curve(l)], { reference: true }));
+    const back = m.setReference(ref.constraint.handle, false, d.lookup);
+    expect(back.ok).toBe(false);
+    if (!back.ok) expect(back.message).toMatch(/over-constrain/);
+    expect(m.dimensions.find((c) => c.parameter === 'd2')?.reference).toBe(true);
+  });
+
+  it('setReference refuses a constraint a driving expression follows from', () => {
+    const { d, m, add } = setup();
+    const a = d.circle(0, 0, 2);
+    const b = d.circle(10, 0, 1);
+    const ra = add(dim('radial', [curve(a)]));
+    add(dim('radial', [curve(b)], { expression: 'rad1 / 2' }));
+    const r = m.setReference(ra.constraint.handle, true, d.lookup);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/rad2/);
+    expect(m.dimensions[0]!.reference).toBeUndefined();
+    expect(m.parameters.get('rad1')?.expression).toBe('2');
+  });
+
+  it('setReference to what it is already changes nothing', () => {
+    const { d, m, add } = setup();
+    const l = d.line(0, 0, 10, 0);
+    const r = add(dim('aligned', [curve(l)]));
+    expect(m.setReference(r.constraint.handle, false, d.lookup)).toEqual({
+      ok: true,
+      updated: [],
+      parameters: [],
+    });
+    expect(m.setReference('FFFF', true, d.lookup).ok).toBe(false);
   });
 
   it('measures with measureDimension', () => {

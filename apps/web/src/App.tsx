@@ -10,6 +10,7 @@ import type {
   EditResult,
   EngineEdit,
   EntityId,
+  Handle,
   ExportScript,
   FileAction,
   Layout,
@@ -545,7 +546,8 @@ engines.onCommand((doc, o) => {
   }
   if (o.type === 'selection') {
     selections.set(doc, o.ids);
-    for (const c of controllersOf(doc)) c.setHighlight(o.ids);
+    constraintSelections.set(doc, o.constraints ?? []);
+    for (const c of controllersOf(doc)) c.setHighlight(o.ids, o.constraints);
   }
   if (o.type === 'grips') {
     grips.set(doc, o);
@@ -758,6 +760,8 @@ async function clearAllLocalData(): Promise<ClearReport> {
 
 /** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
 const selections = new Map<number, readonly EntityId[]>();
+/** The dimensional constraints selected in each drawing (M9-03 part 10), by handle. */
+const constraintSelections = new Map<number, readonly Handle[]>();
 /** Each drawing's reference edited in place (M5-02 part 5), for canvases made during the edit. */
 const refEdits = new Map<number, RefEditDisplay>();
 
@@ -2944,7 +2948,8 @@ export function App() {
                 // The row's object shows highlighted with the selection, as AutoCAD's list does.
                 const selected = selections.get(active.id) ?? [];
                 const shown = id === undefined ? selected : [...selected, id];
-                for (const c of controllersOf(active.id)) c.setHighlight(shown);
+                const constraints = constraintSelections.get(active.id);
+                for (const c of controllersOf(active.id)) c.setHighlight(shown, constraints);
               }}
             />
           )}
@@ -3666,7 +3671,8 @@ function ViewportCanvas({
     c.setDrafting(drafting.get());
     c.setPrompt(commandLines.get(id).prompt);
     const selected = selections.get(id);
-    if (selected?.length) c.setHighlight(selected);
+    const constraints = constraintSelections.get(id);
+    if (selected?.length || constraints?.length) c.setHighlight(selected ?? [], constraints);
     const editing = refEdits.get(id);
     if (editing) c.setRefEdit(editing);
     const shown = grips.get(id);
