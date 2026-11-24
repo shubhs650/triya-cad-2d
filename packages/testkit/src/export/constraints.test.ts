@@ -5,19 +5,22 @@
 // (the solver is `@triya/constraints`', which the testkit may not reach; its scenarios are in
 // packages/constraints/test). Dimensional constraints (DEC-082) are added beside them, as
 // DIMCONSTRAINT files them, and user parameters (M9-03 part 6, DEC-083) as the Parameters
-// Manager's New files them.
+// Manager's New files them, and a group filter (M9-03 part 12, DEC-086) holding a user parameter
+// and a dimensional constraint, as its New Group Filter and drag file them.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
   DocumentModel,
   isGeometricConstraint,
+  isParameterGroup,
   isParameterObject,
   type ConstraintRef,
   type DimensionalConstraintObject,
   type Entity,
   type GeometricConstraintKind,
   type GeometricConstraintObject,
+  type ParameterGroupObject,
   type ParameterObject,
   type UserParameterObject,
 } from '@triya/engine';
@@ -53,6 +56,9 @@ const constraintsOf = (model: DocumentModel) => [
     };
     return rest;
   }),
+  ...[...model.objects.values()]
+    .filter(isParameterGroup)
+    .map(({ handle, name, members }) => ({ handle, name, members })),
 ];
 
 type Dim = Omit<DimensionalConstraintObject, 'handle' | 'type' | 'owner'>;
@@ -138,19 +144,30 @@ function constrain(model: DocumentModel): number {
     { parameter: 'user1', expression: '2.5', description: 'Bolt pitch' },
     { parameter: 'user2', expression: dims.length > 0 ? `${dims[0]!.parameter}*2` : 'user1*2' },
   ];
+  const members: string[] = [];
   for (const u of users) {
-    b.addObject({
+    const made = b.addObject({
       type: 'TRIYA_USERPARAMETER',
       owner: model.meta.rootDictionary!,
       ...u,
     } as Omit<UserParameterObject, 'handle'>);
+    if (members.length === 0) members.push(made.handle);
   }
   for (const d of dims) {
-    b.addObject({ type: 'TRIYA_DIMCONSTRAINT', owner: model.meta.rootDictionary!, ...d } as Omit<
-      DimensionalConstraintObject,
-      'handle'
-    >);
+    const made = b.addObject({
+      type: 'TRIYA_DIMCONSTRAINT',
+      owner: model.meta.rootDictionary!,
+      ...d,
+    } as Omit<DimensionalConstraintObject, 'handle'>);
+    if (members.length === 1) members.push(made.handle);
   }
+  // A group filter (M9-03 part 12, DEC-086) naming a user parameter and a dimensional constraint.
+  b.addObject({
+    type: 'TRIYA_PARAMETERGROUP',
+    owner: model.meta.rootDictionary!,
+    name: 'Group Filter1',
+    members,
+  } as Omit<ParameterGroupObject, 'handle'>);
   for (const [kind, refs] of made) {
     b.addObject({
       type: 'TRIYA_GEOMCONSTRAINT',
@@ -163,7 +180,7 @@ function constrain(model: DocumentModel): number {
   return made.length + dims.length + users.length;
 }
 
-describe('constraints and user parameters on corpus files (M9-04, M9-03 parts 3 and 6)', () => {
+describe('constraints, user parameters and group filters on corpus files (M9-04, M9-03 parts 3, 6 and 12)', () => {
   for (const path of FILES) {
     it(`${path}: saved, reopened and round-tripped with no difference`, () => {
       const bytes = bytesOf(path);

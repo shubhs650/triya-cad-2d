@@ -9,8 +9,10 @@ import {
   PromptBus,
   builtinCommands,
   isDimensionalConstraint,
+  isParameterGroup,
   isUserParameter,
   parameterEditCommand,
+  parameterGroups,
   type BusEvent,
   type CommandOutput,
   type ConstraintSolver,
@@ -18,6 +20,7 @@ import {
   type Entity,
   type ParameterChangeResult,
   type ParameterEdit,
+  type ParameterGroupObject,
   type ParameterInfo,
   type ParameterObject,
   type UserParameterObject,
@@ -57,7 +60,7 @@ function setup(
     expressions: [],
   }),
   solver: 'stub' | 'none' | 'broken' = 'stub',
-  extra: readonly ParameterObject[] = [],
+  extra: readonly (ParameterObject | ParameterGroupObject)[] = [],
 ) {
   const init = sampleInit();
   const model = DocumentModel.create({
@@ -106,8 +109,9 @@ function setup(
   });
   const dims = () => [...model.objects.values()].filter(isDimensionalConstraint);
   const users = () => [...model.objects.values()].filter(isUserParameter);
+  const groups = () => [...model.objects.values()].filter(isParameterGroup);
   const edit = (e: ParameterEdit) => bus.run(parameterEditCommand(e));
-  return { model, bus, log, asked, passed, views, dims, users, edit };
+  return { model, bus, log, asked, passed, views, dims, users, groups, edit };
 }
 
 describe('PARAMETERS and PARAMETERSCLOSE', () => {
@@ -312,6 +316,103 @@ describe('user parameters (M9-03 part 6)', () => {
   });
 });
 
+const G1: ParameterGroupObject = {
+  handle: 'F1',
+  type: 'TRIYA_PARAMETERGROUP',
+  owner: 'C',
+  name: 'Widths',
+  members: ['D1'],
+};
+
+describe('parameter group filters (M9-03 part 12)', () => {
+  it('New Group Filter makes Group Filter1, then Group Filter2, each one undo step, no solver', async () => {
+    const s = setup(undefined, 'none');
+    await s.edit({ kind: 'new-group' });
+    expect(s.groups()).toEqual([
+      expect.objectContaining({
+        type: 'TRIYA_PARAMETERGROUP',
+        owner: 'C',
+        name: 'Group Filter1',
+        members: [],
+      }),
+    ]);
+    await s.edit({ kind: 'new-group' });
+    expect(s.groups().map((g) => g.name)).toEqual(['Group Filter1', 'Group Filter2']);
+    expect(s.log).toEqual([]);
+    await s.bus.script(['U']);
+    expect(s.groups().map((g) => g.name)).toEqual(['Group Filter1']);
+  });
+
+  it('New Group Filter takes the lowest number no filter has, any case', async () => {
+    const s = setup(undefined, 'none', [{ ...G1, name: 'group filter1' }]);
+    await s.edit({ kind: 'new-group' });
+    expect(s.groups().map((g) => g.name)).toEqual(['group filter1', 'Group Filter2']);
+  });
+
+  it('a group starts with the parameters it is made with', async () => {
+    const s = setup(undefined, 'none', [U1]);
+    await s.edit({ kind: 'new-group', parameters: ['E1', 'D2', '30', 'D2'] });
+    expect(s.groups()[0]!.members).toEqual(['E1', 'D2']);
+  });
+
+  it('renames a group, trimmed; refuses an empty name, one in use or a fixed filter', async () => {
+    const s = setup(undefined, 'none', [G1, { ...G1, handle: 'F2', name: 'Heights' }]);
+    await s.edit({ kind: 'rename-group', group: 'F1', to: ' Spans ' });
+    expect(s.groups().map((g) => g.name)).toEqual(['Spans', 'Heights']);
+    const version = s.model.version;
+    await s.edit({ kind: 'rename-group', group: 'F1', to: 'Spans' });
+    await s.edit({ kind: 'rename-group', group: 'F1', to: '  ' });
+    await s.edit({ kind: 'rename-group', group: 'F1', to: 'heights' });
+    await s.edit({ kind: 'rename-group', group: 'F1', to: 'All Used in Expressions' });
+    await s.edit({ kind: 'rename-group', group: 'F9', to: 'Other' });
+    expect(s.log).toEqual([
+      'A group filter needs a name.',
+      'A filter named "heights" already exists.',
+      'A filter named "All Used in Expressions" already exists.',
+      'That group filter is gone.',
+    ]);
+    expect(s.model.version).toBe(version);
+    await s.bus.script(['U']);
+    expect(s.groups()[0]!.name).toBe('Widths');
+  });
+
+  it('adds parameters to a group and removes them, each one undo step', async () => {
+    const s = setup(undefined, 'none', [U1, G1]);
+    await s.edit({ kind: 'add-to-group', group: 'F1', parameters: ['E1', 'D1', '30'] });
+    expect(s.groups()[0]!.members).toEqual(['D1', 'E1']);
+    await s.edit({ kind: 'remove-from-group', group: 'F1', parameters: ['D1'] });
+    expect(s.groups()[0]!.members).toEqual(['E1']);
+    const version = s.model.version;
+    await s.edit({ kind: 'remove-from-group', group: 'F1', parameters: ['D1'] });
+    await s.edit({ kind: 'add-to-group', group: 'F1', parameters: ['E1'] });
+    expect(s.model.version).toBe(version);
+    await s.bus.script(['U']);
+    expect(s.groups()[0]!.members).toEqual(['D1', 'E1']);
+    await s.bus.script(['U']);
+    expect(s.groups()[0]!.members).toEqual(['D1']);
+  });
+
+  it('deletes a group, leaving its parameters', async () => {
+    const s = setup(undefined, 'none', [G1]);
+    await s.edit({ kind: 'delete-group', group: 'F1' });
+    expect(s.groups()).toEqual([]);
+    expect(s.dims()).toHaveLength(2);
+    await s.bus.script(['U']);
+    expect(s.groups()).toHaveLength(1);
+  });
+
+  it('lists only the members the drawing holds: a deleted parameter leaves, U brings it back', async () => {
+    const s = setup(undefined, 'stub', [{ ...G1, members: ['D1', 'D2'] }]);
+    expect(parameterGroups(s.model)).toEqual([
+      { handle: 'F1', name: 'Widths', members: ['D1', 'D2'] },
+    ]);
+    await s.edit({ kind: 'delete', name: 'd1' });
+    expect(parameterGroups(s.model)[0]!.members).toEqual(['D2']);
+    await s.bus.script(['U']);
+    expect(parameterGroups(s.model)[0]!.members).toEqual(['D1', 'D2']);
+  });
+});
+
 describe('EngineSession and the Parameters Manager', () => {
   const flush = async () => {
     for (let i = 0; i < 8; i++) await Promise.resolve();
@@ -326,7 +427,7 @@ describe('EngineSession and the Parameters Manager', () => {
     constraint: d.handle,
   });
 
-  function session(objects: readonly ParameterObject[], loads = true) {
+  function session(objects: readonly (ParameterObject | ParameterGroupObject)[], loads = true) {
     const init = sampleInit();
     let asked = 0;
     const solver = {
@@ -352,7 +453,11 @@ describe('EngineSession and the Parameters Manager', () => {
       out
         .filter((o): o is Extract<CommandOutput, { type: 'parameters' }> => o.type === 'parameters')
         .map((o) => o.rows.map((r) => `${r.name}=${r.expression}:${r.description}`));
-    return { se, rows, asked: () => asked };
+    const groups = () =>
+      out
+        .filter((o): o is Extract<CommandOutput, { type: 'parameters' }> => o.type === 'parameters')
+        .map((o) => o.groups);
+    return { se, rows, groups, asked: () => asked };
   }
 
   it('sends the rows while the palette is open, again after each edit and undo', async () => {
@@ -385,6 +490,25 @@ describe('EngineSession and the Parameters Manager', () => {
     await s.se.command({ kind: 'parameter', edit: { kind: 'new' } });
     await flush();
     expect(s.rows().at(-1)).toEqual(['user1=4:', 'user2=1:']);
+  });
+
+  it('sends the group filters with the rows, a drawing without parameters too (M9-03 part 12)', async () => {
+    const s = session([D1, { ...G1, members: ['D1', 'D9'] }]);
+    await s.se.command({ kind: 'parameters', open: true });
+    expect(s.groups()).toEqual([[{ handle: 'F1', name: 'Widths', members: ['D1'] }]]);
+    await s.se.command({ kind: 'parameter', edit: { kind: 'new-group' } });
+    await flush();
+    expect(
+      s
+        .groups()
+        .at(-1)!
+        .map((g) => g.name),
+    ).toEqual(['Widths', 'Group Filter1']);
+    const none = session([]);
+    await none.se.command({ kind: 'parameter', edit: { kind: 'new-group' } });
+    await none.se.command({ kind: 'parameters', open: true });
+    expect(none.groups()).toEqual([[expect.objectContaining({ name: 'Group Filter1' })]]);
+    expect(none.asked()).toBe(0);
   });
 
   it('sends no rows without constraints, and none when the solver does not load', async () => {
