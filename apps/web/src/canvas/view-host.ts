@@ -192,6 +192,11 @@ export interface ViewContext {
    */
   readonly tab?: (name: string | undefined) => ViewReply;
   /**
+   * CONSTRAINTBAR and a constraint applied (M9-05 part 2): the drawing's constraint bars shown
+   * or hidden.
+   */
+  readonly constraintBars?: (r: Extract<ViewRequest, { op: 'constraintBars' }>) => ViewReply;
+  /**
    * BEDIT and BCLOSE (M5-02): the app shows the Block Editor on the block definition `block`,
    * or without one closes it.
    */
@@ -343,6 +348,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'tab') {
     return ctx.tab ? ctx.tab(r.name) : { ok: false, message: NO_TABS };
+  }
+  if (r.op === 'constraintBars') {
+    return ctx.constraintBars ? ctx.constraintBars(r) : { ok: false, message: NO_CANVAS };
   }
   if (r.op === 'blockEditor') {
     return ctx.blockEditor ? ctx.blockEditor(r.block, r.name) : { ok: false, message: NO_TABS };

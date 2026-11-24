@@ -371,6 +371,17 @@ export type ViewRequest =
    */
   | { readonly op: 'tab'; readonly name?: string }
   /**
+   * Constraint bars (M9-05 part 2), the app's display state of the drawing: CONSTRAINTBAR's
+   * Show (and Reset, Showall) and Hide (Hideall) for the objects `entities`; `applied`, a
+   * geometric constraint was just applied to them, so their bars show or hide as
+   * CONSTRAINTBARDISPLAY bit 1 says. No edit: a bar shown is no undo step.
+   */
+  | {
+      readonly op: 'constraintBars';
+      readonly action: 'show' | 'hide' | 'applied';
+      readonly entities: readonly Handle[];
+    }
+  /**
    * MSPACE and PSPACE (M6-02 part 3): the layout shown is worked in through its floating
    * viewport `viewport` (model space), or in its paper space again (null). No edit: as in
    * AutoCAD, the viewport made current is no undo step. `geometry` is the viewport's as it is now.

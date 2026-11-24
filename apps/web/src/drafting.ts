@@ -131,6 +131,23 @@ export interface DraftingState {
    */
   readonly constraintNameFormat: 0 | 1 | 2;
   /**
+   * CONSTRAINTBARMODE (M9-05 part 2): the kinds of geometric constraint the constraint bars
+   * show, bits 1 Horizontal … 2048 Fix. AutoCAD keeps it per user, initially 4095 (all).
+   */
+  readonly constraintBarMode: number;
+  /**
+   * CONSTRAINTBARDISPLAY (M9-05 part 2): bit 1, an object's bar shows once a constraint is
+   * applied to it (clear: it hides); bit 2, hidden bars (and hidden dynamic constraints, which
+   * DYNCONSTRAINTMODE already covers) show while their objects are selected. Per user,
+   * initially 3.
+   */
+  readonly constraintBarDisplay: number;
+  /**
+   * CBARTRANSPARENCY (M9-05 part 2): the constraint bars' opacity, 10 to 90 percent ("The
+   * higher value makes the constraint bars more opaque"). Per user, initially 50.
+   */
+  readonly cbarTransparency: number;
+  /**
    * LAYLOCKFADECTL (M5-06): objects on locked layers drawn faded by this percentage, −90 to 90
    * (negative: not faded). AutoCAD keeps it per user, initially 50; LAYISO sets it.
    */
@@ -558,6 +575,9 @@ export const INITIAL_DRAFTING: DraftingState = {
   dynConstraints: true,
   dynConstraintMode: true,
   constraintNameFormat: 2,
+  constraintBarMode: 4095,
+  constraintBarDisplay: 3,
+  cbarTransparency: 50,
   layLockFade: 50,
   xFade: 50,
   plotTransparencyOverride: 1,

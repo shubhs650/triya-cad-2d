@@ -333,6 +333,7 @@ describe('completions', () => {
       { name: 'CLOSEALL' },
       { name: 'COMMANDLINE' },
       { name: 'COMMANDLINEHIDE' },
+      { name: 'CONSTRAINTBAR' },
       { name: 'COPY' },
       { name: 'COPYBASE' },
       { name: 'COPYCLIP' },
@@ -385,12 +386,14 @@ describe('completions of system variables', () => {
       'CLOSEALL',
       'COMMANDLINE',
       'COMMANDLINEHIDE',
+      'CONSTRAINTBAR',
       'COPY',
       'COPYBASE',
       'COPYCLIP',
       'CUTCLIP',
     ]);
     expect(c.slice(first).map((s) => s.name)).toEqual([
+      'CBARTRANSPARENCY',
       'CDATE',
       // What new center marks take (M4-08 part 3), kept for the session in any drawing.
       'CENTERCROSSGAP',
@@ -404,6 +407,8 @@ describe('completions of system variables', () => {
       'CHAMMODE',
       'CLAYER',
       'COMMANDPREVIEW',
+      'CONSTRAINTBARDISPLAY',
+      'CONSTRAINTBARMODE',
       // A dimensional constraint's text (M9-03 part 4), kept per user.
       'CONSTRAINTNAMEFORMAT',
       // The status bar's coordinates (M7-06 part 3), kept per user.

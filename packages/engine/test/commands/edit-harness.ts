@@ -21,6 +21,7 @@ import {
   type ViewHost,
   type Vec2,
   type ViewReply,
+  type ViewRequest,
 } from '../../src/index';
 import {
   LAYER_0,
@@ -102,9 +103,15 @@ export function host(
   model: () => DocumentModel,
   variables?: Map<string, number>,
   clipboard?: SharedClipboard,
+  requests?: ViewRequest[],
 ): ViewHost {
   return {
     request: (r): Promise<ViewReply> => {
+      // The app's display state a command asks for (M9-05 part 2's constraint bars), recorded.
+      if (requests && r.op === 'constraintBars') {
+        requests.push(r);
+        return Promise.resolve({ ok: true });
+      }
       // The app's Clipboard, shared by the drawings given the same one (M9-10).
       if (r.op === 'clipboard' && clipboard) {
         if (r.content) {
@@ -190,6 +197,8 @@ export function setup(
     constraints?: ConstraintService;
     /** The app's Clipboard, which COPYCLIP fills and PASTECLIP reads (M9-10). */
     clipboard?: SharedClipboard;
+    /** Records the constraint bars' requests (M9-05 part 2), which are answered. */
+    requests?: ViewRequest[];
   } = {},
 ) {
   const init = sampleInit();
@@ -225,7 +234,7 @@ export function setup(
   const bus = new PromptBus({
     model,
     registry: builtinCommands(),
-    view: host(() => model, o.variables, o.clipboard),
+    view: host(() => model, o.variables, o.clipboard, o.requests),
     ...(o.constraints && { constraints: o.constraints }),
   });
   const log: string[] = [];

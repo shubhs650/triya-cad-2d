@@ -172,6 +172,7 @@ import {
   type LinetypeFiles,
 } from './linetype-files';
 import { parameterRows } from './parameters';
+import { constraintBarStates } from './constraint-bars';
 import { propertySheets } from './properties';
 import { paletteStack, type PaletteName } from './palette-stack';
 import { PaletteDock } from './PaletteDock';
@@ -546,6 +547,10 @@ drafting.subscribe(() => {
   setPlotTransparencyOverride(drafting.get().plotTransparencyOverride);
   for (const c of allControllers()) c.setDrafting(drafting.get());
 });
+// CONSTRAINTBAR's Show and Hide (M9-05 part 2): each canvas draws its drawing's bars again.
+constraintBarStates.subscribe(() => {
+  for (const c of allControllers()) c.constraintBarsChanged();
+});
 
 /**
  * REVCLOUDGRIPS (M2-42), LAYEREVALCTL (M5-19 part 3), PICKFIRST (M2-59), PICKADD and PICKAUTO (M3-04 part 4), PICKSTYLE and
@@ -805,6 +810,12 @@ function viewContext(id: number): ViewContext {
         };
       }
       store.showSpace(doc.id, block);
+      return { ok: true };
+    },
+    // CONSTRAINTBAR (M9-05 part 2): the drawing's bars shown or hidden, a constraint applied
+    // showing or hiding its objects' as CONSTRAINTBARDISPLAY says.
+    constraintBars: (r) => {
+      constraintBarStates.apply(id, r, drafting.get().constraintBarDisplay);
       return { ok: true };
     },
     // BEDIT and BCLOSE (M5-02): the Block Editor shows the block, or closes.
@@ -1087,6 +1098,7 @@ async function closeDoc(id: number): Promise<boolean> {
   undoStates.forget(id);
   ribbonPropertiesStore.forget(id);
   parameterRows.forget(id);
+  constraintBarStates.forget(id);
   runningCommands.forget(id);
   return true;
 }
@@ -3389,12 +3401,16 @@ function pdfDefinitions(
 function drawingHooks(
   id: number,
   opened: OpenDocument['opened'],
-): Pick<CanvasHooks, 'patterns' | 'fonts' | 'changes' | 'connect' | 'underlays' | 'images'> {
+): Pick<
+  CanvasHooks,
+  'patterns' | 'fonts' | 'changes' | 'connect' | 'underlays' | 'images' | 'constraintBars'
+> {
   return {
     patterns: () => patterns.sources(),
     fonts: () => fonts.sources(),
     changes: () => engines.changesOf(id),
     connect: () => engines.connect(id),
+    constraintBars: () => constraintBarStates.hidden(id),
     underlays: (deliver, deliverSnap) =>
       pdfPages.client(pdfDefinitions(id, opened), deliver, deliverSnap),
     images: (deliver) =>

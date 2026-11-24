@@ -642,6 +642,10 @@ const PARAMETRIC: RibbonTab = {
         ),
         cmd('gc-symmetric', 'Symmetric', 'gc-symmetric', 'GCSYMMETRIC', ICON),
         cmd('gc-equal', 'Equal', 'gc-equal', 'GCEQUAL', ICON),
+        // M9-05 part 2: the constraint bars, as AutoCAD's Geometric panel shows them.
+        cmd('gc-show-hide', 'Show/Hide', 'eye_off', 'CONSTRAINTBAR', SECONDARY),
+        cmd('gc-show-all', 'Show All', 'eye', 'CONSTRAINTBAR', SECONDARY, ['Showall']),
+        cmd('gc-hide-all', 'Hide All', 'eye_off', 'CONSTRAINTBAR', SECONDARY, ['Hideall']),
       ],
     },
     {
@@ -678,7 +682,10 @@ const PARAMETRIC: RibbonTab = {
       id: 'manage',
       label: 'Manage',
       compress: { order: 3, keep: ['parameters-manager'] },
-      items: [cmd('parameters-manager', 'Parameters Manager', 'table_settings', 'PARAMETERS', BIG)],
+      items: [
+        cmd('delete-constraints', 'Delete Constraints', 'eraser', 'DELCONSTRAINT', BIG),
+        cmd('parameters-manager', 'Parameters Manager', 'table_settings', 'PARAMETERS', BIG),
+      ],
     },
   ],
 };

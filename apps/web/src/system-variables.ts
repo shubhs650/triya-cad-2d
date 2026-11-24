@@ -146,6 +146,19 @@ const VALUES: Readonly<
     get: (s) => bit(s.dynConstraintMode),
     set: (v) => ({ dynConstraintMode: v === 1 }),
   },
+  // M9-05 part 2: the constraint bars, the canvas's (`RenderStyle.constraintBars`).
+  CONSTRAINTBARMODE: {
+    get: (s) => s.constraintBarMode,
+    set: (constraintBarMode) => ({ constraintBarMode }),
+  },
+  CONSTRAINTBARDISPLAY: {
+    get: (s) => s.constraintBarDisplay,
+    set: (constraintBarDisplay) => ({ constraintBarDisplay }),
+  },
+  CBARTRANSPARENCY: {
+    get: (s) => s.cbarTransparency,
+    set: (cbarTransparency) => ({ cbarTransparency }),
+  },
   // M5-06: locked layers' fading, the canvas's (`RenderStyle.layLockFade`); LAYISO sets it.
   LAYLOCKFADECTL: { get: (s) => s.layLockFade, set: (layLockFade) => ({ layLockFade }) },
   // M5-02 part 5: the fading of what is not in REFEDIT's working set (`RenderStyle.xFade`).

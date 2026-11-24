@@ -198,6 +198,15 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // initially).
   { name: 'CONSTRAINTNAMEFORMAT', store: 'app', kind: 'integer', min: 0, max: 2 },
   { name: 'DYNCONSTRAINTMODE', store: 'app', kind: 'switch' },
+  // M9-05 part 2 (AutoCAD 2024 Help, each "Saved in: Registry"): CONSTRAINTBARMODE, the kinds the
+  // constraint bars show (1 Horizontal, 2 Vertical, 4 Perpendicular, 8 Parallel, 16 Tangent, 32
+  // Smooth, 64 Coincident, 128 Concentric, 256 Collinear, 512 Symmetric, 1024 Equal, 2048 Fix;
+  // initially 4095); CONSTRAINTBARDISPLAY, bars shown as objects are constrained (1) and hidden
+  // ones while their objects are selected (2), initially 3; CBARTRANSPARENCY, the bars' opacity,
+  // 10 to 90, initially 50.
+  { name: 'CONSTRAINTBARMODE', store: 'app', kind: 'integer', min: 0, max: 4095 },
+  { name: 'CONSTRAINTBARDISPLAY', store: 'app', kind: 'integer', min: 0, max: 3 },
+  { name: 'CBARTRANSPARENCY', store: 'app', kind: 'integer', min: 10, max: 90 },
   // LAYLOCKFADECTL (M5-06; AutoCAD 2024 Help, "Saved in: Registry"): objects on locked layers
   // drawn faded by this percentage, −90 to 90, initially 50; a negative value turns fading off
   // keeping the amount. LAYISO's Lock and fade sets it.

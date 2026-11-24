@@ -229,6 +229,9 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'gc-smooth': 'Joins a spline to another curve with curvature continuity.',
   'gc-symmetric': 'Makes two objects or points symmetric about a line.',
   'gc-equal': 'Makes lines the same length, or arcs and circles the same radius.',
+  'gc-show-hide': 'Shows or hides the constraint bars of the objects you select.',
+  'gc-show-all': 'Shows the constraint bars of every constrained object.',
+  'gc-hide-all': 'Hides every constraint bar.',
   'dc-linear': 'Holds the horizontal or vertical distance between two points at a value.',
   'dc-linear-linear': 'Holds the horizontal or vertical distance between two points at a value.',
   'dc-horizontal':
@@ -242,6 +245,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'dc-show-dynamic':
     'Shows or hides the dynamic constraints; hidden ones show while their objects are selected.',
   'dc-show-hide': 'Shows or hides the dynamic constraints of the objects you select.',
+  'delete-constraints':
+    'Removes every geometric and dimensional constraint from the objects you select.',
   'parameters-manager':
     "Opens the Parameters Manager: the dimensional constraints' names, expressions and values, edited in place.",
   // View

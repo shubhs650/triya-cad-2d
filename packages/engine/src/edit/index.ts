@@ -45,6 +45,7 @@ export * from './clipboard-data';
 export * from './constraints';
 export * from './constraint-copy';
 export * from './constraint-display';
+export * from './constraint-bars';
 export * from './picture';
 export * from './underlay-attach';
 export * from './pdf-frame';

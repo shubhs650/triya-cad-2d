@@ -191,6 +191,10 @@ async function apply(
       'handle'
     >);
   });
+  // The constrained objects' bars show, or hide, as CONSTRAINTBARDISPLAY bit 1 says (M9-05
+  // part 2): the app's display state, which a front-end without bars ignores.
+  const entities = [...new Set(refs.map((r) => r.entity))];
+  await ctx.view.request({ op: 'constraintBars', action: 'applied', entities });
   return true;
 }
 
