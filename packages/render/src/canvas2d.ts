@@ -2954,7 +2954,8 @@ export class Canvas2DRenderer implements Renderer {
       shownLayers ? (id, entry) => this.#overriddenEntry(vp, shownLayers, id, entry) : undefined,
     );
     this.#sceneEntries += entries.length;
-    const constraints = this.#constraints?.length !== 0 && this.#modelBlock !== undefined;
+    this.#constraints ??= constraintDisplays(this.#model, this.#style.constraints?.nameFormat ?? 2);
+    const constraints = this.#constraints.length > 0;
     if (entries.length === 0 && !constraints) return;
     this.#clipTo(ctx, vp, view, through.clip);
     if (entries.length > 0) this.#drawPrimitives(ctx, entries, reduced, through.frame);
