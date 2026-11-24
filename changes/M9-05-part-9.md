@@ -1,0 +1,1 @@
+- M9-05 part 9 (#679): dimensional constraints show a lock icon before their text as DIMCONSTRAINTICON says (dynamic and annotational, initially both); the Constraint Settings' Show lock icon for annotational constraints turns the annotational one. M9-05 complete.
