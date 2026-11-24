@@ -228,3 +228,90 @@ test('a constraint saved with the drawing holds after it is opened again (M9-04)
   await page.keyboard.press('Escape');
   await expect(prompt(page)).toHaveText('Command:');
 });
+
+// M9-06: modify commands keep the constraints (PRD FR-X4). An L is joined at its corner and its
+// foot made horizontal; MOVE of the upright drags the foot's end along, the foot staying level;
+// ROTATE of the foot is refused (it is horizontal) and changes nothing; ERASE of the upright
+// takes the corner's constraint with it, saying so.
+test('MOVE drags joined geometry, a refused ROTATE, ERASE removes constraints (M9-06)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await gridOff(page);
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  const draw = async (a: string, b: string) => {
+    await type(page, 'L', 'Specify first point:');
+    await type(page, a, 'Specify next point or [Undo]:');
+    await type(page, b, 'Specify next point or [Undo]:');
+    await type(page, '', 'Command:');
+  };
+  await draw('1000020,1000020', '1000080,1000020');
+  await draw('1000080,1000020', '1000080,1000070');
+  await expect.poll(async () => (await drawn(page)).lines).toHaveLength(2);
+  await expectDrawn(page, { timeout: 15_000 });
+
+  const view = await viewOf(page);
+  const click = async (x: number, y: number) => {
+    const p = view.at(1000000 + x, 1000000 + y);
+    await page.mouse.click(view.box.x + p.x, view.box.y + p.y);
+  };
+  const park = () => page.mouse.move(view.box.x + 60, view.box.y + view.box.height - 40);
+
+  await type(page, 'GCHORIZONTAL', /^Select an object or/);
+  await click(50, 20);
+  await expect(prompt(page)).toHaveText('Command:', { timeout: 15_000 });
+  await type(page, 'GCCOINCIDENT', /^Select first point or/);
+  await click(70, 20);
+  await expect(prompt(page)).toHaveText('Select second point:');
+  await click(80, 30);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect
+    .poll(async () => (await drawn(page)).constraints)
+    .toEqual(['horizontal', 'coincident']);
+  await expectDrawn(page);
+  await park();
+  await page.screenshot({ path: test.info().outputPath('m9-06-1-before-move.png') });
+
+  // MOVE the upright 30 to the right: the foot's end follows, the foot level.
+  await type(page, 'MOVE', 'Select objects:');
+  await click(80, 50);
+  await type(page, '', /^Specify base point or/);
+  await type(page, '1000080,1000020', /^Specify second point or/);
+  await type(page, '@30,0', 'Command:');
+  await expect
+    .poll(async () => (await drawn(page)).lines)
+    .toEqual([
+      [20, 20, 110, 20],
+      [110, 20, 110, 70],
+    ]);
+  await expectDrawn(page);
+  await park();
+  await page.screenshot({ path: test.info().outputPath('m9-06-2-after-move.png') });
+
+  // ROTATE the foot: it is horizontal, so the rotation is refused and nothing turns.
+  await type(page, 'ROTATE', 'Select objects:');
+  await click(60, 20);
+  await type(page, '', 'Specify base point:');
+  await type(page, '1000020,1000020', /^Specify rotation angle or/);
+  await type(page, '30', 'Command:');
+  await expect(log).toContainText(
+    'The change breaks a constraint the other geometry cannot follow.',
+  );
+  expect((await drawn(page)).lines[0]).toEqual([20, 20, 110, 20]);
+
+  // ERASE the upright: the corner's constraint goes with it.
+  await type(page, 'ERASE', 'Select objects:');
+  await click(110, 50);
+  await type(page, '', 'Command:');
+  await expect(log).toContainText('1 geometric constraint removed.');
+  await expect.poll(async () => (await drawn(page)).constraints).toEqual(['horizontal']);
+  await park();
+  await page.screenshot({ path: test.info().outputPath('m9-06-3-after-erase.png') });
+});

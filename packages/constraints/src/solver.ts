@@ -1,6 +1,7 @@
 // The engine's constraint solver (M9-05): `ConstraintModel` over PlaneGCS behind the engine's
 // `ConstraintSolver` interface. The drawing keeps the constraints, so each call loads them into
 // a fresh model: building one costs nothing, and every solve already builds its sketch anew.
+// `solveEdit` re-solves after a modify command (M9-06).
 // Dimensional constraints (M9-03 part 3) bring their parameters: the Parameters Manager's table
 // is built from their expressions on each call too.
 import type {
@@ -95,6 +96,12 @@ export function constraintSolver(gcs: PlaneGcs): ConstraintSolver {
         dofs: r.dofs,
         expressions: expressionsOf(model, r.parameters),
       };
+    },
+    solveEdit(constraints, edits, lookup, tolerance, whole, dimensions = []) {
+      const model = modelOf(gcs, tolerance, constraints, dimensions);
+      const r = model.solveEdit(edits, lookup, whole);
+      if (!r.ok || !r.parameters?.length) return r;
+      return { ...r, expressions: expressionsOf(model, r.parameters) };
     },
   };
 }

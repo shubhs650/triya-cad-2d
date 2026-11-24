@@ -583,10 +583,16 @@ export class ConstraintModel {
 
   /**
    * Re-solves the constraints an edit touches. `edits` are the edit's replacements; the
-   * values each one changed are held and the geometry constrained to them follows. Refused
+   * values each one changed are held and the geometry constrained to them follows. With
+   * `whole`, each edited entity is held whole, unchanged values too: a modify command (MOVE,
+   * ROTATE…) places its objects whole, where a grip drag moves only its grip (M9-06). Refused
    * when the edit breaks a constraint the rest cannot absorb (a Fix, say).
    */
-  solveEdit(edits: readonly Replacement<Entity>[], lookup: EntityLookup): EditResult {
+  solveEdit(
+    edits: readonly Replacement<Entity>[],
+    lookup: EntityLookup,
+    whole = false,
+  ): EditResult {
     const done = (updated: readonly Replacement<Entity>[]): EditResult => {
       const parameters = this.#remeasure(updated, lookup);
       return parameters.length ? { ok: true, updated, parameters } : { ok: true, updated };
@@ -594,14 +600,14 @@ export class ConstraintModel {
     const group = this.#group(edits.map((e) => e.after.handle));
     if (!group.length) return done(edits);
     const edited = new Map(edits.map((e) => [e.after.handle, e]));
-    const build = this.#editBuild(group, edits, lookup);
+    const build = this.#editBuild(group, edits, lookup, whole);
     try {
       if (!build.solveChecked()) {
         const named = build.diagnose().conflicting;
         return refusal(
           'overconstrained',
           'The change breaks a constraint the other geometry cannot follow',
-          named.length ? named : this.#culprits(group, lookup, () => edits),
+          named.length ? named : this.#culprits(group, lookup, () => edits, whole),
         );
       }
       return done(build.moved(edited, lookup));
@@ -656,10 +662,14 @@ export class ConstraintModel {
     group: readonly AnyConstraint[],
     edits: readonly Replacement<Entity>[],
     lookup: EntityLookup,
+    whole = false,
   ): Build {
     const build = this.#build(lookup);
     for (const c of group) build.tryConstrain(c);
-    if (edits.every((e) => build.assignEdit(e))) return build;
+    if (edits.every((e) => build.assignEdit(e))) {
+      if (whole) for (const e of edits) build.holdEntity(e.after.handle);
+      return build;
+    }
     build.dispose();
     const edited = new Map(edits.map((e) => [e.after.handle, e.after]));
     const reshaped = this.#build((h) => edited.get(h) ?? lookup(h));
@@ -677,12 +687,13 @@ export class ConstraintModel {
     constraints: readonly AnyConstraint[],
     lookup: EntityLookup,
     edits: () => readonly Replacement<Entity>[] | undefined,
+    whole = false,
   ): Handle[] {
     const out: Handle[] = [];
     for (const left of constraints) {
       const rest = constraints.filter((c) => c !== left);
       const e = edits();
-      const build = e ? this.#editBuild(rest, e, lookup) : this.#build(lookup);
+      const build = e ? this.#editBuild(rest, e, lookup, whole) : this.#build(lookup);
       try {
         if (!e) for (const c of rest) build.tryConstrain(c);
         if (build.solveChecked()) out.push(left.handle);

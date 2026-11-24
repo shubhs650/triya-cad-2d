@@ -394,6 +394,7 @@ export function dimensionalConstraintCommands(): CommandDef[] {
   const kinds = Object.keys(KEYWORDS) as DimensionalCommandKind[];
   const dimconstraint: CommandDef = {
     name: 'DIMCONSTRAINT',
+    solvesConstraints: true,
     async *run(ctx) {
       for (;;) {
         ctx.message(`Current settings: Constraint Form = ${FORM[session.form]}`);
@@ -438,6 +439,7 @@ export function dimensionalConstraintCommands(): CommandDef[] {
     dimconstraint,
     ...kinds.map((kind) => ({
       name: COMMAND_NAMES[kind],
+      solvesConstraints: true,
       run: (ctx: CommandContext) => flow(ctx, session, kind),
     })),
   ];

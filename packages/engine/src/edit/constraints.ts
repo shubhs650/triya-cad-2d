@@ -12,6 +12,7 @@ import { polylineSegment, polylineSegmentCount } from '../geom/eval';
 import { distance, midpoint } from '../geom/vec';
 import type { Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
+import type { ChangeSetBuilder } from '../model/builder';
 import type { Replacement } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -24,8 +25,10 @@ import {
   type DimensionalConstraintKind,
   type DimensionalConstraintObject,
   type Entity,
+  type GeometricConstraintKind,
   type GeometricConstraintObject,
 } from '../model/types';
+import type { Similarity } from './similarity';
 
 /** Why the solver refused a constraint, with the constraints in the way (the new one included). */
 export interface ConstraintRefusal {
@@ -94,6 +97,19 @@ export type DimensionAddResult =
     }
   | ConstraintRefusal;
 
+export type ConstraintEditResult =
+  | {
+      readonly ok: true;
+      /**
+       * The edit's own replacements (adjusted where the solver had to), then the other entities
+       * it moved to keep the constraints.
+       */
+      readonly updated: readonly Replacement<Entity>[];
+      /** Dimensional constraints' expressions the moved geometry changed (reference ones). */
+      readonly expressions?: readonly ExpressionChange[];
+    }
+  | ConstraintRefusal;
+
 /** The geometric constraint solver: `@triya/constraints`' ConstraintModel over PlaneGCS. */
 export interface ConstraintSolver {
   /**
@@ -108,6 +124,22 @@ export interface ConstraintSolver {
     tolerance: Tolerance,
     dimensions?: readonly DimensionalConstraintObject[],
   ): ConstraintAddResult;
+  /**
+   * Re-solves the drawing's `constraints` after an edit (M9-06): the values each of `edits`
+   * changed are held and the geometry constrained to them follows. `lookup` gives the drawing as
+   * it was before the edit. With `whole`, each edited entity is held whole, the values it kept
+   * too (a modify command places its objects whole; a grip drag moves only its grip). Refused
+   * when the edit breaks a constraint the rest cannot absorb (a Fix, or a Horizontal line
+   * turned). The drawing's `dimensions` keep their values while the edit is solved.
+   */
+  solveEdit(
+    constraints: readonly GeometricConstraintObject[],
+    edits: readonly Replacement<Entity>[],
+    lookup: (handle: Handle) => Entity | undefined,
+    tolerance: Tolerance,
+    whole: boolean,
+    dimensions?: readonly DimensionalConstraintObject[],
+  ): ConstraintEditResult;
   /** What `spec` measures and the name its parameter would take (M9-03 part 3). */
   measure(
     dimensions: readonly DimensionalConstraintObject[],
@@ -135,6 +167,50 @@ export type ConstraintService = () => Promise<ConstraintSolver>;
 /** The drawing's geometric constraints. */
 export function geometricConstraints(model: DocumentModel): GeometricConstraintObject[] {
   return [...model.objects.values()].filter(isGeometricConstraint);
+}
+
+/**
+ * The kind a constraint takes on copies carried by `t` (M9-06): every geometric relation but
+ * Horizontal and Vertical survives a move, turn, scale or reflection; those two hold when the
+ * copies' directions stay level (turned by a multiple of 180°) and swap when turned square.
+ * Undefined when a copy at another angle cannot keep it.
+ */
+export function carriedKind(
+  kind: GeometricConstraintKind,
+  t: Similarity,
+): GeometricConstraintKind | undefined {
+  if (kind !== 'horizontal' && kind !== 'vertical') return kind;
+  const turns = (2 * t.angle) / Math.PI;
+  const quarter = Math.round(turns);
+  if (Math.abs(turns - quarter) > 1e-9) return undefined;
+  if (quarter % 2 === 0) return kind;
+  return kind === 'horizontal' ? 'vertical' : 'horizontal';
+}
+
+/**
+ * Adds, for each of the drawing's constraints whose objects were all copied, the same constraint
+ * between the copies (COPY, MIRROR, ROTATE and SCALE's Copy; AutoCAD's PARAMETERCOPYMODE 1:
+ * constraints among the objects copied go with them, those to objects left behind do not).
+ * `copies` maps each source's handle to its copy.
+ */
+export function carryConstraints(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  copies: ReadonlyMap<Handle, Entity>,
+  t: Similarity,
+): void {
+  if (copies.size === 0) return;
+  for (const c of geometricConstraints(model)) {
+    if (!c.refs.every((r) => copies.has(r.entity))) continue;
+    const kind = carriedKind(c.kind, t);
+    if (!kind) continue;
+    b.addObject({
+      type: 'TRIYA_GEOMCONSTRAINT',
+      owner: c.owner,
+      kind,
+      refs: c.refs.map((r) => ({ ...r, entity: copies.get(r.entity)!.handle })),
+    } as Omit<GeometricConstraintObject, 'handle'>);
+  }
 }
 
 /** The drawing's dimensional constraints (M9-03 part 3). */

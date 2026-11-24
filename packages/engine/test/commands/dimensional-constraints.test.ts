@@ -97,6 +97,10 @@ function setup(answer: Answer = accepted()) {
     add: () => {
       throw new Error('no geometric constraints here');
     },
+    // The DC* commands solve their own edits: the bus never re-solves after them (M9-06).
+    solveEdit: () => {
+      throw new Error('not asked');
+    },
     measure: (dims, spec, lookup) => {
       expect(lookup(spec.refs[0]!.entity)).toBeDefined();
       measured.push(spec);
@@ -493,6 +497,7 @@ describe('when the solver is missing or refuses the references', () => {
         conflicting: [],
       }),
       addDimension: () => ({ ok: false, reason: 'invalid', message: 'x', conflicting: [] }),
+      solveEdit: () => ({ ok: false, reason: 'invalid', message: 'x', conflicting: [] }),
     };
     const bus = new PromptBus({
       model,
