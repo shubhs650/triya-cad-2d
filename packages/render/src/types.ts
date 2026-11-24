@@ -68,6 +68,8 @@ export interface ConstraintBarStyle {
   readonly transparency?: number;
   /** The icons' colour, a CSS colour; the dynamic constraints' when absent. */
   readonly color?: string;
+  /** The panel's colour, a CSS colour; the background's when absent. */
+  readonly panel?: string;
 }
 
 export interface RenderStyle {

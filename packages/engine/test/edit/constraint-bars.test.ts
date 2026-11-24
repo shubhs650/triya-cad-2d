@@ -73,7 +73,11 @@ describe('constraint bars (M9-05 part 2)', () => {
       ['50', ['E1', 'E2']],
       ['51', ['E2', 'E3']],
     ]);
-    expect(bars[0]!.icons[1]).toEqual({ handle: 'E2', kind: 'perpendicular', entities: ['50', '51'] });
+    expect(bars[0]!.icons[1]).toEqual({
+      handle: 'E2',
+      kind: 'perpendicular',
+      entities: ['50', '51'],
+    });
     // A line's bar from its midpoint, below it; a vertical line's to its right.
     close(bars[0]!.anchor, 5, 0);
     close(bars[0]!.side, 0, -1);
@@ -84,7 +88,10 @@ describe('constraint bars (M9-05 part 2)', () => {
   it('places a circle’s below it, an arc’s outside its middle, a segment’s by the segment', () => {
     const m = model([
       gc('E1', 'concentric', [{ entity: '53' }, { entity: '54' }]),
-      gc('E2', 'equal', [{ entity: '55', segment: 0 }, { entity: '55', segment: 1 }]),
+      gc('E2', 'equal', [
+        { entity: '55', segment: 0 },
+        { entity: '55', segment: 1 },
+      ]),
     ]);
     const { bars } = constraintBars(m);
     expect(bars.map((b) => [b.entity, b.segment])).toEqual([

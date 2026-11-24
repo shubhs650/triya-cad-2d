@@ -2297,7 +2297,7 @@ export class Canvas2DRenderer implements Renderer {
     const prims = constraintBarPrimitives(this.#bars, visible, view.scale, {
       mode: look.mode ?? 4095,
       color,
-      panel: 'background',
+      panel: look.panel ?? 'background',
       opacity: Math.min(Math.max(look.transparency ?? 50, 10), 90) / 100,
     });
     this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);

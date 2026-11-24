@@ -166,6 +166,7 @@ import {
 import { DEFAULT_CANVAS, type CanvasColours } from '../preferences';
 import { heldOverrides, withOverrides } from '../temp-overrides';
 import {
+  CONSTRAINT_BAR_PANEL,
   CONSTRAINT_COLOR,
   crosshairCursor,
   foregroundOn,
@@ -2432,6 +2433,7 @@ export class CanvasController {
         mode: d.constraintBarMode,
         showSelected: (d.constraintBarDisplay & 2) !== 0,
         transparency: d.cbarTransparency,
+        panel: isDarkColor(background) ? CONSTRAINT_BAR_PANEL.dark : CONSTRAINT_BAR_PANEL.light,
       },
       // A layout's viewports show model space's UCS icon (M3-06 part 8).
       ...(this.#layout && { layoutBackground: c.surround, viewportUcsIcons: true }),

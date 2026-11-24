@@ -80,7 +80,9 @@ export const CONSTRAINT_GLYPHS: Readonly<Record<GeometricConstraintKind, Glyph>>
   parallel: [line(-0.35, -0.4, 0.05, 0.4), line(-0.05, -0.4, 0.35, 0.4)],
   tangent: [circle(0, -0.12, 0.28), line(-0.42, 0.16, 0.42, 0.16)],
   smooth: [arc(-0.2, 0, 0.2, Math.PI, 0), arc(0.2, 0, 0.2, Math.PI, 2 * Math.PI)],
-  coincident: [[PATH_M, -0.2, -0.2, PATH_L, 0.2, -0.2, PATH_L, 0.2, 0.2, PATH_L, -0.2, 0.2, PATH_Z]],
+  coincident: [
+    [PATH_M, -0.2, -0.2, PATH_L, 0.2, -0.2, PATH_L, 0.2, 0.2, PATH_L, -0.2, 0.2, PATH_Z],
+  ],
   concentric: [circle(0, 0, 0.38), circle(0, 0, 0.15)],
   collinear: [line(-0.42, -0.42, -0.08, -0.08), line(0.08, 0.08, 0.42, 0.42)],
   symmetric: [
@@ -101,7 +103,7 @@ export const CONSTRAINT_GLYPHS: Readonly<Record<GeometricConstraintKind, Glyph>>
 function placeGlyph(glyph: Glyph, at: Vec2, size: number): number[][] {
   return glyph.map((path) => {
     const out: number[] = [];
-    for (let i = 0; i < path.length; ) {
+    for (let i = 0; i < path.length;) {
       const op = path[i]!;
       out.push(op);
       if (op === PATH_M || op === PATH_L) {
