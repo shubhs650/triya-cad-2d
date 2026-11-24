@@ -68,10 +68,19 @@ export const ConstraintKind = {
    * (fixed) are their curvature factors.
    */
   SplineEndCurvatureMatch: 37,
+  PointOnEllipse: 38,
+  TangentLineEllipse: 39,
+  /** Keeps an elliptical arc's start and end points at its start and end parameters. */
+  EllipticalArcRules: 40,
+  /** An ellipse's axis ends: the point at its centre plus (Start) or minus (End) the axis. */
+  EllipseMajorStart: 41,
+  EllipseMajorEnd: 42,
+  EllipseMinorStart: 43,
+  EllipseMinorEnd: 44,
 } as const;
 export type ConstraintKind = (typeof ConstraintKind)[keyof typeof ConstraintKind];
 
-type Arg = 'point' | 'line' | 'circle' | 'arc' | 'param';
+type Arg = 'point' | 'line' | 'circle' | 'arc' | 'ellipse' | 'param';
 
 /** What each kind takes, in order (sketch.cpp's comments). */
 const ARGS: Record<ConstraintKind, readonly Arg[]> = {
@@ -122,6 +131,13 @@ const ARGS: Record<ConstraintKind, readonly Arg[]> = {
     'param',
     'param',
   ],
+  [ConstraintKind.PointOnEllipse]: ['point', 'ellipse'],
+  [ConstraintKind.TangentLineEllipse]: ['line', 'ellipse'],
+  [ConstraintKind.EllipticalArcRules]: ['ellipse'],
+  [ConstraintKind.EllipseMajorStart]: ['ellipse', 'point'],
+  [ConstraintKind.EllipseMajorEnd]: ['ellipse', 'point'],
+  [ConstraintKind.EllipseMinorStart]: ['ellipse', 'point'],
+  [ConstraintKind.EllipseMinorEnd]: ['ellipse', 'point'],
 };
 
 /** PlaneGCS's `SolveStatus`. Parameters change only on Success or Converged. */
@@ -171,6 +187,24 @@ export interface ArcIds extends CircleIds {
   end: number;
 }
 
+export interface EllipseIds {
+  /** Its id among the sketch's ellipses and elliptical arcs. */
+  id: number;
+  center: number;
+  /** Its first focus, on the major axis's positive side. */
+  focus: number;
+  /** The minor radius parameter. */
+  radmin: number;
+}
+
+export interface EllipticalArcIds extends EllipseIds {
+  /** Parameters (radians from the major axis, counter-clockwise), as DXF's 41 and 42. */
+  startAngle: number;
+  endAngle: number;
+  start: number;
+  end: number;
+}
+
 /**
  * The tag of the ArcRules constraint `arc()` adds to each arc. It belongs to the geometry,
  * not to anything the user made, so `diagnose()` leaves it out of its lists.
@@ -191,6 +225,16 @@ interface NativeSketch {
   addArc(
     center: number,
     radius: number,
+    startAngle: number,
+    endAngle: number,
+    start: number,
+    end: number,
+  ): number;
+  addEllipse(center: number, focus: number, radmin: number): number;
+  addEllipticalArc(
+    center: number,
+    focus: number,
+    radmin: number,
     startAngle: number,
     endAngle: number,
     start: number,
@@ -228,6 +272,7 @@ export class PlaneGcsSketch {
   #lines = 0;
   #circles = 0;
   #arcs = 0;
+  #ellipses = 0;
   #params = 0;
   #constraints = 0;
   /** How many PlaneGCS constraints each tag added (Symmetric adds two). */
@@ -333,6 +378,58 @@ export class PlaneGcsSketch {
   }
 
   /**
+   * An ellipse from its centre, major axis (centre to an end of it) and minor-to-major ratio,
+   * as DXF keeps one. PlaneGCS keeps its first focus and minor radius instead, which are
+   * added. The ratio must be below 1: a circle has no focus off its centre.
+   */
+  ellipse(center: number, majorAxis: { x: number; y: number }, ratio: number): EllipseIds {
+    if (!(ratio > 0 && ratio < 1)) throw new RangeError(`ellipse ratio ${ratio} must be in (0, 1)`);
+    const c = this.pointAt(this.#check('point', center));
+    const a = Math.hypot(majorAxis.x, majorAxis.y);
+    const b = a * ratio;
+    const f = Math.sqrt(a * a - b * b) / a;
+    const focus = this.point(c.x + majorAxis.x * f, c.y + majorAxis.y * f);
+    const radmin = this.param(b);
+    this.#ellipses = this.#live().addEllipse(center, focus, radmin) + 1;
+    return { id: this.#ellipses - 1, center, focus, radmin };
+  }
+
+  /**
+   * An elliptical arc, as `ellipse()`, from parameter `startAngle` counter-clockwise to
+   * `endAngle`. Its start and end points are added and held on it by an EllipticalArcRules
+   * constraint (`ARC_RULES_TAG`).
+   */
+  ellipticalArc(
+    center: number,
+    majorAxis: { x: number; y: number },
+    ratio: number,
+    startAngle: number,
+    endAngle: number,
+  ): EllipticalArcIds {
+    if (!(ratio > 0 && ratio < 1)) throw new RangeError(`ellipse ratio ${ratio} must be in (0, 1)`);
+    const c = this.pointAt(this.#check('point', center));
+    const a = Math.hypot(majorAxis.x, majorAxis.y);
+    const b = a * ratio;
+    const minor = { x: -majorAxis.y * ratio, y: majorAxis.x * ratio };
+    const at = (t: number) =>
+      this.point(
+        c.x + majorAxis.x * Math.cos(t) + minor.x * Math.sin(t),
+        c.y + majorAxis.y * Math.cos(t) + minor.y * Math.sin(t),
+      );
+    const f = Math.sqrt(a * a - b * b) / a;
+    const focus = this.point(c.x + majorAxis.x * f, c.y + majorAxis.y * f);
+    const radmin = this.param(b);
+    const a0 = this.param(startAngle);
+    const a1 = this.param(endAngle);
+    const start = at(startAngle);
+    const end = at(endAngle);
+    const id = this.#live().addEllipticalArc(center, focus, radmin, a0, a1, start, end);
+    this.#ellipses = id + 1;
+    this.constrain(ConstraintKind.EllipticalArcRules, [id], ARC_RULES_TAG);
+    return { id, center, focus, radmin, startAngle: a0, endAngle: a1, start, end };
+  }
+
+  /**
    * Adds a constraint. `ids` are the point, line, circle, arc or parameter ids the kind
    * takes (`ARGS`); `tag` (>= 1) names it in `diagnose()` and `remove()`. A non-driving
    * constraint computes its value parameter (declare it `driven`) instead of imposing it.
@@ -404,6 +501,7 @@ export class PlaneGcsSketch {
       line: this.#lines,
       circle: this.#circles,
       arc: this.#arcs,
+      ellipse: this.#ellipses,
       param: this.#params,
     }[arg];
     if (!Number.isInteger(id) || id < 0 || id >= count) {

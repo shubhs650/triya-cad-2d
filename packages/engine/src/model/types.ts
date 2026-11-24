@@ -2322,16 +2322,18 @@ export type GeometricConstraintKind = (typeof GEOMETRIC_CONSTRAINT_KINDS)[number
 
 /**
  * A constraint point of an entity (M9-05): a LINE's start, end or mid; a CIRCLE's center; an
- * ARC's center, start or end; a POINT's position; an LWPOLYLINE's vertex `index`, the mid of
- * straight segment `index` or the center of arc segment `index`.
+ * ARC's center, start, end or mid; a POINT's position; an LWPOLYLINE's vertex `index`, the mid
+ * of segment `index` or the center of arc segment `index`; an open SPLINE's start or end; an
+ * ELLIPSE's center, `quadrant` `index` (0 to 3, from the major axis's positive end round
+ * through the minor's) and an elliptical arc's start and end (M9-02).
  */
 export interface ConstraintPointRef {
   readonly entity: Handle;
-  readonly point: 'start' | 'end' | 'mid' | 'center' | 'position' | 'vertex';
+  readonly point: 'start' | 'end' | 'mid' | 'center' | 'position' | 'vertex' | 'quadrant';
   readonly index?: number;
 }
 
-/** A whole LINE, CIRCLE or ARC, or segment `segment` of an LWPOLYLINE. */
+/** A whole LINE, CIRCLE, ARC, ELLIPSE or SPLINE, or segment `segment` of an LWPOLYLINE. */
 export interface ConstraintCurveRef {
   readonly entity: Handle;
   readonly segment?: number;

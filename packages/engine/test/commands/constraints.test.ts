@@ -60,7 +60,9 @@ interface Call {
 /**
  * A drawing: line 30 (0,0)-(10,0), line 31 (0,5)-(10,8), circle 32 at (20,0) r 2, a polyline 33
  * (30,0)-(40,0)-(40,10), a POINT 34 at (50,0), a text 35 at (60,0), line 36 (0,20)-(10,20) on a
- * locked layer, a spline 37 from (0,-20) to (10,-18) and an arc 38 at (20,-20) r 3 from 90° to 180°. `answer` is what the solver says (by default: applied, nothing moved).
+ * locked layer, a spline 37 from (0,-20) to (10,-18), an arc 38 at (20,-20) r 3 from 90° to 180°
+ * and an ellipse 39 at (40,-20), axes 4 along X and 2. `answer` is what the solver says (by
+ * default: applied, nothing moved).
  */
 function setup(
   answer: (call: Call) => ConstraintAddResult = () => ({ ok: true, updated: [], dofs: 0 }),
@@ -115,6 +117,14 @@ function setup(
         radius: 3,
         startAngle: Math.PI / 2,
         endAngle: Math.PI,
+      } as EntityGeometry),
+      entityInit('39', {
+        kind: 'ELLIPSE',
+        center: { x: 40, y: -20 },
+        majorAxis: { x: 4, y: 0 },
+        ratio: 0.5,
+        startParam: 0,
+        endParam: 2 * Math.PI,
       } as EntityGeometry),
     ],
   });
@@ -341,6 +351,23 @@ describe('GCCOINCIDENT', () => {
     expect(s.bus.promptText).toBe('Select a point:');
     await s.bus.pick({ x: 50, y: 0 });
     expect(s.calls[0]!.refs).toEqual([{ entity: '32' }, { entity: '34', point: 'position' }]);
+  });
+
+  it("takes an ellipse's axis ends and centre as points, and the ellipse as an object (M9-02)", async () => {
+    const s = setup();
+    await s.bus.script(['GCCOINCIDENT']);
+    await s.bus.pick({ x: 39.9, y: -18 });
+    await s.bus.pick({ x: 50, y: 0 });
+    await s.bus.script(['GCCOINCIDENT', '']);
+    await s.bus.pick({ x: 44, y: -20.1 });
+    await s.bus.pick({ x: 50, y: 0 });
+    expect(s.calls.map((c) => c.refs)).toEqual([
+      [
+        { entity: '39', point: 'quadrant', index: 1 },
+        { entity: '34', point: 'position' },
+      ],
+      [{ entity: '39' }, { entity: '34', point: 'position' }],
+    ]);
   });
 });
 

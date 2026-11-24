@@ -21,7 +21,10 @@
 import {
   bulgeArc,
   ccwSweep,
+  ellipseSweep,
+  pointAt,
   polylineSegmentCount,
+  TAU,
   type Entity,
   type Handle,
   type Vec2,
@@ -326,7 +329,8 @@ function entityOf(ref: GeomRef, lookup: Lookup): Entity {
     kind !== 'ARC' &&
     kind !== 'POINT' &&
     kind !== 'LWPOLYLINE' &&
-    kind !== 'SPLINE'
+    kind !== 'SPLINE' &&
+    kind !== 'ELLIPSE'
   ) {
     throw new MeasureError('unsupported', `${kind} cannot be constrained yet`);
   }
@@ -368,6 +372,18 @@ export function resolvePoint(ref: GeomRef, lookup: Lookup): Vec2 {
       if (g.closed || g.periodic || !c.length) throw bad();
       if (ref.point === 'start' && clamped(k.slice(0, g.degree + 1))) return c[0]!;
       if (ref.point === 'end' && clamped(k.slice(k.length - g.degree - 1))) return c[c.length - 1]!;
+      throw bad();
+    }
+    case 'ELLIPSE': {
+      // Its centre, its axes' ends by quadrant, and an elliptical arc's ends (model.ts).
+      const arc = ellipseSweep(g) !== TAU;
+      const i = ref.index ?? -1;
+      if (ref.point === 'center') return g.center;
+      if (ref.point === 'start' && arc) return pointAt(g, g.startParam);
+      if (ref.point === 'end' && arc) return pointAt(g, g.startParam + ellipseSweep(g));
+      if (ref.point === 'quadrant' && Number.isInteger(i) && i >= 0 && i < 4) {
+        return pointAt(g, (i * Math.PI) / 2);
+      }
       throw bad();
     }
     case 'POINT':

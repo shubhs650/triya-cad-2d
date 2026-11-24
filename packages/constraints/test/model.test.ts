@@ -857,14 +857,7 @@ describe('degrees of freedom and over-constrained geometry', () => {
 describe('refused references', () => {
   it('names geometry the model does not map, and references that do not fit the kind', () => {
     const { d, m } = setup();
-    const e = d.add({
-      kind: 'ELLIPSE',
-      center: { x: 0, y: 0 },
-      majorAxis: { x: 5, y: 0 },
-      ratio: 0.5,
-      startParam: 0,
-      endParam: 2 * Math.PI,
-    });
+    const e = d.add({ kind: 'XLINE', base: { x: 0, y: 0 }, direction: { x: 1, y: 1 } });
     const l = d.line(0, 0, 10, 0);
     const c = d.circle(0, 0, 3);
     const p = d.polyline([
