@@ -551,3 +551,60 @@ jobs:
             test-results/
             playwright-report/
           retention-days: 14
+
+  # The ubuntu-24.04 browser caches, saved from main. A cache saved by a PR run can be restored
+  # only by that PR, and on a main push whose tree already passed `build · offline · io` is
+  # skipped, so main never saved them: every new PR downloaded Chromium's, Firefox's and WebKit's
+  # system packages from apt, which a slow Ubuntu mirror stretched past the job's 20 minutes
+  # (2026-11-24, runs 45307386010, 45311774597, 45317767030). This job only fills the caches, after
+  # perf on the runner it frees; with them hit it takes about a minute.
+  browser-cache:
+    name: browser caches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [changes, perf]
+    if: ${{ !cancelled() && github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - id: pw
+        run: |
+          echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install chromium
+      - id: apt-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pw-apt
+          key: pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          restore-keys: pw-apt-${{ steps.pw.outputs.os }}-
+      - name: Install browser system dependencies
+        run: bash scripts/ci-browser-deps.sh
+      - id: pw-other
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright/firefox-*
+            ~/.cache/ms-playwright/webkit-*
+            ~/.cache/ms-playwright/ffmpeg-*
+          key: playwright-firefox-webkit-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-other.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install firefox webkit
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pw-apt-firefox-webkit
+          key: pw-apt-firefox-webkit-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
+          restore-keys: pw-apt-firefox-webkit-${{ steps.pw.outputs.os }}-
+      - name: Install Firefox and WebKit system dependencies
+        run: bash scripts/ci-browser-deps.sh firefox webkit
