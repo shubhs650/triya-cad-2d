@@ -19,12 +19,20 @@
 // (lines at the same angle all made parallel to the first), so a selection of n parallel lines
 // gives n - 1 candidates rather than every pair.
 //
-// Lines, arcs, circles and polyline segments take part. Splines and ellipses are left out: their
-// constraints (Smooth, an ellipse's points) are not among the tab's types, and Triya cannot yet
-// tell where a line is tangent to an ellipse.
+// Lines, arcs, circles and polyline segments take part, and (M9-05 part 5) splines and ellipses
+// as far as the solver takes them (M9-02 parts 2 and 3): an open spline by its ends, which meet
+// other objects' ends or lie on them (a constraint cannot put a point on a spline, so nothing is
+// made coincident with a spline's middle; Smooth is not among the tab's types); an ellipse or
+// elliptical arc by its centre (Concentric with circles, arcs and other ellipses), the curve
+// itself (an end lying on it is Coincident, a line touching it Tangent) and an arc's ends. The
+// solver refuses Tangent between an ellipse and a circle, arc or ellipse and Equal on ellipses,
+// so they are not offered.
 import { ccwSweep, normalizeAngle, TAU } from '../geom/angle';
-import { polylineSegment, polylineSegmentCount } from '../geom/eval';
-import { distance } from '../geom/vec';
+import { closestPoint } from '../geom/closest';
+import type { Ellipse } from '../geom/curves';
+import { ellipseAxes, polylineSegment, polylineSegmentCount } from '../geom/eval';
+import { toleranceForSize } from '../geom/tolerance';
+import { distance, dot, length } from '../geom/vec';
 import type { Vec2 } from '../geom/types';
 import type {
   ConstraintCurveRef,
@@ -33,6 +41,7 @@ import type {
   Entity,
   GeometricConstraintKind,
 } from '../model/types';
+import { constraintPointsOf } from './constraints';
 
 /** The types the AutoConstrain tab lists: every geometric constraint but Smooth, Symmetric, Fix. */
 export const AUTOCONSTRAIN_KINDS = [
@@ -129,16 +138,49 @@ interface Round {
   readonly sweep: number;
 }
 
+/** An ellipse or elliptical arc. */
+interface Oval {
+  readonly ref: ConstraintCurveRef;
+  readonly ellipse: Ellipse;
+}
+
 interface End {
   readonly ref: ConstraintPointRef;
   readonly at: Vec2;
 }
 
-/** The lines, arcs and circles of `entities` (a polyline's segments each), and their ends. */
-function shapesOf(entities: readonly Entity[]): { lines: Line[]; rounds: Round[]; ends: End[] } {
+/** A circle, arc or ellipse by its centre, for Concentric. */
+interface Centred {
+  readonly ref: ConstraintCurveRef;
+  readonly center: Vec2;
+}
+
+/**
+ * The lines, arcs, circles and ellipses of `entities` (a polyline's segments each), their
+ * centres, and their ends (a spline's too).
+ */
+function shapesOf(entities: readonly Entity[]): {
+  lines: Line[];
+  rounds: Round[];
+  ovals: Oval[];
+  centred: Centred[];
+  ends: End[];
+} {
   const lines: Line[] = [];
   const rounds: Round[] = [];
+  const ovals: Oval[] = [];
+  const centred: Centred[] = [];
   const ends: End[] = [];
+  const round = (r: Round) => {
+    rounds.push(r);
+    centred.push(r);
+  };
+  // A spline's or an elliptical arc's start and end, as the solver maps them.
+  const endsOf = (e: Entity) => {
+    for (const c of constraintPointsOf(e)) {
+      if (c.ref.point === 'start' || c.ref.point === 'end') ends.push(c);
+    }
+  };
   const line = (ref: ConstraintCurveRef, a: Vec2, b: Vec2) => {
     const length = distance(a, b);
     if (length === 0) return;
@@ -157,11 +199,11 @@ function shapesOf(entities: readonly Entity[]): { lines: Line[]; rounds: Round[]
         );
         break;
       case 'CIRCLE':
-        rounds.push({ ref: { entity }, center: g.center, radius: g.radius, start: 0, sweep: TAU });
+        round({ ref: { entity }, center: g.center, radius: g.radius, start: 0, sweep: TAU });
         break;
       case 'ARC': {
         const sweep = ccwSweep(g.startAngle, g.endAngle);
-        rounds.push({
+        round({
           ref: { entity },
           center: g.center,
           radius: g.radius,
@@ -186,7 +228,7 @@ function shapesOf(entities: readonly Entity[]): { lines: Line[]; rounds: Round[]
             continue;
           }
           const { center, radius, startAngle, sweep } = s.arc;
-          rounds.push({
+          round({
             ref: { entity, segment },
             center,
             radius,
@@ -199,11 +241,19 @@ function shapesOf(entities: readonly Entity[]): { lines: Line[]; rounds: Round[]
         );
         break;
       }
+      case 'ELLIPSE':
+        ovals.push({ ref: { entity }, ellipse: g });
+        centred.push({ ref: { entity }, center: g.center });
+        endsOf(e);
+        break;
+      case 'SPLINE':
+        endsOf(e);
+        break;
       default:
         break;
     }
   }
-  return { lines, rounds, ends };
+  return { lines, rounds, ovals, centred, ends };
 }
 
 /** The difference of two line directions, 0 to π/2. */
@@ -253,6 +303,42 @@ function offRound(r: Round, p: Vec2): number {
   return Math.min(distance(p, at(r.start)), distance(p, at(r.start + r.sweep)));
 }
 
+/** How far `p` lies from the ellipse or elliptical arc `o`. */
+function offOval(o: Oval, p: Vec2): number {
+  const e = o.ellipse;
+  const size = Math.max(
+    Math.abs(e.center.x),
+    Math.abs(e.center.y),
+    Math.abs(p.x),
+    Math.abs(p.y),
+    length(e.majorAxis),
+  );
+  return closestPoint(e, p, toleranceForSize(size)).distance;
+}
+
+/**
+ * Where the infinite line through `l` would touch the ellipse `o` (the point of the ellipse
+ * whose tangent runs parallel to it, on the line's side), and how far the line lies from
+ * touching it.
+ */
+function ovalTouch(l: Line, o: Oval): { at: Vec2; gap: number } {
+  const { major, minor } = ellipseAxes(o.ellipse);
+  const c = o.ellipse.center;
+  // The line's unit normal, turned to point from the centre towards the line.
+  let n = { x: -(l.b.y - l.a.y) / l.length, y: (l.b.x - l.a.x) / l.length };
+  const s = dot(n, { x: l.a.x - c.x, y: l.a.y - c.y });
+  if (s < 0) n = { x: -n.x, y: -n.y };
+  // The ellipse's support in that direction: its farthest point along n.
+  const nu = dot(n, major);
+  const nv = dot(n, minor);
+  const h = Math.hypot(nu, nv);
+  const at = {
+    x: c.x + (nu * major.x + nv * minor.x) / h,
+    y: c.y + (nu * major.y + nv * minor.y) / h,
+  };
+  return { at, gap: Math.abs(Math.abs(s) - h) };
+}
+
 /**
  * Groups `items` round the first of each group: an item joins the first group whose first item
  * it `agrees` with, else starts one. Returns each group's first item with each other item.
@@ -279,7 +365,7 @@ export function autoConstraints(
   entities: readonly Entity[],
   settings: AutoConstrainSettings,
 ): AutoConstraint[] {
-  const { lines, rounds, ends } = shapesOf(entities);
+  const { lines, rounds, ovals, centred, ends } = shapesOf(entities);
   const dist = settings.distance;
   const ang = (settings.angle * Math.PI) / 180;
   const other = (a: { ref: { entity: string } }, b: { ref: { entity: string } }) =>
@@ -304,6 +390,10 @@ export function autoConstraints(
         for (const r of rounds) {
           if (!other(p, r) || nearEnd(p.at, r.ref.entity)) continue;
           if (offRound(r, p.at) <= dist) out.push({ kind: 'coincident', refs: [r.ref, p.ref] });
+        }
+        for (const o of ovals) {
+          if (!other(p, o) || nearEnd(p.at, o.ref.entity)) continue;
+          if (offOval(o, p.at) <= dist) out.push({ kind: 'coincident', refs: [o.ref, p.ref] });
         }
       }
       return out;
@@ -335,6 +425,14 @@ export function autoConstraints(
           }
           out.push({ kind: 'tangent', refs: [l.ref, r.ref] });
         }
+        for (const o of ovals) {
+          const { at, gap } = ovalTouch(l, o);
+          if (gap > dist) continue;
+          if (settings.tangentTouch && (offSegment(l, at) > dist || offOval(o, at) > dist)) {
+            continue;
+          }
+          out.push({ kind: 'tangent', refs: [l.ref, o.ref] });
+        }
       }
       for (const [r, s] of allPairs(rounds)) {
         const d = distance(r.center, s.center);
@@ -359,7 +457,7 @@ export function autoConstraints(
       return out;
     },
     concentric: () =>
-      leaders(rounds, (r, s) => distance(r.center, s.center) <= dist).map(([r, s]) => ({
+      leaders(centred, (r, s) => distance(r.center, s.center) <= dist).map(([r, s]) => ({
         kind: 'concentric',
         refs: [r.ref, s.ref],
       })),

@@ -31,6 +31,8 @@ beforeAll(async () => {
 
 const MODEL = '1F';
 
+type Vec = { x: number; y: number };
+
 const entity = (handle: string, geom: EntityGeometry) => ({
   handle,
   owner: MODEL,
@@ -162,6 +164,81 @@ describe('AUTOCONSTRAIN with PlaneGCS (M9-05 part 3)', () => {
     await s.bus.script(['U']);
     expect(s.kinds()).toEqual([]);
     expect(s.ends('30')).toEqual([0, 0, 10, 0.05]);
+  });
+
+  it('takes splines by their ends and ellipses by centre and curve (M9-05 part 5)', async () => {
+    // An ellipse 10 by 4 about the origin; a line along its top 0.03 above it; a circle 0.02
+    // off its centre; a spline from 0.02 off its right end to 0.03 short of a line's start.
+    const s = setup([
+      entity('30', {
+        kind: 'ELLIPSE',
+        center: { x: 0, y: 0 },
+        majorAxis: { x: 10, y: 0 },
+        ratio: 0.4,
+        startParam: 0,
+        endParam: 2 * Math.PI,
+      } as EntityGeometry),
+      line('31', -5, 4.03, 5, 4.03),
+      entity('32', { kind: 'CIRCLE', center: { x: 0.02, y: 0.01 }, radius: 2 } as EntityGeometry),
+      entity('33', {
+        kind: 'SPLINE',
+        degree: 3,
+        knots: [0, 0, 0, 0, 1, 1, 1, 1],
+        controlPoints: [
+          { x: 10.02, y: 0.01 },
+          { x: 13, y: 3 },
+          { x: 17, y: 3 },
+          { x: 20, y: 0 },
+        ],
+        closed: false,
+        periodic: false,
+      } as unknown as EntityGeometry),
+      line('34', 20.03, 0, 25, 0),
+    ]);
+    await s.bus.script(['AUTOCONSTRAIN']);
+    await s.select(
+      { x: 0, y: -4 },
+      { x: 4, y: 4.03 },
+      { x: -2, y: 0 },
+      { x: 15, y: 2.25 },
+      {
+        x: 23,
+        y: 0,
+      },
+    );
+    expect(s.bus.command).toBeUndefined();
+    expect(s.kinds()).toEqual([
+      'coincident',
+      'coincident',
+      'parallel',
+      'tangent',
+      'concentric',
+      'horizontal',
+    ]);
+    const geom = (h: string) => s.model.entityByHandle(h)!.geom;
+    const e = geom('30') as { center: Vec; majorAxis: Vec; ratio: number };
+    const c = geom('32') as { center: Vec };
+    const sp = geom('33') as { controlPoints: Vec[] };
+    const [, y31] = s.ends('31');
+    const [x34, y34] = s.ends('34');
+    // The circle shares the ellipse's centre.
+    expect(c.center.x).toBeCloseTo(e.center.x, 9);
+    expect(c.center.y).toBeCloseTo(e.center.y, 9);
+    // The line touches the ellipse: as far from its centre as the ellipse reaches up.
+    const a = Math.hypot(e.majorAxis.x, e.majorAxis.y);
+    const reach = Math.hypot(e.majorAxis.y, e.ratio * e.majorAxis.x);
+    expect(Math.abs(y31! - e.center.y)).toBeCloseTo(reach, 6);
+    // The spline starts on the ellipse and ends on the line's start.
+    const p0 = sp.controlPoints[0]!;
+    const u = { x: e.majorAxis.x / a, y: e.majorAxis.y / a };
+    const dx = p0.x - e.center.x;
+    const dy = p0.y - e.center.y;
+    const along = (dx * u.x + dy * u.y) / a;
+    const across = (-dx * u.y + dy * u.x) / (a * e.ratio);
+    expect(along ** 2 + across ** 2).toBeCloseTo(1, 9);
+    expect(sp.controlPoints[3]!.x).toBeCloseTo(x34!, 9);
+    expect(sp.controlPoints[3]!.y).toBeCloseTo(y34!, 9);
+    expect(s.log).toContain('6 constraints applied to 5 objects.');
   });
 
   it('adds nothing more when run again', async () => {
