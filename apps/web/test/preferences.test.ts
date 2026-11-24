@@ -2,7 +2,7 @@
 // coordinate display, Dynamic Input and the object snap settings AutoCAD keeps per user, kept
 // in IndexedDB between sessions; anything unreadable falls back to the defaults.
 import { describe, expect, it } from 'vitest';
-import { OSMODE_DEFAULT, OSNAP } from '@triya/engine';
+import { AUTOCONSTRAIN_DEFAULTS, OSMODE_DEFAULT, OSNAP } from '@triya/engine';
 import { Drafting } from '../src/drafting';
 import { DynMode } from '../src/dynamic-input';
 import {
@@ -77,6 +77,8 @@ describe('preferences', () => {
       constraintBarMode: 4095,
       constraintBarDisplay: 3,
       cbarTransparency: 50,
+      // The AutoConstrain tab's defaults (M9-05 part 3).
+      autoConstrain: AUTOCONSTRAIN_DEFAULTS,
       // LAYLOCKFADECTL 50 (M5-06).
       layLockFade: 50,
       // XFADECTL 50 (M5-02 part 5).

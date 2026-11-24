@@ -15,10 +15,12 @@
 import { GRIP_COLORS_DEFAULT, type GripColors } from '@triya/render';
 import { DEFAULT_TOOLTIP, type TooltipAppearance } from './tooltip-appearance';
 import {
+  AUTOCONSTRAIN_DEFAULTS,
   GRID_DISPLAY,
   OSMODE_DEFAULT,
   OSNAP,
   OSNAP_OFF,
+  type AutoConstrainSettings,
   type Box,
   type OsnapMode,
 } from '@triya/engine';
@@ -147,6 +149,11 @@ export interface DraftingState {
    * higher value makes the constraint bars more opaque"). Per user, initially 50.
    */
   readonly cbarTransparency: number;
+  /**
+   * The Constraint Settings dialog's AutoConstrain tab (M9-05 part 3): the types AUTOCONSTRAIN
+   * applies, in order, and its tolerances. Per user (AutoCAD keeps it in the registry).
+   */
+  readonly autoConstrain: AutoConstrainSettings;
   /**
    * LAYLOCKFADECTL (M5-06): objects on locked layers drawn faded by this percentage, −90 to 90
    * (negative: not faded). AutoCAD keeps it per user, initially 50; LAYISO sets it.
@@ -581,6 +588,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   constraintBarMode: 4095,
   constraintBarDisplay: 3,
   cbarTransparency: 50,
+  autoConstrain: AUTOCONSTRAIN_DEFAULTS,
   layLockFade: 50,
   xFade: 50,
   plotTransparencyOverride: 1,

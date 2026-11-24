@@ -331,7 +331,7 @@ describe('GCCOINCIDENT', () => {
   it('makes two points coincide', async () => {
     const s = setup();
     await s.bus.script(['GCCOINCIDENT']);
-    expect(s.bus.promptText).toBe('Select first point or [Object] <Object>:');
+    expect(s.bus.promptText).toBe('Select first point or [Object/Autoconstrain] <Object>:');
     await s.bus.pick({ x: 0.1, y: 0 });
     await s.bus.pick({ x: 0.1, y: 5 });
     expect(s.calls[0]).toMatchObject({

@@ -615,8 +615,8 @@ const ANNOTATE: RibbonTab = {
  * (M9-03 part 3): Linear (with Horizontal and Vertical), Aligned, Radius, Diameter, Angular;
  * Convert greyed out until DIMCONSTRAINT converts dimensions; Show Dynamic Constraints (M9-03
  * part 4); Show/Hide, DCDISPLAY (M9-03 part 7). The Manage panel: Parameters Manager (M9-03
- * part 5). Auto Constrain, the Geometric panel's Show/Hide and Infer, and Delete Constraints
- * come with their commands.
+ * part 5). Auto Constrain and Constraint Settings (M9-05 part 3) on the Geometric panel; Infer
+ * comes with its command.
  */
 const PARAMETRIC: RibbonTab = {
   id: 'parametric',
@@ -627,6 +627,8 @@ const PARAMETRIC: RibbonTab = {
       label: 'Geometric',
       compress: { order: 1, keep: [] },
       items: [
+        // M9-05 part 3: Auto Constrain, large at the panel's left as AutoCAD's.
+        cmd('gc-auto', 'Auto Constrain', 'link_multiple', 'AUTOCONSTRAIN', BIG),
         cmd('gc-coincident', 'Coincident', 'gc-coincident', 'GCCOINCIDENT', ICON),
         cmd('gc-collinear', 'Collinear', 'gc-collinear', 'GCCOLLINEAR', ICON),
         cmd('gc-concentric', 'Concentric', 'gc-concentric', 'GCCONCENTRIC', ICON),
@@ -643,6 +645,8 @@ const PARAMETRIC: RibbonTab = {
         cmd('gc-show-hide', 'Show/Hide', 'eye_off', 'CONSTRAINTBAR', SECONDARY),
         cmd('gc-show-all', 'Show All', 'eye', 'CONSTRAINTBAR', SECONDARY, ['Showall']),
         cmd('gc-hide-all', 'Hide All', 'eye_off', 'CONSTRAINTBAR', SECONDARY, ['Hideall']),
+        // M9-05 part 3: the panel's launcher in AutoCAD; a button of its own here.
+        cmd('gc-settings', 'Constraint Settings', 'settings', 'CONSTRAINTSETTINGS', SECONDARY),
       ],
     },
     {

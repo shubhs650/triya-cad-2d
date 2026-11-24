@@ -128,7 +128,7 @@ test('GCTANGENT and GCCOINCIDENT take an ellipse (M9-02 part 3)', async ({ page 
   await park();
   await shot('2-tangent.png');
 
-  await type(page, 'GCCOINCIDENT', 'Select first point or [Object] <Object>:');
+  await type(page, 'GCCOINCIDENT', 'Select first point or [Object/Autoconstrain] <Object>:');
   await click(80, 20);
   await expect(prompt(page)).toHaveText('Select second point:');
   await click(110.5, 0.25);

@@ -5638,6 +5638,56 @@ button {
   align-items: center;
 }
 
+/* CONSTRAINTSETTINGS' Constraint Settings (M9-05 part 3), on the Drafting Settings' layout. */
+.cad-dialog.csettings {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.csettings-kinds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+
+.csettings-transparency,
+.csettings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csettings-row input[type='text'] {
+  flex: 0 0 10ch;
+}
+
+.csettings-auto {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.csettings-order {
+  flex: 1 1 auto;
+  border-collapse: collapse;
+  border: 1px solid var(--chrome-border);
+}
+
+.csettings-order th,
+.csettings-order td {
+  padding: 1px 6px;
+  text-align: left;
+}
+
+.csettings-order tr[aria-selected='true'] {
+  background: var(--selected-bg);
+}
+
+.csettings-order-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 /* DSETTINGS' Drafting Settings (M3-06 part 1): tabs of check boxes and grouped options. */
 .cad-dialog.dsettings {
   width: min(520px, calc(100vw - 32px));

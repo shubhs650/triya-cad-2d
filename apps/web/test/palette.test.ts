@@ -72,6 +72,7 @@ describe('palette search', () => {
       'ATTREDEF',
       // M5-02 part 2: references given their block's attributes.
       'ATTSYNC',
+      'AUTOCONSTRAIN',
       // M5-01 part 1: blocks made and inserted at the command line, and BASE.
       'BASE',
       // M5-03 part 2: the Block Attribute Manager.
@@ -106,6 +107,7 @@ describe('palette search', () => {
       'COMMANDLINEHIDE',
       // M9-05 part 2: constraint bars shown or hidden, and constraints removed.
       'CONSTRAINTBAR',
+      'CONSTRAINTSETTINGS',
       'COPY',
       'COPYBASE',
       'COPYCLIP',

@@ -823,6 +823,15 @@ export type DialogRequest =
       readonly snapGrid?: SnapGridSettings;
     }
   | {
+      /**
+       * CONSTRAINTSETTINGS' Constraint Settings (M9-05 part 3): the app's per-user constraint
+       * settings, which the dialog sets itself; `tab` the tab it opens on (AUTOCONSTRAIN's
+       * Settings: AutoConstrain), none for the one shown last.
+       */
+      readonly type: 'csettings';
+      readonly tab?: ConstraintSettingsTab;
+    }
+  | {
       /** SELECTSIMILAR's Select Similar Settings (M3-04 part 3), opened on SELECTSIMILARMODE. */
       readonly type: 'selectsimilar';
       readonly mode: number;
@@ -981,6 +990,9 @@ export type GroupingAction =
 /** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
 export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'dyn' | 'qp' | 'sc';
 
+/** The Constraint Settings dialog's tabs (M9-05 part 3). */
+export type ConstraintSettingsTab = 'geometric' | 'dimensional' | 'autoconstrain';
+
 /**
  * What the Snap and Grid tab sets in the `*Active` VPORT (M3-06 part 2): SNAPUNIT, GRIDUNIT (0
  * follows the snap spacing) and GRIDMAJOR, and its Grid behavior (part 6), GRIDDISPLAY's bits.
@@ -1101,8 +1113,12 @@ export type PromptAnswer =
        * multiline attribute `target` (the value's `...` button); `field` makes them and opens
        * the Field dialog for the value of `target` (EATTEDIT), the Default of `resume.editing`
        * (BATTMAN's Edit Attribute), whose value marks the field's place (M5-03 part 4).
+       * `cancel` closes it unchanged where the command goes on (the Constraint Settings opened
+       * by AUTOCONSTRAIN's Settings, which asks for objects again; M9-05 part 3); elsewhere a
+       * dialog's Cancel cancels the command.
        */
-      readonly action: 'ok' | 'apply' | 'select' | 'mtext' | 'remove' | 'preview' | 'field';
+      readonly action:
+        'ok' | 'apply' | 'select' | 'mtext' | 'remove' | 'preview' | 'field' | 'cancel';
       readonly attributes?: readonly AttributePatch[];
       /** The Block Attribute Manager's state (BATTMAN, M5-03 part 2). */
       readonly battman?: BattmanAnswer;
