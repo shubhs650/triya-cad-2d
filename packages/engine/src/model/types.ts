@@ -2404,6 +2404,32 @@ export const isDimensionalConstraint = (
 ): o is DimensionalConstraintObject => o?.type === 'TRIYA_DIMCONSTRAINT';
 
 /**
+ * A user parameter (M9-03 part 6): a row the Parameters Manager's New User Parameter made, a
+ * named value or expression no constraint holds, which dimensional constraints' expressions may
+ * name (AutoCAD 2024 Help, "Parameters Manager"). `parameter` is its name, as a dimensional
+ * constraint's is. Filed under the root dictionary and saved in `TRIYA_CONSTRAINTS` as a record of
+ * its own (DEC-083).
+ */
+export interface UserParameterObject extends NonGraphicalObject {
+  readonly type: 'TRIYA_USERPARAMETER';
+  /** The parameter's name: user1, user2… or the one it was renamed to. */
+  readonly parameter: string;
+  /** Its expression: a value, or one naming other parameters. */
+  readonly expression: string;
+  /** The Parameters Manager's Description. */
+  readonly description?: string;
+}
+
+export const isUserParameter = (o: NonGraphicalObject | undefined): o is UserParameterObject =>
+  o?.type === 'TRIYA_USERPARAMETER';
+
+/** What holds a row of the Parameters Manager: a dimensional constraint or a user parameter. */
+export type ParameterObject = DimensionalConstraintObject | UserParameterObject;
+
+export const isParameterObject = (o: NonGraphicalObject | undefined): o is ParameterObject =>
+  isDimensionalConstraint(o) || isUserParameter(o);
+
+/**
  * What restoring a layer state sets (M5-07, DXF 91 of its XRECORD): ObjectARX's
  * `AcDbLayerStateManager::LayerStateMask`, the Layer States Manager's "Layer properties to
  * restore". `vpFrozen` is VP Freeze in the current viewport, `newVpFrozen` New VP Freeze. `hidden`

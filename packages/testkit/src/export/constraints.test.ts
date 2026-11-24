@@ -4,19 +4,22 @@
 // kind `constraints`). The constraints are added to the drawing as GEOMCONSTRAINT files them
 // (the solver is `@triya/constraints`', which the testkit may not reach; its scenarios are in
 // packages/constraints/test). Dimensional constraints (DEC-082) are added beside them, as
-// DIMCONSTRAINT files them.
+// DIMCONSTRAINT files them, and user parameters (M9-03 part 6, DEC-083) as the Parameters
+// Manager's New files them.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
   DocumentModel,
-  isDimensionalConstraint,
   isGeometricConstraint,
+  isParameterObject,
   type ConstraintRef,
   type DimensionalConstraintObject,
   type Entity,
   type GeometricConstraintKind,
   type GeometricConstraintObject,
+  type ParameterObject,
+  type UserParameterObject,
 } from '@triya/engine';
 import { TRIYA_CONSTRAINTS, documentInit, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
@@ -40,12 +43,12 @@ const constraintsOf = (model: DocumentModel) => [
   ...[...model.objects.values()]
     .filter(isGeometricConstraint)
     .map(({ handle, kind, refs }) => ({ handle, kind, refs })),
-  ...[...model.objects.values()].filter(isDimensionalConstraint).map((d) => {
+  ...[...model.objects.values()].filter(isParameterObject).map((d) => {
     const {
       raw: _raw,
       owner: _owner,
       ...rest
-    } = d as DimensionalConstraintObject & {
+    } = d as ParameterObject & {
       raw?: unknown;
     };
     return rest;
@@ -128,6 +131,18 @@ function constrain(model: DocumentModel): number {
     });
   }
   const b = new ChangeSetBuilder(model);
+  // User parameters (M9-03 part 6, DEC-083): one plain, one naming a constraint's parameter.
+  const users = [
+    { parameter: 'user1', expression: '2.5', description: 'Bolt pitch' },
+    { parameter: 'user2', expression: dims.length > 0 ? `${dims[0]!.parameter}*2` : 'user1*2' },
+  ];
+  for (const u of users) {
+    b.addObject({
+      type: 'TRIYA_USERPARAMETER',
+      owner: model.meta.rootDictionary!,
+      ...u,
+    } as Omit<UserParameterObject, 'handle'>);
+  }
   for (const d of dims) {
     b.addObject({ type: 'TRIYA_DIMCONSTRAINT', owner: model.meta.rootDictionary!, ...d } as Omit<
       DimensionalConstraintObject,
@@ -143,10 +158,10 @@ function constrain(model: DocumentModel): number {
     } as Omit<GeometricConstraintObject, 'handle'>);
   }
   model.apply(b.build());
-  return made.length + dims.length;
+  return made.length + dims.length + users.length;
 }
 
-describe('geometric and dimensional constraints on corpus files (M9-04, M9-03 part 3)', () => {
+describe('constraints and user parameters on corpus files (M9-04, M9-03 parts 3 and 6)', () => {
   for (const path of FILES) {
     it(`${path}: saved, reopened and round-tripped with no difference`, () => {
       const bytes = bytesOf(path);

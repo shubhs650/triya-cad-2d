@@ -3,7 +3,8 @@
 // width with its expression, value and type. A new expression typed in place moves the line (its
 // dynamic constraint reaches further right); a self-reference is refused on the command line and
 // the cell shows the expression again; a rename and a description are kept; the search narrows
-// the list; Delete removes the constraint; PARAMETERSCLOSE closes the palette. The edits'
+// the list; Delete removes the constraint; PARAMETERSCLOSE closes the palette. Part 6: New makes
+// a user parameter, its name ready to type, which the constraint's expression then names. The edits'
 // behaviour is unit-tested in packages/engine/test/commands/parameters.test.ts and, with
 // PlaneGCS, packages/constraints/test/solver.test.ts; this checks the palette, ribbon and worker.
 import { expect, test, type Page } from '@playwright/test';
@@ -123,8 +124,8 @@ test('the Parameters Manager lists, edits, renames, searches and deletes paramet
     .click();
   const palette = page.getByRole('complementary', { name: 'Parameters Manager' });
   await expect(palette).toBeVisible();
-  const table = palette.getByRole('table', { name: 'Dimensional constraint parameters' });
-  const rows = table.locator('tbody tr');
+  const table = palette.getByRole('table', { name: 'Parameters' });
+  const rows = table.locator('tbody tr[data-name]');
   await expect(rows).toHaveCount(1);
   const expression = palette.getByRole('textbox', { name: 'Expression of width' });
   await expect(palette.getByRole('textbox', { name: 'Name of width' })).toHaveValue('width');
@@ -170,7 +171,9 @@ test('the Parameters Manager lists, edits, renames, searches and deletes paramet
   // Delete removes the constraint: the palette lists none and the line keeps its length.
   await rows.first().getByRole('rowheader').click();
   await palette.getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(palette).toContainText('None: the drawing has no dimensional constraints.');
+  await expect(palette).toContainText(
+    'None: the drawing has no dimensional constraints or user parameters.',
+  );
   await expect.poll(right).toBe(0);
   await shot('4-deleted.png');
 
@@ -180,4 +183,104 @@ test('the Parameters Manager lists, edits, renames, searches and deletes paramet
   await expect(rows).toHaveCount(1);
   await type(page, 'PARAMETERSCLOSE', 'Command:');
   await expect(palette).toBeHidden();
+});
+
+test('New makes a user parameter that a constraint names (M9-03 part 6)', async ({ page }) => {
+  test.setTimeout(150_000);
+  const shots = process.env['TRIYA_SHOTS'];
+  const shot = async (name: string) => {
+    await page.mouse.move(view.box.x + 60, view.box.y + view.box.height - 40);
+    await page.screenshot({
+      path: shots ? path.join(shots, name) : test.info().outputPath(name),
+    });
+  };
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await gridOff(page);
+
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, '1000020,1000040', 'Specify next point or [Undo]:');
+  await type(page, '1000080,1000040', 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+  await expectDrawn(page, { timeout: 15_000 });
+
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => view.at(1000000 + x, 1000000 + y);
+  const click = async (x: number, y: number) => {
+    const p = at(x, y);
+    await page.mouse.click(view.box.x + p.x, view.box.y + p.y);
+  };
+  const right = () => bluePixels(page, at(84, 46), at(104, 70));
+
+  await type(page, 'DCALIGNED', /^Specify first constraint point or/);
+  await type(page, '', 'Select object:');
+  await click(50, 40);
+  await expect(prompt(page)).toHaveText('Specify dimension line location:', { timeout: 15_000 });
+  await click(50, 60);
+  await expect(prompt(page)).toHaveText('Dimension text <d1=60.0000>:');
+  await type(page, 'width=60', 'Command:');
+  await expect.poll(() => bluePixels(page, at(10, 46), at(90, 70))).toBeGreaterThan(100);
+
+  await type(page, 'PARAMETERS', 'Command:');
+  const palette = page.getByRole('complementary', { name: 'Parameters Manager' });
+  await expect(palette).toBeVisible();
+  const table = palette.getByRole('table', { name: 'Parameters' });
+  const users = table.getByRole('rowgroup', { name: 'User Parameters' });
+  await expect(users).toHaveCount(0);
+
+  // New: user1 = 1 under User Parameters, its name selected for typing.
+  await palette.getByRole('button', { name: 'New User Parameter' }).click();
+  const user1 = palette.getByRole('textbox', { name: 'Name of user1' });
+  await expect(user1).toBeFocused();
+  await expect(users.locator('tr[data-name]')).toHaveCount(1);
+  await expect(users).toContainText('User Parameters');
+  await expect(palette.getByRole('textbox', { name: 'Expression of user1' })).toHaveValue('1');
+  await expect(users.locator('tr[data-name="user1"]')).toContainText('1.0000');
+  await expect(users.locator('tr[data-name="user1"]')).toContainText('User');
+  await shot('1-new-user-parameter.png');
+
+  // Typed over at once: the name is kept.
+  await page.keyboard.type('span');
+  await page.keyboard.press('Enter');
+  const expression = palette.getByRole('textbox', { name: 'Expression of span' });
+  await expect(expression).toHaveValue('1');
+  await expression.fill('80');
+  await expression.press('Enter');
+  await expect(users.locator('tr[data-name="span"]')).toContainText('80.0000');
+  const description = palette.getByRole('textbox', { name: 'Description of span' });
+  await description.fill('Bracket span');
+  await description.press('Enter');
+  await expect(description).toHaveValue('Bracket span');
+
+  // The constraint names it: the line reaches past x = 84.
+  expect(await right()).toBe(0);
+  const width = palette.getByRole('textbox', { name: 'Expression of width' });
+  await width.fill('span');
+  await width.press('Enter');
+  await expect(table.locator('tr[data-name="width"]')).toContainText('80.0000');
+  await expect.poll(right, { timeout: 15_000 }).toBeGreaterThan(20);
+  await shot('2-constraint-names-it.png');
+
+  // A second New takes user1 again, the lowest free name.
+  await palette.getByRole('button', { name: 'New User Parameter' }).click();
+  await expect(palette.getByRole('textbox', { name: 'Name of user1' })).toBeFocused();
+  await page.keyboard.press('Escape');
+
+  // Deleting span leaves width with its value; the line stays.
+  await users.locator('tr[data-name="span"]').getByRole('rowheader').click();
+  await palette.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(users.locator('tr[data-name]')).toHaveCount(1);
+  await expect(width).toHaveValue('80');
+  expect(await right()).toBeGreaterThan(20);
+  await shot('3-user-parameter-deleted.png');
+
+  // One U brings it back.
+  await activeCanvas(page).focus();
+  await type(page, 'U', 'Command:');
+  await expect(users.locator('tr[data-name]')).toHaveCount(2);
+  await expect(width).toHaveValue('span');
 });

@@ -5,11 +5,17 @@
 // Dimensional constraints (M9-03 part 3) bring their parameters: the Parameters Manager's table
 // is built from their expressions on each call too. The Parameters Manager (M9-03 part 5) lists
 // it and edits it: an expression set re-solves what its values drive, a rename or a delete
-// rewrites the expressions that name the parameter.
+// rewrites the expressions that name the parameter. User parameters (part 6) are rows of the
+// same table that no constraint holds: the dimensional constraints' expressions may name them.
+import {
+  isDimensionalConstraint,
+  isUserParameter,
+  type DimensionalConstraintObject,
+  type ParameterObject,
+} from '@triya/engine';
 import type {
   ConstraintRefusal,
   ConstraintSolver,
-  DimensionalConstraintObject,
   ExpressionChange,
   GeometricConstraintObject,
 } from '@triya/engine';
@@ -19,31 +25,36 @@ import { ParameterTable } from './parameters';
 import type { PlaneGcs } from './planegcs';
 import type { Tolerance } from '@triya/engine';
 
-/** The parameters of the drawing's dimensional constraints, as the Parameters Manager lists them. */
-export function parameterTableOf(
-  dimensions: readonly DimensionalConstraintObject[],
-): ParameterTable {
+/**
+ * The parameters of the drawing's dimensional constraints and its user parameters, as the
+ * Parameters Manager lists them.
+ */
+export function parameterTableOf(parameters: readonly ParameterObject[]): ParameterTable {
   return ParameterTable.load(
-    dimensions.map((d) => ({
+    parameters.map((d) => ({
       name: d.parameter,
       expression: d.expression,
-      kind: 'constraint' as const,
-      type: DIMENSION_TYPE[d.dimension],
+      ...(isUserParameter(d)
+        ? { kind: 'user' as const }
+        : { kind: 'constraint' as const, type: DIMENSION_TYPE[d.dimension] }),
       ...(d.description === undefined ? {} : { description: d.description }),
     })),
   );
 }
 
+const dimensionsOf = (parameters: readonly ParameterObject[]): DimensionalConstraintObject[] =>
+  parameters.filter(isDimensionalConstraint);
+
 function modelOf(
   gcs: PlaneGcs,
   tolerance: Tolerance,
   constraints: readonly GeometricConstraintObject[],
-  dimensions: readonly DimensionalConstraintObject[],
+  parameters: readonly ParameterObject[],
 ): ConstraintModel {
-  const model = new ConstraintModel(gcs, tolerance, parameterTableOf(dimensions));
+  const model = new ConstraintModel(gcs, tolerance, parameterTableOf(parameters));
   model.load(constraints);
   model.loadDimensions(
-    dimensions.map((d) => ({
+    dimensionsOf(parameters).map((d) => ({
       handle: d.handle,
       dimension: d.dimension,
       refs: d.refs,
@@ -115,9 +126,12 @@ export function constraintSolver(gcs: PlaneGcs): ConstraintSolver {
     },
     parameters(dimensions) {
       const table = parameterTableOf(dimensions);
-      return dimensions.flatMap((d) => {
+      // AutoCAD's two groups: the dimensional constraints' parameters, then the user parameters.
+      const grouped = [...dimensionsOf(dimensions), ...dimensions.filter(isUserParameter)];
+      return grouped.flatMap((d) => {
         const row = table.get(d.parameter);
         if (!row) return [];
+        const user = isUserParameter(d);
         return [
           {
             name: row.name,
@@ -126,8 +140,9 @@ export function constraintSolver(gcs: PlaneGcs): ConstraintSolver {
             ...(row.error === undefined ? {} : { error: row.error }),
             type: row.type,
             description: row.description,
-            reference: d.reference === true,
+            reference: !user && d.reference === true,
             constraint: d.handle,
+            ...(user ? { user: true } : {}),
           },
         ];
       });

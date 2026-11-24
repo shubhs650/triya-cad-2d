@@ -19,7 +19,7 @@ import {
   constraintCurveAt,
   constraintPointAt,
   constraintPointsOf,
-  dimensionalConstraints,
+  parameterObjects,
   geometricConstraints,
   type ExpressionChange,
 } from '../edit/constraints';
@@ -177,7 +177,7 @@ async function apply(
     constraint,
     (h) => ctx.model.entityByHandle(h),
     toleranceOf(ctx, refs),
-    dimensionalConstraints(ctx.model),
+    parameterObjects(ctx.model),
   );
   if (!r.ok) {
     ctx.message(sentence(r.message));
@@ -196,7 +196,8 @@ async function apply(
 
 /**
  * Keeps the drawing's dimensional constraints' expressions in step with a solve (M9-03 part 3):
- * a reference constraint measuring geometry that moved.
+ * a reference constraint measuring geometry that moved, or an expression a Parameters Manager
+ * edit rewrote, a user parameter's included (part 6).
  */
 export function setExpressions(
   ctx: CommandContext,
@@ -205,7 +206,7 @@ export function setExpressions(
 ): void {
   if (!changes.length) return;
   const now = new Map(changes.map((c) => [c.parameter, c.expression]));
-  for (const d of dimensionalConstraints(ctx.model)) {
+  for (const d of parameterObjects(ctx.model)) {
     const expression = now.get(d.parameter);
     if (expression !== undefined && expression !== d.expression) {
       b.updateObject(d.handle, { expression } as RecordPatch<NonGraphicalObject>);
