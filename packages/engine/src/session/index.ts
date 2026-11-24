@@ -36,6 +36,7 @@ import {
   saveViewLayers,
 } from '../edit/view-layers';
 import type { DeferredPick } from '../geom/deferred';
+import type { SnappedPoint } from '../edit/infer-constraints';
 import type { Vec2 } from '../geom/types';
 import type { Lasso } from '../selection/loop';
 import { ChangeSetBuilder } from '../model/builder';
@@ -596,6 +597,8 @@ export type CommandInput =
       readonly grip?: number;
       /** The Deferred Tangent or Perpendicular the point was snapped with (M3-01 part 2). */
       readonly deferred?: DeferredPick;
+      /** The object snap the point was given by and its object, which Infer reads (M9-05 part 7). */
+      readonly snap?: Omit<SnappedPoint, 'point'>;
       /** Ctrl was held: an arc's direction switched (M3-01 part 6), or a grip copy (M3-05). */
       readonly ctrl?: boolean;
       /** The function picked from a grip's hover menu, with `grip` (M3-05 part 2). */
@@ -994,6 +997,7 @@ export class EngineSession {
           ...(input.missed && { missed: true }),
           ...(input.grip !== undefined && { grip: input.grip }),
           ...(input.deferred && { deferred: input.deferred }),
+          ...(input.snap && { snap: input.snap }),
           ...(input.ctrl && { ctrl: true }),
           ...(input.gripFunction && { gripFunction: input.gripFunction }),
           ...(input.dragged && { dragged: true }),
