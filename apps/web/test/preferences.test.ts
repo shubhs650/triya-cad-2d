@@ -151,6 +151,8 @@ describe('preferences', () => {
         PEDITACCEPT: 0,
         // M9-10: what copies carry of constraints (copy values, rename on conflict).
         PARAMETERCOPYMODE: 1,
+        // M9-03 part 8: new dimensional constraints dynamic.
+        CCONSTRAINTFORM: 0,
         // M4-09 part 3: TEXTALIGN's Left and Current vertical.
         TEXTALIGNMODE: 9,
         TEXTALIGNSPACING: 2,
@@ -370,6 +372,7 @@ describe('preferences', () => {
       TRIMMODE: 0,
       PEDITACCEPT: 1,
       PARAMETERCOPYMODE: 4,
+      CCONSTRAINTFORM: 0,
       TEXTALIGNMODE: 9,
       TEXTALIGNSPACING: 2,
       HPDLGMODE: 2,

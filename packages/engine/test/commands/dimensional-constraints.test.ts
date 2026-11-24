@@ -4,6 +4,7 @@
 // the commands against PlaneGCS.
 import { describe, expect, it } from 'vitest';
 import {
+  APP_VARIABLES,
   DocumentModel,
   PromptBus,
   builtinCommands,
@@ -26,10 +27,17 @@ import {
 import { NO_PARAMETERS } from './solver-stub';
 import { MODEL_SPACE, entityInit, lineGeom, sampleInit } from '../model/fixtures';
 
-/** Picks take the model-space objects within 0.25 of the pick. */
-function host(model: () => DocumentModel): ViewHost {
+/**
+ * Picks take the model-space objects within 0.25 of the pick; `vars`, when given, are the app's
+ * system variables (CCONSTRAINTFORM), read and set as the app keeps them.
+ */
+function host(model: () => DocumentModel, vars?: Map<string, number>): ViewHost {
   return {
     request: (r): Promise<ViewReply> => {
+      if (r.op === 'sysvar' && vars) {
+        if (r.value !== undefined) vars.set(r.name, r.value as number);
+        return Promise.resolve({ ok: true, value: vars.get(r.name) ?? 0 });
+      }
       if (r.op !== 'pick') return Promise.resolve({ ok: false, message: 'no' });
       const hits: [number, EntityId][] = [];
       for (const e of model().entities()) {
@@ -64,7 +72,7 @@ const accepted =
  * (30,0)-(40,0)-(40,10) and an arc 34 at (60,0) r 5 from 0° to 90°. The solver measures 10
  * (an angle 90) and names a new parameter d1 (ang1, rad1, dia1).
  */
-function setup(answer: Answer = accepted()) {
+function setup(answer: Answer = accepted(), vars?: Map<string, number>) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
@@ -124,7 +132,7 @@ function setup(answer: Answer = accepted()) {
   const bus = new PromptBus({
     model,
     registry: builtinCommands(),
-    view: host(() => model),
+    view: host(() => model, vars),
     constraints: () => Promise.resolve(service),
   });
   const log: string[] = [];
@@ -448,6 +456,44 @@ describe('DIMCONSTRAINT', () => {
       ['radial', 'annotational'],
       ['diameter', 'annotational'],
     ]);
+  });
+
+  it('takes the Form from CCONSTRAINTFORM where the app keeps it, and sets it (M9-03 part 8)', async () => {
+    const vars = new Map([['CCONSTRAINTFORM', 1]]);
+    const s = setup(accepted(), vars);
+    await s.bus.script(['DCRADIUS']);
+    await s.bus.pick({ x: 22, y: 0 });
+    await s.bus.pick({ x: 25, y: 3 });
+    await s.bus.script(['']);
+    await s.bus.script(['DIMCONSTRAINT']);
+    expect(s.log).toContain('Current settings: Constraint Form = Annotational');
+    await s.bus.script(['F', 'D']);
+    expect(vars.get('CCONSTRAINTFORM')).toBe(0);
+    expect(s.log).toContain('Current settings: Constraint Form = Dynamic');
+    await s.bus.cancel();
+    // SETVAR in between: the next command reads the app's value as it starts.
+    vars.set('CCONSTRAINTFORM', 1);
+    await s.bus.script(['DCDIAMETER']);
+    await s.bus.pick({ x: 22, y: 0 });
+    await s.bus.pick({ x: 25, y: 3 });
+    await s.bus.script(['']);
+    vars.set('CCONSTRAINTFORM', 0);
+    await s.bus.script(['DCDIAMETER']);
+    await s.bus.pick({ x: 22, y: 0 });
+    await s.bus.pick({ x: 25, y: -3 });
+    await s.bus.script(['']);
+    expect(s.dims().map((d) => [d.dimension, d.form])).toEqual([
+      ['radial', 'annotational'],
+      ['diameter', 'annotational'],
+      ['diameter', 'dynamic'],
+    ]);
+  });
+
+  it('CCONSTRAINTFORM is a switch the app keeps', () => {
+    expect(APP_VARIABLES.find((v) => v.name === 'CCONSTRAINTFORM')).toMatchObject({
+      store: 'app',
+      kind: 'switch',
+    });
   });
 
   it('says converting a dimension is not supported yet, and asks again', async () => {

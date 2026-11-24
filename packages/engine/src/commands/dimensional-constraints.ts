@@ -15,8 +15,10 @@
 //  - AutoCAD's "Dimension Constraints - Over-constraining Geometry" task dialog ("Create a
 //    reference constraint" or "Cancel") is asked at the command line: "Create a reference
 //    constraint? [Yes/No] <Yes>".
-//  - Constraint Form (DIMCONSTRAINT's Form, AutoCAD's CCONSTRAINTFORM) is kept for the session
-//    by the commands; its system variable comes with the constraints' display.
+//  - Constraint Form is CCONSTRAINTFORM (M9-03 part 8; AutoCAD 2024 Help, "CCONSTRAINTFORM
+//    (System Variable)": 0 dynamic, 1 annotational, "Saved in: Registry", initially 0), the
+//    app's: each command reads it as it starts and DIMCONSTRAINT's Form sets it. Where no app
+//    keeps it (scripts, tests) the commands share their own for the session.
 //
 // Left out here: converting an associative dimension (DIMCONSTRAINT's first prompt, DCCONVERT),
 // the constraints' display on the drawing, the Parameters Manager palette (later parts of M9-03).
@@ -33,6 +35,7 @@ import {
   toleranceOf,
 } from './constraints';
 import { drawingUnits } from './units';
+import { optionVariable, setOptionVariable } from './modify/option-variables';
 import {
   constraintPointsOf,
   parameterObjects,
@@ -58,6 +61,15 @@ export type DimensionalCommandKind = DimensionalConstraintKind | 'linear';
 /** The Constraint Form new dimensional constraints take, shared by DIMCONSTRAINT and DC*. */
 interface Session {
   form: DimensionalConstraintObject['form'];
+}
+
+/** The system variable that keeps the Constraint Form: 0 dynamic, 1 annotational. */
+const CCONSTRAINTFORM = 'CCONSTRAINTFORM';
+
+/** Takes the Form the app keeps, where it keeps one, as a command starts. */
+async function readForm(ctx: CommandContext, session: Session): Promise<void> {
+  const v = await optionVariable(ctx, CCONSTRAINTFORM, session.form === 'annotational' ? 1 : 0);
+  session.form = v === 1 ? 'annotational' : 'dynamic';
 }
 
 async function* objectOnly(
@@ -396,6 +408,7 @@ export function dimensionalConstraintCommands(): CommandDef[] {
     name: 'DIMCONSTRAINT',
     solvesConstraints: true,
     async *run(ctx) {
+      await readForm(ctx, session);
       for (;;) {
         ctx.message(`Current settings: Constraint Form = ${FORM[session.form]}`);
         const a = yield ctx.prompt.point({
@@ -425,6 +438,7 @@ export function dimensionalConstraintCommands(): CommandDef[] {
           });
           if (f.kind !== 'keyword') return;
           session.form = f.keyword === 'Annotational' ? 'annotational' : 'dynamic';
+          await setOptionVariable(ctx, CCONSTRAINTFORM, session.form === 'annotational' ? 1 : 0);
           continue;
         }
         const kind = kinds.find((k) => KEYWORDS[k] === a.keyword);
@@ -440,7 +454,10 @@ export function dimensionalConstraintCommands(): CommandDef[] {
     ...kinds.map((kind) => ({
       name: COMMAND_NAMES[kind],
       solvesConstraints: true,
-      run: (ctx: CommandContext) => flow(ctx, session, kind),
+      async *run(ctx: CommandContext) {
+        await readForm(ctx, session);
+        yield* flow(ctx, session, kind);
+      },
     })),
   ];
 }

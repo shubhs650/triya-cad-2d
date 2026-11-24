@@ -523,6 +523,10 @@ export class RenderSession {
       }),
       ...(request.paperspaceLast && { paperspaceLast: true }),
       ...(request.handles && { only: new Set(request.handles) }),
+      // Annotational constraints plot labelled as the screen shows them (M9-03 part 8).
+      ...(this.renderer.style.constraints?.nameFormat !== undefined && {
+        constraintNameFormat: this.renderer.style.constraints.nameFormat,
+      }),
       // The space shown plots as it shows (ANNOALLVISIBLE 0 on the Model tab, M6-03).
       ...(block === this.#block && { hidden: (e: Entity) => this.renderer.hides(e) }),
     });

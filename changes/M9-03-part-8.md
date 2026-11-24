@@ -1,0 +1,1 @@
+- M9-03 part 8 (#666): annotational dimensional constraints now plot (and show in the plot preview) from the Model tab, sized as dimensions and in colour 7 through the plot style table; dynamic ones never plot. CCONSTRAINTFORM sets the Form (Dynamic or Annotational) new dimensional constraints take, kept per user, and DIMCONSTRAINT's Form sets it.

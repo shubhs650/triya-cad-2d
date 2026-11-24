@@ -394,6 +394,8 @@ describe('completions of system variables', () => {
     ]);
     expect(c.slice(first).map((s) => s.name)).toEqual([
       'CBARTRANSPARENCY',
+      // The Form new dimensional constraints take (M9-03 part 8), kept per user.
+      'CCONSTRAINTFORM',
       'CDATE',
       // What new center marks take (M4-08 part 3), kept for the session in any drawing.
       'CENTERCROSSGAP',
