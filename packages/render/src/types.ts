@@ -593,6 +593,12 @@ export interface Renderer {
     view?: ViewTransform,
   ): Handle | null;
   /**
+   * The dimensional constraints a selection window, polygon or fence in world units takes
+   * (M9-03 part 14), by the parts `constraintAt` finds them by: wholly inside a window, inside
+   * or crossing a crossing one, crossed by a fence. `view` as `constraintAt`'s.
+   */
+  constraintsIn(query: SelectQuery, view?: ViewTransform): Handle[];
+  /**
    * The layout viewport made current (MSPACE, M6-02 part 3), by handle; undefined, paper space.
    * While it is, picks, windows and snaps take model space's objects, and the selection, grips
    * and previews are drawn through the viewport, clipped to it; its frame is drawn bold.

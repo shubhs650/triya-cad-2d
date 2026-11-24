@@ -81,6 +81,11 @@ export interface ViewTarget {
   pick(point: Vec2): Promise<EntityId[]>;
   /** The dimensional constraint drawn within the pickbox of a world point (M9-03 part 10). */
   constraintAt(point: Vec2): Promise<Handle | undefined>;
+  /**
+   * The dimensional constraints a selection window, polygon or fence takes (M9-03 part 14):
+   * `area` is the request the objects were taken with.
+   */
+  constraintsIn(area: ConstraintArea): Promise<Handle[]>;
   /** What a pick hit inside a block reference (M5-06 part 5). */
   pickNested(point: Vec2, id: EntityId): Promise<NestedPick | undefined>;
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]>;
@@ -249,6 +254,9 @@ export interface ViewContext {
     r: Extract<ViewRequest, { op: 'underlayLayers' }>,
   ) => ViewReply | Promise<ViewReply>;
 }
+
+/** A selection window or path whose constraints `constraintsIn` asks for (M9-03 part 14). */
+export type ConstraintArea = Extract<ViewRequest, { op: 'constraintsIn' }>['area'];
 
 /** What -PLOT and -EXPORT (M2-39 part 5) ask of the app. */
 export type PlotScriptRequest = Extract<
@@ -498,6 +506,8 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
         ok: true,
         ...(constraint !== undefined && { constraint }),
       }));
+    case 'constraintsIn':
+      return t.constraintsIn(r.area).then((constraints) => ({ ok: true, constraints }));
     case 'nested':
       return t
         .pickNested(r.point, r.id)
