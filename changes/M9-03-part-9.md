@@ -1,1 +1,1 @@
-- M9-03 part 9 (#000): DCCONVERT (and DIMCONSTRAINT's "Select associative dimension to convert") turns linear, aligned, angular, radius and diameter dimensions on the drawing's objects into dimensional constraints of the current Constraint Form, keeping their measured values.
+- M9-03 part 9 (#669): DCCONVERT (and DIMCONSTRAINT's "Select associative dimension to convert") turns linear, aligned, angular, radius and diameter dimensions on the drawing's objects into dimensional constraints of the current Constraint Form, keeping their measured values.

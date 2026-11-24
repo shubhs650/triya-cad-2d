@@ -46,6 +46,7 @@ export * from './autoconstrain';
 export * from './constraints';
 export * from './constraint-copy';
 export * from './constraint-display';
+export * from './dimension-convert';
 export * from './constraint-bars';
 export * from './picture';
 export * from './underlay-attach';

@@ -496,7 +496,7 @@ describe('DIMCONSTRAINT', () => {
     });
   });
 
-  it('says converting a dimension is not supported yet, and asks again', async () => {
+  it('asks again when what is picked is not a dimension', async () => {
     const s = setup();
     await s.bus.script(['DIMCONSTRAINT']);
     await s.bus.pick({ x: 5, y: 0 });

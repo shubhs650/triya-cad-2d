@@ -115,6 +115,8 @@ describe('palette search', () => {
       // M9-03 part 3: dimensional constraints.
       'DCALIGNED',
       'DCANGULAR',
+      // M9-03 part 9: dimensions converted to constraints.
+      'DCCONVERT',
       'DCDIAMETER',
       // M9-03 part 7: each dynamic constraint shown or hidden.
       'DCDISPLAY',
