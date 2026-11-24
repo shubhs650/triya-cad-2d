@@ -14,7 +14,14 @@
 
 /** The palettes the stack holds so far, as named by their commands' host requests. */
 export type PaletteName =
-  'designcenter' | 'diagnostics' | 'health' | 'history' | 'layers' | 'properties' | 'references';
+  | 'designcenter'
+  | 'diagnostics'
+  | 'health'
+  | 'history'
+  | 'layers'
+  | 'parameters'
+  | 'properties'
+  | 'references';
 
 /** The rail's order, and each palette's name on its rail button and tab. */
 export const PALETTES: readonly { readonly name: PaletteName; readonly title: string }[] = [
@@ -24,6 +31,7 @@ export const PALETTES: readonly { readonly name: PaletteName; readonly title: st
   { name: 'diagnostics', title: 'Diagnostics' },
   { name: 'references', title: 'References' },
   { name: 'designcenter', title: 'DesignCenter' },
+  { name: 'parameters', title: 'Parameters' },
   { name: 'history', title: 'Command History' },
 ];
 

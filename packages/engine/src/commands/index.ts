@@ -46,6 +46,12 @@ export {
 } from './dimensional-constraints';
 export { designCenterCommand, type DesignCenterDrop } from './design-center';
 export {
+  applyParameterEdit,
+  parameterEditCommand,
+  PARAMETERS_COMMANDS,
+  type ParameterEdit,
+} from './parameters';
+export {
   dimStyleRequest,
   dimstyleCommand,
   type DimStyleAction,

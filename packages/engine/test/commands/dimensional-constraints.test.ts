@@ -23,6 +23,7 @@ import {
   type ViewHost,
   type ViewReply,
 } from '../../src/index';
+import { NO_PARAMETERS } from './solver-stub';
 import { MODEL_SPACE, entityInit, lineGeom, sampleInit } from '../model/fixtures';
 
 /** Picks take the model-space objects within 0.25 of the pick. */
@@ -94,6 +95,7 @@ function setup(answer: Answer = accepted()) {
   const measured: DimensionalConstraintSpec[] = [];
   const prefix = { angular: 'ang', radial: 'rad', diameter: 'dia' } as Record<string, string>;
   const service: ConstraintSolver = {
+    ...NO_PARAMETERS,
     add: () => {
       throw new Error('no geometric constraints here');
     },
@@ -489,6 +491,7 @@ describe('when the solver is missing or refuses the references', () => {
   it('says why the references cannot take the constraint and asks again', async () => {
     const model = drawing();
     const refuse: ConstraintSolver = {
+      ...NO_PARAMETERS,
       add: () => ({ ok: false, reason: 'invalid', message: 'x', conflicting: [] }),
       measure: () => ({
         ok: false,

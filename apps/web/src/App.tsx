@@ -156,6 +156,7 @@ import {
   opfsPictures,
 } from './pasted-pictures';
 import { LayersPalette } from './LayersPalette';
+import { ParametersPalette } from './ParametersPalette';
 import { PropertiesPalette } from './PropertiesPalette';
 import { QuickProperties } from './QuickProperties';
 import { quickRequests, selectionKey } from './quick-properties';
@@ -170,6 +171,7 @@ import {
   linetypeFileSources,
   type LinetypeFiles,
 } from './linetype-files';
+import { parameterRows } from './parameters';
 import { propertySheets } from './properties';
 import { paletteStack, type PaletteName } from './palette-stack';
 import { PaletteDock } from './PaletteDock';
@@ -488,6 +490,7 @@ engines.onCommand((doc, o) => {
   }
   if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
   if (o.type === 'properties') propertySheets.set(doc, o.sheet);
+  if (o.type === 'parameters') parameterRows.set(doc, o.rows);
   if (o.type === 'ribbon-properties') ribbonPropertiesStore.set(doc, o.properties);
   // A rollover tooltip's answer shows; a command starting takes it away (M2-35 part 21).
   if (o.type === 'rollover') rollovers.answer(doc, o.id, o.sheet);
@@ -1083,6 +1086,7 @@ async function closeDoc(id: number): Promise<boolean> {
   commandLines.forget(id);
   undoStates.forget(id);
   ribbonPropertiesStore.forget(id);
+  parameterRows.forget(id);
   runningCommands.forget(id);
   return true;
 }
@@ -2971,6 +2975,13 @@ export function App() {
                       doc={active}
                       pdfCache={pdfCacheSize}
                       onClose={() => paletteStack.close('diagnostics')}
+                    />
+                  );
+                case 'parameters':
+                  return (
+                    <ParametersPalette
+                      doc={active}
+                      onClose={() => paletteStack.close('parameters')}
                     />
                   );
                 case 'history':

@@ -613,8 +613,9 @@ const ANNOTATE: RibbonTab = {
  * Parametric (M9-05, UI_SPEC §2): the Geometric panel's twelve constraints, in AutoCAD's order.
  * Smooth is greyed out until the solver takes splines (M9-02 part 2). The Dimensional panel
  * (M9-03 part 3): Linear (with Horizontal and Vertical), Aligned, Radius, Diameter, Angular;
- * Convert greyed out until DIMCONSTRAINT converts dimensions. Auto Constrain, Show/Hide and
- * Infer, the dimensional constraints' Show/Hide, and the Manage panel come with their commands.
+ * Convert greyed out until DIMCONSTRAINT converts dimensions; Show Dynamic Constraints (M9-03
+ * part 4). The Manage panel: Parameters Manager (M9-03 part 5). Auto Constrain, Show/Hide and
+ * Infer, and Delete Constraints come with their commands.
  */
 const PARAMETRIC: RibbonTab = {
   id: 'parametric',
@@ -670,6 +671,12 @@ const PARAMETRIC: RibbonTab = {
           'Converting a dimension to a constraint comes later',
         ),
       ],
+    },
+    {
+      id: 'manage',
+      label: 'Manage',
+      compress: { order: 3, keep: ['parameters-manager'] },
+      items: [cmd('parameters-manager', 'Parameters Manager', 'table_settings', 'PARAMETERS', BIG)],
     },
   ],
 };

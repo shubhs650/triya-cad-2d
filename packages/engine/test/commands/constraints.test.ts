@@ -22,6 +22,7 @@ import {
   type ViewHost,
   type ViewReply,
 } from '../../src/index';
+import { NO_PARAMETERS } from './solver-stub';
 import { LAYER_0, MODEL_SPACE, entityInit, layer, lineGeom, sampleInit } from '../model/fixtures';
 
 const LOCKED = '12';
@@ -99,6 +100,7 @@ function setup(
   });
   const calls: Call[] = [];
   const service: ConstraintSolver = {
+    ...NO_PARAMETERS,
     add: (existing, c, lookup, tol) => {
       expect(tol.linear).toBeGreaterThan(0);
       expect(lookup(c.refs[0]!.entity)).toBeDefined();

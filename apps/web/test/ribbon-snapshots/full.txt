@@ -232,6 +232,8 @@ Dimensional (expanded)
   small-label dc-angular<dim-angular>
   small-label dc-show-dynamic<eye>
   small-label dc-convert<dim-linear>
+Manage (expanded)
+  large-label parameters-manager<table_settings>
 
 ### step 1
 Geometric (collapsed)
@@ -241,6 +243,11 @@ Geometric (collapsed)
 Dimensional (compressed)
   icon        dc-linear<dim-linear> ▾ [dc-linear-linear<dim-linear>, dc-horizontal<dim-linear>, dc-vertical<dim-linear>]
   ▾ dc-aligned, dc-radius, dc-diameter, dc-angular, dc-show-dynamic, dc-convert
+
+### step 3
+Manage (compressed)
+  icon        parameters-manager<table_settings>
+  ▾ 
 
 ## View
 Navigate (expanded)

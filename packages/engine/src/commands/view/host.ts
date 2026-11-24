@@ -546,7 +546,7 @@ export interface PlotScript {
  * DesignCenter (ADCENTER, ADCCLOSE; M5-11); Command History (TEXTSCR, GRAPHSCR; M7-06).
  */
 export type PaletteName =
-  'designcenter' | 'history' | 'layers' | 'properties' | 'quick' | 'references';
+  'designcenter' | 'history' | 'layers' | 'parameters' | 'properties' | 'quick' | 'references';
 
 /**
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows

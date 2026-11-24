@@ -24,6 +24,7 @@ import {
   type GeometricConstraintObject,
   type Replacement,
 } from '../../src/index';
+import { NO_PARAMETERS } from './solver-stub';
 import { lineGeom } from '../model/fixtures';
 import { setup } from './edit-harness';
 
@@ -79,6 +80,7 @@ function drawing(
 ) {
   const asked: Asked[] = [];
   const solver: ConstraintSolver = {
+    ...NO_PARAMETERS,
     add: () => {
       throw new Error('not asked');
     },

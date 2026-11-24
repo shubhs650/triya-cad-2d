@@ -106,8 +106,8 @@ describe('the data model', () => {
       'Palettes',
       'Interface',
     ]);
-    // Parametric (M9-05, M9-03 part 3): Manage comes with PARAMETERS.
-    expect(labels('parametric')).toEqual(['Geometric', 'Dimensional']);
+    // Parametric (M9-05, M9-03 part 3; Manage with PARAMETERS, part 5).
+    expect(labels('parametric')).toEqual(['Geometric', 'Dimensional', 'Manage']);
     expect(labels('output')).toEqual(['Plot', 'Export', 'Publish']);
     expect(labels('layout')).toEqual(['Layout', 'Layout Viewports']);
     expect(labels('tools')).toEqual(['Drawing Utilities', 'Settings', 'Customization', 'Help']);
