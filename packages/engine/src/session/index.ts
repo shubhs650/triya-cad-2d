@@ -17,11 +17,7 @@ import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
-import {
-  dimensionalConstraints,
-  type ConstraintService,
-  type ParameterInfo,
-} from '../edit/constraints';
+import { parameterObjects, type ConstraintService, type ParameterInfo } from '../edit/constraints';
 import { parameterEditCommand, type ParameterEdit } from '../commands/parameters';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
 import {
@@ -862,10 +858,11 @@ export class EngineSession {
 
   /**
    * The drawing's parameters, worked out by the constraint solver. A drawing without
-   * dimensional constraints has none, and the solver's module is not loaded for it.
+   * dimensional constraints or user parameters has none, and the solver's module is not loaded
+   * for it.
    */
   async #sendParameters(): Promise<void> {
-    const dims = dimensionalConstraints(this.model);
+    const dims = parameterObjects(this.model);
     let rows: readonly ParameterInfo[] = [];
     if (dims.length > 0) {
       try {

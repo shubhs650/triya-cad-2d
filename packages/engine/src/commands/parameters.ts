@@ -9,22 +9,28 @@
 // expression that uses it; a description is the user's note. Deleting a dimensional
 // constraint's parameter deletes the constraint, and expressions that use it keep its value.
 // A reference constraint's parameter shows what it measures and cannot be set.
+//
+// User parameters (part 6): the manager's New User Parameter adds user1 = 1 (then user2…, the
+// lowest number no parameter has), a value or expression no constraint holds, which the
+// constraints' expressions may name. It is edited, renamed and deleted as a constraint's
+// parameter is, and deleting it leaves the expressions that used it with its value.
 import type { CommandContext, CommandDef } from './command';
 import { sentence, setExpressions } from './constraints';
 import { viewRequest } from './view/zoom';
 import { toleranceFor } from './modify/offset';
 import {
-  dimensionalConstraints,
   geometricConstraints,
+  parameterObjects,
   type ConstraintSolver,
   type ParameterChangeResult,
 } from '../edit/constraints';
 import type { ChangeSetBuilder } from '../model/builder';
-import type { NonGraphicalObject } from '../model/types';
+import type { NonGraphicalObject, UserParameterObject } from '../model/types';
 import type { RecordPatch } from '../model/update';
 
-/** An edit made in the Parameters Manager, on parameter `name`. */
+/** An edit made in the Parameters Manager, on parameter `name`; `new` adds a user parameter. */
 export type ParameterEdit =
+  | { readonly kind: 'new' }
   | { readonly kind: 'expression'; readonly name: string; readonly expression: string }
   | { readonly kind: 'rename'; readonly name: string; readonly to: string }
   | { readonly kind: 'description'; readonly name: string; readonly description: string }
@@ -63,7 +69,11 @@ export function parameterEditCommand(edit: ParameterEdit): CommandDef {
 
 /** Applies `edit` to the drawing, or says why it cannot. */
 export async function applyParameterEdit(ctx: CommandContext, edit: ParameterEdit): Promise<void> {
-  const dims = dimensionalConstraints(ctx.model);
+  const dims = parameterObjects(ctx.model);
+  if (edit.kind === 'new') {
+    newUserParameter(ctx, new Set(dims.map((d) => d.parameter)));
+    return;
+  }
   const own = dims.find((d) => d.parameter === edit.name);
   if (!own) {
     ctx.message(`No parameter named "${edit.name}".`);
@@ -116,6 +126,24 @@ export async function applyParameterEdit(ctx: CommandContext, edit: ParameterEdi
     if (edit.kind === 'delete') b.removeObject(own.handle);
     setExpressions(ctx, b, done.expressions);
   });
+}
+
+/**
+ * AutoCAD's New User Parameter: user1 = 1, or the lowest number no parameter has. Nothing depends
+ * on it yet, so nothing is solved.
+ */
+function newUserParameter(ctx: CommandContext, taken: ReadonlySet<string>): void {
+  let n = 1;
+  while (taken.has(`user${n}`)) n++;
+  const owner = ctx.model.meta.rootDictionary ?? '0';
+  ctx.edit((b) =>
+    b.addObject({
+      type: 'TRIYA_USERPARAMETER',
+      owner,
+      parameter: `user${n}`,
+      expression: '1',
+    } as Omit<UserParameterObject, 'handle'>),
+  );
 }
 
 async function solverOf(ctx: CommandContext): Promise<ConstraintSolver | undefined> {

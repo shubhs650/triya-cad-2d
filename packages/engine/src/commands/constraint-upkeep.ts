@@ -25,6 +25,7 @@ import {
   constraintPointsOf,
   dimensionalConstraints,
   geometricConstraints,
+  userParameters,
 } from '../edit/constraints';
 import type { Tolerance } from '../geom/tolerance';
 import type { ChangeSet, Replacement } from '../model/changeset';
@@ -203,7 +204,11 @@ export async function keepConstraints(
     (h) => before.get(h) ?? ctx.model.entityByHandle(h),
     toleranceOf(ctx, edits),
     !MOVES_CHANGED_VALUES.has(command),
-    kept.filter((c): c is DimensionalConstraintObject => !isGeometricConstraint(c)),
+    // The user parameters too, which the constraints' expressions may name (M9-03 part 6).
+    [
+      ...kept.filter((c): c is DimensionalConstraintObject => !isGeometricConstraint(c)),
+      ...userParameters(ctx.model),
+    ],
   );
   if (!r.ok) {
     ctx.message(sentence(r.message));

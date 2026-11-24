@@ -1,5 +1,6 @@
 // Constraints Triya made (GEOMCONSTRAINT and the GC* commands, M9-05; DIMCONSTRAINT and the DC*
-// commands, M9-03 part 3; storage M9-04, PRD FR-X5, DEC-081, DEC-082): the XRECORDs of the
+// commands, M9-03 part 3; storage M9-04, PRD FR-X5, DEC-081, DEC-082) and user parameters (M9-03
+// part 6, DEC-083): the XRECORDs of the
 // `TRIYA_CONSTRAINTS` dictionary in the drawing's named object dictionary, each under its own
 // handle as its key, read into the drawing's `GeometricConstraintObject`s and
 // `DimensionalConstraintObject`s. A geometric constraint's groups (DEC-081):
@@ -17,6 +18,11 @@
 //   description, when it has one; 280 1 for a reference constraint, else 0; 281 the form (0
 //   dynamic, 1 annotational); 10 the dimension line's location; then the references as above.
 //
+// A user parameter's (the Parameters Manager's New User Parameter, M9-03 part 6, DEC-083):
+//
+//   70 its layout's version (1); 1 `parameter`; 300 its name; 301 its expression; 302 its
+//   description, when it has one. Nothing more: it references no object.
+//
 // A record of another version or kind, one whose groups are not laid out so, one with no
 // reference or more than three, or one naming an object the drawing does not hold is not mapped:
 // it stays in the dictionary as read. AutoCAD ignores the dictionary, and its own constraints
@@ -31,6 +37,7 @@ import {
   type DimensionalConstraintObject,
   type GeometricConstraintKind,
   type GeometricConstraintObject,
+  type UserParameterObject,
   type Vec2,
 } from '@triya/engine';
 import { common, hex } from './common';
@@ -52,6 +59,8 @@ export const CONSTRAINT_POINTS = [
 ] as const;
 /** Group 1 of a dimensional constraint's record (DEC-082), a word no geometric kind is. */
 export const DIMENSIONAL_RECORD = 'dimensional';
+/** Group 1 of a user parameter's record (DEC-083), a word no geometric kind is. */
+export const PARAMETER_RECORD = 'parameter';
 /** 281: the constraint's form, by its value. */
 export const CONSTRAINT_FORMS = ['dynamic', 'annotational'] as const;
 /** The most references a constraint takes (Symmetric: two objects and the symmetry line). */
@@ -154,13 +163,36 @@ export function dimensionalFields(
   };
 }
 
-/** The drawing's geometric and dimensional constraints, in the dictionary's order. */
-export function mapTriyaConstraints(
-  doc: CadDocument,
-): (GeometricConstraintObject | DimensionalConstraintObject)[] {
+type UserParameterFields = Omit<UserParameterObject, 'handle' | 'type' | 'owner'>;
+
+/** A user parameter's fields (DEC-083), or undefined when the groups are not a whole record. */
+export function userParameterFields(entries: Entries): UserParameterFields | undefined {
+  const at = (i: number, code: number) =>
+    entries[i]?.code === code ? entries[i]!.value : undefined;
+  if (number(at(0, 70)) !== TRIYA_CONSTRAINTS_VERSION || at(1, 1) !== PARAMETER_RECORD) {
+    return undefined;
+  }
+  const parameter = at(2, 300);
+  const expression = at(3, 301);
+  if (typeof parameter !== 'string' || typeof expression !== 'string') return undefined;
+  const description = at(4, 302);
+  if (description !== undefined && typeof description !== 'string') return undefined;
+  if (entries.length !== (description === undefined ? 4 : 5)) return undefined;
+  return {
+    parameter,
+    expression,
+    ...(description === undefined ? {} : { description: description as string }),
+  };
+}
+
+type TriyaConstraint =
+  GeometricConstraintObject | DimensionalConstraintObject | UserParameterObject;
+
+/** The drawing's constraints and user parameters, in the dictionary's order. */
+export function mapTriyaConstraints(doc: CadDocument): TriyaConstraint[] {
   const dict = namedDictionary(doc, TRIYA_CONSTRAINTS);
   if (!dict) return [];
-  const out: (GeometricConstraintObject | DimensionalConstraintObject)[] = [];
+  const out: TriyaConstraint[] = [];
   for (const key of dict.entryNames) {
     const o: unknown = dict.getEntry(key);
     if (!(o instanceof XRecord) || o.owner !== dict) continue;
@@ -172,7 +204,12 @@ export function mapTriyaConstraints(
       continue;
     }
     const dimensional = dimensionalFields(entries, doc);
-    if (dimensional) out.push({ ...common(o), type: 'TRIYA_DIMCONSTRAINT', owner, ...dimensional });
+    if (dimensional) {
+      out.push({ ...common(o), type: 'TRIYA_DIMCONSTRAINT', owner, ...dimensional });
+      continue;
+    }
+    const user = userParameterFields(entries);
+    if (user) out.push({ ...common(o), type: 'TRIYA_USERPARAMETER', owner, ...user });
   }
   return out;
 }

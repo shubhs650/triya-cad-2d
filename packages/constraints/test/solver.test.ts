@@ -1,4 +1,4 @@
-// M9-05 part 1 and M9-03 parts 3 and 5: the engine's GC* and DC* commands and the Parameters Manager's edits with the real solver (`constraintSolver` over PlaneGCS),
+// M9-05 part 1 and M9-03 parts 3, 5 and 6: the engine's GC* and DC* commands and the Parameters Manager's edits with the real solver (`constraintSolver` over PlaneGCS),
 // as the app's engine worker runs them: the second object adjusts to the first, a constraint
 // that conflicts with the drawing's others is refused, and U takes a constraint back with what
 // it moved.
@@ -11,7 +11,9 @@ import {
   closestPoint,
   isDimensionalConstraint,
   isGeometricConstraint,
+  isUserParameter,
   parameterEditCommand,
+  parameterObjects,
   toleranceForSize,
   type BusEvent,
   type DocumentInit,
@@ -333,5 +335,77 @@ describe('the Parameters Manager with PlaneGCS (M9-03 part 5)', () => {
     expect(s.dims()[0]!.description).toBeUndefined();
     await s.edit({ kind: 'description', name: 'nothing', description: 'x' });
     expect(s.log.at(-1)).toBe('No parameter named "nothing".');
+  });
+});
+
+describe('user parameters with PlaneGCS (M9-03 part 6)', () => {
+  async function withUser() {
+    const s = await twoParameters();
+    s.log.length = 0;
+    await s.edit({ kind: 'new' });
+    await s.edit({ kind: 'expression', name: 'user1', expression: '25' });
+    await s.edit({ kind: 'expression', name: 'width', expression: 'user1' });
+    const users = () =>
+      [...s.model.objects.values()].filter(isUserParameter).map((u) => [u.parameter, u.expression]);
+    return { ...s, users };
+  }
+
+  it('a constraint takes a user parameter, listed last as User, and follows its edits', async () => {
+    const s = await withUser();
+    expect(s.log).toEqual([]);
+    expect(length(s.geom('31'))).toBeCloseTo(25, 7);
+    expect(length(s.geom('30'))).toBeCloseTo(12.5, 7);
+    const rows = constraintSolver(gcs).parameters(parameterObjects(s.model));
+    expect(rows.map((r) => [r.name, r.expression, r.value, r.type, r.user ?? false])).toEqual([
+      ['width', 'user1', 25, 'Aligned', false],
+      ['height', 'width/2', 12.5, 'Horizontal', false],
+      ['user1', '25', 25, 'User', true],
+    ]);
+    await s.edit({ kind: 'expression', name: 'user1', expression: '40' });
+    expect(length(s.geom('31'))).toBeCloseTo(40, 7);
+    expect(length(s.geom('30'))).toBeCloseTo(20, 7);
+    await s.bus.script(['U']);
+    expect(length(s.geom('31'))).toBeCloseTo(25, 7);
+    expect(s.users()).toEqual([['user1', '25']]);
+  });
+
+  it('renaming it renames it in the expressions; deleting it leaves its value', async () => {
+    const s = await withUser();
+    await s.edit({ kind: 'rename', name: 'user1', to: 'span' });
+    expect(s.rows()[0]).toEqual(['width', 'span']);
+    expect(s.users()).toEqual([['span', '25']]);
+    await s.edit({ kind: 'delete', name: 'span' });
+    expect(s.users()).toEqual([]);
+    expect(s.rows()[0]).toEqual(['width', '25']);
+    expect(length(s.geom('31'))).toBeCloseTo(25, 7);
+  });
+
+  it("a user parameter may name a constraint's, and a cycle through it is refused", async () => {
+    const s = await withUser();
+    await s.edit({ kind: 'new' });
+    await s.edit({ kind: 'expression', name: 'user2', expression: 'height*4' });
+    expect(s.users()).toEqual([
+      ['user1', '25'],
+      ['user2', 'height*4'],
+    ]);
+    const before = s.geom('31');
+    await s.edit({ kind: 'expression', name: 'user1', expression: 'user2' });
+    expect(s.log.at(-1)).toMatch(/circular|cycle|itself/i);
+    expect(s.users()[0]).toEqual(['user1', '25']);
+    expect(s.geom('31')).toEqual(before);
+  });
+
+  it('a modify command keeps the values a user parameter drives', async () => {
+    const s = await withUser();
+    const g = s.geom('31');
+    // SCALE holds line 31 whole: twice as long breaks width = user1 = 25, so it is refused.
+    await s.bus.script(['SCALE']);
+    await s.bus.pick(mid(g));
+    await s.bus.script(['']);
+    await s.bus.pick(g.start);
+    await s.bus.script(['2']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.geom('31')).toEqual(g);
+    expect(length(s.geom('31'))).toBeCloseTo(25, 6);
   });
 });

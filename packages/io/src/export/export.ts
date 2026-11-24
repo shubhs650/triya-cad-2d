@@ -203,11 +203,13 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   // M4-08 part 2, DEC-066), and layer states and filters (layer-states.ts, layer-filters.ts,
   // M5-07), and DGN linestyle components (dgn-linestyles.ts, M5-09 part 5), and named page setups
   // (page-setups.ts, M6-01 part 3), and the scale list (scales.ts, M6-02 part 21), and geometric
-  // constraints (triya-constraints.ts, M9-04, DEC-081), dimensional ones too (M9-03 part 3, DEC-082).
+  // constraints (triya-constraints.ts, M9-04, DEC-081), dimensional ones too (M9-03 part 3, DEC-082)
+  // and user parameters (M9-03 part 6, DEC-083).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'TRIYA_GEOMCONSTRAINT' &&
     o.type !== 'TRIYA_DIMCONSTRAINT' &&
+    o.type !== 'TRIYA_USERPARAMETER' &&
     o.type !== 'GROUP' &&
     o.type !== 'DIMASSOC' &&
     o.type !== 'SPATIAL_FILTER' &&
