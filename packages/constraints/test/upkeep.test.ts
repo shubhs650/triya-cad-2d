@@ -302,4 +302,47 @@ describe('modify commands keep constraints with PlaneGCS (M9-06)', () => {
     // Line 30 is held 10 long, so it slides along rather than stretching.
     expect(s.ends('30').map((v) => Math.round(v * 1e4) / 1e4)).toEqual([5, 0, 15, 0]);
   });
+
+  it('COPY carries dimensional constraints under new names, which the copies then hold (M9-10)', async () => {
+    const aligned = (handle: string, entity: string, parameter: string, expression: string) =>
+      ({
+        handle,
+        type: 'TRIYA_DIMCONSTRAINT',
+        owner: '0',
+        dimension: 'aligned',
+        refs: [
+          { entity, point: 'start' },
+          { entity, point: 'end' },
+        ],
+        parameter,
+        expression,
+        location: { x: 5, y: -5 },
+        form: 'dynamic',
+      }) as DimensionalConstraintObject;
+    const s = setup(false, [aligned('B1', '30', 'd1', '10'), aligned('B2', '31', 'height', 'd1')]);
+    await s.bus.script(['COPY']);
+    await s.select(L, R);
+    await s.bus.script(['0,0', '30,0', '']);
+    const copies = [...s.model.entities()].filter((e) => !['30', '31', '32'].includes(e.handle));
+    const [c30, c31] = copies.map((e) => e.handle);
+    const dims = () =>
+      [...s.model.objects.values()]
+        .filter((o): o is DimensionalConstraintObject => o.type === 'TRIYA_DIMCONSTRAINT')
+        .map((d) => [d.parameter, d.expression, d.refs[0]!.entity]);
+    // PARAMETERCOPYMODE 1 (no app keeps it here): the next free names, values as constants.
+    expect(dims()).toEqual([
+      ['d1', '10', '30'],
+      ['height', 'd1', '31'],
+      ['d2', '10', c30],
+      ['d3', '10', c31],
+    ]);
+    // The copied L is solved with its own values: its horizontal line slides, 10 long.
+    await s.bus.script(['MOVE']);
+    await s.select({ x: 40, y: 5 });
+    await s.bus.script(['0,0', '5,0']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.ends(c31!)).toEqual([45, 0, 45, 10]);
+    expect(s.ends(c30!).map((v) => Math.round(v * 1e4) / 1e4)).toEqual([35, 0, 45, 0]);
+    expect(s.ends('30')).toEqual([0, 0, 10, 0]);
+  });
 });
