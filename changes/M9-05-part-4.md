@@ -1,0 +1,1 @@
+- M9-05 part 4 (#TBD): constraint bar icons answer the pointer (claimed; in progress).
