@@ -205,6 +205,135 @@ describe('autoConstraints (M9-05 part 3)', () => {
     ]);
   });
 
+  // M9-05 part 5: splines by their ends, ellipses by their centre, curve and an arc's ends.
+  const spline = (pts: [number, number][]): EntityGeometry =>
+    ({
+      kind: 'SPLINE',
+      degree: 3,
+      knots: [0, 0, 0, 0, 1, 1, 1, 1],
+      controlPoints: pts.map(([x, y]) => ({ x, y })),
+      closed: false,
+      periodic: false,
+    }) as unknown as EntityGeometry;
+  const ellipse = (
+    x: number,
+    y: number,
+    ax: number,
+    ay: number,
+    ratio: number,
+    startParam = 0,
+    endParam = 2 * Math.PI,
+  ): EntityGeometry =>
+    ({
+      kind: 'ELLIPSE',
+      center: { x, y },
+      majorAxis: { x: ax, y: ay },
+      ratio,
+      startParam,
+      endParam,
+    }) as unknown as EntityGeometry;
+
+  it("makes a spline's ends coincident with the ends and middles they meet (M9-05 part 5)", () => {
+    const es = [
+      entity(
+        '5A',
+        spline([
+          [0, 0],
+          [3, 4],
+          [6, -4],
+          [10, 0.02],
+        ]),
+      ),
+      entity('A', lineGeom(10, 0, 20, 0)),
+      entity('B', lineGeom(-5, -5, 5, 5)),
+      // An end on the spline's middle: the solver cannot put a point on a spline.
+      entity('C', lineGeom(4.5, 0.5, 4.5, 8)),
+    ];
+    expect(kinds(es, only('coincident'))).toEqual([
+      'coincident {"entity":"5A","point":"end"} {"entity":"A","point":"start"}',
+      'coincident {"entity":"B"} {"entity":"5A","point":"start"}',
+    ]);
+    // Nothing else takes a spline: no tangent, equal or parallel among the tab's types.
+    expect(autoConstraints([es[0]!], AUTOCONSTRAIN_DEFAULTS)).toEqual([]);
+    // A closed spline has no ends.
+    const closed = entity('5B', {
+      ...(spline([
+        [0, 0],
+        [3, 4],
+        [6, -4],
+        [10, 0],
+      ]) as object),
+      closed: true,
+    } as unknown as EntityGeometry);
+    expect(kinds([closed, entity('A', lineGeom(10, 0, 20, 0))], only('coincident'))).toEqual([]);
+  });
+
+  it("makes an elliptical arc's ends and ends on an ellipse coincident (M9-05 part 5)", () => {
+    // The upper half of an ellipse 10 by 4 about the origin, its ends at (±10, 0).
+    const es = [
+      entity('E', ellipse(0, 0, 10, 0, 0.4, 0, Math.PI)),
+      entity('A', lineGeom(10.02, 0, 10, -6)),
+      // An end on the arc's top, and one on the half the arc leaves out.
+      entity('B', lineGeom(0, 4.01, 0, 9)),
+      entity('C', lineGeom(0, -4, 3, -9)),
+      // An end on a whole ellipse, which has no ends of its own.
+      entity('F', ellipse(30, 0, 0, 5, 0.5)),
+      entity('5C', lineGeom(30, 5, 36, 9)),
+    ];
+    expect(kinds(es, only('coincident'))).toEqual([
+      'coincident {"entity":"E","point":"start"} {"entity":"A","point":"start"}',
+      'coincident {"entity":"E"} {"entity":"B","point":"start"}',
+      'coincident {"entity":"F"} {"entity":"5C","point":"start"}',
+    ]);
+  });
+
+  it('makes lines tangent to ellipses, touching when the check is on (M9-05 part 5)', () => {
+    // An ellipse turned 30°, 10 by 4: its support along a direction gives where a line touches.
+    const t = Math.PI / 6;
+    const e = entity('E', ellipse(0, 0, 10 * Math.cos(t), 10 * Math.sin(t), 0.4));
+    const h = Math.hypot(10 * Math.sin(t), 4 * Math.cos(t)); // its extent up the Y axis
+    const es = [
+      e,
+      // Touching the top, 0.02 above it.
+      entity('A', lineGeom(-10, h + 0.02, 10, h + 0.02)),
+      // Along the tangent below, but off to the side.
+      entity('B', lineGeom(20, -h, 30, -h)),
+      // 0.1 clear of it: not tangent.
+      entity('C', lineGeom(-10, -h - 0.1, 10, -h - 0.1)),
+    ];
+    expect(kinds(es, only('tangent'))).toEqual(['tangent {"entity":"A"} {"entity":"E"}']);
+    expect(kinds(es, { ...only('tangent'), tangentTouch: false })).toEqual([
+      'tangent {"entity":"A"} {"entity":"E"}',
+      'tangent {"entity":"B"} {"entity":"E"}',
+    ]);
+    // An elliptical arc whose top half is gone: the line along its top touches nothing.
+    const arc = entity('5D', ellipse(0, 0, 10, 0, 0.4, Math.PI, 2 * Math.PI));
+    const top = entity('5E', lineGeom(-5, 4, 5, 4));
+    expect(kinds([arc, top], only('tangent'))).toEqual([]);
+    expect(kinds([arc, top], { ...only('tangent'), tangentTouch: false })).toHaveLength(1);
+    // No tangent between an ellipse and a circle, and no equal ellipses: the solver takes
+    // neither.
+    const round = [
+      entity('6A', ellipse(0, 0, 10, 0, 0.4)),
+      entity('6B', circleGeom(15, 0, 5)),
+      entity('6C', ellipse(40, 0, 10, 0, 0.4)),
+    ];
+    expect(kinds(round, only('tangent', 'equal'))).toEqual([]);
+  });
+
+  it('makes ellipses concentric with circles, arcs and ellipses (M9-05 part 5)', () => {
+    const es = [
+      entity('A', circleGeom(0, 0, 3)),
+      entity('E', ellipse(0.01, 0, 10, 0, 0.4)),
+      entity('F', ellipse(0, 0.02, 0, 6, 0.5)),
+      entity('5C', ellipse(30, 0, 10, 0, 0.4)),
+    ];
+    expect(kinds(es, only('concentric'))).toEqual([
+      'concentric {"entity":"A"} {"entity":"E"}',
+      'concentric {"entity":"A"} {"entity":"F"}',
+    ]);
+  });
+
   it('reads settings back, mending what is missing or out of range', () => {
     expect(autoConstrainSettingsOf(undefined)).toBe(AUTOCONSTRAIN_DEFAULTS);
     const s = autoConstrainSettingsOf({

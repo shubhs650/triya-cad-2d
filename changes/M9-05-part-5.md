@@ -1,0 +1,1 @@
+- M9-05 part 5 (#670): AUTOCONSTRAIN takes splines and ellipses: a spline's ends become coincident with the ends and objects they meet, an ellipse concentric with circles, arcs and ellipses, an end on an ellipse coincident with it, and a line touching an ellipse tangent to it.
