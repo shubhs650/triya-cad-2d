@@ -58,8 +58,13 @@ const constraint = (
 /**
  * An L of line 30 (0,0)-(10,0) and line 31 (10,0)-(10,10), line 32 (0,20)-(10,20): 30
  * horizontal, 30's end on 31's start, 31 vertical, 32 parallel to 30; with `fixed`, 32 fixed.
+ * `only` replaces those constraints.
  */
-function setup(fixed = false, extra: readonly DimensionalConstraintObject[] = []) {
+function setup(
+  fixed = false,
+  extra: readonly DimensionalConstraintObject[] = [],
+  only?: readonly GeometricConstraintObject[],
+) {
   const init: DocumentInit = {
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '40',
@@ -96,7 +101,7 @@ function setup(fixed = false, extra: readonly DimensionalConstraintObject[] = []
     blocks: [{ handle: MODEL, name: '*Model_Space', basePoint: { x: 0, y: 0 } }],
     layouts: [{ handle: '22', name: 'Model', tabOrder: 0, blockRecord: MODEL }],
     entities: [line('30', 0, 0, 10, 0), line('31', 10, 0, 10, 10), line('32', 0, 20, 10, 20)],
-    objects: [
+    objects: only ?? [
       constraint('A1', 'horizontal', [{ entity: '30' }]),
       constraint('A2', 'coincident', [
         { entity: '30', point: 'end' },
@@ -210,6 +215,23 @@ describe('modify commands keep constraints with PlaneGCS (M9-06)', () => {
     await f.bus.script(['0,0', '0,5']);
     expect(f.log.some((l) => /breaks a constraint/.test(l))).toBe(true);
     expect(f.ends('32')).toEqual([0, 20, 10, 20]);
+  });
+
+  it('ROTATE 90 of one of a parallel pair turns the other about its start (M9-11)', async () => {
+    // An exact quarter turn was refused: PlaneGCS's Parallel has no slope when the lines are
+    // square. The other line now starts turned with the edited one.
+    const s = setup(
+      false,
+      [],
+      [constraint('A4', 'parallel', [{ entity: '30' }, { entity: '32' }])],
+    );
+    await s.bus.script(['ROTATE']);
+    await s.select(L);
+    await s.bus.script(['0,0', '90']);
+    expect(s.log.some((l) => /breaks a constraint/.test(l))).toBe(false);
+    expect(s.ends('30')).toEqual([0, 0, 0, 10]);
+    expect(s.ends('32')).toEqual([0, 20, 0, 30]);
+    expect(s.ends('31')).toEqual([10, 0, 10, 10]);
   });
 
   it('a grip drag of a horizontal line’s end moves the line up whole, dragging the upright', async () => {

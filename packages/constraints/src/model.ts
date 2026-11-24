@@ -604,7 +604,9 @@ export class ConstraintModel {
     const edited = new Map(edits.map((e) => [e.after.handle, e]));
     const build = this.#editBuild(group, edits, lookup, whole);
     try {
-      if (!solveEditKeeping(build, group, new Set(edited.keys()), whole)) {
+      const start = build.snapshot();
+      const solved = () => solveEditKeeping(build, group, new Set(edited.keys()), whole);
+      if (!solved() && !this.#solveTurnedAlong(build, group, edits, start, solved)) {
         const named = build.diagnose().conflicting;
         return refusal(
           'overconstrained',
@@ -616,6 +618,35 @@ export class ConstraintModel {
     } finally {
       build.dispose();
     }
+  }
+
+  /**
+   * Tries an edit again with the lines it turns along started turned (M9-11). PlaneGCS's
+   * Parallel is the cross product of two directions, which has no slope when they are square:
+   * an edit that turns one of a parallel pair exactly 90 degrees leaves the solver no way to
+   * start turning the other (it could only shorten it to nothing), and 89 degrees solved.
+   * So when the edited lines all turned by one angle (ROTATE, or a grip drag of one line),
+   * the lines Parallel, Perpendicular, Collinear or an angle ties to them start turned by
+   * it about their starts (M9-08's pivot), lengths kept, and the edit is solved from there.
+   * Symmetric turns its line the other way and is left to the solver.
+   */
+  #solveTurnedAlong(
+    build: Build,
+    group: readonly AnyConstraint[],
+    edits: readonly Replacement<Entity>[],
+    start: readonly number[],
+    solved: () => boolean,
+  ): boolean {
+    const angle = commonTurn(edits, this.#tol.angular);
+    if (angle === undefined) return false;
+    const along = turnedAlong(
+      group,
+      edits.map((e) => e.after.handle),
+    );
+    if (!along.length) return false;
+    build.restore(start);
+    build.turnLines(along, angle);
+    return solved();
   }
 
   /** Degrees of freedom, conflicting, redundant and invalid constraints, group by group. */
@@ -785,6 +816,54 @@ function orientedEntities(group: readonly AnyConstraint[]): Set<Handle> {
     for (const r of c.refs) if (!isPointRef(r)) out.add(r.entity);
   }
   return out;
+}
+
+/**
+ * The one angle (radians) every edited line turned by, or undefined when none turned or
+ * they turned by different angles. Other edited entities do not count.
+ */
+function commonTurn(edits: readonly Replacement<Entity>[], tol: number): number | undefined {
+  let out: number | undefined;
+  for (const { before, after } of edits) {
+    const was = before.geom;
+    const g = after.geom;
+    if (was.kind !== 'LINE' || g.kind !== 'LINE') continue;
+    const u = { x: was.end.x - was.start.x, y: was.end.y - was.start.y };
+    const v = { x: g.end.x - g.start.x, y: g.end.y - g.start.y };
+    if (!Math.hypot(u.x, u.y) || !Math.hypot(v.x, v.y)) return undefined;
+    const angle = Math.atan2(u.x * v.y - u.y * v.x, u.x * v.x + u.y * v.y);
+    if (out === undefined) out = angle;
+    else if (!sameAngle(angle, out, tol)) return undefined;
+  }
+  return out === undefined || Math.abs(out) <= tol ? undefined : out;
+}
+
+/**
+ * The entities, other than `edited`, that a chain of Parallel, Perpendicular and Collinear
+ * constraints, Angular dimensions and two-line Aligned ones ties to the edited ones: each
+ * turns by the angle its neighbour turns.
+ */
+function turnedAlong(group: readonly AnyConstraint[], edited: readonly Handle[]): Handle[] {
+  const links = group
+    .filter((c) =>
+      isDimensional(c)
+        ? c.dimension === 'angular' || (c.dimension === 'aligned' && c.refs.length === 2)
+        : ORIENTING.has(c.kind) && c.kind !== 'symmetric',
+    )
+    .map((c) => c.refs.filter((r) => !isPointRef(r)).map((r) => r.entity));
+  const reached = new Set(edited);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const link of links) {
+      if (!link.some((h) => reached.has(h))) continue;
+      for (const h of link) {
+        if (reached.has(h)) continue;
+        reached.add(h);
+        grew = true;
+      }
+    }
+  }
+  return [...reached].filter((h) => !edited.includes(h));
 }
 
 /**
@@ -1646,6 +1725,29 @@ class Build {
   holdEdited(whole: boolean): void {
     if (whole || this.#reshaped) this.#edit.handles.forEach((h) => this.holdEntity(h));
     else this.#hold(this.#edit.points, this.#edit.params);
+  }
+
+  /** Turns the lines of `handles` about their starts by `angle` (radians), lengths kept. */
+  turnLines(handles: readonly Handle[], angle: number): void {
+    const s = this.#s;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const setPoint = (p: number, v: Vec2) => {
+      const [px, py] = s.pointParams(p);
+      s.setValue(px, v.x);
+      s.setValue(py, v.y);
+    };
+    for (const h of handles) {
+      const m = this.#mapped.get(h)?.m;
+      if (m?.kind !== 'LINE') continue;
+      const a = s.pointAt(m.line.p1);
+      const b = s.pointAt(m.line.p2);
+      const d = { x: b.x - a.x, y: b.y - a.y };
+      const end = { x: a.x + d.x * cos - d.y * sin, y: a.y + d.x * sin + d.y * cos };
+      setPoint(m.line.p2, end);
+      if (m.line.mid !== undefined)
+        setPoint(m.line.mid, { x: (a.x + end.x) / 2, y: (a.y + end.y) / 2 });
+    }
   }
 
   /**

@@ -21,9 +21,9 @@ test.afterAll(async () => {
 
 type Dev = { triyaDev: { changes(): readonly ChangeSet[] } };
 
-/** The lines the session drew, less (1000000, 1000000), rounded to 0.001. */
-const lines = (page: Page) =>
-  page.evaluate(() => {
+/** The lines the session drew, less (o, o), rounded to 0.001. */
+const lines = (page: Page, o = 1000000) =>
+  page.evaluate((o) => {
     const out = new Map<
       string,
       { start: { x: number; y: number }; end: { x: number; y: number } }
@@ -34,9 +34,9 @@ const lines = (page: Page) =>
       for (const u of cs.entities?.updated ?? [])
         if (out.has(u.after.handle)) out.set(u.after.handle, u.after.geom as never);
     }
-    const r = (v: number) => Math.round((v - 1000000) * 1000) / 1000 + 0;
+    const r = (v: number) => Math.round((v - o) * 1000) / 1000 + 0;
     return [...out.values()].map((g) => [r(g.start.x), r(g.start.y), r(g.end.x), r(g.end.y)]);
-  });
+  }, o);
 
 const prompt = (page: Page) => page.getByTestId('command-prompt');
 
@@ -46,30 +46,34 @@ async function type(page: Page, text: string, next: string | RegExp): Promise<vo
   await expect(prompt(page)).toHaveText(next);
 }
 
-test('a grip drag turns a parallel line with it, lengths kept (M9-09)', async ({ page }) => {
-  test.setTimeout(120_000);
+/**
+ * Opens the plan, zooms to an empty part of it from (o, o), and draws two lines made
+ * parallel, (20, 20)-(60, 20) and (20, 40)-(60, 40) from there.
+ */
+async function parallelPair(page: Page, o = 1000000) {
   await page.goto(app.url);
   await openWithPicker(page, DXF);
   await expectShown(page, path.basename(DXF));
   await gridOff(page);
 
   await type(page, 'Z', /^Specify corner of window/);
-  await type(page, '1000000,1000000', 'Specify opposite corner:');
-  await type(page, '1000160,1000100', 'Command:');
+  const xy = (x: number, y: number) => `${o + x},${o + y}`;
+  await type(page, xy(0, 0), 'Specify opposite corner:');
+  await type(page, xy(160, 100), 'Command:');
   const draw = async (a: string, b: string) => {
     await type(page, 'L', 'Specify first point:');
     await type(page, a, 'Specify next point or [Undo]:');
     await type(page, b, 'Specify next point or [Undo]:');
     await type(page, '', 'Command:');
   };
-  await draw('1000020,1000020', '1000060,1000020');
-  await draw('1000020,1000040', '1000060,1000040');
-  await expect.poll(() => lines(page)).toHaveLength(2);
+  await draw(xy(20, 20), xy(60, 20));
+  await draw(xy(20, 40), xy(60, 40));
+  await expect.poll(() => lines(page, o)).toHaveLength(2);
   await expectDrawn(page, { timeout: 15_000 });
 
   const view = await viewOf(page);
   const at = (x: number, y: number) => {
-    const p = view.at(1000000 + x, 1000000 + y);
+    const p = view.at(o + x, o + y);
     return { x: view.box.x + p.x, y: view.box.y + p.y };
   };
   const click = async (x: number, y: number) => {
@@ -86,6 +90,12 @@ test('a grip drag turns a parallel line with it, lengths kept (M9-09)', async ({
   await expect(prompt(page)).toHaveText('Command:', { timeout: 15_000 });
   await expectDrawn(page);
   await park();
+  return { at, click, park, shot };
+}
+
+test('a grip drag turns a parallel line with it, lengths kept (M9-09)', async ({ page }) => {
+  test.setTimeout(120_000);
+  const { at, click, park, shot } = await parallelPair(page);
   await shot('1-parallel.png');
   // Running object snaps would pull the grip's destination onto the lines' own points; off.
   await page.keyboard.press('F3');
@@ -111,4 +121,31 @@ test('a grip drag turns a parallel line with it, lengths kept (M9-09)', async ({
   await expectDrawn(page);
   await park();
   await shot('3-after.png');
+});
+
+// M9-11: an exact quarter turn of one of a parallel pair was refused (PlaneGCS's Parallel has
+// no slope when the lines are square), while 89 degrees solved. ROTATE 90 of the lower line
+// about its midpoint now turns the upper one about its start, its length kept. Drawn near the
+// plan (from 1000, 1000): a million out, ROTATE's rounding nudged the lines off square and
+// the solve went through even before.
+test('ROTATE 90 of one of a parallel pair turns the other with it (M9-11)', async ({ page }) => {
+  test.setTimeout(120_000);
+  const o = 1000;
+  const { click, park, shot } = await parallelPair(page, o);
+  await shot('1-parallel.png');
+
+  await type(page, 'ROTATE', 'Select objects:');
+  await click(40, 20);
+  await type(page, '', 'Specify base point:');
+  await type(page, `${o + 40},${o + 20}`, /^Specify rotation angle or/);
+  await type(page, '90', 'Command:');
+  await expect
+    .poll(() => lines(page, o), { timeout: 15_000 })
+    .toEqual([
+      [40, 0, 40, 40],
+      [20, 40, 20, 80],
+    ]);
+  await expectDrawn(page);
+  await park();
+  await shot('2-rotated-90.png');
 });
