@@ -42,6 +42,7 @@ export * from './revcloud';
 export * from './image-clip';
 export * from './clipboard';
 export * from './clipboard-data';
+export * from './autoconstrain';
 export * from './constraints';
 export * from './constraint-copy';
 export * from './constraint-display';

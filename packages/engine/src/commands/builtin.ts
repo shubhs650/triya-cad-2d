@@ -30,6 +30,7 @@ import { fieldCommand } from './draw/field';
 import { FIND_COMMANDS } from './modify/find';
 import { GEOMETRIC_CONSTRAINT_COMMANDS, geomconstraintCommand } from './constraints';
 import { constraintBarCommand, delConstraintCommand } from './constraint-bar';
+import { autoconstrainCommand, constraintSettingsCommand } from './autoconstrain';
 import { dcdisplayCommand } from './dcdisplay';
 import { dimensionalConstraintCommands } from './dimensional-constraints';
 import { SPELL_COMMANDS } from './modify/spell';
@@ -171,6 +172,9 @@ export function builtinCommands(): CommandRegistry {
     // M9-05 part 2: constraint bars shown or hidden, and constraints removed.
     constraintBarCommand(),
     delConstraintCommand(),
+    // M9-05 part 3: constraints applied by how objects lie, and the Constraint Settings dialog.
+    autoconstrainCommand(),
+    constraintSettingsCommand(),
     // M9-03 part 5: the Parameters Manager.
     ...PARAMETERS_COMMANDS.map((make) => make()),
     breakCommand(),

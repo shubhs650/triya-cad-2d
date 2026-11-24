@@ -823,6 +823,15 @@ export type DialogRequest =
       readonly snapGrid?: SnapGridSettings;
     }
   | {
+      /**
+       * CONSTRAINTSETTINGS' Constraint Settings (M9-05 part 3): the app's per-user constraint
+       * settings, which the dialog sets itself; `tab` the tab it opens on (AUTOCONSTRAIN's
+       * Settings: AutoConstrain), none for the one shown last.
+       */
+      readonly type: 'csettings';
+      readonly tab?: ConstraintSettingsTab;
+    }
+  | {
       /** SELECTSIMILAR's Select Similar Settings (M3-04 part 3), opened on SELECTSIMILARMODE. */
       readonly type: 'selectsimilar';
       readonly mode: number;
@@ -980,6 +989,9 @@ export type GroupingAction =
 
 /** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
 export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'dyn' | 'qp' | 'sc';
+
+/** The Constraint Settings dialog's tabs (M9-05 part 3). */
+export type ConstraintSettingsTab = 'geometric' | 'dimensional' | 'autoconstrain';
 
 /**
  * What the Snap and Grid tab sets in the `*Active` VPORT (M3-06 part 2): SNAPUNIT, GRIDUNIT (0

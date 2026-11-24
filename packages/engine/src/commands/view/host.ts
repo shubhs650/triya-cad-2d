@@ -31,6 +31,7 @@ import type { ScaleListDialogRequest, ScaleListEntry } from '../../annotation/sc
 import type { LinetypeDefinition } from '../../edit/linetypes';
 import type { EnclosedSpace } from '../inquiry/quick';
 import type { TextFrame } from '../../edit/text-justify';
+import type { AutoConstrainSettings } from '../../edit/autoconstrain';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -382,6 +383,11 @@ export type ViewRequest =
       readonly entities: readonly Handle[];
     }
   /**
+   * AUTOCONSTRAIN (M9-05 part 3): the AutoConstrain tab's settings, the user's, which the app
+   * keeps; answered as `autoConstrain`. A host without them leaves AUTOCONSTRAIN the defaults.
+   */
+  | { readonly op: 'autoConstrain' }
+  /**
    * MSPACE and PSPACE (M6-02 part 3): the layout shown is worked in through its floating
    * viewport `viewport` (model space), or in its paper space again (null). No edit: as in
    * AutoCAD, the viewport made current is no undo step. `geometry` is the viewport's as it is now.
@@ -715,6 +721,8 @@ export type ViewReply =
        * (Tab-separated rows come as `text`, which PASTECLIP reads itself.)
        */
       readonly cells?: SheetCells;
+      /** The AutoConstrain tab's settings an `autoConstrain` request asked for (M9-05 part 3). */
+      readonly autoConstrain?: AutoConstrainSettings;
       /** What `plotSetup` found (-PLOT, M2-17 part 5). */
       readonly plotSetup?: PlotScriptSetup;
       /** What `hatchPattern` placed (M2-35 part 3). */

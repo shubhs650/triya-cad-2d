@@ -10,9 +10,10 @@
 // takes a line, circle or arc whole, or the polyline segment picked; GCSMOOTH's picks take the
 // end of the curve nearest the pick (M9-02 part 2).
 //
-// Left out here: GCCOINCIDENT's Autoconstrain (AUTOCONSTRAIN is not built), the constraint bars
-// that show a constraint once applied, and Infer (later parts of M9-05).
+// GCCOINCIDENT's Autoconstrain came with AUTOCONSTRAIN (M9-05 part 3, autoconstrain.ts); the
+// constraint bars that show a constraint once applied with part 2. Left out: Infer.
 import { toleranceFor } from './modify/offset';
+import { coincidentAutoconstrain } from './autoconstrain';
 import type { CommandContext, CommandDef, CommandGenerator } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import {
@@ -252,11 +253,18 @@ async function* horizontalOrVertical(
   }
 }
 
-/** Coincident: two points, or (Object, the default) a point on an object. */
+/**
+ * Coincident: two points, or (Object, the default) a point on an object, or (Autoconstrain,
+ * M9-05 part 3) every coincidence among the objects selected.
+ */
 async function* coincident(ctx: CommandContext): CommandGenerator {
   for (;;) {
-    const a = yield* pointPick(ctx, 'Select first point or', ['Object'], 'Object');
+    const a = yield* pointPick(ctx, 'Select first point or', ['Object', 'Autoconstrain'], 'Object');
     if (a === undefined) return;
+    if (a !== 'enter' && 'keyword' in a && a.keyword === 'Autoconstrain') {
+      yield* coincidentAutoconstrain(ctx);
+      return;
+    }
     if (isRef(a)) {
       const b = yield* point(ctx, 'Select second point');
       if (!b) return;

@@ -22,6 +22,7 @@ import {
   type Vec2,
   type ViewReply,
   type ViewRequest,
+  type AutoConstrainSettings,
 } from '../../src/index';
 import {
   LAYER_0,
@@ -104,9 +105,14 @@ export function host(
   variables?: Map<string, number>,
   clipboard?: SharedClipboard,
   requests?: ViewRequest[],
+  autoConstrain?: AutoConstrainSettings,
 ): ViewHost {
   return {
     request: (r): Promise<ViewReply> => {
+      // The user's AutoConstrain settings (M9-05 part 3), which the app keeps.
+      if (r.op === 'autoConstrain' && autoConstrain) {
+        return Promise.resolve({ ok: true, autoConstrain });
+      }
       // The app's display state a command asks for (M9-05 part 2's constraint bars), recorded.
       if (requests && r.op === 'constraintBars') {
         requests.push(r);
@@ -199,6 +205,8 @@ export function setup(
     clipboard?: SharedClipboard;
     /** Records the constraint bars' requests (M9-05 part 2), which are answered. */
     requests?: ViewRequest[];
+    /** The user's AutoConstrain settings (M9-05 part 3), which the app answers with. */
+    autoConstrain?: AutoConstrainSettings;
   } = {},
 ) {
   const init = sampleInit();
@@ -234,7 +242,7 @@ export function setup(
   const bus = new PromptBus({
     model,
     registry: builtinCommands(),
-    view: host(() => model, o.variables, o.clipboard, o.requests),
+    view: host(() => model, o.variables, o.clipboard, o.requests, o.autoConstrain),
     ...(o.constraints && { constraints: o.constraints }),
   });
   const log: string[] = [];
