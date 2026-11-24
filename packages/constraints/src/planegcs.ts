@@ -56,6 +56,18 @@ export const ConstraintKind = {
    */
   P2PAngle: 34,
   PointOnPerpBisector: 35,
+  /**
+   * Triya's (sketch.cpp): a spline end's curvature, from its first three control points away
+   * from the end, equals 1 / radius; the last parameter (fixed) is the end's curvature factor
+   * times +1 when the spline leaves a counter-clockwise turn, -1 a clockwise one.
+   */
+  SplineEndCurvatureArc: 36,
+  /**
+   * Triya's (sketch.cpp): two spline ends at one point turn opposite ways by the same
+   * curvature, each from its first three control points away from the end; the parameters
+   * (fixed) are their curvature factors.
+   */
+  SplineEndCurvatureMatch: 37,
 } as const;
 export type ConstraintKind = (typeof ConstraintKind)[keyof typeof ConstraintKind];
 
@@ -99,6 +111,17 @@ const ARGS: Record<ConstraintKind, readonly Arg[]> = {
   [ConstraintKind.MidpointOnLine]: ['line', 'line'],
   [ConstraintKind.P2PAngle]: ['point', 'point', 'param'],
   [ConstraintKind.PointOnPerpBisector]: ['point', 'line'],
+  [ConstraintKind.SplineEndCurvatureArc]: ['point', 'point', 'point', 'param', 'param'],
+  [ConstraintKind.SplineEndCurvatureMatch]: [
+    'point',
+    'point',
+    'point',
+    'point',
+    'point',
+    'point',
+    'param',
+    'param',
+  ],
 };
 
 /** PlaneGCS's `SolveStatus`. Parameters change only on Success or Converged. */

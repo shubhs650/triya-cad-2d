@@ -23,7 +23,8 @@ const gc = (
 
 /**
  * Line 50 (0,0)-(10,0), vertical line 51 (0,0)-(0,5), circle 53 at (20,0) r 3, arc 54 at (40,0)
- * r 2 from 0° to 90°, polyline 55 (0,-10)-(6,-10) bulging to (6,-4).
+ * r 2 from 0° to 90°, polyline 55 (0,-10)-(6,-10) bulging to (6,-4), a cubic spline 56 from
+ * (20,-20) to (29,-17).
  */
 function model(constraints: GeometricConstraintObject[]): DocumentModel {
   const init = sampleInit();
@@ -50,6 +51,19 @@ function model(constraints: GeometricConstraintObject[]): DocumentModel {
           { x: 6, y: -10, bulge: 1 },
           { x: 6, y: -4, bulge: 0 },
         ],
+      } as EntityGeometry),
+      entityInit('56', {
+        kind: 'SPLINE',
+        degree: 3,
+        knots: [0, 0, 0, 0, 1, 1, 1, 1],
+        controlPoints: [
+          { x: 20, y: -20 },
+          { x: 23, y: -17 },
+          { x: 26, y: -20 },
+          { x: 29, y: -17 },
+        ],
+        closed: false,
+        periodic: false,
       } as EntityGeometry),
     ],
   });
@@ -107,6 +121,20 @@ describe('constraint bars (M9-05 part 2)', () => {
     // The bulge-1 half circle from (6,-10) to (6,-4) about (6,-7): its middle at (9,-7).
     close(bars[3]!.anchor, 9, -7);
     close(bars[3]!.side, 1, 0);
+  });
+
+  it("places a spline's at its middle, below it (M9-02 part 2)", () => {
+    const m = model([
+      gc('E1', 'smooth', [
+        { entity: '56', point: 'start' },
+        { entity: '50', point: 'end' },
+      ]),
+    ]);
+    const { bars } = constraintBars(m);
+    expect(bars.map((b) => b.entity)).toEqual(['56', '50']);
+    // At u = 0.5 the cubic is at (C0 + 3 C1 + 3 C2 + C3) / 8, running along X.
+    close(bars[0]!.anchor, 24.5, -18.5);
+    close(bars[0]!.side, 0, -1);
   });
 
   it('shows Coincident as a square at the point instead of an icon', () => {

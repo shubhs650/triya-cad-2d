@@ -55,6 +55,29 @@ export class Drawing {
   point(x: number, y: number): Handle {
     return this.add({ kind: 'POINT', position: { x, y } });
   }
+  /** An open spline; clamped uniform knots unless given. */
+  spline(
+    controlPoints: [number, number][],
+    options: { degree?: number; knots?: number[]; weights?: number[]; fitPoints?: Vec2[] } = {},
+  ): Handle {
+    const degree = options.degree ?? 3;
+    const n = controlPoints.length;
+    const knots = options.knots ?? [
+      ...Array<number>(degree + 1).fill(0),
+      ...Array.from({ length: n - degree - 1 }, (_, i) => i + 1),
+      ...Array<number>(degree + 1).fill(n - degree),
+    ];
+    return this.add({
+      kind: 'SPLINE',
+      degree,
+      knots,
+      controlPoints: controlPoints.map(([x, y]) => ({ x, y })),
+      ...(options.weights && { weights: options.weights }),
+      ...(options.fitPoints && { fitPoints: options.fitPoints }),
+      closed: false,
+      periodic: false,
+    });
+  }
   polyline(vertices: [number, number, number?][], closed = false): Handle {
     return this.add({
       kind: 'LWPOLYLINE',

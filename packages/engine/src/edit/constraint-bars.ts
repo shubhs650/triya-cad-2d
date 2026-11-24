@@ -4,14 +4,21 @@
 // clutter, Coincident constraints display by default as small, blue squares". A bar's default
 // place is "near the midpoint of the entity" (BricsCAD's CONSTRAINTBAR Reset; AutoCAD's Help
 // says only "their default locations"), so each object's bar is laid out from its midpoint, off
-// to one side: below a line (right of a vertical one), outside an arc, below a circle. A
+// to one side: below a line (right of a vertical one), outside an arc, below a circle, below a
+// spline or elliptical arc at its middle parameter (as a line through it there). A
 // polyline's segments each have their own bar, as AutoCAD constrains them one by one.
 //
 // The renderer draws the bars at a fixed size on screen (`render/constraint-bars.ts`); which ones
 // show (CONSTRAINTBAR's Show and Hide, CONSTRAINTBARMODE's kinds, CONSTRAINTBARDISPLAY) is the
 // app's display state, not the drawing's: AutoCAD's Help does not say a bar's visibility is
 // saved, and BricsCAD's says bars "are initially hidden when a drawing is opened".
-import { polylineSegment, polylineSegmentCount } from '../geom/eval';
+import {
+  derivativeAt,
+  domain,
+  pointAt as curvePointAt,
+  polylineSegment,
+  polylineSegmentCount,
+} from '../geom/eval';
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
@@ -137,6 +144,15 @@ export function barPlace(
     }
     case 'POINT':
       return { anchor: g.position, side: unit({ x: 1, y: -1 }) };
+    case 'SPLINE':
+    case 'ELLIPSE': {
+      const d = domain(g);
+      const t = (d.start + d.end) / 2;
+      const anchor = curvePointAt(g, t);
+      const dir = derivativeAt(g, t);
+      if (dir.x === 0 && dir.y === 0) return { anchor, side: { x: 0, y: -1 } };
+      return { anchor, side: lineSide(anchor, { x: anchor.x + dir.x, y: anchor.y + dir.y }) };
+    }
     case 'LWPOLYLINE': {
       if (segment === undefined || segment >= polylineSegmentCount(g)) return undefined;
       const s = polylineSegment(g, segment);

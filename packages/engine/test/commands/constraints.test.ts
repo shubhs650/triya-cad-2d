@@ -59,8 +59,8 @@ interface Call {
 
 /**
  * A drawing: line 30 (0,0)-(10,0), line 31 (0,5)-(10,8), circle 32 at (20,0) r 2, a polyline 33
- * (30,0)-(40,0)-(40,10), a POINT 34 at (50,0), a text 35 at (60,0), and line 36 (0,20)-(10,20) on a
- * locked layer. `answer` is what the solver says (by default: applied, nothing moved).
+ * (30,0)-(40,0)-(40,10), a POINT 34 at (50,0), a text 35 at (60,0), line 36 (0,20)-(10,20) on a
+ * locked layer, a spline 37 from (0,-20) to (10,-18) and an arc 38 at (20,-20) r 3 from 90° to 180°. `answer` is what the solver says (by default: applied, nothing moved).
  */
 function setup(
   answer: (call: Call) => ConstraintAddResult = () => ({ ok: true, updated: [], dofs: 0 }),
@@ -96,6 +96,26 @@ function setup(
         rotation: 0,
       } as unknown as EntityGeometry),
       entityInit('36', lineGeom(0, 20, 10, 20), { layer: LOCKED }),
+      entityInit('37', {
+        kind: 'SPLINE',
+        degree: 3,
+        knots: [0, 0, 0, 0, 1, 1, 1, 1],
+        controlPoints: [
+          { x: 0, y: -20 },
+          { x: 3, y: -17 },
+          { x: 6, y: -21 },
+          { x: 10, y: -18 },
+        ],
+        closed: false,
+        periodic: false,
+      } as EntityGeometry),
+      entityInit('38', {
+        kind: 'ARC',
+        center: { x: 20, y: -20 },
+        radius: 3,
+        startAngle: Math.PI / 2,
+        endAngle: Math.PI,
+      } as EntityGeometry),
     ],
   });
   const calls: Call[] = [];
@@ -472,11 +492,62 @@ describe('GEOMCONSTRAINT', () => {
     await s.bus.cancel();
   });
 
-  it('says Smooth needs splines', async () => {
+  it('runs Smooth (M9-02 part 2)', async () => {
     const s = setup();
     await s.bus.script(['GEOMCONSTRAINT', 'SM']);
-    expect(s.log).toContain('Smooth needs a spline, which constraints do not support yet.');
+    expect(s.bus.promptText).toBe('Select first spline curve:');
+    await s.bus.cancel();
+  });
+});
+
+describe('GCSMOOTH', () => {
+  it("takes a spline's end, then the end of the curve it joins, each nearest its pick", async () => {
+    const s = setup();
+    await s.bus.script(['GCSMOOTH']);
+    expect(s.bus.promptText).toBe('Select first spline curve:');
+    await s.bus.pick({ x: 5, y: 0 });
+    expect(s.log).toContain('Invalid selection. Select an open spline.');
+    await s.bus.pick({ x: 9.9, y: -18.05 });
+    expect(s.bus.promptText).toBe('Select second curve:');
+    await s.bus.pick({ x: 20, y: 2 });
+    expect(s.log).toContain('Invalid selection. Select a spline, line, arc or open polyline.');
+    await s.bus.pick({ x: 17.05, y: -19.9 });
+    expect(s.calls).toEqual([
+      {
+        kind: 'smooth',
+        refs: [
+          { entity: '37', point: 'end' },
+          { entity: '38', point: 'end' },
+        ],
+        existing: 0,
+      },
+    ]);
+    expect(s.constraints().map((c) => c.kind)).toEqual(['smooth']);
     expect(s.bus.command).toBeUndefined();
-    expect(builtinCommands().get('GCSMOOTH')).toBeUndefined();
+  });
+
+  it("takes an open polyline's start, and asks again after a refusal", async () => {
+    const s = setup((c) =>
+      c.existing === 0 && s.calls.length === 1
+        ? { ok: false, reason: 'overconstrained', message: 'no', conflicting: [] }
+        : { ok: true, updated: [], dofs: 0 },
+    );
+    await s.bus.script(['GCSMOOTH']);
+    await s.bus.pick({ x: 0.05, y: -19.95 });
+    await s.bus.pick({ x: 30.5, y: 0 });
+    expect(s.log).toContain('No.');
+    expect(s.bus.promptText).toBe('Select first spline curve:');
+    await s.bus.pick({ x: 0.05, y: -19.95 });
+    await s.bus.pick({ x: 39.9, y: 9 });
+    expect(s.calls.map((c) => c.refs)).toEqual([
+      [
+        { entity: '37', point: 'start' },
+        { entity: '33', point: 'start' },
+      ],
+      [
+        { entity: '37', point: 'start' },
+        { entity: '33', point: 'end' },
+      ],
+    ]);
   });
 });

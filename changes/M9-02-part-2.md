@@ -1,0 +1,1 @@
+- M9-02 part 2 (#664): Smooth (GCSMOOTH, GEOMCONSTRAINT's SMooth, the Parametric tab's Smooth) joins a spline's end to the end of a spline, line, arc or open polyline with G2 continuity, the spline adjusting; open splines' ends and arcs' midpoints are constraint points, and Fix holds a whole spline. PlaneGCS gains two constraints of Triya's own for a spline end's curvature.

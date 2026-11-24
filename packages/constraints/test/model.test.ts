@@ -363,12 +363,12 @@ describe('geometric constraints', () => {
     expect(r).toMatchObject({ ok: false, reason: 'overconstrained' });
   });
 
-  it('Smooth needs splines, which the model does not map yet', () => {
+  it('Smooth joins a spline, not two lines (smooth.test.ts has the splines)', () => {
     const { d, m } = setup();
     const a = d.line(0, 0, 10, 0);
     const b = d.line(10, 0, 20, 5);
-    const r = m.add(con('smooth', curve(a), curve(b)), d.lookup);
-    expect(r).toMatchObject({ ok: false, reason: 'unsupported' });
+    const r = m.add(con('smooth', pt(a, 'end'), pt(b, 'start')), d.lookup);
+    expect(r).toMatchObject({ ok: false, reason: 'invalid' });
     expect(m.constraints).toEqual([]);
   });
 });

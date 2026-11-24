@@ -25,8 +25,16 @@
 // endpoint pair when it matters), and an edit holds exactly the values it changed, so a
 // dragged grip stays under the cursor and the rest of the geometry follows.
 //
-// Smooth (G2 continuity with a spline) needs splines in the solver module and is refused as
-// unsupported until then (M9-02 part 2), as are ellipses and splines in any constraint.
+// Splines (M9-02 part 2) take part by their control points: an open, clamped spline's ends are
+// constraint points (AutoCAD's only points on a spline), Fix holds the whole spline, and Smooth
+// joins an end of one to an end of another spline, a line, an arc or a polyline with G2
+// continuity (GCSMOOTH: "Constrains a spline to be contiguous and maintain G2 continuity with
+// another spline, line, arc, or polyline"). The spline is what adjusts, its end's first three
+// control points moving (the Help: "The splines are updated to be contiguous"); the other curve
+// stays. Where the Help is silent: a spline whose control points a constraint moved loses its
+// fit points, as SPLINEDIT's control-vertex edits make it, unless it only moved whole.
+// An arc's midpoint (and a polyline arc segment's) is a constraint point too. Ellipses are not
+// mapped yet.
 //
 // Dimensional constraints (M9-03, measure.ts) live beside the geometric ones, each with its
 // parameter in the model's ParameterTable, the Parameters Manager's table: an edit of an
@@ -41,6 +49,7 @@ import {
   ccwSweep,
   normalizeAngle,
   polylineSegmentCount,
+  purgeFitData,
   updateEntity,
   type BulgeVertex,
   type Entity,
@@ -48,6 +57,7 @@ import {
   type Handle,
   type LwPolylineGeometry,
   type Replacement,
+  type SplineGeometry,
   type Tolerance,
   type Vec2,
 } from '@triya/engine';
@@ -93,8 +103,8 @@ export type GeometricKind = (typeof GEOMETRIC_KINDS)[number];
 
 /**
  * A point on an entity: a LINE's start, end or mid; a CIRCLE's center; an ARC's center,
- * start or end; a POINT's position; an LWPOLYLINE's vertex `index`, start or end, or the mid
- * of straight segment `index` or the center of arc segment `index`.
+ * start, end or mid; a POINT's position; an LWPOLYLINE's vertex `index`, start or end, the mid
+ * of segment `index` or the center of arc segment `index`; a SPLINE's start or end.
  */
 export type PointName = 'start' | 'end' | 'mid' | 'center' | 'position' | 'vertex';
 
@@ -117,8 +127,9 @@ export const isPointRef = (ref: GeomRef): ref is PointRef => 'point' in ref;
 /**
  * One geometric constraint. `refs` in the order GEOMCONSTRAINT picks them: Horizontal and
  * Vertical take a line or two points; Coincident two points or a point and a curve;
- * Symmetric two objects (or points) and then the symmetry line; Fix one point or object; the
- * others two objects.
+ * Symmetric two objects (or points) and then the symmetry line; Fix one point or object;
+ * Smooth the end of a spline and then the end of the curve it joins (a spline, line, arc or
+ * an open polyline's start or end); the others two objects.
  */
 export interface GeometricConstraint {
   readonly handle: Handle;
@@ -301,9 +312,6 @@ export class ConstraintModel {
    * over-constrain the geometry.
    */
   add(constraint: GeometricConstraint, lookup: EntityLookup): AddResult {
-    if (constraint.kind === 'smooth') {
-      return refusal('unsupported', 'Smooth needs a spline, which constraints do not support yet');
-    }
     const r = this.#addSolved(constraint, holdFor(constraint), lookup);
     if (!r.ok) return r;
     this.#constraints.push(constraint);
@@ -788,6 +796,9 @@ function holdFor(c: GeometricConstraint): GeomRef[] {
       return b && !isPointRef(b) ? [b] : [a];
     case 'symmetric':
       return axis ? [a, axis] : [a];
+    case 'smooth':
+      // The spline adjusts: the curve it joins stays, held whole (Build.hold).
+      return b ? [b] : [];
     default:
       return [a];
   }
@@ -1054,6 +1065,8 @@ interface ArcPrim extends ArcIds {
   readonly type: 'arc';
   /** A polyline arc segment that runs clockwise (negative bulge): start and end swapped. */
   readonly cw?: boolean;
+  /** Its midpoint, once a constraint names it (Build.#arcMid). */
+  mid?: number;
 }
 type Curve = LinePrim | CirclePrim | ArcPrim;
 
@@ -1063,13 +1076,34 @@ type Mapped =
   | { readonly kind: 'ARC'; readonly arc: ArcPrim }
   | { readonly kind: 'POINT'; readonly point: number }
   | {
+      readonly kind: 'SPLINE';
+      /** Its control points, in order. */
+      readonly points: readonly number[];
+      readonly spline: SplineGeometry;
+    }
+  | {
       readonly kind: 'LWPOLYLINE';
       readonly vertices: readonly number[];
       readonly segments: readonly (LinePrim | ArcPrim)[];
       readonly closed: boolean;
     };
 
-/** The tag of the structure Triya adds (a line's midpoint). */
+/**
+ * A spline end as Smooth uses it: its first three control points counted from the end, and
+ * the factor that turns them into the end's curvature (sketch.cpp's SplineEndCurvature*).
+ */
+interface SplineEnd {
+  readonly points: readonly [number, number, number];
+  readonly factor: number;
+}
+
+/** The end of the curve a spline is made smooth with, and where it is (Build.#endCurve). */
+type EndCurve =
+  | { readonly type: 'line'; readonly line: LinePrim; readonly at: number; readonly from: number }
+  | { readonly type: 'arc'; readonly arc: ArcPrim; readonly at: number }
+  | { readonly type: 'spline'; readonly end: SplineEnd; readonly at: number };
+
+/** The tag of the structure Triya adds (a line's or arc's midpoint). */
 const INTERNAL_TAG = ARC_RULES_TAG - 1;
 /** What a moving object keeps while a geometric constraint is first solved (Build.keepMoving). */
 type KeepMoving = 'whole' | 'pivot' | 'length' | 'slide';
@@ -1103,6 +1137,11 @@ class Build {
   readonly #parallel = new Set<string>();
   /** Lines' ends and circles' and arcs' radii, with their size when mapped. */
   readonly #sizes: { line?: LinePrim; radius?: number; initial: number }[] = [];
+  /**
+   * For each Smooth, how far the spline's end runs on along the curve it joins (a dot
+   * product): a solution where it turns back is refused (#solveOnce).
+   */
+  readonly #senses: (() => number)[] = [];
 
   /** A driving dimensional constraint's value for the solver (radians for angles); undefined without one. */
   readonly #value: (c: DimensionalConstraint) => number | undefined;
@@ -1285,10 +1324,9 @@ class Build {
         break;
       }
       case 'smooth':
-        throw new Refused(
-          'unsupported',
-          'Smooth needs a spline, which constraints do not support yet',
-        );
+        arity(2);
+        this.#smooth(refs[0]!, refs[1]!, tag);
+        break;
       default:
         throw new Refused('invalid', `unknown constraint kind ${String(c.kind)}`);
     }
@@ -1430,7 +1468,11 @@ class Build {
   }
 
   #solveOnce(): boolean {
-    return this.#s.solve() === SolveStatus.Success && !this.#collapsed();
+    return (
+      this.#s.solve() === SolveStatus.Success &&
+      !this.#collapsed() &&
+      this.#senses.every((sense) => sense() > 0)
+    );
   }
 
   snapshot(): number[] {
@@ -1451,6 +1493,8 @@ class Build {
    * Vertical on a line, only its start.
    */
   hold(ref: GeomRef, kind?: GeometricKind): void {
+    // Smooth holds the curve the spline joins whole, not only its end.
+    if (kind === 'smooth' && isPointRef(ref)) return this.holdEntity(ref.entity);
     const lineStart = (kind === 'horizontal' || kind === 'vertical') && !isPointRef(ref);
     const { points, params } = lineStart
       ? { points: [this.#line(ref).p1], params: [] }
@@ -1471,6 +1515,8 @@ class Build {
         return this.#hold([m.arc.center], [m.arc.radius, m.arc.startAngle, m.arc.endAngle]);
       case 'POINT':
         return this.#hold([m.point], []);
+      case 'SPLINE':
+        return this.#hold(m.points, []);
       case 'LWPOLYLINE': {
         const arcs = m.segments.filter((s): s is ArcPrim => s.type === 'arc');
         return this.#hold(
@@ -1513,6 +1559,12 @@ class Build {
         return this.holdShape(handle);
       case 'POINT':
         return;
+      case 'SPLINE': {
+        // Moved whole, or else free: Smooth reshapes only the end it joins.
+        const [p0, ...rest] = m.points;
+        if (how === 'whole' && p0 !== undefined) this.#keepOffsets(p0, rest);
+        return;
+      }
       case 'LWPOLYLINE': {
         const [v0, ...rest] = m.vertices;
         if (how === 'whole' && v0 !== undefined) this.#keepOffsets(v0, rest);
@@ -1687,6 +1739,10 @@ class Build {
     } else if (m.kind === 'ARC' && g.kind === 'ARC') {
       const a0 = g.startAngle;
       setArc(m.arc, g.center, g.radius, a0, a0 + ccwSweep(a0, g.endAngle));
+    } else if (m.kind === 'SPLINE' && g.kind === 'SPLINE' && was.kind === 'SPLINE') {
+      // Smooth's curvature factor was worked out from the knots and weights mapped.
+      if (!sameSplineFrame(g, was)) return false;
+      g.controlPoints.forEach((p, i) => setPointIf(m.points[i]!, p, was.controlPoints[i]!));
     } else if (m.kind === 'LWPOLYLINE' && g.kind === 'LWPOLYLINE' && was.kind === 'LWPOLYLINE') {
       const n = g.vertices.length;
       if (n !== was.vertices.length || g.closed !== was.closed) return false;
@@ -1848,6 +1904,9 @@ class Build {
       case 'LWPOLYLINE':
         m = this.#mapPolyline(g);
         break;
+      case 'SPLINE':
+        m = { kind: 'SPLINE', points: g.controlPoints.map((p) => s.point(p.x, p.y)), spline: g };
+        break;
       default:
         throw new Refused('unsupported', `${g.kind} cannot be constrained yet`);
     }
@@ -1913,7 +1972,11 @@ class Build {
         if (ref.point === 'center') return m.arc.center;
         if (ref.point === 'start') return m.arc.start;
         if (ref.point === 'end') return m.arc.end;
+        if (ref.point === 'mid') return this.#arcMid(m.arc);
         throw bad();
+      case 'SPLINE':
+        if (ref.point !== 'start' && ref.point !== 'end') throw bad();
+        return m.points[splineEndIndex(m.spline, ref.point, ref.entity)]!;
       case 'POINT':
         if (ref.point === 'position') return m.point;
         throw bad();
@@ -1925,6 +1988,7 @@ class Build {
         if (ref.point === 'vertex' && v[i] !== undefined) return v[i];
         const seg = m.segments[i];
         if (ref.point === 'mid' && seg?.type === 'line') return this.#midpoint(seg);
+        if (ref.point === 'mid' && seg?.type === 'arc') return this.#arcMid(seg);
         if (ref.point === 'center' && seg?.type === 'arc') return seg.center;
         throw bad();
       }
@@ -1955,6 +2019,12 @@ class Build {
     if (m.kind === 'LINE') return m.line;
     if (m.kind === 'CIRCLE') return m.circle;
     if (m.kind === 'ARC') return m.arc;
+    if (m.kind === 'SPLINE') {
+      throw new Refused(
+        'unsupported',
+        `${ref.entity} is a spline: a constraint takes its ends, or Smooth or Fix the spline`,
+      );
+    }
     throw new Refused('invalid', `${ref.entity} is a point, not an object`);
   }
 
@@ -2018,6 +2088,220 @@ class Build {
     s.constrain(kind, ids, tag);
   }
 
+  /**
+   * An arc's midpoint: on the arc and as far from its start as from its end. Of the two such
+   * points it starts at the arc's own, and the solver keeps it there.
+   */
+  #arcMid(arc: ArcPrim): number {
+    if (arc.mid === undefined) {
+      const s = this.#s;
+      const c = s.pointAt(arc.center);
+      const r = s.value(arc.radius);
+      const t = (s.value(arc.startAngle) + s.value(arc.endAngle)) / 2;
+      arc.mid = s.point(c.x + r * Math.cos(t), c.y + r * Math.sin(t));
+      s.constrain(ConstraintKind.PointOnArc, [arc.mid, arc.id], INTERNAL_TAG);
+      const chord = s.line(arc.start, arc.end);
+      s.constrain(ConstraintKind.PointOnPerpBisector, [arc.mid, chord], INTERNAL_TAG);
+    }
+    return arc.mid;
+  }
+
+  /**
+   * Smooth (G2): the spline's end on the other curve's end, its tangent there running on
+   * along the curve, and its curvature the curve's (none for a line, 1 / radius turning the
+   * arc's way, the other spline's turning back). The end's first three control points carry
+   * it: the tangent runs from the first to the second, and the curvature follows from the
+   * third (sketch.cpp). The three are first placed where they satisfy it (#placeSmooth):
+   * PlaneGCS's Gauss-Newton steps (FullPivLU, which moves the variables it pivots on, not
+   * the least change) crawl on the curvature's 1 / length terms from far off and give up.
+   */
+  #smooth(a: GeomRef, b: GeomRef, tag: number): void {
+    if (!isPointRef(a) || !isPointRef(b)) {
+      throw new Refused('invalid', 'smooth takes the end of a spline and the end of a curve');
+    }
+    if (a.entity === b.entity) throw new Refused('invalid', 'smooth needs two different curves');
+    const s = this.#s;
+    const end = this.#splineEnd(a);
+    const other = this.#endCurve(b);
+    const [q0, q1, q2] = end.points;
+    this.#placeSmooth(end, other);
+    const runsOn = () => {
+      const t = this.#tangentIn(other);
+      const p = s.pointAt(q0);
+      const r = s.pointAt(q1);
+      return (r.x - p.x) * t.x + (r.y - p.y) * t.y;
+    };
+    const add = (kind: ConstraintKind, ids: readonly number[]) => s.constrain(kind, ids, tag);
+    add(ConstraintKind.Coincident, [q0, other.at]);
+    this.#join(q0, other.at);
+    switch (other.type) {
+      case 'line':
+        add(ConstraintKind.PointOnLine, [q1, other.line.id]);
+        add(ConstraintKind.PointOnLine, [q2, other.line.id]);
+        break;
+      case 'arc': {
+        const radius = s.line(other.arc.center, other.at);
+        add(ConstraintKind.Perpendicular, [radius, s.line(q0, q1)]);
+        // Arriving at the arc's end it turned counter-clockwise; at its start, clockwise.
+        const turn = other.at === other.arc.end ? 1 : -1;
+        const factor = s.param(turn * end.factor, 'fixed');
+        add(ConstraintKind.SplineEndCurvatureArc, [q0, q1, q2, other.arc.radius, factor]);
+        break;
+      }
+      case 'spline': {
+        const [r0, r1] = other.end.points;
+        add(ConstraintKind.Parallel, [s.line(q0, q1), s.line(r0, r1)]);
+        add(ConstraintKind.SplineEndCurvatureMatch, [
+          ...end.points,
+          ...other.end.points,
+          s.param(end.factor, 'fixed'),
+          s.param(other.end.factor, 'fixed'),
+        ]);
+        break;
+      }
+    }
+    this.#senses.push(runsOn);
+  }
+
+  /**
+   * Places a spline end's first three control points on the curve it joins, G2 already:
+   * the first at the curve's end, the second along the curve's tangent at the distance it
+   * had from the first, the third at the distance along the tangent it had and across it as
+   * far as the curvature needs (k = factor * offset / distance^2). A spline that ran back
+   * along the curve is turned round, so it runs on.
+   */
+  #placeSmooth(end: SplineEnd, other: EndCurve): void {
+    const s = this.#s;
+    const [q0, q1, q2] = end.points.map((q) => s.pointAt(q)) as [Vec2, Vec2, Vec2];
+    const at = s.pointAt(other.at);
+    const tIn = this.#tangentIn(other);
+    const tLen = Math.hypot(tIn.x, tIn.y);
+    const u1 = { x: q1.x - q0.x, y: q1.y - q0.y };
+    const a = Math.hypot(u1.x, u1.y);
+    if (tLen === 0 || a === 0) return;
+    const t = { x: tIn.x / tLen, y: tIn.y / tLen };
+    const n = { x: -t.y, y: t.x };
+    const sense = u1.x * t.x + u1.y * t.y < 0 ? -1 : 1;
+    const along = sense * ((q2.x - q0.x) * t.x + (q2.y - q0.y) * t.y);
+    const across = (this.#curvatureIn(other) * a * a) / end.factor;
+    this.#setPoint(end.points[0], at);
+    this.#setPoint(end.points[1], { x: at.x + a * t.x, y: at.y + a * t.y });
+    this.#setPoint(end.points[2], {
+      x: at.x + along * t.x + across * n.x,
+      y: at.y + along * t.y + across * n.y,
+    });
+  }
+
+  /** A curve's signed curvature as it arrives at its end (positive turning counter-clockwise). */
+  #curvatureIn(e: EndCurve): number {
+    const s = this.#s;
+    switch (e.type) {
+      case 'line':
+        return 0;
+      case 'arc':
+        return (e.at === e.arc.end ? 1 : -1) / s.value(e.arc.radius);
+      case 'spline': {
+        // Its own curvature leaving the end, turned round.
+        const [r0, r1, r2] = e.end.points.map((r) => s.pointAt(r)) as [Vec2, Vec2, Vec2];
+        const d1 = { x: r1.x - r0.x, y: r1.y - r0.y };
+        const d2 = { x: r2.x - r1.x, y: r2.y - r1.y };
+        const l = Math.hypot(d1.x, d1.y);
+        return l === 0 ? 0 : (-e.end.factor * (d1.x * d2.y - d1.y * d2.x)) / l ** 3;
+      }
+    }
+  }
+
+  /** The direction a curve runs in as it arrives at its end `at`. */
+  #tangentIn(e: EndCurve): Vec2 {
+    const s = this.#s;
+    const at = s.pointAt(e.at);
+    switch (e.type) {
+      case 'line': {
+        const from = s.pointAt(e.from);
+        return { x: at.x - from.x, y: at.y - from.y };
+      }
+      case 'arc': {
+        const c = s.pointAt(e.arc.center);
+        const turn = e.at === e.arc.end ? 1 : -1;
+        return { x: -(at.y - c.y) * turn, y: (at.x - c.x) * turn };
+      }
+      case 'spline': {
+        const next = s.pointAt(e.end.points[1]);
+        return { x: at.x - next.x, y: at.y - next.y };
+      }
+    }
+  }
+
+  /** A spline's start or end for Smooth: degree 2 or more, open, clamped there. */
+  #splineEnd(ref: PointRef): SplineEnd {
+    const m = this.#map(ref.entity);
+    if (m.kind !== 'SPLINE') throw new Refused('invalid', `${ref.entity} is not a spline`);
+    if (ref.point !== 'start' && ref.point !== 'end') {
+      throw new Refused('invalid', `there is no ${describeRef(ref)}`);
+    }
+    const g = m.spline;
+    const i = splineEndIndex(g, ref.point, ref.entity);
+    const p = g.degree;
+    if (p < 2 || m.points.length < 3) {
+      throw new Refused('invalid', `smooth needs a spline of degree 2 or more (${ref.entity})`);
+    }
+    const k = g.knots;
+    const last = k.length - 1;
+    // The two knot spans from the end, and the weights of its first three control points.
+    const [d1, d2] =
+      i === 0
+        ? [k[p + 1]! - k[p]!, k[p + 2]! - k[p]!]
+        : [k[last]! - k[last - p - 1]!, k[last]! - k[last - p - 2]!];
+    const order = i === 0 ? [0, 1, 2] : [i, i - 1, i - 2];
+    const [w0, w1, w2] = order.map((j) => g.weights?.[j] ?? 1) as [number, number, number];
+    if (!(d1 > 0 && d2 > 0 && w0 > 0 && w1 > 0 && w2 > 0)) {
+      throw new Refused(
+        'invalid',
+        `the knots or weights at the ${ref.point} of ${ref.entity} cannot be smoothed`,
+      );
+    }
+    return {
+      points: order.map((j) => m.points[j]!) as [number, number, number],
+      factor: (((p - 1) / p) * d1 * w0 * w2) / (d2 * w1 * w1),
+    };
+  }
+
+  /** The end of the curve Smooth joins a spline to: a line's, an arc's, an open polyline's, a spline's. */
+  #endCurve(ref: PointRef): EndCurve {
+    const m = this.#map(ref.entity);
+    const bad = () =>
+      new Refused('invalid', 'smooth joins a spline to the end of a spline, line, arc or polyline');
+    if (ref.point !== 'start' && ref.point !== 'end') throw bad();
+    const first = ref.point === 'start';
+    const onSegment = (seg: LinePrim | ArcPrim, at: number): EndCurve =>
+      seg.type === 'line'
+        ? { type: 'line', line: seg, at, from: seg.p1 === at ? seg.p2 : seg.p1 }
+        : { type: 'arc', arc: seg, at };
+    switch (m.kind) {
+      case 'LINE':
+        return onSegment(m.line, first ? m.line.p1 : m.line.p2);
+      case 'ARC':
+        return onSegment(m.arc, first ? m.arc.start : m.arc.end);
+      case 'LWPOLYLINE': {
+        if (m.closed || !m.segments.length) throw bad();
+        const seg = first ? m.segments[0]! : m.segments[m.segments.length - 1]!;
+        return onSegment(seg, first ? m.vertices[0]! : m.vertices[m.vertices.length - 1]!);
+      }
+      case 'SPLINE': {
+        const end = this.#splineEnd(ref);
+        return { type: 'spline', end, at: end.points[0] };
+      }
+      default:
+        throw bad();
+    }
+  }
+
+  #setPoint(p: number, v: Vec2): void {
+    const [px, py] = this.#s.pointParams(p);
+    this.#s.setValue(px, v.x);
+    this.#s.setValue(py, v.y);
+  }
+
   #midpoint(line: LinePrim): number {
     if (line.mid === undefined) {
       const a = this.#s.pointAt(line.p1);
@@ -2037,6 +2321,8 @@ class Build {
   #parts(ref: GeomRef, use: 'fix' | 'hold'): { points: number[]; params: number[] } {
     if (isPointRef(ref)) return { points: [this.#point(ref)], params: [] };
     const m = this.#map(ref.entity);
+    if (m.kind === 'SPLINE' && ref.segment === undefined)
+      return { points: [...m.points], params: [] };
     if (m.kind === 'LWPOLYLINE' && ref.segment === undefined && use === 'fix') {
       const params = m.segments.flatMap((s) => (s.type === 'arc' ? [s.startAngle] : []));
       return { points: [...m.vertices], params };
@@ -2151,6 +2437,7 @@ class Build {
         sameAngle(arc.endAngle, g.endAngle, this.#tol.angular);
       return same ? undefined : { ...g, ...arc };
     }
+    if (m.kind === 'SPLINE' && g.kind === 'SPLINE') return solvedSpline(g, m.points.map(at), lin);
     if (m.kind === 'LWPOLYLINE' && g.kind === 'LWPOLYLINE') {
       let changed = false;
       const vertices = g.vertices.map((v, i) => {
@@ -2200,6 +2487,67 @@ class Build {
 const COLLAPSE = 1e-6;
 
 const pairKey = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`);
+
+/**
+ * The index of the control point at a spline's start or end: the curve's own end only when
+ * the spline is open and clamped there (its first or last degree + 1 knots equal).
+ */
+function splineEndIndex(g: SplineGeometry, end: 'start' | 'end', handle: Handle): number {
+  if (g.closed || g.periodic) throw new Refused('invalid', `closed spline ${handle} has no ends`);
+  const n = g.controlPoints.length;
+  const k = g.knots;
+  const p = g.degree;
+  if (n < 2 || p < 1 || k.length !== n + p + 1) {
+    throw new Refused('invalid', `spline ${handle} has no ends a constraint can take`);
+  }
+  const eps = 1e-9 * Math.max(1, Math.abs(k[k.length - 1]! - k[0]!));
+  const ends = end === 'start' ? k.slice(0, p + 1) : k.slice(k.length - p - 1);
+  if (ends.some((u) => Math.abs(u - ends[0]!) > eps)) {
+    throw new Refused(
+      'unsupported',
+      `the ${end} of spline ${handle} is not one of its control points`,
+    );
+  }
+  return end === 'start' ? 0 : n - 1;
+}
+
+/** Whether two splines share degree, knots, weights and closure, so only control points differ. */
+function sameSplineFrame(a: SplineGeometry, b: SplineGeometry): boolean {
+  const same = (x?: readonly number[], y?: readonly number[]) =>
+    (x?.length ?? 0) === (y?.length ?? 0) && (x ?? []).every((v, i) => v === y![i]);
+  return (
+    a.degree === b.degree &&
+    a.closed === b.closed &&
+    a.periodic === b.periodic &&
+    a.controlPoints.length === b.controlPoints.length &&
+    same(a.knots, b.knots) &&
+    same(a.weights, b.weights)
+  );
+}
+
+/**
+ * A spline with its solved control points, or undefined when none moved. One moved whole
+ * keeps its fit points, moved with it; one reshaped loses them (and their tangents and
+ * tolerance), as SPLINEDIT's control-vertex edits make it (purgeFitData): they no longer lie
+ * on it.
+ */
+function solvedSpline(
+  g: SplineGeometry,
+  controlPoints: readonly Vec2[],
+  tol: number,
+): SplineGeometry | undefined {
+  const was = g.controlPoints;
+  if (controlPoints.every((p, i) => samePoint(p, was[i]!, tol))) return undefined;
+  const d = { x: controlPoints[0]!.x - was[0]!.x, y: controlPoints[0]!.y - was[0]!.y };
+  const whole = controlPoints.every((p, i) =>
+    samePoint({ x: p.x - d.x, y: p.y - d.y }, was[i]!, tol),
+  );
+  if (whole) {
+    const fitPoints = g.fitPoints?.map((f) => ({ x: f.x + d.x, y: f.y + d.y }));
+    return { ...g, controlPoints, ...(fitPoints && { fitPoints }) };
+  }
+  return { ...purgeFitData(g), controlPoints };
+}
 
 /** Whether a polyline segment from `v` to `w` maps to a line or an arc. */
 function segmentKind(v: BulgeVertex, w: Vec2, tol: number): 'line' | 'arc' {
