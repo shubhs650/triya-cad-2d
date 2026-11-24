@@ -16,6 +16,8 @@ import {
   type OsnapMode,
   type ViewRequest,
 } from '../../src/index';
+import { EngineSession } from '../../src/session/index';
+import { sampleInit } from '../model/fixtures';
 import { setup } from './edit-harness';
 import { NO_PARAMETERS } from './solver-stub';
 
@@ -43,19 +45,19 @@ function stub() {
 function drawing(infer = 1) {
   const { solver, asked } = stub();
   const requests: ViewRequest[] = [];
-  const variables = new Map([['CONSTRAINTINFER', infer]]);
   const s = setup([], {
-    variables,
     requests,
     constraints: () => Promise.resolve(solver),
   });
+  // The app tells each drawing's engine CONSTRAINTINFER (the session's `sysvar` edit).
+  s.bus.setConstraintInfer(infer === 1);
   const constraints = () => [...s.model.objects.values()].filter(isGeometricConstraint);
   const idOf = (h: string) => s.byHandle(h)!.id;
   /** A click given by object snap `mode` on the object with handle `h`. */
   const snap = (x: number, y: number, mode: OsnapMode, h: string) =>
     s.bus.pick({ x, y }, { snap: { mode, id: idOf(h) } });
   const made = () => s.space().filter((e) => !['30', '31'].includes(e.handle));
-  return { ...s, asked, requests, variables, constraints, snap, made };
+  return { ...s, asked, requests, constraints, snap, made };
 }
 
 const summary = (cs: readonly GeometricConstraintObject[]) =>
@@ -186,6 +188,18 @@ describe('Infer Constraints (M9-05 part 7)', () => {
       await d.bus.submit('');
       expect(d.constraints()).toEqual([]);
     }
+  });
+});
+
+describe('CONSTRAINTINFER in the session (M9-05 part 7)', () => {
+  it('is off until the app tells the drawing otherwise, never an undo step', () => {
+    const session = new EngineSession(sampleInit());
+    expect(session.constraintInfer).toBe(false);
+    const r = session.edit({ kind: 'sysvar', name: 'CONSTRAINTINFER', value: 1 });
+    expect(r).toEqual({ ok: true, change: {} });
+    expect(session.constraintInfer).toBe(true);
+    session.edit({ kind: 'sysvar', name: 'CONSTRAINTINFER', value: 0 });
+    expect(session.constraintInfer).toBe(false);
   });
 });
 

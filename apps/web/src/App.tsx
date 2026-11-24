@@ -22,6 +22,7 @@ import type {
 } from '@triya/engine';
 import {
   GRIP_CYCLE,
+  CONSTRAINT_INFER,
   GROUPDISPLAYMODE,
   PICKADD,
   PICKAUTO,
@@ -580,7 +581,7 @@ constraintBarStates.subscribe(() => {
 
 /**
  * REVCLOUDGRIPS (M2-42), LAYEREVALCTL (M5-19 part 3), PICKFIRST (M2-59), PICKADD and PICKAUTO (M3-04 part 4), PICKSTYLE and
- * GROUPDISPLAYMODE (M3-13: the grips a selected group shows), per-user
+ * GROUPDISPLAYMODE (M3-13: the grips a selected group shows), CONSTRAINTINFER (M9-05 part 7), per-user
  * settings each drawing's engine follows (its grips, its command line's selection): each is told
  * them when the drawing opens and whenever SETVAR or the stored settings change them.
  */
@@ -592,11 +593,20 @@ const sessionVariablesOf = (s: DraftingState) => ({
   pickauto: s.pickauto,
   pickStyle: s.pickStyle,
   groupDisplayMode: s.groupDisplayMode,
+  constraintInfer: s.constraintInfer,
 });
 let sessionVariables = sessionVariablesOf(drafting.get());
 function tellSessionVariables(doc: number): void {
-  const { revcloudGrips, layerEvalCtl, pickfirst, pickadd, pickauto, pickStyle, groupDisplayMode } =
-    sessionVariables;
+  const {
+    revcloudGrips,
+    layerEvalCtl,
+    pickfirst,
+    pickadd,
+    pickauto,
+    pickStyle,
+    groupDisplayMode,
+    constraintInfer,
+  } = sessionVariables;
   void engines.edit(doc, { kind: 'sysvar', name: REVCLOUDGRIPS, value: revcloudGrips ? 1 : 0 });
   void engines.edit(doc, { kind: 'sysvar', name: LAYEREVALCTL, value: layerEvalCtl ? 1 : 0 });
   void engines.edit(doc, { kind: 'sysvar', name: PICKFIRST, value: pickfirst ? 1 : 0 });
@@ -604,6 +614,11 @@ function tellSessionVariables(doc: number): void {
   void engines.edit(doc, { kind: 'sysvar', name: PICKAUTO, value: pickauto });
   void engines.edit(doc, { kind: 'sysvar', name: PICKSTYLE, value: pickStyle });
   void engines.edit(doc, { kind: 'sysvar', name: GROUPDISPLAYMODE, value: groupDisplayMode });
+  void engines.edit(doc, {
+    kind: 'sysvar',
+    name: CONSTRAINT_INFER,
+    value: constraintInfer ? 1 : 0,
+  });
 }
 drafting.subscribe(() => {
   const next = sessionVariablesOf(drafting.get());

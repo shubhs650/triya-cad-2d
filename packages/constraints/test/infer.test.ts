@@ -88,10 +88,7 @@ function setup(entities: ReturnType<typeof entity>[]) {
   const model = DocumentModel.create(init);
   const view: ViewHost = {
     request: (r): Promise<ViewReply> => {
-      // CONSTRAINTINFER as the app keeps it, on; the bars' requests answered.
-      if (r.op === 'sysvar' && r.name === 'CONSTRAINTINFER') {
-        return Promise.resolve({ ok: true, value: 1 });
-      }
+      // The bars' requests answered.
       if (r.op === 'constraintBars') return Promise.resolve({ ok: true });
       if (r.op !== 'pick') return Promise.resolve({ ok: false, message: 'no' });
       const ids: EntityId[] = [];
@@ -109,6 +106,8 @@ function setup(entities: ReturnType<typeof entity>[]) {
     view,
     constraints: () => Promise.resolve(constraintSolver(gcs)),
   });
+  // CONSTRAINTINFER on, as the app tells each drawing's engine.
+  bus.setConstraintInfer(true);
   const log: string[] = [];
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);

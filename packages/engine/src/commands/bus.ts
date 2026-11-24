@@ -477,6 +477,8 @@ export class PromptBus {
    * (M9-05 part 7): what Infer Constraints infers from as it ends.
    */
   #snaps: SnappedPoint[] = [];
+  /** CONSTRAINTINFER as the app last told it (M9-05 part 7): off, AutoCAD's initial 0. */
+  #constraintInfer = false;
   #last: { readonly def: CommandDef; readonly dash: boolean } | undefined;
   /** The outermost command running, whose record `#close` makes. */
   #current: CommandDef | undefined;
@@ -1043,6 +1045,18 @@ export class PromptBus {
    * PICKFIRST set while the drawing is open (SETVAR, M2-59): it holds from the next pick, and
    * turned off it deselects what was picked at `Command:`, which no command could take now.
    */
+  /**
+   * CONSTRAINTINFER (M9-05 part 7), a per-user setting the app tells each drawing's engine, so
+   * a command ending asks the app nothing.
+   */
+  setConstraintInfer(on: boolean): void {
+    this.#constraintInfer = on;
+  }
+
+  get constraintInfer(): boolean {
+    return this.#constraintInfer;
+  }
+
   setPickfirst(on: boolean): Promise<void> {
     if (on === this.#pickfirstOn) return Promise.resolve();
     this.#pickfirstOn = on;
@@ -2078,10 +2092,10 @@ export class PromptBus {
   /**
    * Infer Constraints (M9-05 part 7): what the outermost command (`frame`) made takes the
    * constraints its snapped points and the command imply, in its undo step, while CONSTRAINTINFER
-   * is on.
+   * is on (`setConstraintInfer`).
    */
   async #inferConstraints(frame: Frame): Promise<void> {
-    if (frame.transparent || frame.def.solvesConstraints) return;
+    if (!this.#constraintInfer || frame.transparent || frame.def.solvesConstraints) return;
     if (this.#changes.length === 0) return;
     try {
       await inferConstraints(frame.ctx, frame.def.name, this.#changes, this.#snaps);

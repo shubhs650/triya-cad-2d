@@ -4,16 +4,15 @@
 // outermost command made take the constraints `inferredConstraints` finds from the points it was
 // given by object snaps, in the command's own undo step, silently as AutoCAD applies them, their
 // bars shown as an applied constraint's are. The app keeps the variable per user, as AutoCAD keeps
-// it in the registry (initially 0); it is asked only when there is a constraint to infer.
+// it in the registry (initially 0), and tells each drawing's engine (the session's `sysvar`
+// edit, `PromptBus.setConstraintInfer`), so a command ending asks the app nothing.
 import type { ChangeSet } from '../model/changeset';
 import type { EntityId } from '../model/entity-ids';
 import type { Entity } from '../model/types';
 import type { CommandContext } from './command';
 import { applyGeometricConstraints } from './autoconstrain';
 import { toleranceOf } from './constraints';
-import { optionVariable } from './modify/option-variables';
 import {
-  CONSTRAINT_INFER,
   INFERS_ITSELF,
   INFERS_NOTHING,
   inferredConstraints,
@@ -40,7 +39,7 @@ function addedBy(ctx: CommandContext, changes: readonly ChangeSet[]): Entity[] {
 
 /**
  * Infers the constraints of what command `name` made (`changes`) from the snapped points it was
- * given (`snaps`), when CONSTRAINTINFER is on.
+ * given (`snaps`); the bus calls it while CONSTRAINTINFER is on.
  */
 export async function inferConstraints(
   ctx: CommandContext,
@@ -66,10 +65,7 @@ export async function inferConstraints(
       }),
     ]),
   });
-  // The app is asked only when there is something to infer, so a command that could take
-  // nothing (one line, a circle typed) ends as it did.
   if (candidates.length === 0) return;
-  if ((await optionVariable(ctx, CONSTRAINT_INFER, 0)) !== 1) return;
   let solver;
   try {
     solver = await ctx.constraints?.();
