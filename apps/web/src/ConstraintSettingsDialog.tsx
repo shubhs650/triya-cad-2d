@@ -4,8 +4,7 @@
 // AutoConstrain), edits a copy of the user's settings and sets them on OK; Cancel (or Esc) leaves
 // them as they were.
 //
-// Left out or greyed: Infer geometric constraints is greyed until CONSTRAINTINFER is built (a
-// later part of M9-05); Only display constraint bars for objects in the current plane is left
+// Infer geometric constraints is CONSTRAINTINFER (M9-05 part 7). Left out: Only display constraint bars for objects in the current plane is left
 // out, as Triya draws in one plane (PRD non-goal: no 3D); Show lock icon for annotational
 // constraints (DIMCONSTRAINTICON) is left out until annotational constraints draw a lock.
 import {
@@ -133,7 +132,7 @@ function Check({
 function GeometricTab({ d, set }: TabProps) {
   return (
     <div className="dsettings-tab">
-      <Check checked={false} disabled onChange={() => undefined}>
+      <Check checked={d.infer} onChange={(infer) => set({ infer })}>
         Infer geometric constraints
       </Check>
       <fieldset className="csettings-bars">

@@ -88,6 +88,7 @@ import {
   type DeferredPick,
   type EnclosedSpace,
   type OsnapHit,
+  type OsnapMode,
   type Lasso,
   type Prompt,
   type QuickMeasure,
@@ -480,6 +481,8 @@ export interface PickedPoint {
   readonly point: Vec2;
   readonly missed?: boolean;
   readonly deferred?: DeferredPick;
+  /** The object snap that gave the point and its object, which Infer reads (M9-05 part 7). */
+  readonly snap?: { readonly mode: OsnapMode; readonly id: EntityId };
 }
 
 const sameHit = (a: OsnapHit | undefined, b: OsnapHit | undefined): boolean =>
@@ -3735,7 +3738,10 @@ export class CanvasController {
     const hit = hits[this.#cycle < hits.length ? this.#cycle : 0];
     if (hit) {
       const point = this.#along(world, hit.point);
-      return { point, ...(hit.deferred && { deferred: hit.deferred }) };
+      if (hit.deferred) return { point, deferred: hit.deferred };
+      // Where the point is the snap's own (not moved along TK's axis), its object snap.
+      const exact = point.x === hit.point.x && point.y === hit.point.y;
+      return { point, ...(exact && { snap: { mode: hit.mode, id: hit.id } }) };
     }
     const p = this.#prompt;
     const missed = p?.kind === 'point' && p.osnap !== undefined && p.osnap !== 0;

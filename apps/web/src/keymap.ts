@@ -146,6 +146,13 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     group: 'Drafting',
     keys: [],
   },
+  // AutoCAD's Infer Constraints (CONSTRAINTINFER, M9-05 part 7), Ctrl+Shift+I.
+  {
+    id: 'drafting:infer',
+    label: 'Infer Constraints on/off',
+    group: 'Drafting',
+    keys: ['Ctrl+Shift+I'],
+  },
   // AutoCAD's temporary override keys (M3-06 part 5): each has a left-hand and a right-hand key.
   ...(
     [

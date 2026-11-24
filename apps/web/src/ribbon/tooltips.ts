@@ -233,6 +233,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'gc-show-all': 'Shows the constraint bars of every constrained object.',
   'gc-hide-all': 'Hides every constraint bar.',
   'gc-auto': 'Applies constraints to the objects you select by how they lie to one another.',
+  'gc-infer': 'Applies constraints as you draw, from the object snaps that place each point.',
   'gc-settings': 'Sets the constraint bars, constraint names and Auto Constrain rules.',
   'dc-linear': 'Holds the horizontal or vertical distance between two points at a value.',
   'dc-linear-linear': 'Holds the horizontal or vertical distance between two points at a value.',

@@ -4,8 +4,7 @@
 // outermost command made take the constraints `inferredConstraints` finds from the points it was
 // given by object snaps, in the command's own undo step, silently as AutoCAD applies them, their
 // bars shown as an applied constraint's are. The app keeps the variable per user, as AutoCAD keeps
-// it in the registry (initially 0); it is asked only when the command made something the
-// constraints could take and was given a snapped point, or is LINE or RECTANG.
+// it in the registry (initially 0); it is asked only when there is a constraint to infer.
 import type { ChangeSet } from '../model/changeset';
 import type { EntityId } from '../model/entity-ids';
 import type { Entity } from '../model/types';
@@ -53,7 +52,6 @@ export async function inferConstraints(
   if (snaps.length === 0 && !INFERS_ITSELF.has(name)) return;
   const added = addedBy(ctx, changes);
   if (added.length === 0) return;
-  if ((await optionVariable(ctx, CONSTRAINT_INFER, 0)) !== 1) return;
   const candidates = inferredConstraints({
     command: name,
     added,
@@ -68,7 +66,10 @@ export async function inferConstraints(
       }),
     ]),
   });
+  // The app is asked only when there is something to infer, so a command that could take
+  // nothing (one line, a circle typed) ends as it did.
   if (candidates.length === 0) return;
+  if ((await optionVariable(ctx, CONSTRAINT_INFER, 0)) !== 1) return;
   let solver;
   try {
     solver = await ctx.constraints?.();

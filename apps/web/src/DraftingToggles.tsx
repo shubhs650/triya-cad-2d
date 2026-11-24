@@ -1,4 +1,4 @@
-// The status bar's drafting aids (M2-04): GRID, SNAP, ORTHO, POLAR, OTRACK and OSNAP, then
+// The status bar's drafting aids (M2-04): INFER (M9-05 part 7), GRID, SNAP, ORTHO, POLAR, OTRACK and OSNAP, then
 // LWT, TPY, QP (Quick Properties) and SC (Selection Cycling), in AutoCAD's order, each with its
 // first key in the tooltip as the keyboard map has it (M3-10 part 2), and OSNAP's menu of
 // running object snap modes (AutoCAD's arrow beside the OSNAP button), a checkbox per mode.
@@ -8,6 +8,8 @@ import { drafting, isOn, type DraftingToggle } from './drafting';
 import { keymap, keymapVersion } from './shortcuts';
 
 const TOGGLES: readonly { toggle: DraftingToggle; label: string; title: string }[] = [
+  // Infer Constraints (CONSTRAINTINFER, M9-05 part 7), first as in AutoCAD's status bar.
+  { toggle: 'infer', label: 'INFER', title: 'Infer Constraints' },
   { toggle: 'grid', label: 'GRID', title: 'Grid Display' },
   { toggle: 'snap', label: 'SNAP', title: 'Snap Mode' },
   { toggle: 'ortho', label: 'ORTHO', title: 'Ortho Mode' },

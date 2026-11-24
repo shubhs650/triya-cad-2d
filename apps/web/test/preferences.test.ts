@@ -74,6 +74,7 @@ describe('preferences', () => {
       dynConstraints: true,
       dynConstraintMode: true,
       constraintNameFormat: 2,
+      constraintInfer: false,
       constraintBarMode: 4095,
       constraintBarDisplay: 3,
       cbarTransparency: 50,

@@ -281,7 +281,7 @@ describe('the default keyboard map', () => {
     'Ctrl+H': 'drafting:groups',
     'Ctrl+Shift+H': 'palettes',
     'Ctrl+I': 'coords',
-    'Ctrl+Shift+I': [null, 'Infer Constraints: M9-05'],
+    'Ctrl+Shift+I': 'drafting:infer',
     'Ctrl+J': 'enter',
     'Ctrl+M': 'enter',
     // AutoCAD's HYPERLINK: Triya has no hyperlinks to edit, and Ctrl+K is its command palette.

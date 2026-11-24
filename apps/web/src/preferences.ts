@@ -102,6 +102,7 @@ export type DraftingPreferences = Pick<
   | 'dynConstraints'
   | 'dynConstraintMode'
   | 'constraintNameFormat'
+  | 'constraintInfer'
   | 'constraintBarMode'
   | 'constraintBarDisplay'
   | 'cbarTransparency'
@@ -245,6 +246,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     dynConstraints: true,
     dynConstraintMode: true,
     constraintNameFormat: 2,
+    constraintInfer: false,
     constraintBarMode: 4095,
     constraintBarDisplay: 3,
     cbarTransparency: 50,
@@ -431,6 +433,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       fieldDisplay: bool(k['fieldDisplay'], d.drafting.fieldDisplay),
       dynConstraints: bool(k['dynConstraints'], d.drafting.dynConstraints),
       dynConstraintMode: bool(k['dynConstraintMode'], d.drafting.dynConstraintMode),
+      constraintInfer: bool(k['constraintInfer'], d.drafting.constraintInfer),
       constraintNameFormat: within(
         k['constraintNameFormat'],
         { min: 0, max: 2 },
@@ -632,6 +635,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     dynConstraints: s.dynConstraints,
     dynConstraintMode: s.dynConstraintMode,
     constraintNameFormat: s.constraintNameFormat,
+    constraintInfer: s.constraintInfer,
     constraintBarMode: s.constraintBarMode,
     constraintBarDisplay: s.constraintBarDisplay,
     cbarTransparency: s.cbarTransparency,
