@@ -230,6 +230,7 @@ Dimensional (expanded)
   small-label dc-radius<dim-radius>
   small-label dc-diameter<dim-diameter>
   small-label dc-angular<dim-angular>
+  small-label dc-show-dynamic<eye>
   small-label dc-convert<dim-linear>
 
 ### step 1
@@ -239,7 +240,7 @@ Geometric (collapsed)
 ### step 2
 Dimensional (compressed)
   icon        dc-linear<dim-linear> ▾ [dc-linear-linear<dim-linear>, dc-horizontal<dim-linear>, dc-vertical<dim-linear>]
-  ▾ dc-aligned, dc-radius, dc-diameter, dc-angular, dc-convert
+  ▾ dc-aligned, dc-radius, dc-diameter, dc-angular, dc-show-dynamic, dc-convert
 
 ## View
 Navigate (expanded)

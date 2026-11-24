@@ -35,6 +35,24 @@ export interface ViewTransform {
 }
 
 /** Display settings that change how the scene looks but not what it contains. */
+/** How dimensional constraints show (M9-03 part 4, `constraint-display.ts`). */
+export interface ConstraintStyle {
+  /**
+   * Dynamic constraints shown (the Parametric tab's Show Dynamic Constraints, on initially);
+   * annotational ones always are, as dimensions.
+   */
+  readonly dynamic?: boolean;
+  /**
+   * DYNCONSTRAINTMODE 1 (initially): hidden dynamic constraints shown while an object they
+   * constrain is selected.
+   */
+  readonly showSelected?: boolean;
+  /** CONSTRAINTNAMEFORMAT: 0 Name, 1 Value, 2 Name and expression (initially). */
+  readonly nameFormat?: 0 | 1 | 2;
+  /** A dynamic constraint's colour, a CSS colour; the foreground's when absent. */
+  readonly color?: string;
+}
+
 export interface RenderStyle {
   /** Canvas background, a CSS colour. */
   readonly background: string;
@@ -87,6 +105,8 @@ export interface RenderStyle {
    * initial value is 1, so absent shows them all.
    */
   readonly annotationAllVisible?: boolean;
+  /** How dimensional constraints show on the Model tab (M9-03 part 4); absent, as AutoCAD's initial. */
+  readonly constraints?: ConstraintStyle;
   /** The selection highlight's colour (M2-03, UI_SPEC.md §6), a CSS colour; a blue by default. */
   readonly selection?: string;
   /** GRID on (M2-04 part 2): the grid drawn under the drawing; absent draws none. */

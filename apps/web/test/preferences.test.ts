@@ -71,6 +71,9 @@ describe('preferences', () => {
       arrayAssociativity: true,
       // FIELDDISPLAY 1 (M4-10 part 3).
       fieldDisplay: true,
+      dynConstraints: true,
+      dynConstraintMode: true,
+      constraintNameFormat: 2,
       // LAYLOCKFADECTL 50 (M5-06).
       layLockFade: 50,
       // XFADECTL 50 (M5-02 part 5).

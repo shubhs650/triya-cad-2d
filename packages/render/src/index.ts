@@ -120,3 +120,4 @@ export {
   type PreviewContext,
   type PreviewSize,
 } from './dim-style-preview';
+export * from './constraint-display';

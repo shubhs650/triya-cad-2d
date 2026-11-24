@@ -116,6 +116,21 @@ export interface DraftingState {
    */
   readonly fieldDisplay: boolean;
   /**
+   * The Parametric tab's Show Dynamic Constraints (M9-03 part 4): every dynamic constraint shown
+   * on the drawing, initially on; annotational ones always are.
+   */
+  readonly dynConstraints: boolean;
+  /**
+   * DYNCONSTRAINTMODE (M9-03 part 4): hidden dynamic constraints shown while an object they
+   * constrain is selected. AutoCAD keeps it per user, initially 1.
+   */
+  readonly dynConstraintMode: boolean;
+  /**
+   * CONSTRAINTNAMEFORMAT (M9-03 part 4): a dimensional constraint's text, 0 its name, 1 its
+   * value, 2 name and expression. AutoCAD keeps it per user, initially 2.
+   */
+  readonly constraintNameFormat: 0 | 1 | 2;
+  /**
    * LAYLOCKFADECTL (M5-06): objects on locked layers drawn faded by this percentage, −90 to 90
    * (negative: not faded). AutoCAD keeps it per user, initially 50; LAYISO sets it.
    */
@@ -482,6 +497,7 @@ export type DraftingToggle =
   | 'tpy'
   | 'annoVisible'
   | 'annoAutoScale'
+  | 'dynConstraints'
   | 'qp'
   | 'sc'
   | 'groups'
@@ -503,6 +519,7 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:tpy', label: 'Show/Hide Transparency' },
   { id: 'drafting:annoVisible', label: 'Annotation Visibility on/off' },
   { id: 'drafting:annoAutoScale', label: 'Annotation AutoScale on/off' },
+  { id: 'drafting:dynConstraints', label: 'Show Dynamic Constraints on/off' },
   { id: 'drafting:qp', label: 'Quick Properties on/off' },
   { id: 'drafting:sc', label: 'Selection Cycling on/off' },
   { id: 'drafting:groups', label: 'Group Selection on/off' },
@@ -536,6 +553,9 @@ export const INITIAL_DRAFTING: DraftingState = {
   rolloverTips: true,
   arrayAssociativity: true,
   fieldDisplay: true,
+  dynConstraints: true,
+  dynConstraintMode: true,
+  constraintNameFormat: 2,
   layLockFade: 50,
   xFade: 50,
   plotTransparencyOverride: 1,
@@ -723,6 +743,7 @@ export class Drafting {
         return this.#set({ ...s, [t]: !s[t] });
       case 'otrack':
       case 'tpy':
+      case 'dynConstraints':
         return this.#set({ ...s, [t]: !s[t] });
     }
   }

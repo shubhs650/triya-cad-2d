@@ -93,6 +93,9 @@ export type DraftingPreferences = Pick<
   | 'rolloverTips'
   | 'arrayAssociativity'
   | 'fieldDisplay'
+  | 'dynConstraints'
+  | 'dynConstraintMode'
+  | 'constraintNameFormat'
   | 'layLockFade'
   | 'xFade'
   | 'annoAutoScale'
@@ -229,6 +232,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
     rolloverTips: true,
     arrayAssociativity: true,
     fieldDisplay: true,
+    dynConstraints: true,
+    dynConstraintMode: true,
+    constraintNameFormat: 2,
     layLockFade: 50,
     xFade: 50,
     annoAutoScale: -4,
@@ -409,6 +415,13 @@ export function normalizePreferences(raw: unknown): Preferences {
       rolloverTips: bool(k['rolloverTips'], d.drafting.rolloverTips),
       arrayAssociativity: bool(k['arrayAssociativity'], d.drafting.arrayAssociativity),
       fieldDisplay: bool(k['fieldDisplay'], d.drafting.fieldDisplay),
+      dynConstraints: bool(k['dynConstraints'], d.drafting.dynConstraints),
+      dynConstraintMode: bool(k['dynConstraintMode'], d.drafting.dynConstraintMode),
+      constraintNameFormat: within(
+        k['constraintNameFormat'],
+        { min: 0, max: 2 },
+        d.drafting.constraintNameFormat,
+      ) as 0 | 1 | 2,
       layLockFade: within(k['layLockFade'], { min: -90, max: 90 }, d.drafting.layLockFade),
       xFade: within(k['xFade'], { min: 0, max: 90 }, d.drafting.xFade),
       // M6-03: ANNOAUTOSCALE is −4 to 4 but 0.
@@ -585,6 +598,9 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     rolloverTips: s.rolloverTips,
     arrayAssociativity: s.arrayAssociativity,
     fieldDisplay: s.fieldDisplay,
+    dynConstraints: s.dynConstraints,
+    dynConstraintMode: s.dynConstraintMode,
+    constraintNameFormat: s.constraintNameFormat,
     layLockFade: s.layLockFade,
     xFade: s.xFade,
     annoAutoScale: s.annoAutoScale,

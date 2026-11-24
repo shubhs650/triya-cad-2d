@@ -24,6 +24,12 @@ export function isDarkColor(hex: string): boolean {
   return l === undefined ? true : l < Math.sqrt(1.05 * 0.05) - 0.05;
 }
 
+/**
+ * Dynamic dimensional constraints (M9-03 part 4): AutoCAD draws them in a colour of their own,
+ * not their objects'; a light blue on a dark background, a deep one on a light background.
+ */
+export const CONSTRAINT_COLOR = { dark: '#5ab4ff', light: '#1565c0' } as const;
+
 /** What ACI 7 draws in on `background`. */
 export const foregroundOn = (background: string): string =>
   isDarkColor(background) ? '#ffffff' : '#000000';

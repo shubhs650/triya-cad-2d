@@ -192,6 +192,12 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // FIELDDISPLAY (M4-10 part 3; AutoCAD 2024 Help, "Saved in: Registry"): fields shown on a grey
   // background (1, initially), which is not plotted; 0 shows them as the rest of their text.
   { name: 'FIELDDISPLAY', store: 'app', kind: 'switch' },
+  // CONSTRAINTNAMEFORMAT and DYNCONSTRAINTMODE (M9-03 part 4; AutoCAD 2024 Help, "Saved in:
+  // Registry"): a dimensional constraint's text, 0 Name, 1 Value, 2 Name and expression
+  // (initially); and hidden dynamic constraints shown while their objects are selected (1,
+  // initially).
+  { name: 'CONSTRAINTNAMEFORMAT', store: 'app', kind: 'integer', min: 0, max: 2 },
+  { name: 'DYNCONSTRAINTMODE', store: 'app', kind: 'switch' },
   // LAYLOCKFADECTL (M5-06; AutoCAD 2024 Help, "Saved in: Registry"): objects on locked layers
   // drawn faded by this percentage, −90 to 90, initially 50; a negative value turns fading off
   // keeping the amount. LAYISO's Lock and fade sets it.

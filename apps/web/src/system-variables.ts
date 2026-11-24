@@ -137,6 +137,15 @@ const VALUES: Readonly<
   },
   // M4-10 part 3: fields on a grey background, the canvas's (`RenderStyle.showFields`).
   FIELDDISPLAY: { get: (s) => bit(s.fieldDisplay), set: (v) => ({ fieldDisplay: v === 1 }) },
+  // M9-03 part 4: how dimensional constraints show, the canvas's (`RenderStyle.constraints`).
+  CONSTRAINTNAMEFORMAT: {
+    get: (s) => s.constraintNameFormat,
+    set: (v) => ({ constraintNameFormat: v as 0 | 1 | 2 }),
+  },
+  DYNCONSTRAINTMODE: {
+    get: (s) => bit(s.dynConstraintMode),
+    set: (v) => ({ dynConstraintMode: v === 1 }),
+  },
   // M5-06: locked layers' fading, the canvas's (`RenderStyle.layLockFade`); LAYISO sets it.
   LAYLOCKFADECTL: { get: (s) => s.layLockFade, set: (layLockFade) => ({ layLockFade }) },
   // M5-02 part 5: the fading of what is not in REFEDIT's working set (`RenderStyle.xFade`).
