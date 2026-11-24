@@ -197,6 +197,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // (initially); and hidden dynamic constraints shown while their objects are selected (1,
   // initially).
   { name: 'CONSTRAINTNAMEFORMAT', store: 'app', kind: 'integer', min: 0, max: 2 },
+  // DIMCONSTRAINTICON (M9-05 part 9; AutoCAD 2024 Help, "Saved in: Registry", initially 3): the
+  // lock icon before dimensional constraints' text, a bitcode, 1 dynamic, 2 annotational.
+  { name: 'DIMCONSTRAINTICON', store: 'app', kind: 'integer', min: 0, max: 3 },
   // CCONSTRAINTFORM (M9-03 part 8; AutoCAD 2024 Help, "Saved in: Registry", initially 0): the
   // Form new dimensional constraints take, 0 dynamic, 1 annotational; DIMCONSTRAINT's Form sets it.
   { name: 'CCONSTRAINTFORM', store: 'app', kind: 'switch' },

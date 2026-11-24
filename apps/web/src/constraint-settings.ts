@@ -6,8 +6,8 @@
 // Geometric: Infer geometric constraints (CONSTRAINTINFER, M9-05 part 7), the kinds the
 // constraint bars show (CONSTRAINTBARMODE), the bars' transparency
 // (CBARTRANSPARENCY), and CONSTRAINTBARDISPLAY's two bits. Dimensional: the name format
-// (CONSTRAINTNAMEFORMAT) and Show hidden dynamic constraints for selected objects
-// (DYNCONSTRAINTMODE). AutoConstrain: the types AUTOCONSTRAIN applies, in order, each with its
+// (CONSTRAINTNAMEFORMAT), Show lock icon for annotational constraints (DIMCONSTRAINTICON bit
+// 2, M9-05 part 9) and Show hidden dynamic constraints for selected objects (DYNCONSTRAINTMODE). AutoConstrain: the types AUTOCONSTRAIN applies, in order, each with its
 // Apply check, the two "must share an intersection point" checks and the tolerances.
 import {
   AUTOCONSTRAIN_ANGLE_MAX,
@@ -63,6 +63,10 @@ export interface ConstraintSettingsDraft {
   readonly showSelected: boolean;
   /** CONSTRAINTNAMEFORMAT. */
   readonly nameFormat: 0 | 1 | 2;
+  /** DIMCONSTRAINTICON bit 2: Show lock icon for annotational constraints. */
+  readonly lockAnnotational: boolean;
+  /** DIMCONSTRAINTICON bit 1, the dynamic constraints' lock, which the dialog keeps as it is. */
+  readonly lockDynamic: boolean;
   /** DYNCONSTRAINTMODE: Show hidden dynamic constraints for selected objects. */
   readonly showHidden: boolean;
   /** The AutoConstrain tab, its tolerances as typed. */
@@ -82,6 +86,8 @@ export function draftOf(s: DraftingState): ConstraintSettingsDraft {
     showApplied: (s.constraintBarDisplay & 1) !== 0,
     showSelected: (s.constraintBarDisplay & 2) !== 0,
     nameFormat: s.constraintNameFormat,
+    lockAnnotational: (s.dimConstraintIcon & 2) !== 0,
+    lockDynamic: (s.dimConstraintIcon & 1) !== 0,
     showHidden: s.dynConstraintMode,
     ...autoConstrainDraft(a),
   };
@@ -128,6 +134,7 @@ export function draftPatch(d: ConstraintSettingsDraft): Partial<DraftingState> {
     cbarTransparency: d.transparency,
     constraintBarDisplay: (d.showApplied ? 1 : 0) | (d.showSelected ? 2 : 0),
     constraintNameFormat: d.nameFormat,
+    dimConstraintIcon: (d.lockDynamic ? 1 : 0) | (d.lockAnnotational ? 2 : 0),
     dynConstraintMode: d.showHidden,
     autoConstrain: {
       order: d.order,

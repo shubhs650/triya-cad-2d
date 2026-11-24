@@ -50,6 +50,11 @@ export interface ConstraintStyle {
   readonly showSelected?: boolean;
   /** CONSTRAINTNAMEFORMAT: 0 Name, 1 Value, 2 Name and expression (initially). */
   readonly nameFormat?: 0 | 1 | 2;
+  /**
+   * DIMCONSTRAINTICON (M9-05 part 9): the lock icon before dynamic constraints' text (bit 1)
+   * and annotational ones' (bit 2); 3 (both) when absent.
+   */
+  readonly lockIcon?: number;
   /** A dynamic constraint's colour, a CSS colour; the foreground's when absent. */
   readonly color?: string;
 }

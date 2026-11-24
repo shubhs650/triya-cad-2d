@@ -1552,6 +1552,7 @@ export class CanvasController {
       before.dynConstraints !== state.dynConstraints ||
       before.dynConstraintMode !== state.dynConstraintMode ||
       before.constraintNameFormat !== state.constraintNameFormat ||
+      before.dimConstraintIcon !== state.dimConstraintIcon ||
       before.constraintBarMode !== state.constraintBarMode ||
       before.constraintBarDisplay !== state.constraintBarDisplay ||
       before.cbarTransparency !== state.cbarTransparency ||
@@ -2573,11 +2574,13 @@ export class CanvasController {
       background,
       foreground: foregroundOn(background),
       // Dimensional constraints (M9-03 part 4): Show Dynamic Constraints, DYNCONSTRAINTMODE and
-      // CONSTRAINTNAMEFORMAT; dynamic ones in a blue that reads on the background.
+      // CONSTRAINTNAMEFORMAT; dynamic ones in a blue that reads on the background. Their lock
+      // icons, DIMCONSTRAINTICON (M9-05 part 9).
       constraints: {
         dynamic: d.dynConstraints,
         showSelected: d.dynConstraintMode,
         nameFormat: d.constraintNameFormat,
+        lockIcon: d.dimConstraintIcon,
         color: isDarkColor(background) ? CONSTRAINT_COLOR.dark : CONSTRAINT_COLOR.light,
       },
       // Constraint bars (M9-05 part 2): those CONSTRAINTBAR hid, CONSTRAINTBARMODE's kinds,
