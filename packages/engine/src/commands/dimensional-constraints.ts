@@ -20,12 +20,17 @@
 //    app's: each command reads it as it starts and DIMCONSTRAINT's Form sets it. Where no app
 //    keeps it (scripts, tests) the commands share their own for the session.
 //
-// Left out here: converting an associative dimension (DIMCONSTRAINT's first prompt, DCCONVERT),
-// the constraints' display on the drawing, the Parameters Manager palette (later parts of M9-03).
+// Converting dimensions (M9-03 part 9): DCCONVERT ("Select associative dimensions to convert")
+// and a dimension picked at DIMCONSTRAINT's first prompt become constraints of the current Form,
+// each keeping the value it measures, the dimension erased, all one undo step. What a dimension
+// converts to is `dimensionConstraintOf` (edit/dimension-convert.ts), which also takes Triya's
+// own (non-associative) dimensions whose points lie on objects. Decisions where the Help is
+// silent: a dimension whose value would over-constrain the geometry becomes a reference
+// constraint without asking (one question per dimension of a selection would be a chore), and
+// the command line says how many converted and why the others did not.
 import type { CommandContext, CommandDef, CommandGenerator } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
 import {
-  entityAt,
   INVALID_OBJECT,
   isRef,
   objectPick,
@@ -42,7 +47,13 @@ import {
   geometricConstraints,
   type ConstraintSolver,
   type DimensionalConstraintSpec,
+  type ExpressionChange,
 } from '../edit/constraints';
+import { dimensionConstraintOf, type DimensionConversionProblem } from '../edit/dimension-convert';
+import { eraseObjects } from '../edit/edit';
+import { toleranceFor } from './modify/offset';
+import type { EntityId } from '../model/entity-ids';
+import type { Handle } from '../model/handle';
 import { polylineSegment } from '../geom/eval';
 import type { Vec2 } from '../geom/types';
 import type {
@@ -51,6 +62,8 @@ import type {
   ConstraintRef,
   DimensionalConstraintKind,
   DimensionalConstraintObject,
+  Entity,
+  ParameterObject,
 } from '../model/types';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -232,6 +245,152 @@ async function* place(
       } as Omit<DimensionalConstraintObject, 'handle'>);
     });
     return true;
+  }
+}
+
+// ── Converting dimensions (M9-03 part 9) ────────────────────────────────────────────────────
+
+/** Why dimensions were not converted, as the command line says it. */
+const NOT_CONVERTED: Readonly<Record<DimensionConversionProblem['problem'] | 'locked', string>> = {
+  kind: 'ordinate, arc length and jogged dimensions have no dimensional constraint',
+  rotated: 'a linear dimension converts only when horizontal or vertical',
+  unattached: 'their points are not on objects a constraint can take',
+  locked: 'they or the objects they measure are on a locked layer',
+};
+
+const isDimension = (e: Entity | undefined): e is Entity =>
+  e?.geom.kind === 'DIMENSION' ||
+  e?.geom.kind === 'ARC_DIMENSION' ||
+  e?.geom.kind === 'LARGE_RADIAL_DIMENSION';
+
+/** The dimension of the current space under a pick, nearest first. */
+async function dimensionAt(ctx: CommandContext, p: Vec2): Promise<Entity | undefined> {
+  const r = await ctx.view.request({ op: 'pick', point: p });
+  return (r.ok ? (r.ids ?? []) : [])
+    .map((id) => ctx.model.entity(id))
+    .find((e): e is Entity => isDimension(e) && e.owner === ctx.space);
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** The drawing's tolerance about a dimension: its points and the drawing's extents. */
+function dimensionTolerance(ctx: CommandContext, dim: Entity) {
+  const pts = Object.values(dim.geom).filter(
+    (v): v is Vec2 =>
+      typeof v === 'object' && v !== null && typeof (v as Vec2).x === 'number' && 'y' in v,
+  );
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  return toleranceFor(ctx.model, {
+    kind: 'LINE',
+    start: { x: Math.min(0, ...xs), y: Math.min(0, ...ys) },
+    end: { x: Math.max(1, ...xs), y: Math.max(1, ...ys) },
+  });
+}
+
+/**
+ * Converts the dimensions `ids` to dimensional constraints of the session's Form, each keeping
+ * its value (a reference constraint where the value would over-constrain), the dimensions
+ * erased, one undo step; says how many converted and why any others did not.
+ */
+async function convertDimensions(
+  ctx: CommandContext,
+  session: Session,
+  ids: readonly EntityId[],
+): Promise<void> {
+  const dims = ids.map((id) => ctx.model.entity(id)).filter(isDimension);
+  if (dims.length === 0) {
+    ctx.message('No dimensions selected.');
+    return;
+  }
+  const solver = await solverOf(ctx);
+  if (!solver) return;
+  const owner = ctx.model.meta.rootDictionary ?? '0';
+  const constraints = geometricConstraints(ctx.model);
+  const moved = new Map<Handle, Entity>();
+  const lookup = (h: Handle) => moved.get(h) ?? ctx.model.entityByHandle(h);
+  const isLocked = (e: Entity | undefined) =>
+    e !== undefined && ctx.model.tables.layers.get(e.layer)?.locked === true;
+  let parameters: ParameterObject[] = parameterObjects(ctx.model);
+  const expressions = new Map<string, string>();
+  const added: DimensionalConstraintObject[] = [];
+  const converted: EntityId[] = [];
+  const problems = new Map<string, number>();
+  const fail = (why: string) => problems.set(why, (problems.get(why) ?? 0) + 1);
+  let references = 0;
+  for (const dim of dims) {
+    const c = dimensionConstraintOf(ctx.model, dim, dimensionTolerance(ctx, dim));
+    if ('problem' in c) {
+      fail(NOT_CONVERTED[c.problem]);
+      continue;
+    }
+    if (isLocked(dim) || c.refs.some((r) => isLocked(ctx.model.entityByHandle(r.entity)))) {
+      fail(NOT_CONVERTED.locked);
+      continue;
+    }
+    const spec: DimensionalConstraintSpec = { dimension: c.dimension, refs: c.refs };
+    const tol = toleranceOf(ctx, c.refs);
+    let reference = false;
+    let r = solver.addDimension(constraints, parameters, spec, lookup, tol);
+    if (!r.ok && (r.reason === 'overconstrained' || r.reason === 'redundant')) {
+      reference = true;
+      r = solver.addDimension(constraints, parameters, { ...spec, reference }, lookup, tol);
+    }
+    if (!r.ok) {
+      fail(r.message);
+      continue;
+    }
+    if (reference) references++;
+    for (const u of r.updated) moved.set(u.after.handle, u.after);
+    for (const x of r.expressions) expressions.set(x.parameter, x.expression);
+    // A handle of its own for the solver to tell it from the others by; the edit allocates the
+    // real one.
+    const constraint: DimensionalConstraintObject = {
+      handle: `DV${added.length.toString(16).toUpperCase()}`,
+      type: 'TRIYA_DIMCONSTRAINT',
+      owner,
+      dimension: r.dimension,
+      refs: c.refs,
+      parameter: r.parameter,
+      expression: r.expression,
+      ...(reference ? { reference: true } : {}),
+      location: c.location,
+      form: session.form,
+    };
+    added.push(constraint);
+    converted.push(dim.id);
+    parameters = [...parameters, constraint].map((p) => {
+      const expression = expressions.get(p.parameter);
+      return expression === undefined ? p : { ...p, expression };
+    });
+  }
+  if (added.length) {
+    const fresh = new Set(added.map((a) => a.parameter));
+    const changes: ExpressionChange[] = [...expressions]
+      .filter(([parameter]) => !fresh.has(parameter))
+      .map(([parameter, expression]) => ({ parameter, expression }));
+    ctx.edit((b) => {
+      for (const e of moved.values()) b.updateEntity(e.id, { geom: e.geom });
+      setExpressions(ctx, b, changes);
+      for (const { handle: _, ...a } of added) {
+        b.addObject({
+          ...a,
+          expression: expressions.get(a.parameter) ?? a.expression,
+        } as Omit<DimensionalConstraintObject, 'handle'>);
+      }
+      eraseObjects(b, ctx.model, converted);
+    });
+    ctx.message(
+      sentence(
+        `${plural(added.length, 'dimension')} converted` +
+          (references
+            ? `, ${references} as ${references === 1 ? 'a reference constraint' : 'reference constraints'}`
+            : ''),
+      ),
+    );
+  }
+  for (const [why, n] of problems) {
+    ctx.message(sentence(`${plural(n, 'dimension')} not converted: ${why}`));
   }
 }
 
@@ -418,14 +577,16 @@ export function dimensionalConstraintCommands(): CommandDef[] {
           default: { kind: 'keyword', keyword: KEYWORDS[last] },
         });
         if (a.kind === 'point') {
-          const e = await entityAt(ctx, a.point);
+          const dim = await dimensionAt(ctx, a.point);
+          if (dim) {
+            await convertDimensions(ctx, session, [dim.id]);
+            return;
+          }
           ctx.message(
-            e?.geom.kind === 'DIMENSION'
-              ? 'Converting a dimension to a constraint is not supported yet.'
-              : INVALID_OBJECT.replace(
-                  'a line, circle, arc or polyline segment',
-                  'an associative dimension',
-                ),
+            INVALID_OBJECT.replace(
+              'a line, circle, arc or polyline segment',
+              'an associative dimension',
+            ),
           );
           continue;
         }
@@ -449,7 +610,19 @@ export function dimensionalConstraintCommands(): CommandDef[] {
       }
     },
   };
+  const dcconvert: CommandDef = {
+    name: 'DCCONVERT',
+    solvesConstraints: true,
+    usesSelection: 'during',
+    async *run(ctx) {
+      await readForm(ctx, session);
+      const a = yield ctx.prompt.selection({ message: 'Select associative dimensions to convert' });
+      if (a.kind !== 'selection' || a.ids.length === 0) return;
+      await convertDimensions(ctx, session, a.ids);
+    },
+  };
   return [
+    dcconvert,
     dimconstraint,
     ...kinds.map((kind) => ({
       name: COMMAND_NAMES[kind],
