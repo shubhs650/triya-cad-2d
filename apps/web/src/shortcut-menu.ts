@@ -10,6 +10,11 @@ export interface ShortcutMenuState {
   readonly items: readonly ShortcutMenuItem[];
   /** The menu's accessible name (the prompt's `shortcutMenuTitle`). */
   readonly title: string;
+  /**
+   * What an item chosen does, for a menu that answers no prompt (a constraint bar's icon, M9-05
+   * part 4); without it the item answers the prompt as its keyword typed would.
+   */
+  readonly choose?: (item: ShortcutMenuItem) => void;
 }
 
 class ShortcutMenu {
@@ -28,8 +33,9 @@ class ShortcutMenu {
     at: { readonly x: number; readonly y: number },
     items: readonly ShortcutMenuItem[],
     title = 'Grip options',
+    choose?: (item: ShortcutMenuItem) => void,
   ): void {
-    this.#set({ doc, at, items, title });
+    this.#set({ doc, at, items, title, ...(choose && { choose }) });
   }
 
   close(): void {

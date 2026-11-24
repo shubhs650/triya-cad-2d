@@ -113,6 +113,7 @@ import {
   aciRgb,
   rgbHex,
   type ChangeLink,
+  type ConstraintBarHit,
   type DrawnEntity,
   type FontSources,
   type GridSpec,
@@ -130,6 +131,7 @@ import {
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
 import { ROLLOVER_DELAY_MS, type RestAt } from '../rollover';
+import { commandInput, focusOf } from '../shortcuts';
 import { RestWatch } from './rest';
 import {
   areaPreviewed,
@@ -357,6 +359,16 @@ export interface CanvasHooks {
    * px, if it has one (the grip modes'); true when shown, so the browser's menu is not.
    */
   readonly onShortcutMenu?: (at: { readonly x: number; readonly y: number }) => boolean;
+  /**
+   * A right-click at `Command:` on a constraint bar (M9-05 part 4): its icon's shortcut menu at
+   * client px (Delete, Hide, Hide All Constraints, Constraint Bar Settings); true when shown.
+   */
+  readonly onConstraintBarMenu?: (
+    at: { readonly x: number; readonly y: number },
+    hit: ConstraintBarHit,
+  ) => boolean;
+  /** Delete pressed with the cursor resting on a constraint bar's icon (M9-05 part 4). */
+  readonly onConstraintDelete?: (hit: ConstraintBarHit) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
   /**
@@ -611,6 +623,10 @@ export class CanvasController {
   #lockWanted: Point | undefined;
   /** The cursor carries the lock of the cell under it. */
   #lockShown = false;
+  /** What of the constraint bars the cursor is on at `Command:` (M9-05 part 4), as answered. */
+  #barHit: ConstraintBarHit | undefined;
+  /** The latest constraint bar question asked; older answers are passed over. */
+  #barSeq = 0;
   /** The badge's latest hit test, so an older answer arriving late is dropped. */
   #badgeAsked = 0;
   /** The badge shows. */
@@ -1295,6 +1311,8 @@ export class CanvasController {
     // A cell locked or unlocked at the last prompt shows as such where the cursor rests.
     const at = this.#pointer;
     this.#hoverLock(at && !this.#press && this.#mode === 'none' ? this.#world(at) : undefined);
+    // A constraint bar answers the cursor at `Command:` only.
+    this.#hoverBar(at && !this.#press && this.#mode === 'none' ? at : undefined);
     // The preview drawn was the last prompt's; this one's is asked for where the cursor rests.
     this.#showCommandPreview(undefined);
     if (prompt?.commandPreview?.hover) {
@@ -1795,6 +1813,34 @@ export class CanvasController {
     if (on === this.#lockShown) return;
     this.#lockShown = on;
     this.#paintCursor();
+  }
+
+  /**
+   * The cursor at `screen` (CSS pixels on the canvas) over the constraint bars at `Command:`
+   * (M9-05 part 4): the renderer highlights the icon under it with its constraint's objects, as
+   * AutoCAD does while the cursor rests on an icon, and answers what it is, kept for a
+   * right-click or Delete; undefined, or another prompt, takes the highlight away.
+   */
+  #hoverBar(screen: { readonly offsetX: number; readonly offsetY: number } | undefined): void {
+    const on = screen && (this.#hooks.atCommand?.() ?? false);
+    const seq = ++this.#barSeq;
+    if (!on) {
+      if (!this.#barHit) return;
+      this.#barHit = undefined;
+      void this.#host.hoverConstraintBar(undefined);
+      this.#requestFrame();
+      return;
+    }
+    const at = { x: screen.offsetX, y: screen.offsetY };
+    void this.#host.hoverConstraintBar(at, this.#pointerView()).then((hit) => {
+      if (seq === this.#barSeq) this.#barHit = hit ?? undefined;
+    });
+    this.#requestFrame();
+  }
+
+  /** What of the constraint bars the cursor rests on (M9-05 part 4), as last answered. */
+  constraintBarHit(): ConstraintBarHit | undefined {
+    return this.#barHit;
   }
 
   /**
@@ -2998,6 +3044,20 @@ export class CanvasController {
     };
     window.addEventListener('keydown', shiftKey, opts);
     window.addEventListener('keyup', shiftKey, opts);
+    // Delete with the cursor resting on a constraint bar's icon deletes its constraint (M9-05
+    // part 4), unless it edits text typed somewhere (the command line's, a palette's field).
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        const bar = this.#barHit;
+        if (e.key !== 'Delete' || e.ctrlKey || e.altKey || e.metaKey || !bar?.constraint) return;
+        if (!this.#canvas.matches(':hover') || typesText(e.target)) return;
+        e.preventDefault();
+        this.#hooks.onConstraintDelete?.(bar);
+        this.#hoverBar(undefined);
+      },
+      opts,
+    );
     window.addEventListener('blur', () => (this.#shift = false), opts);
     c.addEventListener(
       'wheel',
@@ -3005,6 +3065,7 @@ export class CanvasController {
         e.preventDefault();
         this.#rest.cancel();
         this.#hoverPreview(undefined);
+        this.#hoverBar(undefined);
         if (!this.#view) return;
         // The wheel zooms the viewport under the cursor, which becomes current (as a press
         // would), so the navigation bar then acts on the viewport just zoomed.
@@ -3157,6 +3218,7 @@ export class CanvasController {
         this.#hoverGrip(resting ? world : undefined);
         this.#hoverPreview(resting ? { x: e.offsetX, y: e.offsetY } : undefined);
         this.#hoverLock(resting ? world : undefined);
+        this.#hoverBar(resting && this.#mode === 'none' ? this.#pointer : undefined);
         // A preview by the object under the pickbox follows the cursor itself (M3-12 part 6).
         if (this.#asked?.commandPreview?.hover) this.#commandPreview(resting ? world : undefined);
         if (press?.pointer === e.pointerId) {
@@ -3239,6 +3301,7 @@ export class CanvasController {
         this.#hoverPreview(undefined);
         this.#commandPreview(undefined);
         this.#hoverLock(undefined);
+        this.#hoverBar(undefined);
         this.#pointer = undefined;
         this.#leftWork(false);
         this.#hit = undefined;
@@ -3280,6 +3343,16 @@ export class CanvasController {
       'contextmenu',
       (e) => {
         if (this.#mode !== 'none') return;
+        // A constraint bar's icon at `Command:` (M9-05 part 4): its own shortcut menu.
+        const bar = this.#barHit;
+        if (
+          !e.shiftKey &&
+          bar &&
+          this.#hooks.onConstraintBarMenu?.({ x: e.clientX, y: e.clientY }, bar)
+        ) {
+          e.preventDefault();
+          return;
+        }
         if (!e.shiftKey) {
           // The prompt's own menu (M3-05 part 5: the grip modes' right-click menu).
           if (this.#hooks.onShortcutMenu?.({ x: e.clientX, y: e.clientY })) e.preventDefault();
@@ -3747,6 +3820,12 @@ export class CanvasController {
 const NO_PROMPT: Prompt = { kind: 'keyword', message: '' } as Prompt;
 
 const sameAt = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;
+
+/** A key pressed in text being typed (the command line's, a field's), not left empty. */
+function typesText(target: EventTarget | null): boolean {
+  const f = focusOf(target, commandInput.current);
+  return f.kind !== 'none' && !(f.kind === 'command' && f.empty);
+}
 
 const sameTransform = (a: ViewTransform, b: ViewTransform): boolean =>
   a.scale === b.scale && sameAt(a.center, b.center);

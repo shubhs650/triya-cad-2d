@@ -6,6 +6,7 @@
 // command line").
 import { describe, expect, it } from 'vitest';
 import {
+  deleteConstraintsCommand,
   isDimensionalConstraint,
   isGeometricConstraint,
   type ConstraintSolver,
@@ -184,5 +185,26 @@ describe('DELCONSTRAINT (M9-05 part 2)', () => {
     const left = [...d.model.objects.values()].filter(isDimensionalConstraint);
     expect(left.map((c) => [c.handle, c.expression])).toEqual([['D2', '20']]);
     expect(d.bus.undo.state.undoable).toBe(1);
+  });
+});
+
+describe("A bar icon's Delete (M9-05 part 4)", () => {
+  it('removes the constraints named, one DELCONSTRAINT undo step, the geometry left alone', async () => {
+    const d = drawing();
+    const before = d.model.entityByHandle('30')!.geom;
+    await d.bus.run(deleteConstraintsCommand(['E2']));
+    expect(d.objects().sort()).toEqual(['D1', 'E1']);
+    expect(d.model.entityByHandle('30')!.geom).toEqual(before);
+    expect(d.bus.undo.state.undoable).toBe(1);
+    expect(d.bus.undo.state.nextUndo).toBe('DELCONSTRAINT');
+    await d.bus.script(['U']);
+    expect(d.objects().sort()).toEqual(['D1', 'E1', 'E2']);
+  });
+
+  it('passes over a handle that names no constraint (one deleted meanwhile)', async () => {
+    const d = drawing();
+    await d.bus.run(deleteConstraintsCommand(['30', 'FF']));
+    expect(d.objects().sort()).toEqual(['D1', 'E1', 'E2']);
+    expect(d.bus.undo.state.undoable).toBe(0);
   });
 });

@@ -96,3 +96,26 @@ export function delConstraintCommand(): CommandDef {
     },
   };
 }
+
+/**
+ * A constraint bar icon's Delete (M9-05 part 4: its shortcut menu, or Delete with the cursor on
+ * it): the geometric constraints `handles` name go, as DELCONSTRAINT removes them, one undo
+ * step, the geometry left as it is. AutoCAD 2024 Help, "About Displaying and Verifying Geometric
+ * Constraints": a constraint icon's shortcut menu deletes it. A handle that names no constraint
+ * (one gone since the cursor rested on it) is passed over; nothing is said on the command line,
+ * as the app's palette edits say nothing.
+ */
+export function deleteConstraintsCommand(handles: readonly Handle[]): CommandDef {
+  return {
+    name: 'DELCONSTRAINT',
+    usesSelection: 'none',
+    keepsSelection: true,
+    solvesConstraints: true,
+    // eslint-disable-next-line require-yield -- the app named the constraints
+    async *run(ctx) {
+      const named = new Set(handles);
+      const gone = geometricConstraints(ctx.model).filter((c) => named.has(c.handle));
+      if (gone.length > 0) await dropConstraints(ctx, gone);
+    },
+  };
+}

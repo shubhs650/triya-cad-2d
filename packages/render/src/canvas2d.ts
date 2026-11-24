@@ -141,7 +141,11 @@ import {
   DYNAMIC_CONSTRAINT_PX,
   sizesAt,
 } from './constraint-display';
-import { constraintBarPrimitives } from './constraint-bars';
+import {
+  constraintBarAt,
+  constraintBarHoverPrimitives,
+  constraintBarPrimitives,
+} from './constraint-bars';
 import type { PatternLibrary } from '@triya/hatch';
 import type { TextFonts } from '@triya/text';
 import {
@@ -156,6 +160,8 @@ import {
   gripHalfSize,
   screenToWorld,
   visibleBox,
+  type ConstraintBarHit,
+  type ConstraintBarStyle,
   type DrawnEntity,
   type FillGradient,
   type GripColors,
@@ -699,6 +705,8 @@ export class Canvas2DRenderer implements Renderer {
   #constraints: readonly ConstraintDisplay[] | undefined;
   /** The drawing's constraint bars as they are laid out (M9-05 part 2), until a change. */
   #bars: ConstraintBars | undefined;
+  /** The constraint bar's icon, square or panel under the cursor (M9-05 part 4). */
+  #barHover: ConstraintBarHit | undefined;
   /**
    * What a command drags (M2-06 part 2): cached entries drawn through `m`, and the stretched
    * objects' entries tessellated from their stretched geometry.
@@ -1319,6 +1327,27 @@ export class Canvas2DRenderer implements Renderer {
     this.#transientDirty = true;
   }
 
+  hoverConstraintBar(
+    screen: { readonly x: number; readonly y: number } | undefined,
+    view: ViewTransform = this.#view,
+  ): ConstraintBarHit | null {
+    const look = this.#style.constraintBars;
+    let hit: ConstraintBarHit | undefined;
+    if (screen && look && this.#modelTab) {
+      this.#bars ??= constraintBars(this.#model);
+      const p = screenToWorld(view, this.#width, this.#height, screen);
+      hit = constraintBarAt(this.#bars, this.#barVisible(look), view.scale, look.mode ?? 4095, p);
+    }
+    const was = this.#barHover;
+    const same =
+      hit?.constraint === was?.constraint &&
+      hit?.entity === was?.entity &&
+      hit?.segment === was?.segment;
+    this.#barHover = hit;
+    if (!same) this.#transientDirty = true;
+    return hit ?? null;
+  }
+
   /** What `preview` lights up: the object under the pickbox, or what its area would take. */
   #previewOf(preview: SelectionPreview): EntityId[] {
     const o = { filter: preview.filter, groups: preview.groups, space: this.#pickBlock() };
@@ -1414,6 +1443,8 @@ export class Canvas2DRenderer implements Renderer {
     if (cs.objects || cs.header || this.#constraints?.length) this.#constraints = undefined;
     // Constraint bars follow their objects' midpoints (M9-05 part 2).
     if (cs.objects || this.#bars?.bars.length || this.#bars?.marks.length) this.#bars = undefined;
+    // The hovered icon's frame follows its bar.
+    if (this.#barHover) this.#transientDirty = true;
     for (const r of e?.removed ?? []) this.#forget(r.entity);
     for (const a of e?.added ?? []) this.#cacheIfShown(a.entity);
     for (const u of e?.updated ?? []) {
@@ -1538,6 +1569,7 @@ export class Canvas2DRenderer implements Renderer {
         overlay,
       );
       if (this.#previewed.length > 0) this.#drawPreview(t.ctx, overlay);
+      if (this.#barHover) this.#drawBarHover(t.ctx, overlay);
       if (this.#grips) this.#drawGrips(t.ctx, overlay);
       // `#overlayFrame` clipped to the current viewport.
       if (this.#activeViewport()) t.ctx.restore();
@@ -2287,12 +2319,7 @@ export class Canvas2DRenderer implements Renderer {
     if (!look) return;
     this.#bars ??= constraintBars(this.#model);
     if (this.#bars.bars.length === 0 && this.#bars.marks.length === 0) return;
-    const selected = (h: string) => {
-      const e = this.#model.entityByHandle(h);
-      return e !== undefined && this.#highlight.has(e.id);
-    };
-    const visible = (h: string) =>
-      !look.hidden.has(h) || (look.showSelected !== false && selected(h));
+    const visible = this.#barVisible(look);
     const color = look.color ?? this.#style.constraints?.color ?? 'foreground';
     const prims = constraintBarPrimitives(this.#bars, visible, view.scale, {
       mode: look.mode ?? 4095,
@@ -2301,6 +2328,46 @@ export class Canvas2DRenderer implements Renderer {
       opacity: Math.min(Math.max(look.transparency ?? 50, 10), 90) / 100,
     });
     this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);
+  }
+
+  /**
+   * Whether an object's bar shows: not hidden by CONSTRAINTBAR, or hidden and selected while
+   * CONSTRAINTBARDISPLAY bit 2 is on.
+   */
+  #barVisible(look: ConstraintBarStyle): (h: Handle) => boolean {
+    const selected = (h: string) => {
+      const e = this.#model.entityByHandle(h);
+      return e !== undefined && this.#highlight.has(e.id);
+    };
+    return (h) => !look.hidden.has(h) || (look.showSelected !== false && selected(h));
+  }
+
+  /**
+   * The constraint under the cursor (M9-05 part 4) on the transient layer: its objects as the
+   * selection preview shows an object, its icons framed in the selection colour.
+   */
+  #drawBarHover(ctx: Canvas2D, frame: DrawFrame): void {
+    const hit = this.#barHover;
+    const look = this.#style.constraintBars;
+    if (!hit || !look || !this.#modelTab) return;
+    this.#bars ??= constraintBars(this.#model);
+    const ids: EntityId[] = [];
+    for (const h of hit.entities) {
+      const e = this.#model.entityByHandle(h);
+      if (e) ids.push(e.id);
+    }
+    this.#drawPreview(ctx, frame, ids);
+    const color = this.#style.selection ?? SELECTION_COLOR;
+    const prims = constraintBarHoverPrimitives(
+      this.#bars,
+      this.#barVisible(look),
+      frame.scale,
+      look.mode ?? 4095,
+      hit,
+      color,
+    );
+    if (prims.length > 0)
+      this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, frame);
   }
 
   /**
@@ -2344,8 +2411,8 @@ export class Canvas2DRenderer implements Renderer {
    * the pickbox as the selection's glow, then a solid line `PREVIEW_LINE_PX` wide, in the
    * selection colour, on the transient layer, so moving the cursor never redraws the scene.
    */
-  #drawPreview(ctx: Canvas2D, frame: DrawFrame): void {
-    if (!this.#outline(ctx, frame, this.#previewed)) return;
+  #drawPreview(ctx: Canvas2D, frame: DrawFrame, ids: readonly EntityId[] = this.#previewed): void {
+    if (!this.#outline(ctx, frame, ids)) return;
     const px = this.#dpr;
     ctx.strokeStyle = this.#style.selection ?? SELECTION_COLOR;
     ctx.globalAlpha = SELECTION_GLOW_ALPHA;

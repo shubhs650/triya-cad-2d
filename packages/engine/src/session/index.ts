@@ -18,6 +18,7 @@ import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
 import { parameterObjects, type ConstraintService, type ParameterInfo } from '../edit/constraints';
+import { deleteConstraintsCommand } from '../commands/constraint-bar';
 import { parameterEditCommand, type ParameterEdit } from '../commands/parameters';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
 import {
@@ -661,6 +662,11 @@ export type CommandInput =
   /** A Parameters Manager edit (one undo step). */
   | { readonly kind: 'parameter'; readonly edit: ParameterEdit }
   /**
+   * A constraint bar icon's Delete (M9-05 part 4): the geometric constraints named go, one
+   * DELCONSTRAINT undo step.
+   */
+  | { readonly kind: 'delete-constraints'; readonly handles: readonly Handle[] }
+  /**
    * The ribbon's Layers and Properties dropdowns (M7-02 part 3) show the drawing's: while open,
    * `ribbon-properties` outputs follow the selection and every change, whatever the Properties
    * palette shows.
@@ -1022,6 +1028,8 @@ export class EngineSession {
         // The edit's commit sends the rows; a refused edit sends them too, so the palette puts
         // back the value it showed.
         return this.#bus.run(parameterEditCommand(input.edit)).then(() => this.#queueParameters());
+      case 'delete-constraints':
+        return this.#bus.run(deleteConstraintsCommand(input.handles));
       case 'ribbon-properties':
         this.#ribbon = input.open;
         if (input.open) this.#sendRibbon();
