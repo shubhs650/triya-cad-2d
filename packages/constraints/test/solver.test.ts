@@ -49,8 +49,11 @@ const line = (handle: string, x1: number, y1: number, x2: number, y2: number) =>
   geom: { kind: 'LINE', start: { x: x1, y: y1 }, end: { x: x2, y: y2 } } as EntityGeometry,
 });
 
-/** Line 30 (0,0)-(10,0) and line 31 (0,5)-(10,8), with the solver loaded. */
-function setup() {
+/**
+ * Line 30 (0,0)-(10,0) and line 31 (0,5)-(10,8), with the solver loaded; `extra` adds more
+ * entities.
+ */
+function setup(extra: DocumentInit['entities'] = []) {
   const init: DocumentInit = {
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '40',
@@ -86,7 +89,7 @@ function setup() {
     },
     blocks: [{ handle: MODEL, name: '*Model_Space', basePoint: { x: 0, y: 0 } }],
     layouts: [{ handle: '22', name: 'Model', tabOrder: 0, blockRecord: MODEL }],
-    entities: [line('30', 0, 0, 10, 0), line('31', 0, 5, 10, 8)],
+    entities: [line('30', 0, 0, 10, 0), line('31', 0, 5, 10, 8), ...extra],
   };
   const model = DocumentModel.create(init);
   const view: ViewHost = {
@@ -407,5 +410,70 @@ describe('user parameters with PlaneGCS (M9-03 part 6)', () => {
     expect(s.bus.command).toBeUndefined();
     expect(s.geom('31')).toEqual(g);
     expect(length(s.geom('31'))).toBeCloseTo(25, 6);
+  });
+});
+
+/** A dimension from `first` to `second` (rotated by `rotation`, else aligned), placed at `at`. */
+const dimension = (
+  handle: string,
+  first: { x: number; y: number },
+  second: { x: number; y: number },
+  at: { x: number; y: number },
+  rotation?: number,
+) => ({
+  ...line(handle, 0, 0, 0, 0),
+  type: 'DIMENSION',
+  geom: {
+    kind: 'DIMENSION',
+    style: '27',
+    textUserPositioned: false,
+    text: '',
+    textRotation: 0,
+    horizontalDirection: 0,
+    attachment: 5,
+    lineSpacingStyle: 1,
+    lineSpacing: 1,
+    dimType: rotation === undefined ? 'aligned' : 'linear',
+    first,
+    second,
+    definitionPoint: at,
+    textPosition: at,
+    ...(rotation !== undefined && { rotation }),
+  } as EntityGeometry,
+});
+
+describe('DCCONVERT with PlaneGCS (M9-03 part 9)', () => {
+  it('converts dimensions to constraints of their values, which then drive the geometry', async () => {
+    // 3A: line 31's length (aligned); 3B: line 30's start to line 31's start (vertical).
+    const s = setup([
+      dimension('3A', { x: 0, y: 5 }, { x: 10, y: 8 }, { x: 4, y: 10 }),
+      dimension('3B', { x: 0, y: 0 }, { x: 0, y: 5 }, { x: -3, y: 2.5 }, Math.PI / 2),
+    ]);
+    const ids = ['3A', '3B'].map((h) => s.model.entityByHandle(h)!.id);
+    await s.bus.script(['DCCONVERT']);
+    await s.bus.answer({ kind: 'selection', ids });
+    expect(s.bus.command).toBeUndefined();
+    expect(s.log).toContain('2 dimensions converted.');
+    expect(s.dims()).toEqual([
+      expect.objectContaining({ dimension: 'aligned', refs: [{ entity: '31' }], parameter: 'd1' }),
+      expect.objectContaining({
+        dimension: 'vertical',
+        refs: [
+          { entity: '30', point: 'start' },
+          { entity: '31', point: 'start' },
+        ],
+        parameter: 'd2',
+      }),
+    ]);
+    expect(Number(s.dims()[0]!.expression)).toBeCloseTo(Math.hypot(10, 3), 9);
+    expect(Number(s.dims()[1]!.expression)).toBeCloseTo(5, 9);
+    // Nothing moved; the dimensions are gone.
+    expect(s.geom('31')).toMatchObject({ start: { x: 0, y: 5 }, end: { x: 10, y: 8 } });
+    expect(s.model.entityByHandle('3A')).toBeUndefined();
+    // The converted values drive the lines.
+    await s.bus.run(parameterEditCommand({ kind: 'expression', name: 'd2', expression: '7' }));
+    expect(s.geom('31').start.y - s.geom('30').start.y).toBeCloseTo(7, 7);
+    await s.bus.run(parameterEditCommand({ kind: 'expression', name: 'd1', expression: '20' }));
+    expect(length(s.geom('31'))).toBeCloseTo(20, 7);
   });
 });

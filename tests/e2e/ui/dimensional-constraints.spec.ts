@@ -115,7 +115,7 @@ test('Aligned from the Dimensional panel, DCLINEAR typed, a reference constraint
   const ribbon = page.getByRole('tablist', { name: 'Ribbon' });
   await ribbon.getByRole('tab', { name: 'Parametric', exact: true }).click();
   const dimensional = page.getByRole('group', { name: 'Dimensional' });
-  await expect(dimensional.getByRole('button', { name: 'Convert', exact: true })).toBeDisabled();
+  await expect(dimensional.getByRole('button', { name: 'Convert', exact: true })).toBeEnabled();
   await park();
   await page.screenshot({ path: test.info().outputPath('1-dimensional-panel.png') });
 

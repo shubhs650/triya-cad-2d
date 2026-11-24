@@ -613,8 +613,7 @@ const ANNOTATE: RibbonTab = {
  * Parametric (M9-05, UI_SPEC §2): the Geometric panel's twelve constraints, in AutoCAD's order
  * (Smooth with M9-02 part 2). The Dimensional panel
  * (M9-03 part 3): Linear (with Horizontal and Vertical), Aligned, Radius, Diameter, Angular;
- * Convert greyed out until DIMCONSTRAINT converts dimensions; Show Dynamic Constraints (M9-03
- * part 4); Show/Hide, DCDISPLAY (M9-03 part 7). The Manage panel: Parameters Manager (M9-03
+ * Convert (DCCONVERT, M9-03 part 9); Show Dynamic Constraints (M9-03 part 4); Show/Hide, DCDISPLAY (M9-03 part 7). The Manage panel: Parameters Manager (M9-03
  * part 5). Auto Constrain and Constraint Settings (M9-05 part 3) on the Geometric panel; Infer
  * comes with its command.
  */
@@ -673,10 +672,8 @@ const PARAMETRIC: RibbonTab = {
           sizes: SECONDARY,
         },
         cmd('dc-show-hide', 'Show/Hide', 'eye_off', 'DCDISPLAY', SECONDARY),
-        off(
-          cmd('dc-convert', 'Convert', 'dim-linear', 'DIMCONSTRAINT', SECONDARY),
-          'Converting a dimension to a constraint comes later',
-        ),
+        // M9-03 part 9: DCCONVERT, as AutoCAD's Convert.
+        cmd('dc-convert', 'Convert', 'dim-linear', 'DCCONVERT', SECONDARY),
       ],
     },
     {
