@@ -304,7 +304,7 @@ export function LayerFilterTree({
 }
 
 /** A filter's name typed in place: Enter or leaving the field keeps it, Esc does not. */
-function RenameField({
+export function RenameField({
   name,
   onDone,
 }: {

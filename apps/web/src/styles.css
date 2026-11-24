@@ -2982,6 +2982,44 @@ button {
   background: var(--chrome-hover);
 }
 
+/* The filter tree beside the list and the sorting headers (M9-03 part 12), as the Layer palette's. */
+.parameters-body .parameters-table-wrap {
+  min-width: 0;
+}
+
+/* The tree takes its names' width, at most two fifths of the palette; longer names are cut. */
+.layer-filters.parameters-filters {
+  flex: 0 1 auto;
+  min-width: 96px;
+  max-width: 40%;
+}
+
+.parameters-filters [role='treeitem'] {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.parameters-table thead th[scope='col'] {
+  padding: 0;
+}
+
+.parameters-sort {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  width: 100%;
+  padding: 1px 4px;
+  font: inherit;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.parameters-sort-arrow {
+  font-size: 0.7em;
+}
+
 /* AutoCAD's group headings: Dimensional Constraint Parameters, User Parameters (M9-03 part 6). */
 .parameters-table .parameters-group th {
   padding: 4px 6px 2px;
