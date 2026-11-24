@@ -52,7 +52,9 @@ export function ConstraintSettingsDialog({ doc, request }: { doc: number; reques
     drafting.configure(draftPatch(d));
     void engines.command(doc, { kind: 'answer', answer: { kind: 'dialog', action: 'ok' } });
   };
-  const cancel = () => engines.command(doc, { kind: 'cancel' });
+  // Cancel closes the dialog only: AUTOCONSTRAIN's Settings asks for objects again, as AutoCAD's.
+  const cancel = () =>
+    void engines.command(doc, { kind: 'answer', answer: { kind: 'dialog', action: 'cancel' } });
   const label = CONSTRAINT_SETTINGS_TABS.find((t) => t.tab === tab)!.label;
   return (
     <Modal label="Constraint Settings" className="csettings" onOk={ok} onCancel={cancel}>

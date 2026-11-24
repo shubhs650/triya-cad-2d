@@ -35,6 +35,7 @@ async function expectFocusIn(dialog: Locator): Promise<void> {
 const DIALOGS: readonly { command: string; title: string | RegExp }[] = [
   { command: 'OPTIONS', title: 'Options' },
   { command: 'DSETTINGS', title: 'Drafting Settings' },
+  { command: 'CONSTRAINTSETTINGS', title: 'Constraint Settings' },
   { command: 'DIMSTYLE', title: 'Dimension Style Manager' },
   { command: 'STYLE', title: 'Text Style' },
   { command: 'TABLESTYLE', title: 'Table Style' },
