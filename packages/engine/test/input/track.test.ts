@@ -15,7 +15,7 @@ describe('OTRACK', () => {
   it('tracks horizontally and vertically from an acquired point', () => {
     const v = trackCursor({ x: 50.4, y: 80 }, { acquired: [END], tolerance: 1 })!;
     expect(round(v.point)).toEqual({ x: 50, y: 80 });
-    expect(v.paths).toEqual([{ from: END.point, angle: deg(90), label: 'Endpoint' }]);
+    expect(v.paths).toEqual([{ from: END.point, angle: deg(90), label: 'Endpoint', source: END }]);
     expect(trackLabel(v, 2)).toBe('Endpoint: 60.00 < 90°');
     const h = trackCursor({ x: 10, y: 19.5 }, { acquired: [END], tolerance: 1 })!;
     expect(round(h.point)).toEqual({ x: 10, y: 20 });

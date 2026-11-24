@@ -790,6 +790,8 @@ export class PromptBus {
       readonly tile?: number;
       /** The object snap the point was given by and its object (M9-05 part 7, Infer). */
       readonly snap?: Omit<SnappedPoint, 'point'>;
+      /** The tracking paths the point was placed on that Infer reads (M9-05 part 8). */
+      readonly tracks?: readonly Omit<SnappedPoint, 'point'>[];
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
@@ -867,6 +869,8 @@ export class PromptBus {
         const p = this.prompt;
         const tile = p?.kind === 'point' && p.viewport ? o.tile : undefined;
         if (o.snap) this.#snaps.push({ point, mode: o.snap.mode, id: o.snap.id });
+        // The tracking paths it was placed on (PARallel, OTRACK; M9-05 part 8).
+        for (const t of o.tracks ?? []) this.#snaps.push({ ...t, point });
         return this.#direct({
           kind: 'point',
           point,

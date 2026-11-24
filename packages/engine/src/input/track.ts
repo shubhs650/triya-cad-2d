@@ -16,16 +16,28 @@
 // acquires a point the cursor pauses over and drops it when the cursor pauses over it again,
 // keeping at most seven.
 import type { Vec2 } from '../geom/types';
+import type { EntityId } from '../model/entity-ids';
 import { OSNAP_MODES, type OsnapMode } from './osnap';
 import type { PolarSettings } from './constrain';
 
+// `id` is the object the point or line belongs to, which Infer Constraints reads (M9-05 part 8).
 export type Acquired =
   /** An object snap point acquired for OTRACK. */
-  | { readonly kind: 'point'; readonly point: Vec2; readonly mode: OsnapMode }
+  | {
+      readonly kind: 'point';
+      readonly point: Vec2;
+      readonly mode: OsnapMode;
+      readonly id?: EntityId;
+    }
   /** A line's end acquired for EXTension; `direction` points out of the line. */
   | { readonly kind: 'extension'; readonly point: Vec2; readonly direction: Vec2 }
   /** A line acquired for PARallel where the cursor paused on it. */
-  | { readonly kind: 'parallel'; readonly point: Vec2; readonly direction: Vec2 };
+  | {
+      readonly kind: 'parallel';
+      readonly point: Vec2;
+      readonly direction: Vec2;
+      readonly id?: EntityId;
+    };
 
 /** AutoCAD's limit on acquired tracking points. */
 export const MAX_ACQUIRED = 7;
@@ -42,6 +54,8 @@ export interface TrackPath {
   readonly relative?: number;
   /** The UCS X axis's angle, which the tooltip's angle counts from otherwise (M3-06 part 7). */
   readonly zero?: number;
+  /** The acquired point or line the path follows (OTRACK, PARallel), which Infer reads. */
+  readonly source?: Acquired;
 }
 
 export interface TrackLock {
@@ -116,14 +130,14 @@ export function trackPaths(o: Omit<TrackOptions, 'tolerance'>): TrackPath[] {
   for (const q of o.acquired ?? []) {
     if (q.kind === 'point') {
       const label = LABEL.get(q.mode) ?? q.mode;
-      for (const a of otrack) paths.push({ from: q.point, angle: a, label, ...z });
+      for (const a of otrack) paths.push({ from: q.point, angle: a, label, ...z, source: q });
     } else if (q.kind === 'extension') {
       const a = norm(Math.atan2(q.direction.y, q.direction.x));
       paths.push({ from: q.point, angle: a, label: 'Extension', ...z });
     } else if (base) {
       const a = norm(Math.atan2(q.direction.y, q.direction.x));
-      paths.push({ from: base, angle: a, label: 'Parallel', ...z });
-      paths.push({ from: base, angle: norm(a + Math.PI), label: 'Parallel', ...z });
+      paths.push({ from: base, angle: a, label: 'Parallel', ...z, source: q });
+      paths.push({ from: base, angle: norm(a + Math.PI), label: 'Parallel', ...z, source: q });
     }
   }
   return paths;
