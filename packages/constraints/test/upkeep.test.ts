@@ -14,6 +14,7 @@ import {
   toleranceForSize,
   type BusEvent,
   type ConstraintRef,
+  type DimensionalConstraintObject,
   type DocumentInit,
   type EntityGeometry,
   type EntityId,
@@ -58,7 +59,7 @@ const constraint = (
  * An L of line 30 (0,0)-(10,0) and line 31 (10,0)-(10,10), line 32 (0,20)-(10,20): 30
  * horizontal, 30's end on 31's start, 31 vertical, 32 parallel to 30; with `fixed`, 32 fixed.
  */
-function setup(fixed = false) {
+function setup(fixed = false, extra: readonly DimensionalConstraintObject[] = []) {
   const init: DocumentInit = {
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '40',
@@ -104,6 +105,7 @@ function setup(fixed = false) {
       constraint('A3', 'vertical', [{ entity: '31' }]),
       constraint('A4', 'parallel', [{ entity: '30' }, { entity: '32' }]),
       ...(fixed ? [constraint('A5', 'fix', [{ entity: '32' }])] : []),
+      ...extra,
     ],
   };
   const model = DocumentModel.create(init);
@@ -273,5 +275,31 @@ describe('modify commands keep constraints with PlaneGCS (M9-06)', () => {
     await s.bus.script(['0,0', '5,0']);
     expect(s.ends(c30!).slice(2)).toEqual([45, 0]);
     expect(s.ends('30')).toEqual([0, 0, 10, 0]);
+  });
+
+  it('MOVE keeps a dimensional constraint’s value: the joined line moves whole', async () => {
+    const s = setup(false, [
+      {
+        handle: 'B1',
+        type: 'TRIYA_DIMCONSTRAINT',
+        owner: '0',
+        dimension: 'aligned',
+        refs: [
+          { entity: '30', point: 'start' },
+          { entity: '30', point: 'end' },
+        ],
+        parameter: 'd1',
+        expression: '10',
+        location: { x: 5, y: -5 },
+        form: 'dynamic',
+      },
+    ]);
+    await s.bus.script(['MOVE']);
+    await s.select(R);
+    await s.bus.script(['0,0', '5,0']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.ends('31')).toEqual([15, 0, 15, 10]);
+    // Line 30 is held 10 long, so it slides along rather than stretching.
+    expect(s.ends('30').map((v) => Math.round(v * 1e4) / 1e4)).toEqual([5, 0, 15, 0]);
   });
 });

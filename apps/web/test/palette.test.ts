@@ -108,6 +108,14 @@ describe('palette search', () => {
       'COPYBASE',
       'COPYCLIP',
       'CUTCLIP',
+      // M9-03 part 3: dimensional constraints.
+      'DCALIGNED',
+      'DCANGULAR',
+      'DCDIAMETER',
+      'DCHORIZONTAL',
+      'DCLINEAR',
+      'DCRADIUS',
+      'DCVERTICAL',
       // M3-01 part 6: the Point Style dialog.
       'DDPTYPE',
       'DIMALIGNED',
@@ -117,6 +125,7 @@ describe('palette search', () => {
       'DIMBASELINE',
       // M4-02 part 4: DIMBREAK and DIMINSPECT.
       'DIMBREAK',
+      'DIMCONSTRAINT',
       'DIMCONTINUE',
       'DIMDIAMETER',
       // M4-02 part 3: DIMDISASSOCIATE and DIMREASSOCIATE.

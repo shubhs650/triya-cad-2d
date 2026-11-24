@@ -17,9 +17,13 @@ import type { Replacement } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import {
+  isDimensionalConstraint,
   isGeometricConstraint,
   type ConstraintCurveRef,
   type ConstraintPointRef,
+  type ConstraintRef,
+  type DimensionalConstraintKind,
+  type DimensionalConstraintObject,
   type Entity,
   type GeometricConstraintKind,
   type GeometricConstraintObject,
@@ -34,6 +38,15 @@ export interface ConstraintRefusal {
   readonly conflicting: readonly Handle[];
 }
 
+/**
+ * A parameter whose expression a solve changed (M9-03 part 3): a reference constraint measuring
+ * geometry that moved, and the parameters that follow from it.
+ */
+export interface ExpressionChange {
+  readonly parameter: string;
+  readonly expression: string;
+}
+
 export type ConstraintAddResult =
   | {
       readonly ok: true;
@@ -41,6 +54,46 @@ export type ConstraintAddResult =
       readonly updated: readonly Replacement<Entity>[];
       /** Degrees of freedom left in the constrained group the new constraint joined. */
       readonly dofs: number;
+      /** Dimensional constraints' expressions the moved geometry changed. */
+      readonly expressions?: readonly ExpressionChange[];
+    }
+  | ConstraintRefusal;
+
+/** A dimensional constraint as DIMCONSTRAINT and the DC* commands ask for one (M9-03 part 3). */
+export interface DimensionalConstraintSpec {
+  /** Linear becomes Horizontal or Vertical by the points (horizontal when as far across as up). */
+  readonly dimension: DimensionalConstraintKind | 'linear';
+  readonly refs: readonly ConstraintRef[];
+  /** The parameter's name; the next free d1, ang1, rad1 or dia1 when not given. */
+  readonly parameter?: string;
+  /** The value or expression typed; the measured value when not given. */
+  readonly expression?: string;
+  readonly reference?: boolean;
+}
+
+/** What a dimensional constraint would measure, before it is placed. */
+export type DimensionMeasurement =
+  | {
+      readonly ok: true;
+      readonly dimension: DimensionalConstraintKind;
+      /** A distance in drawing units, an angle in degrees. */
+      readonly value: number;
+      /** The name a new constraint's parameter takes when none is typed. */
+      readonly parameter: string;
+    }
+  | ConstraintRefusal;
+
+export type DimensionAddResult =
+  | {
+      readonly ok: true;
+      readonly dimension: DimensionalConstraintKind;
+      readonly parameter: string;
+      /** The parameter's expression as kept (the measured value when none was typed). */
+      readonly expression: string;
+      readonly value: number;
+      readonly updated: readonly Replacement<Entity>[];
+      readonly dofs: number;
+      readonly expressions: readonly ExpressionChange[];
     }
   | ConstraintRefusal;
 
@@ -52,6 +105,8 @@ export type ConstraintEditResult =
        * it moved to keep the constraints.
        */
       readonly updated: readonly Replacement<Entity>[];
+      /** Dimensional constraints' expressions the moved geometry changed (reference ones). */
+      readonly expressions?: readonly ExpressionChange[];
     }
   | ConstraintRefusal;
 
@@ -67,6 +122,7 @@ export interface ConstraintSolver {
     constraint: GeometricConstraintObject,
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
+    dimensions?: readonly DimensionalConstraintObject[],
   ): ConstraintAddResult;
   /**
    * Re-solves the drawing's `constraints` after an edit (M9-06): the values each of `edits`
@@ -74,7 +130,7 @@ export interface ConstraintSolver {
    * it was before the edit. With `whole`, each edited entity is held whole, the values it kept
    * too (a modify command places its objects whole; a grip drag moves only its grip). Refused
    * when the edit breaks a constraint the rest cannot absorb (a Fix, or a Horizontal line
-   * turned).
+   * turned). The drawing's `dimensions` keep their values while the edit is solved.
    */
   solveEdit(
     constraints: readonly GeometricConstraintObject[],
@@ -82,7 +138,27 @@ export interface ConstraintSolver {
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
     whole: boolean,
+    dimensions?: readonly DimensionalConstraintObject[],
   ): ConstraintEditResult;
+  /** What `spec` measures and the name its parameter would take (M9-03 part 3). */
+  measure(
+    dimensions: readonly DimensionalConstraintObject[],
+    spec: DimensionalConstraintSpec,
+    lookup: (handle: Handle) => Entity | undefined,
+  ): DimensionMeasurement;
+  /**
+   * Adds a dimensional constraint to the drawing's and solves its group to the value, the second
+   * object adjusting; refused, nothing moved, when the expression has no value or one out of
+   * range, or the value would over-constrain the geometry (AutoCAD then offers a reference
+   * constraint: add it again with `reference`).
+   */
+  addDimension(
+    constraints: readonly GeometricConstraintObject[],
+    dimensions: readonly DimensionalConstraintObject[],
+    spec: DimensionalConstraintSpec,
+    lookup: (handle: Handle) => Entity | undefined,
+    tolerance: Tolerance,
+  ): DimensionAddResult;
 }
 
 /** Loads the solver once it is first needed (a WebAssembly module of its own). */
@@ -135,6 +211,11 @@ export function carryConstraints(
       refs: c.refs.map((r) => ({ ...r, entity: copies.get(r.entity)!.handle })),
     } as Omit<GeometricConstraintObject, 'handle'>);
   }
+}
+
+/** The drawing's dimensional constraints (M9-03 part 3). */
+export function dimensionalConstraints(model: DocumentModel): DimensionalConstraintObject[] {
+  return [...model.objects.values()].filter(isDimensionalConstraint);
 }
 
 /** A constraint point of an entity and where it is. */

@@ -1,4 +1,4 @@
-// M9-05 part 1: the engine's GC* commands with the real solver (`constraintSolver` over PlaneGCS),
+// M9-05 part 1 and M9-03 part 3: the engine's GC* and DC* commands with the real solver (`constraintSolver` over PlaneGCS),
 // as the app's engine worker runs them: the second object adjusts to the first, a constraint
 // that conflicts with the drawing's others is refused, and U takes a constraint back with what
 // it moved.
@@ -9,6 +9,7 @@ import {
   PromptBus,
   builtinCommands,
   closestPoint,
+  isDimensionalConstraint,
   isGeometricConstraint,
   toleranceForSize,
   type BusEvent,
@@ -107,7 +108,8 @@ function setup() {
   });
   const geom = (h: string) => model.entityByHandle(h)!.geom as LineGeometry;
   const constraints = () => [...model.objects.values()].filter(isGeometricConstraint);
-  return { model, bus, log, geom, constraints };
+  const dims = () => [...model.objects.values()].filter(isDimensionalConstraint);
+  return { model, bus, log, geom, constraints, dims };
 }
 
 const mid = (g: LineGeometry) => ({ x: (g.start.x + g.end.x) / 2, y: (g.start.y + g.end.y) / 2 });
@@ -165,5 +167,69 @@ describe('geometric constraint commands with PlaneGCS', () => {
     expect(Math.hypot(g.end.x - 10, g.end.y)).toBeLessThan(1e-7);
     expect(Math.abs(g.start.y)).toBeLessThan(1e-7);
     expect(s.constraints().map((c) => c.kind)).toEqual(['horizontal', 'coincident']);
+  });
+});
+
+const length = (g: LineGeometry) => Math.hypot(g.end.x - g.start.x, g.end.y - g.start.y);
+
+describe('dimensional constraint commands with PlaneGCS', () => {
+  it('DCALIGNED sets a line to the length typed, its start staying; U takes it back', async () => {
+    const s = setup();
+    await s.bus.script(['DCALIGNED', 'O']);
+    await s.bus.pick({ x: 5, y: 6.5 });
+    await s.bus.pick({ x: 4, y: 10 });
+    expect(s.bus.promptText).toBe('Dimension text <d1=10.4403>:');
+    await s.bus.script(['width=2*10']);
+    expect(s.bus.command).toBeUndefined();
+    expect(length(s.geom('31'))).toBeCloseTo(20, 9);
+    expect(s.geom('31').start).toEqual({ x: 0, y: 5 });
+    expect(s.dims()).toEqual([
+      expect.objectContaining({ dimension: 'aligned', parameter: 'width', expression: '2*10' }),
+    ]);
+    await s.bus.script(['U']);
+    expect(s.dims()).toEqual([]);
+    expect(s.geom('31')).toMatchObject({ start: { x: 0, y: 5 }, end: { x: 10, y: 8 } });
+  });
+
+  it('Enter keeps the measured value; a second value on the same distance becomes a reference', async () => {
+    const s = setup();
+    await s.bus.script(['DCLINEAR']);
+    await s.bus.pick({ x: 0.1, y: 0 });
+    await s.bus.pick({ x: 9.9, y: 0 });
+    await s.bus.pick({ x: 5, y: -3 });
+    await s.bus.script(['']);
+    expect(s.dims()).toEqual([
+      expect.objectContaining({ dimension: 'horizontal', parameter: 'd1', expression: '10' }),
+    ]);
+    await s.bus.script(['DCALIGNED', 'O']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick({ x: 5, y: -5 });
+    expect(s.bus.promptText).toBe('Dimension text <d2=10.0000>:');
+    await s.bus.script(['15']);
+    expect(s.bus.promptText).toBe('Create a reference constraint? [Yes/No] <Yes>:');
+    await s.bus.script(['']);
+    expect(s.geom('30')).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 10, y: 0 } });
+    expect(s.dims().map((d) => [d.parameter, d.expression, d.reference])).toEqual([
+      ['d1', '10', undefined],
+      ['d2', '10', true],
+    ]);
+    // The reference follows the geometry when the driving value changes the line.
+    await s.bus.script(['GCHORIZONTAL']);
+    await s.bus.pick({ x: 5, y: 6.5 });
+    expect(s.dims()[1]!.expression).toBe('10');
+  });
+
+  it("a geometric constraint added later keeps the dimensional constraints' values", async () => {
+    const s = setup();
+    await s.bus.script(['DCALIGNED', 'O']);
+    await s.bus.pick({ x: 5, y: 6.5 });
+    await s.bus.pick({ x: 4, y: 10 });
+    await s.bus.script(['20']);
+    await s.bus.script(['GCPARALLEL']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick(mid(s.geom('31')));
+    expect(s.bus.command).toBeUndefined();
+    expect(Math.abs(direction(s.geom('31')).y)).toBeLessThan(1e-9);
+    expect(length(s.geom('31'))).toBeCloseTo(20, 7);
   });
 });

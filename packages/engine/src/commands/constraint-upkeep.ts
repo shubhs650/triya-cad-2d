@@ -1,6 +1,7 @@
 // Constraints kept in step with the edits commands make (M9-06, PRD FR-X4, ARCHITECTURE.md §11's
 // `ConstraintAwareness`): as a command ends, the bus hands this its change sets, and each
-// geometric constraint on an object the command changed is kept, dropped or re-solved.
+// geometric or dimensional constraint on an object the command changed is kept, dropped or
+// re-solved.
 //
 // - An object erased (ERASE, or removed by any command) takes its constraints with it, as AutoCAD
 //   deletes them; U brings both back, the removal being part of the command's undo step.
@@ -11,20 +12,33 @@
 // - Any other edit (MOVE, ROTATE, SCALE, MIRROR, STRETCH, LENGTHEN, grips, the Properties
 //   palette) is re-solved: what the edit placed is held and the geometry constrained to it
 //   follows. A modify command places its objects whole; a grip drag or a palette edit only the
-//   values it changed, the rest of the object following its constraints. Constraints wholly within the objects moved together still hold, so nothing else
-//   moves. An edit the constraints cannot take (moving a Fixed object, turning a Horizontal line)
+//   values it changed, the rest of the object following its constraints. Constraints wholly
+//   within the objects moved together still hold, so nothing else moves. Dimensional
+//   constraints hold their values; a reference one measures the geometry again. An edit the constraints cannot take (moving a Fixed object, turning a Horizontal line)
 //   is refused with the solver's reason and the command's changes are taken back: AutoCAD keeps
 //   the constraint and the geometry does not turn. Its Help does not say what ROTATE does to a
 //   Horizontal line; drafters report that the line will not rotate, which this follows.
 //
 // Copies carry the constraints among the objects copied (COPY, MIRROR, ROTATE and SCALE's Copy:
 // `carryConstraints`, made with the copies), so nothing here handles them.
-import { geometricConstraints, constraintPointsOf } from '../edit/constraints';
+import {
+  constraintPointsOf,
+  dimensionalConstraints,
+  geometricConstraints,
+} from '../edit/constraints';
 import type { Tolerance } from '../geom/tolerance';
 import type { ChangeSet, Replacement } from '../model/changeset';
 import type { Handle } from '../model/handle';
-import type { Entity, EntityGeometry, GeometricConstraintObject } from '../model/types';
+import {
+  isGeometricConstraint,
+  type ConstraintRef,
+  type DimensionalConstraintObject,
+  type Entity,
+  type EntityGeometry,
+  type GeometricConstraintObject,
+} from '../model/types';
 import type { CommandContext } from './command';
+import { setExpressions } from './constraints';
 import { toleranceFor } from './modify/offset';
 
 /** The commands whose changes drop the constraints on what they change (FR-X4). */
@@ -94,30 +108,33 @@ function sameShape(before: EntityGeometry, after: EntityGeometry): boolean {
   return true;
 }
 
+/** A constraint as the upkeep sees it: the objects it names. */
+type Constrains = { readonly handle: Handle; readonly refs: readonly ConstraintRef[] };
+
 /** What a command's changes mean for the drawing's constraints. */
-export interface UpkeepPlan {
+export interface UpkeepPlan<C extends Constrains = GeometricConstraintObject> {
   /** Constraints on an object removed, reshaped, or changed by a command that drops them. */
-  readonly dropped: readonly GeometricConstraintObject[];
+  readonly dropped: readonly C[];
   /** The others. */
-  readonly kept: readonly GeometricConstraintObject[];
+  readonly kept: readonly C[];
   /** The changes to objects the kept constraints name: what a re-solve holds. */
   readonly edits: readonly Replacement<Entity>[];
 }
 
 /** Which of `constraints` `command`'s changes (`net`) drop, and what the rest re-solve. */
-export function planUpkeep(
+export function planUpkeep<C extends Constrains>(
   command: string,
   net: NetEntityChanges,
-  constraints: readonly GeometricConstraintObject[],
-): UpkeepPlan {
+  constraints: readonly C[],
+): UpkeepPlan<C> {
   const drops = DROPS_CONSTRAINTS.has(command);
   const lost = (h: Handle): boolean => {
     if (net.removed.has(h)) return true;
     const u = net.updated.get(h);
     return u !== undefined && (drops || !sameShape(u.before.geom, u.after.geom));
   };
-  const dropped: GeometricConstraintObject[] = [];
-  const kept: GeometricConstraintObject[] = [];
+  const dropped: C[] = [];
+  const kept: C[] = [];
   for (const c of constraints) (c.refs.some((r) => lost(r.entity)) ? dropped : kept).push(c);
   const constrained = new Set(kept.flatMap((c) => c.refs.map((r) => r.entity)));
   const edits = [...net.updated.values()].filter((u) => constrained.has(u.after.handle));
@@ -154,13 +171,20 @@ export async function keepConstraints(
 ): Promise<boolean> {
   const net = netEntityChanges(changes);
   if (net.updated.size === 0 && net.removed.size === 0) return true;
-  const all = geometricConstraints(ctx.model);
+  const all: (GeometricConstraintObject | DimensionalConstraintObject)[] = [
+    ...geometricConstraints(ctx.model),
+    ...dimensionalConstraints(ctx.model),
+  ];
   if (all.length === 0) return true;
   const { dropped, kept, edits } = planUpkeep(command, net, all);
   if (dropped.length > 0) {
     ctx.edit((b) => dropped.forEach((c) => b.removeObject(c.handle)));
-    const n = dropped.length;
-    ctx.message(`${n} geometric constraint${n === 1 ? '' : 's'} removed.`);
+    const geometric = dropped.filter((c) => isGeometricConstraint(c)).length;
+    const dimensional = dropped.length - geometric;
+    const removed = (n: number, kind: string) =>
+      n > 0 && ctx.message(`${n} ${kind} constraint${n === 1 ? '' : 's'} removed.`);
+    removed(geometric, 'geometric');
+    removed(dimensional, 'dimensional');
   }
   if (edits.length === 0) return true;
   let solver;
@@ -174,11 +198,12 @@ export async function keepConstraints(
   if (!solver) return true;
   const before = new Map(edits.map((u) => [u.after.handle, u.before]));
   const r = solver.solveEdit(
-    kept,
+    kept.filter(isGeometricConstraint),
     edits,
     (h) => before.get(h) ?? ctx.model.entityByHandle(h),
     toleranceOf(ctx, edits),
     !MOVES_CHANGED_VALUES.has(command),
+    kept.filter((c): c is DimensionalConstraintObject => !isGeometricConstraint(c)),
   );
   if (!r.ok) {
     ctx.message(sentence(r.message));
@@ -189,8 +214,12 @@ export async function keepConstraints(
     const now = ctx.model.entityByHandle(u.after.handle);
     if (now && now !== u.after && now.geom !== u.after.geom) moved.push([now, u.after.geom]);
   }
-  if (moved.length > 0) {
-    ctx.edit((b) => moved.forEach(([e, geom]) => b.updateEntity(e.id, { geom })));
+  const expressions = r.expressions ?? [];
+  if (moved.length > 0 || expressions.length > 0) {
+    ctx.edit((b) => {
+      for (const [e, geom] of moved) b.updateEntity(e.id, { geom });
+      setExpressions(ctx, b, expressions);
+    });
   }
   return true;
 }

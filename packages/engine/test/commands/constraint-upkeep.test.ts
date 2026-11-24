@@ -6,6 +6,7 @@ import {
   DROPS_CONSTRAINTS,
   MOVES_CHANGED_VALUES,
   carriedKind,
+  isDimensionalConstraint,
   isGeometricConstraint,
   moveBy,
   mirrorIn,
@@ -16,6 +17,7 @@ import {
   type ConstraintEditResult,
   type ConstraintRef,
   type ConstraintSolver,
+  type DimensionalConstraintObject,
   type Entity,
   type EntityGeometry,
   type GeometricConstraintKind,
@@ -37,11 +39,33 @@ const constraint = (
   refs,
 });
 
+/** An aligned dimensional constraint on line `entity`'s length. */
+const dimension = (
+  handle: string,
+  entity: string,
+  parameter: string,
+  expression: string,
+): DimensionalConstraintObject => ({
+  handle,
+  type: 'TRIYA_DIMCONSTRAINT',
+  owner: 'C',
+  dimension: 'aligned',
+  refs: [
+    { entity, point: 'start' },
+    { entity, point: 'end' },
+  ],
+  parameter,
+  expression,
+  location: { x: 0, y: 0 },
+  form: 'dynamic',
+});
+
 interface Asked {
   readonly constraints: readonly string[];
   readonly edits: readonly Replacement<Entity>[];
   readonly lookup: (h: string) => Entity | undefined;
   readonly whole: boolean;
+  readonly dimensions: readonly string[];
 }
 
 /**
@@ -51,16 +75,28 @@ interface Asked {
  */
 function drawing(
   answer?: (asked: Asked) => ConstraintEditResult,
-  o: { solver?: 'none' | 'broken' } = {},
+  o: { solver?: 'none' | 'broken'; dimensions?: boolean } = {},
 ) {
   const asked: Asked[] = [];
   const solver: ConstraintSolver = {
     add: () => {
       throw new Error('not asked');
     },
-    solveEdit: (constraints, edits, lookup, tol, whole) => {
+    measure: () => {
+      throw new Error('not asked');
+    },
+    addDimension: () => {
+      throw new Error('not asked');
+    },
+    solveEdit: (constraints, edits, lookup, tol, whole, dimensions = []) => {
       expect(tol.linear).toBeGreaterThan(0);
-      const a = { constraints: constraints.map((c) => c.handle), edits, lookup, whole };
+      const a = {
+        constraints: constraints.map((c) => c.handle),
+        edits,
+        lookup,
+        whole,
+        dimensions: dimensions.map((d) => d.handle),
+      };
       asked.push(a);
       return answer ? answer(a) : { ok: true, updated: [...edits] };
     },
@@ -87,6 +123,12 @@ function drawing(
         ]),
         constraint('C3', 'horizontal', [{ entity: '41', segment: 0 }]),
         constraint('C4', 'fix', [{ entity: '31' }]),
+        ...(o.dimensions
+          ? [
+              dimension('D1', '40', 'd1', '10'),
+              { ...dimension('D2', '30', 'd2', '10'), reference: true },
+            ]
+          : []),
       ],
       ...(o.solver !== 'none' && {
         constraints:
@@ -136,6 +178,45 @@ describe('ERASE (M9-06)', () => {
     await plain.bus.pick({ x: 5, y: 30 });
     await plain.bus.submit('');
     expect(plain.log.some((l) => /constraint/.test(l))).toBe(false);
+  });
+});
+
+describe('dimensional constraints (M9-06 with M9-03 part 3)', () => {
+  const dims = (d: ReturnType<typeof drawing>) =>
+    [...d.model.objects.values()]
+      .filter(isDimensionalConstraint)
+      .map((c) => `${c.handle}:${c.expression}`)
+      .sort();
+
+  it('ERASE removes an erased object’s dimensional constraints too, saying so', async () => {
+    const d = drawing(undefined, { dimensions: true });
+    await d.bus.script(['ERASE']);
+    await d.bus.pick({ x: 10, y: 5 });
+    await d.bus.submit('');
+    expect(dims(d)).toEqual(['D2:10']);
+    expect(d.log).toContain('1 geometric constraint removed.');
+    expect(d.log).toContain('1 dimensional constraint removed.');
+    await d.bus.script(['U']);
+    expect(dims(d)).toEqual(['D1:10', 'D2:10']);
+  });
+
+  it('a re-solve holds the dimensions and writes the reference values it measured', async () => {
+    const d = drawing(
+      ({ edits }) => ({
+        ok: true,
+        updated: [...edits],
+        expressions: [{ parameter: 'd2', expression: '15' }],
+      }),
+      { dimensions: true },
+    );
+    await d.bus.script(['MOVE']);
+    await d.bus.pick({ x: 10, y: 5 });
+    await d.bus.submit('');
+    await d.bus.script(['0,0', '5,0']);
+    expect(d.asked.map((a) => a.dimensions)).toEqual([['D1', 'D2']]);
+    expect(dims(d)).toEqual(['D1:10', 'D2:15']);
+    await d.bus.script(['U']);
+    expect(dims(d)).toEqual(['D1:10', 'D2:10']);
   });
 });
 
