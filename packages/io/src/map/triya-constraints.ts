@@ -24,6 +24,12 @@
 //   70 its layout's version (1); 1 `parameter`; 300 its name; 301 its expression; 302 its
 //   description, when it has one. Nothing more: it references no object.
 //
+// A parameter group filter's (the Parameters Manager's filter tree, M9-03 part 12, DEC-086):
+//
+//   70 its layout's version (1); 1 `group`; 300 its name; then 331 (soft pointer) each
+//   parameter's record in it (a dimensional constraint's or a user parameter's of this
+//   dictionary), in the order added; none for an empty group.
+//
 // A record of another version or kind, one whose groups are not laid out so, one with no
 // reference or more than three, or one naming an object the drawing does not hold is not mapped:
 // it stays in the dictionary as read. AutoCAD ignores the dictionary, and its own constraints
@@ -38,6 +44,8 @@ import {
   type DimensionalConstraintObject,
   type GeometricConstraintKind,
   type GeometricConstraintObject,
+  type Handle,
+  type ParameterGroupObject,
   type UserParameterObject,
   type Vec2,
 } from '@triya/engine';
@@ -63,6 +71,8 @@ export const CONSTRAINT_POINTS = [
 export const DIMENSIONAL_RECORD = 'dimensional';
 /** Group 1 of a user parameter's record (DEC-083), a word no geometric kind is. */
 export const PARAMETER_RECORD = 'parameter';
+/** Group 1 of a parameter group filter's record (DEC-086), a word no geometric kind is. */
+export const GROUP_RECORD = 'group';
 /** 281: the constraint's form, by its value. */
 export const CONSTRAINT_FORMS = ['dynamic', 'annotational'] as const;
 /** The most references a constraint takes (Symmetric: two objects and the symmetry line). */
@@ -195,31 +205,79 @@ export function userParameterFields(entries: Entries): UserParameterFields | und
   };
 }
 
-type TriyaConstraint =
-  GeometricConstraintObject | DimensionalConstraintObject | UserParameterObject;
+type GroupFields = Omit<ParameterGroupObject, 'handle' | 'type' | 'owner'>;
 
-/** The drawing's constraints and user parameters, in the dictionary's order. */
+/**
+ * A parameter group filter's fields (DEC-086), or undefined when the groups are not a whole
+ * record or a member is not one of `parameters` (the handles of the records read as parameters).
+ */
+export function parameterGroupFields(
+  entries: Entries,
+  parameters: ReadonlySet<Handle>,
+): GroupFields | undefined {
+  const at = (i: number, code: number) =>
+    entries[i]?.code === code ? entries[i]!.value : undefined;
+  if (number(at(0, 70)) !== TRIYA_CONSTRAINTS_VERSION || at(1, 1) !== GROUP_RECORD) {
+    return undefined;
+  }
+  const name = at(2, 300);
+  if (typeof name !== 'string') return undefined;
+  const members: Handle[] = [];
+  for (const e of entries.slice(3)) {
+    if (e.code !== 331) return undefined;
+    const n = e.value instanceof CadObject ? e.value.handle : number(e.value);
+    const h = n === undefined ? undefined : hex(n);
+    if (h === undefined || !parameters.has(h) || members.includes(h)) return undefined;
+    members.push(h);
+  }
+  return { name, members };
+}
+
+type TriyaConstraint =
+  | GeometricConstraintObject
+  | DimensionalConstraintObject
+  | UserParameterObject
+  | ParameterGroupObject;
+
+/**
+ * The drawing's constraints, user parameters and parameter group filters, in the dictionary's
+ * order.
+ */
 export function mapTriyaConstraints(doc: CadDocument): TriyaConstraint[] {
   const dict = namedDictionary(doc, TRIYA_CONSTRAINTS);
   if (!dict) return [];
   const out: TriyaConstraint[] = [];
-  for (const key of dict.entryNames) {
-    const o: unknown = dict.getEntry(key);
-    if (!(o instanceof XRecord) || o.owner !== dict) continue;
+  const owner = hex(dict.handle);
+  const records = dict.entryNames
+    .map((key): unknown => dict.getEntry(key))
+    .filter((o): o is XRecord => o instanceof XRecord && o.owner === dict);
+  // A group names parameters' records, which may come after it: they are read first.
+  const mapped = new Map<XRecord, TriyaConstraint>();
+  for (const o of records) {
     const entries = o.entries as Entries;
-    const owner = hex(dict.handle);
     const geometric = constraintFields(entries, doc);
-    if (geometric) {
-      out.push({ ...common(o), type: 'TRIYA_GEOMCONSTRAINT', owner, ...geometric });
-      continue;
-    }
-    const dimensional = dimensionalFields(entries, doc);
+    const dimensional = geometric ? undefined : dimensionalFields(entries, doc);
+    const user = geometric || dimensional ? undefined : userParameterFields(entries);
+    if (geometric)
+      mapped.set(o, { ...common(o), type: 'TRIYA_GEOMCONSTRAINT', owner, ...geometric });
     if (dimensional) {
-      out.push({ ...common(o), type: 'TRIYA_DIMCONSTRAINT', owner, ...dimensional });
+      mapped.set(o, { ...common(o), type: 'TRIYA_DIMCONSTRAINT', owner, ...dimensional });
+    }
+    if (user) mapped.set(o, { ...common(o), type: 'TRIYA_USERPARAMETER', owner, ...user });
+  }
+  const parameters = new Set(
+    [...mapped.values()]
+      .filter((c) => c.type === 'TRIYA_DIMCONSTRAINT' || c.type === 'TRIYA_USERPARAMETER')
+      .map((c) => c.handle),
+  );
+  for (const o of records) {
+    const known = mapped.get(o);
+    if (known) {
+      out.push(known);
       continue;
     }
-    const user = userParameterFields(entries);
-    if (user) out.push({ ...common(o), type: 'TRIYA_USERPARAMETER', owner, ...user });
+    const group = parameterGroupFields(o.entries as Entries, parameters);
+    if (group) out.push({ ...common(o), type: 'TRIYA_PARAMETERGROUP', owner, ...group });
   }
   return out;
 }

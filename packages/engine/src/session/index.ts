@@ -17,7 +17,13 @@ import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
-import { parameterObjects, type ConstraintService, type ParameterInfo } from '../edit/constraints';
+import {
+  parameterGroups,
+  parameterObjects,
+  type ConstraintService,
+  type ParameterGroupInfo,
+  type ParameterInfo,
+} from '../edit/constraints';
 import { deleteConstraintsCommand } from '../commands/constraint-bar';
 import { parameterEditCommand, type ParameterEdit } from '../commands/parameters';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
@@ -748,8 +754,12 @@ export type CommandOutput =
   | { readonly type: 'properties'; readonly sheet: PropertySheet }
   /** The ribbon's Layers and Properties dropdowns (M7-02 part 3), while they are open. */
   | { readonly type: 'ribbon-properties'; readonly properties: RibbonProperties }
-  /** The Parameters Manager's rows (M9-03 part 5), while it is open. */
-  | { readonly type: 'parameters'; readonly rows: readonly ParameterInfo[] }
+  /** The Parameters Manager's rows (M9-03 part 5) and group filters (part 12), while it is open. */
+  | {
+      readonly type: 'parameters';
+      readonly rows: readonly ParameterInfo[];
+      readonly groups: readonly ParameterGroupInfo[];
+    }
   /** A command preview asked for with `seq` (M3-12 part 6); none where the prompt shows none. */
   | { readonly type: 'command-preview'; readonly seq: number; readonly preview?: CommandPreview }
   /** The rollover tooltip of object `id` (M2-35 part 21); no sheet when the object is gone. */
@@ -885,7 +895,7 @@ export class EngineSession {
         // No solver: the commands say why when they need it; the palette lists nothing.
       }
     }
-    this.#emit({ type: 'parameters', rows });
+    this.#emit({ type: 'parameters', rows, groups: parameterGroups(this.model) });
   }
 
   /**

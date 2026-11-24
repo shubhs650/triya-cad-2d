@@ -2437,6 +2437,25 @@ export const isParameterObject = (o: NonGraphicalObject | undefined): o is Param
   isDimensionalConstraint(o) || isUserParameter(o);
 
 /**
+ * A parameter group filter (M9-03 part 12): a named group of the Parameters Manager's filter
+ * tree, which shows only its members (AutoCAD 2024 Help, "Parameters Manager": "Creates a new
+ * parameter group filter"; parameters are dragged into it). `members` are the handles of the
+ * parameters' own objects (a dimensional constraint or a user parameter), in the order added, so a
+ * rename keeps a parameter in its groups. A member whose object is gone (deleted, erased with its
+ * geometry) is not shown and not saved, and comes back with it on U. Filed under the root
+ * dictionary and saved in `TRIYA_CONSTRAINTS` as a record of its own (DEC-086).
+ */
+export interface ParameterGroupObject extends NonGraphicalObject {
+  readonly type: 'TRIYA_PARAMETERGROUP';
+  /** The filter's name: Group Filter1… or the one it was renamed to. */
+  readonly name: string;
+  readonly members: readonly Handle[];
+}
+
+export const isParameterGroup = (o: NonGraphicalObject | undefined): o is ParameterGroupObject =>
+  o?.type === 'TRIYA_PARAMETERGROUP';
+
+/**
  * What restoring a layer state sets (M5-07, DXF 91 of its XRECORD): ObjectARX's
  * `AcDbLayerStateManager::LayerStateMask`, the Layer States Manager's "Layer properties to
  * restore". `vpFrozen` is VP Freeze in the current viewport, `newVpFrozen` New VP Freeze. `hidden`

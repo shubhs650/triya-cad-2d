@@ -50,6 +50,7 @@ export {
 export { designCenterCommand, type DesignCenterDrop } from './design-center';
 export {
   applyParameterEdit,
+  FIXED_PARAMETER_FILTERS,
   parameterEditCommand,
   PARAMETERS_COMMANDS,
   type ParameterEdit,

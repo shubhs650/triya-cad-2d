@@ -14,6 +14,13 @@
 // lowest number no parameter has), a value or expression no constraint holds, which the
 // constraints' expressions may name. It is edited, renamed and deleted as a constraint's
 // parameter is, and deleting it leaves the expressions that used it with its value.
+//
+// Group filters (part 12): the manager's filter tree has All, All Used in Expressions and the
+// user's group filters, which AutoCAD keeps with the drawing ("Creates a new parameter group
+// filter"; parameters are dragged into one). New Group Filter makes Group Filter1 (then the lowest
+// number no filter has), named in place; a group is renamed, deleted (its parameters stay) and
+// given or relieved of parameters, each one undo step that needs no solver. Two filters may not
+// share a name, any case, nor take a fixed filter's.
 import type { CommandContext, CommandDef } from './command';
 import { sentence, setExpressions } from './constraints';
 import { viewRequest } from './view/zoom';
@@ -25,7 +32,14 @@ import {
   type ParameterChangeResult,
 } from '../edit/constraints';
 import type { ChangeSetBuilder } from '../model/builder';
-import type { NonGraphicalObject, UserParameterObject } from '../model/types';
+import {
+  isParameterGroup,
+  isParameterObject,
+  type NonGraphicalObject,
+  type ParameterGroupObject,
+  type UserParameterObject,
+} from '../model/types';
+import type { Handle } from '../model/handle';
 import type { RecordPatch } from '../model/update';
 
 /** An edit made in the Parameters Manager, on parameter `name`; `new` adds a user parameter. */
@@ -40,7 +54,24 @@ export type ParameterEdit =
     }
   | { readonly kind: 'rename'; readonly name: string; readonly to: string }
   | { readonly kind: 'description'; readonly name: string; readonly description: string }
-  | { readonly kind: 'delete'; readonly name: string };
+  | { readonly kind: 'delete'; readonly name: string }
+  /** Group filters (part 12): `parameters` are the parameters' objects, by handle. */
+  | { readonly kind: 'new-group'; readonly parameters?: readonly Handle[] }
+  | { readonly kind: 'rename-group'; readonly group: Handle; readonly to: string }
+  | { readonly kind: 'delete-group'; readonly group: Handle }
+  | {
+      readonly kind: 'add-to-group';
+      readonly group: Handle;
+      readonly parameters: readonly Handle[];
+    }
+  | {
+      readonly kind: 'remove-from-group';
+      readonly group: Handle;
+      readonly parameters: readonly Handle[];
+    };
+
+/** The filter tree's fixed filters, whose names a group filter may not take. */
+export const FIXED_PARAMETER_FILTERS = ['All', 'All Used in Expressions'] as const;
 
 function paletteCommand(name: string, open: boolean): CommandDef {
   return {
@@ -75,6 +106,16 @@ export function parameterEditCommand(edit: ParameterEdit): CommandDef {
 
 /** Applies `edit` to the drawing, or says why it cannot. */
 export async function applyParameterEdit(ctx: CommandContext, edit: ParameterEdit): Promise<void> {
+  if (
+    edit.kind === 'new-group' ||
+    edit.kind === 'rename-group' ||
+    edit.kind === 'delete-group' ||
+    edit.kind === 'add-to-group' ||
+    edit.kind === 'remove-from-group'
+  ) {
+    groupEdit(ctx, edit);
+    return;
+  }
   const dims = parameterObjects(ctx.model);
   if (edit.kind === 'new') {
     newUserParameter(ctx, new Set(dims.map((d) => d.parameter)));
@@ -151,6 +192,61 @@ function newUserParameter(ctx: CommandContext, taken: ReadonlySet<string>): void
       expression: '1',
     } as Omit<UserParameterObject, 'handle'>),
   );
+}
+
+type GroupEdit = Extract<
+  ParameterEdit,
+  { kind: 'new-group' | 'rename-group' | 'delete-group' | 'add-to-group' | 'remove-from-group' }
+>;
+
+/** The handles of `parameters` that are parameters' objects, each once, in the order given. */
+function parametersOf(ctx: CommandContext, parameters: readonly Handle[]): Handle[] {
+  return [...new Set(parameters)].filter((h) => isParameterObject(ctx.model.objects.get(h)));
+}
+
+/** A group filter edit: no solver, nothing moves. */
+function groupEdit(ctx: CommandContext, edit: GroupEdit): void {
+  const groups = [...ctx.model.objects.values()].filter(isParameterGroup);
+  const taken = (name: string, except?: Handle) =>
+    [...FIXED_PARAMETER_FILTERS, ...groups.filter((g) => g.handle !== except).map((g) => g.name)]
+      .map((n) => n.toLowerCase())
+      .includes(name.toLowerCase());
+  if (edit.kind === 'new-group') {
+    let n = 1;
+    while (taken(`Group Filter${n}`)) n++;
+    const owner = ctx.model.meta.rootDictionary ?? '0';
+    ctx.edit((b) =>
+      b.addObject({
+        type: 'TRIYA_PARAMETERGROUP',
+        owner,
+        name: `Group Filter${n}`,
+        members: parametersOf(ctx, edit.parameters ?? []),
+      } as Omit<ParameterGroupObject, 'handle'>),
+    );
+    return;
+  }
+  const group = groups.find((g) => g.handle === edit.group);
+  if (!group) {
+    ctx.message('That group filter is gone.');
+    return;
+  }
+  const update = (patch: Partial<ParameterGroupObject>) =>
+    ctx.edit((b) => b.updateObject(group.handle, patch as RecordPatch<NonGraphicalObject>));
+  if (edit.kind === 'delete-group') {
+    ctx.edit((b) => b.removeObject(group.handle));
+  } else if (edit.kind === 'rename-group') {
+    const to = edit.to.trim();
+    if (to === group.name) return;
+    if (to === '') ctx.message('A group filter needs a name.');
+    else if (taken(to, group.handle)) ctx.message(`A filter named "${to}" already exists.`);
+    else update({ name: to });
+  } else if (edit.kind === 'add-to-group') {
+    const added = parametersOf(ctx, edit.parameters).filter((h) => !group.members.includes(h));
+    if (added.length > 0) update({ members: [...group.members, ...added] });
+  } else {
+    const members = group.members.filter((h) => !edit.parameters.includes(h));
+    if (members.length < group.members.length) update({ members });
+  }
 }
 
 async function solverOf(ctx: CommandContext): Promise<ConstraintSolver | undefined> {

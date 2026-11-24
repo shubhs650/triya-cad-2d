@@ -516,7 +516,7 @@ engines.onCommand((doc, o) => {
   }
   if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
   if (o.type === 'properties') propertySheets.set(doc, o.sheet);
-  if (o.type === 'parameters') parameterRows.set(doc, o.rows);
+  if (o.type === 'parameters') parameterRows.set(doc, o.rows, o.groups);
   if (o.type === 'ribbon-properties') ribbonPropertiesStore.set(doc, o.properties);
   // A rollover tooltip's answer shows; a command starting takes it away (M2-35 part 21).
   if (o.type === 'rollover') rollovers.answer(doc, o.id, o.sheet);

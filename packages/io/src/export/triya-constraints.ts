@@ -1,5 +1,6 @@
 // TriyaToAcad for geometric constraints (M9-04, PRD FR-X5, DEC-081), dimensional ones (M9-03
-// part 3, DEC-082) and user parameters (M9-03 part 6, DEC-083), the inverse of map/triya-constraints.ts: each constraint is an XRECORD in the `TRIYA_CONSTRAINTS` dictionary
+// part 3, DEC-082), user parameters (M9-03 part 6, DEC-083) and the Parameters Manager's group
+// filters (M9-03 part 12, DEC-086), the inverse of map/triya-constraints.ts: each constraint is an XRECORD in the `TRIYA_CONSTRAINTS` dictionary
 // of the named object dictionary, keyed by its own handle. A new constraint joins it; the first
 // one a drawing gets brings the dictionary, made as AutoCAD files its own dictionaries there
 // (soft owner, 281 = 1, the root dictionary its reactor). A constraint whose kind or references
@@ -7,7 +8,8 @@
 //
 // A constraint naming an object the drawing no longer holds is saved as none: AutoCAD removes an
 // erased object's constraints with it (AutoCAD 2024 Help, "About Applying Geometric
-// Constraints"), and a record naming nothing could not be read back.
+// Constraints"), and a record naming nothing could not be read back. A group filter is saved
+// with the members that are saved, so one whose parameter went is written again without it.
 //
 // Refused, before anything changes: a constraint filed elsewhere than the root dictionary (where
 // GEOMCONSTRAINT files a new one) or `TRIYA_CONSTRAINTS`, a kind Triya does not name, no
@@ -27,6 +29,8 @@ import {
   GEOMETRIC_CONSTRAINT_KINDS,
   isDimensionalConstraint,
   isGeometricConstraint,
+  isParameterGroup,
+  isParameterObject,
   isUserParameter,
   type DimensionalConstraintObject,
   type DocumentInit,
@@ -34,12 +38,14 @@ import {
   type GeometricConstraintObject,
   type Handle,
   type NonGraphicalObject,
+  type ParameterGroupObject,
   type UserParameterObject,
 } from '@triya/engine';
 import {
   CONSTRAINT_FORMS,
   CONSTRAINT_POINTS,
   DIMENSIONAL_RECORD,
+  GROUP_RECORD,
   MAX_CONSTRAINT_REFS,
   PARAMETER_RECORD,
   TRIYA_CONSTRAINTS,
@@ -48,13 +54,20 @@ import {
 } from '../map/triya-constraints';
 import { resolve, same, type Resolver } from './entities';
 
-type Constraint = GeometricConstraintObject | DimensionalConstraintObject | UserParameterObject;
+type Constraint =
+  | GeometricConstraintObject
+  | DimensionalConstraintObject
+  | UserParameterObject
+  | ParameterGroupObject;
 
 const isConstraint = (o: NonGraphicalObject | undefined): o is Constraint =>
-  isGeometricConstraint(o) || isDimensionalConstraint(o) || isUserParameter(o);
+  isGeometricConstraint(o) ||
+  isDimensionalConstraint(o) ||
+  isUserParameter(o) ||
+  isParameterGroup(o);
 
-/** The references a record names: a user parameter names none. */
-const refsOf = (c: Constraint) => (isUserParameter(c) ? [] : c.refs);
+/** The objects a record names: a user parameter names none, a group its parameters' records. */
+const refsOf = (c: Constraint) => (isUserParameter(c) || isParameterGroup(c) ? [] : c.refs);
 
 export interface TriyaConstraintsPlan {
   readonly updated: { readonly acad: XRecord; readonly after: Constraint }[];
@@ -89,9 +102,13 @@ function parameterTextProblems(c: DimensionalConstraintObject | UserParameterObj
   return out;
 }
 
-/** Why `c` cannot be written as DEC-081 (DEC-082, DEC-083) lays a record out. */
+/** Why `c` cannot be written as DEC-081 (DEC-082, DEC-083, DEC-086) lays a record out. */
 function layoutProblems(c: Constraint): string[] {
   if (isUserParameter(c)) return parameterTextProblems(c);
+  if (isParameterGroup(c)) {
+    const p = textProblem('the group filter name', c.name);
+    return c.name === '' ? ['an empty group filter name'] : p ? [p] : [];
+  }
   const out: string[] = [];
   if (isDimensionalConstraint(c)) {
     if (!(DIMENSIONAL_CONSTRAINT_KINDS as readonly string[]).includes(c.dimension)) {
@@ -146,13 +163,35 @@ export function planTriyaConstraints(
   for (const a of model.objects.values()) {
     if (saved(a) && named(a)) names.set(a.parameter, (names.get(a.parameter) ?? 0) + 1);
   }
+  // Group filters' names, any case, as the Parameters Manager tells them apart.
+  const groupNames = new Map<string, number>();
   for (const a of model.objects.values()) {
-    if (!saved(a)) continue;
+    if (!isParameterGroup(a)) continue;
+    const n = a.name.toLowerCase();
+    groupNames.set(n, (groupNames.get(n) ?? 0) + 1);
+  }
+  // A group keeps only the members saved with it (a parameter deleted, or gone with its object).
+  const written = (o: Constraint): Constraint =>
+    isParameterGroup(o)
+      ? {
+          ...o,
+          members: o.members.filter((h) => {
+            const m = model.objects.get(h);
+            return isParameterObject(m) && saved(m);
+          }),
+        }
+      : o;
+  for (const o of model.objects.values()) {
+    if (!saved(o)) continue;
+    const a = written(o);
     const b = before.get(a.handle);
     if (b && b.type === a.type && same(fields(b), fields(a))) continue;
     const out = layoutProblems(a);
     if (named(a) && (names.get(a.parameter) ?? 0) > 1) {
       out.push(`parameter ${a.parameter} is another constraint's too`);
+    }
+    if (isParameterGroup(a) && (groupNames.get(a.name.toLowerCase()) ?? 0) > 1) {
+      out.push(`group filter ${a.name} is another group's too`);
     }
     if (!owners.has(a.owner)) out.push(`it is filed in ${a.owner}, not ${TRIYA_CONSTRAINTS}`);
     if (old) out.push(`${ACadVersion[version!]} is older than R2000`);
@@ -174,6 +213,12 @@ export function planTriyaConstraints(
 function fill(x: XRecord, c: Constraint): void {
   x.clear();
   x.createEntry(70, TRIYA_CONSTRAINTS_VERSION);
+  if (isParameterGroup(c)) {
+    x.createEntry(1, GROUP_RECORD);
+    x.createEntry(300, c.name);
+    for (const m of c.members) x.createEntry(331, handle(m));
+    return;
+  }
   if (isUserParameter(c)) {
     x.createEntry(1, PARAMETER_RECORD);
     x.createEntry(300, c.parameter);
