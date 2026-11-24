@@ -47,6 +47,7 @@ import { SelectSimilarDialog } from './SelectSimilarDialog';
 import { ObjectGroupingDialog } from './ObjectGroupingDialog';
 import { FilterDialog } from './FilterDialog';
 import { QSelectDialog } from './QSelectDialog';
+import { ConstraintSettingsDialog } from './ConstraintSettingsDialog';
 import { DraftingSettingsDialog } from './DraftingSettingsDialog';
 import { UnitsDialog } from './UnitsDialog';
 import { DimStyleDialog } from './DimStyleDialog';
@@ -154,6 +155,8 @@ export function AttributeDialogs({
       return <QSelectDialog key={key} doc={doc.id} request={d} />;
     case 'dsettings':
       return <DraftingSettingsDialog key={key} doc={doc.id} request={d} />;
+    case 'csettings':
+      return <ConstraintSettingsDialog key={key} doc={doc.id} request={d} />;
     case 'selectsimilar':
       return <SelectSimilarDialog key={key} doc={doc.id} request={d} />;
     case 'objectgrouping':

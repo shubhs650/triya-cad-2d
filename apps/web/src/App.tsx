@@ -818,6 +818,8 @@ function viewContext(id: number): ViewContext {
       constraintBarStates.apply(id, r, drafting.get().constraintBarDisplay);
       return { ok: true };
     },
+    // AUTOCONSTRAIN (M9-05 part 3): the user's AutoConstrain tab.
+    autoConstrain: () => ({ ok: true, autoConstrain: drafting.get().autoConstrain }),
     // BEDIT and BCLOSE (M5-02): the Block Editor shows the block, or closes.
     blockEditor: (block, name) => {
       if (block === undefined) store.closeBlockEditor(id);

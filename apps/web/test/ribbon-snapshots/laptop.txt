@@ -212,6 +212,7 @@ Dimensions (compressed)
 
 ## Parametric
 Geometric (expanded)
+  icon        gc-auto<link_multiple>
   icon        gc-coincident<gc-coincident>
   icon        gc-collinear<gc-collinear>
   icon        gc-concentric<gc-concentric>
@@ -227,6 +228,7 @@ Geometric (expanded)
   icon        gc-show-hide<eye_off>
   icon        gc-show-all<eye>
   icon        gc-hide-all<eye_off>
+  icon        gc-settings<settings>
 Dimensional (expanded)
   icon        dc-linear<dim-linear> ▾ [dc-linear-linear<dim-linear>, dc-horizontal<dim-linear>, dc-vertical<dim-linear>]
   icon        dc-aligned<dim-aligned>
@@ -242,7 +244,7 @@ Manage (expanded)
 
 ### step 1
 Geometric (collapsed)
-  ▾ gc-coincident, gc-collinear, gc-concentric, gc-fix, gc-parallel, gc-perpendicular, gc-horizontal, gc-vertical, gc-tangent, gc-smooth, gc-symmetric, gc-equal, gc-show-hide, gc-show-all, gc-hide-all
+  ▾ gc-auto, gc-coincident, gc-collinear, gc-concentric, gc-fix, gc-parallel, gc-perpendicular, gc-horizontal, gc-vertical, gc-tangent, gc-smooth, gc-symmetric, gc-equal, gc-show-hide, gc-show-all, gc-hide-all, gc-settings
 
 ### step 2
 Dimensional (compressed)

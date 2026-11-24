@@ -5,7 +5,13 @@
 // ORTHO, SNAP, GRID, LWT and TPY are each drawing's own in AutoCAD (ORTHOMODE, SNAPMODE,
 // GRIDMODE, LWDISPLAY, TRANSPARENCYDISPLAY) and stay per session, as M2-04 built them.
 import { GRIP_COLORS_DEFAULT, type GripColors } from '@triya/render';
-import { LINEWEIGHTS, OSMODE_DEFAULT, OSNAP_OFF } from '@triya/engine';
+import {
+  AUTOCONSTRAIN_DEFAULTS,
+  LINEWEIGHTS,
+  OSMODE_DEFAULT,
+  OSNAP_OFF,
+  autoConstrainSettingsOf,
+} from '@triya/engine';
 import {
   AUTOSNAP_KEPT,
   INITIAL_MODIFY_OPTIONS,
@@ -99,6 +105,7 @@ export type DraftingPreferences = Pick<
   | 'constraintBarMode'
   | 'constraintBarDisplay'
   | 'cbarTransparency'
+  | 'autoConstrain'
   | 'layLockFade'
   | 'xFade'
   | 'annoAutoScale'
@@ -241,6 +248,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     constraintBarMode: 4095,
     constraintBarDisplay: 3,
     cbarTransparency: 50,
+    autoConstrain: AUTOCONSTRAIN_DEFAULTS,
     layLockFade: 50,
     xFade: 50,
     annoAutoScale: -4,
@@ -443,6 +451,8 @@ export function normalizePreferences(raw: unknown): Preferences {
         { min: 10, max: 90 },
         d.drafting.cbarTransparency,
       ),
+      // M9-05 part 3: the AutoConstrain tab, mended where it is missing or out of range.
+      autoConstrain: autoConstrainSettingsOf(k['autoConstrain']),
       layLockFade: within(k['layLockFade'], { min: -90, max: 90 }, d.drafting.layLockFade),
       xFade: within(k['xFade'], { min: 0, max: 90 }, d.drafting.xFade),
       // M6-03: ANNOAUTOSCALE is −4 to 4 but 0.
@@ -625,6 +635,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     constraintBarMode: s.constraintBarMode,
     constraintBarDisplay: s.constraintBarDisplay,
     cbarTransparency: s.cbarTransparency,
+    autoConstrain: s.autoConstrain,
     layLockFade: s.layLockFade,
     xFade: s.xFade,
     annoAutoScale: s.annoAutoScale,
