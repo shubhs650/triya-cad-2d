@@ -27,7 +27,8 @@ import type { Prompt, PromptAnswer, SelectionWindow } from '../prompt';
 import { formatNumber } from '../units';
 import type { Box } from '../../geom/bounds';
 import type { CommandContext, CommandDef } from '../command';
-import { parameterCopyModeOf } from '../constraint-upkeep';
+import { dropConstraints, parameterCopyModeOf } from '../constraint-upkeep';
+import { dimensionalConstraints } from '../../edit/constraints';
 import { regenerateDimensions } from './dimensions';
 import { currentUcs } from '../ucs';
 
@@ -101,8 +102,15 @@ export function eraseCommand(): CommandDef {
     name: 'ERASE',
     erases: true,
     usesSelection: 'during',
+    takesConstraints: true,
     async *run(ctx) {
-      const ids = yield* selectObjects(ctx);
+      // Dimensional constraints selected at `Command:` (M9-03 part 10) go too; with nothing
+      // else selected, ERASE asks for no objects, as it takes a pre-selection.
+      const picked = new Set(ctx.preselectedConstraints ?? []);
+      const constraints = dimensionalConstraints(ctx.model).filter((c) => picked.has(c.handle));
+      const ids =
+        ctx.preselected.length > 0 || !constraints.length ? yield* selectObjects(ctx) : [];
+      if (constraints.length > 0) await dropConstraints(ctx, constraints);
       if (ids.length === 0) return;
       run(ctx, 'erased', (b) => eraseObjects(b, ctx.model, ids));
     },

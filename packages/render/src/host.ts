@@ -333,10 +333,27 @@ export class RendererHost {
     ]);
   }
 
-  /** The entities to draw selected (M2-03). */
-  setHighlight(ids: readonly EntityId[]): void {
-    if (this.#session) this.#session.renderer.setHighlight(ids);
-    else this.#post({ type: 'highlight', ids });
+  /** The entities to draw selected (M2-03), and the dimensional constraints (M9-03 part 10). */
+  setHighlight(ids: readonly EntityId[], constraints: readonly Handle[] = []): void {
+    if (this.#session) this.#session.renderer.setHighlight(ids, constraints);
+    else this.#post({ type: 'highlight', ids, ...(constraints.length > 0 && { constraints }) });
+  }
+
+  /** The dimensional constraint drawn under a pick (M9-03 part 10), or null. */
+  constraintAt(
+    screen: { readonly x: number; readonly y: number },
+    aperture: number,
+    view?: ViewTransform,
+  ): Promise<Handle | null> {
+    if (this.#session)
+      return Promise.resolve(this.#session.renderer.constraintAt(screen, aperture, view));
+    return this.#request((id) => ({
+      type: 'constraintAt',
+      id,
+      screen,
+      aperture,
+      ...(view && { view }),
+    })).then((m) => (m.type === 'constraint' ? m.handle : null));
   }
 
   /**

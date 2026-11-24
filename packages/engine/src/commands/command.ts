@@ -82,6 +82,12 @@ export interface CommandContext {
    */
   readonly preselected: readonly EntityId[];
   /**
+   * The dimensional constraints selected at `Command:` that a command taking them
+   * (`takesConstraints`, ERASE) took as it started (M9-03 part 10), by handle; absent or empty
+   * when there were none.
+   */
+  readonly preselectedConstraints?: readonly Handle[];
+  /**
    * Leaves `ids` selected at `Command:`, as a pick there would (QUICKPROPERTIES, M2-35 part 21:
    * the objects it shows Quick Properties for stay selected and gripped). Only a command that
    * keeps the selection (`keepsSelection`) should: another's next start clears it.
@@ -264,6 +270,11 @@ export interface CommandDef {
    * M2-06), where any other command that does not select deselects them.
    */
   readonly keepsSelection?: boolean;
+  /**
+   * It takes the dimensional constraints selected at `Command:` as it starts (ERASE, M9-03 part
+   * 10): `CommandContext.preselectedConstraints`.
+   */
+  readonly takesConstraints?: boolean;
   /**
    * A double click on the canvas cancels it and runs what a double click runs at `Command:`
    * (TABLECELL, M4-05 part 3: the first click of a double click on a cell selects the cell).

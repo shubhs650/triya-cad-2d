@@ -114,6 +114,13 @@ export type ViewRequest =
    */
   | { readonly op: 'pick'; readonly point: Vec2 }
   /**
+   * The dimensional constraint drawn within the pickbox of `point` (M9-03 part 10), by its text,
+   * dimension line or arc and arrows, the nearest: the reply's `constraint`, none where no
+   * constraint is drawn there. Only the canvas knows where a dynamic one is drawn, as it keeps
+   * its size on screen.
+   */
+  | { readonly op: 'constraintAt'; readonly point: Vec2 }
+  /**
    * What a pick at `point` hit inside the block reference `id` it took (M5-06 part 5: the layer
    * tools' Block selection setting), as drawn: the reply's `nested`, or none where the pick
    * comes near none of its contents.
@@ -641,6 +648,8 @@ export type ViewReply =
       readonly enclosed?: EnclosedSpace;
       /** What a `pick` or `select` took. */
       readonly ids?: readonly EntityId[];
+      /** What a `constraintAt` request found (M9-03 part 10). */
+      readonly constraint?: Handle;
       /** What a `nested` pick hit. */
       readonly nested?: NestedPick;
       /** What an `xref` request did, one line each (M5-04). */

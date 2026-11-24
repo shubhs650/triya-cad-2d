@@ -66,12 +66,17 @@ export function annotationalSizes(header: ReadonlyMap<string, unknown>): Constra
   };
 }
 
-/** What `d` draws, in `color`, at sizes `s`; its text only where a font is loaded. */
+/**
+ * What `d` draws, in `color`, at sizes `s`; its text only where a font is loaded. Without
+ * `extensions`, its extension lines are left out: what a pick takes it by (M9-03 part 10), as
+ * they start at the objects' points.
+ */
 export function constraintPrimitives(
   d: ConstraintDisplay,
   s: ConstraintSizes,
   color: PrimitiveColor,
   text: TextContext | undefined,
+  extensions = true,
 ): RenderPrimitive[] {
   const out: RenderPrimitive[] = [];
   const stroke = (path: number[]) => out.push({ kind: 'stroke', path, color });
@@ -99,7 +104,7 @@ export function constraintPrimitives(
       color,
     });
   };
-  drawShape(d.shape, s, stroke, arrow);
+  drawShape(d.shape, s, stroke, arrow, extensions);
   if (text) {
     const c = Math.cos(d.textAngle);
     const sn = Math.sin(d.textAngle);
@@ -124,10 +129,12 @@ function drawShape(
   s: ConstraintSizes,
   stroke: (path: number[]) => void,
   arrow: (tip: Vec2, from: Vec2) => void,
+  extensions: boolean,
 ): void {
   const line = (p: Vec2, q: Vec2) => stroke([PATH_M, p.x, p.y, PATH_L, q.x, q.y]);
   /** An extension line from `p` to `q`, starting `offset` off `p` and running `extend` past `q`. */
   const extension = (p: Vec2, q: Vec2) => {
+    if (!extensions) return;
     const len = Math.hypot(q.x - p.x, q.y - p.y);
     if (!(len > s.offset)) return;
     const u = { x: (q.x - p.x) / len, y: (q.y - p.y) / len };

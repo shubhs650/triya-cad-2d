@@ -107,7 +107,8 @@ import type { DragPreview } from './drag';
 import type { CommandPreview, PreviewQuery } from './command-preview';
 import { UndoStack, type UndoAction, type UndoState } from './undo';
 import type { PropertyEdit } from '../properties/edit';
-import { filtered } from '../properties/sheet';
+import { DIMCONSTRAINT_SHEET_TYPE, filtered, type SheetType } from '../properties/sheet';
+import { constraintPropertyCommand } from './constraint-properties';
 import { textOf } from '../properties/multileader';
 import type { EntityType } from '../model/types';
 import { LAYERP, layerPreviousOf } from './layer-previous';
@@ -210,7 +211,15 @@ export type BusEvent =
    * The objects to show selected changed (M2-03): the pre-selection at `Command:`, or the set a
    * "Select objects" prompt is building.
    */
-  | { readonly type: 'selection'; readonly ids: readonly EntityId[] }
+  | {
+      readonly type: 'selection';
+      readonly ids: readonly EntityId[];
+      /**
+       * The dimensional constraints selected at `Command:` (M9-03 part 10), by handle: they are
+       * objects, not entities, drawn by the canvas over the scene.
+       */
+      readonly constraints?: readonly Handle[];
+    }
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
   | { readonly type: 'commit'; readonly record: CommandRecord }
   /**
@@ -483,6 +492,8 @@ export class PromptBus {
   /** Where the pre-selection's last pick was made (EATTEDIT's attribute, M2-27). */
   #pickfirstPick: Vec2 | undefined;
   #pickfirstTakes: readonly SelectionTake[] = [];
+  /** The constraints a command taking them (ERASE) took as it started (M9-03 part 10). */
+  #pickfirstConstraints: readonly Handle[] = [];
   /** The hot grip while grip editing runs (M2-06). */
   #hot: Vec2 | undefined;
   /** The grips last shown, as a key, so only a change is sent. */
@@ -491,6 +502,12 @@ export class PromptBus {
   #previous: readonly EntityId[] = [];
   /** The selection last shown (the `selection` event). */
   #shown: readonly EntityId[] = [];
+  #shownConstraints: readonly Handle[] = [];
+  /**
+   * The dimensional constraints selected at `Command:` (M9-03 part 10): a pick on one the canvas
+   * draws selects it, beside the objects selected there.
+   */
+  #constraintSel: Handle[] = [];
   readonly #undo: UndoStack;
   readonly #clock: Clock;
 
@@ -619,6 +636,14 @@ export class PromptBus {
       if (loop) return loop.ids;
     }
     return this.#idle.ids;
+  }
+
+  /**
+   * The dimensional constraints selected at `Command:` (M9-03 part 10), in the order picked;
+   * none while a command builds a selection of its own.
+   */
+  get constraintSelection(): readonly Handle[] {
+    return this.#stack.some((f) => f.select) ? [] : this.#constraintSel;
   }
 
   /** The running command (the innermost, when one runs transparently), or undefined. */
@@ -829,8 +854,43 @@ export class PromptBus {
         });
       }
       if (!this.#pickfirstOn) return;
+      if (await this.#pickConstraint(point, o)) return;
       this.#step(undefined, await this.#idle.point(point, o));
     });
+  }
+
+  /**
+   * A click at `Command:` on a dimensional constraint the canvas draws (M9-03 part 10) selects
+   * it, as AutoCAD selects one ("Select a dimensional constraint", "To Edit a Dimensional
+   * Constraint Using the Properties Palette"): added with PICKADD 1 or 2, Shift removing it;
+   * with PICKADD 0 it replaces the selection, Shift toggling it. A constraint is drawn over the
+   * objects, so the canvas is asked first; a click that finds none picks objects as before. Not
+   * while a window is being dragged: its corner is the click.
+   */
+  async #pickConstraint(
+    point: Vec2,
+    o: { readonly shift?: boolean; readonly release?: boolean; readonly lasso?: Lasso },
+  ): Promise<boolean> {
+    if (o.release || o.lasso || this.#idle.wantsPoint) return false;
+    const r = await this.#view.request({ op: 'constraintAt', point });
+    const handle = r.ok ? r.constraint : undefined;
+    if (handle === undefined) return false;
+    const had = this.#constraintSel.includes(handle);
+    const adds = this.#pickadd === 1 || this.#pickadd === 2;
+    if (o.shift) {
+      if (had || !adds) {
+        this.#constraintSel = had
+          ? this.#constraintSel.filter((h) => h !== handle)
+          : [...this.#constraintSel, handle];
+      }
+    } else if (adds) {
+      if (!had) this.#constraintSel = [...this.#constraintSel, handle];
+    } else {
+      this.#idle.clear();
+      this.#constraintSel = [handle];
+    }
+    this.#showSelection();
+    return true;
   }
 
   /**
@@ -1089,9 +1149,11 @@ export class PromptBus {
   /** Deselects what was picked at `Command:` (another space shown, M2-03). */
   clearSelection(): Promise<void> {
     return this.#enqueue(() => {
-      if (this.#idle.ids.length === 0 && !this.#idle.wantsPoint) return;
+      if (this.#idle.ids.length === 0 && !this.#idle.wantsPoint && !this.#constraintSel.length)
+        return;
       const corner = this.#idle.wantsPoint;
       this.#idle.clear();
+      this.#constraintSel = [];
       this.#showSelection();
       if (corner && this.#stack.length === 0) this.#showPrompt();
     });
@@ -1110,12 +1172,23 @@ export class PromptBus {
    * palette or ribbon button cancels it (^C^C); grip editing keeps its selection, so the edit
    * applies to it.
    */
-  setProperty(edit: PropertyEdit, filter?: EntityType): Promise<void> {
+  setProperty(edit: PropertyEdit, filter?: SheetType): Promise<void> {
     return this.#enqueue(async () => {
+      const only = filter === DIMCONSTRAINT_SHEET_TYPE ? undefined : filter;
       const loop = this.#selecting();
-      if (loop) return this.#propertyInside([...loop.ids], edit, filter);
+      if (loop) return this.#propertyInside([...loop.ids], edit, only);
       if (this.#stack.length > 0) await this.#cancel();
       const ids = [...this.#idle.ids];
+      // The palette shows the constraints selected (M9-03 part 10) when narrowed to them, or
+      // when nothing else is selected.
+      const constraints = this.#constraintSel;
+      if (
+        constraints.length > 0 &&
+        (filter === DIMCONSTRAINT_SHEET_TYPE || (ids.length === 0 && filter === undefined))
+      ) {
+        return this.#start(constraintPropertyCommand([...constraints], edit), false, false);
+      }
+      if (filter === DIMCONSTRAINT_SHEET_TYPE) return;
       // eslint-disable-next-line @typescript-eslint/no-this-alias -- the command's body runs on the bus
       const bus = this;
       const def: CommandDef = {
@@ -1124,7 +1197,7 @@ export class PromptBus {
         keepsSelection: true,
         // eslint-disable-next-line require-yield -- the palette gave the value
         async *run(ctx) {
-          await bus.#applyProperty(ctx, ids, edit, filter);
+          await bus.#applyProperty(ctx, ids, edit, only);
         },
       };
       await this.#start(def, false, false);
@@ -1512,7 +1585,12 @@ export class PromptBus {
       this.#pickfirstWindow = this.#pickfirst ? this.#idle.window : undefined;
       this.#pickfirstPick = this.#pickfirst ? this.#idle.pick : undefined;
       this.#pickfirstTakes = this.#pickfirst ? this.#idle.takes : [];
-      if (!def.transparent && !def.keepsSelection) this.#idle.clear();
+      // ERASE takes the constraints selected (M9-03 part 10); any other command leaves them.
+      this.#pickfirstConstraints = def.takesConstraints ? [...this.#constraintSel] : [];
+      if (!def.transparent && !def.keepsSelection) {
+        this.#idle.clear();
+        this.#constraintSel = [];
+      }
       this.#showSelection();
     }
     const ctx = this.#context(dash, transparent);
@@ -1546,6 +1624,9 @@ export class PromptBus {
       },
       get preselected() {
         return transparent ? [] : (bus.#pickfirst ?? []);
+      },
+      get preselectedConstraints() {
+        return transparent ? [] : bus.#pickfirstConstraints;
       },
       get space() {
         return bus.#space();
@@ -1899,14 +1980,34 @@ export class PromptBus {
   #showSelection(): void {
     this.#showGrips();
     const ids = this.selection;
+    const constraints = this.constraintSelection;
     const shown = this.#shown;
-    if (ids.length === shown.length && ids.every((id, i) => id === shown[i])) return;
+    const was = this.#shownConstraints;
+    if (
+      ids.length === shown.length &&
+      ids.every((id, i) => id === shown[i]) &&
+      constraints.length === was.length &&
+      constraints.every((h, i) => h === was[i])
+    )
+      return;
     this.#shown = [...ids];
-    this.#emit({ type: 'selection', ids: this.#shown });
+    this.#shownConstraints = [...constraints];
+    this.#emit({
+      type: 'selection',
+      ids: this.#shown,
+      ...(constraints.length > 0 && { constraints: this.#shownConstraints }),
+    });
   }
 
   /** Erased objects leave every selection, the Previous set included. */
   #forget(cs: ChangeSet): void {
+    const objects = cs.objects?.removed;
+    if (objects?.length && this.#constraintSel.length) {
+      const gone = new Set(objects.map((o) => o.handle));
+      this.#constraintSel = this.#constraintSel.filter((h) => !gone.has(h));
+      this.#pickfirstConstraints = this.#pickfirstConstraints.filter((h) => !gone.has(h));
+      this.#showSelection();
+    }
     const removed = cs.entities?.removed;
     if (!removed?.length) return;
     const gone = new Set(removed.map((r) => r.entity.id));
@@ -1953,6 +2054,7 @@ export class PromptBus {
 
   #close(): void {
     this.#pickfirst = undefined;
+    this.#pickfirstConstraints = [];
     this.#showSelection();
     if (this.#previewing) {
       this.#previewing = false;
@@ -1972,7 +2074,10 @@ export class PromptBus {
     this.#log(`${this.promptText} *Cancel*`);
     this.#collectors = [];
     // Esc at `Command:` deselects, as in AutoCAD.
-    if (this.#stack.length === 0) this.#idle.clear();
+    if (this.#stack.length === 0) {
+      this.#idle.clear();
+      this.#constraintSel = [];
+    }
     const outermost = this.#stack[0];
     while (this.#stack.length > 0) {
       const frame = this.#stack.pop()!;
