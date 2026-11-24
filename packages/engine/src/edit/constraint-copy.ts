@@ -249,6 +249,8 @@ export function carryConstraintsFrom(
       ...(d.reference && { reference: true }),
       location: applyPoint(t.m, d.location),
       form: d.form,
+      // DCDISPLAY's Hide goes with the copy (M9-03 part 7).
+      ...(d.hidden && { hidden: true }),
     } as Omit<DimensionalConstraintObject, 'handle'>);
   }
 }

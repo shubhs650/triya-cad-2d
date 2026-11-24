@@ -173,6 +173,35 @@ describe('saving dimensional constraints (TRIYA_CONSTRAINTS, DEC-082)', () => {
     expect(back.dims()[0]!.description).toBeUndefined();
   });
 
+  it("writes a dynamic constraint's DCDISPLAY Hide as 282 1 and reads it back (DEC-084)", () => {
+    const s = open(source.bytes);
+    const hw = s.dimension({ ...width, hidden: true });
+    const ha = s.dimension(ang);
+    const saved = s.save();
+    const dict = dictionaryOf(saved)!;
+    expect(groups(dict.getEntry(hw)).slice(5, 10)).toEqual([
+      [302, 'Overall width'],
+      [280, 0],
+      [281, 0],
+      [282, 1],
+      [10, [4, 10]],
+    ]);
+    // A constraint shown has no 282: its record is DEC-082's as it was.
+    expect(groups(dict.getEntry(ha)).slice(5, 8)).toEqual([
+      [280, 1],
+      [281, 0],
+      [10, [12, 2]],
+    ]);
+    const back = open(saved);
+    expect(back.dims()[0]).toEqual(expect.objectContaining({ handle: hw, hidden: true }));
+    expect(back.dims()[1]!.hidden).toBeUndefined();
+
+    // Shown again, the 282 goes.
+    back.update(hw, { hidden: undefined } as never);
+    const again = dictionaryOf(back.save())!;
+    expect(groups(again.getEntry(hw)).map(([code]) => code)).not.toContain(282);
+  });
+
   it('rewrites a changed expression and leaves out a removed constraint', () => {
     const first = open(source.bytes);
     const hd1 = first.dimension(d1);
@@ -224,11 +253,17 @@ describe('saving dimensional constraints (TRIYA_CONSTRAINTS, DEC-082)', () => {
     copy('NOLOC', (e) => {
       e.splice(7, 1);
     });
+    // DEC-084: 282 is 1 or absent.
+    copy('HIDDEN2', (e) => {
+      const x = new XRecord();
+      x.createEntry(282, 2);
+      e.splice(7, 0, x.entries[0] as never);
+    });
     const back = open(writeCadDocument(doc, { format: 'dxf' }));
     expect(back.dims().map((d) => d.handle)).toEqual([h]);
     back.dimension({ ...width, parameter: 'w' });
     const out = dictionaryOf(back.save())!;
-    expect(out.entryNames).toEqual(expect.arrayContaining(['FORM', 'KIND', 'NOLOC', h]));
+    expect(out.entryNames).toEqual(expect.arrayContaining(['FORM', 'KIND', 'NOLOC', 'HIDDEN2', h]));
     expect(groups(out.getEntry('KIND'))[2]).toEqual([2, 'arclength']);
   });
 });

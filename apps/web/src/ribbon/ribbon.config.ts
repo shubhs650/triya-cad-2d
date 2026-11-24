@@ -614,8 +614,9 @@ const ANNOTATE: RibbonTab = {
  * Smooth is greyed out until the solver takes splines (M9-02 part 2). The Dimensional panel
  * (M9-03 part 3): Linear (with Horizontal and Vertical), Aligned, Radius, Diameter, Angular;
  * Convert greyed out until DIMCONSTRAINT converts dimensions; Show Dynamic Constraints (M9-03
- * part 4). The Manage panel: Parameters Manager (M9-03 part 5). Auto Constrain, Show/Hide and
- * Infer, and Delete Constraints come with their commands.
+ * part 4); Show/Hide, DCDISPLAY (M9-03 part 7). The Manage panel: Parameters Manager (M9-03
+ * part 5). Auto Constrain, the Geometric panel's Show/Hide and Infer, and Delete Constraints
+ * come with their commands.
  */
 const PARAMETRIC: RibbonTab = {
   id: 'parametric',
@@ -666,6 +667,7 @@ const PARAMETRIC: RibbonTab = {
           ),
           sizes: SECONDARY,
         },
+        cmd('dc-show-hide', 'Show/Hide', 'eye_off', 'DCDISPLAY', SECONDARY),
         off(
           cmd('dc-convert', 'Convert', 'dim-linear', 'DIMCONSTRAINT', SECONDARY),
           'Converting a dimension to a constraint comes later',

@@ -1,0 +1,1 @@
+- M9-03 part 7 (#662): DCDISPLAY and the Parametric tab's Show/Hide show or hide the dynamic constraints of the objects you select, each constraint keeping its own setting through a save (DEC-084) and copies; a hidden one still shows while its objects are selected.

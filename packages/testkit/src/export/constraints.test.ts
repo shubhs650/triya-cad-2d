@@ -128,6 +128,8 @@ function constrain(model: DocumentModel): number {
       expression: 'd1/4',
       location: { x: 5, y: 6 },
       form: 'dynamic',
+      // DCDISPLAY's Hide (M9-03 part 7, DEC-084): 282 1 in its record.
+      hidden: true,
     });
   }
   const b = new ChangeSetBuilder(model);

@@ -182,6 +182,17 @@ describe('Canvas2DRenderer draws dimensional constraints', () => {
     expect(drawnIn(redraw(), BLUE).strokes).toBe(0);
   });
 
+  it('hides a constraint DCDISPLAY hid, showing it while its object is selected', () => {
+    // M9-03 part 7: D1 hidden on its own, D2 shown, Show Dynamic Constraints on.
+    const { d, r, redraw } = setup([dim('D1', { hidden: true }), dim('D2', { parameter: 'd2' })]);
+    expect(drawnIn(redraw(), BLUE).fills).toBe(2);
+    r.setHighlight([d.model.entityByHandle('20')!.id]);
+    expect(drawnIn(redraw(), BLUE).fills).toBe(4);
+    // DYNCONSTRAINTMODE 0 keeps it hidden while selected.
+    r.setStyle({ ...DARK, constraints: { color: BLUE, showSelected: false } });
+    expect(drawnIn(redraw(), BLUE).fills).toBe(2);
+  });
+
   it('draws an annotational constraint in the foreground even with dynamic ones hidden', () => {
     const hidden: RenderStyle = { ...DARK, constraints: { color: BLUE, dynamic: false } };
     const { redraw } = setup([dim('D1', { form: 'annotational' })], { style: hidden });
