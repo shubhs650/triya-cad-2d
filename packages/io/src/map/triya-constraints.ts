@@ -1,5 +1,5 @@
 // Constraints Triya made (GEOMCONSTRAINT and the GC* commands, M9-05; DIMCONSTRAINT and the DC*
-// commands, M9-03 part 3; storage M9-04, PRD FR-X5, DEC-081, DEC-082) and user parameters (M9-03
+// commands, M9-03 part 3; storage M9-04, PRD FR-X5, DEC-081, DEC-082, DEC-084) and user parameters (M9-03
 // part 6, DEC-083): the XRECORDs of the
 // `TRIYA_CONSTRAINTS` dictionary in the drawing's named object dictionary, each under its own
 // handle as its key, read into the drawing's `GeometricConstraintObject`s and
@@ -16,7 +16,8 @@
 //   70 its layout's version (1); 1 `dimensional`; 2 the kind (horizontal, vertical, aligned,
 //   angular, radial, diameter); 300 the parameter's name; 301 its expression; 302 its
 //   description, when it has one; 280 1 for a reference constraint, else 0; 281 the form (0
-//   dynamic, 1 annotational); 10 the dimension line's location; then the references as above.
+//   dynamic, 1 annotational); 282 1 when DCDISPLAY hid it (M9-03 part 7, DEC-084), else
+//   nothing; 10 the dimension line's location; then the references as above.
 //
 // A user parameter's (the Parameters Manager's New User Parameter, M9-03 part 6, DEC-083):
 //
@@ -145,11 +146,16 @@ export function dimensionalFields(
   if (description !== undefined && typeof description !== 'string') return undefined;
   const reference = number(at(i, 280));
   const form = number(at(i + 1, 281));
-  const location = point(at(i + 2, 10));
+  i += 2;
+  // DCDISPLAY's Hide (DEC-084): 282 1, only on a hidden constraint.
+  const hidden = at(i, 282);
+  if (hidden !== undefined) i++;
+  if (hidden !== undefined && number(hidden) !== 1) return undefined;
+  const location = point(at(i, 10));
   if (reference !== 0 && reference !== 1) return undefined;
   if (form !== 0 && form !== 1) return undefined;
   if (!location) return undefined;
-  const refs = refsOf(entries.slice(i + 3), doc);
+  const refs = refsOf(entries.slice(i + 1), doc);
   if (!refs) return undefined;
   return {
     dimension,
@@ -160,6 +166,7 @@ export function dimensionalFields(
     ...(reference === 1 ? { reference: true } : {}),
     location,
     form: CONSTRAINT_FORMS[form],
+    ...(hidden === undefined ? {} : { hidden: true as const }),
   };
 }
 

@@ -189,6 +189,8 @@ function fill(x: XRecord, c: Constraint): void {
     if (c.description !== undefined) x.createEntry(302, c.description);
     x.createEntry(280, c.reference ? 1 : 0);
     x.createEntry(281, CONSTRAINT_FORMS.indexOf(c.form));
+    // DCDISPLAY's Hide (M9-03 part 7, DEC-084): a shown constraint's record stays DEC-082's.
+    if (c.hidden) x.createEntry(282, 1);
     x.createEntry(10, new XYZ(c.location.x, c.location.y, 0));
   } else {
     x.createEntry(1, c.kind);

@@ -112,6 +112,8 @@ describe('palette search', () => {
       'DCALIGNED',
       'DCANGULAR',
       'DCDIAMETER',
+      // M9-03 part 7: each dynamic constraint shown or hidden.
+      'DCDISPLAY',
       'DCHORIZONTAL',
       'DCLINEAR',
       'DCRADIUS',

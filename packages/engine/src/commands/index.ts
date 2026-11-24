@@ -38,6 +38,7 @@ export {
 } from './drawing-units';
 export { rayCommand, xlineCommand } from './draw/xline';
 export { dashDimstyleCommand } from './dimstyle-dash';
+export { dcdisplayCommand } from './dcdisplay';
 export {
   dimensionalConstraintCommands,
   linearDirection,

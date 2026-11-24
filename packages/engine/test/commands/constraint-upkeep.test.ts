@@ -602,6 +602,20 @@ describe('the rest of constraint upkeep (M9-10)', () => {
     expect((await copy(4, '2')).added).toEqual(['d2=20@40copy', 'd3=20@30copy']);
   });
 
+  it("a copy keeps a dynamic constraint's DCDISPLAY Hide (M9-03 part 7)", async () => {
+    const d = drawing(undefined, {
+      objects: [{ ...DIMENSIONS[0]!, hidden: true }, DIMENSIONS[1]!],
+    });
+    await d.bus.script(['COPY']);
+    await pickBoth(d);
+    await d.bus.submit('');
+    await d.bus.script(['0,0', '0,20', '']);
+    const hidden = [...d.model.objects.values()]
+      .filter(isDimensionalConstraint)
+      .map((c) => `${c.parameter}:${c.hidden ?? false}`);
+    expect(hidden).toEqual(['d1:true', 'width:false', 'd2:true', 'd3:false']);
+  });
+
   it('under 2 a copy keeps an expression of user parameters, whose names copies never take', async () => {
     const user = (handle: string, parameter: string, expression: string) =>
       ({ handle, type: 'TRIYA_USERPARAMETER', owner: 'C', parameter, expression }) as never;

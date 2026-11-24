@@ -241,6 +241,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'dc-convert': 'Turns an associative dimension into a dimensional constraint.',
   'dc-show-dynamic':
     'Shows or hides the dynamic constraints; hidden ones show while their objects are selected.',
+  'dc-show-hide': 'Shows or hides the dynamic constraints of the objects you select.',
   'parameters-manager':
     "Opens the Parameters Manager: the dimensional constraints' names, expressions and values, edited in place.",
   // View

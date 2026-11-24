@@ -2397,6 +2397,11 @@ export interface DimensionalConstraintObject extends NonGraphicalObject {
   readonly location: Vec2;
   /** AutoCAD's Constraint Form: dynamic (the default, CCONSTRAINTFORM 0) or annotational. */
   readonly form: 'dynamic' | 'annotational';
+  /**
+   * DCDISPLAY's Hide (M9-03 part 7): this dynamic constraint is not shown, except while an
+   * object it constrains is selected (DYNCONSTRAINTMODE 1). Absent is shown.
+   */
+  readonly hidden?: true;
 }
 
 export const isDimensionalConstraint = (

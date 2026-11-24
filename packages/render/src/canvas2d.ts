@@ -2234,9 +2234,10 @@ export class Canvas2DRenderer implements Renderer {
 
   /**
    * The dimensional constraints on the Model tab (M9-03 part 4): dynamic ones the same size on
-   * screen at any zoom, in their own colour, unless hidden (then shown while an object they
-   * constrain is selected, under DYNCONSTRAINTMODE 1); annotational ones sized by the drawing's
-   * DIMVARs, as dimensions. Not plotted: plots draw entities only.
+   * screen at any zoom, in their own colour, unless hidden, all of them or one by DCDISPLAY
+   * (then shown while an object they constrain is selected, under DYNCONSTRAINTMODE 1);
+   * annotational ones sized by the drawing's DIMVARs, as dimensions. Not plotted: plots draw
+   * entities only.
    */
   #drawConstraints(ctx: Canvas2D, view: DrawFrame): void {
     const look = this.#style.constraints;
@@ -2255,7 +2256,9 @@ export class Canvas2DRenderer implements Renderer {
     for (const d of this.#constraints) {
       if (d.form === 'annotational') {
         prims.push(...constraintPrimitives(d, annotational, 'foreground', this.#tessellate.text));
-      } else if (showDynamic || (showSelected && selected(d))) {
+      } else if ((showDynamic && !d.hidden) || (showSelected && selected(d))) {
+        // A constraint DCDISPLAY hid (M9-03 part 7) shows as all do while Show Dynamic
+        // Constraints is off: only while an object it constrains is selected.
         const color = look?.color ?? 'foreground';
         prims.push(...constraintPrimitives(d, dynamic, color, this.#tessellate.text));
       }

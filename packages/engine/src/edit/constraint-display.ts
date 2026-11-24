@@ -68,6 +68,8 @@ export type ConstraintShape =
 export interface ConstraintDisplay {
   readonly handle: string;
   readonly form: 'dynamic' | 'annotational';
+  /** DCDISPLAY's Hide (M9-03 part 7): shown only while an object it constrains is selected. */
+  readonly hidden?: true;
   /** The entities it constrains (its references' objects). */
   readonly entities: readonly string[];
   readonly shape: ConstraintShape;
@@ -127,7 +129,14 @@ export function constraintDisplay(
   if (!placed) return undefined;
   const entities = [...new Set(c.refs.map((r) => r.entity))];
   const label = constraintLabel(c, placed.value, units, format);
-  return { handle: c.handle, form: c.form, entities, label, ...placed.at };
+  return {
+    handle: c.handle,
+    form: c.form,
+    ...(c.hidden && { hidden: true }),
+    entities,
+    label,
+    ...placed.at,
+  };
 }
 
 /**
