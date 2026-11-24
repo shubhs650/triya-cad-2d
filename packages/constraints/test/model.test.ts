@@ -699,6 +699,85 @@ describe('edits keep line lengths (M9-09)', () => {
   });
 });
 
+describe('a quarter turn of a constrained line (M9-11)', () => {
+  // PlaneGCS's Parallel is the cross product of the two directions, which has no slope when
+  // they are square to each other: an edit that turns one of a parallel pair exactly 90
+  // degrees left the solver no way to start turning the other, and was refused (89 worked).
+  // The lines an orientation constraint turns with the edited one now start turned by the
+  // edit's turn.
+  it('ROTATE 90 of one of a parallel pair turns the other about its start, its length kept', () => {
+    const { d, m, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 5, 20, 5);
+    add(con('parallel', curve(a), curve(b)));
+    // ROTATE a 90 degrees about its start: the command holds a whole.
+    const r = m.solveEdit([d.edit(a, { end: { x: 0, y: 10 } })], d.lookup, true);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    nearPt(d.geom(a, 'LINE').start, { x: 0, y: 0 });
+    nearPt(d.geom(a, 'LINE').end, { x: 0, y: 10 });
+    nearPt(d.geom(b, 'LINE').start, { x: 0, y: 5 });
+    nearPt(d.geom(b, 'LINE').end, { x: 0, y: 25 });
+  });
+
+  it('ROTATE -90 about its midpoint turns the other line the same way', () => {
+    const { d, m, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 5, 20, 5);
+    add(con('parallel', curve(a), curve(b)));
+    const r = m.solveEdit(
+      [d.edit(a, { start: { x: 5, y: 5 }, end: { x: 5, y: -5 } })],
+      d.lookup,
+      true,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    nearPt(d.geom(b, 'LINE').start, { x: 0, y: 5 });
+    nearPt(d.geom(b, 'LINE').end, { x: 0, y: -15 });
+  });
+
+  it('a 90-degree grip drag of one of a parallel pair turns the other about its start', () => {
+    const { d, m, add } = setup();
+    const a = d.line(0, 0, 20, 0);
+    const b = d.line(0, 5, 20, 5);
+    add(con('parallel', curve(a), curve(b)));
+    // The end grip dragged straight up: a turns 90 degrees and grows to 12.
+    const r = m.solveEdit([d.edit(a, { end: { x: 0, y: 12 } })], d.lookup);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    nearPt(d.geom(a, 'LINE').start, { x: 0, y: 0 });
+    nearPt(d.geom(a, 'LINE').end, { x: 0, y: 12 });
+    nearPt(d.geom(b, 'LINE').start, { x: 0, y: 5 });
+    nearPt(d.geom(b, 'LINE').end, { x: 0, y: 25 });
+  });
+
+  it('a quarter turn carries a perpendicular line round too', () => {
+    const { d, m, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(20, 0, 20, 8);
+    add(con('perpendicular', curve(a), curve(b)));
+    const r = m.solveEdit([d.edit(a, { end: { x: 0, y: 10 } })], d.lookup, true);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    d.apply(r.updated);
+    nearPt(d.geom(b, 'LINE').start, { x: 20, y: 0 });
+    nearPt(d.geom(b, 'LINE').end, { x: 12, y: 0 });
+  });
+
+  it('a quarter turn still refuses what a Fix holds', () => {
+    const { d, m, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 5, 20, 5);
+    add(con('parallel', curve(a), curve(b)));
+    add(con('fix', curve(b)));
+    const r = m.solveEdit([d.edit(a, { end: { x: 0, y: 10 } })], d.lookup, true);
+    expect(r).toMatchObject({ ok: false, reason: 'overconstrained' });
+  });
+});
+
 describe('degrees of freedom and over-constrained geometry', () => {
   it('counts the degrees of freedom left', () => {
     const { d, m, add } = setup();
