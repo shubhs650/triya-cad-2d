@@ -31,7 +31,13 @@ import type { RecordPatch } from '../model/update';
 /** An edit made in the Parameters Manager, on parameter `name`; `new` adds a user parameter. */
 export type ParameterEdit =
   | { readonly kind: 'new' }
-  | { readonly kind: 'expression'; readonly name: string; readonly expression: string }
+  | {
+      readonly kind: 'expression';
+      readonly name: string;
+      readonly expression: string;
+      /** The side of its constraint that adjusts: a triangular grip's (M9-03 part 11). */
+      readonly side?: 'first' | 'second';
+    }
   | { readonly kind: 'rename'; readonly name: string; readonly to: string }
   | { readonly kind: 'description'; readonly name: string; readonly description: string }
   | { readonly kind: 'delete'; readonly name: string };
@@ -108,6 +114,7 @@ export async function applyParameterEdit(ctx: CommandContext, edit: ParameterEdi
       edit.expression.trim(),
       lookup,
       tol,
+      ...(edit.side ? [edit.side] : []),
     );
   } else if (edit.kind === 'rename') {
     if (edit.to.trim() === edit.name) return;

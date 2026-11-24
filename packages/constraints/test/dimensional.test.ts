@@ -371,6 +371,87 @@ describe('angular, radial and diameter constraints', () => {
   });
 });
 
+describe('a value set from its first side (M9-03 part 11: triangular grips)', () => {
+  // A triangular grip at the first object's end of a constraint sets the value with the first
+  // object adjusting and the second held, the mirror of a value typed (the second adjusts).
+  const first = (m: ConstraintModel, d: Drawing, name: string, expression: string) => {
+    const r = m.setExpression(name, expression, d.lookup, 'first');
+    if (!r.ok) throw new Error(`${name} = ${expression} refused: ${r.reason} ${r.message}`);
+    d.apply(r.updated);
+    return r;
+  };
+
+  it('Horizontal between two points keeps the second and moves the first', () => {
+    const { d, m, add } = setup();
+    const l = d.line(0, 0, 10, 3);
+    add(dim('horizontal', [pt(l, 'start'), pt(l, 'end')]));
+    first(m, d, 'd1', '12');
+    const g = d.geom(l, 'LINE');
+    nearPt(g.start, { x: -2, y: 0 });
+    nearPt(g.end, { x: 10, y: 3 });
+  });
+
+  it('Aligned on a line keeps its end and moves its start along it', () => {
+    const { d, m, add } = setup();
+    const l = d.line(0, 0, 6, 8);
+    add(dim('aligned', [curve(l)]));
+    first(m, d, 'd1', '5');
+    const g = d.geom(l, 'LINE');
+    nearPt(g.end, { x: 6, y: 8 });
+    nearPt(g.start, { x: 3, y: 4 });
+  });
+
+  it('Angular between two lines keeps the second and turns the first about the corner', () => {
+    const { d, m, add } = setup();
+    const a = d.line(0, 0, 10, 0);
+    const b = d.line(0, 0, 0, 10);
+    add(dim('angular', [curve(a), curve(b)]));
+    first(m, d, 'ang1', '60');
+    const gb = d.geom(b, 'LINE');
+    nearPt(gb.start, { x: 0, y: 0 });
+    nearPt(gb.end, { x: 0, y: 10 });
+    const ga = d.geom(a, 'LINE');
+    nearPt(ga.start, { x: 0, y: 0 });
+    near(angleOf(ga.start, ga.end), 30 * deg);
+    near(len(ga.start, ga.end), 10);
+  });
+
+  it('Angular on an arc keeps its end and moves its start', () => {
+    const { d, m, add } = setup();
+    const a = d.arc(0, 0, 5, 30, 120);
+    add(dim('angular', [curve(a)]));
+    first(m, d, 'ang1', '45');
+    const g = d.geom(a, 'ARC');
+    nearPt(g.center, { x: 0, y: 0 });
+    near(g.radius, 5);
+    near(g.startAngle, 75 * deg);
+    near(g.endAngle, 120 * deg);
+  });
+
+  it('Angular by three points keeps the second point and turns the first', () => {
+    const { d, m, add } = setup();
+    const v = d.point(1, 1);
+    const p = d.point(5, 1);
+    const q = d.point(1, 4);
+    add(dim('angular', [pt(v, 'position'), pt(p, 'position'), pt(q, 'position')]));
+    first(m, d, 'ang1', '30');
+    nearPt(d.geom(q, 'POINT').position, { x: 1, y: 4 });
+    const gp = d.geom(p, 'POINT').position;
+    near(angleOf({ x: 1, y: 1 }, gp), 60 * deg);
+    near(len({ x: 1, y: 1 }, gp), 4);
+  });
+
+  it('a radius has one side: the centre stays', () => {
+    const { d, m, add } = setup();
+    const c = d.circle(3, 4, 2);
+    add(dim('radial', [curve(c)]));
+    first(m, d, 'rad1', '5');
+    const g = d.geom(c, 'CIRCLE');
+    nearPt(g.center, { x: 3, y: 4 });
+    near(g.radius, 5);
+  });
+});
+
 describe('expressions drive geometry', () => {
   it('a user parameter drives every constraint whose expression names it', () => {
     const { d, m, add, set } = setup();

@@ -147,9 +147,9 @@ export function constraintSolver(gcs: PlaneGcs): ConstraintSolver {
         ];
       });
     },
-    setExpression(constraints, dimensions, name, expression, lookup, tolerance) {
+    setExpression(constraints, dimensions, name, expression, lookup, tolerance, side) {
       const model = modelOf(gcs, tolerance, constraints, dimensions);
-      const r = model.setExpression(name, expression, lookup);
+      const r = model.setExpression(name, expression, lookup, side);
       if (!r.ok) return r;
       return { ok: true, updated: r.updated, expressions: expressionsOf(model, r.parameters) };
     },

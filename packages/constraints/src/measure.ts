@@ -153,6 +153,8 @@ export interface Circular {
   readonly centerRef: PointRef;
   /** An arc's start point (ARC), or a polyline arc segment's first vertex. */
   readonly startRef?: PointRef;
+  /** An arc's end point (ARC), or a polyline arc segment's second vertex (M9-03 part 11). */
+  readonly endRef?: PointRef;
 }
 
 export interface LineAngle {
@@ -274,6 +276,48 @@ export function dimensionShape(
     }
     default:
       throw new MeasureError('invalid', `unknown dimensional constraint ${String(c.dimension)}`);
+  }
+}
+
+/** The side of a dimensional constraint whose object adjusts as its value is set. */
+export type DimensionSide = 'first' | 'second';
+
+/**
+ * What to hold while a constraint's new value is solved, `side` adjusting (M9-03 part 11): the
+ * second side is AutoCAD's way with a value typed (`dimensionShape`'s holds); the first is a
+ * triangular grip at the first object's end dragged, which holds the second object instead: a
+ * distance keeps its second point (a line's end), an angle its second line, second point or
+ * arc end. A radius or diameter has one side.
+ */
+export function dimensionHolds(
+  c: { readonly dimension: DimensionalKind; readonly refs: readonly GeomRef[] },
+  lookup: Lookup,
+  side: DimensionSide = 'second',
+): readonly GeomRef[] {
+  const shape = dimensionShape(c, lookup);
+  if (side === 'second') return shape.holds;
+  const refs = c.refs;
+  switch (shape.dimension) {
+    case 'horizontal':
+    case 'vertical':
+    case 'aligned':
+      return refs.length === 1 ? [resolveLine(refs[0]!, lookup).endRef] : [refs[1]!];
+    case 'angular': {
+      if (refs.length === 1) {
+        const arc = resolveCircular(refs[0]!, lookup);
+        return [arc.centerRef, arc.endRef!];
+      }
+      if (refs.length === 2) {
+        const a = resolveLine(refs[0]!, lookup);
+        const b = resolveLine(refs[1]!, lookup);
+        const angle = lineAngle(a, b)!;
+        // The first line turns about its end at the corner.
+        return [refs[1]!, angle.flipA ? a.endRef : a.startRef];
+      }
+      return [refs[0]!, refs[2]!];
+    }
+    default:
+      return shape.holds;
   }
 }
 
@@ -459,6 +503,7 @@ export function resolveCircular(ref: GeomRef, lookup: Lookup): Circular {
         anchor: center,
         centerRef: center,
         startRef: { entity: ref.entity, point: 'start' },
+        endRef: { entity: ref.entity, point: 'end' },
       };
     }
     throw notCircular();
@@ -478,6 +523,7 @@ export function resolveCircular(ref: GeomRef, lookup: Lookup): Circular {
     anchor: first,
     centerRef: { entity: ref.entity, point: 'center', index: i },
     startRef: first,
+    endRef: { entity: ref.entity, point: 'vertex', index: (i + 1) % g.vertices.length },
   };
 }
 

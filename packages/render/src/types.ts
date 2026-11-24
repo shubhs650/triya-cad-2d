@@ -613,9 +613,15 @@ export interface Renderer {
   setDrag(motion: DragMotion | undefined): void;
   /**
    * The objects to show grips on, `hot` the hot grip (M2-06 part 2), and the groups shown by
-   * one grip at their centre (GROUPDISPLAYMODE, M3-13); none hides them.
+   * one grip at their centre (GROUPDISPLAYMODE, M3-13); none hides them. `constraints`: the
+   * dimensional constraints selected, which show their grips too (M9-03 part 11).
    */
-  setGrips(ids: readonly EntityId[], hot?: Vec2, groups?: readonly GroupGrip[]): void;
+  setGrips(
+    ids: readonly EntityId[],
+    hot?: Vec2,
+    groups?: readonly GroupGrip[],
+    constraints?: readonly Handle[],
+  ): void;
   /**
    * The cursor (M3-05 part 2): the grip nearest it within `within` drawing units draws in the
    * hover colour; undefined, none does.

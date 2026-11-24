@@ -51,6 +51,12 @@ export type ConstraintShape =
       readonly start: number;
       readonly sweep: number;
       readonly extensions: readonly (readonly [Vec2, Vec2])[];
+      /**
+       * Whether the arc's start is at the first object's side (its first line, first point
+       * after the vertex, or an arc's start): which side a triangular grip there sets
+       * (M9-03 part 11).
+       */
+      readonly firstAtStart: boolean;
     }
   /**
    * A radius or diameter: a line from the centre (or across) along `angle` to the curve, an
@@ -230,7 +236,8 @@ function angular(refs: readonly ConstraintRef[], loc: Vec2, lookup: Lookup): Pla
     const arc = circular(refs[0]!, lookup);
     if (!arc || arc.sweep === undefined) return undefined;
     const off = dist(loc, arc.center);
-    return arcPlaced(arc.center, off > 0 ? off : arc.radius, arc.start!, arc.sweep, []);
+    const r = off > 0 ? off : arc.radius;
+    return arcPlaced(arc.center, r, arc.start!, arc.sweep, [], !arc.reversed);
   }
   let v: Vec2;
   let far: [Vec2, Vec2];
@@ -272,7 +279,7 @@ function angular(refs: readonly ConstraintRef[], loc: Vec2, lookup: Lookup): Pla
     if (r > fd) extensions.push([f, on]);
     else if (r < nd) extensions.push([near[i]!, on]);
   });
-  return arcPlaced(v, r, start, Math.abs(sweep), extensions);
+  return arcPlaced(v, r, start, Math.abs(sweep), extensions, sweep >= 0);
 }
 
 function arcPlaced(
@@ -281,12 +288,13 @@ function arcPlaced(
   start: number,
   sweep: number,
   extensions: (readonly [Vec2, Vec2])[],
+  firstAtStart: boolean,
 ): Placed {
   const mid = start + sweep / 2;
   return {
     value: (sweep * 180) / Math.PI,
     at: {
-      shape: { kind: 'angular', center, radius, start, sweep, extensions },
+      shape: { kind: 'angular', center, radius, start, sweep, extensions, firstAtStart },
       textAt: { x: center.x + radius * Math.cos(mid), y: center.y + radius * Math.sin(mid) },
       textAngle: readable(mid - Math.PI / 2),
     },
@@ -327,6 +335,8 @@ interface Circular {
   /** An arc's start angle and counter-clockwise sweep, radians; undefined for a circle. */
   readonly start?: number;
   readonly sweep?: number;
+  /** A clockwise polyline arc segment: its start angle is its second vertex's. */
+  readonly reversed?: true;
 }
 
 function circular(r: ConstraintRef, lookup: Lookup): Circular | undefined {
@@ -348,7 +358,7 @@ function circular(r: ConstraintRef, lookup: Lookup): Circular | undefined {
   const { center, radius, startAngle, sweep } = s.arc;
   return sweep >= 0
     ? { center, radius, start: startAngle, sweep }
-    : { center, radius, start: startAngle + sweep, sweep: -sweep };
+    : { center, radius, start: startAngle + sweep, sweep: -sweep, reversed: true };
 }
 
 /** Horizontal and Vertical: two points, or a line's ends. */

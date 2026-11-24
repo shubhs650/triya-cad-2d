@@ -33,6 +33,8 @@
 import {
   constraintBars,
   constraintDisplays,
+  constraintGripsOf,
+  type ConstraintGrip,
   type ConstraintBars,
   type ConstraintDisplay,
   annotationHidden,
@@ -742,6 +744,8 @@ export class Canvas2DRenderer implements Renderer {
         readonly ids: readonly EntityId[];
         readonly hot: Vec2 | undefined;
         readonly groups: readonly GroupGrip[];
+        /** The dimensional constraints selected, showing their grips (M9-03 part 11). */
+        readonly constraints: readonly Handle[];
       }
     | undefined;
   /** The cursor, and how near a grip counts as under it (M3-05 part 2), for GRIPHOVER. */
@@ -1319,11 +1323,26 @@ export class Canvas2DRenderer implements Renderer {
    * Grips are drawn at the style's GRIPSIZE in GRIPCOLOR (ACI 150) and GRIPHOT (ACI 12), over
    * everything, AutoCAD's defaults.
    */
-  setGrips(ids: readonly EntityId[], hot?: Vec2, groups: readonly GroupGrip[] = []): void {
-    const shown = ids.length > 0 || groups.length > 0;
+  setGrips(
+    ids: readonly EntityId[],
+    hot?: Vec2,
+    groups: readonly GroupGrip[] = [],
+    constraints: readonly Handle[] = [],
+  ): void {
+    const shown = ids.length > 0 || groups.length > 0 || constraints.length > 0;
     if (!shown && !this.#grips) return;
-    this.#grips = shown ? { ids, hot, groups } : undefined;
+    this.#grips = shown ? { ids, hot, groups, constraints } : undefined;
     this.#transientDirty = true;
+  }
+
+  /**
+   * The grips of the dimensional constraints selected (M9-03 part 11): on the Model tab only,
+   * where constraints are drawn.
+   */
+  #constraintGrips(): ConstraintGrip[] {
+    const handles = this.#grips?.constraints ?? [];
+    if (handles.length === 0 || !this.#modelTab) return [];
+    return handles.flatMap((h) => constraintGripsOf(this.#model, h));
   }
 
   /**
@@ -2127,25 +2146,27 @@ export class Canvas2DRenderer implements Renderer {
       seen.add(`${x},${y}`);
       square(x, y, fillOf(center));
     }
-    for (const id of grips.ids) {
+    const objects = grips.ids.flatMap((id) => {
       const e = this.#model.entity(id);
-      if (!e) continue;
-      for (const g of gripsOf(e.geom, gripInfoOf(this.#model, e))) {
-        const { x, y } = device(g.point);
-        if (seen.has(`${x},${y}`)) continue;
-        seen.add(`${x},${y}`);
-        const fill = fillOf(g.point);
-        if (g.towards) {
-          // An arrow grip (M2-26 part 2: an MTEXT's column width and height), pointing the way
-          // it sizes, as AutoCAD draws them.
-          const dx = m.a * g.towards.x + m.c * g.towards.y;
-          const dy = m.b * g.towards.x + m.d * g.towards.y;
-          const len = Math.hypot(dx, dy) || 1;
-          arrowGrip(ctx, x, y, dx / len, dy / len, half, fill, colors.contour);
-          continue;
-        }
-        square(x, y, fill);
+      return e ? gripsOf(e.geom, gripInfoOf(this.#model, e)) : [];
+    });
+    // A selected constraint's grips (M9-03 part 11): its triangles set its value, as an
+    // MTEXT's column grips size it.
+    for (const g of [...objects, ...this.#constraintGrips()]) {
+      const { x, y } = device(g.point);
+      if (seen.has(`${x},${y}`)) continue;
+      seen.add(`${x},${y}`);
+      const fill = fillOf(g.point);
+      if (g.towards) {
+        // An arrow grip (M2-26 part 2: an MTEXT's column width and height), pointing the way
+        // it sizes, as AutoCAD draws them.
+        const dx = m.a * g.towards.x + m.c * g.towards.y;
+        const dy = m.b * g.towards.x + m.d * g.towards.y;
+        const len = Math.hypot(dx, dy) || 1;
+        arrowGrip(ctx, x, y, dx / len, dy / len, half, fill, colors.contour);
+        continue;
       }
+      square(x, y, fill);
     }
   }
 
@@ -2162,15 +2183,19 @@ export class Canvas2DRenderer implements Renderer {
         bestD = d;
       }
     }
-    for (const id of this.#grips.ids) {
-      const e = this.#model.entity(id);
-      if (!e) continue;
-      for (const g of gripsOf(e.geom, gripInfoOf(this.#model, e))) {
-        const d = Math.hypot(g.point.x - h.at.x, g.point.y - h.at.y);
-        if (d <= bestD) {
-          best = g.point;
-          bestD = d;
-        }
+    const points = [
+      ...this.#grips.ids.flatMap((id) => {
+        const e = this.#model.entity(id);
+        return e ? gripsOf(e.geom, gripInfoOf(this.#model, e)).map((g) => g.point) : [];
+      }),
+      // A selected constraint's (M9-03 part 11).
+      ...this.#constraintGrips().map((g) => g.point),
+    ];
+    for (const p of points) {
+      const d = Math.hypot(p.x - h.at.x, p.y - h.at.y);
+      if (d <= bestD) {
+        best = p;
+        bestD = d;
       }
     }
     return best;
