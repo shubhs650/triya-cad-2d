@@ -266,6 +266,9 @@ describe('palette search', () => {
       // M6-01 part 3: PAGESETUP, the Page Setup Manager.
       'PAGESETUP',
       'PAN',
+      // M9-03 part 5: the Parameters Manager.
+      'PARAMETERS',
+      'PARAMETERSCLOSE',
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',

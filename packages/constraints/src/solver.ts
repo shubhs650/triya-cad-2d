@@ -3,8 +3,11 @@
 // a fresh model: building one costs nothing, and every solve already builds its sketch anew.
 // `solveEdit` re-solves after a modify command (M9-06).
 // Dimensional constraints (M9-03 part 3) bring their parameters: the Parameters Manager's table
-// is built from their expressions on each call too.
+// is built from their expressions on each call too. The Parameters Manager (M9-03 part 5) lists
+// it and edits it: an expression set re-solves what its values drive, a rename or a delete
+// rewrites the expressions that name the parameter.
 import type {
+  ConstraintRefusal,
   ConstraintSolver,
   DimensionalConstraintObject,
   ExpressionChange,
@@ -58,6 +61,13 @@ const expressionsOf = (model: ConstraintModel, names: readonly string[]): Expres
     return row ? [{ parameter, expression: row.expression }] : [];
   });
 
+const invalid = (message: string): ConstraintRefusal => ({
+  ok: false,
+  reason: 'invalid',
+  message,
+  conflicting: [],
+});
+
 export function constraintSolver(gcs: PlaneGcs): ConstraintSolver {
   return {
     add(constraints, constraint, lookup, tolerance, dimensions = []) {
@@ -102,6 +112,52 @@ export function constraintSolver(gcs: PlaneGcs): ConstraintSolver {
       const r = model.solveEdit(edits, lookup, whole);
       if (!r.ok || !r.parameters?.length) return r;
       return { ...r, expressions: expressionsOf(model, r.parameters) };
+    },
+    parameters(dimensions) {
+      const table = parameterTableOf(dimensions);
+      return dimensions.flatMap((d) => {
+        const row = table.get(d.parameter);
+        if (!row) return [];
+        return [
+          {
+            name: row.name,
+            expression: row.expression,
+            value: row.value,
+            ...(row.error === undefined ? {} : { error: row.error }),
+            type: row.type,
+            description: row.description,
+            reference: d.reference === true,
+            constraint: d.handle,
+          },
+        ];
+      });
+    },
+    setExpression(constraints, dimensions, name, expression, lookup, tolerance) {
+      const model = modelOf(gcs, tolerance, constraints, dimensions);
+      const r = model.setExpression(name, expression, lookup);
+      if (!r.ok) return r;
+      return { ok: true, updated: r.updated, expressions: expressionsOf(model, r.parameters) };
+    },
+    renameParameter(dimensions, from, to) {
+      const table = parameterTableOf(dimensions);
+      const r = table.rename(from, to);
+      if (!r.ok) return invalid(r.error);
+      const others = r.changed.filter((n) => n !== to);
+      const expressions = others.map((parameter) => ({
+        parameter,
+        expression: table.get(parameter)!.expression,
+      }));
+      return { ok: true, updated: [], expressions };
+    },
+    deleteParameter(dimensions, name) {
+      const table = parameterTableOf(dimensions);
+      const r = table.delete(name);
+      if (!r.ok) return invalid(r.error);
+      const expressions = r.changed.map((parameter) => ({
+        parameter,
+        expression: table.get(parameter)!.expression,
+      }));
+      return { ok: true, updated: [], expressions };
     },
   };
 }

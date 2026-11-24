@@ -235,6 +235,7 @@ test('the start screen, drawing window, ribbon tabs, palettes and menus are acce
   for (const [command, name] of [
     ['PROPERTIES', 'Properties'],
     ['LAYER', 'Layers'],
+    ['PARAMETERS', 'Parameters Manager'],
     ['XREF', 'References'],
     ['ADCENTER', 'DesignCenter'],
     ['TEXTSCR', 'Command History'],

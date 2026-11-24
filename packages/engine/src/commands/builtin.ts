@@ -84,6 +84,7 @@ import { setvarCommand } from './setvar';
 import { PALETTE_COMMANDS } from './palettes';
 import { INTERFACE_COMMANDS } from './interface';
 import { DESIGN_CENTER_COMMANDS } from './design-center';
+import { PARAMETERS_COMMANDS } from './parameters';
 import { viewCommand } from './view/named-view';
 import { panCommand, regenCommand, zoomCommand } from './view/zoom';
 import { UNDO_COMMANDS } from './undo-commands';
@@ -163,6 +164,8 @@ export function builtinCommands(): CommandRegistry {
     ...GEOMETRIC_CONSTRAINT_COMMANDS,
     // M9-03 part 3: dimensional constraints.
     ...dimensionalConstraintCommands(),
+    // M9-03 part 5: the Parameters Manager.
+    ...PARAMETERS_COMMANDS.map((make) => make()),
     breakCommand(),
     breakAtPointCommand(),
     joinCommand(),

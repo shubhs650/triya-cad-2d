@@ -17,7 +17,12 @@ import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
-import type { ConstraintService } from '../edit/constraints';
+import {
+  dimensionalConstraints,
+  type ConstraintService,
+  type ParameterInfo,
+} from '../edit/constraints';
+import { parameterEditCommand, type ParameterEdit } from '../commands/parameters';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
 import {
   paperViewsChange,
@@ -653,6 +658,13 @@ export type CommandInput =
   /** A Properties palette edit on the selected objects of the type it shows (one undo step). */
   | { readonly kind: 'property'; readonly edit: PropertyEdit }
   /**
+   * The Parameters Manager (M9-03 part 5) opened or closed: while it is open the engine sends
+   * the drawing's `parameters` after every change.
+   */
+  | { readonly kind: 'parameters'; readonly open: boolean }
+  /** A Parameters Manager edit (one undo step). */
+  | { readonly kind: 'parameter'; readonly edit: ParameterEdit }
+  /**
    * The ribbon's Layers and Properties dropdowns (M7-02 part 3) show the drawing's: while open,
    * `ribbon-properties` outputs follow the selection and every change, whatever the Properties
    * palette shows.
@@ -728,6 +740,8 @@ export type CommandOutput =
   | { readonly type: 'properties'; readonly sheet: PropertySheet }
   /** The ribbon's Layers and Properties dropdowns (M7-02 part 3), while they are open. */
   | { readonly type: 'ribbon-properties'; readonly properties: RibbonProperties }
+  /** The Parameters Manager's rows (M9-03 part 5), while it is open. */
+  | { readonly type: 'parameters'; readonly rows: readonly ParameterInfo[] }
   /** A command preview asked for with `seq` (M3-12 part 6); none where the prompt shows none. */
   | { readonly type: 'command-preview'; readonly seq: number; readonly preview?: CommandPreview }
   /** The rollover tooltip of object `id` (M2-35 part 21); no sheet when the object is gone. */
@@ -782,6 +796,9 @@ export class EngineSession {
   /** The ribbon's dropdowns are shown: their properties are sent (M7-02 part 3). */
   #ribbon = false;
   #ribbonQueued = false;
+  /** The Parameters Manager is open: its rows are sent (M9-03 part 5). */
+  #parameters = false;
+  #parametersQueued = false;
   readonly #services: EngineServices;
 
   /**
@@ -829,7 +846,36 @@ export class EngineSession {
         this.#emit({ ...e, prompt: { ...e.prompt, commandPreview } });
       } else this.#emit(e.type === 'commit' ? { type: 'commit', command: e.record.command } : e);
       if (e.type === 'selection' || e.type === 'commit' || e.type === 'undo') this.#queueSheet();
+      if (e.type === 'commit' || e.type === 'undo') this.#queueParameters();
     });
+  }
+
+  /** Sends the Parameters Manager its rows once the change settles. */
+  #queueParameters(): void {
+    if (!this.#parameters || this.#parametersQueued) return;
+    this.#parametersQueued = true;
+    void Promise.resolve().then(() => {
+      this.#parametersQueued = false;
+      return this.#parameters ? this.#sendParameters() : undefined;
+    });
+  }
+
+  /**
+   * The drawing's parameters, worked out by the constraint solver. A drawing without
+   * dimensional constraints has none, and the solver's module is not loaded for it.
+   */
+  async #sendParameters(): Promise<void> {
+    const dims = dimensionalConstraints(this.model);
+    let rows: readonly ParameterInfo[] = [];
+    if (dims.length > 0) {
+      try {
+        const solver = await this.#services.constraints?.();
+        rows = solver?.parameters(dims) ?? [];
+      } catch {
+        // No solver: the commands say why when they need it; the palette lists nothing.
+      }
+    }
+    this.#emit({ type: 'parameters', rows });
   }
 
   /**
@@ -972,6 +1018,13 @@ export class EngineSession {
         // The palette shows what the edit made, a running command's selection's too (M2-35
         // part 30), which no commit announces.
         return this.#bus.setProperty(input.edit, this.#filter).then(() => this.#queueSheet());
+      case 'parameters':
+        this.#parameters = input.open;
+        return input.open ? this.#sendParameters() : Promise.resolve();
+      case 'parameter':
+        // The edit's commit sends the rows; a refused edit sends them too, so the palette puts
+        // back the value it showed.
+        return this.#bus.run(parameterEditCommand(input.edit)).then(() => this.#queueParameters());
       case 'ribbon-properties':
         this.#ribbon = input.open;
         if (input.open) this.#sendRibbon();

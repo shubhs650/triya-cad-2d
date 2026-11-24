@@ -24,6 +24,7 @@ interface Step {
 interface Job {
   name?: string;
   needs?: string | string[];
+  'runs-on'?: string;
   if?: string;
   strategy?: { 'fail-fast'?: boolean; matrix?: Record<string, unknown> };
   steps?: Step[];
@@ -376,9 +377,11 @@ describe('ci.yml for two threads at once', () => {
     const chained = Object.entries(ci.jobs).filter(
       ([id]) => id !== 'changes' && !together.some(([t]) => t === id) && !GATHERING.includes(id),
     );
-    expect(chained.map(([id]) => id).sort()).toEqual(['offline', 'perf']);
+    expect(chained.map(([id]) => id).sort()).toEqual(['browser-cache', 'offline', 'perf']);
     expect(needsOf(ci.jobs['offline']!)).toEqual(['changes', 'static']);
     expect(needsOf(ci.jobs['perf']!)).toEqual(['changes', 'offline']);
+    // On main only, after perf on the runner it frees.
+    expect(needsOf(ci.jobs['browser-cache']!)).toEqual(['changes', 'perf']);
     for (const id of ['static', 'offline']) expect(shardCount(ci.jobs[id]!)).toBeUndefined();
     expect(needsOf(ci.jobs['checks']!)).toEqual(expect.arrayContaining(['unit', 'static']));
     expect(needsOf(ci.jobs['browser']!)).toEqual(expect.arrayContaining(['playwright', 'offline']));
@@ -443,6 +446,28 @@ describe('ci.yml for two threads at once', () => {
     } else {
       expect(job.if, id).toBe(`\${{ ${SKIP_IF_PASSED} }}`);
     }
+  });
+
+  // 2026-11-24: a PR can restore only its own caches and main's, and main skips
+  // `build · offline · io` on a tree that passed, so main fills its ubuntu-24.04 browser caches in
+  // a job of their own, with the same keys, and runs no suite there.
+  it("fills the build job's browser caches on every push to main, and on no PR", () => {
+    const fill = ci.jobs['browser-cache']!;
+    const build = ci.jobs['offline']!;
+    expect(fill.if).toContain("github.event_name == 'push'");
+    expect(fill.if).not.toContain('tested');
+    expect(fill['runs-on']).toBe(build['runs-on']);
+    const keys = (job: Job) =>
+      (job.steps ?? [])
+        .filter((s) => s.uses?.startsWith('actions/cache@'))
+        .map((s) => String(s.with?.['key']));
+    expect(keys(fill)).toEqual(keys(build));
+    const scripts = (job: Job) =>
+      (job.steps ?? [])
+        .map((s) => s.run?.trim() ?? '')
+        .filter((r) => r.startsWith('bash scripts/'));
+    expect(scripts(fill)).toEqual(scripts(build));
+    expect((fill.steps ?? []).some((s) => /pnpm (test|build)/.test(s.run ?? ''))).toBe(false);
   });
 
   it('still runs the perf budgets on every push to main', () => {

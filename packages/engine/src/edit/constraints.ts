@@ -110,6 +110,38 @@ export type ConstraintEditResult =
     }
   | ConstraintRefusal;
 
+/**
+ * A row of the Parameters Manager (M9-03 part 5, AutoCAD's PARAMETERS palette): a dimensional
+ * constraint's parameter, with its value worked out from the expressions.
+ */
+export interface ParameterInfo {
+  readonly name: string;
+  readonly expression: string;
+  /** A distance in drawing units or an angle in degrees; undefined while it has none. */
+  readonly value: number | undefined;
+  /** Why it has no value. */
+  readonly error?: string;
+  /** The constraint's type as the manager's Type column shows it: Horizontal, Aligned, Angular… */
+  readonly type: string;
+  readonly description: string;
+  /** A reference constraint's parameter: measured, never set. */
+  readonly reference: boolean;
+  /** The dimensional constraint whose value it is. */
+  readonly constraint: Handle;
+}
+
+/**
+ * What an edit in the Parameters Manager changes (M9-03 part 5): the entities the new values
+ * moved and the expressions the edit rewrote (its own, and others that name it).
+ */
+export type ParameterChangeResult =
+  | {
+      readonly ok: true;
+      readonly updated: readonly Replacement<Entity>[];
+      readonly expressions: readonly ExpressionChange[];
+    }
+  | ConstraintRefusal;
+
 /** The geometric constraint solver: `@triya/constraints`' ConstraintModel over PlaneGCS. */
 export interface ConstraintSolver {
   /**
@@ -159,6 +191,34 @@ export interface ConstraintSolver {
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
   ): DimensionAddResult;
+  /** The drawing's parameters, as the Parameters Manager lists them (M9-03 part 5). */
+  parameters(dimensions: readonly DimensionalConstraintObject[]): readonly ParameterInfo[];
+  /**
+   * Sets parameter `name`'s expression and moves the geometry its values drive; refused, nothing
+   * changed, when the expression has no value, makes a cycle, or the geometry cannot take it.
+   */
+  setExpression(
+    constraints: readonly GeometricConstraintObject[],
+    dimensions: readonly DimensionalConstraintObject[],
+    name: string,
+    expression: string,
+    lookup: (handle: Handle) => Entity | undefined,
+    tolerance: Tolerance,
+  ): ParameterChangeResult;
+  /** Renames a parameter; `expressions` are those naming it, rewritten. Moves nothing. */
+  renameParameter(
+    dimensions: readonly DimensionalConstraintObject[],
+    from: string,
+    to: string,
+  ): ParameterChangeResult;
+  /**
+   * The expressions that name parameter `name` once it is deleted with its constraint: each
+   * keeps the value it had, as the Parameters Manager's delete does. Moves nothing.
+   */
+  deleteParameter(
+    dimensions: readonly DimensionalConstraintObject[],
+    name: string,
+  ): ParameterChangeResult;
 }
 
 /** Loads the solver once it is first needed (a WebAssembly module of its own). */
