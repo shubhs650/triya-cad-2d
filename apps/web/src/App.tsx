@@ -3591,6 +3591,7 @@ function ViewportCanvas({
           ...(r?.missed && { missed: true }),
           ...(r?.deferred && { deferred: r.deferred }),
           ...(r?.snap && { snap: r.snap }),
+          ...(r?.tracks && { tracks: r.tracks }),
           ...(o.grip !== undefined && { grip: o.grip }),
           ...(o.ctrl && { ctrl: true }),
           ...(o.lasso && { lasso: o.lasso }),

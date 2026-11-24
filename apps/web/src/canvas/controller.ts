@@ -62,6 +62,7 @@ import {
   offsetSnapPoint,
   polarLabel,
   trackLabel,
+  trackedSnaps,
   toWorld,
   ucsOf,
   viewportUcs,
@@ -89,6 +90,7 @@ import {
   type EnclosedSpace,
   type OsnapHit,
   type OsnapMode,
+  type SnappedPoint,
   type Lasso,
   type Prompt,
   type QuickMeasure,
@@ -483,6 +485,8 @@ export interface PickedPoint {
   readonly deferred?: DeferredPick;
   /** The object snap that gave the point and its object, which Infer reads (M9-05 part 7). */
   readonly snap?: { readonly mode: OsnapMode; readonly id: EntityId };
+  /** The PARallel and OTRACK paths it was placed on, from which objects (M9-05 part 8). */
+  readonly tracks?: readonly Omit<SnappedPoint, 'point'>[];
 }
 
 const sameHit = (a: OsnapHit | undefined, b: OsnapHit | undefined): boolean =>
@@ -3661,13 +3665,13 @@ export class CanvasController {
     const items: Acquired[] = [];
     const point = this.#hit;
     if (point && this.#aids().otrack && this.#prompt?.kind === 'point' && !this.#prompt.osnap)
-      items.push({ kind: 'point', point: point.point, mode: point.mode });
+      items.push({ kind: 'point', point: point.point, mode: point.mode, id: point.id });
     for (const h of hits) {
       if (!h.track || !h.direction) continue;
       if (h.mode === 'EXT' && (!point || sameAt(h.point, point.point)))
         items.push({ kind: 'extension', point: h.point, direction: h.direction });
       else if (h.mode === 'PAR' && !point && !items.some((i) => i.kind === 'parallel'))
-        items.push({ kind: 'parallel', point: h.point, direction: h.direction });
+        items.push({ kind: 'parallel', point: h.point, direction: h.direction, id: h.id });
     }
     const key = items.map((i) => `${i.kind}:${i.point.x},${i.point.y}`).join('|');
     if (key === this.#candidate?.key) return;
@@ -3733,7 +3737,8 @@ export class CanvasController {
     if (grip) return { point: grip };
     // The aids as they are at the click: an override key let go while the snaps are worked out
     // still counts (M3-06 part 5), as the modes asked for already do.
-    const constrained = this.#constrain(world).point;
+    const aided = this.#constrain(world);
+    const constrained = aided.point;
     const hits = (await this.#snapAt(world)).filter((h) => !h.track);
     const hit = hits[this.#cycle < hits.length ? this.#cycle : 0];
     if (hit) {
@@ -3745,7 +3750,13 @@ export class CanvasController {
     }
     const p = this.#prompt;
     const missed = p?.kind === 'point' && p.osnap !== undefined && p.osnap !== 0;
-    return { point: constrained, ...(missed && { missed: true }) };
+    // Placed on PARallel's or object snap tracking's paths: which, for Infer (M9-05 part 8).
+    const tracks = aided.track ? trackedSnaps(aided.track) : [];
+    return {
+      point: constrained,
+      ...(missed && { missed: true }),
+      ...(tracks.length > 0 && { tracks }),
+    };
   }
 
   /**

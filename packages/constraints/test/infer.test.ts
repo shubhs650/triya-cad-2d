@@ -2,6 +2,8 @@
 // the app's engine worker runs it. What is inferred already holds, so the solver takes it all
 // without moving anything: LINE's segments joined end to start and closed, a segment from a
 // line's end, RECTANG's sides, a line drawn perpendicular to another and one tangent to a circle.
+// Part 8: a fillet's arc Coincident with and Tangent to both lines (solved at the shared ends), a
+// line on the Parallel path, and a copy tracked horizontally from another line's end.
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -178,6 +180,48 @@ describe('Infer Constraints with PlaneGCS (M9-05 part 7)', () => {
     expect(made.map((e) => s.ends(e.handle))).toEqual([
       [6, 8, 6, 0],
       [55, 10, 55, 0],
+    ]);
+  });
+});
+
+describe('Infer Constraints with PlaneGCS (M9-05 part 8)', () => {
+  it('FILLET: both ends Coincident and both lines Tangent, the arc where it was made', async () => {
+    const s = setup([line('30', 0, 0, 10, 0), line('31', 12, 2, 12, 10)]);
+    await s.bus.script(['FILLET', 'R', '1']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick({ x: 12, y: 6 });
+    expect(s.bus.command).toBeUndefined();
+    expect(kindsOf(s.model).sort()).toEqual(['coincident', 'coincident', 'tangent', 'tangent']);
+    expect(s.ends('30')).toEqual([0, 0, 11, 0]);
+    expect(s.ends('31')).toEqual([12, 1, 12, 10]);
+    const arc = [...s.model.entities()].find((e) => e.geom.kind === 'ARC')!.geom;
+    expect(arc).toMatchObject({ center: { x: 11, y: 1 }, radius: 1 });
+  });
+
+  it('a line on the Parallel path, and a copy tracked horizontally from an end', async () => {
+    const s = setup([line('30', 0, 0, 10, 0), line('31', 20, 20, 30, 25)]);
+    const idOf = (h: string) => s.model.entityByHandle(h)!.id;
+    await s.bus.script(['LINE', '0,10']);
+    await s.bus.pick(
+      { x: 8, y: 14 },
+      { tracks: [{ mode: 'PAR', id: idOf('31'), from: { x: 24, y: 22 } }] },
+    );
+    await s.bus.submit('');
+    await s.bus.script(['COPY']);
+    await s.select({ x: 5, y: 0 });
+    await s.bus.pick({ x: 0, y: 0 }, { snap: { mode: 'END', id: idOf('30') } });
+    await s.bus.pick(
+      { x: 40, y: 25 },
+      {
+        tracks: [{ mode: 'END', id: idOf('31'), from: { x: 30, y: 25 }, along: 'horizontal' }],
+      },
+    );
+    await s.bus.submit('');
+    expect(kindsOf(s.model)).toEqual(['parallel', 'horizontal']);
+    const made = [...s.model.entities()].filter((e) => !['30', '31'].includes(e.handle));
+    expect(made.map((e) => s.ends(e.handle))).toEqual([
+      [0, 10, 8, 14],
+      [40, 25, 50, 25],
     ]);
   });
 });
