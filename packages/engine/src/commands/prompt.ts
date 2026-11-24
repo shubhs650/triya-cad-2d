@@ -1113,8 +1113,12 @@ export type PromptAnswer =
        * multiline attribute `target` (the value's `...` button); `field` makes them and opens
        * the Field dialog for the value of `target` (EATTEDIT), the Default of `resume.editing`
        * (BATTMAN's Edit Attribute), whose value marks the field's place (M5-03 part 4).
+       * `cancel` closes it unchanged where the command goes on (the Constraint Settings opened
+       * by AUTOCONSTRAIN's Settings, which asks for objects again; M9-05 part 3); elsewhere a
+       * dialog's Cancel cancels the command.
        */
-      readonly action: 'ok' | 'apply' | 'select' | 'mtext' | 'remove' | 'preview' | 'field';
+      readonly action:
+        'ok' | 'apply' | 'select' | 'mtext' | 'remove' | 'preview' | 'field' | 'cancel';
       readonly attributes?: readonly AttributePatch[];
       /** The Block Attribute Manager's state (BATTMAN, M5-03 part 2). */
       readonly battman?: BattmanAnswer;
