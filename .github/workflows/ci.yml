@@ -419,6 +419,15 @@ jobs:
           restore-keys: pw-apt-${{ steps.pw.outputs.os }}-
       - name: Install browser system dependencies
         run: bash scripts/ci-browser-deps.sh
+      # Saved as soon as apt has fetched them, so a run that later hits the time limit still
+      # leaves them for its re-run (the cache step's own save runs only when the job finishes).
+      - if: steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        # apt may have given nothing to keep (the script then checks the libraries instead).
+        continue-on-error: true
+        with:
+          path: ~/.cache/pw-apt
+          key: pw-apt-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
       - run: pnpm build
       - run: pnpm test:offline
       # The io suite still runs after an offline failure so one red PR shows every broken gate.
@@ -438,7 +447,8 @@ jobs:
           key: playwright-firefox-webkit-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - if: ${{ !cancelled() && steps.pw-other.outputs.cache-hit != 'true' }}
         run: pnpm exec playwright install firefox webkit
-      - if: ${{ !cancelled() }}
+      - id: apt-other
+        if: ${{ !cancelled() }}
         uses: actions/cache@v4
         with:
           path: ~/.cache/pw-apt-firefox-webkit
@@ -447,6 +457,13 @@ jobs:
       - name: Install Firefox and WebKit system dependencies
         if: ${{ !cancelled() }}
         run: bash scripts/ci-browser-deps.sh firefox webkit
+      - if: ${{ !cancelled() && steps.apt-other.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        # apt may have given nothing to keep (the script then checks the libraries instead).
+        continue-on-error: true
+        with:
+          path: ~/.cache/pw-apt-firefox-webkit
+          key: pw-apt-firefox-webkit-${{ steps.pw.outputs.image }}-${{ steps.pw.outputs.version }}
       - if: ${{ !cancelled() }}
         run: pnpm test:browsers
       - uses: actions/upload-artifact@v4
