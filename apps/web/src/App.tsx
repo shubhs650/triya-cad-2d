@@ -3436,7 +3436,15 @@ function drawingHooks(
   opened: OpenDocument['opened'],
 ): Pick<
   CanvasHooks,
-  'patterns' | 'fonts' | 'changes' | 'connect' | 'underlays' | 'images' | 'constraintBars'
+  | 'patterns'
+  | 'fonts'
+  | 'changes'
+  | 'connect'
+  | 'underlays'
+  | 'images'
+  | 'constraintBars'
+  | 'constraintBarMoves'
+  | 'moveConstraintBar'
 > {
   return {
     patterns: () => patterns.sources(),
@@ -3444,6 +3452,9 @@ function drawingHooks(
     changes: () => engines.changesOf(id),
     connect: () => engines.connect(id),
     constraintBars: () => constraintBarStates.hidden(id),
+    // M9-05 part 6: the bars dragged, display state like the bars hidden.
+    constraintBarMoves: () => constraintBarStates.moved(id),
+    moveConstraintBar: (key, offset) => constraintBarStates.move(id, key, offset),
     underlays: (deliver, deliverSnap) =>
       pdfPages.client(pdfDefinitions(id, opened), deliver, deliverSnap),
     images: (deliver) =>
