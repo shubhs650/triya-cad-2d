@@ -102,6 +102,7 @@ export type DraftingPreferences = Pick<
   | 'dynConstraints'
   | 'dynConstraintMode'
   | 'constraintNameFormat'
+  | 'dimConstraintIcon'
   | 'constraintInfer'
   | 'constraintBarMode'
   | 'constraintBarDisplay'
@@ -246,6 +247,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     dynConstraints: true,
     dynConstraintMode: true,
     constraintNameFormat: 2,
+    dimConstraintIcon: 3,
     constraintInfer: false,
     constraintBarMode: 4095,
     constraintBarDisplay: 3,
@@ -439,6 +441,11 @@ export function normalizePreferences(raw: unknown): Preferences {
         { min: 0, max: 2 },
         d.drafting.constraintNameFormat,
       ) as 0 | 1 | 2,
+      dimConstraintIcon: within(
+        k['dimConstraintIcon'],
+        { min: 0, max: 3 },
+        d.drafting.dimConstraintIcon,
+      ),
       constraintBarMode: within(
         k['constraintBarMode'],
         { min: 0, max: 4095 },
@@ -635,6 +642,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     dynConstraints: s.dynConstraints,
     dynConstraintMode: s.dynConstraintMode,
     constraintNameFormat: s.constraintNameFormat,
+    dimConstraintIcon: s.dimConstraintIcon,
     constraintInfer: s.constraintInfer,
     constraintBarMode: s.constraintBarMode,
     constraintBarDisplay: s.constraintBarDisplay,

@@ -9,7 +9,7 @@
 import type { ConstraintDisplay, ConstraintShape, Vec2 } from '@triya/engine';
 import type { Affine } from './affine';
 import type { Paint } from './tessellate';
-import { frameLabelPrimitives, type TextContext } from './text';
+import { frameLabelPrimitives, labelWidth, type TextContext } from './text';
 import { PATH_A, PATH_L, PATH_M, PATH_Z, type PrimitiveColor, type RenderPrimitive } from './types';
 
 /** A constraint's sizes, in drawing units. */
@@ -67,9 +67,23 @@ export function annotationalSizes(header: ReadonlyMap<string, unknown>): Constra
 }
 
 /**
+ * DIMCONSTRAINTICON's bits (M9-05 part 9; AutoCAD 2024 Help, "DIMCONSTRAINTICON (System
+ * Variable)"): the lock icon beside dynamic constraints' text (1) and annotational ones' (2);
+ * initially 3, both.
+ */
+export const LOCK_ICON_DYNAMIC = 1;
+export const LOCK_ICON_ANNOTATIONAL = 2;
+
+/** Whether DIMCONSTRAINTICON `bits` (3 when absent) gives `d` its lock icon. */
+export function showsLock(d: ConstraintDisplay, bits: number | undefined): boolean {
+  const bit = d.form === 'annotational' ? LOCK_ICON_ANNOTATIONAL : LOCK_ICON_DYNAMIC;
+  return ((bits ?? LOCK_ICON_DYNAMIC | LOCK_ICON_ANNOTATIONAL) & bit) !== 0;
+}
+
+/**
  * What `d` draws, in `color`, at sizes `s`; its text only where a font is loaded. Without
  * `extensions`, its extension lines are left out: what a pick takes it by (M9-03 part 10), as
- * they start at the objects' points.
+ * they start at the objects' points. With `lock`, a padlock before its text (M9-05 part 9).
  */
 export function constraintPrimitives(
   d: ConstraintDisplay,
@@ -77,6 +91,7 @@ export function constraintPrimitives(
   color: PrimitiveColor,
   text: TextContext | undefined,
   extensions = true,
+  lock = false,
 ): RenderPrimitive[] {
   const out: RenderPrimitive[] = [];
   const stroke = (path: number[]) => out.push({ kind: 'stroke', path, color });
@@ -120,8 +135,51 @@ export function constraintPrimitives(
     };
     const paint: Paint = { color };
     out.push(...frameLabelPrimitives(d.label, frame, s.text, paint, text));
+    const unit = lock ? labelWidth(d.label, text) : undefined;
+    if (unit !== undefined) out.push(...lockPrimitives(frame, s.text, (unit * s.text) / 2, color));
   }
   return out;
+}
+
+/**
+ * A padlock `h` tall (the text's height) ending a third of `h` before the text, whose label
+ * runs from -`half` to `half` along `frame` and is centred on its origin: a filled body and
+ * its shackle, a stroke. AutoCAD draws its lock to the left of the name; the Help shows it but
+ * gives no size, so it is the text's height here, as the text keeps its size on screen.
+ */
+function lockPrimitives(
+  frame: Affine,
+  h: number,
+  half: number,
+  color: PrimitiveColor,
+): RenderPrimitive[] {
+  const at = (x: number, y: number): [number, number] => [
+    frame.a * x + frame.c * y + frame.e,
+    frame.b * x + frame.d * y + frame.f,
+  ];
+  const right = -half - h / 3;
+  const width = 0.7 * h;
+  const left = right - width;
+  const bottom = -h / 2;
+  const top = bottom + 0.55 * h;
+  const body = [at(left, bottom), at(right, bottom), at(right, top), at(left, top)];
+  // The shackle: two legs up from the body joined by a half circle, as a polyline.
+  const r = width / 2 - 0.15 * h;
+  const cx = (left + right) / 2;
+  const cy = top + 0.15 * h;
+  const shackle: [number, number][] = [at(cx - r, top)];
+  const steps = 8;
+  for (let i = 0; i <= steps; i++) {
+    const a = Math.PI - (Math.PI * i) / steps;
+    shackle.push(at(cx + r * Math.cos(a), cy + r * Math.sin(a)));
+  }
+  shackle.push(at(cx + r, top));
+  const path = (pts: [number, number][]) =>
+    pts.flatMap(([x, y], i) => [i === 0 ? PATH_M : PATH_L, x, y]);
+  return [
+    { kind: 'fill', path: [...path(body), PATH_Z], color },
+    { kind: 'stroke', path: path(shackle), color },
+  ];
 }
 
 function drawShape(

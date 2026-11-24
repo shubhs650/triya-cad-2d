@@ -141,6 +141,7 @@ import {
   annotationalSizes,
   constraintPrimitives,
   DYNAMIC_CONSTRAINT_PX,
+  showsLock,
   sizesAt,
   type ConstraintSizes,
 } from './constraint-display';
@@ -1124,6 +1125,7 @@ export class Canvas2DRenderer implements Renderer {
         'foreground',
         this.#tessellate.text,
         false,
+        showsLock(d, look?.lockIcon),
       )) {
         prims.push(prim);
         if (prim.kind !== 'infinite' && prim.kind !== 'point' && prim.text) {
@@ -2406,7 +2408,14 @@ export class Canvas2DRenderer implements Renderer {
       const sizes = this.#constraintSizes(d, look, view.scale);
       if (!sizes) continue;
       const color = d.form === 'annotational' ? 'foreground' : (look?.color ?? 'foreground');
-      const drawn = constraintPrimitives(d, sizes, color, this.#tessellate.text);
+      const drawn = constraintPrimitives(
+        d,
+        sizes,
+        color,
+        this.#tessellate.text,
+        true,
+        showsLock(d, look?.lockIcon),
+      );
       prims.push(...drawn);
       if (this.#highlightConstraints.has(d.handle)) picked.push(...drawn);
     }

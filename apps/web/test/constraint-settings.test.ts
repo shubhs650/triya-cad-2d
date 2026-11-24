@@ -46,6 +46,7 @@ describe('Constraint Settings (M9-05 part 3)', () => {
       cbarTransparency: 50,
       constraintBarDisplay: 3,
       constraintNameFormat: 2,
+      dimConstraintIcon: 3,
       dynConstraintMode: true,
       autoConstrain: AUTOCONSTRAIN_DEFAULTS,
     });
@@ -113,6 +114,35 @@ describe('Constraint Settings (M9-05 part 3)', () => {
     expect(p.drafting.autoConstrain.angle).toBe(3);
     const bad = normalizePreferences({ drafting: { autoConstrain: { distance: 'x' } } });
     expect(bad.drafting.autoConstrain).toEqual(AUTOCONSTRAIN_DEFAULTS);
+  });
+});
+
+describe('Show lock icon for annotational constraints (M9-05 part 9)', () => {
+  it('is DIMCONSTRAINTICON, 3 at first (both icons), a bitcode from 0 to 3', () => {
+    expect(INITIAL_DRAFTING.dimConstraintIcon).toBe(3);
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'DIMCONSTRAINTICON')).toEqual({ ok: true, value: 3 });
+    expect(systemVariableReply(d, 'DIMCONSTRAINTICON', 1)).toEqual({ ok: true, value: 1 });
+    expect(d.get().dimConstraintIcon).toBe(1);
+  });
+
+  it("is the Dimensional tab's check, its bit 2 alone", () => {
+    const draft = draftOf({ ...INITIAL_DRAFTING, dimConstraintIcon: 1 });
+    expect(draft.lockAnnotational).toBe(false);
+    expect(draftPatch({ ...draft, lockAnnotational: true }).dimConstraintIcon).toBe(3);
+    const off = draftOf({ ...INITIAL_DRAFTING, dimConstraintIcon: 2 });
+    expect(off.lockAnnotational).toBe(true);
+    // Bit 1, the dynamic constraints' icon, which the dialog does not show, is kept.
+    expect(draftPatch({ ...off, lockAnnotational: false }).dimConstraintIcon).toBe(0);
+    expect(draftPatch(draftOf(INITIAL_DRAFTING)).dimConstraintIcon).toBe(3);
+  });
+
+  it('is kept per user in the preferences, a bad one mended', () => {
+    const at = (v: unknown) =>
+      normalizePreferences({ drafting: { dimConstraintIcon: v } }).drafting.dimConstraintIcon;
+    expect(at(2)).toBe(2);
+    expect(at(4)).toBe(3);
+    expect(at('x')).toBe(3);
   });
 });
 

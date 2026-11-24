@@ -4,9 +4,9 @@
 // AutoConstrain), edits a copy of the user's settings and sets them on OK; Cancel (or Esc) leaves
 // them as they were.
 //
-// Infer geometric constraints is CONSTRAINTINFER (M9-05 part 7). Left out: Only display constraint bars for objects in the current plane is left
-// out, as Triya draws in one plane (PRD non-goal: no 3D); Show lock icon for annotational
-// constraints (DIMCONSTRAINTICON) is left out until annotational constraints draw a lock.
+// Infer geometric constraints is CONSTRAINTINFER (M9-05 part 7); Show lock icon for annotational
+// constraints is DIMCONSTRAINTICON's bit 2 (M9-05 part 9). Only display constraint bars for
+// objects in the current plane is left out, as Triya draws in one plane (PRD non-goal: no 3D).
 import {
   CONSTRAINT_BAR_ALL,
   CONSTRAINT_BAR_BITS,
@@ -196,6 +196,12 @@ function DimensionalTab({ d, set }: TabProps) {
             ))}
           </select>
         </label>
+        <Check
+          checked={d.lockAnnotational}
+          onChange={(lockAnnotational) => set({ lockAnnotational })}
+        >
+          Show lock icon for annotational constraints
+        </Check>
       </fieldset>
       <Check checked={d.showHidden} onChange={(showHidden) => set({ showHidden })}>
         Show hidden dynamic constraints for selected objects

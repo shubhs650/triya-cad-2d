@@ -145,6 +145,11 @@ const VALUES: Readonly<
     get: (s) => s.constraintNameFormat,
     set: (v) => ({ constraintNameFormat: v as 0 | 1 | 2 }),
   },
+  // M9-05 part 9: the lock icon before their text, dynamic (1) and annotational (2).
+  DIMCONSTRAINTICON: {
+    get: (s) => s.dimConstraintIcon,
+    set: (dimConstraintIcon) => ({ dimConstraintIcon }),
+  },
   DYNCONSTRAINTMODE: {
     get: (s) => bit(s.dynConstraintMode),
     set: (v) => ({ dynConstraintMode: v === 1 }),

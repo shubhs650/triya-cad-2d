@@ -133,6 +133,12 @@ export interface DraftingState {
    */
   readonly constraintNameFormat: 0 | 1 | 2;
   /**
+   * DIMCONSTRAINTICON (M9-05 part 9): the lock icon before dimensional constraints' text, bit 1
+   * on dynamic ones, bit 2 on annotational ones (the Constraint Settings' Show lock icon for
+   * annotational constraints). AutoCAD keeps it per user, initially 3.
+   */
+  readonly dimConstraintIcon: number;
+  /**
    * CONSTRAINTINFER (M9-05 part 7): geometric constraints inferred as objects are drawn, from
    * the object snaps that placed them (the status bar's Infer Constraints, Ctrl+Shift+I).
    * AutoCAD keeps it per user, initially 0; each drawing's engine asks for it as a command ends.
@@ -593,6 +599,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   dynConstraints: true,
   dynConstraintMode: true,
   constraintNameFormat: 2,
+  dimConstraintIcon: 3,
   constraintInfer: false,
   constraintBarMode: 4095,
   constraintBarDisplay: 3,

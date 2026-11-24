@@ -45,7 +45,9 @@
 //   as colour 7 at the default lineweight, continuous, through the table (ours: AutoCAD gives
 //   them the current layer's). A layout plots them through each viewport after its objects,
 //   carried and clipped as they are (M9-03 part 13), leaving out in a viewport those whose
-//   objects are all on layers frozen in it, as the screen does.
+//   objects are all on layers frozen in it, as the screen does. Their lock icons
+//   (DIMCONSTRAINTICON, M9-05 part 9) do not plot: the Help says what plots of the constraints
+//   but not of the icon, a display aid as the constraint bars are (decision).
 //
 // Not plotted: an image whose bitmap the app has not loaded, which plots its frame only.
 
