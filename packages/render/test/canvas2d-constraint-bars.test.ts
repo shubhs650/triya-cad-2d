@@ -2,7 +2,7 @@
 // icon per geometric constraint on it, the same size on screen at any zoom; CONSTRAINTBAR's Hide
 // hides it (shown again while its object is selected, CONSTRAINTBARDISPLAY bit 2);
 // CONSTRAINTBARMODE picks the kinds shown; Coincident constraints are small squares.
-import { constraintBars, type GeometricConstraintObject } from '@triya/engine';
+import { constraintBarKey, constraintBars, type GeometricConstraintObject } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   CONSTRAINT_BAR_PX,
@@ -267,5 +267,62 @@ describe('Canvas2DRenderer: the cursor over a constraint bar (M9-05 part 4)', ()
     expect(drawnIn(overlay(), PINK).strokes).toBeGreaterThan(0);
     expect(r.hoverConstraintBar(undefined)).toBeNull();
     expect(drawnIn(overlay(), PINK).strokes).toBe(0);
+  });
+});
+
+// M9-05 part 6: a bar dragged keeps its place beside its object, the drag's offset in screen
+// pixels from where the bar is laid out (so the same at any zoom, and following its object);
+// CONSTRAINTBAR Reset puts it back.
+describe('a constraint bar dragged (M9-05 part 6)', () => {
+  const bars = constraintBars(setup().d.model);
+  const bar20 = bars.bars.find((b) => b.entity === '20')!;
+  const key20 = constraintBarKey('20');
+  const moved = new Map([[key20, { x: 30, y: -20 }]]);
+
+  it('names each bar by its object and polyline segment', () => {
+    expect(constraintBarKey('20')).toBe('20');
+    expect(constraintBarKey('2A', 3)).toBe('2A:3');
+  });
+
+  it('lays a dragged bar out its offset in screen pixels, y down, from its own place', () => {
+    const home = barBox(bar20, 2, 10);
+    const there = barBox(bar20, 2, 10, { x: 30, y: -20 });
+    // 30 px right and 20 px up at 10 px a unit.
+    expect(there.min.x - home.min.x).toBeCloseTo(3);
+    expect(there.min.y - home.min.y).toBeCloseTo(2);
+    expect(there.icons[1]!.x - home.icons[1]!.x).toBeCloseTo(3);
+    // The same pixels at any zoom.
+    const far = barBox(bar20, 2, 2, { x: 30, y: -20 });
+    expect(far.min.x - barBox(bar20, 2, 2).min.x).toBeCloseTo(15);
+  });
+
+  it('draws, finds and frames the bar where it was dragged', () => {
+    const home = barBox(bar20, 2, 10);
+    const there = barBox(bar20, 2, 10, { x: 30, y: -20 });
+    const prims = constraintBarPrimitives(bars, () => true, 10, look, moved);
+    const panel = prims.find((p) => p.kind === 'fill' && p.color === 'background')!;
+    expect(panel.kind === 'fill' && panel.path[1]).toBeCloseTo(there.min.x);
+    expect(constraintBarAt(bars, () => true, 10, 4095, there.icons[0]!, moved)).toMatchObject({
+      entity: '20',
+      constraint: 'E1',
+    });
+    // Nothing is left where it was.
+    expect(constraintBarAt(bars, () => true, 10, 4095, home.icons[0]!, moved)).toBeUndefined();
+    const hit = constraintBarAt(bars, () => true, 10, 4095, there.icons[1]!, moved)!;
+    const frames = constraintBarHoverPrimitives(bars, () => true, 10, 4095, hit, PINK, moved);
+    const first = frames[0]!;
+    expect(first.kind === 'stroke' && first.path[1]).toBeCloseTo(there.icons[1]!.x - 0.8);
+  });
+
+  it("the renderer draws and answers the cursor by the style's offsets", () => {
+    const style: RenderStyle = {
+      ...STYLE,
+      constraintBars: { hidden: new Set(), color: BLUE, moved },
+    };
+    const { r } = setup({ style });
+    const there = barBox(bar20, 2, 10, { x: 30, y: -20 });
+    expect(r.hoverConstraintBar(screenOf(there.icons[0]!))).toMatchObject({ constraint: 'E1' });
+    const home = barBox(bar20, 2, 10);
+    expect(r.hoverConstraintBar(screenOf(home.icons[0]!))).toBeNull();
   });
 });

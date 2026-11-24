@@ -17,7 +17,7 @@ import type {
   Vec2,
 } from '@triya/engine';
 import type { ConstraintBarHit } from './types';
-import { CONSTRAINT_BAR_BITS } from '@triya/engine';
+import { CONSTRAINT_BAR_BITS, constraintBarKey } from '@triya/engine';
 import { PATH_A, PATH_L, PATH_M, PATH_Z, type PrimitiveColor, type RenderPrimitive } from './types';
 
 /** A bar's sizes on screen, CSS pixels (AutoCAD documents none; ours). */
@@ -142,6 +142,21 @@ const rect = (x0: number, y0: number, x1: number, y1: number) => [
   PATH_Z,
 ];
 
+/**
+ * Where the drafter dragged bars (M9-05 part 6), by `constraintBarKey`: each one's offset in CSS
+ * pixels, y down, from where it is laid out. AutoCAD 2024 Help, "About Displaying and Verifying
+ * Geometric Constraints", lets a bar be dragged; it does not say whether a dragged bar keeps its
+ * place in the drawing or beside its object. Triya keeps it beside its object, as the bars are
+ * the same size on screen at any zoom: the same offset in pixels from its object's midpoint
+ * whatever the zoom, and following the object as it moves.
+ */
+export type ConstraintBarMoves = ReadonlyMap<string, { readonly x: number; readonly y: number }>;
+
+const NOT_MOVED: ConstraintBarMoves = new Map();
+
+const movedOf = (bar: ConstraintBar, moved: ConstraintBarMoves) =>
+  moved.size === 0 ? undefined : moved.get(constraintBarKey(bar.entity, bar.segment));
+
 /** A bar's icons shown under CONSTRAINTBARMODE `mode`. */
 export function barIcons(bar: ConstraintBar, mode: number): ConstraintBar['icons'] {
   return bar.icons.filter((i) => (mode & CONSTRAINT_BAR_BITS[i.kind]) !== 0);
@@ -150,12 +165,13 @@ export function barIcons(bar: ConstraintBar, mode: number): ConstraintBar['icons
 /**
  * Where a bar of `n` icons sits for a view of `scale` CSS pixels per drawing unit: its panel's
  * corners and each icon's centre, in drawing units, the panel off its object's midpoint on the
- * bar's side, a row across the screen.
+ * bar's side, a row across the screen; `moved` (CSS pixels, y down) from there when dragged.
  */
 export function barBox(
   bar: ConstraintBar,
   n: number,
   scale: number,
+  moved?: { readonly x: number; readonly y: number },
 ): { min: Vec2; max: Vec2; icons: Vec2[] } {
   const k = 1 / scale;
   const { icon, pad, offset } = CONSTRAINT_BAR_PX;
@@ -163,7 +179,10 @@ export function barBox(
   const h = (icon + 2 * pad) * k;
   // Far enough along the side that the panel's nearest edge is `offset` off the midpoint.
   const reach = offset * k + Math.abs(bar.side.x) * (w / 2) + Math.abs(bar.side.y) * (h / 2);
-  const c = { x: bar.anchor.x + bar.side.x * reach, y: bar.anchor.y + bar.side.y * reach };
+  const c = {
+    x: bar.anchor.x + bar.side.x * reach + (moved ? moved.x * k : 0),
+    y: bar.anchor.y + bar.side.y * reach - (moved ? moved.y * k : 0),
+  };
   const min = { x: c.x - w / 2, y: c.y - h / 2 };
   const icons = Array.from({ length: n }, (_, i) => ({
     x: min.x + (pad + i * (icon + pad) + icon / 2) * k,
@@ -174,13 +193,15 @@ export function barBox(
 
 /**
  * What the bars `shown` draw (those whose object, or polyline, `visible` names) at a view of
- * `scale`: each bar's panel, framed, then its icons; each Coincident square.
+ * `scale`: each bar's panel, framed, then its icons, where `moved` says those dragged are; each
+ * Coincident square.
  */
 export function constraintBarPrimitives(
   bars: ConstraintBars,
   visible: (entity: Handle) => boolean,
   scale: number,
   look: ConstraintBarLook,
+  moved: ConstraintBarMoves = NOT_MOVED,
 ): RenderPrimitive[] {
   const out: RenderPrimitive[] = [];
   const k = 1 / scale;
@@ -189,7 +210,7 @@ export function constraintBarPrimitives(
     if (!visible(bar.entity)) continue;
     const icons = barIcons(bar, look.mode);
     if (icons.length === 0) continue;
-    const box = barBox(bar, icons.length, scale);
+    const box = barBox(bar, icons.length, scale, movedOf(bar, moved));
     const frame = rect(box.min.x, box.min.y, box.max.x, box.max.y);
     out.push({ kind: 'fill', path: frame, color: look.panel, ...opacity });
     out.push({ kind: 'stroke', path: frame, color: look.color, ...opacity });
@@ -228,6 +249,7 @@ export function constraintBarAt(
   scale: number,
   mode: number,
   p: Vec2,
+  moved: ConstraintBarMoves = NOT_MOVED,
 ): ConstraintBarHit | undefined {
   const k = 1 / scale;
   if ((mode & CONSTRAINT_BAR_BITS.coincident) !== 0) {
@@ -246,7 +268,7 @@ export function constraintBarAt(
     if (!visible(bar.entity)) continue;
     const icons = barIcons(bar, mode);
     if (icons.length === 0) continue;
-    const box = barBox(bar, icons.length, scale);
+    const box = barBox(bar, icons.length, scale, movedOf(bar, moved));
     if (p.x < box.min.x || p.x > box.max.x || p.y < box.min.y || p.y > box.max.y) continue;
     const at = bar.segment === undefined ? {} : { segment: bar.segment };
     // Each icon's square, half the gap between two either side of it.
@@ -278,6 +300,7 @@ export function constraintBarHoverPrimitives(
   mode: number,
   hit: ConstraintBarHit,
   color: PrimitiveColor,
+  moved: ConstraintBarMoves = NOT_MOVED,
 ): RenderPrimitive[] {
   const out: RenderPrimitive[] = [];
   if (hit.constraint === undefined) return out;
@@ -288,7 +311,7 @@ export function constraintBarHoverPrimitives(
     const icons = barIcons(bar, mode);
     const n = icons.findIndex((i) => i.handle === hit.constraint);
     if (n < 0) continue;
-    const c = barBox(bar, icons.length, scale).icons[n]!;
+    const c = barBox(bar, icons.length, scale, movedOf(bar, moved)).icons[n]!;
     out.push({ kind: 'stroke', path: rect(c.x - half, c.y - half, c.x + half, c.y + half), color });
   }
   if ((mode & CONSTRAINT_BAR_BITS.coincident) !== 0) {

@@ -380,13 +380,14 @@ export type ViewRequest =
   | { readonly op: 'tab'; readonly name?: string }
   /**
    * Constraint bars (M9-05 part 2), the app's display state of the drawing: CONSTRAINTBAR's
-   * Show (and Reset, Showall) and Hide (Hideall) for the objects `entities`; `applied`, a
-   * geometric constraint was just applied to them, so their bars show or hide as
-   * CONSTRAINTBARDISPLAY bit 1 says. No edit: a bar shown is no undo step.
+   * Show (and Showall) and Hide (Hideall) for the objects `entities`; Reset (M9-05 part 6)
+   * shows them and puts the bars dragged back where they are laid out; `applied`, a geometric
+   * constraint was just applied to them, so their bars show or hide as CONSTRAINTBARDISPLAY
+   * bit 1 says. No edit: a bar shown is no undo step.
    */
   | {
       readonly op: 'constraintBars';
-      readonly action: 'show' | 'hide' | 'applied';
+      readonly action: 'show' | 'hide' | 'reset' | 'applied';
       readonly entities: readonly Handle[];
     }
   /**

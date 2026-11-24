@@ -88,7 +88,7 @@ describe('CONSTRAINTBAR (M9-05 part 2)', () => {
     expect(d.bus.undo.state.undoable).toBe(0);
   });
 
-  it('shows them, Show being the default and Reset showing them too', async () => {
+  it('shows them, Show being the default, Reset showing them and putting them back', async () => {
     const d = drawing();
     await d.bus.script(['CONSTRAINTBAR']);
     await d.bus.pick({ x: 10, y: 5 });
@@ -98,9 +98,10 @@ describe('CONSTRAINTBAR (M9-05 part 2)', () => {
     await d.bus.pick({ x: 5, y: 0 });
     await d.bus.submit('');
     await d.bus.submit('Reset');
+    // M9-05 part 6: Reset "resets them to their default locations", where dragging left them.
     expect(d.requests).toEqual([
       { op: 'constraintBars', action: 'show', entities: ['40'] },
-      { op: 'constraintBars', action: 'show', entities: ['30'] },
+      { op: 'constraintBars', action: 'reset', entities: ['30'] },
     ]);
   });
 

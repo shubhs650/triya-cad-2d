@@ -1374,7 +1374,14 @@ export class Canvas2DRenderer implements Renderer {
     if (screen && look && this.#modelTab) {
       this.#bars ??= constraintBars(this.#model);
       const p = screenToWorld(view, this.#width, this.#height, screen);
-      hit = constraintBarAt(this.#bars, this.#barVisible(look), view.scale, look.mode ?? 4095, p);
+      hit = constraintBarAt(
+        this.#bars,
+        this.#barVisible(look),
+        view.scale,
+        look.mode ?? 4095,
+        p,
+        look.moved,
+      );
     }
     const was = this.#barHover;
     const same =
@@ -2373,12 +2380,18 @@ export class Canvas2DRenderer implements Renderer {
     if (this.#bars.bars.length === 0 && this.#bars.marks.length === 0) return;
     const visible = this.#barVisible(look);
     const color = look.color ?? this.#style.constraints?.color ?? 'foreground';
-    const prims = constraintBarPrimitives(this.#bars, visible, view.scale, {
-      mode: look.mode ?? 4095,
-      color,
-      panel: look.panel ?? 'background',
-      opacity: Math.min(Math.max(look.transparency ?? 50, 10), 90) / 100,
-    });
+    const prims = constraintBarPrimitives(
+      this.#bars,
+      visible,
+      view.scale,
+      {
+        mode: look.mode ?? 4095,
+        color,
+        panel: look.panel ?? 'background',
+        opacity: Math.min(Math.max(look.transparency ?? 50, 10), 90) / 100,
+      },
+      look.moved,
+    );
     this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);
   }
 
@@ -2417,6 +2430,7 @@ export class Canvas2DRenderer implements Renderer {
       look.mode ?? 4095,
       hit,
       color,
+      look.moved,
     );
     if (prims.length > 0)
       this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, frame);

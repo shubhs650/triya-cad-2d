@@ -58,6 +58,7 @@ import {
   constrainCursor,
   dragMotion,
   layoutSheet,
+  constraintBarKey,
   offsetSnapPoint,
   polarLabel,
   trackLabel,
@@ -429,6 +430,13 @@ export interface CanvasHooks {
   /** The objects of the drawing whose constraint bars are hidden, by handle (M9-05 part 2). */
   readonly constraintBars?: () => ReadonlySet<string>;
   /**
+   * The drawing's constraint bars the drafter dragged (M9-05 part 6), by `constraintBarKey`: each
+   * one's offset in CSS pixels, y down, from where it is laid out.
+   */
+  readonly constraintBarMoves?: () => ReadonlyMap<string, { x: number; y: number }>;
+  /** A constraint bar dragged at `Command:` (M9-05 part 6) to `offset`; undefined puts it back. */
+  readonly moveConstraintBar?: (key: string, offset: { x: number; y: number } | undefined) => void;
+  /**
    * Links a new render worker to the drawing's engine (M2-62), so the engine's change sets
    * reach it without waiting on the main thread; see `RendererHostOptions.connect`.
    */
@@ -627,6 +635,22 @@ export class CanvasController {
   #barHit: ConstraintBarHit | undefined;
   /** The latest constraint bar question asked; older answers are passed over. */
   #barSeq = 0;
+  /**
+   * A press at `Command:` on a constraint bar (M9-05 part 6): a drag moves the bar, a click
+   * without one picks there as any other click does, on release.
+   */
+  #barPress:
+    | {
+        readonly pointer: number;
+        readonly x: number;
+        readonly y: number;
+        readonly key: string;
+        readonly from: { readonly x: number; readonly y: number } | undefined;
+        readonly world: Point;
+        readonly shift: boolean;
+        dragged: boolean;
+      }
+    | undefined;
   /** The badge's latest hit test, so an older answer arriving late is dropped. */
   #badgeAsked = 0;
   /** The badge shows. */
@@ -1838,6 +1862,64 @@ export class CanvasController {
     this.#requestFrame();
   }
 
+  /**
+   * A left press at `Command:` on a constraint bar's panel or icon (M9-05 part 6; AutoCAD 2024
+   * Help, "About Displaying and Verifying Geometric Constraints": constraint bars can be dragged):
+   * held until the pointer moves or is released. Not a Coincident square, which sits at its point.
+   */
+  #pressBar(e: PointerEvent, world: Point): boolean {
+    const bar = this.#barHit;
+    const move = this.#hooks.moveConstraintBar;
+    if (bar?.entity === undefined || !move || !(this.#hooks.atCommand?.() ?? false)) return false;
+    const key = constraintBarKey(bar.entity, bar.segment);
+    this.#barPress = {
+      pointer: e.pointerId,
+      x: e.offsetX,
+      y: e.offsetY,
+      key,
+      from: this.#hooks.constraintBarMoves?.().get(key),
+      world,
+      shift: e.shiftKey,
+      dragged: false,
+    };
+    this.canvas.setPointerCapture(e.pointerId);
+    return true;
+  }
+
+  /** The bar pressed follows the pointer once it moves past a click (M9-05 part 6). */
+  #dragBar(e: PointerEvent): boolean {
+    const p = this.#barPress;
+    if (!p || p.pointer !== e.pointerId) return false;
+    const dx = e.offsetX - p.x;
+    const dy = e.offsetY - p.y;
+    if (!p.dragged && Math.hypot(dx, dy) > CLICK_PX) p.dragged = true;
+    if (p.dragged) {
+      this.#hooks.moveConstraintBar?.(p.key, {
+        x: (p.from?.x ?? 0) + dx,
+        y: (p.from?.y ?? 0) + dy,
+      });
+    }
+    this.#pointer = { offsetX: e.offsetX, offsetY: e.offsetY };
+    this.#cursorAt(this.#world(e));
+    return true;
+  }
+
+  /**
+   * The press on a bar ends (M9-05 part 6): a drag leaves the bar where it is (put back where it
+   * was if the pointer was lost); a click picks where it was pressed, as at any other place.
+   */
+  #dropBar(e: PointerEvent): void {
+    const p = this.#barPress;
+    if (!p || p.pointer !== e.pointerId) return;
+    this.#barPress = undefined;
+    if (p.dragged) {
+      if (e.type !== 'pointerup') this.#hooks.moveConstraintBar?.(p.key, p.from);
+      return;
+    }
+    if (e.type !== 'pointerup') return;
+    this.#hooks.onPick?.(p.world, { shift: p.shift, release: false, grip: this.gripReach() });
+  }
+
   /** What of the constraint bars the cursor rests on (M9-05 part 4), as last answered. */
   constraintBarHit(): ConstraintBarHit | undefined {
     return this.#barHit;
@@ -2487,6 +2569,7 @@ export class CanvasController {
       // CONSTRAINTBARDISPLAY bit 2 and CBARTRANSPARENCY.
       constraintBars: {
         hidden: this.#hooks?.constraintBars?.() ?? new Set<string>(),
+        moved: this.#hooks?.constraintBarMoves?.() ?? new Map<string, { x: number; y: number }>(),
         mode: d.constraintBarMode,
         showSelected: (d.constraintBarDisplay & 2) !== 0,
         transparency: d.cbarTransparency,
@@ -3138,6 +3221,7 @@ export class CanvasController {
         if (this.#mode === 'none') {
           const world = this.#world(e);
           if (!world) return;
+          if (this.#pressBar(e, world)) return;
           this.#press = {
             pointer: e.pointerId,
             x: e.offsetX,
@@ -3189,6 +3273,7 @@ export class CanvasController {
     c.addEventListener(
       'pointermove',
       (e) => {
+        if (this.#dragBar(e)) return;
         const drag = this.#drag;
         if (drag && drag.pointer === e.pointerId && this.#view) {
           // A press that never moves the view is no undo step.
@@ -3281,6 +3366,7 @@ export class CanvasController {
     );
     const endDrag = (e: PointerEvent) => {
       if (c.hasPointerCapture(e.pointerId)) c.releasePointerCapture(e.pointerId);
+      this.#dropBar(e);
       if (this.#drag?.pointer === e.pointerId) this.#drag = undefined;
       // A window dragged out ends on release; one clicked waits for the second click.
       const world = this.#world(e);

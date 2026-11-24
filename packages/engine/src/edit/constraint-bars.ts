@@ -233,6 +233,19 @@ export function constraintBars(
   return { bars: out, marks };
 }
 
+/**
+ * The name of an object's bar (`segment`'s, for a polyline's) in the app's display state (M9-05
+ * part 6: where a bar was dragged): the handle, then `:segment`.
+ */
+export function constraintBarKey(entity: Handle, segment?: number): string {
+  return segment === undefined ? entity : `${entity}:${segment}`;
+}
+
+/** Whether `key` (`constraintBarKey`'s) names one of `entity`'s bars. */
+export function isConstraintBarOf(key: string, entity: Handle): boolean {
+  return key === entity || key.startsWith(`${entity}:`);
+}
+
 /** The objects any geometric constraint names: what Showall and Hideall show or hide. */
 export function constrainedObjects(model: DocumentModel): Handle[] {
   const out = new Set<Handle>();

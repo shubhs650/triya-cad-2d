@@ -87,6 +87,11 @@ export interface ConstraintBarStyle {
   readonly color?: string;
   /** The panel's colour, a CSS colour; the background's when absent. */
   readonly panel?: string;
+  /**
+   * The bars the drafter dragged (M9-05 part 6), by `constraintBarKey`: each one's offset in CSS
+   * pixels, y down, from where it is laid out.
+   */
+  readonly moved?: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
 }
 
 export interface RenderStyle {
