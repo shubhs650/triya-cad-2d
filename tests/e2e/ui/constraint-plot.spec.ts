@@ -9,15 +9,7 @@
 // the worker's plot and the preview.
 import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
-import {
-  DXF,
-  activeCanvas,
-  expectDrawn,
-  expectShown,
-  gridOff,
-  openWithPicker,
-  viewOf,
-} from '../app/page';
+import { DXF, expectDrawn, expectShown, gridOff, openWithPicker, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -44,9 +36,10 @@ async function type(page: Page, text: string, next: string | RegExp): Promise<vo
  * `shot` (a screenshot's name, or none), then back to the drawing.
  */
 async function previewInk(page: Page, shot?: (name: string) => Promise<void>, name = '') {
-  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  // PLOT typed, not a click on the canvas first: a click on an empty part starts a selection window.
   await expect(prompt(page)).toHaveText('Command:');
-  await page.keyboard.press('Control+p');
+  await page.keyboard.type('PLOT');
+  await page.keyboard.press('Enter');
   const d = dialog(page);
   await expect(d.getByRole('heading')).toHaveText('Plot - Model');
   await d.getByLabel('Paper size').selectOption('ISO A4');
