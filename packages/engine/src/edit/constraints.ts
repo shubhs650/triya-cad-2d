@@ -19,6 +19,8 @@ import type { Handle } from '../model/handle';
 import {
   isDimensionalConstraint,
   isGeometricConstraint,
+  isParameterGroup,
+  isParameterObject,
   isUserParameter,
   type ConstraintCurveRef,
   type ConstraintPointRef,
@@ -271,6 +273,26 @@ export function userParameters(model: DocumentModel): UserParameterObject[] {
  */
 export function parameterObjects(model: DocumentModel): ParameterObject[] {
   return [...dimensionalConstraints(model), ...userParameters(model)];
+}
+
+/**
+ * A group filter of the Parameters Manager's tree (M9-03 part 12), as the palette shows it: its
+ * object's handle, its name and the handles of the parameters' objects in it that the drawing
+ * still holds.
+ */
+export interface ParameterGroupInfo {
+  readonly handle: Handle;
+  readonly name: string;
+  readonly members: readonly Handle[];
+}
+
+/** The drawing's parameter group filters, in the order made, each with the members it holds. */
+export function parameterGroups(model: DocumentModel): ParameterGroupInfo[] {
+  return [...model.objects.values()].filter(isParameterGroup).map((g) => ({
+    handle: g.handle,
+    name: g.name,
+    members: g.members.filter((h) => isParameterObject(model.objects.get(h))),
+  }));
 }
 
 /** A constraint point of an entity and where it is. */
