@@ -2982,6 +2982,14 @@ button {
   background: var(--chrome-hover);
 }
 
+/* AutoCAD's group headings: Dimensional Constraint Parameters, User Parameters (M9-03 part 6). */
+.parameters-table .parameters-group th {
+  padding: 4px 6px 2px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--chrome-text-muted);
+}
+
 .parameters-table tr[data-reference] input[readonly],
 .parameters-table .value[data-error] {
   color: var(--chrome-text-muted);

@@ -1,5 +1,5 @@
-// TriyaToAcad for geometric constraints (M9-04, PRD FR-X5, DEC-081) and dimensional ones (M9-03
-// part 3, DEC-082), the inverse of map/triya-constraints.ts: each constraint is an XRECORD in the `TRIYA_CONSTRAINTS` dictionary
+// TriyaToAcad for geometric constraints (M9-04, PRD FR-X5, DEC-081), dimensional ones (M9-03
+// part 3, DEC-082) and user parameters (M9-03 part 6, DEC-083), the inverse of map/triya-constraints.ts: each constraint is an XRECORD in the `TRIYA_CONSTRAINTS` dictionary
 // of the named object dictionary, keyed by its own handle. A new constraint joins it; the first
 // one a drawing gets brings the dictionary, made as AutoCAD files its own dictionaries there
 // (soft owner, 281 = 1, the root dictionary its reactor). A constraint whose kind or references
@@ -11,8 +11,8 @@
 //
 // Refused, before anything changes: a constraint filed elsewhere than the root dictionary (where
 // GEOMCONSTRAINT files a new one) or `TRIYA_CONSTRAINTS`, a kind Triya does not name, no
-// reference or more than three, a bad vertex or segment index, a dimensional constraint's
-// parameter name taken by another or text that does not fit a string group, a new constraint's handle in use,
+// reference or more than three, a bad vertex or segment index, a parameter name (a dimensional
+// constraint's or a user parameter's) taken by another or text that does not fit a string group, a new constraint's handle in use,
 // and a version before R2000 (the save writes AC1032, DEC-047).
 import {
   ACadVersion,
@@ -27,28 +27,34 @@ import {
   GEOMETRIC_CONSTRAINT_KINDS,
   isDimensionalConstraint,
   isGeometricConstraint,
+  isUserParameter,
   type DimensionalConstraintObject,
   type DocumentInit,
   type DocumentModel,
   type GeometricConstraintObject,
   type Handle,
   type NonGraphicalObject,
+  type UserParameterObject,
 } from '@triya/engine';
 import {
   CONSTRAINT_FORMS,
   CONSTRAINT_POINTS,
   DIMENSIONAL_RECORD,
   MAX_CONSTRAINT_REFS,
+  PARAMETER_RECORD,
   TRIYA_CONSTRAINTS,
   TRIYA_CONSTRAINTS_VERSION,
   constraintsDictionary,
 } from '../map/triya-constraints';
 import { resolve, same, type Resolver } from './entities';
 
-type Constraint = GeometricConstraintObject | DimensionalConstraintObject;
+type Constraint = GeometricConstraintObject | DimensionalConstraintObject | UserParameterObject;
 
 const isConstraint = (o: NonGraphicalObject | undefined): o is Constraint =>
-  isGeometricConstraint(o) || isDimensionalConstraint(o);
+  isGeometricConstraint(o) || isDimensionalConstraint(o) || isUserParameter(o);
+
+/** The references a record names: a user parameter names none. */
+const refsOf = (c: Constraint) => (isUserParameter(c) ? [] : c.refs);
 
 export interface TriyaConstraintsPlan {
   readonly updated: { readonly acad: XRecord; readonly after: Constraint }[];
@@ -68,8 +74,24 @@ const fields = (c: Constraint) => {
 const textProblem = (what: string, s: string): string | undefined =>
   /[\r\n]/.test(s) || s.length > 2049 ? `${what} does not fit one string group` : undefined;
 
-/** Why `c` cannot be written as DEC-081 (DEC-082) lays a record out. */
+/** The text groups of a parameter's record, and why they cannot be written. */
+function parameterTextProblems(c: DimensionalConstraintObject | UserParameterObject): string[] {
+  const out: string[] = [];
+  for (const [what, text] of [
+    ['the parameter name', c.parameter],
+    ['the expression', c.expression],
+    ['the description', c.description ?? ''],
+  ] as const) {
+    const p = textProblem(what, text);
+    if (p) out.push(p);
+  }
+  if (c.parameter === '' || c.expression === '') out.push('an empty parameter or expression');
+  return out;
+}
+
+/** Why `c` cannot be written as DEC-081 (DEC-082, DEC-083) lays a record out. */
 function layoutProblems(c: Constraint): string[] {
+  if (isUserParameter(c)) return parameterTextProblems(c);
   const out: string[] = [];
   if (isDimensionalConstraint(c)) {
     if (!(DIMENSIONAL_CONSTRAINT_KINDS as readonly string[]).includes(c.dimension)) {
@@ -77,15 +99,7 @@ function layoutProblems(c: Constraint): string[] {
     }
     if (!CONSTRAINT_FORMS.includes(c.form)) out.push(`form ${String(c.form)}`);
     if (!Number.isFinite(c.location?.x) || !Number.isFinite(c.location?.y)) out.push('location');
-    for (const [what, text] of [
-      ['the parameter name', c.parameter],
-      ['the expression', c.expression],
-      ['the description', c.description ?? ''],
-    ] as const) {
-      const p = textProblem(what, text);
-      if (p) out.push(p);
-    }
-    if (c.parameter === '' || c.expression === '') out.push('an empty parameter or expression');
+    out.push(...parameterTextProblems(c));
   } else if (!(GEOMETRIC_CONSTRAINT_KINDS as readonly string[]).includes(c.kind)) {
     out.push(`kind ${String(c.kind)}`);
   }
@@ -119,7 +133,7 @@ export function planTriyaConstraints(
 
   // A constraint on an object that is gone is saved as none.
   const saved = (o: NonGraphicalObject | undefined): o is Constraint =>
-    isConstraint(o) && o.refs.every((ref) => model.entityByHandle(ref.entity));
+    isConstraint(o) && refsOf(o).every((ref) => model.entityByHandle(ref.entity));
   for (const [h, was] of before) {
     if (saved(model.objects.get(h))) continue;
     const acad = resolve(r, h, XRecord);
@@ -128,17 +142,16 @@ export function planTriyaConstraints(
   }
   // A parameter's name is the Parameters Manager's key: two records may not share one.
   const names = new Map<string, number>();
+  const named = (o: Constraint) => isDimensionalConstraint(o) || isUserParameter(o);
   for (const a of model.objects.values()) {
-    if (saved(a) && isDimensionalConstraint(a)) {
-      names.set(a.parameter, (names.get(a.parameter) ?? 0) + 1);
-    }
+    if (saved(a) && named(a)) names.set(a.parameter, (names.get(a.parameter) ?? 0) + 1);
   }
   for (const a of model.objects.values()) {
     if (!saved(a)) continue;
     const b = before.get(a.handle);
     if (b && b.type === a.type && same(fields(b), fields(a))) continue;
     const out = layoutProblems(a);
-    if (isDimensionalConstraint(a) && (names.get(a.parameter) ?? 0) > 1) {
+    if (named(a) && (names.get(a.parameter) ?? 0) > 1) {
       out.push(`parameter ${a.parameter} is another constraint's too`);
     }
     if (!owners.has(a.owner)) out.push(`it is filed in ${a.owner}, not ${TRIYA_CONSTRAINTS}`);
@@ -161,6 +174,13 @@ export function planTriyaConstraints(
 function fill(x: XRecord, c: Constraint): void {
   x.clear();
   x.createEntry(70, TRIYA_CONSTRAINTS_VERSION);
+  if (isUserParameter(c)) {
+    x.createEntry(1, PARAMETER_RECORD);
+    x.createEntry(300, c.parameter);
+    x.createEntry(301, c.expression);
+    if (c.description !== undefined) x.createEntry(302, c.description);
+    return;
+  }
   if (isDimensionalConstraint(c)) {
     x.createEntry(1, DIMENSIONAL_RECORD);
     x.createEntry(2, c.dimension);

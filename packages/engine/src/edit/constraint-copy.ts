@@ -8,8 +8,12 @@
 //   from copied objects." Triya copies no constraint at all, geometric ones included.
 // 1 "Copy dimensional constraints and constraint parameters. Always replace expressions with
 //   numerical constants. Rename dimensional parameters if there is a naming conflict."
-// 2 and 3 copy user parameters too, referencing those the drawing has or making the missing
-//   ones. Triya has no user parameters yet (M9-03's later part), so they copy as 1 does.
+// 2 "Reference existing user parameters when available, otherwise replace expressions with
+//   numerical constants." 3 does the same and makes the user parameters the drawing lacks. Triya
+//   keeps an expression that names only user parameters where it is copied within the drawing,
+//   whose user parameters give the copy its value; pasted into another drawing, whose user
+//   parameters may hold other values, it takes the value (making the missing ones and re-solving
+//   to another drawing's values are M9-12).
 // 4 "Copy all dimensional constraints, constraint parameters, and expressions. Rename the
 //   parameters of copied objects if conflicts in value occurs for copied parameters."
 //
@@ -28,6 +32,7 @@ import type { Handle } from '../model/handle';
 import {
   isDimensionalConstraint,
   isGeometricConstraint,
+  isUserParameter,
   type DimensionalConstraintKind,
   type DimensionalConstraintObject,
   type Entity,
@@ -190,9 +195,17 @@ export function carryConstraintsFrom(
   }
   const dimensions = carried.filter(isDimensionalConstraint);
   if (dimensions.length === 0) return;
-  // The names the drawing holds as this edit leaves it so far (earlier copies' included).
+  // The names the drawing holds as this edit leaves it so far (earlier copies' included), user
+  // parameters' too (M9-03 part 6).
   const used = new Set<string>();
-  for (const o of b.objects()) if (isDimensionalConstraint(o)) used.add(o.parameter);
+  const user = new Set<string>();
+  for (const o of b.objects()) {
+    if (isDimensionalConstraint(o)) used.add(o.parameter);
+    if (isUserParameter(o)) {
+      used.add(o.parameter);
+      user.add(o.parameter);
+    }
+  }
   const rename = new Map<string, string>();
   for (const d of dimensions) {
     const name =
@@ -208,13 +221,18 @@ export function carryConstraintsFrom(
     const now = measuredValue({ ...d, refs }, (h) => byCopy.get(h));
     const was = measuredValue(d, source.lookup);
     let expression = d.expression;
-    if (!d.reference && mode === 4) {
-      const names = new Set<string>();
-      expression = renameInExpression(d.expression, rename, names);
-      const known = [...names].every((n) => rename.has(n) || (source.sameDrawing && used.has(n)));
-      if (!known || now === undefined || was === undefined || !same(now, was)) {
-        expression = now === undefined ? d.expression : constant(now);
-      }
+    const names = new Set<string>();
+    const renamed = renameInExpression(d.expression, rename, names);
+    // 4: the copies' names and the drawing's own; 2 and 3: the drawing's user parameters only.
+    const known =
+      mode === 4
+        ? [...names].every((n) => rename.has(n) || (source.sameDrawing && used.has(n)))
+        : mode !== 1 &&
+          source.sameDrawing &&
+          names.size > 0 &&
+          [...names].every((n) => user.has(n) && !rename.has(n));
+    if (!d.reference && known && now !== undefined && was !== undefined && same(now, was)) {
+      expression = renamed;
     } else if (now !== undefined) {
       // A constant already giving the copy's value is kept as typed.
       const typed = Number(d.expression.trim());

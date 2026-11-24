@@ -34,6 +34,7 @@ import {
   type ConstraintSolver,
   dimensionalConstraints,
   geometricConstraints,
+  userParameters,
 } from '../edit/constraints';
 import type { Tolerance } from '../geom/tolerance';
 import type { ChangeSet, Replacement } from '../model/changeset';
@@ -46,6 +47,7 @@ import {
   type Entity,
   type EntityGeometry,
   type GeometricConstraintObject,
+  type ParameterObject,
 } from '../model/types';
 import type { CommandContext } from './command';
 import { setExpressions } from './constraints';
@@ -192,7 +194,7 @@ const sentence = (s: string): string =>
   `${s.charAt(0).toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? '' : '.'}`;
 
 /** The parameters a dimensional constraint's expression names. */
-function names(d: DimensionalConstraintObject): Set<string> {
+function names(d: ParameterObject): Set<string> {
   const out = new Set<string>();
   renameInExpression(d.expression, new Map(), out);
   return out;
@@ -206,9 +208,9 @@ function names(d: DimensionalConstraintObject): Set<string> {
 function keepValues(
   ctx: CommandContext,
   solver: ConstraintSolver,
-  dimensions: readonly DimensionalConstraintObject[],
+  dimensions: readonly ParameterObject[],
   dropped: readonly DimensionalConstraintObject[],
-): DimensionalConstraintObject[] {
+): ParameterObject[] {
   let now = [...dimensions];
   const changes = new Map<string, string>();
   for (const d of dropped) {
@@ -254,10 +256,15 @@ export async function keepConstraints(
     removed(geometric, 'geometric');
     removed(dimensional, 'dimensional');
   }
-  let dimensions = kept.filter((c): c is DimensionalConstraintObject => !isGeometricConstraint(c));
+  // The parameters the re-solve evaluates: the dimensional constraints kept and the user
+  // parameters (M9-03 part 6), which may name a dropped one.
+  let parameters: ParameterObject[] = [
+    ...kept.filter((c): c is DimensionalConstraintObject => !isGeometricConstraint(c)),
+    ...userParameters(ctx.model),
+  ];
   const named = dropped.filter(
     (c): c is DimensionalConstraintObject =>
-      !isGeometricConstraint(c) && dimensions.some((d) => names(d).has(c.parameter)),
+      !isGeometricConstraint(c) && parameters.some((d) => names(d).has(c.parameter)),
   );
   if (edits.length === 0 && named.length === 0) return true;
   let solver;
@@ -271,9 +278,12 @@ export async function keepConstraints(
   if (!solver) return true;
   if (named.length > 0) {
     // In the drawing's order, the dropped ones among the rest.
-    const pool = new Set<object>([...dimensions, ...named]);
-    const ordered = all.filter((c): c is DimensionalConstraintObject => pool.has(c));
-    dimensions = keepValues(ctx, solver, ordered, named);
+    const pool = new Set<object>([...parameters, ...named]);
+    const ordered = [
+      ...all.filter((c): c is DimensionalConstraintObject => pool.has(c)),
+      ...userParameters(ctx.model),
+    ];
+    parameters = keepValues(ctx, solver, ordered, named);
     if (edits.length === 0) return true;
   }
   const before = new Map(edits.map((u) => [u.after.handle, u.before]));
@@ -283,7 +293,8 @@ export async function keepConstraints(
     (h) => before.get(h) ?? ctx.model.entityByHandle(h),
     toleranceOf(ctx, edits),
     !MOVES_CHANGED_VALUES.has(command),
-    dimensions,
+    // The user parameters too, which the constraints' expressions may name (M9-03 part 6).
+    parameters,
   );
   if (!r.ok) {
     ctx.message(sentence(r.message));

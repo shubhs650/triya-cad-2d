@@ -4,13 +4,17 @@
 // place; the geometry follows a new expression; renaming a parameter renames it in the
 // expressions that use it; Delete removes the selected parameter's constraint, and expressions
 // that used it keep its value. A reference constraint's parameter shows what it measures, and its
-// expression cannot be edited. The search box narrows the list. User parameters (AutoCAD's
-// "Creates a new user parameter") are not made yet: the roadmap keeps them for a later part.
+// expression cannot be edited. The search box narrows the list.
+//
+// User parameters (part 6): New (AutoCAD's "Creates a new user parameter") adds user1 = 1, the
+// next free number after it, and puts its name in edit mode, as AutoCAD does. The table shows
+// AutoCAD's two groups, Dimensional Constraint Parameters and then User Parameters, each only
+// when it has rows.
 //
 // The rows come from the drawing's engine while the palette shows it; each edit goes back as one
 // undo step, and a refused one (a cycle, a name in use) says why on the command line and the
 // row shows its value again.
-import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import type { ParameterEdit, ParameterInfo } from '@triya/engine';
 import type { OpenDocument } from './documents';
 import { engines } from './engine/registry';
@@ -61,10 +65,88 @@ function EditCell({
   );
 }
 
+/** A group of rows, with AutoCAD's heading for it. */
+function ParameterGroup({
+  title,
+  rows,
+  sent,
+  selected,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  title: string;
+  rows: readonly ParameterInfo[];
+  sent: unknown;
+  selected: string | undefined;
+  onSelect: (name: string) => void;
+  onEdit: (e: ParameterEdit) => void;
+  onDelete: (r: ParameterInfo) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <tbody aria-label={title}>
+      <tr className="parameters-group">
+        <th scope="rowgroup" colSpan={5}>
+          {title}
+        </th>
+      </tr>
+      {rows.map((r) => (
+        <tr
+          key={r.constraint}
+          data-name={r.name}
+          aria-selected={r.name === selected}
+          data-reference={r.reference || undefined}
+          onFocus={() => onSelect(r.name)}
+          onClick={() => onSelect(r.name)}
+          onKeyDown={(e) => {
+            // Delete on a row (not while typing in its cells) deletes it.
+            if (e.key === 'Delete' && e.target === e.currentTarget) onDelete(r);
+          }}
+          tabIndex={-1}
+        >
+          <th scope="row">
+            <EditCell
+              sent={sent}
+              value={r.name}
+              label={`Name of ${r.name}`}
+              onCommit={(to) => onEdit({ kind: 'rename', name: r.name, to })}
+            />
+          </th>
+          <td>
+            <EditCell
+              sent={sent}
+              value={r.reference ? `(${r.expression})` : r.expression}
+              label={`Expression of ${r.name}`}
+              readOnly={r.reference}
+              onCommit={(expression) => onEdit({ kind: 'expression', name: r.name, expression })}
+            />
+          </td>
+          <td className="value" data-error={r.value === undefined || undefined} title={r.error}>
+            {parameterValueText(r)}
+          </td>
+          <td>{r.type}</td>
+          <td>
+            <EditCell
+              sent={sent}
+              value={r.description}
+              label={`Description of ${r.name}`}
+              onCommit={(description) => onEdit({ kind: 'description', name: r.name, description })}
+            />
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  );
+}
+
 export function ParametersPalette({ doc, onClose }: { doc: OpenDocument; onClose: () => void }) {
   const rows = useSyncExternalStore(parameterRows.subscribe, () => parameterRows.get(doc.id));
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | undefined>();
+  // The user parameters' names when New was pressed: the one the engine adds is put in edit mode.
+  const before = useRef<ReadonlySet<string> | undefined>(undefined);
+  const table = useRef<HTMLTableElement>(null);
 
   useEffect(() => {
     // The engine sends rows only while the palette shows its drawing.
@@ -72,12 +154,38 @@ export function ParametersPalette({ doc, onClose }: { doc: OpenDocument; onClose
     return () => engines.command(doc.id, { kind: 'parameters', open: false });
   }, [doc.id]);
 
+  useEffect(() => {
+    const was = before.current;
+    if (!was || !rows) return;
+    const made = rows.find((r) => r.user && !was.has(r.name));
+    if (!made) return;
+    before.current = undefined;
+    setSearch('');
+    setSelected(made.name);
+    const input = table.current?.querySelector<HTMLInputElement>(
+      `tr[data-name="${CSS.escape(made.name)}"] th input`,
+    );
+    input?.focus();
+    input?.select();
+  }, [rows]);
+
   const edit = (e: ParameterEdit) => engines.command(doc.id, { kind: 'parameter', edit: e });
   const shown = searchParameters(rows ?? [], search);
   const picked = rows?.find((r) => r.name === selected);
   const remove = (r: ParameterInfo) => {
     edit({ kind: 'delete', name: r.name });
     setSelected(undefined);
+  };
+  const create = () => {
+    before.current = new Set((rows ?? []).filter((r) => r.user).map((r) => r.name));
+    edit({ kind: 'new' });
+  };
+  const groups = {
+    sent: rows,
+    selected,
+    onSelect: setSelected,
+    onEdit: edit,
+    onDelete: remove,
   };
 
   return (
@@ -91,8 +199,20 @@ export function ParametersPalette({ doc, onClose }: { doc: OpenDocument; onClose
       <div className="parameters-tools" role="toolbar" aria-label="Parameters">
         <button
           type="button"
+          aria-label="New User Parameter"
+          title="Creates a new user parameter"
+          onClick={create}
+        >
+          New
+        </button>
+        <button
+          type="button"
           disabled={!picked}
-          title="Deletes the selected parameter and its dimensional constraint; expressions that use it keep its value"
+          title={
+            picked?.user
+              ? 'Deletes the selected user parameter; expressions that use it keep its value'
+              : 'Deletes the selected parameter and its dimensional constraint; expressions that use it keep its value'
+          }
           onClick={() => picked && remove(picked)}
         >
           Delete
@@ -108,10 +228,12 @@ export function ParametersPalette({ doc, onClose }: { doc: OpenDocument; onClose
       {rows === undefined ? (
         <p className="empty">Reading the drawing's parameters…</p>
       ) : rows.length === 0 ? (
-        <p className="empty">None: the drawing has no dimensional constraints.</p>
+        <p className="empty">
+          None: the drawing has no dimensional constraints or user parameters.
+        </p>
       ) : (
         <div className="parameters-table-wrap">
-          <table className="parameters-table" aria-label="Dimensional constraint parameters">
+          <table className="parameters-table" aria-label="Parameters" ref={table}>
             <thead>
               <tr>
                 <th scope="col">Name</th>
@@ -121,60 +243,16 @@ export function ParametersPalette({ doc, onClose }: { doc: OpenDocument; onClose
                 <th scope="col">Description</th>
               </tr>
             </thead>
-            <tbody>
-              {shown.map((r) => (
-                <tr
-                  key={r.constraint}
-                  aria-selected={r.name === selected}
-                  data-reference={r.reference || undefined}
-                  onFocus={() => setSelected(r.name)}
-                  onClick={() => setSelected(r.name)}
-                  onKeyDown={(e) => {
-                    // Delete on a row (not while typing in its cells) deletes it.
-                    if (e.key === 'Delete' && e.target === e.currentTarget) remove(r);
-                  }}
-                  tabIndex={-1}
-                >
-                  <th scope="row">
-                    <EditCell
-                      sent={rows}
-                      value={r.name}
-                      label={`Name of ${r.name}`}
-                      onCommit={(to) => edit({ kind: 'rename', name: r.name, to })}
-                    />
-                  </th>
-                  <td>
-                    <EditCell
-                      sent={rows}
-                      value={r.reference ? `(${r.expression})` : r.expression}
-                      label={`Expression of ${r.name}`}
-                      readOnly={r.reference}
-                      onCommit={(expression) =>
-                        edit({ kind: 'expression', name: r.name, expression })
-                      }
-                    />
-                  </td>
-                  <td
-                    className="value"
-                    data-error={r.value === undefined || undefined}
-                    title={r.error}
-                  >
-                    {parameterValueText(r)}
-                  </td>
-                  <td>{r.type}</td>
-                  <td>
-                    <EditCell
-                      sent={rows}
-                      value={r.description}
-                      label={`Description of ${r.name}`}
-                      onCommit={(description) =>
-                        edit({ kind: 'description', name: r.name, description })
-                      }
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+            <ParameterGroup
+              title="Dimensional Constraint Parameters"
+              rows={shown.filter((r) => !r.user)}
+              {...groups}
+            />
+            <ParameterGroup
+              title="User Parameters"
+              rows={shown.filter((r) => r.user)}
+              {...groups}
+            />
           </table>
           {shown.length === 0 && <p className="empty">No parameter matches the search.</p>}
         </div>

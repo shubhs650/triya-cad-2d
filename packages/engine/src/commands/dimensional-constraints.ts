@@ -35,7 +35,7 @@ import {
 import { drawingUnits } from './units';
 import {
   constraintPointsOf,
-  dimensionalConstraints,
+  parameterObjects,
   geometricConstraints,
   type ConstraintSolver,
   type DimensionalConstraintSpec,
@@ -148,7 +148,7 @@ async function* place(
   const solver = await solverOf(ctx);
   if (!solver) return true;
   const lookup = (h: string) => ctx.model.entityByHandle(h);
-  const dims = dimensionalConstraints(ctx.model);
+  const dims = parameterObjects(ctx.model);
   const first = solver.measure(dims, { dimension: kind, refs }, lookup);
   if (!first.ok) {
     ctx.message(sentence(first.message));

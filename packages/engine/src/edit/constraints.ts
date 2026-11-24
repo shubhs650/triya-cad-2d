@@ -18,6 +18,7 @@ import type { Handle } from '../model/handle';
 import {
   isDimensionalConstraint,
   isGeometricConstraint,
+  isUserParameter,
   type ConstraintCurveRef,
   type ConstraintPointRef,
   type ConstraintRef,
@@ -25,6 +26,8 @@ import {
   type DimensionalConstraintObject,
   type Entity,
   type GeometricConstraintObject,
+  type ParameterObject,
+  type UserParameterObject,
 } from '../model/types';
 
 /** Why the solver refused a constraint, with the constraints in the way (the new one included). */
@@ -109,7 +112,8 @@ export type ConstraintEditResult =
 
 /**
  * A row of the Parameters Manager (M9-03 part 5, AutoCAD's PARAMETERS palette): a dimensional
- * constraint's parameter, with its value worked out from the expressions.
+ * constraint's parameter or a user parameter (part 6), with its value worked out from the
+ * expressions.
  */
 export interface ParameterInfo {
   readonly name: string;
@@ -118,13 +122,18 @@ export interface ParameterInfo {
   readonly value: number | undefined;
   /** Why it has no value. */
   readonly error?: string;
-  /** The constraint's type as the manager's Type column shows it: Horizontal, Aligned, Angular… */
+  /**
+   * The constraint's type as the manager's Type column shows it: Horizontal, Aligned, Angular…,
+   * or User for a user parameter.
+   */
   readonly type: string;
   readonly description: string;
   /** A reference constraint's parameter: measured, never set. */
   readonly reference: boolean;
-  /** The dimensional constraint whose value it is. */
+  /** The dimensional constraint whose value it is, or the user parameter's own object. */
   readonly constraint: Handle;
+  /** A user parameter (the manager's User Parameters group). */
+  readonly user?: boolean;
 }
 
 /**
@@ -151,7 +160,7 @@ export interface ConstraintSolver {
     constraint: GeometricConstraintObject,
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
-    dimensions?: readonly DimensionalConstraintObject[],
+    dimensions?: readonly ParameterObject[],
   ): ConstraintAddResult;
   /**
    * Re-solves the drawing's `constraints` after an edit (M9-06): the values each of `edits`
@@ -160,6 +169,9 @@ export interface ConstraintSolver {
    * too (a modify command places its objects whole; a grip drag moves only its grip). Refused
    * when the edit breaks a constraint the rest cannot absorb (a Fix, or a Horizontal line
    * turned). The drawing's `dimensions` keep their values while the edit is solved.
+   *
+   * Each `dimensions` here is the drawing's `parameterObjects`: its dimensional constraints and
+   * the user parameters their expressions may name (M9-03 part 6).
    */
   solveEdit(
     constraints: readonly GeometricConstraintObject[],
@@ -167,11 +179,11 @@ export interface ConstraintSolver {
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
     whole: boolean,
-    dimensions?: readonly DimensionalConstraintObject[],
+    dimensions?: readonly ParameterObject[],
   ): ConstraintEditResult;
   /** What `spec` measures and the name its parameter would take (M9-03 part 3). */
   measure(
-    dimensions: readonly DimensionalConstraintObject[],
+    dimensions: readonly ParameterObject[],
     spec: DimensionalConstraintSpec,
     lookup: (handle: Handle) => Entity | undefined,
   ): DimensionMeasurement;
@@ -183,20 +195,20 @@ export interface ConstraintSolver {
    */
   addDimension(
     constraints: readonly GeometricConstraintObject[],
-    dimensions: readonly DimensionalConstraintObject[],
+    dimensions: readonly ParameterObject[],
     spec: DimensionalConstraintSpec,
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
   ): DimensionAddResult;
   /** The drawing's parameters, as the Parameters Manager lists them (M9-03 part 5). */
-  parameters(dimensions: readonly DimensionalConstraintObject[]): readonly ParameterInfo[];
+  parameters(dimensions: readonly ParameterObject[]): readonly ParameterInfo[];
   /**
    * Sets parameter `name`'s expression and moves the geometry its values drive; refused, nothing
    * changed, when the expression has no value, makes a cycle, or the geometry cannot take it.
    */
   setExpression(
     constraints: readonly GeometricConstraintObject[],
-    dimensions: readonly DimensionalConstraintObject[],
+    dimensions: readonly ParameterObject[],
     name: string,
     expression: string,
     lookup: (handle: Handle) => Entity | undefined,
@@ -204,7 +216,7 @@ export interface ConstraintSolver {
   ): ParameterChangeResult;
   /** Renames a parameter; `expressions` are those naming it, rewritten. Moves nothing. */
   renameParameter(
-    dimensions: readonly DimensionalConstraintObject[],
+    dimensions: readonly ParameterObject[],
     from: string,
     to: string,
   ): ParameterChangeResult;
@@ -212,10 +224,7 @@ export interface ConstraintSolver {
    * The expressions that name parameter `name` once it is deleted with its constraint: each
    * keeps the value it had, as the Parameters Manager's delete does. Moves nothing.
    */
-  deleteParameter(
-    dimensions: readonly DimensionalConstraintObject[],
-    name: string,
-  ): ParameterChangeResult;
+  deleteParameter(dimensions: readonly ParameterObject[], name: string): ParameterChangeResult;
 }
 
 /** Loads the solver once it is first needed (a WebAssembly module of its own). */
@@ -229,6 +238,19 @@ export function geometricConstraints(model: DocumentModel): GeometricConstraintO
 /** The drawing's dimensional constraints (M9-03 part 3). */
 export function dimensionalConstraints(model: DocumentModel): DimensionalConstraintObject[] {
   return [...model.objects.values()].filter(isDimensionalConstraint);
+}
+
+/** The drawing's user parameters (M9-03 part 6). */
+export function userParameters(model: DocumentModel): UserParameterObject[] {
+  return [...model.objects.values()].filter(isUserParameter);
+}
+
+/**
+ * Everything that holds a parameter, dimensional constraints first and then user parameters, as
+ * the Parameters Manager groups them: what the solver builds the parameter table from.
+ */
+export function parameterObjects(model: DocumentModel): ParameterObject[] {
+  return [...dimensionalConstraints(model), ...userParameters(model)];
 }
 
 /** A constraint point of an entity and where it is. */

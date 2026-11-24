@@ -602,6 +602,32 @@ describe('the rest of constraint upkeep (M9-10)', () => {
     expect((await copy(4, '2')).added).toEqual(['d2=20@40copy', 'd3=20@30copy']);
   });
 
+  it('under 2 a copy keeps an expression of user parameters, whose names copies never take', async () => {
+    const user = (handle: string, parameter: string, expression: string) =>
+      ({ handle, type: 'TRIYA_USERPARAMETER', owner: 'C', parameter, expression }) as never;
+    const copy = async (mode: number) => {
+      const d = drawing(undefined, {
+        // span = 10 drives line 30's length; a user parameter has taken the name d1.
+        objects: [
+          user('A1', 'span', '10'),
+          user('A2', 'd1', '3'),
+          dimension('D7', '30', 'width', 'span'),
+        ],
+        variables: copyMode(mode),
+      });
+      await d.bus.script(['COPY']);
+      await d.bus.pick({ x: 5, y: 0 });
+      await d.bus.submit('');
+      await d.bus.script(['0,0', '0,20', '']);
+      return dims(d)
+        .slice(1)
+        .map((x) => x.replace(/@.*/, ''));
+    };
+    expect(await copy(2)).toEqual(['d2=span']);
+    expect(await copy(3)).toEqual(['d2=span']);
+    expect(await copy(1)).toEqual(['d2=10']);
+  });
+
   it('OOPS puts back the constraints ERASE removed whose objects are all back', async () => {
     const d = drawing(undefined, { objects: [dimension('D5', '40', 'd1', '10')] });
     await d.bus.script(['ERASE']);
