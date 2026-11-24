@@ -1068,19 +1068,56 @@ export class Canvas2DRenderer implements Renderer {
     aperture: number,
     view: ViewTransform = this.#view,
   ): Handle | null {
-    // On a layout, through the viewport made current (M9-03 part 13): `view` is then its model
-    // view, as for objects' picks.
-    const vp = this.#modelTab ? undefined : this.#activeViewport();
-    if (!this.#modelTab && !vp) return null;
-    const look = this.#style.constraints;
-    this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
     const p = screenToWorld(view, this.#width, this.#height, screen);
     const r = aperture / view.scale;
     let best: { handle: Handle; d: number } | undefined;
+    for (const { handle, prims } of this.#pickableConstraints(view)) {
+      for (const prim of prims) {
+        const dist = distanceTo(prim, p);
+        if (dist <= r && (!best || dist < best.d)) best = { handle, d: dist };
+      }
+    }
+    return best?.handle ?? null;
+  }
+
+  constraintsIn(query: SelectQuery, view: ViewTransform = this.#view): Handle[] {
+    const poly = query.polygon;
+    const test: (p: RenderPrimitive) => boolean = poly
+      ? query.kind === 'window'
+        ? (p) => primInsidePolygon(p, poly)
+        : query.kind === 'crossing'
+          ? (p) => primCrossesPolygon(p, poly)
+          : (p) => primCrossesFence(p, poly)
+      : query.kind === 'window'
+        ? (p) => primInside(p, query.box)
+        : (p) => primCrosses(p, query.box);
+    const all = query.kind === 'window' ? 'every' : 'some';
+    const out: Handle[] = [];
+    for (const { handle, prims } of this.#pickableConstraints(view)) {
+      if (prims.length > 0 && prims[all](test)) out.push(handle);
+    }
+    return out;
+  }
+
+  /**
+   * The dimensional constraints a pick or a window can take in `view` (M9-03 parts 10 and 14),
+   * each with the primitives it is taken by: its text (its runs' boxes, as an object's text is
+   * taken anywhere in them), dimension line or arc and arrows, not its extension lines. None on
+   * a layout but through the viewport made current (M9-03 part 13), where `view` is its model
+   * view; none hidden, nor one whose objects are all on layers frozen in that viewport.
+   */
+  *#pickableConstraints(
+    view: ViewTransform,
+  ): Generator<{ readonly handle: Handle; readonly prims: readonly RenderPrimitive[] }> {
+    const vp = this.#modelTab ? undefined : this.#activeViewport();
+    if (!this.#modelTab && !vp) return;
+    const look = this.#style.constraints;
+    this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
     for (const d of this.#constraints) {
       if (vp?.frozen && this.#constraintFrozen(d, vp.frozen)) continue;
       const sizes = this.#constraintSizes(d, look, view.scale);
       if (!sizes) continue;
+      const prims: RenderPrimitive[] = [];
       for (const prim of constraintPrimitives(
         d,
         sizes,
@@ -1088,15 +1125,13 @@ export class Canvas2DRenderer implements Renderer {
         this.#tessellate.text,
         false,
       )) {
-        let dist = distanceTo(prim, p);
-        // Its text picks anywhere in its runs' boxes, as an object's does.
+        prims.push(prim);
         if (prim.kind !== 'infinite' && prim.kind !== 'point' && prim.text) {
-          dist = Math.min(dist, distanceTo({ kind: 'fill', path: prim.text.greek, color: '' }, p));
+          prims.push({ kind: 'fill', path: prim.text.greek, color: '' });
         }
-        if (dist <= r && (!best || dist < best.d)) best = { handle: d.handle, d: dist };
       }
+      yield { handle: d.handle, prims };
     }
-    return best?.handle ?? null;
   }
 
   setRefEdit(display: RefEditDisplay | undefined): void {

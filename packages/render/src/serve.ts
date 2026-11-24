@@ -134,6 +134,13 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
           handle: r.constraintAt(m.screen, m.aperture, m.view),
         });
         break;
+      case 'constraintsIn':
+        port.postMessage({
+          type: 'constraints',
+          id: m.id,
+          handles: r.constraintsIn(m.query, m.view),
+        });
+        break;
       case 'active-viewport':
         r.setActiveViewport(m.handle ?? undefined, m.maximized);
         break;

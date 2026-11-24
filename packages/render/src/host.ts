@@ -356,6 +356,17 @@ export class RendererHost {
     })).then((m) => (m.type === 'constraint' ? m.handle : null));
   }
 
+  /** The dimensional constraints a selection window takes (M9-03 part 14), by handle. */
+  constraintsIn(query: SelectQuery, view?: ViewTransform): Promise<Handle[]> {
+    if (this.#session) return Promise.resolve(this.#session.renderer.constraintsIn(query, view));
+    return this.#request((id) => ({
+      type: 'constraintsIn',
+      id,
+      query,
+      ...(view && { view }),
+    })).then((m) => (m.type === 'constraints' ? [...m.handles] : []));
+  }
+
   /**
    * The layout viewport made current (MSPACE, M6-02 part 3); undefined, paper space. `maximized`:
    * the geometry it fills the canvas with (VPMAX, M6-02 part 7).

@@ -251,6 +251,53 @@ describe('Canvas2DRenderer picks and highlights dimensional constraints', () => 
     expect(annotational.r.constraintAt(screenOf(5, -2), 3)).toBe('D1');
   });
 
+  // M9-03 part 14: a selection window takes a constraint by the parts a pick finds it by.
+  it('finds the constraints a window, crossing window, polygon or fence takes', () => {
+    const { r } = setup([dim('D1'), dim('D2', { parameter: 'd2', location: { x: 5, y: -8 } })]);
+    const box = (minX: number, minY: number, maxX: number, maxY: number) => ({
+      minX,
+      minY,
+      maxX,
+      maxY,
+    });
+    // D1's dimension line runs from x 0 to 10 at y -2; its extension lines up to the line at
+    // y 0 are not needed inside.
+    expect(r.constraintsIn({ kind: 'window', box: box(-1, -4, 11, -0.5) })).toEqual(['D1']);
+    expect(r.constraintsIn({ kind: 'window', box: box(-1, -10, 11, -0.5) })).toEqual(['D1', 'D2']);
+    // Half of it: a window leaves it, a crossing window takes it.
+    expect(r.constraintsIn({ kind: 'window', box: box(4, -4, 11, -0.5) })).toEqual([]);
+    expect(r.constraintsIn({ kind: 'crossing', box: box(4, -4, 11, -0.5) })).toEqual(['D1']);
+    // Crossing only an extension line: none.
+    expect(r.constraintsIn({ kind: 'crossing', box: box(-0.5, -0.9, 0.5, -0.5) })).toEqual([]);
+    const square = [
+      { x: -1, y: -4 },
+      { x: 11, y: -4 },
+      { x: 11, y: -0.5 },
+      { x: -1, y: -0.5 },
+    ];
+    expect(
+      r.constraintsIn({ kind: 'window', box: box(-1, -4, 11, -0.5), polygon: square }),
+    ).toEqual(['D1']);
+    const fence = [
+      { x: 2, y: -10 },
+      { x: 2, y: -1.5 },
+    ];
+    expect(r.constraintsIn({ kind: 'fence', box: box(2, -10, 2, -1.5), polygon: fence })).toEqual([
+      'D1',
+      'D2',
+    ]);
+  });
+
+  it('a window finds none hidden, nor on a layout outside a viewport', () => {
+    const all = { kind: 'crossing' as const, box: { minX: -20, minY: -20, maxX: 20, maxY: 20 } };
+    const hidden: RenderStyle = { ...DARK, constraints: { color: BLUE, dynamic: false } };
+    expect(setup([dim('D1')], { style: hidden }).r.constraintsIn(all)).toEqual([]);
+    expect(setup([dim('D1', { hidden: true })]).r.constraintsIn(all)).toEqual([]);
+    expect(setup([dim('D1')], { block: PAPER }).r.constraintsIn(all)).toEqual([]);
+    const annotational = setup([dim('D1', { form: 'annotational' })], { style: hidden });
+    expect(annotational.r.constraintsIn(all)).toEqual(['D1']);
+  });
+
   it('draws a selected constraint with the selection glow and dashes', () => {
     const { r, redraw } = setup([dim('D1'), dim('D2', { parameter: 'd2' })]);
     const SELECTION = '#4da3ff';

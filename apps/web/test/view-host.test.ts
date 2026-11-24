@@ -60,6 +60,10 @@ class Target implements ViewTarget {
   regen = () => void this.calls.push('regen');
   pick = (p: Vec2) => (this.calls.push(`pick ${p.x},${p.y}`), Promise.resolve([7]));
   constraintAt = (p: Vec2) => Promise.resolve(p.x === 5 ? 'D1' : undefined);
+  constraintsIn = (area: { op: string }) => (
+    this.calls.push(`constraints ${area.op}`),
+    Promise.resolve(area.op === 'select' ? ['D1', 'D2'] : [])
+  );
   pickNested = (p: Vec2, id: number) =>
     Promise.resolve(id === 7 && p.x === 1 ? { path: [7, 12], attribute: 'A1' } : undefined);
   selectWindow = (a: Vec2, b: Vec2, crossing: boolean) => (
@@ -449,6 +453,28 @@ describe('answerView', () => {
       ids: [9],
     });
     expect(t.calls).toEqual(['path fence 0,0 5,0 2,4']);
+  });
+
+  it('answers the constraints a window or path takes from the renderer (M9-03 part 14)', async () => {
+    const t = new Target();
+    const { ctx } = context(t);
+    const area = { op: 'select', a: { x: 0, y: 0 }, b: { x: 5, y: 5 }, crossing: false } as const;
+    expect(await answerView({ op: 'constraintsIn', area }, ctx)).toEqual({
+      ok: true,
+      constraints: ['D1', 'D2'],
+    });
+    const points = [
+      { x: 0, y: 0 },
+      { x: 5, y: 0 },
+      { x: 2, y: 4 },
+    ];
+    expect(
+      await answerView(
+        { op: 'constraintsIn', area: { op: 'selectPath', kind: 'window', points } },
+        ctx,
+      ),
+    ).toEqual({ ok: true, constraints: [] });
+    expect(t.calls).toEqual(['constraints select', 'constraints selectPath']);
   });
 
   it('measures text with the renderer (M2-09, MLEADEREDIT)', async () => {
