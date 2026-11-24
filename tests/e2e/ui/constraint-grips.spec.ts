@@ -84,19 +84,19 @@ test('a grip drag turns a parallel line with it, lengths kept (M9-09)', async ({
   await expect(prompt(page)).toHaveText('Select second object:');
   await click(40, 20);
   await expect(prompt(page)).toHaveText('Command:', { timeout: 15_000 });
+  await expectDrawn(page);
+  await park();
+  await shot('1-parallel.png');
   // Running object snaps would pull the grip's destination onto the lines' own points; off.
   await page.keyboard.press('F3');
 
   // Picked at Command: the lower line's grips show; a click on its end makes that grip hot.
   await click(30, 20);
-  await park();
-  await expectDrawn(page);
-  await shot('m9-09-1-picked.png');
   await click(60, 20);
   await expect(prompt(page)).toHaveText('Specify stretch point or [Base point/Copy/Undo/eXit]:');
   const to = at(52, 44);
   await page.mouse.move(to.x, to.y, { steps: 4 });
-  await shot('m9-09-2-dragging.png');
+  await shot('2-dragging.png');
   await page.mouse.click(to.x, to.y);
   await expect(prompt(page)).toHaveText('Command:');
 
@@ -110,5 +110,5 @@ test('a grip drag turns a parallel line with it, lengths kept (M9-09)', async ({
   await page.keyboard.press('Escape');
   await expectDrawn(page);
   await park();
-  await shot('m9-09-3-after.png');
+  await shot('3-after.png');
 });
