@@ -413,6 +413,8 @@ export interface CanvasHooks {
    * the drawing as opened, so a new one (first show, REGEN) applies these to catch up.
    */
   readonly changes?: () => readonly ChangeSet[];
+  /** The objects of the drawing whose constraint bars are hidden, by handle (M9-05 part 2). */
+  readonly constraintBars?: () => ReadonlySet<string>;
   /**
    * Links a new render worker to the drawing's engine (M2-62), so the engine's change sets
    * reach it without waiting on the main thread; see `RendererHostOptions.connect`.
@@ -1477,6 +1479,13 @@ export class CanvasController {
     this.#rubberBand(undefined);
   }
 
+  /** CONSTRAINTBAR showed or hid bars of the drawing (M9-05 part 2). */
+  constraintBarsChanged(): void {
+    if (this.#layout) return;
+    this.#host.setStyle(this.#style());
+    this.#requestFrame();
+  }
+
   /** The status bar's drafting aids changed (M2-04). */
   setDrafting(state: DraftingState): void {
     const before = this.#drafting;
@@ -1493,6 +1502,9 @@ export class CanvasController {
       before.dynConstraints !== state.dynConstraints ||
       before.dynConstraintMode !== state.dynConstraintMode ||
       before.constraintNameFormat !== state.constraintNameFormat ||
+      before.constraintBarMode !== state.constraintBarMode ||
+      before.constraintBarDisplay !== state.constraintBarDisplay ||
+      before.cbarTransparency !== state.cbarTransparency ||
       before.layLockFade !== state.layLockFade ||
       before.xFade !== state.xFade ||
       before.lwDefault !== state.lwDefault ||
@@ -2412,6 +2424,14 @@ export class CanvasController {
         showSelected: d.dynConstraintMode,
         nameFormat: d.constraintNameFormat,
         color: isDarkColor(background) ? CONSTRAINT_COLOR.dark : CONSTRAINT_COLOR.light,
+      },
+      // Constraint bars (M9-05 part 2): those CONSTRAINTBAR hid, CONSTRAINTBARMODE's kinds,
+      // CONSTRAINTBARDISPLAY bit 2 and CBARTRANSPARENCY.
+      constraintBars: {
+        hidden: this.#hooks?.constraintBars?.() ?? new Set<string>(),
+        mode: d.constraintBarMode,
+        showSelected: (d.constraintBarDisplay & 2) !== 0,
+        transparency: d.cbarTransparency,
       },
       // A layout's viewports show model space's UCS icon (M3-06 part 8).
       ...(this.#layout && { layoutBackground: c.surround, viewportUcsIcons: true }),

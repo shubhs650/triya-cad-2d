@@ -74,6 +74,9 @@ describe('preferences', () => {
       dynConstraints: true,
       dynConstraintMode: true,
       constraintNameFormat: 2,
+      constraintBarMode: 4095,
+      constraintBarDisplay: 3,
+      cbarTransparency: 50,
       // LAYLOCKFADECTL 50 (M5-06).
       layLockFade: 50,
       // XFADECTL 50 (M5-02 part 5).

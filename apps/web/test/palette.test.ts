@@ -104,6 +104,8 @@ describe('palette search', () => {
       'CLOSEALL',
       'COMMANDLINE',
       'COMMANDLINEHIDE',
+      // M9-05 part 2: constraint bars shown or hidden, and constraints removed.
+      'CONSTRAINTBAR',
       'COPY',
       'COPYBASE',
       'COPYCLIP',
@@ -120,6 +122,7 @@ describe('palette search', () => {
       'DCVERTICAL',
       // M3-01 part 6: the Point Style dialog.
       'DDPTYPE',
+      'DELCONSTRAINT',
       'DIMALIGNED',
       'DIMANGULAR',
       // M4-02 part 1: DIMARC, DIMJOGGED, DIMJOGLINE and DIMORDINATE.

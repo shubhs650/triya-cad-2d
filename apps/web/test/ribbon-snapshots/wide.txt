@@ -224,6 +224,9 @@ Geometric (expanded)
   icon        gc-smooth<gc-smooth>
   icon        gc-symmetric<gc-symmetric>
   icon        gc-equal<gc-equal>
+  icon        gc-show-hide<eye_off>
+  icon        gc-show-all<eye>
+  icon        gc-hide-all<eye_off>
 Dimensional (expanded)
   small-label dc-linear<dim-linear> ▾ [dc-linear-linear<dim-linear>, dc-horizontal<dim-linear>, dc-vertical<dim-linear>]
   icon        dc-aligned<dim-aligned>
@@ -234,11 +237,12 @@ Dimensional (expanded)
   icon        dc-show-hide<eye_off>
   icon        dc-convert<dim-linear>
 Manage (expanded)
+  small-label delete-constraints<eraser>
   small-label parameters-manager<table_settings>
 
 ### step 1
 Geometric (collapsed)
-  ▾ gc-coincident, gc-collinear, gc-concentric, gc-fix, gc-parallel, gc-perpendicular, gc-horizontal, gc-vertical, gc-tangent, gc-smooth, gc-symmetric, gc-equal
+  ▾ gc-coincident, gc-collinear, gc-concentric, gc-fix, gc-parallel, gc-perpendicular, gc-horizontal, gc-vertical, gc-tangent, gc-smooth, gc-symmetric, gc-equal, gc-show-hide, gc-show-all, gc-hide-all
 
 ### step 2
 Dimensional (compressed)
@@ -248,7 +252,7 @@ Dimensional (compressed)
 ### step 3
 Manage (compressed)
   icon        parameters-manager<table_settings>
-  ▾ 
+  ▾ delete-constraints
 
 ## View
 Navigate (expanded)

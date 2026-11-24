@@ -53,6 +53,23 @@ export interface ConstraintStyle {
   readonly color?: string;
 }
 
+/** How constraint bars show (M9-05 part 2, `constraint-bars.ts`); the app's display state. */
+export interface ConstraintBarStyle {
+  /** The objects whose bars CONSTRAINTBAR (or CONSTRAINTBARDISPLAY 0) hid, by handle. */
+  readonly hidden: ReadonlySet<string>;
+  /** CONSTRAINTBARMODE: the kinds the bars show; absent is every kind (4095). */
+  readonly mode?: number;
+  /**
+   * CONSTRAINTBARDISPLAY bit 2 (initially set): a hidden bar shows while its object is
+   * selected.
+   */
+  readonly showSelected?: boolean;
+  /** CBARTRANSPARENCY, 10 to 90 (initially 50): the panel's opacity in percent. */
+  readonly transparency?: number;
+  /** The icons' colour, a CSS colour; the dynamic constraints' when absent. */
+  readonly color?: string;
+}
+
 export interface RenderStyle {
   /** Canvas background, a CSS colour. */
   readonly background: string;
@@ -107,6 +124,8 @@ export interface RenderStyle {
   readonly annotationAllVisible?: boolean;
   /** How dimensional constraints show on the Model tab (M9-03 part 4); absent, as AutoCAD's initial. */
   readonly constraints?: ConstraintStyle;
+  /** Constraint bars on the Model tab (M9-05 part 2); absent draws none (plots, previews). */
+  readonly constraintBars?: ConstraintBarStyle;
   /** The selection highlight's colour (M2-03, UI_SPEC.md §6), a CSS colour; a blue by default. */
   readonly selection?: string;
   /** GRID on (M2-04 part 2): the grid drawn under the drawing; absent draws none. */

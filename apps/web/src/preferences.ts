@@ -96,6 +96,9 @@ export type DraftingPreferences = Pick<
   | 'dynConstraints'
   | 'dynConstraintMode'
   | 'constraintNameFormat'
+  | 'constraintBarMode'
+  | 'constraintBarDisplay'
+  | 'cbarTransparency'
   | 'layLockFade'
   | 'xFade'
   | 'annoAutoScale'
@@ -235,6 +238,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
     dynConstraints: true,
     dynConstraintMode: true,
     constraintNameFormat: 2,
+    constraintBarMode: 4095,
+    constraintBarDisplay: 3,
+    cbarTransparency: 50,
     layLockFade: 50,
     xFade: 50,
     annoAutoScale: -4,
@@ -422,6 +428,21 @@ export function normalizePreferences(raw: unknown): Preferences {
         { min: 0, max: 2 },
         d.drafting.constraintNameFormat,
       ) as 0 | 1 | 2,
+      constraintBarMode: within(
+        k['constraintBarMode'],
+        { min: 0, max: 4095 },
+        d.drafting.constraintBarMode,
+      ),
+      constraintBarDisplay: within(
+        k['constraintBarDisplay'],
+        { min: 0, max: 3 },
+        d.drafting.constraintBarDisplay,
+      ),
+      cbarTransparency: within(
+        k['cbarTransparency'],
+        { min: 10, max: 90 },
+        d.drafting.cbarTransparency,
+      ),
       layLockFade: within(k['layLockFade'], { min: -90, max: 90 }, d.drafting.layLockFade),
       xFade: within(k['xFade'], { min: 0, max: 90 }, d.drafting.xFade),
       // M6-03: ANNOAUTOSCALE is −4 to 4 but 0.
@@ -601,6 +622,9 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     dynConstraints: s.dynConstraints,
     dynConstraintMode: s.dynConstraintMode,
     constraintNameFormat: s.constraintNameFormat,
+    constraintBarMode: s.constraintBarMode,
+    constraintBarDisplay: s.constraintBarDisplay,
+    cbarTransparency: s.cbarTransparency,
     layLockFade: s.layLockFade,
     xFade: s.xFade,
     annoAutoScale: s.annoAutoScale,

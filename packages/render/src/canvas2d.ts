@@ -31,7 +31,9 @@
 // both first, then to the renderer (the order `SpatialIndex.apply` already requires).
 
 import {
+  constraintBars,
   constraintDisplays,
+  type ConstraintBars,
   type ConstraintDisplay,
   annotationHidden,
   applyPoint,
@@ -139,6 +141,7 @@ import {
   DYNAMIC_CONSTRAINT_PX,
   sizesAt,
 } from './constraint-display';
+import { constraintBarPrimitives } from './constraint-bars';
 import type { PatternLibrary } from '@triya/hatch';
 import type { TextFonts } from '@triya/text';
 import {
@@ -694,6 +697,8 @@ export class Canvas2DRenderer implements Renderer {
   #highlight: ReadonlySet<EntityId> = new Set();
   /** The drawing's dimensional constraints as they show (M9-03 part 4), until a change. */
   #constraints: readonly ConstraintDisplay[] | undefined;
+  /** The drawing's constraint bars as they are laid out (M9-05 part 2), until a change. */
+  #bars: ConstraintBars | undefined;
   /**
    * What a command drags (M2-06 part 2): cached entries drawn through `m`, and the stretched
    * objects' entries tessellated from their stretched geometry.
@@ -1407,6 +1412,8 @@ export class Canvas2DRenderer implements Renderer {
     // Dimensional constraints follow their objects, values and the drawing's units; a drawing
     // without any is looked at again only when its objects change.
     if (cs.objects || cs.header || this.#constraints?.length) this.#constraints = undefined;
+    // Constraint bars follow their objects' midpoints (M9-05 part 2).
+    if (cs.objects || this.#bars?.bars.length || this.#bars?.marks.length) this.#bars = undefined;
     for (const r of e?.removed ?? []) this.#forget(r.entity);
     for (const a of e?.added ?? []) this.#cacheIfShown(a.entity);
     for (const u of e?.updated ?? []) {
@@ -2224,7 +2231,10 @@ export class Canvas2DRenderer implements Renderer {
       reduced,
       annotation === undefined ? view : { ...view, linetypeScale: annotation },
     );
-    if (this.#modelTab) this.#drawConstraints(ctx, view);
+    if (this.#modelTab) {
+      this.#drawConstraints(ctx, view);
+      this.#drawConstraintBars(ctx, view);
+    }
     // While a viewport is current its model space's objects are selected, drawn through it.
     const overlay = this.#overlayFrame(ctx, view);
     this.#drawHighlight(ctx, overlay);
@@ -2263,6 +2273,33 @@ export class Canvas2DRenderer implements Renderer {
         prims.push(...constraintPrimitives(d, dynamic, color, this.#tessellate.text));
       }
     }
+    this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);
+  }
+
+  /**
+   * The constraint bars on the Model tab (M9-05 part 2): each constrained object's bar, the same
+   * size on screen at any zoom, unless CONSTRAINTBAR hid it (then shown while its object is
+   * selected, under CONSTRAINTBARDISPLAY bit 2); CONSTRAINTBARMODE's kinds; the Coincident
+   * squares of the objects shown. Not plotted: plots draw entities only.
+   */
+  #drawConstraintBars(ctx: Canvas2D, view: DrawFrame): void {
+    const look = this.#style.constraintBars;
+    if (!look) return;
+    this.#bars ??= constraintBars(this.#model);
+    if (this.#bars.bars.length === 0 && this.#bars.marks.length === 0) return;
+    const selected = (h: string) => {
+      const e = this.#model.entityByHandle(h);
+      return e !== undefined && this.#highlight.has(e.id);
+    };
+    const visible = (h: string) =>
+      !look.hidden.has(h) || (look.showSelected !== false && selected(h));
+    const color = look.color ?? this.#style.constraints?.color ?? 'foreground';
+    const prims = constraintBarPrimitives(this.#bars, visible, view.scale, {
+      mode: look.mode ?? 4095,
+      color,
+      panel: 'background',
+      opacity: Math.min(Math.max(look.transparency ?? 50, 10), 90) / 100,
+    });
     this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);
   }
 
