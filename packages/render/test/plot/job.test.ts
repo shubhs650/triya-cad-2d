@@ -387,13 +387,53 @@ describe('plotParts with dimensional constraints (M9-03 part 8)', () => {
     expect(parts.every((p) => !('layer' in p))).toBe(true);
   });
 
-  it('plots no dynamic constraint, none with only the named objects, and none on a layout', () => {
+  it('plots no dynamic constraint and none with only the named objects', () => {
     const m = model([dim('A1')]);
     expect(plotParts(model([dim('A1', { form: 'dynamic' })]), MODEL, { resolver })).toHaveLength(1);
     expect(plotParts(m, MODEL, { resolver, only: new Set(['50']) })).toHaveLength(1);
-    // The layout: its viewport's frame and the line through it; the screen shows constraints on
-    // the Model tab only.
-    expect(plotParts(m, PAPER, { resolver })).toHaveLength(2);
+    // Nor through a layout's viewports.
+    expect(plotParts(model([dim('A1', { form: 'dynamic' })]), PAPER, { resolver })).toHaveLength(2);
+    expect(plotParts(m, PAPER, { resolver, only: new Set(['71']) })).toHaveLength(2);
+  });
+
+  // M9-03 part 13: a layout plots the annotational constraints its viewports show.
+  it("plots annotational constraints through a layout's viewports, after its objects, clipped", () => {
+    const m = model([dim('A1')]);
+    const parts = plotParts(m, PAPER, { resolver });
+    // The viewport's frame, the line through it, then the constraint's five parts.
+    expect(parts).toHaveLength(7);
+    const frame = [40, 20, 80, 20, 80, 60, 40, 60];
+    expect(parts.slice(1).every((p) => 'clip' in p && p.clip?.[0]?.join() === frame.join())).toBe(
+      true,
+    );
+    // Carried onto the sheet as the objects are: model (x, y) at paper (40 + 2x, 20 + 2y).
+    const onSheet = drawn(m).map((path) => {
+      const out = [...path];
+      for (let i = 0; i < out.length;) {
+        const n = out[i] === PATH_Z ? 0 : out[i] === PATH_A ? 5 : 2;
+        if (n === 2) {
+          out[i + 1] = 40 + 2 * out[i + 1]!;
+          out[i + 2] = 20 + 2 * out[i + 2]!;
+        }
+        i += 1 + n;
+      }
+      return out;
+    });
+    expect(paths(parts).slice(2)).toEqual(onSheet);
+    expect(new Set(colours(parts.slice(2)).map((c) => c.join()))).toEqual(new Set(['0,0,255']));
+  });
+
+  it('plots none in a viewport where every object it constrains is on a frozen layer', () => {
+    const m = drawing(
+      [
+        entity('50', line(0, 0, 10, 0), { layer: LAYER_RED }),
+        entity('71', viewport({ frozenLayers: [LAYER_RED] }), { owner: PAPER }),
+      ],
+      { objects: [dim('A1')], layoutPlot: PLOT, header: [['$DIMSCALE', 2]] },
+    ).model;
+    expect(plotParts(m, PAPER, { resolver })).toHaveLength(1);
+    // The Model tab has no viewport to freeze it in.
+    expect(plotParts(m, MODEL, { resolver })).toHaveLength(6);
   });
 
   it("labels them by the plot's CONSTRAINTNAMEFORMAT, Name and expression when absent", () => {

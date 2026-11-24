@@ -1068,13 +1068,17 @@ export class Canvas2DRenderer implements Renderer {
     aperture: number,
     view: ViewTransform = this.#view,
   ): Handle | null {
-    if (!this.#modelTab) return null;
+    // On a layout, through the viewport made current (M9-03 part 13): `view` is then its model
+    // view, as for objects' picks.
+    const vp = this.#modelTab ? undefined : this.#activeViewport();
+    if (!this.#modelTab && !vp) return null;
     const look = this.#style.constraints;
     this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
     const p = screenToWorld(view, this.#width, this.#height, screen);
     const r = aperture / view.scale;
     let best: { handle: Handle; d: number } | undefined;
     for (const d of this.#constraints) {
+      if (vp?.frozen && this.#constraintFrozen(d, vp.frozen)) continue;
       const sizes = this.#constraintSizes(d, look, view.scale);
       if (!sizes) continue;
       for (const prim of constraintPrimitives(
@@ -1336,12 +1340,12 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   /**
-   * The grips of the dimensional constraints selected (M9-03 part 11): on the Model tab only,
-   * where constraints are drawn.
+   * The grips of the dimensional constraints selected (M9-03 part 11): on the Model tab, or on a
+   * layout through the viewport made current (M9-03 part 13), where they are picked.
    */
   #constraintGrips(): ConstraintGrip[] {
     const handles = this.#grips?.constraints ?? [];
-    if (handles.length === 0 || !this.#modelTab) return [];
+    if (handles.length === 0 || (!this.#modelTab && !this.#activeViewport())) return [];
     return handles.flatMap((h) => constraintGripsOf(this.#model, h));
   }
 
@@ -2348,16 +2352,22 @@ export class Canvas2DRenderer implements Renderer {
    * The dimensional constraints on the Model tab (M9-03 part 4): dynamic ones the same size on
    * screen at any zoom, in their own colour, unless hidden, all of them or one by DCDISPLAY
    * (then shown while an object they constrain is selected, under DYNCONSTRAINTMODE 1);
-   * annotational ones sized by the drawing's DIMVARs, as dimensions. Not plotted: plots draw
-   * entities only.
+   * annotational ones sized by the drawing's DIMVARs, as dimensions (plotted by the plot job).
+   *
+   * Through a layout's viewport (M9-03 part 13, `view` its frame): the annotational ones, and
+   * the dynamic ones with `dynamic` (the viewport made current, where model space is worked in;
+   * AutoCAD keeps them for editing and never plots them); none whose objects are all on layers
+   * frozen in the viewport, as Triya's constraints keep no layer of their own.
    */
-  #drawConstraints(ctx: Canvas2D, view: DrawFrame): void {
+  #drawConstraints(ctx: Canvas2D, view: DrawFrame, dynamic = true): void {
     const look = this.#style.constraints;
     this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
     if (this.#constraints.length === 0) return;
     const prims: RenderPrimitive[] = [];
     const picked: RenderPrimitive[] = [];
     for (const d of this.#constraints) {
+      if (!dynamic && d.form === 'dynamic') continue;
+      if (view.frozen && this.#constraintFrozen(d, view.frozen)) continue;
       const sizes = this.#constraintSizes(d, look, view.scale);
       if (!sizes) continue;
       const color = d.form === 'annotational' ? 'foreground' : (look?.color ?? 'foreground');
@@ -2368,6 +2378,14 @@ export class Canvas2DRenderer implements Renderer {
     this.#drawPrimitives(ctx, [{ prims, size: Infinity, x: 0, y: 0 }], false, view);
     // The constraints selected (M9-03 part 10), highlighted as selected objects are.
     if (picked.length > 0 && this.#outlinePrimitives(ctx, view, picked)) this.#strokeSelected(ctx);
+  }
+
+  /** Whether every object `d` constrains is on a layer in `frozen` (a viewport's). */
+  #constraintFrozen(d: ConstraintDisplay, frozen: ReadonlySet<Handle>): boolean {
+    return d.entities.every((h) => {
+      const layer = this.#model.entityByHandle(h)?.layer;
+      return layer !== undefined && frozen.has(layer);
+    });
   }
 
   /**
@@ -2935,10 +2953,16 @@ export class Canvas2DRenderer implements Renderer {
       through.frame.box,
       shownLayers ? (id, entry) => this.#overriddenEntry(vp, shownLayers, id, entry) : undefined,
     );
-    if (entries.length === 0) return;
     this.#sceneEntries += entries.length;
+    this.#constraints ??= constraintDisplays(this.#model, this.#style.constraints?.nameFormat ?? 2);
+    const constraints = this.#constraints.length > 0;
+    if (entries.length === 0 && !constraints) return;
     this.#clipTo(ctx, vp, view, through.clip);
-    this.#drawPrimitives(ctx, entries, reduced, through.frame);
+    if (entries.length > 0) this.#drawPrimitives(ctx, entries, reduced, through.frame);
+    // Its annotational constraints, and the dynamic ones while it is current (M9-03 part 13).
+    if (constraints) {
+      this.#drawConstraints(ctx, through.frame, vp.handle === this.#activeViewport()?.handle);
+    }
     ctx.restore();
   }
 
