@@ -112,6 +112,7 @@ const NAMES = [
   'search_square',
   'select_object',
   'settings',
+  'split_vertical',
   'style_guide',
   'tab_add',
   'table',

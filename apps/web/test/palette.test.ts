@@ -105,6 +105,9 @@ describe('palette search', () => {
       'CLOSEALL',
       'COMMANDLINE',
       'COMMANDLINEHIDE',
+      // M8-06: the Compare palette.
+      'COMPARE',
+      'COMPARECLOSE',
       // M9-05 part 2: constraint bars shown or hidden, and constraints removed.
       'CONSTRAINTBAR',
       'CONSTRAINTSETTINGS',

@@ -759,6 +759,12 @@ const VIEW: RibbonTab = {
         ]),
       ],
     },
+    {
+      id: 'compare',
+      label: 'Compare',
+      compress: { order: 6, keep: [] },
+      items: [cmd('compare', 'Compare', 'split_vertical', 'COMPARE', BIG)],
+    },
   ],
 };
 

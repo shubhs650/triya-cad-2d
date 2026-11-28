@@ -283,6 +283,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'theme-system': "Follows the device's light or dark setting.",
   'theme-light': 'Uses the light colour theme.',
   'theme-dark': 'Uses the dark colour theme.',
+  compare: 'Compares two drawings and shows what the revision added, removed and modified.',
   // Output
   plot: 'Plots the drawing to a PDF or a printer.',
   preview: 'Shows the drawing as it will be plotted.',

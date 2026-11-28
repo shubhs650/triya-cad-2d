@@ -105,13 +105,13 @@ export interface CompareResult {
   };
 }
 
-interface Space {
+export interface Space {
   readonly name: string;
   readonly block: Handle;
 }
 
 /** Model space and every paper space of a drawing, in tab order. */
-function spacesOf(model: DocumentModel): Space[] {
+export function spacesOf(model: DocumentModel): Space[] {
   const out: Space[] = [];
   const seen = new Set<Handle>();
   const records = [...model.tables.blockRecords.values()];
