@@ -2,10 +2,14 @@
 // unedited and edited, and CI loads each save with ezdxf's `recover` and runs its `audit`
 // (scripts/dxf-audit/audit.py). The saves are written by the corpus suites only when
 // TRIYA_DXF_AUDIT_DIR names a directory, so a plain `pnpm test` writes nothing.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { CadDocument } from '@node-projects/acad-ts';
 import type { DocumentModel } from '@triya/engine';
 import { saveDxf } from '@triya/io';
+import { expect } from 'vitest';
 
 export type AuditSaveKind =
   | 'unedited'
@@ -146,7 +150,57 @@ export type AuditSaveKind =
  * against AC1032. Consumes `original`.
  */
 export function saveAc1032Dxf(original: CadDocument, model: DocumentModel): Uint8Array {
-  return saveDxf(original, model);
+  const saved = saveDxf(original, model);
+  keepSweepSave(saved);
+  return saved;
+}
+
+/** Where the sweep's saves go (M10-02), or undefined when the suites should not keep them. */
+export function sweepDir(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const dir = env['TRIYA_DXF_SWEEP_DIR'];
+  return dir === undefined || dir === '' ? undefined : dir;
+}
+
+/** A test, by its file (from the repository root) and its full name. */
+export interface SweepTest {
+  readonly file: string;
+  readonly name: string;
+}
+
+const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+
+/** The Vitest test running now. */
+function currentTest(): SweepTest {
+  const { testPath, currentTestName } = expect.getState();
+  return {
+    file: testPath ? relative(REPO_ROOT, testPath).replaceAll('\\', '/') : '(unknown)',
+    name: currentTestName ?? '(unknown)',
+  };
+}
+
+/**
+ * The ezdxf audit sweep (M10-02): every save the suites make through `saveAc1032Dxf` is kept
+ * for scripts/dxf-audit/sweep.py, not only the gate's named saves. A save is kept once, named
+ * by the SHA-1 of its bytes (a save made by several tests, or several times, is audited once),
+ * and `<hash>.tests.txt` lists each test that made it, one `file<TAB>name` line per save.
+ */
+export function keepSweepSave(
+  bytes: Uint8Array,
+  test: SweepTest | undefined = undefined,
+  dir = sweepDir(),
+): void {
+  if (dir === undefined) return;
+  mkdirSync(dir, { recursive: true });
+  const hash = createHash('sha1').update(bytes).digest('hex');
+  try {
+    writeFileSync(`${dir}/${hash}.dxf`, bytes, { flag: 'wx' });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+  }
+  const { file, name } = test ?? currentTest();
+  appendFileSync(`${dir}/${hash}.tests.txt`, `${file}\t${name.replaceAll(/\s+/g, ' ')}\n`);
 }
 
 /** The save's file name: the corpus path flattened, then the kind (audit.py reads it back). */
