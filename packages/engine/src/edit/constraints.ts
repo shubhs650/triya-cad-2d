@@ -283,6 +283,11 @@ export function setConstraintEditorBlock(model: DocumentModel, block?: Handle): 
   else editorBlocks.set(model, block);
 }
 
+/** The block the Block Editor shows in `model`, if it is open (M9-14). */
+export function constraintEditorBlock(model: DocumentModel): Handle | undefined {
+  return editorBlocks.get(model);
+}
+
 /** Where constraints act: model space, the layouts' spaces and the Block Editor's block. */
 export function constraintSpaces(model: DocumentModel): Set<Handle> {
   const out = new Set<Handle>(model.layouts.map((l) => l.blockRecord));
@@ -336,6 +341,46 @@ export function heldDimensionalConstraints(model: DocumentModel): DimensionalCon
   if (all.length === 0) return all;
   const spaces = constraintSpaces(model);
   return all.filter((c) => heldInBlock(model, c, spaces));
+}
+
+/**
+ * The constraints among the objects of `space` (M9-14), held in a block or acting: what a canvas
+ * showing that space draws. The render worker's copy of the drawing never learns which block
+ * the Block Editor shows (the bus keeps that), so the Block Editor's canvas asks for its block's
+ * constraints by the space it shows. A constraint on an object that is gone is left out.
+ */
+export function constraintsIn(
+  model: DocumentModel,
+  space: Handle,
+): (GeometricConstraintObject | DimensionalConstraintObject)[] {
+  const out: (GeometricConstraintObject | DimensionalConstraintObject)[] = [];
+  for (const o of model.objects.values()) {
+    if (!isGeometricConstraint(o) && !isDimensionalConstraint(o)) continue;
+    const owners = o.refs.map((r) => model.entityByHandle(r.entity)?.owner);
+    if (owners.length > 0 && owners.every((h) => h === space)) out.push(o);
+  }
+  return out;
+}
+
+/**
+ * The dimensional constraints the Parameters Manager leaves out (M9-14): those held in blocks
+ * and, while the Block Editor is open, all but its block's, as AutoCAD lists a block's
+ * parameters in the Block Editor and the drawing's out of it (AutoCAD 2024 Help, "About
+ * Constraints in Blocks"). User parameters are the drawing's (one table, M9-13) and always show.
+ */
+export function unlistedParameters(model: DocumentModel): Set<Handle> {
+  const editor = editorBlocks.get(model);
+  const spaces = constraintSpaces(model);
+  const out = new Set<Handle>();
+  for (const o of model.objects.values()) {
+    if (!isDimensionalConstraint(o)) continue;
+    const listed =
+      editor === undefined
+        ? !heldInBlock(model, o, spaces)
+        : o.refs.some((r) => model.entityByHandle(r.entity)?.owner === editor);
+    if (!listed) out.add(o.handle);
+  }
+  return out;
 }
 
 /** The drawing's user parameters (M9-03 part 6). */
