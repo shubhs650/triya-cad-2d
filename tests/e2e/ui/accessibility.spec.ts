@@ -238,6 +238,7 @@ test('the start screen, drawing window, ribbon tabs, palettes and menus are acce
     ['PARAMETERS', 'Parameters Manager'],
     ['XREF', 'References'],
     ['ADCENTER', 'DesignCenter'],
+    ['LIBRARY', 'Library'],
     ['TEXTSCR', 'Command History'],
   ] as const) {
     await test.step(`palette ${name}`, async () => {

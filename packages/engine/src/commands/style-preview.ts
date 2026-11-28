@@ -9,6 +9,8 @@
 //   placed; the picture is fitted to what it draws either way).
 // - Insert (M5-01 part 3; AutoCAD Help, "Insert Dialog Box"): a reference to the block at its
 //   base point, unscaled and unturned, the blocks it nests copied with it.
+// - The library palette (M8-03): a block the drawing does not have yet, pasted into the preview
+//   drawing as DesignCenter's Add pastes it and inserted as Insert's is.
 // - Multileader Style (AutoCAD 2024 Help, "Multileader Style Manager", Preview of: "Displays a
 //   preview image of the style that is selected in the Styles list", and "Modify Multileader
 //   Style Dialog Box": the image shows the settings as they are made): one multileader in a style
@@ -19,6 +21,7 @@
 //   only, as OK adds it to the drawing.
 import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
+import { pasteDefinitions, type Clipboard } from '../edit/clipboard';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type {
@@ -66,7 +69,26 @@ export type StylePreview =
        */
       readonly kind: 'block';
       readonly block: Handle;
+    }
+  | {
+      /**
+       * The library palette's preview (M8-03): block `block` as `content` carries it (copied out
+       * as DesignCenter copies a block), not yet in the drawing, inserted unscaled.
+       */
+      readonly kind: 'library';
+      readonly block: string;
+      readonly content: Clipboard;
     };
+
+/** A reference to `block` at `position`, unscaled and unturned. */
+const unscaled = (block: Handle, position: Vec2): InsertGeometry => ({
+  kind: 'INSERT',
+  block,
+  position,
+  scale: { x: 1, y: 1, z: 1 },
+  rotation: 0,
+  attributes: [],
+});
 
 /** The sample text, AutoCAD's own words for it. */
 export const TEXT_STYLE_SAMPLE = 'AaBb123';
@@ -106,6 +128,17 @@ export function stylePreviewModel(
   if (preview.kind === 'textstyle') {
     b.addEntity({ owner: space, layer, geom: textSample(b, preview.settings) });
     pm.apply(b.build());
+    return pm;
+  }
+  if (preview.kind === 'library') {
+    pasteDefinitions(b, pm, preview.content);
+    pm.apply(b.build());
+    const name = upper(preview.block);
+    const def = [...pm.blocks.values()].find((d) => upper(d.name) === name);
+    if (!def) return undefined;
+    const placed = new ChangeSetBuilder(pm);
+    placed.addEntity({ owner: space, layer, geom: unscaled(def.handle, def.basePoint) });
+    pm.apply(placed.build());
     return pm;
   }
   if (preview.kind === 'block') {

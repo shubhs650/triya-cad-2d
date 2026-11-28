@@ -10,6 +10,11 @@
 // "automatic scaling"); by Insert Block..., in INSERT's Insert dialog on that block. Settled for
 // the common drafter expectation (noted in the PR): the command line says what was added and
 // what was ignored, by name, where AutoCAD's own wording is not documented.
+//
+// The library palette's Insert (M8-03) is the same drop: its block, drawn in the drawing's units,
+// is added and inserted where the drafter picks (`onScreen`), at scale 1 and the UCS's angle, as
+// AutoCAD 2024's Blocks palette inserts on a click ("Blocks Palette": the block is attached to
+// the cursor for its insertion point), one INSERT undo step.
 import type { Vec2 } from '../geom/types';
 import type { CommandDef } from './command';
 import type { Prompt, PromptAnswer } from './prompt';
@@ -28,8 +33,13 @@ import { viewRequest } from './view/zoom';
 export interface DesignCenterDrop {
   /** Copied out of the drawing they come from; none when it is this drawing. */
   readonly items: readonly DesignCenterItem[];
-  /** The block (by name) to insert once added: at `at` (world), else by the Insert dialog. */
-  readonly insert?: { readonly block: string; readonly at?: Vec2 };
+  /**
+   * The block (by name) to insert once added: at `at` (world), else at the point picked with
+   * `onScreen`, else by the Insert dialog.
+   */
+  readonly insert?: { readonly block: string; readonly at?: Vec2; readonly onScreen?: boolean };
+  /** The library palette's (M8-03): its undo step is INSERT's. */
+  readonly library?: boolean;
 }
 
 /** Each category's item, as the command line names it. */
@@ -46,7 +56,7 @@ const NOUN: Record<DesignCenterItem['category'], string> = {
 /** The command a DesignCenter drop runs (see the file comment). */
 export function designCenterCommand(drop: DesignCenterDrop): CommandDef {
   return {
-    name: 'ADCENTER',
+    name: drop.library ? 'INSERT' : 'ADCENTER',
     usesSelection: 'none',
     async *run(ctx): AsyncGenerator<Prompt, void, PromptAnswer> {
       const added = new Map<string, string[]>();
@@ -72,7 +82,8 @@ export function designCenterCommand(drop: DesignCenterDrop): CommandDef {
       await loadPastedXrefs(ctx, xrefs);
       const insert = drop.insert;
       if (!insert) return;
-      if (insert.at === undefined) return yield* insertDialog(ctx, insert.block);
+      if (insert.at === undefined && !insert.onScreen)
+        return yield* insertDialog(ctx, insert.block);
       const refusal = insertRefusal(ctx, insert.block);
       if (refusal) {
         ctx.message(refusal);
@@ -82,7 +93,7 @@ export function designCenterCommand(drop: DesignCenterDrop): CommandDef {
       yield* insertBlock(ctx, r, {
         explode: false,
         uniform: r.scalable === false,
-        at: insert.at,
+        ...(insert.at && { at: insert.at }),
         scale: { x: 1, y: 1, z: 1 },
         rotation: currentUcs(ctx).angle,
       });

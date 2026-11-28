@@ -242,6 +242,9 @@ describe('palette search', () => {
       'LAYVPI',
       'LAYWALK',
       'LENGTHEN',
+      // M8-03: the library palette.
+      'LIBRARY',
+      'LIBRARYCLOSE',
       'LINE',
       // M5-08: the Linetype Manager, -LINETYPE and LTSCALE.
       'LINETYPE',

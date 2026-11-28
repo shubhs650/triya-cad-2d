@@ -75,6 +75,18 @@ with a hanging indent, on the current layer in the current text style, so the dr
 editing it; `addStandardNotesBlock(builder, model, spec)` puts that MTEXT in a block
 (`TRIYA_NOTES_<digest>`) for notes inserted unchanged on every sheet (DEC-094).
 
+## The library palette's catalogue (M8-03)
+
+`LIBRARY_ENTRIES` lists one entry per generator (six flange types, two nozzles, five supports,
+AWS and ISO weld symbols, ASME and ISO surface texture symbols, standard notes), each with its
+group, standard and search words and `defaults({ scale, units })` in a drawing's units.
+`searchLibrary(query)` finds the entries holding every word typed. A `LibraryItem` is what an
+entry draws with the drafter's options; `libraryBlock(model, item)` gives the drawing's own block
+of its name, or the block drawn in the drawing's units on a copy of its tables and copied out as
+DesignCenter copies a block, for the drawing's engine to add as it inserts it at scale 1.
+`rescaleLibraryItem(item, factor)` draws an item kept from a drawing in other units the same
+size (DEC-095).
+
 ## ASME B16.5 flanges (M8-01)
 
 `b165Flange({ flangeClass, nps, type, schedule? })` gives a flange's dimensions in inches for

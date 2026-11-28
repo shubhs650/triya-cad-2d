@@ -1,6 +1,7 @@
 // The engine worker's message loop (M1-67), apart from the worker entry so tests can drive it
 // in-process. Messages are handled in order, so replies come back in the order asked.
 import { EngineSession, type ChangeSet } from '@triya/engine';
+import { libraryAnswer } from '@triya/library';
 import type { ChangeMessage } from '@triya/render';
 import type { Endpoint, EngineReply, EngineRequest } from './protocol';
 import { ENGINE_SERVICES } from './services';
@@ -87,6 +88,11 @@ export function serveEngine(port: Endpoint<EngineRequest, EngineReply>): void {
       }
       if (data.type === 'layers-in-use') {
         port.postMessage({ type: 'layers-in-use', id: data.id, layers: session.layersInUse() });
+        return;
+      }
+      if (data.type === 'library') {
+        const library = libraryAnswer(session.model, data.item);
+        port.postMessage({ type: 'library', id: data.id, library });
         return;
       }
       const result = session.edit(data.edit);

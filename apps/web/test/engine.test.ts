@@ -548,6 +548,33 @@ describe('EngineHost layersInUse (M5-07 part 5)', () => {
   });
 });
 
+describe('EngineHost library (M8-03)', () => {
+  it("gives the drawing's context and an item's block, in the worker or on the main thread", async () => {
+    const item = {
+      kind: 'flange',
+      spec: { flangeClass: 150, nps: 2, type: 'BL' },
+      view: 'front',
+    } as const;
+    for (const host of [new EngineHost(init, inProcessWorker), new EngineHost(init)]) {
+      expect(await host.library()).toEqual({
+        context: { scale: 25.4, units: { name: 'MILLIMETRES', metric: true } },
+      });
+      const { block } = await host.library(item);
+      expect(block?.name).toBe('ASME_B16.5_BL_CL150_NPS2_FRONT');
+      expect(block?.content?.blocks.map((b) => b.name)).toEqual([block?.name]);
+      host.dispose();
+    }
+  });
+
+  it('is undefined for a drawing not open', async () => {
+    const engines = new Engines(
+      (i) => new EngineHost(i),
+      () => [],
+    );
+    expect(await engines.library(7)).toBeUndefined();
+  });
+});
+
 describe('change sets straight to the render workers (M2-62)', () => {
   type Numbered = { seq: number; change: unknown };
   /** What a linked renderer hears on its port. */

@@ -283,6 +283,9 @@ describe('completions', () => {
       { name: 'LAYVPI' },
       { name: 'LAYWALK' },
       { name: 'LENGTHEN' },
+      // M8-03: the library palette.
+      { name: 'LIBRARY' },
+      { name: 'LIBRARYCLOSE' },
       // M5-08: LINETYPE and LTSCALE.
       { name: 'LINETYPE' },
       { name: 'LIST' },
@@ -292,6 +295,8 @@ describe('completions', () => {
     ]);
     expect(completions(registry, 'LI')).toEqual([
       { name: 'LIST', alias: 'LI' },
+      { name: 'LIBRARY' },
+      { name: 'LIBRARYCLOSE' },
       { name: 'LINE' },
       { name: 'LINETYPE' },
     ]);

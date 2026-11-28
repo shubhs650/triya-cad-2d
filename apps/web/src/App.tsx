@@ -207,6 +207,7 @@ import { pdfFileReply } from './pdf-files';
 import { writeXrefFile, xrefDrawingReply, xrefFileReply } from './xref-files';
 import { layerStateFileReply, writeLayerStateFile } from './layer-state-files';
 import { DesignCenterPalette } from './DesignCenterPalette';
+import { LibraryPalette } from './LibraryPalette';
 import { DESIGN_CENTER_DRAG, designCenterDrop, takeDesignCenterDrag } from './design-center';
 import { writeBlockFile } from './block-file-io';
 import { drawingFileModel, openDrawingModel } from './dimstyle-import';
@@ -2659,6 +2660,7 @@ export function App() {
   const layerColumns = useSyncExternalStore(preferences.subscribe, preferences.get).layerColumns;
   // The Ctrl+K palette's items run last (M7-06 part 2).
   const paletteRecent = useSyncExternalStore(preferences.subscribe, preferences.get).paletteRecent;
+  const libraryPreferences = useSyncExternalStore(preferences.subscribe, preferences.get).library;
   // The first-run browser compatibility notice (M7-09), once the stored settings are read.
   const browserNotice = showBrowserNotice(BROWSER_LIMITS, {
     loaded: preferences.loaded,
@@ -3228,6 +3230,15 @@ export function App() {
                       doc={active}
                       docs={state.docs}
                       onClose={() => paletteStack.close('designcenter')}
+                    />
+                  );
+                case 'library':
+                  return (
+                    <LibraryPalette
+                      doc={active}
+                      library={libraryPreferences}
+                      onLibrary={(library) => preferences.update({ library })}
+                      onClose={() => paletteStack.close('library')}
                     />
                   );
                 case 'references':

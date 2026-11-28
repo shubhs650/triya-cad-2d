@@ -484,6 +484,12 @@ const INSERT: RibbonTab = {
       ],
     },
     {
+      // M8-03: the symbol library (UI_SPEC §2's PV symbols, weld symbols), LIBRARY's palette.
+      id: 'library',
+      label: 'Library',
+      items: [cmd('library', 'Library', 'library', 'LIBRARY', BIG)],
+    },
+    {
       id: 'import',
       label: 'Import',
       items: [cmd('pdf-import', 'PDF Underlay', 'arrow_import', 'PDFATTACH', BIG)],
@@ -742,6 +748,7 @@ const VIEW: RibbonTab = {
         cmd('properties', 'Properties', 'apps_list_detail', 'PROPERTIES', BIG),
         cmd('layers-palette', 'Layers', 'layer', 'LAYER', SECONDARY),
         cmd('designcenter', 'DesignCenter', 'app_folder', 'ADCENTER', SECONDARY),
+        cmd('library-palette', 'Library', 'library', 'LIBRARY', SECONDARY),
         cmd('references', 'External References', 'link_multiple', 'EXTERNALREFERENCES', SECONDARY),
         act('health', 'Health', 'heart_pulse', 'palette:health', SECONDARY),
         act('history', 'Command History', 'history', 'palette:history', SECONDARY),

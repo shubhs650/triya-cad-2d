@@ -20,6 +20,7 @@ export type PaletteName =
   | 'health'
   | 'history'
   | 'layers'
+  | 'library'
   | 'parameters'
   | 'properties'
   | 'references';
@@ -32,6 +33,7 @@ export const PALETTES: readonly { readonly name: PaletteName; readonly title: st
   { name: 'diagnostics', title: 'Diagnostics' },
   { name: 'references', title: 'References' },
   { name: 'designcenter', title: 'DesignCenter' },
+  { name: 'library', title: 'Library' },
   { name: 'parameters', title: 'Parameters' },
   { name: 'compare', title: 'Compare' },
   { name: 'history', title: 'Command History' },

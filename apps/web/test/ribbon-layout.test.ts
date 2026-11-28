@@ -83,6 +83,8 @@ describe('the data model', () => {
     expect(tab('insert').panels.map((p) => p.label)).toEqual([
       'Block',
       'Reference',
+      // M8-03: LIBRARY.
+      'Library',
       'Import',
       'Data',
     ]);
