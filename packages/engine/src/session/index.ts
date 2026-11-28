@@ -18,9 +18,10 @@ import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
 import {
-  heldDimensionalConstraints,
+  constraintEditorBlock,
   parameterGroups,
   parameterObjects,
+  unlistedParameters,
   type ConstraintService,
   type ParameterGroupInfo,
   type ParameterInfo,
@@ -825,6 +826,8 @@ export class EngineSession {
   #ribbonQueued = false;
   /** The Parameters Manager is open: its rows are sent (M9-03 part 5). */
   #parameters = false;
+  /** The Block Editor's block when the palette's rows were last sent (M9-14). */
+  #parametersEditor: Handle | undefined;
   #parametersQueued = false;
   readonly #services: EngineServices;
 
@@ -874,6 +877,11 @@ export class EngineSession {
       } else this.#emit(e.type === 'commit' ? { type: 'commit', command: e.record.command } : e);
       if (e.type === 'selection' || e.type === 'commit' || e.type === 'undo') this.#queueSheet();
       if (e.type === 'commit' || e.type === 'undo') this.#queueParameters();
+      // The Block Editor opened or closed (M9-14), which commits nothing when nothing changed:
+      // the palette lists the block's parameters there and the drawing's out of it.
+      else if (e.type === 'end' && constraintEditorBlock(this.model) !== this.#parametersEditor) {
+        this.#queueParameters();
+      }
     });
   }
 
@@ -894,13 +902,14 @@ export class EngineSession {
    */
   async #sendParameters(): Promise<void> {
     const dims = parameterObjects(this.model);
+    this.#parametersEditor = constraintEditorBlock(this.model);
     let rows: readonly ParameterInfo[] = [];
     if (dims.length > 0) {
       try {
         const solver = await this.#services.constraints?.();
-        // A block's parameters are its own, listed in the Block Editor only (M9-13).
-        const held = new Set(heldDimensionalConstraints(this.model).map((d) => d.handle));
-        rows = (solver?.parameters(dims) ?? []).filter((r) => !held.has(r.constraint));
+        // A block's parameters are its own, listed in the Block Editor only (M9-13, M9-14).
+        const unlisted = unlistedParameters(this.model);
+        rows = (solver?.parameters(dims) ?? []).filter((r) => !unlisted.has(r.constraint));
       } catch {
         // No solver: the commands say why when they need it; the palette lists nothing.
       }

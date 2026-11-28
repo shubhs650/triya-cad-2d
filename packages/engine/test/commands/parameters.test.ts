@@ -427,8 +427,14 @@ describe('EngineSession and the Parameters Manager', () => {
     constraint: d.handle,
   });
 
-  function session(objects: readonly (ParameterObject | ParameterGroupObject)[], loads = true) {
+  function session(
+    objects: readonly (ParameterObject | ParameterGroupObject)[],
+    loads = true,
+    block = false,
+  ) {
     const init = sampleInit();
+    // M9-14: block ELL (80), whose line 50 holds d3.
+    const ell = { handle: '80', name: 'ELL', basePoint: { x: 0, y: 0 } };
     let asked = 0;
     const solver = {
       parameters: (dims) => {
@@ -440,7 +446,20 @@ describe('EngineSession and the Parameters Manager', () => {
       {
         ...init,
         meta: { ...init.meta, rootDictionary: 'C' },
-        entities: [entityInit('30', lineGeom(0, 0, 10, 0))],
+        entities: [
+          entityInit('30', lineGeom(0, 0, 10, 0)),
+          ...(block ? [entityInit('50', lineGeom(0, 0, 0, 5), { owner: '80' })] : []),
+        ],
+        ...(block && {
+          tables: {
+            ...init.tables,
+            blockRecords: [
+              ...(init.tables?.blockRecords ?? []),
+              { ...ell, units: 0, explodable: true, scalable: true },
+            ],
+          },
+          blocks: [...(init.blocks ?? []), ell],
+        }),
         objects: [...(init.objects ?? []), ...objects],
       },
       {
@@ -490,6 +509,28 @@ describe('EngineSession and the Parameters Manager', () => {
     await s.se.command({ kind: 'parameter', edit: { kind: 'new' } });
     await flush();
     expect(s.rows().at(-1)).toEqual(['user1=4:', 'user2=1:']);
+  });
+
+  it("lists a block's parameters in the Block Editor only, and again as it opens and closes (M9-14)", async () => {
+    // AutoCAD 2024 Help, "About Constraints in Blocks": a block's constraints and parameters
+    // belong to the Block Editor; the drawing's are not the block's.
+    const D3 = { ...D1, handle: 'D3', parameter: 'd3', refs: [{ entity: '50' }] };
+    const s = session([D1, D3, { ...U1, expression: '4' }], true, true);
+    // The app shows the Block Editor and closes it.
+    s.se.onCommand((o) => {
+      if (o.type === 'view') void s.se.command({ kind: 'view', id: o.id, reply: { ok: true } });
+    });
+    await s.se.command({ kind: 'parameters', open: true });
+    expect(s.rows().at(-1)).toEqual(['d1=10:', 'user1=4:']);
+    await s.se.command({ kind: 'submit', text: '-BEDIT' });
+    await s.se.command({ kind: 'submit', text: 'ELL' });
+    await flush();
+    expect(s.rows().at(-1)).toEqual(['d3=10:', 'user1=4:']);
+    const sent = s.rows().length;
+    await s.se.command({ kind: 'submit', text: 'BCLOSE' });
+    await flush();
+    expect(s.rows().at(-1)).toEqual(['d1=10:', 'user1=4:']);
+    expect(s.rows()).toHaveLength(sent + 1);
   });
 
   it('sends the group filters with the rows, a drawing without parameters too (M9-03 part 12)', async () => {

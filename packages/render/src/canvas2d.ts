@@ -33,6 +33,9 @@
 import {
   constraintBars,
   constraintDisplays,
+  constraintsIn,
+  isDimensionalConstraint,
+  isGeometricConstraint,
   constraintGripsOf,
   type ConstraintGrip,
   type ConstraintBars,
@@ -1101,6 +1104,35 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   /**
+   * The space whose constraints this canvas shows (M9-14): its own on the Model tab and in the
+   * Block Editor (a block that is neither model space nor a layout, whose constraints AutoCAD
+   * shows there alone), model space through a layout's viewports.
+   */
+  #constraintSpace(): Handle | undefined {
+    return this.#paperSpace ? this.#modelBlock : this.#block;
+  }
+
+  /** Whether the constraints are drawn and picked on the canvas itself: not a layout's sheet. */
+  #ownConstraints(): boolean {
+    return !this.#paperSpace;
+  }
+
+  /** The dimensional constraints among the objects of `#constraintSpace`, as they show. */
+  #spaceConstraints(): readonly ConstraintDisplay[] {
+    const space = this.#constraintSpace();
+    if (space === undefined) return [];
+    const dims = constraintsIn(this.#model, space).filter(isDimensionalConstraint);
+    return constraintDisplays(this.#model, this.#style.constraints?.nameFormat ?? 2, dims);
+  }
+
+  /** The constraint bars of the objects of `#constraintSpace`. */
+  #spaceBars(): ConstraintBars {
+    const space = this.#constraintSpace();
+    const all = space === undefined ? [] : constraintsIn(this.#model, space);
+    return constraintBars(this.#model, all.filter(isGeometricConstraint));
+  }
+
+  /**
    * The dimensional constraints a pick or a window can take in `view` (M9-03 parts 10 and 14),
    * each with the primitives it is taken by: its text (its runs' boxes, as an object's text is
    * taken anywhere in them), dimension line or arc and arrows, not its extension lines. None on
@@ -1110,10 +1142,10 @@ export class Canvas2DRenderer implements Renderer {
   *#pickableConstraints(
     view: ViewTransform,
   ): Generator<{ readonly handle: Handle; readonly prims: readonly RenderPrimitive[] }> {
-    const vp = this.#modelTab ? undefined : this.#activeViewport();
-    if (!this.#modelTab && !vp) return;
+    const vp = this.#ownConstraints() ? undefined : this.#activeViewport();
+    if (!this.#ownConstraints() && !vp) return;
     const look = this.#style.constraints;
-    this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
+    this.#constraints ??= this.#spaceConstraints();
     for (const d of this.#constraints) {
       if (vp?.frozen && this.#constraintFrozen(d, vp.frozen)) continue;
       const sizes = this.#constraintSizes(d, look, view.scale);
@@ -1382,7 +1414,7 @@ export class Canvas2DRenderer implements Renderer {
    */
   #constraintGrips(): ConstraintGrip[] {
     const handles = this.#grips?.constraints ?? [];
-    if (handles.length === 0 || (!this.#modelTab && !this.#activeViewport())) return [];
+    if (handles.length === 0 || (!this.#ownConstraints() && !this.#activeViewport())) return [];
     return handles.flatMap((h) => constraintGripsOf(this.#model, h));
   }
 
@@ -1431,8 +1463,8 @@ export class Canvas2DRenderer implements Renderer {
   ): ConstraintBarHit | null {
     const look = this.#style.constraintBars;
     let hit: ConstraintBarHit | undefined;
-    if (screen && look && this.#modelTab) {
-      this.#bars ??= constraintBars(this.#model);
+    if (screen && look && this.#ownConstraints()) {
+      this.#bars ??= this.#spaceBars();
       const p = screenToWorld(view, this.#width, this.#height, screen);
       hit = constraintBarAt(
         this.#bars,
@@ -2374,7 +2406,7 @@ export class Canvas2DRenderer implements Renderer {
       reduced,
       annotation === undefined ? view : { ...view, linetypeScale: annotation },
     );
-    if (this.#modelTab) {
+    if (this.#ownConstraints()) {
       this.#drawConstraints(ctx, view);
       this.#drawConstraintBars(ctx, view);
     }
@@ -2398,7 +2430,7 @@ export class Canvas2DRenderer implements Renderer {
    */
   #drawConstraints(ctx: Canvas2D, view: DrawFrame, dynamic = true): void {
     const look = this.#style.constraints;
-    this.#constraints ??= constraintDisplays(this.#model, look?.nameFormat ?? 2);
+    this.#constraints ??= this.#spaceConstraints();
     if (this.#constraints.length === 0) return;
     const prims: RenderPrimitive[] = [];
     const picked: RenderPrimitive[] = [];
@@ -2463,7 +2495,7 @@ export class Canvas2DRenderer implements Renderer {
   #drawConstraintBars(ctx: Canvas2D, view: DrawFrame): void {
     const look = this.#style.constraintBars;
     if (!look) return;
-    this.#bars ??= constraintBars(this.#model);
+    this.#bars ??= this.#spaceBars();
     if (this.#bars.bars.length === 0 && this.#bars.marks.length === 0) return;
     const visible = this.#barVisible(look);
     const color = look.color ?? this.#style.constraints?.color ?? 'foreground';
@@ -2501,8 +2533,8 @@ export class Canvas2DRenderer implements Renderer {
   #drawBarHover(ctx: Canvas2D, frame: DrawFrame): void {
     const hit = this.#barHover;
     const look = this.#style.constraintBars;
-    if (!hit || !look || !this.#modelTab) return;
-    this.#bars ??= constraintBars(this.#model);
+    if (!hit || !look || !this.#ownConstraints()) return;
+    this.#bars ??= this.#spaceBars();
     const ids: EntityId[] = [];
     for (const h of hit.entities) {
       const e = this.#model.entityByHandle(h);
@@ -2998,7 +3030,7 @@ export class Canvas2DRenderer implements Renderer {
       shownLayers ? (id, entry) => this.#overriddenEntry(vp, shownLayers, id, entry) : undefined,
     );
     this.#sceneEntries += entries.length;
-    this.#constraints ??= constraintDisplays(this.#model, this.#style.constraints?.nameFormat ?? 2);
+    this.#constraints ??= this.#spaceConstraints();
     const constraints = this.#constraints.length > 0;
     if (entries.length === 0 && !constraints) return;
     this.#clipTo(ctx, vp, view, through.clip);
