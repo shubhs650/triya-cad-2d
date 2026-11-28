@@ -1,0 +1,8 @@
+# TRIYA_BRACKET_D48_B8_H10_TB0.75_C1_HD1_E5_TP0.375_HP14
+# Bracket support, elevation: vessel OD 48, projection 8, height 10, base thickness 0.75, gusset end 1, hole diameter 1, hole offset 5, pad thickness 0.375, pad height 14
+visible LWPOLYLINE closed (24.0000, -2.0000) (24.3750, -2.0000) (24.3750, 12.0000) (24.0000, 12.0000)
+visible LWPOLYLINE closed (24.3750, 0.0000) (32.3750, 0.0000) (32.3750, 0.7500) (24.3750, 0.7500)
+visible LWPOLYLINE closed (24.3750, 0.7500) (32.3750, 0.7500) (32.3750, 1.7500) (25.3750, 10.0000) (24.3750, 10.0000)
+hidden  LINE (28.8750, 0.0000) (28.8750, 0.7500)
+hidden  LINE (29.8750, 0.0000) (29.8750, 0.7500)
+center  LINE (29.3750, -0.7500) (29.3750, 1.5000)

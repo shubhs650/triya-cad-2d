@@ -7,27 +7,25 @@
 // at the face. Bolt holes straddle the centre lines, as B16.5 places them (no hole on a centre
 // line), and the section shows two of them turned into the cutting plane on the bolt circle,
 // as ASME Y14.3 draws aligned features in a section.
-import type { EntityGeometry, HatchGeometry, PolylineVertex, Vec2 } from '@triya/engine';
+import type { EntityGeometry } from '@triya/engine';
 import type { FlangeDimensions } from './b16-5';
+import {
+  circle,
+  closed,
+  corner,
+  hatch,
+  line,
+  open,
+  scaled,
+  type Corner,
+  type LibraryPart,
+  type PartRole,
+} from '../parts';
+
+export type { LibraryPart, PartRole } from '../parts';
 
 export const FLANGE_VIEWS = ['front', 'side', 'section'] as const;
 export type FlangeView = (typeof FLANGE_VIEWS)[number];
-
-/**
- * What a part is drawn as: an outline, a hidden edge (HIDDEN linetype), a centre line (CENTER
- * linetype) or the section's hatch.
- */
-export type PartRole = 'visible' | 'hidden' | 'center' | 'hatch';
-
-export interface LibraryPart {
-  readonly role: PartRole;
-  readonly geom: EntityGeometry;
-}
-
-/** A corner of the flange's half profile: x along the axis from the face, y from the axis. */
-type Corner = PolylineVertex;
-
-const corner = (x: number, y: number, bulge = 0): Corner => ({ x, y, bulge });
 
 /**
  * The flange's half profile above the axis: `outer` from the face out round the ring and hub
@@ -73,26 +71,6 @@ function mirrored(corners: readonly Corner[]): Corner[] {
   // it turns back. The first corner takes the closing segment's (the last corner's) bulge.
   return corners.map((c, i) => ({ x: c.x, y: -c.y, bulge: corners.at(i - 1)!.bulge })).reverse();
 }
-
-const closed = (vertices: readonly Corner[]): EntityGeometry => ({
-  kind: 'LWPOLYLINE',
-  vertices,
-  closed: true,
-});
-
-const open = (vertices: readonly Corner[]): EntityGeometry => ({
-  kind: 'LWPOLYLINE',
-  vertices,
-  closed: false,
-});
-
-const line = (a: Vec2, b: Vec2): EntityGeometry => ({ kind: 'LINE', start: a, end: b });
-
-const circle = (r: number, center: Vec2 = { x: 0, y: 0 }): EntityGeometry => ({
-  kind: 'CIRCLE',
-  center,
-  radius: r,
-});
 
 /** Lines across the axis at x, ±y, one per x (the largest y), for y > 0. */
 function crossLines(at: readonly Corner[]): EntityGeometry[] {
@@ -208,63 +186,6 @@ function section(d: FlangeDimensions): LibraryPart[] {
     parts.push({ role: 'center', geom: line({ x: x0 - m, y }, { x: x1 + m, y }) });
   }
   return parts;
-}
-
-/** A user-defined hatch of lines at 45°, `spacing` apart, over the loops (DXF 76 = 0). */
-function hatch(loops: readonly Corner[][], spacing: number): HatchGeometry {
-  const angle = Math.PI / 4;
-  return {
-    kind: 'HATCH',
-    pattern: '_USER',
-    solid: false,
-    associative: false,
-    style: 0,
-    patternType: 0,
-    patternAngle: angle,
-    patternScale: spacing,
-    double: false,
-    // DXF 92: 1 external, 2 polyline.
-    loops: loops.map((vertices) => ({ flags: 3, polyline: { vertices, closed: true } })),
-    patternLines: [
-      {
-        angle,
-        base: { x: 0, y: 0 },
-        offset: { x: -Math.sin(angle) * spacing, y: Math.cos(angle) * spacing },
-        dashes: [],
-      },
-    ],
-    seedPoints: [],
-  };
-}
-
-/** Scales a part's geometry from inches by `s` (about the base point). */
-function scaled(g: EntityGeometry, s: number): EntityGeometry {
-  const p = (v: Vec2): Vec2 => ({ x: v.x * s, y: v.y * s });
-  const vs = (v: readonly Corner[]) => v.map((c) => ({ ...c, x: c.x * s, y: c.y * s }));
-  switch (g.kind) {
-    case 'LINE':
-      return { ...g, start: p(g.start), end: p(g.end) };
-    case 'CIRCLE':
-      return { ...g, center: p(g.center), radius: g.radius * s };
-    case 'LWPOLYLINE':
-      return { ...g, vertices: vs(g.vertices) };
-    case 'HATCH':
-      return {
-        ...g,
-        patternScale: g.patternScale * s,
-        loops: g.loops.map((l) => ({
-          ...l,
-          polyline: { ...l.polyline!, vertices: vs(l.polyline!.vertices) },
-        })),
-        patternLines: g.patternLines.map((pl) => ({
-          ...pl,
-          base: p(pl.base),
-          offset: p(pl.offset),
-        })),
-      };
-    default:
-      return g;
-  }
 }
 
 /**

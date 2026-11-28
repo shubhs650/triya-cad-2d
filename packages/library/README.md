@@ -3,6 +3,28 @@
 Pressure-vessel symbol generators: standard flanges, nozzles, supports, weld symbols and notes,
 drawn as 2D blocks to scale (PRD FR-Z1). Runs in Node and in a worker; no DOM.
 
+## Nozzle details and vessel supports (M8-02)
+
+Each is a `DetailGenerator`: its principal dimensions (`fields`, lengths in drawing units and
+angles in degrees, an optional one 0 for without), `defaults` in inches (`detailDefaults(g,
+drawingScale(model))` for a drawing), `checkDetail(g, spec)` naming the first rule a set breaks,
+and `parts(spec)`. `addDetailBlock(builder, model, g, spec)` adds it as a block named by its
+dimensions (`TRIYA_SADDLE_D60_H42_A120_…`), or finds the drawing's own (DEC-090).
+
+| Generator       | View                       | Base point                                   | Dimensions                                                                                                        |
+| --------------- | -------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `NOZZLE_SET_IN` | section on the axis        | axis at the shell's outside                  | neck OD and thickness, shell thickness, projection, internal projection, pad diameter and thickness, weld leg, shell length shown |
+| `NOZZLE_SET_ON` | section on the axis        | axis at the shell's outside                  | as set-in, without the internal projection                                                                        |
+| `SADDLE`        | end view                   | vessel axis                                  | vessel OD, height to the axis, contact angle, base length and thickness, top plate, wear plate thickness and angle, bolt spacing and hole |
+| `LEG`           | elevation                  | vessel axis on the floor                     | vessel OD, leg height and width, base plate width and thickness, hole                                             |
+| `BRACKET`       | elevation                  | vessel axis on the bearing level             | vessel OD, projection, height, base thickness, gusset end, hole and its offset, pad thickness and height          |
+| `SKIRT`         | elevation                  | skirt axis on the foundation                 | skirt OD, thickness and height, base ring OD, ID and thickness, bolt circle and hole, access opening and height    |
+| `ANCHOR_CHAIR`  | elevation from outside     | bolt centre on the foundation                | hole, gusset spacing and thickness, chair height, top plate width and thickness, base ring thickness and length shown |
+
+These are drafting outlines, not designs: the dimensions are the drafter's (a saddle's contact
+angle, say, from L. P. Zick's analysis or the vessel code), and the checks only refuse parts
+that cannot be drawn (a bolt hole off its plate, a neck thicker than its radius).
+
 ## ASME B16.5 flanges (M8-01)
 
 `b165Flange({ flangeClass, nps, type, schedule? })` gives a flange's dimensions in inches for
