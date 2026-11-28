@@ -114,7 +114,7 @@ import {
   RasterVariables,
   WipeoutVariables,
 } from '@node-projects/acad-ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { aciOfTrueColor } from '../src/map/common';
 import { readCadDocument, writeCadDocument } from '../src/index';
 
@@ -2981,5 +2981,44 @@ describe('acad-ts local patches', () => {
     expect([...doc.textStyles!].includes(spare)).toBe(false);
     // A named entry still hands its referrers to the default when it goes.
     expect(doc.textStyles!.keyOf(doc.textStyles!.get('Standard'))).toBe('STANDARD');
+  });
+
+  it('0191 a DXF read decodes its lines without a new TextDecoder for each', () => {
+    // Each line of a text DXF was decoded through a TextDecoder made for it, which a browser
+    // makes slowly: 4.2 s of the 8.4 s the I/O worker took to read bench-100k (M10-01).
+    const values = ['plain', 'Ø25 ± 0.1 °C', '漢字', 'caret ^ and \\ backslash'];
+    for (const version of [ACadVersion.AC1032, ACadVersion.AC1015]) {
+      const doc = new CadDocument(version);
+      for (const value of values) {
+        const t = new TextEntity();
+        t.value = value;
+        doc.entities!.add(t);
+      }
+      const bytes = writeCadDocument(doc, { format: 'dxf' });
+      let made = 0;
+      const Real = globalThis.TextDecoder;
+      vi.stubGlobal(
+        'TextDecoder',
+        class extends Real {
+          constructor(...args: ConstructorParameters<typeof TextDecoder>) {
+            super(...args);
+            made++;
+          }
+        },
+      );
+      let read: CadDocument;
+      try {
+        read = readCadDocument(bytes, 'dxf');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      // A decoder for each code page the reader meets, not one for each of the file's lines.
+      expect(made, ACadVersion[version]).toBeLessThan(5);
+      const texts = [...read.entities!].filter((e) => e instanceof TextEntity);
+      expect(
+        texts.map((t) => t.value),
+        ACadVersion[version],
+      ).toEqual(values);
+    }
   });
 });

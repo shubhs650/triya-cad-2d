@@ -201,12 +201,34 @@ export function decodeDxfUnicode(value: string): string {
 		hex != null && parseInt(hex, 16) >= 0x80 ? String.fromCharCode(parseInt(hex, 16)) : m);
 }
 
+const _decoders = new Map<string, TextDecoder>();
+
 export function decodeCadString(bytes: Uint8Array, codePage: string | number | null | undefined): string {
 	if (!bytes || bytes.length === 0) {
 		return '';
 	}
 
-	return new TextDecoder(getDecoderEncodingLabel(codePage)).decode(bytes);
+	const encoding = getDecoderEncodingLabel(codePage);
+	// A DXF is read a line at a time and nearly every line is ASCII, which every code page but
+	// UTF-16 decodes as itself; a browser makes a TextDecoder slowly, so they are kept.
+	if (encoding !== 'utf-16le' && bytes.length <= 1024) {
+		let ascii = true;
+		for (let i = 0; i < bytes.length; i++) {
+			if (bytes[i] >= 0x80) {
+				ascii = false;
+				break;
+			}
+		}
+		if (ascii) {
+			return String.fromCharCode.apply(null, bytes as unknown as number[]);
+		}
+	}
+	let decoder = _decoders.get(encoding);
+	if (!decoder) {
+		decoder = new TextDecoder(encoding);
+		_decoders.set(encoding, decoder);
+	}
+	return decoder.decode(bytes);
 }
 
 export function encodeUtf16Le(value: string | null | undefined): Uint8Array {
