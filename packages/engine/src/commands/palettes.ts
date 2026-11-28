@@ -11,6 +11,8 @@
 // versions of a drawing", asking for the drawing to compare with; "COMPARECLOSE": "Closes the
 // Compare toolbar and exits the compare state". Triya's compare picks its two drawings in the
 // Compare palette, which COMPARE opens and COMPARECLOSE closes.
+// LIBRARY (alias LIB) and LIBRARYCLOSE (M8-03): Triya's own, as AutoCAD 2024's BLOCKSPALETTE and
+// BLOCKSPALETTECLOSE open and close its Blocks palette: the symbol library palette.
 import type { CommandDef } from './command';
 import type { PaletteName } from './view/host';
 import { viewRequest } from './view/zoom';
@@ -46,6 +48,8 @@ function quickPropertiesCommand(): CommandDef {
 export const PALETTE_COMMANDS: readonly (() => CommandDef)[] = [
   () => paletteCommand('COMPARE', 'compare', true),
   () => paletteCommand('COMPARECLOSE', 'compare', false),
+  () => paletteCommand('LIBRARY', 'library', true),
+  () => paletteCommand('LIBRARYCLOSE', 'library', false),
   () => paletteCommand('PROPERTIES', 'properties', true),
   () => paletteCommand('PROPERTIESCLOSE', 'properties', false),
   quickPropertiesCommand,
