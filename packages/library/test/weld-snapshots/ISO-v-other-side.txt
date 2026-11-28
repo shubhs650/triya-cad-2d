@@ -1,0 +1,13 @@
+# TRIYA_WELD_ISO_0_V_F77DC461
+# Weld symbol, ISO 2553: other side V-groove, size s8, groove angle 60%%d; tail 111 ISO 5817-B; height 0.125, reference line 1, leader 0.375 at 45°
+visible LINE (0.0000, 0.0000) (0.2652, 0.2652)
+visible LWPOLYLINE closed (0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)
+hatch   HATCH SOLID [(0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)]
+visible LINE (0.2652, 0.2652) (1.2652, 0.2652)
+hidden  LINE (0.2652, 0.2152) (1.2652, 0.2152)
+visible LWPOLYLINE open (0.6402, 0.0902) (0.7652, 0.2152) (0.8902, 0.0902)
+visible TEXT "s8" (0.6089, 0.1527) h0.1250 j22
+visible TEXT "60%%d" (0.7652, 0.0589) h0.1250 j13
+visible LINE (1.2652, 0.2652) (1.3402, 0.3402)
+visible LINE (1.2652, 0.2652) (1.3402, 0.1902)
+visible TEXT "111 ISO 5817-B" (1.3714, 0.2652) h0.1250 j02

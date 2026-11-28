@@ -1,0 +1,9 @@
+# TRIYA_WELD_ISO_FILLET_0_9057C022
+# Weld symbol, ISO 2553: arrow side fillet, size a5; height 0.125, reference line 1, leader 0.375 at 45°
+visible LINE (0.0000, 0.0000) (0.2652, 0.2652)
+visible LWPOLYLINE closed (0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)
+hatch   HATCH SOLID [(0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)]
+visible LINE (0.2652, 0.2652) (1.2652, 0.2652)
+hidden  LINE (0.2652, 0.2152) (1.2652, 0.2152)
+visible LWPOLYLINE open (0.7027, 0.2652) (0.7027, 0.3902) (0.8277, 0.2652)
+visible TEXT "a5" (0.6714, 0.3277) h0.1250 j22

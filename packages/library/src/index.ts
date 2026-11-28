@@ -37,3 +37,21 @@ export {
 } from './details/detail';
 export { NOZZLE_SET_IN, NOZZLE_SET_ON } from './details/nozzle';
 export { ANCHOR_CHAIR, BRACKET, LEG, SADDLE, SKIRT, SUPPORTS } from './details/supports';
+export {
+  WELD_CONTOURS,
+  WELD_STANDARD_NAMES,
+  WELD_SYMBOL_DEFAULTS,
+  WELD_TYPES,
+  WELD_TYPE_NAMES,
+  addWeldSymbolBlock,
+  checkWeldSymbol,
+  weldSymbolDefaults,
+  weldSymbolDescription,
+  weldSymbolName,
+  weldSymbolParts,
+  type WeldContour,
+  type WeldSide,
+  type WeldStandard,
+  type WeldSymbolSpec,
+  type WeldType,
+} from './welds/weld';

@@ -1,0 +1,12 @@
+# TRIYA_WELD_AWS_SPOT_SEAM_4E388403
+# Weld symbol, AWS A2.4: arrow side spot, size 0.30; other side seam, size 0.25; height 0.125, reference line 1, leader 0.375 at 45°
+visible LINE (0.0000, 0.0000) (0.2652, 0.2652)
+visible LWPOLYLINE closed (0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)
+hatch   HATCH SOLID [(0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)]
+visible LINE (0.2652, 0.2652) (1.2652, 0.2652)
+visible CIRCLE (0.7652, 0.2027) r0.0625
+visible TEXT "0.30" (0.6714, 0.2027) h0.1250 j22
+visible CIRCLE (0.7652, 0.3277) r0.0625
+visible LINE (0.6777, 0.3089) (0.8527, 0.3089)
+visible LINE (0.6777, 0.3464) (0.8527, 0.3464)
+visible TEXT "0.25" (0.6464, 0.3277) h0.1250 j22
