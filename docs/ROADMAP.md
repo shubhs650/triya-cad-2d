@@ -605,7 +605,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 **Exit criteria:** FR-Z1–Z4 complete with tests.
 
-- [ ] **M8-01** Library data: ASME B16.5 (NPS ½–24, all classes, WN/SO/BL/LJ/SW/TH; dimensions tables with source citation) and B16.47 A/B; generators produce 2D blocks (front/side/section) at drawing units. **Acceptance:** dimension tables unit-tested against published values (owner validates a sample).
+- [~] (thread: Ship next M8 roadmap task) **M8-01** Library data: ASME B16.5 (NPS ½–24, all classes, WN/SO/BL/LJ/SW/TH; dimensions tables with source citation) and B16.47 A/B; generators produce 2D blocks (front/side/section) at drawing units. **Acceptance:** dimension tables unit-tested against published values (owner validates a sample).
 
 - [ ] **M8-02** Library: nozzle details (set-in/set-on, pad), saddle/leg/bracket/skirt/anchor-chair outlines with editable principal dims, weld symbols (AWS A2.4 / ISO 2553 builder), surface finish, standard notes. **Acceptance:** each generator snapshot-tested.
 
