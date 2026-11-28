@@ -7,7 +7,9 @@
 // each drawn as a block in the drawing's units, so it is inserted at scale 1. Favorites keeps
 // an item with its options (the Blocks palette's Favorites tab), Recent the last ten inserted;
 // both are kept on the device with the preferences, and a kept item is drawn the same size in a
-// drawing of other units. The user's own library folders come with M8-03 part 2.
+// drawing of other units. Below the catalogue, My Library holds the drafter's own drawing files
+// in folders kept on the device (M8-03 part 2, UserLibrary.tsx): drawing files dropped on the
+// palette join a folder, and their blocks are listed, previewed and inserted as the library's.
 import { useEffect, useId, useMemo, useState } from 'react';
 import {
   B16_5_CLASSES,
@@ -37,10 +39,12 @@ import {
   type WeldType,
 } from '@triya/library';
 import type { OpenDocument } from './documents';
+import { INSUNITS_NAMES } from '@triya/engine';
 import { engines } from './engine/registry';
 import {
   isKept,
   keptFor,
+  libraryBlockUnits,
   libraryDrop,
   libraryPreview,
   rememberInserted,
@@ -49,6 +53,15 @@ import {
   type LibraryPreferences,
 } from './library';
 import { StylePreview } from './StylePreview';
+import {
+  UserLibrary,
+  droppedDrawings,
+  useUserBlock,
+  useUserLibrary,
+  userMatches,
+  type UserPick,
+} from './UserLibrary';
+import { userLibrary } from './user-library';
 
 const PREVIEW = { width: 220, height: 140 };
 
@@ -534,6 +547,13 @@ export function LibraryPalette({
   const context = useContext(doc);
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<{ entry: string; item: LibraryItem; scale: number }>();
+  // A block of the user's library files, picked instead of a catalogue item.
+  const [userPick, setUserPick] = useState<UserPick>();
+  const [target, setTarget] = useState<string>();
+  const [dropping, setDropping] = useState(false);
+  const user = useUserLibrary();
+  const userBlock = useUserBlock(userPick);
+  const userPreview = useMemo(() => libraryPreview(userBlock), [userBlock]);
   const found = useMemo(() => searchLibrary(query), [query]);
   // The item as this drawing draws it: one kept from a drawing of other units is rescaled.
   const item = picked && context ? keptFor({ ...picked, name: '' }, context.scale) : undefined;
@@ -547,8 +567,26 @@ export function LibraryPalette({
   const favorite = kept !== undefined && isKept(library.favorites, kept);
 
   const pick = (e: LibraryEntry) => {
-    if (context) setPicked({ entry: e.id, item: e.defaults(context), scale: context.scale });
+    if (!context) return;
+    setUserPick(undefined);
+    setPicked({ entry: e.id, item: e.defaults(context), scale: context.scale });
   };
+  const pickKept = (k: KeptLibraryItem) => {
+    setUserPick(undefined);
+    setPicked(k);
+  };
+  const pickUser = (p: UserPick) => {
+    setPicked(undefined);
+    setUserPick(p);
+  };
+  const insertUser = () => {
+    const drop = userBlock && libraryDrop(userBlock);
+    if (drop) engines.command(doc.id, { kind: 'design-center', drop });
+  };
+  const userUnits = libraryBlockUnits(userBlock);
+  // Where files dropped on the palette (not on a folder) go: the folder chosen, else the first.
+  const folder =
+    user.state.folders.find((f) => f.name === target)?.name ?? user.state.folders[0]?.name;
   const insert = () => {
     const drop = block && libraryDrop(block);
     if (!drop || !kept) return;
@@ -557,7 +595,28 @@ export function LibraryPalette({
   };
 
   return (
-    <aside className="palette library-palette" aria-labelledby="library-title">
+    <aside
+      className={dropping ? 'palette library-palette dropping' : 'palette library-palette'}
+      aria-labelledby="library-title"
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        // Drawing files dropped here join the library, not opened.
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDropping(false);
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDropping(false);
+        void droppedDrawings(e.dataTransfer.files).then((d) => userLibrary.add(folder, d));
+      }}
+    >
       <header>
         <h2 id="library-title">Library</h2>
         <button type="button" aria-label="Close Library" onClick={onClose}>
@@ -582,8 +641,8 @@ export function LibraryPalette({
         <div className="library-browse">
           {query === '' && (
             <>
-              <KeptList label="Favorites" list={library.favorites} onPick={setPicked} />
-              <KeptList label="Recent" list={library.recent} onPick={setPicked} />
+              <KeptList label="Favorites" list={library.favorites} onPick={pickKept} />
+              <KeptList label="Recent" list={library.recent} onPick={pickKept} />
             </>
           )}
           <ul className="library-list" role="listbox" aria-label="Library items">
@@ -619,8 +678,55 @@ export function LibraryPalette({
               );
             })}
           </ul>
-          {found.length === 0 && <p className="empty">Nothing in the library matches “{query}”.</p>}
+          {found.length === 0 && userMatches(user.state, user.blocks, query) === 0 && (
+            <p className="empty">Nothing in the library matches “{query}”.</p>
+          )}
+          <UserLibrary
+            state={user.state}
+            blocks={user.blocks}
+            query={query}
+            target={folder}
+            onTarget={setTarget}
+            picked={userPick}
+            onPick={pickUser}
+          />
         </div>
+        {userPick && (
+          <section className="library-item" aria-label={userPick.block}>
+            <h3>{userPick.block}</h3>
+            <StylePreview
+              doc={doc.id}
+              preview={userPreview}
+              size={PREVIEW}
+              testId="library-preview"
+            />
+            {userBlock?.error !== undefined ? (
+              <p className="message error" role="alert">
+                {userBlock.error}
+              </p>
+            ) : (
+              <p className="library-name" data-testid="library-block-name">
+                {userPick.file} in {userPick.folder}
+              </p>
+            )}
+            {userUnits !== undefined && (
+              <p className="hint" data-testid="library-block-units">
+                {userUnits === 0
+                  ? 'Unitless: inserted at scale 1.'
+                  : `Drawn in ${INSUNITS_NAMES[userUnits]?.toLowerCase() ?? 'its units'}: Insert converts it to the drawing’s units.`}
+              </p>
+            )}
+            <div className="library-actions">
+              <button
+                type="button"
+                disabled={!userBlock || userBlock.error !== undefined}
+                onClick={insertUser}
+              >
+                Insert
+              </button>
+            </div>
+          </section>
+        )}
         {picked && item && context && (
           <section className="library-item" aria-label={entry?.title ?? 'Item'}>
             <h3>{entry?.title}</h3>

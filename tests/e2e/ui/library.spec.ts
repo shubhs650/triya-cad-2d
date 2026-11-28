@@ -6,13 +6,20 @@
 // favourite, which in millimetres is drawn the same size (60 in. is 1524 mm), survives a reload
 // and is inserted from Favorites. The catalogue and the engine side are unit-tested in
 // packages/library/test/catalogue.test.ts and packages/engine/test/commands/library.test.ts.
+// M8-03 part 2: a drafter's own symbol file (valves.dxf, in inches) dropped on the palette is
+// kept in My Library, its blocks listed, found by the search, previewed and inserted into a
+// millimetre drawing at INSERT's 25.4 conversion; a folder made with New Folder... takes a drop
+// of its own, a folder removed goes, and the folders survive a reload (the origin-private file
+// system). The folder store is unit-tested in apps/web/test/user-library.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, CircleGeometry, InsertGeometry } from '@triya/engine';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   DOCKED_PALETTES,
   DXF,
   activeCanvas,
+  dropFiles,
   enterCommand,
   expectInputsRead,
   expectShown,
@@ -22,6 +29,10 @@ import {
 } from '../app/page';
 import { blocking, checkA11y } from '../app/a11y';
 import { startApp } from '../app/server';
+
+const VALVES = fileURLToPath(
+  new URL('../../../packages/testkit/fixtures/library/valves.dxf', import.meta.url),
+);
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -209,4 +220,82 @@ test('keeps a favourite, drawn the same size in other units, after a reload', as
   await expect
     .poll(async () => (await inserted(page)).map((r) => r.name))
     .toEqual([expect.stringMatching(/^TRIYA_SADDLE_D1524_H1066.8_/)]);
+});
+
+test('keeps drawing files dropped on the palette in folders and inserts their blocks', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await open(page);
+  await insunits(page, 4);
+  await enterCommand(page, 'LIB');
+  const lib = palette(page);
+  const search = lib.getByRole('searchbox', { name: 'Search library' });
+  const mine = lib.getByRole('region', { name: 'My library folders' });
+  await expect(mine).toContainText('Drop drawing files here to keep their blocks in your library.');
+
+  // Dropped on the palette, the file is kept in My Library, not opened.
+  await dropFiles(page, lib, VALVES);
+  await expect(mine.getByRole('status')).toHaveText('Added valves.dxf to My Library.');
+  const valves = mine.getByRole('listbox', { name: 'valves.dxf' });
+  await expect(valves.getByRole('option')).toHaveText(['CHECK-VALVE', 'GATE-VALVE']);
+  await expect(page.getByRole('tab', { name: /valves/ })).toHaveCount(0);
+
+  // Found by the search, previewed, and inserted converted from its inches.
+  await search.fill('gate');
+  await expect(valves.getByRole('option')).toHaveText(['GATE-VALVE']);
+  await valves.getByRole('option', { name: 'GATE-VALVE' }).click();
+  await expect(lib.getByRole('region', { name: 'GATE-VALVE' })).toBeVisible();
+  await expect(lib.getByTestId('library-block-name')).toHaveText('valves.dxf in My Library');
+  await expect(lib.getByTestId('library-block-units')).toHaveText(
+    'Drawn in inches: Insert converts it to the drawing’s units.',
+  );
+  await expect(lib.getByTestId('library-preview')).toHaveAttribute('data-drawn', /library/);
+  await shot(page, '4-user-library-block');
+  expect(blocking(await checkA11y(page))).toEqual([]);
+  await insertAt(page, { x: 260, y: 240 });
+  await expect.poll(async () => (await inserted(page)).length).toBe(1);
+  const [ref] = await inserted(page);
+  expect(ref!.name).toBe('GATE-VALVE');
+  expect(ref!.scale).toBeCloseTo(25.4, 9);
+  expect(ref!.largest).toBeCloseTo(0.5, 9);
+  await expect(log(page)).toContainText('Block(s) added: GATE-VALVE.');
+  await shot(page, '5-user-block-inserted');
+
+  // A folder of the drafter's naming takes a drop of its own.
+  await search.fill('');
+  await mine.getByRole('button', { name: 'New Folder...' }).click();
+  await mine.getByRole('textbox', { name: 'New folder name' }).fill('Piping');
+  await page.keyboard.press('Enter');
+  const folder = (name: string) =>
+    mine.locator('.library-folder', {
+      has: page.getByRole('button', { name, exact: true }),
+    });
+  await expect(mine.getByRole('button', { name: 'Piping', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await dropFiles(page, folder('Piping'), VALVES);
+  await expect(mine.getByRole('status')).toHaveText('Added valves.dxf to Piping.');
+  await expect(folder('Piping').getByRole('option')).toHaveText(['CHECK-VALVE', 'GATE-VALVE']);
+  await mine.getByRole('button', { name: 'Remove folder My Library' }).click();
+  await expect(mine.getByRole('button', { name: 'My Library', exact: true })).toHaveCount(0);
+  await mine.scrollIntoViewIfNeeded();
+  await shot(page, '6-user-library-folders');
+
+  // Kept on the device: after a reload the folder and its file are there still.
+  await page.reload();
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await insunits(page, 4);
+  await expect(lib).toBeVisible();
+  await expect(mine.getByRole('button', { name: 'My Library', exact: true })).toHaveCount(0);
+  await folder('Piping').getByRole('option', { name: 'CHECK-VALVE' }).click();
+  await expect(lib.getByTestId('library-block-name')).toHaveText('valves.dxf in Piping');
+  await insertAt(page, { x: 300, y: 260 });
+  await expect.poll(async () => (await inserted(page)).length).toBe(1);
+  const [check] = await inserted(page);
+  expect(check!.name).toBe('CHECK-VALVE');
+  expect(check!.scale).toBeCloseTo(25.4, 9);
+  expect(check!.largest).toBeCloseTo(0.75, 9);
 });

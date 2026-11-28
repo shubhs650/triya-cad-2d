@@ -49,6 +49,15 @@ export async function serve(page: Page, file: string): Promise<string> {
 
 /** Drops a file, or several at once, on the app window, as dragging them from the desktop does. */
 export async function openWithDrop(page: Page, file: string | readonly string[]): Promise<void> {
+  await dropFiles(page, page.getByTestId('app'), file);
+}
+
+/** Drops a file, or several at once, on `target`, as dragging them from the desktop does. */
+export async function dropFiles(
+  page: Page,
+  target: Locator,
+  file: string | readonly string[],
+): Promise<void> {
   const files = typeof file === 'string' ? [file] : file;
   const sources = [];
   for (const f of files) sources.push({ url: await serve(page, f), name: path.basename(f) });
@@ -60,7 +69,6 @@ export async function openWithDrop(page: Page, file: string | readonly string[])
     }
     return dt;
   }, sources);
-  const target = page.getByTestId('app');
   await target.dispatchEvent('dragenter', { dataTransfer: data });
   await target.dispatchEvent('dragover', { dataTransfer: data });
   await target.dispatchEvent('drop', { dataTransfer: data });
