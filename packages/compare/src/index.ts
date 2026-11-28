@@ -10,3 +10,14 @@ export {
   type CompareStatus,
 } from './compare';
 export { PROPERTY_KEYS, type PropertyKey } from './same';
+export {
+  COMPARE_COLORS,
+  compareMarkup,
+  itemShown,
+  marksShown,
+  type CompareFilter,
+  type CompareMarkup,
+  type Mark,
+  type MarkStatus,
+  type MarkedItem,
+} from './markup';
