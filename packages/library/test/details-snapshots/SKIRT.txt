@@ -1,0 +1,17 @@
+# TRIYA_SKIRT_D60_T0.5_H96_BO72_BI54_TB1.25_BC66_HD1.5_OD18_OH36
+# Skirt support, elevation: skirt OD 60, skirt thickness 0.5, skirt height 96, base ring OD 72, base ring ID 54, base ring thickness 1.25, bolt circle 66, hole diameter 1.5, access opening diameter 18, access opening height 36
+visible LWPOLYLINE closed (-30.0000, 1.2500) (30.0000, 1.2500) (30.0000, 96.0000) (-30.0000, 96.0000)
+visible LWPOLYLINE closed (-36.0000, 0.0000) (36.0000, 0.0000) (36.0000, 1.2500) (-36.0000, 1.2500)
+hidden  LINE (-29.5000, 1.2500) (-29.5000, 96.0000)
+hidden  LINE (29.5000, 1.2500) (29.5000, 96.0000)
+hidden  LINE (-27.0000, 0.0000) (-27.0000, 1.2500)
+hidden  LINE (27.0000, 0.0000) (27.0000, 1.2500)
+hidden  LINE (-33.7500, 0.0000) (-33.7500, 1.2500)
+hidden  LINE (-32.2500, 0.0000) (-32.2500, 1.2500)
+center  LINE (-33.0000, -1.2500) (-33.0000, 2.5000)
+hidden  LINE (32.2500, 0.0000) (32.2500, 1.2500)
+hidden  LINE (33.7500, 0.0000) (33.7500, 1.2500)
+center  LINE (33.0000, -1.2500) (33.0000, 2.5000)
+visible CIRCLE (0.0000, 36.0000) r9.0000
+center  LINE (-11.2500, 36.0000) (11.2500, 36.0000)
+center  LINE (0.0000, -3.7500) (0.0000, 99.7500)

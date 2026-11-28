@@ -1,0 +1,11 @@
+# TRIYA_LEG_D48_L60_W6_BP10_TB0.75_HD0.875
+# Leg support, elevation: vessel OD 48, leg height 60, leg width 6, base plate width 10, base plate thickness 0.75, hole diameter 0.875
+visible LWPOLYLINE closed (24.0000, 0.7500) (30.0000, 0.7500) (30.0000, 60.0000) (24.0000, 60.0000)
+visible LWPOLYLINE closed (22.0000, 0.0000) (32.0000, 0.0000) (32.0000, 0.7500) (22.0000, 0.7500)
+center  LINE (27.0000, -1.2500) (27.0000, 61.2500)
+hidden  LINE (22.5625, 0.0000) (22.5625, 0.7500)
+hidden  LINE (23.4375, 0.0000) (23.4375, 0.7500)
+center  LINE (23.0000, -0.7500) (23.0000, 1.5000)
+hidden  LINE (30.5625, 0.0000) (30.5625, 0.7500)
+hidden  LINE (31.4375, 0.0000) (31.4375, 0.7500)
+center  LINE (31.0000, -0.7500) (31.0000, 1.5000)
