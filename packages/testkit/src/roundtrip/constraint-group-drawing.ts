@@ -5,7 +5,10 @@
 // on each constrained object, which lists it in its reactors. ObjectARX publishes the classes, not
 // their DXF group codes, so the bodies here are illustrative, of AutoCAD's names and shape: the
 // tests need Triya to keep whatever they hold, and the Health palette to say they are there.
-import { ACadVersion, CadDocument, Line, XYZ } from '@node-projects/acad-ts';
+// Beside them is a note whose multiline text names fonts inline (`\f` a TrueType family, `\F` a
+// font file) that no text style names, for the Health palette's Missing fonts card; the app
+// spec opens the committed copy, fixtures/health/autocad-constraints.dxf.
+import { ACadVersion, CadDocument, Line, MText, XYZ } from '@node-projects/acad-ts';
 import { writeCadDocument } from '@triya/io';
 
 /** The DXF names of the association objects the drawing holds, in the order written. */
@@ -16,6 +19,13 @@ export const CONSTRAINT_OBJECT_NAMES = [
   'ACDBASSOCGEOMDEPENDENCY',
   'ACDBASSOCGEOMDEPENDENCY',
 ] as const;
+
+/** The note's contents: Consolas inline, and the isocp font file. */
+export const INLINE_FONT_NOTE =
+  '{\\fConsolas|b0|i0|c0|p49;Constrained} lines, {\\Fisocp.shx;drawn in AutoCAD}';
+
+/** Where the app spec finds the drawing, from packages/testkit. */
+export const CONSTRAINT_FIXTURE = 'fixtures/health/autocad-constraints.dxf';
 
 export interface ConstraintGroupDrawing {
   readonly bytes: Uint8Array;
@@ -47,6 +57,11 @@ export function constraintGroupDrawing(): ConstraintGroupDrawing {
   const b = new Line(new XYZ(0, 0, 0), new XYZ(0, 30, 0));
   doc.entities!.add(a);
   doc.entities!.add(b);
+  const note = new MText();
+  note.insertPoint = new XYZ(0, -10, 0);
+  note.height = 2.5;
+  note.value = INLINE_FONT_NOTE;
+  doc.entities!.add(note);
 
   let text = new TextDecoder().decode(writeCadDocument(doc, { format: 'dxf' }));
   const seed = Number.parseInt(/\$HANDSEED\r?\n\s*5\r?\n([0-9A-F]+)/i.exec(text)![1]!, 16);

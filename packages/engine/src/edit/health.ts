@@ -112,12 +112,24 @@ export function unitsProblems(model: DocumentModel): UnitsProblem[] {
     : [];
 }
 
+/**
+ * The block records of model space and each layout. Model space is one even in a drawing with no
+ * LAYOUT objects (some programs write none; AutoCAD makes them as it opens such a file).
+ */
+function spaces(model: DocumentModel): string[] {
+  const out = model.layouts.map((l) => l.blockRecord);
+  for (const r of model.tables.blockRecords.values()) {
+    if (r.name.toUpperCase() === '*MODEL_SPACE' && !out.includes(r.handle)) out.unshift(r.handle);
+  }
+  return out;
+}
+
 /** OVERKILL's plan for each space, in drawing order, with the objects it may touch. */
 export function duplicatePlans(model: DocumentModel): OverkillPlan[] {
   const locked = (layer: string) => model.tables.layers.get(layer)?.locked === true;
-  return model.layouts.map((l) => {
+  return spaces(model).map((space) => {
     const ids: EntityId[] = [];
-    for (const id of model.blockEntities(l.blockRecord)) {
+    for (const id of model.blockEntities(space)) {
       const e = model.entity(id);
       // A viewport is a layout's window on model space, not geometry to deduplicate.
       if (e && e.geom.kind !== 'VIEWPORT' && !locked(e.layer)) ids.push(id);
@@ -153,8 +165,8 @@ const DIMENSION_KINDS = new Set(['DIMENSION', 'ARC_DIMENSION', 'LARGE_RADIAL_DIM
 export function overriddenDimensions(model: DocumentModel): EntityId[] {
   const locked = (layer: string) => model.tables.layers.get(layer)?.locked === true;
   const out: EntityId[] = [];
-  for (const l of model.layouts) {
-    for (const id of model.blockEntities(l.blockRecord)) {
+  for (const space of spaces(model)) {
+    for (const id of model.blockEntities(space)) {
       const e = model.entity(id);
       if (!e || !DIMENSION_KINDS.has(e.geom.kind) || locked(e.layer)) continue;
       if (Object.keys(dstyleOverrides(e.xdata, model)).length > 0) out.push(id);

@@ -362,6 +362,9 @@ describe('Health checks: dimensions with style overrides', () => {
         { name: 'DIMTXT', dimensions: 3 },
       ],
     });
+    // A drawing written without LAYOUT objects still has its model space checked.
+    const bare = new EngineSession({ ...dimInit(OVERRIDDEN), layouts: [] });
+    expect(bare.healthChecks().dimensionOverrides.dimensions).toBe(2);
     expect(new EngineSession(dimInit([])).healthChecks().dimensionOverrides).toEqual({
       dimensions: 0,
       styles: [],

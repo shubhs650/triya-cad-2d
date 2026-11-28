@@ -6,12 +6,20 @@
 // Use Inches, which the Drawing card follows; AUTOCONSTRAIN on the line shows on the Constraints
 // card, whose Parameters Manager... opens the palette. The checks and fixes are unit-tested in
 // packages/engine/test/edit/health.test.ts.
+// Part 2, on the thread-authored autocad-constraints.dxf (packages/testkit/src/roundtrip/
+// constraint-group-drawing.ts): AutoCAD's constraint group shows on the Constraints card, the
+// fonts its note names inline on Missing fonts; a dimension given DIMSCALE 2 by DIMOVERRIDE shows
+// on Dimension overrides, whose Clear Overrides takes it off (one DIMOVERRIDE step, Ctrl+Z).
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { enterCommand, expectShown, openWithPicker } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 const FILE = path.join(CORPUS, 'acadsharp/dynamic-blocks/BLOCKROTATIONPARAMETER.dxf');
+const CONSTRAINED = path.join(
+  import.meta.dirname,
+  '../../../packages/testkit/fixtures/health/autocad-constraints.dxf',
+);
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -121,4 +129,80 @@ test('the Health palette checks duplicates, units, dynamic blocks and constraint
   await shot('3-constraints.png');
   await constraints.getByRole('button', { name: 'Parameters Manager…' }).click();
   await expect(page.getByRole('complementary', { name: 'Parameters Manager' })).toBeVisible();
+});
+
+test("the Health palette finds dimension overrides, inline fonts and AutoCAD's constraints (M8-07 part 2)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, CONSTRAINED);
+  await expectShown(page, path.basename(CONSTRAINED));
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Health' })
+    .click();
+  const palette = page.getByRole('complementary', { name: 'Health' });
+  const constraints = palette.getByRole('group', { name: /^Constraints/ });
+  const fonts = palette.getByRole('group', { name: /^Missing fonts/ });
+  const overrides = palette.getByRole('group', { name: /^Dimension overrides/ });
+  const references = palette.getByRole('group', { name: /^References/ });
+
+  // AutoCAD's constraint group: kept, not solved.
+  await expect(summary(constraints)).toHaveText('Constraints (1)');
+  await expect(constraints.getByTestId('autocad-constraints')).toContainText(
+    '1 constraint group made in AutoCAD',
+  );
+  // The note's inline fonts, which no text style names.
+  const fontRows = fonts.getByRole('table', { name: 'Missing fonts' });
+  await expect(fontRows.getByRole('row', { name: /^Consolas/ })).toContainText(
+    'Inline in 1 object',
+  );
+  await expect(fontRows.getByRole('row', { name: /^isocp\.shx/ })).toContainText(
+    'Inline in 1 object',
+  );
+  await expect(summary(references)).toHaveText('References (0)');
+  await expect(references).toContainText('None: the drawing attaches no other files.');
+  await expect(summary(overrides)).toHaveText('Dimension overrides (0)');
+  await constraints.scrollIntoViewIfNeeded();
+  await page.mouse.move(300, 300);
+  await shot('4-autocad-constraints.png');
+  await fonts.scrollIntoViewIfNeeded();
+  await shot('5-inline-fonts.png');
+
+  // A dimension of the long line, then DIMSCALE 2 on it alone.
+  await type(page, 'DIMLINEAR', 'Specify first extension line origin or <select object>:');
+  await type(page, '0,0', 'Specify second extension line origin:');
+  await type(page, '50,0', /^Specify dimension line location/);
+  await type(page, '25,-5', 'Command:');
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, 'E', 'Command:');
+  await type(
+    page,
+    'DIMOVERRIDE',
+    'Enter dimension variable name to override or [Clear overrides]:',
+  );
+  await type(page, 'DIMSCALE', /^Enter new value for dimension variable/);
+  await type(page, '2', 'Enter dimension variable name to override or [Clear overrides]:');
+  await type(page, '', 'Select objects:');
+  await type(page, 'L', /^Select objects/);
+  await type(page, '', 'Command:');
+  await expect(summary(overrides)).toHaveText('Dimension overrides (1)', { timeout: 15_000 });
+  await expect(overrides).toContainText('DIMSCALE');
+  const styles = overrides.getByRole('table', { name: 'Dimension overrides' });
+  await expect(styles.getByRole('row', { name: /^Standard/ })).toContainText('1');
+  await overrides.scrollIntoViewIfNeeded();
+  await page.mouse.move(300, 300);
+  await shot('6-dimension-overrides.png');
+
+  // Clear Overrides: one DIMOVERRIDE undo step.
+  await overrides.getByRole('button', { name: 'Clear Overrides' }).click();
+  await expect(summary(overrides)).toHaveText('Dimension overrides (0)', { timeout: 15_000 });
+  await expect(overrides).toContainText('None: every dimension draws as its style says.');
+  await page.keyboard.press('Control+z');
+  await expect(summary(overrides)).toHaveText('Dimension overrides (1)', { timeout: 15_000 });
+  await overrides.getByRole('button', { name: 'Dimension Style…' }).click();
+  await expect(page.getByRole('dialog', { name: /Dimension Style Manager/ })).toBeVisible();
 });
