@@ -18,6 +18,7 @@ import type {
   PaperView,
   PurgeHealth,
 } from '@triya/engine';
+import type { LibraryAnswer, LibraryItem } from '@triya/library';
 
 export type EngineRequest =
   /** `changes`: a recovered drawing's change log, replayed onto `init` (M2-14). */
@@ -34,6 +35,8 @@ export type EngineRequest =
   | { readonly type: 'health-checks'; readonly id: number }
   /** The layers objects are on: the Layer Properties Manager's All Used Layers (M5-07 part 5). */
   | { readonly type: 'layers-in-use'; readonly id: number }
+  /** The library palette's drawing context, and `item` as a block for it (M8-03). */
+  | { readonly type: 'library'; readonly id: number; readonly item?: LibraryItem }
   /** A render worker's end of a change channel (M2-62), transferred; `id` names the link. */
   | { readonly type: 'renderer'; readonly id: number; readonly port: MessagePort }
   /** The renderer linked as `id` is gone: stop posting to it. */
@@ -47,6 +50,7 @@ export type EngineReply =
   | { readonly type: 'purge-health'; readonly id: number; readonly health: PurgeHealth }
   | { readonly type: 'health-checks'; readonly id: number; readonly checks: HealthChecks }
   | { readonly type: 'layers-in-use'; readonly id: number; readonly layers: readonly Handle[] }
+  | { readonly type: 'library'; readonly id: number; readonly library: LibraryAnswer }
   | { readonly type: 'error'; readonly message: string; readonly id?: number };
 
 /** One end of the channel, typed by shape: a Worker, a worker's `self` or a test double. */

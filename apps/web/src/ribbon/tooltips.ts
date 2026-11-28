@@ -153,7 +153,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   cut: 'Removes objects and puts them on the clipboard.',
   'copy-clip': 'Copies objects to the clipboard.',
   'copy-base': 'Copies objects to the clipboard with a base point you pick.',
-  // Insert > Reference, Import, Data
+  // Insert > Reference, Library, Import, Data
   attach: 'Attaches a drawing, image or PDF as a reference.',
   xattach: 'Attaches a drawing as an external reference.',
   imageattach: 'Attaches a raster image.',
@@ -168,6 +168,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'underlay-snap': 'Snaps to the geometry of PDF underlays, or stops snapping to it.',
   'underlay-snap-on': 'Snaps to the geometry of PDF underlays.',
   'underlay-snap-off': 'Stops snapping to the geometry of PDF underlays.',
+  library:
+    'Shows the Library palette, to insert flanges, nozzles, supports, weld and surface symbols and notes.',
   'pdf-import': 'Attaches a PDF page as an underlay to trace over.',
   field: 'Inserts a field that updates with the data it shows.',
   // Text Editor (M7-02 part 5)
@@ -274,6 +276,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   'viewport-config': 'Splits the drawing area into tiled model viewports.',
   'layers-palette': 'Manages layers and their properties.',
   designcenter: 'Shows DesignCenter, to browse and insert content from drawings.',
+  'library-palette':
+    'Shows the Library palette: flanges, nozzles, supports, weld and surface symbols, notes.',
   references: 'Shows the External References palette.',
   health: 'Shows the Health palette: what the drawing holds that may need attention.',
   diagnostics:

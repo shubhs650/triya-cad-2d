@@ -27,6 +27,7 @@ import {
 } from './drafting';
 import type { DynMode } from './dynamic-input';
 import { normalizePaletteRecent } from './palette';
+import { DEFAULT_LIBRARY, normalizeLibrary, type LibraryPreferences } from './library';
 import { normalizeKeyOverrides, type KeyOverrides } from './keymap';
 import {
   DEFAULT_LAYER_COLUMNS,
@@ -190,6 +191,8 @@ export interface Preferences {
   readonly browserNoticeSeen: boolean;
   /** The Layer Properties Manager's columns and sort (M5-05 part 3, layer-columns.ts). */
   readonly layerColumns: LayerColumnSettings;
+  /** The library palette's favourites and recent items (M8-03, library.ts). */
+  readonly library: LibraryPreferences;
   /** The palette stack's tabs, side and width (M7-03, palette-stack.ts). */
   readonly palettes: PaletteLayout;
   /**
@@ -308,6 +311,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   errorReports: true,
   browserNoticeSeen: false,
   layerColumns: DEFAULT_LAYER_COLUMNS,
+  library: DEFAULT_LIBRARY,
   palettes: DEFAULT_PALETTE_LAYOUT,
   defaultTemplate: DEFAULT_TEMPLATE_ID,
 };
@@ -399,6 +403,7 @@ export function normalizePreferences(raw: unknown): Preferences {
     errorReports: bool(raw['errorReports'], d.errorReports),
     browserNoticeSeen: bool(raw['browserNoticeSeen'], d.browserNoticeSeen),
     layerColumns: normalizeLayerColumns(raw['layerColumns']),
+    library: normalizeLibrary(raw['library']),
     palettes: normalizePaletteLayout(raw['palettes']),
     defaultTemplate:
       typeof raw['defaultTemplate'] === 'string' && raw['defaultTemplate'].length <= 260

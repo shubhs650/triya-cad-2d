@@ -586,13 +586,14 @@ export interface PlotScript {
  * The palettes a command opens or closes (M2-21): the Properties palette, and Quick Properties
  * (QUICKPROPERTIES, M2-35 part 21), shown for the objects selected whatever QPMODE says;
  * DesignCenter (ADCENTER, ADCCLOSE; M5-11); Command History (TEXTSCR, GRAPHSCR; M7-06); Compare
- * (COMPARE, COMPARECLOSE; M8-06).
+ * (COMPARE, COMPARECLOSE; M8-06); the library (LIBRARY, LIBRARYCLOSE; M8-03).
  */
 export type PaletteName =
   | 'compare'
   | 'designcenter'
   | 'history'
   | 'layers'
+  | 'library'
   | 'parameters'
   | 'properties'
   | 'quick'

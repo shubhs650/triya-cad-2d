@@ -21,6 +21,7 @@
     "@triya/engine": "workspace:*",
     "@triya/hatch": "workspace:*",
     "@triya/io": "workspace:*",
+    "@triya/library": "workspace:*",
     "@triya/pdf": "workspace:*",
     "@triya/render": "workspace:*",
     "@triya/text": "workspace:*",

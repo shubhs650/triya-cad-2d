@@ -128,6 +128,8 @@ Reference (expanded)
   icon        bind<merge>
   icon        underlay-layers<layer_diagonal>
   icon        underlay-snap<target> ▾ [underlay-snap-on<target>, underlay-snap-off<target>]
+Library (expanded)
+  small-label library<library>
 Import (expanded)
   small-label pdf-import<arrow_import>
 Data (expanded)
@@ -273,6 +275,7 @@ Palettes (expanded)
   small-label properties<apps_list_detail>
   icon        layers-palette<layer>
   icon        designcenter<app_folder>
+  icon        library-palette<library>
   icon        references<link_multiple>
   icon        health<heart_pulse>
   icon        history<history>
@@ -296,7 +299,7 @@ Interface (collapsed)
 ### step 4
 Palettes (compressed)
   icon        properties<apps_list_detail>
-  ▾ layers-palette, designcenter, references, health, history
+  ▾ layers-palette, designcenter, library-palette, references, health, history
 
 ### step 5
 Navigate (compressed)

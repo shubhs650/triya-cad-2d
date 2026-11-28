@@ -14,6 +14,7 @@ import {
   type HealthChecks,
   type PurgeHealth,
 } from '@triya/engine';
+import { libraryAnswer, type LibraryAnswer, type LibraryItem } from '@triya/library';
 import type { ChangeLink } from '@triya/render';
 import type { Endpoint, EngineReply, EngineRequest } from './protocol';
 import { ENGINE_SERVICES } from './services';
@@ -39,6 +40,10 @@ export class EngineHost {
   readonly #health = new Map<number, { resolve(h: PurgeHealth): void; reject(e: Error): void }>();
   readonly #checks = new Map<number, { resolve(h: HealthChecks): void; reject(e: Error): void }>();
   readonly #used = new Map<number, { resolve(h: Handle[]): void; reject(e: Error): void }>();
+  readonly #library = new Map<
+    number,
+    { resolve(a: LibraryAnswer): void; reject(e: Error): void }
+  >();
   readonly #commandListeners = new Set<(o: CommandOutput) => void>();
   #nextId = 1;
   #nextLink = 1;
@@ -171,6 +176,17 @@ export class EngineHost {
     });
   }
 
+  /** The library palette's drawing context, and `item` as a block for the drawing (M8-03). */
+  library(item?: LibraryItem): Promise<LibraryAnswer> {
+    if (this.#disposed) return Promise.reject(new Error('engine host disposed'));
+    if (this.#session) return Promise.resolve(libraryAnswer(this.#session.model, item));
+    const id = this.#nextId++;
+    return new Promise((resolve, reject) => {
+      this.#library.set(id, { resolve, reject });
+      this.#worker!.postMessage(item ? { type: 'library', id, item } : { type: 'library', id });
+    });
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#worker?.terminate();
@@ -180,6 +196,7 @@ export class EngineHost {
       ...this.#health.values(),
       ...this.#checks.values(),
       ...this.#used.values(),
+      ...this.#library.values(),
     ]) {
       p.reject(new Error('engine host disposed'));
     }
@@ -188,6 +205,7 @@ export class EngineHost {
     this.#health.clear();
     this.#checks.clear();
     this.#used.clear();
+    this.#library.clear();
     this.#commandListeners.clear();
   }
 
@@ -218,6 +236,13 @@ export class EngineHost {
       else used.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
       return;
     }
+    const library = m.id === undefined ? undefined : this.#library.get(m.id);
+    if (library) {
+      this.#library.delete(m.id!);
+      if (m.type === 'library') library.resolve(m.library);
+      else library.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
+      return;
+    }
     const blocks = m.id === undefined ? undefined : this.#blocks.get(m.id);
     if (blocks) {
       this.#blocks.delete(m.id!);
@@ -230,7 +255,8 @@ export class EngineHost {
       m.type === 'save-views' ||
       m.type === 'purge-health' ||
       m.type === 'health-checks' ||
-      m.type === 'layers-in-use'
+      m.type === 'layers-in-use' ||
+      m.type === 'library'
     )
       return;
     const p = m.id === undefined ? undefined : this.#pending.get(m.id);

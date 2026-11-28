@@ -86,6 +86,9 @@ importers:
       '@triya/io':
         specifier: workspace:*
         version: link:../../packages/io
+      '@triya/library':
+        specifier: workspace:*
+        version: link:../../packages/library
       '@triya/pdf':
         specifier: workspace:*
         version: link:../../packages/pdf

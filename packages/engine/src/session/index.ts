@@ -1138,8 +1138,13 @@ export class EngineSession {
         return this.#bus.designCenter({
           items: (Array.isArray(items) ? items : []).filter(isDesignCenterItem),
           ...(typeof insert?.block === 'string' && {
-            insert: { block: insert.block, ...(point && { at: { x: point.x, y: point.y } }) },
+            insert: {
+              block: insert.block,
+              ...(point && { at: { x: point.x, y: point.y } }),
+              ...(insert.onScreen === true && { onScreen: true }),
+            },
           }),
+          ...(input.drop.library === true && { library: true }),
         });
       }
       case 'reference-path':

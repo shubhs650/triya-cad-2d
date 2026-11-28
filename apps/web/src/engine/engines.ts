@@ -18,6 +18,7 @@ import type {
   PaperView,
   PurgeHealth,
 } from '@triya/engine';
+import type { LibraryAnswer, LibraryItem } from '@triya/library';
 import type { ChangeLink } from '@triya/render';
 import type { EngineHost } from './host';
 
@@ -225,6 +226,15 @@ export class Engines {
   async layersInUse(doc: number): Promise<Handle[] | undefined> {
     const engine = this.#engines.get(doc);
     return engine ? engine.layersInUse() : undefined;
+  }
+
+  /**
+   * The library palette's context of a drawing, and `item` as a block for it (M8-03); undefined
+   * when the drawing is not open.
+   */
+  async library(doc: number, item?: LibraryItem): Promise<LibraryAnswer | undefined> {
+    const engine = this.#engines.get(doc);
+    return engine ? engine.library(item) : undefined;
   }
 
   /** Applies an edit to a drawing and shows it on every canvas of that drawing. */
