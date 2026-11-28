@@ -1316,6 +1316,7 @@ button {
 
 .redline-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 

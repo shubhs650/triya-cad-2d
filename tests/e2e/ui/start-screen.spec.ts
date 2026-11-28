@@ -10,7 +10,7 @@
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, EntityGeometry } from '@triya/engine';
-import { expectDrawn, expectShown } from '../app/page';
+import { expectDrawn, expectInputsRead, expectShown } from '../app/page';
 import { startApp } from '../app/server';
 
 const PDF = path.join(
@@ -164,7 +164,11 @@ test.describe('start screen', () => {
     await type(page, '25.4,25.4', 'Specify second point:');
     await type(page, '76.2,25.4', 'Specify new length or [Points] <1.0000>:');
     await type(page, '50', 'Command:');
-    await expect(card).toHaveCount(0);
+    // On to the markup (M8-04, pdf-redline.spec.ts), once REDLINE is current and the page shown.
+    await expect(card).toContainText('Mark up pdf-underlay.pdf');
+    await expect(card.getByRole('button', { name: 'Revision Cloud' })).toBeEnabled();
+    await expectInputsRead(page);
+    await expect(prompt(page)).toHaveText('Command:');
 
     const after = (await underlays(page)).at(-1)!;
     // 50 / 50.8 of 25.4 units an inch: 25, about the corner at the origin.
@@ -199,7 +203,11 @@ test.describe('start screen', () => {
     await (await chooser).setFiles(PDF);
     await expectShown(page, 'pdf-underlay.dxf');
     const card = page.getByRole('region', { name: 'Red-line PDF' });
+    // Not now goes on to the markup at the printed size (M8-04); Done withdraws the card.
     await card.getByRole('button', { name: 'Not now' }).click();
+    await expect(card).toContainText('Mark up pdf-underlay.pdf');
+    await expect(card.getByRole('button', { name: 'Revision Cloud' })).toBeEnabled();
+    await card.getByRole('button', { name: 'Done' }).click();
     await expect(card).toHaveCount(0);
   });
 });

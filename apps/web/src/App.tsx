@@ -2979,6 +2979,10 @@ export function App() {
               onCalibrate={() => {
                 for (const input of redline.calibrate(active.id)) engines.command(active.id, input);
               }}
+              onSkip={() => {
+                for (const input of redline.skip(active.id)) engines.command(active.id, input);
+              }}
+              onRun={(name) => engines.command(active.id, { kind: 'invoke', name })}
             />
           )}
           {state.docs.length === 0 && (

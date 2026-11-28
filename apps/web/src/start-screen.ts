@@ -226,7 +226,7 @@ export const GUIDE: readonly GuideSection[] = [
         commands: [{ name: 'PDFATTACH' }, { name: 'SCALE', aliases: ['SC'] }],
       },
       {
-        text: 'Then mark it up with revision clouds, text and leaders, and plot it to PDF.',
+        text: 'Then mark it up on layer REDLINE, in red: the card’s Revision Cloud, Text and Leader draw over the page, and Plot… plots the page with the markup.',
         commands: [
           { name: 'REVCLOUD' },
           { name: 'MTEXT', aliases: ['T'] },
