@@ -204,7 +204,7 @@ Since DEC-047 no gate needs the owner or AutoCAD. The AutoCAD AUDIT sweep is rep
 ```
 pnpm test               # unit + command + round-trip (public), with coverage gates (test-reports/coverage/)
 pnpm test:fidelity      # Playwright fidelity on public corpus (TRIYA_UPDATE_GOLDEN=1 rewrites golden images)
-pnpm test:perf          # perf targets
+pnpm test:perf          # perf targets, one spec at a time (--workers=1): each times the app, so none may load the runner for another (M10-01)
 pnpm test:offline       # offline/privacy
 pnpm test:ui            # dialogs, ribbon, grips
 pnpm test:io            # @triya/io worker in Chromium via a Vite dev server (M0-03; responsiveness, progress, cancel M1-06)
