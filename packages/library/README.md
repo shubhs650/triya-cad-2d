@@ -34,7 +34,7 @@ each as the text to show), weld all around, field weld, the tail's reference and
 the text height, reference line length and leader length and angle in drawing units
 (`weldSymbolDefaults(drawingScale(model))`). `checkWeldSymbol(spec)` names the first rule a spec
 breaks; `addWeldSymbolBlock(builder, model, spec)` adds it as a block based at the arrow's tip
-(`TRIYA_WELD_AWS_FILLET_0_<digest>`), its texts in the drawing's current text style (DEC-092).
+(`TRIYA_WELD_AWS_FILLET_0_<digest>`), its texts in the drawing's current text style (DEC-093).
 
 | Standard | Arrow side                 | Other side                                       |
 | -------- | -------------------------- | ------------------------------------------------ |

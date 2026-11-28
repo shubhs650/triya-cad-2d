@@ -1,4 +1,4 @@
-// Weld symbols (M8-02 part 2, DEC-092): the welding symbol of AWS A2.4 or ISO 2553 (system A)
+// Weld symbols (M8-02 part 2, DEC-093): the welding symbol of AWS A2.4 or ISO 2553 (system A)
 // built from what the drafter states for each side of the joint, as a block.
 //
 // Placement: the base point is the arrow's tip, on the joint. The leader runs from it at the
