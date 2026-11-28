@@ -5,7 +5,6 @@ import {
   clearDimensionOverridesCommand,
   dragMotion,
   dstyleOverrides,
-  type DimensionGeometry,
   type Entity,
 } from '../../src/index';
 import { snapshot } from '../model/fixtures';
