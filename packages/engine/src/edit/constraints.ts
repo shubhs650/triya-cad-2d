@@ -252,14 +252,77 @@ export interface ConstraintSolver {
 /** Loads the solver once it is first needed (a WebAssembly module of its own). */
 export type ConstraintService = () => Promise<ConstraintSolver>;
 
-/** The drawing's geometric constraints. */
-export function geometricConstraints(model: DocumentModel): GeometricConstraintObject[] {
-  return [...model.objects.values()].filter(isGeometricConstraint);
+// Constraints among the objects of a block definition (M9-13): an associative array's source
+// block, a block BLOCK made of constrained objects. AutoCAD keeps them with the definition and
+// solves them in the Block Editor only (AutoCAD 2024 Help, "About Constraints in Blocks"), so
+// Triya's drawing keeps them as it keeps any other, naming the block's objects, and they act
+// only where their objects are drawn and edited: model space, a layout, or the block the Block
+// Editor shows. ARRAYEDIT Source hands them to the objects it opens for editing and back
+// (assoc-array.ts). Elsewhere they are held in the block: not drawn, picked or solved.
+
+// The block the Block Editor shows in each drawing, which the bus sets (M5-02): its objects'
+// constraints act while it is open.
+const editorBlocks = new WeakMap<DocumentModel, Handle>();
+
+/** Sets (or, with none, clears) the block the Block Editor shows in `model`. */
+export function setConstraintEditorBlock(model: DocumentModel, block?: Handle): void {
+  if (block === undefined) editorBlocks.delete(model);
+  else editorBlocks.set(model, block);
 }
 
-/** The drawing's dimensional constraints (M9-03 part 3). */
+/** Where constraints act: model space, the layouts' spaces and the Block Editor's block. */
+export function constraintSpaces(model: DocumentModel): Set<Handle> {
+  const out = new Set<Handle>(model.layouts.map((l) => l.blockRecord));
+  for (const r of model.tables.blockRecords.values()) {
+    if (r.name.toUpperCase() === '*MODEL_SPACE') out.add(r.handle);
+  }
+  const shown = editorBlocks.get(model);
+  if (shown !== undefined) out.add(shown);
+  return out;
+}
+
+/**
+ * Whether `c` is held in a block definition (M9-13): an object it names is in a block that is
+ * not where constraints act. An object the drawing no longer holds does not hold it there: the
+ * upkeep drops the constraints of objects removed.
+ */
+export function heldInBlock(
+  model: DocumentModel,
+  c: { readonly refs: readonly ConstraintRef[] },
+  spaces: ReadonlySet<Handle> = constraintSpaces(model),
+): boolean {
+  return c.refs.some((r) => {
+    const e = model.entityByHandle(r.entity);
+    return e !== undefined && !spaces.has(e.owner);
+  });
+}
+
+/** The constraints among `all` that act (not held in a block). */
+function acting<C extends { readonly refs: readonly ConstraintRef[] }>(
+  model: DocumentModel,
+  all: C[],
+): C[] {
+  if (all.length === 0) return all;
+  const spaces = constraintSpaces(model);
+  return all.filter((c) => !heldInBlock(model, c, spaces));
+}
+
+/** The drawing's geometric constraints, those held in blocks aside (M9-13). */
+export function geometricConstraints(model: DocumentModel): GeometricConstraintObject[] {
+  return acting(model, [...model.objects.values()].filter(isGeometricConstraint));
+}
+
+/** The drawing's dimensional constraints (M9-03 part 3), those held in blocks aside (M9-13). */
 export function dimensionalConstraints(model: DocumentModel): DimensionalConstraintObject[] {
-  return [...model.objects.values()].filter(isDimensionalConstraint);
+  return acting(model, [...model.objects.values()].filter(isDimensionalConstraint));
+}
+
+/** The dimensional constraints held in blocks (M9-13), whose parameters the table still holds. */
+export function heldDimensionalConstraints(model: DocumentModel): DimensionalConstraintObject[] {
+  const all = [...model.objects.values()].filter(isDimensionalConstraint);
+  if (all.length === 0) return all;
+  const spaces = constraintSpaces(model);
+  return all.filter((c) => heldInBlock(model, c, spaces));
 }
 
 /** The drawing's user parameters (M9-03 part 6). */
@@ -272,7 +335,9 @@ export function userParameters(model: DocumentModel): UserParameterObject[] {
  * the Parameters Manager groups them: what the solver builds the parameter table from.
  */
 export function parameterObjects(model: DocumentModel): ParameterObject[] {
-  return [...dimensionalConstraints(model), ...userParameters(model)];
+  // Those held in blocks too (M9-13): one table, so a name stays the drawing's only one and an
+  // expression naming a block's parameter still has its value.
+  return [...[...model.objects.values()].filter(isDimensionalConstraint), ...userParameters(model)];
 }
 
 /**

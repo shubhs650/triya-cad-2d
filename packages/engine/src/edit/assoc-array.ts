@@ -41,6 +41,8 @@ import {
   type EditReport,
 } from './edit';
 import { followedBy, moveBy, similarity, type Similarity } from './similarity';
+import { constraintsOf, handConstraints, putBack } from './block-constraints';
+import { carryConstraints, type CarriedConstraint } from './constraint-copy';
 import type { TransformOptions } from './transform';
 
 /** The record of the array whose INSERT is `insert`, if it is one Triya made. */
@@ -267,6 +269,9 @@ export function makeAssocArray(
     b.removeBlock(source);
     return { insert: undefined, report };
   }
+  // The constraints among the objects arrayed go into the source block with them (M9-13); a
+  // move keeps every one.
+  handConstraints(b, report.copies, moveBy({ x: -a.origin.x, y: -a.origin.y }));
   eraseObjects(b, model, ids);
   const block = b.addBlock({ name: names.take('U'), basePoint: zero, flags: 1 }).handle;
   const dictionary = b.allocateHandle();
@@ -315,7 +320,9 @@ export function copyAssocArrays(
     for (const from of [record.source, ...(record.replaced ?? []).map((r) => r.block)]) {
       if (blocks.has(from)) continue;
       const to = b.addBlock({ name: names.take('U'), basePoint: zero, flags: 1 }).handle;
-      copyObjects(b, model, b.blockEntities(from), moveBy(zero), {}, to, names);
+      const copied = copyObjects(b, model, b.blockEntities(from), moveBy(zero), {}, to, names);
+      // With the constraints the block holds (M9-13), under names of their own, as COPY's.
+      carryConstraints(b, model, copied.copies, moveBy(zero));
       blocks.set(from, to);
     }
     const block = b.addBlock({ name: names.take('U'), basePoint: zero, flags: 1 }).handle;
@@ -487,6 +494,15 @@ export interface SourceEdit {
   readonly original: readonly Entity[];
   /** The objects being edited, by handle. */
   readonly handles: Set<Handle>;
+  /**
+   * The constraints the block's objects held when the edit opened, as they were (M9-13): handed
+   * to the objects being edited, or set aside (`aside`), and put back by ARRAYCLOSE's No.
+   */
+  readonly constraints: readonly CarriedConstraint[];
+  /** Those the item's place could not carry: out of the drawing until ARRAYCLOSE. */
+  readonly aside: readonly CarriedConstraint[];
+  /** Each of the block's objects (by handle) → the one opened in its place. */
+  readonly opened: ReadonlyMap<Handle, Handle>;
 }
 
 // One editing state per drawing, as AutoCAD's: kept outside the drawing's data, so a save
@@ -516,6 +532,10 @@ export function openSourceEdit(
   const ids = b.blockEntities(block);
   const original = ids.map((id) => b.entity(id)!);
   const report = copyObjects(b, model, ids, place, transform, space);
+  // The block's constraints act on the objects opened (M9-13), so edits to them are solved.
+  const constraints = constraintsOf(b, report.copies);
+  const aside = handConstraints(b, report.copies, place);
+  for (const c of aside) b.removeObject(c.handle);
   sourceEdits.set(model, {
     insert: insert.handle,
     record: record.handle,
@@ -525,6 +545,9 @@ export function openSourceEdit(
     place,
     original,
     handles: new Set(report.ids.map((id) => b.entity(id)!.handle)),
+    constraints,
+    aside,
+    opened: new Map([...report.copies].map(([h, e]) => [h, e.handle])),
   });
   remakeAssocArray(b, model, insert, record, record.params);
   return report;
@@ -562,7 +585,12 @@ export function syncSourceEdit(
  * objects go back to what they were; the objects being edited leave the drawing and the item
  * returns to the array. Returns false when nothing was being edited.
  */
-export function closeSourceEdit(b: ChangeSetBuilder, model: DocumentModel, save: boolean): boolean {
+export function closeSourceEdit(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  save: boolean,
+  transform?: TransformOptions,
+): boolean {
   const edit = sourceEdits.get(model);
   if (!edit) return false;
   sourceEdits.delete(model);
@@ -570,12 +598,44 @@ export function closeSourceEdit(b: ChangeSetBuilder, model: DocumentModel, save:
     const kept = new Set(edit.original.map((e) => e.id));
     for (const id of b.blockEntities(edit.block)) if (!kept.has(id)) b.removeEntity(id);
     for (const e of edit.original) if (!b.entity(e.id)) b.restoreEntity(e);
+    // The constraints as they were (M9-13); those drawn among the objects edited go with them.
+    for (const c of edit.constraints) putBack(b, c);
+    for (const c of constraintsOf(b, edit.handles)) b.removeObject(c.handle);
   }
+  if (save) keepEditedConstraints(b, model, edit, transform);
   for (const id of sourceEditIds(model, edit)) b.removeEntity(id);
   const insert = model.entityByHandle(edit.insert);
   const record = model.objects.get(edit.record);
   if (insert && isAssocArray(record)) remakeAssocArray(b, model, insert, record, record.params);
   return true;
+}
+
+/**
+ * ARRAYCLOSE's Yes with constraints (M9-13): the objects edited go into the block once more, so
+ * the constraints among them can name the block's objects, and those set aside come back on the
+ * objects that stand for theirs. Without constraints the block stays as the last edit left it.
+ */
+function keepEditedConstraints(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  edit: SourceEdit,
+  transform?: TransformOptions,
+): void {
+  const ids = sourceEditIds(model, edit);
+  const standing = new Set(ids.map((id) => b.entity(id)!.handle));
+  if (ids.length === 0 || !b.block(edit.block)) return;
+  if (edit.aside.length === 0 && constraintsOf(b, standing).length === 0) return;
+  for (const id of b.blockEntities(edit.block)) b.removeEntity(id);
+  const back = similarity(invert(edit.place.m));
+  const copies = copyObjects(b, model, ids, back, transform, edit.block).copies;
+  handConstraints(b, copies, back);
+  for (const c of edit.aside) {
+    const refs = c.refs.map((r) => {
+      const now = copies.get(edit.opened.get(r.entity) ?? '');
+      return now && { ...r, entity: now.handle };
+    });
+    if (refs.every((r) => r !== undefined)) b.restoreObject({ ...c, refs } as CarriedConstraint);
+  }
 }
 
 /** Forgets an editing state whose array is gone (erased, or undone away). */

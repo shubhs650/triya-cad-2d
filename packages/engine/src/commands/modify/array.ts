@@ -1045,7 +1045,7 @@ function arrayCloseCommand(): CommandDef {
         ctx.message("The item's objects are all erased: the changes are discarded.");
         save = false;
       }
-      ctx.edit((b) => closeSourceEdit(b, ctx.model, save));
+      ctx.edit((b) => closeSourceEdit(b, ctx.model, save, mirrorOptions(ctx.model)));
     },
   };
 }

@@ -18,6 +18,7 @@ import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
 import {
+  heldDimensionalConstraints,
   parameterGroups,
   parameterObjects,
   type ConstraintService,
@@ -897,7 +898,9 @@ export class EngineSession {
     if (dims.length > 0) {
       try {
         const solver = await this.#services.constraints?.();
-        rows = solver?.parameters(dims) ?? [];
+        // A block's parameters are its own, listed in the Block Editor only (M9-13).
+        const held = new Set(heldDimensionalConstraints(this.model).map((d) => d.handle));
+        rows = (solver?.parameters(dims) ?? []).filter((r) => !held.has(r.constraint));
       } catch {
         // No solver: the commands say why when they need it; the palette lists nothing.
       }

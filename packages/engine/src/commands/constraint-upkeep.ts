@@ -31,9 +31,11 @@ import {
 } from '../edit/constraint-copy';
 import {
   constraintPointsOf,
+  constraintSpaces,
   type ConstraintSolver,
   dimensionalConstraints,
   geometricConstraints,
+  heldDimensionalConstraints,
   userParameters,
 } from '../edit/constraints';
 import type { Tolerance } from '../geom/tolerance';
@@ -193,6 +195,21 @@ function toleranceOf(ctx: CommandContext, edits: readonly Replacement<Entity>[])
 const sentence = (s: string): string =>
   `${s.charAt(0).toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? '' : '.'}`;
 
+/**
+ * The objects `changes` removed from blocks (M9-13): not from model space, a layout or the block
+ * the Block Editor shows.
+ */
+function blockObjectsRemoved(ctx: CommandContext, changes: readonly ChangeSet[]): Set<Handle> {
+  const spaces = constraintSpaces(ctx.model);
+  const out = new Set<Handle>();
+  for (const cs of changes) {
+    for (const r of cs.entities?.removed ?? []) {
+      if (!spaces.has(r.entity.owner)) out.add(r.entity.handle);
+    }
+  }
+  return out;
+}
+
 /** The parameters a dimensional constraint's expression names. */
 function names(d: ParameterObject): Set<string> {
   const out = new Set<string>();
@@ -288,8 +305,11 @@ export async function keepConstraints(
   const { dropped, kept, edits } = planUpkeep(command, net, all);
   if (dropped.length > 0) {
     ctx.edit((b) => dropped.forEach((c) => b.removeObject(c.handle)));
-    const geometric = dropped.filter((c) => isGeometricConstraint(c)).length;
-    const dimensional = dropped.length - geometric;
+    // Those a block held go with its objects unannounced (M9-13): a block redefined, purged.
+    const inBlocks = blockObjectsRemoved(ctx, changes);
+    const told = dropped.filter((c) => !c.refs.some((r) => inBlocks.has(r.entity)));
+    const geometric = told.filter((c) => isGeometricConstraint(c)).length;
+    const dimensional = told.length - geometric;
     const removed = (n: number, kind: string) =>
       n > 0 && ctx.message(`${n} ${kind} constraint${n === 1 ? '' : 's'} removed.`);
     removed(geometric, 'geometric');
@@ -299,6 +319,8 @@ export async function keepConstraints(
   // parameters (M9-03 part 6), which may name a dropped one.
   let parameters: ParameterObject[] = [
     ...kept.filter((c): c is DimensionalConstraintObject => !isGeometricConstraint(c)),
+    // Those held in blocks keep their rows, which an expression may name (M9-13).
+    ...heldDimensionalConstraints(ctx.model),
     ...userParameters(ctx.model),
   ];
   const named = dropped.filter(

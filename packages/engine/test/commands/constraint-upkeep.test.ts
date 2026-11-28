@@ -7,6 +7,7 @@ import {
   DROPS_CONSTRAINTS,
   MOVES_CHANGED_VALUES,
   carriedKind,
+  geometricConstraints,
   isDimensionalConstraint,
   isGeometricConstraint,
   moveBy,
@@ -489,15 +490,16 @@ describe('the rest of constraint upkeep (M9-10)', () => {
     expect(three.added()).toEqual([]);
   });
 
-  it('an associative array takes its source, and so its constraints, out of the drawing', async () => {
+  it('an associative array takes its source, and its constraints with it into the source block (M9-13)', async () => {
     const d = drawing(undefined, { variables: new Map([['ARRAYASSOCIATIVITY', 1]]) });
     await d.bus.script(['ARRAYRECT']);
     await pickBoth(d);
     await d.bus.submit('');
     await d.bus.script(['']);
     expect(d.byHandle('30')).toBeUndefined();
-    expect(d.constraints()).toEqual(['C3:horizontal:41', 'C4:fix:31']);
-    expect(d.log).toContain('2 geometric constraints removed.');
+    // Held in the block (block-constraints.test.ts): the drawing's acting ones are the rest.
+    expect(geometricConstraints(d.model).map((c) => c.handle)).toEqual(['C3', 'C4']);
+    expect(d.log.some((l) => /constraints? removed/.test(l))).toBe(false);
   });
 
   it('grip Copy gives each copy the constraints, and Undo takes the last copy’s back', async () => {
