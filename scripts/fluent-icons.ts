@@ -82,6 +82,7 @@ const NAMES = [
   'keyboard',
   'layer',
   'layer_diagonal',
+  'library',
   'line',
   'link',
   'link_dismiss',
