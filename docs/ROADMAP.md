@@ -659,7 +659,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 **Exit criteria:** all PRD §11 success criteria and §12 targets pass; drafter sessions done; docs complete; v1.0.0 tagged.
 
-- [ ] **M10-01** Performance pass to T1–T3, T5–T7 on the generated bench drawings (DEC-045); memory leak check; decide WebGL trigger if needed (needs-human if triggered). **Acceptance:** perf CI job green with margins recorded.
+- [~] (thread: Ship next M8 roadmap task) **M10-01** Performance pass to T1–T3, T5–T7 on the generated bench drawings (DEC-045); memory leak check; decide WebGL trigger if needed (needs-human if triggered). **Acceptance:** perf CI job green with margins recorded.
 
 - [ ] **M10-02** Fidelity sweep: T4 on the public corpus against golden images, ezdxf audit sweep on every Triya-saved DXF; private corpus run by the owner if they choose (optional, DEC-047). **Acceptance:** report in `docs/reports/`.
 
