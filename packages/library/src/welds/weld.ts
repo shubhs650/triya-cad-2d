@@ -26,16 +26,22 @@
 // included. A text is placed by its alignment point, so nothing depends on its width: the
 // reference line's length is the drafter's (long enough for their texts) and the texts stay
 // clear of the symbol whatever they say.
-import type {
-  ChangeSetBuilder,
-  DocumentModel,
-  EntityGeometry,
-  Handle,
-  TextGeometry,
-  Vec2,
-} from '@triya/engine';
+import type { ChangeSetBuilder, DocumentModel, EntityGeometry, Handle, Vec2 } from '@triya/engine';
 import { addPartsBlock } from '../block';
 import { circle, closed, corner, line, open, solid, type Corner, type LibraryPart } from '../parts';
+import {
+  BOTTOM,
+  CENTRE,
+  LEFT,
+  MIDDLE,
+  RIGHT,
+  TOP,
+  currentTextStyle,
+  digest,
+  figure,
+  oneLine,
+  text,
+} from '../texts';
 
 export const WELD_TYPES = [
   'fillet',
@@ -266,40 +272,6 @@ function placed(g: EntityGeometry, h: number, s: 1 | -1, at: Vec2): EntityGeomet
   }
 }
 
-/** DXF 72 and 73. */
-const LEFT = 0;
-const CENTRE = 1;
-const RIGHT = 2;
-const BOTTOM = 1;
-const MIDDLE = 2;
-const TOP = 3;
-
-function text(
-  value: string,
-  at: Vec2,
-  h: number,
-  halign: number,
-  valign: number,
-  style: Handle,
-): LibraryPart {
-  const geom: TextGeometry = {
-    kind: 'TEXT',
-    value,
-    style,
-    position: at,
-    alignmentPoint: at,
-    height: h,
-    rotation: 0,
-    widthFactor: 1,
-    oblique: 0,
-    halign,
-    valign,
-    backward: false,
-    upsideDown: false,
-  };
-  return { role: 'visible', geom };
-}
-
 /** A side's symbol and texts, centred at `cx` on the line at `y`, on the side `s`. */
 function sideParts(
   side: WeldSide,
@@ -437,8 +409,6 @@ export function weldSymbolParts(spec: WeldSymbolSpec, style: Handle): LibraryPar
   return parts;
 }
 
-const oneLine = (v: string | undefined) => v === undefined || !/[\r\n]/.test(v);
-
 function checkSide(side: WeldSide): string | undefined {
   if (!WELD_TYPES.includes(side.type)) return `${side.type} is not a weld type`;
   for (const [key, label] of [
@@ -491,12 +461,6 @@ export function checkWeldSymbol(spec: WeldSymbolSpec): string | undefined {
   return undefined;
 }
 
-/** A dimension in a description: at most four decimals, without trailing zeros. */
-function figure(v: number): string {
-  const s = v.toFixed(4).replace(/\.?0+$/, '');
-  return s === '-0' ? '0' : s;
-}
-
 function sideDescription(label: string, side: WeldSide): string {
   const said = [
     side.size && `size ${side.size}`,
@@ -526,16 +490,6 @@ export function weldSymbolDescription(spec: WeldSymbolSpec): string {
   return `Weld symbol, ${WELD_STANDARD_NAMES[spec.standard]}: ${said.join('; ')}`;
 }
 
-/** FNV-1a, 32 bits, of the string's UTF-16 code units, as eight hex digits. */
-function digest(s: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    hash ^= s.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).toUpperCase().padStart(8, '0');
-}
-
 /**
  * The block's name: `TRIYA_WELD_<standard>_<arrow side>_<other side>_<digest>`, a side's weld
  * type or 0 without one, and a digest of the description (the texts a drafter writes may hold
@@ -550,15 +504,6 @@ export function weldSymbolName(spec: WeldSymbolSpec): string {
     type(spec.otherSide),
     digest(weldSymbolDescription(spec)),
   ].join('_');
-}
-
-/** The style TEXTSTYLE names, else Standard, else the first (as TEXT and MTEXT start with). */
-function currentTextStyle(model: DocumentModel): Handle | undefined {
-  const name = model.header.get('$TEXTSTYLE');
-  const styles = [...model.tables.textStyles.values()];
-  const named = (n: string) => styles.find((s) => s.name.toUpperCase() === n.toUpperCase());
-  return ((typeof name === 'string' ? named(name) : undefined) ?? named('Standard') ?? styles[0])
-    ?.handle;
 }
 
 /**

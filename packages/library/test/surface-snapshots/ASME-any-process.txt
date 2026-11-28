@@ -1,0 +1,4 @@
+# TRIYA_SURF_ASME_APA_0E3FAAB2
+# Surface texture, ASME Y14.36: any process allowed; height 0.125, extension 0.75
+visible LINE (0.0000, 0.0000) (-0.1010, 0.1750)
+visible LINE (0.0000, 0.0000) (0.2165, 0.3750)

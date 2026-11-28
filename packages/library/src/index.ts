@@ -1,4 +1,5 @@
-// @triya/library: Pressure-vessel symbol generators (B16.5/B16.47, nozzles, supports, welds).
+// @triya/library: Pressure-vessel symbol generators (B16.5/B16.47, nozzles, supports, welds,
+// surface texture symbols and standard notes).
 // Runs in Node and in a Web Worker: no DOM or browser globals (enforced by tsconfig `lib` and ESLint).
 export { B16_5_TABLES, type B165Row } from './flanges/b16-5-tables';
 export {
@@ -55,3 +56,40 @@ export {
   type WeldSymbolSpec,
   type WeldType,
 } from './welds/weld';
+export {
+  SURFACE_FINISH_DEFAULTS,
+  SURFACE_LAYS,
+  SURFACE_LAY_SYMBOLS,
+  SURFACE_PROCESSES,
+  SURFACE_PROCESS_NAMES,
+  SURFACE_STANDARD_NAMES,
+  addSurfaceFinishBlock,
+  checkSurfaceFinish,
+  surfaceFinishDefaults,
+  surfaceFinishDescription,
+  surfaceFinishName,
+  surfaceFinishParts,
+  type SurfaceFinishSpec,
+  type SurfaceLay,
+  type SurfaceProcess,
+  type SurfaceStandard,
+} from './surface/surface';
+export {
+  STANDARD_NOTES,
+  STANDARD_NOTES_DEFAULTS,
+  STANDARD_NOTE_GROUPS,
+  addStandardNotes,
+  checkStandardNotes,
+  drawingUnits,
+  standardNoteText,
+  standardNotesContents,
+  standardNotesDefaults,
+  standardNotesGeometry,
+  type DrawingUnits,
+  type StandardNote,
+  type StandardNoteField,
+  type StandardNoteGroup,
+  type StandardNoteId,
+  type StandardNoteItem,
+  type StandardNotesSpec,
+} from './notes/notes';

@@ -1,0 +1,6 @@
+# TRIYA_SURF_ASME_MRR_89828C04
+# Surface texture, ASME Y14.36: material removal required; 125; height 0.125, extension 0.75
+visible LINE (0.0000, 0.0000) (-0.1010, 0.1750)
+visible LINE (0.0000, 0.0000) (0.2165, 0.3750)
+visible LINE (-0.1010, 0.1750) (0.1010, 0.1750)
+visible TEXT "125" (0.0878, 0.2062) h0.1250 j21

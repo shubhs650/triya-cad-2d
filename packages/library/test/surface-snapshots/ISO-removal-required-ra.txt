@@ -1,0 +1,7 @@
+# TRIYA_SURF_ISO_MRR_27E0C1C8
+# Surface texture, ISO 1302: material removal required; Ra 3.2; height 0.125, extension 0.75
+visible LINE (0.0000, 0.0000) (-0.1010, 0.1750)
+visible LINE (0.0000, 0.0000) (0.2165, 0.3750)
+visible LINE (-0.1010, 0.1750) (0.1010, 0.1750)
+visible LINE (0.2165, 0.3750) (0.9665, 0.3750)
+visible TEXT "Ra 3.2" (0.2297, 0.3438) h0.1250 j03

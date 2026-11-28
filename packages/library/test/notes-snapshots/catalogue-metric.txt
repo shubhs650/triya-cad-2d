@@ -1,0 +1,20 @@
+general  units                  ALL DIMENSIONS ARE IN MILLIMETRES UNLESS OTHERWISE STATED.
+general  do-not-scale           DO NOT SCALE FROM THIS DRAWING.
+general  projection             FIRST ANGLE PROJECTION.
+general  tolerances             UNLESS OTHERWISE STATED, TOLERANCES ARE TO ISO 2768-m.
+general  break-edges            REMOVE ALL BURRS AND BREAK SHARP EDGES 0.5 MAX.
+vessel   design-code            DESIGNED, FABRICATED, INSPECTED AND TESTED TO ASME BPVC SECTION VIII, DIVISION 1.
+vessel   design-conditions      DESIGN PRESSURE 10 bar(g) AT 150 °C.
+vessel   hydrotest              HYDROSTATIC TEST PRESSURE 13 bar(g), MEASURED AT THE TOP OF THE VESSEL.
+vessel   corrosion-allowance    CORROSION ALLOWANCE 3 mm.
+vessel   flanges                FLANGES TO ASME B16.5 UNLESS OTHERWISE STATED.
+vessel   bolt-holes             FLANGE BOLT HOLES STRADDLE THE PRINCIPAL CENTRE LINES.
+vessel   nameplate              NAMEPLATE AND BRACKET LOCATED AS SHOWN.
+welding  welding-qualification  WELDING PROCEDURES AND WELDERS QUALIFIED TO ASME BPVC SECTION IX.
+welding  butt-welds             ALL BUTT WELDS ARE FULL PENETRATION.
+welding  fillet-welds           FILLET WELDS ARE 6 mm CONTINUOUS UNLESS OTHERWISE STATED.
+welding  radiography            RADIOGRAPHY: SPOT.
+welding  pwht                   POST-WELD HEAT TREATMENT: NOT REQUIRED.
+finish   surface-finish         SURFACE FINISH Ra 3.2 µm UNLESS OTHERWISE STATED.
+finish   painting               EXTERNAL SURFACES BLAST CLEANED AND PAINTED TO THE PURCHASER'S SPECIFICATION.
+finish   gasket-faces           GASKET FACES ARE NOT TO BE PAINTED.
