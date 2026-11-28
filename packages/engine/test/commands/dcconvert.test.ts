@@ -286,6 +286,8 @@ describe('DCCONVERT (M9-03 part 9)', () => {
     await s.bus.script(['DCCONVERT']);
     await s.bus.answer({ kind: 'selection', ids: [s.id('40')] });
     expect(s.dims().map((d) => d.form)).toEqual(['annotational']);
+    // Annotational, it looks as the dimension did: the dimension's style (M9-03 part 15).
+    expect(s.dims()[0]!.style).toBe('27');
   });
 });
 

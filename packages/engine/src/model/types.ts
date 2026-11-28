@@ -2404,6 +2404,17 @@ export interface DimensionalConstraintObject extends NonGraphicalObject {
    * object it constrains is selected (DYNCONSTRAINTMODE 1). Absent is shown.
    */
   readonly hidden?: true;
+  /**
+   * The dimension style an annotational constraint is drawn with (M9-03 part 15, DEC-088), by
+   * handle: the current one when it was made or turned annotational. Absent (saved before, or
+   * never annotational): the header's DIMVARs.
+   */
+  readonly style?: Handle;
+  /**
+   * Its own DIMVARs over its style's, as the Properties palette set them or the header did when
+   * it took its style (DIMASZ, DIMEXE, DIMEXO, DIMGAP, DIMSCALE, DIMTXT; `edit/constraint-style.ts`).
+   */
+  readonly dimvars?: Readonly<Partial<Record<string, number>>>;
 }
 
 export const isDimensionalConstraint = (

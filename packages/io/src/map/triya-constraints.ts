@@ -17,7 +17,10 @@
 //   angular, radial, diameter); 300 the parameter's name; 301 its expression; 302 its
 //   description, when it has one; 280 1 for a reference constraint, else 0; 281 the form (0
 //   dynamic, 1 annotational); 282 1 when DCDISPLAY hid it (M9-03 part 7, DEC-084), else
-//   nothing; 10 the dimension line's location; then the references as above.
+//   nothing; 340 the dimension style it is drawn with (hard pointer to a DIMSTYLE), when it has
+//   one, then a 304 DIMVAR name and its 140 value for each of its own DIMVARs (DIMASZ, DIMEXE,
+//   DIMEXO, DIMGAP, DIMSCALE, DIMTXT), in that order (M9-03 part 15, DEC-088); 10 the dimension
+//   line's location; then the references as above. A 340 naming no DIMSTYLE is read as none.
 //
 // A user parameter's (the Parameters Manager's New User Parameter, M9-03 part 6, DEC-083):
 //
@@ -35,10 +38,11 @@
 // it stays in the dictionary as read. AutoCAD ignores the dictionary, and its own constraints
 // (ACAD_ASSOCNETWORK) stay in passthrough, untouched.
 import type { CadDictionary } from '@node-projects/acad-ts';
-import { CadObject, XRecord, type CadDocument } from '@node-projects/acad-ts';
+import { CadObject, DimensionStyle, XRecord, type CadDocument } from '@node-projects/acad-ts';
 import {
   DIMENSIONAL_CONSTRAINT_KINDS,
   GEOMETRIC_CONSTRAINT_KINDS,
+  isConstraintDimvar,
   type ConstraintRef,
   type DimensionalConstraintKind,
   type DimensionalConstraintObject,
@@ -164,6 +168,26 @@ export function dimensionalFields(
   const hidden = at(i, 282);
   if (hidden !== undefined) i++;
   if (hidden !== undefined && number(hidden) !== 1) return undefined;
+  // An annotational constraint's dimension style and DIMVARs (DEC-088).
+  let style: Handle | undefined;
+  if (entries[i]?.code === 340) {
+    const v = entries[i]!.value;
+    const h = v instanceof CadObject ? v.handle : number(v);
+    const o = v instanceof CadObject ? v : h === undefined ? undefined : doc.getCadObject(h);
+    if (o instanceof DimensionStyle) style = hex(o.handle);
+    i++;
+  }
+  const dimvars: Record<string, number> = {};
+  while (entries[i]?.code === 304) {
+    const name = entries[i]!.value;
+    const value = number(at(i + 1, 140));
+    if (typeof name !== 'string' || !isConstraintDimvar(name) || value === undefined) {
+      return undefined;
+    }
+    if (name in dimvars) return undefined;
+    dimvars[name] = value;
+    i += 2;
+  }
   const location = point(at(i, 10));
   if (reference !== 0 && reference !== 1) return undefined;
   if (form !== 0 && form !== 1) return undefined;
@@ -180,6 +204,8 @@ export function dimensionalFields(
     location,
     form: CONSTRAINT_FORMS[form],
     ...(hidden === undefined ? {} : { hidden: true as const }),
+    ...(style !== undefined && { style }),
+    ...(Object.keys(dimvars).length > 0 && { dimvars }),
   };
 }
 

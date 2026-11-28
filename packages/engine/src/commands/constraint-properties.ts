@@ -10,6 +10,12 @@
 // Constraint Using the Properties Palette": the name, expression and description are edited
 // there as in the Parameters Manager (`parameters.ts`), whose rename and expression edits these
 // are.
+//
+// An annotational constraint's Dim style and DIMVAR rows (M9-03 part 15, DEC-088) set its style
+// and its own DIMVARs, as a dimension's rows set its style and `DSTYLE` overrides; "Annotational
+// constraints display using the current dimension style", which one made (or turned)
+// annotational takes. A dynamic one has no such rows: the palette shows them only when every
+// constraint shown is annotational.
 import type { CommandContext, CommandDef } from './command';
 import { applyParameterEdit } from './parameters';
 import { sentence, setExpressions } from './constraints';
@@ -23,6 +29,13 @@ import type { Handle } from '../model/handle';
 import type { DimensionalConstraintObject, NonGraphicalObject } from '../model/types';
 import type { RecordPatch } from '../model/update';
 import type { PropertyEdit } from '../properties/edit';
+import { DIMVAR_DEFAULTS, DIMVAR_ROWS } from '../properties/dimension';
+import type { PropertyValue } from '../properties/sheet';
+import {
+  constraintDimvars,
+  isConstraintDimvar,
+  newConstraintStyle,
+} from '../edit/constraint-style';
 
 /** The edit `edit` of the Constraint rows, on the constraints `handles`, as a bus command. */
 export function constraintPropertyCommand(
@@ -55,7 +68,19 @@ async function applyConstraintProperty(
   switch (edit.key) {
     case 'constraint-form': {
       if (text !== 'dynamic' && text !== 'annotational') return;
-      for (const c of shown) if (c.form !== text) patch(c, { form: text });
+      for (const c of shown) {
+        if (c.form === text) continue;
+        // Made annotational, it takes the current dimension style unless it kept one (DEC-088).
+        const style = text === 'annotational' && c.style === undefined;
+        patch(c, { form: text, ...(style && newConstraintStyle(ctx.model)) });
+      }
+      return;
+    }
+    case 'constraint-dimStyle': {
+      if (!ctx.model.tables.dimStyles.has(text)) return;
+      for (const c of shown) {
+        if (c.form === 'annotational' && c.style !== text) patch(c, { style: text });
+      }
       return;
     }
     case 'constraint-description': {
@@ -82,7 +107,35 @@ async function applyConstraintProperty(
       return setReference(ctx, shown, text === 'yes');
     }
     default:
+      if (edit.key.startsWith('dimvar:')) setDimvar(ctx, shown, edit.key.slice(7), edit.value);
       return;
+  }
+}
+
+/**
+ * Sets DIMVAR `name` (one of those a constraint draws with) of the annotational constraints of
+ * `cs` to `value`, as the dimension's row of it takes a value (M9-03 part 15): kept as the
+ * constraint's own over its style's; a value the row refuses changes nothing.
+ */
+function setDimvar(
+  ctx: CommandContext,
+  cs: readonly DimensionalConstraintObject[],
+  name: string,
+  value: PropertyValue,
+): void {
+  const row = DIMVAR_ROWS.find((r) => r.name === name);
+  if (!row || !isConstraintDimvar(name)) return;
+  for (const c of cs) {
+    if (c.form !== 'annotational') continue;
+    const vars = { ...DIMVAR_DEFAULTS, ...constraintDimvars(ctx.model, c) };
+    const n = row.set(value, vars, ctx.model)?.[name];
+    if (typeof n !== 'number') return;
+    if (c.dimvars?.[name] === n) continue;
+    ctx.edit((b) =>
+      b.updateObject(c.handle, {
+        dimvars: { ...c.dimvars, [name]: n },
+      } as RecordPatch<NonGraphicalObject>),
+    );
   }
 }
 

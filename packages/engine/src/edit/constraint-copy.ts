@@ -42,6 +42,7 @@ import {
 } from '../model/types';
 import { applyPoint } from '../geom/transform';
 import { measuredValue } from './constraint-display';
+import { newConstraintStyle } from './constraint-style';
 import type { Similarity } from './similarity';
 
 /** The constraints a copy carries. */
@@ -149,6 +150,26 @@ export function renameInExpression(
   return out;
 }
 
+/** The style fields of a copy of `d` into `model`, within the drawing or pasted from another. */
+function copiedStyle(
+  model: DocumentModel,
+  d: DimensionalConstraintObject,
+  sameDrawing: boolean,
+): Pick<DimensionalConstraintObject, 'style' | 'dimvars'> {
+  if (sameDrawing || (d.style === undefined && d.form !== 'annotational')) {
+    return {
+      ...(d.style !== undefined && { style: d.style }),
+      ...(d.dimvars !== undefined && { dimvars: d.dimvars }),
+    };
+  }
+  const current = newConstraintStyle(model);
+  const dimvars = { ...current.dimvars, ...d.dimvars };
+  return {
+    ...(current.style !== undefined && { style: current.style }),
+    ...(Object.keys(dimvars).length > 0 && { dimvars }),
+  };
+}
+
 /** A measured value written as an expression: 12 significant digits, as DIMCONSTRAINT keeps one. */
 const constant = (v: number): string => String(Number(v.toPrecision(12)));
 
@@ -251,6 +272,9 @@ export function carryConstraintsFrom(
       form: d.form,
       // DCDISPLAY's Hide goes with the copy (M9-03 part 7).
       ...(d.hidden && { hidden: true }),
+      // And its dimension style and DIMVARs (M9-03 part 15): another drawing's handles name
+      // other styles, so a paste takes that drawing's current one, keeping its own DIMVARs.
+      ...copiedStyle(model, d, source.sameDrawing),
     } as Omit<DimensionalConstraintObject, 'handle'>);
   }
 }

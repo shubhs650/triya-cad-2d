@@ -475,10 +475,10 @@ class Plotter {
         )
       : this.#displays;
     if (shown.length === 0) return;
-    const sizes = annotationalSizes(model.header);
     const object: PlotObject = { color: COLOR_7, lineweight: this.#lwDefault };
     const props = this.#src.resolver.resolve(object);
     for (const d of shown) {
+      const sizes = annotationalSizes(model.header, d.dimvars);
       for (const drawn of constraintPrimitives(d, sizes, 'foreground', this.#tessellate.text)) {
         const prim = o.m ? transformPrimitive(drawn, o.m) : drawn;
         const part = this.part(prim, object, props, 'foreground');
