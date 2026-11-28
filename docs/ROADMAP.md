@@ -611,7 +611,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [ ] **M8-03** Library palette: search, preview, units-aware insert, favourites, user library folders (OPFS) with drop. **Acceptance:** insert scenario tests.
 
-- [ ] **M8-04** PDF red-line flow: open PDF from start screen → underlay on a new sheet → two-pick calibration → markup → plot with underlay. **Acceptance:** end-to-end Playwright.
+- [~] (thread: Ship second next M8 task) **M8-04** PDF red-line flow: open PDF from start screen → underlay on a new sheet → two-pick calibration → markup → plot with underlay. **Acceptance:** end-to-end Playwright.
 
 - [ ] **M8-05** Compare engine: normalised geometry + handle diff; added/removed/modified classification; tolerance settings. **Acceptance:** diff tests on revised corpus pairs.
 
