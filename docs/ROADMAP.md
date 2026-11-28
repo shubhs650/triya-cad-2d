@@ -607,7 +607,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 - [~] (thread: Ship next M8 roadmap task) **M8-01** Library data: ASME B16.5 (NPS ½–24, all classes, WN/SO/BL/LJ/SW/TH; dimensions tables with source citation) and B16.47 A/B; generators produce 2D blocks (front/side/section) at drawing units. **Acceptance:** dimension tables unit-tested against published values (owner validates a sample). *Part 1 (#684):* ASME B16.5 Classes 150 to 2500, NPS ½ to 24, all six types (`packages/library`, DEC-089): the inch tables (B16.5-2020 Appendix II, transcribed from Texas Flange's charts and cross-checked against engineeringtoolbox, apiint, Thermometrics and amesweb; nine disagreements settled by majority, `packages/library/README.md`) with the standard's size and type rules, pipe bores by schedule, and front, side and section views drawn as blocks at drawing units (`addFlangeBlock`). For the owner's sample, the README names the values that rest on one source. *Part 2:* B16.47 Series A and B (NPS 26 to 60).
 
-- [ ] **M8-02** Library: nozzle details (set-in/set-on, pad), saddle/leg/bracket/skirt/anchor-chair outlines with editable principal dims, weld symbols (AWS A2.4 / ISO 2553 builder), surface finish, standard notes. **Acceptance:** each generator snapshot-tested.
+- [~] (thread: Ship next M8 roadmap task) **M8-02** Library: nozzle details (set-in/set-on, pad), saddle/leg/bracket/skirt/anchor-chair outlines with editable principal dims, weld symbols (AWS A2.4 / ISO 2553 builder), surface finish, standard notes. **Acceptance:** each generator snapshot-tested.
 
 - [ ] **M8-03** Library palette: search, preview, units-aware insert, favourites, user library folders (OPFS) with drop. **Acceptance:** insert scenario tests.
 
