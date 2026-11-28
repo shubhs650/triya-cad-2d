@@ -159,6 +159,12 @@ export function constraintSolver(gcs: PlaneGcs): ConstraintSolver {
       if (!r.ok) return r;
       return { ok: true, updated: r.updated, expressions: expressionsOf(model, r.parameters) };
     },
+    solveDimensions(constraints, dimensions, handles, lookup, tolerance) {
+      const model = modelOf(gcs, tolerance, constraints, dimensions);
+      const r = model.solveDimensions(handles, lookup);
+      if (!r.ok) return r;
+      return { ok: true, updated: r.updated, expressions: expressionsOf(model, r.parameters) };
+    },
     renameParameter(dimensions, from, to) {
       const table = parameterTableOf(dimensions);
       const r = table.rename(from, to);

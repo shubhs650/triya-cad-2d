@@ -41,13 +41,14 @@ import { point, scaleAbout } from '../../edit/similarity';
 import { transformGeometry } from '../../edit/transform';
 import { eraseObjects, refusalMessages } from '../../edit/edit';
 import type { EntityId } from '../../model/entity-ids';
+import type { Handle } from '../../model/handle';
 import type { EntityGeometry, MTextGeometry } from '../../model/types';
 import { mtextLiteral } from '../../edit/clipboard-data';
 import { tabSeparatedCells, type SheetCells } from '../../edit/spreadsheet';
 import { pasteTable } from './paste-table';
 import { hasPixels, pastePicture, pictureFrame, type ClipboardPicture } from '../../edit/picture';
 import { currentTextStyle, textSize } from '../draw/text';
-import { parameterCopyModeOf } from '../constraint-upkeep';
+import { parameterCopyModeOf, solvePasted } from '../constraint-upkeep';
 import type { CommandContext, CommandDef } from '../command';
 import { currentProps } from '../../properties/current';
 import { insUnitsOf } from '../../model/units';
@@ -372,8 +373,10 @@ export function pasteClipCommand(): CommandDef {
       const before = xrefHandles(ctx);
       const carrying = paste.clip.constraints !== undefined;
       const mode = await parameterCopyModeOf(ctx, carrying);
-      const carry = { mode, sameDrawing: found.sameDrawing };
+      const solve: Handle[] = [];
+      const carry = { mode, sameDrawing: found.sameDrawing, solve };
       ctx.edit((b) => pasteObjects(b, ctx.model, paste.clip, ctx.space, at, paste.units, carry));
+      await solvePasted(ctx, solve);
       await loadPastedXrefs(ctx, before);
     },
   };
@@ -414,8 +417,10 @@ export function pasteOrigCommand(): CommandDef {
       const { clip, units } = paste;
       const before = xrefHandles(ctx);
       const mode = await parameterCopyModeOf(ctx, clip.constraints !== undefined);
-      const carry = { mode, sameDrawing: false };
+      const solve: Handle[] = [];
+      const carry = { mode, sameDrawing: false, solve };
       ctx.edit((b) => pasteObjects(b, ctx.model, clip, ctx.space, clip.base, units, carry));
+      await solvePasted(ctx, solve);
       await loadPastedXrefs(ctx, before);
     },
   };

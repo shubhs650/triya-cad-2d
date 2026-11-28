@@ -460,6 +460,33 @@ export class ConstraintModel {
   }
 
   /**
+   * Solves driving dimensional constraints `handles` to the values their parameters have,
+   * holding their first objects (M9-12): a paste from another drawing, whose expressions name
+   * this drawing's user parameters. Refused, nothing moved, when a value has none or is out of
+   * range, or the geometry cannot take it. `parameters`: the reference rows the move changed.
+   */
+  solveDimensions(handles: readonly Handle[], lookup: EntityLookup): ParameterResult {
+    const wanted = new Set(handles);
+    const driven = this.#dimensions.filter((c) => wanted.has(c.handle) && !c.reference);
+    for (const c of driven) {
+      const wrong = this.#drivingError(c);
+      if (wrong) return refusal('invalid', `${c.parameter}: ${wrong}`, [c.handle]);
+    }
+    const updated: Replacement<Entity>[] = [];
+    const done = new Set<DimensionalConstraint>();
+    for (const c of driven) {
+      if (done.has(c)) continue;
+      const group = this.#group(c.refs.map((r) => r.entity));
+      const changed = driven.filter((d) => group.includes(d));
+      changed.forEach((d) => done.add(d));
+      const r = this.#resolveValues(group, changed, lookup);
+      if (!r.ok) return r;
+      updated.push(...r.updated);
+    }
+    return { ok: true, updated, parameters: this.#remeasure(updated, lookup) };
+  }
+
+  /**
    * The Properties palette's Reference (M9-03 part 10; AutoCAD 2024 Help, "About Applying
    * Dimensional Constraints"): `reference` makes the constraint measure rather than drive, its
    * expression set to the value it measures; refused while a driving value follows from it.

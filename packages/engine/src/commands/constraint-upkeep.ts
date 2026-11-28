@@ -22,8 +22,11 @@
 // Copies carry the constraints among the objects copied (COPY, MIRROR, ROTATE and SCALE's Copy,
 // ARRAY's items, grip Copy, PASTECLIP: `carryConstraints`, made with the copies, M9-10), so
 // nothing here handles them. A dimensional constraint dropped leaves the expressions that name
-// its parameter the value they had, as the Parameters Manager's delete does (M9-10).
+// its parameter the value they had, as the Parameters Manager's delete does (M9-10). A paste
+// from another drawing whose dimensional constraints kept expressions naming this drawing's user
+// parameters (PARAMETERCOPYMODE 2 to 4, M9-12) is solved to their values (`solvePasted`).
 import {
+  formatConstant,
   parameterCopyMode,
   PARAMETER_COPY_MODE,
   renameInExpression,
@@ -36,11 +39,14 @@ import {
   dimensionalConstraints,
   geometricConstraints,
   heldDimensionalConstraints,
+  parameterObjects,
   userParameters,
 } from '../edit/constraints';
+import { measuredValue } from '../edit/constraint-display';
 import type { Tolerance } from '../geom/tolerance';
 import type { ChangeSet, Replacement } from '../model/changeset';
 import type { Handle } from '../model/handle';
+import type { RecordPatch } from '../model/update';
 import {
   isDimensionalConstraint,
   isGeometricConstraint,
@@ -49,6 +55,7 @@ import {
   type Entity,
   type EntityGeometry,
   type GeometricConstraintObject,
+  type NonGraphicalObject,
   type ParameterObject,
 } from '../model/types';
 import type { CommandContext } from './command';
@@ -75,6 +82,66 @@ export async function parameterCopyModeOf(
 ): Promise<ParameterCopyMode> {
   if (!carrying) return 1;
   return parameterCopyMode(await optionVariable(ctx, PARAMETER_COPY_MODE, 1));
+}
+
+/**
+ * Solves the dimensional constraints `handles` that PASTECLIP or PASTEORIG just pasted from
+ * another drawing (M9-12) to the values their expressions take here: the drawing's user
+ * parameters may hold other values than the drawing copied from, and AutoCAD's 2 and 3 "reference
+ * existing user parameters". Part of the paste's undo step. Where the geometry cannot take them
+ * (or no solver loads), each keeps the value its copy measures, as PARAMETERCOPYMODE 1 would
+ * have pasted it, and the drafter is told.
+ */
+export async function solvePasted(ctx: CommandContext, handles: readonly Handle[]): Promise<void> {
+  const pasted = handles
+    .map((h) => ctx.model.objects.get(h))
+    .filter((d): d is DimensionalConstraintObject => isDimensionalConstraint(d));
+  if (pasted.length === 0) return;
+  let solver: ConstraintSolver | undefined;
+  let why: string | undefined;
+  try {
+    solver = await ctx.constraints?.();
+  } catch (e) {
+    why = `The constraint solver could not load: ${e instanceof Error ? e.message : e}`;
+  }
+  if (solver) {
+    const lookup = (h: Handle) => ctx.model.entityByHandle(h);
+    const edits = pasted.flatMap((d) =>
+      d.refs.flatMap((r) => {
+        const e = lookup(r.entity);
+        return e ? [{ before: e, after: e }] : [];
+      }),
+    );
+    const r = solver.solveDimensions(
+      geometricConstraints(ctx.model),
+      parameterObjects(ctx.model),
+      pasted.map((d) => d.handle),
+      lookup,
+      toleranceOf(ctx, edits),
+    );
+    if (r.ok) {
+      ctx.edit((b) => {
+        for (const moved of r.updated) b.updateEntity(moved.after.id, { geom: moved.after.geom });
+        setExpressions(ctx, b, r.expressions);
+      });
+      return;
+    }
+    why = sentence(r.message).replace(/\.$/, '');
+  }
+  // No solve: the values the copies measure, as constants.
+  ctx.edit((b) => {
+    for (const d of pasted) {
+      const v = measuredValue(d, (h) => ctx.model.entityByHandle(h));
+      if (v !== undefined) {
+        b.updateObject(d.handle, {
+          expression: formatConstant(v),
+        } as RecordPatch<NonGraphicalObject>);
+      }
+    }
+  });
+  if (why !== undefined) {
+    ctx.message(`${why}: the pasted constraints keep the values they measure.`);
+  }
 }
 
 /** The commands whose changes drop the constraints on what they change (FR-X4). */

@@ -10,6 +10,7 @@ import {
   geometricConstraints,
   isDimensionalConstraint,
   isGeometricConstraint,
+  isUserParameter,
   moveBy,
   mirrorIn,
   netEntityChanges,
@@ -90,12 +91,17 @@ function drawing(
     clipboard?: SharedClipboard;
     /** What the solver's deleteParameter answers (M9-10). */
     deleteParameter?: ConstraintSolver['deleteParameter'];
+    /** What the solver's solveDimensions answers (M9-12). */
+    solveDimensions?: ConstraintSolver['solveDimensions'];
+    /** The drawing's INSUNITS (M9-12: a paste between units scales). */
+    insUnits?: number;
   } = {},
 ) {
   const asked: Asked[] = [];
   const solver: ConstraintSolver = {
     ...NO_PARAMETERS,
     ...(o.deleteParameter && { deleteParameter: o.deleteParameter }),
+    ...(o.solveDimensions && { solveDimensions: o.solveDimensions }),
     add: () => {
       throw new Error('not asked');
     },
@@ -150,6 +156,7 @@ function drawing(
       ],
       ...(o.variables && { variables: o.variables }),
       ...(o.clipboard && { clipboard: o.clipboard }),
+      ...(o.insUnits !== undefined && { meta: { insUnits: o.insUnits } }),
       ...(o.solver !== 'none' && {
         constraints:
           o.solver === 'broken'
@@ -715,6 +722,209 @@ describe('the rest of constraint upkeep (M9-10)', () => {
       'd4*2+sin(d10)+1e1+pi/x - E',
     );
     expect([...names].sort()).toEqual(['d1', 'd10', 'e1']);
+  });
+});
+
+describe('PARAMETERCOPYMODE 2 and 3 for pastes into another drawing (M9-12)', () => {
+  const user = (handle: string, parameter: string, expression: string, description?: string) =>
+    ({
+      handle,
+      type: 'TRIYA_USERPARAMETER',
+      owner: 'C',
+      parameter,
+      expression,
+      ...(description !== undefined && { description }),
+    }) as never;
+  /** The dimensional constraints added to the copies, as `name=expression`. */
+  const pasted = (d: ReturnType<typeof drawing>, start: number) =>
+    [...d.model.objects.values()]
+      .filter(isDimensionalConstraint)
+      .slice(start)
+      .map((c) => `${c.parameter}=${c.expression}`);
+  const users = (d: ReturnType<typeof drawing>) =>
+    [...d.model.objects.values()]
+      .filter(isUserParameter)
+      .map((u) => `${u.parameter}=${u.expression}${u.description ? ` (${u.description})` : ''}`);
+  /** Line 30's length driven by user parameter span = 10, as `width`. */
+  const SPAN = [user('A1', 'span', '10'), dimension('D7', '30', 'width', 'span')];
+  /** The copy of line 30. */
+  const copyOf30 = (d: ReturnType<typeof drawing>) =>
+    d.space().find((e) => e.geom.kind === 'LINE' && !['30', '40'].includes(e.handle))!;
+
+  interface Solve {
+    readonly handles: readonly string[];
+    readonly dimensions: readonly string[];
+  }
+  /**
+   * Line 30 (and, with `both`, line 40) copied from a drawing holding `from` and pasted at 0,20
+   * into one holding `to`, under PARAMETERCOPYMODE `mode`. `solve` answers the target's solver.
+   */
+  async function paste(
+    mode: number,
+    from: readonly never[] | readonly DimensionalConstraintObject[],
+    to: readonly (GeometricConstraintObject | DimensionalConstraintObject)[] = [],
+    o: {
+      both?: boolean;
+      solve?: ConstraintSolver['solveDimensions'];
+      /** The INSUNITS of the drawings copied from and pasted into. */
+      units?: readonly [number, number];
+    } = {},
+  ) {
+    const clipboard: SharedClipboard = {};
+    const variables = new Map([['PARAMETERCOPYMODE', mode]]);
+    const source = drawing(undefined, {
+      clipboard,
+      variables,
+      objects: from as readonly DimensionalConstraintObject[],
+      ...(o.units && { insUnits: o.units[0] }),
+    });
+    const asked: Solve[] = [];
+    const target = drawing(undefined, {
+      clipboard,
+      variables,
+      objects: to,
+      ...(o.units && { insUnits: o.units[1] }),
+      solveDimensions: (constraints, dimensions, handles, lookup, tol) => {
+        expect(tol.linear).toBeGreaterThan(0);
+        asked.push({ handles, dimensions: dimensions.map((d) => d.parameter) });
+        if (o.solve) return o.solve(constraints, dimensions, handles, lookup, tol);
+        return { ok: true, updated: [], expressions: [] };
+      },
+    });
+    await source.bus.script(['COPYCLIP']);
+    await source.bus.pick({ x: 5, y: 0 });
+    if (o.both) await source.bus.pick({ x: 10, y: 5 });
+    await source.bus.submit('');
+    const start = [...target.model.objects.values()].filter(isDimensionalConstraint).length;
+    await target.bus.script(['PASTECLIP', '0,20']);
+    expect(target.bus.command).toBeUndefined();
+    return { target, asked, dims: pasted(target, start), users: users(target) };
+  }
+
+  it('2 keeps an expression of user parameters the drawing has and solves the copies to them', async () => {
+    const span = user('B1', 'span', '12');
+    const r = await paste(2, SPAN as never[], [span], {
+      solve: (_c, dimensions, handles, lookup) => {
+        const own = dimensions.find((d) => d.handle === handles[0]);
+        const line = lookup(isDimensionalConstraint(own) ? own.refs[0]!.entity : '')!;
+        return {
+          ok: true,
+          updated: [{ before: line, after: { ...line, geom: lineGeom(0, 20, 12, 20) } }],
+          expressions: [],
+        };
+      },
+    });
+    const copy = copyOf30(r.target);
+    expect(r.dims).toEqual(['width=span']);
+    expect(r.users).toEqual(['span=12']);
+    // The solver is asked to solve the pasted constraint to the drawing's span, and its move kept.
+    const pastedHandle = [...r.target.model.objects.values()].find(
+      (o) => isDimensionalConstraint(o) && o.parameter === 'width',
+    )!.handle;
+    expect(r.asked).toEqual([{ handles: [pastedHandle], dimensions: ['width', 'span'] }]);
+    expect(copy.geom).toEqual(lineGeom(0, 20, 12, 20));
+    // One undo step takes the paste and the solve back.
+    await r.target.bus.script(['U']);
+    expect(r.target.byHandle(copy.handle)).toBeUndefined();
+    expect(users(r.target)).toEqual(['span=12']);
+  });
+
+  it('2 takes the value where the drawing lacks the user parameter, or has it as a dimension', async () => {
+    const none = await paste(2, SPAN as never[]);
+    expect(none.dims).toEqual(['width=10']);
+    expect(none.users).toEqual([]);
+    expect(none.asked).toEqual([]);
+    const dim = await paste(2, SPAN as never[], [dimension('E1', '41', 'span', '10')]);
+    expect(dim.dims).toEqual(['width=10']);
+    expect(dim.asked).toEqual([]);
+  });
+
+  it('3 makes the user parameters the drawing lacks, those they name too, with their descriptions', async () => {
+    const from = [
+      user('A1', 'base', '5', 'the base'),
+      user('A2', 'span', 'base*2'),
+      user('A3', 'unused', '7'),
+      dimension('D7', '30', 'width', 'span'),
+    ];
+    const r = await paste(3, from as never[]);
+    expect(r.users).toEqual(['base=5 (the base)', 'span=base*2']);
+    expect(r.dims).toEqual(['width=span']);
+    expect(r.asked).toHaveLength(1);
+    // The drawing's own span is referenced as it is; base, which only span named, is not made.
+    const own = await paste(3, from as never[], [user('B1', 'span', '12')]);
+    expect(own.users).toEqual(['span=12']);
+    expect(own.dims).toEqual(['width=span']);
+    // A name the drawing gives a dimensional constraint: the user parameter made takes userN.
+    const taken = await paste(3, from as never[], [dimension('E1', '41', 'base', '10')]);
+    expect(taken.users).toEqual(['user1=5 (the base)', 'span=user1*2']);
+    // 2 makes none of them.
+    expect((await paste(2, from as never[])).dims).toEqual(['width=10']);
+  });
+
+  it('3 turns a dimensional parameter left behind into a user parameter of its value', async () => {
+    // width = d1, where d1 is line 40's length (10), and only line 30 is copied.
+    const from = [dimension('D5', '40', 'd1', '10'), dimension('D6', '30', 'width', 'd1')];
+    const free = await paste(3, from as never[]);
+    expect(free.users).toEqual(['d1=10']);
+    expect(free.dims).toEqual(['width=d1']);
+    const taken = await paste(3, from as never[], [dimension('E1', '41', 'd1', '10')]);
+    expect(taken.users).toEqual(['user1=10']);
+    expect(taken.dims).toEqual(['width=user1']);
+    expect((await paste(2, from as never[])).dims).toEqual(['width=10']);
+    // Copied with it, d1 is a copied dimension: 3 names no copied dimension (only 4 does).
+    const both = await paste(3, from as never[], [], { both: true });
+    expect(both.users).toEqual([]);
+    expect(both.dims).toEqual(['d1=10', 'width=10']);
+    // 4 keeps what it copied and makes the rest as 3 does.
+    expect((await paste(4, from as never[])).dims).toEqual(['width=d1']);
+    expect((await paste(4, from as never[], [], { both: true })).dims).toEqual([
+      'd1=10',
+      'width=d1',
+    ]);
+  });
+
+  it('takes the values of copies scaled into the drawing’s units, as they measure another', async () => {
+    // Metres into millimetres: line 30 lands 10000 long, which no expression of span gives.
+    for (const mode of [2, 3, 4]) {
+      const r = await paste(mode, SPAN as never[], [user('B1', 'span', '10')], { units: [6, 4] });
+      expect(r.dims).toEqual(['width=10000']);
+      expect(r.asked).toEqual([]);
+    }
+  });
+
+  it('takes the values the copies measure, saying so, where they cannot take the drawing’s', async () => {
+    const r = await paste(2, SPAN as never[], [user('B1', 'span', '12')], {
+      solve: () => ({
+        ok: false,
+        reason: 'overconstrained',
+        message: 'The geometry cannot take the value',
+        conflicting: [],
+      }),
+    });
+    expect(r.dims).toEqual(['width=10']);
+    expect(copyOf30(r.target).geom).toEqual(lineGeom(0, 20, 10, 20));
+    expect(r.target.log).toContain(
+      'The geometry cannot take the value: the pasted constraints keep the values they measure.',
+    );
+  });
+
+  it('COPY under 3 makes a user parameter of a dimensional parameter left behind; 2 takes values', async () => {
+    const copy = async (mode: number) => {
+      const d = drawing(undefined, {
+        objects: [dimension('D5', '40', 'd1', '10'), dimension('D6', '30', 'width', 'd1')],
+        variables: new Map([['PARAMETERCOPYMODE', mode]]),
+      });
+      await d.bus.script(['COPY']);
+      await d.bus.pick({ x: 5, y: 0 });
+      await d.bus.submit('');
+      await d.bus.script(['0,0', '0,20', '']);
+      return { dims: pasted(d, 2), users: users(d) };
+    };
+    // d1 is still the drawing's, so the user parameter takes the next free user name.
+    expect(await copy(3)).toEqual({ dims: ['d2=user1'], users: ['user1=10'] });
+    expect(await copy(2)).toEqual({ dims: ['d2=10'], users: [] });
+    // 4 within the drawing names d1 itself.
+    expect(await copy(4)).toEqual({ dims: ['d2=d1'], users: [] });
   });
 });
 

@@ -59,7 +59,9 @@ import { sub } from '../geom/vec';
 import {
   carryConstraintsFrom,
   constraintsAmong,
+  parametersNamed,
   type CarriedConstraint,
+  type CarriedParameter,
   type ParameterCopyMode,
 } from './constraint-copy';
 import { createGroup, groupsOf } from './groups';
@@ -163,6 +165,12 @@ export interface Clipboard {
    * (constraint-copy.ts).
    */
   readonly constraints?: readonly CarriedConstraint[];
+  /**
+   * The parameters those constraints' expressions name that were not copied with them (M9-12):
+   * the user parameters, and the values of the dimensional constraints left behind, which
+   * PARAMETERCOPYMODE 3 makes in a drawing lacking them (`parametersNamed`).
+   */
+  readonly parameters?: readonly CarriedParameter[];
 }
 
 /** One layer's override in one copied viewport, by the source's handles. */
@@ -610,6 +618,7 @@ export function copyToClipboard(
   const tables: Record<string, ObjectCommon[]> = {};
   for (const [t, list] of records) tables[t] = [...list.values()];
   const constraints = constraintsAmong(model.objects.values(), carried);
+  const parameters = constraints.length > 0 ? parametersNamed(model, constraints) : [];
   return {
     clipboard: {
       base,
@@ -625,6 +634,7 @@ export function copyToClipboard(
       ...(clips.length > 0 ? { clips } : {}),
       ...(viewportOverrides.length > 0 ? { viewportOverrides } : {}),
       ...(constraints.length > 0 ? { constraints } : {}),
+      ...(parameters.length > 0 ? { parameters } : {}),
     },
     refused,
     unannotated,
@@ -692,18 +702,26 @@ export function pasteObjects(
   // The constraints among the objects pasted (M9-10), where the paste is told how to carry them.
   if (constraints && clip.constraints) {
     const source = new Map(clip.entities.map((e) => [e.handle, e as unknown as Entity]));
-    carryConstraintsFrom(
+    const solve = carryConstraintsFrom(
       b,
       model,
       {
         constraints: clip.constraints,
         lookup: (h) => source.get(h),
         sameDrawing: constraints.sameDrawing,
+        ...(clip.parameters && { parameters: clip.parameters }),
       },
-      new Map([...copies].filter(([h]) => source.has(h))),
+      // As the paste placed them: moved and scaled into the drawing's units (a copy scaled
+      // measures another value than its original, so keeps no expression).
+      new Map(
+        [...copies]
+          .filter(([h]) => source.has(h))
+          .map(([h, e]) => [h, b.entity(e.id) ?? e] as const),
+      ),
       t ?? moveBy({ x: 0, y: 0 }),
       constraints.mode,
     );
+    constraints.solve?.push(...solve);
   }
   // A group copied whole is pasted as a new unnamed group (M3-13); the pasted objects are in
   // the Clipboard's order.
@@ -757,6 +775,11 @@ export interface PastedConstraints {
   readonly mode: ParameterCopyMode;
   /** Pasted into the drawing they were copied from (every parameter name is in use). */
   readonly sameDrawing: boolean;
+  /**
+   * Filled with the dimensional constraints pasted with an expression naming the drawing's
+   * user parameters (M9-12), which the paste then solves (`solvePasted`).
+   */
+  readonly solve?: Handle[];
 }
 
 /** How `pasteInto` pastes. */
