@@ -1,0 +1,13 @@
+# TRIYA_WELD_AWS_V_BACK_658DE8FB
+# Weld symbol, AWS A2.4: arrow side V-groove, size 1/2, groove angle 60%%d, root opening 1/8, flush contour, finish G; other side back or backing; height 0.125, reference line 1, leader 0.375 at 45°
+visible LINE (0.0000, 0.0000) (0.2652, 0.2652)
+visible LWPOLYLINE closed (0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)
+hatch   HATCH SOLID [(0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)]
+visible LINE (0.2652, 0.2652) (1.2652, 0.2652)
+visible LWPOLYLINE open (0.6402, 0.1402) (0.7652, 0.2652) (0.8902, 0.1402)
+visible TEXT "1/2" (0.6089, 0.2027) h0.1250 j22
+visible TEXT "1/8" (0.7652, 0.1089) h0.1250 j13
+visible TEXT "60%%d" (0.7652, -0.0473) h0.1250 j13
+visible LINE (0.6277, -0.2036) (0.9027, -0.2036)
+visible TEXT "G" (0.7652, -0.2286) h0.1250 j13
+visible LWPOLYLINE open (0.7027, 0.2652) b-1.0000 (0.8277, 0.2652)

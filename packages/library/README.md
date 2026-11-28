@@ -25,6 +25,26 @@ These are drafting outlines, not designs: the dimensions are the drafter's (a sa
 angle, say, from L. P. Zick's analysis or the vessel code), and the checks only refuse parts
 that cannot be drawn (a bolt hole off its plate, a neck thicker than its radius).
 
+## Weld symbols (M8-02)
+
+`WeldSymbolSpec` is the welding symbol a drafter would state: the standard (`AWS` for AWS A2.4,
+`ISO` for ISO 2553 system A), the weld on the arrow side and on the other side (`WeldSide`: one
+of `WELD_TYPES` with its size, length and pitch, groove angle, root opening, contour and finish,
+each as the text to show), weld all around, field weld, the tail's reference and staggered, and
+the text height, reference line length and leader length and angle in drawing units
+(`weldSymbolDefaults(drawingScale(model))`). `checkWeldSymbol(spec)` names the first rule a spec
+breaks; `addWeldSymbolBlock(builder, model, spec)` adds it as a block based at the arrow's tip
+(`TRIYA_WELD_AWS_FILLET_0_<digest>`), its texts in the drawing's current text style (DEC-092).
+
+| Standard | Arrow side                 | Other side                                       |
+| -------- | -------------------------- | ------------------------------------------------ |
+| AWS A2.4 | below the reference line   | above it                                         |
+| ISO 2553 | above the continuous line  | below the dashed identification line under it; a symmetric weld across the continuous line, with no identification line |
+
+Around each side's symbol: the size to its left, the length and pitch to its right, and outwards
+from the line the root opening, groove angle, contour and finish letter. The texts are placed by
+their alignment points, so the reference line's length is the drafter's to fit them.
+
 ## ASME B16.5 flanges (M8-01)
 
 `b165Flange({ flangeClass, nps, type, schedule? })` gives a flange's dimensions in inches for

@@ -1,0 +1,11 @@
+# TRIYA_WELD_AWS_PLUG_SURFACING_03F67490
+# Weld symbol, AWS A2.4: arrow side plug or slot, size 1, length 4-6; other side surfacing, size 1/8; height 0.125, reference line 1, leader 0.375 at 45°
+visible LINE (0.0000, 0.0000) (0.2652, 0.2652)
+visible LWPOLYLINE closed (0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)
+hatch   HATCH SOLID [(0.0000, 0.0000) (0.0737, 0.1031) (0.1031, 0.0737)]
+visible LINE (0.2652, 0.2652) (1.2652, 0.2652)
+visible LWPOLYLINE closed (0.7027, 0.2652) (0.8277, 0.2652) (0.8277, 0.2027) (0.7027, 0.2027)
+visible TEXT "1" (0.6714, 0.2027) h0.1250 j22
+visible TEXT "4-6" (0.8589, 0.2027) h0.1250 j02
+visible LWPOLYLINE open (0.6402, 0.2652) b-1.0000 (0.7652, 0.2652) b-1.0000 (0.8902, 0.2652)
+visible TEXT "1/8" (0.6089, 0.3277) h0.1250 j22
