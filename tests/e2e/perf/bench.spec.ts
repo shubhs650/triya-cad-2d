@@ -170,35 +170,64 @@ async function memory(cdp: CDPSession): Promise<{ total: number; parts: Record<s
   const parts: Record<string, number> = {
     page: bytes((await cdp.send('Runtime.getHeapUsage')) as HeapUsage),
   };
-  const pending = new Map<number, (r: unknown) => void>();
-  const listener = (e: { message: string }) => {
+  // A worker can end while it is asked (a closed drawing's engine and render workers end
+  // after its tab goes): its session then detaches without answering, and it holds nothing.
+  // Unhandled, that left the test waiting until its timeout (#696's first run).
+  const pending = new Map<number, { session: string; resolve: (r: unknown) => void }>();
+  const answered = (e: { message: string }) => {
     const m = JSON.parse(e.message) as { id: number; result?: unknown };
-    pending.get(m.id)?.(m.result);
+    pending.get(m.id)?.resolve(m.result);
+    pending.delete(m.id);
   };
-  cdp.on('Target.receivedMessageFromTarget', listener);
+  const detached = (e: { sessionId: string }) => {
+    for (const [id, p] of pending)
+      if (p.session === e.sessionId) {
+        p.resolve(undefined);
+        pending.delete(id);
+      }
+  };
+  cdp.on('Target.receivedMessageFromTarget', answered);
+  cdp.on('Target.detachedFromTarget', detached);
   let id = 0;
   try {
     const { targetInfos } = await cdp.send('Target.getTargets');
     for (const t of targetInfos.filter((t) => t.type === 'worker')) {
-      const { sessionId } = await cdp.send('Target.attachToTarget', {
-        targetId: t.targetId,
-        flatten: false,
-      });
+      const attached = await cdp
+        .send('Target.attachToTarget', { targetId: t.targetId, flatten: false })
+        .catch(() => undefined);
+      if (!attached) continue; // ended since it was listed
+      const session = attached.sessionId;
       const call = (method: string) =>
-        new Promise<unknown>((resolve) => {
-          pending.set(++id, resolve);
-          void cdp.send('Target.sendMessageToTarget', {
-            sessionId,
-            message: JSON.stringify({ id, method }),
-          });
+        new Promise<unknown>((resolve, reject) => {
+          const n = ++id;
+          // A live worker answers in milliseconds; say which did not rather than hang.
+          const timer = setTimeout(() => {
+            pending.delete(n);
+            reject(new Error(`worker ${t.url} did not answer ${method}`));
+          }, 15_000);
+          const done = (r: unknown) => {
+            clearTimeout(timer);
+            resolve(r);
+          };
+          pending.set(n, { session, resolve: done });
+          cdp
+            .send('Target.sendMessageToTarget', {
+              sessionId: session,
+              message: JSON.stringify({ id: n, method }),
+            })
+            .catch(() => {
+              pending.delete(n);
+              done(undefined);
+            });
         });
       await call('HeapProfiler.collectGarbage');
       const usage = (await call('Runtime.getHeapUsage')) as HeapUsage | undefined;
-      await cdp.send('Target.detachFromTarget', { sessionId });
+      await cdp.send('Target.detachFromTarget', { sessionId: session }).catch(() => undefined);
       if (usage) parts[`${t.url.split('/').pop()} ${t.targetId.slice(0, 6)}`] = bytes(usage);
     }
   } finally {
-    cdp.off('Target.receivedMessageFromTarget', listener);
+    cdp.off('Target.receivedMessageFromTarget', answered);
+    cdp.off('Target.detachedFromTarget', detached);
   }
   return { total: Object.values(parts).reduce((a, b) => a + b, 0), parts };
 }
@@ -216,6 +245,9 @@ function report(name: string, ms: number, b: { target: number; budget: number })
 
 test.describe('T2, T5 and T7 in the app on the generated bench drawings', () => {
   test.describe.configure({ timeout: 300_000 });
+  // A click that cannot happen (a dialog over the button) fails with what it waited for, not at
+  // the test's timeout.
+  test.use({ actionTimeout: 30_000 });
 
   test('T2: bench-ga opens to its first frame', async ({ page }) => {
     await instrument(page);
@@ -268,6 +300,7 @@ test.describe('T2, T5 and T7 in the app on the generated bench drawings', () => 
     for (let i = 0; i < CYCLES; i++) {
       await openBench(page, BENCH_GA);
       await closeBench(page, BENCH_GA);
+      console.log(`bench perf, cycle ${i + 1} of ${CYCLES} opened and closed`);
       if (i === 0 || i === CYCLES - 1) {
         // Closing a drawing ends its workers; they may take a moment to go.
         last = (await memory(cdp)).total;
