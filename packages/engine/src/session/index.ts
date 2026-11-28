@@ -138,6 +138,13 @@ import {
 import { layerPreviousOf } from '../commands/layer-previous';
 import { loadLinetypes, type LinetypeDefinition } from '../edit/linetypes';
 import {
+  duplicatePlans,
+  healthChecks,
+  overkillInto,
+  unitsProblems,
+  type HealthChecks,
+} from '../edit/health';
+import {
   emptyTextObjects,
   orphanedData,
   purgeClosure,
@@ -529,6 +536,17 @@ export interface PurgeEdit {
 }
 
 /**
+ * The Health palette's drawing-check fixes (M8-07): `duplicates` runs OVERKILL with the Delete
+ * Duplicate Objects dialog's initial settings on every space (locked layers left out), one
+ * OVERKILL undo step; `units` sets INSUNITS of a unitless drawing to `insUnits` and
+ * `measurement` sets MEASUREMENT to the system INSUNITS names, each one UNITS or MEASUREMENT undo
+ * step. Refused when there is nothing to fix.
+ */
+export type HealthFixEdit =
+  | { readonly kind: 'health-fix'; readonly what: 'duplicates' | 'measurement' }
+  | { readonly kind: 'health-fix'; readonly what: 'units'; readonly insUnits: number };
+
+/**
  * The Compare palette's filters (M8-06, DEC-092): the objects of the compare drawing `shown` made
  * visible and those `hidden` invisible (DXF 60), one COMPARE undo step; objects already so, and
  * handles the drawing does not hold, are left alone.
@@ -542,6 +560,7 @@ export interface EntityVisibilityEdit {
 export type EngineEdit =
   | EntityVisibilityEdit
   | FieldEventEdit
+  | HealthFixEdit
   | PurgeEdit
   | LayerStateEdit
   | LayerTableEdit
@@ -1258,6 +1277,7 @@ export class EngineSession {
       return this.#pageSetupEdit(e);
     if (e.kind === 'linetype-load') return this.#linetypeLoad(e);
     if (e.kind === 'purge') return this.#purge(e);
+    if (e.kind === 'health-fix') return this.#healthFix(e);
     if (e.kind === 'entity-visibility') return this.#visibility(e);
     if (e.kind === 'aliases') {
       this.#registry.setUserAliases(e.aliases);
@@ -1499,6 +1519,11 @@ export class EngineSession {
     return purgeHealth(this.model);
   }
 
+  /** What the Health palette's drawing checks find (M8-07). */
+  healthChecks(): HealthChecks {
+    return healthChecks(this.model);
+  }
+
   /** The layers any object is on: the Layer Properties Manager's All Used Layers (M5-07 part 5). */
   layersInUse(): Handle[] {
     return [...layersInUse(this.model)];
@@ -1535,6 +1560,35 @@ export class EngineSession {
     const change = b.build();
     m.apply(change);
     this.#step('PURGE', change);
+    return { ok: true, change };
+  }
+
+  #healthFix(e: HealthFixEdit): EditResult {
+    const m = this.model;
+    const b = new ChangeSetBuilder(m);
+    let step: string;
+    if (e.what === 'duplicates') {
+      if (!overkillInto(b, m, duplicatePlans(m)))
+        return { ok: false, message: 'No duplicate objects found.' };
+      step = 'OVERKILL';
+    } else {
+      const p = unitsProblems(m)[0];
+      if (e.what === 'units') {
+        if (p?.kind !== 'unitless') return { ok: false, message: 'The drawing has units.' };
+        if (!Number.isInteger(e.insUnits) || e.insUnits <= 0 || e.insUnits > 24)
+          return { ok: false, message: `${e.insUnits} is not an INSUNITS value.` };
+        b.setHeader('$INSUNITS', e.insUnits);
+        step = 'UNITS';
+      } else {
+        if (p?.kind !== 'measurement')
+          return { ok: false, message: 'MEASUREMENT already matches the drawing units.' };
+        b.setHeader('$MEASUREMENT', p.suggested === 'metric' ? 1 : 0);
+        step = 'MEASUREMENT';
+      }
+    }
+    const change = b.build();
+    m.apply(change);
+    this.#step(step, change);
     return { ok: true, change };
   }
 

@@ -218,6 +218,15 @@ export {
   type LayerProps,
 } from './layer-manager';
 export {
+  duplicatePlans,
+  healthChecks,
+  overkillInto,
+  unitSystem,
+  unitsProblems,
+  type HealthChecks,
+  type UnitsProblem,
+} from './health';
+export {
   PURGE_CATEGORIES,
   PURGE_RULES,
   emptyTextObjects,
