@@ -1,0 +1,1 @@
+- M8-02 part 1 (#687): the symbol library draws nozzle details (set-in and set-on necks, with a reinforcing pad, internal projection and fillet welds, as a section) and vessel support outlines (saddle, leg, bracket, skirt, anchor chair) from the drafter's principal dimensions, as blocks at the drawing's units named by those dimensions.

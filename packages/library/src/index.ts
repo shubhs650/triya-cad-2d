@@ -21,11 +21,19 @@ export {
   type FlangeDimensions,
   type FlangeType,
 } from './flanges/b16-5';
+export { FLANGE_VIEWS, flangeParts, type FlangeView } from './flanges/draw';
+export { addFlangeBlock, flangeBlockName, flangeDescription } from './flanges/block';
+export type { LibraryPart, PartRole } from './parts';
+export { drawingScale } from './block';
 export {
-  FLANGE_VIEWS,
-  flangeParts,
-  type FlangeView,
-  type LibraryPart,
-  type PartRole,
-} from './flanges/draw';
-export { addFlangeBlock, drawingScale, flangeBlockName, flangeDescription } from './flanges/block';
+  addDetailBlock,
+  checkDetail,
+  detailBlockName,
+  detailDefaults,
+  detailDescription,
+  type DetailField,
+  type DetailGenerator,
+  type DetailSpec,
+} from './details/detail';
+export { NOZZLE_SET_IN, NOZZLE_SET_ON } from './details/nozzle';
+export { ANCHOR_CHAIR, BRACKET, LEG, SADDLE, SKIRT, SUPPORTS } from './details/supports';
