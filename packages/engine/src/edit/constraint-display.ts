@@ -115,15 +115,19 @@ export function constraintLabel(
   return c.reference ? `(${fx})` : fx;
 }
 
-/** The drawing's dimensional constraints as they show, those whose objects are gone left out. */
+/**
+ * The drawing's dimensional constraints as they show (or those of `constraints`: a space's,
+ * M9-14), those whose objects are gone left out.
+ */
 export function constraintDisplays(
   model: DocumentModel,
   format: ConstraintNameFormat,
+  constraints: readonly DimensionalConstraintObject[] = dimensionalConstraints(model),
 ): ConstraintDisplay[] {
   const units = drawingUnits(model.header);
   const lookup = (h: string) => model.entityByHandle(h);
   const out: ConstraintDisplay[] = [];
-  for (const c of dimensionalConstraints(model)) {
+  for (const c of constraints) {
     const d = constraintDisplay(c, lookup, units, format);
     if (!d) continue;
     out.push(c.form === 'annotational' ? { ...d, dimvars: constraintDimvars(model, c) } : d);
