@@ -281,3 +281,150 @@ describe('Health checks: dynamic blocks and constraints present', () => {
     });
   });
 });
+
+// Part 2: dimensions that override their style (the roadmap's "non-standard dim styles"), and
+// the fonts multiline text names inline (`\F`, `\f`).
+const ACAD_APP = 'B0';
+const STANDARD = 'B1';
+const ISO = 'B2';
+
+/** Overrides as AutoCAD files them: the `DSTYLE` list in the dimension's ACAD xdata. */
+const dstyle = (...pairs: [number, number, number][]) => [
+  {
+    appId: ACAD_APP,
+    values: [
+      { code: 1000, value: 'DSTYLE' },
+      { code: 1002, value: '{' },
+      ...pairs.flatMap(([code, group, value]) => [
+        { code: 1070, value: code },
+        { code: group, value },
+      ]),
+      { code: 1002, value: '}' },
+    ],
+  },
+];
+
+const linearDim = (x: number, style = STANDARD, text = ''): EntityGeometry => ({
+  kind: 'DIMENSION',
+  dimType: 'linear',
+  style,
+  first: { x, y: 0 },
+  second: { x: x + 10, y: 0 },
+  definitionPoint: { x: x + 10, y: 5 },
+  textPosition: { x: x + 5, y: 6 },
+  rotation: 0,
+  textUserPositioned: false,
+  text,
+  textRotation: 0,
+  horizontalDirection: 0,
+  attachment: 5,
+  lineSpacingStyle: 1,
+  lineSpacing: 1,
+});
+
+// DIMTXT (140) 5 and DIMCLRD (176) 1 on two Standard dimensions, DIMTXT on an ISO one in paper
+// space; one plain; one on a locked layer and one inside a block, both left out.
+const OVERRIDDEN: EntityInit[] = [
+  entityInit('60', linearDim(0), { xdata: dstyle([140, 1040, 5], [176, 1070, 1]) }),
+  entityInit('61', linearDim(20), { xdata: dstyle([140, 1040, 5]) }),
+  entityInit('62', linearDim(40, ISO), { owner: PAPER_SPACE, xdata: dstyle([140, 1040, 3]) }),
+  entityInit('63', linearDim(60)),
+  entityInit('64', linearDim(80), { layer: LOCKED, xdata: dstyle([140, 1040, 5]) }),
+  entityInit('65', linearDim(0), { owner: PLAIN, xdata: dstyle([140, 1040, 5]) }),
+];
+
+function dimInit(entities: EntityInit[]): DocumentInit {
+  const i = init({ entities });
+  return {
+    ...i,
+    tables: {
+      ...i.tables,
+      appIds: [{ handle: ACAD_APP, name: 'ACAD' }],
+      dimStyles: [
+        { handle: STANDARD, name: 'Standard', vars: { DIMTXT: 2.5 } },
+        { handle: ISO, name: 'ISO-25', vars: { DIMTXT: 2.5 } },
+      ],
+    },
+  };
+}
+
+describe('Health checks: dimensions with style overrides', () => {
+  it('counts them by style and by variable, in every space outside locked layers', () => {
+    const s = new EngineSession(dimInit(OVERRIDDEN));
+    expect(s.healthChecks().dimensionOverrides).toEqual({
+      dimensions: 3,
+      styles: [
+        { name: 'ISO-25', dimensions: 1 },
+        { name: 'Standard', dimensions: 2 },
+      ],
+      variables: [
+        { name: 'DIMCLRD', dimensions: 1 },
+        { name: 'DIMTXT', dimensions: 3 },
+      ],
+    });
+    expect(new EngineSession(dimInit([])).healthChecks().dimensionOverrides).toEqual({
+      dimensions: 0,
+      styles: [],
+      variables: [],
+    });
+  });
+
+  it('Clear Overrides takes every override off them as one DIMOVERRIDE undo step', async () => {
+    const s = new EngineSession(dimInit(OVERRIDDEN));
+    const said: string[] = [];
+    s.onCommand((o) => {
+      if (o.type === 'log') said.push(o.line);
+    });
+    await s.command({ kind: 'health-clear-overrides' });
+    const xdata = (h: string) => s.model.entityByHandle(h)!.xdata;
+    expect(xdata('60')).toBeUndefined();
+    expect(xdata('61')).toBeUndefined();
+    expect(xdata('62')).toBeUndefined();
+    // Left alone: the locked layer's and the block's.
+    expect(xdata('64')).toEqual(dstyle([140, 1040, 5]));
+    expect(xdata('65')).toEqual(dstyle([140, 1040, 5]));
+    expect(s.healthChecks().dimensionOverrides.dimensions).toBe(0);
+    expect(s.undoState.undoList).toEqual(['DIMOVERRIDE']);
+    expect(said).toContain('Overrides cleared from 3 dimensions.');
+    await s.command({ kind: 'health-clear-overrides' });
+    expect(said).toContain('No dimensions with style overrides found.');
+    expect(s.undoState.undoList).toEqual(['DIMOVERRIDE']);
+    await s.command({ kind: 'submit', text: 'U' });
+    expect(xdata('60')).toEqual(dstyle([140, 1040, 5], [176, 1070, 1]));
+    expect(s.healthChecks().dimensionOverrides.dimensions).toBe(3);
+  });
+});
+
+const mtext = (contents: string): EntityGeometry => ({
+  kind: 'MTEXT',
+  contents,
+  style: '',
+  position: { x: 0, y: 0 },
+  height: 2.5,
+  width: 0,
+  rotation: 0,
+  attachment: 1,
+  direction: 1,
+  lineSpacingStyle: 1,
+  lineSpacing: 1,
+});
+
+describe('Health checks: fonts multiline text names inline', () => {
+  it('lists each font once with the objects naming it, escapes and empty codes skipped', () => {
+    const entities = [
+      entityInit('70', mtext('{\\fArial|b1|i0|c0|p34;Bold} and {\\fArial|b0|i0|c0|p34;plain}')),
+      entityInit('71', mtext('\\fARIAL|b0|i0|c0|p34;Shouting \\Fromand.shx;Hershey')),
+      // `\\F` is a backslash and an F, not a font; `\F;` names none.
+      entityInit('72', mtext('C:\\\\Fonts\\\\romans \\F;text')),
+      entityInit('73', linearDim(0, STANDARD, '\\fConsolas|b0|i0|c0|p49;<>'), {
+        owner: PLAIN,
+      }),
+    ];
+    expect(new EngineSession(init({ entities })).healthChecks().inlineFonts).toEqual([
+      { code: 'f', value: 'Arial|b1|i0|c0|p34', objects: 2 },
+      { code: 'f', value: 'Consolas|b0|i0|c0|p49', objects: 1 },
+      { code: 'F', value: 'romand.shx', objects: 1 },
+    ]);
+    expect(new EngineSession(init()).healthChecks().inlineFonts).toEqual([]);
+  });
+});

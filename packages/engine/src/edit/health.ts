@@ -12,12 +12,26 @@
 //     state without evaluating them (PRD non-goal 2, FR-B3).
 //   - Constraints: the drawing's geometric and dimensional constraints and user parameters
 //     (M9), those acting and those held in blocks.
+//   - Dimension overrides (part 2, the roadmap's "non-standard dim styles"): dimensions in model
+//     space and the layouts, outside locked layers, whose ACAD xdata holds a `DSTYLE` list of
+//     DIMVARs overriding their style, as the DIMSTYLE dialog's `<style overrides>` shows. Its fix,
+//     DIMOVERRIDE's Clear overrides on all of them, is a command (`clearDimensionOverridesCommand`)
+//     because the dimensions are redrawn as it ends.
+//   - Inline fonts (part 2): the fonts multiline text names with `\F` (a font file) or `\f` (a
+//     TrueType family) in MTEXT, multileader text and dimension text, blocks included, which the
+//     text style check does not see. The app resolves them against its fonts (`@triya/io/health`).
 import type { ChangeSetBuilder } from '../model/builder';
+import { dstyleOverrides } from '../annotation/leader';
 import { dynamicBlockOf } from '../model/dynamic-block';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import { insUnitsOf, metresPerUnit } from '../model/units';
-import { isDimensionalConstraint, isGeometricConstraint, isUserParameter } from '../model/types';
+import {
+  isDimensionalConstraint,
+  isGeometricConstraint,
+  isUserParameter,
+  type EntityGeometry,
+} from '../model/types';
 import { metric } from './center-settings';
 import { eraseObjects, reshapeObject } from './edit';
 import { DEFAULT_OVERKILL, planOverkill, type OverkillPlan } from './overkill';
@@ -39,6 +53,15 @@ export type UnitsProblem =
       readonly suggested: 'imperial' | 'metric';
     };
 
+/** A font multiline text names inline, by its first spelling, with the objects naming it. */
+export interface InlineFont {
+  /** `F` names a font file (SHX), `f` a TrueType family. */
+  readonly code: 'F' | 'f';
+  /** As written between the code and its `;`: the name, then `|b1|i0|c0|p34` flags for `\f`. */
+  readonly value: string;
+  readonly objects: number;
+}
+
 export interface HealthChecks {
   /** OVERKILL's two counts over every space, as its two messages print them. */
   readonly duplicates: { readonly duplicates: number; readonly overlaps: number };
@@ -58,6 +81,14 @@ export interface HealthChecks {
     readonly dimensional: number;
     readonly userParameters: number;
   };
+  readonly dimensionOverrides: {
+    readonly dimensions: number;
+    /** The styles those dimensions override, by name, with how many override each. */
+    readonly styles: readonly { readonly name: string; readonly dimensions: number }[];
+    /** The DIMVARs overridden, by name, with how many dimensions override each. */
+    readonly variables: readonly { readonly name: string; readonly dimensions: number }[];
+  };
+  readonly inlineFonts: readonly InlineFont[];
 }
 
 // INSUNITS codes by system (AutoCAD 2024 Help, "INSUNITS (System Variable)"); the astronomical
@@ -112,6 +143,86 @@ export function overkillInto(
   return any;
 }
 
+const DIMENSION_KINDS = new Set(['DIMENSION', 'ARC_DIMENSION', 'LARGE_RADIAL_DIMENSION']);
+
+/**
+ * The dimensions of model space and the layouts, outside locked layers, that override DIMVARs of
+ * their style, in drawing order. A dimension inside a block definition is the block's to change
+ * (BEDIT or REFEDIT), as OVERKILL and PURGE leave block contents alone here.
+ */
+export function overriddenDimensions(model: DocumentModel): EntityId[] {
+  const locked = (layer: string) => model.tables.layers.get(layer)?.locked === true;
+  const out: EntityId[] = [];
+  for (const l of model.layouts) {
+    for (const id of model.blockEntities(l.blockRecord)) {
+      const e = model.entity(id);
+      if (!e || !DIMENSION_KINDS.has(e.geom.kind) || locked(e.layer)) continue;
+      if (Object.keys(dstyleOverrides(e.xdata, model)).length > 0) out.push(id);
+    }
+  }
+  return out;
+}
+
+function dimensionOverrides(model: DocumentModel): HealthChecks['dimensionOverrides'] {
+  const ids = overriddenDimensions(model);
+  const styles = new Map<string, number>();
+  const variables = new Map<string, number>();
+  const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
+  for (const id of ids) {
+    const e = model.entity(id)!;
+    const style = (e.geom as { readonly style?: string }).style;
+    bump(styles, (style && model.tables.dimStyles.get(style)?.name) || '(none)');
+    for (const name of Object.keys(dstyleOverrides(e.xdata, model))) bump(variables, name);
+  }
+  const rows = (m: Map<string, number>) =>
+    [...m]
+      .map(([name, dimensions]) => ({ name, dimensions }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  return { dimensions: ids.length, styles: rows(styles), variables: rows(variables) };
+}
+
+// `\\` is an escaped backslash, read past so the `F` after it is text; `\F` and `\f` run to
+// their `;` (AutoCAD 2024 Help, "Format Multiline Text in an Alternate Text Editor").
+const FONT_CODE = /\\(?:\\|([Ff])([^;]*);)/g;
+
+/** The MTEXT-coded string of `geom`: an MTEXT's contents, a multileader's, a dimension's text. */
+function codedText(geom: EntityGeometry): string | undefined {
+  if (geom.kind === 'MTEXT') return geom.contents;
+  if (geom.kind === 'MULTILEADER') return geom.text?.content;
+  if (geom.kind === 'DIMENSION' || geom.kind === 'ARC_DIMENSION') return geom.text;
+  if (geom.kind === 'LARGE_RADIAL_DIMENSION') return geom.text;
+  return undefined;
+}
+
+/**
+ * The fonts every object's multiline text names inline, once per font (by code and name, case
+ * aside: the flags only pick a face), sorted by name; each object counted once per font.
+ */
+export function inlineFonts(model: DocumentModel): InlineFont[] {
+  const fonts = new Map<string, { code: 'F' | 'f'; value: string; objects: number }>();
+  for (const e of model.entities()) {
+    const text = codedText(e.geom);
+    if (!text || !text.includes('\\')) continue;
+    const seen = new Set<string>();
+    for (const m of text.matchAll(FONT_CODE)) {
+      const code = m[1] as 'F' | 'f' | undefined;
+      const value = m[2] ?? '';
+      const name = value.split('|')[0]!.trim();
+      if (!code || name === '') continue;
+      const key = `${code}\u0000${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const f = fonts.get(key);
+      if (f) f.objects++;
+      else fonts.set(key, { code, value, objects: 1 });
+    }
+  }
+  const name = (f: InlineFont) => f.value.split('|')[0]!.toLowerCase();
+  return [...fonts.values()].sort((a, b) =>
+    name(a) < name(b) ? -1 : name(a) > name(b) ? 1 : a.code < b.code ? -1 : 1,
+  );
+}
+
 export function healthChecks(model: DocumentModel): HealthChecks {
   let duplicates = 0;
   let overlaps = 0;
@@ -154,5 +265,7 @@ export function healthChecks(model: DocumentModel): HealthChecks {
     },
     dynamicBlocks: { blocks, references: referenced },
     constraints: { geometric, dimensional, userParameters },
+    dimensionOverrides: dimensionOverrides(model),
+    inlineFonts: inlineFonts(model),
   };
 }

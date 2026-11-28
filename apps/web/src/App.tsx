@@ -3184,6 +3184,8 @@ export function App() {
                       patternSources={patterns.sources()}
                       fontStore={fonts}
                       deviceFonts={deviceFonts}
+                      references={references}
+                      onReferences={() => paletteStack.set('references')}
                       onClose={() => paletteStack.close('health')}
                     />
                   );

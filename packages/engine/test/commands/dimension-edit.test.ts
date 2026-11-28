@@ -1,9 +1,15 @@
 // M4-02 part 2: DIMEDIT, DIMTEDIT and DIMOVERRIDE on the PromptBus with AutoCAD 2024's
 // prompts, on the stand-in dimension engine of dimension-harness.ts.
 import { describe, expect, it } from 'vitest';
-import { dragMotion, dstyleOverrides, type Entity } from '../../src/index';
+import {
+  clearDimensionOverridesCommand,
+  dragMotion,
+  dstyleOverrides,
+  type DimensionGeometry,
+  type Entity,
+} from '../../src/index';
 import { snapshot } from '../model/fixtures';
-import { said, setup, standard } from './dimension-harness';
+import { regenerate, said, setup, standard } from './dimension-harness';
 
 /** A drawing with one DIMLINEAR dimension from (0,0) to (10,0), its line at y = 5. */
 async function linear(o: Parameters<typeof setup>[0] = {}) {
@@ -286,6 +292,33 @@ describe('DIMOVERRIDE', () => {
     await s.bus.pick({ x: 10, y: 5 });
     await s.bus.submit('');
     expect(said(s.bus)).toContain('The drawing has no ACAD application to file overrides under.');
+  });
+
+  it('the Health palette’s Clear Overrides clears every dimension and redraws them (M8-07)', async () => {
+    const redrawn: string[] = [];
+    const s = setup({
+      ...header,
+      regenerate: (e, model, measure) => {
+        redrawn.push(e.handle);
+        return regenerate(e, model, measure);
+      },
+    });
+    await s.bus.script(['DIMLINEAR', '0,0', '10,0', '5,5']);
+    await s.bus.script(['DIMLINEAR', '0,20', '10,20', '5,25']);
+    await s.bus.script(['DIMOVERRIDE', 'DIMSCALE', '2', '']);
+    await s.bus.pick({ x: 10, y: 5 });
+    await s.bus.pick({ x: 10, y: 25 });
+    await s.bus.submit('');
+    const [a, b] = s.dims();
+    expect([overrides(s, a), overrides(s, b)]).toEqual([{ DIMSCALE: 2 }, { DIMSCALE: 2 }]);
+    redrawn.length = 0;
+    await s.bus.run(clearDimensionOverridesCommand());
+    expect([overrides(s, a), overrides(s, b)]).toEqual([{}, {}]);
+    // Each is drawn again (the stand-in draws the same block, so the command's end may too).
+    expect([...new Set(redrawn)].sort()).toEqual([a!.handle, b!.handle].sort());
+    expect(said(s.bus)).toContain('Overrides cleared from 2 dimensions.');
+    await s.bus.script(['U']);
+    expect([overrides(s, a), overrides(s, b)]).toEqual([{ DIMSCALE: 2 }, { DIMSCALE: 2 }]);
   });
 });
 

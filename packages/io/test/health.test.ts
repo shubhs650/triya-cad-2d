@@ -278,6 +278,36 @@ describe('healthReport', () => {
     expect(r.unmappedEntities).toEqual({ total: 5, byType: FACTS.unmappedEntities });
   });
 
+  it('lists the fonts multiline text names inline, with the objects naming them (M8-07)', () => {
+    const book = fonts('romans', 'txt', 'gbcbig', 'ltypeshp');
+    const r = healthReport(FACTS, {
+      fonts: book,
+      inlineFonts: [
+        // Joins the Body style's arial.ttf row.
+        { code: 'f', value: 'Arial|b1|i0|c0|p34', objects: 2 },
+        { code: 'f', value: 'Consolas|b0|i0|c0|p49', objects: 1 },
+        // A font file the book holds draws itself; one it lacks has no stand-in but the default.
+        { code: 'F', value: 'romans.shx', objects: 4 },
+        { code: 'F', value: 'isocp', objects: 3 },
+      ],
+    });
+    expect(r.fonts.missing).toEqual([
+      { font: 'Consolas', substitute: 'oet-simplex', styles: [], inline: 1 },
+      { font: 'arial.ttf', substitute: 'oet-simplex', styles: ['Body'], inline: 2 },
+      { font: 'isocp', substitute: 'oet-simplex', styles: [], inline: 3 },
+    ]);
+    expect([...book.missing]).toEqual([]);
+  });
+
+  it("counts AutoCAD's own constraint groups among the unknown objects (M8-07)", () => {
+    expect(healthReport(FACTS, { fonts: fonts() }).autocadConstraintGroups).toBe(0);
+    const facts = {
+      ...FACTS,
+      unknownObjects: [...FACTS.unknownObjects, { type: 'ACDBASSOC2DCONSTRAINTGROUP', count: 2 }],
+    };
+    expect(healthReport(facts, { fonts: fonts() }).autocadConstraintGroups).toBe(2);
+  });
+
   it('lists references as found in the file, not yet looked for', () => {
     expect(healthReport(FACTS, { fonts: fonts() }).references).toEqual([
       { kind: 'image', name: 'logo', path: '.\\logo.png', status: 'unchecked' },

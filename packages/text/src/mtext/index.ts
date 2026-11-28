@@ -1,5 +1,6 @@
 export {
   MBCS_CODEPAGES,
+  inlineFont,
   paragraphKeys,
   paragraphStyleOf,
   parseMText,

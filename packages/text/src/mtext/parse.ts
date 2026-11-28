@@ -189,6 +189,14 @@ function factor(value: string): { v: number; relative: boolean } | undefined {
   return v === undefined ? undefined : { v, relative };
 }
 
+/**
+ * The font an MTEXT inline font code names: `F` with its value (a font file), `f` (a TrueType
+ * family, `|b1|i0|c0|p34` flags after the name), as `parseMText` reads them.
+ */
+export function inlineFont(code: 'F' | 'f', value: string): MTextFont {
+  return parseFont(value, code === 'F');
+}
+
 function parseFont(value: string, upper: boolean): MTextFont {
   const [name = '', ...flags] = value.split('|');
   let bold = false;
