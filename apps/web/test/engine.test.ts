@@ -441,6 +441,61 @@ describe('EngineHost purgeHealth (M5-09 part 3)', () => {
   });
 });
 
+describe('EngineHost healthChecks (M8-07)', () => {
+  /** The sample, unitless, with line 30 drawn twice. */
+  const line = (handle: string) => ({
+    handle,
+    owner: '1F',
+    type: 'LINE' as const,
+    layer: '11',
+    color: { kind: 'byLayer' as const },
+    linetype: 'ByLayer',
+    lineweight: 'ByLayer' as const,
+    transparency: 'ByLayer' as const,
+    ltScale: 1,
+    visible: true,
+    geom: { kind: 'LINE' as const, start: { x: 1, y: 1 }, end: { x: 5, y: 1 } },
+  });
+  const twice: DocumentInit = {
+    ...init,
+    header: new Map([...(init.header ?? []), ['$INSUNITS', 0]]),
+    layouts: [{ handle: '22', name: 'Model', tabOrder: 0, blockRecord: '1F' }],
+    entities: [line('30'), line('31')],
+  };
+
+  it('finds duplicates and units problems, in the worker or on the main thread, and follows the fixes', async () => {
+    for (const host of [new EngineHost(twice, inProcessWorker), new EngineHost(twice)]) {
+      expect(await host.healthChecks()).toMatchObject({
+        duplicates: { duplicates: 1, overlaps: 0 },
+        units: {
+          insUnits: 0,
+          measurement: 'metric',
+          problems: [{ kind: 'unitless', suggested: 4 }],
+        },
+        dynamicBlocks: { references: 0 },
+        constraints: { geometric: 0, dimensional: 0, userParameters: 0 },
+      });
+      expect((await host.edit({ kind: 'health-fix', what: 'duplicates' })).ok).toBe(true);
+      expect((await host.edit({ kind: 'health-fix', what: 'units', insUnits: 4 })).ok).toBe(true);
+      expect(await host.healthChecks()).toMatchObject({
+        duplicates: { duplicates: 0, overlaps: 0 },
+        units: { insUnits: 4, problems: [] },
+      });
+      host.dispose();
+    }
+  });
+
+  it('is undefined for a drawing not open', async () => {
+    const engines = new Engines(
+      (i) => new EngineHost(i),
+      () => [],
+    );
+    expect(await engines.healthChecks(7)).toBeUndefined();
+    engines.start(7, twice);
+    expect((await engines.healthChecks(7))?.duplicates.duplicates).toBe(1);
+  });
+});
+
 describe('EngineHost layersInUse (M5-07 part 5)', () => {
   it('names the layers objects are on, in the worker or on the main thread, after edits', async () => {
     const withSpare: DocumentInit = {

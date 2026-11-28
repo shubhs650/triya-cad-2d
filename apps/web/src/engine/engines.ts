@@ -14,6 +14,7 @@ import type {
   EditResult,
   EngineEdit,
   Handle,
+  HealthChecks,
   PaperView,
   PurgeHealth,
 } from '@triya/engine';
@@ -209,6 +210,12 @@ export class Engines {
   async purgeHealth(doc: number): Promise<PurgeHealth | undefined> {
     const engine = this.#engines.get(doc);
     return engine ? engine.purgeHealth() : undefined;
+  }
+
+  /** What the Health palette's drawing checks find (M8-07); undefined when the drawing is not open. */
+  async healthChecks(doc: number): Promise<HealthChecks | undefined> {
+    const engine = this.#engines.get(doc);
+    return engine ? engine.healthChecks() : undefined;
   }
 
   /**
