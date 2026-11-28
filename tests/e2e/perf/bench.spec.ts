@@ -14,7 +14,7 @@
 //
 // Where the app does not meet a target yet, the budget is the time measured when M10-01 set it
 // plus TESTING.md §5's runner margin, so it cannot get slower, and the target is reported beside
-// it; DEC-096 and M10-01's later parts in ROADMAP.md hold what is left to do. Each number is a test annotation.
+// it; DEC-097 and M10-01's later parts in ROADMAP.md hold what is left to do. Each number is a test annotation.
 import { writeFileSync } from 'node:fs';
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
 import {
@@ -31,7 +31,7 @@ const MARGIN = 1.2;
 
 /**
  * Each budget: PRD §12's target, and the budget asserted (the target with the margin, or, while
- * the app is slower, the time M10-01 measured on a 4-core runner with the margin; DEC-096).
+ * the app is slower, the time M10-01 measured on a 4-core runner with the margin; DEC-097).
  */
 const BUDGETS = {
   openGa: { target: 500, budget: 2600 * MARGIN },

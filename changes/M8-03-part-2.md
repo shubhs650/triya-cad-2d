@@ -1,0 +1,1 @@
+- M8-03 part 2 (#695): user library folders. Drawing files dropped on the Library palette (or added with Add Drawings...) are kept on the device in folders you name; each file's blocks are listed, found by the search, previewed and inserted like the library's own, converted from the file's units into the drawing's.

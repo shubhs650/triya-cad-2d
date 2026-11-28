@@ -9,6 +9,7 @@ import {
   LIBRARY_LIMITS,
   isKept,
   keptFor,
+  libraryBlockUnits,
   libraryDrop,
   libraryPreview,
   normalizeLibrary,
@@ -122,5 +123,19 @@ describe('a library block in the palette', () => {
       library: true,
     });
     expect(libraryDrop({ name: '', error: 'no' })).toBeUndefined();
+  });
+
+  it('names the units of a block copied out, which INSERT converts (M8-03 part 2)', () => {
+    const withRecord = (units?: number) =>
+      ({
+        ...content,
+        tables: {
+          blockRecords: [{ handle: '2A', name: 'VALVE', ...(units !== undefined && { units }) }],
+        },
+      }) as unknown as Clipboard;
+    expect(libraryBlockUnits({ name: 'valve', content: withRecord(1) })).toBe(1);
+    expect(libraryBlockUnits({ name: 'VALVE', content: withRecord() })).toBe(0);
+    expect(libraryBlockUnits({ name: 'A', existing: '2A' })).toBeUndefined();
+    expect(libraryBlockUnits(undefined)).toBeUndefined();
   });
 });

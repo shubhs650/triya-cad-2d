@@ -117,3 +117,4 @@ export {
   type LibraryGroup,
   type LibraryItem,
 } from './catalogue';
+export { libraryDrawingBlock, libraryDrawingBlocks } from './user-blocks';
