@@ -1,0 +1,1 @@
+- M8-01 part 1 (#684): the symbol library's first parts, ASME B16.5 flanges: dimensions for Classes 150 to 2500, NPS ½ to 24, in all six types (weld neck, slip-on, blind, lap joint, socket welding, threaded), checked against published charts, drawn as front, side and section views and added to a drawing as blocks at its units.
