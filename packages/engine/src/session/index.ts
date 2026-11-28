@@ -528,7 +528,19 @@ export interface PurgeEdit {
   readonly what: 'unused' | 'zero-length' | 'empty-text' | 'orphaned';
 }
 
+/**
+ * The Compare palette's filters (M8-06, DEC-092): the objects of the compare drawing `shown` made
+ * visible and those `hidden` invisible (DXF 60), one COMPARE undo step; objects already so, and
+ * handles the drawing does not hold, are left alone.
+ */
+export interface EntityVisibilityEdit {
+  readonly kind: 'entity-visibility';
+  readonly shown: readonly Handle[];
+  readonly hidden: readonly Handle[];
+}
+
 export type EngineEdit =
+  | EntityVisibilityEdit
   | FieldEventEdit
   | PurgeEdit
   | LayerStateEdit
@@ -1246,6 +1258,7 @@ export class EngineSession {
       return this.#pageSetupEdit(e);
     if (e.kind === 'linetype-load') return this.#linetypeLoad(e);
     if (e.kind === 'purge') return this.#purge(e);
+    if (e.kind === 'entity-visibility') return this.#visibility(e);
     if (e.kind === 'aliases') {
       this.#registry.setUserAliases(e.aliases);
       return { ok: true, change: {} };
@@ -1522,6 +1535,24 @@ export class EngineSession {
     const change = b.build();
     m.apply(change);
     this.#step('PURGE', change);
+    return { ok: true, change };
+  }
+
+  #visibility(e: EntityVisibilityEdit): EditResult {
+    const m = this.model;
+    const b = new ChangeSetBuilder(m);
+    const set = (handles: readonly Handle[], visible: boolean) => {
+      for (const h of handles) {
+        const entity = m.entityByHandle(h);
+        if (entity && entity.visible !== visible) b.updateEntity(entity.id, { visible });
+      }
+    };
+    set(e.shown, true);
+    set(e.hidden, false);
+    const change = b.build();
+    if (Object.keys(change).length === 0) return { ok: true, change };
+    m.apply(change);
+    this.#step('COMPARE', change);
     return { ok: true, change };
   }
 

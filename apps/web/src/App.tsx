@@ -21,6 +21,7 @@ import type {
   ViewState,
 } from '@triya/engine';
 import {
+  DocumentModel,
   GRIP_CYCLE,
   CONSTRAINT_INFER,
   GROUPDISPLAYMODE,
@@ -149,6 +150,21 @@ import {
 import { engines, nextEngineWorker } from './engine/registry';
 import { drawingRecords, shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
+import { ComparePalette } from './ComparePalette';
+import {
+  ALL_DIFFERENCES,
+  compareDrawingName,
+  compareSession,
+  toleranceOf,
+  type CompareSource,
+} from './compare';
+import {
+  compareDrawings,
+  compareMarkup,
+  marksShown,
+  type CompareFilter,
+  type MarkedItem,
+} from '@triya/compare';
 import { CommandHistoryPalette } from './CommandHistoryPalette';
 import type { ImageAdjustPreview } from './ImageAdjustDialog';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
@@ -1139,6 +1155,7 @@ async function closeDoc(id: number): Promise<boolean> {
   lastPlotSettings.forget(id);
   pictureFiles.forget(id);
   layerNotices.forget(id);
+  compareSession.closed(id);
   store.close(id);
   engines.stop(id);
   commandLines.forget(id);
@@ -2232,7 +2249,11 @@ async function open(
     readonly handle?: { readonly kind: string };
   },
   recovered?: Recovered,
-  options: { readonly untitled?: boolean } = {},
+  options: {
+    readonly untitled?: boolean;
+    /** Edits the new drawing starts with, unsaved (the compare drawing, M8-06). */
+    readonly changes?: readonly ChangeSet[];
+  } = {},
 ): Promise<number | undefined> {
   store.startOpening(file.name);
   // Its engine worker loads while the file is read (M4-22).
@@ -2244,9 +2265,10 @@ async function open(
     if (!opened.modelSpace) throw new Error('the drawing has no model space');
     const handle = file.handle?.kind === 'file' ? (file.handle as SaveHandle) : undefined;
     const saved = drawingFile(bytes, opened.summary, handle);
-    const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits, options);
+    const edits = recovered?.edits ?? (options.changes?.length ? 1 : undefined);
+    const id = store.opened(file.name, opened, opened.modelSpace, saved, edits, options);
     // The drawing's authoritative document goes to its engine worker (M1-67).
-    engines.start(id, opened.init, recovered?.changes);
+    engines.start(id, opened.init, recovered?.changes ?? options.changes);
     tellSessionVariables(id);
     tellAliases(id);
     void fieldEvent(id, 'open', dwgName(file.name));
@@ -2353,6 +2375,132 @@ async function openPdfToRedline(file: File): Promise<void> {
   );
   if (id === undefined) return;
   for (const input of redline.begin(id, file.name, pages[0])) engines.command(id, input);
+}
+
+/** A drawing COMPARE reads (M8-06): an open one as its engine holds it now, or a file. */
+async function compareSource(
+  s: CompareSource,
+): Promise<{ model: DocumentModel; bytes: Uint8Array; changes: readonly ChangeSet[] }> {
+  if (s.kind === 'open') {
+    const doc = store.getSnapshot().docs.find((d) => d.id === s.doc);
+    if (!doc?.file) throw new Error(`${s.name} is not open`);
+    const changes = engines.changesOf(doc.id);
+    return { model: openDrawingModel(doc, changes), bytes: doc.file.bytes, changes };
+  }
+  const bytes = new Uint8Array(await s.file.arrayBuffer());
+  // The I/O worker takes its own copy: the compare drawing opens from these bytes.
+  const opened = await openDrawing(bytes.slice());
+  return { model: DocumentModel.create(opened.init), bytes, changes: [] };
+}
+
+/**
+ * The Compare palette's Compare (M8-06, DEC-092): the revision compared with the original, and the
+ * compare drawing opened as a new tab: the revision's file with its edits and the markup's
+ * change set, unsaved and untitled, so its first save is a Save As.
+ */
+async function runCompare(original: CompareSource, revision: CompareSource): Promise<void> {
+  const { options } = compareSession.getSnapshot();
+  compareSession.update({ busy: `Reading ${original.name}…`, message: undefined });
+  try {
+    const a = await compareSource(original);
+    compareSession.update({ busy: `Reading ${revision.name}…` });
+    const b = await compareSource(revision);
+    compareSession.update({ busy: 'Comparing…' });
+    const linear = toleranceOf(options.tolerance);
+    const result = compareDrawings(a.model, b.model, {
+      ...(linear !== undefined && { tolerance: { linear } }),
+      matchHandles: options.matchHandles,
+      properties: options.properties,
+    });
+    const markup = compareMarkup(a.model, b.model, result);
+    // The compare drawing as its engine will hold it, for the ids its list zooms to.
+    b.model.apply(markup.change);
+    const { docs, opening } = store.getSnapshot();
+    const name = compareDrawingName(original.name, revision.name, [
+      ...docs.map((d) => d.name),
+      ...opening,
+    ]);
+    const bytes = b.bytes;
+    const id = await open(
+      { name, getFile: () => Promise.resolve(new Blob([bytes as Uint8Array<ArrayBuffer>])) },
+      undefined,
+      { untitled: true, changes: [...b.changes, markup.change] },
+    );
+    if (id === undefined) {
+      compareSession.update({ busy: undefined, message: `${name} could not be opened.` });
+      return;
+    }
+    const ids = new Map<string, number>();
+    for (const m of markup.marks) {
+      const e = b.model.entityByHandle(m.handle);
+      if (e) ids.set(m.handle, e.id);
+    }
+    compareSession.update({
+      busy: undefined,
+      filter: ALL_DIFFERENCES,
+      run: {
+        doc: id,
+        name,
+        original: original.name,
+        revision: revision.name,
+        markup,
+        counts: result.counts,
+        ids,
+      },
+    });
+  } catch (e) {
+    compareSession.update({
+      busy: undefined,
+      message: `The drawings could not be compared: ${e instanceof Error ? e.message : String(e)}`,
+    });
+  }
+}
+
+/** The compare drawing's filters' edits, one after another. */
+let compareFiltering: Promise<void> = Promise.resolve();
+
+/** The Compare palette's filters (M8-06): the compare drawing shows only what they show. */
+function filterCompare(filter: CompareFilter): void {
+  const run = compareSession.getSnapshot().run;
+  if (!run) return;
+  const { shown, hidden } = marksShown(run.markup, filter);
+  compareFiltering = compareFiltering
+    .then(async () => {
+      const r = await engines.edit(run.doc, { kind: 'entity-visibility', shown, hidden });
+      if (r.ok && Object.keys(r.change).length > 0) store.edited(run.doc);
+    })
+    .catch(() => undefined);
+}
+
+/** A row of the Compare palette's list (M8-06): the compare drawing shown, zoomed to it. */
+async function zoomCompare(item: MarkedItem): Promise<void> {
+  const run = compareSession.getSnapshot().run;
+  const doc = run && store.getSnapshot().docs.find((d) => d.id === run.doc);
+  if (!run || !doc) return;
+  const space = spacesOf(doc, engines.changesOf(doc.id)).find(
+    (s) => s.name.toUpperCase() === item.space.toUpperCase(),
+  );
+  if (!space) return;
+  store.activate(doc.id);
+  if (doc.block !== space.block) store.showSpace(doc.id, space.block);
+  const ids = item.marks.flatMap((h) => {
+    const id = run.ids.get(h);
+    return id === undefined ? [] : [id];
+  });
+  const c = await whenRegistered(doc.id, space.block);
+  if (!c || ids.length === 0) return;
+  await compareFiltering;
+  await c.zoomObjects(ids);
+  c.setHighlight(ids);
+}
+
+/** The Compare palette's Export DXF... and Export PDF... (M8-06): Save As or EXPORTPDF of it. */
+function exportCompare(as: 'dxf' | 'pdf'): void {
+  const run = compareSession.getSnapshot().run;
+  if (!run || !store.getSnapshot().docs.some((d) => d.id === run.doc)) return;
+  store.activate(run.doc);
+  if (as === 'dxf') void saveDoc(run.doc, 'saveas');
+  else engines.command(run.doc, { kind: 'invoke', name: 'EXPORTPDF' });
 }
 
 /** The start screen's Samples (M7-07): a public corpus drawing, opened as a dropped file is. */
@@ -3031,6 +3179,18 @@ export function App() {
                       fontStore={fonts}
                       deviceFonts={deviceFonts}
                       onClose={() => paletteStack.close('health')}
+                    />
+                  );
+                case 'compare':
+                  return (
+                    <ComparePalette
+                      docs={state.docs}
+                      active={active}
+                      onCompare={(a, b) => void runCompare(a, b)}
+                      onFilter={filterCompare}
+                      onZoom={(item) => void zoomCompare(item)}
+                      onExport={exportCompare}
+                      onClose={() => paletteStack.close('compare')}
                     />
                   );
                 case 'diagnostics':

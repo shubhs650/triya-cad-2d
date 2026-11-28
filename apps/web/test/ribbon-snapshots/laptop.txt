@@ -278,6 +278,8 @@ Palettes (expanded)
   icon        history<history>
 Interface (expanded)
   icon        theme<dark_theme> ▾ [theme-system<dark_theme>, theme-light<weather_sunny>, theme-dark<weather_moon>]
+Compare (expanded)
+  icon        compare<split_vertical>
 
 ### step 1
 Model Viewports (collapsed)
@@ -300,6 +302,10 @@ Palettes (compressed)
 Navigate (compressed)
   icon        zoom<zoom_fit> ▾ [zoom-extents<zoom_fit>, zoom-window<search_square>, zoom-previous<arrow_previous>, zoom-realtime<search>, zoom-all<full_screen_maximize>, zoom-center<location_arrow>, zoom-object<select_object>, zoom-in<zoom_in>, zoom-out<zoom_out>]
   ▾ pan, named-views
+
+### step 6
+Compare (collapsed)
+  ▾ compare
 
 ## Output
 Plot (expanded)

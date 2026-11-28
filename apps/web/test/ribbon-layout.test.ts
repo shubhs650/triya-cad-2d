@@ -105,6 +105,8 @@ describe('the data model', () => {
       'Model Viewports',
       'Palettes',
       'Interface',
+      // M8-06: COMPARE.
+      'Compare',
     ]);
     // Parametric (M9-05, M9-03 part 3; Manage with PARAMETERS, part 5).
     expect(labels('parametric')).toEqual(['Geometric', 'Dimensional', 'Manage']);

@@ -68,6 +68,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@triya/compare':
+        specifier: workspace:*
+        version: link:../../packages/compare
       '@triya/constraints':
         specifier: workspace:*
         version: link:../../packages/constraints

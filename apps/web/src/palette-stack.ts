@@ -14,6 +14,7 @@
 
 /** The palettes the stack holds so far, as named by their commands' host requests. */
 export type PaletteName =
+  | 'compare'
   | 'designcenter'
   | 'diagnostics'
   | 'health'
@@ -32,6 +33,7 @@ export const PALETTES: readonly { readonly name: PaletteName; readonly title: st
   { name: 'references', title: 'References' },
   { name: 'designcenter', title: 'DesignCenter' },
   { name: 'parameters', title: 'Parameters' },
+  { name: 'compare', title: 'Compare' },
   { name: 'history', title: 'Command History' },
 ];
 

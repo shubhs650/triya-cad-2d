@@ -7,6 +7,10 @@
 // objects selected, or those picked at "Select objects" when none are, whatever QPMODE says
 // (QPMODE decides only whether a pick at `Command:` shows it). The objects stay selected, as the
 // palette shows a selection. Help is silent on an empty pick: nothing is shown.
+// COMPARE and COMPARECLOSE (M8-06, DEC-092): AutoCAD 2024 Help, "COMPARE (Command)": "Compares two
+// versions of a drawing", asking for the drawing to compare with; "COMPARECLOSE": "Closes the
+// Compare toolbar and exits the compare state". Triya's compare picks its two drawings in the
+// Compare palette, which COMPARE opens and COMPARECLOSE closes.
 import type { CommandDef } from './command';
 import type { PaletteName } from './view/host';
 import { viewRequest } from './view/zoom';
@@ -40,6 +44,8 @@ function quickPropertiesCommand(): CommandDef {
 }
 
 export const PALETTE_COMMANDS: readonly (() => CommandDef)[] = [
+  () => paletteCommand('COMPARE', 'compare', true),
+  () => paletteCommand('COMPARECLOSE', 'compare', false),
   () => paletteCommand('PROPERTIES', 'properties', true),
   () => paletteCommand('PROPERTIESCLOSE', 'properties', false),
   quickPropertiesCommand,
