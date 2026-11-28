@@ -10,7 +10,9 @@ import {
   PromptBus,
   builtinCommands,
   closestPoint,
+  geometricConstraints,
   isGeometricConstraint,
+  parameterObjects,
   toleranceForSize,
   type BusEvent,
   type ConstraintRef,
@@ -366,5 +368,54 @@ describe('modify commands keep constraints with PlaneGCS (M9-06)', () => {
     expect(s.ends(c31!)).toEqual([45, 0, 45, 10]);
     expect(s.ends(c30!).map((v) => Math.round(v * 1e4) / 1e4)).toEqual([35, 0, 45, 0]);
     expect(s.ends('30')).toEqual([0, 0, 10, 0]);
+  });
+
+  it('solves constraints pasted from another drawing to its user parameters (M9-12)', async () => {
+    const user = (expression: string) =>
+      ({
+        handle: 'B2',
+        type: 'TRIYA_USERPARAMETER',
+        owner: '0',
+        parameter: 'span',
+        expression,
+      }) as never;
+    const width = {
+      handle: 'B1',
+      type: 'TRIYA_DIMCONSTRAINT',
+      owner: '0',
+      dimension: 'aligned',
+      refs: [
+        { entity: '30', point: 'start' },
+        { entity: '30', point: 'end' },
+      ],
+      parameter: 'width',
+      expression: 'span',
+      location: { x: 5, y: -5 },
+      form: 'dynamic',
+    } as DimensionalConstraintObject;
+    // Line 30 is 10 long as pasted; this drawing's span is 12.
+    const solve = (span: string) => {
+      const s = setup(false, [width, user(span)]);
+      return constraintSolver(gcs).solveDimensions(
+        geometricConstraints(s.model),
+        parameterObjects(s.model),
+        ['B1'],
+        (h) => s.model.entityByHandle(h),
+        toleranceForSize(100),
+      );
+    };
+    const r = solve('12');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const moved = r.updated.find((u) => u.after.handle === '30')!.after.geom as LineGeometry;
+    expect(
+      [moved.start.x, moved.start.y, moved.end.x, moved.end.y].map((v) => +v.toFixed(6)),
+    ).toEqual([0, 0, 12, 0]);
+    // The upright joined to its end follows, still vertical.
+    const upright = r.updated.find((u) => u.after.handle === '31')!.after.geom as LineGeometry;
+    expect(+upright.start.x.toFixed(6)).toBe(12);
+    expect(+upright.end.x.toFixed(6)).toBe(12);
+    // A value a length cannot take is refused, nothing moved.
+    expect(solve('-1')).toMatchObject({ ok: false, reason: 'invalid' });
   });
 });

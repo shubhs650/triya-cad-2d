@@ -8,11 +8,17 @@ const notAsked = (): never => {
 
 export const NO_PARAMETERS: Pick<
   ConstraintSolver,
-  'parameters' | 'setExpression' | 'setReference' | 'renameParameter' | 'deleteParameter'
+  | 'parameters'
+  | 'setExpression'
+  | 'setReference'
+  | 'renameParameter'
+  | 'deleteParameter'
+  | 'solveDimensions'
 > = {
   parameters: notAsked,
   setExpression: notAsked,
   setReference: notAsked,
   renameParameter: notAsked,
   deleteParameter: notAsked,
+  solveDimensions: notAsked,
 };

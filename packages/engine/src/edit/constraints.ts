@@ -236,6 +236,19 @@ export interface ConstraintSolver {
     lookup: (handle: Handle) => Entity | undefined,
     tolerance: Tolerance,
   ): ParameterChangeResult;
+  /**
+   * Solves the dimensional constraints `handles` among `dimensions` to their values, holding
+   * their first objects (M9-12): a paste from another drawing whose expressions take this
+   * drawing's user parameters. Refused, nothing moved, when a value has none or the geometry
+   * cannot take it. `expressions`: the reference rows the move changed.
+   */
+  solveDimensions(
+    constraints: readonly GeometricConstraintObject[],
+    dimensions: readonly ParameterObject[],
+    handles: readonly Handle[],
+    lookup: (handle: Handle) => Entity | undefined,
+    tolerance: Tolerance,
+  ): ParameterChangeResult;
   /** Renames a parameter; `expressions` are those naming it, rewritten. Moves nothing. */
   renameParameter(
     dimensions: readonly ParameterObject[],
