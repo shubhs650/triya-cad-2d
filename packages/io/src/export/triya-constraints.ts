@@ -25,8 +25,10 @@ import {
   type CadDocument,
 } from '@node-projects/acad-ts';
 import {
+  CONSTRAINT_DIMVARS,
   DIMENSIONAL_CONSTRAINT_KINDS,
   GEOMETRIC_CONSTRAINT_KINDS,
+  isConstraintDimvar,
   isDimensionalConstraint,
   isGeometricConstraint,
   isParameterGroup,
@@ -77,6 +79,9 @@ export interface TriyaConstraintsPlan {
 
 const handle = (h: Handle): number => Number.parseInt(h, 16);
 
+/** `c` without its dimension style. */
+const withoutStyle = ({ style: _s, ...rest }: DimensionalConstraintObject): Constraint => rest;
+
 /** What the record states: everything but the handle and owner. */
 const fields = (c: Constraint) => {
   const { handle: _h, owner: _o, ...rest } = c;
@@ -116,6 +121,10 @@ function layoutProblems(c: Constraint): string[] {
     }
     if (!CONSTRAINT_FORMS.includes(c.form)) out.push(`form ${String(c.form)}`);
     if (!Number.isFinite(c.location?.x) || !Number.isFinite(c.location?.y)) out.push('location');
+    for (const [name, v] of Object.entries(c.dimvars ?? {})) {
+      if (!isConstraintDimvar(name)) out.push(`DIMVAR ${name}`);
+      else if (!Number.isFinite(v)) out.push(`${name} ${String(v)}`);
+    }
     out.push(...parameterTextProblems(c));
   } else if (!(GEOMETRIC_CONSTRAINT_KINDS as readonly string[]).includes(c.kind)) {
     out.push(`kind ${String(c.kind)}`);
@@ -170,17 +179,20 @@ export function planTriyaConstraints(
     const n = a.name.toLowerCase();
     groupNames.set(n, (groupNames.get(n) ?? 0) + 1);
   }
-  // A group keeps only the members saved with it (a parameter deleted, or gone with its object).
+  // A group keeps only the members saved with it (a parameter deleted, or gone with its object);
+  // a dimensional constraint whose style was purged is saved with none, as it is drawn (DEC-088).
   const written = (o: Constraint): Constraint =>
-    isParameterGroup(o)
-      ? {
-          ...o,
-          members: o.members.filter((h) => {
-            const m = model.objects.get(h);
-            return isParameterObject(m) && saved(m);
-          }),
-        }
-      : o;
+    isDimensionalConstraint(o) && o.style !== undefined && !model.tables.dimStyles.has(o.style)
+      ? withoutStyle(o)
+      : isParameterGroup(o)
+        ? {
+            ...o,
+            members: o.members.filter((h) => {
+              const m = model.objects.get(h);
+              return isParameterObject(m) && saved(m);
+            }),
+          }
+        : o;
   for (const o of model.objects.values()) {
     if (!saved(o)) continue;
     const a = written(o);
@@ -236,6 +248,14 @@ function fill(x: XRecord, c: Constraint): void {
     x.createEntry(281, CONSTRAINT_FORMS.indexOf(c.form));
     // DCDISPLAY's Hide (M9-03 part 7, DEC-084): a shown constraint's record stays DEC-082's.
     if (c.hidden) x.createEntry(282, 1);
+    // An annotational constraint's dimension style and own DIMVARs (M9-03 part 15, DEC-088).
+    if (c.style !== undefined) x.createEntry(340, handle(c.style));
+    for (const name of CONSTRAINT_DIMVARS) {
+      const v = c.dimvars?.[name];
+      if (v === undefined) continue;
+      x.createEntry(304, name);
+      x.createEntry(140, v);
+    }
     x.createEntry(10, new XYZ(c.location.x, c.location.y, 0));
   } else {
     x.createEntry(1, c.kind);

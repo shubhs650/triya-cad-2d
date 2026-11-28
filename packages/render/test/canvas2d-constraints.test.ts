@@ -144,6 +144,21 @@ describe('constraintPrimitives (M9-03 part 4)', () => {
     expect(annotationalSizes(new Map([['$DIMSCALE', 0]])).arrow).toBe(0.18);
   });
 
+  it("sizes one by its own DIMVARs (its style's and its own) over the header's (M9-03 part 15)", () => {
+    const header = new Map<string, unknown>([
+      ['$DIMASZ', 2.5],
+      ['$DIMTXT', 3.5],
+    ]);
+    const own = { DIMASZ: 1, DIMEXE: 0.5, DIMEXO: 0.25, DIMGAP: 0.2, DIMSCALE: 3, DIMTXT: 2 };
+    expect(annotationalSizes(header, own)).toEqual({
+      text: 6,
+      arrow: 3,
+      offset: 0.75,
+      extend: 1.5,
+      gap: expect.closeTo(0.6, 12),
+    });
+  });
+
   it('draws angular constraints as arcs and radial ones as leaders', () => {
     const { model } = drawing([entity('20', line(0, 0, 10, 0)), entity('21', line(0, 0, 0, 10))], {
       objects: [
@@ -206,6 +221,18 @@ describe('Canvas2DRenderer draws dimensional constraints', () => {
     const c = redraw();
     expect(drawnIn(c, BLUE).strokes).toBe(0);
     expect(drawnIn(c, '#ffffff').fills).toBe(2);
+  });
+
+  it("draws an annotational constraint at its own DIMVARs' sizes (M9-03 part 15)", () => {
+    const at = (o: Partial<DimensionalConstraintObject>) => {
+      const c = setup([dim('D1', { form: 'annotational', ...o })]).redraw();
+      return c.calls.filter((call) => call[0] === 'lineTo' || call[0] === 'moveTo');
+    };
+    const header = at({});
+    // The header's own values, stated as the constraint's: drawn the same.
+    expect(at({ dimvars: { DIMASZ: 0.18, DIMTXT: 0.18 } })).toEqual(header);
+    expect(at({ dimvars: { DIMASZ: 2 } })).not.toEqual(header);
+    expect(at({ dimvars: { DIMSCALE: 4 } })).not.toEqual(header);
   });
 
   it('follows its object when it moves and goes when the constraint is removed', () => {

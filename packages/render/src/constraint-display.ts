@@ -4,9 +4,15 @@
 // Constraints": a dynamic constraint keeps "the same size when zooming in or out" and is not
 // plotted; an annotational one is sized as a dimension (its dimension style). Sizes are given
 // here in drawing units: the renderer works out a dynamic constraint's from pixels at the
-// view's scale each time the scene is drawn, an annotational one's from the drawing's DIMVARs.
+// view's scale each time the scene is drawn, an annotational one's from its DIMVARs.
 
-import type { ConstraintDisplay, ConstraintShape, Vec2 } from '@triya/engine';
+import type {
+  ConstraintDimvar,
+  ConstraintDimvars,
+  ConstraintDisplay,
+  ConstraintShape,
+  Vec2,
+} from '@triya/engine';
 import type { Affine } from './affine';
 import type { Paint } from './tessellate';
 import { frameLabelPrimitives, labelWidth, type TextContext } from './text';
@@ -48,21 +54,25 @@ export function sizesAt(px: ConstraintSizes, scale: number): ConstraintSizes {
 }
 
 /**
- * An annotational constraint's sizes: the drawing's DIMTXT, DIMASZ, DIMEXO, DIMEXE and DIMGAP
- * times DIMSCALE (0 counting as 1), AutoCAD's imperial defaults where the header has none.
+ * An annotational constraint's sizes: its DIMTXT, DIMASZ, DIMEXO, DIMEXE and DIMGAP times
+ * DIMSCALE (0 counting as 1), from `dimvars` (its dimension style's and its own, M9-03 part 15)
+ * or, without, the drawing's header, AutoCAD's imperial defaults where the header has none.
  */
-export function annotationalSizes(header: ReadonlyMap<string, unknown>): ConstraintSizes {
-  const num = (name: string, fallback: number) => {
-    const v = header.get(name);
+export function annotationalSizes(
+  header: ReadonlyMap<string, unknown>,
+  dimvars?: ConstraintDimvars,
+): ConstraintSizes {
+  const num = (name: ConstraintDimvar, fallback: number) => {
+    const v = dimvars ? dimvars[name] : header.get('$' + name);
     return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
   };
-  const scale = num('$DIMSCALE', 1) || 1;
+  const scale = num('DIMSCALE', 1) || 1;
   return {
-    text: num('$DIMTXT', 0.18) * scale,
-    arrow: num('$DIMASZ', 0.18) * scale,
-    offset: num('$DIMEXO', 0.0625) * scale,
-    extend: num('$DIMEXE', 0.18) * scale,
-    gap: Math.abs(num('$DIMGAP', 0.09)) * scale,
+    text: num('DIMTXT', 0.18) * scale,
+    arrow: num('DIMASZ', 0.18) * scale,
+    offset: num('DIMEXO', 0.0625) * scale,
+    extend: num('DIMEXE', 0.18) * scale,
+    gap: Math.abs(num('DIMGAP', 0.09)) * scale,
   };
 }
 
