@@ -2400,7 +2400,13 @@ async function compareSource(
  */
 async function runCompare(original: CompareSource, revision: CompareSource): Promise<void> {
   const { options } = compareSession.getSnapshot();
-  compareSession.update({ busy: `Reading ${original.name}…`, message: undefined });
+  // Kept: the compare drawing, on screen next, is not the revision.
+  compareSession.update({
+    original,
+    revision,
+    busy: `Reading ${original.name}…`,
+    message: undefined,
+  });
   try {
     const a = await compareSource(original);
     compareSession.update({ busy: `Reading ${revision.name}…` });
@@ -2490,8 +2496,8 @@ async function zoomCompare(item: MarkedItem): Promise<void> {
   const c = await whenRegistered(doc.id, space.block);
   if (!c || ids.length === 0) return;
   await compareFiltering;
+  // Not highlighted: the highlight would hide the colour that says what changed.
   await c.zoomObjects(ids);
-  c.setHighlight(ids);
 }
 
 /** The Compare palette's Export DXF... and Export PDF... (M8-06): Save As or EXPORTPDF of it. */
