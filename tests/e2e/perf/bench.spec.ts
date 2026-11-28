@@ -31,12 +31,14 @@ const MARGIN = 1.2;
 
 /**
  * Each budget: PRD §12's target, and the budget asserted (the target with the margin, or, while
- * the app is slower, the time M10-01 measured on a 4-core runner with the margin; DEC-097).
+ * the app is slower, the time M10-01 part 1 measured on CI's runner, where it is asserted, with
+ * the margin; DEC-097). Run 46160444447 (`performance budgets`, one spec at a time): bench-ga
+ * 2499 ms, bench-100k open 8234 ms, save 4944 ms.
  */
 const BUDGETS = {
-  openGa: { target: 500, budget: 2600 * MARGIN },
-  open100k: { target: 3000, budget: 7800 * MARGIN },
-  save100k: { target: 2000, budget: 5400 * MARGIN },
+  openGa: { target: 500, budget: 2500 * MARGIN },
+  open100k: { target: 3000, budget: 8300 * MARGIN },
+  save100k: { target: 2000, budget: 5000 * MARGIN },
 } as const;
 
 /** PRD §12 T7: memory for bench-100k. A heap measure needs no runner margin. */
