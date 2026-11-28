@@ -81,6 +81,10 @@ export function serveEngine(port: Endpoint<EngineRequest, EngineReply>): void {
         port.postMessage({ type: 'purge-health', id: data.id, health: session.purgeHealth() });
         return;
       }
+      if (data.type === 'health-checks') {
+        port.postMessage({ type: 'health-checks', id: data.id, checks: session.healthChecks() });
+        return;
+      }
       if (data.type === 'layers-in-use') {
         port.postMessage({ type: 'layers-in-use', id: data.id, layers: session.layersInUse() });
         return;

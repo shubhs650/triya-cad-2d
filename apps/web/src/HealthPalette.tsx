@@ -1,8 +1,8 @@
 // The Health palette (M1-70, UI_SPEC.md §4 "Health: report cards"): the drawing health report
 // (M1-25) of the drawing on screen, one folding card per section. The file's facts come from
 // the I/O worker with the drawing; the report sets them against the fonts and hatch patterns
-// the app has loaded, so it is worked out again when the user adds .pat files. Fix buttons
-// arrive with the complete report (M8-07). Keyboard operable: each card folds from its summary.
+// the app has loaded, so it is worked out again when the user adds .pat files. Keyboard
+// operable: each card folds from its summary.
 // Fonts (M1-38 part 3): the report asks a book of the fonts the renderers get, bundled, the
 // user's files and installed faces, so it follows them as they change, and it lists the font
 // files the app could not read or parse and the installed faces the drawing draws with.
@@ -17,9 +17,23 @@
 // Purge... (the Purge dialog, to choose); zero-length geometry, empty text and orphaned data (the
 // DGN linestyle data no linetype uses, M5-09 part 5): Delete. Each fix is one PURGE undo step;
 // registered applications are left to -PURGE, as in the dialog.
+// Drawing checks (M8-07, PRD FR-Z4 "duplicate (OVERKILL candidates) ... units/scale sanity ...
+// one-click fixes"): asked of the drawing's engine as the purge counts are. Units: a unitless
+// drawing (Use Millimeters or Use Inches, as its measurement suggests, or Units... for the
+// dialog) and a MEASUREMENT that disagrees with INSUNITS (Set Measurement); the Drawing card
+// shows the units as they now are. Duplicate objects: what OVERKILL's initial settings delete in
+// every space (Delete Duplicates, one OVERKILL undo step, or Overkill... to choose). Dynamic blocks
+// and constraints present: what the drawing holds, which Triya draws without evaluating (dynamic
+// blocks, PRD non-goal 2) or solves (constraints, M9); Parameters Manager... opens PARAMETERS.
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { DimensionMismatch, DrawingDimensionHealth } from '@triya/dims';
-import type { PurgeEdit, PurgeHealth } from '@triya/engine';
+import {
+  INSUNITS_NAMES,
+  type HealthChecks,
+  type HealthFixEdit,
+  type PurgeEdit,
+  type PurgeHealth,
+} from '@triya/engine';
 import { healthReport, type HealthReport } from '@triya/io/health';
 import { patternLibrary } from '@triya/render';
 import { controllerOf, controllersOf } from './canvas/registry';
@@ -75,6 +89,12 @@ export function HealthPalette({
   }, [facts, patternSources, fontSources, own, device]);
   const { version, units, fonts, references, patterns, unknownObjects, unmappedEntities } = report;
   const dims = useDimensionHealth(doc, fontSources);
+  const checks = useHealthChecks(doc);
+  // The units as they now are once the engine says (a fix changes them); the file's until then.
+  const unitsName = checks
+    ? (INSUNITS_NAMES[checks.units.insUnits] ?? `Unknown (${checks.units.insUnits})`)
+    : units.name;
+  const measurement = checks?.units.measurement ?? units.measurement;
 
   return (
     <aside className="palette health-palette" aria-labelledby="health-title">
@@ -92,13 +112,17 @@ export function HealthPalette({
               {version.release ? `${version.release} (${version.code})` : version.code || '—'}
             </dd>
             <dt>Units</dt>
-            <dd>{units.name}</dd>
+            <dd>{unitsName}</dd>
             <dt>Measurement</dt>
-            <dd>{units.measurement === 'metric' ? 'Metric' : 'Imperial'}</dd>
+            <dd>{measurement === 'metric' ? 'Metric' : 'Imperial'}</dd>
           </dl>
         </Card>
 
+        <UnitsCard doc={doc} store={store} checks={checks} />
+
         <PurgeCards doc={doc} store={store} />
+
+        <DuplicatesCard doc={doc} store={store} checks={checks} />
 
         <Card id="fonts" title="Missing fonts" count={fonts.missing.length}>
           {fonts.missing.length === 0 ? (
@@ -225,6 +249,10 @@ export function HealthPalette({
             </>
           )}
         </Card>
+
+        <DynamicBlocksCard checks={checks} />
+
+        <ConstraintsCard doc={doc} checks={checks} />
 
         <Card id="unknown" title="Unknown objects" count={unknownObjects.total}>
           {unknownObjects.total === 0 ? (
@@ -422,6 +450,253 @@ function PurgeCards({ doc, store }: { doc: OpenDocument; store: DocumentStore })
         )}
       </Card>
     </>
+  );
+}
+
+/**
+ * What the drawing checks find (M8-07), from the drawing's engine: asked at once for a drawing
+ * shown, and again once its edits settle, as the purge counts are; undefined until the first
+ * answer. OVERKILL's plan of every space is most of the cost (0.4 s at 100k objects).
+ */
+function useHealthChecks(doc: OpenDocument): HealthChecks | undefined {
+  const [checks, setChecks] = useState<{ doc: number; checks: HealthChecks }>();
+  const known = checks?.doc === doc.id;
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(
+      () =>
+        void engines.healthChecks(doc.id).then(
+          (c) => {
+            if (live && c) setChecks({ doc: doc.id, checks: c });
+          },
+          () => {},
+        ),
+      known ? PURGE_HEALTH_SETTLE_MS : 0,
+    );
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // `known` only picks the delay, as in usePurgeHealth.
+  }, [doc.id, doc.revision]);
+  return known ? checks.checks : undefined;
+}
+
+/** A drawing-check fix (M8-07) as an engine edit; its refusal shown, the drawing marked edited. */
+function useHealthFix(doc: OpenDocument, store: DocumentStore) {
+  const [message, setMessage] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const fix = async (edit: HealthFixEdit) => {
+    setBusy(true);
+    try {
+      const r = await engines.edit(doc.id, edit);
+      if (!r.ok) {
+        setMessage(r.message);
+        return;
+      }
+      setMessage(undefined);
+      store.edited(doc.id);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const status = message && (
+    <p className="hint" role="status">
+      {message}
+    </p>
+  );
+  return { fix, busy, status };
+}
+
+const Checking = ({ id, title }: { id: string; title: string }) => (
+  <Card id={id} title={title}>
+    <p className="empty">Checking…</p>
+  </Card>
+);
+
+const unitName = (code: number) => INSUNITS_NAMES[code] ?? `Unknown (${code})`;
+const systemName = (m: 'imperial' | 'metric') => (m === 'metric' ? 'Metric' : 'Imperial');
+
+function UnitsCard({
+  doc,
+  store,
+  checks,
+}: {
+  doc: OpenDocument;
+  store: DocumentStore;
+  checks: HealthChecks | undefined;
+}) {
+  const { fix, busy, status } = useHealthFix(doc, store);
+  if (!checks) return <Checking id="units" title="Units" />;
+  const { problems } = checks.units;
+  return (
+    <Card id="units" title="Units" count={problems.length}>
+      {problems.length === 0 && (
+        <p className="empty">None: the drawing has units, and its measurement agrees with them.</p>
+      )}
+      {problems.map((p) =>
+        p.kind === 'unitless' ? (
+          <div key={p.kind}>
+            <p className="hint">
+              The drawing is unitless (INSUNITS 0): blocks inserted into it and objects pasted from
+              other drawings are not scaled to its size.
+            </p>
+            <div className="health-fixes">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void fix({ kind: 'health-fix', what: 'units', insUnits: p.suggested })
+                }
+              >
+                Use {unitName(p.suggested)}
+              </button>
+              <button
+                type="button"
+                title="Choose the units in the Drawing Units dialog"
+                onClick={() => engines.command(doc.id, { kind: 'invoke', name: 'UNITS' })}
+              >
+                Units…
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div key={p.kind}>
+            <p className="hint">
+              The drawing is in {unitName(p.insUnits)} but its measurement is{' '}
+              {systemName(p.measurement)} (MEASUREMENT {p.measurement === 'metric' ? 1 : 0}): new
+              hatch patterns and linetypes come from the {p.measurement} files.
+            </p>
+            <div className="health-fixes">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void fix({ kind: 'health-fix', what: 'measurement' })}
+              >
+                Set Measurement to {systemName(p.suggested)}
+              </button>
+            </div>
+          </div>
+        ),
+      )}
+      {status}
+    </Card>
+  );
+}
+
+function DuplicatesCard({
+  doc,
+  store,
+  checks,
+}: {
+  doc: OpenDocument;
+  store: DocumentStore;
+  checks: HealthChecks | undefined;
+}) {
+  const { fix, busy, status } = useHealthFix(doc, store);
+  if (!checks) return <Checking id="duplicates" title="Duplicate objects" />;
+  const { duplicates, overlaps } = checks.duplicates;
+  const total = duplicates + overlaps;
+  return (
+    <Card id="duplicates" title="Duplicate objects" count={total}>
+      {total === 0 ? (
+        <p className="empty">None: OVERKILL finds nothing to delete.</p>
+      ) : (
+        <>
+          <p className="hint">
+            What OVERKILL deletes with its initial settings, in model space and each layout, outside
+            locked layers: objects drawn twice, and lines, arcs and segments lying on others.
+          </p>
+          <Counts
+            label="Duplicate objects"
+            head={['Kind', 'Count']}
+            rows={[
+              ['Duplicates', duplicates],
+              ['Overlapping', overlaps],
+            ]}
+          />
+        </>
+      )}
+      <div className="health-fixes">
+        {total > 0 && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void fix({ kind: 'health-fix', what: 'duplicates' })}
+          >
+            Delete Duplicates
+          </button>
+        )}
+        <button
+          type="button"
+          title="Select the objects and choose the settings in Delete Duplicate Objects"
+          onClick={() => engines.command(doc.id, { kind: 'invoke', name: 'OVERKILL' })}
+        >
+          Overkill…
+        </button>
+      </div>
+      {status}
+    </Card>
+  );
+}
+
+function DynamicBlocksCard({ checks }: { checks: HealthChecks | undefined }) {
+  if (!checks) return <Checking id="dynamic-blocks" title="Dynamic blocks" />;
+  const { blocks, references } = checks.dynamicBlocks;
+  return (
+    <Card id="dynamic-blocks" title="Dynamic blocks" count={blocks.length}>
+      {blocks.length === 0 ? (
+        <p className="empty">None.</p>
+      ) : (
+        <>
+          <p className="hint">
+            Drawn as saved, in {plural(references, 'reference')}. Triya keeps their parameters and
+            actions unchanged but does not run them: edit them in AutoCAD.
+          </p>
+          <Counts
+            label="Dynamic blocks"
+            head={['Block', 'References']}
+            rows={blocks.map((b) => [b.name, b.references])}
+          />
+        </>
+      )}
+    </Card>
+  );
+}
+
+function ConstraintsCard({ doc, checks }: { doc: OpenDocument; checks: HealthChecks | undefined }) {
+  if (!checks) return <Checking id="constraints" title="Constraints" />;
+  const { geometric, dimensional, userParameters } = checks.constraints;
+  const total = geometric + dimensional;
+  return (
+    <Card id="constraints" title="Constraints" count={total}>
+      {total + userParameters === 0 ? (
+        <p className="empty">None.</p>
+      ) : (
+        <>
+          <p className="hint">
+            Parametric constraints, in the drawing and its blocks: edits keep them satisfied.
+          </p>
+          <Counts
+            label="Constraints"
+            head={['Kind', 'Count']}
+            rows={[
+              ['Geometric', geometric],
+              ['Dimensional', dimensional],
+              ['User parameters', userParameters],
+            ]}
+          />
+        </>
+      )}
+      <div className="health-fixes">
+        <button
+          type="button"
+          onClick={() => engines.command(doc.id, { kind: 'invoke', name: 'PARAMETERS' })}
+        >
+          Parameters Manager…
+        </button>
+      </div>
+    </Card>
   );
 }
 

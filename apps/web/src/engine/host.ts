@@ -11,6 +11,7 @@ import {
   type EngineEdit,
   type Handle,
   type PaperView,
+  type HealthChecks,
   type PurgeHealth,
 } from '@triya/engine';
 import type { ChangeLink } from '@triya/render';
@@ -36,6 +37,7 @@ export class EngineHost {
   readonly #pending = new Map<number, Pending>();
   readonly #blocks = new Map<number, PendingBlocks>();
   readonly #health = new Map<number, { resolve(h: PurgeHealth): void; reject(e: Error): void }>();
+  readonly #checks = new Map<number, { resolve(h: HealthChecks): void; reject(e: Error): void }>();
   readonly #used = new Map<number, { resolve(h: Handle[]): void; reject(e: Error): void }>();
   readonly #commandListeners = new Set<(o: CommandOutput) => void>();
   #nextId = 1;
@@ -147,6 +149,17 @@ export class EngineHost {
     });
   }
 
+  /** What the Health palette's drawing checks find (M8-07), as the drawing is now. */
+  healthChecks(): Promise<HealthChecks> {
+    if (this.#disposed) return Promise.reject(new Error('engine host disposed'));
+    if (this.#session) return Promise.resolve(this.#session.healthChecks());
+    const id = this.#nextId++;
+    return new Promise((resolve, reject) => {
+      this.#checks.set(id, { resolve, reject });
+      this.#worker!.postMessage({ type: 'health-checks', id });
+    });
+  }
+
   /** The layers objects are on (M5-07 part 5: the Layer Properties Manager's All Used Layers). */
   layersInUse(): Promise<Handle[]> {
     if (this.#disposed) return Promise.reject(new Error('engine host disposed'));
@@ -165,6 +178,7 @@ export class EngineHost {
       ...this.#pending.values(),
       ...this.#blocks.values(),
       ...this.#health.values(),
+      ...this.#checks.values(),
       ...this.#used.values(),
     ]) {
       p.reject(new Error('engine host disposed'));
@@ -172,6 +186,7 @@ export class EngineHost {
     this.#pending.clear();
     this.#blocks.clear();
     this.#health.clear();
+    this.#checks.clear();
     this.#used.clear();
     this.#commandListeners.clear();
   }
@@ -187,6 +202,13 @@ export class EngineHost {
       this.#health.delete(m.id!);
       if (m.type === 'purge-health') health.resolve(m.health);
       else health.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
+      return;
+    }
+    const checks = m.id === undefined ? undefined : this.#checks.get(m.id);
+    if (checks) {
+      this.#checks.delete(m.id!);
+      if (m.type === 'health-checks') checks.resolve(m.checks);
+      else checks.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
       return;
     }
     const used = m.id === undefined ? undefined : this.#used.get(m.id);
@@ -207,6 +229,7 @@ export class EngineHost {
       m.type === 'save-blocks' ||
       m.type === 'save-views' ||
       m.type === 'purge-health' ||
+      m.type === 'health-checks' ||
       m.type === 'layers-in-use'
     )
       return;

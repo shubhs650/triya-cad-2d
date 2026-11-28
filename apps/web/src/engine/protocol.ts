@@ -14,6 +14,7 @@ import type {
   EditResult,
   EngineEdit,
   Handle,
+  HealthChecks,
   PaperView,
   PurgeHealth,
 } from '@triya/engine';
@@ -29,6 +30,8 @@ export type EngineRequest =
   | { readonly type: 'save-views'; readonly id: number; readonly layouts: readonly PaperView[] }
   /** What the Health palette's purge card counts (M5-09 part 3). */
   | { readonly type: 'purge-health'; readonly id: number }
+  /** What the Health palette's drawing checks find (M8-07). */
+  | { readonly type: 'health-checks'; readonly id: number }
   /** The layers objects are on: the Layer Properties Manager's All Used Layers (M5-07 part 5). */
   | { readonly type: 'layers-in-use'; readonly id: number }
   /** A render worker's end of a change channel (M2-62), transferred; `id` names the link. */
@@ -42,6 +45,7 @@ export type EngineReply =
   | { readonly type: 'save-blocks'; readonly id: number; readonly change?: ChangeSet }
   | { readonly type: 'save-views'; readonly id: number; readonly change?: ChangeSet }
   | { readonly type: 'purge-health'; readonly id: number; readonly health: PurgeHealth }
+  | { readonly type: 'health-checks'; readonly id: number; readonly checks: HealthChecks }
   | { readonly type: 'layers-in-use'; readonly id: number; readonly layers: readonly Handle[] }
   | { readonly type: 'error'; readonly message: string; readonly id?: number };
 
