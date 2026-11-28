@@ -38,7 +38,7 @@ export const DEPENDENCY_GRAPH = {
   engine: [],
   // Test-only harness (DEC-032): may reach the file layer and renderer to drive round-trip,
   // fidelity and perf tests. Only test files may import it.
-  testkit: ['engine', 'io', 'render', 'text', 'hatch', 'dims', 'pdf'],
+  testkit: ['engine', 'io', 'render', 'text', 'hatch', 'dims', 'compare', 'pdf'],
 };
 
 /** `ui → engine (types only)` in ARCHITECTURE.md §2. */

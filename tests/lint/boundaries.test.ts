@@ -51,7 +51,7 @@ const ALLOWED: Record<Element, readonly Element[]> = {
   compare: ['engine'],
   pdf: ['render', 'engine'],
   engine: [],
-  testkit: ['engine', 'io', 'render', 'text', 'hatch', 'dims', 'pdf'],
+  testkit: ['engine', 'io', 'render', 'text', 'hatch', 'dims', 'compare', 'pdf'],
 };
 
 const dirOf = (e: Element) => (e === 'web' ? 'apps/web' : `packages/${e}`);
