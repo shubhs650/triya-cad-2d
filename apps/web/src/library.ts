@@ -106,6 +106,17 @@ export function libraryPreview(block: LibraryBlock | undefined): StylePreview | 
 }
 
 /**
+ * The INSUNITS code of a block copied out (its record's Block Unit), which INSERT converts into
+ * the drawing's; undefined for the drawing's own block or none.
+ */
+export function libraryBlockUnits(block: LibraryBlock | undefined): number | undefined {
+  if (!block?.content) return undefined;
+  const upper = block.name.toUpperCase();
+  const r = block.content.tables.blockRecords?.find((x) => x.name.toUpperCase() === upper);
+  return r ? (r.units ?? 0) : undefined;
+}
+
+/**
  * What Insert asks of the drawing: the block copied out added (unless the drawing has its own)
  * and inserted at the point picked, one INSERT undo step.
  */
