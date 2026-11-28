@@ -25,6 +25,13 @@
 // every space (Delete Duplicates, one OVERKILL undo step, or Overkill... to choose). Dynamic blocks
 // and constraints present: what the drawing holds, which Triya draws without evaluating (dynamic
 // blocks, PRD non-goal 2) or solves (constraints, M9); Parameters Manager... opens PARAMETERS.
+// Part 2: Dimension overrides (the roadmap's "non-standard dim styles": dimensions whose DIMVARs
+// override their style, by style and variable; Clear Overrides, DIMOVERRIDE's Clear overrides on
+// them all as one undo step that redraws them, or Dimension Style... for DIMSTYLE); the
+// references as the References palette found them (Loaded, Not found, Unloaded; References...
+// shows that palette, where the files are dropped or picked); the fonts multiline text names
+// inline (`\F`, `\f`) in the Missing fonts card beside the styles' fonts; and AutoCAD's own
+// constraint groups on the Constraints card, kept as read but not solved.
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { DimensionMismatch, DrawingDimensionHealth } from '@triya/dims';
 import {
@@ -34,7 +41,7 @@ import {
   type PurgeEdit,
   type PurgeHealth,
 } from '@triya/engine';
-import { healthReport, type HealthReport } from '@triya/io/health';
+import { healthReport } from '@triya/io/health';
 import { patternLibrary } from '@triya/render';
 import { controllerOf, controllersOf } from './canvas/registry';
 import type { DocumentStore, OpenDocument } from './documents';
@@ -42,9 +49,11 @@ import { engines } from './engine/registry';
 import { appFontErrors, appFonts } from './fonts';
 import type { DeviceFonts } from './local-fonts';
 import type { FontStore } from './user-fonts';
+import { REFERENCE_STATUS, type ReferenceRow } from './xrefs';
 
-const REFERENCE_KIND: Record<HealthReport['references'][number]['kind'], string> = {
-  xref: 'Xref',
+const REFERENCE_KIND: Record<ReferenceRow['kind'], string> = {
+  attach: 'Xref (attach)',
+  overlay: 'Xref (overlay)',
   image: 'Image',
   pdf: 'PDF underlay',
 };
@@ -55,6 +64,8 @@ export function HealthPalette({
   patternSources,
   fontStore,
   deviceFonts,
+  references,
+  onReferences,
   onClose,
 }: {
   doc: OpenDocument;
@@ -66,6 +77,10 @@ export function HealthPalette({
   fontStore: FontStore;
   /** Fonts installed on this computer (M1-38 part 2). */
   deviceFonts: DeviceFonts;
+  /** The drawing's references as the References palette found them (M8-07 part 2). */
+  references: readonly ReferenceRow[];
+  /** References...: the References palette, where the missing files are dropped or picked. */
+  onReferences: () => void;
   onClose: () => void;
 }) {
   const facts = doc.opened.facts;
@@ -73,6 +88,8 @@ export function HealthPalette({
   const device = useSyncExternalStore(deviceFonts.subscribe, deviceFonts.getSnapshot);
   // The same object until the fonts change (FontStore), so the book is loaded once per change.
   const fontSources = fontStore.sources();
+  const checks = useHealthChecks(doc);
+  const inlineFonts = checks?.inlineFonts;
   const report = useMemo(() => {
     const app = appFonts(fontSources);
     return healthReport(facts, {
@@ -85,11 +102,11 @@ export function HealthPalette({
         device: device.warnings,
       }),
       installed: device.used,
+      ...(inlineFonts && { inlineFonts }),
     });
-  }, [facts, patternSources, fontSources, own, device]);
-  const { version, units, fonts, references, patterns, unknownObjects, unmappedEntities } = report;
+  }, [facts, patternSources, fontSources, own, device, inlineFonts]);
+  const { version, units, fonts, patterns, unknownObjects, unmappedEntities } = report;
   const dims = useDimensionHealth(doc, fontSources);
-  const checks = useHealthChecks(doc);
   // The units as they now are once the engine says (a fix changes them); the file's until then.
   const unitsName = checks
     ? (INSUNITS_NAMES[checks.units.insUnits] ?? `Unknown (${checks.units.insUnits})`)
@@ -141,9 +158,7 @@ export function HealthPalette({
                   <tr key={f.font}>
                     <th scope="row">{f.font || '(none)'}</th>
                     <td>{f.substitute ?? 'Not drawn'}</td>
-                    <td>
-                      {f.styles.length ? f.styles.map((s) => s || '(unnamed)').join(', ') : '—'}
-                    </td>
+                    <td>{fontUsers(f.styles, f.inline)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -208,32 +223,9 @@ export function HealthPalette({
 
         <DimensionsCard doc={doc} health={dims} />
 
-        <Card id="references" title="References" count={references.length}>
-          {references.length === 0 ? (
-            <p className="empty">None: the drawing attaches no other files.</p>
-          ) : (
-            <table aria-label="References">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Saved path</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {references.map((r, i) => (
-                  <tr key={`${r.kind} ${r.name} ${i}`}>
-                    <th scope="row">{r.name}</th>
-                    <td>{REFERENCE_KIND[r.kind]}</td>
-                    <td className="path">{r.path || '—'}</td>
-                    <td>Not checked</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
+        <DimensionOverridesCard doc={doc} checks={checks} />
+
+        <ReferencesCard references={references} onReferences={onReferences} />
 
         <Card id="patterns" title="Missing hatch patterns" count={patterns.missing.length}>
           {patterns.missing.length === 0 ? (
@@ -252,7 +244,7 @@ export function HealthPalette({
 
         <DynamicBlocksCard checks={checks} />
 
-        <ConstraintsCard doc={doc} checks={checks} />
+        <ConstraintsCard doc={doc} checks={checks} autocadGroups={report.autocadConstraintGroups} />
 
         <Card id="unknown" title="Unknown objects" count={unknownObjects.total}>
           {unknownObjects.total === 0 ? (
@@ -664,15 +656,24 @@ function DynamicBlocksCard({ checks }: { checks: HealthChecks | undefined }) {
   );
 }
 
-function ConstraintsCard({ doc, checks }: { doc: OpenDocument; checks: HealthChecks | undefined }) {
+function ConstraintsCard({
+  doc,
+  checks,
+  autocadGroups,
+}: {
+  doc: OpenDocument;
+  checks: HealthChecks | undefined;
+  /** AutoCAD's own constraint groups, from the file (M8-07 part 2). */
+  autocadGroups: number;
+}) {
   if (!checks) return <Checking id="constraints" title="Constraints" />;
   const { geometric, dimensional, userParameters } = checks.constraints;
   const total = geometric + dimensional;
+  const triya = total + userParameters > 0;
   return (
-    <Card id="constraints" title="Constraints" count={total}>
-      {total + userParameters === 0 ? (
-        <p className="empty">None.</p>
-      ) : (
+    <Card id="constraints" title="Constraints" count={total + autocadGroups}>
+      {!triya && autocadGroups === 0 && <p className="empty">None.</p>}
+      {triya && (
         <>
           <p className="hint">
             Parametric constraints, in the drawing and its blocks: edits keep them satisfied.
@@ -688,6 +689,13 @@ function ConstraintsCard({ doc, checks }: { doc: OpenDocument; checks: HealthChe
           />
         </>
       )}
+      {autocadGroups > 0 && (
+        <p className="hint" data-testid="autocad-constraints">
+          {plural(autocadGroups, 'constraint group')} made in AutoCAD (ACDBASSOC2DCONSTRAINTGROUP):
+          kept unchanged so saving loses nothing, but not solved, so edits do not keep{' '}
+          {autocadGroups === 1 ? 'its' : 'their'} constraints satisfied. Edit them in AutoCAD.
+        </p>
+      )}
       <div className="health-fixes">
         <button
           type="button"
@@ -698,6 +706,127 @@ function ConstraintsCard({ doc, checks }: { doc: OpenDocument; checks: HealthChe
       </div>
     </Card>
   );
+}
+
+function DimensionOverridesCard({
+  doc,
+  checks,
+}: {
+  doc: OpenDocument;
+  checks: HealthChecks | undefined;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (!checks) return <Checking id="dimension-overrides" title="Dimension overrides" />;
+  const { dimensions, styles, variables } = checks.dimensionOverrides;
+  const clear = () => {
+    setBusy(true);
+    engines.command(doc.id, { kind: 'health-clear-overrides' });
+    // The card follows the drawing once the command's edit settles.
+    setTimeout(() => setBusy(false), PURGE_HEALTH_SETTLE_MS);
+  };
+  return (
+    <Card id="dimension-overrides" title="Dimension overrides" count={dimensions}>
+      {dimensions === 0 ? (
+        <p className="empty">None: every dimension draws as its style says.</p>
+      ) : (
+        <>
+          <p className="hint">
+            {plural(dimensions, 'dimension')} in model space and the layouts, outside locked layers,{' '}
+            {dimensions === 1 ? 'overrides' : 'override'} {styles.length === 1 ? 'its' : 'their'}{' '}
+            dimension style: {variables.map((v) => v.name).join(', ')}.
+          </p>
+          <Counts
+            label="Dimension overrides"
+            head={['Dimension style', 'Dimensions']}
+            rows={styles.map((st) => [st.name, st.dimensions])}
+          />
+        </>
+      )}
+      <div className="health-fixes">
+        {dimensions > 0 && (
+          <button
+            type="button"
+            disabled={busy}
+            title="Take every override off them, as DIMOVERRIDE's Clear overrides"
+            onClick={clear}
+          >
+            Clear Overrides
+          </button>
+        )}
+        <button
+          type="button"
+          title="Change the styles in the Dimension Style Manager"
+          onClick={() => engines.command(doc.id, { kind: 'invoke', name: 'DIMSTYLE' })}
+        >
+          Dimension Style…
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+function ReferencesCard({
+  references,
+  onReferences,
+}: {
+  references: readonly ReferenceRow[];
+  onReferences: () => void;
+}) {
+  const missing = references.filter((r) => r.status === 'not-found').length;
+  return (
+    <Card id="references" title="References" count={missing}>
+      {references.length === 0 ? (
+        <p className="empty">None: the drawing attaches no other files.</p>
+      ) : (
+        <>
+          <p className="hint">
+            {missing === 0
+              ? `${plural(references.length, 'reference')}: every file is found.`
+              : `${plural(missing, 'file')} not found: drop ${missing === 1 ? 'it' : 'them'} on the window, or pick ${missing === 1 ? 'it' : 'them'} in References.`}
+          </p>
+          <table aria-label="References">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Type</th>
+                <th scope="col">Saved path</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {references.map((r, i) => (
+                <tr key={`${r.handle} ${i}`} data-status={r.status}>
+                  <th scope="row">
+                    {r.name}
+                    {r.depth > 0 && <span className="dim-where"> nested</span>}
+                  </th>
+                  <td>{REFERENCE_KIND[r.kind]}</td>
+                  <td className="path">{r.path || '—'}</td>
+                  <td>{REFERENCE_STATUS[r.status]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      <div className="health-fixes">
+        <button
+          type="button"
+          title="Find the files in the References palette"
+          onClick={onReferences}
+        >
+          References…
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+/** Who names a missing font: its text styles, and the objects naming it inline. */
+function fontUsers(styles: readonly string[], inline: number | undefined): string {
+  const named = styles.map((s) => s || '(unnamed)');
+  if (inline) named.push(`${inline === 1 ? 'Inline in 1 object' : `Inline in ${inline} objects`}`);
+  return named.length ? named.join(', ') : '—';
 }
 
 /** How many differences a row shows before "and n more". */

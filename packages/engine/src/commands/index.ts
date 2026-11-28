@@ -354,6 +354,7 @@ export {
   regenerateRestyled,
   restyledDimensions,
 } from './modify/dimensions';
+export { clearDimensionOverridesCommand } from './modify/dimension-edit';
 export { FILE_COMMANDS } from './file';
 export { INQUIRY_COMMANDS, inquiryResults } from './inquiry/inquiry';
 export {

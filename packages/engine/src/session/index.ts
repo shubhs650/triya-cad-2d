@@ -27,6 +27,7 @@ import {
   type ParameterInfo,
 } from '../edit/constraints';
 import { deleteConstraintsCommand } from '../commands/constraint-bar';
+import { clearDimensionOverridesCommand } from '../commands/modify/dimension-edit';
 import { parameterEditCommand, type ParameterEdit } from '../commands/parameters';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
 import {
@@ -719,6 +720,11 @@ export type CommandInput =
    */
   | { readonly kind: 'delete-constraints'; readonly handles: readonly Handle[] }
   /**
+   * The Health palette's Clear Overrides (M8-07 part 2): the DIMVAR overrides taken off every
+   * dimension the drawing check finds, one DIMOVERRIDE undo step that redraws them.
+   */
+  | { readonly kind: 'health-clear-overrides' }
+  /**
    * The ribbon's Layers and Properties dropdowns (M7-02 part 3) show the drawing's: while open,
    * `ribbon-properties` outputs follow the selection and every change, whatever the Properties
    * palette shows.
@@ -1110,6 +1116,8 @@ export class EngineSession {
         return this.#bus.run(parameterEditCommand(input.edit)).then(() => this.#queueParameters());
       case 'delete-constraints':
         return this.#bus.run(deleteConstraintsCommand(input.handles));
+      case 'health-clear-overrides':
+        return this.#bus.run(clearDimensionOverridesCommand());
       case 'ribbon-properties':
         this.#ribbon = input.open;
         if (input.open) this.#sendRibbon();

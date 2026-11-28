@@ -55,7 +55,9 @@ test('lists the version, units, missing fonts, references and unknown objects', 
   const refs = palette.getByRole('group', { name: /^References/ });
   await expect(refs).toContainText('.\\image.JPG');
   await expect(refs).toContainText('..\\pdf-definition.pdf');
-  await expect(refs).toContainText('Not checked');
+  // Looked for as the References palette looks (M8-07 part 2): neither file was given.
+  await expect(refs).toContainText('Not found');
+  await expect(refs.locator('summary')).toHaveText('References (2)');
 
   // The totals move as acad-ts reads more of the file, so check they add up, not their value.
   const unknown = palette.getByRole('group', { name: /^Unknown objects/ });
@@ -69,6 +71,10 @@ test('lists the version, units, missing fonts, references and unknown objects', 
   await expect(palette.getByRole('group', { name: /^Missing hatch patterns/ })).toContainText(
     'None',
   );
+
+  // References... shows the References palette, where the files are given.
+  await refs.getByRole('button', { name: 'References…' }).click();
+  await expect(page.getByRole('complementary', { name: 'References' })).toBeVisible();
 });
 
 test('follows the drawing on screen and is keyboard operable', async ({ page }) => {

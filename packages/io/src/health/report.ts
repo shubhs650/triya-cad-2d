@@ -4,7 +4,8 @@
 // only; the I/O worker, which only gathers facts, does not load the font and pattern code.
 
 import { bundledPatterns } from '@triya/hatch';
-import { styleFont, type MTextFont } from '@triya/text';
+import type { InlineFont } from '@triya/engine';
+import { inlineFont, styleFont, type MTextFont } from '@triya/text';
 import type { DrawingFacts, DrawingReference } from './facts';
 
 export type { DrawingFacts, DrawingReference } from './facts';
@@ -34,6 +35,11 @@ export interface HealthSources {
   readonly installed?: readonly { readonly requested: string; readonly face: string }[];
   /** The patterns hatches stored without lines draw from; the bundled set when not given. */
   readonly patterns?: { get(name: string): unknown };
+  /**
+   * The fonts the drawing's multiline text names inline (`\F`, `\f`), as its engine finds them
+   * in the drawing as edited (`healthChecks`, M8-07 part 2).
+   */
+  readonly inlineFonts?: readonly InlineFont[];
 }
 
 export interface MissingFont {
@@ -43,6 +49,8 @@ export interface MissingFont {
   readonly substitute: string | undefined;
   /** Text styles that name it (as primary, big font or shape file). */
   readonly styles: readonly string[];
+  /** How many objects' multiline text names it inline (`\F`, `\f`), when any do. */
+  readonly inline?: number;
 }
 
 export interface HealthReport {
@@ -72,6 +80,11 @@ export interface HealthReport {
     readonly total: number;
     readonly byType: DrawingFacts['unknownObjects'];
   };
+  /**
+   * AutoCAD's own constraint groups (ACDBASSOC2DCONSTRAINTGROUP, one per plane constrained):
+   * kept as read among the unknown objects, not solved (M8-07 part 2).
+   */
+  readonly autocadConstraintGroups: number;
   readonly unmappedEntities: {
     readonly total: number;
     readonly byType: DrawingFacts['unmappedEntities'];
@@ -81,8 +94,8 @@ export interface HealthReport {
 /**
  * The health report of a drawing whose facts are `facts`, given the app's fonts and patterns.
  * Each text style's fonts are resolved through `fonts` as drawing them would, so the missing
- * list does not wait for the text to be drawn. Fonts MTEXT names inline (`\F`) are not in the
- * facts yet (M8-07).
+ * list does not wait for the text to be drawn. The fonts multiline text names inline come from
+ * the drawing's engine (`sources.inlineFonts`), resolved the same way.
  */
 export function healthReport(facts: DrawingFacts, sources: HealthSources): HealthReport {
   const { fonts } = sources;
@@ -106,9 +119,26 @@ export function healthReport(facts: DrawingFacts, sources: HealthSources): Healt
     // A big font's characters have no stand-in either.
     if (s.bigFont && !fonts.hasShx(s.bigFont)) miss(s.bigFont, s.name, undefined);
   }
+  // An inline font joins the row of a style's font of the same file name (`Arial` and
+  // `arial.ttf`), or has a row of its own.
+  const inline = new Map<string, number>();
+  for (const f of sources.inlineFonts ?? []) {
+    const font = inlineFont(f.code, f.value);
+    const r = fonts.resolve(font);
+    if (r.face && r.substitute === undefined) continue;
+    const row = [...missingFonts.keys()].find((k) => fontKey(k) === fontKey(font.name));
+    const key = row ?? font.name;
+    if (!row) missingFonts.set(key, { substitute: r.substitute, styles: new Set() });
+    inline.set(key, (inline.get(key) ?? 0) + f.objects);
+  }
   const missing = [...missingFonts]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([font, m]) => ({ font, substitute: m.substitute, styles: [...m.styles].sort() }));
+    .map(([font, m]) => ({
+      font,
+      substitute: m.substitute,
+      styles: [...m.styles].sort(),
+      ...(inline.has(font) && { inline: inline.get(font)! }),
+    }));
   const naming = stylesNaming(facts);
   const byFont = <T extends { font: string }>(a: T, b: T) =>
     a.font.toLowerCase() < b.font.toLowerCase()
@@ -139,6 +169,9 @@ export function healthReport(facts: DrawingFacts, sources: HealthSources): Healt
         .map((p) => ({ pattern: p.pattern, hatches: p.count })),
     },
     unknownObjects: { total: total(facts.unknownObjects), byType: facts.unknownObjects },
+    autocadConstraintGroups:
+      facts.unknownObjects.find((o) => o.type.toUpperCase() === 'ACDBASSOC2DCONSTRAINTGROUP')
+        ?.count ?? 0,
     unmappedEntities: { total: total(facts.unmappedEntities), byType: facts.unmappedEntities },
   };
 }

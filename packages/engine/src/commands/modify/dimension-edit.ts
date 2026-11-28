@@ -33,6 +33,7 @@ import {
   isArcDimension,
   withArcRadius,
 } from '../../edit/dimension';
+import { overriddenDimensions } from '../../edit/health';
 import { DIMVAR_DEFAULTS } from '../../properties/dimension';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
@@ -429,6 +430,34 @@ function dimoverrideCommand(): CommandDef {
         return x.xdata === e.xdata ? {} : { xdata: x.xdata };
       });
       if (noAcad) ctx.message('The drawing has no ACAD application to file overrides under.');
+    },
+  };
+}
+
+/**
+ * The Health palette's Clear Overrides (M8-07 part 2): DIMOVERRIDE's Clear overrides on every
+ * dimension that has overrides in model space and the layouts, outside locked layers
+ * (`overriddenDimensions`), as one DIMOVERRIDE undo step that redraws them.
+ */
+export function clearDimensionOverridesCommand(): CommandDef {
+  return {
+    name: 'DIMOVERRIDE',
+    usesSelection: 'none',
+    keepsSelection: true,
+    // eslint-disable-next-line require-yield -- the palette named the dimensions
+    async *run(ctx) {
+      const dims = overriddenDimensions(ctx.model).map((id) => ctx.model.entity(id)!);
+      if (dims.length === 0) {
+        ctx.message('No dimensions with style overrides found.');
+        return;
+      }
+      await changeDimensions(ctx, dims, (e) => {
+        const xdata = withoutOverrides(e, ctx);
+        return xdata === e.xdata ? {} : { xdata };
+      });
+      ctx.message(
+        `Overrides cleared from ${dims.length} ${dims.length === 1 ? 'dimension' : 'dimensions'}.`,
+      );
     },
   };
 }

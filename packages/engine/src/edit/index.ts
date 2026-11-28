@@ -220,10 +220,13 @@ export {
 export {
   duplicatePlans,
   healthChecks,
+  inlineFonts,
   overkillInto,
+  overriddenDimensions,
   unitSystem,
   unitsProblems,
   type HealthChecks,
+  type InlineFont,
   type UnitsProblem,
 } from './health';
 export {
