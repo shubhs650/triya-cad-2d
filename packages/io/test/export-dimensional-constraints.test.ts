@@ -202,6 +202,57 @@ describe('saving dimensional constraints (TRIYA_CONSTRAINTS, DEC-082)', () => {
     expect(groups(again.getEntry(hw)).map(([code]) => code)).not.toContain(282);
   });
 
+  it("writes an annotational constraint's dimension style and DIMVARs and reads them back (DEC-088)", () => {
+    const s = open(source.bytes);
+    const standard = [...s.model.tables.dimStyles.values()][0]!.handle;
+    const h = s.dimension({ ...d1, style: standard, dimvars: { DIMTXT: 0.25, DIMSCALE: 2 } });
+    const hw = s.dimension(width);
+    const saved = s.save();
+    const dict = dictionaryOf(saved)!;
+    const code340 = (g: unknown[]) =>
+      g.map((e) => {
+        const [code, v] = e as [number, unknown];
+        return code === 340 && typeof v === 'number' ? [code, hex(v)] : [code, v];
+      });
+    // After 280 and 281 (no 282: shown), before the location; the DIMVARs in their order.
+    expect(code340(groups(dict.getEntry(h)).slice(5, 13))).toEqual([
+      [280, 0],
+      [281, 1],
+      [340, standard],
+      [304, 'DIMSCALE'],
+      [140, 2],
+      [304, 'DIMTXT'],
+      [140, 0.25],
+      [10, [5, -3]],
+    ]);
+    // One with none is DEC-082's record as it was.
+    expect(groups(dict.getEntry(hw)).map(([code]) => code)).not.toContain(340);
+    const back = open(saved);
+    expect(back.dims()[0]).toEqual(
+      expect.objectContaining({
+        handle: h,
+        style: standard,
+        dimvars: { DIMSCALE: 2, DIMTXT: 0.25 },
+      }),
+    );
+    expect(back.dims()[1]!.style).toBeUndefined();
+    expect(back.dims()[1]!.dimvars).toBeUndefined();
+    // Saved again unchanged: the same groups.
+    expect(groups(dictionaryOf(back.save())!.getEntry(h))).toEqual(groups(dict.getEntry(h)));
+
+    // A style the drawing no longer has is saved as none, the DIMVARs kept.
+    back.update(h, { style: 'FFFFF' });
+    const purged = groups(dictionaryOf(back.save())!.getEntry(h)).map(([code]) => code);
+    expect(purged).not.toContain(340);
+    expect(purged).toContain(304);
+  });
+
+  it('refuses a DIMVAR a constraint is not drawn with (DEC-088)', () => {
+    const s = open(source.bytes);
+    s.dimension({ ...d1, dimvars: { DIMTAD: 1 } });
+    expect(() => s.save()).toThrow(/DIMVAR DIMTAD/);
+  });
+
   it('rewrites a changed expression and leaves out a removed constraint', () => {
     const first = open(source.bytes);
     const hd1 = first.dimension(d1);
@@ -259,11 +310,32 @@ describe('saving dimensional constraints (TRIYA_CONSTRAINTS, DEC-082)', () => {
       x.createEntry(282, 2);
       e.splice(7, 0, x.entries[0] as never);
     });
+    // DEC-088: a 304 names a DIMVAR a constraint is drawn with, a 140 value after it.
+    const entry = (code: number, value: unknown) => {
+      const x = new XRecord();
+      x.createEntry(code, value as never);
+      return x.entries[0] as never;
+    };
+    copy('DIMTAD', (e) => {
+      e.splice(7, 0, entry(304, 'DIMTAD'), entry(140, 1));
+    });
+    copy('NO140', (e) => {
+      e.splice(7, 0, entry(304, 'DIMTXT'));
+    });
+    // A 340 naming no DIMSTYLE reads as no style (its style purged elsewhere).
+    copy('NOSTYLE', (e) => {
+      e[3]!.value = 'dx';
+      e.splice(7, 0, entry(340, good.handle));
+    });
     const back = open(writeCadDocument(doc, { format: 'dxf' }));
-    expect(back.dims().map((d) => d.handle)).toEqual([h]);
+    const nostyle = back.dims().find((d) => d.parameter === 'dx')!;
+    expect(nostyle.style).toBeUndefined();
+    expect(back.dims().map((d) => d.handle)).toEqual([h, nostyle.handle]);
     back.dimension({ ...width, parameter: 'w' });
     const out = dictionaryOf(back.save())!;
-    expect(out.entryNames).toEqual(expect.arrayContaining(['FORM', 'KIND', 'NOLOC', 'HIDDEN2', h]));
+    expect(out.entryNames).toEqual(
+      expect.arrayContaining(['FORM', 'KIND', 'NOLOC', 'HIDDEN2', 'DIMTAD', 'NO140', h]),
+    );
     expect(groups(out.getEntry('KIND'))[2]).toEqual([2, 'arclength']);
   });
 });

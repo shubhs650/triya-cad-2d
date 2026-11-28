@@ -19,6 +19,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import { dimensionalConstraints } from '../edit/constraints';
 import { measuredValue } from '../edit/constraint-display';
+import { constraintDimvars, shownDimStyle, type ConstraintDimvar } from '../edit/constraint-style';
 import type {
   Color,
   Entity,
@@ -33,6 +34,7 @@ import type {
 import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
 import {
+  DIMVAR_DEFAULTS,
   DIMVAR_ROWS,
   TOLERANCE_DIMVAR_ROWS,
   arrowheadOptions,
@@ -1916,7 +1918,7 @@ function withConstraints(
     label: 'Dimensional Constraint',
     count: constraints.length,
   } as const;
-  const rows = [constraintSection(model, constraints)];
+  const rows = [constraintSection(model, constraints), ...annotationalSections(model, constraints)];
   if (ids.length === 0) return { count: constraints.length, types: [own], sections: rows, units };
   const objects = propertySheet(
     model,
@@ -2008,6 +2010,49 @@ function constraintSection(
       ),
     ],
   };
+}
+
+/**
+ * An annotational constraint's dimension rows (M9-03 part 15, DEC-088): AutoCAD 2024 Help,
+ * "About Applying Dimensional Constraints": annotational constraints "display using the current
+ * dimension style" and are changed in the Properties palette as dimensions are. Its Dim style,
+ * then the dimension's rows of the DIMVARs Triya draws a constraint with, under a dimension's
+ * headings and labels: Arrow size, Ext line ext and Ext line offset; Text height and Text
+ * offset; Dim scale overall. Only when every constraint shown is annotational: a dynamic one is
+ * sized on screen, by no style.
+ */
+function annotationalSections(
+  model: DocumentModel,
+  cs: readonly DimensionalConstraintObject[],
+): PropertySection[] {
+  if (!cs.every((c) => c.form === 'annotational')) return [];
+  const vars = cs.map((c) => ({ ...DIMVAR_DEFAULTS, ...constraintDimvars(model, c) }));
+  const dimvar = (name: ConstraintDimvar): PropertyRow => {
+    const d = DIMVAR_ROWS.find((r) => r.name === name)!;
+    return row(vars, {
+      key: `dimvar:${name}`,
+      label: d.label,
+      kind: d.kind,
+      get: (v) => d.get(v, model),
+    });
+  };
+  return [
+    {
+      title: 'Misc',
+      rows: [
+        row(cs, {
+          key: 'constraint-dimStyle',
+          label: 'Dim style',
+          kind: 'choice',
+          options: dimStyleOptions(model),
+          get: (c) => shownDimStyle(model, c)?.handle ?? '',
+        }),
+      ],
+    },
+    { title: 'Lines & Arrows', rows: [dimvar('DIMASZ'), dimvar('DIMEXE'), dimvar('DIMEXO')] },
+    { title: 'Text', rows: [dimvar('DIMTXT'), dimvar('DIMGAP')] },
+    { title: 'Fit', rows: [dimvar('DIMSCALE')] },
+  ];
 }
 
 const CONSTRAINT_FORMS: readonly PropertyOption[] = [

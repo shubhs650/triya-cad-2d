@@ -47,6 +47,7 @@ export * from './infer-constraints';
 export * from './constraints';
 export * from './constraint-copy';
 export * from './constraint-display';
+export * from './constraint-style';
 export * from './constraint-grips';
 export * from './dimension-convert';
 export * from './constraint-bars';

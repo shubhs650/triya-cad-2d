@@ -29,6 +29,8 @@
 // constraint without asking (one question per dimension of a selection would be a chore), and
 // the command line says how many converted and why the others did not.
 import type { CommandContext, CommandDef, CommandGenerator } from './command';
+import { dstyleOverrides } from '../annotation/leader';
+import { convertedConstraintStyle, newConstraintStyle } from '../edit/constraint-style';
 import type { Prompt, PromptAnswer } from './prompt';
 import {
   INVALID_OBJECT,
@@ -242,6 +244,8 @@ async function* place(
         ...(reference ? { reference: true } : {}),
         location: at.point,
         form: session.form,
+        // An annotational one takes the current dimension style (M9-03 part 15, DEC-088).
+        ...(session.form === 'annotational' && newConstraintStyle(ctx.model)),
       } as Omit<DimensionalConstraintObject, 'handle'>);
     });
     return true;
@@ -257,6 +261,14 @@ const NOT_CONVERTED: Readonly<Record<DimensionConversionProblem['problem'] | 'lo
   unattached: 'their points are not on objects a constraint can take',
   locked: 'they or the objects they measure are on a locked layer',
 };
+
+/** A dimension's style and overrides, as the constraint DCCONVERT makes of it keeps them. */
+function dimensionStyle(ctx: CommandContext, dim: Entity) {
+  const style = (dim.geom as { readonly style?: Handle }).style;
+  return style === undefined
+    ? newConstraintStyle(ctx.model)
+    : convertedConstraintStyle(style, dstyleOverrides(dim.xdata, ctx.model));
+}
 
 const isDimension = (e: Entity | undefined): e is Entity =>
   e?.geom.kind === 'DIMENSION' ||
@@ -356,6 +368,8 @@ async function convertDimensions(
       ...(reference ? { reference: true } : {}),
       location: c.location,
       form: session.form,
+      // An annotational one looks as the dimension did: its style and overrides (DEC-088).
+      ...(session.form === 'annotational' && dimensionStyle(ctx, dim)),
     };
     added.push(constraint);
     converted.push(dim.id);

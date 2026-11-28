@@ -23,6 +23,7 @@ import type {
   Entity,
 } from '../model/types';
 import { constraintPointsOf, dimensionalConstraints } from './constraints';
+import { constraintDimvars, type ConstraintDimvars } from './constraint-style';
 
 /** CONSTRAINTNAMEFORMAT: 0 Name, 1 Value, 2 Name and expression. */
 export type ConstraintNameFormat = 0 | 1 | 2;
@@ -83,6 +84,11 @@ export interface ConstraintDisplay {
   /** Where the text sits (it is drawn just above this point) and its direction, radians. */
   readonly textAt: Vec2;
   readonly textAngle: number;
+  /**
+   * An annotational constraint's DIMVARs, which size it (its dimension style's and its own,
+   * M9-03 part 15); absent for a dynamic one, sized on screen.
+   */
+  readonly dimvars?: ConstraintDimvars;
 }
 
 /** A plain number, as the measured value or a number typed is kept. */
@@ -119,7 +125,8 @@ export function constraintDisplays(
   const out: ConstraintDisplay[] = [];
   for (const c of dimensionalConstraints(model)) {
     const d = constraintDisplay(c, lookup, units, format);
-    if (d) out.push(d);
+    if (!d) continue;
+    out.push(c.form === 'annotational' ? { ...d, dimvars: constraintDimvars(model, c) } : d);
   }
   return out;
 }

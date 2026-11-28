@@ -2434,7 +2434,7 @@ export class Canvas2DRenderer implements Renderer {
 
   /**
    * The sizes `d` is drawn at, or undefined where it is not drawn: an annotational one always,
-   * sized by the drawing's DIMVARs; a dynamic one the same size on screen, unless hidden (all
+   * sized by its DIMVARs; a dynamic one the same size on screen, unless hidden (all
    * of them, or this one by DCDISPLAY, M9-03 part 7), then shown only while an object it
    * constrains is selected (DYNCONSTRAINTMODE 1).
    */
@@ -2443,7 +2443,7 @@ export class Canvas2DRenderer implements Renderer {
     look: ConstraintStyle | undefined,
     scale: number,
   ): ConstraintSizes | undefined {
-    if (d.form === 'annotational') return annotationalSizes(this.#model.header);
+    if (d.form === 'annotational') return annotationalSizes(this.#model.header, d.dimvars);
     const selected = () =>
       d.entities.some((h) => {
         const e = this.#model.entityByHandle(h);

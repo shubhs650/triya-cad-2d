@@ -104,6 +104,7 @@ function constrain(model: DocumentModel): number {
     made.push(['equal', any.map((entity) => ({ entity }))]);
   }
   const dims: Dim[] = [];
+  const style = [...model.tables.dimStyles.keys()][0];
   if (lines.length >= 1) {
     dims.push({
       dimension: 'aligned',
@@ -124,6 +125,9 @@ function constrain(model: DocumentModel): number {
       reference: true,
       location: { x: 3, y: 4 },
       form: 'annotational',
+      // Its dimension style and own DIMVARs (M9-03 part 15, DEC-088): 340, 304/140 in its record.
+      ...(style !== undefined && { style }),
+      dimvars: { DIMTXT: 0.25, DIMSCALE: 2 },
     });
   }
   if (circles.length >= 1) {
@@ -180,7 +184,7 @@ function constrain(model: DocumentModel): number {
   return made.length + dims.length + users.length;
 }
 
-describe('constraints, user parameters and group filters on corpus files (M9-04, M9-03 parts 3, 6 and 12)', () => {
+describe('constraints, user parameters and group filters on corpus files (M9-04, M9-03 parts 3, 6, 12 and 15)', () => {
   for (const path of FILES) {
     it(`${path}: saved, reopened and round-tripped with no difference`, () => {
       const bytes = bytesOf(path);
