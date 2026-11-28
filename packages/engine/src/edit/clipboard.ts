@@ -711,7 +711,13 @@ export function pasteObjects(
         sameDrawing: constraints.sameDrawing,
         ...(clip.parameters && { parameters: clip.parameters }),
       },
-      new Map([...copies].filter(([h]) => source.has(h))),
+      // As the paste placed them: moved and scaled into the drawing's units (a copy scaled
+      // measures another value than its original, so keeps no expression).
+      new Map(
+        [...copies]
+          .filter(([h]) => source.has(h))
+          .map(([h, e]) => [h, b.entity(e.id) ?? e] as const),
+      ),
       t ?? moveBy({ x: 0, y: 0 }),
       constraints.mode,
     );

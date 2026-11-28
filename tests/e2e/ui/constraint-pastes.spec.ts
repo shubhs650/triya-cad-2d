@@ -8,8 +8,7 @@
 // into another drawing (M9-12)'), the solve with PlaneGCS in packages/constraints/test/upkeep.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
-import path from 'node:path';
-import { DWG, DXF, expectDrawn, expectShown, gridOff, openWithPicker, viewOf } from '../app/page';
+import { expectDrawn, expectShown, gridOff, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -100,10 +99,12 @@ test('pastes into another drawing make the user parameters it lacks (3) or solve
 }) => {
   test.setTimeout(180_000);
   await page.goto(app.url);
-  await openWithPicker(page, DXF);
-  await expectShown(page, path.basename(DXF));
-  await openWithPicker(page, DWG);
-  await expectShown(page, path.basename(DWG));
+  // Two new drawings of one template (one units, so the paste is not scaled): Drawing1 pasted
+  // into, Drawing2 copied from.
+  await page.getByTestId('start').getByRole('button', { name: 'New drawing' }).click();
+  await expectShown(page, 'Drawing1.dxf');
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expectShown(page, 'Drawing2.dxf');
 
   /** The showing drawing zoomed to an empty part of its plan, and a click there. */
   const emptyPart = async () => {
@@ -126,12 +127,14 @@ test('pastes into another drawing make the user parameters it lacks (3) or solve
   };
 
   // The first drawing: span = 30, and a line 30 long whose length is width = span.
-  await docTabs(page).first().click();
-  await expectShown(page, path.basename(DXF));
+  // The Parameters Manager first: the canvas it narrows is the one clicked on.
+  await type(page, 'PARAMETERS', 'Command:');
+  await page.locator('#command-input').click();
   const first = await emptyPart();
   await type(page, 'L', 'Specify first point:');
   await type(page, '1000010,1000020', 'Specify next point or [Undo]:');
-  await type(page, '1000040,1000020', 'Specify next point or [Undo]:');
+  // Relative: Dynamic Input reads a second point so anyway.
+  await type(page, '@30,0', 'Specify next point or [Undo]:');
   await type(page, '', 'Command:');
   await newUserParameter(page, 'span', '30');
   await type(page, 'DCALIGNED', /<Object>:$/);
@@ -153,8 +156,8 @@ test('pastes into another drawing make the user parameters it lacks (3) or solve
   // so the paste makes it, as the first drawing had it.
   await type(page, 'PARAMETERCOPYMODE', /^Enter new value for PARAMETERCOPYMODE <1>:/);
   await type(page, '3', 'Command:');
-  await docTabs(page).nth(1).click();
-  await expectShown(page, path.basename(DWG));
+  await docTabs(page).first().click();
+  await expectShown(page, 'Drawing1.dxf');
   const second = await emptyPart();
   await type(page, 'PASTECLIP', 'Specify insertion point:');
   await type(page, '1000000,1000060', 'Command:');

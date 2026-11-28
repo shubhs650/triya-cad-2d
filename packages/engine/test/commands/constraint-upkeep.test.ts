@@ -93,6 +93,8 @@ function drawing(
     deleteParameter?: ConstraintSolver['deleteParameter'];
     /** What the solver's solveDimensions answers (M9-12). */
     solveDimensions?: ConstraintSolver['solveDimensions'];
+    /** The drawing's INSUNITS (M9-12: a paste between units scales). */
+    insUnits?: number;
   } = {},
 ) {
   const asked: Asked[] = [];
@@ -154,6 +156,7 @@ function drawing(
       ],
       ...(o.variables && { variables: o.variables }),
       ...(o.clipboard && { clipboard: o.clipboard }),
+      ...(o.insUnits !== undefined && { meta: { insUnits: o.insUnits } }),
       ...(o.solver !== 'none' && {
         constraints:
           o.solver === 'broken'
@@ -760,7 +763,12 @@ describe('PARAMETERCOPYMODE 2 and 3 for pastes into another drawing (M9-12)', ()
     mode: number,
     from: readonly never[] | readonly DimensionalConstraintObject[],
     to: readonly (GeometricConstraintObject | DimensionalConstraintObject)[] = [],
-    o: { both?: boolean; solve?: ConstraintSolver['solveDimensions'] } = {},
+    o: {
+      both?: boolean;
+      solve?: ConstraintSolver['solveDimensions'];
+      /** The INSUNITS of the drawings copied from and pasted into. */
+      units?: readonly [number, number];
+    } = {},
   ) {
     const clipboard: SharedClipboard = {};
     const variables = new Map([['PARAMETERCOPYMODE', mode]]);
@@ -768,12 +776,14 @@ describe('PARAMETERCOPYMODE 2 and 3 for pastes into another drawing (M9-12)', ()
       clipboard,
       variables,
       objects: from as readonly DimensionalConstraintObject[],
+      ...(o.units && { insUnits: o.units[0] }),
     });
     const asked: Solve[] = [];
     const target = drawing(undefined, {
       clipboard,
       variables,
       objects: to,
+      ...(o.units && { insUnits: o.units[1] }),
       solveDimensions: (constraints, dimensions, handles, lookup, tol) => {
         expect(tol.linear).toBeGreaterThan(0);
         asked.push({ handles, dimensions: dimensions.map((d) => d.parameter) });
@@ -871,6 +881,15 @@ describe('PARAMETERCOPYMODE 2 and 3 for pastes into another drawing (M9-12)', ()
       'd1=10',
       'width=d1',
     ]);
+  });
+
+  it('takes the values of copies scaled into the drawing’s units, as they measure another', async () => {
+    // Metres into millimetres: line 30 lands 10000 long, which no expression of span gives.
+    for (const mode of [2, 3, 4]) {
+      const r = await paste(mode, SPAN as never[], [user('B1', 'span', '10')], { units: [6, 4] });
+      expect(r.dims).toEqual(['width=10000']);
+      expect(r.asked).toEqual([]);
+    }
   });
 
   it('takes the values the copies measure, saying so, where they cannot take the drawing’s', async () => {
