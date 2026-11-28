@@ -32,6 +32,8 @@ import { followedBy, moveBy, scaleAbout, turnAbout, type Similarity } from './si
 import { rescaledReference, transformGeometry } from './transform';
 import { copyObjects, copyProblem, eraseObjects, type EditReport } from './edit';
 import { validViewName } from './named-view';
+import { handConstraints } from './block-constraints';
+import { carryConstraints } from './constraint-copy';
 
 /** DXF 70 of an ATTDEF: the value never changes, so references carry no attribute for it. */
 export const ATTRIBUTE_CONSTANT = 2;
@@ -192,6 +194,10 @@ export function defineBlock(
     return e !== undefined && !problem;
   });
   const report = copyObjects(b, model, taken, t, {}, block);
+  // The constraints among the objects go into the block with them (M9-13): those of objects
+  // erased are handed over, the others copied as COPY copies them.
+  if (init.erase) handConstraints(b, report.copies, t);
+  else carryConstraints(b, model, report.copies, t);
   if (init.erase) eraseObjects(b, model, taken);
   return { ...report, refused, block, redefined: existing !== undefined };
 }

@@ -103,7 +103,7 @@ import { gripInfoOf } from '../edit/array-grips';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { HatchLinesOf } from '../edit/explode';
 import type { SpellService } from '../edit/spelling';
-import type { ConstraintService } from '../edit/constraints';
+import { setConstraintEditorBlock, type ConstraintService } from '../edit/constraints';
 import type { LayerNotifyEvent } from '../edit/layer-notify';
 import { distance } from '../geom/vec';
 import { wholeGroups } from '../edit/groups';
@@ -1736,6 +1736,8 @@ export class PromptBus {
         },
         open: (block, made) => {
           this.#blockEditor = { block, changes: made ? [made] : [] };
+          // The block's constraints act while it is shown (M9-13).
+          setConstraintEditorBlock(this.#model, block);
         },
         save: () => {
           if (this.#blockEditor) this.#blockEditor.changes = [];
@@ -1743,6 +1745,7 @@ export class PromptBus {
         close: (discard) => {
           const editing = this.#blockEditor;
           this.#blockEditor = undefined;
+          setConstraintEditorBlock(this.#model);
           if (!discard || !editing) return;
           // The edits taken back, last first, join this command's undo step: U puts them back.
           for (const c of [...editing.changes].reverse()) {
