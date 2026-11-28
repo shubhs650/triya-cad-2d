@@ -27,6 +27,7 @@ import {
   XYZ,
   type Entity,
 } from '@node-projects/acad-ts';
+import { writeCadDocument } from '@triya/io';
 
 export interface BenchSpec {
   readonly name: string;
@@ -276,4 +277,12 @@ function entity(
 /** The drawing as DWG bytes (AutoCAD 2018 format). */
 export function benchDwg(spec: BenchSpec): Uint8Array {
   return DwgWriter.writeToBuffer(benchDocument(spec));
+}
+
+/**
+ * The drawing as an AC1032 ASCII DXF (M10-01): the format Triya saves (DEC-047), so the app
+ * opens it, saves it in place and reopens it as a user's own drawing (T2, T5, T7).
+ */
+export function benchDxf(spec: BenchSpec): Uint8Array {
+  return writeCadDocument(benchDocument(spec), { format: 'dxf' });
 }

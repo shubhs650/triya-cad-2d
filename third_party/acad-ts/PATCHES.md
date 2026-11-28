@@ -3474,3 +3474,20 @@ A shape file's STYLE record has an empty name, and the table keeps each under a 
 `CadDictionaryTemplate` built each dictionary with `dictionary.Add(entry)`, which files the entry under `entry.Name`. Objects that read a name of their own, such as a SCALE (group code 300, "1:1"), therefore lost the key the file lists them under: ACAD_SCALELIST's entries are keyed A0, A1, … by AutoCAD, which orders the scale list, and they came back keyed by scale name, so writing the document renamed every entry. This adds each entry under the key read, `AddByKey(key, entry)`; an entry without a name still takes the key as its name.
 
 </details>
+
+### 0191 — a DXF read decodes its lines without a new TextDecoder for each
+
+- **File:** `third_party/acad-ts-patches/0191-decode-ascii-lines-without-a-decoder.patch`
+- **Touches:** `src/IO/TextEncoding.ts`
+- **Symptom:** `decodeCadString` made a `TextDecoder` for every string it decoded, and the DXF text reader decodes every line with it. Browsers make a `TextDecoder` slowly: reading the generated `bench-100k` DXF (M10-01) spent 4.2 s of the I/O worker's 8.4 s in it, on 2.7 million lines nearly all ASCII.
+- **Fix:** a string of at most 1024 bytes, all below 0x80, is returned as those characters (every code page the reader names decodes ASCII as itself, UTF-16 excepted, which keeps the decoder); otherwise one `TextDecoder` per encoding label is kept and reused (a non-streaming `decode` keeps no state between calls, BOM handling included).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0191 a DXF read decodes its lines without a new TextDecoder for each" (counts the decoders made while reading an AC1032 and an AC1015 DXF with non-ASCII text, which reads back unchanged).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Decode ASCII DXF lines without making a TextDecoder for each
+
+`decodeCadString` constructs a new `TextDecoder` per call, and `DxfTextReader` calls it once per line. In browsers constructing a `TextDecoder` is expensive, so reading a 27 MB ASCII DXF (100,000 entities) spent about half its time there. This returns short all-ASCII byte runs directly (identical output for every supported code page except UTF-16LE, which still goes through the decoder) and caches one decoder per encoding label for the rest. `decode` without `{ stream: true }` resets the decoder each call, so reuse does not change results.
+
+</details>

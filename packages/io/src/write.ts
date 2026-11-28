@@ -1,4 +1,5 @@
 import {
+  ACadVersion,
   DwgWriter,
   DwgWriterConfiguration,
   DxfWriter,
@@ -12,7 +13,7 @@ export interface WriteOptions {
   format: CadFormat;
   /** DXF only: binary instead of ASCII. */
   binary?: boolean;
-  /** DXF ASCII only: starting size of the output buffer; it doubles until the file fits. */
+  /** DXF ASCII only: starting size of the output buffer, which grows until the file fits. */
   initialBufferBytes?: number;
   /** Writer diagnostics, e.g. "Object not implemented : Material" for objects it drops. */
   onNotification?: (message: string, type: number) => void;
@@ -59,7 +60,16 @@ export function writeCadDocument(doc: CadDocument, options: WriteOptions): Uint8
     );
     return concat(chunks);
   }
-  // ASCII DXF: let acad-ts encode text in the document's code page by writing into a
+  // R2007 and later DXF is UTF-8 (acad-ts writes it so whatever the code page), which a growing
+  // buffer takes line by line (M10-01): acad-ts's own byte buffer cannot grow, so a large
+  // drawing was written over again at each doubling, and it encodes every line through a new
+  // TextEncoder, most of the time a save of bench-100k took.
+  if (doc.header!.version >= ACadVersion.AC1021) {
+    const out = new Utf8Text(options.initialBufferBytes ?? 1 << 20);
+    DxfWriter.writeToStream(out, doc, false, fidelityDxfConfiguration(), notify);
+    return out.bytes();
+  }
+  // Older ASCII DXF: let acad-ts encode text in the document's code page by writing into a
   // byte buffer. DXF text never contains NUL, so the file ends at the last non-zero byte.
   let size = options.initialBufferBytes ?? 1 << 20;
   for (;;) {
@@ -76,6 +86,47 @@ export function writeCadDocument(doc: CadDocument, options: WriteOptions): Uint8
     let end = buffer.length;
     while (end > 0 && buffer[end - 1] === 0) end--;
     return buffer.slice(0, end);
+  }
+}
+
+/**
+ * A text output for acad-ts's ASCII DXF writer that encodes UTF-8 into a buffer it grows. The
+ * writer hands it short lines, nearly all ASCII, which are copied a code unit a byte; a line
+ * with any other character goes through `TextEncoder.encodeInto`, as acad-ts's own output
+ * encodes, so the bytes are the same.
+ */
+class Utf8Text {
+  #bytes: Uint8Array;
+  #length = 0;
+  readonly #encoder = new TextEncoder();
+
+  constructor(initialBytes: number) {
+    this.#bytes = new Uint8Array(Math.max(initialBytes, 64));
+  }
+
+  write(value: string): void {
+    // UTF-8 takes at most three bytes for each UTF-16 code unit.
+    const need = this.#length + value.length * 3;
+    if (need > this.#bytes.length) {
+      const grown = new Uint8Array(Math.max(need, this.#bytes.length * 2));
+      grown.set(this.#bytes.subarray(0, this.#length));
+      this.#bytes = grown;
+    }
+    const bytes = this.#bytes;
+    let at = this.#length;
+    for (let i = 0; i < value.length; i++) {
+      const c = value.charCodeAt(i);
+      if (c >= 0x80) {
+        at = this.#length + this.#encoder.encodeInto(value, bytes.subarray(this.#length)).written;
+        break;
+      }
+      bytes[at++] = c;
+    }
+    this.#length = at;
+  }
+
+  bytes(): Uint8Array {
+    return this.#bytes.slice(0, this.#length);
   }
 }
 

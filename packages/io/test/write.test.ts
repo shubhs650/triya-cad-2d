@@ -1,5 +1,5 @@
-import { DxfReader, XYZ } from '@node-projects/acad-ts';
-import { describe, expect, it } from 'vitest';
+import { DxfReader, DxfWriter, MText, TextEntity, XYZ } from '@node-projects/acad-ts';
+import { describe, expect, it, vi } from 'vitest';
 import {
   fidelityDwgConfiguration,
   fidelityDxfConfiguration,
@@ -55,6 +55,41 @@ describe('writeCadDocument', () => {
     expect(summarizeDocument(readCadDocument(bytes), 'dxf').modelSpaceEntities).toEqual({
       LINE: 1,
     });
+  });
+
+  it('writes an R2007+ ASCII DXF in one pass, however small its first buffer (M10-01)', () => {
+    // acad-ts's byte buffer cannot grow: a DXF larger than the guess was written again at each
+    // doubling, six times over for bench-100k's 27 MB.
+    const write = vi.spyOn(DxfWriter, 'writeToStream');
+    try {
+      const doc = sampleDocument(ACadVersion.AC1032);
+      for (let i = 0; i < 200; i++) doc.entities!.add(new TextEntity());
+      writeCadDocument(doc, { format: 'dxf', initialBufferBytes: 64 });
+      expect(write).toHaveBeenCalledTimes(1);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  it("writes an R2007+ DXF's text as acad-ts's own buffer encodes it (M10-01)", () => {
+    const doc = sampleDocument(ACadVersion.AC1032);
+    const values = ['Ø25 ± 0.1 °C', '漢字 and 😀', 'tab\there^ caret', 'lone \ud800 surrogate'];
+    for (const value of values) {
+      const t = new TextEntity();
+      t.value = value;
+      doc.entities!.add(t);
+    }
+    const m = new MText();
+    m.value = 'Line 1\\PΔ line 2';
+    doc.entities!.add(m);
+    const buffer = new Uint8Array(1 << 20);
+    DxfWriter.writeToStream(buffer, doc, false, fidelityDxfConfiguration());
+    let end = buffer.length;
+    while (buffer[end - 1] === 0) end--;
+    expect(writeCadDocument(doc, { format: 'dxf' })).toEqual(buffer.slice(0, end));
+    const read = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+    const texts = [...read.entities!].filter((e) => e instanceof TextEntity);
+    expect(texts.map((t) => t.value)).toEqual(values.map((v) => v.replace('\ud800', '\ufffd')));
   });
 
   it('keeps every header variable in a DXF save, not only the acad-ts default subset', () => {
