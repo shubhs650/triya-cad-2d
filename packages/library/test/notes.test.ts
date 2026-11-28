@@ -8,9 +8,11 @@ import {
   STANDARD_NOTES_DEFAULTS,
   STANDARD_NOTE_GROUPS,
   addStandardNotes,
+  addStandardNotesBlock,
   checkStandardNotes,
   drawingUnits,
   standardNoteText,
+  standardNotesBlockName,
   standardNotesContents,
   standardNotesDefaults,
   type StandardNotesSpec,
@@ -71,15 +73,15 @@ describe('standard notes (M8-02)', () => {
     }
   });
 
-  it('writes a heading and the notes numbered with a hanging indent, escaping MTEXT codes', () => {
+  it('writes a heading and the notes numbered with a hanging indent and a tab, escaping MTEXT codes', () => {
     const s = spec({
       notes: [{ id: 'do-not-scale' }, { text: 'SEE C:\\SPECS {REV 2}.' }],
     });
     expect(standardNotesContents(s, MM)).toBe(
-      'NOTES:\\P\\pxi-3,l3,t3;1.\\tDO NOT SCALE FROM THIS DRAWING.\\P2.\\tSEE C:\\\\SPECS \\{REV 2\\}.',
+      'NOTES:\\P\\pxi-3,l3,t3;1.\tDO NOT SCALE FROM THIS DRAWING.\\P2.\tSEE C:\\\\SPECS \\{REV 2\\}.',
     );
     expect(standardNotesContents({ ...s, heading: '' }, MM)).toBe(
-      '\\pxi-3,l3,t3;1.\\tDO NOT SCALE FROM THIS DRAWING.\\P2.\\tSEE C:\\\\SPECS \\{REV 2\\}.',
+      '\\pxi-3,l3,t3;1.\tDO NOT SCALE FROM THIS DRAWING.\\P2.\tSEE C:\\\\SPECS \\{REV 2\\}.',
     );
   });
 
@@ -144,6 +146,41 @@ describe('standard notes (M8-02)', () => {
     const e2 = [...plain.entities()].find((x) => x.handle === h2)!;
     expect(plain.tables.layers.get(e2.layer)?.name).toBe('0');
     expect((e2.geom as MTextGeometry).style).toBe(STYLE);
+  });
+});
+
+describe('standard notes blocks (M8-02)', () => {
+  it('adds a block holding the MTEXT on layer 0 ByBlock, and finds one it has', () => {
+    const model = drawing({
+      header: [
+        ['$CLAYER', 'NOTES'],
+        ['$TEXTSTYLE', 'Notes'],
+      ],
+    });
+    const s = standardNotesDefaults(25.4);
+    const b = new ChangeSetBuilder(model);
+    const made = addStandardNotesBlock(b, model, s)!;
+    expect(addStandardNotesBlock(b, model, { ...s, width: 0 })).toBeUndefined();
+    model.apply(b.build());
+    expect(model.blocks.get(made)).toMatchObject({
+      name: standardNotesBlockName(s, MM),
+      basePoint: { x: 0, y: 0 },
+      description: 'Standard notes: 4 under "NOTES:"',
+    });
+    expect(standardNotesBlockName(s, MM)).toMatch(/^TRIYA_NOTES_[0-9A-F]{8}$/);
+    expect(standardNotesBlockName(s, MM)).not.toBe(standardNotesBlockName(s, INCHES));
+    const parts = model.blockEntities(made).map((id) => model.entity(id)!);
+    expect(parts).toHaveLength(1);
+    expect(model.tables.layers.get(parts[0]!.layer)?.name).toBe('0');
+    expect(parts[0]).toMatchObject({ color: { kind: 'byBlock' }, lineweight: 'ByBlock' });
+    expect(parts[0]!.geom).toMatchObject({
+      kind: 'MTEXT',
+      contents: standardNotesContents(s, MM),
+      style: NOTES_STYLE,
+      position: { x: 0, y: 0 },
+      attachment: 1,
+    });
+    expect(addStandardNotesBlock(new ChangeSetBuilder(model), model, s)).toBe(made);
   });
 });
 

@@ -1,12 +1,14 @@
 // Standard notes (M8-02 part 3, DEC-094): a drafting office's general notes for vessel and
 // piping drawings, chosen from a catalogue and filled in for the drawing, written as one MTEXT
-// the drafter goes on editing (a block of notes could only be exploded first).
+// the drafter goes on editing, or as a block holding it (PRD FR-Z1's "standard notes blocks",
+// for an office that inserts the same notes on every sheet).
 //
 // The wording is Triya's own, in the capitals drawings use. Each note's values (a design code,
 // a pressure) default to what is usual for a metric or an imperial drawing; the units note names
 // the drawing's INSUNITS. The MTEXT has a heading paragraph and the notes numbered with a
 // hanging indent (`\pxi-3,l3,t3;`: wrapped lines line up under the note's text, three text
-// heights in, where the tab after its number goes).
+// heights in, where the tab after its number goes). The tab is a tab character, as AutoCAD's
+// editor stores it (`^I` in the DXF file).
 import {
   insUnitsOf,
   type ChangeSetBuilder,
@@ -15,7 +17,8 @@ import {
   type MTextGeometry,
   type Vec2,
 } from '@triya/engine';
-import { currentTextStyle, oneLine } from '../texts';
+import { blockNamed } from '../block';
+import { currentTextStyle, digest, oneLine } from '../texts';
 
 export const STANDARD_NOTE_GROUPS = ['general', 'vessel', 'welding', 'finish'] as const;
 
@@ -249,9 +252,7 @@ const literal = (s: string) => s.replace(/[\\{}]/g, (c) => `\\${c}`);
 
 /** The MTEXT contents of the notes `spec` for a drawing in `units`. */
 export function standardNotesContents(spec: StandardNotesSpec, units: DrawingUnits): string {
-  const notes = spec.notes.map(
-    (item, i) => `${i + 1}.\\t${literal(standardNoteText(item, units))}`,
-  );
+  const notes = spec.notes.map((item, i) => `${i + 1}.\t${literal(standardNoteText(item, units))}`);
   const list = `\\pxi-3,l3,t3;${notes.join('\\P')}`;
   return spec.heading ? `${literal(spec.heading)}\\P${list}` : list;
 }
@@ -335,4 +336,47 @@ export function addStandardNotes(
     layer: currentLayer(model),
     geom: standardNotesGeometry(spec, drawingUnits(model), style, position),
   }).handle;
+}
+
+/**
+ * The block's name: `TRIYA_NOTES_<digest>`, a digest of the MTEXT's contents, height and width
+ * (the notes may hold characters a block name cannot).
+ */
+export function standardNotesBlockName(spec: StandardNotesSpec, units: DrawingUnits): string {
+  return `TRIYA_NOTES_${digest(`${standardNotesContents(spec, units)}|${spec.height}|${spec.width}`)}`;
+}
+
+/**
+ * The handle of the drawing's block holding the notes `spec` as one MTEXT, its top left at the
+ * base point, on layer 0 ByBlock in the current text style; added when the drawing lacks it.
+ * Undefined, with nothing added, when `spec` is no set of notes or the drawing has no text style.
+ */
+export function addStandardNotesBlock(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  spec: StandardNotesSpec,
+): Handle | undefined {
+  if (checkStandardNotes(spec) !== undefined) return undefined;
+  const style = currentTextStyle(model);
+  if (style === undefined) return undefined;
+  const units = drawingUnits(model);
+  const name = standardNotesBlockName(spec, units);
+  const found = blockNamed(model, name);
+  if (found) return found;
+  const block = b.addBlock({
+    name,
+    basePoint: { x: 0, y: 0 },
+    units: insUnitsOf(model),
+    description: `Standard notes: ${spec.notes.length} under "${spec.heading}"`,
+  }).handle;
+  const zero = [...model.tables.layers.values()].find((l) => l.name === '0')!.handle;
+  b.addEntity({
+    owner: block,
+    layer: zero,
+    geom: standardNotesGeometry(spec, units, style, { x: 0, y: 0 }),
+    color: { kind: 'byBlock' },
+    linetype: 'ByBlock',
+    lineweight: 'ByBlock',
+  });
+  return block;
 }

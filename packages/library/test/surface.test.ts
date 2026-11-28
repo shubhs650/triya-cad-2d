@@ -155,13 +155,16 @@ describe('surface texture symbol geometry (M8-02)', () => {
   });
 
   it('draws all around as a circle at the corner of the long leg and the extension', () => {
-    for (const s of [iso({ allAround: true }), spec({ allAround: true })]) {
+    for (const s of [iso({ allAround: true }), spec({ allAround: true, method: 'CAST' })]) {
       const parts = surfaceFinishParts(s, STYLE);
       const top = legs(parts)[1].end;
       const [c] = circles(parts).filter((c) => c.center.y > 2 * H);
       expect(c!.center.x).toBeCloseTo(top.x, 12);
       expect(c!.center.y).toBeCloseTo(top.y, 12);
       expect(c!.radius).toBeCloseTo(0.4 * H, 12);
+      // The texts along the extension start clear of it.
+      for (const t of texts(parts).filter((t) => t.alignmentPoint!.y > 2 * H))
+        expect(t.alignmentPoint!.x).toBeGreaterThan(c!.center.x + c!.radius);
     }
   });
 

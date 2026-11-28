@@ -136,6 +136,8 @@ const LONG = 3;
 /** A text line's pitch and the gap between a text and a line, in h. */
 const PITCH = 1.25;
 const GAP = 0.25;
+/** The all-around circle's radius, in h. */
+const AROUND = 0.4;
 
 /** The long leg's x at height y (both in h): it rises at 60°. */
 const legX = (y: number) => y / ROOT3;
@@ -162,15 +164,17 @@ export function surfaceFinishParts(spec: SurfaceFinishSpec, style: Handle): Libr
   // The incircle of the equilateral V up to the bar's height.
   if (spec.process === 'removal-prohibited') add(circle((SHORT / 3) * h, p(0, (2 * SHORT) / 3)));
   if (extended(spec)) add(line(longTop, { x: longTop.x + spec.extensionLength, y: longTop.y }));
-  if (spec.allAround) add(circle(0.4 * h, longTop));
+  if (spec.allAround) add(circle(AROUND * h, longTop));
 
   const say = (value: string, x: number, y: number, halign: number, valign: number) =>
     parts.push(text(value, p(x, y), h, halign, valign, style));
-  if (spec.method) say(spec.method, legX(long) + GAP, long + GAP, LEFT, BOTTOM);
+  // Texts along the extension start clear of the all-around circle at its corner.
+  const clear = spec.allAround ? legX(long) + AROUND + GAP : -Infinity;
+  if (spec.method) say(spec.method, Math.max(legX(long) + GAP, clear), long + GAP, LEFT, BOTTOM);
   if (spec.standard === 'ISO') {
     // Under the extension, each text starting right of the leg at its top.
     const a = long - GAP;
-    if (spec.requirement) say(spec.requirement, legX(a) + GAP, a, LEFT, TOP);
+    if (spec.requirement) say(spec.requirement, Math.max(legX(a) + GAP, clear), a, LEFT, TOP);
     const b = a - PITCH;
     if (spec.secondRequirement) say(spec.secondRequirement, legX(b) + GAP, b, LEFT, TOP);
   } else {
@@ -194,9 +198,10 @@ export function surfaceFinishParts(spec: SurfaceFinishSpec, style: Handle): Libr
     }
   }
   if (spec.allowance) {
-    // Mid-height on the short leg, ending left of the leg at the text's top.
+    // Mid-height on the short leg, ending left of the leg at the text's top (a wider gap: a
+    // stroke font's figures have next to no side bearing, and 0.25h looked to touch the leg).
     const y = SHORT / 2;
-    say(spec.allowance, -legX(y + 0.5) - GAP, y, RIGHT, MIDDLE);
+    say(spec.allowance, -legX(y + 0.5) - 2 * GAP, y, RIGHT, MIDDLE);
   }
   return parts;
 }
