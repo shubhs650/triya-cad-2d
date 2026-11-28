@@ -1,0 +1,18 @@
+# TRIYA_WELD_AWS_BEVEL_J_17EFBCA1
+# Weld symbol, AWS A2.4: arrow side bevel groove, size 3/8, groove angle 45%%d, convex contour, finish M; other side J-groove, size 1/4, concave contour; tail WPS-12; height 0.125, reference line 1, leader 0.375 at 135°
+visible LINE (0.0000, 0.0000) (-0.2652, 0.2652)
+visible LWPOLYLINE closed (0.0000, 0.0000) (-0.1031, 0.0737) (-0.0737, 0.1031)
+hatch   HATCH SOLID [(0.0000, 0.0000) (-0.1031, 0.0737) (-0.0737, 0.1031)]
+visible LINE (-0.2652, 0.2652) (-1.2652, 0.2652)
+visible LWPOLYLINE open (-0.8152, 0.1402) (-0.8152, 0.2652) (-0.7152, 0.1402)
+visible TEXT "3/8" (-0.8464, 0.2027) h0.1250 j22
+visible TEXT "45%%d" (-0.7652, 0.1089) h0.1250 j13
+visible LWPOLYLINE open (-0.8277, -0.0473) b0.4000 (-0.7027, -0.0473)
+visible TEXT "M" (-0.7652, -0.0973) h0.1250 j13
+visible LINE (-0.7902, 0.2652) (-0.7902, 0.3902)
+visible LWPOLYLINE open (-0.7902, 0.2964) b0.4142 (-0.7402, 0.3464) (-0.7402, 0.3902)
+visible TEXT "1/4" (-0.8214, 0.3277) h0.1250 j22
+visible LWPOLYLINE open (-0.8027, 0.4464) b0.6667 (-0.7277, 0.4464)
+visible LINE (-1.2652, 0.2652) (-1.3402, 0.3402)
+visible LINE (-1.2652, 0.2652) (-1.3402, 0.1902)
+visible TEXT "WPS-12" (-1.3714, 0.2652) h0.1250 j22

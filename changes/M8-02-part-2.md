@@ -1,0 +1,1 @@
+- M8-02 part 2 (#689): the symbol library builds AWS A2.4 and ISO 2553 welding symbols (fillet, groove, flare, plug, spot, seam, back and surfacing welds on either side, with size, length and pitch, groove angle, root opening, contour, finish, all-around, field weld and tail) as blocks at the drawing's units.
