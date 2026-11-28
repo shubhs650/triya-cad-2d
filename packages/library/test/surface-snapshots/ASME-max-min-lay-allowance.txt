@@ -1,0 +1,10 @@
+# TRIYA_SURF_ASME_MRR_78928A6B
+# Surface texture, ASME Y14.36: material removal required; 63; 32; lay ⊥ (perpendicular); allowance 0.02; height 0.125, extension 0.75
+visible LINE (0.0000, 0.0000) (-0.1010, 0.1750)
+visible LINE (0.0000, 0.0000) (0.3067, 0.5313)
+visible LINE (-0.1010, 0.1750) (0.1010, 0.1750)
+visible TEXT "32" (0.0878, 0.2062) h0.1250 j21
+visible TEXT "63" (0.1780, 0.3625) h0.1250 j21
+visible LINE (0.1241, 0.0250) (0.2241, 0.0250)
+visible LINE (0.1741, 0.0250) (0.1741, 0.1500)
+visible TEXT "0.02" (-0.1491, 0.0875) h0.1250 j22

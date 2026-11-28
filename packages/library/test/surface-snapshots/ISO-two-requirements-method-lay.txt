@@ -1,0 +1,12 @@
+# TRIYA_SURF_ISO_MRR_F9FFAAD5
+# Surface texture, ISO 1302: material removal required; Ra 1.6; Rz 6.3; method ground; lay = (parallel); allowance 0.3; height 0.125, extension 0.75
+visible LINE (0.0000, 0.0000) (-0.1010, 0.1750)
+visible LINE (0.0000, 0.0000) (0.3067, 0.5313)
+visible LINE (-0.1010, 0.1750) (0.1010, 0.1750)
+visible LINE (0.3067, 0.5313) (1.0567, 0.5313)
+visible TEXT "ground" (0.3380, 0.5625) h0.1250 j01
+visible TEXT "Ra 1.6" (0.3199, 0.5000) h0.1250 j03
+visible TEXT "Rz 6.3" (0.2297, 0.3438) h0.1250 j03
+visible LINE (0.1241, 0.0688) (0.2241, 0.0688)
+visible LINE (0.1241, 0.1062) (0.2241, 0.1062)
+visible TEXT "0.3" (-0.1491, 0.0875) h0.1250 j22

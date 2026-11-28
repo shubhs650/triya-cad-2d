@@ -1,0 +1,7 @@
+# TRIYA_SURF_ISO_APA_57990A87
+# Surface texture, ISO 1302: any process allowed; Ra 6.3; lay M (multidirectional); height 0.125, extension 0.75
+visible LINE (0.0000, 0.0000) (-0.1010, 0.1750)
+visible LINE (0.0000, 0.0000) (0.2165, 0.3750)
+visible LINE (0.2165, 0.3750) (0.9665, 0.3750)
+visible TEXT "Ra 6.3" (0.2297, 0.3438) h0.1250 j03
+visible TEXT "M" (0.1241, 0.0875) h0.1250 j02

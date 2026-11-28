@@ -1,7 +1,7 @@
 # @triya/library
 
-Pressure-vessel symbol generators: standard flanges, nozzles, supports, weld symbols and notes,
-drawn as 2D blocks to scale (PRD FR-Z1). Runs in Node and in a worker; no DOM.
+Pressure-vessel symbol generators: standard flanges, nozzles, supports, weld and surface texture
+symbols drawn as 2D blocks to scale, and standard notes (PRD FR-Z1). Runs in Node and in a worker; no DOM.
 
 ## Nozzle details and vessel supports (M8-02)
 
@@ -44,6 +44,36 @@ breaks; `addWeldSymbolBlock(builder, model, spec)` adds it as a block based at t
 Around each side's symbol: the size to its left, the length and pitch to its right, and outwards
 from the line the root opening, groove angle, contour and finish letter. The texts are placed by
 their alignment points, so the reference line's length is the drafter's to fit them.
+
+## Surface texture symbols (M8-02)
+
+`SurfaceFinishSpec` is the symbol a drafter would state: the standard (`ISO` for ISO 1302,
+`ASME` for ASME Y14.36), the process (`any`, `removal-required` with the bar, `removal-prohibited`
+with the circle), the requirement and a second one, the manufacturing method, the lay (one of
+`SURFACE_LAYS`), the machining allowance and all around, with the text height and the extension's
+length in drawing units (`surfaceFinishDefaults(drawingScale(model), standard)`: 125 µin ASME or
+Ra 3.2 ISO). `checkSurfaceFinish(spec)` names the first rule a spec breaks;
+`addSurfaceFinishBlock(builder, model, spec)` adds it as a block based at the symbol's point
+(`TRIYA_SURF_ISO_MRR_<digest>`), its texts in the drawing's current text style (DEC-094).
+
+| Standard    | Requirement (a) and second (b)                                  | Extension                           |
+| ----------- | --------------------------------------------------------------- | ----------------------------------- |
+| ISO 1302    | under the extension, right of the long leg, a over b            | with a requirement, method or all around |
+| ASME Y14.36 | in the V above the short leg, left of the long leg, max over min | with a method or all around         |
+
+Both put the method above the extension, the lay at the foot of the long leg and the allowance
+left of the short leg.
+
+## Standard notes (M8-02)
+
+`STANDARD_NOTES` is a catalogue of general notes in Triya's own wording (`general`, `vessel`,
+`welding`, `finish`), each with fields whose defaults suit a metric or an imperial drawing
+(`drawingUnits(model)`; the units note names the drawing's INSUNITS). `StandardNotesSpec` lists
+notes by id with the drafter's values, or in the drafter's own words, under a heading;
+`addStandardNotes(builder, model, spec, owner, position)` writes them as one MTEXT, numbered
+with a hanging indent, on the current layer in the current text style, so the drafter goes on
+editing it; `addStandardNotesBlock(builder, model, spec)` puts that MTEXT in a block
+(`TRIYA_NOTES_<digest>`) for notes inserted unchanged on every sheet (DEC-094).
 
 ## ASME B16.5 flanges (M8-01)
 

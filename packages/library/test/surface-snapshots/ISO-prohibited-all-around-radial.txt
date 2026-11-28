@@ -1,0 +1,9 @@
+# TRIYA_SURF_ISO_NMR_D3E38794
+# Surface texture, ISO 1302: material removal prohibited; Ra 12.5; lay R (radial); all around; height 0.125, extension 0.75
+visible LINE (0.0000, 0.0000) (-0.1010, 0.1750)
+visible LINE (0.0000, 0.0000) (0.2165, 0.3750)
+visible CIRCLE (0.0000, 0.1167) r0.0583
+visible LINE (0.2165, 0.3750) (0.9665, 0.3750)
+visible CIRCLE (0.2165, 0.3750) r0.0500
+visible TEXT "Ra 12.5" (0.2978, 0.3438) h0.1250 j03
+visible TEXT "R" (0.1241, 0.0875) h0.1250 j02

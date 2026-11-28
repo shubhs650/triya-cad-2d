@@ -1,0 +1,9 @@
+# TRIYA_SURF_ASME_NMR_90AEB5F8
+# Surface texture, ASME Y14.36: material removal prohibited; 250; method CAST; all around; height 0.125, extension 0.75
+visible LINE (0.0000, 0.0000) (-0.1010, 0.1750)
+visible LINE (0.0000, 0.0000) (0.2165, 0.3750)
+visible CIRCLE (0.0000, 0.1167) r0.0583
+visible LINE (0.2165, 0.3750) (0.9665, 0.3750)
+visible CIRCLE (0.2165, 0.3750) r0.0500
+visible TEXT "CAST" (0.2978, 0.4063) h0.1250 j01
+visible TEXT "250" (0.0878, 0.2062) h0.1250 j21
