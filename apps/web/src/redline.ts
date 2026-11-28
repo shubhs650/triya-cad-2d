@@ -14,6 +14,14 @@
 // objects") stops the script, so nothing is ever typed into the wrong prompt. "Select objects"
 // takes Last, which is the underlay only while nothing was drawn after it: the selection is
 // checked before it is kept, and the offer goes once the drawing's objects change.
+//
+// M8-04 (FR-Z2's "mark up, print"): calibrated, or not (Not now), the drawing goes on to the
+// markup. -LAYER makes layer REDLINE (colour 1, red) current, so whatever the drafter draws over
+// the page is red and can be turned off or frozen to see the page alone, as a red-line layer is
+// in a drafting office (AutoCAD has no red-line command: Markup Import works on DWFs). A
+// calibrated page is then zoomed to at its new size. The card offers Revision Cloud, Text,
+// Leader and Plot... (the Plot dialog plots the underlay's page with the markup, M2-16 part 5)
+// until Done; the drawing's edits no longer withdraw it.
 import type { CommandInput, CommandOutput, EntityGeometry, EntityId } from '@triya/engine';
 
 /** A PDF page's size in inches (pdf.js, underlay/pages.ts). */
@@ -29,6 +37,8 @@ export type RedlineState =
   | { readonly phase: 'attaching'; readonly file: string }
   | { readonly phase: 'offer'; readonly file: string; readonly note?: string }
   | { readonly phase: 'calibrating'; readonly file: string }
+  /** `ready` once REDLINE is current (-LAYER has ended): the markup buttons wait for it. */
+  | { readonly phase: 'markup'; readonly file: string; readonly ready: boolean }
   | { readonly phase: 'failed'; readonly file: string; readonly message: string };
 
 /** One answer of a script: typed at the prompt whose message starts with `prompt`. */
@@ -49,9 +59,24 @@ interface Run {
   page?: PdfPageSize;
   /** The set the running "Select objects" has built (SCALE's Last). */
   selected: readonly EntityId[];
+  /** Sent when the command the steps answer ends (the ZOOM after -LAYER). */
+  after?: CommandInput[];
 }
 
 const submit = (text: string): CommandInput => ({ kind: 'submit', text });
+
+/** The layer the markup goes on, and its colour (ACI 1, red). */
+export const REDLINE_LAYER = 'REDLINE';
+
+/** -LAYER's answers: Make REDLINE (current), Color 1 on it, then Enter to end. */
+const LAYER_STEPS: readonly Step[] = [
+  { prompt: 'Enter an option', answer: 'M' },
+  { prompt: 'Enter name for new layer', answer: REDLINE_LAYER },
+  { prompt: 'Enter an option', answer: 'C' },
+  { prompt: 'New color', answer: '1' },
+  { prompt: 'Enter name list of layer(s) for color', answer: REDLINE_LAYER },
+  { prompt: 'Enter an option', answer: '' },
+];
 
 const NOT_LAST =
   'The PDF is no longer the last object drawn: select it for SCALE and use its Reference option.';
@@ -107,7 +132,15 @@ export class Redline {
     return [{ kind: 'cancel' }, submit('SCALE')];
   }
 
-  /** The offer's Not now, or the failure's Close. */
+  /** The offer's Not now: on to the markup at the printed size (none when there is no offer). */
+  skip(doc: number): CommandInput[] {
+    const run = this.#runs.get(doc);
+    if (run?.state.phase !== 'offer') return [];
+    // Esc first: a command left running would take -LAYER as its answer.
+    return [{ kind: 'cancel' }, ...this.#markup(run)];
+  }
+
+  /** The markup's Done, or the failure's Close. */
   dismiss(doc: number): void {
     if (this.#runs.delete(doc)) this.#changed();
   }
@@ -137,6 +170,10 @@ export class Redline {
       if (state.phase === 'attaching' && underlay) {
         run.underlay = underlay.entity.id;
         run.geometry = underlay.entity.geom as Underlay;
+      } else if (state.phase === 'calibrating') {
+        // SCALE's result: where the page now is, for the ZOOM after.
+        const scaled = o.change.entities?.updated?.find((u) => u.after.id === run.underlay);
+        if (scaled?.after.geom.kind === 'PDFUNDERLAY') run.geometry = scaled.after.geom;
       }
       // Edited since: Last may no longer be the underlay, so the offer goes.
       else if (state.phase === 'offer' && o.change.entities) this.dismiss(doc);
@@ -156,11 +193,30 @@ export class Redline {
       }
       if (state.phase === 'calibrating') {
         run.steps = [];
-        if (o.cancelled) this.#phase(run, { phase: 'offer', file: state.file });
-        else this.dismiss(doc);
+        if (o.cancelled) {
+          this.#phase(run, { phase: 'offer', file: state.file });
+          return [];
+        }
+        const markup = this.#markup(run);
+        run.after = [submit('ZOOM'), ...zoomTo(run.geometry, run.page)];
+        return markup;
+      }
+      if (state.phase === 'markup') {
+        run.steps = [];
+        const after = run.after ?? [];
+        delete run.after;
+        if (!state.ready) this.#phase(run, { ...state, ready: true });
+        return after;
       }
     }
     return [];
+  }
+
+  /** On to the markup: -LAYER, with its answers to type. */
+  #markup(run: Run): CommandInput[] {
+    run.steps = [...LAYER_STEPS];
+    this.#phase(run, { phase: 'markup', file: run.state.file, ready: false });
+    return [submit('-LAYER')];
   }
 
   #phase(run: Run, state: RedlineState): void {

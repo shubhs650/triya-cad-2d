@@ -1,7 +1,7 @@
 // A plotted PDF as a reader sees it (M2-17's Plot dialog test): pdf.js reads the bytes in Node and
 // reports the first page's size in millimetres, the page labels, how many paths and forms it
 // draws, and its text; M2-60 adds the PDF layers, the bookmarks and whether fonts are embedded;
-// M2-74 the page's links.
+// M2-74 the page's links; M8-04 the colours the page strokes outside its forms.
 import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 export interface PdfSummary {
@@ -61,6 +61,28 @@ export async function pdfSummary(bytes: Uint8Array, at = 1): Promise<PdfSummary>
     fonts,
     links: await linksOf(pdf, page),
   };
+}
+
+/**
+ * The stroke colours (`RG`, as `#rrggbb`) the first page sets outside its forms, in order: what
+ * the plot itself draws, not the PDF underlays' pages it paints (M8-04's red-line markup).
+ */
+export async function pdfStrokeColors(bytes: Uint8Array): Promise<string[]> {
+  const pdf = await getDocument({ data: bytes.slice(), useWasm: false }).promise;
+  const ops = await (await pdf.getPage(1)).getOperatorList();
+  const hex = (v: number) => v.toString(16).padStart(2, '0');
+  const out: string[] = [];
+  let depth = 0;
+  ops.fnArray.forEach((fn, i) => {
+    if (fn === OPS.paintFormXObjectBegin) depth++;
+    else if (fn === OPS.paintFormXObjectEnd) depth--;
+    else if (depth === 0 && fn === OPS.setStrokeRGBColor) {
+      // pdf.js hands the colour on as a hex string, or as its three components.
+      const [c] = ops.argsArray[i] as [string | ArrayLike<number>];
+      out.push(typeof c === 'string' ? c.toLowerCase() : `#${Array.from(c, hex).join('')}`);
+    }
+  });
+  return out;
 }
 
 type Loaded = Awaited<ReturnType<typeof getDocument>['promise']>;
